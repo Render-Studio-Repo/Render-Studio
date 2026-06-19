@@ -1,0 +1,23 @@
+{
+  "name": "Arduino → 28BYJ-48 stepper (ULN2003)",
+  "description": "Arduino Uno drives a 28BYJ-48 through a ULN2003 board. Motor plugs into the white socket — no OUT wires. Open Code & Simulate and press Run.",
+  "reference_image": null,
+  "components": [
+    { "id": "c_arduino", "type": "arduino-uno", "label": "Arduino Uno", "x": 60, "y": 140, "w": 150, "h": 150, "color": "#00979d" },
+    { "id": "c_driver", "type": "motor-driver", "label": "ULN2003", "x": 360, "y": 160, "w": 104, "h": 92, "color": "#21262d" },
+    { "id": "c_stepper", "type": "stepper", "label": "Stepper (28BYJ-48)", "x": 520, "y": 170, "w": 86, "h": 86, "color": "#1f6feb" }
+  ],
+  "wires": [
+    { "id": "w_pwr", "from": { "componentId": "c_arduino", "pinId": "5v" }, "to": { "componentId": "c_driver", "pinId": "vcc" }, "color": "#f85149", "label": "5V" },
+    { "id": "w_gnd", "from": { "componentId": "c_arduino", "pinId": "gnd" }, "to": { "componentId": "c_driver", "pinId": "gnd" }, "color": "#6e7681", "label": "GND" },
+    { "id": "w1", "from": { "componentId": "c_arduino", "pinId": "d13" }, "to": { "componentId": "c_driver", "pinId": "in1" }, "color": "#58a6ff", "label": "IN1" },
+    { "id": "w2", "from": { "componentId": "c_arduino", "pinId": "d12" }, "to": { "componentId": "c_driver", "pinId": "in2" }, "color": "#58a6ff", "label": "IN2" },
+    { "id": "w3", "from": { "componentId": "c_arduino", "pinId": "d11" }, "to": { "componentId": "c_driver", "pinId": "in3" }, "color": "#58a6ff", "label": "IN3" },
+    { "id": "w4", "from": { "componentId": "c_arduino", "pinId": "a0" }, "to": { "componentId": "c_driver", "pinId": "in4" }, "color": "#58a6ff", "label": "IN4" }
+  ],
+  "notes": [
+    "28BYJ-48 5-wire connector plugs into the white socket on the ULN2003 — no jumper wires to O1–O4.",
+    "Control: D13→IN1, D12→IN2, D11→IN3, A0 (D14)→IN4.",
+    "Press Code & Simulate → Run to animate the rotor."
+  ]
+}

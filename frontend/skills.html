@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skills Library — Render3D</title>
+  <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
+  <link rel="stylesheet" href="/styles.css?v=20260610-info-layout" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <a href="/" class="nav-tab">Studio</a>
+        <a href="/skills.html" class="nav-tab active">Skills Library</a>
+        <a href="/docs.html" class="nav-tab">Docs</a>
+        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content skills-page">
+        <header class="info-hero">
+          <p class="info-eyebrow">Agent skills</p>
+          <h2>Skills Library</h2>
+          <p class="info-lead">
+            Agent skills from
+            <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener">text-to-cad</a>
+            — full Python tooling (step, inspect, snapshot, URDF, SDF, DXF, and more) synced to the server.
+            Enable skills to inject guidance into AI prompts; with <strong>CAD</strong> enabled, exported STEP files
+            are validated via the skill's Python inspect tools after each build.
+          </p>
+        </header>
+
+        <p id="skills-status" class="skills-status muted"></p>
+        <div id="skills-list" class="skills-list"></div>
+        <div id="skill-detail" class="skill-detail hidden"></div>
+
+        <section class="info-section">
+          <h3>How it works</h3>
+          <ul class="info-list">
+            <li><strong>12 skills</strong> — CAD, Blueprint Vision, URDF, SDF, SRDF, DXF, step-parts, gcode, bambu-labs, cad-viewer, implicit-cad, sendcutsend.</li>
+            <li><strong>Auto Blueprint Vision</strong> — attaching an image to a prompt automatically enables schematic analysis; disable it in Skills Library if you only want a visual reference.</li>
+            <li><strong>Python tools</strong> — each skill ships <code>scripts/</code> CLIs; Render3D runs CAD inspect on STEP after builds when CAD is enabled.</li>
+            <li><strong>Sync updates</strong> — run <code>scripts/sync-skills-from-text-to-cad.sh</code> on the server to pull latest from GitHub.</li>
+          </ul>
+        </section>
+      </article>
+    </main>
+  </div>
+
+  <script type="module">
+    import { initSkillsLibraryPage } from "./skills-library.js?v=20260610-text-to-cad";
+    initSkillsLibraryPage({
+      listEl: document.getElementById("skills-list"),
+      detailEl: document.getElementById("skill-detail"),
+      statusEl: document.getElementById("skills-status"),
+    });
+  </script>
+</body>
+</html>

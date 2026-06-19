@@ -1,0 +1,18 @@
+# Render3D — public reverse proxy
+# App: render3d.service on 127.0.0.1:8001
+#
+# DNS: smartcallusa.com → this server's public IP
+# (Add www.smartcallusa.com to this block once www DNS matches.)
+
+smartcallusa.com {
+	encode gzip zstd
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy 127.0.0.1:8001 {
+		transport http {
+			read_timeout 540s
+			write_timeout 540s
+		}
+	}
+}

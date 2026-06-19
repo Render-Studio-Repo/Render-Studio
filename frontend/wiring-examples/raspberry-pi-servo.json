@@ -1,0 +1,84 @@
+{
+  "name": "Raspberry Pi → Servo motor",
+  "description": "Standard hobby servo on GPIO18 (PWM). Power and ground run through the breadboard rails; orange signal wire goes Pi → breadboard → servo.",
+  "reference_image": null,
+  "components": [
+    {
+      "id": "c_pi",
+      "type": "raspberry-pi",
+      "label": "Raspberry Pi 4",
+      "x": 36,
+      "y": 96,
+      "w": 148,
+      "h": 188
+    },
+    {
+      "id": "c_bread",
+      "type": "breadboard",
+      "label": "Half breadboard",
+      "x": 268,
+      "y": 128,
+      "w": 340,
+      "h": 200
+    },
+    {
+      "id": "c_servo",
+      "type": "servo-motor",
+      "label": "SG90 Servo",
+      "x": 688,
+      "y": 188,
+      "w": 80,
+      "h": 80
+    }
+  ],
+  "wires": [
+    {
+      "id": "w_pwr",
+      "from": { "componentId": "c_pi", "pinId": "5v" },
+      "to": { "componentId": "c_bread", "pinId": "t+_7" },
+      "color": "#f85149",
+      "label": "5V → + rail"
+    },
+    {
+      "id": "w_gnd",
+      "from": { "componentId": "c_pi", "pinId": "gnd" },
+      "to": { "componentId": "c_bread", "pinId": "t-_7" },
+      "color": "#6e7681",
+      "label": "GND → − rail"
+    },
+    {
+      "id": "w_pwm",
+      "from": { "componentId": "c_pi", "pinId": "gpio18" },
+      "to": { "componentId": "c_bread", "pinId": "d7" },
+      "color": "#58a6ff",
+      "label": "GPIO18 PWM → row d"
+    },
+    {
+      "id": "w_rail_vcc",
+      "from": { "componentId": "c_bread", "pinId": "t+_11" },
+      "to": { "componentId": "c_servo", "pinId": "vcc" },
+      "color": "#f85149",
+      "label": "+ rail → servo 5V"
+    },
+    {
+      "id": "w_rail_gnd",
+      "from": { "componentId": "c_bread", "pinId": "t-_11" },
+      "to": { "componentId": "c_servo", "pinId": "gnd" },
+      "color": "#6e7681",
+      "label": "− rail → servo GND"
+    },
+    {
+      "id": "w_sig",
+      "from": { "componentId": "c_bread", "pinId": "e7" },
+      "to": { "componentId": "c_servo", "pinId": "signal" },
+      "color": "#58a6ff",
+      "label": "PWM signal → servo"
+    }
+  ],
+  "notes": [
+    "Use GPIO18 (physical pin 12) for hardware PWM — ideal for servos.",
+    "Servo wire colors: red = 5V, brown/black = GND, orange/yellow = signal.",
+    "For multiple servos, power the rails from a dedicated 5V supply (≥1A) and tie grounds together.",
+    "Example Python: pigpio or gpiozero Servo on GPIO18."
+  ]
+}

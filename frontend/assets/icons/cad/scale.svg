@@ -1,0 +1,51 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Scale">
+  <title>Scale</title>
+  <defs>
+    <linearGradient id="blueGrad" x1="18" y1="10" x2="48" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#86B8FF"/>
+      <stop offset="0.52" stop-color="#4F7FE5"/>
+      <stop offset="1" stop-color="#254C9A"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="16" y1="12" x2="50" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8E8799"/>
+      <stop offset="0.55" stop-color="#4A4656"/>
+      <stop offset="1" stop-color="#272532"/>
+    </linearGradient>
+    <linearGradient id="yellowGrad" x1="18" y1="12" x2="49" y2="55" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE996"/>
+      <stop offset="0.55" stop-color="#F1C95A"/>
+      <stop offset="1" stop-color="#9B7120"/>
+    </linearGradient>
+    <linearGradient id="pinkGrad" x1="18" y1="12" x2="50" y2="55" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7DA6"/>
+      <stop offset="0.55" stop-color="#E5497A"/>
+      <stop offset="1" stop-color="#852743"/>
+    </linearGradient>
+    <linearGradient id="steelGrad" x1="16" y1="12" x2="50" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F1F6FF"/>
+      <stop offset="0.55" stop-color="#C7D0DC"/>
+      <stop offset="1" stop-color="#7B8798"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="innerGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+    </filter>
+    <radialGradient id="sphereShine" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(24 20) rotate(48) scale(28)">
+      <stop offset="0" stop-color="#A8CBFF"/>
+      <stop offset="0.48" stop-color="#5D8DF0"/>
+      <stop offset="1" stop-color="#244487"/>
+    </radialGradient>
+    
+  </defs>
+  
+  <g filter="url(#softShadow)" stroke="#DDE8F7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="19" y="25" width="20" height="20" rx="2" fill="#4F7FE5" fill-opacity="0.35"/>
+    <path d="M36 12H52V28"/>
+    <path d="M52 12L35 29"/>
+    <path d="M22 52H12V42"/>
+    <path d="M12 52L27 37"/>
+  </g>
+
+</svg>

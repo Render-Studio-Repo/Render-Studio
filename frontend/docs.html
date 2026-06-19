@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Docs — Render3D</title>
+  <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
+  <link rel="stylesheet" href="/styles.css?v=20260617-docs-today" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <a href="/" class="nav-tab">Studio</a>
+        <a href="/skills.html" class="nav-tab">Skills Library</a>
+        <a href="/docs.html" class="nav-tab active">Docs</a>
+        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content">
+        <header class="info-hero">
+          <p class="info-eyebrow">Documentation</p>
+          <h2>Render3D CAD Visualizer</h2>
+          <p class="info-lead">
+            A CAD project visualizer inspired by ForgeCAD: orbit, zoom, and pan a 3D viewport,
+            upload meshes, edit transforms, and generate new geometry from natural-language prompts
+            via <strong>GPT-5.5 Pro</strong>.
+          </p>
+        </header>
+
+        <section class="info-section">
+          <h3>What changed today</h3>
+          <p>
+            Render3D now has a more complete electronics-to-CAD workflow: source parts, wire them,
+            generate real mounting fixtures, draw routes between objects, and inspect AI cost usage
+            by project, person, prompt, tokens, or calls.
+          </p>
+          <div class="info-feature-grid">
+            <article class="info-feature-card">
+              <strong>Component-aware CAD</strong>
+              <span>Imported STEP/GLB parts can be profiled, measured, referenced, mounted, and automatically placed into generated fixtures.</span>
+            </article>
+            <article class="info-feature-card">
+              <strong>Draw mode upgrades</strong>
+              <span>Selected-face hole patterns, blind depths, and line-tool ducts/wire loops now run as local geometry edits.</span>
+            </article>
+            <article class="info-feature-card">
+              <strong>Wiring simulator intelligence</strong>
+              <span>Components can be dragged into the simulator, drivers are validated for motors, and code/simulation flows are documented.</span>
+            </article>
+            <article class="info-feature-card">
+              <strong>Workspace quality of life</strong>
+              <span>Stop generation, hide objects from the context menu, keep prompt drafts per project, and use expanded AI cost analytics.</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Visual workflows</h3>
+          <div class="info-visual-grid">
+            <div class="info-visual-card">
+              <h4>Line tool to route geometry</h4>
+              <pre class="info-code"><code>Line tool
+  click object A
+      ↓
+  click bend / midpoint(s)
+      ↓
+  click object B
+      ↓
+  Enter / double-click → @path-1
+      ↓
+Draw prompt: "create wire loops along this path"</code></pre>
+            </div>
+            <div class="info-visual-card">
+              <h4>Component fixture prompt</h4>
+              <pre class="info-code"><code>@component:arduino_nano_r4
+@component:adafruit_858_stepper_motor_5vdc
+      ↓
+component_specs + measured bounds
+      ↓
+deterministic fixture generator
+      ↓
+mount plate + board pocket + motor posts
+      ↓
+component meshes moved into the mounts</code></pre>
+            </div>
+            <div class="info-visual-card">
+              <h4>AI cost analytics</h4>
+              <pre class="info-code"><code>Range filter: 7d / 30d / 90d / year
+View filter: mine / shared / individual
+Metric: cost / tokens / prompts / calls
+Chart: bars / line / area / user / project / prompts
+Prompt chart: "compare project token usage last 90 days"</code></pre>
+            </div>
+            <div class="info-visual-card">
+              <h4>Wiring validation</h4>
+              <pre class="info-code"><code>Stepper motor requested
+      ↓
+validator checks coils + current path
+      ↓
+Arduino pins must feed driver inputs
+      ↓
+ULN2003 / driver outputs feed motor coils
+      ↓
+simulation animates actuator when valid</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Prompt examples — using skills</h3>
+          <p>
+            Enable skills on the <a href="/skills.html">Skills Library</a> page, then reference them in Studio prompts.
+            Active skills appear as <code>@skill:cad</code> chips; you can also name the skill in plain language.
+            <strong>Blueprint Vision</strong> turns on automatically when you attach an image to a prompt.
+          </p>
+
+          <h4 class="prompt-example-title">CAD — parametric block with holes</h4>
+          <pre class="info-code"><code>Use the CAD skill to generate a parametric STEP model.
+
+Create a 100mm x 60mm x 20mm rectangular block with four 8mm vertical through-holes. Add a 2mm chamfer only on the top outer perimeter.
+
+Output:
+- STEP file
+- STL file
+- Preview in CAD Viewer</code></pre>
+
+          <h4 class="prompt-example-title">Blueprint Vision — schematic to CAD model</h4>
+          <p>Attach a schematic, blueprint, or concept drawing image to the prompt. <strong>Blueprint Vision</strong> enables automatically; also enable <strong>CAD</strong> to generate geometry.</p>
+          <pre class="info-code"><code>Use the Blueprint Vision skill to analyze this schematic, then model it with the CAD skill.
+
+Extract all dimensions and labels from the image text. Produce the full 7-stage analysis
+(understanding, dimensions, components, relationships, reconstruction plan, model tree),
+then generate a parametric STEP assembly.
+
+Example target: countertop automated cooking appliance, 420×360×520 mm envelope,
+bowl, support columns, bridge, motor, mixing shaft, hopper, spice dispensers, control panel.
+
+Output:
+- Structured analysis summary
+- STEP assembly
+- STL meshes
+- Preview in CAD Viewer</code></pre>
+
+          <h4 class="prompt-example-title">Mesh Checkup — repair and smooth a selected region</h4>
+          <p>
+            Use the <strong>◈ Checkup</strong> tool in the Direct modeling panel (Tools tab). Pick a face (<kbd>F</kbd>) or lasso a region (<kbd>L</kbd>) first to scope smoothing; repair runs on the whole mesh.
+          </p>
+          <pre class="info-code"><code>1. Upload or load an STL/GLB mesh with rough or noisy geometry.
+2. Press F and click a bumpy face, or press L and lasso the area to smooth.
+3. Open Tools → ◈ Checkup.
+4. Click Check — review topology report (non-manifold edges, open boundaries, degenerate triangles).
+5. Enable Repair topology + Smooth selection.
+   Method: Taubin (shape-preserving) · Iterations: 8
+6. Click Apply cleanup.
+
+Optional AI prompt (after cleanup) for further edits on the same region:
+At @face-1 fillet the outer edge 2mm and keep the smoothed surface unchanged.</code></pre>
+
+          <h4 class="prompt-example-title">Wiring Simulator — breadboard schematic from prompt or photo</h4>
+          <p>
+            Switch workspace to <strong>⎍ Wiring Simulator</strong>. Drag components, drag wires pin-to-pin on the grid,
+            or describe the circuit in the left <strong>Wiring AI</strong> panel. Attach a breadboard photo to match an existing build.
+            Click <strong>Example</strong> to load a filled blink-LED circuit with color-coded wires.
+          </p>
+          <pre class="info-code"><code>Arduino Uno blink LED on pin 13:
+- Half breadboard centered on canvas
+- 220Ω resistor between D13 row and LED anode
+- LED cathode to GND rail
+- 5V and GND from Arduino to breadboard power rails
+Use red for 5V, gray for GND, blue for D13 signal.
+
+Then prompt edits:
+Move the LED one column right and add a second red LED on pin 12 with its own 220Ω resistor.</code></pre>
+
+          <h4 class="prompt-example-title">Component-aware fixture — real parts, real mounts</h4>
+          <p>
+            Drag components from the project browser into the prompt or copy their <code>@component</code>
+            reference. Render3D measures the current mesh, uses known part profiles when available,
+            and can place the component models into deterministic mounting geometry.
+          </p>
+          <pre class="info-code"><code>@component:adafruit_858_stepper_motor_5vdc
+@component:arduino_nano_r4
+
+Generate a flat open breadboard-style test fixture.
+Mount the Arduino Nano in a pocket with corner holes and USB clearance.
+Hold the stepper motor by its bracket ears with two posts and a body clearance opening.
+Move the referenced STEP/GLB components into the generated mounts.</code></pre>
+
+          <h4 class="prompt-example-title">Draw mode — selected-face hole pattern</h4>
+          <p>
+            Switch prompt mode to <strong>Draw</strong>, press <kbd>F</kbd>, pick a face, then describe
+            the local edit. Draw mode now separates hole count, diameter, pattern, and blind depth.
+          </p>
+          <pre class="info-code"><code>put 5 holes in a circle evenly apart 4 mm 3mm deep
+
+Result:
+- 5 blind holes
+- 4 mm diameter
+- 3 mm deep
+- evenly spaced around the selected face center</code></pre>
+
+          <h4 class="prompt-example-title">Draw mode — ducts and wire loops from the Line tool</h4>
+          <p>
+            Press <kbd>N</kbd> or click <strong>Line</strong>, click path points between objects, then
+            double-click or press Enter to finish. The path becomes an <code>@path-N</code> reference
+            that Draw mode can turn into route geometry.
+          </p>
+          <pre class="info-code"><code>create a 6mm wire duct along this path
+
+make 2mm wire loops 10mm high along this path
+
+add wire clips between these two objects using @path-1</code></pre>
+        </section>
+
+        <section class="info-section">
+          <h3>Features</h3>
+          <ul class="info-list">
+            <li><strong>3D viewer</strong> — Orbit, pan, zoom; grid toggle; fit-to-view</li>
+            <li><strong>Edit timeline</strong> — Fusion-style history; drag the slider or click steps to restore earlier states</li>
+            <li><strong>Geometric references</strong> — Pick corners, faces, edges, lasso regions, and line paths; insert <code>@corner-1</code> or <code>@path-1</code> chips into prompts</li>
+            <li><strong>Reference-aware AI</strong> — e.g. “at @corner-1 drill a 3mm hole through the part”</li>
+            <li><strong>File import</strong> — STL, OBJ, GLB/GLTF, PLY, OFF, and 3MF upload with timeline history</li>
+            <li><strong>Gizmo edit</strong> — Transform controls with server-side save</li>
+            <li><strong>AI CAD prompting</strong> — GPT-5.5 Pro builds and modifies geometry via Trimesh</li>
+            <li><strong>Stop generating</strong> — cancel an in-flight OpenAI/Claude generation to avoid wasting time and tokens</li>
+            <li><strong>Project prompt drafts</strong> — prompt text and references are saved per project when you switch away and restored when you return</li>
+            <li><strong>Object visibility</strong> — right-click a component in the workspace browser and choose Hide object / Show object</li>
+            <li><strong>Color tool</strong> — select an object or face and apply a color from the Create/viewport controls</li>
+            <li><strong>Component profiles</strong> — source imported parts, store datasheets/pinouts/specs, and feed verified dimensions to wiring and CAD generation</li>
+            <li><strong>Driver-aware wiring</strong> — motors and steppers are validated through driver boards such as ULN2003 instead of wiring Arduino pins directly to coils</li>
+            <li><strong>Code + simulation</strong> — wiring designs can generate Arduino-style code, open an editable code tab, and run visual actuator simulations when wiring validates</li>
+            <li><strong>AI cost analytics</strong> — compare cost, tokens, prompt counts, and AI calls by time range, user, project, or recent prompt</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>Draw mode local edits</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Reference</th><th>Prompt</th><th>Result</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Selected face</td><td><code>put a 4 mm hole in the middle of this face</code></td><td>Through-hole at selected face center</td></tr>
+                <tr><td>Selected face</td><td><code>put 5 holes in a circle evenly apart 4 mm 3mm deep</code></td><td>Blind circular hole pattern</td></tr>
+                <tr><td>Line path</td><td><code>create a wire duct along this path</code></td><td>Raised duct/conduit along <code>@path-N</code></td></tr>
+                <tr><td>Line path</td><td><code>make wire loops along this path</code></td><td>Repeated hoop clips following <code>@path-N</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Component and wiring workflow</h3>
+          <ul class="info-list">
+            <li><strong>Drag to prompt</strong> — drag a component from the workspace browser into the AI prompt to create a component reference chip.</li>
+            <li><strong>Drag to Wiring Simulator</strong> — drop a component into the wiring viewport to create a recognized wiring part with pins.</li>
+            <li><strong>Profile / source</strong> — right-click a component and choose Profile / source to identify an imported STEP/GLB part, collect specs, and seed datasheets or pinout data.</li>
+            <li><strong>Driver picker</strong> — if a motor needs a driver, the simulator can prompt for a compatible driver board and import/source the supporting STEP file.</li>
+            <li><strong>Validation</strong> — stepper coil inputs, Arduino control pins, power rails, and driver outputs are checked before simulation.</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>AI cost analytics</h3>
+          <p>
+            Open the account/profile menu and choose <strong>View analytics</strong>. The popup is wide
+            enough for chart comparison and includes quick buttons plus a prompt-style chart builder.
+          </p>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Control</th><th>Options</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Range</td><td>Last 7, 14, 30, 60, 90, 180, or 365 days</td></tr>
+                <tr><td>View</td><td>Mine + shared, mine only, shared only, or a specific shared-key user</td></tr>
+                <tr><td>Metric</td><td>Cost, tokens, prompt count, AI calls</td></tr>
+                <tr><td>Chart</td><td>Stacked bars, line, area, by person, by project, recent prompts</td></tr>
+                <tr><td>Prompt chart</td><td><code>compare project token usage last 90 days</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Quick start</h3>
+          <pre class="info-code"><code>cd Render3D
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env and set OPENAI_API_KEY
+python run.py</code></pre>
+          <p>Open <strong>http://127.0.0.1:8001</strong> (default port; set <code>PORT</code> in <code>.env</code> if needed).</p>
+        </section>
+
+        <section class="info-section">
+          <h3>Viewer controls</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Input</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><kbd>LMB</kbd></td><td>Orbit</td></tr>
+                <tr><td><kbd>RMB</kbd></td><td>Pan</td></tr>
+                <tr><td><kbd>Scroll</kbd></td><td>Zoom</td></tr>
+                <tr><td><kbd>C</kbd> / <kbd>F</kbd> / <kbd>E</kbd></td><td>Pick corner / face / edge</td></tr>
+                <tr><td><kbd>L</kbd></td><td>Lasso a surface region for scoped cleanup or references</td></tr>
+                <tr><td><kbd>N</kbd></td><td>Line / path tool for ducts, wire loops, and route references</td></tr>
+                <tr><td><kbd>G</kbd></td><td>Toggle gizmo</td></tr>
+                <tr><td><kbd>W</kbd></td><td>Toggle wireframe</td></tr>
+                <tr><td>Right-click component</td><td>Open, attach to wiring, profile/source, hide/show, export, rename, delete</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Return to orbit mode</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Configuration</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>OPENAI_API_KEY</code></td><td>—</td><td>Required for AI prompts</td></tr>
+                <tr><td><code>OPENAI_MODEL</code></td><td><code>gpt-5.5</code></td><td>Fast OpenAI model id</td></tr>
+                <tr><td><code>OPENAI_MODEL_QUALITY</code></td><td><code>gpt-5.5-pro</code></td><td>Quality model for slower prompts</td></tr>
+                <tr><td><code>HOST</code></td><td><code>127.0.0.1</code></td><td>Bind address</td></tr>
+                <tr><td><code>PORT</code></td><td><code>8000</code></td><td>HTTP port</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Skills Library</h3>
+          <p>
+            Render3D ships agent skills from
+            <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener">text-to-cad</a>
+            under <code>backend/skills/</code>. Enable skills on the
+            <a href="/skills.html">Skills Library</a> page; active skills appear as
+            <code>@skill:cad</code> chips in Studio and are sent with each prompt.
+          </p>
+          <ul class="info-list">
+            <li><code>GET /api/skills</code> — List installed skills (tools, references, provenance)</li>
+            <li><code>GET /api/skills/{id}</code> — Full SKILL.md content</li>
+            <li><code>GET /api/skills/{id}/tools</code> — Python CLI tools for a skill</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>API</h3>
+          <ul class="info-list api-list">
+            <li><code>GET /api/health</code> — Status and model</li>
+            <li><code>GET /api/projects</code> — List saved projects</li>
+            <li><code>POST /api/projects</code> — Create project</li>
+            <li><code>POST /api/projects/{id}/upload</code> — Upload CAD file</li>
+            <li><code>POST /api/projects/{id}/prompt</code> — AI generate geometry</li>
+            <li><code>POST /api/projects/{id}/generation/cancel</code> — Stop an in-flight generation</li>
+            <li><code>POST /api/projects/{id}/files/{name}/transform</code> — Apply transform</li>
+            <li><code>POST /api/projects/{id}/files/{name}/paint</code> — Paint an object or selected face</li>
+            <li><code>POST /api/projects/{id}/files/{name}/draw-hole</code> — Draw selected-face holes and hole patterns</li>
+            <li><code>POST /api/projects/{id}/files/{name}/draw-route</code> — Draw ducts or wire loops along a line-tool path</li>
+            <li><code>POST /api/projects/{id}/files/{name}/mesh-cleanup</code> — Topology checkup, repair, and selection smoothing</li>
+            <li><code>GET /api/projects/{id}/timeline</code> — Edit history timeline</li>
+            <li><code>GET /api/projects/{id}/prompt-history</code> — Past prompts</li>
+            <li><code>GET /api/user/ai-costs</code> — Cost, token, project, user, and prompt analytics</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>Security</h3>
+          <p>Never commit <code>.env</code> or API keys. If a key was shared in chat or logs, rotate it in the OpenAI dashboard.</p>
+        </section>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

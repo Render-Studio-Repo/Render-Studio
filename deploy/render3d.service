@@ -1,0 +1,19 @@
+[Unit]
+Description=Render3D CAD server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu
+EnvironmentFile=/home/ubuntu/.env
+ExecStartPre=/home/ubuntu/scripts/kill-stray-uvicorn.sh pre-start
+ExecStartPre=/home/ubuntu/scripts/backup-code.sh service-restart
+ExecStart=/home/ubuntu/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

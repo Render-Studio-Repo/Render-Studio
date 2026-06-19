@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <title>Render3D — CAD Visualizer</title>
+  <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
+  <link rel="stylesheet" href="/styles.css?v=20260619-prompt-mic-v2" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+    }
+  }
+  </script>
+  <link rel="stylesheet" href="/ribbon.css?v=20260616-no-newmodel" />
+</head>
+<body>
+  <div id="app">
+    <header class="toolbar">
+      <button id="btn-toggle-sidebar" class="btn-collapse" title="Hide sidebar" aria-label="Toggle left panel" aria-pressed="false">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75ZM1 7.75A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"/></svg>
+        <span class="btn-collapse-label">Sidebar</span>
+      </button>
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <a href="/" class="nav-tab active">Studio</a>
+        <a href="/skills.html" class="nav-tab">Skills Library</a>
+        <a href="/docs.html" class="nav-tab">Docs</a>
+        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+      </nav>
+      <div class="toolbar-pick">
+        <span class="toolbar-pick-label">Pick</span>
+        <button type="button" id="btn-pick-object" class="btn pick-btn" data-mode="object" title="Select object (V)">Select</button>
+        <button type="button" id="btn-pick-corner" class="btn pick-btn" data-mode="corner">Corner</button>
+        <button type="button" id="btn-pick-face" class="btn pick-btn" data-mode="face">Face</button>
+        <button type="button" id="btn-pick-edge" class="btn pick-btn" data-mode="edge">Edge</button>
+        <button type="button" id="btn-pick-line" class="btn pick-btn" data-mode="line" title="Line / path tool (N) — click points between parts, double-click to finish">Line</button>
+        <button type="button" id="btn-pick-lasso" class="btn pick-btn" data-mode="lasso">Lasso</button>
+        <button type="button" id="btn-pick-orbit" class="btn pick-btn active" data-mode="off">Orbit</button>
+        <button type="button" id="btn-left-drag-mode" class="btn left-drag-mode-btn" title="Toggle plain left-click drag between viewport selection and camera rotate" aria-pressed="true">Left drag: Select</button>
+      </div>
+      <div class="toolbar-actions">
+        <button id="btn-toggle-ribbon" class="btn-collapse" title="Hide primitives toolbar" aria-label="Toggle primitives toolbar" aria-pressed="false">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="1" width="14" height="5.5" rx="2"/></svg>
+          <span class="btn-collapse-label">Primitives</span>
+        </button>
+        <button id="btn-new-project" class="btn secondary">New project</button>
+        <label class="btn primary">
+          Upload CAD
+          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp" multiple hidden />
+        </label>
+        <select id="unit-select" class="unit-select" title="Document units" aria-label="Document units">
+          <option value="mm">mm</option>
+          <option value="in">in</option>
+        </select>
+      </div>
+      <div class="auth-widget">
+        <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Account">
+          <svg class="auth-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+          <span id="auth-avatar" class="auth-avatar hidden"></span>
+          <span id="onshape-badge" class="onshape-badge hidden" title="Signed in via Onshape" aria-hidden="true">
+            <img src="/onshape-logo.png?v=20260617-small" width="16" height="16" alt="" />
+          </span>
+          <span id="collab-status" class="collab-dot collab-badge" title="Live collaboration"></span>
+        </button>
+        <div id="user-menu" class="user-menu hidden">
+          <div class="user-menu-header">
+            <span id="auth-avatar-lg" class="auth-avatar auth-avatar-lg"></span>
+            <div>
+              <strong id="user-label"></strong>
+              <span id="user-email" class="muted small"></span>
+            </div>
+          </div>
+          <div class="user-menu-meta">
+            <span id="collab-presence" class="collab-presence muted small"></span>
+          </div>
+          <div id="user-menu-ai-cost" class="user-menu-ai-cost">
+            <span id="user-menu-ai-cost-label" class="muted small">This month · all projects</span>
+            <strong id="user-menu-ai-cost-value" class="user-menu-ai-cost-value">—</strong>
+            <span id="user-menu-ai-cost-hint" class="muted small">Estimated from tracked prompts</span>
+          </div>
+          <button type="button" id="btn-ai-key-menu" class="user-menu-item">
+            <span id="ai-key-menu-label">Add AI API key</span>
+            <small id="ai-key-menu-hint">Required for prompts</small>
+          </button>
+          <button type="button" id="btn-costs-menu" class="user-menu-item">
+            <span>Costs</span>
+            <small>Total, shared users, and trend</small>
+          </button>
+          <div id="profile-costs-panel" class="profile-costs-panel hidden"></div>
+          <button type="button" id="btn-workspace-menu" class="user-menu-item">
+            <span>Team workspaces</span>
+            <small>Members, invites, visibility, leave</small>
+          </button>
+          <div id="profile-workspace-panel" class="profile-workspace-panel hidden"></div>
+          <button type="button" id="btn-logout" class="btn secondary btn-compact user-menu-logout">Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="workspace-mode-bar" class="fusion-mode-bar">
+      <div class="fusion-mode-switcher">
+        <button type="button" id="workspace-mode-btn" class="workspace-mode-btn" aria-haspopup="true" aria-expanded="false">
+          <span class="workspace-mode-icon">◧</span>
+          <span class="workspace-mode-label">DESIGN</span>
+          <span class="workspace-mode-caret">▾</span>
+        </button>
+        <div id="workspace-mode-menu" class="workspace-mode-menu hidden" role="menu"></div>
+      </div>
+      <nav id="workspace-tabs" class="workspace-tabs" aria-label="Design tabs"></nav>
+    </div>
+
+    <!-- Ribbon toolbar: mounted by ribbon.js, spans all columns below header -->
+    <div id="ribbon-container"></div>
+
+    <aside class="sidebar left">
+      <div class="left-scroll">
+        <section class="team-panel workspace-panel">
+          <h2>Workspace</h2>
+          <div id="team-invites-alert" class="team-invites-alert hidden" aria-live="polite"></div>
+          <div class="workspace-create-row">
+            <input type="text" id="workspace-name" placeholder="New shared workspace" maxlength="120" />
+            <button type="button" id="btn-create-workspace" class="btn secondary btn-compact">Create</button>
+          </div>
+          <p id="workspace-create-status" class="muted small"></p>
+          <div class="workspace-switcher-row">
+            <select id="team-select" class="team-select" aria-label="Active workspace"></select>
+            <button type="button" id="btn-rename-workspace" class="btn-icon" title="Rename workspace" hidden aria-label="Rename workspace">
+              <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
+            </button>
+          </div>
+          <div class="team-invite-row">
+            <input type="email" id="team-invite-email" placeholder="Invite to workspace" />
+            <button type="button" id="btn-team-invite" class="btn secondary btn-compact">Invite</button>
+          </div>
+          <p id="team-invite-status" class="muted small"></p>
+          <ul id="team-members" class="team-members"></ul>
+        </section>
+        <section class="workspace-browser-section">
+          <h2>Projects</h2>
+          <p class="muted small">Drag projects into folders · click ▾ to expand objects</p>
+          <div id="project-browser" class="project-browser"></div>
+          <h3 class="workspace-activity-title">Workspace activity</h3>
+          <div id="workspace-activity-list" class="workspace-activity-list"></div>
+        </section>
+        <section>
+          <h2>Current project</h2>
+          <div class="project-current-row">
+            <p id="project-id" class="mono muted">—</p>
+            <button id="btn-export-model" type="button" class="btn secondary btn-compact" disabled title="Download GLB, STL, STEP, or 3MF">Export</button>
+            <button id="btn-rename-project" type="button" class="btn secondary btn-compact" disabled>Rename</button>
+          </div>
+        </section>
+        <section class="design-browser-section">
+          <h2>Browser</h2>
+          <p class="muted small">Components, sketches, and wiring for this project</p>
+          <div id="design-browser" class="design-browser-root"></div>
+          <ul id="file-list" class="file-list hidden" aria-hidden="true"></ul>
+        </section>
+        <section id="onshape-library-section" class="onshape-library-section">
+          <div class="onshape-library-header">
+            <h2>
+              <img class="onshape-library-logo" src="/onshape-logo.png?v=20260617-small" width="18" height="18" alt="" />
+              Onshape Library
+            </h2>
+            <button type="button" class="btn-icon btn-onshape-refresh" title="Refresh documents" aria-label="Refresh Onshape documents">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.06-3.36L10 7h5V2l-1.35.35z"/></svg>
+            </button>
+          </div>
+          <p class="onshape-status muted small">Loading your Onshape documents…</p>
+          <div class="onshape-doc-list"></div>
+        </section>
+        <section class="object-history-panel">
+          <h2>Project history</h2>
+          <p class="muted small">Full log with who did what — click extrude/build steps to jump to that timeline state</p>
+          <div id="object-history-list" class="object-history-list"></div>
+        </section>
+        <section>
+          <h2>View</h2>
+          <div class="view-controls">
+            <button type="button" id="btn-grid-sidebar" class="btn secondary active" data-toggle-grid title="Toggle grid (Shift+G)">Grid</button>
+            <button type="button" id="btn-fit-sidebar" class="btn secondary" title="Fit view">Fit view</button>
+          </div>
+          <div class="hint">
+            <kbd>LMB</kbd> orbit · <kbd>RMB</kbd> pan · <kbd>Scroll</kbd> zoom<br />
+            <kbd>E</kbd> extrude · <kbd>P</kbd> press-pull · <kbd>G</kbd> gizmo · <kbd>M</kbd> mirror · <kbd>C</kbd>/<kbd>F</kbd> pick · <kbd>Ctrl/⌘+Z</kbd> undo · <kbd>Ctrl/⌘+Shift+Z</kbd> redo · <kbd>W</kbd> wireframe · <kbd>Shift+G</kbd> grid · <kbd>Esc</kbd> orbit
+          </div>
+        </section>
+      </div>
+      <div id="activity-log-panel" class="left-log-dock"></div>
+    </aside>
+
+    <div class="main-column">
+      <main id="viewport">
+        <div id="viewport-drop-overlay" class="viewport-drop-overlay hidden" aria-hidden="true">
+          <div class="viewport-drop-card">
+            <strong>Drop CAD files</strong>
+            <span>STEP, STL, GLB, OBJ, 3MF…</span>
+          </div>
+        </div>
+        <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
+          <header class="sketch-top-bar">
+            <div class="sketch-top-bar-left">
+              <span class="sketch-pencil-icon" aria-hidden="true"></span>
+              <div class="sketch-top-bar-titles">
+                <strong id="sketch-name">Sketch1</strong>
+                <span id="sketch-plane-label">XY Plane · Edit Sketch</span>
+              </div>
+            </div>
+            <div class="sketch-top-bar-right">
+              <button type="button" id="btn-sketch-cancel" class="sketch-btn sketch-btn--ghost">Cancel</button>
+              <button type="button" id="btn-sketch-finish" class="sketch-btn sketch-btn--finish">
+                <span class="sketch-finish-check" aria-hidden="true">✓</span> Finish Sketch
+              </button>
+            </div>
+          </header>
+          <aside id="sketch-quick-tools" class="sketch-quick-tools" aria-label="Quick constraints">
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="horizontal" title="Horizontal">H</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="vertical" title="Vertical">V</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="coincident" title="Coincident">●</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="parallel" title="Parallel">∥</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="perpendicular" title="Perpendicular">⊥</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="dimension" title="Dimension">⌀</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="angle" title="Angle">∠</button>
+          </aside>
+          <footer class="sketch-status-bar">
+            <span id="sketch-status-tool" class="sketch-status-tool">Line</span>
+            <span class="sketch-status-sep" aria-hidden="true">|</span>
+            <span id="sketch-status-hint" class="sketch-status-hint">Click to place first point</span>
+            <span id="sketch-status-stats" class="sketch-status-stats"></span>
+          </footer>
+        </div>
+        <div id="rigging-chrome" class="rigging-chrome hidden" aria-live="polite">
+          <header class="rigging-toolbelt" role="toolbar" aria-label="Rigging tools">
+            <div class="rigging-tool-group">
+              <span class="rigging-tool-label">Rig</span>
+              <button type="button" class="rigging-tool-btn active" data-rig-tool="select" title="Select bone">↖ Select</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="move" title="Move bone">✥ Move</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="rotate" title="Rotate joint">↻ Rotate</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="add" title="Add bone">● Add Bone</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="connect" title="Connect hierarchy">⛓ Connect</button>
+              <button type="button" class="rigging-tool-btn" data-rig-action="keyframe" title="Keyframe (K)">◆ Key</button>
+            </div>
+            <span class="rigging-tool-sep" aria-hidden="true"></span>
+            <div class="rigging-tool-group">
+              <span class="rigging-tool-label">Pick</span>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="object" title="Select object">Object</button>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="face" title="Select face">Face</button>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="edge" title="Select edge">Edge</button>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="off" title="Orbit view">Orbit</button>
+            </div>
+            <span class="rigging-tool-sep" aria-hidden="true"></span>
+            <div class="rigging-tool-group rigging-tool-group--actions">
+              <button type="button" id="btn-rigging-toolbelt-generate" class="rigging-tool-btn rigging-tool-accent" title="Generate rig with Rigging AI">⚡ Generate</button>
+              <button type="button" id="btn-rigging-toolbelt-save" class="rigging-tool-btn" title="Save rig">💾 Save</button>
+              <button type="button" id="btn-rigging-toolbelt-export" class="rigging-tool-btn" title="Export robot.urdf">📄 URDF</button>
+              <button type="button" id="btn-rigging-toolbelt-auto" class="rigging-tool-btn" title="Auto chain rig">🦴 Auto Rig</button>
+            </div>
+          </header>
+          <footer id="rigging-anim-panel" class="rigging-anim-panel"></footer>
+        </div>
+        <div id="viewport-hint" class="viewport-hint hidden">
+          <strong id="pick-hint-title">Pick mode</strong>
+          <span id="pick-hint-text">Click on the model to add a reference to your prompt</span>
+        </div>
+        <div class="viewport-view-bar" aria-label="Viewport display">
+          <button type="button" id="btn-grid-viewport" class="viewport-view-btn active" data-toggle-grid title="Toggle grid (Shift+G)" aria-pressed="true">Grid</button>
+          <button type="button" id="btn-sketches-viewport" class="viewport-view-btn active" title="Toggle sketches in viewport" aria-pressed="true">Sketches</button>
+          <button type="button" id="btn-measure-viewport" class="viewport-view-btn" title="Measure selected/current object dimensions">Measure</button>
+          <button type="button" id="btn-color-viewport" class="viewport-view-btn" title="Color selected object or picked faces">Color</button>
+        </div>
+        <div class="mobile-showcase-bar" aria-label="Mobile model viewer controls">
+          <button type="button" id="btn-mobile-models" class="mobile-showcase-btn">Models</button>
+          <button type="button" id="btn-mobile-fit" class="mobile-showcase-btn">Fit</button>
+          <button type="button" id="btn-mobile-grid" class="mobile-showcase-btn">Grid</button>
+        </div>
+        <div class="mobile-corner-launchers" aria-label="Mobile windows">
+          <button type="button" class="mobile-corner-btn mobile-corner-btn--tl" data-mobile-corner="workspace" aria-label="Open Explorer or Tools">☰</button>
+          <button type="button" class="mobile-corner-btn mobile-corner-btn--tr" data-mobile-corner="account" aria-label="Open Account and View controls">◉</button>
+          <button type="button" class="mobile-corner-btn mobile-corner-btn--br" data-mobile-corner="ai" aria-label="Open AI prompt">AI</button>
+          <button type="button" class="mobile-corner-btn mobile-corner-btn--bl" data-mobile-corner="quick" aria-label="Open model quick controls">▦</button>
+        </div>
+        <div id="mobile-corner-sheet" class="mobile-corner-sheet hidden" role="dialog" aria-modal="false" aria-label="Mobile quick actions">
+          <div class="mobile-corner-sheet-card">
+            <div class="mobile-corner-sheet-head">
+              <strong id="mobile-corner-sheet-title">Open</strong>
+              <button type="button" class="mobile-corner-sheet-close" data-mobile-sheet-close aria-label="Close">×</button>
+            </div>
+            <div id="mobile-corner-sheet-actions" class="mobile-corner-sheet-actions"></div>
+          </div>
+        </div>
+        <button type="button" id="mobile-panel-close" class="mobile-panel-close" aria-label="Close mobile panel">×</button>
+        <div id="mobile-model-picker" class="mobile-model-picker hidden" role="dialog" aria-modal="true" aria-label="Choose model to view">
+          <div class="mobile-model-picker-backdrop" data-mobile-model-close></div>
+          <div class="mobile-model-picker-card">
+            <div class="mobile-model-picker-head">
+              <div>
+                <strong>Choose model</strong>
+                <span>Open a component in the 3D viewer</span>
+              </div>
+              <button type="button" class="mobile-model-picker-close" data-mobile-model-close aria-label="Close">×</button>
+            </div>
+            <div id="mobile-model-list" class="mobile-model-list"></div>
+          </div>
+        </div>
+      </main>
+      <div id="wiring-workspace" class="wiring-workspace hidden">
+        <aside id="wiring-palette" class="wiring-palette">
+          <div id="wiring-palette-list"></div>
+        </aside>
+        <div class="wiring-main">
+          <div id="wiring-toolbelt" class="wiring-toolbelt" role="toolbar" aria-label="Wiring tools">
+            <button type="button" id="btn-wiring-undo" class="wiring-tool-btn" title="Undo (⌘Z)" disabled>↶ Undo</button>
+            <button type="button" id="btn-wiring-redo" class="wiring-tool-btn" title="Redo (⌘⇧Z)" disabled>↷ Redo</button>
+            <span class="wiring-tool-sep" aria-hidden="true"></span>
+            <button type="button" id="btn-wiring-toolbelt-generate" class="wiring-tool-btn wiring-tool-accent" title="Generate schematic with Wiring AI">⚡ Generate</button>
+            <button type="button" id="btn-wiring-toolbelt-stop" class="wiring-tool-btn wiring-tool-danger hidden" title="Stop wiring generation">Stop generating</button>
+            <button type="button" id="btn-wiring-run-schematic" class="wiring-tool-btn wiring-tool-accent" title="Run the current schematic loop in the simulator">▶ Run schematic</button>
+            <button type="button" id="btn-wiring-code" class="wiring-tool-btn wiring-tool-accent" title="Generate code, edit it, and run a live simulation">&lt;/&gt; Code &amp; Simulate</button>
+            <button type="button" id="btn-wiring-toolbelt-save" class="wiring-tool-btn" title="Save schematic">💾 Save</button>
+            <span class="wiring-tool-sep" aria-hidden="true"></span>
+            <button type="button" id="btn-wiring-toolbelt-demo-motor" class="wiring-tool-btn" title="Pi → Button → Motor demo">Demo: Pi→Motor</button>
+            <button type="button" id="btn-wiring-toolbelt-demo-servo" class="wiring-tool-btn" title="Pi → Servo demo">Demo: Pi→Servo</button>
+            <button type="button" id="btn-wiring-toolbelt-demo-blink" class="wiring-tool-btn" title="Blink LED demo">Demo: Blink</button>
+            <button type="button" id="btn-wiring-toolbelt-demo-stepper" class="wiring-tool-btn" title="Arduino → Stepper demo">Demo: Stepper</button>
+            <span class="wiring-tool-sep" aria-hidden="true"></span>
+            <button type="button" id="btn-wiring-photo-debug" class="wiring-tool-btn wiring-tool-debug" title="Open Circuit Debugger — upload photos of your wiring to diagnose problems">📷 Debug</button>
+          </div>
+          <div class="wiring-content-area">
+            <div id="wiring-viewport" class="wiring-viewport"></div>
+            <!-- Circuit photo debug dashboard -->
+            <div id="wiring-debug-panel" class="wiring-debug-panel" hidden>
+              <div class="wdbg-header">
+                <div class="wdbg-header-left">
+                  <span class="wdbg-icon">📷</span>
+                  <span class="wdbg-title">Circuit Debugger</span>
+                  <span id="wdbg-schematic-badge" class="wdbg-schematic-badge" hidden></span>
+                </div>
+                <div class="wdbg-header-right">
+                  <button type="button" id="wdbg-clear-btn" class="wdbg-hdr-btn" title="Clear conversation">Clear</button>
+                  <button type="button" id="wdbg-close-btn" class="wdbg-hdr-btn" title="Close debugger">✕</button>
+                </div>
+              </div>
+              <div id="wdbg-chat" class="wdbg-chat">
+                <div class="wdbg-welcome">
+                  <div class="wdbg-welcome-icon">📷</div>
+                  <div class="wdbg-welcome-title">Circuit Debugger</div>
+                  <div class="wdbg-welcome-body">Upload a photo of your physical wiring and ask what's wrong. The AI cross-references it against your schematic and returns a structured fault report.</div>
+                  <div class="wdbg-welcome-tips">
+                    <span>💡 Good lighting helps</span>
+                    <span>💡 Multiple photos OK</span>
+                    <span>💡 Describe the symptom</span>
+                  </div>
+                </div>
+              </div>
+              <div class="wdbg-composer">
+                <div id="wdbg-photo-row" class="wdbg-photo-row"></div>
+                <div class="wdbg-photo-add-row">
+                  <button type="button" id="wdbg-add-photo-btn" class="wdbg-add-photo-btn" title="Upload photo from file">📎 Photo</button>
+                  <button type="button" id="wdbg-camera-btn" class="wdbg-add-photo-btn" title="Take photo with camera">📷 Camera</button>
+                  <input type="file" id="wdbg-file-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+                </div>
+                <textarea id="wdbg-text-input" class="wdbg-text-input" rows="2" placeholder="Describe the problem (optional) — e.g. 'LED doesn't light up' or 'motor doesn't spin'"></textarea>
+                <div class="wdbg-send-row">
+                  <label class="wdbg-schematic-toggle" title="Cross-reference the AI schematic when analysing your photo">
+                    <input type="checkbox" id="wdbg-include-schematic" checked />
+                    <span>Include schematic</span>
+                  </label>
+                  <button type="button" id="wdbg-send-btn" class="wdbg-send-btn" disabled>
+                    <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M2 14V9l6-1-6-1V2l13 6-13 6z"/></svg> Analyse
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Canvas mode workspace -->
+      <div id="canvas-workspace" class="canvas-workspace-wrap hidden">
+        <div id="canvas-mode-container" class="canvas-mode-container"></div>
+      </div>
+      <div id="timeline-panel" class="timeline-panel"></div>
+    </div>
+
+    <aside class="sidebar right">
+      <div class="right-panel-tabs" role="tablist" aria-label="Right panel">
+        <button type="button" class="right-panel-tab" data-right-tab="tools">Tools</button>
+        <button type="button" class="right-panel-tab" data-right-tab="history">History</button>
+        <button type="button" class="right-panel-tab" data-right-tab="refs">Refs</button>
+        <button type="button" class="right-panel-tab active" data-right-tab="prompt">AI</button>
+        <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
+        <button type="button" class="right-panel-tab wiring-mode-tab" data-right-tab="wiring">Wiring</button>
+        <button type="button" class="right-panel-tab rigging-mode-tab" data-right-tab="rigging">Rigging</button>
+      </div>
+      <div id="project-cost-thumb" class="project-cost-thumb" aria-live="polite">
+        <div class="project-cost-thumb-head">
+          <span>Current project AI usage</span>
+          <strong id="project-cost-thumb-total">$0.00</strong>
+        </div>
+        <div class="project-cost-thumb-chart" id="project-cost-thumb-chart" aria-label="Recent prompt costs"></div>
+        <div class="project-cost-thumb-meta">
+          <span id="project-cost-thumb-cost">Cost $0.00</span>
+          <span id="project-cost-thumb-prompts">0 prompts</span>
+          <span id="project-cost-thumb-tokens">0 tokens</span>
+        </div>
+      </div>
+
+      <section class="edit-panel right-tab-panel" id="edit-panel" data-right-panel="tools">
+        <h2>Direct modeling</h2>
+        <div class="direct-tools-row">
+          <button type="button" class="btn secondary direct-tool-btn" data-dm-tool="presspull" title="Press-Pull / Extrude / Cut: click a face, drag the arrow (P)">⇕ Press-Pull</button>
+          <button type="button" class="btn secondary direct-tool-btn" data-dm-tool="mirror" title="Mirror with live preview (M)">↔ Mirror</button>
+          <button type="button" class="btn secondary direct-tool-btn" data-dm-tool="fillet" title="Fillet — round edges of parametric model">◜ Fillet</button>
+          <button type="button" class="btn secondary direct-tool-btn" data-dm-tool="chamfer" title="Chamfer — bevel edges of parametric model">◪ Chamfer</button>
+          <button type="button" class="btn secondary direct-tool-btn" id="btn-color-tool" title="Color selected object or picked faces">🎨 Color</button>
+          <button type="button" class="btn secondary direct-tool-btn" id="btn-split-bodies" title="Split disconnected bodies into separate files (Fusion-style)">⊞ Split bodies</button>
+          <button type="button" class="btn secondary direct-tool-btn" id="btn-mesh-checkup" title="Topology checkup / repair / smooth selected faces (face or lasso pick)">◈ Checkup</button>
+          <button type="button" class="btn secondary direct-tool-btn" id="btn-show-dimensions" title="Show selected/current object dimensions">📏 Measure</button>
+          <button type="button" class="btn secondary direct-tool-btn" id="btn-delete-object" title="Delete selected object (Delete/Backspace)">⌫ Delete</button>
+          <button type="button" class="btn secondary direct-tool-btn" id="btn-gizmo-panel" title="Transform gizmo — move, rotate, scale (G)">✥ Transform</button>
+        </div>
+        <p class="muted small direct-tools-hint">
+          Use <strong>Select</strong> in the toolbar (V) to pick an object · <strong>Backspace</strong> or <strong>X</strong> to delete.
+          <strong>Split bodies</strong> separates disconnected solids into individual files.
+          Drag handles in the viewport; type values like <code>25mm</code> or <code>1in</code>.
+        </p>
+        <div id="color-tool-panel" class="color-tool-panel hidden" aria-label="Color tool">
+          <div class="color-tool-head">
+            <strong>Color</strong>
+            <span class="muted small">Select an object or pick faces, then apply.</span>
+          </div>
+          <div class="color-tool-controls">
+            <label class="color-picker-label">
+              <span class="muted small">Color</span>
+              <input type="color" id="color-tool-input" value="#58a6ff" />
+            </label>
+            <div class="color-swatches" aria-label="Quick colors">
+              <button type="button" class="color-swatch" data-color="#58a6ff" style="--swatch:#58a6ff" title="Blue"></button>
+              <button type="button" class="color-swatch" data-color="#3fb950" style="--swatch:#3fb950" title="Green"></button>
+              <button type="button" class="color-swatch" data-color="#f85149" style="--swatch:#f85149" title="Red"></button>
+              <button type="button" class="color-swatch" data-color="#d29922" style="--swatch:#d29922" title="Gold"></button>
+              <button type="button" class="color-swatch" data-color="#a371f7" style="--swatch:#a371f7" title="Purple"></button>
+              <button type="button" class="color-swatch" data-color="#8b949e" style="--swatch:#8b949e" title="Gray"></button>
+            </div>
+          </div>
+          <div class="color-tool-actions">
+            <button type="button" class="btn accent" id="btn-color-object">Color selected object</button>
+            <button type="button" class="btn secondary" id="btn-color-faces">Color picked faces</button>
+            <button type="button" class="btn ghost" id="btn-color-pick-face">Pick faces</button>
+          </div>
+        </div>
+        <div class="edit-tool-tabs">
+          <button type="button" class="edit-tool-tab active" data-tool="move" title="Move gizmo (G)">Move</button>
+          <button type="button" class="edit-tool-tab" data-tool="rotate" title="Rotation rings">Rotate</button>
+          <button type="button" class="edit-tool-tab" data-tool="scale" title="Scale handles">Scale</button>
+          <button type="button" class="edit-tool-tab" data-tool="extrude" title="Press-Pull extrude/cut (E or P)">Extrude / Cut</button>
+        </div>
+
+        <div class="edit-tool-pane" data-tool="move">
+          <p class="muted small edit-hint">Drag the <strong>red/green/blue arrows</strong> in the viewport, or type X/Y/Z in the floating gizmo panel. Snap increments available.</p>
+        </div>
+
+        <div class="edit-tool-pane hidden" data-tool="rotate">
+          <p class="muted small edit-hint">Drag the <strong>rotation rings</strong> around each axis, or type degrees in the gizmo panel. Toggle local/world space.</p>
+        </div>
+
+        <div class="edit-tool-pane hidden" data-tool="scale">
+          <p class="muted small edit-hint">Drag the <strong>scale handles</strong> on the gizmo, or type a uniform scale factor.</p>
+        </div>
+
+        <div class="edit-tool-pane hidden" data-tool="extrude">
+          <p class="muted small edit-hint">
+            Click a planar face — drag the <strong>blue arrow</strong> to join (pull) or cut (push).
+            Options: symmetric, two-sided, taper, through-all, join/cut/intersect/new body.
+          </p>
+          <div id="extrude-target" class="extrude-target muted">Click a face in the viewport</div>
+          <button type="button" id="btn-launch-presspull" class="btn accent full">Start Press-Pull</button>
+        </div>
+
+        <div id="edit-status" class="status"></div>
+      </section>
+
+      <section class="feature-history-panel right-tab-panel" data-right-panel="history">
+        <div class="panel-section-head">
+          <h2>Feature history</h2>
+          <button type="button" id="btn-feature-collapse" class="btn-collapse" aria-pressed="false">Collapse</button>
+        </div>
+        <p class="muted small">Parametric timeline — edit values, suppress, reorder, then rebuild</p>
+        <div id="feature-editor" class="feature-editor"></div>
+      </section>
+
+      <section class="reference-panel right-tab-panel" data-right-panel="refs">
+        <h2>References</h2>
+          <p class="muted small">Use toolbar pick tools, click or lasso the model, then prompt below. Click again to deselect simple refs.</p>
+        <div id="ref-chips" class="ref-chips"></div>
+        <div id="ref-list" class="ref-list"></div>
+      </section>
+
+      <section class="sketch-inspector right-tab-panel" id="sketch-panel" data-right-panel="sketch">
+        <h2>Sketch</h2>
+        <p class="muted small">Active sketch profile, constraints, and AI generation.</p>
+        <dl class="sketch-inspector-meta">
+          <dt>Plane</dt><dd id="sketch-inspector-plane">XY</dd>
+          <dt>Tool</dt><dd id="sketch-inspector-tool">—</dd>
+          <dt>Entities</dt><dd id="sketch-inspector-entities">0</dd>
+          <dt>Constraints</dt><dd id="sketch-inspector-constraints">0</dd>
+        </dl>
+        <p id="sketch-inspector-hint" class="sketch-inspector-hint muted small"></p>
+        <div class="sketch-inspector-actions">
+          <button type="button" id="btn-sketch-panel-finish" class="btn accent full">Finish Sketch</button>
+          <button type="button" id="btn-sketch-panel-cancel" class="btn secondary full">Cancel Sketch</button>
+        </div>
+        <div class="sketch-prompt-block">
+          <div class="prompt-input-head">
+            <h3 class="sketch-prompt-title">Generate sketch</h3>
+            <button type="button" class="prompt-mic-btn" data-mic-target="sketch-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
+              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
+            </button>
+          </div>
+          <textarea id="sketch-prompt-input" rows="6" placeholder="e.g. 40×30 mm mounting plate with a 10 mm hole centered…"></textarea>
+          <button type="button" id="btn-sketch-prompt" class="btn accent full">Generate sketch with AI</button>
+          <button type="button" id="btn-sketch-demo-plate" class="btn secondary full">Demo: mounting plate</button>
+          <div id="sketch-prompt-status" class="status"></div>
+        </div>
+      </section>
+
+      <section class="prompt-panel right-tab-panel active" data-right-panel="prompt">
+        <div class="prompt-panel-tabs">
+          <button type="button" class="prompt-tab active" data-pane="compose">Compose</button>
+          <button type="button" class="prompt-tab" data-pane="history">History</button>
+        </div>
+        <div id="prompt-pane-compose" class="prompt-pane active">
+          <div class="prompt-compose-toolbar">
+            <div class="prompt-compose-head">
+              <h2>AI CAD Prompt</h2>
+              <div class="prompt-key-picker-wrap">
+                <select id="prompt-ai-key-select" class="prompt-ai-key-select-hidden" aria-hidden="true" tabindex="-1"></select>
+                <button id="prompt-key-picker-btn" type="button" class="prompt-key-pill" aria-haspopup="dialog" aria-expanded="false" title="Select AI key and model">
+                  <span class="prompt-key-pill-kw">Key</span>
+                  <span id="prompt-key-pill-name" class="prompt-key-pill-name">Default key</span>
+                  <span id="prompt-key-pill-model" class="prompt-key-pill-model"></span>
+                  <svg class="prompt-key-pill-arrow" viewBox="0 0 10 6" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M1 1l4 4 4-4"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="prompt-mode-row" role="group" aria-label="Prompt mode">
+              <button type="button" class="prompt-mode-btn active" data-prompt-mode="render">Render</button>
+              <button type="button" class="prompt-mode-btn" data-prompt-mode="draw">Draw</button>
+              <button type="button" class="prompt-mode-btn prompt-mode-btn--v2" data-prompt-mode="v2">2.0</button>
+              <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
+            </div>
+          </div>
+          <div class="prompt-skills-row">
+            <span class="prompt-skills-label">Skills</span>
+            <button type="button" id="prompt-skills-toggle" class="prompt-skills-toggle" aria-expanded="false">Skills</button>
+            <div id="prompt-skills-chips" class="prompt-skills-chips"></div>
+            <span id="prompt-skills-link" class="prompt-skills-link"></span>
+            <button type="button" class="prompt-mic-btn" data-mic-target="prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
+              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
+            </button>
+          </div>
+          <div id="prompt-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Prompt references"></div>
+          <textarea id="prompt-input" rows="6" placeholder="Describe what to make or edit. Drag parts/faces here to add @ reference chips…"></textarea>
+          <div id="prompt-image-drop" class="prompt-image-drop" role="button" tabindex="0">
+            <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+            <div>
+              <strong>Add image references</strong>
+              <span>Drop images here, paste screenshots, or drag components from the browser to reference them. Up to 4 images.</span>
+            </div>
+          </div>
+          <div id="prompt-image-list" class="prompt-image-list"></div>
+          <button id="btn-prompt" class="btn accent full">Generate / modify with AI</button>
+          <button type="button" id="btn-stop-generation" class="btn danger full hidden" aria-label="Stop generating">Stop generating</button>
+          <div id="prompt-status" class="status"></div>
+          <div id="prompt-reply" class="reply"></div>
+        </div>
+        <div id="prompt-pane-history" class="prompt-pane hidden">
+          <p class="muted small">Click a prompt to reuse its text and <strong>copy a chat reference ID</strong> (<code>@prompt:…</code>) — paste that when asking for help with a specific model.</p>
+          <div id="prompt-history-summary" class="prompt-history-summary hidden" aria-live="polite"></div>
+          <p id="prompt-ref-status" class="prompt-ref-status hidden"></p>
+          <div id="prompt-history-list" class="prompt-history-list"></div>
+        </div>
+      </section>
+
+      <section class="wiring-prompt-panel right-tab-panel" data-right-panel="wiring" id="wiring-prompt-panel">
+        <div class="panel-section-head wiring-panel-head">
+          <h2>Wiring AI</h2>
+          <button type="button" id="btn-collapse-right-panel" class="btn-collapse" title="Hide wiring panel" aria-label="Collapse right panel" aria-pressed="false">▶</button>
+        </div>
+        <div class="prompt-panel-tabs">
+          <button type="button" class="wiring-prompt-tab active" data-pane="compose">Compose</button>
+          <button type="button" class="wiring-prompt-tab" data-pane="history">History</button>
+        </div>
+        <div id="wiring-prompt-pane-compose" class="prompt-pane active">
+          <p class="muted small">Pick a project, describe a circuit, or load a demo schematic.</p>
+          <div id="wiring-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Wiring prompt references"></div>
+          <div class="prompt-input-head">
+            <span class="prompt-input-head-label muted small">Circuit prompt</span>
+            <button type="button" class="prompt-mic-btn" data-mic-target="wiring-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
+              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
+            </button>
+          </div>
+          <textarea id="wiring-prompt-input" rows="6" placeholder="e.g. Wire Raspberry Pi GPIO17 to a push button; when pressed, GPIO27 runs a DC motor through a driver module…"></textarea>
+          <div id="wiring-prompt-image-drop" class="wiring-prompt-image-drop" role="button" tabindex="0">
+            <input id="wiring-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+            <span>Add reference photo (optional)</span>
+          </div>
+          <div id="wiring-prompt-image-list" class="wiring-prompt-image-list"></div>
+          <!-- Generate row: key pill + generate/stop button (stop replaces generate while running) -->
+          <div class="wiring-generate-row">
+            <button id="wiring-key-picker-btn" type="button" class="prompt-key-pill wiring-key-pill" aria-haspopup="dialog" aria-expanded="false" title="Select AI key and model">
+              <span class="prompt-key-pill-kw">Key</span>
+              <span id="wiring-key-pill-name" class="prompt-key-pill-name">Default key</span>
+              <span id="wiring-key-pill-model" class="prompt-key-pill-model"></span>
+              <svg class="prompt-key-pill-arrow" viewBox="0 0 10 6" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M1 1l4 4 4-4"/></svg>
+            </button>
+            <div class="wiring-btn-slot">
+              <button type="button" id="btn-wiring-prompt" class="btn accent wiring-generate-btn">Generate</button>
+              <button type="button" id="btn-wiring-stop" class="btn danger wiring-generate-btn hidden">■ Stop</button>
+            </div>
+          </div>
+          <!-- Secondary actions -->
+          <div class="wiring-secondary-row">
+            <button type="button" id="btn-wiring-code-panel" class="btn secondary wiring-action-btn">&lt;/&gt; Code &amp; Simulate</button>
+          </div>
+          <!-- Demo presets as compact chips -->
+          <div class="wiring-demo-row">
+            <span class="wiring-demo-label">Demos</span>
+            <button type="button" id="btn-wiring-demo-blink" class="wiring-demo-chip">Blink LED</button>
+            <button type="button" id="btn-wiring-demo" class="wiring-demo-chip">Pi → Servo</button>
+            <button type="button" id="btn-wiring-demo-motor" class="wiring-demo-chip">Pi → Button → Motor</button>
+          </div>
+          <div id="wiring-prompt-status" class="status"></div>
+        </div>
+        <div id="wiring-prompt-pane-history" class="prompt-pane hidden">
+          <p class="muted small">Click a prompt to reuse its text and <strong>copy a chat reference ID</strong> (<code>@prompt:…</code>).</p>
+          <div id="wiring-prompt-history-summary" class="prompt-history-summary hidden" aria-live="polite"></div>
+          <p id="wiring-prompt-ref-status" class="prompt-ref-status hidden"></p>
+          <div id="wiring-prompt-history-list" class="prompt-history-list"></div>
+        </div>
+      </section>
+
+      <section class="rigging-prompt-panel right-tab-panel" data-right-panel="rigging" id="rigging-prompt-panel">
+        <div class="panel-section-head rigging-panel-head">
+          <h2>Rigging AI</h2>
+          <button type="button" id="btn-collapse-rigging-panel" class="btn-collapse" title="Hide rigging panel" aria-label="Collapse right panel" aria-pressed="false">▶</button>
+        </div>
+        <div class="prompt-panel-tabs">
+          <button type="button" class="rigging-prompt-tab active" data-pane="compose">Compose</button>
+          <button type="button" class="rigging-prompt-tab" data-pane="history">History</button>
+        </div>
+        <div id="rigging-prompt-pane-compose" class="prompt-pane active">
+          <p class="muted small"><strong>Rigging shows joint bones</strong> (orange spheres) — not CAD geometry. Build gears first in <strong>SOLID → AI Compose</strong>, then use Rigging for shaft animation and URDF export.</p>
+          <div class="prompt-input-head">
+            <span class="prompt-input-head-label muted small">Rig prompt</span>
+            <button type="button" class="prompt-mic-btn" data-mic-target="rigging-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
+              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
+            </button>
+          </div>
+          <textarea id="rigging-prompt-input" rows="6" placeholder="e.g. 4-DOF arm: base_link fixed, link_1 shoulder revolute Z, link_2 elbow revolute Z, ee_link gripper. Animate a pick-and-place cycle…"></textarea>
+          <div id="rigging-prompt-image-drop" class="rigging-prompt-image-drop" role="button" tabindex="0">
+            <input id="rigging-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+            <span>Add reference photo (optional)</span>
+          </div>
+          <div id="rigging-prompt-image-list" class="rigging-prompt-image-list"></div>
+          <button type="button" id="btn-rigging-prompt" class="btn accent full">Generate rig / animation</button>
+          <button type="button" id="btn-rigging-demo-gear-train" class="btn secondary full">Build mounted 2-gear model</button>
+          <button type="button" id="btn-rigging-demo-arm" class="btn secondary full">Load demo (4-DOF arm)</button>
+          <div id="rigging-prompt-status" class="status"></div>
+        </div>
+        <div id="rigging-prompt-pane-history" class="prompt-pane hidden">
+          <p class="muted small">Click a prompt to reuse its text and <strong>copy a chat reference ID</strong> (<code>@prompt:…</code>).</p>
+          <p id="rigging-prompt-ref-status" class="prompt-ref-status hidden"></p>
+          <div id="rigging-prompt-history-list" class="prompt-history-list"></div>
+        </div>
+      </section>
+
+    </aside>
+  </div>
+
+  <div id="drop-destination-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="drop-destination-title">
+    <div class="auth-backdrop" data-drop-dest-close></div>
+    <div class="auth-card app-dialog-card">
+      <button type="button" class="auth-close" data-drop-dest-close aria-label="Close">&times;</button>
+      <h2 id="drop-destination-title" class="app-dialog-title">Import CAD file</h2>
+      <p id="drop-destination-file" class="drop-dest-file mono"></p>
+      <p class="muted small">Add this file to your open project or start a new one.</p>
+      <div class="drop-dest-options">
+        <button type="button" id="drop-destination-current" class="drop-dest-option">
+          <span class="drop-dest-option-title">Current project / workspace</span>
+          <span id="drop-destination-current-label" class="drop-dest-option-meta muted small"></span>
+        </button>
+        <button type="button" id="drop-destination-new" class="drop-dest-option">
+          <span class="drop-dest-option-title">New project</span>
+          <span class="drop-dest-option-meta muted small">Create one fresh project for the selected upload</span>
+        </button>
+      </div>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn secondary" data-drop-dest-close>Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="workspace-rename-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-rename-title">
+    <div class="auth-backdrop" data-ws-rename-close></div>
+    <div class="auth-card app-dialog-card">
+      <button type="button" class="auth-close" data-ws-rename-close aria-label="Close">&times;</button>
+      <h2 id="workspace-rename-title" class="app-dialog-title">Rename workspace</h2>
+      <label class="app-dialog-label">Workspace name
+        <input type="text" id="workspace-rename-input" maxlength="120" placeholder="Workspace name" />
+      </label>
+      <p id="workspace-rename-error" class="auth-error hidden"></p>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn secondary" data-ws-rename-close>Cancel</button>
+        <button type="button" id="btn-workspace-rename-save" class="btn accent">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="auth-backdrop" data-auth-close></div>
+    <div class="auth-card">
+      <button type="button" class="auth-close" data-auth-close aria-label="Close">&times;</button>
+      <div class="auth-card-header">
+        <img class="auth-logo" src="/logo.png?v=3" alt="" width="40" height="40" />
+        <div>
+          <h2 id="auth-title">Welcome back</h2>
+          <p class="auth-subtitle">Sign in to access your shared workspaces</p>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Log in</button>
+        <button type="button" class="auth-tab" data-tab="register">Create account</button>
+      </div>
+      <p id="auth-error" class="auth-error"></p>
+      <form id="auth-form-login" class="auth-form">
+        <label>Email<input type="email" id="login-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" /></label>
+        <button type="submit" class="btn accent auth-submit">Log in</button>
+      </form>
+      <form id="auth-form-register" class="auth-form hidden">
+        <label>Name<input type="text" id="register-name" required autocomplete="name" placeholder="Your name" /></label>
+        <label>Email<input type="email" id="register-email" required autocomplete="email" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <button type="submit" class="btn accent auth-submit">Create account</button>
+      </form>
+      <div class="auth-divider"><span>or</span></div>
+      <button type="button" class="btn auth-onshape-btn" data-onshape-login>
+        <img class="auth-onshape-logo" src="/onshape-logo.png?v=20260617-small" width="18" height="18" alt="" />
+        Sign in with Onshape
+      </button>
+    </div>
+  </div>
+
+  <div id="ai-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ai-key-title">
+    <div class="auth-backdrop" data-ai-key-close></div>
+    <div class="auth-card ai-keys-card">
+      <button type="button" class="auth-close" data-ai-key-close aria-label="Close">&times;</button>
+      <div class="auth-card-header">
+        <img class="auth-logo" src="/logo.png?v=3" alt="" width="40" height="40" />
+        <div>
+          <h2 id="ai-key-title">AI API keys</h2>
+          <p class="auth-subtitle">Save keys for OpenAI and Claude — switch between them any time.</p>
+        </div>
+      </div>
+
+      <!-- Saved keys list -->
+      <div id="ai-keys-list" class="ai-keys-list"></div>
+
+      <!-- Add new key form (collapsed by default) -->
+      <details id="ai-key-add-section" class="ai-key-add-section">
+        <summary class="ai-key-add-toggle">+ Add a new key</summary>
+        <p id="ai-key-error" class="auth-error hidden"></p>
+        <form id="ai-key-form" class="auth-form ai-key-add-form">
+          <label>Nickname
+            <input type="text" id="ai-key-name" maxlength="60" placeholder="e.g. My OpenAI key" autocomplete="off" />
+          </label>
+          <label>Provider
+            <select id="ai-key-provider">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Claude / Anthropic</option>
+            </select>
+          </label>
+          <label>Model
+            <select id="ai-key-model"></select>
+          </label>
+          <label>API key
+            <input type="password" id="ai-key-input" required autocomplete="off" placeholder="sk-... or sk-ant-..." />
+          </label>
+          <label class="ai-key-share-toggle">
+            <input type="checkbox" id="ai-key-shared" />
+            <span>Share this key with a team</span>
+          </label>
+          <label id="ai-key-source-label" class="hidden">Shared key source
+            <select id="ai-key-source">
+              <option value="__new__">Paste a new key below</option>
+            </select>
+          </label>
+          <label id="ai-key-team-label" class="hidden">Team
+            <select id="ai-key-team"></select>
+          </label>
+          <p id="ai-key-share-hint" class="muted small hidden">
+            Shared keys are named for your team and can be assigned per member from the Members panel.
+          </p>
+          <button type="submit" class="btn accent auth-submit" id="ai-key-submit">Save &amp; activate</button>
+        </form>
+      </details>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var TOKEN_KEY = "render3d:token";
+    function getToken() {
+      try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
+    }
+    function authHeaders() {
+      var t = getToken();
+      return t ? { Authorization: "Bearer " + t } : {};
+    }
+    function esc(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function show(html) {
+      var b = document.getElementById("project-browser");
+      if (b && !window.__appProjectListReady) b.innerHTML = html;
+    }
+    var editorFailed = false;
+    show('<p class="muted small browser-empty">Loading projects…</p>');
+    window.addEventListener("error", function (e) {
+      if (window.__appProjectListReady) return;
+      editorFailed = true;
+      show('<p class="status error browser-empty">Editor failed to start (' + esc(e.message || "error") + '). Try Ctrl+Shift+R to hard refresh.</p>');
+    });
+    window.addEventListener("unhandledrejection", function (e) {
+      if (window.__appProjectListReady) return;
+      editorFailed = true;
+      var reason = e.reason && (e.reason.message || e.reason);
+      show('<p class="status error browser-empty">Editor failed to start (' + esc(reason || "error") + '). Try Ctrl+Shift+R to hard refresh.</p>');
+    });
+    var token = getToken();
+    if (!token) {
+      show('<p class="muted small browser-empty">Sign in to view your projects</p>');
+      return;
+    }
+    fetch("/api/auth/me", { headers: authHeaders() })
+      .then(function (r) {
+        if (!r.ok) throw new Error("Session expired — sign in again");
+        return r.json();
+      })
+      .then(function (me) {
+        var teams = me.teams || [];
+        var saved = localStorage.getItem("render3d:lastWorkspaceId");
+        var teamId = saved && teams.some(function (t) { return t.id === saved; }) ? saved : (teams[0] && teams[0].id);
+        var qs = teamId ? "?team_id=" + encodeURIComponent(teamId) : "";
+        return fetch("/api/projects" + qs, { headers: authHeaders() }).then(function (r) {
+          if (!r.ok) throw new Error("Could not load projects");
+          return r.json();
+        });
+      })
+      .then(function (data) {
+        if (window.__appProjectListReady || editorFailed) return;
+        var projects = data.projects || [];
+        if (!projects.length) {
+          show('<p class="muted small browser-empty">No projects yet — create one or upload a model.</p>');
+          return;
+        }
+        var b = document.getElementById("project-browser");
+        if (!b) return;
+        var html = '<p class="muted small">' + projects.length + ' project(s) — loading editor…</p><ul class="project-list">';
+        projects.forEach(function (p) {
+          html += '<li class="proj-item"><button type="button" class="proj-row-body"><span class="proj-name">' + esc(p.name || p.id) + '</span></button></li>';
+        });
+        html += "</ul>";
+        b.innerHTML = html;
+      })
+      .catch(function (err) {
+        show('<p class="status error browser-empty">' + esc(err.message || "Could not load projects") + "</p>");
+      });
+  })();
+  </script>
+  <script type="module" src="/early-boot.js?v=20260611-project-recovery"></script>
+  <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
+  <script type="module" src="/app.js?v=20260619-debug-fix"></script>
+  <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
+  <script type="module" src="/panel-collapse.js?v=20260611-timeline-restore"></script>
+  <!-- ribbon.js is imported inside app.js -->
+</body>
+</html>

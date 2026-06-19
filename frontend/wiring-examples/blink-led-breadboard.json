@@ -1,0 +1,99 @@
+{
+  "name": "Blink LED — Arduino Uno + Breadboard",
+  "description": "Classic beginner circuit: pin 13 drives an LED through a 220Ω resistor. Red = 5V rail, gray = GND, blue = signal path.",
+  "reference_image": "/wiring-examples/blink-led-schematic.svg",
+  "components": [
+    {
+      "id": "c_arduino",
+      "type": "arduino-uno",
+      "label": "Arduino Uno",
+      "x": 48,
+      "y": 180,
+      "w": 168,
+      "h": 104
+    },
+    {
+      "id": "c_bread",
+      "type": "breadboard",
+      "label": "Half breadboard",
+      "x": 280,
+      "y": 140,
+      "w": 340,
+      "h": 200
+    },
+    {
+      "id": "c_res",
+      "type": "resistor",
+      "label": "220 Ω",
+      "x": 430,
+      "y": 248,
+      "w": 72,
+      "h": 24
+    },
+    {
+      "id": "c_led",
+      "type": "led",
+      "label": "LED",
+      "x": 548,
+      "y": 232,
+      "w": 40,
+      "h": 40
+    }
+  ],
+  "wires": [
+    {
+      "id": "w_pwr",
+      "from": { "componentId": "c_arduino", "pinId": "5v" },
+      "to": { "componentId": "c_bread", "pinId": "t+_8" },
+      "color": "#f85149",
+      "label": "5V → + rail"
+    },
+    {
+      "id": "w_gnd_a",
+      "from": { "componentId": "c_arduino", "pinId": "gnd" },
+      "to": { "componentId": "c_bread", "pinId": "t-_8" },
+      "color": "#6e7681",
+      "label": "GND → − rail"
+    },
+    {
+      "id": "w_sig",
+      "from": { "componentId": "c_arduino", "pinId": "d13" },
+      "to": { "componentId": "c_bread", "pinId": "a7" },
+      "color": "#58a6ff",
+      "label": "D13 → col 7"
+    },
+    {
+      "id": "w_res_a",
+      "from": { "componentId": "c_res", "pinId": "a" },
+      "to": { "componentId": "c_bread", "pinId": "c7" },
+      "color": "#58a6ff",
+      "label": "col 7 → resistor"
+    },
+    {
+      "id": "w_res_b",
+      "from": { "componentId": "c_res", "pinId": "b" },
+      "to": { "componentId": "c_bread", "pinId": "c9" },
+      "color": "#3fb950",
+      "label": "resistor → col 9"
+    },
+    {
+      "id": "w_e_led",
+      "from": { "componentId": "c_bread", "pinId": "a9" },
+      "to": { "componentId": "c_led", "pinId": "anode" },
+      "color": "#3fb950",
+      "label": "col 9 → LED +"
+    },
+    {
+      "id": "w_led_gnd",
+      "from": { "componentId": "c_led", "pinId": "cathode" },
+      "to": { "componentId": "c_bread", "pinId": "t-_10" },
+      "color": "#6e7681",
+      "label": "LED − → GND rail"
+    }
+  ],
+  "notes": [
+    "Upload the Blink sketch (pin 13) to the Arduino.",
+    "Long LED leg = anode (+), short leg = cathode (−).",
+    "220Ω limits current — use 330Ω if the LED is too bright."
+  ]
+}

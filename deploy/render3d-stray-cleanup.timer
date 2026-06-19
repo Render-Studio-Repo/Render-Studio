@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically kill stray Render3D uvicorn dev servers
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

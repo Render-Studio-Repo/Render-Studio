@@ -1,0 +1,40 @@
+.env
+.env.*
+!.env.example
+
+# Runtime / user data
+data/
+projects/
+backups/
+inbox/
+backend/render3d.db
+
+# Python
+.venv/
+myenv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS / editor / tooling
+.cache/
+.codex/
+.cursor/
+.cursor-server/
+.local/
+*.log
+
+# Secrets / keys
+*.pem
+*.key
+id_rsa*
+
+# Home dotfiles
+.bash_history
+.bash_logout
+.bashrc
+.profile
+.python_history
+.zshrc
+.ssh/

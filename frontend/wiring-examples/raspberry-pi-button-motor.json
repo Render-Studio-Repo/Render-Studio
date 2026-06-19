@@ -1,0 +1,185 @@
+{
+  "name": "Raspberry Pi → Button → DC Motor",
+  "description": "Press the button to read GPIO17; GPIO18 drives an NPN transistor that switches the motor. Includes pull-up, base resistor, and flyback diode.",
+  "reference_image": null,
+  "components": [
+    {
+      "id": "c_pi",
+      "type": "raspberry-pi",
+      "label": "Raspberry Pi 4",
+      "x": 32,
+      "y": 88,
+      "w": 148,
+      "h": 188
+    },
+    {
+      "id": "c_bread",
+      "type": "breadboard",
+      "label": "Half breadboard",
+      "x": 248,
+      "y": 120,
+      "w": 360,
+      "h": 210
+    },
+    {
+      "id": "c_r_pullup",
+      "type": "resistor",
+      "label": "10 kΩ pull-up",
+      "x": 318,
+      "y": 168,
+      "w": 72,
+      "h": 22
+    },
+    {
+      "id": "c_r_base",
+      "type": "resistor",
+      "label": "1 kΩ base",
+      "x": 318,
+      "y": 248,
+      "w": 72,
+      "h": 22
+    },
+    {
+      "id": "c_q1",
+      "type": "transistor",
+      "label": "2N2222 NPN",
+      "x": 430,
+      "y": 228,
+      "w": 48,
+      "h": 56
+    },
+    {
+      "id": "c_d1",
+      "type": "diode",
+      "label": "Flyback 1N4001",
+      "x": 598,
+      "y": 268,
+      "w": 56,
+      "h": 20
+    },
+    {
+      "id": "c_btn",
+      "type": "button",
+      "label": "Push button",
+      "x": 688,
+      "y": 132,
+      "w": 44,
+      "h": 44
+    },
+    {
+      "id": "c_motor",
+      "type": "motor",
+      "label": "DC Motor",
+      "x": 688,
+      "y": 248,
+      "w": 56,
+      "h": 56
+    }
+  ],
+  "wires": [
+    {
+      "id": "w_5v",
+      "from": { "componentId": "c_pi", "pinId": "5v" },
+      "to": { "componentId": "c_bread", "pinId": "t+_6" },
+      "color": "#f85149",
+      "label": "5V → + rail"
+    },
+    {
+      "id": "w_gnd",
+      "from": { "componentId": "c_pi", "pinId": "gnd" },
+      "to": { "componentId": "c_bread", "pinId": "t-_6" },
+      "color": "#6e7681",
+      "label": "GND → − rail"
+    },
+    {
+      "id": "w_3v3",
+      "from": { "componentId": "c_pi", "pinId": "3v3" },
+      "to": { "componentId": "c_r_pullup", "pinId": "a" },
+      "color": "#d29922",
+      "label": "3.3V → pull-up"
+    },
+    {
+      "id": "w_pullup_row",
+      "from": { "componentId": "c_r_pullup", "pinId": "b" },
+      "to": { "componentId": "c_bread", "pinId": "e5" },
+      "color": "#d29922",
+      "label": "Pull-up → row 5"
+    },
+    {
+      "id": "w_gpio17",
+      "from": { "componentId": "c_pi", "pinId": "gpio17" },
+      "to": { "componentId": "c_bread", "pinId": "d5" },
+      "color": "#58a6ff",
+      "label": "GPIO17 input"
+    },
+    {
+      "id": "w_btn_row",
+      "from": { "componentId": "c_bread", "pinId": "c5" },
+      "to": { "componentId": "c_btn", "pinId": "1" },
+      "color": "#58a6ff",
+      "label": "Button leg 1"
+    },
+    {
+      "id": "w_btn_gnd",
+      "from": { "componentId": "c_btn", "pinId": "2" },
+      "to": { "componentId": "c_bread", "pinId": "t-_9" },
+      "color": "#6e7681",
+      "label": "Button → GND"
+    },
+    {
+      "id": "w_gpio18",
+      "from": { "componentId": "c_pi", "pinId": "gpio18" },
+      "to": { "componentId": "c_r_base", "pinId": "a" },
+      "color": "#3fb950",
+      "label": "GPIO18 → base R"
+    },
+    {
+      "id": "w_base_q",
+      "from": { "componentId": "c_r_base", "pinId": "b" },
+      "to": { "componentId": "c_q1", "pinId": "base" },
+      "color": "#3fb950",
+      "label": "Base resistor → B"
+    },
+    {
+      "id": "w_emit_gnd",
+      "from": { "componentId": "c_q1", "pinId": "emitter" },
+      "to": { "componentId": "c_bread", "pinId": "t-_11" },
+      "color": "#6e7681",
+      "label": "Emitter → GND"
+    },
+    {
+      "id": "w_motor_vcc",
+      "from": { "componentId": "c_bread", "pinId": "t+_11" },
+      "to": { "componentId": "c_motor", "pinId": "plus" },
+      "color": "#f85149",
+      "label": "+ rail → motor +"
+    },
+    {
+      "id": "w_motor_col",
+      "from": { "componentId": "c_motor", "pinId": "minus" },
+      "to": { "componentId": "c_q1", "pinId": "collector" },
+      "color": "#3fb950",
+      "label": "Motor − → collector"
+    },
+    {
+      "id": "w_diode_plus",
+      "from": { "componentId": "c_motor", "pinId": "plus" },
+      "to": { "componentId": "c_d1", "pinId": "cathode" },
+      "color": "#d29922",
+      "label": "Diode K → motor +"
+    },
+    {
+      "id": "w_diode_minus",
+      "from": { "componentId": "c_d1", "pinId": "anode" },
+      "to": { "componentId": "c_motor", "pinId": "minus" },
+      "color": "#d29922",
+      "label": "Diode A → motor −"
+    }
+  ],
+  "notes": [
+    "Button on GPIO17 (BCM 17, physical pin 11): HIGH when open, LOW when pressed (internal pull-up via 10 kΩ).",
+    "Motor on GPIO18 (BCM 18, physical pin 12): set HIGH to turn on the transistor and spin the motor.",
+    "Use a 1 kΩ base resistor and 2N2222 / BC547 NPN; flyback diode protects the transistor from motor spikes.",
+    "Python: gpiozero Button(17) + DigitalOutputDevice(18) or RPi.GPIO with INPUT on 17 and OUTPUT on 18."
+  ]
+}

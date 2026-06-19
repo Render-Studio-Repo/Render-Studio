@@ -1,0 +1,183 @@
+/** Multi-component project assembly — Fusion-style browser + viewport. */
+
+import * as THREE from "three";
+import { disposeStyledModel } from "./scene-style.js?v=20260605-smooth-boolean-normals";
+
+export function createProjectAssembly(scene) {
+  const root = new THREE.Group();
+  root.name = "ProjectAssembly";
+  scene.add(root);
+
+  /** @type {Map<string, THREE.Object3D>} */
+  const components = new Map();
+
+  function clear() {
+    for (const obj of components.values()) {
+      root.remove(obj);
+      disposeStyledModel(obj);
+    }
+    components.clear();
+  }
+
+  function has(name) {
+    return components.has(name);
+  }
+
+  function count() {
+    return components.size;
+  }
+
+  function get(name) {
+    return components.get(name) || null;
+  }
+
+  function getRoot() {
+    return root;
+  }
+
+  function componentStem(name = "") {
+    return String(name || "")
+      .toLowerCase()
+      .replace(/\.[^.]+$/, "")
+      .replace(/_edited(?:_\d+)?$/i, "")
+      .replace(/_cleaned(?:_\d+)?$/i, "")
+      .replace(/_(loops|duct|hole|extruded|pulled|mirrored)(?:_\d+)?$/i, "")
+      .replace(/_copy\d*$/i, "");
+  }
+
+  function objectMatchesStem(obj, targetStem) {
+    if (!targetStem) return false;
+    const values = [
+      obj?.name,
+      obj?.userData?.catalogFilename,
+      obj?.userData?.name,
+      obj?.userData?.filename,
+    ].filter(Boolean).map(String);
+    return values.some((value) => componentStem(value) === targetStem);
+  }
+
+  function add(catalogName, object3d) {
+    const key = String(catalogName || "");
+    if (!key || !object3d) return null;
+    if (components.has(key)) {
+      root.remove(components.get(key));
+      disposeStyledModel(components.get(key));
+    }
+    object3d.userData.catalogFilename = key;
+    object3d.name = key.replace(/\.[^.]+$/, "") || key;
+    root.add(object3d);
+    components.set(key, object3d);
+    return object3d;
+  }
+
+  function remove(catalogName) {
+    const obj = components.get(catalogName);
+    if (!obj) return;
+    root.remove(obj);
+    disposeStyledModel(obj);
+    components.delete(catalogName);
+  }
+
+  function setVisible(catalogName, visible) {
+    const key = String(catalogName || "");
+    const targetStem = componentStem(key);
+    let changed = false;
+    for (const [name, obj] of components) {
+      const objStem = componentStem(name);
+      const catalogStem = componentStem(obj?.userData?.catalogFilename || "");
+      const topLevelMatch = name === key || obj?.userData?.catalogFilename === key || objStem === targetStem || catalogStem === targetStem;
+      if (topLevelMatch) {
+        obj.visible = visible;
+        obj.traverse?.((child) => {
+          if (child !== obj) child.visible = visible;
+        });
+        changed = true;
+        continue;
+      }
+      obj.traverse?.((child) => {
+        if (!objectMatchesStem(child, targetStem)) return;
+        child.visible = visible;
+        child.traverse?.((nested) => {
+          nested.visible = visible;
+        });
+        changed = true;
+      });
+    }
+    return changed;
+  }
+
+  function list() {
+    return [...components.entries()];
+  }
+
+  function boundingBox() {
+    if (!components.size) return null;
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    let hasVisible = false;
+    for (const obj of components.values()) {
+      if (obj?.visible === false) continue;
+      const objBox = new THREE.Box3().setFromObject(obj);
+      if (objBox.isEmpty()) continue;
+      box.union(objBox);
+      hasVisible = true;
+    }
+    return hasVisible ? box : null;
+  }
+
+  return {
+    clear,
+    has,
+    count,
+    get,
+    getRoot,
+    add,
+    remove,
+    setVisible,
+    list,
+    boundingBox,
+  };
+}
+
+export function filesToBrowserComponents(files = []) {
+  const byStem = new Map();
+  const preferred = [".glb", ".gltf", ".step", ".stp", ".3mf", ".stl", ".obj", ".ply", ".off"];
+  const baseStem = (name = "") => name.replace(/\.[^.]+$/, "").replace(/_edited(?:_\d+)?$/i, "");
+  for (const f of files) {
+    if (!f?.name) continue;
+    const stem = baseStem(f.name);
+    if (!byStem.has(stem)) byStem.set(stem, []);
+    byStem.get(stem).push(f);
+  }
+  const components = [];
+  for (const [stem, group] of byStem) {
+    let canonical = group[0];
+    const edited = group
+      .filter((g) => /_edited(?:_\d+)?\.glb$/i.test(String(g.name || "")))
+      .sort((a, b) => String(b.name).localeCompare(String(a.name)))[0];
+    if (edited) canonical = edited;
+    for (const ext of preferred) {
+      if (edited) break;
+      const match = group.find((g) => String(g.name || "").toLowerCase().endsWith(ext));
+      if (match) {
+        canonical = match;
+        break;
+      }
+    }
+    const canonicalName = String(canonical.name || "");
+    const suffix = canonicalName.slice(canonicalName.lastIndexOf(".")).toLowerCase();
+    const viewer =
+      [".step", ".stp", ".3mf"].includes(suffix)
+        ? group.find((g) => String(g.name || "").toLowerCase().endsWith(".glb"))?.name || canonicalName
+        : canonicalName;
+    components.push({
+      id: stem,
+      name: canonicalName,
+      stem,
+      format: suffix.replace(".", ""),
+      viewer_filename: viewer,
+      size: canonical.size,
+    });
+  }
+  return components.sort((a, b) => a.name.localeCompare(b.name));
+}

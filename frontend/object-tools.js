@@ -1,0 +1,338 @@
+/**
+ * Fusion-style object selection, split bodies, and delete tools.
+ */
+
+import * as THREE from "three";
+import { pickObject } from "./picking.js?v=20260611-object-select";
+
+function listSelectableMeshes(root) {
+  if (!root) return [];
+  const meshes = [];
+  root.traverse((c) => {
+    if (!c.isMesh || !c.geometry) return;
+    if (c.userData.isEdge || c.userData.isSilhouette) return;
+    meshes.push(c);
+  });
+  return meshes;
+}
+
+export function createObjectTools({
+  scene,
+  getMeshRoot,
+  getModelInfo,
+  api,
+  onApplied,
+  onStatus,
+  transformControls,
+}) {
+  let selected = null;
+  let highlights = [];
+  let bodyInfo = null;
+
+  function setStatus(kind, text) {
+    onStatus?.(kind, text);
+  }
+
+  function removeHighlight() {
+    for (const h of highlights) {
+      scene.remove(h);
+      h.geometry?.dispose?.();
+      h.material?.dispose?.();
+    }
+    highlights = [];
+  }
+
+  function clearSelection({ detachGizmo = true } = {}) {
+    selected = null;
+    removeHighlight();
+    if (detachGizmo && transformControls?.object) {
+      transformControls.detach();
+    }
+    window.dispatchEvent(new CustomEvent("render3d:object-selection-changed", { detail: { selected: null } }));
+  }
+
+  function bodyIndexForFace(faceIndex) {
+    if (faceIndex == null || !bodyInfo?.face_offsets?.length) return 0;
+    const offsets = bodyInfo.face_offsets;
+    for (let i = offsets.length - 1; i >= 0; i--) {
+      if (faceIndex >= offsets[i]) return i;
+    }
+    return 0;
+  }
+
+  function meshLabel(mesh, root, bodyIndex) {
+    const meshes = listSelectableMeshes(root);
+    if (bodyInfo?.count > 1) {
+      return bodyInfo.body_names?.[bodyIndex] || `Body ${bodyIndex + 1}`;
+    }
+    if (meshes.length > 1) {
+      const idx = meshes.indexOf(mesh);
+      return mesh.name?.trim() || `Object ${idx + 1}`;
+    }
+    return mesh.name?.trim() || root?.name?.trim() || "Component";
+  }
+
+  function faceCount(mesh) {
+    const geom = mesh?.geometry;
+    if (!geom?.attributes?.position) return 0;
+    return geom.index ? Math.floor(geom.index.count / 3) : Math.floor(geom.attributes.position.count / 3);
+  }
+
+  function bodyFaceRange(bodyIndex) {
+    const start = bodyInfo?.face_offsets?.[bodyIndex] ?? 0;
+    const end = bodyInfo?.face_offsets?.[bodyIndex + 1] ?? null;
+    return { start, end };
+  }
+
+  function bodyBounds(mesh, bodyIndex) {
+    if (!mesh?.isMesh || !mesh.geometry || !bodyInfo?.face_offsets?.length) {
+      return new THREE.Box3().setFromObject(mesh);
+    }
+    const geom = mesh.geometry;
+    const pos = geom.attributes.position;
+    const index = geom.index;
+    const count = faceCount(mesh);
+    const { start, end } = bodyFaceRange(bodyIndex);
+    const stop = Math.min(end ?? count, count);
+    const box = new THREE.Box3();
+    const v = new THREE.Vector3();
+    for (let fi = Math.max(0, start); fi < stop; fi += 1) {
+      for (let j = 0; j < 3; j += 1) {
+        const vi = index ? index.getX(fi * 3 + j) : fi * 3 + j;
+        v.fromBufferAttribute(pos, vi);
+        mesh.localToWorld(v);
+        box.expandByPoint(v);
+      }
+    }
+    return box.isEmpty() ? new THREE.Box3().setFromObject(mesh) : box;
+  }
+
+  function addSelectionHighlight(item) {
+    let h = null;
+    if ((bodyInfo?.count || 1) > 1 && item.bodyIndex != null) {
+      h = new THREE.Box3Helper(bodyBounds(item.mesh, item.bodyIndex), 0x58a6ff);
+    } else {
+      h = new THREE.BoxHelper(item.mesh, 0x58a6ff);
+    }
+    h.userData.isObjectHighlight = true;
+    scene.add(h);
+    highlights.push(h);
+  }
+
+  function selectObject({ mesh, root, faceIndex = null, bodyIndex = null, catalogName = null }) {
+    if (!mesh || !root) return;
+    const meshes = listSelectableMeshes(root);
+    const resolvedBody = bodyIndex ?? bodyIndexForFace(faceIndex);
+    const isRoot = mesh === root && meshes.length <= 1;
+    const resolvedCatalog = catalogName || root.userData?.catalogFilename || null;
+    selected = {
+      mesh,
+      root,
+      bodyIndex: resolvedBody,
+      faceIndex,
+      label: (bodyInfo?.count || 1) > 1
+        ? meshLabel(mesh, root, resolvedBody)
+        : resolvedCatalog
+        ? resolvedCatalog.replace(/\.[^.]+$/, "")
+        : meshLabel(mesh, root, resolvedBody),
+      isRoot,
+      meshCount: meshes.length,
+      bodyCount: bodyInfo?.count || 1,
+      catalogName: resolvedCatalog,
+    };
+    selected.selections = [{ mesh, root, bodyIndex: resolvedBody, catalogName: resolvedCatalog, label: selected.label }];
+    removeHighlight();
+    addSelectionHighlight(selected.selections[0]);
+    transformControls?.attach?.(mesh);
+    setStatus("ok", `Selected ${selected.label} · Delete / Backspace / X to delete · Cmd+Z to undo`);
+    window.dispatchEvent(new CustomEvent("render3d:object-selection-changed", { detail: { selected } }));
+  }
+
+  function selectMany(items = []) {
+    const normalized = items.filter((item) => item?.mesh && item?.root);
+    if (!normalized.length) return false;
+    const first = normalized[0];
+    const resolvedCatalog = first.catalogName || first.root.userData?.catalogFilename || null;
+    const label = normalized.length === 1
+      ? (first.label || meshLabel(first.mesh, first.root, first.bodyIndex || 0))
+      : `${normalized.length} bodies/objects`;
+    selected = {
+      mesh: first.mesh,
+      root: first.root,
+      bodyIndex: first.bodyIndex ?? 0,
+      faceIndex: first.faceIndex ?? null,
+      label,
+      isRoot: false,
+      meshCount: normalized.length,
+      bodyCount: bodyInfo?.count || 1,
+      catalogName: resolvedCatalog,
+      selections: normalized.map((item) => ({
+        ...item,
+        bodyIndex: item.bodyIndex ?? 0,
+        catalogName: item.catalogName || item.root.userData?.catalogFilename || null,
+        label: item.label || meshLabel(item.mesh, item.root, item.bodyIndex || 0),
+      })),
+    };
+    removeHighlight();
+    selected.selections.forEach(addSelectionHighlight);
+    transformControls?.detach?.();
+    setStatus("ok", `Selected ${label} · Delete / Backspace / X to delete · Split bodies separates them into files`);
+    window.dispatchEvent(new CustomEvent("render3d:object-selection-changed", { detail: { selected } }));
+    return true;
+  }
+
+  function selectRoot(root) {
+    if (!root) return;
+    const meshes = listSelectableMeshes(root);
+    selectObject({ mesh: meshes[0] || root, root, bodyIndex: 0 });
+  }
+
+  async function refreshBodyInfo() {
+    const { projectId, filename } = getModelInfo?.() || {};
+    if (!projectId || !filename) {
+      bodyInfo = null;
+      return null;
+    }
+    try {
+      bodyInfo = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/bodies`);
+    } catch {
+      bodyInfo = null;
+    }
+    return bodyInfo;
+  }
+
+  async function onModelLoaded(root) {
+    await refreshBodyInfo();
+    clearSelection();
+  }
+
+  function pickFromEvent(event, ctx) {
+    const root = getMeshRoot?.();
+    if (!root) return false;
+    const hit = pickObject(event, ctx);
+    if (!hit?.mesh) {
+      clearSelection();
+      setStatus("", "");
+      return true;
+    }
+    if (selected?.mesh === hit.mesh) {
+      selectObject({ mesh: hit.mesh, root, faceIndex: hit.faceIndex });
+      return true;
+    }
+    selectObject({ mesh: hit.mesh, root, faceIndex: hit.faceIndex });
+    return true;
+  }
+
+  function getSelection() {
+    return selected ? { ...selected } : null;
+  }
+
+  function getBodyInfo() {
+    return bodyInfo ? { ...bodyInfo } : null;
+  }
+
+  async function splitBodies() {
+    const { projectId, filename } = getModelInfo?.() || {};
+    if (!projectId || !filename) {
+      setStatus("error", "Load a model file first.");
+      return;
+    }
+    if (bodyInfo && !bodyInfo.can_split) {
+      setStatus("error", "This mesh has only one body — nothing to split.");
+      return;
+    }
+    setStatus("loading", "Splitting bodies…");
+    try {
+      const data = await api(
+        `/api/projects/${projectId}/files/${encodeURIComponent(filename)}/split-bodies`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keep_original: true }),
+        }
+      );
+      setStatus("ok", `Split into ${data.count} separate file${data.count === 1 ? "" : "s"}.`);
+      clearSelection();
+      onApplied?.(data);
+    } catch (err) {
+      setStatus("error", err.message || "Split failed.");
+    }
+  }
+
+  async function deleteSelected() {
+    const { projectId, filename: activeFilename } = getModelInfo?.() || {};
+    if (!projectId || !activeFilename || !selected) {
+      setStatus("error", "Select an object first (V).");
+      return false;
+    }
+
+    const selections = selected.selections?.length ? selected.selections : [selected];
+    const label = selected.label;
+    const targetFile = selected.catalogName || activeFilename;
+    const multiBody = (bodyInfo?.count || 1) > 1;
+
+    const selectedBodyIndices = [...new Set(selections.map((s) => s.bodyIndex).filter((n) => Number.isInteger(n)))]
+      .sort((a, b) => b - a);
+
+    if (multiBody && selectedBodyIndices.length > 0 && selectedBodyIndices.length < (bodyInfo?.count || 1)) {
+      setStatus("loading", `Removing ${label}…`);
+      try {
+        let data = null;
+        for (const bodyIndex of selectedBodyIndices) {
+          data = await api(
+            `/api/projects/${projectId}/files/${encodeURIComponent(targetFile)}/remove-body`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ body_index: bodyIndex }),
+            }
+          );
+        }
+        setStatus("ok", `Removed ${label}. Press Cmd/Ctrl+Z to undo.`);
+        clearSelection();
+        onApplied?.(data);
+        return true;
+      } catch (err) {
+        setStatus("error", err.message || "Could not remove body.");
+        return false;
+      }
+    }
+
+    setStatus("loading", `Deleting ${label}…`);
+    try {
+      const fileTargets = [...new Set(selections.map((s) => s.catalogName).filter(Boolean))];
+      const targets = fileTargets.length ? fileTargets : [targetFile];
+      const deleted = [];
+      let data = null;
+      for (const file of targets) {
+        data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(file)}`, { method: "DELETE" });
+        deleted.push(file);
+      }
+      setStatus("ok", `Deleted ${label}. Press Cmd/Ctrl+Z to undo.`);
+      clearSelection();
+      return { ...data, deletedFile: deleted[0], deleted_files: deleted };
+    } catch (err) {
+      setStatus("error", err.message || "Delete failed.");
+      return false;
+    }
+  }
+
+  function updateHighlight() {
+    highlights.forEach((h) => h.update?.());
+  }
+
+  return {
+    pickFromEvent,
+    selectRoot,
+    selectObject,
+    selectMany,
+    clearSelection,
+    getSelection,
+    getBodyInfo,
+    splitBodies,
+    deleteSelected,
+    refreshBodyInfo,
+    onModelLoaded,
+    updateHighlight,
+  };
+}

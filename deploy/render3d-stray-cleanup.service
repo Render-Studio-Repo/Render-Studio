@@ -1,0 +1,8 @@
+[Unit]
+Description=Kill stray Render3D uvicorn dev servers
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/home/ubuntu/scripts/kill-stray-uvicorn.sh guard
