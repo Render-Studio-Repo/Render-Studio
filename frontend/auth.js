@@ -233,7 +233,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       // Already connected — toggle Fusion library section
       document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth" });
     } else {
-      window.location.href = "/api/autodesk/oauth/start";
+      window.location.href = "/oauth/autodesk/start";
     }
   });
 
@@ -249,6 +249,33 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       const params = new URLSearchParams(window.location.search);
       const oauthToken = params.get("onshape_token");
       const oauthError = params.get("onshape_error");
+      const autodeskLinked = params.get("autodesk_linked");
+      const autodeskError = params.get("autodesk_error");
+      const renderToken = params.get("render3d_token");
+
+      if (autodeskError) {
+        history.replaceState({}, "", window.location.pathname);
+        if (authError) authError.textContent = `Fusion login failed: ${decodeURIComponent(autodeskError)}`;
+        showModal(true);
+        return null;
+      }
+
+      if (autodeskLinked && renderToken) {
+        history.replaceState({}, "", window.location.pathname);
+        try {
+          localStorage.setItem(TOKEN_KEY, renderToken);
+          const data = await api("/api/auth/me");
+          setSession(renderToken, data.user);
+          setUserUI(data.user);
+          setFusionBadge(true);
+          showModal(false);
+          return data;
+        } catch {
+          clearSession();
+          setLoggedOutUI();
+          return null;
+        }
+      }
 
       if (oauthError) {
         // Clean URL, show error

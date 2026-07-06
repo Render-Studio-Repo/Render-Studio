@@ -4036,8 +4036,16 @@ body.canvas-design-tab .main-column {
   pointer-events: auto;
 }
 
-#ribbon-container {
+#ribbon-desktop-anchor {
   grid-area: ribbon;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#ribbon-container {
+  grid-area: unset;
+  flex: 1;
   min-height: 0;
   overflow: visible;
 }
@@ -12372,6 +12380,97 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .prompt-mode-btn--fusion:hover {
   background: linear-gradient(135deg, #005db3 0%, #009ec8 100%);
   color: #fff;
+}
+
+.prompt-advanced-row {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.prompt-advanced-row.visible {
+  display: flex;
+}
+
+.prompt-advanced-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.prompt-advanced-row select {
+  min-width: 120px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #0d1117;
+  color: var(--text);
+  font-size: 0.75rem;
+}
+
+.workspace-fusion-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  font-size: 0.78rem;
+}
+
+.workspace-fusion-row input {
+  margin: 0;
+}
+
+.workspace-realtime-editor {
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid rgba(48, 54, 61, 0.85);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.48);
+}
+
+.workspace-realtime-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.workspace-render-folder-card strong,
+.workspace-fusion-projects strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.workspace-fusion-link-btn {
+  margin-top: 8px;
+}
+
+.workspace-fusion-projects {
+  margin-top: 8px;
+}
+
+.ribbon-bar--architect .ribbon-tabs {
+  border-color: rgba(56, 139, 253, 0.35);
+}
+
+.architect-mode-tab {
+  display: inline-flex;
+}
+
+.architect-prompt-panel .architect-hint {
+  margin: 0 0 10px;
+}
+
+#app.architect-design-tab .sidebar.left .design-browser-section,
+#app.architect-design-tab .sidebar.left #onshape-library-section,
+#app.architect-design-tab .sidebar.left #fusion-library-section {
+  opacity: 0.92;
 }
 
 /* ── Fusion library section ──────────────────────────────────────────── */

@@ -9,7 +9,7 @@
   <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
-  <link rel="stylesheet" href="/styles.css?v=20260706-restore" />
+  <link rel="stylesheet" href="/styles.css?v=20260706-full-ui" />
   <script type="importmap">
   {
     "imports": {
@@ -207,12 +207,24 @@
               <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
             </button>
           </div>
+          <label class="workspace-fusion-row checkbox-field" id="workspace-fusion-row">
+            <input type="checkbox" id="workspace-fusion-connect" />
+            Connect this workspace to Fusion
+          </label>
           <div class="team-invite-row">
             <input type="email" id="team-invite-email" placeholder="Invite to workspace" />
             <button type="button" id="btn-team-invite" class="btn secondary btn-compact">Invite</button>
           </div>
           <p id="team-invite-status" class="muted small"></p>
           <ul id="team-members" class="team-members"></ul>
+          <div id="workspace-realtime-editor" class="workspace-realtime-editor">
+            <div class="workspace-realtime-head">
+              <strong>Realtime editor</strong>
+              <span id="workspace-realtime-presence" class="muted small">Offline</span>
+            </div>
+            <div id="workspace-render-folder-card" class="workspace-render-folder-card muted small">Render3D cloud source</div>
+            <div id="workspace-fusion-projects" class="workspace-fusion-projects muted small"></div>
+          </div>
         </section>
         <section class="workspace-browser-section">
           <div class="workspace-browser-head">
@@ -263,19 +275,6 @@
           <p class="fusion-status muted small">Connect Autodesk to browse Fusion hubs and push STEP files.</p>
           <div class="fusion-library-controls"></div>
           <div class="fusion-doc-list"></div>
-        </section>
-        <section id="onshape-library-section" class="onshape-library-section">
-          <div class="onshape-library-header">
-            <h2>
-              <img src="/onshape-logo.png" width="14" height="14" alt="" style="vertical-align:-2px;margin-right:5px" />
-              Onshape Library
-            </h2>
-            <button type="button" class="btn-icon btn-onshape-refresh" title="Refresh documents" aria-label="Refresh Onshape documents">
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.06-3.36L10 7h5V2l-1.35.35z"/></svg>
-            </button>
-          </div>
-          <p class="onshape-status muted small">Loading your Onshape documents…</p>
-          <div class="onshape-doc-list"></div>
         </section>
         <section class="object-history-panel">
           <h2>Project history</h2>
@@ -563,9 +562,8 @@
         <button type="button" class="right-panel-tab" data-right-tab="tools">Tools</button>
         <button type="button" class="right-panel-tab" data-right-tab="history">History</button>
         <button type="button" class="right-panel-tab" data-right-tab="refs">Refs</button>
+        <button type="button" class="right-panel-tab architect-mode-tab" data-right-tab="architect">Architect</button>
         <button type="button" class="right-panel-tab active" data-right-tab="prompt">AI</button>
-        <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
-        <button type="button" class="right-panel-tab wiring-mode-tab" data-right-tab="wiring">Wiring</button>
         <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
         <button type="button" class="right-panel-tab wiring-mode-tab" data-right-tab="wiring">Wiring</button>
         <button type="button" class="right-panel-tab rigging-mode-tab" data-right-tab="rigging">Rigging</button>
@@ -730,6 +728,14 @@
         </div>
       </section>
 
+      <section class="architect-prompt-panel right-tab-panel" data-right-panel="architect" id="architect-prompt-panel">
+        <h2>Architect AI</h2>
+        <p class="muted small architect-hint">Describe modular buildings, rooms, roofs, and site layouts. Uses a 1000&nbsp;mm snap grid and places multiple components into the project.</p>
+        <textarea id="architect-prompt-input" rows="8" placeholder="Example: 12×10 m single-story house with 2800 mm wall height, 2 bedrooms, open kitchen, gable roof, and front porch."></textarea>
+        <button type="button" id="btn-architect-prompt" class="btn accent full">Generate architect layout</button>
+        <div id="architect-prompt-status" class="status"></div>
+      </section>
+
       <section class="prompt-panel right-tab-panel active" data-right-panel="prompt">
         <div class="prompt-panel-tabs">
           <button type="button" class="prompt-tab active" data-pane="compose">Compose</button>
@@ -755,6 +761,21 @@
               <button type="button" class="prompt-mode-btn prompt-mode-btn--v2" data-prompt-mode="v2">2.0</button>
               <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
+            </div>
+            <div class="prompt-advanced-row" id="prompt-advanced-row">
+              <label>Mode
+                <select id="prompt-speed" aria-label="Generation speed">
+                  <option value="fast">Fast</option>
+                  <option value="quality" selected>Quality</option>
+                </select>
+              </label>
+              <label>Target
+                <select id="prompt-target" aria-label="Prompt target">
+                  <option value="design" selected>Add new object</option>
+                  <option value="edit">Edit selected model</option>
+                  <option value="fusion360">Push to Fusion 360</option>
+                </select>
+              </label>
             </div>
           </div>
           <div class="prompt-skills-row">
@@ -1223,7 +1244,7 @@
   </script>
   <script type="module" src="/early-boot.js?v=20260611-project-recovery"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
-  <script type="module" src="/app.js?v=20260706-pick-face"></script>
+  <script type="module" src="/app.js?v=20260706-full-ui"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260611-timeline-restore"></script>
   <!-- ribbon.js is imported inside app.js -->

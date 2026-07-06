@@ -754,6 +754,34 @@ const RIGGING_CATALOG = {
   ],
 };
 
+/** Architect environment ribbon: modular house kit tools. */
+const ARCHITECT_CATALOG = {
+  Build: [
+    { id: "arch_room", label: "Room", icon: "▣", desc: "Generate a modular room bay", architectTool: "room" },
+    { id: "arch_floor", label: "Floor", icon: "▤", desc: "Generate a grid floor slab with snap rails", architectTool: "floor" },
+    { id: "arch_wall", label: "Wall", icon: "▥", desc: "Generate a modular wall panel", architectTool: "wall" },
+    { id: "arch_window", label: "Window", icon: "▦", desc: "Generate a replaceable window insert", architectTool: "window" },
+    { id: "arch_door", label: "Door", icon: "▯", desc: "Generate a modular door insert", architectTool: "door" },
+    { id: "arch_roof", label: "Roof", icon: "⌂", desc: "Generate roof or ceiling modules", architectTool: "roof" },
+  ],
+  Customize: [
+    { id: "arch_edit_window", label: "Add Window", icon: "▦", desc: "Edit selected wall/room to add or resize a window", architectEdit: "window" },
+    { id: "arch_edit_door", label: "Add Door", icon: "▯", desc: "Edit selected wall/room to add a modular door", architectEdit: "door" },
+    { id: "arch_materials", label: "Materials", icon: "◐", desc: "Color/style selected module like house materials", architectEdit: "materials" },
+    { id: "arch_customize", label: "Customize", icon: "✦", desc: "Generative edit selected module", architectEdit: "customize" },
+  ],
+  Layout: [
+    { id: "arch_snap_grid", label: "Snap Grid", icon: "⌗", desc: "Snap selected module to Architect grid", architectAction: "snap_grid" },
+    { id: "arch_pattern", label: "Pattern", icon: "▦", desc: "Generate repeated wall/floor modules in a grid pattern", architectTool: "pattern" },
+    { id: "arch_service", label: "Service Core", icon: "◫", desc: "Generate utility/service-core module", architectTool: "service" },
+    { id: "arch_robot", label: "Robot Build", icon: "⚑", desc: "Generate robot assembly-friendly kit", architectTool: "robot" },
+  ],
+  References: [
+    { id: "arch_image", label: "Image Ref", icon: "▧", desc: "Prompt from a house/reference image", architectTool: "image" },
+    { id: "arch_blueprint", label: "Blueprint", icon: "⌑", desc: "Prompt from a floor plan or blueprint", architectTool: "blueprint" },
+  ],
+};
+
 // ─────────────────────────── internal state ─────────────────────────────────
 
 let _api = null;           // async fn(path, opts) — injected by init()
@@ -771,6 +799,7 @@ let _onViewportTool = null; // callback(toolId, entry) for direct modeling hando
 let _onSketchAction = null; // callback(action, entry, values?) for sketch workflow
 let _onExportAction = null;
 let _onRiggingAction = null;
+let _onArchitectAction = null;
 let _activeSketchTool = null;
 let _isBusy = null;        // fn() → true when another build/prompt is running
 let _designTab = "SOLID";
@@ -1226,6 +1255,18 @@ function _onToolClick(entry) {
     _onExportAction?.(entry.exportAction, entry);
     return;
   }
+  if (entry.architectTool) {
+    _onArchitectAction?.("tool", entry, { tool: entry.architectTool });
+    return;
+  }
+  if (entry.architectEdit) {
+    _onArchitectAction?.("edit", entry, { edit: entry.architectEdit });
+    return;
+  }
+  if (entry.architectAction) {
+    _onArchitectAction?.(entry.architectAction, entry);
+    return;
+  }
   if (entry.rigTool) {
     _onRiggingAction?.("tool", entry, { tool: entry.rigTool });
     return;
@@ -1282,14 +1323,22 @@ function _appendFeature(entry, feat) {
 }
 
 function _setDesignTab(tab) {
-  const next = tab === "SKETCH" ? "SKETCH" : tab === "RIGGING" ? "RIGGING" : "SOLID";
+  const next =
+    tab === "SKETCH" ? "SKETCH" : tab === "RIGGING" ? "RIGGING" : tab === "ARCHITECT" ? "ARCHITECT" : "SOLID";
   if (_designTab === next) return;
   _designTab = next;
   const catalog =
-    next === "SKETCH" ? SKETCH_CATALOG : next === "RIGGING" ? RIGGING_CATALOG : SOLID_CATALOG;
+    next === "SKETCH"
+      ? SKETCH_CATALOG
+      : next === "RIGGING"
+      ? RIGGING_CATALOG
+      : next === "ARCHITECT"
+      ? ARCHITECT_CATALOG
+      : SOLID_CATALOG;
   _mountCatalog(catalog);
   _ribbonBar?.classList.toggle("ribbon-bar--sketch", next === "SKETCH");
   _ribbonBar?.classList.toggle("ribbon-bar--rigging", next === "RIGGING");
+  _ribbonBar?.classList.toggle("ribbon-bar--architect", next === "ARCHITECT");
 }
 
 // ─────────────────────────── build DOM ───────────────────────────────────────
@@ -1409,6 +1458,7 @@ export function createRibbon({
   onViewportTool, // fn(toolId, entry) — direct viewport tools
   onSketchAction, // fn(action, entry, data?) — sketch workflow
   onRiggingAction, // fn(action, entry, data?) — rigging workflow
+  onArchitectAction, // fn(action, entry, data?) — architect workflow
   onExportAction, // fn(action, entry) — download/share menu
   isBusy,         // fn() → true when prompt/build already running
   projectId,
@@ -1421,6 +1471,7 @@ export function createRibbon({
   _onViewportTool = onViewportTool;
   _onSketchAction = onSketchAction;
   _onRiggingAction = onRiggingAction;
+  _onArchitectAction = onArchitectAction;
   _onExportAction = onExportAction;
   _isBusy = isBusy;
   _projectId = projectId;

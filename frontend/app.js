@@ -51,7 +51,7 @@ import { createTimelineUI } from "./timeline.js?v=20260618-restore-assembly";
 import { createPromptComposer } from "./prompt-composer.js?v=20260618-multi-drag";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260618-deterministic-cost";
 import { formatPromptRef } from "./prompt-ref.js";
-import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-restore";
+import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, syncBlueprintVisionForImages, setSkillEnabled } from "./skills-library.js?v=20260706-restore";
 import { createObjectHistoryUI } from "./object-history.js?v=20260618-restore-latest";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260619-folder-icon";
@@ -61,7 +61,7 @@ import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js";
 import { initFusionPanel } from "./fusion-panel.js?v=20260706";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260618-shared-key-dollar-limits";
 import { createCollab } from "./collab.js?v=20260617-local-path-markers";
-import { createRibbon } from "./ribbon.js?v=20260617-measure-analytics";
+import { createRibbon } from "./ribbon.js?v=20260706-architect-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260618-v2-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
@@ -384,9 +384,24 @@ async function cancelActiveGeneration() {
 }
 
 function promptGenerationOverlayOpts(mode = "standard") {
-  if ((mode || "standard").toLowerCase() === "v2") {
+  const normalized = (mode || "standard").toLowerCase();
+  if (normalized === "v2") {
     return {
       message: "Generating with 2.0 in background… refresh anytime; model loads when ready.",
+      mode: "ai",
+      estimateMs: 900000,
+    };
+  }
+  if (normalized === "fusion") {
+    return {
+      message: "Generating + pushing to Fusion 360… (runs in background — safe to refresh)",
+      mode: "ai",
+      estimateMs: 900000,
+    };
+  }
+  if (normalized === "architect") {
+    return {
+      message: "Generating Architect layout in background… safe to refresh.",
       mode: "ai",
       estimateMs: 900000,
     };
@@ -398,6 +413,13 @@ function promptGenerationOverlayOpts(mode = "standard") {
   };
 }
 
+function fusionTargetLabel() {
+  const target = document.getElementById("prompt-target")?.value || "design";
+  if (target === "fusion360") return "Fusion 360";
+  if (target === "edit") return "Edit selected";
+  return "Add new object";
+}
+
 function applyPromptModeUI(mode = promptMode) {
   promptMode = mode || "render";
   document.querySelectorAll("[data-prompt-mode]").forEach((b) => {
@@ -406,8 +428,9 @@ function applyPromptModeUI(mode = promptMode) {
   const promptBtn = document.getElementById("btn-prompt");
   if (promptBtn) {
     if (promptMode === "draw") promptBtn.textContent = "Apply Draw command";
-    else if (promptMode === "v2") promptBtn.textContent = "Generate with 2.0";
+    else if (promptMode === "architect") promptBtn.textContent = "Generate architect layout";
     else if (promptMode === "fusion") promptBtn.textContent = "Generate + Push to Fusion 360";
+    else if (promptMode === "v2") promptBtn.textContent = "Generate with 2.0";
     else promptBtn.textContent = "Generate / modify with AI";
   }
   const hint = document.getElementById("prompt-mode-hint");
@@ -418,9 +441,21 @@ function applyPromptModeUI(mode = promptMode) {
       hint.textContent = "2.0 runs the full quality pipeline: brief → plan → build → inspect → repair. Slower but significantly better geometry.";
     } else if (promptMode === "fusion") {
       hint.textContent = "Fusion mode generates parametric CAD then pushes the STEP file directly to your linked Fusion 360 hub.";
+    } else if (promptMode === "architect") {
+      hint.textContent = "Architect mode builds modular rooms, walls, roofs, and site layouts on a snap grid.";
     } else {
       hint.textContent = "Render creates or regenerates CAD with AI.";
     }
+  }
+  document.getElementById("prompt-advanced-row")?.classList.toggle(
+    "visible",
+    promptMode === "v2" || promptMode === "fusion" || promptMode === "render"
+  );
+  if (promptMode === "architect") {
+    setSkillEnabled("cad", true);
+    setSkillEnabled("architect", true);
+    skillsPromptUI?.render?.();
+    skillsPromptUI?.updatePlan?.();
   }
 }
 
@@ -482,8 +517,8 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           ? "Generating with 2.0 in background… refresh anytime; model loads when ready."
           : "Generating in background… safe to refresh.";
     }
-    if ((mode || "standard").toLowerCase() === "v2" && pid === projectId) {
-      applyPromptModeUI("v2");
+    if (["v2", "fusion", "architect"].includes((mode || "standard").toLowerCase()) && pid === projectId) {
+      applyPromptModeUI((mode || "standard").toLowerCase());
     }
   }
   syncStopButtonVisibility();
@@ -1462,8 +1497,11 @@ const promptHistory = createPromptHistoryUI({
 let promptMode = "render";
 
 function promptModeForRef(mode = promptMode) {
-  if ((mode || "render").toLowerCase() === "v2") return "v2";
-  if ((mode || "render").toLowerCase() === "draw") return "draw";
+  const normalized = (mode || "render").toLowerCase();
+  if (normalized === "v2") return "v2";
+  if (normalized === "draw") return "draw";
+  if (normalized === "fusion") return "fusion";
+  if (normalized === "architect") return "architect";
   return "standard";
 }
 
@@ -1493,6 +1531,32 @@ document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
   btn.addEventListener("click", () => {
     applyPromptModeUI(btn.dataset.promptMode || "render");
   });
+});
+document.getElementById("prompt-target")?.addEventListener("change", () => applyPromptModeUI(promptMode));
+document.getElementById("prompt-speed")?.addEventListener("change", () => applyPromptModeUI(promptMode));
+applyPromptModeUI("render");
+
+document.getElementById("btn-architect-prompt")?.addEventListener("click", async () => {
+  const prompt = document.getElementById("architect-prompt-input")?.value?.trim();
+  const status = document.getElementById("architect-prompt-status");
+  if (!prompt) {
+    if (status) {
+      status.className = "status error";
+      status.textContent = "Describe the building or layout you want.";
+    }
+    return;
+  }
+  applyPromptModeUI("architect");
+  composer.setPromptText(`${architectPromptPrefix()}\n\n${prompt}`);
+  setSkillEnabled("cad", true);
+  setSkillEnabled("architect", true);
+  skillsPromptUI.render();
+  showAiComposePanel();
+  if (status) {
+    status.className = "status loading";
+    status.textContent = "Starting architect generation…";
+  }
+  document.getElementById("btn-prompt")?.click();
 });
 
 const wiringPromptHistory = createPromptHistoryUI({
@@ -2311,6 +2375,145 @@ function exitCanvasTab() {
   canvasModeInstance?.hide?.();
 }
 
+function selectedObjectFilename() {
+  return objectTools?.getSelection?.()?.catalogName || selectedFile || "";
+}
+
+function architectPromptPrefix() {
+  const gridMm = Number(document.getElementById("architect-grid-size")?.value || 1000);
+  const wallHeightMm = Number(document.getElementById("architect-wall-height")?.value || 2800);
+  return [
+    "Architect mode modular house CAD:",
+    `Use a ${gridMm} mm snap grid and ${wallHeightMm} mm wall height.`,
+    "Build modular rooms, walls, roofs, and site pieces as separate editable components with snap interfaces.",
+    "Use house materials/colors: warm wood floors, light plaster walls, darker roof parts, blue glass, and contrasting trim.",
+  ].join(" ");
+}
+
+function architectPresetPrompt(kind = "room") {
+  const presets = {
+    room: "Generate a starter 2×3 grid living room module with floor slab, four walls, one door opening, one window opening, snap tabs along outside edges, and labels for wall_A through wall_D.",
+    wall: "Generate a modular wall panel with a small window, connector tabs on both sides, bottom alignment rail, top cap, and robot gripper-friendly lift points.",
+    roof: "Generate a roof and ceiling module that snaps onto a 2×3 grid room, with overhang, ridge beam, alignment sockets, and removable panel sections.",
+    robot: "Generate a robot assembly-friendly wall kit: two wall panels, one corner connector, one small window insert, numbered snap features, and assembly order labels.",
+    window: "Generate a replaceable window insert module with frame, sill, snap tabs, weather lip, alignment keys, and robot gripper flats.",
+    door: "Generate a modular door panel insert with frame, threshold rail, hinge-side connector features, latch-side alignment pockets, and robot assembly labels.",
+    floor: "Generate a modular floor slab panel with perimeter snap rails, underside robot lift pockets, alignment sockets on all edges, and warm wood material coloring.",
+    pattern: "Generate a repeated grid pattern of modular floor and wall panels for a small house layout with labeled module coordinates and assembly order labels.",
+    image: "Use Architect mode to generate a modular house element from an attached reference image with snap interfaces and robot pick labels.",
+    blueprint: "Use Architect mode to generate grid-snapping modular house parts from an attached floor plan or blueprint.",
+    service: "Generate a compact service-core module for a modular house wall: electrical conduit chase, plumbing chase placeholder, removable cover, connector rails, and robot pick tabs.",
+  };
+  return `${architectPromptPrefix()}\n\n${presets[kind] || presets.room}`;
+}
+
+function architectEditPrompt(kind = "customize", filename = selectedObjectFilename()) {
+  const target = filename ? `Target selected module: ${filename}. ` : "";
+  const prompts = {
+    window: `${target}Edit the selected wall/room module to add or resize a window opening with a replaceable window insert, snap tabs, alignment keys, sill/lintel details, and robot pick tabs.`,
+    door: `${target}Edit the selected wall/room module to add a modular door opening and removable door insert with threshold rail, hinge-side labels, and snap sockets.`,
+    materials: `${target}Apply house-like material/color styling to the selected architect module while keeping snap interfaces visible and labeled.`,
+    customize: `${target}Customize the selected architect module while preserving its grid footprint and snap interfaces.`,
+  };
+  return `${architectPromptPrefix()}\n\n${prompts[kind] || prompts.customize}`;
+}
+
+function architectGridModelUnits() {
+  const gridMm = Number(document.getElementById("architect-grid-size")?.value || 1000);
+  const unit = Number(mmPerModelUnit?.() || 1) || 1;
+  return gridMm / unit;
+}
+
+function architectSelectedMesh() {
+  const selection = objectTools?.getSelection?.();
+  if (selection?.mesh) return selection.mesh;
+  const active = selectedFile && projectAssembly.has(selectedFile) ? projectAssembly.get(selectedFile) : null;
+  if (active) return active;
+  if (projectAssembly.count() === 1) return projectAssembly.list()[0]?.[1] || null;
+  return null;
+}
+
+function snapArchitectSelectionToGrid() {
+  const mesh = architectSelectedMesh();
+  if (!mesh) {
+    setEditStatus("error", "Select an architect module first.");
+    return;
+  }
+  const grid = architectGridModelUnits();
+  const center = objectWorldBoxCenter(mesh);
+  const target = center.clone();
+  target.x = Math.round(target.x / grid) * grid;
+  target.y = Math.round(target.y / grid) * grid;
+  const delta = worldDeltaToParentDelta(mesh, target.sub(center));
+  if (!gizmoPanel.translateBy?.(delta, { autoApply: true })) {
+    setEditStatus("error", "Could not snap module to grid.");
+    return;
+  }
+  setEditStatus("loading", "Snapped module to Architect grid. Saving placement…");
+}
+
+function activateArchitectPrompt(kind = "room") {
+  showAiComposePanel();
+  setRightTab("prompt");
+  promptHistory.setTab("compose");
+  setSkillEnabled("cad", true);
+  setSkillEnabled("architect", true);
+  skillsPromptUI.render();
+  applyPromptModeUI("architect");
+  composer.setPromptText(architectPresetPrompt(kind));
+  skillsPromptUI.updatePlan?.();
+  saveActiveModelPromptState();
+}
+
+function setArchitectPromptForNewModule(kind = "room") {
+  activateArchitectPrompt(kind);
+}
+
+function setArchitectPromptForSelectedEdit(kind = "customize") {
+  showAiComposePanel();
+  setRightTab("prompt");
+  promptHistory.setTab("compose");
+  applyPromptModeUI("architect");
+  setSkillEnabled("cad", true);
+  setSkillEnabled("architect", true);
+  composer.setPromptText(architectEditPrompt(kind, selectedObjectFilename()));
+  skillsPromptUI.render();
+  skillsPromptUI.updatePlan?.();
+  saveActiveModelPromptState();
+}
+
+function handleArchitectRibbonAction(action, entry, data = {}) {
+  if (action === "tool") {
+    setArchitectPromptForNewModule(data.tool || entry?.architectTool || "room");
+    return;
+  }
+  if (action === "edit") {
+    setArchitectPromptForSelectedEdit(data.edit || entry?.architectEdit || "customize");
+    return;
+  }
+  if (action === "snap_grid") {
+    snapArchitectSelectionToGrid();
+  }
+}
+
+function enterArchitectMode() {
+  exitSketchMode();
+  exitRiggingMode();
+  exitCanvasTab();
+  catalogPanel?.close?.();
+  setRightTab("architect");
+  setSkillEnabled("cad", true);
+  setSkillEnabled("architect", true);
+  skillsPromptUI.render();
+  skillsPromptUI.updatePlan?.();
+  setGridVisible(true);
+  setEditStatus("ok", "Architect mode — generate modular rooms, walls, windows, and site layouts on a snap grid.");
+}
+
+function exitArchitectMode() {
+  // Architect is a permanent right-panel tab; leaving the design mode should not hide it.
+}
+
 function handleDesignTabChange(tab) {
   const app = document.getElementById("app");
   if (tab !== "SKETCH" && sketchEditor.isActive()) {
@@ -2318,14 +2521,22 @@ function handleDesignTabChange(tab) {
   }
   if (tab === "RIGGING") {
     exitSketchMode();
+    exitArchitectMode();
     enterRiggingMode();
   } else {
     exitRiggingMode();
+  }
+  if (tab === "ARCHITECT") {
+    enterArchitectMode();
+  } else {
+    exitArchitectMode();
   }
   if (tab === "SKETCH") {
     setEditStatus("ok", "Sketch mode — click Create Sketch to enter locked 2D edit.");
   } else if (tab === "RIGGING") {
     setEditStatus("ok", "Rigging mode — Add Bone, Connect hierarchy, Save Rig.");
+  } else if (tab === "ARCHITECT") {
+    setEditStatus("ok", "Architect mode — modular house CAD with grid snapping and robot assembly labels.");
   } else if (tab === "CATALOG") {
     exitCanvasTab();
     exitSketchMode();
@@ -2342,6 +2553,7 @@ function handleDesignTabChange(tab) {
   if (tab !== "CANVAS") ribbon?.setDesignTab(tab);
   app?.classList.toggle("sketch-design-tab", tab === "SKETCH");
   app?.classList.toggle("rigging-design-tab", tab === "RIGGING");
+  app?.classList.toggle("architect-design-tab", tab === "ARCHITECT");
   app?.classList.toggle("canvas-design-tab", tab === "CANVAS");
 }
 
@@ -6352,10 +6564,13 @@ function applyWorkspaceMode(mode) {
   const app = document.getElementById("app");
   const wiringWorkspace = document.getElementById("wiring-workspace");
   app?.classList.toggle("wiring-mode", mode === "wiring");
+  app?.classList.toggle("architect-workspace-mode", mode === "architect");
   document.body.classList.toggle("wiring-mode", mode === "wiring");
+  document.body.classList.toggle("architect-workspace-mode", mode === "architect");
   if (mode === "wiring") {
     exitSketchMode();
     exitRiggingMode();
+    exitArchitectMode();
     exitCanvasTab();
     wiringWorkspace?.classList.remove("hidden");
     setRightTab("wiring");
@@ -6364,21 +6579,23 @@ function applyWorkspaceMode(mode) {
     wiringSim.show();
     window.dispatchEvent(new Event("resize"));
   } else {
+    catalogPanel?.close?.();
     wiringWorkspace?.classList.add("hidden");
     clearWiringPrompts();
     wiringSim.hide();
     const tab = workspaceModes.getDesignTab();
-    if (tab === "CANVAS") {
-      enterCanvasTab();
-    } else {
-      exitCanvasTab();
+    let activeTab = tab;
+    if (mode === "architect" && activeTab !== "ARCHITECT") {
+      workspaceModes.setDesignTab("ARCHITECT");
+      activeTab = "ARCHITECT";
+    }
+    handleDesignTabChange(activeTab);
+    if (activeTab !== "ARCHITECT" && activeTab !== "CANVAS") {
       setRightTab("prompt");
       promptHistory.setTab("compose");
     }
     resize();
     if (currentMesh && tab !== "CANVAS") fitCamera();
-    if (tab === "RIGGING") enterRiggingMode();
-    else exitRiggingMode();
   }
 }
 
@@ -6910,6 +7127,125 @@ async function refreshWorkspaceHistory() {
     workspaceActivity.render(data.entries || []);
   } catch {
     workspaceActivity.render([]);
+  }
+}
+
+async function linkActiveWorkspaceToFusion() {
+  const teamId = getSelectedWorkspaceId();
+  if (!teamId) {
+    setEditStatus("error", "Select one workspace before linking Fusion.");
+    return;
+  }
+  try {
+    const saved = await api(`/api/teams/${encodeURIComponent(teamId)}/render-folder`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "fusion",
+        label: "Fusion 360 workspace",
+        folder_ref: "autodesk-user-cloud",
+      }),
+    });
+    if (saved.team) {
+      const idx = allTeams.findIndex((team) => team.id === teamId);
+      if (idx >= 0) allTeams[idx] = { ...allTeams[idx], ...saved.team };
+    }
+    const cb = document.getElementById("workspace-fusion-connect");
+    if (cb) cb.checked = true;
+    await refreshWorkspaceRealtimeEditor();
+    setEditStatus("ok", "Fusion linked to this workspace. Import a design from Fusion Library to share it with the team.");
+  } catch (err) {
+    setEditStatus("error", err.message || "Could not link Fusion to this workspace.");
+  }
+}
+
+function renderWorkspaceRealtimeEditor(data = null) {
+  const folderEl = document.getElementById("workspace-render-folder-card");
+  const projectsEl = document.getElementById("workspace-fusion-projects");
+  if (!folderEl || !projectsEl) return;
+  if (!data) {
+    folderEl.innerHTML = "Select one workspace to use the realtime editor.";
+    projectsEl.innerHTML = "";
+    return;
+  }
+  const folder = data.render_folder || {};
+  const provider = folder.provider || "render3d";
+  const label = folder.label || (provider === "fusion" ? "Fusion 360" : "Render3D cloud");
+  folderEl.innerHTML = `
+    <strong>${escapeHtml(label)}</strong>
+    <span>${escapeHtml(provider.replace(/_/g, " "))}${folder.folder_ref ? ` · ${escapeHtml(folder.folder_ref)}` : ""}</span>
+    ${
+      provider === "fusion"
+        ? `<button type="button" class="btn secondary btn-compact workspace-fusion-link-btn" data-workspace-fusion-open>Open Fusion Library</button>`
+        : `<button type="button" class="btn secondary btn-compact workspace-fusion-link-btn" data-workspace-fusion-link>Link Fusion to workspace</button>`
+    }
+  `;
+  folderEl.querySelector("[data-workspace-fusion-open]")?.addEventListener("click", () => {
+    document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setEditStatus("ok", "Fusion is connected. Use Fusion Library below to import or sync designs.");
+  });
+  folderEl.querySelector("[data-workspace-fusion-link]")?.addEventListener("click", () => {
+    void linkActiveWorkspaceToFusion();
+  });
+  const fusionProjects = (data.projects || []).filter((p) => p.fusion_source || (p.fusion_mirrors || []).length);
+  if (!fusionProjects.length) {
+    projectsEl.innerHTML = `
+      <strong>Fusion projects</strong>
+      <span>No Fusion-linked projects yet. Use the Fusion Library below to import a design into this workspace.</span>
+    `;
+    return;
+  }
+  projectsEl.innerHTML = `
+    <strong>Fusion linked folders</strong>
+    <div class="workspace-fusion-project-list">
+      ${fusionProjects
+        .slice(0, 5)
+        .map(
+          (p) => `
+        <div class="workspace-fusion-project-card">
+          <div class="workspace-fusion-project-head">
+            <span>${escapeHtml(p.name || p.id)}</span>
+          </div>
+          <small>${escapeHtml(p.latest_file || "No preview file")} · ${escapeHtml(p.fusion_source?.item_name || "Fusion item")}</small>
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+async function refreshWorkspaceRealtimeEditor() {
+  const teamId = getSelectedWorkspaceId();
+  if (!teamId) {
+    renderWorkspaceRealtimeEditor(null);
+    return;
+  }
+  try {
+    const data = await api(`/api/teams/${teamId}/realtime-editor`);
+    renderWorkspaceRealtimeEditor(data);
+    const cb = document.getElementById("workspace-fusion-connect");
+    if (cb) cb.checked = (data.render_folder?.provider || "render3d") === "fusion";
+  } catch {
+    renderWorkspaceRealtimeEditor(null);
+  }
+}
+
+async function syncWorkspaceFusionConnect() {
+  const teamId = getSelectedWorkspaceId();
+  const cb = document.getElementById("workspace-fusion-connect");
+  if (!cb) return;
+  if (!teamId) {
+    cb.checked = false;
+    cb.disabled = true;
+    return;
+  }
+  cb.disabled = false;
+  try {
+    const data = await api(`/api/teams/${teamId}/render-folder`);
+    cb.checked = (data.render_folder?.provider || "render3d") === "fusion";
+  } catch {
+    cb.checked = false;
   }
 }
 
@@ -8411,12 +8747,17 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   await ensureProject();
   const status = document.getElementById("prompt-status");
   const reply = document.getElementById("prompt-reply");
-  const genMode = promptMode === "v2" ? "v2" : promptMode === "fusion" ? "fusion" : "standard";
+  const genMode =
+    promptMode === "v2" ? "v2" : promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : "standard";
+  const speed = document.getElementById("prompt-speed")?.value || "quality";
+  const target = document.getElementById("prompt-target")?.value || "design";
   status.className = "status loading";
   status.textContent = promptMode === "v2"
     ? `Generating with 2.0 (quality pipeline)… (runs in background — safe to refresh)`
     : promptMode === "fusion"
     ? `Generating + pushing to Fusion 360… (runs in background — safe to refresh)`
+    : promptMode === "architect"
+    ? `Generating architect layout… (runs in background — safe to refresh)`
     : `Generating with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
   reply.textContent = "";
   beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
@@ -8432,7 +8773,16 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       images: promptImages,
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
       ...getPromptAiKeyBodyFields(),
-      ...(promptMode === "v2" ? { mode: "v2", speed: "quality" } : promptMode === "fusion" ? { mode: "fusion", fusion_push: true } : {}),
+      ...(promptMode === "v2" ? { mode: "v2", speed } : {}),
+      ...(promptMode === "fusion"
+        ? {
+            mode: "fusion",
+            fusion_push: target === "fusion360",
+            fusion_target: target === "fusion360" ? "fusion360" : "in_app",
+            speed,
+          }
+        : {}),
+      ...(promptMode === "architect" ? { mode: "architect", speed } : {}),
     };
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
     const data = await api(
@@ -8540,6 +8890,7 @@ ribbon = createRibbon({
   onViewportTool: (toolId) => launchViewportTool(toolId),
   onSketchAction: handleSketchAction,
   onRiggingAction: handleRiggingAction,
+  onArchitectAction: handleArchitectRibbonAction,
   onExportAction: () => {
     exportCurrentModel(document.querySelector('.ribbon-btn[data-id="export_model"]')).catch((err) =>
       alert(err.message || "Could not export"),
@@ -8852,6 +9203,8 @@ window.addEventListener("keydown", (e) => {
       return;
     }
     await refreshWorkspaceHistory();
+    await refreshWorkspaceRealtimeEditor();
+    await syncWorkspaceFusionConnect();
     await refreshWorkspaceAiUsage();
     renderProjectList();
     if (projectId && !allProjects.some((p) => p.id === projectId)) {
@@ -9868,6 +10221,7 @@ window.addEventListener("keydown", (e) => {
 
   document.getElementById("btn-create-workspace")?.addEventListener("click", async () => {
     const name = document.getElementById("workspace-name")?.value?.trim();
+    const connectFusion = document.getElementById("workspace-fusion-connect")?.checked === true;
     const status = document.getElementById("workspace-create-status");
     if (!name) {
       if (status) status.textContent = "Enter a workspace name.";
@@ -9892,8 +10246,40 @@ window.addEventListener("keydown", (e) => {
       const sel = document.getElementById("team-select");
       if (sel && team) sel.value = team.id;
       await onWorkspaceChange();
+      if (connectFusion && team?.id) {
+        await linkActiveWorkspaceToFusion();
+        if (status) status.textContent = `Created workspace "${team.name}" and connected Fusion.`;
+      }
     } catch (err) {
       if (status) status.textContent = err.message;
+    }
+  });
+
+  document.getElementById("workspace-fusion-connect")?.addEventListener("change", async (event) => {
+    const teamId = getSelectedWorkspaceId();
+    if (!teamId) {
+      event.target.checked = false;
+      return;
+    }
+    if (event.target.checked) {
+      await linkActiveWorkspaceToFusion();
+      return;
+    }
+    try {
+      await api(`/api/teams/${encodeURIComponent(teamId)}/render-folder`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "render3d",
+          label: "Render3D cloud",
+          folder_ref: null,
+        }),
+      });
+      await refreshWorkspaceRealtimeEditor();
+      setEditStatus("ok", "Workspace disconnected from Fusion.");
+    } catch (err) {
+      event.target.checked = true;
+      setEditStatus("error", err.message || "Could not disconnect Fusion from this workspace.");
     }
   });
 
