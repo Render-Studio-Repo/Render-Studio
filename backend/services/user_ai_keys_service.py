@@ -473,7 +473,6 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
     """Return all team members with their access status for a specific shared key.
     Only the key sharer or a team owner may call this."""
     with get_conn() as conn:
-        # Verify requester is team member
         row = conn.execute(
             "SELECT 1 FROM team_members WHERE team_id=? AND user_id=?", (team_id, requester_id)
         ).fetchone()
@@ -484,22 +483,8 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
         ).fetchone()
         if not key_row:
             raise ValueError("Key not found")
-        self_limit_only = (
-            requester_id == target_user_id
-            and granted is None
-            and use_key is None
-            and model is None
-            and (daily_limit_provided or daily_token_limit_provided)
-        )
-        if not self_limit_only and key_row["shared_by"] != requester_id and not _is_team_owner(conn, team_id, requester_id):
+        if key_row["shared_by"] != requester_id and not _is_team_owner(conn, team_id, requester_id):
             raise PermissionError("Only the key owner or team owner can manage shared-key access")
-        if self_limit_only:
-            grant = conn.execute(
-                "SELECT granted FROM team_key_grants WHERE key_id=? AND user_id=?",
-                (key_id, target_user_id),
-            ).fetchone()
-            if grant is not None and not bool(grant["granted"]) and target_user_id != key_row["shared_by"]:
-                raise PermissionError("You do not have access to this shared key")
 
         rows = conn.execute(
             """SELECT tm.user_id, u.display_name, u.email,
@@ -617,122 +602,6 @@ def set_team_key_member_access(
         conn.commit()
     if self_limit_only:
         return []
-    return list_team_key_members(team_id, key_id, requester_id)
-
-
-def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[dict[str, Any]]:
-    """Return all team members with their access status for a specific shared key.
-    Only the key sharer or a team owner may call this."""
-    with get_conn() as conn:
-        # Verify requester is team member
-        row = conn.execute(
-            "SELECT 1 FROM team_members WHERE team_id=? AND user_id=?", (team_id, requester_id)
-        ).fetchone()
-        if not row:
-            raise PermissionError("Not a team member")
-        key_row = conn.execute(
-            "SELECT shared_by, provider, model FROM team_shared_ai_keys WHERE id=? AND team_id=?", (key_id, team_id)
-        ).fetchone()
-        if not key_row:
-            raise ValueError("Key not found")
-        if key_row["shared_by"] != requester_id:
-            raise PermissionError("Only the key owner can manage shared-key access")
-
-        rows = conn.execute(
-            """SELECT tm.user_id, u.display_name, u.email,
-                      tm.role,
-                      COALESCE(g.granted, 1) AS granted,
-                      COALESCE(opt.use_key, 0) AS use_key,
-                      opt.model AS member_model,
-                      opt.daily_limit_usd AS daily_limit_usd
-               FROM team_members tm
-               JOIN users u ON u.id = tm.user_id
-               LEFT JOIN team_key_grants g ON g.key_id = ? AND g.user_id = tm.user_id
-               LEFT JOIN user_team_key_opts opt ON opt.key_id = ? AND opt.user_id = tm.user_id
-               WHERE tm.team_id = ?
-               ORDER BY u.display_name""",
-            (key_id, key_id, team_id),
-        ).fetchall()
-    return [
-        {
-            "user_id": r["user_id"],
-            "display_name": r["display_name"],
-            "email": r["email"],
-            "role": r["role"],
-            "granted": bool(r["granted"]),
-            "use_key": bool(r["use_key"]),
-            "provider": key_row["provider"],
-            "model": r["member_model"] or key_row["model"],
-            "key_model": key_row["model"],
-            "daily_limit_usd": r["daily_limit_usd"],
-            "is_key_owner": r["user_id"] == key_row["shared_by"],
-        }
-        for r in rows
-    ]
-
-
-def set_team_key_member_access(
-    team_id: str,
-    key_id: str,
-    target_user_id: str,
-    granted: bool | None,
-    requester_id: str,
-    *,
-    use_key: bool | None = None,
-    model: str | None = None,
-    daily_limit_usd: float | None = None,
-    daily_limit_provided: bool = False,
-) -> list[dict[str, Any]]:
-    """Manage a member's access, shared-key preference, and model for a team key."""
-    now = datetime.now(timezone.utc).isoformat()
-    with get_conn() as conn:
-        key_row = conn.execute(
-            "SELECT shared_by, provider, model FROM team_shared_ai_keys WHERE id=? AND team_id=?", (key_id, team_id)
-        ).fetchone()
-        if not key_row:
-            raise ValueError("Key not found")
-        if key_row["shared_by"] != requester_id:
-            raise PermissionError("Only the key owner can manage shared-key access")
-        requester_member = conn.execute(
-            "SELECT 1 FROM team_members WHERE team_id=? AND user_id=?",
-            (team_id, requester_id),
-        ).fetchone()
-        if not requester_member:
-            raise PermissionError("Not a team member")
-        target_member = conn.execute(
-            "SELECT 1 FROM team_members WHERE team_id=? AND user_id=?",
-            (team_id, target_user_id),
-        ).fetchone()
-        if not target_member:
-            raise ValueError("Target user is not a team member")
-        if target_user_id == key_row["shared_by"] and granted is False:
-            raise PermissionError("The key owner must keep access to their own shared key")
-        if granted is True and use_key is None:
-            use_key = True
-        elif granted is False:
-            use_key = False
-        if granted is not None:
-            conn.execute(
-                "INSERT INTO team_key_grants (key_id,user_id,granted,updated_by,updated_at) VALUES (?,?,?,?,?) "
-                "ON CONFLICT(key_id,user_id) DO UPDATE SET granted=excluded.granted, updated_by=excluded.updated_by, updated_at=excluded.updated_at",
-                (key_id, target_user_id, 1 if granted else 0, requester_id, now),
-            )
-        if use_key is not None or model is not None or daily_limit_provided:
-            current = conn.execute(
-                "SELECT use_key, model, daily_limit_usd FROM user_team_key_opts WHERE user_id=? AND key_id=?",
-                (target_user_id, key_id),
-            ).fetchone()
-            chosen_use = (bool(current["use_key"]) if current else False) if use_key is None else bool(use_key)
-            chosen_model = (current["model"] if current else None) if model is None else (model.strip() or None)
-            chosen_limit = daily_limit_usd if daily_limit_provided else (current["daily_limit_usd"] if current else None)
-            if chosen_model is None:
-                chosen_model = key_row["model"]
-            conn.execute(
-                "INSERT INTO user_team_key_opts (user_id,key_id,use_key,model,daily_limit_usd) VALUES (?,?,?,?,?) "
-                "ON CONFLICT(user_id,key_id) DO UPDATE SET use_key=excluded.use_key, model=excluded.model, daily_limit_usd=excluded.daily_limit_usd",
-                (target_user_id, key_id, 1 if chosen_use else 0, chosen_model, chosen_limit),
-            )
-        conn.commit()
     return list_team_key_members(team_id, key_id, requester_id)
 
 
