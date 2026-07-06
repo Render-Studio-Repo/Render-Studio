@@ -65,7 +65,8 @@ const CATALOG = {
       id: "box",
       label: "Box",
       icon: "⬛",
-      desc: "Rectangular solid",
+      desc: "Rectangular solid — click-drag in viewport",
+      viewportTool: "create_box",
       fields: [
         { name: "length", label: "Length (mm)", type: "number", default: 20, min: 0.1, step: 1 },
         { name: "width",  label: "Width (mm)",  type: "number", default: 20, min: 0.1, step: 1 },
@@ -87,7 +88,8 @@ const CATALOG = {
       id: "cylinder",
       label: "Cylinder",
       icon: "🔵",
-      desc: "Cylinder / tube",
+      desc: "Cylinder / tube — click-drag in viewport",
+      viewportTool: "create_cylinder",
       fields: [
         { name: "radius", label: "Radius (mm)", type: "number", default: 10, min: 0.1, step: 0.5 },
         { name: "height", label: "Height (mm)", type: "number", default: 20, min: 0.1, step: 1 },
@@ -101,7 +103,8 @@ const CATALOG = {
       id: "sphere",
       label: "Sphere",
       icon: "🟡",
-      desc: "Sphere primitive",
+      desc: "Sphere primitive — click-drag in viewport",
+      viewportTool: "create_sphere",
       fields: [
         { name: "radius", label: "Radius (mm)", type: "number", default: 10, min: 0.1, step: 0.5 },
         { name: "combine", label: "Combine", type: "select", default: "new",
@@ -113,7 +116,8 @@ const CATALOG = {
       id: "cone",
       label: "Cone",
       icon: "🔺",
-      desc: "Cone / frustum",
+      desc: "Cone / frustum — click-drag in viewport",
+      viewportTool: "create_cone",
       fields: [
         { name: "bottom_radius", label: "Base radius (mm)", type:"number", default:10, min:0.1, step:0.5 },
         { name: "top_radius",    label: "Top radius (mm)",  type:"number", default:0,  min:0,   step:0.5 },
@@ -128,7 +132,8 @@ const CATALOG = {
       id: "torus",
       label: "Torus",
       icon: "⭕",
-      desc: "Torus (ring)",
+      desc: "Torus (ring) — click-drag in viewport",
+      viewportTool: "create_torus",
       fields: [
         { name: "major_radius", label: "Major radius (mm)", type:"number", default:20, min:0.1, step:1 },
         { name: "minor_radius", label: "Minor (tube) (mm)", type:"number", default:5,  min:0.1, step:0.5 },
@@ -148,10 +153,10 @@ const CATALOG = {
         { name: "profile_preset", label: "Profile preset", type:"select", default:"square",
           options:["square","triangle","hexagon","L-shape"] },
         { name: "profile_size", label: "Profile size (mm)", type:"number", default:20, min:1, step:1 },
-        { name: "height", label: "Height / depth (mm)", type:"number", default:15, min:0.1, step:1 },
         { name: "combine", label: "Combine", type: "select", default: "new",
           options: ["new","add","cut","intersect"] },
       ],
+      interactive: "drag_height",
       featureOf: v => {
         const s = +v.profile_size;
         const profiles = {
@@ -160,9 +165,11 @@ const CATALOG = {
           hexagon:  [[s,0],[s/2,s*0.866],[-s/2,s*0.866],[-s,-0],[-s/2,-s*0.866],[s/2,-s*0.866]],
           "L-shape":[[0,0],[s,0],[s,s*0.33],[s*0.33,s*0.33],[s*0.33,s],[0,s]],
         };
+        const height = +v.height;
+        if (!Number.isFinite(height) || height <= 0) throw new Error("Extrude depth must be > 0");
         return { op:"extrude", combine:v.combine,
           profile: profiles[v.profile_preset] || profiles.square,
-          height:+v.height };
+          height };
       },
     },
     {
@@ -751,12 +758,131 @@ const RIGGING_CATALOG = {
 
 let _api = null;           // async fn(path, opts) — injected by init()
 let _projectId = null;     // current project id
-let _onBuilt = null;       // callback(filename, url) after successful build
+let _onBuilt = null;       // callback(filename, url, label) after successful build
+let _onViewerToast = null; // optional viewer overlay toast
 let _onGenerating = null;  // callback(active, message) during kernel build
 let _onGenerationStarted = null; // callback(data) when build accepted as background job
-let _onBuildError = null;  // callback(message) on build failure
+let _onGenerationStarted = null; // callback(data) when build accepted as background job
+let _onBuildError = null;
+let _onExtrudeFaceDrag = null;
+let _onExtrudeProfileDrag = null;
+let _hasLoadedMesh = null;  // callback(message) on build failure
 let _onViewportTool = null; // callback(toolId, entry) for direct modeling handoff
+/** Fusion-style rigging environment ribbon (visible when RIGGING workspace tab is active). */
+const RIGGING_CATALOG = {
+  Create: [
+    {
+      id: "rig_add_bone",
+      label: "Add Bone",
+      icon: "●",
+      desc: "Click the model to place a new bone",
+      rigAction: "add",
+    },
+    {
+      id: "rig_auto",
+      label: "Auto Rig",
+      icon: "🦴",
+      desc: "Generate a kinematic chain from model bounds",
+      rigAction: "auto",
+    },
+  ],
+  Hierarchy: [
+    {
+      id: "rig_connect",
+      label: "Connect",
+      icon: "⛓",
+      desc: "Click parent bone, then child bone",
+      rigAction: "connect",
+    },
+    {
+      id: "rig_delete",
+      label: "Delete Bone",
+      icon: "⌫",
+      desc: "Remove selected bone and its children",
+      rigAction: "delete",
+    },
+    {
+      id: "rig_clear",
+      label: "Clear Rig",
+      icon: "✕",
+      desc: "Remove all bones",
+      rigAction: "clear",
+    },
+  ],
+  Tools: [
+    {
+      id: "rig_select",
+      label: "Select",
+      icon: "↖",
+      desc: "Select bones",
+      rigTool: "select",
+    },
+    {
+      id: "rig_move",
+      label: "Move",
+      icon: "✥",
+      desc: "Drag bones to reposition",
+      rigTool: "move",
+    },
+    {
+      id: "rig_rotate",
+      label: "Rotate Joint",
+      icon: "↻",
+      desc: "Drag to rotate selected joint",
+      rigTool: "rotate",
+    },
+  ],
+  Animation: [
+    {
+      id: "rig_keyframe",
+      label: "Keyframe",
+      icon: "◆",
+      desc: "Insert keyframe at current time (K)",
+      rigAction: "keyframe",
+    },
+    {
+      id: "rig_play",
+      label: "Play / Pause",
+      icon: "▶",
+      desc: "Play animation timeline (Space)",
+      rigAction: "play",
+    },
+    {
+      id: "rig_stop",
+      label: "Stop",
+      icon: "■",
+      desc: "Stop and rewind animation",
+      rigAction: "stop",
+    },
+  ],
+  Export: [
+    {
+      id: "rig_export_urdf",
+      label: "Export URDF",
+      icon: "📄",
+      desc: "Write robot.urdf to project",
+      rigAction: "export_urdf",
+    },
+    {
+      id: "rig_save",
+      label: "Save Rig",
+      icon: "💾",
+      desc: "Save rigging.json to project",
+      rigAction: "save",
+    },
+    {
+      id: "rig_reload",
+      label: "Reload",
+      icon: "↻",
+      desc: "Reload rig from disk",
+      rigAction: "reload",
+    },
+  ],
+};
+
 let _onSketchAction = null; // callback(action, entry, values?) for sketch workflow
+let _onExportAction = null;
+let _onRiggingAction = null;
 let _onExportAction = null;
 let _onRiggingAction = null;
 let _activeSketchTool = null;
@@ -789,6 +915,8 @@ let _tabBtns        = null;   // NodeList of .ribbon-tab
 let _panelsWrap     = null;   // .ribbon-panels container
 let _featureTree    = null;   // .feature-tree list
 let _statusEl       = null;   // .ribbon-status span
+let _statusCopyBtn  = null;   // copy error button
+let _statusCopyText = "";     // full text for clipboard
 let _statusCopyBtn  = null;   // copy error button
 let _statusCopyText = "";     // full text for clipboard
 let _dialog         = null;   // .ribbon-dialog overlay
@@ -955,6 +1083,77 @@ function _closeDialog() {
   if (_dialog) { _dialog.remove(); _dialog = null; }
 }
 
+function _openExtrudeDragDialog(entry) {
+  _closeDialog();
+  const fields = entry.fields.filter((f) => f.name !== "height");
+  const overlay = document.createElement("div");
+  overlay.className = "ribbon-dialog-overlay";
+  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) _closeDialog(); });
+
+  const box = document.createElement("div");
+  box.className = "ribbon-dialog";
+  box.innerHTML = `
+    <div class="rdlg-header">
+      ${_iconMarkup(entry, "rdlg-icon")}
+      <span class="rdlg-title">${entry.label}</span>
+      <span class="rdlg-desc">${entry.desc} — then drag depth in the viewport</span>
+      <button class="rdlg-close" aria-label="Close">✕</button>
+    </div>
+    <form class="rdlg-form" id="rdlg-form"></form>
+    <div class="rdlg-footer">
+      <span class="rdlg-tip">Next step: drag arrow in viewport to set depth</span>
+      <button type="button" class="btn secondary rdlg-cancel">Cancel</button>
+      <button type="button" class="btn primary rdlg-ok">Continue &amp; drag</button>
+    </div>`;
+
+  const form = box.querySelector("#rdlg-form");
+  for (const f of fields) {
+    const row = document.createElement("div");
+    row.className = "rdlg-row";
+    const label = document.createElement("label");
+    label.textContent = f.label;
+    label.htmlFor = `rdlg-${f.name}`;
+    let input;
+    if (f.type === "select") {
+      input = document.createElement("select");
+      for (const opt of f.options) {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt;
+        if (opt == f.default) o.selected = true;
+        input.appendChild(o);
+      }
+    } else {
+      input = document.createElement("input");
+      input.type = "number";
+      if (f.min !== undefined) input.min = f.min;
+      if (f.step !== undefined) input.step = f.step;
+      input.value = f.default ?? 0;
+    }
+    input.id = `rdlg-${f.name}`;
+    input.name = f.name;
+    row.append(label, input);
+    form.appendChild(row);
+  }
+
+  const ok = () => {
+    const values = {};
+    for (const f of fields) {
+      const el = form.querySelector(`#rdlg-${f.name}`);
+      values[f.name] = el?.value;
+    }
+    _closeDialog();
+    _onExtrudeProfileDrag?.(values, entry.featureOf);
+  };
+
+  box.querySelector(".rdlg-ok").addEventListener("click", ok);
+  box.querySelector(".rdlg-cancel").addEventListener("click", _closeDialog);
+  box.querySelector(".rdlg-close").addEventListener("click", _closeDialog);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  _dialog = overlay;
+}
+
 // ─────────────────────────── feature tree ────────────────────────────────────
 
 function _renderTree() {
@@ -1071,6 +1270,11 @@ function _setStatus(msg, cls = "") {
     _statusCopyBtn.classList.toggle("ribbon-status-copy--hidden", !isError || !_statusCopyText);
     _statusCopyBtn.disabled = !isError || !_statusCopyText;
   }
+  if (_onViewerToast && msg) {
+    const kind = cls === "loading" ? "loading" : cls === "error" ? "error" : "ok";
+    const text = msg.replace(/^[✓✗]\s*/, "").trim() || msg;
+    _onViewerToast(text, { kind, durationMs: kind === "loading" ? 0 : 3200 });
+  }
 }
 
 // ─────────────────────────── collapse ────────────────────────────────────────
@@ -1081,6 +1285,14 @@ function _setCollapsed(val) {
   _ribbonBody?.classList.toggle("ribbon-body--collapsed", _collapsed);
   if (_chevron) _chevron.textContent = _collapsed ? "▾" : "▴";
   if (_chevron) _chevron.setAttribute("aria-label", _collapsed ? "Open toolbar" : "Collapse toolbar");
+}
+
+function setActiveSketchTool(tool) {
+  _activeSketchTool = tool || null;
+  if (!_ribbonBar) return;
+  _ribbonBar.querySelectorAll(".ribbon-btn[data-sketch-tool]").forEach((btn) => {
+    btn.classList.toggle("ribbon-btn--active", btn.dataset.sketchTool === tool);
+  });
 }
 
 function setActiveSketchTool(tool) {
@@ -1342,6 +1554,7 @@ export function createRibbon({
 
   // Mount inside the dedicated grid slot
   const target = container || document.getElementById("ribbon-container") || document.body;
+  target.innerHTML = "";
   target.appendChild(bar);
 
   // Tab wiring handled in _mountCatalog
@@ -1365,9 +1578,20 @@ export function createRibbon({
     setSketchEditing(editing) {
       _ribbonBar?.classList.toggle("ribbon-bar--sketch-editing", !!editing);
     },
+    /** Highlight active sketch tool in the ribbon. */
+    setActiveSketchTool(tool) { setActiveSketchTool(tool); },
+    /** Light/dark ribbon chrome while actively editing a sketch. */
+    setSketchEditing(editing) {
+      _ribbonBar?.classList.toggle("ribbon-bar--sketch-editing", !!editing);
+    },
     /** Store closed sketch profile for extrude-from-sketch. */
     setSketchProfile(profile, plane = "XY") {
       _sketchContext = { profile, plane };
+    },
+    appendFeatureAndBuild(feat, label = "Feature") {
+      _part().features.push({ ...feat, id: `f-${Date.now()}` });
+      _renderTree();
+      return _buildProgram(label);
     },
     appendFeatureAndBuild(feat, label = "Feature") {
       _part().features.push({ ...feat, id: `f-${Date.now()}` });
@@ -1378,5 +1602,12 @@ export function createRibbon({
     reset() { _program = _emptyProgram(); _renderTree(); _setStatus("", ""); _sketchContext = { profile: null, plane: "XY" }; },
     /** Expose the current program (for debugging / export). */
     getProgram() { return _program; },
+    appendFeature(feat) {
+      _part().features.push(feat);
+      _renderTree();
+    },
+    async build(label) {
+      await _buildProgram(label || "build");
+    },
   };
 }

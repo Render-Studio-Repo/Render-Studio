@@ -12279,3 +12279,109 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .wiring-3d-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; }
 .wiring-3d-stage { width: 100%; height: 340px; background: #0d1117; }
 .wiring-3d-foot { padding: 8px 14px; border-top: 1px solid var(--border); }
+
+/* ── Fusion badge on auth button ─────────────────────────────────────── */
+.fusion-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #0076d6;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+.fusion-badge img { border-radius: 50%; display: block; }
+
+/* ── Management toolbar button (admin-only) ──────────────────────────── */
+#btn-admin-dashboard-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(255,160,0,.13);
+  border: 1px solid rgba(255,160,0,.35);
+  border-radius: 6px;
+  color: #ffb300;
+  font-size: .75rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+#btn-admin-dashboard-toolbar:hover {
+  background: rgba(255,160,0,.22);
+  border-color: rgba(255,160,0,.6);
+}
+#btn-admin-dashboard-toolbar.hidden { display: none; }
+
+/* ── Cloud connections card in user menu ─────────────────────────────── */
+.cloud-connections-card {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cloud-connections-head {
+  padding: 8px 12px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cloud-connections-head span { font-size: .78rem; font-weight: 600; color: var(--fg); }
+.cloud-connections-head small { font-size: .7rem; color: var(--muted); }
+.cloud-connection-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--fg);
+  text-align: left;
+  transition: background .15s;
+}
+.cloud-connection-row:hover { background: var(--hover-bg, rgba(255,255,255,.06)); }
+.cloud-connection-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.cloud-connection-icon img { display: block; }
+.cloud-connection-row strong { font-size: .8rem; display: block; }
+.cloud-connection-row small { font-size: .7rem; color: var(--muted); }
+
+/* ── Fusion prompt mode button ───────────────────────────────────────── */
+.prompt-mode-btn--fusion {
+  background: linear-gradient(135deg, #0076d6 0%, #00c0f0 100%);
+  border-color: #0076d6;
+  color: #fff;
+}
+.prompt-mode-btn--fusion.active,
+.prompt-mode-btn--fusion:hover {
+  background: linear-gradient(135deg, #005db3 0%, #009ec8 100%);
+  color: #fff;
+}
+
+/* ── Fusion library section ──────────────────────────────────────────── */
+.fusion-library-section { margin-top: 8px; }
+.fusion-library-logo { vertical-align: middle; }
+
+/* ── Admin dashboard link in user menu ───────────────────────────────── */
+#btn-admin-dashboard {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+#btn-admin-dashboard.hidden { display: none; }

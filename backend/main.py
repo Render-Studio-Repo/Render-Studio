@@ -1227,7 +1227,10 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
 def _is_fresh_design_request(body: PromptRequest) -> bool:
     """Route to the parametric kernel (full rebuild) instead of legacy mesh-edit actions."""
     if body.references:
-        return False
+        # Allow vision-generated DXF-only references to still use the parametric pipeline
+        non_vision = [r for r in body.references if r.id != "vision-reference"]
+        if non_vision:
+            return False
     prompt = body.prompt.strip().lower()
 
     # Localized edits on the loaded mesh — stay on legacy actions path.
@@ -4465,6 +4468,65 @@ def _background_kernel_build(
         generation_service.fail(project_path, f"Kernel build failed: {exc}", trace_id=trace_id)
 
 
+def _with_image_generated_dxf_reference(body: PromptRequest, ai: "AIService", trace_id: str | None) -> PromptRequest:
+    """Convert attached image references into a hidden DXF reference for CAD prompts."""
+    if not body.images:
+        return body
+    if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
+        return body
+    try:
+        dxf_text, call_trace = ai.generate_dxf_from_images(
+            body.prompt,
+            images=[img.model_dump() for img in body.images[:4]],
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        trace_add(
+            "warning",
+            f"Image-to-DXF conversion failed; continuing with image references only: {exc}",
+            trace_id=trace_id,
+        )
+        return body
+    if not dxf_text.strip():
+        return body
+    image_names = ", ".join(img.name for img in body.images[:4])
+    ref = GeoReference(
+        id="vision-reference",
+        type="dxf",
+        label=f"Vision DXF from image{'s' if len(body.images) != 1 else ''}",
+        filename="vision-reference.dxf",
+        stem="vision-reference",
+        format="dxf",
+        text_content=dxf_text[:90000],
+        text_truncated=len(dxf_text) > 90000,
+    )
+    instruction = (
+        "\n\nUse the attached generated DXF reference `@vision-reference` as the primary 2D drawing extracted "
+        f"from the uploaded image{'s' if len(body.images) != 1 else ''} ({image_names}). Follow the DXF geometry, "
+        "layers, proportions, notes, and inferred dimensions when creating the 3D model. Use the original image(s) "
+        "only to resolve ambiguity, color/material/style, and 3D depth."
+    )
+    trace_add(
+        "info",
+        "Generated hidden DXF reference from prompt image(s)",
+        trace_id=trace_id,
+        data={
+            "image_count": len(body.images),
+            "dxf_chars": len(dxf_text),
+            "model": call_trace.get("model"),
+            "provider": call_trace.get("provider"),
+        },
+    )
+    skills = body.skills
+    if "dxf" not in {str(s).lower() for s in skills}:
+        skills = [*skills, "dxf"]
+    return body.model_copy(update={
+        "prompt": f"{body.prompt}{instruction}"[:8000],
+        "references": [*body.references, ref],
+        "skills": skills,
+    })
+
+
 @app.post("/api/projects/{project_id}/prompt")
 def prompt_cad(
     project_id: str,
@@ -4508,6 +4570,7 @@ def prompt_cad(
         key_id=body.ai_key_id,
         key_source=body.ai_key_source,
     )
+    body = _with_image_generated_dxf_reference(body, ai, trace_id)
     resolved_skills = skills_service.resolve_prompt_skills(body.skills, has_images=bool(body.images))
 
     trace_add(
@@ -5761,6 +5824,101 @@ async def user_ws(websocket: WebSocket, token: str = Query(...)):
         await hub.connect_user(websocket, user)
     except WebSocketDisconnect:
         return
+
+
+ADMIN_EMAIL = "a1projects.usa@gmail.com"
+
+
+def _require_admin(user: dict[str, Any]) -> None:
+    if (user.get("email") or "").lower() != ADMIN_EMAIL.lower():
+        raise HTTPException(403, "Admin access required")
+
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard(
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_admin(user)
+    conn = get_conn()
+    try:
+        # Users stats
+        total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        recent_users = conn.execute(
+            "SELECT id, email, display_name, created_at FROM users ORDER BY created_at DESC LIMIT 20"
+        ).fetchall()
+        recent_users_list = [
+            {"id": r[0], "email": r[1], "display_name": r[2], "created_at": r[3]}
+            for r in recent_users
+        ]
+
+        # Project stats
+        total_projects = 0
+        recent_projects: list[dict[str, Any]] = []
+        data_root = Path(settings.data_root)
+        if data_root.is_dir():
+            for user_dir in sorted(data_root.iterdir(), reverse=True):
+                if not user_dir.is_dir():
+                    continue
+                for proj_dir in sorted(user_dir.iterdir(), reverse=True):
+                    if not proj_dir.is_dir():
+                        continue
+                    total_projects += 1
+                    meta_path = proj_dir / "project.json"
+                    meta: dict[str, Any] = {}
+                    if meta_path.exists():
+                        try:
+                            meta = json.loads(meta_path.read_text())
+                        except Exception:
+                            pass
+                    if len(recent_projects) < 20:
+                        recent_projects.append({
+                            "id": proj_dir.name,
+                            "owner": user_dir.name,
+                            "name": meta.get("name", proj_dir.name),
+                            "created_at": meta.get("created_at"),
+                            "updated_at": meta.get("updated_at"),
+                        })
+
+        # Prompt history stats
+        total_prompts = 0
+        recent_prompts: list[dict[str, Any]] = []
+        if data_root.is_dir():
+            for user_dir in data_root.iterdir():
+                if not user_dir.is_dir():
+                    continue
+                for proj_dir in user_dir.iterdir():
+                    if not proj_dir.is_dir():
+                        continue
+                    hist_path = proj_dir / "prompt_history.json"
+                    if not hist_path.exists():
+                        continue
+                    try:
+                        entries = json.loads(hist_path.read_text())
+                        if not isinstance(entries, list):
+                            entries = []
+                    except Exception:
+                        entries = []
+                    total_prompts += len(entries)
+                    for entry in entries[-5:]:
+                        if len(recent_prompts) < 50:
+                            recent_prompts.append({
+                                "project_id": proj_dir.name,
+                                "owner": user_dir.name,
+                                **{k: entry.get(k) for k in ("id", "prompt", "success", "created_at", "model", "cost_usd")},
+                            })
+
+        recent_prompts.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+        return {
+            "total_users": total_users,
+            "total_projects": total_projects,
+            "total_prompts": total_prompts,
+            "recent_users": recent_users_list,
+            "recent_projects": recent_projects[:20],
+            "recent_prompts": recent_prompts[:20],
+        }
+    finally:
+        conn.close()
 
 
 if FRONTEND.is_dir():

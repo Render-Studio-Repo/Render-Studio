@@ -30,29 +30,34 @@ export function getEnabledSkills() {
   return [...enabled];
 }
 
-/** Skills sent with a prompt — auto-includes Blueprint Vision when images are attached. */
+const DXF_SKILL_ID = "dxf";
+
+/** Skills sent with a prompt — auto-includes Blueprint Vision + DXF when images are attached. */
 export function getEnabledSkillsForPrompt({ hasImages = false } = {}) {
   const ids = new Set(enabled.map((s) => s.toLowerCase()));
   if (hasImages && !blueprintVisionOptOut) {
     ids.add(BLUEPRINT_VISION_ID);
+    ids.add(DXF_SKILL_ID);
   }
   return [...ids];
 }
 
-/** Turn Blueprint Vision on/off based on attached prompt images. */
+/** Turn Blueprint Vision + DXF on/off based on attached prompt images. */
 export function syncBlueprintVisionForImages(imageCount) {
   if (imageCount > 0) {
-    if (blueprintVisionOptOut) return;
     if (!enabled.includes(BLUEPRINT_VISION_ID)) {
       enabled.push(BLUEPRINT_VISION_ID);
       blueprintVisionAutoEnabled = true;
-      saveEnabled();
     }
+    if (!enabled.includes(DXF_SKILL_ID)) {
+      enabled.push(DXF_SKILL_ID);
+    }
+    saveEnabled();
     return;
   }
   blueprintVisionOptOut = false;
   if (blueprintVisionAutoEnabled) {
-    enabled = enabled.filter((s) => s !== BLUEPRINT_VISION_ID);
+    enabled = enabled.filter((s) => s !== BLUEPRINT_VISION_ID && s !== DXF_SKILL_ID);
     blueprintVisionAutoEnabled = false;
     saveEnabled();
   }
