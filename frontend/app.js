@@ -51,7 +51,7 @@ import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260629-face-edit-refs";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260629-wrap-cost-meta";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
-import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260630-planned-skills-fix";
+import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260630-compact-search";
@@ -2293,7 +2293,8 @@ function clearPromptComposeResult() {
   if (reply) reply.textContent = "";
 }
 document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
     if ((btn.dataset.promptMode || "render") === "fusion") {
       openFusionCapabilityModal();
       return;
@@ -2317,6 +2318,7 @@ function openFusionCapabilityModal() {
     applyPromptModeUI("fusion");
     return;
   }
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
   modal.querySelectorAll("[data-fusion-target]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.fusionTarget === fusionTarget);
   });
@@ -14196,7 +14198,8 @@ window.addEventListener("keydown", (e) => {
     requestAnimationFrame(() => panel.querySelector("#pref-mouse-preset")?.focus?.({ preventScroll: true }));
   }
 
-  document.getElementById("btn-preferences-menu")?.addEventListener("click", () => {
+  document.getElementById("btn-preferences-menu")?.addEventListener("click", (e) => {
+    e.stopPropagation();
     openPreferencesModal();
   });
 
