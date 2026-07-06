@@ -43,8 +43,6 @@ from backend.services.design_service import is_custom_sketch_structural_request
 from backend.services.design_service import is_custom_sketch_structural_request
 from backend.services import teams_service
 from backend.services import skills_service, user_ai_keys_service
-from backend.services import user_keys_service
-from backend.services import user_keys_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import part_profiles_service
 from backend.services.trace_log import TraceTimer, add as trace_add, list_entries, new_trace_id
