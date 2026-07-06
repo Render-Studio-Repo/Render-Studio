@@ -45,53 +45,50 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260617-creased-normals";
-import { createEditTools } from "./edit-tools.js?v=20260611-sketch-extrude";
-import { createTimelineUI } from "./timeline.js?v=20260618-restore-assembly";
-import { createPromptComposer } from "./prompt-composer.js?v=20260618-multi-drag";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260618-deterministic-cost";
-import { formatPromptRef } from "./prompt-ref.js";
-import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, syncBlueprintVisionForImages, setSkillEnabled } from "./skills-library.js?v=20260706-restore";
-import { createObjectHistoryUI } from "./object-history.js?v=20260618-restore-latest";
+} from "./scene-style.js?v=20260629-high-fragment-fast-path";
+import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
+import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
+import { createPromptComposer } from "./prompt-composer.js?v=20260629-face-edit-refs";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260629-wrap-cost-meta";
+import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
+import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260630-planned-skills-fix";
+import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260619-folder-icon";
-import { readExplorerDragPayloads } from "./explorer-drag.js?v=20260618-multi-drag";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260630-compact-search";
+import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js";
-import { initFusionPanel } from "./fusion-panel.js?v=20260706";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260618-shared-key-dollar-limits";
-import { createCollab } from "./collab.js?v=20260617-local-path-markers";
-import { createRibbon } from "./ribbon.js?v=20260706-architect-ribbon";
+import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
+import { createCollab } from "./collab.js?v=20260629-live-object-transform";
+import { createRibbon } from "./ribbon.js?v=20260630-architect-local-tools";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260618-v2-overlay";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loader";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260617-visible-assembly-export";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260630-teammate-mirror-status";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
+import { initFusionPanel } from "./fusion-panel.js?v=20260630-teammate-mirror-status";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
-import { createGizmoPanel } from "./gizmo-panel.js?v=20260618-transform-placement";
-import { createDirectModeling } from "./direct-modeling.js?v=20260615-fillet-chamfer";
+import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
+import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260617-marquee-bodies";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
-import { createProjectTree } from "./project-tree.js?v=20260618-hide-tags";
-import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260618-explorer-ids";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260619-canvas-tab";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260619-wiring-viewport-fix";
-import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-fix";
-import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-compose";
+import { createProjectTree } from "./project-tree.js?v=20260630-parts-label";
+import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260630-architect-mode";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260621-driver-3x3-grid";
+import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
+import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-sketch-fix";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260618-hide-tags";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createMiniViewer } from "./mini-viewer.js?v=20260617-visible-mini-viewer";
-import { createSketchEditor } from "./sketch-editor.js?v=20260615-load-entities";
+import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
+import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
-import { createRiggingEditor } from "./rigging-editor.js?v=20260612-spin-fix3";
-import { createSectionView } from "./section-view.js?v=20260618-section-clean";
-import { createViewerToast, flashViewport } from "./viewer-toast.js";
-import { initMobileUI } from "./mobile-ui.js";
-import { createExtrudeDragTool } from "./extrude-drag.js";
-import { detectModelUnitScale } from "./measure.js";
+import { createRiggingEditor } from "./rigging-editor.js?v=20260630-rigging-post-save";
+import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = 480000;
@@ -100,13 +97,17 @@ const LS_LAST_WORKSPACE = "render3d:lastWorkspaceId";
 const LS_MODEL_PROMPT_STATE = "render3d:modelPromptState:v1";
 const LS_COMPOSE_DRAFT = "render3d:aiComposeDraft:v1";
 const LS_PROMPT_AI_KEY = "render3d:promptAiKey:v1";
+const LS_PROJECT_PROMPT_AI_KEY = "render3d:projectPromptAiKey:v1";
 const LS_HIDDEN_WORKSPACES = "render3d:hiddenWorkspaces:v1";
+const LS_WORKSPACE_REALTIME_COLLAPSED = "render3d:workspaceRealtimeCollapsed:v1";
 
 let projectId = null;
 let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
 let currentUser = null;
+let authUi = null;
+let renderAgentUi = null;
 let selectedFile = null;
 let currentMesh = null;
 let meshCenterOffset = new THREE.Vector3();
@@ -133,11 +134,18 @@ let activePromptAbort = null;
 let activePromptGenerationId = 0;
 let userCancelRequested = false;
 let lastPromptCopyContext = null;
+let latestPromptHistoryEntries = [];
+let viewportPromptDropdown = null;
 let userRealtimeSocket = null;
 let userRealtimeReconnectTimer = null;
+let workspaceRealtimeSocket = null;
+let workspaceRealtimeTeamId = null;
+let workspaceRealtimeReconnectTimer = null;
+let workspaceRealtimeUsers = [];
 let refreshTeamInvitesRealtime = () => {};
 let refreshTeamMembersRealtime = () => {};
 let refreshWorkspacePanelRealtime = () => {};
+let pendingPromptSelectionContext = null;
 
 function syncViewportGenerationOverlay(completeOpts = {}) {
   const overlayPid = generationWatchPid || viewportOverlayPid;
@@ -145,17 +153,121 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
   const inactiveOverlay = activeOverlay === viewerOverlay ? wiringOverlay : viewerOverlay;
   if (overlayPid && overlayPid === projectId) {
     if (generationWatchPid === projectId && generationWatchOverlay) {
-      activeOverlay.setGenerating(true, generationWatchOverlay.message, generationWatchOverlay);
       inactiveOverlay?.setGenerating(false);
+      const liveGen = allProjects.find((p) => p.id === projectId)?.generation;
+      activeOverlay.setGenerating(true, generationWatchOverlay.message, {
+        ...generationWatchOverlay,
+        progress: liveGen?.progress || generationWatchOverlay.progress,
+      });
+      syncViewportGenerationUserBadge(liveGen?.status === "running" ? liveGen : generationWatchOverlay);
     } else if (viewportOverlayPid === projectId && viewportOverlayState) {
       viewerOverlay.setGenerating(true, viewportOverlayState.message, viewportOverlayState);
       wiringOverlay?.setGenerating(false);
+      syncViewportGenerationUserBadge(viewportOverlayState);
     }
+    return;
+  }
+  const currentGeneration = allProjects.find((p) => p.id === projectId)?.generation;
+  if (currentGeneration?.status === "running" && currentGeneration.kind !== "wiring") {
+    const mode = generationPromptMode(currentGeneration);
+    viewerOverlay.setGenerating(true, promptGenerationOverlayOpts(mode).message, {
+      kind: currentGeneration.kind || "prompt",
+      promptMode: mode,
+      progress: currentGeneration.progress,
+      ...promptGenerationOverlayOpts(mode),
+    });
+    wiringOverlay?.setGenerating(false);
+    syncViewportGenerationUserBadge(currentGeneration);
     return;
   }
   viewerOverlay.setGenerating(false, null, { complete: completeOpts.complete ?? false });
   wiringOverlay?.setGenerating(false, null, { complete: completeOpts.complete ?? false });
+  syncViewportGenerationUserBadge(null);
   syncStopButtonVisibility();
+}
+
+function generationUserAvatar(gen = {}) {
+  const name = gen.by_user_name || "AI";
+  const initial = appEscapeHtml(String(name).trim().charAt(0).toUpperCase() || "A");
+  const avatar = gen.by_avatar_url || "";
+  if (avatar) {
+    return `<span class="vgu-avatar vgu-avatar--image" style="background-image:url('${appEscapeHtml(avatar)}')"></span>`;
+  }
+  return `<span class="vgu-avatar">${initial}</span>`;
+}
+
+function syncViewportGenerationUserBadge(gen) {
+  const btn = document.getElementById("viewport-generation-user");
+  if (!btn) return;
+  if (!gen || gen.status !== "running" || gen.kind === "wiring") {
+    btn.classList.add("hidden");
+    btn.innerHTML = "";
+    return;
+  }
+  const name = gen.by_user_name || "Someone";
+  const prompt = gen.prompt || gen.label || "Generating model";
+  btn.classList.remove("hidden");
+  btn.dataset.prompt = prompt;
+  btn.dataset.user = name;
+  btn.dataset.userId = gen.by_user_id || "";
+  btn.innerHTML = `
+    ${generationUserAvatar(gen)}
+    <span class="vgu-copy"><strong>${appEscapeHtml(name)}</strong><small>… generating with AI</small></span>
+    <span class="vgu-ai">AI</span>
+  `;
+}
+
+function closeViewportPromptDropdown() {
+  viewportPromptDropdown?.remove();
+  viewportPromptDropdown = null;
+}
+
+function promptHistoryUserKey(entry = {}) {
+  return entry.user_id || entry.user_name || "";
+}
+
+function latestPromptsForGenerationUser(userId, userName, limit = 5) {
+  const wanted = userId || userName || "";
+  const byUser = latestPromptHistoryEntries
+    .filter((entry) => entry.prompt && promptHistoryUserKey(entry) === wanted)
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, limit);
+  if (byUser.length || !userName) return byUser;
+  return latestPromptHistoryEntries
+    .filter((entry) => entry.prompt && entry.user_name === userName)
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, limit);
+}
+
+function showViewportPromptDropdown(anchor, entries) {
+  closeViewportPromptDropdown();
+  if (!anchor || !entries.length) return;
+  const menu = document.createElement("div");
+  menu.className = "ph-person-menu vgu-prompt-menu";
+  menu.innerHTML = `
+    <div class="ph-person-menu-title">Latest prompts</div>
+    ${entries.map((entry, idx) => `
+      <button type="button" data-prompt-index="${idx}">
+        <strong>${idx === 0 ? "Latest" : new Date(entry.created_at || 0).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</strong>
+        <span>${appEscapeHtml(entry.prompt)}</span>
+      </button>
+    `).join("")}
+  `;
+  document.body.appendChild(menu);
+  const rect = anchor.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(10, Math.min(rect.left, window.innerWidth - menuRect.width - 10))}px`;
+  menu.style.top = `${Math.max(10, Math.min(rect.bottom + 8, window.innerHeight - menuRect.height - 10))}px`;
+  menu.addEventListener("click", async (event) => {
+    const btn = event.target.closest("button[data-prompt-index]");
+    if (!btn) return;
+    const entry = entries[Number(btn.dataset.promptIndex)];
+    if (!entry) return;
+    const ok = await copyText(entry.prompt);
+    setEditStatus(ok ? "ok" : "error", ok ? "Copied to clipboard: prompt." : "Could not copy prompt.");
+    closeViewportPromptDropdown();
+  });
+  viewportPromptDropdown = menu;
 }
 
 function showViewportOverlay(pid, message, opts = {}) {
@@ -188,6 +300,68 @@ function isProjectGenerating(id) {
   return proj?.generation?.status === "running";
 }
 
+const LS_CANVAS_GEN = "render3d:canvas-gen-pending";
+
+function markCanvasGenerationPending(pid = projectId) {
+  if (!pid || !document.body.classList.contains("canvas-design-tab")) return;
+  try {
+    sessionStorage.setItem(LS_CANVAS_GEN, JSON.stringify({ pid, at: Date.now() }));
+  } catch (_) {}
+}
+
+function clearCanvasGenerationPending(pid = projectId) {
+  try {
+    const raw = sessionStorage.getItem(LS_CANVAS_GEN);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!pid || data?.pid === pid) sessionStorage.removeItem(LS_CANVAS_GEN);
+  } catch (_) {}
+}
+
+function syncCanvasGenerationUi() {
+  const banner = document.getElementById("canvas-generation-banner");
+  const messageEl = document.getElementById("canvas-generation-message");
+  if (!banner) return;
+  const active =
+    document.body.classList.contains("canvas-design-tab")
+    && projectId
+    && isGenerationUiActive(projectId)
+    && isCadGenerationActive(projectId);
+  banner.classList.toggle("hidden", !active);
+  if (!active) return;
+  const msg =
+    generationWatchOverlay?.message
+    || "Generating 3D model in background — safe to switch tabs or refresh.";
+  const bannerMode = generationPromptMode(generationWatchOverlay, viewportOverlayState?.promptMode);
+  banner.classList.toggle("canvas-generation-banner--fusion", bannerMode === "fusion");
+  banner.classList.toggle("canvas-generation-banner--v2", bannerMode === "v2");
+  if (messageEl) {
+    messageEl.textContent = msg.replace(/\s*\(safe to refresh\)/i, " — safe to switch tabs or refresh");
+  }
+  const statusEl = document.getElementById("prompt-status");
+  if (statusEl && !statusEl.textContent) {
+    statusEl.className = "status loading";
+    statusEl.textContent = "Generating in background… safe to switch tabs or refresh.";
+  }
+}
+
+async function resumeGenerationFromProjects() {
+  if (!projectId) return;
+  const proj = allProjects.find((p) => p.id === projectId);
+  if (proj?.generation?.status === "running") {
+    await resumeGenerationIfNeeded(projectId, proj.generation);
+    return;
+  }
+  try {
+    const gen = await api(`/api/projects/${projectId}/generation`);
+    if (gen?.status === "running") {
+      const cached = allProjects.find((p) => p.id === projectId);
+      if (cached) cached.generation = gen;
+      await resumeGenerationIfNeeded(projectId, gen);
+    }
+  } catch (_) {}
+}
+
 function generationAppliedKey(pid) {
   return `render3d:gen-applied:${pid}`;
 }
@@ -216,18 +390,80 @@ async function applyGenerationComplete(gen, pid = projectId) {
   newlyCompletedProjects.add(pid);
   renderProjectList();
   if (pid === projectId) {
+    const completionMode = generationPromptMode(
+      gen,
+      generationWatchOverlay?.promptMode || (document.body.classList.contains("architect-design-tab") ? "architect" : "")
+    );
     saveActiveModelPromptState();
     selectedFile = gen.filename;
     await refreshFiles();
     const placedFiles = (gen.placed_parts || []).map((part) => part.filename).filter(Boolean);
-    await reloadViewportFromProject({ fitView: true, latestFile: gen.filename, placedFiles });
+    await reloadViewportFromProject({
+      fitView: true,
+      latestFile: gen.filename,
+      placedFiles,
+      loadAll: completionMode === "architect",
+    });
+    restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: gen.filename });
     viewerOverlay.clearError();
     await refreshTimeline();
     await refreshPromptHistory();
     showAiComposePanel();
     clearPromptComposeResult();
+    const statusEl = document.getElementById("prompt-status");
+    if (statusEl) {
+      const ref = gen.prompt_id
+        ? formatPromptRef({
+            promptId: gen.prompt_id,
+            projectId: pid,
+            filename: gen.filename,
+            traceId: gen.trace_id,
+            promptMode: gen.mode || gen.prompt_mode,
+            model: gen.model,
+            provider: gen.provider,
+          })
+        : "";
+      statusEl.className = "status ok";
+      statusEl.textContent = ref ? `Model ready · ${ref}` : "Model ready.";
+    }
+    if (document.body.classList.contains("canvas-design-tab")) {
+      workspaceModes?.setDesignTab?.("SOLID");
+      setEditStatus("ok", "Model ready — opened in 3D view.");
+    }
+    pendingPromptSelectionContext = null;
   }
+  clearCanvasGenerationPending(pid);
   markGenerationApplied(pid, gen.trace_id);
+}
+
+async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId) {
+  if (!msg?.filename || !pid) return;
+  window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...msg, projectId: pid } }));
+  if (pid !== projectId) {
+    newlyCompletedProjects.add(pid);
+    renderProjectList();
+    return;
+  }
+  const reloadMode = generationPromptMode(
+    msg,
+    generationWatchOverlay?.promptMode || (document.body.classList.contains("architect-design-tab") ? "architect" : "")
+  );
+  saveActiveModelPromptState();
+  selectedFile = msg.filename;
+  await refreshFiles();
+  const placedFiles = (msg.placed_parts || []).map((part) => part.filename).filter(Boolean);
+  await reloadViewportFromProject({
+    fitView: true,
+    latestFile: msg.filename,
+    placedFiles,
+    loadAll: reloadMode === "architect",
+  });
+  restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: msg.filename });
+  viewerOverlay.clearError();
+  await refreshTimeline();
+  await refreshPromptHistory();
+  showAiComposePanel();
+  pendingPromptSelectionContext = null;
 }
 
 async function applyWiringGenerationComplete(gen, pid = projectId) {
@@ -289,6 +525,7 @@ function syncStopButtonVisibility() {
   if (wiringToolbeltBtn) wiringToolbeltBtn.classList.toggle("hidden", !wiringGenerating);
   viewerOverlay.setStopVisible?.(cadGenerating);
   wiringOverlay?.setStopVisible?.(wiringGenerating);
+  syncCanvasGenerationUi();
 }
 
 function stopGenerationWatch() {
@@ -300,6 +537,7 @@ function stopGenerationWatch() {
   generationWatchPid = null;
   generationWatchOverlay = null;
   if (pid) setProjectLoading(pid, false);
+  clearCanvasGenerationPending(pid);
   syncViewportGenerationOverlay({ complete: true });
   document.getElementById("btn-prompt")?.removeAttribute("disabled");
   document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
@@ -330,15 +568,19 @@ async function cancelActiveGeneration() {
     await api(`/api/projects/${pid}/generation/cancel`, { method: "POST" });
     if (pid === projectId) {
       const isWiring = generationWatchOverlay?.kind === "wiring";
-      const isV2 = (generationWatchOverlay?.promptMode || "").toLowerCase() === "v2";
+      const stopMode = (generationWatchOverlay?.promptMode || "").toLowerCase();
+      const isV2 = stopMode === "v2";
+      const isFusion = stopMode === "fusion";
       const statusEl = document.getElementById(isWiring ? "wiring-prompt-status" : "prompt-status");
       if (statusEl) {
         statusEl.className = "status";
         statusEl.textContent = isWiring
           ? "Stopping… (finishes current AI call, then cancels schematic save)"
+          : isFusion
+            ? "Stopping Fusion mode... (finishes current AI call, then cancels build)"
           : isV2
-            ? "Stopping 2.0… (finishes current AI call, then cancels build)"
-            : "Stopping… (finishes current AI call, then cancels build)";
+            ? "Stopping 2.0... (finishes current AI call, then cancels build)"
+            : "Stopping... (finishes current AI call, then cancels build)";
       }
     }
     let gen;
@@ -351,7 +593,7 @@ async function cancelActiveGeneration() {
       if (!generationPollTimer) {
         beginGenerationWatch(pid, {
           kind: gen.kind || "prompt",
-          mode: gen.mode || generationWatchOverlay?.promptMode || "standard",
+          mode: generationPromptMode(gen, generationWatchOverlay?.promptMode || "standard"),
         });
       }
     } else {
@@ -385,23 +627,16 @@ async function cancelActiveGeneration() {
 
 function promptGenerationOverlayOpts(mode = "standard") {
   const normalized = (mode || "standard").toLowerCase();
-  if (normalized === "v2") {
-    return {
-      message: "Generating with 2.0 in background… refresh anytime; model loads when ready.",
-      mode: "ai",
-      estimateMs: 900000,
-    };
-  }
   if (normalized === "fusion") {
     return {
-      message: "Generating + pushing to Fusion 360… (runs in background — safe to refresh)",
+      message: "Fusion is revolving geometry... building, rendering, reviewing, and repairing.",
       mode: "ai",
-      estimateMs: 900000,
+      estimateMs: 1200000,
     };
   }
-  if (normalized === "architect") {
+  if (normalized === "v2") {
     return {
-      message: "Generating Architect layout in background… safe to refresh.",
+      message: "Generating with 2.0 in background... refresh anytime; model loads when ready.",
       mode: "ai",
       estimateMs: 900000,
     };
@@ -413,11 +648,32 @@ function promptGenerationOverlayOpts(mode = "standard") {
   };
 }
 
-function fusionTargetLabel() {
-  const target = document.getElementById("prompt-target")?.value || "design";
-  if (target === "fusion360") return "Fusion 360";
-  if (target === "edit") return "Edit selected";
-  return "Add new object";
+function generationPromptMode(generation = {}, fallback = "standard") {
+  const explicitRaw =
+    generation?.mode ||
+    generation?.prompt_mode ||
+    generation?.promptMode ||
+    generation?.request_body?.mode ||
+    generation?.request_body?.prompt_mode;
+  const text = String(explicitRaw || "").toLowerCase();
+  if (text === "fusion" || text === "fusion360" || text === "fusion-360") return "fusion";
+  if (text === "architect" || text === "architecture") return "architect";
+  if (text === "v2" || text === "2.0" || text === "2") return "v2";
+  if (text === "draw") return "draw";
+  const searchable = String([
+    generation?.message,
+    generation?.label,
+    generation?.prompt,
+    generation?.progress?.label,
+  ].filter(Boolean).join(" "));
+  if (searchable.match(/\bfusion\b/i)) return "fusion";
+  if (searchable.match(/\barchitect(?:ure)?\b/i)) return "architect";
+  if (searchable.match(/\b(v2|2\.0)\b/i)) return "v2";
+  const fallbackText = String(fallback || "standard").toLowerCase();
+  if (fallbackText === "fusion" || fallbackText === "fusion360" || fallbackText === "fusion-360") return "fusion";
+  if (fallbackText === "architect" || fallbackText === "architecture") return "architect";
+  if (fallbackText === "v2" || fallbackText === "2.0" || fallbackText === "2") return "v2";
+  return fallbackText === "draw" ? "draw" : "standard";
 }
 
 function applyPromptModeUI(mode = promptMode) {
@@ -427,30 +683,19 @@ function applyPromptModeUI(mode = promptMode) {
   });
   const promptBtn = document.getElementById("btn-prompt");
   if (promptBtn) {
-    if (promptMode === "draw") promptBtn.textContent = "Apply Draw command";
-    else if (promptMode === "architect") promptBtn.textContent = "Generate architect layout";
-    else if (promptMode === "fusion") promptBtn.textContent = "Generate + Push to Fusion 360";
+    if (promptMode === "render") promptBtn.textContent = "Render scene";
+    else if (promptMode === "draw") promptBtn.textContent = "Apply Draw command";
+    else if (promptMode === "architect") promptBtn.textContent = "Generate modular house part";
+    else if (promptMode === "fusion") promptBtn.textContent = `Generate with ${fusionTargetLabel()}`;
     else if (promptMode === "v2") promptBtn.textContent = "Generate with 2.0";
     else promptBtn.textContent = "Generate / modify with AI";
   }
-  const hint = document.getElementById("prompt-mode-hint");
-  if (hint) {
-    if (promptMode === "draw") {
-      hint.textContent = "Draw uses local modeling tools: pick a face for holes, or draw a Line path and ask for ducts/wire loops.";
-    } else if (promptMode === "v2") {
-      hint.textContent = "2.0 runs the full quality pipeline: brief → plan → build → inspect → repair. Slower but significantly better geometry.";
-    } else if (promptMode === "fusion") {
-      hint.textContent = "Fusion mode generates parametric CAD then pushes the STEP file directly to your linked Fusion 360 hub.";
-    } else if (promptMode === "architect") {
-      hint.textContent = "Architect mode builds modular rooms, walls, roofs, and site layouts on a snap grid.";
-    } else {
-      hint.textContent = "Render creates or regenerates CAD with AI.";
-    }
+  const input = document.getElementById("prompt-input");
+  if (input) {
+    input.placeholder = promptMode === "render"
+      ? "Describe the real-life environment to render. Example: put this model on a kitchen counter in morning light..."
+      : "Describe what to make or edit. Drag parts/faces here to add @ reference chips...";
   }
-  document.getElementById("prompt-advanced-row")?.classList.toggle(
-    "visible",
-    promptMode === "v2" || promptMode === "fusion" || promptMode === "render"
-  );
   if (promptMode === "architect") {
     setSkillEnabled("cad", true);
     setSkillEnabled("architect", true);
@@ -513,8 +758,10 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     if (statusEl && pid === projectId) {
       statusEl.className = "status loading";
       statusEl.textContent =
-        (mode || "standard").toLowerCase() === "v2"
-          ? "Generating with 2.0 in background… refresh anytime; model loads when ready."
+        (mode || "standard").toLowerCase() === "fusion"
+          ? "Generating with Fusion mode in background... building, rendering, reviewing, and repairing."
+          : (mode || "standard").toLowerCase() === "v2"
+          ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
           : "Generating in background… safe to refresh.";
     }
     if (["v2", "fusion", "architect"].includes((mode || "standard").toLowerCase()) && pid === projectId) {
@@ -529,13 +776,24 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       const proj = allProjects.find((p) => p.id === pid);
       if (proj) proj.generation = gen;
       if (gen.status === "running") {
-        if (generationWatchOverlay) generationWatchOverlay.pendingStart = false;
+        if (generationWatchOverlay) {
+          const liveMode = generationPromptMode(gen, generationWatchOverlay.promptMode || mode);
+          Object.assign(generationWatchOverlay, {
+            promptMode: liveMode,
+            pendingStart: false,
+            progress: gen.progress,
+            ...promptGenerationOverlayOpts(liveMode),
+          });
+        }
+        syncViewportGenerationOverlay();
         syncExplorerLoadingUI();
         syncStopButtonVisibility();
+        syncCanvasGenerationUi();
         return;
       }
-      if (gen.status === "idle" && generationWatchOverlay?.pendingStart) {
+      if (generationWatchOverlay?.pendingStart && (!gen.status || gen.status === "idle")) {
         syncStopButtonVisibility();
+        syncCanvasGenerationUi();
         return;
       }
       stopGenerationWatch();
@@ -556,6 +814,22 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           await refreshFiles();
           await refreshTimeline();
           await refreshPromptHistory();
+          const statusEl = document.getElementById("prompt-status");
+          if (statusEl && gen.filename) {
+            const ref = gen.prompt_id
+              ? formatPromptRef({
+                  promptId: gen.prompt_id,
+                  projectId: pid,
+                  filename: gen.filename,
+                  traceId: gen.trace_id,
+                  promptMode: gen.mode || gen.prompt_mode,
+                  model: gen.model,
+                  provider: gen.provider,
+                })
+              : "";
+            statusEl.className = "status ok";
+            statusEl.textContent = ref ? `Model ready · ${ref}` : "Model ready.";
+          }
         }
       } else if (gen.status === "failed") {
         const msg = formatUserError({ message: gen.error || "Generation failed." });
@@ -602,6 +876,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
   poll();
   generationPollTimer = setInterval(poll, 2500);
   syncStopButtonVisibility();
+  syncCanvasGenerationUi();
 }
 
 async function resumeGenerationIfNeeded(pid, generation) {
@@ -612,7 +887,7 @@ async function resumeGenerationIfNeeded(pid, generation) {
   if (generation.status === "running") {
     beginGenerationWatch(pid, {
       kind: generation.kind || "prompt",
-      mode: generation.mode || "standard",
+      mode: generationPromptMode(generation),
     });
     return;
   }
@@ -625,6 +900,8 @@ async function resumeGenerationIfNeeded(pid, generation) {
   }
 }
 
+initPanelResize();
+
 const viewportHint = document.getElementById("viewport-hint");
 const pickHintTitle = document.getElementById("pick-hint-title");
 const pickHintText = document.getElementById("pick-hint-text");
@@ -633,32 +910,44 @@ const viewport = document.getElementById("viewport");
 if (!viewport) {
   throw new Error("Render3D: #viewport element missing from page");
 }
-const viewerToast = createViewerToast(viewport);
-
-function inferMeshUsesMm() {
-  if (!currentMesh) return true;
-  const box = new THREE.Box3().setFromObject(currentMesh);
-  const size = box.getSize(new THREE.Vector3());
-  return Math.max(size.x, size.y, size.z) >= 1.0;
-}
-
-function viewerToastForCollab(msg) {
-  const action = msg.action;
-  const by = msg.by;
-  if (!action || !by) return;
-  const verbs = {
-    extrude: "extruded",
-    transform: "edited",
-    upload: "uploaded",
-    prompt: "updated",
-    build: "built",
-  };
-  const verb = verbs[action] || action;
-  viewerToast.show(`${by} ${verb} the model`, { kind: "info", durationMs: 2800 });
-}
-
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FUSION.canvas);
+const APP_THEME_KEY = "render3d:app-theme:v1";
+const DEFAULT_APP_THEME = "dark";
+const APP_THEMES = {
+  dark: {
+    label: "Dark",
+    canvas: FUSION.canvas,
+    gridMajor: FUSION.gridMajor,
+    gridMinor: FUSION.gridMinor,
+  },
+  light: {
+    label: "Light",
+    canvas: 0xdbeafe,
+    gridMajor: 0x8ea7c8,
+    gridMinor: 0xb9cbea,
+  },
+};
+function normalizedAppTheme(theme) {
+  return Object.prototype.hasOwnProperty.call(APP_THEMES, theme) ? theme : DEFAULT_APP_THEME;
+}
+let appTheme = (() => {
+  try {
+    return normalizedAppTheme(localStorage.getItem(APP_THEME_KEY));
+  } catch {
+    return DEFAULT_APP_THEME;
+  }
+})();
+function currentThemeSceneColors() {
+  return APP_THEMES[appTheme] || APP_THEMES.dark;
+}
+function applyThemeClass() {
+  document.body?.classList.toggle("theme-light", appTheme === "light");
+  document.body?.classList.toggle("theme-dark", appTheme !== "light");
+  document.documentElement?.style.setProperty("color-scheme", appTheme === "light" ? "light" : "dark");
+}
+applyThemeClass();
+scene.background.setHex(currentThemeSceneColors().canvas);
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 20000);
 camera.up.copy(VIEW_CUBE_WORLD_UP);
@@ -666,11 +955,49 @@ camera.up.copy(VIEW_CUBE_WORLD_UP);
 // before the first model loads and triggers fitCamera.
 camera.position.set(6, -6, 4.5);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-setupRenderer(renderer);
+function createFallbackRenderer(error) {
+  const canvas = document.createElement("canvas");
+  canvas.className = "webgl-fallback-canvas";
+  canvas.setAttribute("aria-label", "3D viewport unavailable");
+  const message = document.createElement("div");
+  message.className = "webgl-fallback-message";
+  message.innerHTML = `
+    <strong>3D viewport unavailable</strong>
+    <span>Your browser could not create a WebGL context. You can still sign in, create an account, and use non-3D panels.</span>
+    <small>${appEscapeHtml(error?.message || "WebGL is disabled or unsupported on this device.")}</small>
+  `;
+  viewport.appendChild(message);
+  return {
+    domElement: canvas,
+    shadowMap: {},
+    clippingPlanes: [],
+    localClippingEnabled: false,
+    setPixelRatio() {},
+    setSize(w, h) {
+      canvas.width = Math.max(1, Math.floor(w || 1));
+      canvas.height = Math.max(1, Math.floor(h || 1));
+      canvas.style.width = `${Math.max(1, Math.floor(w || 1))}px`;
+      canvas.style.height = `${Math.max(1, Math.floor(h || 1))}px`;
+    },
+    render() {},
+    dispose() {},
+  };
+}
+
+let renderer;
+let webglAvailable = true;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  setupRenderer(renderer);
+} catch (err) {
+  webglAvailable = false;
+  console.error("WebGL renderer failed; continuing with UI-only fallback.", err);
+  renderer = createFallbackRenderer(err);
+}
 renderer.domElement.tabIndex = 0;  // allow canvas to receive keyboard focus
 renderer.domElement.style.outline = "none";
+renderer.domElement.classList.toggle("webgl-unavailable", !webglAvailable);
 viewport.appendChild(renderer.domElement);
 
 function errorCopyContext(extra = {}) {
@@ -703,7 +1030,73 @@ const viewerOverlay = createViewerOverlay(viewport, {
   onStopGeneration: () => void cancelActiveGeneration(),
   getCopyContext: errorCopyContext,
 });
-setupSceneLighting(scene);
+const sceneLights = setupSceneLighting(scene);
+const VIEWPORT_LIGHTING_KEY = "render3d.viewportLightingPct";
+const sceneLightBaseIntensities = new Map(
+  Object.values(sceneLights || {})
+    .filter((light) => light && typeof light.intensity === "number")
+    .map((light) => [light, light.intensity])
+);
+
+function applyViewportLighting(percent) {
+  const pct = Math.min(180, Math.max(35, Number(percent) || 100));
+  const multiplier = pct / 100;
+  for (const [light, base] of sceneLightBaseIntensities) {
+    light.intensity = base * multiplier;
+  }
+  const value = document.getElementById("viewport-light-value");
+  if (value) value.textContent = `${Math.round(pct)}%`;
+  return pct;
+}
+
+function initViewportLightingControl() {
+  const slider = document.getElementById("viewport-light-slider");
+  if (!slider) return;
+  const panel = document.querySelector(".viewport-lighting-tab");
+  let saved = Number(slider.value || slider.max || 180);
+  try {
+    const raw = localStorage.getItem(VIEWPORT_LIGHTING_KEY);
+    if (raw != null) saved = Number(raw);
+  } catch {
+    /* local storage is best-effort */
+  }
+  slider.value = String(applyViewportLighting(saved));
+  slider.addEventListener("input", () => {
+    const pct = applyViewportLighting(slider.value);
+    try {
+      localStorage.setItem(VIEWPORT_LIGHTING_KEY, String(pct));
+    } catch {
+      /* local storage is best-effort */
+    }
+  });
+  const syncLightToggle = () => {
+    const btn = document.getElementById("btn-light");
+    const open = !!panel && !panel.classList.contains("hidden");
+    btn?.classList.toggle("active", open);
+    btn?.setAttribute("aria-pressed", open ? "true" : "false");
+    if (btn) btn.title = open ? "Hide viewport lighting slider" : "Show viewport lighting slider";
+  };
+  document.addEventListener("click", (event) => {
+    const lightBtn = event.target.closest?.("#btn-light");
+    if (lightBtn) {
+      panel?.classList.toggle("hidden");
+      syncLightToggle();
+      return;
+    }
+    if (!panel || panel.classList.contains("hidden")) return;
+    if (event.target.closest?.(".viewport-lighting-tab")) return;
+    panel.classList.add("hidden");
+    syncLightToggle();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !panel || panel.classList.contains("hidden")) return;
+    panel.classList.add("hidden");
+    syncLightToggle();
+  });
+  syncLightToggle();
+}
+
+initViewportLightingControl();
 const projectAssembly = createProjectAssembly(scene);
 scene.add(getMarkersGroup());
 scene.add(getHoverGroup());
@@ -717,13 +1110,46 @@ controls.zoomSpeed    = 1.2;
 controls.panSpeed     = 0.8;
 controls.staticMoving = true;   // no inertia (matches enableDamping=false)
 controls.minDistance  = 0.05;
-controls.maxDistance  = 5000;
+controls.maxDistance  = Infinity;
 
 const LEFT_DRAG_MODE_KEY = "render3d:left-drag-mode:v1";
+const MOUSE_CONTROL_PRESET_KEY = "render3d:mouse-control-preset:v1";
+const MOUSE_CONTROL_PRESETS = {
+  render3d: {
+    label: "Render3D default",
+    hint: "Left drag uses the toolbar Select/Rotate toggle. Middle-drag pans. Right-drag rotates.",
+  },
+  solidworks: {
+    label: "SolidWorks",
+    hint: "Middle-drag orbits, Ctrl/Cmd+middle pans, Shift+middle zooms, mouse wheel zooms.",
+  },
+  fusion360: {
+    label: "Fusion 360",
+    hint: "Middle-drag pans, Shift+middle orbits, Ctrl/Cmd+middle zooms, mouse wheel zooms.",
+  },
+  onshape: {
+    label: "Onshape",
+    hint: "Right-drag orbits, middle-drag pans, mouse wheel zooms, and left drag stays available for selection.",
+  },
+};
 const MOBILE_INTERACTION_QUERY = window.matchMedia?.("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)");
 function isMobileInteraction() {
   return Boolean(MOBILE_INTERACTION_QUERY?.matches);
 }
+function normalizedMousePreset(preset) {
+  return Object.prototype.hasOwnProperty.call(MOUSE_CONTROL_PRESETS, preset) ? preset : "render3d";
+}
+function isCadMousePreset(preset = mouseControlPreset) {
+  return !isMobileInteraction() && normalizedMousePreset(preset) !== "render3d";
+}
+let mouseControlPreset = (() => {
+  try {
+    const saved = localStorage.getItem(MOUSE_CONTROL_PRESET_KEY);
+    return normalizedMousePreset(saved);
+  } catch {
+    return "render3d";
+  }
+})();
 let leftDragMode = (() => {
   if (isMobileInteraction()) return "rotate";
   try {
@@ -732,21 +1158,92 @@ let leftDragMode = (() => {
     return "select";
   }
 })();
+if (isCadMousePreset()) {
+  leftDragMode = "select";
+}
 
 function applyLeftDragMouseButtons() {
   if (!controls?.mouseButtons) return;
   const effectiveMode = isMobileInteraction() ? "rotate" : leftDragMode;
+  if (isCadMousePreset()) {
+    controls.mouseButtons.LEFT = -1; // CAD presets keep left click/drag available for selection.
+    if (mouseControlPreset === "solidworks") {
+      controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+      controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+    } else {
+      controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+      controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+    }
+    return;
+  }
   if (effectiveMode === "select") {
     controls.mouseButtons.LEFT = -1; // left drag belongs to selection/marquee
-    controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
     controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
   } else {
     controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-    controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
     controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
   }
 }
 applyLeftDragMouseButtons();
+
+function syncMousePreferenceUI() {
+  const select = document.getElementById("pref-mouse-preset");
+  if (select) select.value = mouseControlPreset;
+  const hint = document.getElementById("pref-mouse-preset-hint");
+  if (hint) hint.textContent = MOUSE_CONTROL_PRESETS[mouseControlPreset]?.hint || "";
+}
+
+function setMouseControlPreset(preset, { announce = false } = {}) {
+  mouseControlPreset = normalizedMousePreset(preset);
+  if (isCadMousePreset(mouseControlPreset)) {
+    leftDragMode = "select";
+    try {
+      localStorage.setItem(LEFT_DRAG_MODE_KEY, leftDragMode);
+    } catch {
+      /* local storage is best-effort */
+    }
+  }
+  try {
+    localStorage.setItem(MOUSE_CONTROL_PRESET_KEY, mouseControlPreset);
+  } catch {
+    /* local storage is best-effort */
+  }
+  applyLeftDragModeControls();
+  syncLeftDragModeButton();
+  syncMousePreferenceUI();
+  if (announce) {
+    setEditStatus("ok", `${MOUSE_CONTROL_PRESETS[mouseControlPreset].label} controls enabled.`);
+  }
+}
+
+function withCadMiddleMouseModifier(event) {
+  if (!isCadMousePreset() || event.button !== 1 || !controls?.mouseButtons) return;
+  if (mouseControlPreset === "solidworks") {
+    if (event.ctrlKey || event.metaKey) controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+    else if (event.shiftKey) controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+    else controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+    return;
+  }
+  if (mouseControlPreset === "fusion360") {
+    if (event.shiftKey) controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+    else if (event.ctrlKey || event.metaKey) controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+    else controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+    return;
+  }
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+}
+
+function resetCadMiddleMouseModifier() {
+  if (!isCadMousePreset() || !controls?.mouseButtons) return;
+  applyLeftDragMouseButtons();
+}
+
+renderer.domElement.addEventListener("mousedown", withCadMiddleMouseModifier, true);
+renderer.domElement.addEventListener("pointerdown", withCadMiddleMouseModifier, true);
+window.addEventListener("mouseup", resetCadMiddleMouseModifier, true);
+window.addEventListener("pointerup", resetCadMiddleMouseModifier, true);
 
 // ── Section View (cross-section clipping plane) ───────────────────────────
 const sectionView = createSectionView({
@@ -770,7 +1267,7 @@ function sceneRadius() {
 
 function normalizeBrowser(data) {
   const browser = data?.browser || {};
-  let components = browser.components || [];
+  let components = (browser.components || []).filter((entry) => !isInternalCadSidecar(entry?.name) && !isInternalCadSidecar(entry?.viewer_filename));
   if (!components.length && data?.files?.length) {
     components = filesToBrowserComponents(data.files);
   }
@@ -779,6 +1276,11 @@ function normalizeBrowser(data) {
     sketches: browser.sketches || [],
     wiring: browser.wiring || [],
   };
+}
+
+function isInternalCadSidecar(name = "") {
+  const lower = String(name || "").toLowerCase();
+  return lower.startsWith("_active_") || lower.startsWith("_export_") || (lower.startsWith(".") && lower.endsWith(".step.glb"));
 }
 
 let mobileBrowserComponents = [];
@@ -796,9 +1298,9 @@ function renderMobileModelPicker() {
       const active = entry.name === selectedFile || entry.viewer_filename === selectedFile;
       const label = entry.stem || entry.name || "Model";
       const format = String(entry.format || entry.name?.split(".").pop() || "model").toUpperCase();
-      return `<button type="button" class="mobile-model-item ${active ? "active" : ""}" data-mobile-model="${escapeHtml(entry.name)}">
-        <span><strong>${escapeHtml(label)}</strong><span>${escapeHtml(entry.name || "")}</span></span>
-        <em class="mobile-model-format">${escapeHtml(format)}</em>
+      return `<button type="button" class="mobile-model-item ${active ? "active" : ""}" data-mobile-model="${appEscapeHtml(entry.name)}">
+        <span><strong>${appEscapeHtml(label)}</strong><span>${appEscapeHtml(entry.name || "")}</span></span>
+        <em class="mobile-model-format">${appEscapeHtml(format)}</em>
       </button>`;
     })
     .join("");
@@ -845,7 +1347,7 @@ function selectionTargetFromMesh(hitMesh) {
   const catalogName = catalogNameForMesh(hitMesh);
   const comp = catalogName ? projectAssembly.get(catalogName) : null;
   const root = comp || componentRootForMesh(hitMesh) || currentMesh;
-  const mesh = comp || hitMesh;
+  const mesh = hitMesh || comp;
   return { mesh, root, catalogName };
 }
 
@@ -859,6 +1361,7 @@ function selectAssemblyComponent(catalogName, { autoGizmo = false, fitView = fal
   }
   projectAssembly.setVisible(catalogName, true);
   selectedFile = catalogName;
+  syncPromptTargetUI();
   projectTree.setSelected(catalogName);
   featureEditor.setModel(projectId, catalogName);
   objectTools.selectObject?.({ mesh: obj, root: obj, bodyIndex: 0, catalogName });
@@ -869,19 +1372,95 @@ function selectAssemblyComponent(catalogName, { autoGizmo = false, fitView = fal
   syncExportButton();
 }
 
+function bodyIndexForHitMesh(hitMesh, root, faceIndex = null) {
+  const meshes = listObjectMeshes(root);
+  if (meshes.length > 1) {
+    const idx = meshes.indexOf(hitMesh);
+    if (idx >= 0) return idx;
+  }
+  const info = objectTools.getBodyInfo?.();
+  const offsets = info?.face_offsets || [];
+  if (faceIndex != null && offsets.length) {
+    for (let i = offsets.length - 1; i >= 0; i -= 1) {
+      if (faceIndex >= offsets[i]) return i;
+    }
+  }
+  return 0;
+}
+
+function browserBodySelectionName(catalogName, bodyIndex) {
+  if (!catalogName || !Number.isInteger(bodyIndex)) return catalogName;
+  const parent = projectTree.getComponents?.().find((entry) => entry.name === catalogName || entry.viewer_filename === catalogName);
+  const child = (parent?.children || []).find((entry) => entry.body_index === bodyIndex);
+  return child?.name || catalogName;
+}
+
 function selectObjectHit(hit, { showGizmo = true } = {}) {
   if (!hit?.mesh) return null;
   const target = selectionTargetFromMesh(hit.mesh);
+  const bodyIndex = bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
   if (target.catalogName) {
     selectedFile = target.catalogName;
-    projectTree.setSelected(target.catalogName);
+    syncPromptTargetUI();
+    projectTree.setSelected(browserBodySelectionName(target.catalogName, bodyIndex));
     featureEditor.setModel(projectId, target.catalogName);
   }
-  objectTools.selectObject({ ...target, faceIndex: hit.faceIndex });
+  objectTools.selectObject({ ...target, faceIndex: hit.faceIndex, bodyIndex });
   if (showGizmo) showObjectGizmo(target.mesh, "translate", { switchTab: false });
   renderer.domElement.focus({ preventScroll: true });
   syncExportButton();
   return target;
+}
+
+async function selectBrowserBody(entry, { fitView = false } = {}) {
+  const catalogName = entry?.source_filename || entry?.parent_filename || entry?.filename || entry?.name;
+  const bodyIndex = Number.isInteger(entry?.body_index) ? entry.body_index : null;
+  if (!catalogName || bodyIndex == null) return false;
+  if (!projectAssembly.has(catalogName)) return false;
+  selectedFile = catalogName;
+  projectTree.setSelected(entry.name);
+  featureEditor.setModel(projectId, catalogName);
+  await objectTools.refreshBodyInfo?.();
+  const root = projectAssembly.get(catalogName);
+  const meshes = listObjectMeshes(root);
+  const mesh = meshes[bodyIndex] || meshes[0] || root;
+  objectTools.selectObject?.({
+    mesh,
+    root,
+    bodyIndex,
+    catalogName,
+  });
+  if (fitView) fitCameraToComponent(catalogName);
+  setEditStatus("ok", `Selected ${entry.body_name || entry.label || `Body ${bodyIndex + 1}`} inside ${catalogName}.`);
+  syncPromptTargetUI();
+  syncExportButton();
+  return true;
+}
+
+function selectBrowserVirtualComponent(entry, { fitView = false } = {}) {
+  const catalogName = entry?.source_filename || entry?.parent_filename || entry?.filename || entry?.name;
+  if (!catalogName || !projectAssembly.has(catalogName)) return false;
+  selectedFile = catalogName;
+  projectTree.setSelected(entry.name);
+  featureEditor.setModel(projectId, catalogName);
+  const root = projectAssembly.get(catalogName);
+  const targetName = String(entry.node_name || entry.component_name || entry.stem || "").toLowerCase();
+  const meshes = listObjectMeshes(root);
+  const mesh = meshes.find((item) => {
+    const names = [item.name, item.userData?.name, item.parent?.name].filter(Boolean).map((name) => String(name).toLowerCase());
+    return names.includes(targetName) || names.some((name) => name.includes(targetName) || targetName.includes(name));
+  }) || meshes[entry.component_index] || meshes[0] || root;
+  objectTools.selectObject?.({
+    mesh,
+    root,
+    bodyIndex: Number.isInteger(entry.component_index) ? entry.component_index : 0,
+    catalogName,
+  });
+  if (fitView) fitCameraToComponent(catalogName);
+  setEditStatus("ok", `Selected component ${entry.label || entry.component_name || entry.stem} inside ${catalogName}.`);
+  syncPromptTargetUI();
+  syncExportButton();
+  return true;
 }
 
 /** Switch to Select tool and show the move gizmo on the chosen mesh. */
@@ -894,9 +1473,10 @@ function showObjectGizmo(mesh, mode = "translate", { switchTab = true } = {}) {
   directModeling.reset();
   meshCleanup.hide();
   document.getElementById("btn-gizmo")?.classList.add("active");
+  setLeftDragMode("rotate", { silent: true });
   transformControls.attach(target);
   transformControls.setMode(mode);
-  controls.enabled = leftDragMode === "rotate";
+  controls.enabled = true;
   gizmoPanel.show();
   gizmoPanel.refresh();
   setEditStatus("ok", `${mode === "rotate" ? "Rotate" : mode === "scale" ? "Scale" : "Move"}: drag the gizmo or type values in the panel.`);
@@ -910,26 +1490,33 @@ const viewCube = createViewCube({
 });
 
 const transformControls = new TransformControls(camera, renderer.domElement);
+let transformGizmoDragging = false;
+let suppressSelectionUntil = 0;
+let collabTransformBroadcastAt = 0;
 transformControls.addEventListener("dragging-changed", (e) => {
+  transformGizmoDragging = Boolean(e.value);
+  if (transformGizmoDragging) {
+    suppressSelectionUntil = performance.now() + 450;
+    suppressNextObjectClick = true;
+    sendCollabPresence({ moving: true });
+  } else {
+    suppressSelectionUntil = performance.now() + 350;
+    window.setTimeout(() => {
+      suppressNextObjectClick = false;
+    }, 350);
+    sendCollabPresence({ moving: false });
+  }
   controls.enabled = !e.value;
+});
+transformControls.addEventListener("objectChange", () => {
+  if (!transformGizmoDragging) return;
+  const now = performance.now();
+  if (now - collabTransformBroadcastAt < 90) return;
+  collabTransformBroadcastAt = now;
+  sendCollabPresence({ moving: true });
 });
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
-
-const extrudeDragTool = createExtrudeDragTool({
-  scene,
-  camera,
-  domElement: renderer.domElement,
-  getMeshRoot: () => currentMesh,
-  getMeshCenterOffset: () => meshCenterOffset,
-  getUnitScale: () => detectModelUnitScale(currentMesh),
-  api,
-  onApplied: () => {
-    viewport.classList.remove("extrude-drag-mode");
-    controls.enabled = true;
-  },
-  onStatus: (msg) => viewerToast?.show(msg, { kind: "info" }),
-});
 
 let gridVisible = true;
 let gridHelper = null;
@@ -995,7 +1582,8 @@ function rebuildGrid() {
 
   const size = niceGridSize(sceneRadius());
   const divisions = Math.min(240, Math.max(80, Math.round(size / (size >= 100 ? 5 : 0.25))));
-  gridHelper = new THREE.GridHelper(size, divisions, FUSION.gridMajor, FUSION.gridMinor);
+  const themeColors = currentThemeSceneColors();
+  gridHelper = new THREE.GridHelper(size, divisions, themeColors.gridMajor, themeColors.gridMinor);
   gridHelper.rotation.x = Math.PI / 2;
   makeGridDepthAware(gridHelper);
   gridHelper.visible = gridVisible;
@@ -1023,7 +1611,7 @@ function setGridVisible(visible) {
 }
 
 function syncGridToggleButtons() {
-  for (const id of ["btn-grid", "btn-grid-viewport", "btn-grid-sidebar"]) {
+  for (const id of ["btn-grid", "btn-grid-viewport"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     el.classList.toggle("active", gridVisible);
@@ -1036,6 +1624,30 @@ function toggleGrid() {
 }
 
 rebuildGrid();
+
+function applyAppTheme({ persist = false, rebuild = true, announce = false } = {}) {
+  appTheme = normalizedAppTheme(appTheme);
+  applyThemeClass();
+  if (savedSceneBg == null) {
+    scene.background?.setHex?.(currentThemeSceneColors().canvas);
+  }
+  if (rebuild) rebuildGrid();
+  const select = document.getElementById("pref-app-theme");
+  if (select) select.value = appTheme;
+  if (persist) {
+    try {
+      localStorage.setItem(APP_THEME_KEY, appTheme);
+    } catch {
+      /* local storage is best-effort */
+    }
+  }
+  if (announce) setEditStatus("ok", `${APP_THEMES[appTheme].label} mode enabled.`);
+}
+
+function setAppTheme(theme, options = {}) {
+  appTheme = normalizedAppTheme(theme);
+  applyAppTheme(options);
+}
 
 let collab;
 
@@ -1113,7 +1725,7 @@ const composer = createPromptComposer({
   refsListEl: document.getElementById("ref-list"),
   onReferencesChange: (refs) => {
     if (!restoringModelPromptState) saveActiveModelPromptState();
-    collab?.sendPicks(refs);
+    sendCollabPresence();
     meshCleanup?.refresh?.();
   },
 });
@@ -1176,7 +1788,7 @@ function restoreActiveModelPromptState() {
     meshCenterOffset,
   });
   restoringModelPromptState = false;
-  collab?.sendPicks(composer.getReferences());
+  sendCollabPresence();
 }
 
 function safeRestoreActiveModelPromptState() {
@@ -1196,15 +1808,16 @@ const promptImageDrop = document.getElementById("prompt-image-drop");
 const promptImageInput = document.getElementById("prompt-image-input");
 const promptImageList = document.getElementById("prompt-image-list");
 const promptPaneCompose = document.getElementById("prompt-pane-compose");
+const promptPanel = document.querySelector(".prompt-panel");
 
 function renderPromptImages() {
   if (!promptImageList) return;
   promptImageList.innerHTML = promptImages
     .map(
       (img) => `<div class="prompt-image-card" data-id="${img.id}">
-        <img src="${img.data_url}" alt="${escapeHtml(img.name)}" />
+        <img src="${img.data_url}" alt="${appEscapeHtml(img.name)}" />
         <button type="button" class="prompt-image-remove" title="Remove image">×</button>
-        <span>${escapeHtml(img.name)}</span>
+        <span>${appEscapeHtml(img.name)}</span>
       </div>`
     )
     .join("");
@@ -1218,6 +1831,12 @@ function renderPromptImages() {
   });
   syncBlueprintVisionForImages(promptImages.length);
   skillsPromptUI.render();
+  skillsPromptUI.updatePlan?.();
+  if (promptImages.length > 0) {
+    requestAnimationFrame(() => {
+      document.getElementById("btn-prompt")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }
 }
 
 function readImageFile(file) {
@@ -1231,6 +1850,7 @@ function readImageFile(file) {
 
 async function addPromptImages(files) {
   const allowed = ["image/png", "image/jpeg", "image/webp"];
+  let added = 0;
   for (const file of [...files]) {
     if (promptImages.length >= 4) break;
     if (!allowed.includes(file.type)) continue;
@@ -1245,8 +1865,13 @@ async function addPromptImages(files) {
       media_type: file.type,
       data_url: dataUrl,
     });
+    added += 1;
   }
   renderPromptImages();
+  if (added > 0) {
+    setEditStatus("ok", added === 1 ? "Attached 1 image to the AI prompt." : `Attached ${added} images to the AI prompt.`);
+    showAiComposePanel();
+  }
   if (!restoringModelPromptState) saveActiveModelPromptState();
 }
 
@@ -1260,7 +1885,20 @@ promptImageInput?.addEventListener("change", async (e) => {
 });
 
 function droppedImageFiles(e) {
-  return [...(e.dataTransfer?.files || [])].filter((file) => file.type?.startsWith("image/"));
+  const out = [];
+  const seen = new Set();
+  const addFile = (file) => {
+    if (!file?.type?.startsWith("image/")) return;
+    const key = `${file.name}:${file.size}:${file.lastModified}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(file);
+  };
+  [...(e.dataTransfer?.items || [])].forEach((item) => {
+    if (item.kind === "file") addFile(item.getAsFile());
+  });
+  [...(e.dataTransfer?.files || [])].forEach(addFile);
+  return out;
 }
 
 function droppedDxfFiles(e) {
@@ -1316,12 +1954,15 @@ async function addPromptDxfFiles(files) {
 function handlePromptComposeDragover(e) {
   if (!isPromptImageDrag(e) && !isExplorerComponentDrag(e)) return;
   e.preventDefault();
+  e.stopPropagation();
   if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  promptPaneCompose?.classList.add("dragging-image");
   promptImageDrop?.classList.add("dragging");
 }
 
 function handlePromptComposeDragleave(e) {
-  if (!promptPaneCompose?.contains(e.relatedTarget)) {
+  if (!promptPanel?.contains(e.relatedTarget)) {
+    promptPaneCompose?.classList.remove("dragging-image");
     promptImageDrop?.classList.remove("dragging");
   }
 }
@@ -1331,6 +1972,7 @@ async function handlePromptComposeDrop(e) {
   if (componentRefs.length) {
     e.preventDefault();
     e.stopPropagation();
+    promptPaneCompose?.classList.remove("dragging-image");
     promptImageDrop?.classList.remove("dragging");
     const added = addComponentPromptReferences(componentRefs);
     if (added > 0) {
@@ -1357,6 +1999,7 @@ async function handlePromptComposeDrop(e) {
   if (e.target instanceof Element && e.target.closest("#prompt-image-drop")) return;
   e.preventDefault();
   e.stopPropagation();
+  promptPaneCompose?.classList.remove("dragging-image");
   promptImageDrop?.classList.remove("dragging");
   await addPromptImages(files);
 }
@@ -1425,6 +2068,9 @@ promptImageDrop?.addEventListener("drop", async (e) => {
 promptPaneCompose?.addEventListener("dragover", handlePromptComposeDragover);
 promptPaneCompose?.addEventListener("dragleave", handlePromptComposeDragleave);
 promptPaneCompose?.addEventListener("drop", handlePromptComposeDrop);
+promptPanel?.addEventListener("dragover", handlePromptComposeDragover);
+promptPanel?.addEventListener("dragleave", handlePromptComposeDragleave);
+promptPanel?.addEventListener("drop", handlePromptComposeDrop);
 document.getElementById("prompt-input")?.addEventListener("dragover", handlePromptComposeDragover);
 document.getElementById("prompt-input")?.addEventListener("drop", handlePromptComposeDrop);
 document.getElementById("prompt-inline-ref-chips")?.addEventListener("dragover", handlePromptComposeDragover);
@@ -1450,12 +2096,90 @@ function userRealtimeUrl() {
   return `${proto}//${location.host}/api/ws/user?token=${token}`;
 }
 
+function workspaceRealtimeUrl(teamId) {
+  const token = encodeURIComponent(getToken());
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/api/ws/workspaces/${encodeURIComponent(teamId)}?token=${token}`;
+}
+
 function scheduleUserRealtimeReconnect() {
   if (userRealtimeReconnectTimer || !getToken()) return;
   userRealtimeReconnectTimer = setTimeout(() => {
     userRealtimeReconnectTimer = null;
     connectUserRealtime();
   }, 2500);
+}
+
+function scheduleWorkspaceRealtimeReconnect() {
+  if (workspaceRealtimeReconnectTimer || !getToken() || !workspaceRealtimeTeamId) return;
+  workspaceRealtimeReconnectTimer = setTimeout(() => {
+    workspaceRealtimeReconnectTimer = null;
+    connectWorkspaceRealtime(workspaceRealtimeTeamId);
+  }, 2500);
+}
+
+function renderWorkspaceRealtimePresence() {
+  const el = document.getElementById("workspace-realtime-presence");
+  if (!el) return;
+  if (!workspaceRealtimeTeamId) {
+    el.textContent = "Select workspace";
+    return;
+  }
+  const count = workspaceRealtimeUsers.length;
+  el.textContent = count ? `${count} live` : "Live";
+  el.title = workspaceRealtimeUsers.map((u) => u.display_name || "User").join(", ");
+}
+
+function handleWorkspaceRealtimeEvent(msg = {}) {
+  if (msg.type === "workspace.presence.sync") {
+    workspaceRealtimeUsers = msg.users || [];
+    renderWorkspaceRealtimePresence();
+    return;
+  }
+  if (msg.type === "workspace.presence.join") {
+    const user = msg.user;
+    if (user && !workspaceRealtimeUsers.some((u) => u.id === user.id)) {
+      workspaceRealtimeUsers.push(user);
+      renderWorkspaceRealtimePresence();
+    }
+    return;
+  }
+  if (msg.type === "workspace.presence.leave") {
+    workspaceRealtimeUsers = workspaceRealtimeUsers.filter((u) => u.id !== msg.user_id);
+    renderWorkspaceRealtimePresence();
+    return;
+  }
+  handleRealtimeEvent(msg);
+  if (msg.type === "workspace.render_folder.updated" || msg.type === "workspace.updated" || msg.type === "project.created" || msg.type === "project.deleted") {
+    void refreshWorkspaceRealtimeEditor();
+  }
+}
+
+function connectWorkspaceRealtime(teamId) {
+  if (teamId && workspaceRealtimeTeamId === teamId && workspaceRealtimeSocket && workspaceRealtimeSocket.readyState <= WebSocket.OPEN) {
+    return;
+  }
+  workspaceRealtimeSocket?.close();
+  workspaceRealtimeSocket = null;
+  workspaceRealtimeTeamId = teamId || null;
+  workspaceRealtimeUsers = [];
+  renderWorkspaceRealtimePresence();
+  if (!teamId || !getToken()) return;
+  const ws = new WebSocket(workspaceRealtimeUrl(teamId));
+  workspaceRealtimeSocket = ws;
+  ws.onmessage = (ev) => {
+    try {
+      handleWorkspaceRealtimeEvent(JSON.parse(ev.data));
+    } catch {
+      /* ignore malformed websocket packets */
+    }
+  };
+  ws.onclose = () => {
+    if (workspaceRealtimeSocket === ws) {
+      workspaceRealtimeSocket = null;
+      scheduleWorkspaceRealtimeReconnect();
+    }
+  };
 }
 
 function connectUserRealtime() {
@@ -1485,6 +2209,10 @@ const promptHistory = createPromptHistoryUI({
   summaryEl: document.getElementById("prompt-history-summary"),
   getProjectId: () => projectId,
   onReuse: (entry) => {
+    const reusedMode = generationPromptMode({ prompt_mode: entry.prompt_mode }, promptMode);
+    if (["v2", "fusion", "architect", "draw", "standard"].includes(reusedMode)) {
+      applyPromptModeUI(reusedMode === "standard" ? "render" : reusedMode);
+    }
     const ta = document.getElementById("prompt-input");
     if (ta) {
       ta.value = entry.prompt;
@@ -1494,14 +2222,51 @@ const promptHistory = createPromptHistoryUI({
   },
 });
 
-let promptMode = "render";
+let promptMode = "v2";
+const PROMPT_SPEED_KEY = "render3d:prompt-speed:v1";
+
+function getPromptGenerationSpeed() {
+  return document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
+}
+
+function setPromptGenerationSpeed(value, { persist = true } = {}) {
+  const next = value === "quality" ? "quality" : "fast";
+  const select = document.getElementById("prompt-speed");
+  if (select) select.value = next;
+  if (persist) {
+    try { localStorage.setItem(PROMPT_SPEED_KEY, next); } catch {}
+  }
+  applyPromptModeUI(promptMode);
+}
+
+function initPromptGenerationSpeed() {
+  let saved = "fast";
+  try { saved = localStorage.getItem(PROMPT_SPEED_KEY) || "fast"; } catch {}
+  setPromptGenerationSpeed(saved, { persist: false });
+  document.getElementById("prompt-speed")?.addEventListener("change", (e) => {
+    setPromptGenerationSpeed(e.currentTarget.value);
+  });
+}
+
+const FUSION_TARGET_KEY = "render3d:fusion-target:v1";
+let fusionTarget = (() => {
+  try {
+    return localStorage.getItem(FUSION_TARGET_KEY) === "fusion360" ? "fusion360" : "in_app";
+  } catch {
+    return "in_app";
+  }
+})();
+
+function fusionTargetLabel(target = fusionTarget) {
+  return target === "fusion360" ? "Fusion 360 plugin" : "in-app Fusion";
+}
 
 function promptModeForRef(mode = promptMode) {
   const normalized = (mode || "render").toLowerCase();
-  if (normalized === "v2") return "v2";
-  if (normalized === "draw") return "draw";
   if (normalized === "fusion") return "fusion";
   if (normalized === "architect") return "architect";
+  if (normalized === "v2") return "v2";
+  if (normalized === "draw") return "draw";
   return "standard";
 }
 
@@ -1529,34 +2294,135 @@ function clearPromptComposeResult() {
 }
 document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
   btn.addEventListener("click", () => {
+    if ((btn.dataset.promptMode || "render") === "fusion") {
+      openFusionCapabilityModal();
+      return;
+    }
     applyPromptModeUI(btn.dataset.promptMode || "render");
   });
 });
-document.getElementById("prompt-target")?.addEventListener("change", () => applyPromptModeUI(promptMode));
-document.getElementById("prompt-speed")?.addEventListener("change", () => applyPromptModeUI(promptMode));
-applyPromptModeUI("render");
 
-document.getElementById("btn-architect-prompt")?.addEventListener("click", async () => {
-  const prompt = document.getElementById("architect-prompt-input")?.value?.trim();
-  const status = document.getElementById("architect-prompt-status");
-  if (!prompt) {
-    if (status) {
-      status.className = "status error";
-      status.textContent = "Describe the building or layout you want.";
-    }
+function setFusionTarget(target) {
+  fusionTarget = target === "fusion360" ? "fusion360" : "in_app";
+  try {
+    localStorage.setItem(FUSION_TARGET_KEY, fusionTarget);
+  } catch {
+    /* local storage is best-effort */
+  }
+}
+
+function openFusionCapabilityModal() {
+  const modal = document.getElementById("fusion-capability-modal");
+  if (!modal) {
+    applyPromptModeUI("fusion");
     return;
   }
-  applyPromptModeUI("architect");
-  composer.setPromptText(`${architectPromptPrefix()}\n\n${prompt}`);
-  setSkillEnabled("cad", true);
-  setSkillEnabled("architect", true);
-  skillsPromptUI.render();
-  showAiComposePanel();
-  if (status) {
-    status.className = "status loading";
-    status.textContent = "Starting architect generation…";
+  modal.querySelectorAll("[data-fusion-target]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.fusionTarget === fusionTarget);
+  });
+  modal.classList.remove("hidden");
+}
+
+function closeFusionCapabilityModal() {
+  document.getElementById("fusion-capability-modal")?.classList.add("hidden");
+}
+
+document.getElementById("fusion-capability-close")?.addEventListener("click", closeFusionCapabilityModal);
+function connectFusionTargetIfNeeded() {
+  if (!getToken()) {
+    authUi?.openModal?.();
+    setEditStatus("error", "Sign in to Render3D first, then connect Autodesk Fusion 360.");
+    return;
   }
-  document.getElementById("btn-prompt")?.click();
+  if (authUi?.startAutodeskConnect) {
+    void authUi.startAutodeskConnect({ promptForCredentials: false }).then((status) => {
+      if (status?.linked) {
+        setEditStatus("ok", "Fusion cloud is connected. APS can import/export project files; live desktop edits need the local Fusion add-in bridge.");
+      }
+    });
+    return;
+  }
+  void api("/api/autodesk/status")
+    .then((status) => {
+      if (status?.linked) {
+        setEditStatus("ok", "Fusion cloud is connected. APS can import/export project files; live desktop edits need the local Fusion add-in bridge.");
+        return null;
+      }
+      return api("/api/autodesk/oauth-url", { method: "POST" });
+    })
+    .then((oauth) => {
+      if (oauth?.url) window.location.href = oauth.url;
+    })
+    .catch(() => setEditStatus("error", "Could not start Fusion 360 connection."));
+}
+
+document.getElementById("fusion-capability-modal")?.addEventListener("click", (e) => {
+  if (e.target.id === "fusion-capability-modal") {
+    closeFusionCapabilityModal();
+    return;
+  }
+  const option = e.target.closest("[data-fusion-target]");
+  if (!option) return;
+  setFusionTarget(option.dataset.fusionTarget);
+  closeFusionCapabilityModal();
+  applyPromptModeUI("fusion");
+  if (option.dataset.fusionTarget === "fusion360") {
+    connectFusionTargetIfNeeded();
+  }
+});
+
+document.getElementById("prompt-target-mode")?.addEventListener("change", () => {
+  if (getPromptTargetMode() !== "edit") promptTargetSelectedBody = null;
+  syncPromptTargetUI();
+});
+
+document.getElementById("prompt-target-object")?.addEventListener("change", (e) => {
+  const name = e.currentTarget.value;
+  if (!name) return;
+  promptTargetSelectedBody = null;
+  selectedFile = name;
+  projectTree.setSelected(name);
+  featureEditor.setModel(projectId, name);
+  selectAssemblyComponent(name, { fitView: false });
+  syncPromptTargetUI();
+});
+
+document.getElementById("prompt-target-picker-btn")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  togglePromptTargetPopup();
+});
+
+document.getElementById("prompt-target-popup")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-prompt-target-name]");
+  if (!btn) return;
+  const bodyIndex = btn.dataset.promptTargetBodyIndex === undefined ? null : Number(btn.dataset.promptTargetBodyIndex);
+  choosePromptTargetObject(btn.dataset.promptTargetName, Number.isInteger(bodyIndex) ? bodyIndex : null);
+});
+
+document.getElementById("prompt-target-popup")?.addEventListener("pointerover", (e) => {
+  const btn = e.target.closest("[data-prompt-target-name]");
+  if (!btn) return;
+  beginPromptTargetPreview(btn.dataset.promptTargetName);
+});
+
+document.getElementById("prompt-target-popup")?.addEventListener("pointerout", (e) => {
+  const btn = e.target.closest("[data-prompt-target-name]");
+  if (!btn || btn.contains(e.relatedTarget)) return;
+  if (e.relatedTarget?.closest?.("[data-prompt-target-name]")) return;
+  endPromptTargetPreview();
+});
+
+document.addEventListener("mousedown", (e) => {
+  const popup = document.getElementById("prompt-target-popup");
+  const trigger = document.getElementById("prompt-target-picker-btn");
+  if (popup?.classList.contains("hidden")) return;
+  if (popup.contains(e.target) || trigger?.contains(e.target)) return;
+  closePromptTargetPopup();
+}, true);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closePromptTargetPopup();
 });
 
 const wiringPromptHistory = createPromptHistoryUI({
@@ -1643,8 +2509,14 @@ const skillsPromptUI = createSkillsPromptUI({
   chipsEl: document.getElementById("prompt-skills-chips"),
   linkEl: document.getElementById("prompt-skills-link"),
   toggleEl: document.getElementById("prompt-skills-toggle"),
+  planEl: document.getElementById("prompt-skills-plan"),
+  promptEl: document.getElementById("prompt-input"),
+  getHasImages: () => promptImages.length > 0,
 });
-fetchSkillsCatalog((path) => fetch(path)).then(() => skillsPromptUI.render());
+fetchSkillsCatalog((path, options) => fetch(path, options)).then(() => {
+  skillsPromptUI.render();
+  skillsPromptUI.updatePlan?.();
+});
 safeRestoreActiveModelPromptState();
 
 async function refreshWorkspaceAiUsage() {
@@ -1754,6 +2626,7 @@ async function refreshPromptHistory() {
   try {
     const data = await api(`/api/projects/${projectId}/prompt-history?kind=cad`);
     const entries = data.entries || [];
+    latestPromptHistoryEntries = entries;
     promptHistory.render(entries, data.usage_summary);
     promptHistory.setCountBadge(entries.length);
     renderProjectCostThumb(entries, data.usage_summary);
@@ -1766,6 +2639,7 @@ async function refreshPromptHistory() {
     }
     return entries;
   } catch {
+    latestPromptHistoryEntries = [];
     promptHistory.render([], null);
     promptHistory.setCountBadge(0);
     renderProjectCostThumb([], null);
@@ -1935,7 +2809,7 @@ async function ensureMissingBrowserComponentsLoaded({ keepGizmoOn = null, fitVie
       continue;
     }
     const viewer = entry.viewer_filename || entry.name;
-    const ok = await loadModel(`/api/projects/${projectId}/files/${encodeURIComponent(viewer)}`, viewer, {
+    const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
       projectId,
       append: projectAssembly.count() > 0,
       catalogFilename: entry.name,
@@ -2004,6 +2878,155 @@ async function afterModelEdit(data) {
   }
   await refreshTimeline();
   await refreshPromptHistory();
+}
+
+let objectClipboard = null;
+const viewportUndoStack = [];
+
+function captureViewportAssemblyState() {
+  return projectAssembly.list().map(([name, obj]) => ({
+    name,
+    visible: obj?.visible !== false,
+  }));
+}
+
+function pushViewportUndoAction(action) {
+  if (!action) return;
+  viewportUndoStack.push(action);
+  if (viewportUndoStack.length > 20) viewportUndoStack.shift();
+}
+
+function undoViewportAction() {
+  const action = viewportUndoStack.pop();
+  if (!action) return false;
+  if (action.type === "fusion-component-drop") {
+    const beforeNames = new Set((action.before || []).map((item) => item.name));
+    for (const [name] of [...projectAssembly.list()]) {
+      if (!beforeNames.has(name)) projectAssembly.remove(name);
+    }
+    for (const item of action.before || []) {
+      projectAssembly.setVisible(item.name, item.visible);
+    }
+    const restoreName = action.selectedBefore || (action.before || []).find((item) => item.visible)?.name || null;
+    if (restoreName && projectAssembly.has(restoreName)) {
+      selectAssemblyComponent(restoreName, { fitView: true });
+    } else {
+      objectTools.clearSelection?.();
+      transformControls.detach();
+      gizmoPanel.hide();
+      document.getElementById("btn-gizmo")?.classList.remove("active");
+      currentMesh = projectAssembly.getRoot();
+      fitCamera();
+    }
+    setEditStatus("ok", `Undo drop: removed ${action.label || "component"}.`);
+    return true;
+  }
+  return false;
+}
+
+function selectedObjectFilename() {
+  const selection = objectTools.getSelection?.();
+  const fromSelection = selection?.catalogName || (selection?.mesh ? catalogNameForMesh(selection.mesh) : null);
+  return fromSelection || selectedFile || null;
+}
+
+function capturePromptSelectionContext() {
+  const selection = objectTools.getSelection?.();
+  const filename = selection?.catalogName || (selection?.mesh ? catalogNameForMesh(selection.mesh) : null) || selectedFile || null;
+  if (!filename) return null;
+  return {
+    filename,
+    targetMode: getPromptTargetMode(),
+    bodyIndex: Number.isInteger(selection?.bodyIndex) ? selection.bodyIndex : null,
+    bodyName: selection?.label || null,
+  };
+}
+
+function restorePromptSelectionContext(context = pendingPromptSelectionContext, { resultFilename = null } = {}) {
+  if (!context?.filename) return false;
+  const targetModeSelect = document.getElementById("prompt-target-mode");
+  if (context.targetMode === "edit" && targetModeSelect) targetModeSelect.value = "edit";
+  const restoreName =
+    (context.targetMode === "edit" && resultFilename && projectAssembly.has(resultFilename) ? resultFilename : null) ||
+    (projectAssembly.has(context.filename) ? context.filename : null) ||
+    (resultFilename && projectAssembly.has(resultFilename) ? resultFilename : null);
+  if (!restoreName) return false;
+  const objectSelect = document.getElementById("prompt-target-object");
+  if (objectSelect) objectSelect.value = restoreName;
+  selectedFile = restoreName;
+  const bodyIndex = restoreName === context.filename && Number.isInteger(context.bodyIndex) ? context.bodyIndex : null;
+  if (bodyIndex != null) {
+    const entry = visiblePromptTargetEntries().find((candidate) => candidate.name === restoreName);
+    const body = promptTargetBodies(entry).find((candidate) => candidate.index === bodyIndex);
+    promptTargetSelectedBody = {
+      filename: restoreName,
+      bodyIndex,
+      bodyName: body?.name || context.bodyName || `Body ${bodyIndex + 1}`,
+    };
+    const root = projectAssembly.get(restoreName);
+    const meshes = root ? listObjectMeshes(root) : [];
+    const mesh = meshes[bodyIndex] || meshes[0] || root;
+    if (mesh && root) {
+      objectTools.selectObject?.({ mesh, root, bodyIndex, catalogName: restoreName });
+    }
+    projectTree.setSelected(browserBodySelectionName(restoreName, bodyIndex));
+  } else {
+    promptTargetSelectedBody = null;
+    selectAssemblyComponent(restoreName, { fitView: false });
+  }
+  featureEditor.setModel(projectId, restoreName);
+  syncPromptTargetUI();
+  return true;
+}
+
+function copySelectedObjectToClipboard() {
+  const filename = selectedObjectFilename();
+  if (!filename) {
+    setEditStatus("error", "Select an object to copy.");
+    return false;
+  }
+  objectClipboard = { projectId, filename };
+  setEditStatus("ok", `Copied ${filename.replace(/\.[^.]+$/, "")}. Press Cmd/Ctrl+V to paste.`);
+  return true;
+}
+
+async function duplicateSelectedObject(filename = selectedObjectFilename()) {
+  if (!projectId || !filename) {
+    setEditStatus("error", "Select an object to duplicate.");
+    return null;
+  }
+  try {
+    setEditStatus("loading", `Duplicating ${filename.replace(/\.[^.]+$/, "")}…`);
+    const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/transform`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "delta",
+        copy: true,
+        // Small baked offset makes pasted copies visible instead of perfectly overlapping.
+        translation: [20, 0, 0],
+      }),
+    });
+    selectedFile = data.filename;
+    await refreshFiles();
+    await loadModel(data.url, data.filename, {
+      projectId,
+      append: true,
+      catalogFilename: data.filename,
+      center: false,
+      normalizePivot: false,
+      fitView: false,
+      autoGizmo: true,
+    });
+    await refreshTimeline();
+    setEditStatus("ok", `Duplicated as ${data.filename.replace(/\.[^.]+$/, "")}.`);
+    return data;
+  } catch (err) {
+    const msg = err.message || "Duplicate failed.";
+    setEditStatus("error", msg);
+    viewerOverlay.showError(msg);
+    return null;
+  }
 }
 
 function transformBaselineFromPayload(raw) {
@@ -2232,7 +3255,7 @@ function formatSketchTool(tool) {
 }
 
 function enterSketchVisualMode() {
-  savedSceneBg = scene.background?.getHex?.() ?? FUSION.canvas;
+  savedSceneBg = scene.background?.getHex?.() ?? currentThemeSceneColors().canvas;
   scene.background.setHex(SKETCH_CANVAS);
   if (gridHelper) gridHelper.visible = false;
   ribbon?.setSketchEditing?.(true);
@@ -2241,7 +3264,7 @@ function enterSketchVisualMode() {
 }
 
 function exitSketchVisualMode() {
-  scene.background.setHex(savedSceneBg ?? FUSION.canvas);
+  scene.background.setHex(savedSceneBg ?? currentThemeSceneColors().canvas);
   savedSceneBg = null;
   if (gridHelper) gridHelper.visible = gridVisible;
   ribbon?.setSketchEditing?.(false);
@@ -2349,73 +3372,599 @@ function exitRiggingMode() {
   riggingEditor.hide();
 }
 
-function syncRiggingToolbelt() {
-  const tool = riggingEditor.getTool();
-  document.querySelectorAll("[data-rig-tool]").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.rigTool === tool);
-  });
-}
-
-function enterCanvasTab() {
-  catalogPanel?.close?.();
-  exitRiggingMode();
-  document.getElementById("canvas-workspace")?.classList.remove("hidden");
-  document.getElementById("app")?.classList.add("canvas-design-tab");
-  document.body.classList.add("canvas-design-tab");
-  canvasModeInstance?.show?.();
-  showAiComposePanel();
-  ribbon?.setDesignTab?.("CANVAS");
-  window.dispatchEvent(new Event("resize"));
-}
-
-function exitCanvasTab() {
-  document.getElementById("canvas-workspace")?.classList.add("hidden");
-  document.getElementById("app")?.classList.remove("canvas-design-tab");
-  document.body.classList.remove("canvas-design-tab");
-  canvasModeInstance?.hide?.();
-}
-
-function selectedObjectFilename() {
-  return objectTools?.getSelection?.()?.catalogName || selectedFile || "";
-}
-
 function architectPromptPrefix() {
   const gridMm = Number(document.getElementById("architect-grid-size")?.value || 1000);
   const wallHeightMm = Number(document.getElementById("architect-wall-height")?.value || 2800);
   return [
-    "Architect mode modular house CAD:",
+    "Architect mode room-first modular house CAD:",
     `Use a ${gridMm} mm snap grid and ${wallHeightMm} mm wall height.`,
-    "Build modular rooms, walls, roofs, and site pieces as separate editable components with snap interfaces.",
-    "Use house materials/colors: warm wood floors, light plaster walls, darker roof parts, blue glass, and contrasting trim.",
+    "Build one recognizable room module at a time unless I explicitly ask for a full multi-room house, but make it out of separate editable bodies/pieces.",
+    "A room module must include separate named parts/bodies for the floor slab, north/south/east/west wall panels, door/window inserts, trim/baseboards, corner connectors, ceiling/roof sockets, and snap interfaces.",
+    "Never fuse the room or house into one solid; Render3D must be able to select each wall piece, adjust its length, move it around, and snap it into place.",
+    "Design parts for 3D printing and robot assembly: chunky tabs, sockets, rails, keyed connectors, chamfered lead-ins, robot pick tabs, grip flats, orientation labels, and mating-side labels.",
+    "Leave one wall open, lowered, or cut away so the Render3D preview looks like a real interior room instead of a closed cube.",
+    "Use house materials/colors: warm wood or tan floors, light plaster/drywall walls, darker roof/ceiling parts, blue glass, and contrasting trim/connectors.",
+    "Keep modules rectangular/grid-aligned unless asked otherwise, with STEP-valid separate solids, semantic names, connector pockets/tabs, alignment keys, robot assembly labels, clearance notes, and build order notes.",
   ].join(" ");
 }
 
 function architectPresetPrompt(kind = "room") {
+  const prefix = architectPromptPrefix();
   const presets = {
-    room: "Generate a starter 2×3 grid living room module with floor slab, four walls, one door opening, one window opening, snap tabs along outside edges, and labels for wall_A through wall_D.",
-    wall: "Generate a modular wall panel with a small window, connector tabs on both sides, bottom alignment rail, top cap, and robot gripper-friendly lift points.",
-    roof: "Generate a roof and ceiling module that snaps onto a 2×3 grid room, with overhang, ridge beam, alignment sockets, and removable panel sections.",
-    robot: "Generate a robot assembly-friendly wall kit: two wall panels, one corner connector, one small window insert, numbered snap features, and assembly order labels.",
-    window: "Generate a replaceable window insert module with frame, sill, snap tabs, weather lip, alignment keys, and robot gripper flats.",
-    door: "Generate a modular door panel insert with frame, threshold rail, hinge-side connector features, latch-side alignment pockets, and robot assembly labels.",
-    floor: "Generate a modular floor slab panel with perimeter snap rails, underside robot lift pockets, alignment sockets on all edges, and warm wood material coloring.",
-    pattern: "Generate a repeated grid pattern of modular floor and wall panels for a small house layout with labeled module coordinates and assembly order labels.",
-    image: "Use Architect mode to generate a modular house element from an attached reference image with snap interfaces and robot pick labels.",
-    blueprint: "Use Architect mode to generate grid-snapping modular house parts from an attached floor plan or blueprint.",
-    service: "Generate a compact service-core module for a modular house wall: electrical conduit chase, plumbing chase placeholder, removable cover, connector rails, and robot pick tabs.",
+    room: "Generate `starter_room_2x3`: a complete living-room module built from separate editable bodies, not one fused block. Include separate warm wood floor slab, separate light plaster north/south/east/west wall panels with adjustable wall lengths, one open/cutaway wall for visibility, a door opening with separate removable door insert, a separate blue-glass window insert, separate baseboards/trim, corner posts, snap rails around the floor, roof/ceiling sockets, print-friendly connectors, robot pick tabs, orientation labels, and mating-side labels.",
+    wall: "Generate a modular wall panel that clearly belongs to a room: light plaster wall body with visible thickness, independently adjustable length, bottom snap rail, side connector pockets, top cap, baseboard trim, one framed blue-glass window insert, sill/lintel parts, robot pick tabs, and labeled mating interfaces to floor and corner posts.",
+    roof: "Generate a roof and ceiling module that snaps onto a 2 by 3 room: separate dark roof panels, ceiling underside, overhang, ridge/edge beams, alignment sockets, removable panel sections, robot grip flats, and labels showing which room walls it mates to.",
+    robot: "Generate a robot-assembly-friendly starter room kit: separate floor slab, separate wall panels, one corner connector, one small window insert, one door insert, numbered snap features, chunky printable tabs/sockets, lift tabs, grip flats, and explicit assembly order labels.",
+    window: "Generate a replaceable window insert module for a house wall: blue glass pane, frame, sill, lintel, weather lip, snap tabs, alignment keys, trim, and robot gripper flats. Include a matching wall-opening reference frame.",
+    door: "Generate a modular door insert for a room wall: door panel, frame, threshold rail, hinge-side connector features, latch-side alignment pockets, trim, handle detail, snap sockets, and robot assembly labels.",
+    floor: "Generate a modular room floor slab, not just a plate: warm wood/tan finish, visible plank or tile pattern, perimeter wall snap rails, corner-post sockets, underside robot lift pockets, alignment sockets on all edges, and labels for north/south/east/west wall positions.",
+    pattern: "Generate a two-room grid pattern made from separate room modules: separate floor slabs, separate wall panels, a shared wall connection, labeled module coordinates, doors/windows as separate inserts, snap sockets, and assembly order labels. Keep each room and each wall readable/selectable as a separate module.",
+    image: "Use Architect mode to generate one complete modular room from an attached reference image. Preserve recognizable house colors/materials, include floor/walls/windows/door/trim, leave one side open for interior visibility, and add snap interfaces plus robot pick labels.",
+    blueprint: "Use Architect mode to convert an attached floor plan or blueprint into one room module at a time. Start with a 2 by 3 starter room with floor, named walls, door/window modules, trim, snap interfaces, and labels showing where the next room connects.",
+    service: "Generate a compact service-core wall module for a room: light wall panel, electrical conduit chase, plumbing chase placeholder, removable cover, access panel, baseboard/trim, connector rails, and robot pick tabs.",
   };
-  return `${architectPromptPrefix()}\n\n${presets[kind] || presets.room}`;
+  return `${prefix}\n\n${presets[kind] || presets.room}`;
 }
 
 function architectEditPrompt(kind = "customize", filename = selectedObjectFilename()) {
-  const target = filename ? `Target selected module: ${filename}. ` : "";
+  const target = architectSelectedEditTarget(filename);
   const prompts = {
-    window: `${target}Edit the selected wall/room module to add or resize a window opening with a replaceable window insert, snap tabs, alignment keys, sill/lintel details, and robot pick tabs.`,
-    door: `${target}Edit the selected wall/room module to add a modular door opening and removable door insert with threshold rail, hinge-side labels, and snap sockets.`,
-    materials: `${target}Apply house-like material/color styling to the selected architect module while keeping snap interfaces visible and labeled.`,
-    customize: `${target}Customize the selected architect module while preserving its grid footprint and snap interfaces.`,
+    wall: `${target}Edit only the selected wall piece. Preserve it as a separate editable wall body/component and keep its floor/corner/roof snap interfaces unchanged. Add or refine house details as separate named parts: studs or panel seams, baseboard, trim, connector pockets, robot lift tabs, wall labels, and optional accent pattern.`,
+    window: `${target}Edit only the selected wall piece to add or resize a window opening. Preserve the wall as its own editable piece, and add separate named parts for blue-glass window_insert, sill, lintel, trim frame, snap tabs, alignment keys, and robot pick tabs.`,
+    door: `${target}Edit only the selected wall piece to add a modular door opening. Preserve the wall as its own editable piece, and add separate named parts for removable door_insert, threshold rail, hinge-side labels, latch-side alignment pocket, snap sockets, and trim.`,
+    idea: `${target}Create a generative architectural idea for the selected wall piece while preserving its grid footprint and snap interfaces. Examples: bay window, built-in shelves, planter window, service chase, decorative trim pattern, stronger robot lift tabs, or alternate window layout. Keep every added detail as separate named pieces where practical.`,
+    materials: `${target}Apply house-like material/color styling to the selected architect piece(s). Use warm wood floors, light drywall or plaster walls, darker roof material, glassy blue window panels, trim colors, and keep all snap interfaces visible and labeled.`,
+    customize: `${target}Customize the selected architect piece while preserving its grid footprint and snap interfaces. Add useful house-building details as separate named parts: labeled panels, stronger rails, connector pockets, robot lift points, trim, and assembly notes.`,
   };
   return `${architectPromptPrefix()}\n\n${prompts[kind] || prompts.customize}`;
+}
+
+function architectSelectedEditTarget(filename = selectedObjectFilename()) {
+  const selection = objectTools?.getSelection?.();
+  const selectedBody = selection && Number.isInteger(selection.bodyIndex) && (selection.bodyCount || 1) > 1
+    ? {
+        filename: selection.catalogName || filename,
+        bodyIndex: selection.bodyIndex,
+        bodyName: selection.label || `Body ${selection.bodyIndex + 1}`,
+      }
+    : null;
+  if (selectedBody?.filename) {
+    return `Target selected wall/body: ${selectedBody.bodyName} inside ${selectedBody.filename}. Use body_index ${selectedBody.bodyIndex}. `;
+  }
+  return filename
+    ? `Target selected module: ${filename}. If this is a room assembly, ask me to select an individual wall body before wall-level edits. `
+    : "No wall is selected yet; ask me to select a wall piece first before applying wall-level Architect tools. ";
+}
+
+const ARCHITECT_LOCAL_MODULES = [
+  {
+    id: "floor",
+    title: "Floor Slab",
+    category: "Floors",
+    description: "Grid floor slab with wall rails, corner sockets, and warm wood material.",
+  },
+  {
+    id: "floor-small",
+    title: "Small Floor Tile",
+    category: "Floors",
+    description: "One-cell floor tile for fast fort-builder style layouts.",
+  },
+  {
+    id: "floor-wide",
+    title: "Wide Floor Bay",
+    category: "Floors",
+    description: "Wide 2 x 2 floor bay with snap rails on every side.",
+  },
+  {
+    id: "wall",
+    title: "Wall Panel",
+    category: "Walls",
+    description: "Straight grid wall panel with connector rails. Drag or scale it by hand after placement.",
+  },
+  {
+    id: "wall-half",
+    title: "Half Wall",
+    category: "Walls",
+    description: "Short half-wall / railing piece for open rooms and balconies.",
+  },
+  {
+    id: "wall-low",
+    title: "Low Divider",
+    category: "Walls",
+    description: "Low interior divider wall that snaps to the same grid.",
+  },
+  {
+    id: "wall-corner",
+    title: "Corner Wall",
+    category: "Walls",
+    description: "L-shaped corner wall piece with two snap faces.",
+  },
+  {
+    id: "pillar",
+    title: "Snap Pillar",
+    category: "Walls",
+    description: "Printable corner/structural pillar with sockets for walls and floor rails.",
+  },
+  {
+    id: "pillar-tall",
+    title: "Tall Pillar",
+    category: "Walls",
+    description: "Full-height robot-grabbable pillar for roof and wall alignment.",
+  },
+  {
+    id: "window",
+    title: "Window Insert",
+    category: "Openings",
+    description: "Separate blue-glass window insert with frame, sill, lintel, and snap tabs.",
+  },
+  {
+    id: "door",
+    title: "Door Insert",
+    category: "Openings",
+    description: "Separate door insert with frame, threshold, trim, and connector pockets.",
+  },
+  {
+    id: "window-wall",
+    title: "Wall + Window",
+    category: "Walls",
+    description: "Wall panel with window opening, sill, lintel, and snap rails.",
+  },
+  {
+    id: "door-wall",
+    title: "Wall + Door",
+    category: "Walls",
+    description: "Wall panel with door opening, threshold, and side connector pockets.",
+  },
+  {
+    id: "room",
+    title: "Starter Room Kit",
+    category: "Rooms",
+    description: "Floor slab plus four wall runs with a window and a door opening.",
+  },
+  {
+    id: "roof",
+    title: "Roof / Ceiling Panel",
+    category: "Roof",
+    description: "Flat roof module with overhang and alignment sockets.",
+  },
+  {
+    id: "roof-gable",
+    title: "Gable Roof",
+    category: "Roof",
+    description: "Pitched gable roof made from two sloped-looking panels and a ridge cap.",
+  },
+  {
+    id: "roof-flat",
+    title: "Flat Roof Tile",
+    category: "Roof",
+    description: "Simple flat roof/ceiling tile for stacking room modules.",
+  },
+  {
+    id: "roof-corner",
+    title: "Roof Corner Cap",
+    category: "Roof",
+    description: "Corner cap for turning roof runs around an L-shaped house.",
+  },
+  {
+    id: "service",
+    title: "Service Core",
+    category: "Utilities",
+    description: "Wall utility chase with removable cover and robot pick tabs.",
+  },
+];
+
+function architectDimensions() {
+  const grid = Number(document.getElementById("architect-grid-size")?.value || 1000);
+  const wallHeight = Number(document.getElementById("architect-wall-height")?.value || 2800);
+  return {
+    grid,
+    wallHeight,
+    thickness: Math.max(90, Math.round(grid * 0.12)),
+    wallLength: Math.round(grid * 2),
+  };
+}
+
+function architectBoxFeature(length, width, height, at = [0, 0, 0], combine = "add") {
+  return { op: "box", combine, length, width, height, at };
+}
+
+let architectInstanceSerial = 0;
+
+function architectInstanceScale() {
+  const unit = Number(mmPerModelUnit?.() || 1) || 1;
+  return 1 / unit;
+}
+
+function architectBoxMesh({ length, width, height, at = [0, 0, 0], color = "#d8cab0", name = "architect_part", opacity = 1 }) {
+  const scale = architectInstanceScale();
+  const geom = new THREE.BoxGeometry(length * scale, width * scale, height * scale);
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: 0.72,
+    metalness: 0.02,
+    transparent: opacity < 1,
+    opacity,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.name = name;
+  mesh.position.set(at[0] * scale, at[1] * scale, at[2] * scale);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function addArchitectBox(group, box) {
+  const mesh = architectBoxMesh(box);
+  group.add(mesh);
+  return mesh;
+}
+
+function markArchitectInstance(obj, catalogName, kind) {
+  obj.traverse((child) => {
+    child.userData.catalogFilename = catalogName;
+    child.userData.localOnly = true;
+    child.userData.architectInstance = true;
+    child.userData.architectKind = kind;
+  });
+}
+
+function createArchitectInstance(kind = "wall") {
+  const { grid, wallHeight, thickness, wallLength } = architectDimensions();
+  const group = new THREE.Group();
+  group.userData.localOnly = true;
+  group.userData.architectInstance = true;
+  group.userData.architectKind = kind;
+  const add = (length, width, height, at, color, name, opacity = 1) =>
+    addArchitectBox(group, { length, width, height, at, color, name, opacity });
+  const wallColor = "#e8e1d2";
+  const trim = "#f7f0de";
+  const connector = "#5c6b73";
+  const wood = "#c79552";
+  const roof = "#3f3f46";
+  const glass = "#6fb6ff";
+
+  if (kind === "floor" || kind === "floor-small" || kind === "floor-wide") {
+    const lx = kind === "floor-small" ? grid : kind === "floor-wide" ? grid * 2 : wallLength;
+    const ly = kind === "floor-small" ? grid : kind === "floor-wide" ? grid * 2 : grid * 1.5;
+    add(lx, ly, 90, [0, 0, 45], wood, "floor_slab_wood");
+    add(lx + 140, 55, 70, [0, -ly / 2 - 70, 125], "#d8b074", "floor_snap_rail_south");
+    add(lx + 140, 55, 70, [0, ly / 2 + 70, 125], "#d8b074", "floor_snap_rail_north");
+    add(55, ly + 140, 70, [-lx / 2 - 70, 0, 125], "#d8b074", "floor_snap_rail_west");
+    add(55, ly + 140, 70, [lx / 2 + 70, 0, 125], "#d8b074", "floor_snap_rail_east");
+    return group;
+  }
+
+  if (kind === "wall" || kind === "wall-half" || kind === "wall-low") {
+    const h = kind === "wall-half" ? wallHeight * 0.52 : kind === "wall-low" ? wallHeight * 0.28 : wallHeight;
+    add(wallLength, thickness, h, [0, 0, h / 2], wallColor, "wall_panel_light_plaster");
+    add(wallLength, 35, 70, [0, -thickness / 2 - 22, 105], trim, "baseboard_trim");
+    add(120, thickness + 40, 120, [-wallLength / 2 + 90, 0, 170], connector, "left_snap_socket");
+    add(120, thickness + 40, 120, [wallLength / 2 - 90, 0, 170], connector, "right_snap_socket");
+    return group;
+  }
+
+  if (kind === "pillar" || kind === "pillar-tall") {
+    const h = kind === "pillar-tall" ? wallHeight : wallHeight * 0.58;
+    add(180, 180, h, [0, 0, h / 2], trim, "pillar_body_printable");
+    add(95, 220, 160, [0, -160, 160], connector, "wall_socket_south");
+    add(95, 220, 160, [0, 160, 160], connector, "wall_socket_north");
+    add(220, 95, 160, [-160, 0, 160], connector, "wall_socket_west");
+    add(220, 95, 160, [160, 0, 160], connector, "wall_socket_east");
+    add(120, 120, 70, [0, 0, h + 35], "#94a3b8", "robot_pick_tab_top");
+    return group;
+  }
+
+  if (kind === "wall-corner") {
+    add(grid, thickness, wallHeight, [grid / 2, 0, wallHeight / 2], wallColor, "corner_wall_east");
+    add(thickness, grid, wallHeight, [0, grid / 2, wallHeight / 2], wallColor, "corner_wall_north");
+    add(130, 130, wallHeight, [0, 0, wallHeight / 2], trim, "corner_connector_post");
+    return group;
+  }
+
+  if (kind === "window-wall" || kind === "door-wall") {
+    const side = (wallLength - grid * 0.62) / 2;
+    add(side, thickness, wallHeight, [-wallLength / 2 + side / 2, 0, wallHeight / 2], wallColor, "wall_left_piece");
+    add(side, thickness, wallHeight, [wallLength / 2 - side / 2, 0, wallHeight / 2], wallColor, "wall_right_piece");
+    if (kind === "window-wall") {
+      add(grid * 0.62, thickness, wallHeight * 0.28, [0, 0, wallHeight * 0.14], wallColor, "wall_under_window");
+      add(grid * 0.62, thickness, wallHeight * 0.22, [0, 0, wallHeight * 0.89], wallColor, "wall_above_window");
+      add(grid * 0.5, 28, wallHeight * 0.34, [0, -thickness / 2 - 18, wallHeight * 0.58], glass, "window_glass_insert", 0.78);
+      add(grid * 0.72, 45, 70, [0, -thickness / 2 - 28, wallHeight * 0.38], trim, "window_sill_trim");
+      add(grid * 0.72, 45, 70, [0, -thickness / 2 - 28, wallHeight * 0.79], trim, "window_lintel_trim");
+    } else {
+      add(grid * 0.62, thickness, wallHeight * 0.18, [0, 0, wallHeight * 0.91], wallColor, "wall_header_above_door");
+      add(grid * 0.48, 38, wallHeight * 0.68, [0, -thickness / 2 - 18, wallHeight * 0.34], "#7b5436", "door_insert_wood");
+      add(grid * 0.68, 55, 70, [0, -thickness / 2 - 28, 35], trim, "door_threshold_trim");
+    }
+    return group;
+  }
+
+  if (kind === "window") {
+    add(grid * 0.58, 24, wallHeight * 0.34, [0, 0, wallHeight * 0.58], glass, "window_glass_insert", 0.78);
+    add(grid * 0.72, 44, 70, [0, 0, wallHeight * 0.38], trim, "window_sill");
+    add(grid * 0.72, 44, 70, [0, 0, wallHeight * 0.79], trim, "window_lintel");
+    add(70, 44, wallHeight * 0.48, [-grid * 0.36, 0, wallHeight * 0.58], trim, "window_left_trim");
+    add(70, 44, wallHeight * 0.48, [grid * 0.36, 0, wallHeight * 0.58], trim, "window_right_trim");
+    return group;
+  }
+
+  if (kind === "door") {
+    add(grid * 0.52, 38, wallHeight * 0.72, [0, 0, wallHeight * 0.36], "#7b5436", "door_panel_wood");
+    add(grid * 0.7, 58, 75, [0, 0, wallHeight * 0.75], trim, "door_header_trim");
+    add(70, 58, wallHeight * 0.78, [-grid * 0.35, 0, wallHeight * 0.39], trim, "door_left_frame");
+    add(70, 58, wallHeight * 0.78, [grid * 0.35, 0, wallHeight * 0.39], trim, "door_right_frame");
+    add(grid * 0.74, 70, 70, [0, 0, 35], trim, "door_threshold");
+    return group;
+  }
+
+  if (kind === "roof" || kind === "roof-flat" || kind === "roof-gable" || kind === "roof-corner") {
+    if (kind === "roof-gable") {
+      add(wallLength + 180, grid * 0.78, 120, [0, -grid * 0.22, wallHeight + 160], roof, "gable_roof_left_panel");
+      add(wallLength + 180, grid * 0.78, 120, [0, grid * 0.22, wallHeight + 160], roof, "gable_roof_right_panel");
+      group.children[0].rotation.x = THREE.MathUtils.degToRad(-12);
+      group.children[1].rotation.x = THREE.MathUtils.degToRad(12);
+      add(wallLength + 220, 80, 90, [0, 0, wallHeight + 260], "#27272a", "roof_ridge_cap");
+    } else {
+      const lx = kind === "roof-corner" ? grid * 1.15 : wallLength + 180;
+      const ly = kind === "roof-corner" ? grid * 1.15 : grid * 1.5 + 180;
+      add(lx, ly, 120, [0, 0, wallHeight + 80], roof, "flat_roof_panel");
+      add(lx + 80, 70, 80, [0, -ly / 2 - 25, wallHeight + 130], "#27272a", "roof_edge_trim_south");
+      add(lx + 80, 70, 80, [0, ly / 2 + 25, wallHeight + 130], "#27272a", "roof_edge_trim_north");
+    }
+    return group;
+  }
+
+  if (kind === "service") {
+    add(grid, thickness, wallHeight, [0, 0, wallHeight / 2], wallColor, "service_wall_panel");
+    add(grid * 0.24, 40, wallHeight * 0.82, [0, -thickness / 2 - 26, wallHeight * 0.5], "#94a3b8", "removable_service_cover");
+    add(80, 60, wallHeight * 0.7, [-grid * 0.28, -thickness / 2 - 30, wallHeight * 0.52], "#475569", "conduit_chase");
+    return group;
+  }
+
+  // Starter room kit.
+  const room = createArchitectInstance("floor");
+  const north = createArchitectInstance("wall");
+  north.position.y = grid * architectInstanceScale() * 0.75;
+  const west = createArchitectInstance("wall");
+  west.rotation.z = Math.PI / 2;
+  west.position.x = -wallLength * architectInstanceScale() / 2;
+  const east = createArchitectInstance("wall");
+  east.rotation.z = Math.PI / 2;
+  east.position.x = wallLength * architectInstanceScale() / 2;
+  const south = createArchitectInstance("wall-half");
+  south.position.y = -grid * architectInstanceScale() * 0.75;
+  room.add(north, west, east, south);
+  return room;
+}
+
+function nextArchitectInstancePosition() {
+  const grid = architectGridModelUnits();
+  const count = [...projectAssembly.list()].filter(([name]) => String(name).startsWith("__architect_")).length;
+  return new THREE.Vector3((count % 6) * grid * 0.35, Math.floor(count / 6) * grid * 0.35, 0);
+}
+
+function placeArchitectModuleInstant(kind = "wall") {
+  const localKind = localArchitectKind(kind);
+  if (!localKind) {
+    openArchitectLibrary();
+    return null;
+  }
+  const module = ARCHITECT_LOCAL_MODULES.find((item) => item.id === localKind);
+  const label = module?.title || "Architect part";
+  const object = createArchitectInstance(localKind);
+  const catalogName = `__architect_${localKind}_${++architectInstanceSerial}.local`;
+  markArchitectInstance(object, catalogName, localKind);
+  object.position.copy(nextArchitectInstancePosition());
+  projectAssembly.add(catalogName, object);
+  currentMesh = projectAssembly.getRoot();
+  selectedFile = catalogName;
+  objectTools.selectObject?.({ mesh: object, root: object, bodyIndex: 0, catalogName, isRoot: true });
+  showObjectGizmo(object, "translate", { switchTab: false });
+  rebuildGrid();
+  setEditStatus("ok", `Placed ${label} instantly. Drag it with the gizmo or use Snap Grid.`);
+  return object;
+}
+
+function architectModuleProgram(kind = "wall") {
+  const { grid, wallHeight, thickness, wallLength } = architectDimensions();
+  const base = {
+    name: `architect_${kind.replace(/[^a-z0-9]+/gi, "_")}`,
+    description: `Local Architect module: ${kind}`,
+    units: "mm",
+    meta: { architect_module: kind, grid_mm: grid, wall_height_mm: wallHeight },
+    parts: [{ id: "module", color: "#d8cab0", material: "architectural_model", features: [] }],
+  };
+  const f = base.parts[0].features;
+  if (kind === "floor") {
+    base.parts = [
+      { id: "floor_slab_wood", color: "#c79552", material: "warm_wood_floor", features: [
+        architectBoxFeature(wallLength, grid * 1.5, 90, [0, 0, 45], "new"),
+      ] },
+      { id: "floor_wall_snap_rails", color: "#d8b074", material: "wood_snap_rails", features: [
+        architectBoxFeature(wallLength + 160, 60, 70, [0, -grid * 0.75 - 80, 125], "new"),
+        architectBoxFeature(wallLength + 160, 60, 70, [0, grid * 0.75 + 80, 125], "add"),
+        architectBoxFeature(60, grid * 1.5 + 160, 70, [-wallLength / 2 - 80, 0, 125], "add"),
+        architectBoxFeature(60, grid * 1.5 + 160, 70, [wallLength / 2 + 80, 0, 125], "add"),
+      ] },
+      { id: "corner_post_sockets", color: "#5c6b73", material: "connector_socket", features: [
+        architectBoxFeature(130, 130, 55, [-wallLength / 2, -grid * 0.75, 145], "new"),
+        architectBoxFeature(130, 130, 55, [wallLength / 2, -grid * 0.75, 145], "add"),
+        architectBoxFeature(130, 130, 55, [-wallLength / 2, grid * 0.75, 145], "add"),
+        architectBoxFeature(130, 130, 55, [wallLength / 2, grid * 0.75, 145], "add"),
+      ] },
+    ];
+    return base;
+  }
+  if (kind === "window") {
+    const w = grid * 0.62;
+    const h = wallHeight * 0.36;
+    base.parts = [
+      { id: "window_glass_blue", color: "#6fb6ff", material: "blue_glass", features: [
+        architectBoxFeature(w, 24, h, [0, 0, wallHeight * 0.58], "new"),
+      ] },
+      { id: "window_frame_trim", color: "#f7f0de", material: "painted_window_trim", features: [
+        architectBoxFeature(w + 120, 42, 60, [0, 0, wallHeight * 0.58 - h / 2 - 40], "new"),
+        architectBoxFeature(w + 120, 42, 60, [0, 0, wallHeight * 0.58 + h / 2 + 40], "add"),
+        architectBoxFeature(60, 42, h + 160, [-w / 2 - 60, 0, wallHeight * 0.58], "add"),
+        architectBoxFeature(60, 42, h + 160, [w / 2 + 60, 0, wallHeight * 0.58], "add"),
+      ] },
+      { id: "window_snap_tabs", color: "#5c6b73", material: "connector_tabs", features: [
+        architectBoxFeature(120, 70, 90, [-w / 2 - 110, 0, wallHeight * 0.58], "new"),
+        architectBoxFeature(120, 70, 90, [w / 2 + 110, 0, wallHeight * 0.58], "add"),
+      ] },
+    ];
+    return base;
+  }
+  if (kind === "door") {
+    const w = grid * 0.58;
+    const h = wallHeight * 0.78;
+    base.parts = [
+      { id: "door_panel_wood", color: "#7b5436", material: "wood_door", features: [
+        architectBoxFeature(w, 38, h, [0, 0, h / 2], "new"),
+        architectBoxFeature(70, 55, 70, [w * 0.28, -32, h * 0.55], "add"),
+      ] },
+      { id: "door_frame_trim", color: "#f7f0de", material: "painted_door_trim", features: [
+        architectBoxFeature(w + 160, 58, 75, [0, 0, h + 38], "new"),
+        architectBoxFeature(70, 58, h + 90, [-w / 2 - 70, 0, (h + 90) / 2], "add"),
+        architectBoxFeature(70, 58, h + 90, [w / 2 + 70, 0, (h + 90) / 2], "add"),
+        architectBoxFeature(w + 180, 70, 70, [0, 0, 35], "add"),
+      ] },
+      { id: "door_snap_pockets", color: "#5c6b73", material: "connector_pockets", features: [
+        architectBoxFeature(90, 80, 100, [-w / 2 - 130, 0, h * 0.35], "new"),
+        architectBoxFeature(90, 80, 100, [w / 2 + 130, 0, h * 0.35], "add"),
+      ] },
+    ];
+    return base;
+  }
+  if (kind === "roof") {
+    f.push(architectBoxFeature(wallLength + 180, grid + 180, 120, [0, 0, wallHeight + 80], "new"));
+    f.push(architectBoxFeature(wallLength, grid, 50, [0, 0, wallHeight + 150], "cut"));
+    return base;
+  }
+  if (kind === "service") {
+    f.push(architectBoxFeature(grid, thickness, wallHeight, [0, 0, wallHeight / 2], "new"));
+    f.push(architectBoxFeature(grid * 0.18, thickness + 20, wallHeight * 0.78, [0, 0, wallHeight * 0.52], "cut"));
+    f.push(architectBoxFeature(grid * 0.26, 28, wallHeight * 0.8, [0, -thickness / 2 - 18, wallHeight * 0.52], "add"));
+    return base;
+  }
+  if (kind === "room") {
+    base.parts = [
+      { id: "room_floor_wood", color: "#c79552", material: "warm_wood_floor", features: [
+        architectBoxFeature(wallLength, grid * 1.5, 90, [0, 0, 45], "new"),
+        architectBoxFeature(wallLength + 160, 60, 70, [0, -grid * 0.75 - 80, 125], "add"),
+        architectBoxFeature(wallLength + 160, 60, 70, [0, grid * 0.75 + 80, 125], "add"),
+        architectBoxFeature(60, grid * 1.5 + 160, 70, [-wallLength / 2 - 80, 0, 125], "add"),
+        architectBoxFeature(60, grid * 1.5 + 160, 70, [wallLength / 2 + 80, 0, 125], "add"),
+      ] },
+      { id: "wall_north_light_plaster", color: "#e8e1d2", material: "light_plaster_wall", features: [
+        architectBoxFeature(wallLength, thickness, wallHeight, [0, grid * 0.75, wallHeight / 2], "new"),
+        architectBoxFeature(grid * 0.55, thickness + 40, wallHeight * 0.75, [grid * 0.35, grid * 0.75, wallHeight * 0.38], "cut"),
+      ] },
+      { id: "wall_south_open_cutaway", color: "#e8e1d2", material: "light_plaster_wall", features: [
+        architectBoxFeature(wallLength * 0.42, thickness, wallHeight * 0.72, [-wallLength * 0.29, -grid * 0.75, wallHeight * 0.36], "new"),
+        architectBoxFeature(wallLength * 0.24, thickness, wallHeight * 0.72, [wallLength * 0.38, -grid * 0.75, wallHeight * 0.36], "add"),
+        architectBoxFeature(grid * 0.5, thickness + 40, wallHeight * 0.38, [-grid * 0.35, -grid * 0.75, wallHeight * 0.58], "cut"),
+      ] },
+      { id: "wall_west_light_plaster", color: "#e8e1d2", material: "light_plaster_wall", features: [
+        architectBoxFeature(thickness, grid * 1.5, wallHeight, [-wallLength / 2, 0, wallHeight / 2], "new"),
+      ] },
+      { id: "wall_east_light_plaster", color: "#e8e1d2", material: "light_plaster_wall", features: [
+        architectBoxFeature(thickness, grid * 1.5, wallHeight, [wallLength / 2, 0, wallHeight / 2], "new"),
+      ] },
+      { id: "window_blue_glass_insert", color: "#6fb6ff", material: "blue_glass", features: [
+        architectBoxFeature(grid * 0.48, 22, wallHeight * 0.32, [-grid * 0.35, -grid * 0.75 - thickness / 2 - 18, wallHeight * 0.58], "new"),
+      ] },
+      { id: "door_dark_insert", color: "#6c4a2f", material: "wood_door", features: [
+        architectBoxFeature(grid * 0.45, 36, wallHeight * 0.68, [grid * 0.35, grid * 0.75 + thickness / 2 + 18, wallHeight * 0.34], "new"),
+      ] },
+      { id: "trim_and_corner_connectors", color: "#f7f0de", material: "painted_trim_connectors", features: [
+        architectBoxFeature(wallLength, 35, 60, [0, grid * 0.75 - thickness / 2 - 22, 130], "new"),
+        architectBoxFeature(wallLength * 0.68, 35, 60, [-wallLength * 0.16, -grid * 0.75 + thickness / 2 + 22, 130], "add"),
+        architectBoxFeature(90, 90, wallHeight, [-wallLength / 2, -grid * 0.75, wallHeight / 2], "add"),
+        architectBoxFeature(90, 90, wallHeight, [wallLength / 2, -grid * 0.75, wallHeight / 2], "add"),
+        architectBoxFeature(90, 90, wallHeight, [-wallLength / 2, grid * 0.75, wallHeight / 2], "add"),
+        architectBoxFeature(90, 90, wallHeight, [wallLength / 2, grid * 0.75, wallHeight / 2], "add"),
+      ] },
+    ];
+    return base;
+  }
+  f.push(architectBoxFeature(wallLength, thickness, wallHeight, [0, 0, wallHeight / 2], "new"));
+  f.push(architectBoxFeature(wallLength, 36, 80, [0, -thickness / 2 - 20, 80], "add"));
+  f.push(architectBoxFeature(120, thickness + 24, 120, [-wallLength / 2 + 80, 0, 160], "cut"));
+  f.push(architectBoxFeature(120, thickness + 24, 120, [wallLength / 2 - 80, 0, 160], "cut"));
+  if (kind === "window-wall") {
+    f.push(architectBoxFeature(grid * 0.55, thickness + 40, wallHeight * 0.38, [0, 0, wallHeight * 0.58], "cut"));
+    f.push(architectBoxFeature(grid * 0.68, 40, 70, [0, -thickness / 2 - 28, wallHeight * 0.38], "add"));
+    f.push(architectBoxFeature(grid * 0.68, 40, 70, [0, -thickness / 2 - 28, wallHeight * 0.79], "add"));
+  } else if (kind === "door-wall") {
+    f.push(architectBoxFeature(grid * 0.55, thickness + 40, wallHeight * 0.78, [0, 0, wallHeight * 0.39], "cut"));
+    f.push(architectBoxFeature(grid * 0.7, 52, 90, [0, -thickness / 2 - 32, 45], "add"));
+  }
+  return base;
+}
+
+async function buildArchitectModule(kind = "wall") {
+  const placed = placeArchitectModuleInstant(kind);
+  if (placed) return { status: "placed", local: true };
+  await ensureProject();
+  if (!projectId) throw new Error("Open or create a project first.");
+  const module = ARCHITECT_LOCAL_MODULES.find((item) => item.id === kind);
+  const label = module?.title || "Architect module";
+  setEditStatus("loading", `Building ${label} locally...`);
+  const data = await api(`/api/projects/${projectId}/build`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(architectModuleProgram(kind)),
+  }, 120000);
+  if (data.accepted || data.status === "running") {
+    beginGenerationWatch(projectId, { kind: "build", mode: "architect" });
+    setEditStatus("ok", `${label} is building. Drag/scale it after it appears in the viewport.`);
+    return data;
+  }
+  return data;
+}
+
+function localArchitectKind(kind = "wall") {
+  const value = String(kind || "wall").toLowerCase();
+  if (value === "pattern" || value === "robot") return "room";
+  if (value === "image" || value === "blueprint") return "";
+  if (ARCHITECT_LOCAL_MODULES.some((item) => item.id === value)) return value;
+  return "wall";
+}
+
+function setArchitectPromptForNewModule(kind = "room") {
+  const localKind = localArchitectKind(kind);
+  if (!localKind) {
+    openArchitectLibrary();
+    return;
+  }
+  void buildArchitectModule(localKind).catch((err) => {
+    setEditStatus("error", err.message || "Could not build Architect module.");
+  });
+}
+
+function setArchitectPromptForSelectedEdit(kind = "customize") {
+  if (kind === "window" || kind === "door") {
+    void buildArchitectModule(kind).catch((err) => {
+      setEditStatus("error", err.message || `Could not build Architect ${kind}.`);
+    });
+    return;
+  }
+  if (kind === "idea") {
+    openArchitectLibrary();
+    setEditStatus("ok", "Architect library opened. Pick a local module, then drag, scale, or snap it into the room.");
+    return;
+  }
+  const mesh = architectSelectedMesh();
+  if (mesh) {
+    showObjectGizmo(mesh);
+    const action = kind === "materials"
+      ? "use local house-colored pieces, or scale/snap this selected module"
+      : "drag, scale, or stretch the selected wall/module";
+    setEditStatus("ok", `Architect local edit: ${action}. No generative AI started.`);
+    return;
+  }
+  openArchitectLibrary();
 }
 
 function architectGridModelUnits() {
@@ -2433,10 +3982,78 @@ function architectSelectedMesh() {
   return null;
 }
 
+function isArchitectFloorObject(obj) {
+  const kind = String(obj?.userData?.architectKind || "").toLowerCase();
+  if (kind.startsWith("floor") || kind === "room") return true;
+  let found = false;
+  obj?.traverse?.((child) => {
+    const name = String(child?.name || "").toLowerCase();
+    if (name.includes("floor_slab") || name.includes("floor_snap_rail")) found = true;
+  });
+  return found;
+}
+
+function selectedArchitectKind(mesh) {
+  let obj = mesh;
+  while (obj) {
+    if (obj.userData?.architectKind) return String(obj.userData.architectKind).toLowerCase();
+    obj = obj.parent;
+  }
+  return "";
+}
+
+function nearestArchitectFloorSnap(mesh) {
+  const kind = selectedArchitectKind(mesh);
+  const snapsToFloor = kind.includes("wall") || kind.includes("pillar") || kind === "door" || kind === "window" || kind === "service";
+  if (!snapsToFloor) return null;
+  mesh.updateMatrixWorld(true);
+  const selBox = new THREE.Box3().setFromObject(mesh);
+  if (selBox.isEmpty()) return null;
+  const center = selBox.getCenter(new THREE.Vector3());
+  let best = null;
+  for (const [name, obj] of projectAssembly.list()) {
+    if (obj === mesh || !isArchitectFloorObject(obj)) continue;
+    obj.updateMatrixWorld(true);
+    const floorBox = new THREE.Box3().setFromObject(obj);
+    if (floorBox.isEmpty()) continue;
+    const candidates = [
+      { side: "north", point: new THREE.Vector3(THREE.MathUtils.clamp(center.x, floorBox.min.x, floorBox.max.x), floorBox.max.y, center.z), rotation: 0 },
+      { side: "south", point: new THREE.Vector3(THREE.MathUtils.clamp(center.x, floorBox.min.x, floorBox.max.x), floorBox.min.y, center.z), rotation: 0 },
+      { side: "east", point: new THREE.Vector3(floorBox.max.x, THREE.MathUtils.clamp(center.y, floorBox.min.y, floorBox.max.y), center.z), rotation: Math.PI / 2 },
+      { side: "west", point: new THREE.Vector3(floorBox.min.x, THREE.MathUtils.clamp(center.y, floorBox.min.y, floorBox.max.y), center.z), rotation: Math.PI / 2 },
+    ];
+    for (const candidate of candidates) {
+      const dist = candidate.point.distanceTo(center);
+      if (!best || dist < best.dist) {
+        best = { ...candidate, dist, floorBox, floorName: name };
+      }
+    }
+  }
+  if (!best) return null;
+  const targetCenter = best.point.clone();
+  targetCenter.z = center.z + (best.floorBox.max.z - selBox.min.z);
+  return { targetCenter, rotation: best.rotation, side: best.side, floorName: best.floorName };
+}
+
 function snapArchitectSelectionToGrid() {
   const mesh = architectSelectedMesh();
   if (!mesh) {
     setEditStatus("error", "Select an architect module first.");
+    return;
+  }
+  const floorSnap = nearestArchitectFloorSnap(mesh);
+  if (floorSnap) {
+    if (mesh.userData?.architectInstance) {
+      mesh.rotation.z = floorSnap.rotation;
+    }
+    mesh.updateMatrixWorld(true);
+    const center = objectWorldBoxCenter(mesh);
+    const delta = worldDeltaToParentDelta(mesh, floorSnap.targetCenter.clone().sub(center));
+    if (!gizmoPanel.translateBy?.(delta, { autoApply: true })) {
+      setEditStatus("error", "Could not snap module to floor.");
+      return;
+    }
+    setEditStatus("ok", `Snapped to ${floorSnap.side} floor edge. Use the gizmo to slide it along the rail.`);
     return;
   }
   const grid = architectGridModelUnits();
@@ -2449,42 +4066,29 @@ function snapArchitectSelectionToGrid() {
     setEditStatus("error", "Could not snap module to grid.");
     return;
   }
-  setEditStatus("loading", "Snapped module to Architect grid. Saving placement…");
+  setEditStatus("ok", mesh.userData?.localOnly ? "Snapped local Architect module to grid." : "Snapped module to Architect grid.");
 }
 
-function activateArchitectPrompt(kind = "room") {
-  showAiComposePanel();
-  setRightTab("prompt");
-  promptHistory.setTab("compose");
-  setSkillEnabled("cad", true);
-  setSkillEnabled("architect", true);
-  skillsPromptUI.render();
-  applyPromptModeUI("architect");
-  composer.setPromptText(architectPresetPrompt(kind));
-  skillsPromptUI.updatePlan?.();
-  saveActiveModelPromptState();
-}
-
-function setArchitectPromptForNewModule(kind = "room") {
-  activateArchitectPrompt(kind);
-}
-
-function setArchitectPromptForSelectedEdit(kind = "customize") {
-  showAiComposePanel();
-  setRightTab("prompt");
-  promptHistory.setTab("compose");
-  applyPromptModeUI("architect");
-  setSkillEnabled("cad", true);
-  setSkillEnabled("architect", true);
-  composer.setPromptText(architectEditPrompt(kind, selectedObjectFilename()));
-  skillsPromptUI.render();
-  skillsPromptUI.updatePlan?.();
-  saveActiveModelPromptState();
+function nudgeArchitectSelection(dx = 0, dy = 0) {
+  const mesh = architectSelectedMesh();
+  if (!mesh) {
+    setEditStatus("error", "Select an architect module first.");
+    return;
+  }
+  const grid = architectGridModelUnits();
+  const deltaWorld = new THREE.Vector3(dx * grid, dy * grid, 0);
+  const delta = worldDeltaToParentDelta(mesh, deltaWorld);
+  if (!gizmoPanel.translateBy?.(delta, { autoApply: true })) {
+    setEditStatus("error", "Could not move module on grid.");
+    return;
+  }
+  setEditStatus("ok", mesh.userData?.localOnly ? "Moved local Architect module one grid cell." : "Moved module one Architect grid cell.");
 }
 
 function handleArchitectRibbonAction(action, entry, data = {}) {
   if (action === "tool") {
-    setArchitectPromptForNewModule(data.tool || entry?.architectTool || "room");
+    openArchitectLibrary(data.tool || entry?.architectTool || "wall");
+    setEditStatus("ok", "Pick an Architect kit piece to place instantly. Existing viewport objects stay in place.");
     return;
   }
   if (action === "edit") {
@@ -2507,11 +4111,40 @@ function enterArchitectMode() {
   skillsPromptUI.render();
   skillsPromptUI.updatePlan?.();
   setGridVisible(true);
-  setEditStatus("ok", "Architect mode — generate modular rooms, walls, windows, and site layouts on a snap grid.");
+  setEditStatus("ok", "Architect mode — local modular kit active. Use Advanced for the larger library; AI Architect skill is enabled only if you open AI manually.");
 }
 
 function exitArchitectMode() {
   // Architect is a permanent right-panel tab; leaving the design mode should not hide it.
+}
+
+function syncRiggingToolbelt() {
+  const tool = riggingEditor.getTool();
+  document.querySelectorAll("[data-rig-tool]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.rigTool === tool);
+  });
+}
+
+function enterCanvasTab() {
+  catalogPanel?.close?.();
+  exitRiggingMode();
+  document.getElementById("canvas-workspace")?.classList.remove("hidden");
+  document.getElementById("app")?.classList.add("canvas-design-tab");
+  document.body.classList.add("canvas-design-tab");
+  canvasModeInstance?.show?.();
+  showAiComposePanel();
+  ribbon?.setDesignTab?.("CANVAS");
+  syncCanvasGenerationUi();
+  window.dispatchEvent(new Event("resize"));
+}
+
+function exitCanvasTab() {
+  document.getElementById("canvas-workspace")?.classList.add("hidden");
+  document.getElementById("app")?.classList.remove("canvas-design-tab");
+  document.body.classList.remove("canvas-design-tab");
+  canvasModeInstance?.hide?.();
+  syncCanvasGenerationUi();
+  refreshViewportAfterLayoutChange({ fit: !!currentMesh });
 }
 
 function handleDesignTabChange(tab) {
@@ -2704,6 +4337,10 @@ function handleRiggingAction(action, entry, data = {}) {
     riggingEditor.autoRigChain();
     return;
   }
+  if (action === "simulate") {
+    void simulateRiggingModel();
+    return;
+  }
   if (action === "keyframe") {
     riggingEditor.insertKeyframe();
     return;
@@ -2748,7 +4385,7 @@ const sketchEditor = createSketchEditor({
       enterSketchVisualMode();
     } else if (payload?.profile?.length) {
       updateSketchChrome({ visible: false });
-      scene.background.setHex(savedSceneBg ?? FUSION.canvas);
+      scene.background.setHex(savedSceneBg ?? currentThemeSceneColors().canvas);
       savedSceneBg = null;
       if (gridHelper) gridHelper.visible = gridVisible;
       ribbon?.setSketchEditing?.(false);
@@ -2949,6 +4586,10 @@ const directModeling = createDirectModeling({
   controls,
   viewport,
   getMesh: () => projectAssembly.getRoot() || currentMesh,
+  getMeshCenterOffset: () => meshCenterOffset,
+  getMeshCenterOffsetForMesh: (mesh) => componentRootForMesh(mesh)?.userData?.meshCenterOffset || meshCenterOffset,
+  getRootForMesh: (mesh) => componentRootForMesh(mesh) || projectAssembly.getRoot() || currentMesh,
+  getFilenameForMesh: (mesh) => catalogNameForMesh(mesh) || selectedFile,
   getModelInfo: () => ({ projectId, filename: selectedFile }),
   api,
   onApplied: afterModelEdit,
@@ -2980,11 +4621,22 @@ const directModeling = createDirectModeling({
       gizmoPanel.hide();
       document.getElementById("btn-gizmo")?.classList.remove("active");
       viewportHint?.classList.remove("hidden");
-      if (pickHintTitle) pickHintTitle.textContent = tool === "presspull" ? "Press-Pull" : "Mirror";
+      if (pickHintTitle) {
+        pickHintTitle.textContent =
+          tool === "presspull" ? "Press-Pull" :
+          tool === "hole" ? "Hole" :
+          tool === "fillet" ? "Fillet" :
+          tool === "chamfer" ? "Chamfer" :
+          "Mirror";
+      }
       if (pickHintText) {
         pickHintText.textContent =
           tool === "presspull"
-            ? "Click a sketch profile or model face, drag the arrow or type a distance (mm/in). Esc to exit."
+            ? "Click a sketch profile or model face, drag/type a distance, or use To Face to pick the target face. Esc to exit."
+            : tool === "hole"
+            ? "Click a face point, drag the blue center handle to move it, set depth/through-all, then Apply. Orbit/zoom still work."
+            : tool === "fillet" || tool === "chamfer"
+            ? "Drag the viewport handle or type an exact value, choose edge scope, then Apply. Esc to exit."
             : "Pick a plane, drag it or type an offset. Esc to exit.";
       }
     } else {
@@ -3044,6 +4696,52 @@ const objectTools = createObjectTools({
   transformControls,
 });
 
+function objectSelectionPresenceRefs({ moving = false } = {}) {
+  const selection = objectTools?.getSelection?.();
+  const items = selection?.selections?.length ? selection.selections : selection?.mesh ? [selection] : [];
+  if (!currentMesh || !items.length) return [];
+  return items
+    .map((item, index) => {
+      const target = item.root || item.mesh;
+      if (!target) return null;
+      target.updateMatrixWorld?.(true);
+      currentMesh.updateMatrixWorld?.(true);
+      const box = new THREE.Box3().setFromObject(target);
+      if (box.isEmpty()) return null;
+      const center = box.getCenter(new THREE.Vector3());
+      const localCenter = currentMesh.worldToLocal(center.clone());
+      const localMin = currentMesh.worldToLocal(box.min.clone());
+      const localMax = currentMesh.worldToLocal(box.max.clone());
+      return {
+        id: `object-selection-${item.catalogName || item.mesh?.uuid || index}`,
+        type: "object",
+        label: item.label || selection.label || "object",
+        catalog_name: item.catalogName || selection.catalogName || target.userData?.catalogFilename || null,
+        mesh_uuid: item.mesh?.uuid || null,
+        body_index: item.bodyIndex ?? selection.bodyIndex ?? null,
+        local_point: [localCenter.x, localCenter.y, localCenter.z],
+        local_box_min: [localMin.x, localMin.y, localMin.z],
+        local_box_max: [localMax.x, localMax.y, localMax.z],
+        transform_position: [target.position.x, target.position.y, target.position.z],
+        transform_quaternion: [target.quaternion.x, target.quaternion.y, target.quaternion.z, target.quaternion.w],
+        transform_scale: [target.scale.x, target.scale.y, target.scale.z],
+        moving: !!moving,
+        mode: transformControls.getMode?.() || "translate",
+      };
+    })
+    .filter(Boolean);
+}
+
+function sendCollabPresence({ moving = transformGizmoDragging } = {}) {
+  const promptRefs = composer?.getReferences?.() || [];
+  const objectRefs = objectSelectionPresenceRefs({ moving });
+  collab?.sendPicks([...promptRefs, ...objectRefs]);
+}
+
+window.addEventListener("render3d:object-selection-changed", () => {
+  sendCollabPresence({ moving: false });
+});
+
 const editTools = createEditTools({
   api,
   getState: () => ({
@@ -3062,6 +4760,7 @@ const editTools = createEditTools({
   gizmoPanel,
   directModeling,
   getMmPerModelUnit: currentMmPerModelUnit,
+  onTransformActive: () => setLeftDragMode("rotate", { silent: true }),
 });
 
 document.getElementById("btn-gizmo-panel")?.addEventListener("click", () => {
@@ -3597,7 +5296,7 @@ async function answerDimensionPrompt(prompt) {
   return data;
 }
 
-async function reloadViewportFromProject({ fitView = false, latestFile = null, placedFiles = [] } = {}) {
+async function reloadViewportFromProject({ fitView = false, latestFile = null, placedFiles = [], loadAll = false } = {}) {
   if (!projectId) return;
   const data = await api(`/api/projects/${projectId}`);
   timelineData = data.timeline;
@@ -3669,6 +5368,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
       projectId,
       latestFile: latestFile || data.latest_file,
       fitView,
+      loadAll,
     });
   } else {
     selectedFile = null;
@@ -3781,10 +5481,210 @@ function showAiComposePanel() {
   }
   setRightTab("prompt");
   promptHistory.setTab("compose");
+  applyPromptModeUI("v2");
+}
+
+function activateArchitectPrompt(kind = "room") {
+  setSkillEnabled("cad", true);
+  setSkillEnabled("architect", true);
+  skillsPromptUI.render();
+  applyPromptModeUI("architect");
+  composer.setPromptText(architectPresetPrompt(kind));
+  setRightTab("prompt");
+  promptHistory.setTab("compose");
+  saveActiveModelPromptState();
+  setEditStatus("ok", "Architect prompt loaded — review it, then Generate modular house part.");
+  document.getElementById("prompt-input")?.focus();
 }
 
 document.querySelectorAll("[data-right-tab]").forEach((btn) => {
   btn.addEventListener("click", () => setRightTab(btn.dataset.rightTab));
+});
+
+async function currentProjectModelFiles() {
+  if (!projectId) return [];
+  try {
+    const data = await api(`/api/projects/${projectId}`);
+    return (data.files || []).filter((file) => /\.(glb|gltf|step|stp|stl|obj|3mf)$/i.test(file.name || ""));
+  } catch {
+    return [];
+  }
+}
+
+let architectLibraryFilter = "";
+
+function architectLibraryQueryForTool(tool = "") {
+  const value = String(tool || "").toLowerCase();
+  if (value === "wall") return "wall";
+  if (value === "pillar") return "pillar";
+  if (value === "roof") return "roof";
+  if (value === "floor") return "floor";
+  if (value === "window" || value === "door") return value;
+  if (value === "room" || value === "pattern" || value === "robot") return "room";
+  if (value === "service") return "service";
+  return "";
+}
+
+function architectPreviewKind(id = "") {
+  const value = String(id || "");
+  if (value.includes("roof-gable")) return "roof-gable";
+  if (value.includes("roof-corner")) return "roof-corner";
+  if (value.includes("roof")) return "roof";
+  if (value.includes("corner")) return "corner";
+  if (value.includes("pillar")) return "pillar";
+  if (value.includes("window-wall")) return "window-wall";
+  if (value.includes("door-wall")) return "door-wall";
+  if (value === "window") return "window";
+  if (value === "door") return "door";
+  if (value.includes("floor")) return "floor";
+  if (value.includes("room")) return "room";
+  if (value.includes("service")) return "service";
+  if (value.includes("half") || value.includes("low")) return "low-wall";
+  return "wall";
+}
+
+function architectPreviewMarkup(item = {}) {
+  const kind = architectPreviewKind(item.id);
+  return `<div class="architect-part-preview architect-part-preview--${appEscapeHtml(kind)}" aria-hidden="true">
+    <span class="ap-grid"></span>
+    <span class="ap-floor"></span>
+    <span class="ap-wall ap-wall-a"></span>
+    <span class="ap-wall ap-wall-b"></span>
+    <span class="ap-wall ap-wall-c"></span>
+    <span class="ap-window"></span>
+    <span class="ap-door"></span>
+    <span class="ap-roof ap-roof-a"></span>
+    <span class="ap-roof ap-roof-b"></span>
+    <span class="ap-connector ap-connector-a"></span>
+    <span class="ap-connector ap-connector-b"></span>
+    <span class="ap-tab ap-tab-a"></span>
+    <span class="ap-tab ap-tab-b"></span>
+  </div>`;
+}
+
+async function renderArchitectLibrary() {
+  const grid = document.getElementById("architect-library-grid");
+  const search = document.getElementById("architect-library-search");
+  if (!grid) return;
+  const query = (search?.value || architectLibraryFilter || "").trim().toLowerCase();
+  const models = [];
+  const moduleCards = ARCHITECT_LOCAL_MODULES
+    .filter((item) => `${item.title} ${item.category} ${item.description}`.toLowerCase().includes(query))
+    .map((item) => `
+      <article class="architect-library-item architect-library-item--module" draggable="true" data-architect-library-drag="${appEscapeHtml(item.id)}">
+        <div class="architect-library-preview">${architectPreviewMarkup(item)}</div>
+        <div>
+          <small>${appEscapeHtml(item.category)}</small>
+          <strong>${appEscapeHtml(item.title)}</strong>
+          <p>${appEscapeHtml(item.description)}</p>
+        </div>
+        <button type="button" class="btn accent full" data-architect-library-module="${appEscapeHtml(item.id)}">Place module</button>
+      </article>
+    `);
+  const modelCards = models
+    .filter((file) => `${file.name || ""}`.toLowerCase().includes(query))
+    .map((file) => `
+      <article class="architect-library-item">
+        <div class="architect-library-preview architect-library-preview--file" aria-hidden="true">CAD</div>
+        <div>
+          <small>Uploaded / saved model</small>
+          <strong>${appEscapeHtml(file.name || "Model")}</strong>
+          <p>${file.size ? `${Math.round(Number(file.size) / 1024)} KB` : "Saved in current project"}</p>
+        </div>
+        <button type="button" class="btn secondary full" data-architect-library-open="${appEscapeHtml(file.name || "")}">Open / place</button>
+      </article>
+    `);
+  grid.innerHTML = [...moduleCards, ...modelCards].join("") || `<p class="muted small">No Architect modules or saved models match that search.</p>`;
+  grid.querySelectorAll("[data-architect-library-module]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await buildArchitectModule(btn.dataset.architectLibraryModule || "wall");
+      closeArchitectLibrary();
+    });
+  });
+  grid.querySelectorAll("[data-architect-library-drag]").forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      const kind = card.dataset.architectLibraryDrag || "wall";
+      e.dataTransfer?.setData("application/render3d-architect-module", JSON.stringify({ kind }));
+      e.dataTransfer?.setData("text/plain", `Architect module: ${kind}`);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+    });
+  });
+  grid.querySelectorAll("[data-architect-library-open]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const filename = btn.dataset.architectLibraryOpen;
+      if (!filename || !projectId) return;
+      selectedFile = filename;
+      await loadModel(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}`, filename, {
+        projectId,
+        append: projectAssembly.count() > 0,
+        catalogFilename: filename,
+        autoGizmo: true,
+        fitView: true,
+      });
+      projectTree.setSelected(filename);
+      closeArchitectLibrary();
+      setEditStatus("ok", `Opened ${filename}. Drag it by hand or use grid snap.`);
+    });
+  });
+}
+
+function openArchitectLibrary(filter = "") {
+  architectLibraryFilter = architectLibraryQueryForTool(filter);
+  document.getElementById("architect-library-modal")?.classList.remove("hidden");
+  const search = document.getElementById("architect-library-search");
+  if (search && architectLibraryFilter) search.value = architectLibraryFilter;
+  void renderArchitectLibrary();
+  setTimeout(() => document.getElementById("architect-library-search")?.focus(), 50);
+}
+
+function closeArchitectLibrary() {
+  document.getElementById("architect-library-modal")?.classList.add("hidden");
+  architectLibraryFilter = "";
+}
+
+document.getElementById("btn-architect-advanced")?.addEventListener("click", openArchitectLibrary);
+document.querySelectorAll("[data-architect-library-close]").forEach((el) => {
+  el.addEventListener("click", closeArchitectLibrary);
+});
+document.getElementById("architect-library-search")?.addEventListener("input", () => {
+  void renderArchitectLibrary();
+});
+document.querySelectorAll("[data-architect-module]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    void buildArchitectModule(btn.dataset.architectModule || "wall").catch((err) => {
+      setEditStatus("error", err.message || "Could not build Architect module.");
+    });
+  });
+});
+document.querySelectorAll("[data-architect-tool]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tool = btn.dataset.architectTool || "wall";
+    const kind = tool === "window" ? "window-wall" : tool === "door" ? "door-wall" : tool;
+    void buildArchitectModule(kind).catch((err) => {
+      setEditStatus("error", err.message || "Could not build Architect module.");
+    });
+  });
+});
+document.querySelectorAll("[data-architect-edit-tool]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const mesh = architectSelectedMesh();
+    if (mesh) {
+      showObjectGizmo(mesh);
+      setEditStatus("ok", "Use the viewport gizmo to drag, scale, or stretch the selected Architect module by hand.");
+    } else {
+      openArchitectLibrary();
+    }
+  });
+});
+document.getElementById("btn-architect-snap-grid")?.addEventListener("click", () => snapArchitectSelectionToGrid());
+document.querySelectorAll("[data-architect-nudge]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const dir = btn.dataset.architectNudge || "";
+    if (dir === "x+") nudgeArchitectSelection(1, 0);
+    else if (dir === "x-") nudgeArchitectSelection(-1, 0);
+    else if (dir === "y+") nudgeArchitectSelection(0, 1);
+    else if (dir === "y-") nudgeArchitectSelection(0, -1);
+  });
 });
 
 document.getElementById("btn-feature-collapse")?.addEventListener("click", (e) => {
@@ -3808,7 +5708,44 @@ function openTransformMode(mode) {
   }
 }
 
+function openGenerativeEdits() {
+  const filename = selectedObjectFilename();
+  showAiComposePanel();
+  applyPromptModeUI("v2");
+  const targetModeSelect = document.getElementById("prompt-target-mode");
+  if (targetModeSelect) targetModeSelect.value = filename ? "edit" : "new";
+  if (filename) {
+    const objectSelect = document.getElementById("prompt-target-object");
+    selectedFile = filename;
+    if (objectSelect) objectSelect.value = filename;
+    projectTree.setSelected(filename);
+    featureEditor.setModel(projectId, filename);
+    selectAssemblyComponent(filename, { fitView: false });
+  }
+  syncPromptTargetUI();
+  const input = document.getElementById("prompt-input");
+  const example =
+    "Resize the selected object: make the main body ___ mm wider, adjust the related supports/holes/clearances proportionally, and preserve the existing functional relationships.";
+  if (input && !input.value.trim()) {
+    input.value = example;
+    input.focus();
+    input.select();
+  } else {
+    input?.focus();
+  }
+  setEditStatus(
+    filename ? "ok" : "error",
+    filename
+      ? "Generative Edits: describe width, size, clearance, or proportion changes for the selected object, then Generate."
+      : "Generative Edits opened. Select an object first to edit its width/sizes."
+  );
+  return true;
+}
+
 function launchViewportTool(toolId) {
+  if (toolId === "generative_edits") {
+    return openGenerativeEdits();
+  }
   setRightTab("tools");
   activatePickMode("off");
   document.querySelectorAll("[data-dm-tool]").forEach((btn) => {
@@ -3831,6 +5768,29 @@ function launchViewportTool(toolId) {
     setEditStatus("ok", "Mirror: choose/drag a plane or type an offset.");
     return true;
   }
+  if (toolId === "hole") {
+    gizmoPanel.hide();
+    transformControls.detach();
+    document.getElementById("btn-gizmo")?.classList.remove("active");
+    controls.enabled = true;
+    directModeling.setTool("hole");
+    setEditStatus("ok", "Hole: click a face point, set diameter/depth/pattern, then Apply.");
+    return true;
+  }
+  if (toolId === "fillet" || toolId === "chamfer") {
+    gizmoPanel.hide();
+    transformControls.detach();
+    document.getElementById("btn-gizmo")?.classList.remove("active");
+    controls.enabled = true;
+    directModeling.setTool(toolId);
+    setEditStatus(
+      "ok",
+      toolId === "fillet"
+        ? "Fillet: drag the viewport radius handle or type a radius, then Apply."
+        : "Chamfer: drag the viewport distance handle or type a distance, then Apply."
+    );
+    return true;
+  }
   if (toolId === "presspull" || toolId === "presspull-cut" || toolId === "extrude") {
     gizmoPanel.hide();
     transformControls.detach();
@@ -3842,14 +5802,14 @@ function launchViewportTool(toolId) {
     if (sketch?.profile?.length && sketchCount === 1) {
       startExtrudeFromSketchData(sketch);
     } else if (faceRef && directModeling.startPressPullFromRef?.(faceRef)) {
-      setEditStatus("ok", "Press-Pull linked to the selected face. Drag the arrow or type a distance.");
+      setEditStatus("ok", "Press-Pull linked to the selected face. Drag/type a distance or click To Face.");
     } else {
       directModeling.setTool("presspull");
       setEditStatus(
         "ok",
         sketchCount > 0
           ? "Click a sketch profile to extrude, or click a model face for Press-Pull."
-          : "Press-Pull: click a sketch profile or model face, then drag the arrow or type a distance."
+          : "Press-Pull: click a sketch profile or model face, then drag/type a distance or use To Face."
       );
     }
     editTools.updateExtrudeTarget?.();
@@ -3872,13 +5832,23 @@ function openMarkingMenu(event) {
   if (!currentMesh) return;
   event.preventDefault();
   closeMarkingMenu();
+  const hit = pickObject(event, {
+    camera,
+    domElement: renderer.domElement,
+    meshRoot: currentMesh,
+  });
+  if (hit?.mesh) {
+    selectObjectHit(hit, { showGizmo: false });
+  }
   const menu = document.createElement("div");
   menu.className = "marking-menu";
   const actions = [
     ["⇕", "Press-Pull", () => launchViewportTool("presspull")],
+    ["⌾", "Hole", () => launchViewportTool("hole")],
     ["✥", "Move", () => openTransformMode("translate")],
     ["⟳", "Rotate", () => openTransformMode("rotate")],
     ["⤢", "Scale", () => openTransformMode("scale")],
+    ["⧉", "Duplicate", () => { void duplicateSelectedObject(); }],
     ["↔", "Mirror", () => launchViewportTool("mirror")],
     ["◈", "Mesh Checkup", () => {
       directModeling.reset();
@@ -3966,6 +5936,8 @@ const featureEditor = createFeatureEditor({
 function resize() {
   const w = viewport.clientWidth;
   const h = viewport.clientHeight;
+  // Viewport is display:none in Canvas / Wiring modes — skip so we don't shrink to 0×0.
+  if (!w || !h) return;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
@@ -3973,14 +5945,14 @@ function resize() {
   collab?.resizeLabels();
 }
 
-initPanelResize();
-const mobileUI = initMobileUI({
-  onResize: () => {
+function refreshViewportAfterLayoutChange({ fit = false } = {}) {
+  requestAnimationFrame(() => {
     resize();
-    collab?.resizeLabels();
-  },
-});
-
+    controls.update();
+    viewCube.update?.();
+    if (fit && currentMesh) fitCamera();
+  });
+}
 window.addEventListener("resize", resize);
 resize();
 
@@ -3996,6 +5968,42 @@ function isCadFileDrag(e) {
   return items.some((item) => item.kind === "file" && (!item.type || /model|mesh|octet|zip|step|stl|gltf|3mf/i.test(item.type)));
 }
 
+function isArchitectModuleDrag(e) {
+  return [...(e.dataTransfer?.types || [])].includes("application/render3d-architect-module");
+}
+
+function droppedArchitectModuleKind(e) {
+  try {
+    const raw = e.dataTransfer?.getData("application/render3d-architect-module");
+    return raw ? JSON.parse(raw)?.kind || "" : "";
+  } catch {
+    return "";
+  }
+}
+
+function viewportGridPointForEvent(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(
+    ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+    -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1,
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(ndc, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const point = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(plane, point)) return null;
+  const grid = architectGridModelUnits();
+  point.x = Math.round(point.x / grid) * grid;
+  point.y = Math.round(point.y / grid) * grid;
+  point.z = 0;
+  return point;
+}
+
+function isDesignLikeWorkspaceMode() {
+  const mode = workspaceModes?.getMode?.() || "design";
+  return mode === "design" || mode === "architect";
+}
+
 function clearViewportDropOverlay() {
   viewportDragDepth = 0;
   viewport.classList.remove("viewport-drag-over");
@@ -4003,7 +6011,7 @@ function clearViewportDropOverlay() {
 }
 
 viewport.addEventListener("dragenter", (e) => {
-  if (workspaceModes?.getMode?.() !== "design") return;
+  if (!isDesignLikeWorkspaceMode()) return;
   if (!isCadFileDrag(e)) return;
   e.preventDefault();
   viewportDragDepth += 1;
@@ -4011,7 +6019,7 @@ viewport.addEventListener("dragenter", (e) => {
   viewportDropOverlay?.classList.remove("hidden");
 });
 viewport.addEventListener("dragleave", (e) => {
-  if (workspaceModes?.getMode?.() !== "design") return;
+  if (!isDesignLikeWorkspaceMode()) return;
   if (!isCadFileDrag(e)) return;
   if (e.currentTarget.contains(e.relatedTarget)) return;
   viewportDragDepth = Math.max(0, viewportDragDepth - 1);
@@ -4020,19 +6028,75 @@ viewport.addEventListener("dragleave", (e) => {
   }
 });
 viewport.addEventListener("dragover", (e) => {
-  if (workspaceModes?.getMode?.() !== "design") return;
-  if (!isCadFileDrag(e)) return;
+  if (!isDesignLikeWorkspaceMode()) return;
+  if (!isCadFileDrag(e) && !isExplorerComponentDrag(e) && !isArchitectModuleDrag(e)) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = "copy";
 });
 viewport.addEventListener("drop", async (e) => {
+  if (isArchitectModuleDrag(e)) {
+    e.preventDefault();
+    clearViewportDropOverlay();
+    if (!isDesignLikeWorkspaceMode()) return;
+    const kind = droppedArchitectModuleKind(e) || "wall";
+    const obj = placeArchitectModuleInstant(kind);
+    const point = viewportGridPointForEvent(e);
+    if (obj && point) {
+      obj.position.copy(point);
+      showObjectGizmo(obj, "translate", { switchTab: false });
+      setEditStatus("ok", `Dropped ${kind} on the grid. Drag or Snap Grid to lock it into place.`);
+    }
+    closeArchitectLibrary();
+    return;
+  }
+  if (isExplorerComponentDrag(e)) {
+    e.preventDefault();
+    clearViewportDropOverlay();
+    if (!isDesignLikeWorkspaceMode()) return;
+    const payload = droppedExplorerRefs(e)[0];
+    if (!payload?.projectId || !payload?.filename) {
+      setEditStatus("error", "This Fusion item is only a reference right now; sync/import it before dropping into the viewport.");
+      return;
+    }
+    try {
+      await openProjectById(payload.projectId);
+      const beforeDropState = captureViewportAssemblyState();
+      const selectedBeforeDrop = selectedObjectFilename();
+      const data = await api(`/api/projects/${encodeURIComponent(payload.projectId)}`);
+      const browserComponents = normalizeBrowser(data).components || [];
+      const compCandidates = [
+        ...browserComponents,
+        ...browserComponents.flatMap((entry) => entry.children || []),
+      ];
+      const comp = compCandidates.find((entry) =>
+        entry.name === payload.filename || entry.viewer_filename === payload.filename || entry.filename === payload.filename
+      );
+      if (comp) {
+        await openBrowserComponent(comp);
+        for (const topLevel of browserComponents) {
+          if (topLevel.name !== comp.name) setAssemblyComponentVisible(topLevel, false);
+        }
+        setAssemblyComponentVisible(comp, true);
+        selectAssemblyComponent(comp.name, { fitView: true });
+        pushViewportUndoAction({
+          type: "fusion-component-drop",
+          before: beforeDropState,
+          selectedBefore: selectedBeforeDrop,
+          label: comp.name || payload.name || payload.filename,
+        });
+      }
+    } catch (err) {
+      setEditStatus("error", err.message || "Could not open dropped Fusion component.");
+    }
+    return;
+  }
   if (!isCadFileDrag(e)) {
     clearViewportDropOverlay();
     return;
   }
   e.preventDefault();
   clearViewportDropOverlay();
-  if (workspaceModes?.getMode?.() !== "design") return;
+  if (!isDesignLikeWorkspaceMode()) return;
   const files = [...(e.dataTransfer.files || [])].filter((f) => IMPORT_ACCEPT.test(f.name));
   if (!files.length) return;
   try {
@@ -4052,9 +6116,27 @@ document.addEventListener("dragleave", (e) => {
   }
 }, true);
 
+let promptTargetPreview = null;
+let promptTargetSearch = "";
+let promptTargetSelectedBody = null;
+const promptTargetBodyCache = new Map();
+
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  if (promptTargetPreview?.active) {
+    promptTargetPreview.angle += 0.008;
+    const center = promptTargetPreview.center;
+    const dist = promptTargetPreview.radius;
+    camera.position.set(
+      center.x + Math.cos(promptTargetPreview.angle) * dist,
+      center.y + Math.sin(promptTargetPreview.angle) * dist,
+      center.z + dist * 0.42
+    );
+    controls.target.copy(center);
+    camera.lookAt(center);
+    controls._eye?.subVectors(camera.position, controls.target);
+  }
 
   // Dynamically adjust clip planes so the camera never clips at any zoom level.
   // near = 0.05% of orbit radius keeps depth-buffer precision while preventing
@@ -4106,7 +6188,7 @@ function resetComposerForProject() {
   restoringModelPromptState = false;
   promptImages = [];
   renderPromptImages();
-  collab?.sendPicks([]);
+  sendCollabPresence();
   saveActiveModelPromptState();
 }
 
@@ -4139,6 +6221,349 @@ function fileStem(name) {
   return String(name || "").replace(/\.[^.]+$/, "");
 }
 
+let objectIterationPopover = null;
+
+function formatHistoryWhen(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return "";
+  }
+}
+
+function closeObjectIterationTree() {
+  objectIterationPopover?.remove();
+  objectIterationPopover = null;
+  document.getElementById("btn-history-tree")?.setAttribute("aria-pressed", "false");
+}
+
+function timelineParentFilename(entry) {
+  const meta = entry?.meta || {};
+  return meta.parent || meta.replace_catalog || meta.replaceCatalog || meta.source_file || null;
+}
+
+function timelineKindLabel(kind) {
+  return {
+    upload: "Upload",
+    prompt: "AI",
+    build: "Build",
+    restore: "Restore",
+    transform: "Move",
+    body_transform: "Body move",
+    extrude: "Extrude",
+    face_pull: "Press-pull",
+    fillet: "Fillet",
+    chamfer: "Chamfer",
+    mirror: "Mirror",
+    hole: "Hole",
+    paint: "Paint",
+    mesh_cleanup: "Mesh cleanup",
+    delete_object: "Delete",
+  }[kind] || (kind ? String(kind).replace(/_/g, " ") : "Change");
+}
+
+function relatedTimelineIterations(filename) {
+  const entries = timelineData?.entries || [];
+  if (!entries.length) return [];
+  const related = new Set([filename].filter(Boolean));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const entry of entries) {
+      const child = entry.filename || null;
+      const parent = timelineParentFilename(entry);
+      if ((child && related.has(child)) || (parent && related.has(parent))) {
+        for (const name of [child, parent]) {
+          if (name && !related.has(name)) {
+            related.add(name);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  return entries.filter((entry) => {
+    const child = entry.filename || null;
+    const parent = timelineParentFilename(entry);
+    return (child && related.has(child)) || (parent && related.has(parent));
+  });
+}
+
+function objectIterationTreeHtml(filename) {
+  const entries = relatedTimelineIterations(filename);
+  const current = timelineData?.current_index ?? -1;
+  if (!entries.length) {
+    return `<div class="object-iteration-empty">Version history will appear here after you apply a size change, upload, generate, or edit this object.</div>`;
+  }
+  return entries
+    .map((entry, idx) => {
+      const index = entry.index ?? idx;
+      const parent = timelineParentFilename(entry);
+      const filenameLabel = entry.filename ? fileStem(entry.filename) : "project";
+      const parentLabel = parent && parent !== entry.filename ? `from ${fileStem(parent)}` : "";
+      const active = index === current;
+      const label = entry.label || timelineKindLabel(entry.kind);
+      const when = formatHistoryWhen(entry.created_at);
+      const meta = [timelineKindLabel(entry.kind), when, parentLabel].filter(Boolean).join(" · ");
+      return `<div class="object-iteration-node${active ? " active" : ""}" data-index="${index}">
+        <span class="object-iteration-rail" aria-hidden="true"></span>
+        <div class="object-iteration-card">
+          <div class="object-iteration-main">
+            <span class="object-iteration-badge">#${index + 1}</span>
+            <span class="object-iteration-title">${appEscapeHtml(label)}</span>
+            ${active ? '<span class="object-iteration-current">Current</span>' : ""}
+          </div>
+          <div class="object-iteration-meta">${appEscapeHtml(filenameLabel)}${meta ? ` · ${appEscapeHtml(meta)}` : ""}</div>
+          <div class="object-iteration-actions">
+            <button type="button" class="btn secondary btn-compact" data-history-view="${index}">View</button>
+            <button type="button" class="btn secondary btn-compact" data-history-latest="${index}">Make latest</button>
+          </div>
+        </div>
+      </div>`;
+    })
+    .join("");
+}
+
+function objectResizeTarget(filename) {
+  const selection = objectTools.getSelection?.();
+  const catalogName = selection?.catalogName || filename;
+  const root = catalogName ? projectAssembly.get(catalogName) : (selection?.root || null);
+  const mesh = selection?.mesh || firstPromptTargetMesh(root);
+  if (!root || !mesh) return null;
+  const bodyIndex = Number.isInteger(selection?.bodyIndex) ? selection.bodyIndex : null;
+  const bodyInfo = objectTools.getBodyInfo?.();
+  const box = bodyIndex != null && mesh?.isMesh && (bodyInfo?.count || 0) > 1
+    ? bodyBoundsForMesh(mesh, bodyIndex, bodyInfo)
+    : new THREE.Box3().setFromObject(selection?.root || root);
+  if (!box || box.isEmpty()) return null;
+  const size = box.getSize(new THREE.Vector3());
+  const label = bodyIndex != null && (bodyInfo?.count || 0) > 1
+    ? (bodyInfo.body_names?.[bodyIndex] || `Body ${bodyIndex + 1}`)
+    : fileStem(catalogName || filename);
+  return {
+    filename: catalogName || filename,
+    bodyIndex,
+    bodyCount: bodyInfo?.count || 1,
+    label,
+    size,
+  };
+}
+
+function bodyBoundsForMesh(mesh, bodyIndex, bodyInfo) {
+  if (!mesh?.isMesh || !mesh.geometry?.attributes?.position || !bodyInfo?.face_offsets?.length) {
+    return new THREE.Box3().setFromObject(mesh);
+  }
+  const geom = mesh.geometry;
+  const pos = geom.attributes.position;
+  const index = geom.index;
+  const faceCount = geom.index ? Math.floor(geom.index.count / 3) : Math.floor(pos.count / 3);
+  const start = Math.max(0, bodyInfo.face_offsets[bodyIndex] ?? 0);
+  const end = Math.min(bodyInfo.face_offsets[bodyIndex + 1] ?? faceCount, faceCount);
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  for (let fi = start; fi < end; fi += 1) {
+    for (let j = 0; j < 3; j += 1) {
+      const vi = index ? index.getX(fi * 3 + j) : fi * 3 + j;
+      v.fromBufferAttribute(pos, vi);
+      mesh.localToWorld(v);
+      box.expandByPoint(v);
+    }
+  }
+  return box.isEmpty() ? new THREE.Box3().setFromObject(mesh) : box;
+}
+
+function objectSizeControlsHtml(filename) {
+  const target = objectResizeTarget(filename);
+  if (!target) {
+    return `<section class="object-size-panel">
+      <strong>Generative Size Controls</strong>
+      <p class="object-size-hint">Select an object or body in the viewport, then use this panel to adjust width, depth, and height.</p>
+    </section>`;
+  }
+  const dims = [
+    ["width", "Width", target.size.x],
+    ["depth", "Depth", target.size.y],
+    ["height", "Height", target.size.z],
+  ];
+  const rows = dims.map(([axis, label, value]) => {
+    const base = Math.max(0.01, value);
+    const min = Math.max(0.1, base * 0.2);
+    const max = Math.max(base * 2.5, min + 1);
+    return `<label class="object-size-row" data-axis="${axis}">
+      <span>${label}</span>
+      <input type="range" min="${min.toFixed(2)}" max="${max.toFixed(2)}" step="0.1" value="${base.toFixed(2)}" data-size-range="${axis}" data-base="${base.toFixed(6)}" />
+      <input type="number" min="0.1" step="0.1" value="${base.toFixed(2)}" data-size-number="${axis}" />
+      <em>mm</em>
+    </label>`;
+  }).join("");
+  return `<section class="object-size-panel" data-resize-filename="${appEscapeHtml(target.filename)}" data-resize-body="${target.bodyIndex ?? ""}">
+    <div class="object-size-head">
+      <div>
+        <strong>Generative Size Controls</strong>
+        <span>${appEscapeHtml(target.label)} · ${target.bodyCount > 1 && target.bodyIndex != null ? "selected body" : "selected object"}</span>
+      </div>
+      <button type="button" class="btn secondary btn-compact" data-size-reset>Reset</button>
+    </div>
+    ${rows}
+    <label class="object-size-row object-size-row--uniform">
+      <span>Overall</span>
+      <input type="range" min="20" max="250" step="1" value="100" data-size-uniform />
+      <input type="number" min="1" step="1" value="100" data-size-uniform-number />
+      <em>%</em>
+    </label>
+    <div class="object-size-actions">
+      <button type="button" class="btn accent btn-compact" data-size-apply>Apply size change</button>
+      <small>Scales around the selected object/body center.</small>
+    </div>
+  </section>`;
+}
+
+function bindObjectSizeControls(pop, filename) {
+  const panel = pop.querySelector(".object-size-panel[data-resize-filename]");
+  if (!panel) return;
+  const syncNumber = (axis, value) => {
+    const num = panel.querySelector(`[data-size-number="${axis}"]`);
+    if (num) num.value = Number(value).toFixed(2);
+  };
+  const syncRange = (axis, value) => {
+    const range = panel.querySelector(`[data-size-range="${axis}"]`);
+    if (range) range.value = String(value);
+  };
+  panel.querySelectorAll("[data-size-range]").forEach((range) => {
+    range.addEventListener("input", () => syncNumber(range.dataset.sizeRange, range.value));
+  });
+  panel.querySelectorAll("[data-size-number]").forEach((num) => {
+    num.addEventListener("input", () => syncRange(num.dataset.sizeNumber, num.value));
+  });
+  const applyUniform = (percent) => {
+    const factor = Math.max(0.01, Number(percent || 100) / 100);
+    panel.querySelectorAll("[data-size-range]").forEach((range) => {
+      const base = Number(range.dataset.base || range.value || 1);
+      const next = base * factor;
+      range.value = String(next);
+      syncNumber(range.dataset.sizeRange, next);
+    });
+  };
+  panel.querySelector("[data-size-uniform]")?.addEventListener("input", (event) => {
+    const value = event.currentTarget.value;
+    const number = panel.querySelector("[data-size-uniform-number]");
+    if (number) number.value = value;
+    applyUniform(value);
+  });
+  panel.querySelector("[data-size-uniform-number]")?.addEventListener("input", (event) => {
+    const value = event.currentTarget.value;
+    const range = panel.querySelector("[data-size-uniform]");
+    if (range) range.value = value;
+    applyUniform(value);
+  });
+  panel.querySelector("[data-size-reset]")?.addEventListener("click", () => {
+    panel.querySelectorAll("[data-size-range]").forEach((range) => {
+      const base = Number(range.dataset.base || range.value || 1);
+      range.value = String(base);
+      syncNumber(range.dataset.sizeRange, base);
+    });
+    const uniform = panel.querySelector("[data-size-uniform]");
+    const uniformNumber = panel.querySelector("[data-size-uniform-number]");
+    if (uniform) uniform.value = "100";
+    if (uniformNumber) uniformNumber.value = "100";
+  });
+  panel.querySelector("[data-size-apply]")?.addEventListener("click", async () => {
+    const target = objectResizeTarget(filename);
+    if (!target) {
+      setEditStatus("error", "Select an object or body first.");
+      return;
+    }
+    const values = ["width", "depth", "height"].map((axis) => Number(panel.querySelector(`[data-size-number="${axis}"]`)?.value));
+    if (!values.every((value) => Number.isFinite(value) && value > 0)) {
+      setEditStatus("error", "Width, depth, and height must be positive numbers.");
+      return;
+    }
+    const bases = [target.size.x, target.size.y, target.size.z].map((value) => Math.max(0.01, value));
+    const scale = values.map((value, idx) => value / bases[idx]);
+    setEditStatus("loading", "Applying size change...");
+    try {
+      const endpoint = target.bodyCount > 1 && target.bodyIndex != null
+        ? `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform-body`
+        : `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform`;
+      const body = target.bodyCount > 1 && target.bodyIndex != null
+        ? { body_index: target.bodyIndex, scale }
+        : { scale };
+      const data = await api(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      closeObjectIterationTree();
+      await afterModelEdit({ ...data, replaceCatalog: target.filename });
+      setEditStatus("ok", `Resized ${target.label}.`);
+    } catch (err) {
+      setEditStatus("error", err.message || "Could not apply size change.");
+    }
+  });
+}
+
+function openObjectIterationTree(anchor = document.getElementById("btn-history-tree")) {
+  if (objectIterationPopover) {
+    closeObjectIterationTree();
+    return;
+  }
+  const filename = selectedObjectFilename();
+  if (!projectId || !filename) {
+    setEditStatus("error", "Select an object first to view its iteration tree.");
+    return;
+  }
+  const pop = document.createElement("div");
+  pop.className = "object-iteration-popover";
+  pop.innerHTML = `
+    <div class="object-iteration-header">
+      <div>
+        <strong>Object Adjustments</strong>
+        <span>${appEscapeHtml(fileStem(filename))}</span>
+      </div>
+      <button type="button" class="object-iteration-close" aria-label="Close history tree">✕</button>
+    </div>
+    <div class="object-iteration-list">
+      ${objectSizeControlsHtml(filename)}
+      <div class="object-iteration-history-head">History Tree</div>
+      ${objectIterationTreeHtml(filename)}
+    </div>
+  `;
+  document.body.appendChild(pop);
+  objectIterationPopover = pop;
+  anchor?.setAttribute("aria-pressed", "true");
+  const rect = anchor?.getBoundingClientRect?.();
+  const top = rect ? rect.bottom + 8 : 72;
+  const right = rect ? Math.max(12, window.innerWidth - rect.right) : 16;
+  pop.style.top = `${top}px`;
+  pop.style.right = `${right}px`;
+  pop.querySelector(".object-iteration-close")?.addEventListener("click", closeObjectIterationTree);
+  bindObjectSizeControls(pop, filename);
+  pop.querySelectorAll("[data-history-view]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const index = parseInt(btn.dataset.historyView, 10);
+      closeObjectIterationTree();
+      if (!Number.isNaN(index)) await restoreTimeline(index);
+    });
+  });
+  pop.querySelectorAll("[data-history-latest]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const index = parseInt(btn.dataset.historyLatest, 10);
+      closeObjectIterationTree();
+      if (!Number.isNaN(index)) await restoreTimelineAsLatest(index);
+    });
+  });
+  setTimeout(() => {
+    document.addEventListener("mousedown", function onDocClick(event) {
+      if (objectIterationPopover && !objectIterationPopover.contains(event.target) && !anchor?.contains?.(event.target)) {
+        closeObjectIterationTree();
+      } else if (objectIterationPopover) {
+        document.addEventListener("mousedown", onDocClick, { once: true });
+      }
+    }, { once: true });
+  }, 0);
+}
+
 async function loadSimForFile(filename) {
   currentSim = null;
   if (!projectId) return null;
@@ -4158,7 +6583,8 @@ async function loadSimForFile(filename) {
       if (!res.ok) continue;
       const sim = await res.json();
       const parts = sim?.parts || [];
-      if (parts.some((p) => /gear/i.test(p.id || ""))) {
+      const joints = sim?.joints || [];
+      if (parts.length || joints.length) {
         currentSim = sim;
         if (riggingEditor.isActive?.()) riggingEditor.refreshMeshBindings?.();
         return currentSim;
@@ -4195,9 +6621,7 @@ function primaryViewportComponent(comps = [], latestFile = null) {
 
 function componentsAlreadyLoaded(comps = [], latestFile = null) {
   const primary = primaryViewportComponent(comps, latestFile);
-  const visible = comps.filter((c) => c.auto_load === true);
-  const targets = visible.length ? visible : (primary ? [primary] : comps);
-  return targets.length ? targets.every((c) => projectAssembly.has(c.name)) : false;
+  return primary ? projectAssembly.has(primary.name) : false;
 }
 
 function modelMatchesSelection(viewFilename, catalogName) {
@@ -4213,10 +6637,577 @@ function hasBakedPlacement(filenameOrEntry) {
   return /(?:_edited(?:_\d+)?|_copy\d*|component_mounting_fixture)\.(glb|gltf|stl|obj|ply|off)$/i.test(String(name || ""));
 }
 
+function isFixtureArtifactFilename(name) {
+  return /component_mounting_fixture|fixture_base|mounting_plate|mount_plate/i.test(String(name || ""));
+}
+
+function getPromptTargetMode() {
+  return document.getElementById("prompt-target-mode")?.value === "edit" ? "edit" : "new";
+}
+
+function visiblePromptTargetEntries() {
+  const entries = (projectTree.getComponents?.() || [])
+    .filter((entry) => entry?.name && !isBrowserComponentHidden(entry) && !isFixtureArtifactFilename(entry.name));
+  if (
+    selectedFile
+    && !entries.some((entry) => entry.name === selectedFile)
+    && !isComponentHidden(selectedFile)
+    && !isFixtureArtifactFilename(selectedFile)
+  ) {
+    entries.unshift({
+      name: selectedFile,
+      stem: fileStem(selectedFile),
+      viewer_filename: selectedFile,
+    });
+  }
+  return entries;
+}
+
+function promptTargetEntryLabel(entry) {
+  return entry?.stem || fileStem(entry?.name || "") || entry?.name || "Object";
+}
+
+function promptTargetEntrySubtitle(entry) {
+  const fmt = String(entry?.format || entry?.name?.split(".").pop() || "model").toUpperCase();
+  const viewer = entry?.viewer_filename && entry.viewer_filename !== entry.name
+    ? ` - view ${entry.viewer_filename.split(".").pop()?.toUpperCase()}`
+    : "";
+  const obj = projectAssembly.get(entry?.name);
+  if (!obj) return `${fmt}${viewer}`;
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  if (box.isEmpty()) return `${fmt}${viewer}`;
+  const size = box.getSize(new THREE.Vector3());
+  const dims = [size.x, size.y, size.z].map((v) => Math.max(0, v).toFixed(v >= 10 ? 0 : 1)).join(" x ");
+  return `${fmt}${viewer} - ${dims} mm`;
+}
+
+function promptTargetBodyInfo(entry) {
+  return promptTargetBodyCache.get(entry?.name)?.data || null;
+}
+
+async function loadPromptTargetBodyInfo(entry) {
+  if (!projectId || !entry?.name) return null;
+  const cached = promptTargetBodyCache.get(entry.name);
+  if (cached?.data || cached?.promise) return cached.data || cached.promise;
+  const promise = api(`/api/projects/${projectId}/files/${encodeURIComponent(entry.name)}/bodies`)
+    .then((data) => {
+      promptTargetBodyCache.set(entry.name, { data });
+      return data;
+    })
+    .catch(() => {
+      promptTargetBodyCache.set(entry.name, { data: null });
+      return null;
+    });
+  promptTargetBodyCache.set(entry.name, { promise });
+  return promise;
+}
+
+function refreshPromptTargetBodies(entries = visiblePromptTargetEntries()) {
+  const popup = document.getElementById("prompt-target-popup");
+  if (!popup || popup.classList.contains("hidden")) return;
+  entries.forEach((entry) => {
+    if (promptTargetBodyCache.has(entry.name)) return;
+    void loadPromptTargetBodyInfo(entry).then(() => {
+      if (!popup.classList.contains("hidden")) {
+        renderPromptTargetPopup();
+        positionPromptTargetPopup();
+      }
+    });
+  });
+}
+
+function promptTargetBodies(entry) {
+  const info = promptTargetBodyInfo(entry);
+  const count = Number(info?.count) || 0;
+  if (count <= 1) return [];
+  return Array.from({ length: count }, (_, index) => ({
+    index,
+    name: info?.body_names?.[index] || `Body ${index + 1}`,
+  }));
+}
+
+function promptTargetSearchText(entry) {
+  const bodyNames = promptTargetBodies(entry).map((body) => body.name).join(" ");
+  return `${entry?.name || ""} ${entry?.stem || ""} ${promptTargetEntryLabel(entry)} ${promptTargetEntrySubtitle(entry)} ${bodyNames}`.toLowerCase();
+}
+
+function visiblePromptTargetEntriesForSearch(entries) {
+  const query = promptTargetSearch.trim().toLowerCase();
+  if (!query) return entries;
+  return entries.filter((entry) => promptTargetSearchText(entry).includes(query));
+}
+
+function firstPromptTargetMesh(root) {
+  let found = null;
+  root?.traverse?.((child) => {
+    if (!found && child.isMesh && child.geometry && !child.userData?.isEdge && !child.userData?.isSilhouette) {
+      found = child;
+    }
+  });
+  return found || (root?.isMesh ? root : null);
+}
+
+function selectedPromptTargetBodyRef() {
+  if (getPromptTargetMode() !== "edit" || !promptTargetSelectedBody?.filename) return null;
+  const filename = promptTargetSelectedBody.filename;
+  const stem = fileStem(filename);
+  return {
+    id: `component:${projectId || "project"}:${filename}:body:${promptTargetSelectedBody.bodyIndex}`,
+    type: "component",
+    token: compactComponentToken(`${stem}-body-${Number(promptTargetSelectedBody.bodyIndex) + 1}`),
+    label: promptTargetSelectedBody.bodyName || `Body ${Number(promptTargetSelectedBody.bodyIndex) + 1}`,
+    filename,
+    stem,
+    format: filename.split(".").pop(),
+    viewer_filename: filename,
+    projectId,
+    body_index: promptTargetSelectedBody.bodyIndex,
+    body_name: promptTargetSelectedBody.bodyName,
+  };
+}
+
+function selectedPromptTargetObjectRef() {
+  if (getPromptTargetMode() !== "edit") return null;
+  const filename = promptBaseFilename();
+  if (!filename) return null;
+  const stem = fileStem(filename);
+  const entry = visiblePromptTargetEntries().find((item) => item.name === filename || item.viewer_filename === filename);
+  return {
+    id: `component:${projectId || "project"}:${filename}:object`,
+    type: "component",
+    token: compactComponentToken(stem),
+    label: entry ? promptTargetEntryLabel(entry) : stem,
+    filename,
+    stem,
+    format: filename.split(".").pop(),
+    viewer_filename: entry?.viewer_filename || filename,
+    projectId,
+  };
+}
+
+function promptReferencesForSubmit() {
+  const refs = composer.getReferences();
+  const bodyRef = selectedPromptTargetBodyRef();
+  const objectRef = selectedPromptTargetObjectRef();
+  const additions = [objectRef, bodyRef].filter(Boolean);
+  if (!additions.length) return refs;
+  const existingIds = new Set(refs.map((ref) => ref.id));
+  return [...refs, ...additions.filter((ref) => !existingIds.has(ref.id))];
+}
+
+function promptTargetColor(entry) {
+  const seed = String(entry?.name || entry?.stem || "object");
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return ["#58a6ff", "#3fb950", "#d29922", "#a371f7", "#f778ba", "#56d4dd"][hash % 6];
+}
+
+function drawPromptTargetThumb(canvas, entry, active = false) {
+  const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+  const w = 68;
+  const h = 52;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const accent = promptTargetColor(entry);
+  const grad = ctx.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, active ? "rgba(88,166,255,0.28)" : "rgba(88,166,255,0.12)");
+  grad.addColorStop(1, "rgba(13,17,23,0.92)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = active ? "#58a6ff" : "rgba(139,148,158,0.35)";
+  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+  let sx = 34;
+  let sy = 20;
+  let sz = 16;
+  const obj = projectAssembly.get(entry?.name);
+  if (obj) {
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    if (!box.isEmpty()) {
+      const size = box.getSize(new THREE.Vector3());
+      const max = Math.max(size.x, size.y, size.z, 1);
+      sx = Math.max(10, (size.x / max) * 38);
+      sy = Math.max(8, (size.y / max) * 24);
+      sz = Math.max(8, (size.z / max) * 28);
+    }
+  }
+  const cx = 34;
+  const cy = 31;
+  const dx = sx * 0.45;
+  const dy = sy * 0.35;
+  const top = [[cx - dx, cy - sz * 0.5 - dy], [cx, cy - sz * 0.5 - dy * 1.8], [cx + dx, cy - sz * 0.5 - dy], [cx, cy - sz * 0.5]];
+  const right = [top[2], [top[2][0], top[2][1] + sz], [top[3][0], top[3][1] + sz], top[3]];
+  const left = [top[0], top[3], [top[3][0], top[3][1] + sz], [top[0][0], top[0][1] + sz]];
+  const poly = (pts, fill) => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.stroke();
+  };
+  poly(left, "rgba(88,166,255,0.28)");
+  poly(right, "rgba(163,113,247,0.22)");
+  poly(top, accent);
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.font = "700 10px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(String(entry?.format || entry?.name?.split(".").pop() || "3D").toUpperCase().slice(0, 4), w - 6, h - 6);
+}
+
+function renderPromptTargetThumb(target, entry, active = false) {
+  if (!target) return;
+  target.innerHTML = "";
+  if (!entry) return;
+  const canvas = document.createElement("canvas");
+  drawPromptTargetThumb(canvas, entry, active);
+  target.appendChild(canvas);
+}
+
+promptTargetPreview = {
+  name: null,
+  saved: null,
+  center: new THREE.Vector3(),
+  radius: 1,
+  angle: 0,
+  active: false,
+};
+
+function savePromptTargetPreviewCamera() {
+  if (promptTargetPreview.saved) return;
+  promptTargetPreview.saved = {
+    position: camera.position.clone(),
+    target: controls.target.clone(),
+    up: camera.up.clone(),
+  };
+}
+
+function syncControlsAfterCameraMove() {
+  camera.lookAt(controls.target);
+  controls._up0?.copy(camera.up);
+  controls._position0?.copy(camera.position);
+  controls._target0?.copy(controls.target);
+  controls._eye?.subVectors(camera.position, controls.target);
+  controls._lastAngle = 0;
+  controls.update();
+  viewCube.update?.();
+}
+
+function framePromptTargetPreview(obj) {
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  if (box.isEmpty()) return false;
+  const size = box.getSize(new THREE.Vector3()).length() || 1;
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(size * 0.5, 0.1);
+  const halfFovRad = (camera.fov * Math.PI) / 360;
+  const dist = Math.max((radius / Math.tan(halfFovRad)) * 1.05, 0.15);
+  promptTargetPreview.center.copy(center);
+  promptTargetPreview.radius = dist;
+  promptTargetPreview.angle = Math.atan2(camera.position.y - center.y, camera.position.x - center.x) || -0.8;
+  controls.target.copy(center);
+  camera.up.copy(VIEW_CUBE_WORLD_UP);
+  camera.position.set(
+    center.x + Math.cos(promptTargetPreview.angle) * dist,
+    center.y + Math.sin(promptTargetPreview.angle) * dist,
+    center.z + dist * 0.42
+  );
+  syncControlsAfterCameraMove();
+  return true;
+}
+
+function beginPromptTargetPreview(name) {
+  if (!name || promptTargetPreview.name === name) return;
+  const obj = projectAssembly.get(name);
+  if (!obj) return;
+  savePromptTargetPreviewCamera();
+  promptTargetPreview.name = name;
+  promptTargetPreview.active = framePromptTargetPreview(obj);
+  document.querySelectorAll(".prompt-target-card").forEach((card) => {
+    card.classList.toggle("previewing", card.dataset.promptTargetName === name);
+  });
+}
+
+function endPromptTargetPreview({ restore = true } = {}) {
+  if (restore && promptTargetPreview.saved) {
+    camera.position.copy(promptTargetPreview.saved.position);
+    controls.target.copy(promptTargetPreview.saved.target);
+    camera.up.copy(promptTargetPreview.saved.up);
+    syncControlsAfterCameraMove();
+  }
+  promptTargetPreview.name = null;
+  promptTargetPreview.saved = null;
+  promptTargetPreview.active = false;
+  document.querySelectorAll(".prompt-target-card.previewing").forEach((card) => card.classList.remove("previewing"));
+}
+
+function commitPromptTargetPreview() {
+  endPromptTargetPreview({ restore: false });
+}
+
+function choosePromptTargetObject(name, bodyIndex = null) {
+  if (!name) return;
+  const objectSelect = document.getElementById("prompt-target-object");
+  if (objectSelect) objectSelect.value = name;
+  selectedFile = name;
+  projectTree.setSelected(name);
+  featureEditor.setModel(projectId, name);
+  selectAssemblyComponent(name, { fitView: false });
+  if (Number.isInteger(bodyIndex)) {
+    const entry = visiblePromptTargetEntries().find((candidate) => candidate.name === name);
+    const body = promptTargetBodies(entry).find((candidate) => candidate.index === bodyIndex);
+    promptTargetSelectedBody = {
+      filename: name,
+      bodyIndex,
+      bodyName: body?.name || `Body ${bodyIndex + 1}`,
+    };
+    const root = projectAssembly.get(name) || currentMesh;
+    const mesh = firstPromptTargetMesh(root);
+    if (mesh && root) {
+      objectTools.selectObject?.({ mesh, root, bodyIndex, catalogName: name });
+    }
+    setEditStatus("ok", `Editing ${promptTargetSelectedBody.bodyName} in ${promptTargetEntryLabel(entry)}.`);
+  } else {
+    promptTargetSelectedBody = null;
+  }
+  commitPromptTargetPreview();
+  closePromptTargetPopup({ restorePreview: false });
+  syncPromptTargetUI();
+}
+
+function closePromptTargetPopup({ restorePreview = true } = {}) {
+  if (restorePreview) endPromptTargetPreview();
+  const popup = document.getElementById("prompt-target-popup");
+  const trigger = document.getElementById("prompt-target-picker-btn");
+  popup?.classList.add("hidden");
+  trigger?.setAttribute("aria-expanded", "false");
+}
+
+function positionPromptTargetPopup() {
+  const popup = document.getElementById("prompt-target-popup");
+  const trigger = document.getElementById("prompt-target-picker-btn");
+  if (!popup || !trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  const width = Math.min(420, window.innerWidth - 18);
+  let left = Math.min(window.innerWidth - width - 8, Math.max(8, rect.right - width));
+  let top = rect.bottom + 8;
+  const height = Math.min(520, popup.offsetHeight || 420);
+  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 8);
+  popup.style.width = `${width}px`;
+  popup.style.left = `${left}px`;
+  popup.style.top = `${top}px`;
+}
+
+function renderPromptTargetPopup() {
+  const popup = document.getElementById("prompt-target-popup");
+  if (!popup) return;
+  const allEntries = visiblePromptTargetEntries();
+  const entries = visiblePromptTargetEntriesForSearch(allEntries);
+  const current = document.getElementById("prompt-target-object")?.value || selectedFile || entries[0]?.name || "";
+  popup.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "prompt-target-popup-header";
+  header.innerHTML = `<div><strong>Select object/body to edit</strong><span>Search components and bodies. Hover a component to preview it.</span></div><button type="button" class="prompt-target-popup-close" aria-label="Close">x</button>`;
+  header.querySelector("button")?.addEventListener("click", closePromptTargetPopup);
+  popup.appendChild(header);
+  const searchWrap = document.createElement("div");
+  searchWrap.className = "prompt-target-search";
+  searchWrap.innerHTML = `
+    <span aria-hidden="true">⌕</span>
+    <input type="search" id="prompt-target-search-input" placeholder="Search bodies, objects, filenames..." value="${appEscapeHtml(promptTargetSearch)}" />
+    ${promptTargetSearch ? '<button type="button" class="prompt-target-search-clear" aria-label="Clear search">x</button>' : ""}
+  `;
+  const searchInput = searchWrap.querySelector("input");
+  searchInput?.addEventListener("input", (event) => {
+    promptTargetSearch = event.currentTarget.value;
+    renderPromptTargetPopup();
+    positionPromptTargetPopup();
+    requestAnimationFrame(() => {
+      const next = document.getElementById("prompt-target-search-input");
+      next?.focus();
+      next?.setSelectionRange(promptTargetSearch.length, promptTargetSearch.length);
+    });
+  });
+  searchWrap.querySelector(".prompt-target-search-clear")?.addEventListener("click", () => {
+    promptTargetSearch = "";
+    renderPromptTargetPopup();
+    positionPromptTargetPopup();
+    requestAnimationFrame(() => document.getElementById("prompt-target-search-input")?.focus());
+  });
+  popup.appendChild(searchWrap);
+  const list = document.createElement("div");
+  list.className = "prompt-target-popup-list";
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "prompt-target-popup-empty";
+    empty.textContent = allEntries.length
+      ? "No matching objects or bodies."
+      : "No visible objects available. Show a component in the Browser first.";
+    list.appendChild(empty);
+  }
+  for (const entry of entries) {
+    const selectedBodyMatches = promptTargetSelectedBody?.filename === entry.name;
+    const active = entry.name === current && !selectedBodyMatches;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `prompt-target-card${active ? " active" : ""}`;
+    btn.dataset.promptTargetName = entry.name;
+    btn.title = entry.name;
+    const thumb = document.createElement("span");
+    thumb.className = "prompt-target-card-thumb";
+    renderPromptTargetThumb(thumb, entry, active);
+    const info = document.createElement("span");
+    info.className = "prompt-target-card-info";
+    const name = document.createElement("strong");
+    name.textContent = promptTargetEntryLabel(entry);
+    const meta = document.createElement("small");
+    meta.textContent = promptTargetEntrySubtitle(entry);
+    const file = document.createElement("em");
+    file.textContent = entry.name;
+    info.append(name, meta, file);
+    const check = document.createElement("span");
+    check.className = "prompt-target-card-check";
+    check.textContent = active ? "Selected" : "Choose";
+    btn.append(thumb, info, check);
+    list.appendChild(btn);
+    const bodies = promptTargetBodies(entry);
+    if (bodies.length) {
+      const bodyWrap = document.createElement("div");
+      bodyWrap.className = "prompt-target-body-list";
+      bodies.forEach((body) => {
+        const bodyActive = promptTargetSelectedBody?.filename === entry.name && promptTargetSelectedBody?.bodyIndex === body.index;
+        const bodyBtn = document.createElement("button");
+        bodyBtn.type = "button";
+        bodyBtn.className = `prompt-target-body-card${bodyActive ? " active" : ""}`;
+        bodyBtn.dataset.promptTargetName = entry.name;
+        bodyBtn.dataset.promptTargetBodyIndex = String(body.index);
+        bodyBtn.innerHTML = `
+          <span class="prompt-target-body-badge">Body ${body.index + 1}</span>
+          <span class="prompt-target-body-name">${appEscapeHtml(body.name)}</span>
+          <span class="prompt-target-body-action">${bodyActive ? "Selected" : "Edit body"}</span>
+        `;
+        bodyWrap.appendChild(bodyBtn);
+      });
+      list.appendChild(bodyWrap);
+    } else if (!promptTargetBodyCache.get(entry.name)) {
+      const loading = document.createElement("div");
+      loading.className = "prompt-target-body-loading";
+      loading.textContent = "Checking bodies...";
+      list.appendChild(loading);
+    }
+  }
+  popup.appendChild(list);
+  refreshPromptTargetBodies(allEntries);
+}
+
+function openPromptTargetPopup() {
+  const popup = document.getElementById("prompt-target-popup");
+  const trigger = document.getElementById("prompt-target-picker-btn");
+  if (!popup || !trigger) return;
+  renderPromptTargetPopup();
+  popup.classList.remove("hidden");
+  trigger.setAttribute("aria-expanded", "true");
+  positionPromptTargetPopup();
+}
+
+function togglePromptTargetPopup() {
+  const popup = document.getElementById("prompt-target-popup");
+  if (!popup || popup.classList.contains("hidden")) openPromptTargetPopup();
+  else closePromptTargetPopup();
+}
+
+function syncPromptTargetUI() {
+  const select = document.getElementById("prompt-target-mode");
+  const objectSelect = document.getElementById("prompt-target-object");
+  const pickerBtn = document.getElementById("prompt-target-picker-btn");
+  const pickerTitle = document.getElementById("prompt-target-picker-title");
+  const pickerSubtitle = document.getElementById("prompt-target-picker-subtitle");
+  const pickerThumb = document.getElementById("prompt-target-picker-thumb");
+  const entries = visiblePromptTargetEntries();
+  const targetControlsEnabled = ["standard", "v2", "fusion"].includes(promptMode);
+  const canEdit = targetControlsEnabled && entries.length > 0;
+  if (select) {
+    select.disabled = !targetControlsEnabled;
+    select.querySelector("option[value='edit']")?.toggleAttribute("disabled", !canEdit);
+    if (!canEdit && select.value === "edit") select.value = "new";
+  }
+  if (objectSelect) {
+    const current = entries.some((entry) => entry.name === objectSelect.value)
+      ? objectSelect.value
+      : entries.some((entry) => entry.name === selectedFile)
+        ? selectedFile
+        : entries[0]?.name || "";
+    objectSelect.innerHTML = "";
+    for (const entry of entries) {
+      const option = document.createElement("option");
+      option.value = entry.name;
+      option.textContent = promptTargetEntryLabel(entry);
+      option.title = entry.name;
+      objectSelect.appendChild(option);
+    }
+    objectSelect.value = current;
+    objectSelect.disabled = !canEdit || getPromptTargetMode() !== "edit";
+    objectSelect.hidden = true;
+  }
+  const editing = select?.value === "edit" && canEdit;
+  const currentEntry = entries.find((entry) => entry.name === objectSelect?.value) || entries[0];
+  if (promptTargetSelectedBody && promptTargetSelectedBody.filename !== currentEntry?.name) {
+    promptTargetSelectedBody = null;
+  }
+  if (pickerBtn) {
+    pickerBtn.hidden = !editing;
+    pickerBtn.disabled = !editing;
+  }
+  if (pickerTitle) {
+    pickerTitle.textContent = editing && currentEntry
+      ? (promptTargetSelectedBody?.bodyName || promptTargetEntryLabel(currentEntry))
+      : "Select object";
+  }
+  if (pickerSubtitle) {
+    pickerSubtitle.textContent = editing && currentEntry
+      ? promptTargetSelectedBody
+        ? `${promptTargetEntryLabel(currentEntry)} - body ${Number(promptTargetSelectedBody.bodyIndex) + 1}`
+        : promptTargetEntrySubtitle(currentEntry)
+      : `${entries.length} visible component${entries.length === 1 ? "" : "s"}`;
+  }
+  renderPromptTargetThumb(pickerThumb, currentEntry, true);
+  if (!editing) closePromptTargetPopup();
+  else if (!document.getElementById("prompt-target-popup")?.classList.contains("hidden")) {
+    renderPromptTargetPopup();
+    positionPromptTargetPopup();
+  }
+}
+
+function promptBaseFilename({ canvasAttached = false } = {}) {
+  if (canvasAttached) return null;
+  if (getPromptTargetMode() !== "edit") return null;
+  const chosen = document.getElementById("prompt-target-object")?.value || selectedFile;
+  if (!chosen || isComponentHidden(chosen) || isFixtureArtifactFilename(chosen)) return null;
+  return chosen;
+}
+
+function annotatePickedReference(ref) {
+  if (!ref || !selectedFile) return ref;
+  return {
+    ...ref,
+    filename: ref.filename || selectedFile,
+    viewer_filename: ref.viewer_filename || selectedFile,
+    projectId: ref.projectId || projectId,
+  };
+}
+
 function materializeObject(object3d, { center = true, normalizePivot = center } = {}) {
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
   meshCenterOffset = box.getCenter(new THREE.Vector3());
+  object3d.userData.meshCenterOffset = meshCenterOffset.clone();
   if (center) {
     // Z-up CAD: sit on XY floor (z = 0), center in X/Y.
     object3d.position.x -= meshCenterOffset.x;
@@ -4327,7 +7318,7 @@ function _apiPath(url) {
   }
 }
 
-function formatApiDetail(detail, statusText = "") {
+function formatApiDetail(detail, statusText = "", status = 0) {
   if (typeof detail === "string" && detail.trim()) return detail.trim();
   if (detail && typeof detail === "object") {
     if (Array.isArray(detail)) {
@@ -4341,6 +7332,12 @@ function formatApiDetail(detail, statusText = "") {
       const encoded = JSON.stringify(detail);
       if (encoded && encoded !== "{}" && encoded !== "null") return encoded;
     }
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return "Server is restarting or busy — wait a few seconds and try Generate again.";
+  }
+  if (status === 409) {
+    return "A generation is already running for this project. Wait for it to finish or cancel it first.";
   }
   return (statusText || "").trim() || "Request failed";
 }
@@ -4356,6 +7353,14 @@ function formatUserError(err, fallback = "Something went wrong — check Prompt 
   }
   if (msg === "Failed to fetch" || /networkerror/i.test(msg)) {
     return "Connection lost during generation. The server may still be building — wait a minute, refresh, and check Prompt History before retrying.";
+  }
+  if (/overloaded|529|rate limit hit \(429\)/i.test(msg)) {
+    const cleaned = msg.replace(/^Server error \d+:\s*/i, "").replace(/^\{.*"detail":\s*"([^"]+)".*\}$/s, "$1");
+    return cleaned.includes("Anthropic") ? cleaned : "Anthropic's API is temporarily overloaded. Wait a minute and try again, or switch models in the account menu.";
+  }
+  if (/truncated at token limit|max_output_tokens/i.test(msg)) {
+    const cleaned = msg.replace(/^Server error \d+:\s*/i, "").replace(/^\{.*"detail":\s*"([^"]+)".*\}$/s, "$1");
+    return cleaned.includes("Try again") ? cleaned : "The AI response was cut off before it finished. Try again or switch to a faster model in the account menu.";
   }
   return msg || fallback;
 }
@@ -4480,7 +7485,7 @@ async function loadModel(url, filename, opts = {}) {
   safeRestoreActiveModelPromptState();
   collab?.refreshAllRemote(currentMesh);
   const refs = composer.getReferences();
-  if (refs?.length) collab?.sendPicks(refs);
+  if (refs?.length || objectTools.getSelection?.()) sendCollabPresence();
   sectionView.onModelChanged?.();
   if (riggingEditor.isActive?.()) {
     void loadSimForFile(catalogName);
@@ -4521,10 +7526,26 @@ async function api(path, options = {}, timeoutMs = 200000) {
   const t0 = performance.now();
   let bodyPreview = "";
   if (options.body && typeof options.body === "string") {
-    try {
-      bodyPreview = JSON.parse(options.body);
-    } catch {
-      bodyPreview = options.body.slice(0, 200);
+    if (path.includes("diagnose-photo") || options.body.length > 50000) {
+      try {
+        const parsed = JSON.parse(options.body);
+        const imgCount = Array.isArray(parsed?.images) ? parsed.images.length : 0;
+        bodyPreview = {
+          ...parsed,
+          images: imgCount ? `[${imgCount} image(s)]` : parsed?.images,
+        };
+        if (bodyPreview.client_secret) bodyPreview.client_secret = "[redacted]";
+        if (parsed?.images) delete bodyPreview.images?.[0]?.data_url;
+      } catch {
+        bodyPreview = { note: "large payload", bytes: options.body.length };
+      }
+    } else {
+      try {
+        bodyPreview = JSON.parse(options.body);
+        if (bodyPreview?.client_secret) bodyPreview.client_secret = "[redacted]";
+      } catch {
+        bodyPreview = options.body.slice(0, 200);
+      }
     }
   }
 
@@ -4544,7 +7565,7 @@ async function api(path, options = {}, timeoutMs = 200000) {
 
     if (!res.ok) {
       const detail = data.detail;
-      const msg = formatApiDetail(detail, res.statusText);
+      const msg = formatApiDetail(detail, res.statusText, res.status);
       if (!skipLog) {
         activityLog.push({
           level: "error",
@@ -4649,11 +7670,36 @@ function getStoredPromptAiKeyValue() {
   }
 }
 
-function storePromptAiKeyValue(value) {
+function getProjectPromptAiKeyMap() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_PROJECT_PROMPT_AI_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function getStoredProjectPromptAiKeyValue(pid = projectId) {
+  if (!pid) return "";
+  const map = getProjectPromptAiKeyMap();
+  return typeof map[pid] === "string" ? map[pid] : "";
+}
+
+function storeProjectPromptAiKeyValue(value, pid = projectId) {
+  if (!pid) return;
+  try {
+    const map = getProjectPromptAiKeyMap();
+    if (value) map[pid] = value;
+    else delete map[pid];
+    localStorage.setItem(LS_PROJECT_PROMPT_AI_KEY, JSON.stringify(map));
+  } catch (_) {}
+}
+
+function storePromptAiKeyValue(value, { projectScoped = true } = {}) {
   try {
     if (value) localStorage.setItem(LS_PROMPT_AI_KEY, value);
     else localStorage.removeItem(LS_PROMPT_AI_KEY);
   } catch (_) {}
+  if (projectScoped) storeProjectPromptAiKeyValue(value);
 }
 
 function defaultPromptKeyValue(status) {
@@ -4715,28 +7761,36 @@ function syncPromptKeyPill(status) {
   const allKeys = [...(status?.keys || []), ...(status?.team_keys || [])];
   const found = parsed ? allKeys.find((k) => k.id === parsed.keyId) : null;
 
-  let keyName, modelName;
+  let keyName, modelName, providerName;
   if (found) {
-    keyName = found.name || "Selected key";
+    keyName = "";
     modelName = found.model || found.effective_model || "";
+    providerName = found.provider || "";
   } else if (status?.ai_ready) {
     const eff = status.effective;
-    keyName = eff?.key_name || status.keys?.[0]?.name || "Default key";
+    keyName = "";
     modelName = eff?.model || status.model || "";
+    providerName = eff?.provider || status.provider || "";
   } else {
     keyName = "No key";
     modelName = "";
+    providerName = "";
   }
+  const modelLabel = formatModelLabel(modelName, providerName) || modelName || keyName;
 
-  // Sync all pill buttons (design prompt + wiring prompt)
+  // Sync all pill buttons (design prompt + wiring prompt + circuit debugger)
   for (const [nameId, modelId] of [
     ["prompt-key-pill-name", "prompt-key-pill-model"],
     ["wiring-key-pill-name", "wiring-key-pill-model"],
+    ["wdbg-key-pill-name", "wdbg-key-pill-model"],
   ]) {
     const nameEl = document.getElementById(nameId);
     const modelEl = document.getElementById(modelId);
-    if (nameEl) nameEl.textContent = keyName;
-    if (modelEl) modelEl.textContent = modelName;
+    if (nameEl) {
+      nameEl.textContent = keyName;
+      nameEl.classList.toggle("hidden", !keyName);
+    }
+    if (modelEl) modelEl.textContent = modelLabel;
   }
 }
 
@@ -4753,6 +7807,7 @@ const PROMPT_KEY_MODEL_OPTIONS = {
     { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
   ],
   anthropic: [
+    { value: "claude-fable-5", label: "Claude Fable 5" },
     { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
     { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
     { value: "claude-4.6-sonnet", label: "Claude Sonnet 4.6" },
@@ -4774,6 +7829,18 @@ function buildModelOptionsHTML(provider, currentModel) {
   return html;
 }
 
+function aiKeyAllowedForCurrentProject(key) {
+  if (!key || !key.scope_type || key.scope_type === "all") return true;
+  if (key.scope_type === "project") {
+    return !!projectId && String(key.scope_project_id || "") === String(projectId);
+  }
+  if (key.scope_type === "folder") {
+    const current = allProjects.find((project) => String(project.id || "") === String(projectId || ""));
+    return !!current?.folder_id && String(current.folder_id) === String(key.scope_project_id || "");
+  }
+  return true;
+}
+
 function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
   const sel = document.getElementById("prompt-ai-key-select");
   if (!sel) return;
@@ -4781,7 +7848,7 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
   sel.innerHTML = "";
 
   const personalKeys = status?.keys || [];
-  const teamKeys = (status?.team_keys || []).filter((k) => k.enabled !== false);
+  const teamKeys = (status?.team_keys || []).filter((k) => k.enabled !== false && aiKeyAllowedForCurrentProject(k));
 
   if (!personalKeys.length && !teamKeys.length) {
     sel.disabled = true;
@@ -4807,7 +7874,8 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
   });
 
   sel.disabled = false;
-  const candidates = [prev, getStoredPromptAiKeyValue(), defaultPromptKeyValue(status)].filter(Boolean);
+  const projectStored = getStoredProjectPromptAiKeyValue();
+  const candidates = [prev, projectStored, getStoredPromptAiKeyValue(), defaultPromptKeyValue(status)].filter(Boolean);
   for (const value of candidates) {
     if ([...sel.options].some((opt) => opt.value === value)) {
       sel.value = value;
@@ -4833,7 +7901,7 @@ function renderPromptKeyPopup(status) {
   if (!popup) return;
 
   const personalKeys = status?.keys || [];
-  const teamKeys = (status?.team_keys || []).filter((k) => k.enabled !== false);
+  const teamKeys = (status?.team_keys || []).filter((k) => k.enabled !== false && aiKeyAllowedForCurrentProject(k));
   const currentValue = document.getElementById("prompt-ai-key-select")?.value || "";
 
   const isSelected = (source, id) => currentValue === promptKeyOptionValue(source, id);
@@ -4916,7 +7984,7 @@ function closePromptKeyPopup() {
   const popup = document.getElementById("prompt-key-popup");
   if (!popup) return;
   promptKeyPopupOpen = false;
-  const allPills = document.querySelectorAll("#prompt-key-picker-btn, #wiring-key-picker-btn");
+  const allPills = document.querySelectorAll("#prompt-key-picker-btn, #wiring-key-picker-btn, #wdbg-key-picker-btn");
   allPills.forEach((b) => b.setAttribute("aria-expanded", "false"));
   popup.classList.add("hidden");
   promptKeyPopupAnchor = null;
@@ -4927,7 +7995,7 @@ function initPromptKeyPopup() {
   if (!popup) return;
 
   // Attach to both design-prompt pill and wiring-prompt pill
-  const pillIds = ["prompt-key-picker-btn", "wiring-key-picker-btn"];
+  const pillIds = ["prompt-key-picker-btn", "wiring-key-picker-btn", "wdbg-key-picker-btn"];
   for (const id of pillIds) {
     const btn = document.getElementById(id);
     if (!btn) continue;
@@ -5029,7 +8097,45 @@ function saveLastProjectId(id) {
 }
 
 function getSelectedWorkspaceId() {
-  return document.getElementById("team-select")?.value || allTeams[0]?.id || null;
+  const value = document.getElementById("team-select")?.value;
+  if (value === "__all__") return null;
+  return value || allTeams[0]?.id || null;
+}
+
+function userWorkspaceStorageKey(user = currentUser) {
+  return user?.id ? `${LS_LAST_WORKSPACE}:${user.id}` : LS_LAST_WORKSPACE;
+}
+
+function readSavedWorkspaceId() {
+  try {
+    const userScoped = localStorage.getItem(userWorkspaceStorageKey());
+    if (userScoped) return userScoped;
+    return localStorage.getItem(LS_LAST_WORKSPACE) || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function hasUserScopedSavedWorkspace(id) {
+  if (!id) return false;
+  try {
+    return localStorage.getItem(userWorkspaceStorageKey()) === id;
+  } catch (_) {
+    return false;
+  }
+}
+
+function writeSavedWorkspaceId(id) {
+  if (!id) return;
+  try {
+    localStorage.setItem(userWorkspaceStorageKey(), id);
+    localStorage.setItem(LS_LAST_WORKSPACE, id);
+  } catch (_) {}
+}
+
+function defaultWorkspaceIdForUser(teams = allTeams) {
+  const owned = teams.find((team) => team.role === "owner");
+  return owned?.id || (teams.length > 1 ? "__all__" : teams[0]?.id || "");
 }
 
 function upsertProjectInList(summary = {}) {
@@ -5067,6 +8173,39 @@ async function ensureActiveProjectListed(activeId = projectId) {
 }
 
 let projectFetchSucceeded = false;
+
+function isAnonymousPublicProject(id = projectId) {
+  return !currentUser && !!id && allProjects.some((p) => p.id === id && p.public);
+}
+
+function projectApiPath(id = projectId) {
+  return isAnonymousPublicProject(id) ? `/api/public/projects/${id}` : `/api/projects/${id}`;
+}
+
+function projectFileUrl(id, filename) {
+  return `${projectApiPath(id)}/files/${encodeURIComponent(filename)}`;
+}
+
+async function fetchPublicProjectsForAnonymous() {
+  const data = await api("/api/public/projects");
+  const folder = data.folder || {
+    id: "__public__",
+    name: "Public",
+    virtual: true,
+    read_only: true,
+    public: true,
+  };
+  allProjects = (data.projects || []).map((p) => ({
+    ...p,
+    folder_id: p.folder_id || folder.id,
+    read_only_project: true,
+    public: true,
+  }));
+  workspaceBrowser.setFolders([folder]);
+  projectFetchSucceeded = true;
+  renderProjectList();
+  return allProjects;
+}
 
 async function fetchAllProjects() {
   const fetchGen = ++projectsFetchGeneration;
@@ -5112,11 +8251,14 @@ async function fetchAllProjects() {
     await ensureActiveProjectListed(projectId);
   }
   await workspaceBrowser.refreshFolders();
+  void resumeGenerationFromProjects();
   return allProjects;
 }
 
-async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true } = {}) {
+async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false } = {}) {
   if (!comps?.length) return false;
+  comps = comps.filter((entry) => !isInternalCadSidecar(entry?.name) && !isInternalCadSidecar(entry?.viewer_filename));
+  if (!comps.length) return false;
   prepareViewportForModels();
   const visibleComps = comps.filter((c) => !isBrowserComponentHidden(c));
   if (!visibleComps.length) {
@@ -5139,7 +8281,10 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
     ordered.push(entry);
   };
   pushUnique(primary);
-  for (const comp of visibleComps) pushUnique(comp);
+  if (loadAll) {
+    const autoLoadComps = visibleComps.filter((c) => c.auto_load === true);
+    for (const comp of (autoLoadComps.length ? autoLoadComps : visibleComps)) pushUnique(comp);
+  }
   selectedFile = primary.name;
   let lastError = null;
   let loadedCount = 0;
@@ -5148,7 +8293,7 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
       const viewer = entry.viewer_filename || entry.name;
       selectedFile = entry.name;
       const ok = await loadModel(
-        `/api/projects/${pid}/files/${encodeURIComponent(viewer)}`,
+        projectFileUrl(pid, viewer),
         viewer,
         {
           projectId: pid,
@@ -5322,6 +8467,7 @@ const workspaceBrowser = createWorkspaceBrowser({
   onRenameProject: (p) => renameProject(p),
   onDeleteProject: (p) => deleteProject(p),
   onExportProject: (p) => exportProject(p),
+  onMakePublicProject: (p) => makeProjectPublic(p),
   onOpenHierarchyItem: (project, entry, sectionId) => openHierarchyItem(project, entry, sectionId),
   onOpenProfile: (project, entry) => componentProfileUI.open(entry, project?.id),
   onRenameHierarchyItem: (project, entry) => renameHierarchyComponent(project, entry),
@@ -5355,10 +8501,35 @@ const workspaceBrowser = createWorkspaceBrowser({
 function componentIdentityNames(entryOrName = {}) {
   if (typeof entryOrName === "string") return [entryOrName].filter(Boolean);
   const entry = entryOrName || {};
+  if (entry.virtual_component) {
+    return [
+      entry.name,
+      entry.id,
+      entry.stem,
+      entry.component_name,
+      entry.node_name,
+      entry.source_filename,
+      entry.parent_filename,
+      entry.viewer_filename,
+    ].filter(Boolean).map(String);
+  }
+  if (entry.virtual_body) {
+    return [
+      entry.name,
+      entry.id,
+      entry.stem,
+      entry.body_name,
+      entry.body_name ? `${entry.body_name}.glb` : null,
+      entry.body_name ? `${entry.body_name}.step` : null,
+      entry.body_name ? `${entry.body_name}.stp` : null,
+    ].filter(Boolean).map(String);
+  }
   return [
     entry.name,
     entry.filename,
     entry.viewer_filename,
+    entry.source_filename,
+    entry.parent_filename,
     entry.source_file,
     entry.glb,
     entry.step_file,
@@ -5398,6 +8569,7 @@ function setStoredComponentHidden(pid, entryOrName, hidden) {
 function componentStemName(name = "") {
   return String(name || "")
     .replace(/\.[^.]+$/, "")
+    .replace(/^.+?__\d+_/, "")
     .replace(/_edited(?:_\d+)?$/i, "")
     .replace(/_cleaned(?:_\d+)?$/i, "")
     .replace(/_(loops|duct|hole|extruded|pulled|mirrored)(?:_\d+)?$/i, "")
@@ -5462,19 +8634,28 @@ async function openBrowserComponent(entry) {
   saveActiveModelPromptState();
   prepareViewportForModels();
   try {
-    if (projectAssembly.has(entry.name)) {
-      selectAssemblyComponent(entry.name, { fitView: true });
+    const catalogName = (entry.virtual_body || entry.virtual_component)
+      ? (entry.source_filename || entry.parent_filename || entry.filename || entry.name)
+      : entry.name;
+    if (projectAssembly.has(catalogName)) {
+      if (entry.virtual_component) {
+        selectBrowserVirtualComponent(entry, { fitView: true });
+      } else if (entry.virtual_body) {
+        await selectBrowserBody(entry, { fitView: true });
+      } else {
+        selectAssemblyComponent(catalogName, { fitView: true });
+      }
       await refreshPromptHistory();
       showAiComposePanel();
       return;
     }
-    selectedFile = entry.name;
+    selectedFile = catalogName;
     projectTree.setSelected(entry.name);
     const viewer = entry.viewer_filename || entry.name;
-    const ok = await loadModel(`/api/projects/${projectId}/files/${encodeURIComponent(viewer)}`, viewer, {
+    const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
       projectId,
       append: projectAssembly.count() > 0,
-      catalogFilename: entry.name,
+      catalogFilename: catalogName,
       center: !hasBakedPlacement(entry),
       fitView: true,
       autoGizmo: false,
@@ -5483,6 +8664,13 @@ async function openBrowserComponent(entry) {
       if (!projectAssembly.has(entry.name)) {
         throw new Error("Model load was cancelled or did not complete.");
       }
+    }
+    if (ok && entry.virtual_component) {
+      selectBrowserVirtualComponent(entry, { fitView: false });
+    } else if (ok && entry.virtual_body) {
+      await selectBrowserBody(entry, { fitView: false });
+    } else if (ok) {
+      selectAssemblyComponent(catalogName, { fitView: true });
     }
     viewerOverlay.clearError();
     await refreshPromptHistory();
@@ -5565,6 +8753,7 @@ const projectTree = createProjectTree({
       fitCamera();
     }
     syncExportButton();
+    syncPromptTargetUI();
     workspaceBrowser?.render?.();
   },
   onExport: (entry, anchorEl) => {
@@ -5618,8 +8807,66 @@ function isBrowserComponentHidden(entry) {
   return componentVisibilityCandidates(entry).some((name) => isComponentHidden(name));
 }
 
+let browserBodyHydrationRun = 0;
+
+function bodyChildSlug(label = "", fallback = "body") {
+  return String(label || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || fallback;
+}
+
+function bodyChildrenFromInfo(entry, info) {
+  const count = Number(info?.count || 0);
+  if (count <= 1) return [];
+  const names = Array.isArray(info.body_names) ? info.body_names : [];
+  return Array.from({ length: count }, (_, idx) => {
+    const label = names[idx] || `Body ${idx + 1}`;
+    const slug = bodyChildSlug(label, `body_${idx + 1}`);
+    return {
+      id: `${entry.stem || fileStem(entry.name)}:body:${slug}`,
+      name: `${entry.name}#body:${idx + 1}`,
+      filename: entry.name,
+      stem: slug,
+      label,
+      format: "body",
+      viewer_filename: entry.viewer_filename,
+      source_filename: entry.name,
+      parent_filename: entry.name,
+      body_index: idx,
+      body_name: label,
+      virtual_body: true,
+    };
+  });
+}
+
+async function hydrateBrowserBodyChildren(browser) {
+  const run = ++browserBodyHydrationRun;
+  if (!projectId || !browser?.components?.length) return;
+  let changed = false;
+  await Promise.all((browser.components || []).map(async (entry) => {
+    if (!entry?.name || entry.children?.length || entry.format === "body") return;
+    try {
+      const info = await api(`/api/projects/${projectId}/files/${encodeURIComponent(entry.name)}/bodies`);
+      const children = bodyChildrenFromInfo(entry, info);
+      if (!children.length || run !== browserBodyHydrationRun) return;
+      entry.children_label = entry.children_label || "Parts";
+      entry.children = children;
+      changed = true;
+    } catch {
+      /* body hydration is best-effort; backend browser metadata may already include it */
+    }
+  }));
+  if (changed && run === browserBodyHydrationRun) {
+    projectTree.render(browser);
+    projectTree.setHidden?.(loadHiddenComponentState());
+  }
+}
+
 function renderProjectBrowser(browser) {
   mobileBrowserComponents = browser?.components || [];
+  promptTargetBodyCache.clear();
+  promptTargetSelectedBody = null;
   renderMobileModelPicker();
   projectTree.render(browser);
   projectTree.setHidden?.(loadHiddenComponentState());
@@ -5671,6 +8918,7 @@ function openMobileAccountMenu(action = "account") {
   window.setTimeout(() => {
     if (action === "keys") document.getElementById("btn-ai-key-menu")?.click();
     if (action === "costs") document.getElementById("btn-costs-menu")?.click();
+    if (action === "preferences") document.getElementById("btn-preferences-menu")?.click();
     if (action === "workspaces") document.getElementById("btn-workspace-menu")?.click();
   }, 80);
 }
@@ -5684,8 +8932,8 @@ function openMobileActionSheet(title, items = []) {
   if (titleEl) titleEl.textContent = title;
   actionsEl.innerHTML = items.map((item, idx) => `
     <button type="button" class="mobile-corner-action" data-mobile-action-index="${idx}">
-      <span>${escapeHtml(item.label)}</span>
-      ${item.hint ? `<small>${escapeHtml(item.hint)}</small>` : ""}
+      <span>${appEscapeHtml(item.label)}</span>
+      ${item.hint ? `<small>${appEscapeHtml(item.hint)}</small>` : ""}
     </button>
   `).join("");
   actionsEl.querySelectorAll("[data-mobile-action-index]").forEach((btn) => {
@@ -5718,6 +8966,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Account", hint: "Profile and sign-in menu", run: () => openMobileAccountMenu("account") },
         { label: "AI keys", hint: "Personal and shared key management", run: () => openMobileAccountMenu("keys") },
         { label: "Costs", hint: "AI cost analytics", run: () => openMobileAccountMenu("costs") },
+        { label: "Preferences", hint: "Mouse controls and viewport settings", run: () => openMobileAccountMenu("preferences") },
         { label: "Team workspaces", hint: "Members, invites, visibility", run: () => openMobileAccountMenu("workspaces") },
         { label: "Fit view", hint: "Center the current model", run: () => fitCamera() },
         { label: "Toggle grid", hint: "Show or hide viewport grid", run: () => document.getElementById("btn-grid-viewport")?.click() },
@@ -5783,14 +9032,21 @@ wiringBottomPanel.setHistory(wiringSim.getHistoryState?.());
 const wiringDebug = createWiringDebugPanel({
   getProjectId: () => projectId,
   getSchematic: () => wiringSim.getSchematic?.(),
-  apiFn: (url, opts) => fetch(url, {
-    ...opts,
-    headers: { ...authHeaders(), ...(opts?.headers || {}) },
-  }),
+  getAiKeyBodyFields: () => getPromptAiKeyBodyFields(),
+  onApplyFocusDiagram: (schematic, focusMeta) => {
+    if (!schematic) return;
+    wiringSim.applyFocusPath?.(schematic, focusMeta || {});
+    activityLog.push({
+      level: "info",
+      message: "Circuit debugger path highlighted in wiring canvas",
+    });
+  },
+  apiFn: (url, opts, timeoutMs) => api(url, opts, timeoutMs ?? 360000),
 });
 
 document.getElementById("btn-wiring-photo-debug")?.addEventListener("click", () => {
   wiringDebug.toggle();
+  if (wiringDebug.isOpen?.()) syncPromptKeyPill(aiStatus);
 });
 
 // ── Prompt mic buttons (speech-to-text for all prompt textareas) ──────────
@@ -5858,7 +9114,7 @@ document.getElementById("btn-wiring-photo-debug")?.addEventListener("click", () 
 
 // ── Canvas mode ───────────────────────────────────────────────────────────
 function attachCanvasSketchImage(dataUrl, target = "design") {
-  if (!dataUrl) return;
+  if (!dataUrl) return false;
   const entry = {
     id: `canvas-${Date.now()}`,
     name: "canvas-sketch.png",
@@ -5871,123 +9127,61 @@ function attachCanvasSketchImage(dataUrl, target = "design") {
       wiringPromptImages.push(entry);
       renderWiringPromptImages();
     }
-    return;
+    return true;
   }
   promptImages = promptImages.filter((img) => img.name !== "canvas-sketch.png");
   if (promptImages.length < 4) {
     promptImages.push(entry);
     renderPromptImages();
+    if (!restoringModelPromptState) saveActiveModelPromptState();
+    return true;
   }
+  return false;
 }
 
-function syncCanvasGenerateButtonLabel() {
-  const btn = document.getElementById("btn-canvas-generate");
-  const target = document.getElementById("canvas-prompt-target")?.value || "design";
-  if (!btn) return;
-  btn.textContent = target === "wiring" ? "Generate schematic" : "Generate 3D model";
+const CANVAS_SKETCH_PROMPT_HINT =
+  "Build a 3D CAD model from my attached canvas sketch reference image.";
+
+function augmentPromptForCanvasSketch(prompt) {
+  const text = String(prompt || "").trim();
+  if (!text) return CANVAS_SKETCH_PROMPT_HINT;
+  if (/\b(sketch|drawing|reference image|attached canvas|canvas sketch)\b/i.test(text)) return text;
+  return `${text}\n\nUse the attached canvas sketch as a visual reference for the design.`;
 }
 
-async function runCanvasGenerate() {
-  const statusEl = document.getElementById("canvas-prompt-status");
-  const promptInput = document.getElementById("canvas-prompt-input");
-  let prompt = promptInput?.value?.trim() || "";
-  const transcript = canvasModeInstance.getTranscript?.() || "";
-  if (transcript && !prompt.includes(transcript)) {
-    prompt = prompt ? `${prompt}\n\n${transcript}` : transcript;
-  }
-  if (!prompt) {
-    if (statusEl) {
-      statusEl.className = "status error";
-      statusEl.textContent = "Enter a prompt or record a voice note first.";
-    }
-    return;
-  }
-
+function applyCanvasSketchToPrompt({ showFeedback = false } = {}) {
+  if (!document.body.classList.contains("canvas-design-tab")) return false;
   canvasModeInstance.stopVoice?.();
-  const target = document.getElementById("canvas-prompt-target")?.value || "design";
-  const dataUrl = canvasModeInstance.getCanvasDataUrl?.();
-
-  if (target === "wiring") {
-    workspaceModes.setMode("wiring");
-    applyWorkspaceMode("wiring");
-    const inp = document.getElementById("wiring-prompt-input");
-    if (inp) inp.value = prompt;
-    attachCanvasSketchImage(dataUrl, "wiring");
-    if (statusEl) {
-      statusEl.className = "status loading";
-      statusEl.textContent = "Generating wiring schematic from sketch…";
+  if (!canvasModeInstance.hasDrawing?.()) {
+    if (showFeedback) {
+      const status = document.getElementById("prompt-status");
+      if (status) {
+        status.className = "status error";
+        status.textContent = "Draw something on the canvas first.";
+      }
     }
-    document.getElementById("btn-wiring-prompt")?.click();
-    return;
+    return false;
   }
-
-  workspaceModes.setMode("design");
-  applyWorkspaceMode("design");
-  composer.setPromptText(prompt);
-  if (promptInput) promptInput.value = prompt;
-  attachCanvasSketchImage(dataUrl, "design");
-  if (statusEl) {
-    statusEl.className = "status loading";
-    statusEl.textContent = "Generating 3D model from sketch…";
+  const dataUrl = canvasModeInstance.getCanvasDataUrl?.();
+  if (!dataUrl || !attachCanvasSketchImage(dataUrl, "design")) return false;
+  showAiComposePanel();
+  promptImageList?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  if (showFeedback) {
+    const status = document.getElementById("prompt-status");
+    if (status) {
+      status.className = "status ok";
+      status.textContent = "Canvas sketch attached to AI prompt.";
+    }
   }
-  suppressAiComposePanelSwitch = true;
-  document.getElementById("btn-prompt")?.click();
+  return true;
 }
 
 const canvasModeInstance = createCanvasMode({
   containerEl: document.getElementById("canvas-mode-container"),
-  voiceEls: {
-    recordBtn: document.getElementById("canvas-voice-btn"),
-    timer: document.getElementById("canvas-voice-timer"),
-    time: document.getElementById("canvas-voice-time"),
-    clearTranscriptBtn: document.getElementById("btn-canvas-clear-transcript"),
-    transcriptPanel: document.getElementById("canvas-panel-transcript"),
-  },
 });
 
-document.getElementById("btn-canvas-generate")?.addEventListener("click", () => {
-  void runCanvasGenerate();
-});
-document.getElementById("btn-canvas-clear-panel")?.addEventListener("click", () => {
-  canvasModeInstance.clearCanvas?.();
-});
-document.getElementById("canvas-prompt-target")?.addEventListener("change", syncCanvasGenerateButtonLabel);
-syncCanvasGenerateButtonLabel();
-
-function mirrorStatusToCanvasPanel(sourceEl) {
-  if (!document.body.classList.contains("canvas-design-tab")) return;
-  const canvasStatus = document.getElementById("canvas-prompt-status");
-  if (!sourceEl || !canvasStatus || !sourceEl.textContent) return;
-  canvasStatus.className = sourceEl.className;
-  canvasStatus.textContent = sourceEl.textContent;
-}
-
-const promptStatusEl = document.getElementById("prompt-status");
-if (promptStatusEl) {
-  new MutationObserver(() => mirrorStatusToCanvasPanel(promptStatusEl)).observe(promptStatusEl, {
-    attributes: true,
-    attributeFilter: ["class"],
-    childList: true,
-    subtree: true,
-    characterData: true,
-  });
-}
-const wiringPromptStatusEl = document.getElementById("wiring-prompt-status");
-if (wiringPromptStatusEl) {
-  new MutationObserver(() => mirrorStatusToCanvasPanel(wiringPromptStatusEl)).observe(wiringPromptStatusEl, {
-    attributes: true,
-    attributeFilter: ["class"],
-    childList: true,
-    subtree: true,
-    characterData: true,
-  });
-}
-
-document.getElementById("canvas-prompt-input")?.addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-    e.preventDefault();
-    void runCanvasGenerate();
-  }
+window.addEventListener("canvas:attach-sketch", () => {
+  applyCanvasSketchToPrompt({ showFeedback: true });
 });
 wiringOverlay = createViewerOverlay(document.getElementById("wiring-viewport"), {
   fetchLogs: () => rawFetch("/api/logs?limit=40"),
@@ -6039,7 +9233,7 @@ function renderWiringPromptImages() {
   list.innerHTML = wiringPromptImages
     .map(
       (img) => `<div class="prompt-image-card" data-id="${img.id}">
-        <img src="${img.data_url}" alt="${escapeHtml(img.name)}" />
+        <img src="${img.data_url}" alt="${appEscapeHtml(img.name)}" />
         <button type="button" class="prompt-image-remove" title="Remove">×</button>
       </div>`
     )
@@ -6097,7 +9291,7 @@ function renderWiringPromptRefs() {
   for (const ref of wiringPromptRefs) {
     const chip = document.createElement("span");
     chip.className = "ref-chip ref-chip--inline";
-    chip.innerHTML = `<span class="ref-token">${escapeHtml(ref.token)}</span><span class="ref-coords">${escapeHtml(ref.label || ref.stem)}</span><button type="button" class="ref-remove" title="Remove">×</button>`;
+    chip.innerHTML = `<span class="ref-token">${appEscapeHtml(ref.token)}</span><span class="ref-coords">${appEscapeHtml(ref.label || ref.stem)}</span><button type="button" class="ref-remove" title="Remove">×</button>`;
     chip.querySelector(".ref-remove")?.addEventListener("click", (ev) => {
       ev.stopPropagation();
       wiringPromptRefs = wiringPromptRefs.filter((r) => r.id !== ref.id);
@@ -6175,8 +9369,10 @@ async function runWiringPrompt() {
     return;
   }
   const input = document.getElementById("wiring-prompt-input");
+  const driverLinkInput = document.getElementById("wiring-driver-link-input");
   const status = document.getElementById("wiring-prompt-status");
   const prompt = input?.value?.trim();
+  const driverLink = driverLinkInput?.value?.trim();
   if (!prompt) {
     if (status) {
       status.className = "status error";
@@ -6207,6 +9403,7 @@ async function runWiringPrompt() {
           media_type,
           data_url,
         })),
+        driver_links: driverLink ? [driverLink] : [],
         speed: document.getElementById("prompt-speed")?.value || "fast",
         ...getPromptAiKeyBodyFields(),
       }),
@@ -6234,6 +9431,7 @@ async function runWiringPrompt() {
     markGenerationApplied(projectId, data.trace_id);
     wiringPromptImages = [];
     wiringPromptRefs = [];
+    if (driverLinkInput) driverLinkInput.value = "";
     renderWiringPromptRefs();
     renderWiringPromptImages();
   } catch (err) {
@@ -6378,6 +9576,8 @@ async function loadGearTrainDemo({ switchToRigging = false } = {}) {
 function clearWiringPrompts() {
   const input = document.getElementById("wiring-prompt-input");
   if (input) input.value = "";
+  const driverLinkInput = document.getElementById("wiring-driver-link-input");
+  if (driverLinkInput) driverLinkInput.value = "";
   wiringPromptImages = [];
   renderWiringPromptImages();
   const status = document.getElementById("wiring-prompt-status");
@@ -6395,7 +9595,7 @@ function renderRiggingPromptImages() {
   list.innerHTML = riggingPromptImages
     .map(
       (img) => `<div class="prompt-image-card" data-id="${img.id}">
-        <img src="${img.data_url}" alt="${escapeHtml(img.name)}" />
+        <img src="${img.data_url}" alt="${appEscapeHtml(img.name)}" />
         <button type="button" class="prompt-image-remove" title="Remove">×</button>
       </div>`
     )
@@ -6510,6 +9710,18 @@ document.getElementById("btn-rigging-toolbelt-export")?.addEventListener("click"
   riggingEditor.exportUrdf();
 });
 
+async function simulateRiggingModel() {
+  if (selectedFile) await loadSimForFile(selectedFile);
+  await riggingEditor.show();
+  const result = riggingEditor.simulateModel?.();
+  syncRiggingToolbelt();
+  return result;
+}
+
+document.getElementById("btn-rigging-toolbelt-simulate")?.addEventListener("click", () => {
+  void simulateRiggingModel();
+});
+
 document.getElementById("btn-rigging-toolbelt-auto")?.addEventListener("click", () => {
   handleRiggingAction("auto");
 });
@@ -6549,6 +9761,7 @@ document.querySelectorAll("[data-rig-pick]").forEach((btn) => {
 });
 
 function enterWiringMode() {
+  catalogPanel?.close?.();
   resetComposerForProject();
   clearWiringPrompts();
   transformControls.detach();
@@ -6560,13 +9773,26 @@ function enterWiringMode() {
   refreshWiringPromptHistory();
 }
 
+function handleWiringTabChange(tab) {
+  if (tab === "CATALOG") {
+    exitCanvasTab();
+    exitSketchMode();
+    exitRiggingMode();
+    catalogPanel?.open?.();
+    setEditStatus("ok", "Catalog — search STEP models, compare supplier prices, and import parts into your wiring project.");
+    return;
+  }
+  catalogPanel?.close?.();
+  setRightTab("wiring");
+  wiringPromptHistory.setTab("compose");
+  setEditStatus("ok", "Wiring Simulator — build and debug circuits.");
+}
+
 function applyWorkspaceMode(mode) {
   const app = document.getElementById("app");
   const wiringWorkspace = document.getElementById("wiring-workspace");
   app?.classList.toggle("wiring-mode", mode === "wiring");
-  app?.classList.toggle("architect-workspace-mode", mode === "architect");
   document.body.classList.toggle("wiring-mode", mode === "wiring");
-  document.body.classList.toggle("architect-workspace-mode", mode === "architect");
   if (mode === "wiring") {
     exitSketchMode();
     exitRiggingMode();
@@ -6584,18 +9810,21 @@ function applyWorkspaceMode(mode) {
     clearWiringPrompts();
     wiringSim.hide();
     const tab = workspaceModes.getDesignTab();
-    let activeTab = tab;
-    if (mode === "architect" && activeTab !== "ARCHITECT") {
-      workspaceModes.setDesignTab("ARCHITECT");
-      activeTab = "ARCHITECT";
-    }
-    handleDesignTabChange(activeTab);
-    if (activeTab !== "ARCHITECT" && activeTab !== "CANVAS") {
+    if (tab === "CANVAS") {
+      enterCanvasTab();
+    } else if (tab === "ARCHITECT") {
+      enterArchitectMode();
+    } else {
+      exitCanvasTab();
+      exitArchitectMode();
       setRightTab("prompt");
       promptHistory.setTab("compose");
     }
     resize();
     if (currentMesh && tab !== "CANVAS") fitCamera();
+    if (tab === "RIGGING") enterRiggingMode();
+    else exitRiggingMode();
+    if (tab === "ARCHITECT") enterArchitectMode();
   }
 }
 
@@ -6605,6 +9834,12 @@ const workspaceModes = createWorkspaceModes({
   tabsEl: document.getElementById("workspace-tabs"),
   onChange: (mode) => applyWorkspaceMode(mode),
   onDesignTabChange: (tab) => handleDesignTabChange(tab),
+  onWiringTabChange: (tab) => handleWiringTabChange(tab),
+});
+
+document.getElementById("canvas-gen-view-solid")?.addEventListener("click", () => {
+  workspaceModes?.setDesignTab?.("SOLID");
+  refreshViewportAfterLayoutChange({ fit: !!currentMesh });
 });
 
 document.addEventListener("workspace-folders-changed", () => {
@@ -6671,14 +9906,25 @@ async function exportCurrentModel(anchorEl) {
   const visibleFiles = visibleBrowser.length ? visibleBrowser : visibleLoaded;
   const anchor = anchorEl || document.getElementById("btn-export-model") || document.body;
   if (visibleFiles.length > 1) {
+    const regularFile = selectedFile && visibleFiles.includes(selectedFile) && !isComponentHidden(selectedFile)
+      ? selectedFile
+      : visibleFiles[0];
+    const regularStepName = String(regularFile || "").replace(/\.[^.]+$/, ".step");
     await openFileExportMenu({
       api,
       projectId,
       filename: "visible assembly",
       anchorEl: anchor,
       title: `Export visible assembly`,
-      hint: `Downloads include all ${visibleFiles.length} visible components in the model.`,
+      hint: `Choose regular STEP for one selected part, or assembly STEP for all ${visibleFiles.length} visible components.`,
       allowOnshape: false,
+      extraExports: regularStepName ? [{
+        name: regularStepName,
+        format: "step",
+        size: null,
+        label: "STEP (regular part)",
+        url: `/api/projects/${projectId}/files/${encodeURIComponent(regularStepName)}`,
+      }] : [],
       exportsRequest: {
         path: `/api/projects/${projectId}/assembly/exports`,
         options: {
@@ -6699,15 +9945,96 @@ async function exportCurrentModel(anchorEl) {
   await openFileExportMenu({ api, projectId, filename: file, anchorEl: anchor });
 }
 
+function openRenameDialog({
+  title = "Rename",
+  eyebrow = "Rename",
+  description = "",
+  label = "Name",
+  value = "",
+  placeholder = "Enter a name",
+  confirmText = "Rename",
+} = {}) {
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "auth-modal app-rename-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.innerHTML = `
+      <div class="auth-backdrop app-rename-backdrop" data-rename-cancel></div>
+      <div class="auth-card app-dialog-card app-rename-card">
+        <button type="button" class="auth-close app-rename-close" data-rename-cancel aria-label="Close">&times;</button>
+        <div class="app-rename-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11.5 4.5l4 4L7 17H3v-4l8.5-8.5z"></path>
+            <path d="M10 6l4 4"></path>
+          </svg>
+        </div>
+        <p class="app-rename-eyebrow">${appEscapeHtml(eyebrow)}</p>
+        <h2 class="app-dialog-title app-rename-title">${appEscapeHtml(title)}</h2>
+        ${description ? `<p class="app-rename-description">${appEscapeHtml(description)}</p>` : ""}
+        <label class="app-dialog-label app-rename-label">${appEscapeHtml(label)}
+          <input type="text" class="app-rename-input" value="${appEscapeHtml(value)}" placeholder="${appEscapeHtml(placeholder)}" maxlength="180" spellcheck="false" />
+        </label>
+        <p class="auth-error hidden app-rename-error"></p>
+        <div class="app-dialog-actions app-rename-actions">
+          <button type="button" class="btn secondary" data-rename-cancel>Cancel</button>
+          <button type="button" class="btn accent app-rename-submit">${appEscapeHtml(confirmText)}</button>
+        </div>
+      </div>
+    `;
+    const input = modal.querySelector(".app-rename-input");
+    const error = modal.querySelector(".app-rename-error");
+    const cleanup = (result) => {
+      document.removeEventListener("keydown", onKey);
+      modal.remove();
+      resolve(result);
+    };
+    const showError = (message) => {
+      if (!error) return;
+      error.textContent = message;
+      error.classList.remove("hidden");
+    };
+    const submit = () => {
+      const next = input?.value?.trim() || "";
+      if (!next) {
+        showError("Name cannot be empty.");
+        input?.focus();
+        return;
+      }
+      cleanup(next);
+    };
+    function onKey(event) {
+      if (event.key === "Escape") cleanup(null);
+      if (event.key === "Enter" && document.activeElement === input) {
+        event.preventDefault();
+        submit();
+      }
+    }
+    modal.querySelectorAll("[data-rename-cancel]").forEach((el) => {
+      el.addEventListener("click", () => cleanup(null));
+    });
+    modal.querySelector(".app-rename-submit")?.addEventListener("click", submit);
+    input?.addEventListener("input", () => error?.classList.add("hidden"));
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(modal);
+    setTimeout(() => {
+      input?.focus();
+      input?.select();
+    }, 30);
+  });
+}
+
 async function renameProject(p) {
   const current = p.name || p.id;
-  const next = window.prompt(`New name for project "${current}":`, current);
-  if (next === null) return;
-  const trimmed = next.trim();
-  if (!trimmed) {
-    alert("Project name cannot be empty.");
-    return;
-  }
+  const trimmed = await openRenameDialog({
+    eyebrow: "Current project",
+    title: "Rename Project",
+    description: "Give this project a clear name for the explorer, history, and sharing menus.",
+    label: "Project name",
+    value: current,
+    confirmText: "Save name",
+  });
+  if (trimmed === null) return;
   if (trimmed === current) return;
 
   try {
@@ -6725,6 +10052,26 @@ async function renameProject(p) {
     renderProjectList();
   } catch (err) {
     alert(err.message || "Failed to rename project");
+  }
+}
+
+async function makeProjectPublic(p) {
+  if (!p?.id || p.read_only_project || p.public) return;
+  const name = p.name || p.id;
+  if (!window.confirm(`Make "${name}" public?\n\nAnyone, including people without an account, will be able to view and download this model.`)) {
+    return;
+  }
+  try {
+    await api(`/api/projects/${p.id}/public`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ public: true }),
+    });
+    await fetchAllProjects();
+    renderProjectList();
+    setEditStatus("ok", `"${name}" is now public.`);
+  } catch (err) {
+    alert(err.message || "Could not make project public");
   }
 }
 
@@ -6754,6 +10101,7 @@ async function deleteProject(p) {
 
   if (projectId === p.id) {
     projectId = null;
+    wiringDebug.setProjectId?.(null);
     selectedFile = null;
     try {
       localStorage.removeItem(LS_LAST_PROJECT);
@@ -6781,11 +10129,13 @@ async function deleteProject(p) {
   }
 }
 
-function escapeHtml(s) {
+function appEscapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function openProjectById(id) {
@@ -6794,7 +10144,7 @@ async function openProjectById(id) {
     // Stay in wiring/canvas mode when picking projects from those views.
     // Only reset to design for other non-design modes (sketch, rigging, etc.).
     const mode = workspaceModes.getMode();
-    if (mode !== "design" && mode !== "wiring" && mode !== "canvas") {
+    if (mode !== "design" && mode !== "architect" && mode !== "wiring" && mode !== "canvas") {
       workspaceModes.setMode("design");
       applyWorkspaceMode("design");
     }
@@ -6840,6 +10190,26 @@ function updateProjectNameLocal(projectIdToUpdate, name, meta = null) {
   renderProjectList();
 }
 
+function projectSummaryFromRealtime(msg = {}) {
+  const entry = msg.entry || {};
+  const meta = msg.meta || entry.meta || {};
+  const id = msg.project_id || entry.project_id || meta.project_id;
+  if (!id) return null;
+  const label = msg.name || meta.name || meta.project_name || entry.label || id;
+  const name = String(label)
+    .replace(/^Imported\s+/i, "")
+    .replace(/\s+from\s+(Autodesk|Onshape)$/i, "")
+    .trim() || id;
+  return {
+    id,
+    name,
+    team_id: msg.team_id || entry.team_id || meta.team_id,
+    updated_at: msg.updated_at || meta.updated_at || entry.created_at,
+    created_at: msg.created_at || meta.created_at || entry.created_at,
+    file_count: msg.file_count ?? meta.file_count ?? 0,
+  };
+}
+
 function handleRealtimeEvent(msg = {}) {
   if (!msg?.type) return;
   if (msg.entry) workspaceActivity.prependEntry(msg.entry);
@@ -6849,10 +10219,16 @@ function handleRealtimeEvent(msg = {}) {
     return;
   }
 
+  if (msg.type === "model.reload") {
+    void applyLiveModelReload(msg, msg.project_id || projectId);
+    return;
+  }
+
   if (msg.type === "project.created" || msg.type === "project.deleted") {
     if (msg.type === "project.deleted" && msg.project_id === projectId) {
       showEmptyProjectViewport({ message: "This project was deleted by a teammate." });
       projectId = null;
+      wiringDebug.setProjectId?.(null);
       selectedFile = null;
     }
     if (msg.type === "project.created" && msg.project_id) {
@@ -6876,7 +10252,19 @@ function handleRealtimeEvent(msg = {}) {
   }
 
   if (msg.type === "workspace.invite.updated" || msg.type === "workspace.member.updated" || msg.type === "workspace.updated") {
+    const summary = projectSummaryFromRealtime(msg);
+    if (summary) {
+      upsertProjectInList(summary);
+      renderProjectList();
+    }
     refreshProjectShell({ refreshInvites: true, refreshMembers: true });
+  }
+  if (msg.type === "workspace.render_folder.updated") {
+    if (msg.team) {
+      const idx = allTeams.findIndex((team) => team.id === msg.team.id);
+      if (idx >= 0) allTeams[idx] = { ...allTeams[idx], ...msg.team };
+    }
+    void refreshWorkspaceRealtimeEditor();
   }
 }
 
@@ -6886,15 +10274,18 @@ async function loadProject(id) {
   try {
     saveActiveModelPromptState();
     const prevProjectId = projectId;
-  projectId = id;
+    projectId = id;
+    renderPromptAiKeySelect(aiStatus, { preserveSelection: prevProjectId === id });
+    wiringDebug.setProjectId?.(id);
     ribbon?.setProjectId?.(id);
-  saveLastProjectId(id);
+    saveLastProjectId(id);
     // Clear any new-model badge when the user opens this project.
     if (newlyCompletedProjects.has(id)) {
       newlyCompletedProjects.delete(id);
       renderProjectList();
     }
     if (prevProjectId !== id) {
+      viewportUndoStack.length = 0;
       showEmptyProjectViewport({ keepBrowser: true });
       // If this project is known to be generating (from cache) but we're not watching it,
       // start the watch immediately so the stop button appears before the API call returns.
@@ -6902,31 +10293,25 @@ async function loadProject(id) {
         const cached = allProjects.find((p) => p.id === id);
         beginGenerationWatch(id, {
           kind: cached?.generation?.kind || "prompt",
-          mode: cached?.generation?.mode || "standard",
+          mode: generationPromptMode(cached?.generation),
         });
       }
       syncViewportGenerationOverlay();
       syncStopButtonVisibility();
     }
-    collab.connect(projectId, currentUser, {
-      getMeshRoot: () => currentMesh,
-      onModelReload: async (msg) => {
-        if (msg.filename) {
-          saveActiveModelPromptState();
-          selectedFile = msg.filename;
-          await refreshFiles();
-          const placedFiles = (msg.placed_parts || []).map((part) => part.filename).filter(Boolean);
-          await reloadViewportFromProject({ fitView: true, latestFile: msg.filename, placedFiles });
-          await refreshPromptHistory();
-        }
-        await refreshTimeline();
-      },
-      onProjectMeta: (msg) => handleRealtimeEvent(msg),
-      onTimeline: () => refreshTimeline(),
-      onProjectHistory: () => refreshObjectHistory(),
-      onWorkspaceUpdated: (msg) => handleRealtimeEvent(msg),
-    });
-  const data = await api(`/api/projects/${id}`);
+    if (currentUser) {
+      collab.connect(projectId, currentUser, {
+        getMeshRoot: () => currentMesh,
+        onModelReload: async (msg) => {
+          await applyLiveModelReload(msg, id);
+        },
+        onProjectMeta: (msg) => handleRealtimeEvent(msg),
+        onTimeline: () => refreshTimeline(),
+        onProjectHistory: () => refreshObjectHistory(),
+        onWorkspaceUpdated: (msg) => handleRealtimeEvent(msg),
+      });
+    }
+  const data = await api(projectApiPath(id));
     if (loadGen !== loadProjectGeneration) return;
 
   setProjectHeader(data.name, id);
@@ -6946,8 +10331,9 @@ async function loadProject(id) {
       browser,
       name: data.name || id,
     });
+    renderProjectList();
     renderProjectBrowser(browser);
-    await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
+    if (currentUser) await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
     syncSketchVisibilityFromTree(browser);
     const comps = browser.components || [];
     prepareViewportForModels();
@@ -6967,7 +10353,7 @@ async function loadProject(id) {
           gizmoPanel.hide();
           setEditStatus("ok", "All components are hidden.");
         }
-        await refreshPromptHistory();
+        if (currentUser) await refreshPromptHistory();
       } else {
         await loadProjectComponents(comps, {
           projectId: id,
@@ -6975,15 +10361,15 @@ async function loadProject(id) {
           loadGen,
           fitView: true,
         });
-        await refreshPromptHistory();
+        if (currentUser) await refreshPromptHistory();
       }
   } else {
       showEmptyProjectViewport();
-      await refreshPromptHistory();
+      if (currentUser) await refreshPromptHistory();
     }
     if (loadGen !== loadProjectGeneration) return;
     safeRestoreActiveModelPromptState();
-    await resumeGenerationIfNeeded(id, data.generation);
+    if (currentUser) await resumeGenerationIfNeeded(id, data.generation);
     if (loadGen !== loadProjectGeneration) return;
     // If resumeGenerationIfNeeded applied a completion for this project,
     // clear any badge that was set — the user is already viewing the model.
@@ -6993,7 +10379,9 @@ async function loadProject(id) {
     }
     // Ensure stop button reflects current state after resumeGenerationIfNeeded runs.
     syncStopButtonVisibility();
-    if (workspaceModes.isWiring()) {
+    if (!currentUser) {
+      showAiComposePanel();
+    } else if (workspaceModes.isWiring()) {
       clearWiringPrompts();
       wiringSim.load();
       refreshWiringPromptHistory();
@@ -7130,6 +10518,413 @@ async function refreshWorkspaceHistory() {
   }
 }
 
+const WORKSPACE_FUSION_AUTO_SYNC_MS = 30000;
+let workspaceFusionAutoSyncTimer = null;
+let workspaceFusionAutoSyncTargets = [];
+let workspaceFusionAutoSyncInFlight = false;
+let workspaceFusionAutoSyncLastRun = new Map();
+
+function updateWorkspaceFusionAutoSync(data = null) {
+  const userId = getStoredUser()?.id || "";
+  workspaceFusionAutoSyncTargets = (data?.projects || [])
+    .filter((project) => project?.id)
+    .map((project) => ({
+      projectId: project.id,
+      mirror: (project.fusion_mirrors || []).find((mirror) => mirror.user_id === userId),
+    }))
+    .filter((entry) => entry.mirror);
+  if (!workspaceFusionAutoSyncTargets.length) {
+    if (workspaceFusionAutoSyncTimer) {
+      clearInterval(workspaceFusionAutoSyncTimer);
+      workspaceFusionAutoSyncTimer = null;
+    }
+    return;
+  }
+  if (!workspaceFusionAutoSyncTimer) {
+    workspaceFusionAutoSyncTimer = setInterval(() => {
+      void runWorkspaceFusionAutoSync();
+    }, WORKSPACE_FUSION_AUTO_SYNC_MS);
+  }
+  void runWorkspaceFusionAutoSync();
+}
+
+async function runWorkspaceFusionAutoSync({ force = false } = {}) {
+  if (workspaceFusionAutoSyncInFlight || document.hidden || !workspaceFusionAutoSyncTargets.length) return;
+  const now = Date.now();
+  const dueTargets = workspaceFusionAutoSyncTargets.filter((target) => {
+    const last = workspaceFusionAutoSyncLastRun.get(target.projectId) || 0;
+    return force || now - last >= WORKSPACE_FUSION_AUTO_SYNC_MS;
+  });
+  if (!dueTargets.length) return;
+  workspaceFusionAutoSyncInFlight = true;
+  let shouldRefresh = false;
+  try {
+    for (const target of dueTargets) {
+      workspaceFusionAutoSyncLastRun.set(target.projectId, Date.now());
+      try {
+        const result = await api(`/api/projects/${encodeURIComponent(target.projectId)}/fusion-mirror/sync-from-fusion`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ import_bodies: true }),
+        });
+        if (result.changed || result.pushed_mirrors?.length || result.push_errors?.length) {
+          shouldRefresh = true;
+        }
+      } catch (err) {
+        console.warn("Fusion auto-sync failed", target.projectId, err);
+      }
+    }
+  } finally {
+    workspaceFusionAutoSyncInFlight = false;
+  }
+  if (shouldRefresh) {
+    await refreshWorkspaceRealtimeEditor();
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    void runWorkspaceFusionAutoSync({ force: true });
+  }
+});
+
+function isWorkspaceRealtimeCollapsed() {
+  try {
+    return localStorage.getItem(LS_WORKSPACE_REALTIME_COLLAPSED) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setWorkspaceRealtimeCollapsed(collapsed) {
+  try {
+    localStorage.setItem(LS_WORKSPACE_REALTIME_COLLAPSED, collapsed ? "1" : "0");
+  } catch {
+    /* local storage is best-effort */
+  }
+  syncWorkspaceRealtimeCollapse();
+}
+
+function syncWorkspaceRealtimeCollapse() {
+  const panel = document.getElementById("workspace-realtime-editor");
+  const toggle = document.getElementById("workspace-realtime-toggle");
+  const collapsed = isWorkspaceRealtimeCollapsed();
+  panel?.classList.toggle("is-collapsed", collapsed);
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    toggle.setAttribute("aria-label", collapsed ? "Expand realtime editor" : "Retract realtime editor");
+    toggle.title = collapsed ? "Expand realtime editor" : "Retract realtime editor";
+  }
+}
+
+document.getElementById("workspace-realtime-toggle")?.addEventListener("click", () => {
+  setWorkspaceRealtimeCollapsed(!isWorkspaceRealtimeCollapsed());
+});
+
+function renderWorkspaceRealtimeEditor(data = null) {
+  syncWorkspaceRealtimeCollapse();
+  const folderEl = document.getElementById("workspace-render-folder-card");
+  const projectsEl = document.getElementById("workspace-fusion-projects");
+  if (!folderEl || !projectsEl) return;
+  if (!data) {
+    updateWorkspaceFusionAutoSync(null);
+    folderEl.innerHTML = "Select one workspace to use the realtime editor.";
+    projectsEl.innerHTML = "";
+    return;
+  }
+  const folder = data.render_folder || {};
+  const provider = folder.provider || "render3d";
+  const label = folder.label || (provider === "fusion" ? "Fusion 360" : "Render3D cloud");
+  folderEl.innerHTML = `
+    <strong>${appEscapeHtml(label)}</strong>
+    <span>${appEscapeHtml(provider.replace(/_/g, " "))}${folder.folder_ref ? ` · ${appEscapeHtml(folder.folder_ref)}` : ""}</span>
+    ${provider === "fusion"
+      ? `<button type="button" class="btn secondary btn-compact workspace-fusion-link-btn" data-workspace-fusion-open>Open Fusion Library</button>`
+      : `<button type="button" class="btn secondary btn-compact workspace-fusion-link-btn" data-workspace-fusion-link>Link Fusion to workspace</button>`
+    }
+  `;
+  folderEl.querySelector("[data-workspace-fusion-open]")?.addEventListener("click", () => {
+    document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setEditStatus("ok", "Fusion is already connected to this workspace. Use Fusion Library to link a project mirror or sync the latest version.");
+  });
+  folderEl.querySelector("[data-workspace-fusion-link]")?.addEventListener("click", () => {
+    void linkActiveWorkspaceToFusion();
+  });
+  const fusionProjects = (data.projects || []).filter((p) => p.fusion_source || (p.fusion_mirrors || []).length);
+  updateWorkspaceFusionAutoSync({ ...data, projects: fusionProjects });
+  if (!fusionProjects.length) {
+    projectsEl.innerHTML = `
+      <strong>Fusion projects</strong>
+      <span>No Fusion mirror folders linked yet. Open a Render3D project, then use Fusion Library → Link mirror on each teammate's own Fusion folder.</span>
+    `;
+    return;
+  }
+  projectsEl.innerHTML = `
+    <strong>Fusion linked folders</strong>
+    <p class="muted small">Auto-sync checks your linked Fusion folder every 30 seconds, pulls newer versions into Render3D, then pushes them to teammate mirrors.</p>
+    <div class="workspace-fusion-project-list">
+      ${fusionProjects.slice(0, 5).map((p) => `
+        <div class="workspace-fusion-project-card">
+          <div class="workspace-fusion-project-head">
+            <span>${appEscapeHtml(p.name || p.id)}</span>
+          </div>
+          <small>${appEscapeHtml(p.latest_file || "No preview file")} · ${appEscapeHtml(p.fusion_source?.item_name || "Fusion item")}</small>
+          ${renderWorkspaceFusionComponents(p)}
+          ${renderWorkspaceFusionMirrors(p)}
+        </div>
+      `).join("")}
+    </div>
+  `;
+  projectsEl.querySelectorAll("[data-workspace-open-component]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pid = btn.dataset.projectId;
+      const filename = btn.dataset.filename;
+      if (!pid) return;
+      await openProjectById(pid);
+      if (!filename || !projectId) return;
+      try {
+        const data = await api(`/api/projects/${encodeURIComponent(pid)}`);
+        const browserComponents = normalizeBrowser(data).components || [];
+        const compCandidates = [
+          ...browserComponents,
+          ...browserComponents.flatMap((entry) => entry.children || []),
+        ];
+        const comp = compCandidates.find((entry) =>
+          entry.name === filename || entry.viewer_filename === filename || entry.filename === filename
+        );
+        if (comp) {
+          await openBrowserComponent(comp);
+          for (const topLevel of browserComponents) {
+            if (topLevel.name !== comp.name) setAssemblyComponentVisible(topLevel, false);
+          }
+          setAssemblyComponentVisible(comp, true);
+          if (comp.name) selectAssemblyComponent(comp.name, { fitView: true });
+        }
+      } catch {
+        /* Project open already succeeded; component targeting is best-effort. */
+      }
+    });
+  });
+  projectsEl.querySelectorAll("[data-fusion-drag-row]").forEach((row) => {
+    row.addEventListener("dragstart", (event) => {
+      const payload = fusionDragPayloadFromRow(row);
+      if (!payload) return;
+      setExplorerDragData(event, [payload]);
+    });
+  });
+  projectsEl.querySelectorAll("[data-workspace-sync-fusion]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pid = btn.dataset.workspaceSyncFusion;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Syncing...";
+      try {
+        const result = await api(`/api/projects/${encodeURIComponent(pid)}/fusion-mirror/sync-from-fusion`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ import_bodies: true }),
+        });
+        btn.textContent = result.changed ? "Synced ✓" : "Latest";
+        setEditStatus("ok", result.changed ? "Fusion update synced through Render3D." : "Fusion mirror already has the latest version.");
+        await refreshWorkspaceRealtimeEditor();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = original;
+        setEditStatus("error", err.message || "Could not sync Fusion folder.");
+      }
+    });
+  });
+}
+
+function renderWorkspaceFusionComponents(project) {
+  const components = (project.browser?.components || []).filter((entry) => entry?.name || entry?.viewer_filename || entry?.filename);
+  const fusionComponents = (project.browser?.fusion_components || []).filter((entry) => entry?.label || entry?.name);
+  const splitBodies = components.flatMap((entry) => (entry.children || []).map((child) => ({ ...child, parent: entry })));
+  const fusionBodies = (project.browser?.fusion_bodies || []).filter((entry) => entry?.label || entry?.name);
+  const hasFusionSourceBrowser = fusionComponents.length || fusionBodies.length;
+  const componentEntries = fusionComponents.length ? fusionComponents : components;
+  const bodies = hasFusionSourceBrowser ? fusionBodies : splitBodies;
+  const sketches = project.browser?.sketches || [];
+  const componentRows = componentEntries.map((entry) => {
+    const filename = entry.name || entry.viewer_filename || entry.filename || "";
+    const label = entry.label || entry.component_name || entry.stem || filename;
+    const bodyCount = entry.children?.length || 0;
+    return renderFusionBrowserItem({
+      projectId: project.id,
+      filename,
+      name: label,
+      badge: entry.fusion_component ? "Fusion component" : (bodyCount ? `${bodyCount} bodies` : (entry.format || "component")),
+      icon: "▣",
+      disabled: !filename,
+    });
+  }).join("");
+  const bodyRows = bodies.map((entry) => {
+    const filename = entry.name || entry.viewer_filename || entry.filename || "";
+    const label = entry.label || entry.component_name || entry.stem || filename;
+    const parentLabel = entry.parent?.label || entry.parent?.stem || entry.parent?.name || "component";
+    return renderFusionBrowserItem({
+      projectId: project.id,
+      filename,
+      name: label,
+      badge: entry.fusion_body ? "Fusion body" : parentLabel,
+      icon: "◦",
+      child: true,
+      disabled: !filename,
+    });
+  }).join("");
+  const sketchRows = sketches.map((entry) => renderFusionBrowserItem({
+    projectId: project.id,
+    filename: entry.name || entry.filename || "",
+    name: entry.label || entry.name || entry.stem || "Sketch",
+    badge: entry.format || "sketch",
+    icon: "⌁",
+    disabled: true,
+  })).join("");
+  return `
+    <div class="workspace-fusion-browser">
+      ${renderFusionBrowserSection("Components", componentEntries.length, componentRows || renderFusionEmptyRow("No visible Fusion components yet."), true)}
+      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), false)}
+      ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render3D project yet."), false)}
+    </div>
+  `;
+}
+
+function fusionItemStem(name = "") {
+  return String(name || "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/_edited(?:_\d+)?$/i, "")
+    .replace(/_copy\d*$/i, "")
+    .toLowerCase();
+}
+
+function activeFusionMirrorItems(mirror = {}, items = []) {
+  return items;
+}
+
+function renderWorkspaceFusionMirrors(project) {
+  const mirrors = project.fusion_mirrors || [];
+  if (!mirrors.length) {
+    return `<p class="muted small">No teammate mirror folders linked for this project yet.</p>`;
+  }
+  return `
+    <div class="workspace-fusion-mirror-list">
+      ${mirrors.map((mirror) => {
+        const contents = mirror.contents || {};
+        const folders = contents.folders || [];
+        const items = contents.items || [];
+        const activeItems = activeFusionMirrorItems(mirror, items);
+        const latestLink = renderFusionLatestVersionLink(mirror, activeItems);
+        const contentRows = contents.error
+          ? `<p class="muted small error">${appEscapeHtml(contents.error)}</p>`
+          : [
+              ...folders.map((folder) => renderFusionFolderRow("Folder", folder.name || "Folder", "▸")),
+              ...activeItems.map((item) => renderFusionFolderRow("File", item.name || "Untitled", "□")),
+            ].join("") || renderFusionEmptyRow("Folder is empty.");
+        return `
+          <div class="workspace-fusion-mirror-card">
+            <div class="workspace-fusion-mirror-head">
+              <span>${appEscapeHtml(mirror.display_name || mirror.email || "Teammate")}</span>
+              <small>${mirror.user_id === getStoredUser()?.id ? "Your mirror" : "Teammate mirror"}</small>
+            </div>
+            <p class="muted small workspace-fusion-mirror-meta">
+              <span>${appEscapeHtml(mirror.folder_label || "Fusion folder")} · ${appEscapeHtml(mirror.aps_project_label || mirror.aps_project_id || "Fusion project")}</span>
+              ${latestLink}
+            </p>
+            <div class="workspace-fusion-browser">
+              ${renderFusionBrowserSection("Shared Folder", folders.length + activeItems.length, contentRows, true)}
+            </div>
+            ${mirror.user_id === getStoredUser()?.id
+              ? `<button type="button" class="btn btn-compact" data-workspace-sync-fusion="${appEscapeHtml(project.id)}">Sync latest from Fusion</button>`
+              : ""}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderFusionBrowserSection(title, count, rows, open = true) {
+  return `
+    <details class="workspace-fusion-browser-section"${open ? " open" : ""}>
+      <summary class="workspace-fusion-browser-summary">
+        <span class="browser-chevron">▾</span>
+        <span>${appEscapeHtml(title)}</span>
+        <small>${Number(count) || 0}</small>
+      </summary>
+      <div class="workspace-fusion-browser-list">${rows}</div>
+    </details>
+  `;
+}
+
+function renderFusionLatestVersionLink(mirror, items = []) {
+  const version = String(mirror.last_version_id || "");
+  if (!version) return `<span>Latest: not pushed</span>`;
+  const item = items.find((candidate) =>
+    candidate.id === mirror.last_item_id || candidate.version_id === mirror.last_version_id
+  ) || items[0] || {};
+  const href = item.web_url || item.download_url || "";
+  const label = version.match(/[?&]version=([^&]+)/)?.[1]
+    ? `Latest v${version.match(/[?&]version=([^&]+)/)[1]}`
+    : "Latest version";
+  if (!href) {
+    return `<span title="${appEscapeHtml(version)}">${appEscapeHtml(label)}</span>`;
+  }
+  return `<a class="workspace-fusion-version-link" href="${appEscapeHtml(href)}" target="_blank" rel="noopener" title="${appEscapeHtml(version)}">${appEscapeHtml(label)}</a>`;
+}
+
+function renderFusionBrowserItem({ projectId, filename, name, badge, icon = "□", child = false, disabled = false }) {
+  const stem = String(name || filename || "fusion_item")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[:\s]+/g, "_")
+    .replace(/[^\w-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  const openAttrs = !disabled && filename
+    ? `data-workspace-open-component data-project-id="${appEscapeHtml(projectId)}" data-filename="${appEscapeHtml(filename)}"`
+    : "";
+  const attrs = disabled
+    ? "disabled"
+    : openAttrs;
+  return `
+    <button type="button" class="workspace-fusion-browser-row${child ? " workspace-fusion-browser-row-child" : ""}" ${attrs} ${disabled ? "" : "draggable=\"true\" data-fusion-drag-row"} data-drag-project-id="${appEscapeHtml(projectId)}" data-drag-filename="${appEscapeHtml(filename)}" data-drag-name="${appEscapeHtml(name || filename || "Untitled")}" data-drag-stem="${appEscapeHtml(stem)}" data-drag-format="${appEscapeHtml(badge || "fusion")}">
+      <span class="workspace-fusion-browser-icon">${appEscapeHtml(icon)}</span>
+      <span class="workspace-fusion-browser-name">${appEscapeHtml(name || filename || "Untitled")}</span>
+      <small>${appEscapeHtml(badge || filename || "")}</small>
+    </button>
+  `;
+}
+
+function fusionDragPayloadFromRow(row) {
+  const name = row.dataset.dragName || "";
+  const filename = row.dataset.dragFilename || "";
+  if (!name && !filename) return null;
+  return {
+    type: "component",
+    projectId: row.dataset.dragProjectId || null,
+    name: filename || name,
+    filename: filename || "",
+    stem: row.dataset.dragStem || (filename || name).replace(/\.[^.]+$/, ""),
+    format: row.dataset.dragFormat || "fusion",
+    viewer_filename: filename || "",
+    label: name || filename,
+    fusion_mirror: true,
+  };
+}
+
+function renderFusionFolderRow(kind, name, icon = "□") {
+  return `
+    <div class="workspace-fusion-browser-row workspace-fusion-browser-row-static">
+      <span class="workspace-fusion-browser-icon">${appEscapeHtml(icon)}</span>
+      <span class="workspace-fusion-browser-name">${appEscapeHtml(name)}</span>
+      <small>${appEscapeHtml(kind)}</small>
+    </div>
+  `;
+}
+
+function renderFusionEmptyRow(message) {
+  return `<p class="muted small workspace-fusion-browser-empty">${appEscapeHtml(message)}</p>`;
+}
+
 async function linkActiveWorkspaceToFusion() {
   const teamId = getSelectedWorkspaceId();
   if (!teamId) {
@@ -7150,102 +10945,26 @@ async function linkActiveWorkspaceToFusion() {
       const idx = allTeams.findIndex((team) => team.id === teamId);
       if (idx >= 0) allTeams[idx] = { ...allTeams[idx], ...saved.team };
     }
-    const cb = document.getElementById("workspace-fusion-connect");
-    if (cb) cb.checked = true;
     await refreshWorkspaceRealtimeEditor();
-    setEditStatus("ok", "Fusion linked to this workspace. Import a design from Fusion Library to share it with the team.");
+    setEditStatus("ok", "Fusion is linked to this workspace. Use Fusion Library to import a design or link project mirror folders.");
   } catch (err) {
     setEditStatus("error", err.message || "Could not link Fusion to this workspace.");
   }
-}
-
-function renderWorkspaceRealtimeEditor(data = null) {
-  const folderEl = document.getElementById("workspace-render-folder-card");
-  const projectsEl = document.getElementById("workspace-fusion-projects");
-  if (!folderEl || !projectsEl) return;
-  if (!data) {
-    folderEl.innerHTML = "Select one workspace to use the realtime editor.";
-    projectsEl.innerHTML = "";
-    return;
-  }
-  const folder = data.render_folder || {};
-  const provider = folder.provider || "render3d";
-  const label = folder.label || (provider === "fusion" ? "Fusion 360" : "Render3D cloud");
-  folderEl.innerHTML = `
-    <strong>${escapeHtml(label)}</strong>
-    <span>${escapeHtml(provider.replace(/_/g, " "))}${folder.folder_ref ? ` · ${escapeHtml(folder.folder_ref)}` : ""}</span>
-    ${
-      provider === "fusion"
-        ? `<button type="button" class="btn secondary btn-compact workspace-fusion-link-btn" data-workspace-fusion-open>Open Fusion Library</button>`
-        : `<button type="button" class="btn secondary btn-compact workspace-fusion-link-btn" data-workspace-fusion-link>Link Fusion to workspace</button>`
-    }
-  `;
-  folderEl.querySelector("[data-workspace-fusion-open]")?.addEventListener("click", () => {
-    document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setEditStatus("ok", "Fusion is connected. Use Fusion Library below to import or sync designs.");
-  });
-  folderEl.querySelector("[data-workspace-fusion-link]")?.addEventListener("click", () => {
-    void linkActiveWorkspaceToFusion();
-  });
-  const fusionProjects = (data.projects || []).filter((p) => p.fusion_source || (p.fusion_mirrors || []).length);
-  if (!fusionProjects.length) {
-    projectsEl.innerHTML = `
-      <strong>Fusion projects</strong>
-      <span>No Fusion-linked projects yet. Use the Fusion Library below to import a design into this workspace.</span>
-    `;
-    return;
-  }
-  projectsEl.innerHTML = `
-    <strong>Fusion linked folders</strong>
-    <div class="workspace-fusion-project-list">
-      ${fusionProjects
-        .slice(0, 5)
-        .map(
-          (p) => `
-        <div class="workspace-fusion-project-card">
-          <div class="workspace-fusion-project-head">
-            <span>${escapeHtml(p.name || p.id)}</span>
-          </div>
-          <small>${escapeHtml(p.latest_file || "No preview file")} · ${escapeHtml(p.fusion_source?.item_name || "Fusion item")}</small>
-        </div>
-      `
-        )
-        .join("")}
-    </div>
-  `;
 }
 
 async function refreshWorkspaceRealtimeEditor() {
   const teamId = getSelectedWorkspaceId();
   if (!teamId) {
     renderWorkspaceRealtimeEditor(null);
+    connectWorkspaceRealtime(null);
     return;
   }
+  connectWorkspaceRealtime(teamId);
   try {
     const data = await api(`/api/teams/${teamId}/realtime-editor`);
     renderWorkspaceRealtimeEditor(data);
-    const cb = document.getElementById("workspace-fusion-connect");
-    if (cb) cb.checked = (data.render_folder?.provider || "render3d") === "fusion";
   } catch {
     renderWorkspaceRealtimeEditor(null);
-  }
-}
-
-async function syncWorkspaceFusionConnect() {
-  const teamId = getSelectedWorkspaceId();
-  const cb = document.getElementById("workspace-fusion-connect");
-  if (!cb) return;
-  if (!teamId) {
-    cb.checked = false;
-    cb.disabled = true;
-    return;
-  }
-  cb.disabled = false;
-  try {
-    const data = await api(`/api/teams/${teamId}/render-folder`);
-    cb.checked = (data.render_folder?.provider || "render3d") === "fusion";
-  } catch {
-    cb.checked = false;
   }
 }
 
@@ -7271,13 +10990,13 @@ function renderFileList(files = []) {
       li.classList.add("active");
       try {
         const viewer = f.viewer_filename || f.name;
-        await loadModel(`/api/projects/${projectId}/files/${encodeURIComponent(viewer)}`, viewer, {
+        await loadModel(projectFileUrl(projectId, viewer), viewer, {
           projectId,
           catalogFilename: f.name,
           center: !hasBakedPlacement(f),
           fitView: true,
         });
-        await refreshPromptHistory();
+        if (currentUser) await refreshPromptHistory();
       } catch (err) {
         setEditStatus("error", err.message || "Could not load model.");
         viewerOverlay.showError(err.message || "Could not load model.");
@@ -7324,7 +11043,9 @@ function renderFileList(files = []) {
       deleteProjectFile(f.name);
     });
 
-    actions.append(exp, rename, del);
+    if (!isAnonymousPublicProject(projectId)) {
+      actions.append(exp, rename, del);
+    }
     li.append(body, actions);
     list.appendChild(li);
   }
@@ -7334,13 +11055,16 @@ async function renameProjectFile(filename) {
   if (!projectId) return;
   const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
   const stem = filename.slice(0, filename.length - ext.length);
-  const next = window.prompt(`Rename "${filename}" to:`, stem);
-  if (next === null) return;
-  const trimmed = next.trim();
-  if (!trimmed) {
-    alert("Name cannot be empty.");
-    return;
-  }
+  const trimmed = await openRenameDialog({
+    eyebrow: "Model file",
+    title: "Rename Model",
+    description: ext ? `Keep the ${ext} extension or enter a new full filename.` : "Rename this model in the project browser.",
+    label: "Model name",
+    value: stem,
+    placeholder: "model-name",
+    confirmText: "Rename model",
+  });
+  if (trimmed === null) return;
   const newName = trimmed.includes(".") ? trimmed : `${trimmed}${ext}`;
   if (newName === filename) return;
   try {
@@ -7379,6 +11103,10 @@ async function exportProject(p) {
     return;
   }
   const pid = p.id;
+  if (isAnonymousPublicProject(pid)) {
+    window.open(projectFileUrl(pid, file), "_blank", "noopener");
+    return;
+  }
   const anchor = document.querySelector(`.proj-item[data-project-id="${pid}"] .btn-proj-export`);
   try {
     await openFileExportMenu({ api, projectId: pid, filename: file, anchorEl: anchor || document.body });
@@ -7400,6 +11128,7 @@ async function refreshFiles() {
   await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
   syncSketchVisibilityFromTree(browser);
   if (selectedFile) projectTree.setSelected(selectedFile);
+  syncPromptTargetUI();
   refreshPartProfiles();
 }
 
@@ -7633,6 +11362,14 @@ let controlsEnabledBeforeViewportSelect = true;
 function syncLeftDragModeButton() {
   const btn = document.getElementById("btn-left-drag-mode");
   if (!btn) return;
+  if (isCadMousePreset()) {
+    const preset = MOUSE_CONTROL_PRESETS[mouseControlPreset] || MOUSE_CONTROL_PRESETS.render3d;
+    btn.textContent = `Mouse: ${preset.label}`;
+    btn.classList.add("active");
+    btn.setAttribute("aria-pressed", "true");
+    btn.title = `${preset.hint} Click to switch back to Render3D default controls.`;
+    return;
+  }
   const selecting = !isMobileInteraction() && leftDragMode !== "rotate";
   btn.textContent = `Left drag: ${selecting ? "Select" : "Rotate"}`;
   btn.classList.toggle("active", selecting);
@@ -7642,7 +11379,7 @@ function syncLeftDragModeButton() {
     : "Left-drag rotates the camera. Click to switch left-drag to object selection.";
 }
 
-function setLeftDragMode(mode) {
+function setLeftDragMode(mode, { silent = false } = {}) {
   leftDragMode = isMobileInteraction() ? "rotate" : (mode === "rotate" ? "rotate" : "select");
   try {
     localStorage.setItem(LEFT_DRAG_MODE_KEY, leftDragMode);
@@ -7651,6 +11388,7 @@ function setLeftDragMode(mode) {
   }
   syncLeftDragModeButton();
   applyLeftDragModeControls();
+  if (silent) return;
   if (leftDragMode === "rotate" && !directModeling.isToolActive?.() && !sketchEditor.isActive?.()) {
     setEditStatus("ok", "Left drag now rotates the camera. Click the top toggle to switch back to selection.");
   } else if (leftDragMode === "select") {
@@ -7668,7 +11406,19 @@ function applyLeftDragModeControls(mode = getPickMode()) {
   }
 }
 
+function isTransformEditActive() {
+  return Boolean(transformControls?.object && (gizmoPanel?.isVisible?.() || document.getElementById("btn-gizmo")?.classList.contains("active")));
+}
+
+function shouldSuppressViewportSelection() {
+  return transformGizmoDragging || performance.now() < suppressSelectionUntil;
+}
+
 document.getElementById("btn-left-drag-mode")?.addEventListener("click", () => {
+  if (isCadMousePreset()) {
+    setMouseControlPreset("render3d", { announce: true });
+    return;
+  }
   setLeftDragMode(leftDragMode === "select" ? "rotate" : "select");
 });
 syncLeftDragModeButton();
@@ -7684,9 +11434,10 @@ MOBILE_INTERACTION_QUERY?.addEventListener?.("change", () => {
 function canUseViewportSelectGesture(e) {
   if (isMobileInteraction()) return false;
   if (leftDragMode === "rotate") return false;
+  if (isTransformEditActive() || shouldSuppressViewportSelection()) return false;
   if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || e.code === "Space") return false;
   const mode = getPickMode();
-  if (mode !== "off" && mode !== "object") return false;
+  if (!["off", "object", "face"].includes(mode)) return false;
   if (!currentMesh || sketchEditor.isActive?.() || sketchFacePickActive || directModeling.isToolActive?.()) return false;
   return true;
 }
@@ -7789,6 +11540,24 @@ function projectMeshBodyBoundsToViewport(mesh, bodyIndex, bodyInfo) {
   return projectBoxToViewport(box);
 }
 
+function projectMeshFaceBoundsToViewport(mesh, faceIndex) {
+  const geom = mesh?.geometry;
+  const pos = geom?.attributes?.position;
+  if (!mesh?.visible || !pos || faceIndex == null) return null;
+  const faceCount = geom.index ? Math.floor(geom.index.count / 3) : Math.floor(pos.count / 3);
+  if (faceIndex < 0 || faceIndex >= faceCount) return null;
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  for (let j = 0; j < 3; j += 1) {
+    const vi = geom.index ? geom.index.getX(faceIndex * 3 + j) : faceIndex * 3 + j;
+    v.fromBufferAttribute(pos, vi);
+    mesh.localToWorld(v);
+    box.expandByPoint(v);
+  }
+  if (box.isEmpty()) return null;
+  return projectBoxToViewport(box);
+}
+
 function projectBoxToViewport(box) {
   if (!box || box.isEmpty()) return null;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -7816,6 +11585,58 @@ function projectBoxToViewport(box) {
   return Number.isFinite(bounds.left) ? bounds : null;
 }
 
+function selectFacesFromViewportMarquee(dragRect) {
+  const root = projectAssembly.getRoot() || currentMesh;
+  if (!root) return false;
+  const selections = [];
+  const seenBodies = new Set();
+  root.traverse((mesh) => {
+    if (!mesh?.isMesh || !mesh.geometry || mesh.userData?.isEdge || mesh.userData?.isSilhouette) return;
+    const catalogName = catalogNameForMesh(mesh) || mesh.userData?.catalogFilename || selectedFile;
+    const componentRoot = catalogName ? projectAssembly.get(catalogName) : componentRootForMesh(mesh);
+    if (!componentRoot) return;
+    const geom = mesh.geometry;
+    const faceCount = geom.index
+      ? Math.floor(geom.index.count / 3)
+      : Math.floor((geom.attributes?.position?.count || 0) / 3);
+    for (let faceIndex = 0; faceIndex < faceCount; faceIndex += 1) {
+      const bounds = projectMeshFaceBoundsToViewport(mesh, faceIndex);
+      if (!bounds || !rectsIntersect(dragRect, bounds)) continue;
+      const info = catalogName === selectedFile ? objectTools.getBodyInfo?.() : null;
+      const bodyIndex = info?.face_offsets?.length
+        ? (() => {
+            const offsets = info.face_offsets || [];
+            for (let i = offsets.length - 1; i >= 0; i -= 1) {
+              if (faceIndex >= offsets[i]) return i;
+            }
+            return 0;
+          })()
+        : 0;
+      const key = `${catalogName || mesh.uuid}:${bodyIndex}`;
+      if (seenBodies.has(key)) continue;
+      seenBodies.add(key);
+      selections.push({
+        mesh,
+        root: componentRoot,
+        catalogName,
+        bodyIndex,
+        faceIndex,
+        label: `${catalogName ? catalogName.replace(/\.[^.]+$/, "") : "Object"} face group`,
+      });
+      break;
+    }
+  });
+  if (!selections.length) return false;
+  objectTools.selectMany(selections);
+  if (selections[0]?.catalogName) {
+    selectedFile = selections[0].catalogName;
+    projectTree.setSelectedMany?.(selections.map((item) => item.catalogName));
+    featureEditor.setModel(projectId, selectedFile);
+  }
+  setEditStatus("ok", `Selected ${selections.length} face group${selections.length === 1 ? "" : "s"} · Delete removes the selected object/body.`);
+  return true;
+}
+
 function rectsIntersect(a, b) {
   return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
 }
@@ -7827,6 +11648,9 @@ function selectFromViewportMarquee(drag, e) {
     top: Math.min(drag.startY, e.clientY),
     bottom: Math.max(drag.startY, e.clientY),
   };
+  if (getPickMode() === "face" && selectFacesFromViewportMarquee(dragRect)) {
+    return true;
+  }
   const bodyInfo = objectTools.getBodyInfo?.();
   const bodySelections = [];
   const activeBodyCatalog = selectedFile && projectAssembly.has(selectedFile)
@@ -7851,7 +11675,7 @@ function selectFromViewportMarquee(drag, e) {
   }
   if (bodySelections.length) {
     selectedFile = activeBodyCatalog;
-    projectTree.setSelected(activeBodyCatalog);
+    projectTree.setSelectedMany?.([activeBodyCatalog]);
     featureEditor.setModel(projectId, activeBodyCatalog);
     objectTools.selectMany(bodySelections);
     setEditStatus("ok", `Selected ${bodySelections.length} bod${bodySelections.length === 1 ? "y" : "ies"} · Delete removes them · Split bodies separates them into files.`);
@@ -7880,6 +11704,9 @@ function selectFromViewportMarquee(drag, e) {
     bodyIndex: 0,
     label: catalogName.replace(/\.[^.]+$/, ""),
   })));
+  selectedFile = candidates[0].catalogName;
+  projectTree.setSelectedMany?.(candidates.map((item) => item.catalogName));
+  featureEditor.setModel(projectId, selectedFile);
   setEditStatus("ok", `Selected ${candidates.length} objects · Delete removes them.`);
   return true;
 }
@@ -7934,7 +11761,7 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
 renderer.domElement.addEventListener("pointermove", (e) => {
   if (viewportSelectDrag?.pointerId === e.pointerId) {
     const moved = Math.hypot(e.clientX - viewportSelectDrag.startX, e.clientY - viewportSelectDrag.startY);
-    if (!viewportSelectDrag.hit?.mesh && moved > 6) {
+    if (moved > 6 && !viewportSelectDrag.marquee) {
       viewportSelectDrag.marquee = true;
       setViewportMarqueeVisible(true);
       updateViewportMarquee(viewportSelectDrag, e);
@@ -8037,7 +11864,7 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   viewportSelectDrag = null;
   renderer.domElement.releasePointerCapture?.(e.pointerId);
   controls.enabled = controlsEnabledBeforeViewportSelect;
-  if (drag.hit?.mesh) {
+  if (drag.hit?.mesh && !drag.marquee) {
     window.setTimeout(() => {
       suppressNextObjectClick = false;
     }, 0);
@@ -8185,7 +12012,7 @@ renderer.domElement.addEventListener("click", (e) => {
     composer.removeReference(result.ref.id);
     viewerOverlay.clearError();
   } else {
-    composer.addReference(result.ref);
+    composer.addReference(annotatePickedReference(result.ref));
     viewerOverlay.clearError();
   }
   editTools.updateExtrudeTarget?.();
@@ -8437,12 +12264,18 @@ document.getElementById("file-upload")?.addEventListener("change", async (e) => 
   e.target.value = "";
 });
 
-document.getElementById("btn-fit-sidebar")?.addEventListener("click", fitCamera);
 document.getElementById("btn-grid-viewport")?.addEventListener("click", toggleGrid);
 
 // Delegated listeners for view buttons that live inside the ribbon (inserted after module eval)
-document.addEventListener("click", (e) => {
+document.addEventListener("click", async (e) => {
   if (e.target.closest("#btn-fit")) { fitCamera(); return; }
+
+  const historyTreeBtn = e.target.closest("#btn-history-tree");
+  if (historyTreeBtn) {
+    if (projectId) await refreshTimeline();
+    openObjectIterationTree(historyTreeBtn);
+    return;
+  }
 
   const wireBtn = e.target.closest("#btn-wireframe");
   if (wireBtn) {
@@ -8468,8 +12301,6 @@ document.getElementById("btn-sketches-viewport")?.addEventListener("click", () =
   btn?.setAttribute("aria-pressed", next ? "true" : "false");
   setEditStatus("ok", next ? "Sketches shown in viewport." : "Sketches hidden in viewport.");
 });
-document.getElementById("btn-grid-sidebar")?.addEventListener("click", toggleGrid);
-
 function formatDesignPlanReply(plan) {
   if (!plan || typeof plan !== "object") return "";
   const lines = ["\n--- Design plan ---"];
@@ -8688,8 +12519,51 @@ document.getElementById("btn-stop-generation")?.addEventListener("click", () => 
   void cancelActiveGeneration();
 });
 
+document.addEventListener("click", (event) => {
+  if (!viewportPromptDropdown) return;
+  if (event.target.closest(".vgu-prompt-menu") || event.target.closest("#viewport-generation-user")) return;
+  closeViewportPromptDropdown();
+});
+
+document.getElementById("viewport-generation-user")?.addEventListener("click", async (event) => {
+  event.stopPropagation();
+  const gen = allProjects.find((p) => p.id === projectId)?.generation || {};
+  const btn = document.getElementById("viewport-generation-user");
+  if (!latestPromptHistoryEntries.length && projectId) {
+    try {
+      const data = await api(`/api/projects/${projectId}/prompt-history?kind=cad`);
+      latestPromptHistoryEntries = data.entries || [];
+    } catch {
+      latestPromptHistoryEntries = [];
+    }
+  }
+  const recentPrompts = latestPromptsForGenerationUser(
+    gen.by_user_id || btn?.dataset.userId || "",
+    gen.by_user_name || btn?.dataset.user || "",
+  );
+  const latestPrompt = recentPrompts[0]?.prompt || gen.prompt || btn?.dataset.prompt || "";
+  const user = gen.by_user_name || document.getElementById("viewport-generation-user")?.dataset.user || "Someone";
+  showAiComposePanel();
+  const statusEl = document.getElementById("prompt-status");
+  if (statusEl) {
+    statusEl.className = "status ok";
+    statusEl.textContent = latestPrompt
+      ? `Copied to clipboard: latest prompt by ${user}`
+      : `${user} is generating. No prompt text found to copy.`;
+  }
+  if (latestPrompt) {
+    const ok = await copyText(latestPrompt);
+    setEditStatus(ok ? "ok" : "error", ok ? "Copied to clipboard: latest prompt." : "Could not copy prompt.");
+  }
+  showViewportPromptDropdown(btn, recentPrompts);
+});
+
 document.getElementById("btn-prompt")?.addEventListener("click", async () => {
-  const prompt = composer.getPromptText();
+  const canvasAttached = applyCanvasSketchToPrompt();
+  if (canvasAttached && promptMode === "draw") applyPromptModeUI("render");
+  let prompt = composer.getPromptText();
+  if (canvasAttached) prompt = augmentPromptForCanvasSketch(prompt);
+  if (canvasAttached && prompt !== composer.getPromptText()) composer.setPromptText(prompt);
   if (!prompt) return;
   if (!suppressAiComposePanelSwitch) showAiComposePanel();
   suppressAiComposePanelSwitch = false;
@@ -8705,7 +12579,24 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     return;
   }
   if (isGenerationUiActive(projectId)) {
-    return;
+    try {
+      const gen = await api(`/api/projects/${projectId}/generation`);
+      const proj = allProjects.find((p) => p.id === projectId);
+      if (proj) proj.generation = gen;
+      if (gen?.status === "running") {
+        await resumeGenerationIfNeeded(projectId, gen);
+        return;
+      }
+      if (gen?.status === "complete") {
+        await resumeGenerationIfNeeded(projectId, gen);
+        return;
+      }
+      stopGenerationWatch();
+      hideViewportOverlay(projectId);
+    } catch {
+      syncViewportGenerationOverlay();
+      return;
+    }
   }
   if (promptMode === "draw") {
     lastPromptCopyContext = promptCopyContextBase(prompt);
@@ -8736,7 +12627,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
     return;
   }
-  if (!aiStatus?.ai_ready) {
+  if (!aiStatus?.ai_ready && promptMode !== "render") {
     const status = document.getElementById("prompt-status");
     status.className = "status error";
     status.textContent = "Add your OpenAI or Claude API key from the account menu before prompting.";
@@ -8745,44 +12636,41 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     return;
   }
   await ensureProject();
+  syncPromptTargetUI();
+  pendingPromptSelectionContext = capturePromptSelectionContext();
+  const targetMode = getPromptTargetMode();
+  const targetBaseFilename = promptBaseFilename({ canvasAttached });
+  const promptReferences = promptReferencesForSubmit();
   const status = document.getElementById("prompt-status");
   const reply = document.getElementById("prompt-reply");
-  const genMode =
-    promptMode === "v2" ? "v2" : promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : "standard";
-  const speed = document.getElementById("prompt-speed")?.value || "quality";
-  const target = document.getElementById("prompt-target")?.value || "design";
+  const genMode = promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : promptMode === "v2" ? "v2" : "standard";
   status.className = "status loading";
-  status.textContent = promptMode === "v2"
-    ? `Generating with 2.0 (quality pipeline)… (runs in background — safe to refresh)`
-    : promptMode === "fusion"
-    ? `Generating + pushing to Fusion 360… (runs in background — safe to refresh)`
+  status.textContent = promptMode === "fusion"
+    ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${fusionTargetLabel()}... (builds, renders, reviews, repairs)`
     : promptMode === "architect"
-    ? `Generating architect layout… (runs in background — safe to refresh)`
-    : `Generating with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
+    ? `${targetMode === "edit" ? "Editing selected module" : "Adding modular house part"} with Architect mode... (runs in background - safe to refresh)`
+    : promptMode === "v2"
+    ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with 2.0... (runs in background - safe to refresh)`
+    : `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
   reply.textContent = "";
+  if (canvasAttached) markCanvasGenerationPending(projectId);
   beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
   const genId = ++activePromptGenerationId;
   userCancelRequested = false;
-  activePromptAbort = new AbortController();
+  activePromptAbort = null;
   let promptFailed = false;
   try {
     const body = {
       prompt,
-      base_filename: selectedFile,
-      references: composer.getReferences(),
+      base_filename: targetBaseFilename,
+      references: promptReferences,
       images: promptImages,
+      speed: getPromptGenerationSpeed(),
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
       ...getPromptAiKeyBodyFields(),
-      ...(promptMode === "v2" ? { mode: "v2", speed } : {}),
-      ...(promptMode === "fusion"
-        ? {
-            mode: "fusion",
-            fusion_push: target === "fusion360",
-            fusion_target: target === "fusion360" ? "fusion360" : "in_app",
-            speed,
-          }
-        : {}),
-      ...(promptMode === "architect" ? { mode: "architect", speed } : {}),
+      ...(promptMode === "fusion" ? { mode: "fusion", fusion_target: fusionTarget } : {}),
+      ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
+      ...(promptMode === "v2" ? { mode: "v2" } : {}),
     };
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
     const data = await api(
@@ -8791,7 +12679,6 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-        signal: activePromptAbort.signal,
       },
       120000
     );
@@ -8814,10 +12701,15 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       setEditStatus("ok", data.message || "Answered.");
       await refreshPromptHistory();
       showAiComposePanel();
+      pendingPromptSelectionContext = null;
       return;
     }
     if (data.accepted || data.status === "running") {
-      if (generationWatchOverlay) generationWatchOverlay.pendingStart = false;
+      if (!generationWatchOverlay || generationWatchPid !== projectId) {
+        beginGenerationWatch(projectId, { kind: "prompt", mode: genMode });
+      } else {
+        generationWatchOverlay.pendingStart = false;
+      }
       lastPromptCopyContext = {
         ...lastPromptCopyContext,
         promptId: data.prompt_id,
@@ -8828,10 +12720,16 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         const proj = allProjects.find((p) => p.id === projectId);
         if (proj) proj.generation = data.generation;
       }
-      status.textContent = promptMode === "v2"
-        ? "Generating with 2.0 in background… refresh anytime; model loads when ready."
-        : "Generating in background… refresh anytime; model loads when ready.";
+      status.textContent = promptMode === "fusion"
+        ? `Generating with ${fusionTargetLabel()} in background... building, rendering, reviewing, and repairing.`
+        : promptMode === "architect"
+        ? "Generating Architect module in background... building, rendering, reviewing, and repairing."
+        : promptMode === "v2"
+        ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
+        : "Generating in background... safe to switch tabs or refresh; model loads when ready.";
+      syncViewportGenerationOverlay();
       syncStopButtonVisibility();
+      syncCanvasGenerationUi();
       return;
     }
     stopGenerationWatch();
@@ -8840,7 +12738,14 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     selectedFile = data.filename;
     await refreshFiles();
     const placedFiles = (data.placed_parts || []).map((part) => part.filename).filter(Boolean);
-    await reloadViewportFromProject({ fitView: true, latestFile: data.filename, placedFiles });
+    await reloadViewportFromProject({
+      fitView: true,
+      latestFile: data.filename,
+      placedFiles,
+      loadAll: promptMode === "architect",
+    });
+    restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: data.filename });
+    pendingPromptSelectionContext = null;
     viewerOverlay.clearError();
     await refreshTimeline();
     await refreshPromptHistory();
@@ -8854,6 +12759,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       return;
     }
     promptFailed = true;
+    pendingPromptSelectionContext = null;
     stopGenerationWatch();
     status.className = "status error";
     status.textContent = formatUserError(err);
@@ -8914,10 +12820,50 @@ ribbon = createRibbon({
   },
 });
 
+function isEditableShortcutTarget(target) {
+  return !!target?.closest?.("textarea, input, select, [contenteditable='true'], [contenteditable='']");
+}
+
+function isUiPanelShortcutTarget(target) {
+  return !!target?.closest?.(
+    [
+      ".sidebar",
+      "#timeline-panel",
+      "#ribbon-container",
+      ".topbar",
+      ".catalog-panel-overlay",
+      ".modal",
+      ".modal-backdrop",
+      ".floating-panel",
+      ".dm-hud",
+      ".gizmo-panel",
+      ".viewport-error-banner",
+      ".viewport-spinner",
+      ".viewport-generation-user",
+      ".marking-menu",
+      ".prompt-key-popup",
+      ".prompt-target-popup",
+      ".ribbon-search-results",
+      ".workspace-menu",
+      ".account-menu",
+      ".canvas-generation-banner",
+    ].join(", ")
+  );
+}
+
+function shouldUseNativeClipboardShortcut(event, key, mod) {
+  if (!mod || !["a", "c", "v", "x"].includes(key)) return false;
+  if (isEditableShortcutTarget(event.target)) return true;
+  const selection = window.getSelection?.();
+  if (selection && !selection.isCollapsed) return true;
+  return isUiPanelShortcutTarget(event.target);
+}
+
 window.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
   const key = String(e.key || "").toLowerCase();
-  const inField = e.target.matches("textarea, input, select, [contenteditable]");
+  const inField = isEditableShortcutTarget(e.target);
+  if (shouldUseNativeClipboardShortcut(e, key, mod)) return;
   if (workspaceModes?.isWiring?.() && !inField) {
     if (mod && key === "z" && !e.shiftKey) {
       e.preventDefault();
@@ -8955,6 +12901,24 @@ window.addEventListener("keydown", (e) => {
     }
   }
   if (inField) return;
+  if (mod && key === "c") {
+    if (selectedObjectFilename()) {
+      e.preventDefault();
+      copySelectedObjectToClipboard();
+    }
+    return;
+  }
+  if (mod && key === "v") {
+    if (objectClipboard?.filename) {
+      e.preventDefault();
+      if (objectClipboard.projectId && objectClipboard.projectId !== projectId) {
+        setEditStatus("error", "Copied object is from another project. Open that project to paste it.");
+        return;
+      }
+      void duplicateSelectedObject(objectClipboard.filename);
+    }
+    return;
+  }
   if (key === "tab") {
     e.preventDefault();
     if (getPickMode() === "object" && leftDragMode === "select") {
@@ -8971,6 +12935,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (mod && key === "z" && !e.shiftKey) {
     e.preventDefault();
+    if (undoViewportAction()) return;
     undoTimeline();
     return;
   }
@@ -8999,9 +12964,11 @@ window.addEventListener("keydown", (e) => {
       return;
     }
   }
-  if (key === "p") {
+  if (key === "p" || (key === "e" && !e.shiftKey)) {
+    e.preventDefault();
     setRightTab("tools");
-    directModeling.setTool("presspull");
+    launchViewportTool("presspull");
+    return;
   }
   if (key === "v") activatePickMode("object");
   if (key === "m") {
@@ -9010,11 +12977,14 @@ window.addEventListener("keydown", (e) => {
   }
   if (key === "c") activatePickMode("corner");
   if (key === "f") {
-    setRightTab("tools");
     activatePickMode("face");
     editTools.updateExtrudeTarget?.();
   }
-  if (key === "e") activatePickMode("edge");
+  if (e.shiftKey && key === "e") {
+    e.preventDefault();
+    activatePickMode("edge");
+    return;
+  }
   if (key === "l") activatePickMode("lasso");
   if (key === "n") activatePickMode("line");
   if (e.key === "Enter" && !inField && getPickMode() === "line" && hasLineDraft()) {
@@ -9095,13 +13065,28 @@ window.addEventListener("keydown", (e) => {
 
 (async function init() {
   initPromptKeyPopup();
+  initPromptGenerationSpeed();
 
   aiKeyUi = createAIKeyUI({
     api,
+    getProjects: () => allProjects,
+    getCurrentProjectId: () => projectId,
     onStatusChange: (status) => {
       renderAIStatus(status);
       void refreshWorkspaceAiUsage();
     },
+  });
+
+  renderAgentUi = createRenderAgent({
+    api,
+    getProjectId: () => projectId,
+    getSelectedFile: () => selectedFile,
+    getCurrentUser: () => currentUser,
+    getTeams: () => allTeams,
+    getSelectedWorkspaceId,
+    getSelectedAiKey: getPromptAiKeyBodyFields,
+    onRequireLogin: () => authUi?.openModal?.(),
+    onStatus: (kind, message) => setEditStatus(kind, message),
   });
 
   const auth = createAuthUI({
@@ -9111,6 +13096,7 @@ window.addEventListener("keydown", (e) => {
     },
     onReady: async (data) => {
       currentUser = data.user;
+      renderAgentUi?.setUser?.(data.user);
       allTeams = data.teams || [];
       aiKeyUi.render(data.ai);
       connectUserRealtime();
@@ -9118,6 +13104,7 @@ window.addEventListener("keydown", (e) => {
       await startApp();
     },
   });
+  authUi = auth;
 
   // Onshape Library panel — initialised once; auto-loads when scrolled into view
   initOnshapePanel({
@@ -9145,7 +13132,7 @@ window.addEventListener("keydown", (e) => {
     api,
     getCurrentProjectId: () => projectId,
     getSelectedFile: () => selectedFile,
-    getWorkspaceId: getSelectedWorkspaceId,
+    getWorkspaceId: () => getSelectedWorkspaceId(),
     onImported: async (importedProjectId, filename, name) => {
       await loadProject(importedProjectId);
       await loadModel(`/api/projects/${importedProjectId}/files/${encodeURIComponent(filename)}`, filename, {
@@ -9162,8 +13149,8 @@ window.addEventListener("keydown", (e) => {
         label: name,
       });
     },
-    onStatus: setEditStatus,
-    onMirrorLinked: () => setEditStatus("ok", "Fusion mirror folder linked."),
+    onStatus: (kind, message) => setEditStatus(kind, message),
+    onMirrorLinked: () => void refreshWorkspaceRealtimeEditor(),
   });
 
   async function startApp() {
@@ -9178,6 +13165,7 @@ window.addEventListener("keydown", (e) => {
       }
       await onWorkspaceChange();
   await ensureProject();
+      await resumeGenerationFromProjects();
       showAiComposePanel();
   activityLog.refreshServerDebounced();
     } catch (err) {
@@ -9188,12 +13176,9 @@ window.addEventListener("keydown", (e) => {
   }
 
   async function onWorkspaceChange() {
+    const rawId = document.getElementById("team-select")?.value || "";
     const id = getSelectedWorkspaceId();
-    if (id) {
-      try {
-        localStorage.setItem(LS_LAST_WORKSPACE, id);
-      } catch (_) {}
-    }
+    writeSavedWorkspaceId(rawId);
     updateWorkspaceRenameButton();
     await refreshTeamMembers();
     try {
@@ -9204,7 +13189,6 @@ window.addEventListener("keydown", (e) => {
     }
     await refreshWorkspaceHistory();
     await refreshWorkspaceRealtimeEditor();
-    await syncWorkspaceFusionConnect();
     await refreshWorkspaceAiUsage();
     renderProjectList();
     if (projectId && !allProjects.some((p) => p.id === projectId)) {
@@ -9267,17 +13251,28 @@ window.addEventListener("keydown", (e) => {
     if (!sel) return;
     sel.innerHTML = "";
     const explorerTeams = visibleTeamsForExplorer();
+    if (explorerTeams.length > 1) {
+      const allOpt = document.createElement("option");
+      allOpt.value = "__all__";
+      allOpt.textContent = "All workspaces";
+      sel.appendChild(allOpt);
+    }
     explorerTeams.forEach((t) => {
       const opt = document.createElement("option");
       opt.value = t.id;
       opt.textContent = t.name;
       sel.appendChild(opt);
     });
-    const saved = localStorage.getItem(LS_LAST_WORKSPACE);
-    if (saved && explorerTeams.some((t) => t.id === saved)) {
-      sel.value = saved;
+    const saved = readSavedWorkspaceId();
+    if (saved === "__all__" && explorerTeams.length > 1) {
+      sel.value = "__all__";
+    } else if (saved && explorerTeams.some((t) => t.id === saved)) {
+      const savedTeam = explorerTeams.find((t) => t.id === saved);
+      const hasUserScopedSave = hasUserScopedSavedWorkspace(saved);
+      const savedIsOwned = savedTeam?.role === "owner";
+      sel.value = hasUserScopedSave || savedIsOwned ? saved : defaultWorkspaceIdForUser(explorerTeams);
     } else if (explorerTeams.length) {
-      sel.value = explorerTeams[0].id;
+      sel.value = defaultWorkspaceIdForUser(explorerTeams);
     }
     sel.onchange = () => {
       onWorkspaceChange();
@@ -9363,7 +13358,7 @@ window.addEventListener("keydown", (e) => {
           const minePct = total > 0 ? Math.round((mine / total) * 100) : 0;
           const sharedPct = Math.max(0, 100 - minePct);
           return `
-            <div class="profile-cost-bar" title="${escapeHtml(d.date)} · ${costText(total)}">
+            <div class="profile-cost-bar" title="${appEscapeHtml(d.date)} · ${costText(total)}">
               <span style="height:${height}px">
                 <i class="mine" style="height:${minePct}%"></i>
                 <i class="shared" style="height:${sharedPct}%"></i>
@@ -9387,6 +13382,7 @@ window.addEventListener("keydown", (e) => {
     metric: "cost",
     data: null,
     promptSort: { key: "cost", dir: "desc" },
+    expandedProjects: new Set(),
   };
 
   function filteredCostDaily(data, filter) {
@@ -9442,8 +13438,8 @@ window.addEventListener("keydown", (e) => {
           }).join("")}
           ${area && areaPath ? `<path class="cost-area-fill" d="${areaPath}" />` : ""}
           <polyline class="cost-line-total" points="${line}" />
-          ${pts.map((p, i) => i % labelEvery === 0 || i === pts.length - 1 ? `<text class="cost-date-label" x="${p.x}" y="${height - 16}" text-anchor="middle">${escapeHtml(String(p.date).slice(5))}</text>` : "").join("")}
-          ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="5" fill="var(--accent)" opacity="${Number(p.total_usd) > 0 ? "1" : "0.25"}"><title>${escapeHtml(p.date)} · ${costText(p.total_usd)}</title></circle>`).join("")}
+          ${pts.map((p, i) => i % labelEvery === 0 || i === pts.length - 1 ? `<text class="cost-date-label" x="${p.x}" y="${height - 16}" text-anchor="middle">${appEscapeHtml(String(p.date).slice(5))}</text>` : "").join("")}
+          ${pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="5" fill="var(--accent)" opacity="${Number(p.total_usd) > 0 ? "1" : "0.25"}"><title>${appEscapeHtml(p.date)} · ${costText(p.total_usd)}</title></circle>`).join("")}
         </svg>
       </div>
     `;
@@ -9466,8 +13462,8 @@ window.addEventListener("keydown", (e) => {
         ${rows.map((row) => {
           const pct = Math.max(1, Math.round((row.cost / max) * 100));
           return `
-            <div class="costs-feature-row" title="${escapeHtml(row.label)} · ${costText(row.cost)}">
-              <span><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.sub || "")}</small></span>
+            <div class="costs-feature-row" title="${appEscapeHtml(row.label)} · ${costText(row.cost)}">
+              <span><strong>${appEscapeHtml(row.label)}</strong><small>${appEscapeHtml(row.sub || "")}</small></span>
               <div><i class="${row.kind}" style="width:${pct}%"></i></div>
               <strong>${costText(row.cost)}</strong>
             </div>
@@ -9492,6 +13488,44 @@ window.addEventListener("keydown", (e) => {
     if (metric === "prompts") return `${value.toLocaleString()} prompts`;
     if (metric === "calls") return `${value.toLocaleString()} calls`;
     return costText(value);
+  }
+
+  function fullCostAndTokenText(row, costKey = "display_cost_usd") {
+    const cost = Number(row?.[costKey] ?? row?.window_cost_usd ?? row?.cost_usd ?? row?.cost ?? 0) || 0;
+    const tokens = Number(row?.total_tokens || 0) || 0;
+    return `${costText(cost)} · ${tokens.toLocaleString()} tokens`;
+  }
+
+  function effectiveTokenRateText(cost, tokens) {
+    const c = Number(cost) || 0;
+    const t = Number(tokens) || 0;
+    if (!c || !t) return "";
+    return `${costText((c / t) * 1_000_000)} / 1M tok`;
+  }
+
+  function projectModelBreakdownHtml(project) {
+    const rows = project?.model_breakdown || [];
+    if (!rows.length) return `<div class="costs-model-breakdown"><p class="muted small">No per-model breakdown available for this project yet.</p></div>`;
+    return `
+      <div class="costs-model-breakdown">
+        ${rows.map((row) => {
+          const cost = Number(row.window_cost_usd || row.total_cost_usd || 0) || 0;
+          const tokens = Number(row.total_tokens || 0) || 0;
+          const modelLabel = formatModelLabel(row.model, row.provider) || row.model || row.provider || "AI";
+          const rate = effectiveTokenRateText(cost, tokens);
+          return `
+            <div class="costs-model-row">
+              <span>
+                <strong>${appEscapeHtml(modelLabel)}</strong>
+                <small>${appEscapeHtml(row.provider || "AI")} · ${Number(row.prompt_count || 0)} prompts · ${Number(row.ai_calls || 0)} calls${rate ? ` · ${appEscapeHtml(rate)}` : ""}</small>
+              </span>
+              <span>${Number(row.input_tokens || 0).toLocaleString()} in · ${Number(row.output_tokens || 0).toLocaleString()} out</span>
+              <strong>${costText(cost)} · ${tokens.toLocaleString()} tokens</strong>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
   }
 
   function filteredCostProjects(data, filter = "all") {
@@ -9559,10 +13593,10 @@ window.addEventListener("keydown", (e) => {
       <button type="button"
         class="costs-sort-btn${active ? " active" : ""}"
         data-action="cost-prompt-sort"
-        data-sort-key="${escapeHtml(key)}"
-        data-sort-dir="${escapeHtml(nextDir)}"
-        title="Sort ${escapeHtml(label)} ${escapeHtml(hint)}">
-        <span>${escapeHtml(label)}</span><i aria-hidden="true">${arrow}</i>
+        data-sort-key="${appEscapeHtml(key)}"
+        data-sort-dir="${appEscapeHtml(nextDir)}"
+        title="Sort ${appEscapeHtml(label)} ${appEscapeHtml(hint)}">
+        <span>${appEscapeHtml(label)}</span><i aria-hidden="true">${arrow}</i>
       </button>`;
   }
 
@@ -9574,11 +13608,15 @@ window.addEventListener("keydown", (e) => {
         ${rows.map((row) => {
           const value = costMetricValue(row);
           const pct = Math.max(1, Math.round((value / max) * 100));
+          const expanded = costsAnalyticsState.expandedProjects?.has?.(row.project_id);
           return `
-            <div class="costs-feature-row" title="${escapeHtml(row.name)} · ${costMetricText(row)}">
-              <span><strong>${escapeHtml(row.name || row.project_id)}</strong><small>${Number(row.display_tracked_count || 0)} prompts · ${Number(row.total_tokens || 0).toLocaleString()} tokens</small></span>
-              <div><i class="project" style="width:${pct}%"></i></div>
-              <strong>${costMetricText(row)}</strong>
+            <div class="costs-project-group">
+              <div class="costs-feature-row" title="${appEscapeHtml(row.name)} · ${appEscapeHtml(fullCostAndTokenText(row))}">
+                <span><strong>${appEscapeHtml(row.name || row.project_id)}</strong><small>${Number(row.display_tracked_count || 0)} prompts · ${Number(row.total_tokens || 0).toLocaleString()} tokens</small></span>
+                <div><i class="project" style="width:${pct}%"></i></div>
+                <strong>${appEscapeHtml(fullCostAndTokenText(row))}<button type="button" data-action="cost-project-toggle" data-project-id="${appEscapeHtml(row.project_id)}">${expanded ? "Hide" : "View more"}</button></strong>
+              </div>
+              ${expanded ? projectModelBreakdownHtml(row) : ""}
             </div>
           `;
         }).join("") || `<p class="muted small">No project cost data in this range.</p>`}
@@ -9598,13 +13636,13 @@ window.addEventListener("keydown", (e) => {
           ${costPromptSortHeader("cost", "Cost")}
         </div>
         ${rows.map((row) => `
-          <div class="costs-table-row" role="row" title="${escapeHtml(row.prompt || "")}">
+          <div class="costs-table-row" role="row" title="${appEscapeHtml(row.prompt || "")}">
             <span>
-              <strong>${escapeHtml((row.prompt || "Untitled prompt").slice(0, 92))}${(row.prompt || "").length > 92 ? "..." : ""}</strong>
-              <small>${escapeHtml(row.user_name || "Unknown user")} · ${escapeHtml(row.created_at ? new Date(row.created_at).toLocaleString() : "")}</small>
+              <strong>${appEscapeHtml((row.prompt || "Untitled prompt").slice(0, 92))}${(row.prompt || "").length > 92 ? "..." : ""}</strong>
+              <small>${appEscapeHtml(row.user_name || "Unknown user")} · ${appEscapeHtml(row.created_at ? new Date(row.created_at).toLocaleString() : "")}</small>
             </span>
-            <span>${escapeHtml(row.project_name || row.project_id || "")}</span>
-            <span>${escapeHtml(row.model || row.provider || "AI")}</span>
+            <span>${appEscapeHtml(row.project_name || row.project_id || "")}</span>
+            <span>${appEscapeHtml(row.model || row.provider || "AI")}</span>
             <span>${Number(row.total_tokens || 0).toLocaleString()} tokens${row.ai_calls ? ` · ${Number(row.ai_calls)} calls` : ""}</span>
             <strong>${costText(row.cost_usd)}</strong>
           </div>
@@ -9625,12 +13663,12 @@ window.addEventListener("keydown", (e) => {
           const height = total > 0 ? Math.max(10, Math.round((total / max) * 320)) : 3;
           const minePct = total > 0 ? Math.round((mine / total) * 100) : 0;
           return `
-            <div class="costs-modal-bar" title="${escapeHtml(d.date)} · ${costText(total)}">
+            <div class="costs-modal-bar" title="${appEscapeHtml(d.date)} · ${costText(total)}">
               <span class="${total > 0 ? "" : "empty"}" style="height:${height}px">
                 <i class="mine" style="height:${minePct}%"></i>
                 <i class="shared" style="height:${Math.max(0, 100 - minePct)}%"></i>
               </span>
-              <em>${escapeHtml(d.date.slice(5))}</em>
+              <em>${appEscapeHtml(d.date.slice(5))}</em>
             </div>
           `;
         }).join("")}
@@ -9679,7 +13717,7 @@ window.addEventListener("keydown", (e) => {
           ${projects.map((project) => `
             <div class="profile-cost-user">
               <div>
-                <strong>${escapeHtml(project.name || project.project_id)}</strong>
+                <strong>${appEscapeHtml(project.name || project.project_id)}</strong>
                 <span class="muted small">${Number(project.prompt_count || 0)} prompts · ${Number(project.total_tokens || 0).toLocaleString()} tokens · ${Number(project.ai_calls || 0)} AI calls</span>
               </div>
               <div class="profile-cost-user-stats">
@@ -9687,6 +13725,7 @@ window.addEventListener("keydown", (e) => {
                 <span class="muted small">${costText(project.total_cost_usd)} all time</span>
               </div>
             </div>
+            ${costsAnalyticsState.expandedProjects?.has?.(project.project_id) ? projectModelBreakdownHtml(project) : ""}
           `).join("") || `<p class="muted small">No projects with tracked cost in this range.</p>`}
         </div>
       `;
@@ -9699,12 +13738,12 @@ window.addEventListener("keydown", (e) => {
           ${prompts.map((prompt) => `
             <div class="profile-cost-user">
               <div>
-                <strong>${escapeHtml((prompt.prompt || "Untitled prompt").slice(0, 110))}${(prompt.prompt || "").length > 110 ? "..." : ""}</strong>
-                <span class="muted small">${escapeHtml(prompt.project_name || "")} · ${Number(prompt.total_tokens || 0).toLocaleString()} tokens · ${escapeHtml(prompt.model || prompt.provider || "AI")}</span>
+                <strong>${appEscapeHtml((prompt.prompt || "Untitled prompt").slice(0, 110))}${(prompt.prompt || "").length > 110 ? "..." : ""}</strong>
+                <span class="muted small">${appEscapeHtml(prompt.project_name || "")} · ${Number(prompt.total_tokens || 0).toLocaleString()} tokens · ${appEscapeHtml(prompt.model || prompt.provider || "AI")}</span>
               </div>
               <div class="profile-cost-user-stats">
                 <strong>${costText(prompt.cost_usd)}</strong>
-                <span class="muted small">${escapeHtml(prompt.created_at ? new Date(prompt.created_at).toLocaleDateString() : "")}</span>
+                <span class="muted small">${appEscapeHtml(prompt.created_at ? new Date(prompt.created_at).toLocaleDateString() : "")}</span>
               </div>
             </div>
           `).join("") || `<p class="muted small">No prompt usage in this range.</p>`}
@@ -9718,8 +13757,8 @@ window.addEventListener("keydown", (e) => {
         ${sharedUsers.length ? sharedUsers.map((u) => `
           <div class="profile-cost-user">
             <div>
-              <strong>${escapeHtml(u.display_name || u.email || "Team member")}</strong>
-              <span class="muted small">${escapeHtml(u.email || "")} · ${Number(u.tracked_count || 0)} tracked prompts</span>
+              <strong>${appEscapeHtml(u.display_name || u.email || "Team member")}</strong>
+              <span class="muted small">${appEscapeHtml(u.email || "")} · ${Number(u.tracked_count || 0)} tracked prompts</span>
             </div>
             <div class="profile-cost-user-stats">
               <strong>${costText(u.window_cost_usd)}</strong>
@@ -9831,6 +13870,18 @@ window.addEventListener("keydown", (e) => {
       if (e.key === "Enter") applyCostChartPrompt(e.currentTarget.value);
     });
     costsAnalyticsModal.querySelector("#costs-analytics-body")?.addEventListener("click", (e) => {
+      const projectToggle = e.target.closest("[data-action='cost-project-toggle']");
+      if (projectToggle) {
+        const id = projectToggle.dataset.projectId;
+        if (id) {
+          if (!costsAnalyticsState.expandedProjects) costsAnalyticsState.expandedProjects = new Set();
+          if (costsAnalyticsState.expandedProjects.has(id)) costsAnalyticsState.expandedProjects.delete(id);
+          else costsAnalyticsState.expandedProjects.add(id);
+          costsAnalyticsState.chart = "projects";
+          renderCostsAnalyticsModal();
+        }
+        return;
+      }
       const sortBtn = e.target.closest("[data-action='cost-prompt-sort']");
       if (!sortBtn) return;
       costsAnalyticsState.promptSort = {
@@ -9863,7 +13914,7 @@ window.addEventListener("keydown", (e) => {
         <option value="all">Mine + shared</option>
         <option value="mine">Mine only</option>
         <option value="shared">Shared only</option>
-        ${sharedUsers.map((u) => `<option value="user:${escapeHtml(u.user_id)}">${escapeHtml(u.display_name || u.email || "Team member")}</option>`).join("")}
+        ${sharedUsers.map((u) => `<option value="user:${appEscapeHtml(u.user_id)}">${appEscapeHtml(u.display_name || u.email || "Team member")}</option>`).join("")}
       `;
       select.value = current;
     }
@@ -9873,7 +13924,7 @@ window.addEventListener("keydown", (e) => {
         <div><span>Total</span><strong>${costText(totals.all_window_usd)}</strong></div>
         <div><span>Mine</span><strong>${costText(totals.mine_window_usd)}</strong></div>
         <div><span>Shared</span><strong>${costText(totals.shared_window_usd)}</strong></div>
-        <div><span>Tracked prompts</span><strong>${Number(data.tracked_count || 0)}</strong></div>
+        <div><span>Tokens</span><strong>${compactTokenCount(totals.total_tokens)}</strong></div>
       </div>
       ${renderSelectedCostChart(data, current)}
       <div class="profile-costs-legend">
@@ -9897,6 +13948,61 @@ window.addEventListener("keydown", (e) => {
     await refreshCostsAnalyticsModal();
   }
 
+  function setProfileAvatarStatus(message, cls = "muted small") {
+    const status = document.getElementById("profile-avatar-status");
+    if (!status) return;
+    status.className = `${cls} profile-preferences-note`;
+    status.textContent = message || "";
+  }
+
+  function applyUpdatedUser(user) {
+    if (!user) return;
+    currentUser = user;
+    authUi?.setUser?.(user);
+    renderPreferencesMenuPanel();
+  }
+
+  async function uploadProfileAvatar(file) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|jpg)$/i.test(file.type || "")) {
+      setProfileAvatarStatus("Upload a PNG or JPEG image.", "status error");
+      return;
+    }
+    if (file.size > 1_500_000) {
+      setProfileAvatarStatus("Profile picture must be under 1.5 MB.", "status error");
+      return;
+    }
+    setProfileAvatarStatus("Uploading profile picture...");
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      let data;
+      try {
+        data = await api("/api/users/me/avatar", { method: "POST", body: form });
+      } catch (err) {
+        if (!/Method Not Allowed/i.test(err.message || "")) throw err;
+        const retry = new FormData();
+        retry.append("file", file);
+        data = await api("/api/users/me/avatar", { method: "PUT", body: retry });
+      }
+      applyUpdatedUser(data.user);
+      setProfileAvatarStatus("Profile picture updated.", "status ok");
+    } catch (err) {
+      setProfileAvatarStatus(err.message || "Could not upload profile picture.", "status error");
+    }
+  }
+
+  async function removeProfileAvatar() {
+    setProfileAvatarStatus("Removing profile picture...");
+    try {
+      const data = await api("/api/users/me/avatar", { method: "DELETE" });
+      applyUpdatedUser(data.user);
+      setProfileAvatarStatus("Profile picture removed.", "status ok");
+    } catch (err) {
+      setProfileAvatarStatus(err.message || "Could not remove profile picture.", "status error");
+    }
+  }
+
   async function refreshCostsMenuPanel() {
     const panel = document.getElementById("profile-costs-panel");
     if (!panel || panel.classList.contains("hidden")) return;
@@ -9905,10 +14011,13 @@ window.addEventListener("keydown", (e) => {
       const data = await api("/api/user/ai-costs?days=30");
       const totals = data.totals || {};
       const sharedUsers = data.shared_users || [];
+      const topProjects = (data.projects || [])
+        .filter((project) => Number(project.window_cost_usd || 0) > 0 || Number(project.total_tokens || 0) > 0)
+        .slice(0, 5);
       panel.innerHTML = `
         <div class="profile-workspace-title">
           <strong>AI costs</strong>
-          <span class="muted small">${escapeHtml(data.range?.start || "")} to ${escapeHtml(data.range?.end || "")}</span>
+          <span class="muted small">${appEscapeHtml(data.range?.start || "")} to ${appEscapeHtml(data.range?.end || "")}</span>
           <button type="button" class="btn secondary btn-compact profile-costs-expand" id="btn-costs-expand">View analytics</button>
         </div>
         <div class="profile-costs-grid">
@@ -9932,14 +14041,32 @@ window.addEventListener("keydown", (e) => {
         ${renderCostBars(data.daily || [])}
         <div class="profile-costs-section">
           <div class="profile-costs-section-title">
+            <strong>Top projects</strong>
+            <span class="muted small">Cost + tokens</span>
+          </div>
+          ${topProjects.length ? topProjects.map((project) => `
+            <div class="profile-cost-user">
+              <div>
+                <strong>${appEscapeHtml(project.name || project.project_id)}</strong>
+                <span class="muted small">${Number(project.tracked_count || 0)} prompts · ${Number(project.total_tokens || 0).toLocaleString()} tokens</span>
+              </div>
+              <div class="profile-cost-user-stats">
+                <strong>${costText(project.window_cost_usd)}</strong>
+                <span class="muted small">${costText(project.total_cost_usd)} all time</span>
+              </div>
+            </div>
+          `).join("") : `<p class="muted small">No project cost data found yet.</p>`}
+        </div>
+        <div class="profile-costs-section">
+          <div class="profile-costs-section-title">
             <strong>Shared key users</strong>
             <span class="muted small">${sharedUsers.length} user${sharedUsers.length === 1 ? "" : "s"}</span>
           </div>
           ${sharedUsers.length ? sharedUsers.map((u) => `
             <div class="profile-cost-user">
               <div>
-                <strong>${escapeHtml(u.display_name || u.email || "Team member")}</strong>
-                <span class="muted small">${escapeHtml(u.email || "")}</span>
+                <strong>${appEscapeHtml(u.display_name || u.email || "Team member")}</strong>
+                <span class="muted small">${appEscapeHtml(u.email || "")}</span>
               </div>
               <div class="profile-cost-user-stats">
                 <strong>${costText(u.window_cost_usd)}</strong>
@@ -9956,18 +14083,153 @@ window.addEventListener("keydown", (e) => {
         void openCostsAnalyticsModal();
       });
     } catch (err) {
-      panel.innerHTML = `<span class="ai-key-members-error">${escapeHtml(err.message || "Could not load costs")}</span>`;
+      panel.innerHTML = `<span class="ai-key-members-error">${appEscapeHtml(err.message || "Could not load costs")}</span>`;
     }
   }
 
   document.getElementById("btn-costs-menu")?.addEventListener("click", async () => {
     const panel = document.getElementById("profile-costs-panel");
     const workspacePanel = document.getElementById("profile-workspace-panel");
+    const preferencesPanel = document.getElementById("profile-preferences-panel");
     if (!panel) return;
     workspacePanel?.classList.add("hidden");
+    preferencesPanel?.classList.add("hidden");
     panel.classList.toggle("hidden");
     if (!panel.classList.contains("hidden")) {
       await refreshCostsMenuPanel();
+    }
+  });
+
+  function renderPreferencesMenuPanel() {
+    const panel = document.getElementById("profile-preferences-panel");
+    if (!panel) return;
+    const avatar = currentUser?.avatar_url || "";
+    const initial = (currentUser?.display_name || currentUser?.email || "?").trim().charAt(0).toUpperCase();
+    const mouseOptions = Object.entries(MOUSE_CONTROL_PRESETS)
+      .map(([value, preset]) => `<option value="${appEscapeHtml(value)}">${appEscapeHtml(preset.label)}</option>`)
+      .join("");
+    const themeOptions = Object.entries(APP_THEMES)
+      .map(([value, theme]) => `<option value="${appEscapeHtml(value)}">${appEscapeHtml(theme.label)}</option>`)
+      .join("");
+    panel.innerHTML = `
+      <div class="profile-preferences-card" role="dialog" aria-modal="true" aria-labelledby="profile-preferences-title">
+        <button type="button" class="profile-preferences-close" data-preferences-close aria-label="Close preferences">x</button>
+        <div class="profile-preferences-header">
+          <div>
+            <span class="profile-preferences-kicker">Studio Settings</span>
+            <h2 id="profile-preferences-title">Preferences</h2>
+            <p class="muted small">General settings for the viewport, account, and controls.</p>
+          </div>
+        </div>
+        <div class="profile-preferences-grid">
+          <section class="profile-preferences-section profile-preferences-section--wide">
+            <strong>Profile picture</strong>
+            <div class="profile-avatar-preference">
+              <span class="profile-avatar-preview ${avatar ? "profile-avatar-preview--image" : ""}" style="${avatar ? `background-image:url('${appEscapeHtml(avatar)}')` : ""}">${avatar ? "" : appEscapeHtml(initial)}</span>
+              <div class="profile-avatar-actions">
+                <label class="btn secondary btn-compact">
+                  Upload picture
+                  <input id="profile-avatar-input" type="file" accept="image/png,image/jpeg" hidden />
+                </label>
+                <button type="button" id="profile-avatar-remove" class="btn secondary btn-compact" ${avatar ? "" : "disabled"}>Remove</button>
+                <small class="muted">PNG or JPEG, under 1.5 MB.</small>
+              </div>
+            </div>
+            <p id="profile-avatar-status" class="muted small profile-preferences-note"></p>
+          </section>
+          <section class="profile-preferences-section">
+            <strong>Controls</strong>
+            <label class="profile-preference-field">
+              <span>
+                <b>Mouse controls</b>
+                <small id="pref-mouse-preset-hint">${appEscapeHtml(MOUSE_CONTROL_PRESETS[mouseControlPreset]?.hint || "")}</small>
+              </span>
+              <select id="pref-mouse-preset">
+                ${mouseOptions}
+              </select>
+            </label>
+            <div class="mouse-preset-guide" aria-label="Mouse control preset details">
+              ${Object.entries(MOUSE_CONTROL_PRESETS).map(([, preset]) => `
+                <div>
+                  <b>${appEscapeHtml(preset.label)}</b>
+                  <span>${appEscapeHtml(preset.hint)}</span>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+          <section class="profile-preferences-section">
+            <strong>General</strong>
+            <label class="profile-preference-field">
+              <span>
+                <b>Appearance</b>
+                <small>Switch the studio UI and viewport workspace between dark and light mode.</small>
+              </span>
+              <select id="pref-app-theme">
+                ${themeOptions}
+              </select>
+            </label>
+            <p class="muted small profile-preferences-note">
+              Viewport lighting can be adjusted from the ribbon Light button and is remembered on this device.
+            </p>
+          </section>
+        </div>
+      </div>
+    `;
+    syncMousePreferenceUI();
+    const themeSelect = panel.querySelector("#pref-app-theme");
+    if (themeSelect) themeSelect.value = appTheme;
+  }
+
+  function closePreferencesModal() {
+    document.getElementById("profile-preferences-panel")?.classList.add("hidden");
+  }
+
+  function openPreferencesModal() {
+    const panel = document.getElementById("profile-preferences-panel");
+    if (!panel) return;
+    if (panel.parentElement !== document.body) document.body.appendChild(panel);
+    document.getElementById("profile-costs-panel")?.classList.add("hidden");
+    document.getElementById("profile-workspace-panel")?.classList.add("hidden");
+    document.getElementById("user-menu")?.classList.add("hidden");
+    renderPreferencesMenuPanel();
+    panel.classList.remove("hidden");
+    requestAnimationFrame(() => panel.querySelector("#pref-mouse-preset")?.focus?.({ preventScroll: true }));
+  }
+
+  document.getElementById("btn-preferences-menu")?.addEventListener("click", () => {
+    openPreferencesModal();
+  });
+
+  document.getElementById("profile-preferences-panel")?.addEventListener("change", (e) => {
+    const mouseSelect = e.target.closest("#pref-mouse-preset");
+    if (mouseSelect) {
+      setMouseControlPreset(mouseSelect.value, { announce: true });
+      return;
+    }
+    const themeSelect = e.target.closest("#pref-app-theme");
+    if (themeSelect) {
+      setAppTheme(themeSelect.value, { persist: true, announce: true });
+      return;
+    }
+    const avatarInput = e.target.closest("#profile-avatar-input");
+    if (avatarInput?.files?.[0]) {
+      void uploadProfileAvatar(avatarInput.files[0]);
+    }
+  });
+
+  document.getElementById("profile-preferences-panel")?.addEventListener("click", (e) => {
+    const panel = document.getElementById("profile-preferences-panel");
+    if (e.target === panel || e.target.closest("[data-preferences-close]")) {
+      closePreferencesModal();
+      return;
+    }
+    if (!e.target.closest("#profile-avatar-remove")) return;
+    void removeProfileAvatar();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !document.getElementById("profile-preferences-panel")?.classList.contains("hidden")) {
+      closePreferencesModal();
     }
   });
 
@@ -10010,41 +14272,41 @@ window.addEventListener("keydown", (e) => {
       const visible = !hidden.has(team.id);
       const memberRows = data.members || [];
       parts.push(`
-        <section class="profile-workspace-card" data-team-id="${escapeHtml(team.id)}">
+        <section class="profile-workspace-card" data-team-id="${appEscapeHtml(team.id)}">
           <div class="profile-workspace-head">
             <div>
-              <strong>${escapeHtml(team.name)}</strong>
-              <span class="muted small">${escapeHtml(team.role || "member")}${team.id === activeTeamId ? " · current" : ""}</span>
+              <strong>${appEscapeHtml(team.name)}</strong>
+              <span class="muted small">${appEscapeHtml(team.role || "member")}${team.id === activeTeamId ? " · current" : ""}</span>
             </div>
             <label class="profile-workspace-visible">
-              <input type="checkbox" data-action="workspace-visible" data-team-id="${escapeHtml(team.id)}" ${visible ? "checked" : ""} />
+              <input type="checkbox" data-action="workspace-visible" data-team-id="${appEscapeHtml(team.id)}" ${visible ? "checked" : ""} />
               Explorer
             </label>
           </div>
           <div class="profile-workspace-actions">
             ${isOwner ? `
-              <input type="text" value="${escapeHtml(team.name)}" data-workspace-name="${escapeHtml(team.id)}" maxlength="120" />
-              <button type="button" class="btn btn-compact secondary" data-action="workspace-rename" data-team-id="${escapeHtml(team.id)}">Rename</button>
+              <input type="text" value="${appEscapeHtml(team.name)}" data-workspace-name="${appEscapeHtml(team.id)}" maxlength="120" />
+              <button type="button" class="btn btn-compact secondary" data-action="workspace-rename" data-team-id="${appEscapeHtml(team.id)}">Rename</button>
             ` : `
-              <button type="button" class="btn btn-compact danger" data-action="workspace-leave" data-team-id="${escapeHtml(team.id)}">Leave team</button>
+              <button type="button" class="btn btn-compact danger" data-action="workspace-leave" data-team-id="${appEscapeHtml(team.id)}">Leave team</button>
             `}
           </div>
           <div class="profile-workspace-invite">
-            <input type="email" placeholder="Invite email" data-workspace-invite="${escapeHtml(team.id)}" />
-            <button type="button" class="btn btn-compact secondary" data-action="workspace-invite" data-team-id="${escapeHtml(team.id)}">Invite</button>
+            <input type="email" placeholder="Invite email" data-workspace-invite="${appEscapeHtml(team.id)}" />
+            <button type="button" class="btn btn-compact secondary" data-action="workspace-invite" data-team-id="${appEscapeHtml(team.id)}">Invite</button>
           </div>
           <div class="profile-workspace-members">
             ${memberRows.map((m) => `
               <div class="profile-workspace-member">
-                <span><strong>${escapeHtml(m.display_name || m.email)}</strong> <span class="muted">${escapeHtml(m.email || "")}</span></span>
-                <small>${escapeHtml(m.role || "member")}</small>
+                <span><strong>${appEscapeHtml(m.display_name || m.email)}</strong> <span class="muted">${appEscapeHtml(m.email || "")}</span></span>
+                <small>${appEscapeHtml(m.role || "member")}</small>
               </div>
-            `).join("") || `<p class="muted small">${loadError ? `Could not load members: ${escapeHtml(loadError)}` : "No members in this team yet."}</p>`}
+            `).join("") || `<p class="muted small">${loadError ? `Could not load members: ${appEscapeHtml(loadError)}` : "No members in this team yet."}</p>`}
           </div>
           ${(data.invites || []).length ? `
             <div class="profile-workspace-pending">
               <strong class="muted small">Pending invites</strong>
-              ${(data.invites || []).map((inv) => `<div class="muted small">${escapeHtml(inv.email)}</div>`).join("")}
+              ${(data.invites || []).map((inv) => `<div class="muted small">${appEscapeHtml(inv.email)}</div>`).join("")}
             </div>
           ` : ""}
         </section>
@@ -10062,8 +14324,10 @@ window.addEventListener("keydown", (e) => {
   document.getElementById("btn-workspace-menu")?.addEventListener("click", async () => {
     const panel = document.getElementById("profile-workspace-panel");
     const costsPanel = document.getElementById("profile-costs-panel");
+    const preferencesPanel = document.getElementById("profile-preferences-panel");
     if (!panel) return;
     costsPanel?.classList.add("hidden");
+    preferencesPanel?.classList.add("hidden");
     panel.classList.toggle("hidden");
     if (!panel.classList.contains("hidden")) {
       await refreshWorkspaceMenuPanel();
@@ -10142,8 +14406,8 @@ window.addEventListener("keydown", (e) => {
       container.innerHTML = invites
         .map(
           (inv) => `
-        <div class="team-invite-banner" data-invite-id="${escapeHtml(inv.id)}">
-          <p><strong>${escapeHtml(inv.inviter_name)}</strong> invited you to the workspace <strong>${escapeHtml(inv.team_name)}</strong>.</p>
+        <div class="team-invite-banner" data-invite-id="${appEscapeHtml(inv.id)}">
+          <p><strong>${appEscapeHtml(inv.inviter_name)}</strong> invited you to the workspace <strong>${appEscapeHtml(inv.team_name)}</strong>.</p>
           <div class="team-invite-actions">
             <button type="button" class="btn btn-compact team-invite-accept">Accept</button>
             <button type="button" class="btn secondary btn-compact team-invite-decline">Decline</button>
@@ -10202,9 +14466,9 @@ window.addEventListener("keydown", (e) => {
             <div class="team-members-list">
               ${members.map((m) => `
                 <div class="team-member-row">
-                  <strong>${escapeHtml(m.display_name)}</strong>
-                  <span class="muted">${escapeHtml(m.email)}</span>
-                  <small>${escapeHtml(m.role || "member")}</small>
+                  <strong>${appEscapeHtml(m.display_name)}</strong>
+                  <span class="muted">${appEscapeHtml(m.email)}</span>
+                  <small>${appEscapeHtml(m.role || "member")}</small>
                 </div>
               `).join("") || `<p class="muted small">No members yet.</p>`}
             </div>
@@ -10221,7 +14485,7 @@ window.addEventListener("keydown", (e) => {
 
   document.getElementById("btn-create-workspace")?.addEventListener("click", async () => {
     const name = document.getElementById("workspace-name")?.value?.trim();
-    const connectFusion = document.getElementById("workspace-fusion-connect")?.checked === true;
+    const connectFusion = document.getElementById("workspace-connect-fusion")?.checked === true;
     const status = document.getElementById("workspace-create-status");
     if (!name) {
       if (status) status.textContent = "Enter a workspace name.";
@@ -10247,39 +14511,22 @@ window.addEventListener("keydown", (e) => {
       if (sel && team) sel.value = team.id;
       await onWorkspaceChange();
       if (connectFusion && team?.id) {
-        await linkActiveWorkspaceToFusion();
+        const saved = await api(`/api/teams/${encodeURIComponent(team.id)}/render-folder`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: "fusion",
+            label: "Fusion 360 workspace",
+            folder_ref: "autodesk-user-cloud",
+          }),
+        });
+        const idx = allTeams.findIndex((t) => t.id === team.id);
+        if (idx >= 0 && saved.team) allTeams[idx] = { ...allTeams[idx], ...saved.team };
         if (status) status.textContent = `Created workspace "${team.name}" and connected Fusion.`;
+        await refreshWorkspaceRealtimeEditor();
       }
     } catch (err) {
       if (status) status.textContent = err.message;
-    }
-  });
-
-  document.getElementById("workspace-fusion-connect")?.addEventListener("change", async (event) => {
-    const teamId = getSelectedWorkspaceId();
-    if (!teamId) {
-      event.target.checked = false;
-      return;
-    }
-    if (event.target.checked) {
-      await linkActiveWorkspaceToFusion();
-      return;
-    }
-    try {
-      await api(`/api/teams/${encodeURIComponent(teamId)}/render-folder`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: "render3d",
-          label: "Render3D cloud",
-          folder_ref: null,
-        }),
-      });
-      await refreshWorkspaceRealtimeEditor();
-      setEditStatus("ok", "Workspace disconnected from Fusion.");
-    } catch (err) {
-      event.target.checked = true;
-      setEditStatus("error", err.message || "Could not disconnect Fusion from this workspace.");
     }
   });
 
@@ -10308,6 +14555,7 @@ window.addEventListener("keydown", (e) => {
   const session = await auth.bootstrap();
   if (session) {
     currentUser = session.user;
+    renderAgentUi?.setUser?.(session.user);
     allTeams = session.teams || [];
     aiKeyUi.render(session.ai);
     connectUserRealtime();
@@ -10315,16 +14563,21 @@ window.addEventListener("keydown", (e) => {
     await startApp();
   } else {
     const browser = document.getElementById("project-browser");
-    const hasEarlyList = browser?.querySelector(".proj-item, .project-list-early li");
-    if (!hasEarlyList && browser) {
-      browser.innerHTML = '<p class="muted small browser-empty">Sign in to view your projects</p>';
-    } else if (browser) {
-      const note = document.createElement("p");
-      note.className = "status error browser-empty browser-auth-note";
-      note.textContent = "Session expired — sign in again (account menu, top right).";
-      browser.prepend(note);
+    try {
+      await fetchPublicProjectsForAnonymous();
+      if (allProjects.length) {
+        setEditStatus("ok", "Viewing public projects. Sign in to create or edit models.");
+        await loadProject(allProjects[0].id);
+      } else {
+        setEditStatus("ok", "No public projects yet. Sign in to create one.");
+      }
+    } catch (err) {
+      console.warn("Public project load failed", err);
+      if (browser) {
+        browser.innerHTML = '<p class="muted small browser-empty">Sign in to view your projects</p>';
+      }
+      auth.openModal?.();
     }
-    auth.openModal?.();
     document.getElementById("prompt-status").className = "status";
     document.getElementById("prompt-status").textContent = "Sign in to use AI prompting.";
   }
@@ -10333,7 +14586,7 @@ window.addEventListener("keydown", (e) => {
   window.__appProjectListReady = true;
   const browser = document.getElementById("project-browser");
   if (browser) {
-    browser.innerHTML = `<p class="status error browser-empty">Editor failed to start: ${escapeHtml(err?.message || "Unknown error")}</p>`;
+    browser.innerHTML = `<p class="status error browser-empty">Editor failed to start: ${appEscapeHtml(err?.message || "Unknown error")}</p>`;
   }
   setEditStatus?.("error", err?.message || "Editor failed to start");
 });

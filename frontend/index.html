@@ -9,7 +9,7 @@
   <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
-  <link rel="stylesheet" href="/styles.css?v=20260706-full-ui" />
+  <link rel="stylesheet" href="/styles.css?v=20260706-restore-full" />
   <script type="importmap">
   {
     "imports": {
@@ -208,7 +208,7 @@
             </button>
           </div>
           <label class="workspace-fusion-row checkbox-field" id="workspace-fusion-row">
-            <input type="checkbox" id="workspace-fusion-connect" />
+            <input type="checkbox" id="workspace-connect-fusion" />
             Connect this workspace to Fusion
           </label>
           <div class="team-invite-row">
@@ -729,11 +729,35 @@
       </section>
 
       <section class="architect-prompt-panel right-tab-panel" data-right-panel="architect" id="architect-prompt-panel">
-        <h2>Architect AI</h2>
-        <p class="muted small architect-hint">Describe modular buildings, rooms, roofs, and site layouts. Uses a 1000&nbsp;mm snap grid and places multiple components into the project.</p>
-        <textarea id="architect-prompt-input" rows="8" placeholder="Example: 12×10 m single-story house with 2800 mm wall height, 2 bedrooms, open kitchen, gable roof, and front porch."></textarea>
-        <button type="button" id="btn-architect-prompt" class="btn accent full">Generate architect layout</button>
-        <div id="architect-prompt-status" class="status"></div>
+        <div class="panel-section-head architect-panel-head">
+          <h2>Architect Mode</h2>
+          <button type="button" id="btn-architect-advanced" class="btn secondary small">Advanced</button>
+        </div>
+        <p class="muted small">Modular house builder: place grid-snapping walls, windows, doors, rooms, and roof pieces. Drag modules in the viewport, then snap or nudge them into position.</p>
+        <div class="architect-kit-card">
+          <strong>Architect skill auto-enabled</strong>
+          <span>AI stays out of the default Architect workflow. Open the AI panel manually if you want generative architect prompts.</span>
+        </div>
+        <div class="architect-grid-row">
+          <label>Grid (mm) <input type="number" id="architect-grid-size" value="1000" min="100" step="100" /></label>
+          <label>Wall height (mm) <input type="number" id="architect-wall-height" value="2800" min="500" step="100" /></label>
+        </div>
+        <div class="architect-preset-list">
+          <button type="button" class="btn secondary full" data-architect-module="wall">Place wall panel</button>
+          <button type="button" class="btn secondary full" data-architect-module="window-wall">Place wall with window</button>
+          <button type="button" class="btn secondary full" data-architect-module="door-wall">Place wall with door</button>
+          <button type="button" class="btn secondary full" data-architect-module="room">Place starter room kit</button>
+        </div>
+        <div class="architect-snap-card">
+          <strong>Grid placement</strong>
+          <button type="button" id="btn-architect-snap-grid" class="btn secondary full">Snap selection to grid</button>
+          <div class="architect-nudge-grid">
+            <button type="button" class="btn secondary btn-compact" data-architect-nudge="y+">↑</button>
+            <button type="button" class="btn secondary btn-compact" data-architect-nudge="x-">←</button>
+            <button type="button" class="btn secondary btn-compact" data-architect-nudge="x+">→</button>
+            <button type="button" class="btn secondary btn-compact" data-architect-nudge="y-">↓</button>
+          </div>
+        </div>
       </section>
 
       <section class="prompt-panel right-tab-panel active" data-right-panel="prompt">
@@ -760,23 +784,31 @@
               <button type="button" class="prompt-mode-btn" data-prompt-mode="draw">Draw</button>
               <button type="button" class="prompt-mode-btn prompt-mode-btn--v2" data-prompt-mode="v2">2.0</button>
               <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
-              <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
-            </div>
-            <div class="prompt-advanced-row" id="prompt-advanced-row">
-              <label>Mode
+              <label class="prompt-speed-toggle" title="Speed uses a faster model; Quality uses the Pro/deeper path when selected.">
+                <span>Mode</span>
                 <select id="prompt-speed" aria-label="Generation speed">
-                  <option value="fast">Fast</option>
+                  <option value="fast">Speed</option>
                   <option value="quality" selected>Quality</option>
                 </select>
               </label>
-              <label>Target
-                <select id="prompt-target" aria-label="Prompt target">
-                  <option value="design" selected>Add new object</option>
-                  <option value="edit">Edit selected model</option>
-                  <option value="fusion360">Push to Fusion 360</option>
-                </select>
-              </label>
+              <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
             </div>
+            <label class="prompt-target-row">
+              <span class="prompt-target-label">Target</span>
+              <select id="prompt-target-mode">
+                <option value="new">Add new object</option>
+                <option value="edit">Edit selected</option>
+              </select>
+              <select id="prompt-target-object" hidden aria-label="Object to edit"></select>
+              <button type="button" id="prompt-target-picker-btn" class="prompt-target-picker-btn" hidden aria-haspopup="dialog" aria-expanded="false">
+                <span id="prompt-target-picker-thumb" class="prompt-target-picker-thumb" aria-hidden="true"></span>
+                <span class="prompt-target-picker-text">
+                  <span id="prompt-target-picker-title" class="prompt-target-picker-title">Select object</span>
+                  <span id="prompt-target-picker-subtitle" class="prompt-target-picker-subtitle">Visible components</span>
+                </span>
+                <svg class="prompt-target-picker-arrow" viewBox="0 0 10 6" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M1 1l4 4 4-4"/></svg>
+              </button>
+            </label>
           </div>
           <div class="prompt-skills-row">
             <span class="prompt-skills-label">Skills</span>
@@ -787,6 +819,7 @@
               <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
             </button>
           </div>
+          <div id="prompt-skills-plan" class="prompt-skills-plan" aria-live="polite"></div>
           <div id="prompt-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Prompt references"></div>
           <textarea id="prompt-input" rows="6" placeholder="Describe what to make or edit. Drag parts/faces here to add @ reference chips…"></textarea>
           <div id="prompt-image-drop" class="prompt-image-drop" role="button" tabindex="0">
@@ -1244,7 +1277,47 @@
   </script>
   <script type="module" src="/early-boot.js?v=20260611-project-recovery"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
-  <script type="module" src="/app.js?v=20260706-full-ui"></script>
+  <div id="prompt-target-popup" class="prompt-target-popup hidden" role="dialog" aria-modal="false" aria-label="Select object to edit"></div>
+  <div id="fusion-capability-modal" class="fusion-capability-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title">
+    <div class="fusion-capability-card">
+      <button type="button" id="fusion-capability-close" class="fusion-capability-close" aria-label="Close">×</button>
+      <div class="fusion-capability-head">
+        <span class="fusion-capability-kicker">Fusion mode</span>
+        <h2 id="fusion-capability-title">Choose how Fusion should build</h2>
+        <p>Use the stronger Fusion-style planning loop inside Render3D, or connect to a Fusion 360 add-in bridge for API-driven modeling.</p>
+      </div>
+      <div class="fusion-capability-options">
+        <button type="button" class="fusion-capability-option active" data-fusion-target="in_app">
+          <span class="fusion-capability-icon">R3D</span>
+          <strong>Use in-app Fusion</strong>
+          <small>build123d + STEP/GLB render snapshot + visual review + repair loop. Best for web generation.</small>
+        </button>
+        <button type="button" class="fusion-capability-option fusion-capability-option--plugin" data-fusion-target="fusion360">
+          <span class="fusion-capability-icon">F360</span>
+          <strong>Connect to Fusion 360 plugin</strong>
+          <small>Generate Fusion-style phased code for a local Fusion 360 add-in bridge.</small>
+        </button>
+      </div>
+      <p class="fusion-capability-note">You can reopen this by clicking the Fusion tab again. The selected target is remembered on this device.</p>
+    </div>
+  </div>
+  <div id="architect-library-modal" class="architect-library-modal hidden" role="dialog" aria-modal="true" aria-labelledby="architect-library-title">
+    <div class="architect-library-backdrop" data-architect-library-close></div>
+    <div class="architect-library-card">
+      <header class="architect-library-head">
+        <div>
+          <h2 id="architect-library-title">Architect Library</h2>
+          <p class="muted small">Module kit — place local grid modules or reuse uploaded models from this project.</p>
+        </div>
+        <button type="button" class="auth-close" data-architect-library-close aria-label="Close Architect Library">&times;</button>
+      </header>
+      <div class="architect-library-toolbar">
+        <input id="architect-library-search" type="search" placeholder="Search walls, windows, rooms, uploaded models..." />
+      </div>
+      <div id="architect-library-grid" class="architect-library-grid"></div>
+    </div>
+  </div>
+  <script type="module" src="/app.js?v=20260706-restore-full"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260611-timeline-restore"></script>
   <!-- ribbon.js is imported inside app.js -->
