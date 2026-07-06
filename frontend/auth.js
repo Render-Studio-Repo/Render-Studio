@@ -3,7 +3,14 @@
 const TOKEN_KEY = "render3d:token";
 const USER_KEY = "render3d:user";
 
-const ADMIN_EMAIL = "a1projects.usa@gmail.com";
+const ADMIN_EMAILS = new Set([
+  "a1projects@protonmail.com",
+  "a1projects.usa@gmail.com",
+]);
+
+function isAdminUser(user) {
+  return ADMIN_EMAILS.has(String(user?.email || "").trim().toLowerCase());
+}
 
 export function getToken() {
   try {
@@ -126,7 +133,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     if (userEmail) userEmail.textContent = user.email;
     btnAuth?.setAttribute("title", user.display_name);
     btnAuth?.setAttribute("aria-label", `Account: ${user.display_name}`);
-    const isAdmin = (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const isAdmin = isAdminUser(user);
     adminDashboardLink?.classList.toggle("hidden", !isAdmin);
     adminDashboardToolbar?.classList.toggle("hidden", !isAdmin);
   }

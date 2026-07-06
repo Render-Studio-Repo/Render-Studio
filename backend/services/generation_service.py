@@ -127,7 +127,7 @@ def complete(project_path: Path, result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def fail(project_path: Path, error: str, *, trace_id: str | None = None) -> dict[str, Any]:
+def fail(project_path: Path, error: str, *, trace_id: str | None = None, extra: dict[str, Any] | None = None) -> dict[str, Any]:
     if is_canceled(project_path, trace_id):
         _RUNNING_TRACES.pop(project_path.name, None)
         return {"status": "canceled", "error": "Generation canceled."}
@@ -137,9 +137,46 @@ def fail(project_path: Path, error: str, *, trace_id: str | None = None) -> dict
     data["status"] = "failed"
     data["error"] = error
     data["finished_at"] = _now_iso()
+    if extra:
+        data.update({k: v for k, v in extra.items() if v is not None and k != "status"})
     out = save(project_path, data)
     _RUNNING_TRACES.pop(project_path.name, None)
     return out
+
+
+def update_progress(
+    project_path: Path,
+    progress: dict[str, Any],
+    *,
+    trace_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Persist live pipeline progress for client polling."""
+    if is_canceled(project_path, trace_id) or not project_path.is_dir():
+        return None
+    data = load(project_path) or {}
+    if data.get("status") != "running":
+        return data
+    if trace_id and data.get("trace_id") and str(data.get("trace_id")) != str(trace_id):
+        return data
+    stage = progress.get("stage")
+    pct = progress.get("pct")
+    label = progress.get("label")
+    next_progress: dict[str, Any] = {}
+    if stage is not None:
+        next_progress["stage"] = stage
+    if pct is not None:
+        try:
+            next_progress["pct"] = max(0, min(100, int(pct)))
+        except (TypeError, ValueError):
+            pass
+    if label is not None:
+        next_progress["label"] = str(label)[:240]
+    if not next_progress:
+        return data
+    data["progress"] = next_progress
+    if trace_id:
+        data["trace_id"] = trace_id
+    return save(project_path, data)
 
 
 def request_cancel(project_path: Path, *, reason: str = "Canceled by user.") -> dict[str, Any]:
@@ -193,6 +230,8 @@ def public_summary(project_path: Path) -> dict[str, Any]:
         "prompt", "label", "message", "filename", "url", "error",
         "timeline_index", "prompt_id", "by_user_id", "by_user_name", "mode",
     )}
+    if data.get("progress"):
+        out["progress"] = data.get("progress")
     if data.get("status") == "complete" and data.get("filename"):
         pid = project_path.name
         out.setdefault("url", f"/api/projects/{pid}/files/{data['filename']}")

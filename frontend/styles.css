@@ -10923,6 +10923,37 @@ label input { margin-top: 4px; }
 }
 .fusion-badge.hidden { display: none; }
 
+/* ── Management toolbar button (admin-only) ──────────────────────────── */
+#btn-admin-dashboard-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(255,160,0,.13);
+  border: 1px solid rgba(255,160,0,.35);
+  border-radius: 6px;
+  color: #ffb300;
+  font-size: .75rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+#btn-admin-dashboard-toolbar:hover {
+  background: rgba(255,160,0,.22);
+  border-color: rgba(255,160,0,.6);
+}
+#btn-admin-dashboard-toolbar.hidden { display: none; }
+
+/* ── Admin dashboard link in user menu ───────────────────────────────── */
+#btn-admin-dashboard {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+#btn-admin-dashboard.hidden { display: none; }
+
 .cloud-service-lights {
   position: absolute;
   top: -7px;
