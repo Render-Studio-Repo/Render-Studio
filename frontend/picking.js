@@ -389,11 +389,18 @@ function nearestEdge(hit, meshRoot, offset) {
       bestD = d;
       const mid = v0.clone().add(v1).multiplyScalar(0.5);
       const dir = v1.clone().sub(v0).normalize();
+      const start = worldToModel(v0, meshRoot, offset);
+      const end = worldToModel(v1, meshRoot, offset);
       best = {
         position: worldToModel(closest, meshRoot, offset),
         localPoint: meshRoot.worldToLocal(closest.clone()),
         normal: [dir.x, dir.y, dir.z],
+        direction: dir.clone(),
         edge_mid: worldToModel(mid, meshRoot, offset),
+        edge_start: start,
+        edge_end: end,
+        edge_length: start.distanceTo(end),
+        pick_distance: d,
       };
     }
   }
@@ -1404,6 +1411,117 @@ export function pickObject(event, { camera, domElement, meshRoot }) {
 export function formatRefLabel(type, pos) {
   const p = pos.map((v) => (v * 1000).toFixed(1) + "mm").join(", ");
   return `${type} · (${p})`;
+}
+
+/** Pick a face for extrude without adding a prompt reference marker. */
+export function pickFaceAt(event, { camera, domElement, meshRoot, meshCenterOffset }) {
+  if (!meshRoot) return null;
+  const hits = raycast(event, camera, domElement, meshRoot);
+  if (!hits.length || !hits[0].face) return null;
+  const hit = hits[0];
+  const offset = meshCenterOffset || new THREE.Vector3();
+  const faceGroup = collectCoplanarGroup(hit);
+  const position = groupCentroidModel(hit, faceGroup, meshRoot, offset);
+  const normal = faceNormal(hit);
+  const localPoint = modelToLocal(position, meshRoot, offset);
+  return {
+    type: "face",
+    position,
+    normal,
+    localPoint,
+    face_index: faceGroup?.[0] ?? hit.faceIndex ?? null,
+    face_indices: faceGroup,
+    mesh_uuid: hit.object.uuid,
+    mesh_object: hit.object,
+    hit,
+  };
+}
+
+/** Fusion-style measure pick: auto-detect vertex, edge, or face under the cursor. */
+export function pickMeasureEntity(event, { camera, domElement, meshRoot, meshCenterOffset }) {
+  if (!meshRoot) return null;
+  const hits = raycast(event, camera, domElement, meshRoot);
+  if (!hits.length) return null;
+
+  const hit = hits[0];
+  const offset = meshCenterOffset || new THREE.Vector3();
+  const scale = scaleForMesh(meshRoot);
+  const clickModel = worldToModel(hit.point, meshRoot, offset);
+  const vtx = nearestVertex(hit, meshRoot, offset);
+  const edge = nearestEdge(hit, meshRoot, offset);
+  const vtxDist = vtx ? vtx.distanceTo(clickModel) : Infinity;
+  const edgeDist = edge?.pick_distance ?? Infinity;
+  const pickTol = scale * 4;
+
+  if (vtx && vtxDist < pickTol * 0.45) {
+    return {
+      type: "vertex",
+      position: vtx.clone(),
+      normal: faceNormal(hit),
+      vertex: vtx.clone(),
+      edge: null,
+      face: null,
+    };
+  }
+
+  if (edge && edgeDist < pickTol) {
+    const dir = edge.direction || new THREE.Vector3(...(edge.normal || [0, 1, 0]));
+    return {
+      type: "edge",
+      position: edge.edge_mid.clone(),
+      normal: dir.clone(),
+      vertex: null,
+      edge: {
+        start: edge.edge_start.clone(),
+        end: edge.edge_end.clone(),
+        length: edge.edge_length,
+        direction: dir.clone(),
+      },
+      face: null,
+    };
+  }
+
+  const faceGroup = collectCoplanarGroup(hit);
+  const centroid = groupCentroidModel(hit, faceGroup, meshRoot, offset);
+  const normal = faceNormal(hit);
+  const area = computeGroupArea(hit.object, faceGroup);
+  return {
+    type: "face",
+    position: centroid,
+    normal,
+    vertex: null,
+    edge: null,
+    face: {
+      centroid: centroid.clone(),
+      normal: normal.clone(),
+      area,
+      face_indices: faceGroup,
+    },
+    hit,
+  };
+}
+
+export function updateMeasureHover(event, { camera, domElement, meshRoot, meshCenterOffset, onPreview }) {
+  if (!meshRoot) {
+    clearHover();
+    return null;
+  }
+  const entity = pickMeasureEntity(event, { camera, domElement, meshRoot, meshCenterOffset });
+  clearHover();
+  if (!entity) return null;
+  const scale = scaleForMesh(meshRoot);
+  const offset = meshCenterOffset || new THREE.Vector3();
+  const local = modelToLocal(entity.position, meshRoot, offset);
+
+  if (entity.type === "edge" && entity.edge) {
+    showHoverEdge(local, scale);
+  } else if (entity.type === "vertex") {
+    showHoverCorner(local, scale);
+  } else if (entity.type === "face" && entity.hit) {
+    showHoverFace(entity.hit);
+  }
+  onPreview?.(entity);
+  return entity;
 }
 
 // ─── Measure annotation groups (dimension lines + live preview) ──────────────

@@ -34,7 +34,7 @@ import {
   clearMeasureAnnotations,
   updateMeasureLivePreview,
   clearMeasureLivePreview,
-} from "./picking.js?v=20260618-measure-v2";
+} from "./picking.js?v=20260706-pick-face";
 import {
   FUSION,
   setupSceneLighting,
@@ -589,14 +589,6 @@ async function resumeGenerationIfNeeded(pid, generation) {
     await applyGenerationComplete(generation, pid);
   }
 }
-
-initPanelResize();
-const mobileUI = initMobileUI({
-  onResize: () => {
-    resize();
-    collab?.resizeLabels();
-  },
-});
 
 const viewportHint = document.getElementById("viewport-hint");
 const pickHintTitle = document.getElementById("pick-hint-title");
@@ -3768,6 +3760,15 @@ function resize() {
   sketchEditor.resize?.();
   collab?.resizeLabels();
 }
+
+initPanelResize();
+const mobileUI = initMobileUI({
+  onResize: () => {
+    resize();
+    collab?.resizeLabels();
+  },
+});
+
 window.addEventListener("resize", resize);
 resize();
 
