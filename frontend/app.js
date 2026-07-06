@@ -57,7 +57,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260630-compact-search";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-admin-fusion-fix";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-fusion-disconnect";
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
@@ -67,7 +67,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loade
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260630-teammate-mirror-status";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260706-admin-fusion-fix";
+import { initFusionPanel } from "./fusion-panel.js?v=20260706-fusion-disconnect";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
@@ -10697,6 +10697,7 @@ function syncWorkspaceRealtimeCollapse() {
     toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
     toggle.setAttribute("aria-label", collapsed ? "Expand realtime editor" : "Retract realtime editor");
     toggle.title = collapsed ? "Expand realtime editor" : "Retract realtime editor";
+    toggle.textContent = collapsed ? "▸" : "▾";
   }
 }
 

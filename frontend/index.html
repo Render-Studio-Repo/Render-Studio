@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260706-mobile-sheet-fix" />
+  <link rel="stylesheet" href="/styles.css?v=20260706-realtime-editor-fix" />
   <script type="importmap">
   {
     "imports": {
@@ -211,10 +211,15 @@
           <div id="workspace-realtime-editor" class="workspace-realtime-editor">
             <div class="workspace-realtime-head">
               <strong>Realtime editor</strong>
-              <span id="workspace-realtime-presence" class="muted small">Offline</span>
+              <div class="workspace-realtime-head-actions">
+                <span id="workspace-realtime-presence" class="muted small">Offline</span>
+                <button type="button" id="workspace-realtime-toggle" class="workspace-realtime-toggle" aria-expanded="true" aria-label="Retract realtime editor" title="Retract realtime editor">▾</button>
+              </div>
             </div>
-            <div id="workspace-render-folder-card" class="workspace-render-folder-card muted small">Render3D cloud source</div>
-            <div id="workspace-fusion-projects" class="workspace-fusion-projects muted small"></div>
+            <div class="workspace-realtime-body">
+              <div id="workspace-render-folder-card" class="workspace-render-folder-card muted small">Render3D cloud source</div>
+              <div id="workspace-fusion-projects" class="workspace-fusion-projects muted small"></div>
+            </div>
           </div>
         </section>
         <section class="workspace-browser-section">

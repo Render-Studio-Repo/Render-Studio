@@ -5021,7 +5021,9 @@ label.btn { display: inline-flex; align-items: center; }
 .left-scroll {
   flex: 1 1 0;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 14px;
 }
 
@@ -6848,6 +6850,32 @@ body.panel-resizing-row * {
   display: grid;
   gap: 6px;
   margin: 6px 0;
+}
+
+.fusion-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 120, 212, 0.28);
+  border-radius: 8px;
+  background: rgba(0, 120, 212, 0.08);
+}
+
+.fusion-account-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+.fusion-library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .fusion-library-field {
@@ -15487,6 +15515,9 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   border: 1px solid rgba(48, 54, 61, 0.85);
   border-radius: 10px;
   background: rgba(13, 17, 23, 0.48);
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .workspace-realtime-head {
@@ -15495,6 +15526,52 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+.workspace-realtime-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-realtime-toggle {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(139, 148, 158, 0.32);
+  border-radius: 7px;
+  background: rgba(22, 27, 34, 0.82);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.workspace-realtime-toggle:hover {
+  color: var(--text);
+  border-color: rgba(88, 166, 255, 0.5);
+}
+
+.workspace-realtime-body {
+  display: block;
+  min-width: 0;
+}
+
+.workspace-realtime-editor.is-collapsed .workspace-realtime-body {
+  display: none;
+}
+
+.workspace-realtime-editor.is-collapsed .workspace-realtime-toggle {
+  transform: rotate(-90deg);
+}
+
+.workspace-render-folder-card {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid rgba(48, 54, 61, 0.65);
+  border-radius: 8px;
+  background: rgba(22, 27, 34, 0.45);
 }
 
 .workspace-render-folder-card strong,
@@ -15506,10 +15583,191 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 
 .workspace-fusion-link-btn {
   margin-top: 8px;
+  justify-self: start;
 }
 
 .workspace-fusion-projects {
   margin-top: 8px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.workspace-fusion-project-list,
+.workspace-fusion-mirror-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.workspace-fusion-project-card,
+.workspace-fusion-mirror-card {
+  border: 1px solid rgba(48, 54, 61, 0.65);
+  border-radius: 8px;
+  background: rgba(22, 27, 34, 0.58);
+  padding: 6px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.workspace-fusion-project-head,
+.workspace-fusion-mirror-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-fusion-project-head > span,
+.workspace-fusion-mirror-head > span {
+  color: var(--text);
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-fusion-mirror-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0 2px;
+}
+
+.workspace-fusion-version-link {
+  color: #79c0ff;
+  text-decoration: none;
+}
+
+.workspace-fusion-version-link:hover {
+  text-decoration: underline;
+}
+
+.workspace-fusion-browser {
+  border: 1px solid rgba(48, 54, 61, 0.65);
+  border-radius: 8px;
+  margin: 5px 0;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.workspace-fusion-browser-section {
+  border-bottom: 1px solid rgba(48, 54, 61, 0.45);
+}
+
+.workspace-fusion-browser-section:last-child {
+  border-bottom: none;
+}
+
+.workspace-fusion-browser-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.workspace-fusion-browser-summary::-webkit-details-marker {
+  display: none;
+}
+
+.workspace-fusion-browser-summary small {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.workspace-fusion-browser-list {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+
+.workspace-fusion-browser-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) minmax(42px, 8ch);
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 7px;
+  border: 0;
+  border-top: 1px solid rgba(48, 54, 61, 0.35);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: 0.68rem;
+  min-width: 0;
+}
+
+.workspace-fusion-browser-row-child {
+  padding-left: 14px;
+}
+
+.workspace-fusion-browser-row-static {
+  cursor: default;
+}
+
+.workspace-fusion-browser-row:not(:disabled):not(.workspace-fusion-browser-row-static) {
+  cursor: pointer;
+}
+
+.workspace-fusion-browser-row:not(:disabled):not(.workspace-fusion-browser-row-static):hover {
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.workspace-fusion-browser-row[draggable="true"] {
+  cursor: grab;
+}
+
+.workspace-fusion-browser-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.workspace-fusion-browser-row:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.workspace-fusion-browser-icon {
+  color: var(--muted);
+  text-align: center;
+}
+
+.workspace-fusion-browser-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-fusion-browser-row small {
+  color: var(--muted);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 8ch;
+}
+
+.workspace-fusion-browser-empty {
+  padding: 6px 8px;
+  margin: 0;
+}
+
+.browser-chevron {
+  color: var(--muted);
+  font-size: 0.65rem;
 }
 
 /* ── Agent App Store ── */

@@ -15,8 +15,13 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
 
   let hubs = [];
   let projects = [];
+  let topFolders = [];
+  let libraryItems = [];
+  let linkedAccount = null;
   let activeHubId = "";
   let activeProjectId = "";
+  let activeFolderId = "";
+  let activeItemId = "";
   let preferredMirrorTarget = null;
   const importedMap = new Map();
   let contextMenu = null;
@@ -31,12 +36,22 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     if (!controlsEl || !listEl) return;
     controlsEl.innerHTML = "";
     listEl.innerHTML = "";
-    setStatus("Loading Fusion hubs...");
+    setStatus("Loading Fusion account...");
     try {
+      const status = await api("/api/autodesk/status");
+      linkedAccount = status?.linked ? status : null;
+      if (!linkedAccount) {
+        setStatus("Connect Fusion 360 from your profile menu to browse your library.");
+        renderDisconnectedControls();
+        return;
+      }
+      const accountLabel = linkedAccount.autodesk_email || linkedAccount.autodesk_name || "Autodesk account";
+      setStatus(`Connected as ${accountLabel}. Pick a hub, project, folder, and model below.`);
       const data = await api("/api/autodesk/hubs");
       hubs = data.hubs || [];
       if (!hubs.length) {
-        setStatus("No Fusion hubs found for this Autodesk account.");
+        setStatus(`Connected as ${accountLabel}, but no Fusion hubs were found.`);
+        renderAccountControls();
         return;
       }
       preferredMirrorTarget = await loadPreferredMirrorTarget();
@@ -49,6 +64,57 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     } catch (err) {
       const msg = err.message || "Could not load Fusion library.";
       setStatus(/not linked|401/i.test(msg) ? "Connect Autodesk to browse your Fusion library." : msg, !/not linked|401/i.test(msg));
+      if (/not linked|401/i.test(msg)) renderDisconnectedControls();
+    }
+  }
+
+  function renderDisconnectedControls() {
+    controlsEl.innerHTML = `
+      <button type="button" class="btn btn-compact btn-fusion-connect-account">Connect Fusion 360</button>
+    `;
+    controlsEl.querySelector(".btn-fusion-connect-account")?.addEventListener("click", () => {
+      window.location.href = "/oauth/autodesk/start";
+    });
+  }
+
+  async function disconnectAutodeskAccount(btn) {
+    const accountLabel = linkedAccount?.autodesk_email || linkedAccount?.autodesk_name || "this Fusion account";
+    if (!window.confirm(`Disconnect ${accountLabel}? You can connect a different Autodesk account afterward.`)) return;
+    const orig = btn?.textContent || "Disconnect";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Disconnecting...";
+    }
+    try {
+      const res = await fetch("/api/autodesk/unlink", { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Fusion disconnect failed (${res.status})`);
+      }
+      linkedAccount = null;
+      hubs = [];
+      projects = [];
+      topFolders = [];
+      libraryItems = [];
+      activeHubId = "";
+      activeProjectId = "";
+      activeFolderId = "";
+      activeItemId = "";
+      preferredMirrorTarget = null;
+      importedMap.clear();
+      controlsEl.innerHTML = "";
+      listEl.innerHTML = "";
+      setStatus("Fusion account disconnected. Connect a new Autodesk account from your profile menu.");
+      onStatus?.("ok", "Fusion account disconnected.");
+      window.dispatchEvent(new CustomEvent("render3d:autodesk-unlinked"));
+      renderDisconnectedControls();
+    } catch (err) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+      setStatus(err.message || "Fusion disconnect failed.", true);
+      onStatus?.("error", err.message || "Fusion disconnect failed.");
     }
   }
 
@@ -100,8 +166,25 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     contextMenu = null;
   }
 
-  function renderControls() {
+  function renderAccountControls() {
     controlsEl.innerHTML = `
+      <div class="fusion-account-row">
+        <span class="fusion-account-label">${esc(linkedAccount?.autodesk_email || linkedAccount?.autodesk_name || "Connected")}</span>
+        <button type="button" class="btn btn-compact btn-fusion-disconnect-account" title="Disconnect this Autodesk account so you can connect a different one.">Disconnect account</button>
+      </div>
+    `;
+    controlsEl.querySelector(".btn-fusion-disconnect-account")?.addEventListener("click", (event) => {
+      disconnectAutodeskAccount(event.currentTarget);
+    });
+  }
+
+  function renderControls() {
+    const accountLabel = linkedAccount?.autodesk_email || linkedAccount?.autodesk_name || "Connected";
+    controlsEl.innerHTML = `
+      <div class="fusion-account-row">
+        <span class="fusion-account-label">${esc(accountLabel)}</span>
+        <button type="button" class="btn btn-compact btn-fusion-disconnect-account" title="Disconnect this Autodesk account so you can connect a different one.">Disconnect account</button>
+      </div>
       <label class="fusion-library-field">
         <span>Hub</span>
         <select id="fusion-hub-select"></select>
@@ -110,9 +193,20 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
         <span>Project</span>
         <select id="fusion-project-select"></select>
       </label>
-      ${preferredMirrorTarget ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
-      <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
-      <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Pull the newest version from your linked Fusion mirror, update Render3D, then push to teammates' mirrors.">Sync latest from Fusion</button>
+      <label class="fusion-library-field">
+        <span>Folder</span>
+        <select id="fusion-folder-select"></select>
+      </label>
+      <label class="fusion-library-field">
+        <span>Model</span>
+        <select id="fusion-model-select"></select>
+      </label>
+      <div class="fusion-library-actions">
+        <button type="button" class="btn btn-compact btn-fusion-import-selected" title="Import the model selected above into Render3D.">Import selected</button>
+        ${preferredMirrorTarget ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
+        <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
+        <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Pull the newest version from your linked Fusion mirror, update Render3D, then push to teammates' mirrors.">Sync latest from Fusion</button>
+      </div>
     `;
     controlsEl.querySelector(".btn-fusion-import-visible")?.addEventListener("click", (event) => {
       importVisibleItems(event.currentTarget);
@@ -123,14 +217,127 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     controlsEl.querySelector(".btn-fusion-unlink-mirror")?.addEventListener("click", (event) => {
       unlinkMirrorFolder(event.currentTarget);
     });
+    controlsEl.querySelector(".btn-fusion-disconnect-account")?.addEventListener("click", (event) => {
+      disconnectAutodeskAccount(event.currentTarget);
+    });
+    controlsEl.querySelector(".btn-fusion-import-selected")?.addEventListener("click", (event) => {
+      importSelectedModel(event.currentTarget);
+    });
     const hubSelect = controlsEl.querySelector("#fusion-hub-select");
     hubSelect.innerHTML = hubs.map((hub) => `<option value="${esc(hub.id)}"${hub.id === activeHubId ? " selected" : ""}>${esc(hub.name || hub.id)}</option>`).join("");
     hubSelect.onchange = async () => {
       activeHubId = hubSelect.value;
       activeProjectId = "";
+      activeFolderId = "";
+      activeItemId = "";
+      libraryItems = [];
+      topFolders = [];
       await loadProjects();
     };
     renderProjectSelect();
+    renderFolderSelect();
+    renderModelSelect();
+  }
+
+  function folderById(folderId) {
+    return topFolders.find((folder) => folder.id === folderId) || { id: folderId, name: "Folder" };
+  }
+
+  function renderFolderSelect() {
+    const folderSelect = controlsEl?.querySelector("#fusion-folder-select");
+    if (!folderSelect) return;
+    if (!topFolders.length) {
+      folderSelect.innerHTML = `<option value="">No folders in this project</option>`;
+      folderSelect.disabled = true;
+      return;
+    }
+    folderSelect.disabled = false;
+    folderSelect.innerHTML = topFolders
+      .map((folder) => `<option value="${esc(folder.id)}"${folder.id === activeFolderId ? " selected" : ""}>${esc(folder.name || "Folder")}</option>`)
+      .join("");
+    folderSelect.onchange = async () => {
+      activeFolderId = folderSelect.value;
+      activeItemId = "";
+      await loadFolderLibraryItems(activeFolderId);
+      highlightFolderInTree(activeFolderId);
+    };
+  }
+
+  function renderModelSelect() {
+    const modelSelect = controlsEl?.querySelector("#fusion-model-select");
+    if (!modelSelect) return;
+    if (!activeFolderId) {
+      modelSelect.innerHTML = `<option value="">Select a folder first</option>`;
+      modelSelect.disabled = true;
+      return;
+    }
+    if (!libraryItems.length) {
+      modelSelect.innerHTML = `<option value="">No models in this folder</option>`;
+      modelSelect.disabled = true;
+      return;
+    }
+    modelSelect.disabled = false;
+    if (!activeItemId || !libraryItems.some((item) => item.id === activeItemId)) {
+      activeItemId = libraryItems[0]?.id || "";
+    }
+    modelSelect.innerHTML = libraryItems
+      .map((file) => `<option value="${esc(file.id)}"${file.id === activeItemId ? " selected" : ""}>${esc(file.name || "Untitled")}</option>`)
+      .join("");
+    modelSelect.value = activeItemId;
+    modelSelect.onchange = () => {
+      activeItemId = modelSelect.value;
+    };
+  }
+
+  async function loadFolderLibraryItems(folderId) {
+    if (!folderId || !activeProjectId) {
+      libraryItems = [];
+      renderModelSelect();
+      return;
+    }
+    try {
+      const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folderId)}/contents`);
+      libraryItems = data.items || [];
+      renderModelSelect();
+      const folderName = folderById(folderId).name || "folder";
+      if (libraryItems.length) {
+        setStatus(`${libraryItems.length} model${libraryItems.length === 1 ? "" : "s"} in ${folderName}.`);
+      } else {
+        setStatus(`Folder "${folderName}" has no importable models yet.`);
+      }
+    } catch (err) {
+      libraryItems = [];
+      renderModelSelect();
+      setStatus(err.message || "Could not load folder models.", true);
+    }
+  }
+
+  function highlightFolderInTree(folderId) {
+    if (!folderId || !listEl) return;
+    listEl.querySelectorAll(".fusion-folder-item").forEach((item) => {
+      const toggle = item.querySelector(".onshape-doc-toggle");
+      const panel = item.querySelector(".onshape-doc-elements");
+      const folder = item._fusionFolder;
+      const isMatch = folder?.id === folderId;
+      item.classList.toggle("active", isMatch);
+      if (isMatch && panel && toggle) {
+        panel.classList.remove("hidden");
+        toggle.setAttribute("aria-expanded", "true");
+        toggle.style.transform = "rotate(0deg)";
+        if (!panel.dataset.loaded) {
+          loadFolder(folder, panel);
+        }
+      }
+    });
+  }
+
+  async function importSelectedModel(btn) {
+    const file = libraryItems.find((item) => item.id === activeItemId);
+    if (!file || !activeFolderId) {
+      setStatus("Select a folder and model from the dropdowns first.", true);
+      return;
+    }
+    await importItem(folderById(activeFolderId), file, null, btn);
   }
 
   function renderProjectSelect() {
@@ -140,6 +347,12 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     projectSelect.disabled = !projects.length;
     projectSelect.onchange = async () => {
       activeProjectId = projectSelect.value;
+      activeFolderId = "";
+      activeItemId = "";
+      libraryItems = [];
+      topFolders = [];
+      renderFolderSelect();
+      renderModelSelect();
       await loadTopFolders();
     };
   }
@@ -155,6 +368,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
       activeProjectId = preferredMirrorTarget.aps_project_id;
     }
     renderProjectSelect();
+    renderFolderSelect();
+    renderModelSelect();
     if (!activeProjectId) {
       setStatus("No Fusion projects found in this hub.");
       return;
@@ -166,8 +381,23 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     listEl.innerHTML = "";
     setStatus("Loading Fusion folders...");
     const data = await api(`/api/autodesk/hubs/${encodeURIComponent(activeHubId)}/projects/${encodeURIComponent(activeProjectId)}/top-folders`);
+    topFolders = data.folders || [];
+    activeFolderId = activeFolderId && topFolders.some((folder) => folder.id === activeFolderId)
+      ? activeFolderId
+      : (preferredMirrorTarget?.folder_id && topFolders.some((folder) => folder.id === preferredMirrorTarget.folder_id)
+        ? preferredMirrorTarget.folder_id
+        : topFolders[0]?.id || "");
+    renderFolderSelect();
     setStatus("");
-    renderFolders(data.folders || [], listEl, preferredMirrorTarget?.folder_id || "");
+    renderFolders(topFolders, listEl, preferredMirrorTarget?.folder_id || "");
+    if (activeFolderId) {
+      await loadFolderLibraryItems(activeFolderId);
+      highlightFolderInTree(activeFolderId);
+    } else {
+      libraryItems = [];
+      renderModelSelect();
+      setStatus("No folders found in this Fusion project.");
+    }
   }
 
   function renderFolders(folders, container, preferredFolderId = "") {
@@ -184,6 +414,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   function folderRow(folder, autoOpen = false) {
     const item = document.createElement("div");
     item.className = "onshape-doc-item fusion-folder-item";
+    item._fusionFolder = folder;
     item.innerHTML = `
       <div class="onshape-doc-header">
         <span class="onshape-doc-name"><span class="fusion-folder-glyph" aria-hidden="true">Folder</span> ${esc(folder.name || "Folder")}</span>
@@ -517,6 +748,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   }
 
   function markRowImported(row, file, result) {
+    if (!row) return;
     const btns = row.querySelector(".onshape-elem-btns");
     if (!btns) return;
     btns.innerHTML = `
@@ -533,25 +765,31 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   }
 
   async function importItem(folder, file, row, btn) {
-    const orig = btn.textContent;
+    const orig = btn?.textContent || "Import";
     const canImportDirectly = IMPORTABLE_EXTS.test(file.name || "");
-    btn.disabled = true;
-    btn.textContent = canImportDirectly ? "Importing..." : "Converting...";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = canImportDirectly ? "Importing..." : "Converting...";
+    }
     setStatus(canImportDirectly
       ? `Importing ${file.name || "Autodesk file"}...`
       : `Converting ${file.name || "Fusion design"} to STEP, then importing...`);
     try {
       const result = await importFusionFile(folder, file);
       importedMap.set(file.id, { projectId: result.project_id, filename: result.filename, name: result.name });
-      btn.textContent = "Imported ✓";
-      btn.classList.add("success");
+      if (btn) {
+        btn.textContent = "Imported ✓";
+        btn.classList.add("success");
+      }
       markRowImported(row, file, result);
       setStatus(`Imported ${result.name || file.name}.`);
       onStatus?.("ok", `Imported ${result.name || file.name} from Fusion.`);
       onImported?.(result.project_id, result.filename, result.name);
     } catch (err) {
-      btn.disabled = false;
-      btn.textContent = orig;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
       setStatus(err.message || "Fusion import failed.", true);
       onStatus?.("error", err.message || "Fusion import failed.");
     }

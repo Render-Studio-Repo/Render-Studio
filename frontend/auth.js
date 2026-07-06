@@ -76,9 +76,15 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     if (onshapeStatusEl) onshapeStatusEl.textContent = show ? "Connected" : "Disconnected";
   }
 
-  function setFusionBadge(show) {
+  function setFusionBadge(show, account = null) {
     fusionBadge?.classList.toggle("hidden", !show);
-    if (fusionStatusEl) fusionStatusEl.textContent = show ? "Connected" : "Disconnected";
+    if (fusionStatusEl) {
+      if (!show) fusionStatusEl.textContent = "Disconnected";
+      else {
+        const label = account?.autodesk_email || account?.autodesk_name || "Connected";
+        fusionStatusEl.textContent = label;
+      }
+    }
   }
 
   function showModal(show) {
@@ -263,7 +269,7 @@ function openFusionLibraryPanel() {
     try {
       const status = await api("/api/autodesk/status");
       if (status?.linked) {
-        setFusionBadge(true);
+        setFusionBadge(true, status);
         openFusionLibraryPanel();
         return status;
       }
@@ -291,6 +297,19 @@ function openFusionLibraryPanel() {
       openFusionLibraryPanel();
     } else {
       void startAutodeskConnect({ promptForCredentials: false });
+    }
+  });
+
+  window.addEventListener("render3d:autodesk-unlinked", () => {
+    setFusionBadge(false);
+  });
+
+  window.addEventListener("render3d:autodesk-linked", async () => {
+    try {
+      const fs = await api("/api/autodesk/status");
+      setFusionBadge(fs.linked === true, fs);
+    } catch {
+      setFusionBadge(true);
     }
   });
 
@@ -331,6 +350,12 @@ function openFusionLibraryPanel() {
           setUserUI(data.user);
           setFusionBadge(true);
           showModal(false);
+          try {
+            const fs = await api("/api/autodesk/status");
+            setFusionBadge(true, fs);
+          } catch {
+            setFusionBadge(true);
+          }
           window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
           return data;
         } catch {
@@ -383,7 +408,7 @@ function openFusionLibraryPanel() {
         } catch { /* non-critical */ }
         try {
           const fs = await api("/api/autodesk/status");
-          setFusionBadge(fs.linked === true);
+          setFusionBadge(fs.linked === true, fs);
           if (fs.linked === true) {
             window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
           }
