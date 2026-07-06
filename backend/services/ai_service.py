@@ -941,6 +941,123 @@ class AIService:
         call_trace["intent"] = design.get("intent")
         return design, call_trace
 
+    def generate_cad_brief(
+        self,
+        user_prompt: str,
+        project_context: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+        images: list[dict[str, Any]] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Create the CAD brief text-to-cad expects before authoring source."""
+        from backend.services.skills_service import get_reference, get_skill_dir
+
+        skill_dir = get_skill_dir("cad")
+        if not skill_dir:
+            raise RuntimeError("CAD skill not installed")
+
+        skill_md = skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8", errors="ignore")
+        brief_ref = get_reference("cad", "cad-brief.md")
+        brief_guide = (brief_ref or {}).get("content") or ""
+
+        system = (
+            "You are a CAD authoring agent following the upstream text-to-cad workflow "
+            "(https://github.com/earthtojake/text-to-cad).\n"
+            "Before writing build123d source, produce a concise CAD brief in Markdown.\n"
+            "Start with the line 'CAD brief:' and use bullet notes as described in the reference.\n"
+            "Do not write Python. Do not wrap the brief in JSON.\n\n"
+            f"CAD skill:\n{skill_md}\n\n"
+            f"CAD brief reference:\n{brief_guide}"
+        )
+        parts = [user_prompt]
+        if project_context:
+            parts.append(f"\nProject context: {json.dumps(project_context, separators=(',', ':'))}")
+        raw, trace = self._call_model(
+            system,
+            "".join(parts),
+            trace_id=trace_id,
+            images=images,
+            max_tokens=8192,
+            json_response=False,
+        )
+        brief = raw.strip()
+        if not brief.lower().startswith("cad brief"):
+            brief = f"CAD brief:\n{brief}"
+        trace["stage"] = "cad_brief"
+        return brief, trace
+
+    def generate_cad_python_source(
+        self,
+        user_prompt: str,
+        project_context: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+        repair_note: str | None = None,
+        images: list[dict[str, Any]] | None = None,
+        cad_brief: str | None = None,
+        fusion_mode: bool = False,
+        previous_source: str | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Generate text-to-cad style build123d Python source with gen_step()."""
+        from backend.services.skills_service import get_reference, get_skill_dir
+
+        skill_dir = get_skill_dir("cad")
+        if not skill_dir:
+            raise RuntimeError("CAD skill not installed")
+
+        skill_md = skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8", errors="ignore")
+        ref_blocks: list[str] = []
+        for name in ("build123d-modeling.md", "step-generation.md", "repair-loop.md", "positioning.md"):
+            ref = get_reference("cad", name)
+            if ref and ref.get("content"):
+                ref_blocks.append(f"### {name}\n{ref['content']}")
+
+        system = (
+            "You are a CAD authoring agent following the upstream text-to-cad workflow "
+            "(https://github.com/earthtojake/text-to-cad).\n"
+            "Write ONLY valid Python source for build123d with a top-level gen_step() function.\n"
+            "gen_step() must return the STEP-ready shape or labeled compound; do not write file paths inside gen_step().\n"
+            "Use millimeters. Put dimensions in named parameters. Follow the CAD brief exactly.\n"
+            "Return ONLY Python source — no markdown fences, no explanation before or after the code.\n"
+            "If editing an existing model, preserve working geometry and change only what the prompt or repair note requires.\n\n"
+            f"CAD skill:\n{skill_md}\n\n"
+            + "\n\n".join(ref_blocks)
+        )
+        if fusion_mode:
+            system += (
+                "\n\nFusion mode: structure source like a Fusion 360 timeline with named phase functions, "
+                "explicit datums, and functional interfaces before cosmetic fillets/chamfers."
+            )
+
+        parts: list[str] = []
+        if cad_brief:
+            parts.append(f"CAD brief:\n{cad_brief.strip()}\n")
+        parts.append(user_prompt)
+        if project_context:
+            parts.append(f"\nProject context: {json.dumps(project_context, separators=(',', ':'))}")
+        if previous_source:
+            parts.append(
+                "\n\nExisting generated source to edit (preserve what still works):\n"
+                f"{previous_source[:12000]}"
+            )
+        if repair_note:
+            parts.append(
+                "\n\nThe previous attempt FAILED. Fix the source and return corrected Python only.\n"
+                f"Error/feedback:\n{repair_note}"
+            )
+
+        raw, trace = self._call_model(
+            system,
+            "".join(parts),
+            trace_id=trace_id,
+            images=images,
+            max_tokens=16384,
+            json_response=False,
+        )
+        source = self._python_payload(raw)
+        if "def gen_step" not in source:
+            raise ValueError("AI response did not contain gen_step() Python source.")
+        trace["stage"] = "cad_python_source"
+        return source, trace
+
     def generate_wiring(
         self,
         user_prompt: str,
@@ -1020,6 +1137,7 @@ class AIService:
         images: list[dict[str, Any]] | None = None,
         trace_id: str | None = None,
         max_tokens: int = 16384,
+        **kwargs: Any,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Call the model and parse a JSON object response."""
         raw, call_trace = self._call_model(
@@ -1028,6 +1146,7 @@ class AIService:
             trace_id=trace_id,
             images=images,
             max_tokens=max_tokens,
+            **{k: v for k, v in kwargs.items() if k in {"json_response"}},
         )
         try:
             parsed = json.loads(self._json_payload(raw))
@@ -1048,6 +1167,29 @@ class AIService:
         if 0 <= start < end:
             return text[start : end + 1]
         return text
+
+    @staticmethod
+    def _python_payload(raw: str) -> str:
+        text = (raw or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            while lines and lines[-1].strip().startswith("```"):
+                lines.pop()
+            text = "\n".join(lines).strip()
+        idx = text.find("def gen_step")
+        if idx < 0:
+            return text
+        head = text[:idx]
+        keep: list[str] = []
+        for line in head.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("import ") or stripped.startswith("from ") or not stripped:
+                keep.append(line)
+            elif keep:
+                break
+        return "\n".join(keep + [text[idx:]]).strip()
 
     def _reasoning_param(self) -> dict[str, Any] | None:
         if self.provider != "openai":
@@ -1118,6 +1260,8 @@ class AIService:
         trace_id: str | None = None,
         images: list[dict[str, Any]] | None = None,
         max_tokens: int = 16384,
+        *,
+        json_response: bool = True,
     ) -> tuple[str, dict[str, Any]]:
         clean_images = self._clean_images(images)
         if self.provider == "anthropic":
@@ -1127,6 +1271,7 @@ class AIService:
                 trace_id=trace_id,
                 images=clean_images,
                 max_tokens=max_tokens,
+                json_response=json_response,
             )
 
         messages = [
@@ -1150,13 +1295,15 @@ class AIService:
 
         try:
             trace_add("info", f"OpenAI Responses → {model}", trace_id=trace_id, data=trace)
-            response = self.client.responses.create(
-                model=model,
-                input=messages,
-                text={"format": {"type": "json_object"}},
-                max_output_tokens=max_tokens,
+            create_kwargs: dict[str, Any] = {
+                "model": model,
+                "input": messages,
+                "max_output_tokens": max_tokens,
                 **extra,
-            )
+            }
+            if json_response:
+                create_kwargs["text"] = {"format": {"type": "json_object"}}
+            response = self.client.responses.create(**create_kwargs)
             text = response.output_text or ""
             finish_reason = getattr(response, "status", None) or ""
             incomplete = getattr(response, "incomplete_details", None)
@@ -1171,7 +1318,11 @@ class AIService:
                 trace["cost_usd"] = estimate_cost_usd(model, usage, provider="openai")
             trace_add("info", f"OpenAI OK ({trace['duration_ms']:.0f}ms) finish={finish_reason}", trace_id=trace_id, data=trace)
             if finish_reason in ("max_output_tokens", "length"):
-                raise ValueError(f"AI returned invalid JSON: response truncated at token limit (max_output_tokens={max_tokens}). Partial: {text[:400]}")
+                kind = "JSON" if json_response else "response"
+                raise ValueError(
+                    f"AI returned invalid {kind}: response truncated at token limit "
+                    f"(max_output_tokens={max_tokens}). Partial: {text[:400]}"
+                )
             if text:
                 return text, trace
             raise RuntimeError("Empty response from OpenAI")
@@ -1182,15 +1333,17 @@ class AIService:
             if model in RESPONSES_ONLY_MODELS or model.startswith("gpt-5.5-pro"):
                 raise RuntimeError(f"OpenAI error ({model}): {exc}") from exc
             try:
-                completion = self.client.chat.completions.create(
-                    model=model,
-                    messages=[
+                chat_kwargs: dict[str, Any] = {
+                    "model": model,
+                    "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": self._openai_chat_user_content(user_content, clean_images)},
                     ],
-                    response_format={"type": "json_object"},
-                    max_completion_tokens=max_tokens,
-                )
+                    "max_completion_tokens": max_tokens,
+                }
+                if json_response:
+                    chat_kwargs["response_format"] = {"type": "json_object"}
+                completion = self.client.chat.completions.create(**chat_kwargs)
                 choice = completion.choices[0]
                 text = choice.message.content or "{}"
                 chat_finish = choice.finish_reason or ""
@@ -1203,7 +1356,11 @@ class AIService:
                     trace["usage"] = usage
                     trace["cost_usd"] = estimate_cost_usd(model, usage, provider="openai")
                 if chat_finish == "length":
-                    raise ValueError(f"AI returned invalid JSON: response truncated at token limit (max_tokens={max_tokens}). Partial: {text[:400]}")
+                    kind = "JSON" if json_response else "response"
+                    raise ValueError(
+                        f"AI returned invalid {kind}: response truncated at token limit "
+                        f"(max_tokens={max_tokens}). Partial: {text[:400]}"
+                    )
                 return text, trace
             except Exception as exc2:
                 raise RuntimeError(f"OpenAI API error: {exc2}") from exc2
@@ -1215,6 +1372,7 @@ class AIService:
         trace_id: str | None = None,
         images: list[dict[str, Any]] | None = None,
         max_tokens: int = 16384,
+        json_response: bool = True,
     ) -> tuple[str, dict[str, Any]]:
         t0 = time.perf_counter()
         clean_images = images or []
@@ -1240,10 +1398,13 @@ class AIService:
                         },
                     }
                 )
+            system = system_prompt
+            if json_response:
+                system += "\nReturn only a valid JSON object. Do not wrap it in markdown."
             payload: dict[str, Any] = {
                 "model": self.model,
                 "max_tokens": max_tokens,
-                "system": system_prompt + "\nReturn only a valid JSON object. Do not wrap it in markdown.",
+                "system": system,
                 "messages": [{"role": "user", "content": content}],
             }
             if self._anthropic_supports_temperature(self.model):
