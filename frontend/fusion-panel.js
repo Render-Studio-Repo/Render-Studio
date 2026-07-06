@@ -18,6 +18,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   let activeHubId = "";
   let activeProjectId = "";
   let preferredMirrorTarget = null;
+  let importBodies = false;
   const importedMap = new Map();
   let contextMenu = null;
 
@@ -110,12 +111,14 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
         <span>Project</span>
         <select id="fusion-project-select"></select>
       </label>
-      ${preferredMirrorTarget ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
-      <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
+      <label class="fusion-library-field fusion-library-check">
+        <span>Import parts</span>
+        <input type="checkbox" class="fusion-import-bodies-toggle"${importBodies ? " checked" : ""} />
+      </label>
       <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Pull the newest version from your linked Fusion mirror, update Render3D, then push to teammates' mirrors.">Sync latest from Fusion</button>
     `;
-    controlsEl.querySelector(".btn-fusion-import-visible")?.addEventListener("click", (event) => {
-      importVisibleItems(event.currentTarget);
+    controlsEl.querySelector(".fusion-import-bodies-toggle")?.addEventListener("change", (event) => {
+      importBodies = !!event.currentTarget.checked;
     });
     controlsEl.querySelector(".btn-fusion-sync-latest")?.addEventListener("click", (event) => {
       syncLatestFromFusion(event.currentTarget);
@@ -189,7 +192,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
         <span class="onshape-doc-name"><span class="fusion-folder-glyph" aria-hidden="true">Folder</span> ${esc(folder.name || "Folder")}</span>
         <div class="fusion-row-actions">
           <button type="button" class="btn btn-compact btn-fusion-link-mirror${autoOpen ? " success" : ""}">${autoOpen ? "Linked mirror" : "Link mirror"}</button>
-          <button type="button" class="btn btn-compact btn-fusion-import-folder">Import all</button>
           <button type="button" class="btn btn-compact btn-fusion-push">Push current model</button>
           <button type="button" class="btn-icon onshape-doc-toggle" title="Show folder contents" aria-expanded="false">
             <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor"><path d="M2 3l3 4 3-4H2z"/></svg>
@@ -211,9 +213,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     });
     item.querySelector(".btn-fusion-link-mirror")?.addEventListener("click", (event) => {
       linkMirrorFolder(folder, event.currentTarget);
-    });
-    item.querySelector(".btn-fusion-import-folder")?.addEventListener("click", (event) => {
-      importFolderItems(folder, event.currentTarget);
     });
     if (autoOpen) {
       item.classList.add("active");
@@ -287,7 +286,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
       const res = await fetch(`/api/projects/${encodeURIComponent(currentProjectId)}/fusion-mirror/sync-from-fusion`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ import_bodies: true }),
+        body: JSON.stringify({ import_bodies: importBodies }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -331,8 +330,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   function itemRow(file, folder) {
     const row = document.createElement("div");
     row.className = "onshape-elem-row fusion-file-row";
-    row._fusionFolder = folder;
-    row._fusionFile = file;
     const canImport = IMPORTABLE_EXTS.test(file.name || "");
     const imported = importedMap.get(file.id);
     row.innerHTML = `
@@ -407,6 +404,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   }
 
   function onContextMenuKeydown(event) {
+  function onContextMenuKeydown(event) {
     if (event.key === "Escape") closeContextMenu();
   }
 
@@ -420,118 +418,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     window.open(file.web_url, "_blank", "noopener");
   }
 
-  async function importFusionFile(folder, file) {
-    const res = await fetch("/api/autodesk/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({
-        aps_project_id: activeProjectId,
-        hub_id: activeHubId,
-        folder_id: folder.id,
-        item_id: file.id,
-        version_id: file.version_id || null,
-        name: file.name || "autodesk_import",
-        team_id: getWorkspaceId?.() || null,
-        import_bodies: true,
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `Fusion import failed (${res.status})`);
-    }
-    return res.json();
-  }
-
-  async function importMany(items, btn, label = "items") {
-    const pending = (items || []).filter(({ file }) => file?.id && !importedMap.has(file.id));
-    if (!pending.length) {
-      setStatus(`No new Fusion ${label} to import.`);
-      return;
-    }
-    const orig = btn?.textContent || "";
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = `Importing 0/${pending.length}...`;
-    }
-    let importedCount = 0;
-    let firstResult = null;
-    try {
-      for (const { folder, file, row } of pending) {
-        const result = await importFusionFile(folder, file);
-        importedMap.set(file.id, { projectId: result.project_id, filename: result.filename, name: result.name });
-        importedCount += 1;
-        firstResult ||= result;
-        if (btn) btn.textContent = `Importing ${importedCount}/${pending.length}...`;
-        if (row) markRowImported(row, file, result);
-      }
-      if (btn) {
-        btn.textContent = "Imported all ✓";
-        btn.classList.add("success");
-      }
-      setStatus(`Imported ${importedCount} Fusion ${importedCount === 1 ? "item" : "items"}.`);
-      onStatus?.("ok", `Imported ${importedCount} Fusion ${importedCount === 1 ? "item" : "items"}.`);
-      if (firstResult) onImported?.(firstResult.project_id, firstResult.filename, firstResult.name);
-    } catch (err) {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = orig;
-      }
-      setStatus(`${importedCount ? `Imported ${importedCount}, then failed: ` : ""}${err.message || "Fusion import failed."}`, true);
-      onStatus?.("error", err.message || "Fusion import failed.");
-    }
-  }
-
-  function importVisibleItems(btn) {
-    const rows = [...listEl.querySelectorAll(".fusion-file-row")];
-    const items = rows
-      .map((row) => ({ folder: row._fusionFolder, file: row._fusionFile, row }))
-      .filter(({ folder, file }) => folder?.id && file?.id);
-    void importMany(items, btn, "visible items");
-  }
-
-  async function collectFolderItems(folder) {
-    const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`);
-    const ownItems = (data.items || []).map((file) => ({ folder, file }));
-    const childGroups = await Promise.all((data.folders || []).map((child) => collectFolderItems(child)));
-    return [...ownItems, ...childGroups.flat()];
-  }
-
-  async function importFolderItems(folder, btn) {
-    const orig = btn?.textContent || "";
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "Scanning...";
-    }
-    try {
-      const items = await collectFolderItems(folder);
-      if (btn) btn.textContent = "Importing...";
-      await importMany(items, btn, "folder items");
-    } catch (err) {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = orig;
-      }
-      setStatus(err.message || "Could not import Fusion folder.", true);
-      onStatus?.("error", err.message || "Could not import Fusion folder.");
-    }
-  }
-
-  function markRowImported(row, file, result) {
-    const btns = row.querySelector(".onshape-elem-btns");
-    if (!btns) return;
-    btns.innerHTML = `
-      <button type="button" class="btn btn-compact btn-fusion-view">View</button>
-      <button type="button" class="btn btn-compact btn-fusion-push-imported">Push update</button>
-      ${file.web_url ? `<a class="btn btn-compact btn-onshape-view" target="_blank" rel="noopener" href="${esc(file.web_url)}">Open</a>` : ""}
-    `;
-    btns.querySelector(".btn-fusion-view")?.addEventListener("click", () => {
-      onView?.(result.project_id, result.filename, result.name);
-    });
-    btns.querySelector(".btn-fusion-push-imported")?.addEventListener("click", (event) => {
-      pushImportedProject(result.project_id, event.currentTarget);
-    });
-  }
-
   async function importItem(folder, file, row, btn) {
     const orig = btn.textContent;
     const canImportDirectly = IMPORTABLE_EXTS.test(file.name || "");
@@ -541,11 +427,41 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
       ? `Importing ${file.name || "Autodesk file"}...`
       : `Converting ${file.name || "Fusion design"} to STEP, then importing...`);
     try {
-      const result = await importFusionFile(folder, file);
+      const res = await fetch("/api/autodesk/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          aps_project_id: activeProjectId,
+          folder_id: folder.id,
+          item_id: file.id,
+          version_id: file.version_id || null,
+          name: file.name || "autodesk_import",
+          team_id: getWorkspaceId?.() || null,
+          import_bodies: importBodies,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Fusion import failed (${res.status})`);
+      }
+      const result = await res.json();
       importedMap.set(file.id, { projectId: result.project_id, filename: result.filename, name: result.name });
       btn.textContent = "Imported ✓";
       btn.classList.add("success");
-      markRowImported(row, file, result);
+      const btns = row.querySelector(".onshape-elem-btns");
+      if (btns) {
+        btns.innerHTML = `
+          <button type="button" class="btn btn-compact btn-fusion-view">View</button>
+          <button type="button" class="btn btn-compact btn-fusion-push-imported">Push update</button>
+          ${file.web_url ? `<a class="btn btn-compact btn-onshape-view" target="_blank" rel="noopener" href="${esc(file.web_url)}">Open</a>` : ""}
+        `;
+        btns.querySelector(".btn-fusion-view")?.addEventListener("click", () => {
+          onView?.(result.project_id, result.filename, result.name);
+        });
+        btns.querySelector(".btn-fusion-push-imported")?.addEventListener("click", (event) => {
+          pushImportedProject(result.project_id, event.currentTarget);
+        });
+      }
       setStatus(`Imported ${result.name || file.name}.`);
       onStatus?.("ok", `Imported ${result.name || file.name} from Fusion.`);
       onImported?.(result.project_id, result.filename, result.name);

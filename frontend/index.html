@@ -9,7 +9,7 @@
   <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
-  <link rel="stylesheet" href="/styles.css?v=20260706-restore" />
+  <link rel="stylesheet" href="/styles.css?v=20260619-prompt-mic-v2" />
   <script type="importmap">
   {
     "imports": {
@@ -20,28 +20,21 @@
   </script>
   <link rel="stylesheet" href="/ribbon.css?v=20260616-no-newmodel" />
 </head>
-<body class="theme-dark">
+<body>
   <div id="app">
     <header class="toolbar">
-      <!-- Sidebar toggle (always visible) -->
       <button id="btn-toggle-sidebar" class="btn-collapse" title="Hide sidebar" aria-label="Toggle left panel" aria-pressed="false">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75ZM1 7.75A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"/></svg>
         <span class="btn-collapse-label">Sidebar</span>
       </button>
-      <!-- Management button — admin only, shown by auth.js -->
-      <a id="btn-admin-dashboard-toolbar" class="btn-collapse hidden" href="/admin-dashboard.html" title="Open management dashboard" aria-label="Open management dashboard">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2 2.75A.75.75 0 0 1 2.75 2h10.5a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75H2.75A.75.75 0 0 1 2 13.25V2.75Zm1.5.75v3h9v-3h-9Zm0 4.5v4.5h2.75V8H3.5Zm4.25 4.5h4.75V8H7.75v4.5Z"/></svg>
-        <span class="btn-collapse-label">Management</span>
-      </a>
       <div class="brand">
         <a href="/" class="brand-link">
-          <img class="logo" src="/render3d-logo.jpg?v=20260706" alt="Render3D" width="52" height="52" style="border-radius:8px;object-fit:cover;" />
+          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
           <h1>Render3D</h1>
         </a>
       </div>
       <nav class="toolbar-nav" aria-label="Main">
         <a href="/" class="nav-tab active">Studio</a>
-        <a href="/agent-store.html" class="nav-tab">Agent Store</a>
         <a href="/skills.html" class="nav-tab">Skills Library</a>
         <a href="/docs.html" class="nav-tab">Docs</a>
         <a href="/roadmap.html" class="nav-tab">Roadmap</a>
@@ -81,9 +74,6 @@
           <span id="onshape-badge" class="onshape-badge hidden" title="Signed in via Onshape" aria-hidden="true">
             <img src="/onshape-logo.png?v=20260617-small" width="16" height="16" alt="" />
           </span>
-          <span id="fusion-badge" class="fusion-badge hidden" title="Fusion 360 connected" aria-hidden="true">
-            <img src="/fusion-360-logo.png?v=20260629" alt="" width="16" height="16" />
-          </span>
           <span id="collab-status" class="collab-dot collab-badge" title="Live collaboration"></span>
         </button>
         <div id="user-menu" class="user-menu hidden">
@@ -98,34 +88,9 @@
             <span id="collab-presence" class="collab-presence muted small"></span>
           </div>
           <div id="user-menu-ai-cost" class="user-menu-ai-cost">
-            <span id="user-menu-ai-cost-label" class="muted small">AI est. · this month · your prompts</span>
+            <span id="user-menu-ai-cost-label" class="muted small">This month · all projects</span>
             <strong id="user-menu-ai-cost-value" class="user-menu-ai-cost-value">—</strong>
-            <span id="user-menu-ai-cost-hint" class="muted small">All providers · input + output tokens · all keys</span>
-          </div>
-          <!-- Cloud connections: Onshape + Fusion 360 -->
-          <div id="cloud-connections-card" class="cloud-connections-card">
-            <div class="cloud-connections-head">
-              <span>CAD cloud connections</span>
-              <small>Import, export, and plugin handoff</small>
-            </div>
-            <button type="button" id="btn-onshape-connect" class="cloud-connection-row" data-cloud-row="onshape">
-              <span class="cloud-connection-icon cloud-connection-icon--onshape">
-                <img src="/onshape-logo.png?v=20260617-small" width="22" height="22" alt="" />
-              </span>
-              <div>
-                <strong>Onshape</strong>
-                <small id="onshape-connection-status">Disconnected</small>
-              </div>
-            </button>
-            <button type="button" id="btn-fusion-connect" class="cloud-connection-row" data-cloud-row="fusion">
-              <span class="cloud-connection-icon cloud-connection-icon--fusion">
-                <img src="/fusion-360-logo.png?v=20260629" width="22" height="22" alt="" />
-              </span>
-              <div>
-                <strong>Fusion 360</strong>
-                <small id="fusion-connection-status">Disconnected</small>
-              </div>
-            </button>
+            <span id="user-menu-ai-cost-hint" class="muted small">Estimated from tracked prompts</span>
           </div>
           <button type="button" id="btn-ai-key-menu" class="user-menu-item">
             <span id="ai-key-menu-label">Add AI API key</span>
@@ -136,16 +101,6 @@
             <small>Total, shared users, and trend</small>
           </button>
           <div id="profile-costs-panel" class="profile-costs-panel hidden"></div>
-          <!-- Admin dashboard — shown only for admin users by auth.js -->
-          <a href="/admin-dashboard.html" id="btn-admin-dashboard" class="user-menu-item hidden">
-            <span>Management dashboard</span>
-            <small>Users, projects, prompt history, and site stats</small>
-          </a>
-          <button type="button" id="btn-preferences-menu" class="user-menu-item">
-            <span>Preferences</span>
-            <small>General settings and viewport controls</small>
-          </button>
-          <div id="profile-preferences-panel" class="profile-preferences-panel hidden"></div>
           <button type="button" id="btn-workspace-menu" class="user-menu-item">
             <span>Team workspaces</span>
             <small>Members, invites, visibility, leave</small>
@@ -168,31 +123,13 @@
       <nav id="workspace-tabs" class="workspace-tabs" aria-label="Design tabs"></nav>
     </div>
 
-    <!-- Ribbon toolbar: mounted by ribbon.js (skeleton visible until app loads) -->
-    <div id="ribbon-desktop-anchor">
-      <div id="ribbon-container">
-        <div class="ribbon-bar ribbon-skeleton" id="ribbon-skeleton" aria-busy="true">
-          <div class="ribbon-toggle-row">
-            <div class="ribbon-tabs">
-              <span class="ribbon-tab active">Create</span>
-              <span class="ribbon-tab">Modify</span>
-              <span class="ribbon-tab">Pattern</span>
-              <span class="ribbon-tab">Sketch</span>
-            </div>
-            <span class="ribbon-status muted small">Loading tools…</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Ribbon toolbar: mounted by ribbon.js, spans all columns below header -->
+    <div id="ribbon-container"></div>
 
     <aside class="sidebar left">
       <div class="left-scroll">
         <section class="team-panel workspace-panel">
           <h2>Workspace</h2>
-          <div id="workspace-signin-hint" class="workspace-signin-hint hidden" role="status">
-            <p><strong>Sign in required</strong> — log in with the account icon (top right) to load workspaces and your Rubik's cube project.</p>
-            <button type="button" id="btn-workspace-signin" class="btn accent btn-compact">Sign in</button>
-          </div>
           <div id="team-invites-alert" class="team-invites-alert hidden" aria-live="polite"></div>
           <div class="workspace-create-row">
             <input type="text" id="workspace-name" placeholder="New shared workspace" maxlength="120" />
@@ -200,9 +137,7 @@
           </div>
           <p id="workspace-create-status" class="muted small"></p>
           <div class="workspace-switcher-row">
-            <select id="team-select" class="team-select" aria-label="Active workspace">
-              <option value="">Sign in to load workspaces…</option>
-            </select>
+            <select id="team-select" class="team-select" aria-label="Active workspace"></select>
             <button type="button" id="btn-rename-workspace" class="btn-icon" title="Rename workspace" hidden aria-label="Rename workspace">
               <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
             </button>
@@ -215,10 +150,8 @@
           <ul id="team-members" class="team-members"></ul>
         </section>
         <section class="workspace-browser-section">
-          <div class="workspace-browser-head">
-            <h2>Projects</h2>
-            <p class="workspace-browser-hint muted small">Drag into folders · ▾ to expand</p>
-          </div>
+          <h2>Projects</h2>
+          <p class="muted small">Drag projects into folders · click ▾ to expand objects</p>
           <div id="project-browser" class="project-browser"></div>
           <h3 class="workspace-activity-title">Workspace activity</h3>
           <div id="workspace-activity-list" class="workspace-activity-list"></div>
@@ -241,33 +174,6 @@
           <div class="onshape-library-header">
             <h2>
               <img class="onshape-library-logo" src="/onshape-logo.png?v=20260617-small" width="18" height="18" alt="" />
-              Onshape Library
-            </h2>
-            <button type="button" class="btn-icon btn-onshape-refresh" title="Refresh documents" aria-label="Refresh Onshape documents">
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.06-3.36L10 7h5V2l-1.35.35z"/></svg>
-            </button>
-          </div>
-          <p class="onshape-status muted small">Loading your Onshape documents…</p>
-          <div class="onshape-doc-list"></div>
-        </section>
-        <section id="fusion-library-section" class="onshape-library-section fusion-library-section">
-          <div class="onshape-library-header">
-            <h2>
-              <img class="fusion-library-logo" src="/fusion-360-logo.png?v=20260629" width="18" height="18" alt="" />
-              Fusion Library
-            </h2>
-            <button type="button" class="btn-icon btn-fusion-refresh" title="Refresh Fusion library" aria-label="Refresh Fusion library">
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.06-3.36L10 7h5V2l-1.35.35z"/></svg>
-            </button>
-          </div>
-          <p class="fusion-status muted small">Connect Autodesk to browse Fusion hubs and push STEP files.</p>
-          <div class="fusion-library-controls"></div>
-          <div class="fusion-doc-list"></div>
-        </section>
-        <section id="onshape-library-section" class="onshape-library-section">
-          <div class="onshape-library-header">
-            <h2>
-              <img src="/onshape-logo.png" width="14" height="14" alt="" style="vertical-align:-2px;margin-right:5px" />
               Onshape Library
             </h2>
             <button type="button" class="btn-icon btn-onshape-refresh" title="Refresh documents" aria-label="Refresh Onshape documents">
@@ -329,67 +235,6 @@
             <button type="button" class="sketch-quick-btn" data-sketch-tool="perpendicular" title="Perpendicular">⊥</button>
             <button type="button" class="sketch-quick-btn" data-sketch-tool="dimension" title="Dimension">⌀</button>
             <button type="button" class="sketch-quick-btn" data-sketch-tool="angle" title="Angle">∠</button>
-            <button type="button" class="sketch-quick-btn" data-sketch-tool="angle" title="Angle">∠</button>
-          </aside>
-          <footer class="sketch-status-bar">
-            <span id="sketch-status-tool" class="sketch-status-tool">Line</span>
-            <span class="sketch-status-sep" aria-hidden="true">|</span>
-            <span id="sketch-status-hint" class="sketch-status-hint">Click to place first point</span>
-            <span id="sketch-status-stats" class="sketch-status-stats"></span>
-          </footer>
-        </div>
-        <div id="rigging-chrome" class="rigging-chrome hidden" aria-live="polite">
-          <header class="rigging-toolbelt" role="toolbar" aria-label="Rigging tools">
-            <div class="rigging-tool-group">
-              <span class="rigging-tool-label">Rig</span>
-              <button type="button" class="rigging-tool-btn active" data-rig-tool="select" title="Select bone">↖ Select</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="move" title="Move bone">✥ Move</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="rotate" title="Rotate joint">↻ Rotate</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="add" title="Add bone">● Add Bone</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="connect" title="Connect hierarchy">⛓ Connect</button>
-              <button type="button" class="rigging-tool-btn" data-rig-action="keyframe" title="Keyframe (K)">◆ Key</button>
-            </div>
-            <span class="rigging-tool-sep" aria-hidden="true"></span>
-            <div class="rigging-tool-group">
-              <span class="rigging-tool-label">Pick</span>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="object" title="Select object">Object</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="face" title="Select face">Face</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="edge" title="Select edge">Edge</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="off" title="Orbit view">Orbit</button>
-            </div>
-            <span class="rigging-tool-sep" aria-hidden="true"></span>
-            <div class="rigging-tool-group rigging-tool-group--actions">
-              <button type="button" id="btn-rigging-toolbelt-generate" class="rigging-tool-btn rigging-tool-accent" title="Generate rig with Rigging AI">⚡ Generate</button>
-              <button type="button" id="btn-rigging-toolbelt-save" class="rigging-tool-btn" title="Save rig">💾 Save</button>
-              <button type="button" id="btn-rigging-toolbelt-export" class="rigging-tool-btn" title="Export robot.urdf">📄 URDF</button>
-              <button type="button" id="btn-rigging-toolbelt-auto" class="rigging-tool-btn" title="Auto chain rig">🦴 Auto Rig</button>
-            </div>
-          </header>
-          <footer id="rigging-anim-panel" class="rigging-anim-panel"></footer>
-        </div>
-        <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
-          <header class="sketch-top-bar">
-            <div class="sketch-top-bar-left">
-              <span class="sketch-pencil-icon" aria-hidden="true"></span>
-              <div class="sketch-top-bar-titles">
-                <strong id="sketch-name">Sketch1</strong>
-                <span id="sketch-plane-label">XY Plane · Edit Sketch</span>
-              </div>
-            </div>
-            <div class="sketch-top-bar-right">
-              <button type="button" id="btn-sketch-cancel" class="sketch-btn sketch-btn--ghost">Cancel</button>
-              <button type="button" id="btn-sketch-finish" class="sketch-btn sketch-btn--finish">
-                <span class="sketch-finish-check" aria-hidden="true">✓</span> Finish Sketch
-              </button>
-            </div>
-          </header>
-          <aside id="sketch-quick-tools" class="sketch-quick-tools" aria-label="Quick constraints">
-            <button type="button" class="sketch-quick-btn" data-sketch-tool="horizontal" title="Horizontal">H</button>
-            <button type="button" class="sketch-quick-btn" data-sketch-tool="vertical" title="Vertical">V</button>
-            <button type="button" class="sketch-quick-btn" data-sketch-tool="coincident" title="Coincident">●</button>
-            <button type="button" class="sketch-quick-btn" data-sketch-tool="parallel" title="Parallel">∥</button>
-            <button type="button" class="sketch-quick-btn" data-sketch-tool="perpendicular" title="Perpendicular">⊥</button>
-            <button type="button" class="sketch-quick-btn" data-sketch-tool="dimension" title="Dimension">⌀</button>
           </aside>
           <footer class="sketch-status-bar">
             <span id="sketch-status-tool" class="sketch-status-tool">Line</span>
@@ -433,7 +278,6 @@
         </div>
         <div class="viewport-view-bar" aria-label="Viewport display">
           <button type="button" id="btn-grid-viewport" class="viewport-view-btn active" data-toggle-grid title="Toggle grid (Shift+G)" aria-pressed="true">Grid</button>
-          <button type="button" id="btn-sketches-viewport" class="viewport-view-btn active" title="Toggle sketches in viewport" aria-pressed="true">Sketches</button>
           <button type="button" id="btn-sketches-viewport" class="viewport-view-btn active" title="Toggle sketches in viewport" aria-pressed="true">Sketches</button>
           <button type="button" id="btn-measure-viewport" class="viewport-view-btn" title="Measure selected/current object dimensions">Measure</button>
           <button type="button" id="btn-color-viewport" class="viewport-view-btn" title="Color selected object or picked faces">Color</button>
@@ -546,13 +390,6 @@
       </div>
       <!-- Canvas mode workspace -->
       <div id="canvas-workspace" class="canvas-workspace-wrap hidden">
-        <div id="canvas-generation-banner" class="canvas-generation-banner hidden" aria-live="polite">
-          <div class="canvas-generation-banner-inner">
-            <span class="canvas-generation-spinner" aria-hidden="true"></span>
-            <span id="canvas-generation-message" class="canvas-generation-message">Generating in background…</span>
-            <button type="button" id="canvas-gen-view-solid" class="btn secondary small">Switch to 3D view</button>
-          </div>
-        </div>
         <div id="canvas-mode-container" class="canvas-mode-container"></div>
       </div>
       <div id="timeline-panel" class="timeline-panel"></div>
@@ -564,8 +401,6 @@
         <button type="button" class="right-panel-tab" data-right-tab="history">History</button>
         <button type="button" class="right-panel-tab" data-right-tab="refs">Refs</button>
         <button type="button" class="right-panel-tab active" data-right-tab="prompt">AI</button>
-        <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
-        <button type="button" class="right-panel-tab wiring-mode-tab" data-right-tab="wiring">Wiring</button>
         <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
         <button type="button" class="right-panel-tab wiring-mode-tab" data-right-tab="wiring">Wiring</button>
         <button type="button" class="right-panel-tab rigging-mode-tab" data-right-tab="rigging">Rigging</button>
@@ -702,34 +537,6 @@
         </div>
       </section>
 
-      <section class="sketch-inspector right-tab-panel" id="sketch-panel" data-right-panel="sketch">
-        <h2>Sketch</h2>
-        <p class="muted small">Active sketch profile, constraints, and AI generation.</p>
-        <dl class="sketch-inspector-meta">
-          <dt>Plane</dt><dd id="sketch-inspector-plane">XY</dd>
-          <dt>Tool</dt><dd id="sketch-inspector-tool">—</dd>
-          <dt>Entities</dt><dd id="sketch-inspector-entities">0</dd>
-          <dt>Constraints</dt><dd id="sketch-inspector-constraints">0</dd>
-        </dl>
-        <p id="sketch-inspector-hint" class="sketch-inspector-hint muted small"></p>
-        <div class="sketch-inspector-actions">
-          <button type="button" id="btn-sketch-panel-finish" class="btn accent full">Finish Sketch</button>
-          <button type="button" id="btn-sketch-panel-cancel" class="btn secondary full">Cancel Sketch</button>
-        </div>
-        <div class="sketch-prompt-block">
-          <div class="prompt-input-head">
-            <h3 class="sketch-prompt-title">Generate sketch</h3>
-            <button type="button" class="prompt-mic-btn" data-mic-target="sketch-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
-              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
-            </button>
-          </div>
-          <textarea id="sketch-prompt-input" rows="6" placeholder="e.g. 40×30 mm mounting plate with a 10 mm hole centered…"></textarea>
-          <button type="button" id="btn-sketch-prompt" class="btn accent full">Generate sketch with AI</button>
-          <button type="button" id="btn-sketch-demo-plate" class="btn secondary full">Demo: mounting plate</button>
-          <div id="sketch-prompt-status" class="status"></div>
-        </div>
-      </section>
-
       <section class="prompt-panel right-tab-panel active" data-right-panel="prompt">
         <div class="prompt-panel-tabs">
           <button type="button" class="prompt-tab active" data-pane="compose">Compose</button>
@@ -753,7 +560,6 @@
               <button type="button" class="prompt-mode-btn active" data-prompt-mode="render">Render</button>
               <button type="button" class="prompt-mode-btn" data-prompt-mode="draw">Draw</button>
               <button type="button" class="prompt-mode-btn prompt-mode-btn--v2" data-prompt-mode="v2">2.0</button>
-              <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
             </div>
           </div>
@@ -908,49 +714,6 @@
     </div>
   </div>
 
-  <div id="mobile-backdrop" class="mobile-backdrop hidden" aria-hidden="true"></div>
-
-  <aside id="mobile-tools-sheet" class="mobile-sheet mobile-sheet--tools" aria-label="Tools" aria-hidden="true">
-    <div class="mobile-sheet-header">
-      <h2 class="mobile-sheet-title">Tools</h2>
-      <button type="button" class="mobile-sheet-close" aria-label="Close">×</button>
-    </div>
-    <div class="mobile-sheet-body">
-      <section class="mobile-tool-section">
-        <h3 class="mobile-tool-heading">Pick on model</h3>
-        <div class="mobile-tool-row">
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="corner">Corner</button>
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="face">Face</button>
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="edge">Edge</button>
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="off">Orbit</button>
-        </div>
-      </section>
-      <section class="mobile-tool-section">
-        <h3 class="mobile-tool-heading">View</h3>
-        <div class="mobile-tool-row">
-          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-fit">Fit view</button>
-          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-gizmo">Gizmo</button>
-          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-wireframe">Wireframe</button>
-          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-grid">Grid</button>
-        </div>
-      </section>
-      <section class="mobile-tool-section">
-        <h3 class="mobile-tool-heading">Project</h3>
-        <div class="mobile-tool-row">
-          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-new-project">New project</button>
-          <label class="btn primary mobile-tool-btn mobile-upload-label">
-            Upload
-            <input type="file" class="mobile-upload-input" accept=".stl,.obj,.glb,.gltf,.ply,.off" hidden />
-          </label>
-        </div>
-      </section>
-      <section class="mobile-tool-section mobile-tool-section--ribbon">
-        <h3 class="mobile-tool-heading">Build (parametric)</h3>
-        <div id="mobile-ribbon-slot" class="mobile-ribbon-slot"></div>
-      </section>
-    </div>
-  </aside>
-
   <div id="workspace-rename-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-rename-title">
     <div class="auth-backdrop" data-ws-rename-close></div>
     <div class="auth-card app-dialog-card">
@@ -963,93 +726,6 @@
       <div class="app-dialog-actions">
         <button type="button" class="btn secondary" data-ws-rename-close>Cancel</button>
         <button type="button" id="btn-workspace-rename-save" class="btn accent">Save</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="drop-destination-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="drop-destination-title">
-    <div class="auth-backdrop" data-drop-dest-close></div>
-    <div class="auth-card app-dialog-card">
-      <button type="button" class="auth-close" data-drop-dest-close aria-label="Close">&times;</button>
-      <h2 id="drop-destination-title" class="app-dialog-title">Import CAD file</h2>
-      <p id="drop-destination-file" class="drop-dest-file mono"></p>
-      <p class="muted small">Add this file to your open project or start a new one.</p>
-      <div class="drop-dest-options">
-        <button type="button" id="drop-destination-current" class="drop-dest-option">
-          <span class="drop-dest-option-title">Current project</span>
-          <span id="drop-destination-current-label" class="drop-dest-option-meta muted small"></span>
-        </button>
-        <button type="button" id="drop-destination-new" class="drop-dest-option">
-          <span class="drop-dest-option-title">New project</span>
-          <span class="drop-dest-option-meta muted small">Create a fresh project for this file</span>
-        </button>
-      </div>
-      <div class="app-dialog-actions">
-        <button type="button" class="btn secondary" data-drop-dest-close>Cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="workspace-rename-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-rename-title">
-    <div class="auth-backdrop" data-ws-rename-close></div>
-    <div class="auth-card app-dialog-card">
-      <button type="button" class="auth-close" data-ws-rename-close aria-label="Close">&times;</button>
-      <h2 id="workspace-rename-title" class="app-dialog-title">Rename workspace</h2>
-      <label class="app-dialog-label">Workspace name
-        <input type="text" id="workspace-rename-input" maxlength="120" placeholder="Workspace name" />
-      </label>
-      <p id="workspace-rename-error" class="auth-error hidden"></p>
-      <div class="app-dialog-actions">
-        <button type="button" class="btn secondary" data-ws-rename-close>Cancel</button>
-        <button type="button" id="btn-workspace-rename-save" class="btn accent">Save</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="api-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="api-key-title">
-    <div class="auth-backdrop" data-api-key-close></div>
-    <div class="auth-card app-dialog-card">
-      <button type="button" class="auth-close" data-api-key-close aria-label="Close">&times;</button>
-      <h2 id="api-key-title" class="app-dialog-title">Your OpenAI API key</h2>
-      <p id="api-key-subtitle" class="muted small">Required for AI generate. Get a key at platform.openai.com/api-keys</p>
-      <p id="api-key-hint" class="muted small api-key-hint"></p>
-      <p id="api-key-error" class="auth-error"></p>
-      <div id="api-key-form-wrap">
-        <form id="api-key-form" class="auth-form">
-          <label>API key
-            <input type="password" id="api-key-input" autocomplete="off" placeholder="sk-…" required />
-          </label>
-          <button type="submit" class="btn accent auth-submit">Save API key</button>
-        </form>
-      </div>
-      <p id="api-key-owner-note" class="muted small api-key-owner-note hidden">This account uses the shared workspace key configured on the server.</p>
-      <div class="app-dialog-actions">
-        <button type="button" id="btn-api-key-remove" class="btn secondary hidden">Remove saved key</button>
-        <button type="button" class="btn secondary" data-api-key-close>Close</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="api-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="api-key-title">
-    <div class="auth-backdrop" data-api-key-close></div>
-    <div class="auth-card app-dialog-card">
-      <button type="button" class="auth-close" data-api-key-close aria-label="Close">&times;</button>
-      <h2 id="api-key-title" class="app-dialog-title">Your OpenAI API key</h2>
-      <p id="api-key-subtitle" class="muted small">Required for AI generate. Get a key at platform.openai.com/api-keys</p>
-      <p id="api-key-hint" class="muted small api-key-hint"></p>
-      <p id="api-key-error" class="auth-error"></p>
-      <div id="api-key-form-wrap">
-        <form id="api-key-form" class="auth-form">
-          <label>API key
-            <input type="password" id="api-key-input" autocomplete="off" placeholder="sk-…" required />
-          </label>
-          <button type="submit" class="btn accent auth-submit">Save API key</button>
-        </form>
-      </div>
-      <p id="api-key-owner-note" class="muted small api-key-owner-note hidden">This account uses the shared workspace key configured on the server.</p>
-      <div class="app-dialog-actions">
-        <button type="button" id="btn-api-key-remove" class="btn secondary hidden">Remove saved key</button>
-        <button type="button" class="btn secondary" data-api-key-close>Close</button>
       </div>
     </div>
   </div>
@@ -1081,11 +757,6 @@
         <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
         <button type="submit" class="btn accent auth-submit">Create account</button>
       </form>
-      <div class="auth-divider"><span>or</span></div>
-      <button type="button" class="btn auth-onshape-btn" data-onshape-login>
-        <img src="/onshape-logo.png" width="18" height="18" alt="" />
-        Sign in with Onshape
-      </button>
       <div class="auth-divider"><span>or</span></div>
       <button type="button" class="btn auth-onshape-btn" data-onshape-login>
         <img class="auth-onshape-logo" src="/onshape-logo.png?v=20260617-small" width="18" height="18" alt="" />
@@ -1223,7 +894,7 @@
   </script>
   <script type="module" src="/early-boot.js?v=20260611-project-recovery"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
-  <script type="module" src="/app.js?v=20260706-ribbon-dedup"></script>
+  <script type="module" src="/app.js?v=20260706-dxf-drop"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260611-timeline-restore"></script>
   <!-- ribbon.js is imported inside app.js -->

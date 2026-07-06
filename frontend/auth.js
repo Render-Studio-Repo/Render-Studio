@@ -3,8 +3,6 @@
 const TOKEN_KEY = "render3d:token";
 const USER_KEY = "render3d:user";
 
-const ADMIN_EMAIL = "a1projects.usa@gmail.com";
-
 export function getToken() {
   try {
     return localStorage.getItem(TOKEN_KEY) || "";
@@ -56,22 +54,11 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   const btnLogout = document.getElementById("btn-logout");
   const authError = document.getElementById("auth-error");
   const onshapeBadge = document.getElementById("onshape-badge");
-  const fusionBadge = document.getElementById("fusion-badge");
-  const adminDashboardLink = document.getElementById("btn-admin-dashboard");
-  const adminDashboardToolbar = document.getElementById("btn-admin-dashboard-toolbar");
-  const onshapeStatusEl = document.getElementById("onshape-connection-status");
-  const fusionStatusEl = document.getElementById("fusion-connection-status");
 
   let loggedInUser = null;
 
   function setOnshapeBadge(show) {
     onshapeBadge?.classList.toggle("hidden", !show);
-    if (onshapeStatusEl) onshapeStatusEl.textContent = show ? "Connected" : "Disconnected";
-  }
-
-  function setFusionBadge(show) {
-    fusionBadge?.classList.toggle("hidden", !show);
-    if (fusionStatusEl) fusionStatusEl.textContent = show ? "Connected" : "Disconnected";
   }
 
   function showModal(show) {
@@ -91,9 +78,6 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     btnAuth?.setAttribute("title", "Sign in");
     btnAuth?.setAttribute("aria-label", "Sign in");
     setOnshapeBadge(false);
-    setFusionBadge(false);
-    adminDashboardLink?.classList.add("hidden");
-    adminDashboardToolbar?.classList.add("hidden");
   }
 
   function setUserUI(user) {
@@ -110,9 +94,6 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     if (userEmail) userEmail.textContent = user.email;
     btnAuth?.setAttribute("title", user.display_name);
     btnAuth?.setAttribute("aria-label", `Account: ${user.display_name}`);
-    const isAdmin = (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
-    adminDashboardLink?.classList.toggle("hidden", !isAdmin);
-    adminDashboardToolbar?.classList.toggle("hidden", !isAdmin);
   }
 
   function closeUserMenu() {
@@ -216,27 +197,6 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     });
   });
 
-  // Cloud connection buttons in user menu
-  document.getElementById("btn-onshape-connect")?.addEventListener("click", () => {
-    closeUserMenu();
-    if (onshapeBadge && !onshapeBadge.classList.contains("hidden")) {
-      // Already connected — show status/disconnect option via onshape panel
-      document.getElementById("btn-onshape-panel")?.click();
-    } else {
-      window.location.href = "/oauth/start";
-    }
-  });
-
-  document.getElementById("btn-fusion-connect")?.addEventListener("click", () => {
-    closeUserMenu();
-    if (fusionBadge && !fusionBadge.classList.contains("hidden")) {
-      // Already connected — toggle Fusion library section
-      document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth" });
-    } else {
-      window.location.href = "/api/autodesk/oauth/start";
-    }
-  });
-
   setLoggedOutUI();
 
   return {
@@ -286,14 +246,10 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
         setSession(token, data.user);
         setUserUI(data.user);
         showModal(false);
-        // Check Onshape + Fusion connection status
+        // Check if this user has an Onshape token linked
         try {
           const os = await api("/api/onshape/status");
           setOnshapeBadge(os.linked === true);
-        } catch { /* non-critical */ }
-        try {
-          const fs = await api("/api/autodesk/status");
-          setFusionBadge(fs.linked === true);
         } catch { /* non-critical */ }
         return data;
       } catch {
