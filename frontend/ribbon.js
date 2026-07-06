@@ -762,127 +762,13 @@ let _onBuilt = null;       // callback(filename, url, label) after successful bu
 let _onViewerToast = null; // optional viewer overlay toast
 let _onGenerating = null;  // callback(active, message) during kernel build
 let _onGenerationStarted = null; // callback(data) when build accepted as background job
-let _onGenerationStarted = null; // callback(data) when build accepted as background job
 let _onBuildError = null;
 let _onExtrudeFaceDrag = null;
 let _onExtrudeProfileDrag = null;
 let _hasLoadedMesh = null;  // callback(message) on build failure
 let _onViewportTool = null; // callback(toolId, entry) for direct modeling handoff
-/** Fusion-style rigging environment ribbon (visible when RIGGING workspace tab is active). */
-const RIGGING_CATALOG = {
-  Create: [
-    {
-      id: "rig_add_bone",
-      label: "Add Bone",
-      icon: "●",
-      desc: "Click the model to place a new bone",
-      rigAction: "add",
-    },
-    {
-      id: "rig_auto",
-      label: "Auto Rig",
-      icon: "🦴",
-      desc: "Generate a kinematic chain from model bounds",
-      rigAction: "auto",
-    },
-  ],
-  Hierarchy: [
-    {
-      id: "rig_connect",
-      label: "Connect",
-      icon: "⛓",
-      desc: "Click parent bone, then child bone",
-      rigAction: "connect",
-    },
-    {
-      id: "rig_delete",
-      label: "Delete Bone",
-      icon: "⌫",
-      desc: "Remove selected bone and its children",
-      rigAction: "delete",
-    },
-    {
-      id: "rig_clear",
-      label: "Clear Rig",
-      icon: "✕",
-      desc: "Remove all bones",
-      rigAction: "clear",
-    },
-  ],
-  Tools: [
-    {
-      id: "rig_select",
-      label: "Select",
-      icon: "↖",
-      desc: "Select bones",
-      rigTool: "select",
-    },
-    {
-      id: "rig_move",
-      label: "Move",
-      icon: "✥",
-      desc: "Drag bones to reposition",
-      rigTool: "move",
-    },
-    {
-      id: "rig_rotate",
-      label: "Rotate Joint",
-      icon: "↻",
-      desc: "Drag to rotate selected joint",
-      rigTool: "rotate",
-    },
-  ],
-  Animation: [
-    {
-      id: "rig_keyframe",
-      label: "Keyframe",
-      icon: "◆",
-      desc: "Insert keyframe at current time (K)",
-      rigAction: "keyframe",
-    },
-    {
-      id: "rig_play",
-      label: "Play / Pause",
-      icon: "▶",
-      desc: "Play animation timeline (Space)",
-      rigAction: "play",
-    },
-    {
-      id: "rig_stop",
-      label: "Stop",
-      icon: "■",
-      desc: "Stop and rewind animation",
-      rigAction: "stop",
-    },
-  ],
-  Export: [
-    {
-      id: "rig_export_urdf",
-      label: "Export URDF",
-      icon: "📄",
-      desc: "Write robot.urdf to project",
-      rigAction: "export_urdf",
-    },
-    {
-      id: "rig_save",
-      label: "Save Rig",
-      icon: "💾",
-      desc: "Save rigging.json to project",
-      rigAction: "save",
-    },
-    {
-      id: "rig_reload",
-      label: "Reload",
-      icon: "↻",
-      desc: "Reload rig from disk",
-      rigAction: "reload",
-    },
-  ],
-};
 
 let _onSketchAction = null; // callback(action, entry, values?) for sketch workflow
-let _onExportAction = null;
-let _onRiggingAction = null;
 let _onExportAction = null;
 let _onRiggingAction = null;
 let _activeSketchTool = null;
@@ -915,8 +801,6 @@ let _tabBtns        = null;   // NodeList of .ribbon-tab
 let _panelsWrap     = null;   // .ribbon-panels container
 let _featureTree    = null;   // .feature-tree list
 let _statusEl       = null;   // .ribbon-status span
-let _statusCopyBtn  = null;   // copy error button
-let _statusCopyText = "";     // full text for clipboard
 let _statusCopyBtn  = null;   // copy error button
 let _statusCopyText = "";     // full text for clipboard
 let _dialog         = null;   // .ribbon-dialog overlay
@@ -1285,14 +1169,6 @@ function _setCollapsed(val) {
   _ribbonBody?.classList.toggle("ribbon-body--collapsed", _collapsed);
   if (_chevron) _chevron.textContent = _collapsed ? "▾" : "▴";
   if (_chevron) _chevron.setAttribute("aria-label", _collapsed ? "Open toolbar" : "Collapse toolbar");
-}
-
-function setActiveSketchTool(tool) {
-  _activeSketchTool = tool || null;
-  if (!_ribbonBar) return;
-  _ribbonBar.querySelectorAll(".ribbon-btn[data-sketch-tool]").forEach((btn) => {
-    btn.classList.toggle("ribbon-btn--active", btn.dataset.sketchTool === tool);
-  });
 }
 
 function setActiveSketchTool(tool) {
