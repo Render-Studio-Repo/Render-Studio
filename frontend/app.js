@@ -51,13 +51,14 @@ import { createTimelineUI } from "./timeline.js?v=20260618-restore-assembly";
 import { createPromptComposer } from "./prompt-composer.js?v=20260618-multi-drag";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260618-deterministic-cost";
 import { formatPromptRef } from "./prompt-ref.js";
-import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, syncBlueprintVisionForImages } from "./skills-library.js?v=20260617-skills-collapse";
+import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-restore";
 import { createObjectHistoryUI } from "./object-history.js?v=20260618-restore-latest";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260619-folder-icon";
 import { readExplorerDragPayloads } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js";
+import { initFusionPanel } from "./fusion-panel.js?v=20260706";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260618-shared-key-dollar-limits";
 import { createCollab } from "./collab.js?v=20260617-local-path-markers";
 import { createRibbon } from "./ribbon.js?v=20260617-measure-analytics";
@@ -87,6 +88,10 @@ import { createSketchEditor } from "./sketch-editor.js?v=20260615-load-entities"
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260612-spin-fix3";
 import { createSectionView } from "./section-view.js?v=20260618-section-clean";
+import { createViewerToast, flashViewport } from "./viewer-toast.js";
+import { initMobileUI } from "./mobile-ui.js";
+import { createExtrudeDragTool } from "./extrude-drag.js";
+import { detectModelUnitScale } from "./measure.js";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = 480000;
@@ -402,6 +407,7 @@ function applyPromptModeUI(mode = promptMode) {
   if (promptBtn) {
     if (promptMode === "draw") promptBtn.textContent = "Apply Draw command";
     else if (promptMode === "v2") promptBtn.textContent = "Generate with 2.0";
+    else if (promptMode === "fusion") promptBtn.textContent = "Generate + Push to Fusion 360";
     else promptBtn.textContent = "Generate / modify with AI";
   }
   const hint = document.getElementById("prompt-mode-hint");
@@ -410,6 +416,8 @@ function applyPromptModeUI(mode = promptMode) {
       hint.textContent = "Draw uses local modeling tools: pick a face for holes, or draw a Line path and ask for ducts/wire loops.";
     } else if (promptMode === "v2") {
       hint.textContent = "2.0 runs the full quality pipeline: brief → plan → build → inspect → repair. Slower but significantly better geometry.";
+    } else if (promptMode === "fusion") {
+      hint.textContent = "Fusion mode generates parametric CAD then pushes the STEP file directly to your linked Fusion 360 hub.";
     } else {
       hint.textContent = "Render creates or regenerates CAD with AI.";
     }
@@ -583,6 +591,12 @@ async function resumeGenerationIfNeeded(pid, generation) {
 }
 
 initPanelResize();
+const mobileUI = initMobileUI({
+  onResize: () => {
+    resize();
+    collab?.resizeLabels();
+  },
+});
 
 const viewportHint = document.getElementById("viewport-hint");
 const pickHintTitle = document.getElementById("pick-hint-title");
@@ -592,6 +606,30 @@ const viewport = document.getElementById("viewport");
 if (!viewport) {
   throw new Error("Render3D: #viewport element missing from page");
 }
+const viewerToast = createViewerToast(viewport);
+
+function inferMeshUsesMm() {
+  if (!currentMesh) return true;
+  const box = new THREE.Box3().setFromObject(currentMesh);
+  const size = box.getSize(new THREE.Vector3());
+  return Math.max(size.x, size.y, size.z) >= 1.0;
+}
+
+function viewerToastForCollab(msg) {
+  const action = msg.action;
+  const by = msg.by;
+  if (!action || !by) return;
+  const verbs = {
+    extrude: "extruded",
+    transform: "edited",
+    upload: "uploaded",
+    prompt: "updated",
+    build: "built",
+  };
+  const verb = verbs[action] || action;
+  viewerToast.show(`${by} ${verb} the model`, { kind: "info", durationMs: 2800 });
+}
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FUSION.canvas);
 
@@ -850,6 +888,21 @@ transformControls.addEventListener("dragging-changed", (e) => {
 });
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
+
+const extrudeDragTool = createExtrudeDragTool({
+  scene,
+  camera,
+  domElement: renderer.domElement,
+  getMeshRoot: () => currentMesh,
+  getMeshCenterOffset: () => meshCenterOffset,
+  getUnitScale: () => detectModelUnitScale(currentMesh),
+  api,
+  onApplied: () => {
+    viewport.classList.remove("extrude-drag-mode");
+    controls.enabled = true;
+  },
+  onStatus: (msg) => viewerToast?.show(msg, { kind: "info" }),
+});
 
 let gridVisible = true;
 let gridHelper = null;
@@ -8357,10 +8410,12 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   await ensureProject();
   const status = document.getElementById("prompt-status");
   const reply = document.getElementById("prompt-reply");
-  const genMode = promptMode === "v2" ? "v2" : "standard";
+  const genMode = promptMode === "v2" ? "v2" : promptMode === "fusion" ? "fusion" : "standard";
   status.className = "status loading";
   status.textContent = promptMode === "v2"
     ? `Generating with 2.0 (quality pipeline)… (runs in background — safe to refresh)`
+    : promptMode === "fusion"
+    ? `Generating + pushing to Fusion 360… (runs in background — safe to refresh)`
     : `Generating with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
   reply.textContent = "";
   beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
@@ -8376,7 +8431,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       images: promptImages,
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
       ...getPromptAiKeyBodyFields(),
-      ...(promptMode === "v2" ? { mode: "v2", speed: "quality" } : {}),
+      ...(promptMode === "v2" ? { mode: "v2", speed: "quality" } : promptMode === "fusion" ? { mode: "fusion", fusion_push: true } : {}),
     };
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
     const data = await api(
@@ -8732,6 +8787,31 @@ window.addEventListener("keydown", (e) => {
         label: name,
       });
     },
+  });
+
+  initFusionPanel({
+    api,
+    getCurrentProjectId: () => projectId,
+    getSelectedFile: () => selectedFile,
+    getWorkspaceId: getSelectedWorkspaceId,
+    onImported: async (importedProjectId, filename, name) => {
+      await loadProject(importedProjectId);
+      await loadModel(`/api/projects/${importedProjectId}/files/${encodeURIComponent(filename)}`, filename, {
+        projectId: importedProjectId,
+        catalogFilename: filename,
+        label: name,
+      });
+    },
+    onView: async (viewProjectId, filename, name) => {
+      await loadProject(viewProjectId);
+      await loadModel(`/api/projects/${viewProjectId}/files/${encodeURIComponent(filename)}`, filename, {
+        projectId: viewProjectId,
+        catalogFilename: filename,
+        label: name,
+      });
+    },
+    onStatus: setEditStatus,
+    onMirrorLinked: () => setEditStatus("ok", "Fusion mirror folder linked."),
   });
 
   async function startApp() {

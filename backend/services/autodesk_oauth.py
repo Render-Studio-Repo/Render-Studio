@@ -270,6 +270,18 @@ def get_folder_item(access_token: str, project_id: str, folder_id: str, item_id:
     raise RuntimeError("Autodesk item not found in the selected folder.")
 
 
+def delete_item(access_token: str, project_id: str, item_id: str) -> dict[str, Any]:
+    resp = httpx.delete(
+        f"{AUTODESK_DATA_API}/projects/{urllib.parse.quote(project_id, safe='')}/items/{urllib.parse.quote(item_id, safe='')}",
+        headers=_auth_headers(access_token),
+        timeout=30,
+    )
+    if resp.status_code == 404:
+        return {"deleted": False, "missing": True, "item_id": item_id}
+    _raise_aps(resp)
+    return {"deleted": True, "item_id": item_id}
+
+
 def download_item_file(access_token: str, item: dict[str, Any]) -> bytes:
     url = item.get("download_url")
     if not url:
