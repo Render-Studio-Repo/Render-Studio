@@ -561,7 +561,6 @@
       <div class="right-panel-tabs" role="tablist" aria-label="Right panel">
         <button type="button" class="right-panel-tab" data-right-tab="tools">Tools</button>
         <button type="button" class="right-panel-tab" data-right-tab="history">History</button>
-        <button type="button" class="right-panel-tab" data-right-tab="refs">Refs</button>
         <button type="button" class="right-panel-tab architect-mode-tab" data-right-tab="architect">Architect</button>
         <button type="button" class="right-panel-tab active" data-right-tab="prompt">AI</button>
         <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
@@ -665,12 +664,10 @@
         <div id="feature-editor" class="feature-editor"></div>
       </section>
 
-      <section class="reference-panel right-tab-panel" data-right-panel="refs">
-        <h2>References</h2>
-          <p class="muted small">Use toolbar pick tools, click or lasso the model, then prompt below. Click again to deselect simple refs.</p>
+      <div class="hidden" aria-hidden="true">
         <div id="ref-chips" class="ref-chips"></div>
         <div id="ref-list" class="ref-list"></div>
-      </section>
+      </div>
 
       <section class="sketch-inspector right-tab-panel" id="sketch-panel" data-right-panel="sketch">
         <h2>Sketch</h2>

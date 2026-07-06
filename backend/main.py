@@ -1150,7 +1150,7 @@ def _get_ai_for_user(
             model = settings.openai_model_quality if speed == "quality" else settings.openai_model
         elif not model:
             model = settings.anthropic_model
-        return AIService(model=model, api_key=effective["api_key"], provider=effective["provider"], speed=speed)
+        return AIService(model=model, api_key=effective["api_key"], provider=effective["provider"])
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

@@ -57,7 +57,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260630-compact-search";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-fusion-architect";
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
@@ -4145,32 +4145,9 @@ function snapArchitectSelectionToGrid() {
     setEditStatus("error", "Select an architect module first.");
     return;
   }
-  const floorSnap = nearestArchitectFloorSnap(mesh);
-  if (floorSnap) {
-    if (mesh.userData?.architectInstance) {
-      mesh.rotation.z = floorSnap.rotation;
-    }
-    mesh.updateMatrixWorld(true);
-    const center = objectWorldBoxCenter(mesh);
-    const delta = worldDeltaToParentDelta(mesh, floorSnap.targetCenter.clone().sub(center));
-    if (!gizmoPanel.translateBy?.(delta, { autoApply: true })) {
-      setEditStatus("error", "Could not snap module to floor.");
-      return;
-    }
-    setEditStatus("ok", `Snapped to ${floorSnap.side} floor edge. Use the gizmo to slide it along the rail.`);
-    return;
+  if (!tryArchitectLegoSnap(mesh)) {
+    setEditStatus("error", "Could not snap module to grid or neighbor.");
   }
-  const grid = architectGridModelUnits();
-  const center = objectWorldBoxCenter(mesh);
-  const target = center.clone();
-  target.x = Math.round(target.x / grid) * grid;
-  target.y = Math.round(target.y / grid) * grid;
-  const delta = worldDeltaToParentDelta(mesh, target.sub(center));
-  if (!gizmoPanel.translateBy?.(delta, { autoApply: true })) {
-    setEditStatus("error", "Could not snap module to grid.");
-    return;
-  }
-  setEditStatus("ok", mesh.userData?.localOnly ? "Snapped local Architect module to grid." : "Snapped module to Architect grid.");
 }
 
 function nudgeArchitectSelection(dx = 0, dy = 0) {
@@ -4215,7 +4192,8 @@ function enterArchitectMode() {
   skillsPromptUI.render();
   skillsPromptUI.updatePlan?.();
   setGridVisible(true);
-  setEditStatus("ok", "Architect mode — local modular kit active. Use Advanced for the larger library; AI Architect skill is enabled only if you open AI manually.");
+  fitCamera();
+  setEditStatus("ok", "Architect mode — place wall/floor modules from the panel. They snap together like LEGO when you release the gizmo.");
 }
 
 function exitArchitectMode() {
@@ -9085,7 +9063,6 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
       openMobileActionSheet("AI & Modes", [
         { label: "AI prompt", hint: "Text-to-CAD compose and prompt history", run: () => { showAiComposePanel(); openMobileRightPanel(workspaceModes?.isWiring?.() ? "wiring" : "prompt"); } },
         { label: "Prompt history", hint: "Reuse previous prompts and references", run: () => { openMobileRightPanel("prompt"); promptHistory.setTab("history"); } },
-        { label: "References", hint: "View picked faces, paths, and refs", run: () => openMobileRightPanel("refs") },
         { label: "Sketch", hint: "2D sketch and constraints", run: () => openMobileDesignTab("SKETCH") },
         { label: "Canvas", hint: "Freehand grid sketch for AI prompts", run: () => openMobileDesignTab("CANVAS") },
         { label: "Wiring", hint: "Breadboard wiring simulator and AI", run: () => openMobileDesignTab("WIRING") },
