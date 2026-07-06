@@ -23,6 +23,7 @@ PRICING_REFRESH_PREFIXES = (
     "gpt-5.5-pro",
     "gpt-5.5",
     "gpt-5.3-codex",
+    "claude-fable-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-4.6-opus",
@@ -43,7 +44,13 @@ def load(project_path: Path) -> dict[str, Any]:
     path = _path(project_path)
     if not path.is_file():
         return {"entries": []}
-    return json.loads(path.read_text())
+    try:
+        raw = path.read_text()
+        if not raw.strip():
+            return {"entries": []}
+        return json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return {"entries": []}
 
 
 def save(project_path: Path, data: dict[str, Any]) -> None:
@@ -65,6 +72,7 @@ def append_entry(
     trace_id: str | None = None,
     user_id: str | None = None,
     user_name: str | None = None,
+    user_avatar_url: str | None = None,
     kind: str = "cad",
     usage: dict[str, Any] | None = None,
     cost_usd: float | None = None,
@@ -101,6 +109,7 @@ def append_entry(
         "trace_id": trace_id,
         "user_id": user_id,
         "user_name": user_name,
+        "user_avatar_url": user_avatar_url,
         "kind": kind,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -180,6 +189,60 @@ def _has_billed_sibling(entries: list[dict[str, Any]], prompt: str) -> bool:
         if entry_effective_cost(entry) is not None or entry.get("usage"):
             return True
     return False
+
+
+def _merge_usage_from_timeline(project_path: Path, entries: list[dict[str, Any]]) -> bool:
+    """Patch prompt_history rows that are missing usage when timeline has the same trace_id."""
+    timeline = history_service.load_timeline(project_path)
+    by_trace: dict[str, dict[str, Any]] = {}
+    for e in timeline.get("entries", []):
+        if e.get("kind") != "prompt":
+            continue
+        meta = e.get("meta") or {}
+        trace_id = meta.get("trace_id")
+        if not trace_id:
+            continue
+        usage = meta.get("usage") or meta.get("ai_usage")
+        if not usage and meta.get("cost_usd") is None:
+            continue
+        by_trace[str(trace_id)] = meta
+
+    changed = False
+    for row in entries:
+        if row.get("usage") and row.get("cost_usd") is not None:
+            continue
+        trace_id = row.get("trace_id")
+        if not trace_id:
+            continue
+        meta = by_trace.get(str(trace_id))
+        if not meta:
+            continue
+        usage = meta.get("usage") or meta.get("ai_usage")
+        if usage and not row.get("usage"):
+            row["usage"] = usage
+            changed = True
+        if meta.get("cost_usd") is not None and row.get("cost_usd") is None:
+            row["cost_usd"] = meta.get("cost_usd")
+            changed = True
+        if meta.get("model") and not row.get("model"):
+            row["model"] = meta.get("model")
+            changed = True
+        if meta.get("provider") and not row.get("provider"):
+            row["provider"] = meta.get("provider")
+            changed = True
+        elif usage and not row.get("provider"):
+            row["provider"] = "openai"
+            changed = True
+        if usage and row.get("cost_usd") is None:
+            inferred = estimate_cost_usd(
+                row.get("model"),
+                row.get("usage"),
+                provider=row.get("provider") or "openai",
+            )
+            if inferred is not None:
+                row["cost_usd"] = round(inferred, 6)
+                changed = True
+    return changed
 
 
 def _backfill_from_timeline(project_path: Path) -> None:
@@ -293,9 +356,9 @@ def _backfill_from_generation(project_path: Path) -> None:
         filename = None
     recovered_filename = filename or _best_generated_filename(project_path, gen.get("started_at"))
     status = gen.get("status")
-    success = status == "complete" or bool(recovered_filename and status in {"running", None})
-    if status == "running" and not recovered_filename:
+    if status == "running":
         return
+    success = status == "complete" or bool(recovered_filename and status is None)
 
     row: dict[str, Any] = {
         "id": str(gen.get("prompt_id") or str(uuid.uuid4())[:10]),
@@ -376,7 +439,11 @@ def _prepare_entries(project_path: Path, *, persist: bool = True) -> list[dict[s
     _backfill_from_timeline(project_path)
     _backfill_from_generation(project_path)
     data = load(project_path)
-    entries, changed = _enrich_entries(data.get("entries", []))
+    entries = list(data.get("entries", []))
+    if _merge_usage_from_timeline(project_path, entries):
+        data["entries"] = entries
+        save(project_path, data)
+    entries, changed = _enrich_entries(entries)
     if _fill_prompt_mode_from_generation(project_path, entries):
         changed = True
     if persist and changed:
@@ -414,12 +481,14 @@ def workspace_usage_summary(
     kind: str | None = None,
     year: int | None = None,
     month: int | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate prompt usage across many projects (e.g. workspace or all user projects)."""
-    from backend.services.ai_cost import filter_entries_for_month, month_label
+    from backend.services.ai_cost import entry_effective_cost, entry_in_month, filter_entries_for_month, month_label
 
     combined: list[dict[str, Any]] = []
     seen_projects: set[str] = set()
+    projects_with_prompts: set[str] = set()
     for path in project_paths:
         if not path.is_dir():
             continue
@@ -427,11 +496,29 @@ def workspace_usage_summary(
         entries = _prepare_entries(path)
         if kind:
             entries = [e for e in entries if (e.get("kind") or "cad") == kind]
+        if user_id:
+            entries = [e for e in entries if e.get("user_id") == user_id]
+        if entries:
+            projects_with_prompts.add(path.name)
         combined.extend(entries)
     if year is not None and month is not None:
         combined = filter_entries_for_month(combined, year, month)
+        if user_id or kind:
+            projects_with_prompts = {
+                path.name
+                for path in project_paths
+                if path.is_dir()
+                and any(
+                    entry_in_month(e, year, month)
+                    and (not user_id or e.get("user_id") == user_id)
+                    and (not kind or (e.get("kind") or "cad") == kind)
+                    for e in _prepare_entries(path)
+                )
+            }
     summary = summarize_entries(combined)
     summary["project_count"] = len(seen_projects)
+    summary["projects_with_prompts"] = len(projects_with_prompts)
+    summary["ai_calls"] = sum(int(e.get("ai_calls") or 0) for e in combined if entry_effective_cost(e) is not None)
     if year is not None and month is not None:
         summary["month"] = f"{year:04d}-{month:02d}"
         summary["month_label"] = month_label(year, month)

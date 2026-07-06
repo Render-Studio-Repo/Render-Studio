@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import base64
+from collections import Counter
 import json
 import logging
 import math
+import re
+import secrets
 import shutil
 import time
+import urllib.parse
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,7 +19,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
@@ -24,6 +29,7 @@ from backend.database import get_conn, init_db
 from backend.services import cad_service
 from backend.services.ai_service import AIService
 from backend.services import (
+    agent_marketplace_service,
     folders_service,
     generation_service,
     history_service,
@@ -33,7 +39,12 @@ from backend.services import (
     workspace_log_service,
 )
 from backend.services import kernel_bridge
+from backend.services.design_service import is_custom_sketch_structural_request
+from backend.services.design_service import is_custom_sketch_structural_request
 from backend.services import teams_service
+from backend.services import skills_service, user_ai_keys_service
+from backend.services import user_keys_service
+from backend.services import user_keys_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import part_profiles_service
 from backend.services.trace_log import TraceTimer, add as trace_add, list_entries, new_trace_id
@@ -46,7 +57,31 @@ logger = logging.getLogger("render3d")
 ROOT = Path(__file__).resolve().parent.parent
 PROJECTS = ROOT / settings.projects_dir
 FRONTEND = ROOT / "frontend"
+AVATARS = ROOT / "data" / "avatars"
 PROJECTS.mkdir(parents=True, exist_ok=True)
+AVATARS.mkdir(parents=True, exist_ok=True)
+
+A1PROJECTS_ADMIN_EMAIL = "a1projects@protonmail.com"
+OTHER_USER_RENDERS_FOLDER_ID = "__other_user_renders__"
+OTHER_USER_RENDERS_FOLDER_NAME = "New renders from other users"
+PUBLIC_FOLDER_ID = "__public__"
+PUBLIC_FOLDER_NAME = "Public"
+VIEWPORT_WORKSPACE_ACTIVITY_KINDS = {
+    "upload",
+    "delete_object",
+    "transform",
+    "paint",
+    "extrude",
+    "hole",
+    "draw_route",
+    "face_pull",
+    "fillet",
+    "chamfer",
+    "mirror",
+    "mesh_cleanup",
+    "split_bodies",
+    "remove_body",
+}
 
 app = FastAPI(title="Render3D", description="CAD project visualizer with AI prompting")
 
@@ -66,10 +101,26 @@ def _recover_stuck_generations() -> None:
         project_id_ = job["project_id"]
         project_path_ = job["project_path"]
         original_data = job["data"]
+        if (original_data.get("kind") or "prompt") != "prompt":
+            generation_service.fail(
+                project_path_,
+                "Generation interrupted by server restart. Please retry.",
+                trace_id=job.get("trace_id"),
+            )
+            continue
         request_body = original_data.get("request_body") or {}
         original_trace = job.get("trace_id") or ""
         new_trace = str(_uuid.uuid4())[:8]
         restart_count = original_data.get("restart_count", 0) + 1
+        original_mode = str(original_data.get("mode") or request_body.get("mode") or "").lower()
+        if original_mode in {"v2", "fusion"}:
+            generation_service.fail(
+                project_path_,
+                "Generation was interrupted while waiting on the 2.0 CAD model. Please retry the prompt.",
+                trace_id=original_trace,
+            )
+            logger.info("Marked interrupted %s job failed project=%s trace=%s", original_mode, project_id_, original_trace)
+            continue
         user_ = {
             "id": original_data.get("by_user_id") or "",
             "display_name": original_data.get("by_user_name") or "System",
@@ -81,7 +132,13 @@ def _recover_stuck_generations() -> None:
             generation_service.fail(project_path_, f"Recovery failed: {exc}", trace_id=original_trace)
             continue
         try:
-            ai_ = _get_ai_for_user(user_, body_.speed)
+            ai_ = _get_ai_for_user(
+                user_,
+                body_.speed,
+                key_id=body_.ai_key_id,
+                key_source=body_.ai_key_source,
+                project_id=project_id_,
+            )
         except HTTPException as exc:
             logger.warning("Cannot recover stuck job %s: no AI key available: %s", project_id_, exc.detail)
             generation_service.fail(
@@ -102,6 +159,7 @@ def _recover_stuck_generations() -> None:
                 mode=getattr(body_, "mode", "standard") or "standard",
                 request_body=request_body,
                 restart_count=restart_count,
+                replace_running=True,
             )
         except Exception as exc:
             logger.warning("Could not restart stuck job %s: %s", project_id_, exc)
@@ -170,7 +228,11 @@ async def log_requests(request: Request, call_next):
                 content={"detail": str(exc), "trace_id": trace_id},
                 headers={"X-Trace-Id": trace_id},
             )
-    return await call_next(request)
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".html", ".js", ".css")):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
 
 
 @app.middleware("http")
@@ -198,11 +260,13 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 class GeoReference(BaseModel):
     id: str
-    type: str = Field(..., description="vertex | edge | face | corner | lasso | path | component")
+    type: str = Field(..., description="vertex | edge | face | corner | lasso | path | component | dxf")
     position: list[float] | None = None
     normal: list[float] | None = None
+    local_point: list[float] | None = None
     face_index: int | None = None
     face_indices: list[int] | None = None
+    face_area: float | None = None
     vertex_index: int | None = None
     selected_vertices: list[list[float]] | None = None
     loop_points: list[list[float]] | None = None
@@ -215,6 +279,10 @@ class GeoReference(BaseModel):
     stem: str | None = None
     format: str | None = None
     viewer_filename: str | None = None
+    text_content: str | None = Field(default=None, max_length=100_000)
+    text_truncated: bool | None = None
+    body_index: int | None = None
+    body_name: str | None = None
     # source project when the component lives in a different project
     projectId: str | None = None
 
@@ -233,9 +301,25 @@ class PromptRequest(BaseModel):
     images: list[PromptImage] = Field(default_factory=list, max_length=4)
     speed: str = Field(default="fast", description="fast (~30s) or quality (slower, gpt-5.5-pro)")
     skills: list[str] = Field(default_factory=list, max_length=20)
-    mode: str = Field(default="standard", description="standard (Render) or v2 (quality pipeline with brief+inspect+repair)")
+    skills: list[str] = Field(default_factory=list, max_length=20)
+    mode: str = Field(default="standard", description="standard (Render), v2, fusion, or architect")
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = Field(default=None, description="personal or team")
+
+
+class SceneRenderRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=4000)
+    viewport_image: str = Field(..., max_length=10_000_000)
+    base_filename: str | None = Field(None, max_length=240)
+    speed: str = "fast"
+    ai_key_id: str | None = Field(default=None, max_length=64)
+    ai_key_source: str | None = Field(default=None, description="personal or team")
+
+
+class SkillPlanRequest(BaseModel):
+    prompt: str = Field(default="", max_length=8000)
+    skills: list[str] = Field(default_factory=list, max_length=20)
+    has_images: bool = False
 
 
 class TransformRequest(BaseModel):
@@ -267,7 +351,8 @@ class ExtrudeRequest(BaseModel):
 class FacePullRequest(BaseModel):
     """Fusion-style press-pull. Distance is signed, in model units (viewer units)."""
 
-    face_index: int = Field(..., ge=0)
+    face_index: int | None = Field(default=None, ge=0)
+    face_indices: list[int] | None = None
     distance: float = Field(..., description="Signed pull distance in model units")
     normal: list[float] | None = Field(
         default=None,
@@ -292,6 +377,21 @@ class DrawHoleRequest(BaseModel):
     pattern_radius_mm: float | None = Field(default=None, gt=0, le=1000)
 
 
+class CreatePrimitiveRequest(BaseModel):
+    op: str = Field(..., description="box | cylinder | sphere | cone | torus")
+    combine: str = Field(default="new", description="new | add | cut | intersect")
+    base_filename: str | None = Field(default=None, description="Existing model to boolean with when combine != new")
+    at: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
+    length: float | None = Field(default=None, gt=0, le=10000)
+    width: float | None = Field(default=None, gt=0, le=10000)
+    height: float | None = Field(default=None, gt=0, le=10000)
+    radius: float | None = Field(default=None, gt=0, le=5000)
+    bottom_radius: float | None = Field(default=None, gt=0, le=5000)
+    top_radius: float | None = Field(default=None, ge=0, le=5000)
+    major_radius: float | None = Field(default=None, gt=0, le=5000)
+    minor_radius: float | None = Field(default=None, gt=0, le=5000)
+
+
 class DrawRouteRequest(BaseModel):
     points: list[list[float]] = Field(..., min_length=2)
     surface_normals: list[list[float] | None] | None = None
@@ -309,6 +409,18 @@ class MirrorMeshRequest(BaseModel):
     origin: list[float] | None = None
     offset: float = Field(default=0.0, description="Plane offset along its normal, model units")
     mode: str = Field(default="join", description="join | keep | replace")
+
+
+class FilletRequest(BaseModel):
+    radius_mm: float = Field(..., gt=0, description="Fillet radius in mm")
+    edges: str = Field(default="top", description="top | vertical | bottom | all")
+    preview: bool = Field(default=False, description="When true, return a temporary preview without timeline history")
+
+
+class ChamferRequest(BaseModel):
+    length_mm: float = Field(..., gt=0, description="Chamfer distance in mm")
+    edges: str = Field(default="top", description="top | vertical | bottom | all")
+    preview: bool = Field(default=False, description="When true, return a temporary preview without timeline history")
 
 
 class FilletRequest(BaseModel):
@@ -357,6 +469,10 @@ class FileRenameRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
+class FileRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=128)
@@ -374,6 +490,9 @@ class UserAIKeyRequest(BaseModel):
     model: str | None = Field(None, max_length=120)
     name: str | None = Field(None, max_length=80)
     source_key_id: str | None = Field(None, max_length=80)
+    scope_type: str | None = Field("all", max_length=20)
+    scope_project_id: str | None = Field(None, max_length=64)
+    scope_label: str | None = Field(None, max_length=160)
 
 
 class UserAIKeyRenameRequest(BaseModel):
@@ -381,12 +500,66 @@ class UserAIKeyRenameRequest(BaseModel):
     model: str | None = Field(None, min_length=1, max_length=120)
 
 
+class AutodeskCredentialsRequest(BaseModel):
+    client_id: str = Field(..., min_length=10, max_length=256)
+    client_secret: str = Field(..., min_length=20, max_length=512)
+    redirect_uri: str = Field(default="https://render3d.app/oauth/autodesk/callback", max_length=512)
+
+
+class AgentAppSubmitRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    tagline: str = Field(..., min_length=1, max_length=180)
+    description: str = Field(..., min_length=1, max_length=4000)
+    category: str = Field(default="agent", max_length=80)
+    app_type: str = Field(default="skill", max_length=40)
+    manifest: dict[str, Any] = Field(default_factory=dict)
+    source_url: str | None = Field(default=None, max_length=600)
+    icon_url: str | None = Field(default=None, max_length=600)
+    price_cents: int = Field(default=0, ge=0, le=1_000_000)
+    currency: str = Field(default="USD", min_length=3, max_length=8)
+    premium: bool = False
+
+
+class AgentAppReviewRequest(BaseModel):
+    status: str = Field(..., description="pending | approved | rejected | archived")
+    featured: bool | None = None
+
+
 class TeamCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
 
 
+class TeamRenderFolderRequest(BaseModel):
+    provider: str = Field("render3d", max_length=40)
+    folder_ref: str | None = Field(None, max_length=600)
+    label: str | None = Field(None, max_length=180)
+
+
 class TeamInviteRequest(BaseModel):
     email: EmailStr
+
+
+class FolderCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    parent_id: str | None = None
+
+
+class FolderRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class ProjectFolderRequest(BaseModel):
+    folder_id: str | None = None
+
+
+class WiringSaveRequest(BaseModel):
+    components: list[dict[str, Any]] = []
+    wires: list[dict[str, Any]] = []
+
+
+class FolderShareRequest(BaseModel):
+    email: EmailStr
+    restrict_access: bool = True
 
 
 class FolderCreateRequest(BaseModel):
@@ -414,8 +587,31 @@ class WiringSaveRequest(BaseModel):
 class WiringPromptRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
     images: list[PromptImage] = Field(default_factory=list, max_length=4)
+    driver_links: list[str] = Field(default_factory=list, max_length=3)
     speed: str = "fast"
     ai_key_id: str | None = None
+    ai_key_source: str | None = None
+
+
+class RenderAgentAttachment(BaseModel):
+    id: str | None = None
+    name: str = Field(..., max_length=180)
+    media_type: str | None = Field(None, max_length=120)
+    text: str | None = Field(None, max_length=20000)
+    data_url: str | None = Field(None, max_length=10_000_000)
+
+
+class RenderAgentThreadCreateRequest(BaseModel):
+    title: str | None = Field(None, max_length=80)
+
+
+class RenderAgentMessageRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=8000)
+    thread_id: str | None = Field(None, max_length=80)
+    project_id: str | None = Field(None, max_length=80)
+    attachments: list[RenderAgentAttachment] = Field(default_factory=list, max_length=6)
+    speed: str = "fast"
+    ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = None
 
 
@@ -456,6 +652,21 @@ class SketchPromptRequest(BaseModel):
     speed: str = "fast"
 
 
+class SketchSaveRequest(BaseModel):
+    name: str | None = None
+    plane: str = "XY"
+    plane_ref: dict[str, Any] | None = None
+    profile: list[list[float]] = Field(default_factory=list)
+    entities: list[dict[str, Any]] = Field(default_factory=list)
+    constraints: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SketchPromptRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    images: list[PromptImage] = Field(default_factory=list, max_length=4)
+    speed: str = "fast"
+
+
 class FolderShareRequest(BaseModel):
     email: EmailStr
     restrict_access: bool = True
@@ -468,6 +679,186 @@ def _require_project(user: dict[str, Any], project_id: str) -> Path:
     if not path.is_dir():
         raise HTTPException(404, "Project not found")
     return path
+
+
+def _is_a1projects_admin(user: dict[str, Any] | None) -> bool:
+    return (user or {}).get("email", "").strip().lower() == A1PROJECTS_ADMIN_EMAIL
+
+
+def _require_a1projects_admin(user: dict[str, Any]) -> None:
+    if not _is_a1projects_admin(user):
+        raise HTTPException(403, "Admin dashboard is only available to the a1projects user.")
+
+
+def _parse_admin_dt(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _admin_day(raw: Any) -> str | None:
+    dt = _parse_admin_dt(raw)
+    return dt.date().isoformat() if dt else None
+
+
+def _admin_prompt_preview(prompt: Any, limit: int = 220) -> str:
+    text = re.sub(r"\s+", " ", str(prompt or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _project_owner(project_id: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT pa.project_id, pa.team_id, pa.folder_id, pa.created_by, pa.is_public,
+                   u.email AS owner_email, u.display_name AS owner_name
+            FROM project_access pa
+            LEFT JOIN users u ON u.id = pa.created_by
+            WHERE pa.project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _is_public_project(project_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT is_public FROM project_access WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+    if not row or not bool(row["is_public"]):
+        return False
+    project_path = PROJECTS / project_id
+    return project_path.is_dir() and bool(cad_service.list_project_files(project_path))
+
+
+def _public_project_summaries(
+    *,
+    exclude_ids: set[str] | None = None,
+    viewer_user: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    exclude_ids = exclude_ids or set()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT pa.project_id, pa.created_by, u.email AS owner_email, u.display_name AS owner_name
+            FROM project_access pa
+            LEFT JOIN users u ON u.id = pa.created_by
+            WHERE pa.is_public = 1
+            ORDER BY pa.created_at DESC
+            """
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        project_id = row["project_id"]
+        if project_id in exclude_ids:
+            continue
+        project_path = PROJECTS / project_id
+        if not project_path.is_dir():
+            continue
+        summary = project_store.project_summary(project_path)
+        if not summary.get("file_count"):
+            continue
+        can_manage = bool(viewer_user and teams_service.can_access_project(viewer_user["id"], project_id))
+        out.append(
+            {
+                **summary,
+                "team_id": None,
+                "folder_id": PUBLIC_FOLDER_ID,
+                "read_only_project": not can_manage,
+                "public": True,
+                "owner_user_id": row["created_by"],
+                "owner_email": row["owner_email"],
+                "owner_name": row["owner_name"],
+            }
+        )
+    return out
+
+
+def _public_folder_summary(projects: list[dict[str, Any]] | None = None, team_id: str | None = None) -> dict[str, Any]:
+    return {
+        "id": PUBLIC_FOLDER_ID,
+        "team_id": team_id,
+        "parent_id": None,
+        "name": PUBLIC_FOLDER_NAME,
+        "sort_order": -200,
+        "visibility": "public",
+        "created_by": None,
+        "created_at": None,
+        "project_count": len(projects) if projects is not None else len(_public_project_summaries()),
+        "share_count": 0,
+        "can_manage": False,
+        "is_owner": False,
+        "shared_with_me": False,
+        "read_only": True,
+        "virtual": True,
+        "public": True,
+    }
+
+
+def _is_other_user_render_project(project_id: str, user: dict[str, Any]) -> bool:
+    if not _is_a1projects_admin(user):
+        return False
+    owner = _project_owner(project_id)
+    if not owner or owner.get("created_by") == user["id"]:
+        return False
+    project_path = PROJECTS / project_id
+    if not project_path.is_dir():
+        return False
+    return bool(cad_service.list_project_files(project_path))
+
+
+def _require_project_read(user: dict[str, Any], project_id: str) -> Path:
+    if teams_service.can_access_project(user["id"], project_id) or _is_other_user_render_project(project_id, user) or _is_public_project(project_id):
+        path = PROJECTS / project_id
+        if path.is_dir():
+            return path
+    raise HTTPException(404, "Project not found")
+
+
+def _other_user_render_summaries(user: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
+    if not _is_a1projects_admin(user):
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT pa.project_id, pa.created_by, u.email AS owner_email, u.display_name AS owner_name
+            FROM project_access pa
+            LEFT JOIN users u ON u.id = pa.created_by
+            WHERE pa.created_by IS NOT NULL AND pa.created_by != ?
+            ORDER BY pa.created_at DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        project_path = PROJECTS / row["project_id"]
+        if not project_path.is_dir():
+            continue
+        summary = project_store.project_summary(project_path)
+        if not summary.get("file_count"):
+            continue
+        out.append(
+            {
+                **summary,
+                "team_id": team_id,
+                "folder_id": OTHER_USER_RENDERS_FOLDER_ID,
+                "read_only_project": True,
+                "owner_user_id": row["created_by"],
+                "owner_email": row["owner_email"],
+                "owner_name": row["owner_name"],
+            }
+        )
+    return out
 
 
 def _record_history(
@@ -486,10 +877,28 @@ def _record_history(
         meta=meta,
         user_id=user["id"] if user else None,
         user_name=user["display_name"] if user else None,
+        user_avatar_url=_avatar_url_for_user_id(user["id"]) if user else None,
     )
     log_entry = project_log_service.log_timeline_entry(project_path, entry)
     if user:
         _notify_project_history(project_path.name, log_entry, user)
+        if kind in VIEWPORT_WORKSPACE_ACTIVITY_KINDS:
+            owner = _project_owner(project_path.name) or {}
+            team_id = owner.get("team_id")
+            if team_id:
+                _log_workspace(
+                    team_id,
+                    kind=f"viewport_{kind}",
+                    label=label,
+                    user=user,
+                    project_id=project_path.name,
+                    meta={
+                        "timeline_index": entry.get("index"),
+                        "timeline_kind": kind,
+                        "filename": filename,
+                        **(meta or {}),
+                    },
+                )
     return entry
 
 
@@ -519,12 +928,16 @@ def _append_mesh_edit(project_path: Path, source_filename: str, edit: dict[str, 
 
 
 def _notify_project(project_id: str, message: dict[str, Any]) -> None:
-    hub.notify(project_id, message)
+    hub.notify(project_id, {**message, "project_id": message.get("project_id") or project_id})
 
 
 def _notify_workspace(team_id: str, message: dict[str, Any]) -> None:
+    payload = {**message, "team_id": message.get("team_id") or team_id}
+    hub.notify_workspace(team_id, payload)
     for pid in teams_service.team_project_ids(team_id):
-        hub.notify(pid, message)
+        hub.notify(pid, payload)
+    for user_id in teams_service.team_member_ids(team_id):
+        _notify_user(user_id, payload)
 
 
 def _notify_user(user_id: str | None, message: dict[str, Any]) -> None:
@@ -572,6 +985,8 @@ def _log_workspace(
         team_id,
         {
             "type": "workspace.updated",
+            "team_id": team_id,
+            "project_id": project_id,
             "entry": entry,
             "by": user["display_name"],
             "by_user_id": user["id"],
@@ -588,6 +1003,7 @@ def _notify_project_history(project_id: str, entry: dict[str, Any], user: dict[s
             "entry": entry,
             "by": user["display_name"] if user else None,
             "by_user_id": user["id"] if user else None,
+            "by_avatar_url": _avatar_url_for_user_id(user["id"]) if user else None,
         },
     )
 
@@ -628,7 +1044,13 @@ def _daily_ai_usage_for_user(user_id: str, *, shared_key_id: str | None = None) 
             cost_total += float(entry_effective_cost(entry) or 0)
             usage = entry.get("usage") or {}
             if isinstance(usage, dict):
-                token_total += int(usage.get("total_tokens") or usage.get("tokens") or 0)
+                token_total += int(
+                    usage.get("total_tokens")
+                    or usage.get("tokens")
+                    or (int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+                        + int(usage.get("output_tokens") or usage.get("completion_tokens") or 0))
+                    or 0
+                )
     return {"cost_usd": round(cost_total, 6), "tokens": token_total}
 
 
@@ -690,12 +1112,13 @@ def _get_ai_for_user(
     *,
     key_id: str | None = None,
     key_source: str | None = None,
+    project_id: str | None = None,
 ) -> AIService:
     try:
         if key_id:
-            effective = user_ai_keys_service.resolve_key_for_user(user["id"], key_id, key_source)
+            effective = user_ai_keys_service.resolve_key_for_user(user["id"], key_id, key_source, project_id=project_id)
         else:
-            effective = user_ai_keys_service.get_effective_key_for_user(user["id"])
+            effective = user_ai_keys_service.get_effective_key_for_user(user["id"], project_id=project_id)
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     if not effective or not effective.get("api_key"):
@@ -729,7 +1152,7 @@ def _get_ai_for_user(
             model = settings.openai_model_quality if speed == "quality" else settings.openai_model
         elif not model:
             model = settings.anthropic_model
-        return AIService(model=model, api_key=effective["api_key"], provider=effective["provider"])
+        return AIService(model=model, api_key=effective["api_key"], provider=effective["provider"], speed=speed)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -1035,26 +1458,253 @@ def _match_placement_stem(raw_stem: str | None, referenced_components: list[dict
 
 
 _FIXTURE_PROMPT_WORDS = (
-    "case", "casing", "enclosure", "mount", "holder", "hold the", "bracket",
-    "cradle", "fixture", "tray", "stand", "housing", "chassis", "base plate",
+    "case", "casing", "enclosure", "holder", "hold the", "bracket",
+    "cradle", "fixture", "tray", "housing", "chassis", "base plate",
     "baseplate", "breadboard", "slab", "test plate", "testing plate",
     "testing slab", "mount plate", "plate for", "mounting plate",
     "raspberry pi", " rpi", " pi ", "sbc", "pcb", "board pocket",
     "motor mount", "stepper mount", "nema", "standoff", "standoffs",
     "box", "open top", "no lid", "lidless", "test bench", "test fixture",
+    "test stand", "stand for the", "stand for my", "stand for pi", "stand for rpi",
 )
 
 
-def _looks_like_fixture_prompt(prompt: str | None) -> bool:
+def _looks_like_fixture_prompt(
+    prompt: str | None,
+    images: list[Any] | None = None,
+) -> bool:
+    if is_custom_sketch_structural_request(prompt or "", images):
+        return False
     p = f" {prompt or ''} ".lower()
     return any(word in p for word in _FIXTURE_PROMPT_WORDS)
 
 
+_SURFACE_REF_TYPES = {"face", "edge", "corner", "lasso", "path"}
+
+
+def _has_surface_edit_reference(body: PromptRequest) -> bool:
+    return any((r.type or "").lower() in _SURFACE_REF_TYPES for r in body.references)
+
+
+def _is_reference_anchored_addition(body: PromptRequest) -> bool:
+    """Existing-model edit: add/put/mount geometry on a picked face/edge/object."""
+    if not _has_surface_edit_reference(body):
+        return False
+    p = f" {body.prompt or ''} ".lower()
+    fresh_markers = (
+        "from scratch",
+        "start over",
+        "new model",
+        "new object",
+        "replace the model",
+        "replace this model",
+        "full regen",
+        "regenerate",
+        "rebuild",
+    )
+    if any(marker in p for marker in fresh_markers):
+        return False
+    anchored_markers = (
+        " add ",
+        " put ",
+        " place ",
+        " attach ",
+        " mount ",
+        " on this",
+        " onto this",
+        " to this",
+        " center of this",
+        " middle of this",
+        " at this",
+        " this face",
+        " selected face",
+    )
+    return any(marker in p for marker in anchored_markers)
+
+
+def _reference_base_filename(body: PromptRequest) -> str | None:
+    for r in body.references:
+        name = r.filename or r.viewer_filename
+        if name:
+            return name
+    return None
+
+
+def _infer_surface_edit_base(project_path: Path, body: PromptRequest) -> str | None:
+    """Best-effort recovery for older clients that sent face refs without a base file."""
+    if body.base_filename or not _is_reference_anchored_addition(body):
+        return None
+    ref_base = _reference_base_filename(body)
+    if ref_base:
+        return ref_base
+    candidates = [
+        comp for comp in cad_service.list_browser_tree(project_path).get("components") or []
+        if not _is_existing_fixture_artifact(project_path, comp)
+    ]
+    if len(candidates) == 1:
+        comp = candidates[0]
+        for key in ("filename", "name", "viewer_filename"):
+            name = comp.get(key)
+            if name and (project_path / name).is_file():
+                return name
+        return comp.get("name") or comp.get("viewer_filename")
+    return None
+
+
+def _with_reference_edit_base(project_path: Path, body: PromptRequest, trace_id: str | None) -> PromptRequest:
+    inferred = _infer_surface_edit_base(project_path, body)
+    if not inferred:
+        return body
+    trace_add(
+        "info",
+        "Inferred base model for reference-anchored edit",
+        trace_id=trace_id,
+        data={"base_filename": inferred},
+    )
+    return body.model_copy(update={"base_filename": inferred})
+
+
+_PROMPT_REF_ONLY_RE = re.compile(
+    r"^\s*@prompt:([A-Za-z0-9_-]+)"
+    r"(?:\s*[·|]\s*project:([A-Za-z0-9_-]+))?"
+    r"(?:\s*[·|]\s*mode:[^·|]+)?"
+    r"(?:\s*[·|]\s*trace:[A-Za-z0-9_-]+)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _resolve_prompt_reference_body(
+    current_project_id: str,
+    current_project_path: Path,
+    body: PromptRequest,
+    user: dict[str, Any],
+    trace_id: str | None,
+) -> PromptRequest:
+    """If the prompt box contains only a copied @prompt reference, use that prompt's text."""
+    match = _PROMPT_REF_ONLY_RE.match(body.prompt or "")
+    if not match:
+        return body
+    prompt_id, ref_project_id = match.groups()
+    ref_project_id = ref_project_id or current_project_id
+    ref_path = current_project_path if ref_project_id == current_project_id else PROJECTS / ref_project_id
+    if ref_project_id != current_project_id:
+        _require_project_read(user, ref_project_id)
+    entry = prompt_history_service.get_entry(ref_path, prompt_id)
+    original = (entry or {}).get("prompt") or ""
+    if not original:
+        return body
+    trace_add(
+        "info",
+        "Resolved prompt reference to original prompt text",
+        trace_id=trace_id,
+        data={"prompt_id": prompt_id, "source_project_id": ref_project_id},
+    )
+    return body.model_copy(update={"prompt": original})
+
+
+def _with_image_generated_dxf_reference(body: PromptRequest, ai: AIService, trace_id: str | None) -> PromptRequest:
+    """Convert attached image references into a hidden DXF reference for CAD prompts."""
+    if not body.images:
+        return body
+    if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
+        return body
+    try:
+        dxf_text, call_trace = ai.generate_dxf_from_images(
+            body.prompt,
+            images=[img.model_dump() for img in body.images[:4]],
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        trace_add(
+            "warning",
+            f"Image-to-DXF conversion failed; continuing with image references only: {exc}",
+            trace_id=trace_id,
+        )
+        return body
+    if not dxf_text.strip():
+        return body
+    image_names = ", ".join(img.name for img in body.images[:4])
+    ref = GeoReference(
+        id="vision-reference",
+        type="dxf",
+        label=f"Vision DXF from image{'s' if len(body.images) != 1 else ''}",
+        filename="vision-reference.dxf",
+        stem="vision-reference",
+        format="dxf",
+        text_content=dxf_text[:90000],
+        text_truncated=len(dxf_text) > 90000,
+    )
+    instruction = (
+        "\n\nUse the attached generated DXF reference `@vision-reference` as the primary 2D drawing extracted "
+        f"from the uploaded image{'s' if len(body.images) != 1 else ''} ({image_names}). Follow the DXF geometry, "
+        "layers, proportions, notes, and inferred dimensions when creating the 3D model. Use the original image(s) "
+        "only to resolve ambiguity, color/material/style, and 3D depth."
+    )
+    trace_add(
+        "info",
+        "Generated hidden DXF reference from prompt image(s)",
+        trace_id=trace_id,
+        data={
+            "image_count": len(body.images),
+            "dxf_chars": len(dxf_text),
+            "model": call_trace.get("model"),
+            "provider": call_trace.get("provider"),
+        },
+    )
+    skills = body.skills
+    if "dxf" not in {str(s).lower() for s in skills}:
+        skills = [*skills, "dxf"]
+    return body.model_copy(update={
+        "prompt": f"{body.prompt}{instruction}"[:8000],
+        "references": [*body.references, ref],
+        "skills": skills,
+    })
+
+
+def _source_for_base_model(project_path: Path, base_filename: str | None) -> tuple[str | None, str | None]:
+    if not base_filename:
+        return None, None
+    stem = Path(base_filename).stem
+    candidates = [project_path / f"{stem}.py"]
+    for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body"):
+        if stem.endswith(suffix):
+            candidates.append(project_path / f"{stem[:-len(suffix)]}.py")
+    for path in candidates:
+        if path.is_file():
+            return path.read_text(encoding="utf-8", errors="ignore"), path.name
+    return None, None
+
+
+_IMPLICIT_MODEL_EDIT_RE = re.compile(
+    r"\b(change|edit|modify|update|adjust|resize|scale|offset|move|make it|turn it|set it)\b",
+    re.IGNORECASE,
+)
+
+
+def _infer_implicit_edit_base(project_path: Path, body: PromptRequest) -> str | None:
+    """Recover target model for terse 2.0 prompts like 'change it...' when clients omit base_filename."""
+    if body.base_filename or body.references or not _IMPLICIT_MODEL_EDIT_RE.search(body.prompt or ""):
+        return None
+    latest = project_store.latest_model_file(project_path)
+    if latest and _source_for_base_model(project_path, latest)[1]:
+        return latest
+    # Prefer the newest Python generator with a matching exported model.
+    for source in sorted(project_path.glob("*.py"), key=lambda p: p.stat().st_mtime, reverse=True):
+        stem = source.stem
+        for suffix in (".glb", ".step", ".stp", ".3mf", ".stl"):
+            candidate = project_path / f"{stem}{suffix}"
+            if candidate.is_file():
+                return candidate.name
+    return latest
+
+
 def _should_use_kernel_pipeline(body: PromptRequest, project_path: Path | None = None) -> bool:
     """Route to the parametric kernel instead of legacy mesh-edit actions."""
-    if (body.mode or "standard").lower() == "v2":
+    if (body.mode or "standard").lower() in {"v2", "fusion", "architect"}:
         return True
-    if _looks_like_fixture_prompt(body.prompt):
+    if _is_reference_anchored_addition(body) and (body.base_filename or _reference_base_filename(body)):
+        return False
+    if _looks_like_fixture_prompt(body.prompt, body.images):
         return True
     if not body.base_filename:
         return True
@@ -1161,6 +1811,40 @@ def _apply_part_placements(
     return applied
 
 
+def _reference_edit_guidance(prompt: str, refs: list[dict[str, Any]]) -> str | None:
+    face_refs = [r for r in refs if str(r.get("type") or "").lower() == "face"]
+    if not face_refs:
+        return None
+    p = f" {prompt or ''} ".lower()
+    remove_words = (
+        " remove ",
+        " delete ",
+        " cut out ",
+        " cut away ",
+        " open ",
+        " opening ",
+        " no wall",
+        " wall",
+        " walls",
+        " vertical",
+        " section",
+    )
+    if not any(word in p for word in remove_words):
+        return (
+            "Use the face reference data as exact edit anchors. Each face ref gives a picked planar face "
+            "with position/local_point, outward normal, face_indices, and face_area. Preserve unrelated geometry."
+        )
+    return (
+        "Face-anchored removal edit: the selected face is the wall/section reference, not a generic point. "
+        "Use its position/local_point to identify the matching wall feature in the existing source and its normal "
+        "to determine wall thickness direction. For prompts like 'remove the walls in the same vertical' or "
+        "'remove that section', cut/delete only the vertical wall segment aligned with the picked face, projecting "
+        "the selected face region through the wall thickness and along the relevant Z span. Do not remove the entire "
+        "part, do not create a new replacement model, and do not affect unrelated parallel walls unless the prompt "
+        "explicitly asks for all matching walls."
+    )
+
+
 def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> dict[str, Any]:
     files = cad_service.list_project_files(project_path)
     refs = []
@@ -1184,23 +1868,45 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
             ref["position"] = r.position
         if r.normal is not None:
             ref["normal"] = r.normal
+        if r.local_point is not None:
+            ref["local_point"] = r.local_point
+        if r.face_area is not None:
+            ref["face_area"] = r.face_area
         if r.type == "component" or r.filename:
             ref["filename"] = r.filename
             ref["stem"] = r.stem
+            if r.format:
+                ref["format"] = r.format
             if r.label:
                 ref["label"] = r.label
+            if r.type == "dxf" and r.text_content:
+                ref["text_content"] = r.text_content[:60000]
+                ref["text_truncated"] = bool(r.text_truncated or len(r.text_content) > 60000)
+            if r.body_index is not None:
+                ref["body_index"] = r.body_index
+            if r.body_name:
+                ref["body_name"] = r.body_name
         elif r.label:
             ref["label"] = r.label
         refs.append(ref)
+    is_plain_v2 = (body.mode or "standard").lower() == "v2"
     referenced_components = []
     for r in body.references:
-        if not (r.type == "component" or r.filename):
+        if is_plain_v2 or r.type != "component":
             continue
         comp: dict[str, Any] = {"filename": r.filename, "stem": r.stem, "label": r.label}
         if r.projectId and r.projectId != project_id:
             comp["source_project_id"] = r.projectId
         referenced_components.append(comp)
-    if not referenced_components and _looks_like_fixture_prompt(body.prompt):
+    sketch_structural = is_custom_sketch_structural_request(body.prompt, body.images)
+    if sketch_structural:
+        referenced_components = []
+    elif (
+        not referenced_components
+        and not _is_reference_anchored_addition(body)
+        and (body.mode or "standard").lower() != "v2"
+        and _looks_like_fixture_prompt(body.prompt, body.images)
+    ):
         referenced_components = _project_component_refs_for_fixture(project_path)
         if referenced_components:
             trace_add(
@@ -1208,8 +1914,8 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
                 f"Using {len(referenced_components)} project component(s) as fixture references",
                 trace_id=getattr(body, "trace_id", None),
             )
-    component_specs = _component_specs(project_path, referenced_components)
-    return {
+    component_specs = [] if sketch_structural else _component_specs(project_path, referenced_components)
+    context = {
         "project_id": project_id,
         "file_count": len(files),
         "file_names": [f["name"] for f in files][:10],
@@ -1221,7 +1927,16 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
             {"id": img.id, "name": img.name, "media_type": img.media_type}
             for img in body.images[:4]
         ],
+        "reference_edit_guidance": _reference_edit_guidance(body.prompt, refs),
     }
+    if (body.mode or "standard").lower() == "fusion":
+        context["fusion_target"] = "fusion360" if (body.fusion_target or "").lower() == "fusion360" else "in_app"
+    if (body.mode or "standard").lower() == "architect":
+        context["architect_mode"] = True
+        context["snap_grid_mm"] = 1000
+        context["wall_height_mm"] = 2800
+        context["module_system"] = "modular house kit with grid-snapping room, wall, window, roof, and service-core modules"
+    return context
 
 
 def _is_fresh_design_request(body: PromptRequest) -> bool:
@@ -1428,6 +2143,25 @@ def _rebuild_cooking_appliance_toolhead(
     }
 
 
+def _is_fresh_design_request(body: PromptRequest) -> bool:
+    if body.references:
+        return False
+    prompt = body.prompt.strip().lower()
+    generative = (
+        "make ",
+        "create ",
+        "generate ",
+        "design ",
+        "build ",
+        "turn ",
+        "convert ",
+        "model ",
+    )
+    image_based = bool(body.images) and any(word in prompt for word in ("image", "photo", "picture", "reference"))
+    object_request = any(prompt.startswith(word) or f" {word}" in prompt for word in generative)
+    return image_based and object_request
+
+
 @app.get("/api/logs")
 def get_logs(limit: int = 80):
     return {"entries": list_entries(limit=min(limit, 150))}
@@ -1449,13 +2183,51 @@ def health():
         "model_quality": settings.openai_model_quality,
         "openai_configured": bool(settings.openai_api_key),
         "openai_key_length": len(settings.openai_api_key) if settings.openai_api_key else 0,
+        "per_user_keys": True,
         "auth": True,
     }
 
 
 @app.get("/api/skills")
-def list_skills():
-    return skills_service.skills_manifest()
+def list_skills(user: dict[str, Any] | None = Depends(get_current_user_optional)):
+    return skills_service.skills_manifest(user_id=(user or {}).get("id"))
+
+
+@app.post("/api/skills/plan")
+def plan_prompt_skills(body: SkillPlanRequest, user: dict[str, Any] | None = Depends(get_current_user_optional)):
+    catalog = skills_service.list_skills(user_id=(user or {}).get("id"))
+    by_id = {str(item.get("id") or "").lower(): item for item in catalog}
+    requested = [str(skill or "").strip().lower() for skill in (body.skills or []) if str(skill or "").strip()]
+    resolved = skills_service.resolve_prompt_skills(
+        requested,
+        has_images=bool(body.has_images),
+        prompt=body.prompt or "",
+        user_id=(user or {}).get("id"),
+    )
+    planned = []
+    for skill_id in resolved:
+        item = by_id.get(skill_id) or {}
+        planned.append(
+            {
+                "id": skill_id,
+                "name": item.get("name") or skill_id,
+                "description": item.get("description") or "",
+                "references": item.get("references") or [],
+                "tools": item.get("tools") or [],
+            }
+        )
+    available = [
+        {
+            "id": item.get("id"),
+            "name": item.get("name") or item.get("id"),
+            "description": item.get("description") or "",
+            "installed": item.get("installed", True),
+            "install_required": item.get("install_required", False),
+        }
+        for item in catalog
+        if item.get("id") and (not item.get("install_required") or item.get("installed"))
+    ]
+    return {"skills": planned, "requested": requested, "available": available}
 
 
 @app.get("/api/skills/{skill_id}")
@@ -1464,6 +2236,45 @@ def get_skill(skill_id: str, full: bool = False):
     if not skill:
         raise HTTPException(404, f"Skill '{skill_id}' not found")
     return skill
+
+
+@app.post("/api/skills/{skill_id}/install")
+def install_skill(skill_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    slug = skills_service.INSTALL_REQUIRED_SKILLS.get(skill_id.strip().lower())
+    if not slug:
+        raise HTTPException(400, "This skill does not require a download.")
+    try:
+        app_listing = agent_marketplace_service.install_listing(user["id"], slug)
+    except PermissionError as exc:
+        raise HTTPException(402, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"skill_id": skill_id, "app": app_listing}
+
+
+@app.get("/api/skills/{skill_id}/assets")
+def list_skill_assets(skill_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    return {"skill_id": skill_id, "assets": skills_service.list_skill_assets(user["id"], skill_id)}
+
+
+@app.post("/api/skills/{skill_id}/assets")
+async def upload_skill_assets(
+    skill_id: str,
+    files: list[UploadFile] = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    if skill_id.strip().lower() in skills_service.INSTALL_REQUIRED_SKILLS:
+        installed = {item["id"] for item in skills_service.list_skills(user_id=user["id"]) if item.get("installed")}
+        if skill_id.strip().lower() not in installed:
+            raise HTTPException(403, "Download this skill before uploading assets.")
+    assets = []
+    for item in files[:8]:
+        data = await item.read()
+        try:
+            assets.append(skills_service.save_skill_asset(user["id"], skill_id, item.filename or "asset", data))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    return {"skill_id": skill_id, "assets": skills_service.list_skill_assets(user["id"], skill_id), "uploaded": assets}
 
 
 @app.get("/api/skills/{skill_id}/references/{ref_name}")
@@ -1481,6 +2292,86 @@ def list_skill_tools(skill_id: str):
     if not skills_service.get_skill_dir(skill_id):
         raise HTTPException(404, f"Skill '{skill_id}' not found")
     return {"skill_id": skill_id, "tools": skill_runner.list_skill_tools(skill_id)}
+
+
+# ── Agent App Store / marketplace ────────────────────────────────────────────
+
+@app.get("/api/agent-apps")
+def list_agent_apps(
+    mine: bool = False,
+    include_pending: bool = False,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    is_admin = _is_a1projects_admin(user)
+    apps = agent_marketplace_service.list_listings(
+        user_id=(user or {}).get("id"),
+        include_pending=bool(include_pending and is_admin),
+        mine_only=bool(mine and user),
+    )
+    return {"apps": apps, "admin": is_admin}
+
+
+@app.get("/api/agent-apps/{app_id_or_slug}")
+def get_agent_app(
+    app_id_or_slug: str,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    app_listing = agent_marketplace_service.get_listing(
+        app_id_or_slug,
+        user_id=(user or {}).get("id"),
+        include_pending=_is_a1projects_admin(user),
+    )
+    if not app_listing:
+        raise HTTPException(404, "Agent app not found")
+    return {"app": app_listing}
+
+
+@app.post("/api/agent-apps")
+def submit_agent_app(body: AgentAppSubmitRequest, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        app_listing = agent_marketplace_service.create_listing(user["id"], body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"app": app_listing, "message": "Submitted for review."}
+
+
+@app.post("/api/agent-apps/{app_id_or_slug}/install")
+def install_agent_app(app_id_or_slug: str, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        app_listing = agent_marketplace_service.install_listing(user["id"], app_id_or_slug)
+    except PermissionError as exc:
+        raise HTTPException(402, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"app": app_listing}
+
+
+@app.delete("/api/agent-apps/{app_id_or_slug}/install")
+def uninstall_agent_app(app_id_or_slug: str, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        agent_marketplace_service.uninstall_listing(user["id"], app_id_or_slug)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.patch("/api/agent-apps/{app_id_or_slug}/review")
+def review_agent_app(
+    app_id_or_slug: str,
+    body: AgentAppReviewRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    if not _is_a1projects_admin(user):
+        raise HTTPException(403, "Only admins can review marketplace apps.")
+    try:
+        app_listing = agent_marketplace_service.review_listing(
+            app_id_or_slug,
+            status=body.status,
+            featured=body.featured,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"app": app_listing}
 
 
 @app.post("/api/auth/register")
@@ -1504,9 +2395,321 @@ def login(body: LoginRequest):
     return {"token": token, "user": user, "teams": teams, "ai": _ai_status_for_user(user)}
 
 
+@app.get("/api/auth/social/providers")
+def social_auth_providers():
+    from backend.services.social_oauth import configured_providers
+
+    return {"providers": configured_providers()}
+
+
+@app.get("/oauth/{provider}/start")
+def social_oauth_start(provider: str):
+    from backend.services.social_oauth import build_authorization_url
+
+    try:
+        url = build_authorization_url(provider)
+    except Exception as exc:
+        return _social_redirect_error(provider, str(exc))
+    return RedirectResponse(url, status_code=302)
+
+
+def _social_redirect_error(provider: str, message: str) -> RedirectResponse:
+    safe_provider = urllib.parse.quote((provider or "social").strip().lower()[:40])
+    safe_message = urllib.parse.quote((message or "login_failed")[:240])
+    return RedirectResponse(f"/?social_error={safe_message}&social_provider={safe_provider}", status_code=302)
+
+
+async def _handle_social_callback(provider: str, code: str | None, state: str | None, error: str | None = None) -> RedirectResponse:
+    from backend.services.social_oauth import consume_oauth_state, exchange_code_for_profile, upsert_social_user
+
+    if error:
+        return _social_redirect_error(provider, error)
+    if not code or not state:
+        return _social_redirect_error(provider, "missing_params")
+    state_ok = consume_oauth_state(state)
+    if state_ok is False:
+        return _social_redirect_error(provider, "invalid_state")
+    try:
+        profile = exchange_code_for_profile(provider, code)
+        user = upsert_social_user(profile)
+        token = create_access_token(user["id"])
+    except Exception as exc:
+        logger.warning("Social OAuth callback failed for %s: %s", provider, exc)
+        return _social_redirect_error(provider, str(exc))
+    safe_provider = urllib.parse.quote((provider or "social").strip().lower()[:40])
+    return RedirectResponse(f"/?social_token={token}&social_provider={safe_provider}", status_code=302)
+
+
+@app.get("/oauth/{provider}/callback")
+async def social_oauth_callback(
+    request: Request,
+    provider: str,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    if provider.strip().lower() == "autodesk":
+        return autodesk_oauth_callback(request, code=code, state=state, error=error, error_description=error_description)
+    return await _handle_social_callback(provider, code, state, error)
+
+
+@app.post("/oauth/{provider}/callback")
+async def social_oauth_callback_post(provider: str, request: Request):
+    form = await request.form()
+    if provider.strip().lower() == "autodesk":
+        return autodesk_oauth_callback(
+            request,
+            code=str(form.get("code") or "") or None,
+            state=str(form.get("state") or "") or None,
+            error=str(form.get("error") or "") or None,
+            error_description=str(form.get("error_description") or "") or None,
+        )
+    return await _handle_social_callback(
+        provider,
+        str(form.get("code") or "") or None,
+        str(form.get("state") or "") or None,
+        str(form.get("error") or "") or None,
+    )
+
+
 @app.get("/api/auth/me")
 def auth_me(user: dict[str, Any] = Depends(get_current_user)):
     return {"user": user, "teams": teams_service.list_teams(user["id"]), "ai": _ai_status_for_user(user)}
+
+
+RENDER_AGENT_SYSTEM_PROMPT = """You are Render Agent, the in-app support assistant for Render3D.
+Answer practical questions about Render3D tooling, CAD workflows, Fusion 360/Onshape sync, file uploads,
+AI model generation, sketches, wiring diagrams, BOMs, project folders, permissions, and troubleshooting.
+Be concise and action-oriented. If the user asks for destructive actions, explain the safe workflow first.
+You can use attached images and text snippets as context. You cannot directly edit files from this chat."""
+
+
+def _render_agent_project_context(project_id: str | None, user: dict[str, Any]) -> dict[str, Any] | None:
+    if not project_id:
+        return None
+    try:
+        path = _require_project_read(user, project_id)
+    except Exception:
+        return {"project_id": project_id, "error": "Project not accessible to this user."}
+    summary = project_store.project_summary(path)
+    files = summary.get("files") or []
+    return {
+        "project_id": project_id,
+        "project_name": summary.get("name"),
+        "latest_file": summary.get("latest_file"),
+        "file_count": len(files),
+        "files": [
+            {
+                "name": item.get("name"),
+                "format": item.get("format"),
+                "size": item.get("size"),
+            }
+            for item in files[:40]
+        ],
+        "fusion_source": project_store.load_meta(path).get("autodesk_source"),
+    }
+
+
+def _render_agent_user_content(
+    message: str,
+    *,
+    thread: dict[str, Any],
+    project_context: dict[str, Any] | None,
+    attachments: list[RenderAgentAttachment],
+) -> str:
+    history = [
+        {"role": item.get("role"), "content": str(item.get("content") or "")[:1400]}
+        for item in (thread.get("messages") or [])[-8:]
+        if item.get("content")
+    ]
+    text_attachments = [
+        {
+            "name": item.name,
+            "media_type": item.media_type,
+            "text": (item.text or "")[:6000],
+        }
+        for item in attachments
+        if item.text
+    ]
+    context = {
+        "recent_thread_messages": history,
+        "current_project": project_context,
+        "text_attachments": text_attachments,
+    }
+    return (
+        f"User question:\n{message}\n\n"
+        f"Render3D context JSON:\n{json.dumps(context, separators=(',', ':'), default=str)}"
+    )
+
+
+@app.get("/api/render-agent/threads")
+def list_render_agent_threads(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import render_agent_service
+
+    return {"threads": render_agent_service.list_threads(user["id"])}
+
+
+@app.post("/api/render-agent/threads")
+def create_render_agent_thread(body: RenderAgentThreadCreateRequest, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import render_agent_service
+
+    thread = render_agent_service.create_thread(user["id"], body.title)
+    return {"thread": thread}
+
+
+@app.get("/api/render-agent/threads/{thread_id}")
+def get_render_agent_thread(thread_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import render_agent_service
+
+    thread = render_agent_service.get_thread(user["id"], thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    return {"thread": thread}
+
+
+@app.post("/api/render-agent/messages")
+def render_agent_message(body: RenderAgentMessageRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import render_agent_service
+
+    thread = render_agent_service.get_thread(user["id"], body.thread_id or "") if body.thread_id else None
+    if not thread:
+        thread = render_agent_service.create_thread(user["id"], body.message[:70])
+    ai = _get_ai_for_user(
+        user,
+        body.speed,
+        key_id=body.ai_key_id,
+        key_source=body.ai_key_source,
+        project_id=body.project_id,
+    )
+    attachments = body.attachments[:6]
+    project_context = _render_agent_project_context(body.project_id, user)
+    trace_id = getattr(request.state, "trace_id", new_trace_id())
+    user_content = _render_agent_user_content(
+        body.message,
+        thread=thread,
+        project_context=project_context,
+        attachments=attachments,
+    )
+    images = [
+        item.model_dump()
+        for item in attachments
+        if (item.media_type or "").lower() in {"image/png", "image/jpeg", "image/jpg", "image/webp"} and item.data_url
+    ]
+    try:
+        answer, call_trace = ai._call_model(
+            RENDER_AGENT_SYSTEM_PROMPT,
+            user_content,
+            trace_id=trace_id,
+            images=images,
+            max_tokens=2500,
+            retry_on_truncation=False,
+            pro_floor=None,
+            json_response=False,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Render Agent failed: {exc}") from exc
+    user_message = {
+        "role": "user",
+        "content": body.message,
+        "attachments": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "media_type": item.media_type,
+                "has_text": bool(item.text),
+                "has_image": bool(item.data_url and (item.media_type or "").startswith("image/")),
+            }
+            for item in attachments
+        ],
+    }
+    assistant_message = {"role": "assistant", "content": answer, "attachments": []}
+    updated = render_agent_service.append_messages(user["id"], thread["id"], [user_message, assistant_message])
+    return {
+        "thread": updated,
+        "message": assistant_message,
+        "trace": {
+            "model": call_trace.get("model"),
+            "provider": call_trace.get("provider"),
+            "usage": call_trace.get("usage"),
+            "cost_usd": call_trace.get("cost_usd"),
+        },
+    }
+
+
+def _avatar_path_for_user(user_id: str, ext: str) -> Path:
+    safe_id = "".join(ch for ch in str(user_id) if ch.isalnum() or ch in {"-", "_"})[:80]
+    return AVATARS / f"{safe_id}.{ext}"
+
+
+def _avatar_url_for_user_id(user_id: str | None) -> str | None:
+    if not user_id:
+        return None
+    safe_id = "".join(ch for ch in str(user_id) if ch.isalnum() or ch in {"-", "_"})[:80]
+    if not safe_id:
+        return None
+    return f"/api/users/{safe_id}/avatar"
+
+
+@app.get("/api/users/me/avatar")
+def get_my_avatar(user: dict[str, Any] = Depends(get_current_user)):
+    for ext, media in (("png", "image/png"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg")):
+        path = _avatar_path_for_user(user["id"], ext)
+        if path.is_file():
+            return FileResponse(path, media_type=media)
+    raise HTTPException(404, "Avatar not found")
+
+
+@app.get("/api/users/{user_id}/avatar")
+def get_user_avatar(user_id: str):
+    for ext, media in (("png", "image/png"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg")):
+        path = _avatar_path_for_user(user_id, ext)
+        if path.is_file():
+            return FileResponse(path, media_type=media)
+    raise HTTPException(404, "Avatar not found")
+
+
+@app.post("/api/users/me/avatar")
+@app.put("/api/users/me/avatar")
+async def upload_my_avatar(file: UploadFile = File(...), user: dict[str, Any] = Depends(get_current_user)):
+    media = (file.content_type or "").lower()
+    ext = "png" if media == "image/png" else "jpg" if media in {"image/jpeg", "image/jpg"} else ""
+    if not ext:
+        raise HTTPException(400, "Upload a PNG or JPEG image.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Uploaded image is empty.")
+    if len(data) > 1_500_000:
+        raise HTTPException(400, "Profile picture must be under 1.5 MB.")
+    if ext == "png" and not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(400, "Invalid PNG image.")
+    if ext == "jpg" and not data.startswith(b"\xff\xd8"):
+        raise HTTPException(400, "Invalid JPEG image.")
+
+    # Remove older avatar variants for this user.
+    for old_ext in ("png", "jpg", "jpeg"):
+        old = _avatar_path_for_user(user["id"], old_ext)
+        if old.is_file():
+            old.unlink()
+    path = _avatar_path_for_user(user["id"], ext)
+    path.write_bytes(data)
+    avatar_url = f"{_avatar_url_for_user_id(user['id'])}?v={int(time.time())}"
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET avatar_url = ? WHERE id = ?", (avatar_url, user["id"]))
+    updated = get_user_by_id(user["id"])
+    return {"user": updated, "avatar_url": avatar_url}
+
+
+@app.delete("/api/users/me/avatar")
+def delete_my_avatar(user: dict[str, Any] = Depends(get_current_user)):
+    for ext in ("png", "jpg", "jpeg"):
+        path = _avatar_path_for_user(user["id"], ext)
+        if path.is_file():
+            path.unlink()
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET avatar_url = NULL WHERE id = ?", (user["id"],))
+    updated = get_user_by_id(user["id"])
+    return {"user": updated, "avatar_url": None}
 
 
 # ── Onshape OAuth ─────────────────────────────────────────────────────────────
@@ -1574,6 +2777,757 @@ def onshape_unlink(user: dict[str, Any] = Depends(get_current_user)):
     with get_conn() as conn:
         conn.execute("DELETE FROM onshape_tokens WHERE user_id = ?", (user["id"],))
     return {"ok": True}
+
+
+# ── Autodesk / Fusion 360 OAuth ──────────────────────────────────────────────
+
+
+def _request_origin(request: Request) -> str:
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",", 1)[0].strip()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",", 1)[0].strip()
+    return f"{proto}://{host}".rstrip("/")
+
+
+def _autodesk_redirect_uri_for_request(request: Request) -> str:
+    configured = (settings.autodesk_redirect_uri or "").strip()
+    origin = _request_origin(request)
+    if configured:
+        try:
+            configured_url = urllib.parse.urlparse(configured)
+            request_url = urllib.parse.urlparse(origin)
+            if configured_url.hostname == request_url.hostname:
+                return configured
+        except Exception:
+            pass
+    return f"{origin}/oauth/autodesk/callback"
+
+
+def _autodesk_return_origin() -> str:
+    """Canonical app host to return to after Autodesk OAuth."""
+    configured = (settings.autodesk_redirect_uri or "").strip()
+    if configured:
+        parsed = urllib.parse.urlparse(configured)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return "https://render3d.app"
+
+
+@app.post("/api/autodesk/oauth-url")
+def autodesk_oauth_url(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Create an Autodesk OAuth URL for the currently signed-in user."""
+    try:
+        from backend.services.autodesk_oauth import build_authorization_url
+        origin = _autodesk_return_origin()
+        logger.info("autodesk oauth-url start user_id=%s email=%s origin=%s", user.get("id"), user.get("email"), origin)
+        return {"url": build_authorization_url(user_id=user["id"], return_url=origin)}
+    except Exception as exc:
+        logger.warning("autodesk oauth-url failed user_id=%s error=%s", user.get("id"), exc)
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/oauth/autodesk/start")
+def autodesk_oauth_start(
+    request: Request,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    """Redirect the browser to Autodesk authorization for Fusion 360 linking."""
+    if not user:
+        logger.info("autodesk oauth start rejected login_required origin=%s", _request_origin(request))
+        return RedirectResponse("/?autodesk_error=login_required", status_code=302)
+    try:
+        from backend.services.autodesk_oauth import build_authorization_url
+        origin = _autodesk_return_origin()
+        logger.info("autodesk oauth start user_id=%s email=%s origin=%s", user.get("id"), user.get("email"), origin)
+        url = build_authorization_url(user_id=user["id"], return_url=origin)
+    except Exception as exc:
+        logger.warning("autodesk oauth start failed user_id=%s error=%s", user.get("id"), exc)
+        return RedirectResponse(f"/?autodesk_error={str(exc)[:80]}", status_code=302)
+    return RedirectResponse(url, status_code=302)
+
+
+def _autodesk_redirect_error(message: str) -> RedirectResponse:
+    return RedirectResponse(f"/?autodesk_error={urllib.parse.quote(message[:240])}", status_code=302)
+
+
+@app.get("/oauth/autodesk/callback")
+@app.get("/oauth/autodesk/callback/")
+def autodesk_oauth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    """Autodesk redirects here after account authorization."""
+    logger.info(
+        "autodesk callback received has_code=%s has_state=%s error=%s origin=%s",
+        bool(code),
+        bool(state),
+        error or "",
+        _request_origin(request),
+    )
+    if error:
+        detail = error_description or error
+        logger.warning("autodesk callback provider_error=%s", detail)
+        return _autodesk_redirect_error(detail)
+    if not code or not state:
+        seen = ", ".join(sorted(request.query_params.keys())) or "none"
+        return _autodesk_redirect_error(
+            "Autodesk did not return an authorization code. "
+            f"Check that the APS app callback URL exactly matches {settings.autodesk_redirect_uri}. "
+            f"Callback query params seen: {seen}."
+        )
+
+    try:
+        from backend.services.autodesk_oauth import consume_oauth_state, exchange_code_for_tokens, upsert_user_tokens
+        oauth_state = consume_oauth_state(state)
+        if oauth_state is False:
+            logger.warning("autodesk callback invalid_state")
+            return _autodesk_redirect_error("invalid_state")
+        stored_user_id = oauth_state.get("user_id")
+        if not stored_user_id:
+            logger.warning("autodesk callback login_required missing_user_id")
+            return _autodesk_redirect_error("login_required")
+        token_data = exchange_code_for_tokens(code)
+        upsert_user_tokens(token_data, stored_user_id)
+        app_token = create_access_token(stored_user_id)
+        logger.info("autodesk callback linked user_id=%s return_url=%s", stored_user_id, oauth_state.get("return_url") or "")
+    except Exception as exc:
+        logger.exception("autodesk callback failed error=%s", exc)
+        return _autodesk_redirect_error(str(exc))
+
+    params = urllib.parse.urlencode(
+        {
+            "autodesk_linked": "1",
+            "render3d_token": app_token,
+            # Older cached frontends only restore OAuth redirects from onshape_token.
+            "onshape_token": app_token,
+        }
+    )
+    return_url = str(oauth_state.get("return_url") or "").rstrip("/")
+    if return_url.startswith(("https://", "http://localhost", "http://127.0.0.1")):
+        return RedirectResponse(f"{return_url}/?{params}", status_code=302)
+    return RedirectResponse(f"/?{params}", status_code=302)
+
+
+@app.get("/api/autodesk/status")
+def autodesk_status(request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    """Return whether this user has linked Autodesk/Fusion 360."""
+    from backend.database import get_conn
+    from backend.services.autodesk_oauth import configured_scopes
+    configured = bool(settings.autodesk_client_id and settings.autodesk_client_secret)
+    setup = {
+        "portal_url": "https://aps.autodesk.com/myapps/",
+        "redirect_uri": settings.autodesk_redirect_uri,
+        "required_env": ["AUTODESK_CLIENT_ID", "AUTODESK_CLIENT_SECRET", "AUTODESK_REDIRECT_URI", "AUTODESK_SCOPES"],
+        "apis": ["Authentication API", "Data Management API"],
+        "scopes": configured_scopes(),
+        "client_id_tail": settings.autodesk_client_id[-6:] if settings.autodesk_client_id else "",
+    }
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT autodesk_email, autodesk_name, expires_at FROM autodesk_tokens WHERE user_id = ?",
+            (user["id"],),
+        ).fetchone()
+    if not row:
+        return {"linked": False, "configured": configured, "setup": setup}
+    return {
+        "linked": True,
+        "configured": configured,
+        "setup": setup,
+        "autodesk_email": row["autodesk_email"],
+        "autodesk_name": row["autodesk_name"],
+        "expires_at": row["expires_at"],
+    }
+
+
+@app.post("/api/autodesk/config")
+def autodesk_save_config(body: AutodeskCredentialsRequest, user: dict[str, Any] = Depends(get_current_user)):
+    """Save APS app credentials used for Autodesk/Fusion OAuth."""
+    client_id = body.client_id.strip()
+    client_secret = body.client_secret.strip()
+    redirect_uri = (body.redirect_uri or settings.autodesk_redirect_uri).strip()
+    if not redirect_uri.startswith(("https://", "http://localhost", "http://127.0.0.1")):
+        raise HTTPException(422, "Use an HTTPS redirect URL, or localhost for local development.")
+
+    updates = {
+        "AUTODESK_CLIENT_ID": client_id,
+        "AUTODESK_CLIENT_SECRET": client_secret,
+        "AUTODESK_REDIRECT_URI": redirect_uri,
+        "AUTODESK_SCOPES": settings.autodesk_scopes,
+    }
+    env_path = ROOT / ".env"
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.is_file() else []
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
+        if key in updates:
+            out.append(f"{key}={updates[key]}")
+            seen.add(key)
+        else:
+            out.append(line)
+    for key, value in updates.items():
+        if key not in seen:
+            out.append(f"{key}={value}")
+    env_path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+
+    # Keep this process usable immediately; .env keeps the values across restarts.
+    settings.autodesk_client_id = client_id
+    settings.autodesk_client_secret = client_secret
+    settings.autodesk_redirect_uri = redirect_uri
+    return {
+        "configured": True,
+        "redirect_uri": redirect_uri,
+        "client_id_tail": client_id[-6:],
+    }
+
+
+@app.delete("/api/autodesk/unlink")
+def autodesk_unlink(user: dict[str, Any] = Depends(get_current_user)):
+    """Remove stored Autodesk/Fusion 360 tokens for this user."""
+    from backend.database import get_conn
+    with get_conn() as conn:
+        conn.execute("DELETE FROM autodesk_tokens WHERE user_id = ?", (user["id"],))
+    return {"ok": True}
+
+
+@app.get("/api/autodesk/hubs")
+def autodesk_hubs(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services.autodesk_oauth import get_valid_access_token, list_hubs
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+    try:
+        return {"hubs": list_hubs(token)}
+    except Exception as exc:
+        raise HTTPException(502, f"Autodesk library error: {exc}") from exc
+
+
+@app.get("/api/autodesk/hubs/{hub_id}/projects")
+def autodesk_projects(hub_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services.autodesk_oauth import get_valid_access_token, list_projects
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+    try:
+        return {"projects": list_projects(token, hub_id)}
+    except Exception as exc:
+        raise HTTPException(502, f"Autodesk projects error: {exc}") from exc
+
+
+@app.get("/api/autodesk/hubs/{hub_id}/projects/{aps_project_id}/top-folders")
+def autodesk_top_folders(hub_id: str, aps_project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services.autodesk_oauth import get_valid_access_token, list_top_folders
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+    try:
+        return {"folders": list_top_folders(token, hub_id, aps_project_id)}
+    except Exception as exc:
+        raise HTTPException(502, f"Autodesk folders error: {exc}") from exc
+
+
+@app.get("/api/autodesk/projects/{aps_project_id}/folders/{folder_id}/contents")
+def autodesk_folder_contents(aps_project_id: str, folder_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services.autodesk_oauth import get_valid_access_token, list_folder_contents
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+    try:
+        return list_folder_contents(token, aps_project_id, folder_id)
+    except Exception as exc:
+        raise HTTPException(502, f"Autodesk folder contents error: {exc}") from exc
+
+
+def _safe_model_stem(name: str, fallback: str) -> str:
+    stem = Path(name or fallback).stem or fallback
+    safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in stem).strip().replace(" ", "_").lower()
+    return safe or fallback
+
+
+@app.post("/api/autodesk/import")
+def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(get_current_user)):
+    """Download a supported Autodesk file, convert a preview if needed, and create a local project."""
+    import uuid
+    from backend.services.autodesk_oauth import download_item_file, export_fusion_item_as_step, get_folder_item, get_valid_access_token
+    from backend.services import cad_service
+
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+
+    aps_project_id = str(body.get("aps_project_id") or body.get("autodesk_project_id") or "")
+    hub_id = str(body.get("hub_id") or "")
+    folder_id = str(body.get("folder_id") or "")
+    item_id = str(body.get("item_id") or "")
+    if not aps_project_id or not folder_id or not item_id:
+        raise HTTPException(422, "aps_project_id, folder_id and item_id are required.")
+
+    try:
+        item = get_folder_item(token, aps_project_id, folder_id, item_id)
+    except Exception as exc:
+        raise HTTPException(502, f"Could not find Autodesk item: {exc}") from exc
+
+    name = str(item.get("name") or body.get("name") or "autodesk_import").strip() or "autodesk_import"
+    suffix = Path(name).suffix.lower()
+    converted_from_native = False
+    if suffix in cad_service.SUPPORTED_IMPORT:
+        try:
+            data = download_item_file(token, item)
+        except Exception as exc:
+            raise HTTPException(502, f"Could not download from Autodesk: {exc}") from exc
+    else:
+        if not hub_id:
+            raise HTTPException(422, "This Fusion design needs cloud STEP conversion, but hub_id was not provided.")
+        try:
+            data = export_fusion_item_as_step(token, hub_id=hub_id, project_id=aps_project_id, item_id=item_id)
+        except Exception as exc:
+            raise HTTPException(
+                502,
+                "Could not auto-convert this Fusion design to STEP. "
+                "Enable Manufacturing Data Model API for the APS app, reconnect Autodesk, then try again. "
+                f"Autodesk said: {exc}",
+            ) from exc
+        suffix = ".step"
+        converted_from_native = True
+
+    teams = teams_service.list_teams(user["id"])
+    if not teams:
+        raise HTTPException(400, "No workspace available — create one first.")
+    requested_team_id = str(body.get("team_id") or "").strip()
+    team_ids = {team["id"] for team in teams}
+    if requested_team_id and requested_team_id not in team_ids:
+        raise HTTPException(403, "Not a member of that workspace.")
+    tid = requested_team_id or teams[0]["id"]
+    project_id = str(uuid.uuid4())[:8]
+    proj_path = cad_service.project_dir(PROJECTS, project_id)
+    project_store.touch_project(proj_path, name=name, name_source="user")
+    teams_service.register_project_access(project_id, tid, user["id"])
+
+    safe_stem = _safe_model_stem(name, "autodesk_import")
+    safe_name = f"{'.autodesk_source_' if converted_from_native else ''}{safe_stem}{suffix}"
+    src_path = proj_path / safe_name
+    src_path.write_bytes(data)
+
+    viewer_path = src_path
+    try:
+        if suffix == ".3mf":
+            mesh = cad_service.load_mesh(src_path)
+            viewer_path = src_path.with_suffix(".glb")
+            cad_service.export_mesh(mesh, viewer_path)
+        elif suffix in cad_service.STEP_SUFFIXES:
+            viewer_path = cad_service.tessellate_step_to_glb(src_path)
+            if converted_from_native:
+                assembled_viewer_path = proj_path / f"{safe_stem}.glb"
+                if viewer_path.name != assembled_viewer_path.name:
+                    assembled_viewer_path.write_bytes(viewer_path.read_bytes())
+                viewer_path = assembled_viewer_path
+                if body.get("import_bodies", False) is True:
+                    cad_service.split_scene_components_to_glbs(
+                        viewer_path,
+                        proj_path,
+                        base_stem=safe_stem,
+                    )
+    except Exception as exc:
+        raise HTTPException(422, f"Could not convert Autodesk file for preview: {exc}") from exc
+
+    meta = project_store.load_meta(proj_path)
+    meta["autodesk_source"] = {
+        "aps_project_id": aps_project_id,
+        "folder_id": folder_id,
+        "item_id": item_id,
+        "version_id": item.get("version_id") or body.get("version_id") or "",
+        "item_name": name,
+        "web_url": item.get("web_url") or "",
+        "converted_from_native": converted_from_native,
+    }
+    project_store.save_meta(proj_path, meta)
+    entry = _record_history(
+        proj_path,
+        "autodesk_import",
+        f"Import {name} from Autodesk",
+        viewer_path.name,
+        meta={"source_file": src_path.name, "autodesk_item_id": item_id},
+        user=user,
+    )
+    _log_workspace(tid, kind="autodesk_import", label=f"Imported {name} from Autodesk", user=user, project_id=project_id)
+
+    return {
+        "project_id": project_id,
+        "filename": viewer_path.name,
+        "source_file": src_path.name,
+        "name": name,
+        "autodesk_source": meta["autodesk_source"],
+        "timeline_entry": entry,
+    }
+
+
+@app.post("/api/autodesk/download")
+def autodesk_download_item(body: dict = Body(...), user: dict[str, Any] = Depends(get_current_user)):
+    """Download an Autodesk item through Render3D so authenticated users can save it locally."""
+    from backend.services.autodesk_oauth import download_item_file, get_folder_item, get_valid_access_token
+
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+
+    aps_project_id = str(body.get("aps_project_id") or body.get("autodesk_project_id") or "")
+    folder_id = str(body.get("folder_id") or "")
+    item_id = str(body.get("item_id") or "")
+    if not aps_project_id or not folder_id or not item_id:
+        raise HTTPException(422, "aps_project_id, folder_id and item_id are required.")
+
+    try:
+        item = get_folder_item(token, aps_project_id, folder_id, item_id)
+        data = download_item_file(token, item)
+    except Exception as exc:
+        raise HTTPException(502, f"Could not download from Autodesk: {exc}") from exc
+
+    filename = Path(str(item.get("name") or body.get("name") or "autodesk-download")).name
+    quoted = urllib.parse.quote(filename)
+    return Response(
+        content=data,
+        media_type=item.get("mime_type") or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
+    )
+
+
+@app.get("/api/projects/{project_id}/autodesk-source")
+def get_project_autodesk_source(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    """Return Autodesk/Fusion source metadata for a project, if it was imported from Fusion."""
+    path = _require_project(user, project_id)
+    meta = project_store.load_meta(path)
+    return {"autodesk_source": meta.get("autodesk_source")}
+
+
+def _upsert_project_fusion_mirror(
+    *,
+    project_id: str,
+    user_id: str,
+    team_id: str | None,
+    body: dict[str, Any],
+    result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    hub_id = str(body.get("hub_id") or body.get("autodesk_hub_id") or "").strip()
+    aps_project_id = str(body.get("aps_project_id") or body.get("autodesk_project_id") or "").strip()
+    folder_id = str(body.get("folder_id") or "").strip()
+    if not aps_project_id or not folder_id:
+        raise HTTPException(422, "aps_project_id and folder_id are required.")
+    result = result or {}
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO project_fusion_mirrors
+              (project_id, user_id, team_id, hub_id, hub_label, aps_project_id, aps_project_label,
+               folder_id, folder_label, last_item_id, last_version_id, last_pushed_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project_id, user_id) DO UPDATE SET
+              team_id = excluded.team_id,
+              hub_id = excluded.hub_id,
+              hub_label = excluded.hub_label,
+              aps_project_id = excluded.aps_project_id,
+              aps_project_label = excluded.aps_project_label,
+              folder_id = excluded.folder_id,
+              folder_label = excluded.folder_label,
+              last_item_id = COALESCE(excluded.last_item_id, project_fusion_mirrors.last_item_id),
+              last_version_id = COALESCE(excluded.last_version_id, project_fusion_mirrors.last_version_id),
+              last_pushed_at = COALESCE(excluded.last_pushed_at, project_fusion_mirrors.last_pushed_at),
+              updated_at = excluded.updated_at
+            """,
+            (
+                project_id,
+                user_id,
+                team_id,
+                hub_id,
+                str(body.get("hub_label") or body.get("hub_name") or "").strip() or None,
+                aps_project_id,
+                str(body.get("aps_project_label") or body.get("project_label") or body.get("project_name") or "").strip() or None,
+                folder_id,
+                str(body.get("folder_label") or body.get("folder_name") or "").strip() or None,
+                result.get("item_id"),
+                result.get("version_id"),
+                now if result.get("item_id") or result.get("version_id") else None,
+                now,
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT m.*, u.email, u.display_name
+              FROM project_fusion_mirrors m
+              JOIN users u ON u.id = m.user_id
+             WHERE m.project_id = ? AND m.user_id = ?
+            """,
+            (project_id, user_id),
+        ).fetchone()
+    return dict(row)
+
+
+def _fusion_mirror_summary(row: dict[str, Any], *, include_contents: bool = False) -> dict[str, Any]:
+    mirror = dict(row)
+    if not include_contents:
+        return mirror
+    mirror["contents"] = {"folders": [], "items": [], "error": None}
+    try:
+        from backend.services.autodesk_oauth import get_valid_access_token, list_folder_contents
+
+        token = get_valid_access_token(str(mirror["user_id"]))
+        if not token:
+            mirror["contents"]["error"] = "Autodesk account not linked."
+            return mirror
+        contents = list_folder_contents(token, str(mirror["aps_project_id"]), str(mirror["folder_id"]))
+        mirror["contents"] = {
+            "folders": (contents.get("folders") or [])[:30],
+            "items": (contents.get("items") or [])[:50],
+            "error": None,
+        }
+    except Exception as exc:
+        mirror["contents"]["error"] = str(exc)
+    return mirror
+
+
+@app.get("/api/projects/{project_id}/fusion-mirrors")
+def get_project_fusion_mirrors(
+    project_id: str,
+    include_contents: bool = Query(False),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Per-user Fusion folder mirrors for this shared Render3D project."""
+    _require_project_read(user, project_id)
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT m.*, u.email, u.display_name
+              FROM project_fusion_mirrors m
+              JOIN users u ON u.id = m.user_id
+             WHERE m.project_id = ?
+             ORDER BY lower(u.display_name), lower(u.email)
+            """,
+            (project_id,),
+        ).fetchall()
+    mirrors = [_fusion_mirror_summary(dict(r), include_contents=include_contents) for r in rows]
+    return {
+        "project_id": project_id,
+        "mine": next((m for m in mirrors if m.get("user_id") == user["id"]), None),
+        "mirrors": mirrors,
+    }
+
+
+@app.post("/api/projects/{project_id}/fusion-mirror")
+def save_project_fusion_mirror(
+    project_id: str,
+    body: dict = Body(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Bind this user's personal Fusion folder as a mirror for a Render3D project."""
+    _require_project_read(user, project_id)
+    from backend.services.autodesk_oauth import get_valid_access_token
+
+    if not get_valid_access_token(user["id"]):
+        raise HTTPException(401, "Autodesk account not linked.")
+    team_id = body.get("team_id")
+    if not team_id:
+        with get_conn() as conn:
+            row = conn.execute("SELECT team_id FROM project_access WHERE project_id = ?", (project_id,)).fetchone()
+            team_id = row["team_id"] if row else None
+    mirror = _upsert_project_fusion_mirror(
+        project_id=project_id,
+        user_id=user["id"],
+        team_id=str(team_id) if team_id else None,
+        body=body,
+    )
+    return {"ok": True, "mirror": mirror}
+
+
+@app.post("/api/projects/{project_id}/push-to-autodesk")
+def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), user: dict[str, Any] = Depends(get_current_user)):
+    """Upload the current model STEP into a selected Fusion/Autodesk folder."""
+    from backend.services.autodesk_oauth import get_valid_access_token, upload_step_as_new_version, upload_step_to_folder
+    from backend.services import cad_service
+
+    path = _require_project(user, project_id)
+    meta = project_store.load_meta(path)
+    source = meta.get("autodesk_source") or {}
+    with get_conn() as conn:
+        mirror_row = conn.execute(
+            "SELECT * FROM project_fusion_mirrors WHERE project_id = ? AND user_id = ?",
+            (project_id, user["id"]),
+        ).fetchone()
+    mirror = dict(mirror_row) if mirror_row else {}
+    aps_project_id = str(
+        body.get("aps_project_id")
+        or body.get("autodesk_project_id")
+        or source.get("aps_project_id")
+        or mirror.get("aps_project_id")
+        or ""
+    )
+    folder_id = str(body.get("folder_id") or source.get("folder_id") or mirror.get("folder_id") or "")
+    item_id = str(body.get("item_id") or source.get("item_id") or "")
+    if (
+        not item_id
+        and mirror.get("last_item_id")
+        and aps_project_id == mirror.get("aps_project_id")
+        and folder_id == mirror.get("folder_id")
+    ):
+        item_id = str(mirror["last_item_id"])
+    if not aps_project_id or not folder_id:
+        raise HTTPException(422, "Link a Fusion mirror folder or provide aps_project_id and folder_id.")
+
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+
+    filename = body.get("filename") or project_store.latest_model_file(path)
+    if not filename:
+        raise HTTPException(422, "No model file found in this project.")
+    safe = Path(filename).name
+    stem = safe[: safe.rfind(".")] if "." in safe else safe
+    step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
+    source_path = path / f"{stem}.py"
+
+    upload_name = Path(str(body.get("name") or f"{stem}.step")).name
+    if not upload_name.lower().endswith((".step", ".stp")):
+        upload_name = f"{Path(upload_name).stem}.step"
+
+    try:
+        result = upload_step_to_folder(
+            token,
+            project_id=aps_project_id,
+            folder_id=folder_id,
+            filename=upload_name,
+                data=step_path.read_bytes(),
+            )
+        if body.get("upload_source", True) and source_path.is_file():
+            try:
+                source_name = f"{stem}.build123d.py"
+                result["source_upload"] = upload_step_to_folder(
+                    token,
+                    project_id=aps_project_id,
+                    folder_id=folder_id,
+                    filename=source_name,
+                    data=source_path.read_bytes(),
+                )
+            except Exception as exc:
+                logger.warning("Fusion companion source upload failed for %s: %s", source_path.name, exc)
+                result["source_upload_error"] = str(exc)
+    except Exception as exc:
+        raise HTTPException(502, f"Fusion push failed: {exc}") from exc
+    return result
+
+
+@app.get("/api/onshape/documents")
+def onshape_list_documents(
+    limit: int = 20,
+    offset: int = 0,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services.onshape_oauth import get_valid_access_token, list_documents
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Onshape account not linked.")
+    try:
+        docs = list_documents(token, limit=min(limit, 20), offset=offset)
+    except Exception as exc:
+        raise HTTPException(502, f"Onshape error: {exc}") from exc
+    return {"documents": docs}
+
+
+@app.get("/api/onshape/documents/{did}/elements")
+def onshape_list_elements(
+    did: str,
+    wid: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services.onshape_oauth import get_valid_access_token, list_elements
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Onshape account not linked.")
+    try:
+        elements = list_elements(token, did, wid)
+    except Exception as exc:
+        raise HTTPException(502, f"Onshape error: {exc}") from exc
+    return {"elements": elements}
+
+
+@app.post("/api/onshape/import")
+def onshape_import_element(
+    body: dict = Body(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Download an Onshape element as STEP, convert to GLB, create a local project."""
+    import uuid
+    from backend.services.onshape_oauth import (
+        get_valid_access_token, download_element_as_step
+    )
+    from backend.services import cad_service
+
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Onshape account not linked.")
+
+    did  = body.get("document_id", "")
+    wid  = body.get("workspace_id", "")
+    eid  = body.get("element_id", "")
+    etype = body.get("element_type", "PARTSTUDIO")
+    name = (body.get("name") or "onshape_import").strip()
+    # Sanitise to a safe filename stem
+    safe_name = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip().replace(" ", "_").lower()
+    if not safe_name:
+        safe_name = "onshape_import"
+
+    if not (did and wid and eid):
+        raise HTTPException(422, "document_id, workspace_id and element_id are required.")
+
+    # Download STEP
+    try:
+        step_bytes = download_element_as_step(token, did, wid, eid, etype)
+    except Exception as exc:
+        raise HTTPException(502, f"Could not download from Onshape: {exc}") from exc
+
+    # Create project (same logic as /api/projects)
+    teams = teams_service.list_teams(user["id"])
+    if not teams:
+        raise HTTPException(400, "No workspace available — create one first.")
+    tid = teams[0]["id"]
+    project_id = str(uuid.uuid4())[:8]
+    proj_path = cad_service.project_dir(PROJECTS, project_id)
+    project_store.touch_project(proj_path, name=name)
+    teams_service.register_project_access(project_id, tid, user["id"])
+
+    # Tag project with Onshape source so we can push edits back later
+    meta = project_store.load_meta(proj_path)
+    meta["onshape_source"] = {
+        "document_id":   did,
+        "workspace_id":  wid,
+        "element_id":    eid,
+        "element_type":  etype,
+        "document_name": body.get("document_name", ""),
+        "element_name":  name,
+    }
+    project_store.save_meta(proj_path, meta)
+
+    step_path = proj_path / f"{safe_name}.step"
+    step_path.write_bytes(step_bytes)
+
+    # Convert STEP → GLB using existing pipeline
+    try:
+        glb_path = cad_service.tessellate_step_to_glb(step_path)
+    except Exception as exc:
+        raise HTTPException(422, f"Could not convert STEP to GLB: {exc}") from exc
+
+    _log_workspace(tid, kind="onshape_import", label=f"Imported {name} from Onshape", user=user, project_id=project_id)
+
+    return {
+        "project_id":    project_id,
+        "filename":      glb_path.name,
+        "step_file":     step_path.name,
+        "name":          name,
+        "onshape_source": meta["onshape_source"],
+    }
 
 
 @app.get("/api/onshape/documents")
@@ -1772,6 +3726,246 @@ def list_users(q: str = Query(""), user: dict[str, Any] = Depends(get_current_us
     return {"users": teams_service.list_users(q)}
 
 
+@app.get("/api/admin/dashboard")
+def admin_dashboard(
+    user: dict[str, Any] = Depends(get_current_user),
+    user_limit: int = Query(12, ge=1, le=50),
+    project_limit: int = Query(18, ge=1, le=80),
+    prompt_limit: int = Query(40, ge=1, le=160),
+):
+    """Site-wide management overview for the a1projects account only."""
+    _require_a1projects_admin(user)
+    from backend.services.ai_cost import entry_effective_cost
+
+    with get_conn() as conn:
+        user_rows = conn.execute(
+            """
+            SELECT id, email, display_name, created_at, avatar_url,
+                   ai_provider, ai_model
+              FROM users
+             ORDER BY created_at DESC
+            """
+        ).fetchall()
+        access_rows = conn.execute(
+            """
+            SELECT pa.project_id, pa.team_id, pa.folder_id, pa.created_by, pa.created_at,
+                   pa.is_public, u.email AS owner_email, u.display_name AS owner_name,
+                   t.name AS team_name
+              FROM project_access pa
+              LEFT JOIN users u ON u.id = pa.created_by
+              LEFT JOIN teams t ON t.id = pa.team_id
+             ORDER BY pa.created_at DESC
+            """
+        ).fetchall()
+
+    users_by_id: dict[str, dict[str, Any]] = {}
+    for row in user_rows:
+        users_by_id[row["id"]] = {
+            "id": row["id"],
+            "email": row["email"],
+            "display_name": row["display_name"],
+            "created_at": row["created_at"],
+            "avatar_url": row["avatar_url"],
+            "ai_provider": row["ai_provider"],
+            "ai_model": row["ai_model"],
+            "project_count": 0,
+            "prompt_count": 0,
+            "success_count": 0,
+            "error_count": 0,
+            "total_cost_usd": 0.0,
+            "total_tokens": 0,
+            "last_active_at": row["created_at"],
+            "recent_projects": [],
+            "recent_prompts": [],
+        }
+
+    prompt_kind_counts: Counter[str] = Counter()
+    prompt_model_counts: Counter[str] = Counter()
+    project_format_counts: Counter[str] = Counter()
+    daily_prompts: Counter[str] = Counter()
+    daily_users_joined: Counter[str] = Counter()
+    daily_projects_created: Counter[str] = Counter()
+    recent_prompts: list[dict[str, Any]] = []
+    recent_projects: list[dict[str, Any]] = []
+    projects_scanned = 0
+    files_total = 0
+    prompt_total = 0
+    success_total = 0
+    error_total = 0
+    cost_total = 0.0
+    tokens_total = 0
+
+    for row in user_rows:
+        day = _admin_day(row["created_at"])
+        if day:
+            daily_users_joined[day] += 1
+
+    for access in access_rows:
+        pid = access["project_id"]
+        project_path = PROJECTS / pid
+        if not project_path.is_dir():
+            continue
+        projects_scanned += 1
+        owner_id = access["created_by"]
+        if owner_id in users_by_id:
+            users_by_id[owner_id]["project_count"] += 1
+        day = _admin_day(access["created_at"])
+        if day:
+            daily_projects_created[day] += 1
+        try:
+            meta = project_store.load_meta(project_path)
+        except Exception:
+            meta = {"id": pid, "name": pid}
+        try:
+            files = cad_service.list_project_files(project_path)
+        except Exception:
+            files = []
+        files_total += len(files)
+        for file_info in files:
+            fmt = str(file_info.get("format") or Path(file_info.get("name") or "").suffix.lstrip(".") or "file").lower()
+            project_format_counts[fmt] += 1
+        updated_at = meta.get("updated_at") or access["created_at"]
+        project_item = {
+            "id": pid,
+            "name": meta.get("name") or pid,
+            "created_at": meta.get("created_at") or access["created_at"],
+            "updated_at": updated_at,
+            "file_count": len(files),
+            "latest_file": project_store.latest_model_file(project_path),
+            "owner_user_id": owner_id,
+            "owner_name": access["owner_name"],
+            "owner_email": access["owner_email"],
+            "team_id": access["team_id"],
+            "team_name": access["team_name"],
+            "public": bool(access["is_public"]),
+        }
+        recent_projects.append(project_item)
+        if owner_id in users_by_id:
+            users_by_id[owner_id]["recent_projects"].append(project_item)
+            owner_dt = _parse_admin_dt(users_by_id[owner_id].get("last_active_at"))
+            project_dt = _parse_admin_dt(updated_at)
+            if project_dt and (owner_dt is None or project_dt > owner_dt):
+                users_by_id[owner_id]["last_active_at"] = updated_at
+
+        try:
+            entries = prompt_history_service.list_entries(project_path, limit=200)
+        except Exception as exc:
+            logger.info("Admin dashboard skipped prompt history for %s: %s", pid, exc)
+            entries = []
+        for entry in entries:
+            prompt_total += 1
+            kind = str(entry.get("kind") or "cad")
+            model = str(entry.get("model") or "unknown")
+            prompt_kind_counts[kind] += 1
+            prompt_model_counts[model] += 1
+            if entry.get("success") is False:
+                error_total += 1
+            else:
+                success_total += 1
+            day = _admin_day(entry.get("created_at"))
+            if day:
+                daily_prompts[day] += 1
+            usage = entry.get("usage") or {}
+            entry_tokens = int(usage.get("total_tokens") or usage.get("tokens") or 0) if isinstance(usage, dict) else 0
+            tokens_total += entry_tokens
+            cost = entry_effective_cost(entry)
+            if cost is not None:
+                cost_total += float(cost)
+            entry_user_id = entry.get("user_id") or owner_id
+            if entry_user_id in users_by_id:
+                user_item = users_by_id[entry_user_id]
+                user_item["prompt_count"] += 1
+                if entry.get("success") is False:
+                    user_item["error_count"] += 1
+                else:
+                    user_item["success_count"] += 1
+                user_item["total_tokens"] += entry_tokens
+                if cost is not None:
+                    user_item["total_cost_usd"] += float(cost)
+                entry_dt = _parse_admin_dt(entry.get("created_at"))
+                active_dt = _parse_admin_dt(user_item.get("last_active_at"))
+                if entry_dt and (active_dt is None or entry_dt > active_dt):
+                    user_item["last_active_at"] = entry.get("created_at")
+            prompt_item = {
+                "id": entry.get("id"),
+                "project_id": pid,
+                "project_name": project_item["name"],
+                "prompt": _admin_prompt_preview(entry.get("prompt")),
+                "success": entry.get("success") is not False,
+                "error": entry.get("error"),
+                "kind": kind,
+                "created_at": entry.get("created_at"),
+                "filename": entry.get("filename"),
+                "model": entry.get("model"),
+                "provider": entry.get("provider"),
+                "prompt_mode": entry.get("prompt_mode") or entry.get("speed"),
+                "cost_usd": round(float(cost), 6) if cost is not None else None,
+                "total_tokens": entry_tokens,
+                "user_id": entry_user_id,
+                "user_name": entry.get("user_name") or access["owner_name"],
+                "owner_name": access["owner_name"],
+                "owner_email": access["owner_email"],
+            }
+            recent_prompts.append(prompt_item)
+            if entry_user_id in users_by_id:
+                users_by_id[entry_user_id]["recent_prompts"].append(prompt_item)
+
+    def _sort_dt_key(item: dict[str, Any], field: str) -> str:
+        return str(item.get(field) or "")
+
+    recent_projects.sort(key=lambda item: _sort_dt_key(item, "updated_at"), reverse=True)
+    recent_prompts.sort(key=lambda item: _sort_dt_key(item, "created_at"), reverse=True)
+    for user_item in users_by_id.values():
+        user_item["recent_projects"].sort(key=lambda item: _sort_dt_key(item, "updated_at"), reverse=True)
+        user_item["recent_projects"] = user_item["recent_projects"][:5]
+        user_item["recent_prompts"].sort(key=lambda item: _sort_dt_key(item, "created_at"), reverse=True)
+        user_item["recent_prompts"] = user_item["recent_prompts"][:5]
+        user_item["total_cost_usd"] = round(float(user_item["total_cost_usd"]), 6)
+
+    users = list(users_by_id.values())
+    recent_users = sorted(users, key=lambda item: str(item.get("created_at") or ""), reverse=True)[:user_limit]
+    active_users = sorted(
+        users,
+        key=lambda item: (int(item.get("prompt_count") or 0), str(item.get("last_active_at") or "")),
+        reverse=True,
+    )[:user_limit]
+
+    days = sorted(set(daily_prompts) | set(daily_users_joined) | set(daily_projects_created))[-30:]
+    daily = [
+        {
+            "date": day,
+            "prompts": daily_prompts[day],
+            "users_joined": daily_users_joined[day],
+            "projects_created": daily_projects_created[day],
+        }
+        for day in days
+    ]
+
+    return {
+        "admin": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "stats": {
+            "user_count": len(users_by_id),
+            "project_count": projects_scanned,
+            "file_count": files_total,
+            "prompt_count": prompt_total,
+            "success_count": success_total,
+            "error_count": error_total,
+            "success_rate": round(success_total / prompt_total, 4) if prompt_total else None,
+            "estimated_cost_usd": round(cost_total, 6),
+            "total_tokens": tokens_total,
+        },
+        "recent_users": recent_users,
+        "active_users": active_users,
+        "recent_projects": recent_projects[:project_limit],
+        "recent_prompts": recent_prompts[:prompt_limit],
+        "prompt_kind_counts": [{"kind": k, "count": v} for k, v in prompt_kind_counts.most_common()],
+        "prompt_model_counts": [{"model": k, "count": v} for k, v in prompt_model_counts.most_common(12)],
+        "project_format_counts": [{"format": k, "count": v} for k, v in project_format_counts.most_common(12)],
+        "daily": daily,
+    }
+
+
 @app.get("/api/teams")
 def list_teams(user: dict[str, Any] = Depends(get_current_user)):
     return {"teams": teams_service.list_teams(user["id"])}
@@ -1792,6 +3986,117 @@ def update_team(team_id: str, body: TeamCreateRequest, user: dict[str, Any] = De
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"team": team}
+
+
+@app.get("/api/teams/{team_id}/render-folder")
+def get_team_render_folder(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    team = teams_service.get_team_for_user(team_id, user["id"])
+    if not team:
+        raise HTTPException(403, "Not a member of that workspace")
+    return {
+        "team_id": team_id,
+        "render_folder": {
+            "provider": team.get("render_folder_provider") or "render3d",
+            "folder_ref": team.get("render_folder_ref"),
+            "label": team.get("render_folder_label"),
+            "connected_at": team.get("render_folder_connected_at"),
+        },
+    }
+
+
+@app.put("/api/teams/{team_id}/render-folder")
+def set_team_render_folder(team_id: str, body: TeamRenderFolderRequest, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        team = teams_service.update_render_folder(
+            team_id,
+            user["id"],
+            provider=body.provider,
+            folder_ref=body.folder_ref,
+            label=body.label,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    entry = _log_workspace(
+        team_id,
+        kind="render_folder_connected",
+        label=f"Connected Render folder: {team.get('render_folder_label') or team.get('render_folder_provider')}",
+        user=user,
+        meta={
+            "provider": team.get("render_folder_provider"),
+            "folder_ref": team.get("render_folder_ref"),
+            "label": team.get("render_folder_label"),
+        },
+    )
+    _notify_workspace(
+        team_id,
+        {
+            "type": "workspace.render_folder.updated",
+            "team": team,
+            "entry": entry,
+            "by": user["display_name"],
+            "by_user_id": user["id"],
+        },
+    )
+    return {"team": team, "entry": entry}
+
+
+@app.get("/api/teams/{team_id}/realtime-editor")
+def get_workspace_realtime_editor(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    team = teams_service.get_team_for_user(team_id, user["id"])
+    if not team:
+        raise HTTPException(403, "Not a member of that workspace")
+    projects = []
+    for row in teams_service.user_project_access(user["id"], team_id):
+        path = PROJECTS / row["project_id"]
+        if not path.is_dir():
+            continue
+        summary = project_store.project_summary(path)
+        meta = project_store.load_meta(path)
+        with get_conn() as conn:
+            mirror_rows = conn.execute(
+                """
+                SELECT m.*, u.email, u.display_name
+                  FROM project_fusion_mirrors m
+                  JOIN users u ON u.id = m.user_id
+                 WHERE m.project_id = ?
+                 ORDER BY lower(u.display_name), lower(u.email)
+                """,
+                (row["project_id"],),
+            ).fetchall()
+        projects.append(
+            {
+                "id": row["project_id"],
+                "name": summary.get("name"),
+                "latest_file": summary.get("latest_file"),
+                "file_count": summary.get("file_count"),
+                "updated_at": summary.get("updated_at"),
+                "browser": {
+                    "components": (summary.get("browser") or {}).get("components") or [],
+                    "fusion_components": (summary.get("browser") or {}).get("fusion_components") or [],
+                    "fusion_bodies": (summary.get("browser") or {}).get("fusion_bodies") or [],
+                    "sketches": (summary.get("browser") or {}).get("sketches") or [],
+                    "wiring": (summary.get("browser") or {}).get("wiring") or [],
+                },
+                "fusion_source": meta.get("autodesk_source"),
+                "fusion_mirrors": [
+                    _fusion_mirror_summary(dict(mirror_row), include_contents=True)
+                    for mirror_row in mirror_rows
+                ],
+                "generation": summary.get("generation"),
+            }
+        )
+    return {
+        "team": team,
+        "projects": projects,
+        "render_folder": {
+            "provider": team.get("render_folder_provider") or "render3d",
+            "folder_ref": team.get("render_folder_ref"),
+            "label": team.get("render_folder_label"),
+            "connected_at": team.get("render_folder_connected_at"),
+        },
+    }
 
 
 @app.get("/api/teams/{team_id}/members")
@@ -1827,6 +4132,14 @@ def remove_team_member(team_id: str, target_user_id: str, user: dict[str, Any] =
         return teams_service.remove_team_member(team_id, target_user_id, user["id"])
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/teams/{team_id}/leave")
+def leave_team(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        return teams_service.leave_team(team_id, user["id"])
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1922,7 +4235,10 @@ def add_team_ai_key(team_id: str, body: UserAIKeyRequest, user: dict[str, Any] =
     try:
         if body.source_key_id:
             keys = user_ai_keys_service.add_team_shared_key_from_user_key(
-                team_id, user["id"], body.source_key_id, model=body.model, name=body.name
+                team_id, user["id"], body.source_key_id, model=body.model, name=body.name,
+                scope_type=body.scope_type,
+                scope_project_id=body.scope_project_id,
+                scope_label=body.scope_label,
             )
         else:
             if not body.api_key:
@@ -1930,6 +4246,9 @@ def add_team_ai_key(team_id: str, body: UserAIKeyRequest, user: dict[str, Any] =
             keys = user_ai_keys_service.add_team_shared_key(
                 team_id, user["id"], body.provider, body.api_key,
                 model=body.model, name=body.name,
+                scope_type=body.scope_type,
+                scope_project_id=body.scope_project_id,
+                scope_label=body.scope_label,
             )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -2011,12 +4330,118 @@ def set_team_key_member_access(
     return {"members": _members_with_daily_ai_usage(members, key_id)}
 
 
+@app.get("/api/teams/{team_id}/ai-keys")
+def list_team_ai_keys(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        keys = user_ai_keys_service.list_team_shared_keys(team_id, user["id"])
+    except ValueError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"team_keys": keys}
+
+
+@app.post("/api/teams/{team_id}/ai-keys")
+def add_team_ai_key(team_id: str, body: UserAIKeyRequest, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        keys = user_ai_keys_service.add_team_shared_key(
+            team_id, user["id"], body.provider, body.api_key,
+            model=body.model, name=body.name,
+        )
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"team_keys": keys, "ai": _ai_status_for_user(user)}
+
+
+@app.delete("/api/teams/{team_id}/ai-keys/{key_id}")
+def delete_team_ai_key(team_id: str, key_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        user_ai_keys_service.delete_team_shared_key(team_id, key_id, user["id"])
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.put("/api/teams/{team_id}/ai-keys/{key_id}/toggle")
+def toggle_team_ai_key(team_id: str, key_id: str, body: dict = Body({}), user: dict[str, Any] = Depends(get_current_user)):
+    use = bool(body.get("use_key", True))
+    user_ai_keys_service.toggle_team_key(user["id"], key_id, use, model=body.get("model"))
+    return {"ai": _ai_status_for_user(user)}
+
+
+@app.get("/api/teams/{team_id}/ai-keys/{key_id}/members")
+def list_team_key_members(team_id: str, key_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        members = user_ai_keys_service.list_team_key_members(team_id, key_id, user["id"])
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"members": members}
+
+
+@app.put("/api/teams/{team_id}/ai-keys/{key_id}/members/{target_user_id}")
+def set_team_key_member_access(
+    team_id: str, key_id: str, target_user_id: str,
+    body: dict = Body({}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    granted = bool(body["granted"]) if "granted" in body else None
+    use_key = bool(body["use_key"]) if "use_key" in body else None
+    model = body.get("model")
+    daily_limit_provided = "daily_limit_usd" in body
+    daily_limit_usd = body.get("daily_limit_usd")
+    if daily_limit_usd in ("", None):
+        daily_limit_usd = None
+    elif daily_limit_provided:
+        try:
+            daily_limit_usd = float(daily_limit_usd)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "Daily limit must be a number") from exc
+        if daily_limit_usd < 0:
+            raise HTTPException(400, "Daily limit cannot be negative")
+    try:
+        members = user_ai_keys_service.set_team_key_member_access(
+            team_id,
+            key_id,
+            target_user_id,
+            granted,
+            user["id"],
+            use_key=use_key,
+            model=model,
+            daily_limit_usd=daily_limit_usd,
+            daily_limit_provided=daily_limit_provided,
+        )
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"members": members}
+
+
 @app.get("/api/teams/{team_id}/folders")
 def list_workspace_folders(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
     try:
         folders = folders_service.list_folders(team_id, user["id"])
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+    public_projects = _public_project_summaries(viewer_user=user)
+    folders.append(_public_folder_summary(public_projects, team_id))
+    if _is_a1projects_admin(user):
+        count = len(_other_user_render_summaries(user, team_id))
+        folders.append(
+            {
+                "id": OTHER_USER_RENDERS_FOLDER_ID,
+                "team_id": team_id,
+                "parent_id": None,
+                "name": OTHER_USER_RENDERS_FOLDER_NAME,
+                "sort_order": -100,
+                "visibility": "virtual",
+                "created_by": None,
+                "created_at": None,
+                "project_count": count,
+                "share_count": 0,
+                "can_manage": False,
+                "is_owner": False,
+                "shared_with_me": False,
+                "read_only": True,
+                "virtual": True,
+            }
+        )
     return {"folders": folders}
 
 
@@ -2209,7 +4634,6 @@ def list_projects(
     user: dict[str, Any] = Depends(get_current_user),
     team_id: str | None = Query(None),
 ):
-    teams_service.migrate_orphan_projects(PROJECTS)
     if team_id:
         teams = teams_service.list_teams(user["id"])
         if team_id not in {t["id"] for t in teams}:
@@ -2217,16 +4641,71 @@ def list_projects(
     access = teams_service.user_project_access(user["id"], team_id)
     by_project = {r["project_id"]: r for r in access}
     projects = []
-    for p in project_store.list_all_projects(PROJECTS):
-        if p["id"] not in by_project:
+    for project_id, row in by_project.items():
+        project_path = PROJECTS / project_id
+        if not project_path.is_dir():
             continue
-        row = by_project[p["id"]]
         fid = row.get("folder_id")
         if fid and not folders_service.user_can_access_folder(fid, user["id"]):
             continue
-        p = {**p, "team_id": row["team_id"], "folder_id": fid}
+        p = project_store.project_list_summary(project_path)
+        p = {**p, "team_id": row["team_id"], "folder_id": fid, "folder_name": folders_service.folder_name(fid)}
         projects.append(p)
+    projects.sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
+    projects.extend(_other_user_render_summaries(user, team_id))
     return {"projects": projects}
+
+
+@app.get("/api/public/projects")
+def list_public_projects():
+    return {"folder": _public_folder_summary(), "projects": _public_project_summaries()}
+
+
+@app.get("/api/public/projects/{project_id}")
+def get_public_project(project_id: str):
+    if not _is_public_project(project_id):
+        raise HTTPException(404, "Project not found")
+    project_path = PROJECTS / project_id
+    owner = _project_owner(project_id) or {}
+    summary = project_store.project_summary(project_path)
+    summary.update(
+        {
+            "folder_id": PUBLIC_FOLDER_ID,
+            "read_only_project": True,
+            "public": True,
+            "owner_user_id": owner.get("created_by"),
+            "owner_email": owner.get("owner_email"),
+            "owner_name": owner.get("owner_name"),
+        }
+    )
+    return summary
+
+
+@app.post("/api/projects/{project_id}/public")
+def set_project_public(
+    project_id: str,
+    body: dict = Body({}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    make_public = bool(body.get("public", True))
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE project_access SET is_public = ? WHERE project_id = ?",
+            (1 if make_public else 0, project_id),
+        )
+        conn.commit()
+    return {
+        "project_id": project_id,
+        "public": make_public,
+        "folder_id": PUBLIC_FOLDER_ID if make_public else None,
+        "project": {
+            **project_store.project_summary(path),
+            "folder_id": PUBLIC_FOLDER_ID if make_public else None,
+            "read_only_project": make_public,
+            "public": make_public,
+        },
+    }
 
 
 @app.post("/api/projects")
@@ -2265,15 +4744,29 @@ def create_project(
 
 @app.get("/api/projects/{project_id}")
 def get_project(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
-    path = _require_project(user, project_id)
-    return project_store.project_summary(path)
+    path = _require_project_read(user, project_id)
+    summary = project_store.project_summary(path)
+    if _is_other_user_render_project(project_id, user) or _is_public_project(project_id):
+        owner = _project_owner(project_id) or {}
+        can_manage = teams_service.can_access_project(user["id"], project_id)
+        summary.update(
+            {
+                "folder_id": PUBLIC_FOLDER_ID if _is_public_project(project_id) else OTHER_USER_RENDERS_FOLDER_ID,
+                "read_only_project": not can_manage,
+                "public": _is_public_project(project_id),
+                "owner_user_id": owner.get("created_by"),
+                "owner_email": owner.get("owner_email"),
+                "owner_name": owner.get("owner_name"),
+            }
+        )
+    return summary
 
 
 @app.patch("/api/projects/{project_id}")
 def rename_project_endpoint(
     project_id: str, body: ProjectRenameRequest, user: dict[str, Any] = Depends(get_current_user)
 ):
-    path = _require_project(user, project_id)
+    path = _require_project_read(user, project_id)
     try:
         old_name = project_store.load_meta(path).get("name", project_id)
         meta = project_store.rename_project(path, body.name)
@@ -2310,9 +4803,22 @@ def delete_project(project_id: str, user: dict[str, Any] = Depends(get_current_u
     path = _require_project(user, project_id)
     team_id = teams_service.project_team_id(project_id)
     generation_service.cancel_project(path)
+    fusion_deleted, fusion_delete_errors = _delete_fusion_mirror_items(
+        project_id=project_id,
+        project_path=path,
+        delete_mirror_rows=True,
+    )
     shutil.rmtree(path)
     teams_service.delete_project_access(project_id)
-    _notify_project(project_id, {"type": "project.deleted", "project_id": project_id})
+    _notify_project(
+        project_id,
+        {
+            "type": "project.deleted",
+            "project_id": project_id,
+            "fusion_deleted": fusion_deleted,
+            "fusion_delete_errors": fusion_delete_errors,
+        },
+    )
     if team_id:
         _notify_workspace(
             team_id,
@@ -2322,9 +4828,11 @@ def delete_project(project_id: str, user: dict[str, Any] = Depends(get_current_u
                 "team_id": team_id,
                 "by": user["display_name"],
                 "by_user_id": user["id"],
+                "fusion_deleted": fusion_deleted,
+                "fusion_delete_errors": fusion_delete_errors,
             },
         )
-    return {"deleted": project_id}
+    return {"deleted": project_id, "fusion_deleted": fusion_deleted, "fusion_delete_errors": fusion_delete_errors}
 
 
 @app.get("/api/projects/{project_id}/prompt-history")
@@ -2335,7 +4843,7 @@ def get_prompt_history(
     kind: str | None = Query(None, description="Filter by prompt kind: cad or wiring"),
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    path = _require_project(user, project_id)
+    path = _require_project_read(user, project_id)
     entries = prompt_history_service.list_entries(
         path, limit=limit, base_filename=base_filename, kind=kind
     )
@@ -2371,7 +4879,7 @@ def get_workspace_ai_usage(
     access = teams_service.user_project_access(user["id"], team_id)
     paths = [PROJECTS / row["project_id"] for row in access if (PROJECTS / row["project_id"]).is_dir()]
     return prompt_history_service.workspace_usage_summary(
-        paths, kind=kind, year=year, month=mon
+        paths, kind=kind, year=year, month=mon, user_id=user["id"]
     )
 
 
@@ -2458,7 +4966,10 @@ def get_user_ai_costs(
         total_tokens = int(usage.get("total_tokens") or usage.get("tokens") or (input_tokens + output_tokens) or 0)
         return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
 
-    for project_path in PROJECTS.iterdir() if PROJECTS.is_dir() else []:
+    accessible_projects = teams_service.user_project_access(user["id"], None)
+    project_ids = {row["project_id"] for row in accessible_projects}
+    for project_id in project_ids:
+        project_path = PROJECTS / project_id
         if not project_path.is_dir():
             continue
         projects_scanned += 1
@@ -2482,6 +4993,7 @@ def get_user_ai_costs(
                 "output_tokens": 0,
                 "total_tokens": 0,
                 "users": {},
+                "model_breakdown": {},
             },
         )
         try:
@@ -2508,11 +5020,36 @@ def get_user_ai_costs(
             project_item["output_tokens"] += tokens["output_tokens"]
             project_item["total_tokens"] += tokens["total_tokens"]
             project_item["ai_calls"] += int(entry.get("ai_calls") or 0)
+            model = str(entry.get("model") or "unknown")
+            provider = str(entry.get("provider") or "openai").lower()
+            model_key = f"{provider}:{model}"
+            model_item = project_item["model_breakdown"].setdefault(
+                model_key,
+                {
+                    "provider": provider,
+                    "model": None if model == "unknown" else model,
+                    "prompt_count": 0,
+                    "tracked_count": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "ai_calls": 0,
+                    "total_cost_usd": 0.0,
+                    "window_cost_usd": 0.0,
+                },
+            )
+            model_item["prompt_count"] += 1
+            model_item["input_tokens"] += tokens["input_tokens"]
+            model_item["output_tokens"] += tokens["output_tokens"]
+            model_item["total_tokens"] += tokens["total_tokens"]
+            model_item["ai_calls"] += int(entry.get("ai_calls") or 0)
             if cost is None:
                 continue
             tracked_count += 1
             project_item["tracked_count"] += 1
+            model_item["tracked_count"] += 1
             cost = float(cost)
+            model_item["total_cost_usd"] += cost
             try:
                 created = datetime.fromisoformat(str(entry.get("created_at")).replace("Z", "+00:00"))
                 if created.tzinfo is None:
@@ -2530,6 +5067,7 @@ def get_user_ai_costs(
                     total_by_day[day] += cost
                     project_item["window_cost_usd"] += cost
                     project_item["mine_window_usd"] += cost
+                    model_item["window_cost_usd"] += cost
             else:
                 shared_total += cost
                 project_item["total_cost_usd"] += cost
@@ -2556,6 +5094,7 @@ def get_user_ai_costs(
                     total_by_day[day] += cost
                     project_item["window_cost_usd"] += cost
                     project_item["shared_window_usd"] += cost
+                    model_item["window_cost_usd"] += cost
                     member["window_cost_usd"] += cost
                     member["daily"][day] += cost
                     project_user["window_cost_usd"] += cost
@@ -2606,9 +5145,24 @@ def get_user_ai_costs(
             }
             for member in project["users"].values()
         ]
+        project["model_breakdown"] = sorted(
+            [
+                {
+                    **item,
+                    "total_cost_usd": round(float(item["total_cost_usd"]), 6),
+                    "window_cost_usd": round(float(item["window_cost_usd"]), 6),
+                }
+                for item in project["model_breakdown"].values()
+            ],
+            key=lambda item: float(item.get("window_cost_usd") or item.get("total_cost_usd") or 0),
+            reverse=True,
+        )
         projects.append(project)
     projects.sort(key=lambda p: p["window_cost_usd"], reverse=True)
     recent_prompts.sort(key=lambda p: p.get("created_at") or "", reverse=True)
+    total_input_tokens = sum(int(p.get("input_tokens") or 0) for p in projects)
+    total_output_tokens = sum(int(p.get("output_tokens") or 0) for p in projects)
+    total_tokens = sum(int(p.get("total_tokens") or 0) for p in projects)
 
     return {
         "currency": "USD",
@@ -2626,6 +5180,9 @@ def get_user_ai_costs(
             "mine_window_usd": round(mine_window, 6),
             "shared_window_usd": round(shared_window, 6),
             "all_window_usd": round(mine_window + shared_window, 6),
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "total_tokens": total_tokens,
         },
         "daily": [
             {
@@ -2657,8 +5214,41 @@ def get_prompt_history_entry(
 
 @app.get("/api/projects/{project_id}/timeline")
 def get_timeline(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
-    path = _require_project(user, project_id)
+    path = _require_project_read(user, project_id)
     return history_service.timeline_summary(path)
+
+
+@app.get("/api/projects/{project_id}/object-history")
+def get_object_history(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+    limit: int = Query(100, ge=1, le=200),
+):
+    path = _require_project_read(user, project_id)
+    return {"entries": project_log_service.list_events(path, limit=limit)}
+
+
+@app.get("/api/projects/{project_id}/project-history")
+def get_project_history(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+    limit: int = Query(150, ge=1, le=300),
+):
+    path = _require_project_read(user, project_id)
+    return {"entries": project_log_service.list_events(path, limit=limit)}
+
+
+@app.get("/api/teams/{team_id}/workspace-history")
+def get_workspace_history(
+    team_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+    limit: int = Query(80, ge=1, le=200),
+):
+    try:
+        entries = workspace_log_service.list_events(team_id, user["id"], limit=limit)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"entries": entries}
 
 
 @app.get("/api/projects/{project_id}/object-history")
@@ -2812,6 +5402,7 @@ def get_project_dimensions(
 @app.post("/api/projects/{project_id}/upload")
 async def upload_file(
     project_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -2839,8 +5430,26 @@ async def upload_file(
             viewer_filename = glb_dest.name
         except Exception as exc:
             logger.warning("STEP preview GLB failed for %s: %s", dest.name, exc)
+    # 3MF / STEP have no browser loader — tessellate to GLB for the viewer.
+    viewer_filename = dest.name
+    if suffix == ".3mf":
+        try:
+            mesh = cad_service.load_mesh(dest)
+            glb_dest = dest.with_suffix(".glb")
+            cad_service.export_mesh(mesh, glb_dest)
+            viewer_filename = glb_dest.name
+        except Exception as exc:
+            logger.warning("3MF preview GLB failed for %s: %s", dest.name, exc)
+    elif suffix in cad_service.STEP_SUFFIXES:
+        try:
+            glb_dest = dest.with_suffix(".glb")
+            cad_service.tessellate_step_to_glb(dest, glb_dest)
+            viewer_filename = glb_dest.name
+        except Exception as exc:
+            logger.warning("STEP preview GLB failed for %s: %s", dest.name, exc)
     entry = _record_history(path, "upload", f"Upload {dest.name}", dest.name, user=user)
     project_store.touch_project(path)
+    background_tasks.add_task(_background_push_new_file_to_fusion, project_id, path, dest.name)
     _notify_project(
         project_id,
         {
@@ -2863,10 +5472,37 @@ async def upload_file(
 
 
 @app.get("/api/projects/{project_id}/files/{filename}")
-def get_file(project_id: str, filename: str, user: dict[str, Any] = Depends(get_current_user)):
-    project_path = _require_project(user, project_id)
+def get_file(
+    project_id: str,
+    filename: str,
+    step_mode: str | None = Query(None, description="regular | assembly for STEP downloads"),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    project_path = _require_project_read(user, project_id)
+    return _file_response(project_path, project_id, filename, step_mode=step_mode)
+
+
+@app.get("/api/public/projects/{project_id}/files/{filename}")
+def get_public_file(project_id: str, filename: str, step_mode: str | None = Query(None)):
+    if not _is_public_project(project_id):
+        raise HTTPException(404, "Project not found")
+    project_path = PROJECTS / project_id
+    return _file_response(project_path, project_id, filename, step_mode=step_mode)
+
+
+def _file_response(project_path: Path, project_id: str, filename: str, *, step_mode: str | None = None):
     safe = Path(filename).name
     file_path = project_path / safe
+    if not file_path.is_file() and file_path.suffix.lower() in {".step", ".stp", ".stl", ".3mf", ".obj"}:
+        stem = file_path.stem
+        for suffix in (".glb", ".gltf", ".step", ".stp", ".stl", ".obj", ".ply", ".off", ".3mf"):
+            src = project_path / f"{stem}{suffix}"
+            if src.is_file() and src.name != safe:
+                try:
+                    cad_service.ensure_mesh_exports(project_path, src.name, missing_only=True)
+                except Exception as exc:
+                    logger.warning("Lazy export generation failed for %s from %s: %s", safe, src.name, exc)
+                break
     if not file_path.is_file() and file_path.suffix.lower() == ".glb":
         stem = file_path.stem
         step_src = next(
@@ -2884,6 +5520,16 @@ def get_file(project_id: str, filename: str, user: dict[str, Any] = Depends(get_
                 logger.warning("Lazy STEP preview GLB failed for %s: %s", step_src.name, exc)
     if not file_path.is_file():
         raise HTTPException(404, "File not found")
+    step_mode_normalized = (step_mode or "").lower()
+    if file_path.suffix.lower() in {".step", ".stp"} and step_mode_normalized in {"faceted", "mesh"}:
+        flat_path = project_path / f"{file_path.stem}__faceted.step"
+        try:
+            cad_service.export_mesh_step(cad_service.load_mesh(file_path), flat_path)
+            file_path = flat_path
+            safe = flat_path.name
+        except Exception as exc:
+            logger.warning("Faceted STEP export failed for %s: %s", safe, exc)
+            raise HTTPException(422, f"Could not create faceted STEP: {exc}") from exc
     if file_path.suffix.lower() == ".3mf":
         stem = file_path.stem
         for suffix in (".step", ".stp", ".glb", ".gltf", ".stl", ".obj", ".ply", ".off"):
@@ -2900,13 +5546,241 @@ def get_file(project_id: str, filename: str, user: dict[str, Any] = Depends(get_
     return FileResponse(file_path, filename=download_name)
 
 
+def _resolve_share_token(token: str) -> tuple[str, Path, dict[str, Any]]:
+    clean = re.sub(r"[^A-Za-z0-9_\-]", "", token or "")
+    if not clean:
+        raise HTTPException(404, "Share link not found")
+    for project_path in PROJECTS.iterdir():
+        if not project_path.is_dir():
+            continue
+        try:
+            meta = project_store.load_meta(project_path)
+        except Exception:
+            continue
+        shares = meta.get("file_shares") or {}
+        share = shares.get(clean) if isinstance(shares, dict) else None
+        if isinstance(share, dict):
+            return project_path.name, project_path, share
+    raise HTTPException(404, "Share link not found")
+
+
+def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
+    safe = Path(filename).name
+    allowed = {safe}
+    try:
+        viewer = cad_service.resolve_viewport_filename(project_path, safe)
+        if viewer:
+            allowed.add(Path(viewer).name)
+    except Exception:
+        pass
+    try:
+        cad_service.ensure_mesh_exports(project_path, safe, missing_only=True)
+    except Exception as exc:
+        logger.warning("Could not refresh share exports for %s: %s", safe, exc)
+    for item in cad_service.list_exports_for_model(project_path, safe):
+        name = item.get("name")
+        if name:
+            allowed.add(Path(name).name)
+    return allowed
+
+
+def _share_metadata(token: str) -> dict[str, Any]:
+    project_id, project_path, share = _resolve_share_token(token)
+    filename = Path(str(share.get("filename") or "")).name
+    if not filename:
+        raise HTTPException(404, "Shared file not found")
+    if not (project_path / filename).is_file():
+        raise HTTPException(404, "Shared file not found")
+    allowed = _share_allowed_filenames(project_path, filename)
+    viewer_filename = cad_service.resolve_viewport_filename(project_path, filename) or filename
+    exports = []
+    for item in cad_service.list_exports_for_model(project_path, filename):
+        name = Path(str(item.get("name") or "")).name
+        if not name or name not in allowed:
+            continue
+        exports.append({**item, "name": name, "url": f"/api/share/{token}/files/{urllib.parse.quote(name)}"})
+    if viewer_filename not in allowed and (project_path / viewer_filename).is_file():
+        allowed.add(viewer_filename)
+    meta = project_store.load_meta(project_path)
+    return {
+        "token": token,
+        "project_id": project_id,
+        "project_name": meta.get("name") or project_id,
+        "filename": filename,
+        "viewer_filename": viewer_filename,
+        "viewer_url": f"/api/share/{token}/files/{urllib.parse.quote(viewer_filename)}",
+        "exports": exports,
+    }
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/share")
+def create_file_share(project_id: str, filename: str, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    project_path = _require_project_read(user, project_id)
+    safe = Path(filename).name
+    if not (project_path / safe).is_file():
+        raise HTTPException(404, "File not found")
+    meta = project_store.load_meta(project_path)
+    shares = meta.setdefault("file_shares", {})
+    token = next((tok for tok, share in shares.items() if isinstance(share, dict) and share.get("filename") == safe), None)
+    if not token:
+        token = secrets.token_urlsafe(18)
+        while token in shares:
+            token = secrets.token_urlsafe(18)
+        shares[token] = {
+            "filename": safe,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": user["id"],
+        }
+        project_store.save_meta(project_path, meta)
+    base = str(request.base_url).rstrip("/")
+    return {"token": token, "share_url": f"{base}/share/{token}"}
+
+
+@app.get("/api/share/{token}")
+def get_share_metadata(token: str):
+    return _share_metadata(token)
+
+
+@app.get("/api/share/{token}/files/{filename}")
+def get_share_file(token: str, filename: str, step_mode: str | None = Query(None)):
+    project_id, project_path, share = _resolve_share_token(token)
+    shared_filename = Path(str(share.get("filename") or "")).name
+    if not shared_filename:
+        raise HTTPException(404, "Shared file not found")
+    safe = Path(filename).name
+    if safe not in _share_allowed_filenames(project_path, shared_filename):
+        raise HTTPException(404, "File not found")
+    return _file_response(project_path, project_id, safe, step_mode=step_mode)
+
+
+@app.get("/share/{token}", include_in_schema=False)
+def share_preview_page(token: str):
+    _share_metadata(token)
+    token_json = json.dumps(token)
+    return Response(
+        media_type="text/html",
+        content=f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Render3D Share Preview</title>
+  <script type="importmap">{{"imports":{{"three":"https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"}}}}</script>
+  <style>
+    :root {{ color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    body {{ margin:0; min-height:100vh; display:grid; grid-template-rows:auto 1fr; background:#070b12; color:#e6edf3; }}
+    header {{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 20px; border-bottom:1px solid #21262d; background:rgba(13,17,23,.92); }}
+    h1 {{ margin:0; font-size:1rem; }} p {{ margin:.25rem 0 0; color:#8b949e; font-size:.82rem; }}
+    #viewer {{ position:relative; min-height:0; }} canvas {{ display:block; width:100%; height:100%; }}
+    .downloads {{ display:flex; flex-wrap:wrap; gap:8px; }}
+    .downloads a, .downloads button {{ border:1px solid #30363d; border-radius:999px; background:#161b22; color:#c9d1d9; padding:8px 12px; text-decoration:none; font-weight:700; cursor:pointer; }}
+    .downloads a:hover, .downloads button:hover {{ border-color:#58a6ff; color:#79c0ff; }}
+    .status {{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); color:#8b949e; }}
+    .brand {{ color:#79c0ff; font-weight:900; letter-spacing:.02em; }}
+  </style>
+</head>
+<body>
+  <header>
+    <div><div class="brand">Render3D</div><h1 id="title">Loading shared model...</h1><p id="subtitle">Rotate preview loads automatically. Pick a format to download.</p></div>
+    <div class="downloads" id="downloads"></div>
+  </header>
+  <main id="viewer"><div class="status" id="status">Loading preview...</div></main>
+  <script type="module">
+    import * as THREE from "three";
+    import {{ GLTFLoader }} from "three/addons/loaders/GLTFLoader.js";
+    import {{ OrbitControls }} from "three/addons/controls/OrbitControls.js";
+    const token = {token_json};
+    const fmtLabel = {{ glb:"GLB", stl:"STL", step:"STEP", "3mf":"3MF", obj:"OBJ" }};
+    const meta = await fetch(`/api/share/${{encodeURIComponent(token)}}`).then(r => r.ok ? r.json() : Promise.reject(new Error("Share link not found")));
+    document.title = `${{meta.project_name || "Render3D"}} · Share`;
+    document.getElementById("title").textContent = meta.project_name || meta.filename;
+    document.getElementById("subtitle").textContent = meta.filename;
+    const dl = document.getElementById("downloads");
+    for (const item of meta.exports || []) {{
+      const a = document.createElement("a");
+      a.href = item.url;
+      a.textContent = fmtLabel[item.format] || String(item.format || "Download").toUpperCase();
+      a.download = item.name;
+      dl.appendChild(a);
+    }}
+    const viewer = document.getElementById("viewer");
+    const status = document.getElementById("status");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b12);
+    const camera = new THREE.PerspectiveCamera(45, viewer.clientWidth / viewer.clientHeight, 0.01, 10000);
+    const renderer = new THREE.WebGLRenderer({{ antialias:true }});
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+    viewer.appendChild(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    camera.up.set(0, 0, 1);
+    controls.object.up.copy(camera.up);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x7890a8, 2.2));
+    const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, -4, 5); scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 1.2); fill.position.set(-3, 4, -2); scene.add(fill);
+    const root = new THREE.Group(); scene.add(root);
+    if (!/\\.glb$/i.test(meta.viewer_filename || "")) {{
+      status.textContent = "Preview unavailable for this format. Downloads are ready.";
+    }} else {{
+      new GLTFLoader().load(meta.viewer_url, (gltf) => {{
+        root.add(gltf.scene);
+        const box = new THREE.Box3().setFromObject(root);
+        const center = box.getCenter(new THREE.Vector3());
+        const sizeVec = box.getSize(new THREE.Vector3());
+        const size = sizeVec.length() || 1;
+        root.position.set(-center.x, -center.y, -box.min.z);
+        const targetZ = Math.max(sizeVec.z * 0.5, size * 0.08);
+        camera.position.set(size * 0.95, -size * 1.35, targetZ + size * 0.55);
+        camera.near = Math.max(size / 1000, 0.001); camera.far = size * 20; camera.updateProjectionMatrix();
+        controls.target.set(0, 0, targetZ);
+        controls.update();
+        status.remove();
+      }}, undefined, () => {{ status.textContent = "Could not load preview. Downloads are ready."; }});
+    }}
+    function resize() {{
+      const w = viewer.clientWidth || innerWidth; const h = viewer.clientHeight || innerHeight - 80;
+      camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h);
+    }}
+    addEventListener("resize", resize); resize();
+    function tick() {{ requestAnimationFrame(tick); root.rotation.z += 0.0025; controls.update(); renderer.render(scene, camera); }}
+    tick();
+  </script>
+</body>
+</html>""",
+    )
+
+
 @app.get("/api/projects/{project_id}/files/{filename}/exports")
 def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Depends(get_current_user)):
-    path = _require_project(user, project_id)
+    path = _require_project_read(user, project_id)
     safe = Path(filename).name
     if not (path / safe).is_file():
+        stem = Path(safe).stem
+        root = stem
+        for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body"):
+            if root.endswith(suffix):
+                root = root[: -len(suffix)]
+                break
+        fallback = next(
+            (
+                path / f"{root}{ext}"
+                for ext in (".step", ".stp", ".glb", ".gltf", ".stl", ".3mf", ".obj", ".ply", ".off")
+                if (path / f"{root}{ext}").is_file()
+            ),
+            None,
+        )
+        if fallback is not None:
+            safe = fallback.name
+        else:
+            raise HTTPException(404, "File not found")
+    try:
+        cad_service.ensure_mesh_exports(path, safe, missing_only=True)
+    except Exception as exc:
+        logger.warning("Could not refresh exports for %s: %s", safe, exc)
+    if not (path / safe).is_file():
         raise HTTPException(404, "File not found")
-    # List existing artifacts immediately — avoid blocking on STEP regen (can take 15s+).
+    # Refresh lightweight sibling exports before listing so edited variants still expose STEP/STL/3MF.
     exports = cad_service.list_exports_for_model(path, safe)
     return {
         "filename": safe,
@@ -2933,6 +5807,59 @@ def build_visible_assembly_exports(
         "share_url": f"/api/projects/{project_id}/files/{primary}" if primary else None,
         "component_count": len({Path(name).name for name in body.filenames if name}),
     }
+
+
+@app.post("/api/projects/{project_id}/push-to-onshape")
+def push_project_to_onshape(project_id: str, body: dict = Body(default={}),
+                             user: dict[str, Any] = Depends(get_current_user)):
+    """Create a new Onshape document from the current (edited) model STEP.
+    Onshape auto-translates it to native geometry on open.
+    """
+    from backend.services.onshape_oauth import get_valid_access_token, export_step_to_onshape
+    from backend.services import cad_service
+
+    path = _require_project(user, project_id)
+    meta = project_store.load_meta(path)
+    source = meta.get("onshape_source", {})
+    element_name = source.get("element_name") or meta.get("name", "model")
+
+    access_token = get_valid_access_token(user["id"])
+    if not access_token:
+        raise HTTPException(401, "Onshape account not linked.")
+
+    # Find or regenerate the STEP file
+    filename = body.get("filename") or project_store.latest_model_file(path)
+    if not filename:
+        raise HTTPException(422, "No model file found in this project.")
+
+    safe = Path(filename).name
+    step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
+
+    step_bytes = step_path.read_bytes()
+    from datetime import date
+    doc_name = f"{element_name} — edited {date.today().strftime('%b %d')}"
+
+    try:
+        result = export_step_to_onshape(access_token, step_bytes, doc_name)
+    except Exception as exc:
+        msg = str(exc)
+        if hasattr(exc, "response"):
+            try:
+                msg = exc.response.json().get("message") or msg
+            except Exception:
+                pass
+        raise HTTPException(502, f"Onshape push failed: {msg}") from exc
+
+    return {"url": result["url"], "document_name": doc_name}
+
+
+@app.get("/api/projects/{project_id}/onshape-source")
+def get_project_onshape_source(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    """Return Onshape source metadata for a project (if it was imported from Onshape)."""
+    path = _require_project(user, project_id)
+    meta = project_store.load_meta(path)
+    source = meta.get("onshape_source")
+    return {"onshape_source": source}
 
 
 @app.post("/api/projects/{project_id}/push-to-onshape")
@@ -2991,6 +5918,50 @@ def get_project_onshape_source(project_id: str, user: dict[str, Any] = Depends(g
     meta = project_store.load_meta(path)
     source = meta.get("onshape_source")
     return {"onshape_source": source}
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/export-to-onshape")
+def export_file_to_onshape(
+    project_id: str,
+    filename: str,
+    body: dict = Body(default={}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Export a model's STEP file into a new Onshape document."""
+    from backend.services.onshape_oauth import get_valid_access_token, export_step_to_onshape
+
+    # Verify project access
+    path = _require_project(user, project_id)
+    safe = Path(filename).name
+    if not (path / safe).is_file():
+        raise HTTPException(404, "File not found")
+
+    # Ensure Onshape is linked
+    access_token = get_valid_access_token(user["id"])
+    if not access_token:
+        raise HTTPException(401, "Onshape account not linked. Sign in with Onshape first.")
+
+    # Find the editable STEP file; do not silently upload mesh-derived fallback STEP.
+    stem = safe[: safe.rfind(".")] if "." in safe else safe
+    step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
+
+    step_bytes = step_path.read_bytes()
+    model_name = stem.replace("_", " ").replace("-", " ")
+
+    try:
+        result = export_step_to_onshape(access_token, step_bytes, model_name)
+    except Exception as exc:
+        msg = str(exc)
+        # Surface the Onshape JSON body if available
+        if hasattr(exc, "response"):
+            try:
+                body = exc.response.json()
+                msg = body.get("message") or body.get("error") or msg
+            except Exception:
+                pass
+        raise HTTPException(502, f"Onshape export failed: {msg}") from exc
+
+    return result
 
 
 @app.post("/api/projects/{project_id}/files/{filename}/export-to-onshape")
@@ -3094,6 +6065,11 @@ def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(g
         meta={"deleted_file": safe},
         user=user,
     )
+    fusion_deleted, fusion_delete_errors = _delete_fusion_mirror_items(
+        project_id=project_id,
+        project_path=project_path,
+        filename=safe,
+    )
 
     try:
         deleted_files = cad_service.delete_model_artifacts(project_path, safe)
@@ -3102,15 +6078,20 @@ def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(g
 
     entry_meta = entry.get("meta") or {}
     entry_meta["deleted_files"] = deleted_files
+    entry_meta["fusion_deleted"] = fusion_deleted
+    entry_meta["fusion_delete_errors"] = fusion_delete_errors
     entry["meta"] = entry_meta
 
     project_store.touch_project(project_path)
+    background_tasks.add_task(_background_push_render_edit_to_fusion, project_id, project_path, out.name)
     _notify_project(
         project_id,
         {
             "type": "file.deleted",
             "filename": safe,
             "deleted_files": deleted_files,
+            "fusion_deleted": fusion_deleted,
+            "fusion_delete_errors": fusion_delete_errors,
             "by": user["display_name"],
             "by_user_id": user["id"],
             "timeline_entry": entry,
@@ -3119,6 +6100,8 @@ def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(g
     return {
         "deleted": safe,
         "deleted_files": deleted_files,
+        "fusion_deleted": fusion_deleted,
+        "fusion_delete_errors": fusion_delete_errors,
         "timeline_index": entry["index"],
         "timeline": history_service.timeline_summary(project_path),
     }
@@ -3178,6 +6161,7 @@ def get_rigging(project_id: str, user: dict[str, Any] = Depends(get_current_user
 
 
 @app.put("/api/projects/{project_id}/rigging")
+@app.post("/api/projects/{project_id}/rigging")
 def save_rigging(
     project_id: str,
     body: RiggingSaveRequest,
@@ -3217,20 +6201,15 @@ def rigging_prompt(
 
     trace_id = getattr(request.state, "trace_id", new_trace_id())
     path = _require_project(user, project_id)
-    ai = _get_ai_for_user(
-        user,
-        body.speed,
-        key_id=body.ai_key_id,
-        key_source=body.ai_key_source,
-    )
+    ai = _get_ai_for_prompt(user, body, project_id=project_id)
     try:
         generation_service.start(
             path,
-            kind="wiring",
+            kind="rigging",
             trace_id=trace_id,
             user=user,
             prompt=body.prompt,
-            label="Wiring schematic",
+            label="Rigging animation",
         )
     except generation_service.GenerationInProgress as exc:
         return JSONResponse(
@@ -3347,6 +6326,20 @@ def export_rigging_urdf(
     urdf_path.write_text(urdf_text, encoding="utf-8")
     rigging_path = path / "rigging.json"
     rigging_path.write_text(json.dumps(rig, indent=2), encoding="utf-8")
+    animation_filename = None
+    if body.animations:
+        animation_filename = "robot.animation.json"
+        (path / animation_filename).write_text(
+            json.dumps(
+                {
+                    "name": rig["name"],
+                    "animations": body.animations,
+                    "activeAnimationId": body.activeAnimationId,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
     project_store.touch_project(path)
     _notify_project(
         project_id,
@@ -3356,9 +6349,11 @@ def export_rigging_urdf(
             "by": user["display_name"],
         },
     )
+    suffix = f" + {animation_filename}" if animation_filename else ""
     return {
-        "message": f"Exported {urdf_path.name} ({len(body.bones)} links)",
+        "message": f"Exported {urdf_path.name}{suffix} ({len(body.bones)} links)",
         "filename": "robot.urdf",
+        "animation_filename": animation_filename,
         "urdf": urdf_text,
     }
 
@@ -3440,12 +6435,7 @@ def sketch_prompt(
         )
     except generation_service.GenerationCanceled as exc:
         raise HTTPException(409, exc.message) from exc
-    ai = _get_ai_for_user(
-        user,
-        body.speed,
-        key_id=body.ai_key_id,
-        key_source=body.ai_key_source,
-    )
+    ai = _get_ai_for_prompt(user, body, project_id=project_id)
     current = None
     active_path = path / "_active_sketch.json"
     if active_path.is_file():
@@ -3508,45 +6498,22 @@ def sketch_prompt(
     }
 
 
-@app.post("/api/projects/{project_id}/wiring/prompt")
-def wiring_prompt(
+def _background_wiring_prompt(
     project_id: str,
-    body: WiringPromptRequest,
-    request: Request,
-    user: dict[str, Any] = Depends(get_current_user),
+    body_data: dict[str, Any],
+    trace_id: str,
+    user: dict[str, Any],
 ):
-    """Generate or edit a breadboard wiring schematic from a natural-language prompt."""
     from backend.services import wiring_service
 
-    trace_id = getattr(request.state, "trace_id", new_trace_id())
-    path = _require_project(user, project_id)
+    path = PROJECTS / project_id
     try:
-        generation_service.start(
-            path,
-            kind="wiring",
-            trace_id=trace_id,
-            user=user,
-            prompt=body.prompt,
-            label="Wiring schematic",
-        )
-    except generation_service.GenerationInProgress as exc:
-        return JSONResponse(
-            status_code=202,
-            content={
-                "accepted": True,
-                "status": "running",
-                "trace_id": exc.current.get("trace_id"),
-                "generation": generation_service.public_summary(path),
-            },
-        )
-    except generation_service.GenerationCanceled as exc:
-        raise HTTPException(409, exc.message) from exc
-    ai = _get_ai_for_user(
-        user,
-        body.speed,
-        key_id=body.ai_key_id,
-        key_source=body.ai_key_source,
-    )
+        body = WiringPromptRequest.model_validate(body_data)
+        ai = _get_ai_for_wiring(user, body, project_id=project_id)
+    except Exception as exc:
+        trace_add("error", f"Wiring prompt setup failed: {exc}", trace_id=trace_id)
+        generation_service.fail(path, str(exc), trace_id=trace_id)
+        return
     current = None
     wiring_path = path / "wiring.json"
     if wiring_path.is_file():
@@ -3559,7 +6526,11 @@ def wiring_prompt(
         "info",
         "Wiring prompt started",
         trace_id=trace_id,
-        data={"prompt": body.prompt[:300], "image_count": len(body.images)},
+        data={
+            "prompt": body.prompt[:300],
+            "image_count": len(body.images),
+            "driver_link_count": len(body.driver_links),
+        },
     )
     try:
         schematic, ai_trace, message = wiring_service.generate_wiring_schematic(
@@ -3567,6 +6538,7 @@ def wiring_prompt(
             body.prompt,
             current=current,
             images=[img.model_dump() for img in body.images],
+            driver_links=body.driver_links,
             trace_id=trace_id,
         )
     except (RuntimeError, ValueError) as exc:
@@ -3582,7 +6554,7 @@ def wiring_prompt(
             user=user,
             error=str(exc),
         )
-        raise HTTPException(502, str(exc)) from exc
+        return
     except Exception as exc:
         logger.exception("Wiring prompt crashed project=%s trace=%s", project_id, trace_id)
         trace_add("error", f"Wiring prompt crashed: {exc}", trace_id=trace_id)
@@ -3597,11 +6569,11 @@ def wiring_prompt(
             user=user,
             error=str(exc),
         )
-        raise HTTPException(502, str(exc)) from exc
+        return
 
     if generation_service.is_canceled(path, trace_id):
         trace_add("info", "Wiring prompt canceled before save", trace_id=trace_id)
-        raise HTTPException(409, "Wiring generation canceled.")
+        return
 
     hist_entry = _save_wiring_prompt_history(
         path,
@@ -3628,6 +6600,19 @@ def wiring_prompt(
             "url": None,
         },
     )
+    generation_service.complete(
+        path,
+        {
+            "kind": "wiring",
+            "trace_id": trace_id,
+            "prompt": body.prompt[:500],
+            "label": "Wiring schematic",
+            "message": message,
+            "prompt_id": hist_entry.get("id") if hist_entry else None,
+            "filename": None,
+            "url": None,
+        },
+    )
     _notify_project(
         project_id,
         {
@@ -3641,13 +6626,57 @@ def wiring_prompt(
         f"Wiring prompt done → {len(schematic.get('components') or [])} parts",
         trace_id=trace_id,
     )
-    return {
-        "message": message,
-        "schematic": schematic,
-        "trace_id": trace_id,
-        "trace": {"ai": ai_trace},
-        "prompt_history": hist_entry,
-    }
+
+
+@app.post("/api/projects/{project_id}/wiring/prompt")
+def wiring_prompt(
+    project_id: str,
+    body: WiringPromptRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Generate or edit a breadboard wiring schematic from a natural-language prompt."""
+    trace_id = getattr(request.state, "trace_id", new_trace_id())
+    path = _require_project(user, project_id)
+    try:
+        generation_service.start(
+            path,
+            kind="wiring",
+            trace_id=trace_id,
+            user=user,
+            prompt=body.prompt,
+            label="Wiring schematic",
+            request_body=body.model_dump(mode="json"),
+        )
+    except generation_service.GenerationInProgress as exc:
+        return JSONResponse(
+            status_code=202,
+            content={
+                "accepted": True,
+                "status": "running",
+                "trace_id": exc.current.get("trace_id"),
+                "generation": generation_service.public_summary(path),
+            },
+        )
+    except generation_service.GenerationCanceled as exc:
+        raise HTTPException(409, exc.message) from exc
+    background_tasks.add_task(
+        _background_wiring_prompt,
+        project_id,
+        body.model_dump(mode="json"),
+        trace_id,
+        dict(user),
+    )
+    return JSONResponse(
+        status_code=202,
+        content={
+            "accepted": True,
+            "status": "running",
+            "trace_id": trace_id,
+            "generation": generation_service.public_summary(path),
+        },
+    )
 
 
 @app.post("/api/projects/{project_id}/wiring/diagnose-photo")
@@ -3663,12 +6692,7 @@ def wiring_diagnose_photo(
     trace_id = getattr(request.state, "trace_id", new_trace_id())
     path = _require_project(user, project_id)
 
-    ai = _get_ai_for_user(
-        user,
-        body.speed,
-        key_id=body.ai_key_id,
-        key_source=body.ai_key_source,
-    )
+    ai = _get_ai_for_prompt(user, body, project_id=project_id)
 
     current_schematic: dict[str, Any] | None = None
     if body.include_schematic:
@@ -4035,6 +7059,49 @@ def _usage_history_fields(ai_traces: list[dict[str, Any]] | dict[str, Any] | Non
     return usage_fields_for_history(ai_traces)
 
 
+def _usage_history_fields(ai_traces: list[dict[str, Any]] | dict[str, Any] | None) -> dict[str, Any]:
+    from backend.services.ai_cost import usage_fields_for_history
+
+    return usage_fields_for_history(ai_traces)
+
+
+def _save_rigging_prompt_history(
+    project_path: Path,
+    *,
+    prompt: str,
+    success: bool,
+    speed: str = "fast",
+    images: list[Any] | None = None,
+    trace_id: str | None,
+    user: dict[str, Any] | None = None,
+    message: str | None = None,
+    error: str | None = None,
+    ai_traces: list[dict[str, Any]] | dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    try:
+        img_list = images or []
+        return prompt_history_service.append_entry(
+            project_path,
+            prompt=prompt,
+            success=success,
+            message=message,
+            speed=speed,
+            error=error,
+            images=[
+                img.model_dump(exclude={"data_url"}) if hasattr(img, "model_dump") else img
+                for img in img_list[:4]
+            ],
+            trace_id=trace_id,
+            user_id=user["id"] if user else None,
+            user_name=user["display_name"] if user else None,
+            kind="rigging",
+            **_usage_history_fields(ai_traces),
+        )
+    except Exception as exc:
+        logger.debug("rigging prompt history save failed: %s", exc)
+    return None
+
+
 def _save_rigging_prompt_history(
     project_path: Path,
     *,
@@ -4120,6 +7187,41 @@ def _save_sketch_prompt_history(
     user: dict[str, Any] | None = None,
     message: str | None = None,
     error: str | None = None,
+) -> dict[str, Any] | None:
+    try:
+        img_list = images or []
+        return prompt_history_service.append_entry(
+            project_path,
+            prompt=prompt,
+            success=success,
+            message=message,
+            speed=speed,
+            error=error,
+            images=[
+                img.model_dump(exclude={"data_url"}) if hasattr(img, "model_dump") else img
+                for img in img_list[:4]
+            ],
+            trace_id=trace_id,
+            user_id=user["id"] if user else None,
+            user_name=user["display_name"] if user else None,
+            kind="sketch",
+        )
+    except Exception as exc:
+        logger.debug("sketch prompt history save failed: %s", exc)
+    return None
+
+
+def _save_sketch_prompt_history(
+    project_path: Path,
+    *,
+    prompt: str,
+    success: bool,
+    speed: str = "fast",
+    images: list[Any] | None = None,
+    trace_id: str | None,
+    user: dict[str, Any] | None = None,
+    message: str | None = None,
+    error: str | None = None,
     ai_traces: list[dict[str, Any]] | dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     try:
@@ -4167,10 +7269,13 @@ def _save_prompt_history(
             try:
                 if body.ai_key_id:
                     effective = user_ai_keys_service.resolve_key_for_user(
-                        user["id"], body.ai_key_id, body.ai_key_source
+                        user["id"],
+                        body.ai_key_id,
+                        body.ai_key_source,
+                        project_id=project_path.name,
                     ) or {}
                 else:
-                    effective = user_ai_keys_service.get_effective_key_for_user(user["id"]) or {}
+                    effective = user_ai_keys_service.get_effective_key_for_user(user["id"], project_id=project_path.name) or {}
                 if effective.get("source") == "team":
                     key_meta = {
                         "key_source": "team",
@@ -4208,6 +7313,7 @@ def _save_prompt_history(
             trace_id=trace_id,
             user_id=user["id"] if user else None,
             user_name=user["display_name"] if user else None,
+            user_avatar_url=_avatar_url_for_user_id(user["id"]) if user else None,
             prompt_mode=(getattr(body, "mode", None) or "standard").lower(),
             **usage_meta,
             **key_meta,
@@ -4217,6 +7323,67 @@ def _save_prompt_history(
     return None
 
 
+def _decode_data_url_image(data_url: str) -> tuple[bytes, str]:
+    match = re.match(r"^data:image/(png|jpeg|jpg|webp);base64,(.+)$", data_url or "", re.DOTALL)
+    if not match:
+        raise ValueError("Expected a PNG/JPEG/WebP data URL")
+    ext = "jpg" if match.group(1) in {"jpeg", "jpg"} else match.group(1)
+    try:
+        return base64.b64decode(match.group(2), validate=True), ext
+    except Exception as exc:
+        raise ValueError("Could not decode viewport image") from exc
+
+
+def _render_ai_for_user(user: dict[str, Any], body: SceneRenderRequest, project_id: str) -> AIService:
+    if not body.ai_key_id:
+        sam_key = _sam_openai_key()
+        if sam_key:
+            return AIService(model="gpt-4o-mini", api_key=sam_key["api_key"], provider="openai")
+    ai = _get_ai_for_user(
+        user,
+        body.speed,
+        key_id=body.ai_key_id,
+        key_source=body.ai_key_source,
+        project_id=project_id,
+    )
+    if ai.provider == "openai":
+        return ai
+    sam_key = _sam_openai_key()
+    if sam_key:
+        return AIService(model="gpt-4o-mini", api_key=sam_key["api_key"], provider="openai")
+    raise HTTPException(400, "Photoreal Render mode needs an OpenAI key.")
+
+
+def _extract_openai_image_b64(response: Any) -> str | None:
+    data = getattr(response, "data", None) or []
+    if not data:
+        return None
+    first = data[0]
+    return getattr(first, "b64_json", None) or (first.get("b64_json") if isinstance(first, dict) else None)
+
+
+def _write_scene_render(project_path: Path, image_bytes: bytes) -> str:
+    renders = project_path / "renders"
+    renders.mkdir(parents=True, exist_ok=True)
+    filename = f"render_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.png"
+    (renders / filename).write_bytes(image_bytes)
+    return filename
+
+
+def _scene_render_prompt(user_prompt: str, project_name: str | None, base_filename: str | None) -> str:
+    context = f"Model/project: {project_name or 'Render3D model'}"
+    if base_filename:
+        context += f" ({base_filename})"
+    return (
+        "Create a photorealistic product/environment render using the provided viewport image as the exact 3D model reference. "
+        "Preserve the model's geometry, proportions, color/material intent, and visible orientation. "
+        "Do not redesign the model. Place it naturally in the requested real-life environment with realistic lighting, shadows, "
+        "camera perspective, contact with surfaces, and plausible scale.\n\n"
+        f"{context}\n"
+        f"User environment/render direction: {user_prompt}"
+    )
+
+
 def _prompt_via_kernel(
     project_id: str,
     body: PromptRequest,
@@ -4224,6 +7391,7 @@ def _prompt_via_kernel(
     ai: AIService,
     user: dict[str, Any],
     project_path: Path,
+    progress_callback=None,
 ):
     """New engineering pipeline: AI -> Feature Program -> validated, exported model."""
     from backend.services import design_service
@@ -4231,6 +7399,16 @@ def _prompt_via_kernel(
 
     refs_list = [r.model_dump() for r in body.references]
     context = _slim_context(project_id, project_path, body)
+    previous_source, previous_source_name = (None, None)
+    if (getattr(body, "mode", "standard") or "standard").lower() in {"v2", "fusion", "architect"} and body.base_filename:
+        previous_source, previous_source_name = _source_for_base_model(project_path, body.base_filename)
+        if previous_source_name:
+            trace_add(
+                "info",
+                "Using current model Python source for CAD quality edit",
+                trace_id=trace_id,
+                data={"base_filename": body.base_filename, "source": previous_source_name},
+            )
     timer = TraceTimer("Design pipeline", trace_id)
     cancel_check = lambda: generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir()
     try:
@@ -4246,8 +7424,13 @@ def _prompt_via_kernel(
             skills=body.skills,
             speed=body.speed,
             mode=getattr(body, "mode", "standard") or "standard",
+            previous_source=previous_source,
+            previous_source_name=previous_source_name,
             cancel_check=cancel_check,
+            progress_callback=progress_callback,
         )
+        if cancel_check():
+            raise DesignCanceled("Generation canceled.")
         timer.done(intent=out.get("intent"), attempts=out.get("attempts"))
     except DesignCanceled as exc:
         timer.done(canceled=True)
@@ -4277,9 +7460,10 @@ def _prompt_via_kernel(
 
     result = out["result"]
     primary = result["primary"]
+    is_plain_v2 = (body.mode or "standard").lower() == "v2"
     referenced_components = []
     for r in body.references:
-        if not (r.type == "component" or r.filename):
+        if is_plain_v2 or r.type != "component":
             continue
         comp_ref: dict[str, Any] = {"filename": r.filename, "stem": r.stem, "label": r.label}
         if r.projectId and r.projectId != project_id:
@@ -4315,6 +7499,8 @@ def _prompt_via_kernel(
         message=out.get("message"), filename=primary,
         ai_traces=out.get("ai_trace"),
     )
+    if cancel_check():
+        raise DesignCanceled("Generation canceled.")
     project_store.touch_project(project_path, name=result.get("program", {}).get("name"))
     trace_add("info", f"Design done → {primary} ({out.get('attempts')} attempt(s))", trace_id=trace_id)
     _notify_project(
@@ -4327,6 +7513,7 @@ def _prompt_via_kernel(
             "action": "prompt", "timeline_entry": entry,
         },
     )
+    usage_meta = _usage_history_fields(out.get("ai_trace"))
     return {
         "message": out.get("message"),
         "filename": primary,
@@ -4344,6 +7531,7 @@ def _prompt_via_kernel(
         "trace_id": trace_id,
         "prompt_id": hist_entry.get("id") if hist_entry else None,
         "trace": {"ai": out.get("ai_trace"), "intent": out.get("intent"), "attempts": out.get("attempts")},
+        **usage_meta,
     }
 
 
@@ -4377,31 +7565,98 @@ def _background_prompt_kernel(
         body.speed,
         key_id=body.ai_key_id,
         key_source=body.ai_key_source,
+        project_id=project_id,
     )
-        result = _prompt_via_kernel(project_id, body, trace_id, ai, user, project_path)
+        def progress_callback(progress: dict[str, Any]) -> None:
+            generation_service.update_progress(project_path, progress, trace_id=trace_id)
+
+        result = _prompt_via_kernel(
+            project_id,
+            body,
+            trace_id,
+            ai,
+            user,
+            project_path,
+            progress_callback=progress_callback,
+        )
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
             return
-        generation_service.complete(
-            project_path,
-            {
-                "message": result.get("message"),
-                "filename": result.get("filename"),
-                "url": result.get("url"),
-                "timeline_index": result.get("timeline_index"),
-                "prompt_id": result.get("prompt_id"),
-                "design_plan": result.get("design_plan"),
-            },
-        )
+        complete_payload: dict[str, Any] = {
+            "message": result.get("message"),
+            "filename": result.get("filename"),
+            "url": result.get("url"),
+            "timeline_index": result.get("timeline_index"),
+            "prompt_id": result.get("prompt_id"),
+            "design_plan": result.get("design_plan"),
+        }
+        for key in ("usage", "cost_usd", "model", "provider", "ai_calls"):
+            if result.get(key) is not None:
+                complete_payload[key] = result.get(key)
+        generation_service.complete(project_path, complete_payload)
+        filename = result.get("filename")
+        if filename:
+            import threading
+
+            threading.Thread(
+                target=_background_push_new_file_to_fusion,
+                args=(project_id, project_path, filename),
+                daemon=True,
+                name=f"fusion-new-file-{project_id}-{Path(str(filename)).stem[:24]}",
+            ).start()
     except HTTPException as exc:
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
             return
         detail = exc.detail if isinstance(exc.detail, str) else json.dumps(exc.detail)
-        generation_service.fail(project_path, detail, trace_id=trace_id)
+        fail_payload: dict[str, Any] = {"error": detail}
+        if exc.status_code not in (499,):
+            try:
+                body = PromptRequest.model_validate(body_data)
+                existing = prompt_history_service.list_entries(project_path, limit=500)
+                already_saved = any(str(e.get("trace_id") or "") == str(trace_id) for e in existing)
+                if not already_saved:
+                    saved = _save_prompt_history(
+                        project_path,
+                        prompt=body.prompt,
+                        success=False,
+                        body=body,
+                        refs_list=[r.model_dump() for r in body.references],
+                        trace_id=trace_id,
+                        user=user,
+                        error=detail,
+                        ai_traces=getattr(exc, "ai_traces", None),
+                    )
+                    if saved:
+                        for key in ("usage", "cost_usd", "model", "provider", "ai_calls"):
+                            if saved.get(key) is not None:
+                                fail_payload[key] = saved.get(key)
+            except Exception:
+                pass
+        generation_service.fail(project_path, detail, trace_id=trace_id, extra=fail_payload)
     except Exception as exc:
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
             return
         logger.exception("Background prompt failed project=%s trace=%s", project_id, trace_id)
-        generation_service.fail(project_path, str(exc), trace_id=trace_id)
+        fail_payload = {"error": str(exc)}
+        ai_traces = getattr(exc, "ai_traces", None)
+        if ai_traces:
+            usage_meta = _usage_history_fields(ai_traces)
+            fail_payload.update({k: v for k, v in usage_meta.items() if v is not None})
+            try:
+                body = PromptRequest.model_validate(body_data)
+                _save_prompt_history(
+                    project_path,
+                    prompt=body.prompt,
+                    success=False,
+                    body=body,
+                    refs_list=[r.model_dump() for r in body.references],
+                    trace_id=trace_id,
+                    user=user,
+                    error=str(exc),
+                    ai_traces=ai_traces,
+                )
+            except Exception:
+                pass
+        generation_service.fail(project_path, str(exc), trace_id=trace_id, extra=fail_payload)
 
 
 def _background_kernel_build(
@@ -4527,6 +7782,65 @@ def _with_image_generated_dxf_reference(body: PromptRequest, ai: "AIService", tr
     })
 
 
+def _with_image_generated_dxf_reference(body: PromptRequest, ai: "AIService", trace_id: str | None) -> PromptRequest:
+    """Convert attached image references into a hidden DXF reference for CAD prompts."""
+    if not body.images:
+        return body
+    if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
+        return body
+    try:
+        dxf_text, call_trace = ai.generate_dxf_from_images(
+            body.prompt,
+            images=[img.model_dump() for img in body.images[:4]],
+            trace_id=trace_id,
+        )
+    except Exception as exc:
+        trace_add(
+            "warning",
+            f"Image-to-DXF conversion failed; continuing with image references only: {exc}",
+            trace_id=trace_id,
+        )
+        return body
+    if not dxf_text.strip():
+        return body
+    image_names = ", ".join(img.name for img in body.images[:4])
+    ref = GeoReference(
+        id="vision-reference",
+        type="dxf",
+        label=f"Vision DXF from image{'s' if len(body.images) != 1 else ''}",
+        filename="vision-reference.dxf",
+        stem="vision-reference",
+        format="dxf",
+        text_content=dxf_text[:90000],
+        text_truncated=len(dxf_text) > 90000,
+    )
+    instruction = (
+        "\n\nUse the attached generated DXF reference `@vision-reference` as the primary 2D drawing extracted "
+        f"from the uploaded image{'s' if len(body.images) != 1 else ''} ({image_names}). Follow the DXF geometry, "
+        "layers, proportions, notes, and inferred dimensions when creating the 3D model. Use the original image(s) "
+        "only to resolve ambiguity, color/material/style, and 3D depth."
+    )
+    trace_add(
+        "info",
+        "Generated hidden DXF reference from prompt image(s)",
+        trace_id=trace_id,
+        data={
+            "image_count": len(body.images),
+            "dxf_chars": len(dxf_text),
+            "model": call_trace.get("model"),
+            "provider": call_trace.get("provider"),
+        },
+    )
+    skills = body.skills
+    if "dxf" not in {str(s).lower() for s in skills}:
+        skills = [*skills, "dxf"]
+    return body.model_copy(update={
+        "prompt": f"{body.prompt}{instruction}"[:8000],
+        "references": [*body.references, ref],
+        "skills": skills,
+    })
+
+
 @app.post("/api/projects/{project_id}/prompt")
 def prompt_cad(
     project_id: str,
@@ -4537,6 +7851,17 @@ def prompt_cad(
 ):
     trace_id = getattr(request.state, "trace_id", new_trace_id())
     project_path = _require_project(user, project_id)
+    body = _resolve_prompt_reference_body(project_id, project_path, body, user, trace_id)
+    body = _with_reference_edit_base(project_path, body, trace_id)
+    inferred_edit_base = _infer_implicit_edit_base(project_path, body)
+    if inferred_edit_base:
+        trace_add(
+            "info",
+            "Inferred base model for implicit CAD edit",
+            trace_id=trace_id,
+            data={"base_filename": inferred_edit_base},
+        )
+        body = body.model_copy(update={"base_filename": inferred_edit_base})
     if _is_dimension_question(body.prompt):
         try:
             measurement = _measure_model_dimensions(project_path, body.base_filename)
@@ -4569,9 +7894,28 @@ def prompt_cad(
         body.speed,
         key_id=body.ai_key_id,
         key_source=body.ai_key_source,
+        project_id=project_id,
     )
     body = _with_image_generated_dxf_reference(body, ai, trace_id)
-    resolved_skills = skills_service.resolve_prompt_skills(body.skills, has_images=bool(body.images))
+    resolved_skills = skills_service.resolve_prompt_skills(
+        body.skills,
+        has_images=bool(body.images),
+        prompt=body.prompt,
+        user_id=user["id"],
+    )
+    if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
+        missing_dxf_content = [
+            ref.filename or ref.label or ref.id
+            for ref in body.references
+            if str(ref.type or "").lower() == "dxf" and not (ref.text_content or "").strip()
+        ]
+        if missing_dxf_content:
+            raise HTTPException(
+                422,
+                "DXF reference content was not attached. Reload the app, drop the DXF into the AI prompt again, "
+                f"and retry. Missing DXF content for: {', '.join(missing_dxf_content[:3])}",
+            )
+        resolved_skills = [*resolved_skills, "dxf"] if "dxf" not in {s.lower() for s in resolved_skills} else resolved_skills
 
     trace_add(
         "info",
@@ -4587,6 +7931,18 @@ def prompt_cad(
             "image_count": len(body.images),
         },
     )
+
+    # Whisk/paddle tool swaps on the cooking appliance — parametric rebuild (mesh booleans fail).
+    # 2.0/Fusion modes intentionally follow text-to-cad source generation instead of legacy
+    # project-specific deterministic rebuilds.
+    if (body.mode or "standard").lower() not in {"v2", "fusion"} and _is_appliance_toolhead_swap(body, project_path):
+        trace_add(
+            "info",
+            "Routing appliance toolhead swap to parametric rebuild",
+            trace_id=trace_id,
+            data={"base_filename": body.base_filename},
+        )
+        return _rebuild_cooking_appliance_toolhead(project_id, body, trace_id, user, project_path)
 
     # Whisk/paddle tool swaps on the cooking appliance — parametric rebuild (mesh booleans fail).
     if _is_appliance_toolhead_swap(body, project_path):
@@ -4609,13 +7965,20 @@ def prompt_cad(
             "pipeline": "kernel" if use_kernel else "legacy_mesh_edit",
             "base_filename": body.base_filename,
             "fresh_design": _is_fresh_design_request(body) if body.base_filename else True,
-            "fixture_prompt": _looks_like_fixture_prompt(body.prompt),
+            "fixture_prompt": _looks_like_fixture_prompt(body.prompt, body.images),
         },
     )
     if use_kernel:
         updates: dict[str, Any] = {"skills": resolved_skills}
-        if body.base_filename:
-            updates["base_filename"] = None
+        normalized_mode = (body.mode or "standard").lower()
+        if normalized_mode == "v2":
+            updates.update({
+                "base_filename": None,
+                "references": [],
+                "fusion_target": "in_app",
+                "speed": "quality",
+                "skills": ["cad"],
+            })
         design_body = body.model_copy(update=updates)
         try:
             generation_service.start(
@@ -4823,6 +8186,119 @@ def prompt_cad(
     }
 
 
+@app.get("/api/projects/{project_id}/renders/{filename}")
+def get_scene_render(project_id: str, filename: str, user: dict[str, Any] = Depends(get_current_user)):
+    project_path = _require_project_read(user, project_id)
+    safe = Path(filename).name
+    path = project_path / "renders" / safe
+    if not path.is_file():
+        raise HTTPException(404, "Render not found")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.post("/api/projects/{project_id}/scene-render")
+def render_scene_image(project_id: str, body: SceneRenderRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    trace_id = getattr(request.state, "trace_id", new_trace_id())
+    project_path = _require_project(user, project_id)
+    try:
+        viewport_bytes, _ext = _decode_data_url_image(body.viewport_image)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    ai = _render_ai_for_user(user, body, project_id)
+    if ai.provider != "openai":
+        raise HTTPException(400, "Photoreal Render mode needs an OpenAI key.")
+    project_meta = project_store.load_meta(project_path)
+    prompt = _scene_render_prompt(body.prompt, project_meta.get("name"), body.base_filename)
+    trace_add(
+        "info",
+        "Scene render started",
+        trace_id=trace_id,
+        data={"prompt": body.prompt[:300], "model": "gpt-image-1", "base_filename": body.base_filename},
+    )
+    try:
+        import io
+
+        image_file = io.BytesIO(viewport_bytes)
+        image_file.name = "viewport.png"
+        response = ai.client.images.edit(
+            model="gpt-image-1",
+            image=image_file,
+            prompt=prompt,
+            size="1024x1024",
+        )
+        b64 = _extract_openai_image_b64(response)
+        if not b64:
+            raise RuntimeError("Image API returned no image data")
+        render_bytes = base64.b64decode(b64)
+    except Exception as exc:
+        trace_add("error", f"Scene render failed: {exc}", trace_id=trace_id)
+        prompt_history_service.append_entry(
+            project_path,
+            prompt=body.prompt,
+            success=False,
+            message=None,
+            filename=body.base_filename,
+            base_filename=body.base_filename,
+            speed=body.speed,
+            error=str(exc),
+            references=[],
+            images=[{"id": "viewport", "name": "viewport.png", "media_type": "image/png"}],
+            trace_id=trace_id,
+            user_id=user["id"],
+            user_name=user["display_name"],
+            user_avatar_url=_avatar_url_for_user_id(user["id"]),
+            prompt_mode="render",
+            kind="render",
+            model="gpt-image-1",
+            provider="openai",
+        )
+        raise HTTPException(502, f"Scene render failed: {exc}") from exc
+
+    filename = _write_scene_render(project_path, render_bytes)
+    url = f"/api/projects/{project_id}/renders/{filename}"
+    message = f"Rendered scene: {body.prompt}"
+    hist_entry = prompt_history_service.append_entry(
+        project_path,
+        prompt=body.prompt,
+        success=True,
+        message=message,
+        filename=filename,
+        base_filename=body.base_filename,
+        speed=body.speed,
+        references=[],
+        images=[{"id": "viewport", "name": "viewport.png", "media_type": "image/png"}],
+        trace_id=trace_id,
+        user_id=user["id"],
+        user_name=user["display_name"],
+        user_avatar_url=_avatar_url_for_user_id(user["id"]),
+        prompt_mode="render",
+        kind="render",
+        model="gpt-image-1",
+        provider="openai",
+    )
+    owner = _project_owner(project_id) or {}
+    if owner.get("team_id"):
+        _log_workspace(
+            owner["team_id"],
+            kind="scene_render",
+            label=message,
+            user=user,
+            project_id=project_id,
+            meta={"render_filename": filename, "base_filename": body.base_filename},
+        )
+    return {
+        "kind": "scene_render",
+        "filename": filename,
+        "url": url,
+        "message": message,
+        "trace_id": trace_id,
+        "prompt_id": hist_entry.get("id") if hist_entry else None,
+        "model": "gpt-image-1",
+        "provider": "openai",
+        "prompt_mode": "render",
+    }
+
+
 @app.post("/api/projects/{project_id}/build")
 def build_program_endpoint(
     project_id: str,
@@ -4867,6 +8343,7 @@ def transform_file(
     project_id: str,
     filename: str,
     body: TransformRequest,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(get_current_user),
 ):
     project_path = _require_project(user, project_id)
@@ -4889,6 +8366,7 @@ def transform_file(
     out = project_path / f"{stem}.glb"
     cad_service.export_mesh(mesh, out)
     entry = _record_history(project_path, "transform", "Transform", out.name, meta=transform, user=user)
+    _append_mesh_edit(project_path, filename, {"op": "transform", "parent": filename, "child": out.name, **transform, "copy": body.copy})
     _append_mesh_edit(project_path, safe, {"op": "transform", "parent": safe, "child": out.name, **transform, "copy": body.copy})
     project_store.touch_project(project_path)
     _notify_project(
@@ -4919,6 +8397,7 @@ def transform_body_file(
     project_id: str,
     filename: str,
     body: BodyTransformRequest,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(get_current_user),
 ):
     project_path = _require_project(user, project_id)
@@ -4937,6 +8416,7 @@ def transform_body_file(
     entry = _record_history(project_path, "transform", f"Transform body {body.body_index + 1}", safe, meta=meta, user=user)
     _append_mesh_edit(project_path, safe, {"op": "transform_body", "parent": safe, "child": safe, **meta})
     project_store.touch_project(project_path)
+    background_tasks.add_task(_background_push_render_edit_to_fusion, project_id, project_path, safe)
     _notify_project(
         project_id,
         {
@@ -5083,6 +8563,7 @@ def extrude_file(
         user=user,
     )
     _append_mesh_edit(project_path, filename, {"op": "extrude", "parent": filename, "child": out.name, **meta})
+    _append_mesh_edit(project_path, filename, {"op": "extrude", "parent": filename, "child": out.name, **meta})
     project_store.touch_project(project_path)
     _notify_project(
         project_id,
@@ -5102,6 +8583,107 @@ def extrude_file(
         "timeline_index": entry["index"],
         "meta": meta,
         "parent": filename,
+    }
+
+
+def _program_file_for(project_path: Path, glb_filename: str) -> Path | None:
+    """Resolve the .program.json that corresponds to a .glb filename."""
+    stem = Path(glb_filename).stem
+    # Strip common suffixes added by edits
+    for suffix in ("_filleted", "_chamfered", "_pulled", "_mirrored", "_body"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+    candidate = project_path / f"{stem}.program.json"
+    return candidate if candidate.is_file() else None
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/fillet-edges")
+def fillet_edges_file(
+    project_id: str,
+    filename: str,
+    body: FilletRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Apply a global fillet to all edges of a parametric model via its program."""
+    project_path = _require_project(user, project_id)
+    prog = _program_file_for(project_path, filename)
+    if not prog:
+        raise HTTPException(422, "No program file found for this model. Fillet/chamfer require a parametric (.program.json) source.")
+    try:
+        out_path = cad_service.apply_program_fillet(
+            project_path, prog.name, body.radius_mm, edges=body.edges
+        )
+    except Exception as exc:
+        raise HTTPException(422, str(exc)) from exc
+    meta = body.model_dump()
+    entry = _record_history(
+        project_path,
+        "fillet",
+        f"Fillet r={body.radius_mm}mm {body.edges} edges",
+        out_path.name,
+        meta=meta,
+        user=user,
+    )
+    project_store.touch_project(project_path)
+    _notify_project(project_id, {
+        "type": "model.reload",
+        "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
+        "by": user["display_name"],
+        "by_user_id": user["id"],
+        "action": "fillet",
+        "timeline_entry": entry,
+    })
+    return {
+        "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
+        "timeline_index": entry["index"],
+        "meta": meta,
+    }
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/chamfer-edges")
+def chamfer_edges_file(
+    project_id: str,
+    filename: str,
+    body: ChamferRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Apply a global chamfer to edges of a parametric model via its program."""
+    project_path = _require_project(user, project_id)
+    prog = _program_file_for(project_path, filename)
+    if not prog:
+        raise HTTPException(422, "No program file found for this model. Fillet/chamfer require a parametric (.program.json) source.")
+    try:
+        out_path = cad_service.apply_program_chamfer(
+            project_path, prog.name, body.length_mm, edges=body.edges
+        )
+    except Exception as exc:
+        raise HTTPException(422, str(exc)) from exc
+    meta = body.model_dump()
+    entry = _record_history(
+        project_path,
+        "chamfer",
+        f"Chamfer d={body.length_mm}mm {body.edges} edges",
+        out_path.name,
+        meta=meta,
+        user=user,
+    )
+    project_store.touch_project(project_path)
+    _notify_project(project_id, {
+        "type": "model.reload",
+        "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
+        "by": user["display_name"],
+        "by_user_id": user["id"],
+        "action": "chamfer",
+        "timeline_entry": entry,
+    })
+    return {
+        "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
+        "timeline_index": entry["index"],
+        "meta": meta,
     }
 
 
@@ -5229,6 +8811,178 @@ def draw_hole_file(
     }
 
 
+def _primitive_feature(body: CreatePrimitiveRequest) -> dict[str, Any]:
+    op = str(body.op or "").strip().lower()
+    if op not in {"box", "cylinder", "sphere", "cone", "torus"}:
+        raise ValueError(f"Unsupported primitive '{body.op}'")
+    combine = str(body.combine or "new").strip().lower()
+    if combine not in {"new", "add", "cut", "intersect"}:
+        raise ValueError(f"Unknown combine mode '{body.combine}'")
+    feat: dict[str, Any] = {"op": op, "combine": combine, "at": [float(v) for v in body.at[:3]]}
+    if op == "box":
+        if not all(v and v > 0 for v in (body.length, body.width, body.height)):
+            raise ValueError("Box needs positive length, width, and height")
+        feat.update(length=float(body.length), width=float(body.width), height=float(body.height))
+    elif op == "cylinder":
+        if not body.radius or body.radius <= 0 or not body.height or body.height <= 0:
+            raise ValueError("Cylinder needs positive radius and height")
+        feat.update(radius=float(body.radius), height=float(body.height))
+    elif op == "sphere":
+        if not body.radius or body.radius <= 0:
+            raise ValueError("Sphere needs a positive radius")
+        feat.update(radius=float(body.radius))
+    elif op == "cone":
+        br = body.bottom_radius if body.bottom_radius is not None else body.radius
+        if not br or br <= 0 or not body.height or body.height <= 0:
+            raise ValueError("Cone needs positive bottom radius and height")
+        feat.update(bottom_radius=float(br), top_radius=float(body.top_radius or 0.0), height=float(body.height))
+    else:  # torus
+        if not body.major_radius or body.major_radius <= 0 or not body.minor_radius or body.minor_radius <= 0:
+            raise ValueError("Torus needs positive major and minor radii")
+        feat.update(major_radius=float(body.major_radius), minor_radius=float(body.minor_radius))
+    return feat
+
+
+def _next_primitive_basename(project_path: Path, op: str) -> str:
+    if not (project_path / f"{op}.glb").is_file():
+        return op
+    i = 2
+    while (project_path / f"{op}{i}.glb").is_file():
+        i += 1
+    return f"{op}{i}"
+
+
+@app.post("/api/projects/{project_id}/create-primitive")
+def create_primitive(
+    project_id: str,
+    body: CreatePrimitiveRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Place a parametric primitive synchronously — no AI, no background build job."""
+    project_path = _require_project(user, project_id)
+    try:
+        feat = _primitive_feature(body)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    op = feat["op"]
+    combine = feat["combine"]
+    label_map = {"box": "Box", "cylinder": "Cylinder", "sphere": "Sphere", "cone": "Cone", "torus": "Torus"}
+
+    if combine != "new" and body.base_filename:
+        src = project_path / body.base_filename
+        if not src.is_file():
+            raise HTTPException(404, "Base file not found")
+        import uuid
+
+        from backend.services import kernel_bridge
+
+        tmp_base = f"_prim_{uuid.uuid4().hex[:8]}"
+        tmp_program = {
+            "name": tmp_base,
+            "units": "mm",
+            "parts": [{"id": "solid", "features": [{**feat, "combine": "new"}]}],
+        }
+        try:
+            tmp_result = kernel_bridge.build_and_export(tmp_program, project_path, basename=tmp_base)
+            prim_mesh = cad_service.load_mesh(project_path / tmp_result["primary"])
+            base_mesh = cad_service.load_mesh(src)
+            op_map = {"add": "union", "cut": "difference", "intersect": "intersection"}
+            result = cad_service.boolean_meshes(base_mesh, prim_mesh, op_map[combine])
+        finally:
+            for pattern in (f"{tmp_base}.*", f"{tmp_base}_*.*"):
+                for path in project_path.glob(pattern):
+                    try:
+                        path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+        out = _edited_output(project_path, src, f"_{op}")
+        cad_service.export_mesh(result, out)
+        meta = body.model_dump()
+        entry = _record_history(
+            project_path,
+            "primitive",
+            f"{label_map.get(op, op)} ({combine})",
+            out.name,
+            meta=meta,
+            user=user,
+        )
+        _append_mesh_edit(
+            project_path,
+            body.base_filename,
+            {"op": "create_primitive", "parent": body.base_filename, "child": out.name, **meta},
+        )
+        project_store.touch_project(project_path)
+        _notify_project(
+            project_id,
+            {
+                "type": "model.reload",
+                "filename": out.name,
+                "url": f"/api/projects/{project_id}/files/{out.name}",
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "action": "create_primitive",
+                "timeline_entry": entry,
+            },
+        )
+        return {
+            "filename": out.name,
+            "url": f"/api/projects/{project_id}/files/{out.name}",
+            "timeline_index": entry["index"],
+            "meta": meta,
+            "parent": body.base_filename,
+            "action": "create_primitive",
+            "replace_catalog": body.base_filename,
+            "message": f"Added {label_map.get(op, op).lower()} ({combine}).",
+        }
+
+    from backend.services import kernel_bridge
+
+    program = {
+        "name": op,
+        "units": "mm",
+        "parts": [{"id": "solid", "features": [feat]}],
+    }
+    basename = _next_primitive_basename(project_path, op)
+    try:
+        result = kernel_bridge.build_and_export(program, project_path, basename=basename)
+    except Exception as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    primary = result["primary"]
+    meta = body.model_dump()
+    entry = _record_history(
+        project_path,
+        "primitive",
+        label_map.get(op, op),
+        primary,
+        meta=meta,
+        user=user,
+    )
+    project_store.touch_project(project_path)
+    _notify_project(
+        project_id,
+        {
+            "type": "model.reload",
+            "filename": primary,
+            "url": f"/api/projects/{project_id}/files/{primary}",
+            "by": user["display_name"],
+            "by_user_id": user["id"],
+            "action": "create_primitive",
+            "timeline_entry": entry,
+        },
+    )
+    return {
+        "filename": primary,
+        "url": f"/api/projects/{project_id}/files/{primary}",
+        "timeline_index": entry["index"],
+        "meta": meta,
+        "program": result.get("program"),
+        "action": "create_primitive",
+        "message": f"Created {label_map.get(op, op).lower()}.",
+    }
+
+
 @app.post("/api/projects/{project_id}/files/{filename}/draw-route")
 def draw_route_file(
     project_id: str,
@@ -5306,6 +9060,84 @@ def draw_route_file(
     }
 
 
+@app.post("/api/projects/{project_id}/files/{filename}/draw-hole")
+def draw_hole_file(
+    project_id: str,
+    filename: str,
+    body: DrawHoleRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    project_path = _require_project(user, project_id)
+    src = project_path / filename
+    if not src.is_file():
+        raise HTTPException(404, "File not found")
+
+    mesh = cad_service.load_mesh(src)
+    try:
+        if body.placement == "center":
+            if body.face_index is None:
+                raise ValueError("Pick a face first so Draw can find the face center.")
+            position, axis = cad_service.face_region_center_and_normal(mesh, body.face_index)
+        else:
+            if not body.position:
+                raise ValueError("Pick a face or point first so Draw knows where to place the hole.")
+            position = body.position
+            axis = body.normal or [0, 0, 1]
+        diameter = cad_service.length_from_mm(mesh, body.diameter_mm)
+        result = cad_service.hole_at_point(
+            mesh,
+            position,
+            axis=axis,
+            diameter=diameter,
+            through=body.through_all,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    stem = src.stem.replace("_edited", "").replace("_hole", "") + "_hole"
+    out = project_path / f"{stem}.glb"
+    cad_service.export_mesh(result, out)
+    meta = {
+        "face_index": body.face_index,
+        "position": position,
+        "normal": axis,
+        "diameter_mm": body.diameter_mm,
+        "placement": body.placement,
+        "through_all": body.through_all,
+    }
+    entry = _record_history(
+        project_path,
+        "hole",
+        f"Hole {body.diameter_mm:g}mm",
+        out.name,
+        meta=meta,
+        user=user,
+    )
+    _append_mesh_edit(project_path, filename, {"op": "draw_hole", "parent": filename, "child": out.name, **meta})
+    project_store.touch_project(project_path)
+    _notify_project(
+        project_id,
+        {
+            "type": "model.reload",
+            "filename": out.name,
+            "url": f"/api/projects/{project_id}/files/{out.name}",
+            "by": user["display_name"],
+            "by_user_id": user["id"],
+            "action": "draw_hole",
+            "timeline_entry": entry,
+        },
+    )
+    return {
+        "filename": out.name,
+        "url": f"/api/projects/{project_id}/files/{out.name}",
+        "timeline_index": entry["index"],
+        "meta": meta,
+        "parent": filename,
+        "action": "draw_hole",
+        "message": f"Added a {body.diameter_mm:g} mm through-hole.",
+    }
+
+
 def _edited_output(project_path: Path, src: Path, suffix: str) -> Path:
     base = src.stem
     for tag in ("_edited", "_pulled", "_mirrored", "_body"):
@@ -5332,11 +9164,16 @@ def face_pull_file(
     if not src.is_file():
         raise HTTPException(404, "File not found")
 
+    face_indices = sorted({int(i) for i in (body.face_indices or ([] if body.face_index is None else [body.face_index])) if int(i) >= 0})
+    if not face_indices:
+        raise HTTPException(400, "Pick one or more faces before applying Press-Pull.")
+
     mesh = cad_service.load_mesh(src)
+    operation_src = src
     try:
-        result = cad_service.face_pull(
+        result = cad_service.face_pull_many(
             mesh,
-            body.face_index,
+            face_indices,
             distance=body.distance,
             op=body.op,
             direction=body.direction,
@@ -5346,21 +9183,43 @@ def face_pull_file(
             normal=body.normal,
         )
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
+        message = str(exc)
+        viewer_name = cad_service.viewer_filename_for_model(src.name, project_path)
+        viewer_src = project_path / viewer_name
+        if "face_index out of range" not in message or viewer_src == src or not viewer_src.is_file():
+            raise HTTPException(422, message) from exc
+        try:
+            mesh = cad_service.load_mesh(viewer_src)
+            result = cad_service.face_pull_many(
+                mesh,
+                face_indices,
+                distance=body.distance,
+                op=body.op,
+                direction=body.direction,
+                distance2=body.distance2,
+                taper_deg=body.taper_deg,
+                through=body.through_all,
+                normal=body.normal,
+            )
+            operation_src = viewer_src
+        except ValueError as retry_exc:
+            raise HTTPException(422, str(retry_exc)) from retry_exc
 
     suffix = "_body" if body.op == "new_body" else "_pulled"
-    out = _edited_output(project_path, src, suffix)
+    out = _edited_output(project_path, operation_src, suffix)
     cad_service.export_mesh(result, out)
     op_label = body.op if body.op != "auto" else ("cut" if body.distance < 0 else "join")
     meta = body.model_dump()
+    meta["face_indices"] = face_indices
     entry = _record_history(
         project_path,
         "face_pull",
-        f"Press-pull {op_label} {abs(body.distance):g}",
+        f"Press-pull {len(face_indices)} face{'s' if len(face_indices) != 1 else ''} {op_label} {abs(body.distance):g}",
         out.name,
         meta=meta,
         user=user,
     )
+    _append_mesh_edit(project_path, operation_src.name, {"op": "face_pull", "parent": operation_src.name, "child": out.name, **meta})
     _append_mesh_edit(project_path, filename, {"op": "face_pull", "parent": filename, "child": out.name, **meta})
     project_store.touch_project(project_path)
     _notify_project(
@@ -5378,6 +9237,112 @@ def face_pull_file(
     return {
         "filename": out.name,
         "url": f"/api/projects/{project_id}/files/{out.name}",
+        "timeline_index": entry["index"],
+        "meta": meta,
+        "parent": filename,
+    }
+
+
+def _program_file_for(project_path: Path, glb_filename: str) -> "Path | None":
+    """Resolve the .program.json that corresponds to a .glb filename."""
+    stem = Path(glb_filename).stem
+    for suffix in ("_filleted", "_chamfered", "_pulled", "_mirrored", "_body"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+    candidate = project_path / f"{stem}.program.json"
+    return candidate if candidate.is_file() else None
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/fillet-edges")
+def fillet_edges_file(
+    project_id: str,
+    filename: str,
+    body: FilletRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Apply a global fillet to all edges of a parametric model via its program."""
+    project_path = _require_project(user, project_id)
+    prog = _program_file_for(project_path, filename)
+    if not prog:
+        raise HTTPException(422, "No program file found. Fillet requires a parametric model generated by AI prompt.")
+    try:
+        out_path = cad_service.apply_program_fillet(
+            project_path, prog.name, body.radius_mm, edges=body.edges
+        )
+    except Exception as exc:
+        raise HTTPException(422, str(exc)) from exc
+    meta = body.model_dump()
+    if body.preview:
+        return {
+            "filename": out_path.name,
+            "url": f"/api/projects/{project_id}/files/{out_path.name}",
+            "meta": meta,
+            "preview": True,
+            "action": "fillet_preview",
+            "replaceCatalog": filename,
+        }
+    entry = _record_history(
+        project_path, "fillet", f"Fillet r={body.radius_mm}mm {body.edges} edges",
+        out_path.name, meta=meta, user=user,
+    )
+    project_store.touch_project(project_path)
+    _notify_project(project_id, {
+        "type": "model.reload", "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
+        "by": user["display_name"], "by_user_id": user["id"],
+        "action": "fillet", "timeline_entry": entry,
+    })
+    return {
+        "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
+        "timeline_index": entry["index"],
+        "meta": meta,
+        "parent": filename,
+    }
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/chamfer-edges")
+def chamfer_edges_file(
+    project_id: str,
+    filename: str,
+    body: ChamferRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Apply a global chamfer to edges of a parametric model via its program."""
+    project_path = _require_project(user, project_id)
+    prog = _program_file_for(project_path, filename)
+    if not prog:
+        raise HTTPException(422, "No program file found. Chamfer requires a parametric model generated by AI prompt.")
+    try:
+        out_path = cad_service.apply_program_chamfer(
+            project_path, prog.name, body.length_mm, edges=body.edges
+        )
+    except Exception as exc:
+        raise HTTPException(422, str(exc)) from exc
+    meta = body.model_dump()
+    if body.preview:
+        return {
+            "filename": out_path.name,
+            "url": f"/api/projects/{project_id}/files/{out_path.name}",
+            "meta": meta,
+            "preview": True,
+            "action": "chamfer_preview",
+            "replaceCatalog": filename,
+        }
+    entry = _record_history(
+        project_path, "chamfer", f"Chamfer d={body.length_mm}mm {body.edges} edges",
+        out_path.name, meta=meta, user=user,
+    )
+    project_store.touch_project(project_path)
+    _notify_project(project_id, {
+        "type": "model.reload", "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
+        "by": user["display_name"], "by_user_id": user["id"],
+        "action": "chamfer", "timeline_entry": entry,
+    })
+    return {
+        "filename": out_path.name,
+        "url": f"/api/projects/{project_id}/files/{out_path.name}",
         "timeline_index": entry["index"],
         "meta": meta,
         "parent": filename,
@@ -5507,6 +9472,7 @@ def mirror_file(
         meta=meta,
         user=user,
     )
+    _append_mesh_edit(project_path, filename, {"op": "mirror", "parent": filename, "child": out.name, **meta})
     _append_mesh_edit(project_path, filename, {"op": "mirror", "parent": filename, "child": out.name, **meta})
     project_store.touch_project(project_path)
     _notify_project(
@@ -5800,6 +9766,7 @@ async def project_ws(websocket: WebSocket, project_id: str, token: str = Query(.
     if not user or not teams_service.can_access_project(user_id, project_id):
         await websocket.close(code=4403)
         return
+    user = {**user, "avatar_url": _avatar_url_for_user_id(user["id"])}
 
     client = await hub.connect(project_id, websocket, user)
     try:
@@ -5824,6 +9791,120 @@ async def user_ws(websocket: WebSocket, token: str = Query(...)):
         await hub.connect_user(websocket, user)
     except WebSocketDisconnect:
         return
+
+
+@app.websocket("/api/ws/workspaces/{team_id}")
+async def workspace_ws(websocket: WebSocket, team_id: str, token: str = Query(...)):
+    user_id = decode_token(token)
+    if not user_id:
+        await websocket.close(code=4401)
+        return
+    user = get_user_by_id(user_id)
+    if not user or not teams_service.get_team_for_user(team_id, user_id):
+        await websocket.close(code=4403)
+        return
+    user = {**user, "avatar_url": _avatar_url_for_user_id(user["id"])}
+    client = await hub.connect_workspace(team_id, websocket, user)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await hub.disconnect_workspace(team_id, client.user_id)
+
+
+ADMIN_EMAIL = "a1projects.usa@gmail.com"
+
+
+def _require_admin(user: dict[str, Any]) -> None:
+    if (user.get("email") or "").lower() != ADMIN_EMAIL.lower():
+        raise HTTPException(403, "Admin access required")
+
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard(
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_admin(user)
+    conn = get_conn()
+    try:
+        # Users stats
+        total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        recent_users = conn.execute(
+            "SELECT id, email, display_name, created_at FROM users ORDER BY created_at DESC LIMIT 20"
+        ).fetchall()
+        recent_users_list = [
+            {"id": r[0], "email": r[1], "display_name": r[2], "created_at": r[3]}
+            for r in recent_users
+        ]
+
+        # Project stats
+        total_projects = 0
+        recent_projects: list[dict[str, Any]] = []
+        data_root = Path(settings.data_root)
+        if data_root.is_dir():
+            for user_dir in sorted(data_root.iterdir(), reverse=True):
+                if not user_dir.is_dir():
+                    continue
+                for proj_dir in sorted(user_dir.iterdir(), reverse=True):
+                    if not proj_dir.is_dir():
+                        continue
+                    total_projects += 1
+                    meta_path = proj_dir / "project.json"
+                    meta: dict[str, Any] = {}
+                    if meta_path.exists():
+                        try:
+                            meta = json.loads(meta_path.read_text())
+                        except Exception:
+                            pass
+                    if len(recent_projects) < 20:
+                        recent_projects.append({
+                            "id": proj_dir.name,
+                            "owner": user_dir.name,
+                            "name": meta.get("name", proj_dir.name),
+                            "created_at": meta.get("created_at"),
+                            "updated_at": meta.get("updated_at"),
+                        })
+
+        # Prompt history stats
+        total_prompts = 0
+        recent_prompts: list[dict[str, Any]] = []
+        if data_root.is_dir():
+            for user_dir in data_root.iterdir():
+                if not user_dir.is_dir():
+                    continue
+                for proj_dir in user_dir.iterdir():
+                    if not proj_dir.is_dir():
+                        continue
+                    hist_path = proj_dir / "prompt_history.json"
+                    if not hist_path.exists():
+                        continue
+                    try:
+                        entries = json.loads(hist_path.read_text())
+                        if not isinstance(entries, list):
+                            entries = []
+                    except Exception:
+                        entries = []
+                    total_prompts += len(entries)
+                    for entry in entries[-5:]:
+                        if len(recent_prompts) < 50:
+                            recent_prompts.append({
+                                "project_id": proj_dir.name,
+                                "owner": user_dir.name,
+                                **{k: entry.get(k) for k in ("id", "prompt", "success", "created_at", "model", "cost_usd")},
+                            })
+
+        recent_prompts.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+        return {
+            "total_users": total_users,
+            "total_projects": total_projects,
+            "total_prompts": total_prompts,
+            "recent_users": recent_users_list,
+            "recent_projects": recent_projects[:20],
+            "recent_prompts": recent_prompts[:20],
+        }
+    finally:
+        conn.close()
 
 
 ADMIN_EMAIL = "a1projects.usa@gmail.com"
