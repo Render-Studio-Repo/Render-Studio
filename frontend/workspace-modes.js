@@ -14,11 +14,6 @@ const DESIGN_TABS = [
   { id: "SKETCH", label: "SKETCH", enabled: true },
   { id: "RIGGING", label: "RIGGING", enabled: true },
   { id: "ARCHITECT", label: "ARCHITECT", enabled: true },
-  { id: "SURFACE", label: "SURFACE", enabled: false },
-  { id: "MESH", label: "MESH", enabled: false },
-  { id: "SHEET METAL", label: "SHEET METAL", enabled: false },
-  { id: "UTILITIES", label: "UTILITIES", enabled: false },
-  { id: "MANAGE", label: "MANAGE", enabled: false },
   { id: "CATALOG", label: "CATALOG", enabled: true },
   { id: "CANVAS", label: "CANVAS", enabled: true },
 ];
