@@ -39,7 +39,7 @@ _3MF_RELS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 </Relationships>
 """
 
-SUPPORTED_IMPORT = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf", ".step", ".stp"}
+SUPPORTED_IMPORT = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf", ".step", ".stp", ".dxf"}
 STEP_SUFFIXES = {".step", ".stp"}
 MESH_VIEW_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf"}
 SUPPORTED_EXPORT = {".stl", ".glb", ".obj", ".3mf", ".step"}
@@ -738,6 +738,20 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
             }
         )
 
+    drawings: list[dict[str, Any]] = []
+    for f in sorted(project_path.glob("*.dxf")):
+        if not f.is_file() or f.name.startswith("_active_") or f.name.startswith("_export_"):
+            continue
+        drawings.append(
+            {
+                "id": f.stem,
+                "name": f.name,
+                "stem": f.stem,
+                "format": "dxf",
+                "size": f.stat().st_size,
+            }
+        )
+
     rigging_path = project_path / "rigging.json"
     if rigging_path.is_file():
         count = 0
@@ -762,6 +776,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         "components": components,
         "sketches": sketches,
         "wiring": wiring_items,
+        "drawings": drawings,
         "rigging": rigging_items,
     }
 

@@ -163,7 +163,7 @@ def project_list_summary(project_path: Path) -> dict[str, Any]:
         "updated_at": touch or meta.get("updated_at"),
         "file_count": meta.get("file_count", 0),
         "files": [],
-        "browser": {"components": [], "sketches": [], "wiring": []},
+        "browser": {"components": [], "sketches": [], "wiring": [], "drawings": []},
         "latest_file": None,
         "usage_summary": None,
         "generation": None,

@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260706-realtime-editor-fix" />
+  <link rel="stylesheet" href="/styles.css?v=20260706-dxf-viewport-drop" />
   <script type="importmap">
   {
     "imports": {
@@ -56,7 +56,7 @@
         <button id="btn-new-project" class="btn secondary">New project</button>
         <label class="btn primary">
           Upload CAD
-          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp" multiple hidden />
+          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.dxf" multiple hidden />
         </label>
         <select id="unit-select" class="unit-select" title="Document units" aria-label="Document units">
           <option value="mm">mm</option>
@@ -293,11 +293,12 @@
     </aside>
 
     <div class="main-column">
+      <div id="dxf-tab-bar" class="dxf-tab-bar hidden" role="tablist" aria-label="Open drawings"></div>
       <main id="viewport">
         <div id="viewport-drop-overlay" class="viewport-drop-overlay hidden" aria-hidden="true">
           <div class="viewport-drop-card">
-            <strong>Drop CAD files</strong>
-            <span>STEP, STL, GLB, OBJ, 3MF…</span>
+            <strong>Drop CAD or DXF files</strong>
+            <span>STEP, STL, GLB, OBJ, 3MF, DXF…</span>
           </div>
         </div>
         <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
@@ -468,6 +469,7 @@
           </div>
         </div>
       </main>
+      <div id="dxf-viewer" class="dxf-viewer hidden" aria-hidden="true"></div>
       <div id="wiring-workspace" class="wiring-workspace hidden">
         <aside id="wiring-palette" class="wiring-palette">
           <div id="wiring-palette-list"></div>
@@ -1310,7 +1312,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260706-admin-fusion-fix"></script>
+  <script type="module" src="/app.js?v=20260706-dxf-viewport-drop"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260611-timeline-restore"></script>
   <!-- ribbon.js is imported inside app.js -->

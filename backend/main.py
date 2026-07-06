@@ -4076,6 +4076,7 @@ def get_workspace_realtime_editor(team_id: str, user: dict[str, Any] = Depends(g
                     "fusion_bodies": (summary.get("browser") or {}).get("fusion_bodies") or [],
                     "sketches": (summary.get("browser") or {}).get("sketches") or [],
                     "wiring": (summary.get("browser") or {}).get("wiring") or [],
+                    "drawings": (summary.get("browser") or {}).get("drawings") or [],
                 },
                 "fusion_source": meta.get("autodesk_source"),
                 "fusion_mirrors": [
@@ -5478,6 +5479,25 @@ def get_file(
 ):
     project_path = _require_project_read(user, project_id)
     return _file_response(project_path, project_id, filename, step_mode=step_mode)
+
+
+@app.get("/api/projects/{project_id}/files/{filename}/dxf-preview")
+def get_dxf_preview(
+    project_id: str,
+    filename: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    project_path = _require_project_read(user, project_id)
+    safe = Path(filename).name
+    file_path = project_path / safe
+    if not file_path.is_file() or file_path.suffix.lower() != ".dxf":
+        raise HTTPException(404, "DXF file not found")
+    try:
+        from backend.skills.dxf.scripts.dxf.render_payload import build_dxf_render_payload
+
+        return build_dxf_render_payload(file_path, file_ref=safe)
+    except Exception as exc:
+        raise HTTPException(422, f"Could not render DXF: {exc}") from exc
 
 
 @app.get("/api/public/projects/{project_id}/files/{filename}")

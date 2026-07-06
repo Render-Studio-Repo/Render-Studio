@@ -74,7 +74,8 @@ import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260617-marquee-bodies";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
-import { createProjectTree } from "./project-tree.js?v=20260630-parts-label";
+import { createProjectTree } from "./project-tree.js?v=20260706-dxf-drawings";
+import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260621-driver-3x3-grid";
@@ -1276,6 +1277,7 @@ function normalizeBrowser(data) {
     components,
     sketches: browser.sketches || [],
     wiring: browser.wiring || [],
+    drawings: browser.drawings || [],
   };
 }
 
@@ -6039,6 +6041,12 @@ window.addEventListener("resize", resize);
 resize();
 
 const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp)$/i;
+const DXF_ACCEPT = /\.dxf$/i;
+
+function isViewportImportFile(name = "") {
+  return IMPORT_ACCEPT.test(name) || DXF_ACCEPT.test(name);
+}
+
 let viewportDragDepth = 0;
 const viewportDropOverlay = document.getElementById("viewport-drop-overlay");
 
@@ -6047,7 +6055,13 @@ function isCadFileDrag(e) {
   if (!types.includes("Files")) return false;
   const items = [...(e.dataTransfer?.items || [])];
   if (!items.length) return true;
-  return items.some((item) => item.kind === "file" && (!item.type || /model|mesh|octet|zip|step|stl|gltf|3mf/i.test(item.type)));
+  return items.some((item) => {
+    if (item.kind !== "file") return false;
+    const file = item.getAsFile?.();
+    if (file?.name && isViewportImportFile(file.name)) return true;
+    if (!item.type) return true;
+    return /model|mesh|octet|zip|step|stl|gltf|3mf|dxf/i.test(item.type);
+  });
 }
 
 function isArchitectModuleDrag(e) {
@@ -6179,7 +6193,7 @@ viewport.addEventListener("drop", async (e) => {
   e.preventDefault();
   clearViewportDropOverlay();
   if (!isDesignLikeWorkspaceMode()) return;
-  const files = [...(e.dataTransfer.files || [])].filter((f) => IMPORT_ACCEPT.test(f.name));
+  const files = [...(e.dataTransfer.files || [])].filter((f) => isViewportImportFile(f.name));
   if (!files.length) return;
   try {
     const choice = await askDropDestination(files);
@@ -8809,10 +8823,30 @@ const catalogPanel = createCatalogPanel({
   },
 });
 
+const dxfViewer = createDxfViewer({
+  tabBarEl: document.getElementById("dxf-tab-bar"),
+  viewerEl: document.getElementById("dxf-viewer"),
+  api,
+  getProjectId: () => projectId,
+  onStatus: (kind, text) => {
+    if (text) setEditStatus(kind || "ok", text);
+  },
+});
+
+async function openDxfDrawing(entry) {
+  if (!entry?.name) return;
+  projectTree.setSelected(entry.name);
+  await dxfViewer.openTab(entry.name, {
+    projectId,
+    label: entry.stem || entry.name.replace(/\.dxf$/i, ""),
+  });
+}
+
 const projectTree = createProjectTree({
   container: document.getElementById("design-browser"),
   getProjectId: () => projectId,
   onOpenComponent: (entry) => openBrowserComponent(entry),
+  onOpenDrawing: (entry) => openDxfDrawing(entry),
   onOpenProfile: (entry) => componentProfileUI.open(entry),
   getPartProfile,
   onOpenSketch: (entry) => openSketchInViewport(entry),
@@ -10369,6 +10403,7 @@ async function loadProject(id) {
     }
     if (prevProjectId !== id) {
       viewportUndoStack.length = 0;
+      dxfViewer?.closeAll?.();
       showEmptyProjectViewport({ keepBrowser: true });
       // If this project is known to be generating (from cache) but we're not watching it,
       // start the watch immediately so the stop button appears before the API call returns.
@@ -11174,6 +11209,7 @@ async function deleteProjectFile(filename) {
   if (!window.confirm(`Delete "${filename}" from this project?`)) return;
   try {
     const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" });
+    dxfViewer?.closeIfOpen?.(filename);
     await syncAfterObjectDelete({ deletedFile: filename, ...data });
   } catch (err) {
     alert(err.message || "Failed to delete file");
@@ -12199,6 +12235,51 @@ function askDropDestination(fileOrFiles) {
   });
 }
 
+async function uploadDxfProjectFile(file, choice = {}) {
+  const destination = choice.destination || "current";
+  let targetProjectId;
+
+  if (destination === "new") {
+    saveActiveModelPromptState();
+    await createNewProject();
+    targetProjectId = projectId;
+  } else {
+    targetProjectId = choice.projectId || projectId;
+    if (!targetProjectId && choice.projectId === undefined) {
+      await ensureProjectForUpload();
+      targetProjectId = projectId;
+    }
+    if (!targetProjectId) {
+      throw new Error("Select a project in the sidebar first, or choose New project.");
+    }
+    if (targetProjectId !== projectId) {
+      await loadProject(targetProjectId);
+    } else {
+      ribbon.setProjectId(targetProjectId);
+    }
+  }
+
+  const form = new FormData();
+  form.append("file", file);
+  const res = await rawFetch(`/api/projects/${targetProjectId}/upload`, { method: "POST", body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = data.detail;
+    throw new Error(typeof detail === "string" ? detail : "Upload failed");
+  }
+  saveActiveModelPromptState();
+  selectedFile = data.filename;
+  await refreshFiles();
+  projectTree.setSelected(data.filename);
+  await refreshTimeline();
+  await dxfViewer.openTab(data.filename, {
+    projectId: targetProjectId,
+    label: file.name.replace(/\.dxf$/i, ""),
+  });
+  setEditStatus("ok", `Added ${data.filename} to Drawings.`);
+  return data;
+}
+
 async function uploadProjectFile(file, choice = {}) {
   const destination = choice.destination || "current";
   const hadComponents = projectAssembly.count() > 0;
@@ -12306,8 +12387,9 @@ async function importSourcedStepToProject(source, { profile = null, entry = null
 }
 
 async function uploadProjectFiles(files, choice = {}) {
-  const validFiles = [...(files || [])].filter((file) => IMPORT_ACCEPT.test(file.name));
-  if (!validFiles.length) return [];
+  const meshFiles = [...(files || [])].filter((file) => IMPORT_ACCEPT.test(file.name));
+  const dxfFiles = [...(files || [])].filter((file) => DXF_ACCEPT.test(file.name));
+  if (!meshFiles.length && !dxfFiles.length) return [];
 
   let uploadChoice = { ...choice };
   if ((uploadChoice.destination || "current") === "new") {
@@ -12322,22 +12404,27 @@ async function uploadProjectFiles(files, choice = {}) {
   }
 
   const results = [];
-  for (const file of validFiles) {
+  for (const file of meshFiles) {
     setEditStatus("ok", `Uploading ${file.name}...`);
     results.push(await uploadProjectFile(file, uploadChoice));
   }
+  for (const file of dxfFiles) {
+    setEditStatus("ok", `Uploading ${file.name}...`);
+    results.push(await uploadDxfProjectFile(file, uploadChoice));
+  }
 
+  const total = meshFiles.length + dxfFiles.length;
   setEditStatus(
     "ok",
-    validFiles.length === 1
-      ? `Added ${results[0]?.filename || validFiles[0].name} to this project.`
-      : `Added ${validFiles.length} CAD files to this project.`,
+    total === 1
+      ? `Added ${results[0]?.filename || meshFiles[0]?.name || dxfFiles[0]?.name} to this project.`
+      : `Added ${total} files to this project.`,
   );
   return results;
 }
 
 document.getElementById("file-upload")?.addEventListener("change", async (e) => {
-  const files = [...(e.target.files || [])].filter((f) => IMPORT_ACCEPT.test(f.name));
+  const files = [...(e.target.files || [])].filter((f) => isViewportImportFile(f.name));
   if (!files.length) return;
   try {
     const choice = await askDropDestination(files);
