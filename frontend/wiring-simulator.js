@@ -1,5 +1,7 @@
 /** Cirkit-style drag-and-drop wiring canvas (boards, breadboard, wires). */
 
+import { resolveIssueWireIds } from "./wiring-focus-diagram.js?v=20260619-readable";
+
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260617-part-drag";
 
 const PALETTE = [
@@ -19,7 +21,73 @@ const PALETTE = [
   { type: "breadboard", label: "Breadboard", w: 200, h: 120, color: "#f0f0f0" },
 ];
 
-function pinLayout(type) {
+function componentType(componentOrType) {
+  return typeof componentOrType === "string" ? componentOrType : componentOrType?.type;
+}
+
+function driverFlavor(componentOrType) {
+  if (typeof componentOrType === "string") return "";
+  const label = String(componentOrType?.label || "");
+  if (/drv8825/i.test(label)) return "drv8825";
+  if (/a4988/i.test(label)) return "a4988";
+  if (/tb6600/i.test(label)) return "tb6600";
+  if (/uln2003/i.test(label)) return "uln2003";
+  if (/l298/i.test(label)) return "l298n";
+  return "";
+}
+
+function isStepDirShield(componentOrType) {
+  const flavor = driverFlavor(componentOrType);
+  return flavor === "drv8825" || flavor === "a4988";
+}
+
+function readableComponentSize(component) {
+  const w = Number(component.w) || 80;
+  const h = Number(component.h) || 48;
+  if (isStepDirShield(component)) {
+    return { w: Math.max(w, 340), h: Math.max(h, 230) };
+  }
+  return { w, h };
+}
+
+const DRIVER_LAYOUT_SANITY_CASES = [
+  {
+    name: "DRV8825 shield",
+    component: {
+      type: "motor-driver",
+      label: "DRV8825 Shield",
+      pin_labels: { in1: "S", in2: "DIR", in3: "EN", in4: "MS", vcc: "V", gnd: "G" },
+    },
+    required: ["in1", "in2", "in3", "in4", "vcc", "gnd", "out1", "out2", "out3", "out4"],
+    headerRows: [["in1", "vcc", "gnd"], ["in2", "dir_v", "dir_g"], ["in3", "en_v", "en_g"]],
+    maxPowerY: 0.35,
+  },
+  {
+    name: "A4988 carrier",
+    component: { type: "motor-driver", label: "A4988" },
+    required: ["in1", "in2", "vcc", "gnd", "out1", "out2", "out3", "out4"],
+    headerRows: [["in1", "vcc", "gnd"], ["in2", "dir_v", "dir_g"], ["in3", "en_v", "en_g"]],
+    maxPowerY: 0.35,
+  },
+  {
+    name: "ULN2003 board",
+    component: { type: "motor-driver", label: "ULN2003" },
+    required: ["in1", "in2", "in3", "in4", "vcc", "gnd"],
+  },
+  {
+    name: "L298N module",
+    component: { type: "motor-driver", label: "L298N" },
+    required: ["in1", "in2", "in3", "in4", "vcc", "gnd", "out1", "out2", "out3", "out4"],
+  },
+  {
+    name: "TB6600 driver",
+    component: { type: "motor-driver", label: "TB6600" },
+    required: ["in1", "in2", "in3", "gnd", "out1", "out2", "out3", "out4"],
+  },
+];
+
+function pinLayout(componentOrType) {
+  const type = componentType(componentOrType);
   if (type === "breadboard") {
     const pins = [];
     const cols = 15;
@@ -78,6 +146,38 @@ function pinLayout(type) {
     ];
   }
   if (type === "motor-driver") {
+    const explicitLabels = typeof componentOrType === "string" ? null : componentOrType?.pin_labels;
+    const flavor = driverFlavor(componentOrType);
+    if (isStepDirShield(componentOrType)) {
+      // Keep the generic ids for saved-schema compatibility, but label them as
+      // the real STEP/DIR shield pins shown on DRV8825/A4988 expansion boards.
+      const sigX = 0.18;
+      const vX = 0.34;
+      const gX = 0.5;
+      const stepY = 0.3;
+      const dirY = 0.48;
+      const enY = 0.66;
+      const headerPin = { compactLabel: true };
+      return [
+        { id: "in1", x: sigX, y: stepY, label: explicitLabels?.in1 || "S", title: "STEP signal", ...headerPin },
+        { id: "vcc", x: vX, y: stepY, label: explicitLabels?.vcc || "V", title: "5V logic", ...headerPin },
+        { id: "gnd", x: gX, y: stepY, label: explicitLabels?.gnd || "G", title: "Common ground", ...headerPin },
+        { id: "in2", x: sigX, y: dirY, label: explicitLabels?.in2 || "DIR", displayLabel: "S", title: "DIR signal", ...headerPin },
+        { id: "dir_v", x: vX, y: dirY, label: explicitLabels?.vcc || "V", title: "5V logic for DIR header", ...headerPin },
+        { id: "dir_g", x: gX, y: dirY, label: explicitLabels?.gnd || "G", title: "GND for DIR header", ...headerPin },
+        { id: "in3", x: sigX, y: enY, label: explicitLabels?.in3 || "EN", displayLabel: "S", title: "Enable signal", ...headerPin },
+        { id: "en_v", x: vX, y: enY, label: explicitLabels?.vcc || "V", title: "5V logic for EN header", ...headerPin },
+        { id: "en_g", x: gX, y: enY, label: explicitLabels?.gnd || "G", title: "GND for EN header", ...headerPin },
+        { id: "in4", x: sigX, y: 0.84, label: explicitLabels?.in4 || "MS", title: "Microstep select" },
+        { id: "out1", x: 0.86, y: 0.24, label: explicitLabels?.out1 || "A1" },
+        { id: "out2", x: 0.86, y: 0.4, label: explicitLabels?.out2 || "A2" },
+        { id: "out3", x: 0.86, y: 0.56, label: explicitLabels?.out3 || "B1" },
+        { id: "out4", x: 0.86, y: 0.72, label: explicitLabels?.out4 || "B2" },
+        { id: "in", x: sigX, y: stepY, label: "", alias: true },
+        { id: "mot_a", x: 0.86, y: 0.24, label: "", alias: true },
+        { id: "mot_b", x: 0.86, y: 0.4, label: "", alias: true },
+      ];
+    }
     // Controller-side inputs on the left, motor-side outputs on the right,
     // power along the bottom. Legacy ids (in / mot_a / mot_b) overlap channel 1
     // for backward compatibility with older saved schematics.
@@ -148,6 +248,69 @@ function pinLayout(type) {
   ];
 }
 
+function validateDriverPinLayout({ name, component, required = [], headerRows = [], maxPowerY = null }) {
+  const pins = pinLayout(component);
+  const errors = [];
+  const byId = new Map();
+  for (const pin of pins) {
+    if (byId.has(pin.id)) errors.push(`duplicate pin id "${pin.id}"`);
+    byId.set(pin.id, pin);
+    if (pin.x < 0 || pin.x > 1 || pin.y < 0 || pin.y > 1) {
+      errors.push(`${pin.id} coordinate out of bounds (${pin.x}, ${pin.y})`);
+    }
+    if (!pin.alias && !pin.hole && !String(pin.label || "").trim()) {
+      errors.push(`${pin.id} has no visible label`);
+    }
+  }
+  for (const id of required) {
+    if (!byId.has(id)) errors.push(`missing required pin "${id}"`);
+  }
+
+  const visible = pins.filter((pin) => !pin.alias && !pin.hole);
+  for (let i = 0; i < visible.length; i += 1) {
+    for (let j = i + 1; j < visible.length; j += 1) {
+      const a = visible[i];
+      const b = visible[j];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (distance < 0.055) errors.push(`${a.id} overlaps ${b.id}`);
+    }
+  }
+
+  for (const row of headerRows) {
+    const rowPins = row.map((id) => byId.get(id));
+    if (rowPins.some((pin) => !pin)) {
+      errors.push(`header row missing pin(s): ${row.join(", ")}`);
+      continue;
+    }
+    const y = rowPins[0].y;
+    if (rowPins.some((pin) => Math.abs(pin.y - y) > 0.001)) {
+      errors.push(`header row is not aligned: ${row.join(", ")}`);
+    }
+    for (let i = 1; i < rowPins.length; i += 1) {
+      if (rowPins[i].x <= rowPins[i - 1].x) {
+        errors.push(`header row x-order is invalid: ${row.join(", ")}`);
+        break;
+      }
+    }
+  }
+  if (maxPowerY != null) {
+    for (const id of ["vcc", "gnd"]) {
+      const pin = byId.get(id);
+      if (pin && pin.y > maxPowerY) errors.push(`${id} is too low for header-style driver layout`);
+    }
+  }
+  return errors.map((error) => `${name}: ${error}`);
+}
+
+function validateDriverPinLayouts() {
+  const errors = DRIVER_LAYOUT_SANITY_CASES.flatMap(validateDriverPinLayout);
+  if (errors.length) {
+    console.warn("Wiring driver layout sanity check failed:", errors);
+  }
+}
+
+validateDriverPinLayouts();
+
 function uid() {
   return `c_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -203,6 +366,7 @@ export function createWiringSimulator(options = {}) {
   let suppressNextCanvasClick = false;
   let suppressNextWireClick = false;
   let saveTimer = null;
+  let focusWireIds = new Set();
   let localEditVersion = 0;
   let savedVersion = 0;
   let saveInFlight = null;
@@ -246,16 +410,15 @@ export function createWiringSimulator(options = {}) {
   const notesEl = canvas.querySelector(".wiring-notes");
   const wireEditorEl = canvas.querySelector(".wiring-wire-editor");
   let schematicMeta = { name: "", description: "", notes: [] };
-  let notesDismissed = false;
+  let notesCollapsed = true;
   notesEl?.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
   });
   notesEl?.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (e.target.closest(".wiring-notes-close")) {
-      notesDismissed = true;
-      notesEl.classList.add("hidden");
-      notesEl.innerHTML = "";
+    if (e.target.closest(".wiring-notes-toggle")) {
+      notesCollapsed = !notesCollapsed;
+      renderNotes();
     }
   });
 
@@ -457,7 +620,7 @@ export function createWiringSimulator(options = {}) {
 
   function pinInfo(ref) {
     const comp = components.find((c) => c.id === ref?.componentId);
-    const pin = comp ? pinLayout(comp.type).find((p) => p.id === ref?.pinId) : null;
+    const pin = comp ? pinLayout(comp).find((p) => p.id === ref?.pinId) : null;
     return {
       component: comp,
       pin,
@@ -612,6 +775,7 @@ export function createWiringSimulator(options = {}) {
   }
 
   function pushHistory() {
+    focusWireIds = new Set();
     undoStack.push(captureSnapshot());
     if (undoStack.length > MAX_UNDO) undoStack.shift();
     redoStack = [];
@@ -779,44 +943,158 @@ export function createWiringSimulator(options = {}) {
   function renderNotes() {
     if (!notesEl) return;
     const notes = schematicMeta.notes || [];
-    if (notesDismissed || (!notes.length && !schematicMeta.name)) {
+    if (!notes.length && !schematicMeta.name) {
       notesEl.classList.add("hidden");
       notesEl.innerHTML = "";
       return;
     }
     notesEl.classList.remove("hidden");
-    const title = schematicMeta.name ? `<strong>${schematicMeta.name}</strong>` : "";
-    const desc = schematicMeta.description ? `<p class="wiring-notes-desc">${schematicMeta.description}</p>` : "";
+    notesEl.classList.toggle("collapsed", notesCollapsed);
+    const titleText = schematicMeta.name || "Wiring notes";
+    const title = `<strong>${escapeHtml(titleText)}</strong>`;
+    const desc = schematicMeta.description ? `<p class="wiring-notes-desc">${escapeHtml(schematicMeta.description)}</p>` : "";
     const list = notes.length
-      ? `<ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul>`
+      ? `<ul>${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
       : "";
-    notesEl.innerHTML = `<button type="button" class="wiring-notes-close" aria-label="Close schematic description">×</button>${title}${desc}${list}`;
+    notesEl.innerHTML = `
+      <button type="button" class="wiring-notes-toggle" aria-expanded="${notesCollapsed ? "false" : "true"}" aria-label="${notesCollapsed ? "Expand" : "Collapse"} schematic notes">
+        <span aria-hidden="true">${notesCollapsed ? "▾" : "▴"}</span>
+        ${title}
+      </button>
+      <div class="wiring-notes-body">${desc}${list}</div>`;
   }
 
-  function applySchematic(data, { save = true, skipHistory = false } = {}) {
+  function normalizeEndpointLabel(label) {
+    return String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  }
+
+  function wireEndpointKey(comps, end, { loose = false } = {}) {
+    const comp = comps.find((c) => c.id === end?.componentId);
+    if (!comp || !end?.pinId) return "";
+    const pin = String(end.pinId).toLowerCase();
+    if (loose) return `${comp.type}|${pin}`;
+    return `${comp.type}|${normalizeEndpointLabel(comp.label)}|${pin}`;
+  }
+
+  function wirePairKey(comps, wire, opts) {
+    const a = wireEndpointKey(comps, wire.from, opts);
+    const b = wireEndpointKey(comps, wire.to, opts);
+    if (!a || !b) return "";
+    return a < b ? `${a}::${b}` : `${b}::${a}`;
+  }
+
+  function matchFocusIssueWireIds(focusSchematic, meta = {}) {
+    const issueIds = resolveIssueWireIds(
+      { schematic: focusSchematic, issue_wire_ids: meta.issue_wire_ids },
+      meta.issues || [],
+    );
+    const focusWires = (focusSchematic?.wires || []).filter((w) => issueIds.has(String(w.id)));
+    const focusComponents = focusSchematic?.components || [];
+    if (!focusWires.length || !wires.length) return new Set();
+
+    const tryMatch = (loose) => {
+      const pairs = new Set(
+        focusWires.map((w) => wirePairKey(focusComponents, w, { loose })).filter(Boolean),
+      );
+      const ids = new Set();
+      for (const w of wires) {
+        const key = wirePairKey(components, w, { loose });
+        if (key && pairs.has(key)) ids.add(w.id);
+      }
+      return ids;
+    };
+
+    const strict = tryMatch(false);
+    if (strict.size) return strict;
+    return tryMatch(true);
+  }
+
+  function clearFocusWireHighlight() {
+    if (!focusWireIds.size) return;
+    focusWireIds = new Set();
+    renderWires();
+  }
+
+  function setFocusWireHighlight(ids) {
+    focusWireIds = new Set(Array.isArray(ids) ? ids : [...ids]);
+    renderWires();
+  }
+
+  function applyFocusPath(focusSchematic, meta = {}) {
+    if (!focusSchematic) return { matched: 0, mode: "none" };
+
+    const issueIds = resolveIssueWireIds(
+      { schematic: focusSchematic, issue_wire_ids: meta.issue_wire_ids },
+      meta.issues || [],
+    );
+
+    const matched = matchFocusIssueWireIds(focusSchematic, meta);
+    if (matched.size > 0) {
+      focusWireIds = matched;
+      if (meta.title || meta.caption) {
+        schematicMeta = {
+          ...schematicMeta,
+          name: meta.title || schematicMeta.name,
+          description: meta.caption || schematicMeta.description,
+        };
+        const note = `Debugger: ${matched.size} problem wire${matched.size === 1 ? "" : "s"} marked with animated dashes — fix these first.`;
+        const notes = Array.isArray(schematicMeta.notes) ? [...schematicMeta.notes] : [];
+        if (!notes.includes(note)) notes.unshift(note);
+        schematicMeta.notes = notes;
+        notesCollapsed = true;
+        renderNotes();
+      }
+      renderWires();
+      requestAnimationFrame(fitView);
+      return { matched: matched.size, mode: "highlight" };
+    }
+
+    const merged = {
+      ...focusSchematic,
+      name: meta.title || focusSchematic.name || "Debug focus path",
+      description: meta.caption || focusSchematic.description || "",
+      notes: [
+        ...(Array.isArray(focusSchematic.notes) ? focusSchematic.notes : []),
+        "Loaded from Circuit Debugger — animated red dashes show wires that need fixing.",
+      ],
+    };
+    applySchematic(merged, {
+      save: false,
+      skipHistory: false,
+      highlightFocusPath: true,
+      issueWireIds: issueIds,
+    });
+    return { matched: focusWireIds.size, mode: "replace" };
+  }
+
+  function applySchematic(data, { save = true, skipHistory = false, highlightFocusPath = false, issueWireIds = null } = {}) {
     if (!data) return;
     if (!skipHistory) pushHistory();
-    notesDismissed = false;
+    notesCollapsed = true;
     schematicMeta = {
       name: data.name || "",
       description: data.description || "",
       notes: Array.isArray(data.notes) ? data.notes : [],
     };
-    components = (data.components || []).map((c) => ({
-      id: c.id || uid(),
-      type: c.type,
-      label: c.label || c.type,
-      x: Number(c.x) || 40,
-      y: Number(c.y) || 40,
-      w: Number(c.w) || 80,
-      h: Number(c.h) || 48,
-      color: c.color || PALETTE.find((p) => p.type === c.type)?.color,
-      ...(c.part ? { part: c.part } : {}),
-      ...(c.sourceFile ? { sourceFile: c.sourceFile } : {}),
-      ...(c.preview ? { preview: c.preview } : {}),
-      ...(c.modelUrl ? { modelUrl: c.modelUrl } : {}),
-      ...(c.stats ? { stats: c.stats } : {}),
-    }));
+    components = (data.components || []).map((c) => {
+      const base = {
+        id: c.id || uid(),
+        type: c.type,
+        label: c.label || c.type,
+        x: Number(c.x) || 40,
+        y: Number(c.y) || 40,
+        w: Number(c.w) || 80,
+        h: Number(c.h) || 48,
+        color: c.color || PALETTE.find((p) => p.type === c.type)?.color,
+        ...(c.pin_labels ? { pin_labels: c.pin_labels } : {}),
+        ...(c.part ? { part: c.part } : {}),
+        ...(c.sourceFile ? { sourceFile: c.sourceFile } : {}),
+        ...(c.preview ? { preview: c.preview } : {}),
+        ...(c.modelUrl ? { modelUrl: c.modelUrl } : {}),
+        ...(c.stats ? { stats: c.stats } : {}),
+      };
+      return { ...base, ...readableComponentSize(base) };
+    });
     syncComponentsRef();
     wires = (data.wires || []).map((w) => ({
       id: w.id || uid(),
@@ -826,13 +1104,27 @@ export function createWiringSimulator(options = {}) {
       label: w.label,
       control: w.control || w.waypoint || null,
       manual: Boolean(w.manual || w.control || w.waypoint),
+      status: w.status,
+      needs_fix: Boolean(w.needs_fix),
     }));
     wireStart = null;
     wireCreateDrag = null;
     selectedWireId = null;
     clearSelection();
+    if (highlightFocusPath) {
+      const idSet = issueWireIds instanceof Set
+        ? issueWireIds
+        : new Set([...(issueWireIds || resolveIssueWireIds({ schematic: data }, []))].map(String));
+      focusWireIds = new Set(wires.filter((w) => idSet.has(String(w.id))).map((w) => w.id));
+      if (!focusWireIds.size) {
+        focusWireIds = new Set(wires.map((w) => w.id));
+      }
+    } else {
+      focusWireIds = new Set();
+    }
     renderAll();
     renderNotes();
+    if (highlightFocusPath) requestAnimationFrame(fitView);
     if (save) scheduleSave();
     notifyHistoryChange();
   }
@@ -902,7 +1194,7 @@ export function createWiringSimulator(options = {}) {
     applyViewTransform();
     for (const c of components) {
       partsLayer.appendChild(renderPartBody(c));
-      for (const pin of pinLayout(c.type)) {
+      for (const pin of pinLayout(c)) {
         const pinEl = renderPin(c, pin);
         if (pinEl) pinsLayer.appendChild(pinEl);
       }
@@ -934,7 +1226,7 @@ export function createWiringSimulator(options = {}) {
   // pads line up under the real connection pins, so you draw wires straight
   // from the header where you would on the actual board.
   function boardMarkup(c, chipLabel) {
-    const pins = pinLayout(c.type);
+    const pins = pinLayout(c);
     const pad = (p) =>
       `<span class="wiring-board-pad" style="left:${(p.x * 100).toFixed(1)}%"></span>`;
     const top = pins.filter((p) => p.y < 0.5).map(pad).join("");
@@ -947,6 +1239,33 @@ export function createWiringSimulator(options = {}) {
         <span class="wiring-board-leds"></span>
       </span>
       <span class="wiring-board-header wiring-board-header--bottom">${bottom}</span>
+    </div>`;
+  }
+
+  function stepDirDriverMarkup(c, tag) {
+    const colLabels = [
+      { text: "S", x: 18 },
+      { text: "V", x: 34 },
+      { text: "G", x: 50 },
+    ];
+    const rowLabels = [
+      { text: "STEP", y: 30 },
+      { text: "DIR", y: 48 },
+      { text: "EN", y: 66 },
+    ];
+    return `<div class="wiring-vis-driver wiring-vis-driver--stepdir">
+      <span class="wiring-driver-header-grid" aria-hidden="true">
+        ${colLabels.map((col) => `<span class="wiring-driver-col-label" style="left:${col.x}%">${col.text}</span>`).join("")}
+        ${rowLabels.map((row) => `<span class="wiring-driver-row-label" style="top:${row.y}%">${row.text}</span>`).join("")}
+        <span class="wiring-driver-grid-box"></span>
+        <span class="wiring-driver-grid-line wiring-driver-grid-line--v1"></span>
+        <span class="wiring-driver-grid-line wiring-driver-grid-line--v2"></span>
+        <span class="wiring-driver-grid-line wiring-driver-grid-line--h1"></span>
+        <span class="wiring-driver-grid-line wiring-driver-grid-line--h2"></span>
+        <span class="wiring-driver-ms-label">MS</span>
+      </span>
+      <span class="wiring-driver-motor-label wiring-driver-motor-label--top">MOTOR COILS</span>
+      <span class="wiring-driver-chip wiring-driver-chip--stepdir">${tag}</span>
     </div>`;
   }
 
@@ -970,8 +1289,10 @@ export function createWiringSimulator(options = {}) {
     if (c.type === "motor-driver") {
       const tag = /uln2003/i.test(c.label || "") ? "ULN2003"
         : /l298/i.test(c.label || "") ? "L298N"
-        : /a4988|drv8825/i.test(c.label || "") ? "A4988"
+        : /drv8825/i.test(c.label || "") ? "DRV8825"
+        : /a4988/i.test(c.label || "") ? "A4988"
         : "DRIVER";
+      if (isStepDirShield(c)) return stepDirDriverMarkup(c, tag);
       return `<div class="wiring-vis-driver"><span class="wiring-vis-driver-chip">${tag}</span></div>`;
     }
     if (c.type === "motor") {
@@ -1094,10 +1415,11 @@ export function createWiringSimulator(options = {}) {
     const p = document.createElement("button");
     p.type = "button";
     p.className = "wiring-pin";
-    if (pin.label && !pin.hole) p.dataset.pinLabel = pin.label;
+    if (pin.label && !pin.hole) p.dataset.pinLabel = pin.displayLabel || pin.label;
     if (["motor", "stepper", "motor-driver", "servo-motor"].includes(c.type)) {
       p.classList.add("wiring-pin--labeled");
-      if (pin.x < 0.25) p.classList.add("wiring-pin--label-right");
+      if (pin.compactLabel) p.classList.add("wiring-pin--label-inside");
+      else if (pin.x < 0.25) p.classList.add("wiring-pin--label-right");
       else if (pin.x > 0.75) p.classList.add("wiring-pin--label-left");
       else p.classList.add(pin.y > 0.5 ? "wiring-pin--label-top" : "wiring-pin--label-bottom");
     }
@@ -1106,7 +1428,7 @@ export function createWiringSimulator(options = {}) {
     if (pin.rail === "minus") p.classList.add("wiring-pin-rail", "wiring-pin-ground");
     p.dataset.componentId = c.id;
     p.dataset.pinId = pin.id;
-    p.title = pin.label || pin.id;
+    p.title = pin.title || pin.label || pin.id;
     p.style.left = `${c.x + c.w * pin.x}px`;
     p.style.top = `${c.y + c.h * pin.y}px`;
     p.addEventListener("pointerdown", (e) => {
@@ -1202,7 +1524,7 @@ export function createWiringSimulator(options = {}) {
   function updatePinPositions(compId) {
     const c = components.find((x) => x.id === compId);
     if (!c) return;
-    for (const pin of pinLayout(c.type)) {
+    for (const pin of pinLayout(c)) {
       const el = pinsLayer.querySelector(
         `[data-component-id="${compId}"][data-pin-id="${pin.id}"]`,
       );
@@ -1216,7 +1538,7 @@ export function createWiringSimulator(options = {}) {
   function pinPosition(compId, pinId) {
     const c = components.find((x) => x.id === compId);
     if (!c) return null;
-    const pin = pinLayout(c.type).find((p) => p.id === pinId);
+    const pin = pinLayout(c).find((p) => p.id === pinId);
     if (!pin) return null;
     return {
       x: c.x + c.w * pin.x,
@@ -1281,6 +1603,7 @@ export function createWiringSimulator(options = {}) {
       path.setAttribute("d", d);
       path.setAttribute("class", "wiring-wire-path");
       if (wire.id === selectedWireId || selectedWireIds.has(wire.id)) path.classList.add("selected");
+      if (focusWireIds.has(wire.id)) path.classList.add("wiring-wire-path--focus");
       path.setAttribute("stroke", color);
       if (wire.label) {
         const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
@@ -1304,10 +1627,24 @@ export function createWiringSimulator(options = {}) {
       });
       g.appendChild(path);
 
+      if (focusWireIds.has(wire.id)) {
+        const flow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        flow.setAttribute("d", d);
+        flow.setAttribute("class", "wiring-wire-focus-flow wiring-wire-focus-flow--issue");
+        flow.setAttribute("stroke", "#f85149");
+        flow.setAttribute("aria-hidden", "true");
+        g.appendChild(flow);
+      }
+
       addConnector(g, a.x, a.y, color);
       addConnector(g, b.x, b.y, color);
 
-      const showLabel = wire.label && (wire.id === selectedWireId || selectedWireIds.has(wire.id) || wire.label.length <= 28);
+      const showLabel = wire.label && (
+        wire.id === selectedWireId
+        || selectedWireIds.has(wire.id)
+        || focusWireIds.has(wire.id)
+        || wire.label.length <= 8
+      );
       if (showLabel) {
         const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         const textW = Math.max(48, Math.min(180, wire.label.length * 6 + 14));
@@ -1872,13 +2209,17 @@ export function createWiringSimulator(options = {}) {
       wires = [];
       wireStart = null;
       selectedWireId = null;
+      focusWireIds = new Set();
       schematicMeta = { name: "", description: "", notes: [] };
-      notesDismissed = false;
+      notesCollapsed = true;
       clearHistory();
       renderAll();
       renderNotes();
     },
     applySchematic,
+    applyFocusPath,
+    clearFocusWireHighlight,
+    setFocusWireHighlight,
     loadDemo,
     undo,
     redo,

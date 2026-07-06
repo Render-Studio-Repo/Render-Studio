@@ -100,17 +100,3 @@ Load these files only when their trigger applies:
 - `references/repair-loop.md` — diagnosis and repair procedures.
 
 Final responses should include generated files, returned `$cad-viewer` viewer links, verification snapshots, validation actually run, assumptions, and caveats. Use `references/inspection-and-validation.md` for report structure.
-
-<!-- render3d-studio -->
-
-## Render3D Studio
-
-On the Render3D server this skill lives at `backend/skills/cad/`.
-
-- **Python tools:** `backend/skills/cad/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/cad/references/`
-- **Prompts:** enabled skills inject guidance; emit Render3D JSON Feature Programs with a required `design_plan` (8-step ForgeCAD workflow) unless the user asks for Python source
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
-
-See `backend/skills/RENDER3D.md` for full integration notes.

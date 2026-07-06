@@ -63,11 +63,16 @@ In-app documentation is available at **http://127.0.0.1:8001/docs.html**.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENAI_API_KEY` | — | Required for AI prompts |
-| `OPENAI_MODEL` | `gpt-5.5-pro` | OpenAI model id |
+| `OPENAI_API_KEY` | — | OpenAI key for AI prompts |
+| `ANTHROPIC_API_KEY` | — | Anthropic key for Claude-backed prompts |
+| `JWT_SECRET` | — | Required secret used to sign local auth tokens |
+| `OPENAI_MODEL` | `gpt-5.5` | OpenAI model id |
 | `OPENAI_MODEL_QUALITY` | `gpt-5.5-pro` | Higher-quality model for slower prompts |
 | `HOST` | `127.0.0.1` | Bind address |
-| `PORT` | `8765` | HTTP port (8000/8001 often taken by Cursor) |
+| `PORT` | `8000` | HTTP port |
+| `ONSHAPE_CLIENT_ID` / `ONSHAPE_CLIENT_SECRET` | — | Onshape OAuth app credentials |
+| `AUTODESK_CLIENT_ID` / `AUTODESK_CLIENT_SECRET` | — | Autodesk/Fusion OAuth app credentials |
+| `RENDER3D_FUSION_BRIDGE_TOKEN` | — | Shared token for the optional local Fusion bridge |
 
 ## API
 

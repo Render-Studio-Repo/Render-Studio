@@ -27595,6 +27595,7 @@ function serveDistAsset({ distRoot: distRoot2, indexHtmlPath = path9.join(distRo
 
 // viewer/src/server/vercelBlobAssetBackend.mjs
 import path10 from "node:path";
+var CATALOG_BLOB_CACHE_CONTROL_MAX_AGE_SECONDS = 60;
 function normalizePrefix(value) {
   const rawValue = String(value || "").trim();
   if (!rawValue) {
@@ -27628,6 +27629,15 @@ function publicBlobUrlForRef(prefix, fileRef) {
     return url.toString();
   } catch {
     return "";
+  }
+}
+function cacheBypassedCatalogUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    url.searchParams.set("_tcad_catalog", "1");
+    return url.toString();
+  } catch {
+    return value;
   }
 }
 function normalizeFileRef(value) {
@@ -27795,7 +27805,7 @@ async function readJsonFromUrl(url, { fetchImpl = globalThis.fetch } = {}) {
   if (!fetchImpl) {
     throw new Error("Vercel Blob backend requires fetch to read catalog URLs");
   }
-  const response = await fetchImpl(url);
+  const response = await fetchImpl(cacheBypassedCatalogUrl(url));
   if (!response.ok) {
     const detail = await blobErrorDetail(response);
     throw new Error(
@@ -27892,7 +27902,12 @@ function createVercelBlobAssetBackend({
   async function readCatalog() {
     return fetchCatalogCached();
   }
-  async function writeAsset({ fileRef, body, contentType = "application/octet-stream" } = {}) {
+  async function writeAsset({
+    fileRef,
+    body,
+    contentType = "application/octet-stream",
+    cacheControlMaxAge
+  } = {}) {
     const pathname = joinBlobPath(normalizedPrefix, fileRef);
     if (!pathname) {
       throw new Error("Missing Vercel Blob asset path");
@@ -27903,6 +27918,7 @@ function createVercelBlobAssetBackend({
       addRandomSuffix: false,
       allowOverwrite: true,
       contentType,
+      ...cacheControlMaxAge !== void 0 ? { cacheControlMaxAge } : {},
       token
     });
   }
@@ -27914,7 +27930,8 @@ function createVercelBlobAssetBackend({
         schemaVersion: 4,
         entries: Array.isArray(normalizedCatalog?.entries) ? normalizedCatalog.entries : []
       }, null, 2),
-      contentType: "application/json; charset=utf-8"
+      contentType: "application/json; charset=utf-8",
+      cacheControlMaxAge: CATALOG_BLOB_CACHE_CONTROL_MAX_AGE_SECONDS
     });
   }
   async function refreshCatalog() {
@@ -28253,6 +28270,7 @@ function buildViewerServerInfo({
   dynamicRoot = false,
   stepArtifactGenerationAvailable = true,
   viewerVersion: viewerVersion2 = "",
+  serverMode = "",
   git = "",
   serverFeatures = [],
   activeDirectories: activeDirectories2 = []
@@ -28272,6 +28290,7 @@ function buildViewerServerInfo({
     rootName: ""
   };
   const normalizedPort = normalizeViewerPort(port2);
+  const normalizedServerMode = String(serverMode || "").trim();
   const normalizedGit = String(git || "").trim();
   const normalizedActiveDirectories = normalizeViewerActiveDirectories(activeDirectories2, resolvedDirectoryRoot);
   return {
@@ -28279,6 +28298,7 @@ function buildViewerServerInfo({
     serverApiVersion: VIEWER_SERVER_API_VERSION,
     app: VIEWER_SERVER_APP_ID,
     viewerVersion: String(viewerVersion2 || ""),
+    ...normalizedServerMode ? { serverMode: normalizedServerMode } : {},
     ...normalizedGit ? { git: normalizedGit } : {},
     serverFeatures: Array.isArray(serverFeatures) ? serverFeatures.map((feature) => String(feature || "").trim()).filter(Boolean) : [],
     backend: backend2,
@@ -28302,9 +28322,9 @@ function normalizeViewerDefaultFile(value = "") {
   return rawValue.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
 }
 function normalizeViewerGithubUrl(value = "", fallback = DEFAULT_VIEWER_GITHUB_URL) {
-  return normalizeViewerGithubUrlCandidate(value) || normalizeViewerGithubUrlCandidate(fallback);
+  return normalizeHttpUrlCandidate(value) || normalizeHttpUrlCandidate(fallback);
 }
-function normalizeViewerGithubUrlCandidate(value = "") {
+function normalizeHttpUrlCandidate(value = "") {
   const rawValue = String(value ?? "").trim();
   if (!rawValue) {
     return "";
@@ -28555,6 +28575,7 @@ if (runtime.args.help) {
   process.exit(0);
 }
 var runtimeEnv = runtime.env;
+var viewerServerMode = String(runtimeEnv.VIEWER_AGENT_START_MODE || "serve").trim() || "serve";
 var viewerGit = String(runtimeEnv.VIEWER_GIT || "").trim();
 try {
   assertNoDeprecatedLocalRootEnv(runtimeEnv);
@@ -28633,6 +28654,7 @@ var middlewares = [
         dynamicRoot: true,
         stepArtifactGenerationAvailable: stepArtifactBackendEnabled,
         viewerVersion,
+        serverMode: viewerServerMode,
         git: viewerGit,
         serverFeatures: localServerFeatures,
         activeDirectories: activeDirectoryOptions({ rootDir: infoRootDir })

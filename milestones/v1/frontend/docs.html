@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Docs — Render3D</title>
+  <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <a href="/" class="nav-tab">Studio</a>
+        <a href="/docs.html" class="nav-tab active">Docs</a>
+        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content">
+        <header class="info-hero">
+          <p class="info-eyebrow">Documentation</p>
+          <h2>Render3D CAD Visualizer</h2>
+          <p class="info-lead">
+            A CAD project visualizer inspired by ForgeCAD: orbit, zoom, and pan a 3D viewport,
+            upload meshes, edit transforms, and generate new geometry from natural-language prompts
+            via <strong>GPT-5.5 Pro</strong>.
+          </p>
+        </header>
+
+        <section class="info-section">
+          <h3>Features</h3>
+          <ul class="info-list">
+            <li><strong>3D viewer</strong> — Orbit, pan, zoom; grid toggle; fit-to-view</li>
+            <li><strong>Edit timeline</strong> — Fusion-style history; drag the slider or click steps to restore earlier states</li>
+            <li><strong>Geometric references</strong> — Pick corners, faces, and edges; insert <code>@corner-1</code> chips into prompts</li>
+            <li><strong>Reference-aware AI</strong> — e.g. “at @corner-1 drill a 3mm hole through the part”</li>
+            <li><strong>File import</strong> — STL, OBJ, GLB/GLTF, PLY, OFF</li>
+            <li><strong>Gizmo edit</strong> — Transform controls with server-side save</li>
+            <li><strong>AI CAD prompting</strong> — GPT-5.5 Pro builds and modifies geometry via Trimesh</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>Quick start</h3>
+          <pre class="info-code"><code>cd Render3D
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env and set OPENAI_API_KEY
+python run.py</code></pre>
+          <p>Open <strong>http://127.0.0.1:8001</strong> (default port; set <code>PORT</code> in <code>.env</code> if needed).</p>
+        </section>
+
+        <section class="info-section">
+          <h3>Viewer controls</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Input</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><kbd>LMB</kbd></td><td>Orbit</td></tr>
+                <tr><td><kbd>RMB</kbd></td><td>Pan</td></tr>
+                <tr><td><kbd>Scroll</kbd></td><td>Zoom</td></tr>
+                <tr><td><kbd>C</kbd> / <kbd>F</kbd> / <kbd>E</kbd></td><td>Pick corner / face / edge</td></tr>
+                <tr><td><kbd>G</kbd></td><td>Toggle gizmo</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Return to orbit mode</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Configuration</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>OPENAI_API_KEY</code></td><td>—</td><td>Required for AI prompts</td></tr>
+                <tr><td><code>OPENAI_MODEL</code></td><td><code>gpt-5.5</code></td><td>Fast OpenAI model id</td></tr>
+                <tr><td><code>OPENAI_MODEL_QUALITY</code></td><td><code>gpt-5.5-pro</code></td><td>Quality model for slower prompts</td></tr>
+                <tr><td><code>HOST</code></td><td><code>127.0.0.1</code></td><td>Bind address</td></tr>
+                <tr><td><code>PORT</code></td><td><code>8000</code></td><td>HTTP port</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>API</h3>
+          <ul class="info-list api-list">
+            <li><code>GET /api/health</code> — Status and model</li>
+            <li><code>GET /api/projects</code> — List saved projects</li>
+            <li><code>POST /api/projects</code> — Create project</li>
+            <li><code>POST /api/projects/{id}/upload</code> — Upload CAD file</li>
+            <li><code>POST /api/projects/{id}/prompt</code> — AI generate geometry</li>
+            <li><code>POST /api/projects/{id}/files/{name}/transform</code> — Apply transform</li>
+            <li><code>GET /api/projects/{id}/timeline</code> — Edit history timeline</li>
+            <li><code>GET /api/projects/{id}/prompt-history</code> — Past prompts</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>Security</h3>
+          <p>Never commit <code>.env</code> or API keys. If a key was shared in chat or logs, rotate it in the OpenAI dashboard.</p>
+        </section>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

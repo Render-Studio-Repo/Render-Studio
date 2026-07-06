@@ -75,17 +75,3 @@ Relative source targets and CLI output overrides are resolved from the current w
 - Runtime notes and current limitations: `references/implementation-notes.md`
 
 For local MoveIt2 controls, use `$cad-viewer`; in that skill, read `references/moveit2-server.md`.
-
-<!-- render3d-studio -->
-
-## Render3D Studio
-
-On the Render3D server this skill lives at `backend/skills/srdf/`.
-
-- **Python tools:** `backend/skills/srdf/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/srdf/references/`
-- **Prompts:** enabled skills inject guidance; emit Render3D JSON Feature Programs unless the user asks for Python source
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
-
-See `backend/skills/RENDER3D.md` for full integration notes.

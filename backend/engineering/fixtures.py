@@ -97,7 +97,8 @@ def plan_fixture(specs: list[dict[str, Any]]) -> dict[str, Any]:
             body = sm.get("body") or {}
             mount = _mount_data(s)
             dia = _num(body.get("diameter_mm"), min(size[0], size[1]))
-            body_len = _num(body.get("height_mm"), size[2] * 0.7)
+            dia = max(dia, 20.0)
+            body_len = max(_num(body.get("height_mm"), size[2] * 0.7), 8.0)
             r = dia / 2.0
             spacing_x, spacing_y = _xy_spacing(mount.get("hole_spacing_mm"), 2 * r + 7, 2 * r + 7)
             is_nema = bool(mount.get("center_bore_mm")) or ("nema" in f"{s.get('label','')} {s.get('stem','')}".lower())
@@ -111,6 +112,9 @@ def plan_fixture(specs: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             mount = _mount_data(s)
             bx, by, bz = _board_dims(s)
+            bx = max(bx, 12.0)
+            by = max(by, 12.0)
+            bz = max(bz, 4.0)
             cells.append({
                 "spec": s, "kind": "board", "bx": bx, "by": by, "bz": bz,
                 "cw": bx + 18, "cd": by + 18, "mount": mount,
@@ -118,6 +122,8 @@ def plan_fixture(specs: list[dict[str, Any]]) -> dict[str, Any]:
 
     total_w = MARGIN * 2 + sum(c["cw"] for c in cells) + GAP * max(len(cells) - 1, 0)
     total_d = MARGIN * 2 + (max((c["cd"] for c in cells), default=40.0))
+    total_w = max(total_w, 40.0)
+    total_d = max(total_d, 40.0)
     x = -total_w / 2 + MARGIN
     for c in cells:
         c["cx"] = round(x + c["cw"] / 2.0, 3)
@@ -200,8 +206,10 @@ def _fixture_solid(plan: dict[str, Any]) -> Any:
             solid = solid - pocket
             # USB cutout on the +X short edge.
             solid = solid - Pos(cx + bx / 2.0, cy, T) * Box(10.0, 10.0, 10.0)
-            # Wire-access slot through the floor.
-            solid = solid - Pos(cx, cy, T / 2.0) * Box(bx * 0.5, by * 0.4, T + 4.0)
+            # Wire-access slot through the floor (skip degenerate cuts for bad measurements).
+            slot_w = max(bx * 0.5, 4.0)
+            slot_d = max(by * 0.4, 4.0)
+            solid = solid - Pos(cx, cy, T / 2.0) * Box(slot_w, slot_d, T + 4.0)
             # PCB/SBC mounting bosses: Pi/Nano boards need real standoff posts,
             # not just a recess in the plate.
             sx, sy = _xy_spacing(mount.get("hole_spacing_mm"), max(bx - 12.0, 10.0), max(by - 12.0, 10.0))

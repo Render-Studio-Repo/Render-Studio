@@ -5,14 +5,14 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
-  resolveThemeDisplayEdgeSettings
-} from "./themeSettings.js";
-import {
   displayModeForcesEdges,
   displayModeIsWireframe,
   displayModeShowsEdges,
   displayModeShowsThroughEdges,
-  normalizeDisplaySettings
+  CAMERA_PROJECTION,
+  normalizeDisplaySettings,
+  normalizeCameraProjection,
+  resolveDisplayEdgeSettings
 } from "./displaySettings.js";
 import {
   buildModel
@@ -586,6 +586,7 @@ function renderSectionSvg(segments, edgeColor = "#132232") {
 }
 
 function renderSectionPng(segments, width, height, themeSettings, {
+  edgeSettings = null,
   transparent = false,
   section = {},
   bounds = null,
@@ -613,7 +614,7 @@ function renderSectionPng(segments, width, height, themeSettings, {
     context.restore();
   }
   drawSectionCenterlines(context, transform, width, height);
-  context.strokeStyle = resolveThemeDisplayEdgeSettings(themeSettings).color || "#132232";
+  context.strokeStyle = edgeSettings?.color || "#132232";
   context.lineWidth = 3;
   context.lineCap = "round";
   context.lineJoin = "round";
@@ -652,7 +653,7 @@ export function renderJobContext(meshData, job = {}) {
   const stepDisplayEnabled = sourceKind === "step" || sourceKind === "stp";
   const displaySettings = stepDisplayEnabled
     ? normalizeDisplaySettings(job.display)
-    : normalizeDisplaySettings();
+    : normalizeDisplaySettings({ projection: CAMERA_PROJECTION.PERSPECTIVE });
   const displayMode = displaySettings.mode;
   const bounds = meshData.bounds || boundsFromVertices(meshData.vertices || []);
   const outputs = toArray(job.outputs).length ? toArray(job.outputs) : [{ path: job.output || "", camera: job.camera || "iso" }];
@@ -668,7 +669,7 @@ export function renderJobContext(meshData, job = {}) {
     lighting: theme.lighting || null,
     renderScale: job.render?.renderScale ?? job.renderScale ?? DEFAULT_RENDER_SCALE
   });
-  const baseEdgeSettings = resolveThemeDisplayEdgeSettings(theme);
+  const baseEdgeSettings = resolveDisplayEdgeSettings(displaySettings);
   const edgeSettings = {
     ...baseEdgeSettings,
     enabled: displayModeForcesEdges(displayMode) ? true : baseEdgeSettings.enabled,
@@ -726,6 +727,12 @@ export function renderJobContext(meshData, job = {}) {
 }
 
 export function modelOptionsForRenderJob(context, job = {}) {
+  const selection = job.selection || {};
+  const filterSelection = context.mode === "view" || context.mode === "orbit"
+    ? {
+        hide: selection.hide
+      }
+    : selection;
   return {
     theme: context.sceneTheme,
     displayMode: context.displayMode,
@@ -753,7 +760,8 @@ export function modelOptionsForRenderJob(context, job = {}) {
           context.warnings.push(message);
         }
       }
-    }
+    },
+    filterSelection
   };
 }
 
@@ -896,7 +904,8 @@ export async function captureModel(viewport, captureOptions = {}) {
     sceneScale,
     bounds,
     outputs,
-    warnings
+    warnings,
+    edgeSettings
   } = context;
   const modelBounds = viewport.model?.bounds || meshData.bounds || bounds;
 
@@ -925,7 +934,7 @@ export async function captureModel(viewport, captureOptions = {}) {
           return {
             path: String(output.path || ""),
             mimeType: "image/svg+xml",
-            text: renderSectionSvg(segments, resolveThemeDisplayEdgeSettings(theme).color)
+            text: renderSectionSvg(segments, edgeSettings.color)
           };
         }
         return {
@@ -934,6 +943,7 @@ export async function captureModel(viewport, captureOptions = {}) {
             height,
             mimeType: "image/png",
             dataUrl: renderSectionPng(segments, width, height, theme, {
+              edgeSettings,
               transparent: normalizeBoolean(job.render?.transparent, false),
               section,
               bounds: modelBounds,
@@ -983,7 +993,12 @@ export async function captureModel(viewport, captureOptions = {}) {
     syncViewportTopologyDisplayEdges(viewport);
     syncScreenSpaceLineMaterialResolution(viewport.model.runtime.screenSpaceLineMaterials, width, height);
     const cameraSpec = output.camera || job.camera || "iso";
-    const usePerspectiveCamera = cameraSpecUsesPerspectiveProjection(cameraSpec, {
+    const displayProjection = normalizeCameraProjection(
+      context.displaySettings?.projection,
+      CAMERA_PROJECTION.ORTHOGRAPHIC
+    );
+    const usePerspectiveCamera = displayProjection === CAMERA_PROJECTION.PERSPECTIVE ||
+      cameraSpecUsesPerspectiveProjection(cameraSpec, {
       presets: RENDER_VIEW_PRESETS,
       strict: true
     });

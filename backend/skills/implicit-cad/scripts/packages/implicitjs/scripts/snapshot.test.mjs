@@ -12,6 +12,7 @@ import {
   chromiumLaunchOptions,
   loadJobFromOptions,
   parseSnapshotArgs,
+  printRenderResult,
   resolveRenderJobPacket,
   resolveSnapshotRouteFile,
   timestampOutputPath,
@@ -246,4 +247,19 @@ test("snapshot routes are package-owned and self-contained", () => {
 
 test("snapshot renderer does not force Chromium single-process mode", () => {
   assert.notEqual(chromiumLaunchOptions().args?.includes("--single-process"), true);
+});
+
+test("render result printing surfaces captured page warnings", () => {
+  const lines = [];
+  const stdout = { write: (text) => lines.push(text) };
+
+  printRenderResult({
+    ok: true,
+    mode: "view",
+    outputs: [{ path: "tmp/orb.png" }],
+    warnings: ["page console error: THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false"],
+  }, { jsonOutput: false, stdout });
+
+  assert.equal(lines[0], "saved snapshot: tmp/orb.png\n");
+  assert.match(lines[1], /^snapshot warning: page console error: THREE\.WebGLProgram/);
 });

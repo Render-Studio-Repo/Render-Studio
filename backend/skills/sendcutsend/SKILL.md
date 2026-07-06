@@ -120,17 +120,3 @@ Use `references/report-template.md` when a structured report would help.
 
 - Official source selection: `references/official-sources.md`
 - Report shape: `references/report-template.md`
-
-<!-- render3d-studio -->
-
-## Render3D Studio
-
-On the Render3D server this skill lives at `backend/skills/sendcutsend/`.
-
-- **Python tools:** `backend/skills/sendcutsend/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/sendcutsend/references/`
-- **Prompts:** enabled skills inject guidance; emit Render3D JSON Feature Programs unless the user asks for Python source
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
-
-See `backend/skills/RENDER3D.md` for full integration notes.

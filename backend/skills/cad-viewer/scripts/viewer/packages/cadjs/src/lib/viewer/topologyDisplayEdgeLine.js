@@ -68,6 +68,7 @@ function topologyDisplayEdgeLineSettingsKey(
       ? Object.fromEntries(Object.entries(edgeSettings.classes).map(([classId, settings]) => [
           classId,
           {
+            color: String(settings?.color || ""),
             opacity: numberOrNull(settings?.opacity),
             thickness: numberOrNull(settings?.thickness)
           }

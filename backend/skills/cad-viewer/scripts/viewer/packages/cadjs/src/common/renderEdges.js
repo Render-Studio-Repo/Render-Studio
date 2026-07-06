@@ -23,11 +23,12 @@ const DEFAULT_VISIBLE_TOPOLOGY_EDGE_CLASSES = Object.freeze(["feature"]);
 const TOPOLOGY_EDGE_CLASS_ORDER = Object.freeze(["feature", "tangent", "seam", "degenerate"]);
 const MAX_TOPOLOGY_LINE_STRIP_POLYLINES = 1200;
 const MAX_TOPOLOGY_LINE_STRIP_POSITION_VALUES = 180000;
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
 const DEFAULT_TOPOLOGY_EDGE_CLASS_SETTINGS = Object.freeze({
-  feature: Object.freeze({ opacity: 1, thickness: 1.15 }),
-  tangent: Object.freeze({ opacity: 0.5, thickness: 1.15 }),
-  seam: Object.freeze({ opacity: 0.85, thickness: 1.15 }),
-  degenerate: Object.freeze({ opacity: 1, thickness: 0 })
+  feature: Object.freeze({ color: "#132232", opacity: 1, thickness: 1.15 }),
+  tangent: Object.freeze({ color: "#132232", opacity: 0.5, thickness: 1.15 }),
+  seam: Object.freeze({ color: "#132232", opacity: 0.85, thickness: 1.15 }),
+  degenerate: Object.freeze({ color: "#132232", opacity: 1, thickness: 0 })
 });
 
 export function topologyLineDepthBiasForWidth(lineWidth = 1, { visibilityClass = "" } = {}) {
@@ -166,6 +167,16 @@ function normalizeVisibilityClasses(value, fallback = DEFAULT_VISIBLE_TOPOLOGY_E
   return values.length ? values : fallback;
 }
 
+function normalizeColor(value, fallback) {
+  const normalized = String(value || "").trim();
+  if (!HEX_COLOR_PATTERN.test(normalized)) {
+    return fallback;
+  }
+  return normalized.length === 4
+    ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`.toLowerCase()
+    : normalized.toLowerCase();
+}
+
 function normalizeTopologyEdgeClassSettings(edgeSettings = {}, baseTheme = {}, fallbackClasses = DEFAULT_VISIBLE_TOPOLOGY_EDGE_CLASSES) {
   const classSettings = edgeSettings?.classes && typeof edgeSettings.classes === "object"
     ? edgeSettings.classes
@@ -179,10 +190,12 @@ function normalizeTopologyEdgeClassSettings(edgeSettings = {}, baseTheme = {}, f
   const baseThickness = Number.isFinite(Number(edgeSettings?.thickness))
     ? clamp(Number(edgeSettings.thickness), 0.5, 6)
     : (baseTheme?.edgeThickness ?? 1);
+  const baseColor = normalizeColor(edgeSettings?.color, baseTheme?.edge || "#18181b");
 
   if (!classSettings) {
     return explicitVisibilityClasses.map((classId) => ({
       classId,
+      color: baseColor,
       opacity: baseOpacity,
       thickness: baseThickness
     }));
@@ -197,11 +210,13 @@ function normalizeTopologyEdgeClassSettings(edgeSettings = {}, baseTheme = {}, f
       const classThickness = Number.isFinite(Number(classValue.thickness))
         ? clamp(Number(classValue.thickness), 0, 6)
         : DEFAULT_TOPOLOGY_EDGE_CLASS_SETTINGS[classId].thickness;
+      const classColor = normalizeColor(classValue.color, baseColor);
       if (classThickness <= 0 || classOpacity <= 0) {
         return null;
       }
       return {
         classId,
+        color: classColor,
         opacity: classOpacity,
         thickness: classThickness
       };
@@ -558,6 +573,7 @@ export function createTopologyDisplayEdgeObject(context = {}, selectorRuntime, e
     const lineOptions = {
       ...baseOptions,
       ...options,
+      color: options.color || classSetting.color || baseOptions.color,
       lineWidth,
       opacity: Number.isFinite(Number(options.opacity)) ? options.opacity : classSetting.opacity,
       depthBias: Number.isFinite(Number(options.depthBias))

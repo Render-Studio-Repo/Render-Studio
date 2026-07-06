@@ -207,17 +207,3 @@ python scripts/bambu_lan_print.py cancel \
 Read `references/new-printer-onboarding.md` for new printer setup,
 `references/local-lan-protocol.md` for protocol details, and
 `references/real-printer-checklist.md` before first live use on a new printer.
-
-<!-- render3d-studio -->
-
-## Render3D Studio
-
-On the Render3D server this skill lives at `backend/skills/bambu-labs/`.
-
-- **Python tools:** `backend/skills/bambu-labs/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/bambu-labs/references/`
-- **Prompts:** enabled skills inject guidance; emit Render3D JSON Feature Programs unless the user asks for Python source
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
-
-See `backend/skills/RENDER3D.md` for full integration notes.

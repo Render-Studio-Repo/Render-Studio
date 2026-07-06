@@ -135,17 +135,3 @@ Read `references/gcode-validation.md` when interpreting validation output or dec
 ## Bambu Boundary
 
 This skill generates plain `.gcode` only. It does not create Bambu `.gcode.3mf` archives and does not contact printers. For Bambu upload/start workflows, hand off the validated plain `.gcode` to `$bambu-labs`. Let `$bambu-labs` choose the printer-specific LAN handoff, such as an A1 Mini template project or an explicitly enabled bambox project package.
-
-<!-- render3d-studio -->
-
-## Render3D Studio
-
-On the Render3D server this skill lives at `backend/skills/gcode/`.
-
-- **Python tools:** `backend/skills/gcode/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/gcode/references/`
-- **Prompts:** enabled skills inject guidance; emit Render3D JSON Feature Programs unless the user asks for Python source
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
-
-See `backend/skills/RENDER3D.md` for full integration notes.

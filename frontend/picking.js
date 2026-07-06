@@ -50,6 +50,10 @@ export function resetRefCounter() {
   disposeGroup(markersGroup);
 }
 
+export function resetRefCounterValue() {
+  refCounter = 0;
+}
+
 export function setPickMode(mode) {
   pickMode = mode;
   clearHover();

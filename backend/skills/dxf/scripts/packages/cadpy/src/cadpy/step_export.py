@@ -71,6 +71,48 @@ def create_bin_xcaf_doc() -> Any:
     return doc
 
 
+def quantity_color_rgba_from_color(color: object) -> object | None:
+    """Return a Quantity_ColorRGBA with explicit linear RGB semantics.
+
+    build123d.Color exposes its values through Quantity_ColorRGBA.GetRGB().
+    Different OCP versions can serialize that wrapped color with different
+    implicit color-space assumptions, so normalize through Quantity_TOC_RGB
+    before writing XCAF labels.
+    """
+    if color is None:
+        return None
+
+    if isinstance(color, tuple):
+        values = tuple(max(0.0, min(1.0, float(component))) for component in color)
+        if len(values) == 3:
+            rgba = (values[0], values[1], values[2], 1.0)
+        elif len(values) >= 4:
+            rgba = (values[0], values[1], values[2], values[3])
+        else:
+            return None
+    else:
+        wrapped = getattr(color, "wrapped", None)
+        if wrapped is None:
+            return None
+        try:
+            rgb = wrapped.GetRGB()
+            rgba = (
+                max(0.0, min(1.0, float(rgb.Red()))),
+                max(0.0, min(1.0, float(rgb.Green()))),
+                max(0.0, min(1.0, float(rgb.Blue()))),
+                max(0.0, min(1.0, float(wrapped.Alpha()))),
+            )
+        except Exception:
+            return wrapped
+
+    from OCP.Quantity import Quantity_Color, Quantity_ColorRGBA, Quantity_TOC_RGB
+
+    rgb_color = Quantity_Color(rgba[0], rgba[1], rgba[2], Quantity_TOC_RGB)
+    wrapped_rgba = Quantity_ColorRGBA(rgb_color)
+    wrapped_rgba.SetAlpha(rgba[3])
+    return wrapped_rgba
+
+
 def _create_bin_xcaf_doc(to_export: Any) -> Any:
     import warnings
 
@@ -102,7 +144,7 @@ def _create_bin_xcaf_doc(to_export: Any) -> Any:
     def set_label_color(label: object, color: object | None) -> None:
         if color is None or label.IsNull():
             return
-        wrapped = getattr(color, "wrapped", None)
+        wrapped = quantity_color_rgba_from_color(color)
         if wrapped is None:
             return
         color_tool.SetColor(

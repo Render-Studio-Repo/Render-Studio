@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent App Store — Render3D</title>
+  <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
+  <link rel="stylesheet" href="/styles.css?v=20260630-agent-creator-store" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <a href="/" class="nav-tab">Studio</a>
+        <a href="/agent-store.html" class="nav-tab active">Agent Store</a>
+        <a href="/skills.html" class="nav-tab">Skills Library</a>
+        <a href="/docs.html" class="nav-tab">Docs</a>
+        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content skills-page agent-store-page">
+        <header class="info-hero">
+          <p class="info-eyebrow">Marketplace</p>
+          <h2>Agent App Store</h2>
+          <p class="info-lead">
+            Browse, install, submit, and feature agent apps: prompt skills, scripts, workflows,
+            connectors, and tools. Public self-hosters can wire their own billing; Render3D hosted
+            can use this as the premium app marketplace surface.
+          </p>
+        </header>
+
+        <section class="agent-store-hero">
+          <div>
+            <p class="info-eyebrow">Shop by workflow</p>
+            <h3>Agent apps for CAD, molds, robotics, sourcing, and automation</h3>
+            <p class="muted">Install free apps now. Premium listings are ready for hosted checkout once billing is connected.</p>
+          </div>
+          <div class="agent-store-search">
+            <input id="agent-store-search" type="search" placeholder="Search agent apps, scripts, skills..." />
+          </div>
+        </section>
+
+        <p id="agent-store-status" class="skills-status muted"></p>
+        <div id="agent-store-categories" class="agent-store-categories" aria-label="Agent app categories"></div>
+        <section id="agent-featured-section" class="agent-store-section hidden">
+          <div class="agent-store-section-head">
+            <h3>Featured Agent Apps</h3>
+            <span class="muted small">Curated picks for the Render3D hosted marketplace</span>
+          </div>
+          <div id="agent-featured-list" class="agent-featured-row"></div>
+        </section>
+        <section class="agent-store-section">
+          <div class="agent-store-section-head">
+            <h3 id="agent-store-results-title">All Agent Apps</h3>
+            <span id="agent-store-results-count" class="muted small"></span>
+          </div>
+          <div id="agent-store-list" class="agent-product-grid"></div>
+        </section>
+
+        <section class="info-section agent-submit-section">
+          <h3>Submit an Agent App</h3>
+          <p class="muted">
+            Submit apps for review. Keep secrets out of manifests; use environment variables and provider setup docs.
+          </p>
+          <form id="agent-app-form" class="agent-app-form">
+            <div class="agent-form-grid">
+              <label>Name <input name="name" required maxlength="120" placeholder="Mold Maker Pro" /></label>
+              <label>Type
+                <select name="app_type">
+                  <option value="skill">Skill</option>
+                  <option value="script">Script</option>
+                  <option value="workflow">Workflow</option>
+                  <option value="connector">Connector</option>
+                  <option value="tool">Tool</option>
+                </select>
+              </label>
+              <label>Category <input name="category" maxlength="80" placeholder="CAD, robotics, sourcing" /></label>
+              <label>Price cents <input name="price_cents" type="number" min="0" max="1000000" value="0" /></label>
+              <label class="agent-form-wide">Tagline <input name="tagline" required maxlength="180" placeholder="Generate two-part silicone molds with vents and clips." /></label>
+              <label class="agent-form-wide">Source URL <input name="source_url" maxlength="600" placeholder="https://github.com/you/agent-app" /></label>
+              <label class="agent-form-wide">Description <textarea name="description" required maxlength="4000" rows="5" placeholder="What the app does, how it is used, required env vars, and what it is allowed to access."></textarea></label>
+              <label class="agent-form-wide">Example images <input name="example_images" type="file" multiple accept="image/png,image/jpeg,image/webp" /></label>
+              <label class="agent-form-wide">Instruction docs <input name="instruction_docs" type="file" multiple accept=".txt,.md,.pdf,.doc,.docx,text/plain,text/markdown,application/pdf" /></label>
+              <label class="agent-form-wide">Manifest JSON <textarea name="manifest" rows="6" placeholder='{"entrypoint":"SKILL.md","permissions":["project:read"],"env":["MY_PROVIDER_API_KEY"]}'></textarea></label>
+              <label class="agent-check"><input name="premium" type="checkbox" /> Premium / requires purchase</label>
+            </div>
+            <button type="submit" class="btn primary">Submit for Review</button>
+          </form>
+        </section>
+      </article>
+    </main>
+  </div>
+
+  <script type="module" src="/agent-store.js?v=20260630-agent-creator-store"></script>
+</body>
+</html>

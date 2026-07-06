@@ -723,6 +723,16 @@ export function chromiumLaunchOptions() {
   };
 }
 
+const PAGE_ISSUE_MAX_LENGTH = 2000;
+
+function pageIssueText(prefix, text) {
+  const message = String(text || "").trim();
+  const truncated = message.length > PAGE_ISSUE_MAX_LENGTH
+    ? `${message.slice(0, PAGE_ISSUE_MAX_LENGTH)}… [truncated]`
+    : message;
+  return `${prefix}: ${truncated}`;
+}
+
 class BatchSnapshotRenderer {
   constructor() {
     this.browser = null;
@@ -730,6 +740,7 @@ class BatchSnapshotRenderer {
     this.page = null;
     this.activeRootPath = null;
     this.started = false;
+    this.pageIssues = [];
   }
 
   async start() {
@@ -748,6 +759,17 @@ class BatchSnapshotRenderer {
         deviceScaleFactor: 1,
       });
       this.page = await this.context.newPage();
+      // THREE.js reports shader compile failures through console.error inside
+      // the page; without these hooks a broken shader renders a blank image
+      // with no diagnostic at all.
+      this.page.on("console", (message) => {
+        if (message.type() === "error") {
+          this.pageIssues.push(pageIssueText("page console error", message.text()));
+        }
+      });
+      this.page.on("pageerror", (error) => {
+        this.pageIssues.push(pageIssueText("page error", error instanceof Error ? error.message : error));
+      });
       await this.page.route(SNAPSHOT_ROUTE_GLOB, (route) => this.handleRoute(route));
       await this.page.goto(SNAPSHOT_RENDER_URL, {
         waitUntil: "load",
@@ -800,12 +822,18 @@ class BatchSnapshotRenderer {
     this.activeRootPath = path.resolve(String(resolved.rootPath || ""));
     const [width, height] = maxOutputSize(job);
     await this.page.setViewportSize({ width, height });
+    const issueStart = this.pageIssues.length;
     const result = await withSnapshotTimeout(
       this.page.evaluate((renderJob) => window.__implicitCadSnapshotRender(renderJob), { ...job }),
       job.timeoutSeconds || DEFAULT_TIMEOUT_SECONDS
     );
+    const issues = [...new Set(this.pageIssues.slice(issueStart))];
     if (!isPlainObject(result) || !result.ok) {
-      throw new SnapshotError(String(isPlainObject(result) ? result.error || "" : "") || "unknown browser snapshot failure");
+      const failure = String(isPlainObject(result) ? result.error || "" : "") || "unknown browser snapshot failure";
+      throw new SnapshotError([failure, ...issues].join("\n"));
+    }
+    if (issues.length) {
+      result.warnings = [...(Array.isArray(result.warnings) ? result.warnings : []), ...issues];
     }
     return result;
   }
@@ -910,6 +938,10 @@ export function printRenderResult(result, { jsonOutput = false, stdout = process
     if (isPlainObject(output) && output.path) {
       stdout.write(`saved snapshot: ${output.path}\n`);
     }
+  }
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  for (const warning of warnings) {
+    stdout.write(`snapshot warning: ${warning}\n`);
   }
 }
 

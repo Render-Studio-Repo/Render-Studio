@@ -26,8 +26,10 @@ export const FUSION = {
 
   gridMajor: 0x40516a,
   gridMinor: 0x2a3445,
-  shadowOpacity: 0.28,
+  shadowOpacity: 0.08,
 };
+
+const HIGH_FRAGMENT_MESH_COUNT = 1200;
 
 const CAD_PART_PALETTE = [
   0x78aee8, // Onshape-like blue
@@ -50,7 +52,8 @@ const CAD_PART_PALETTE = [
  *  • Dark  body   → light cool-grey line so it reads on the dark canvas
  */
 function _edgeColorFor(bodyColor) {
-  return new THREE.Color(0x071018);
+  const body = bodyColor || new THREE.Color(FUSION.body);
+  return _luminance(body) > 0.42 ? new THREE.Color(0x071018) : new THREE.Color(0xdbeafe);
 }
 
 /**
@@ -131,9 +134,9 @@ function _meshColorInfo(mesh) {
 
 function _useGeneratedPalette(meshInfos) {
   if (!meshInfos.length) return false;
-  const darkCount = meshInfos.filter((m) => m.info.tooDark).length;
   const missingCount = meshInfos.filter((m) => !m.info.hasColor).length;
   const vertexCount = meshInfos.filter((m) => m.info.source === "vertex").length;
+  const materialCount = meshInfos.filter((m) => m.info.source === "material").length;
   const colors = meshInfos.map((m) => m.info.color);
   let maxDist = 0;
   for (let i = 0; i < colors.length; i++) {
@@ -142,11 +145,12 @@ function _useGeneratedPalette(meshInfos) {
     }
   }
 
+  if (materialCount > 0 && missingCount === 0) return false;
+
   // Generated models often arrive as many dark vertex-coloured bodies. Imports
   // with meaningful Onshape appearances usually have brighter, varied colours.
   return (
     missingCount > 0 ||
-    darkCount / meshInfos.length >= 0.5 ||
     (meshInfos.length > 1 && vertexCount === meshInfos.length && maxDist < 0.18)
   );
 }
@@ -160,11 +164,16 @@ export function setupSceneLighting(scene) {
 
   // Hemisphere: warm sky above, cool ground below — matches Onshape's
   // neutral studio ambient without crushing shadow areas to pure black.
-  const hemi = new THREE.HemisphereLight(0xdce8f0, 0x283848, 0.85);
+  const hemi = new THREE.HemisphereLight(0xf7fbff, 0xe2ecf7, 1.45);
   scene.add(hemi);
 
+  // Neutral ambient lift keeps underside geometry visible without flattening
+  // the model as much as another direct light would.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.46);
+  scene.add(ambient);
+
   // Key light: upper-left front (Z-up) — strong but not harsh
-  const key = new THREE.DirectionalLight(0xfff8f0, 2.0);
+  const key = new THREE.DirectionalLight(0xfff8f0, 1.9);
   key.position.set(5, 6, 10);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -178,35 +187,44 @@ export function setupSceneLighting(scene) {
   scene.add(key);
 
   // Right fill: cool-white to balance the warm key
-  const fill = new THREE.DirectionalLight(0xe0eeff, 0.75);
-  fill.position.set(-5, -3, 5);
+  const fill = new THREE.DirectionalLight(0xe8f3ff, 1.32);
+  fill.position.set(-5, -3, 6);
   scene.add(fill);
 
   // Rim / back light: gives depth and separates parts from background
-  const rim = new THREE.DirectionalLight(0xb0d0f0, 0.50);
+  const rim = new THREE.DirectionalLight(0xb0d0f0, 0.62);
   rim.position.set(0, -8, 7);
   scene.add(rim);
 
   // Camera-facing soft fill: prevents the front face from going flat-dark
-  const front = new THREE.DirectionalLight(0xffffff, 0.40);
+  const front = new THREE.DirectionalLight(0xffffff, 0.78);
   front.position.set(0, 12, 5);
   scene.add(front);
 
-  // Under-fill: subtle bounce from "floor" — warms up bottom geometry
-  const under = new THREE.DirectionalLight(0xffe8c0, 0.20);
-  under.position.set(0, 0, -4);
+  // Under-fill: floor-bounce style lights from multiple lower angles so the
+  // bottom and side walls do not collapse into one dark face.
+  const under = new THREE.DirectionalLight(0xfff4df, 1.35);
+  under.position.set(0, 0, -6);
   scene.add(under);
 
-  return { key, fill, rim, hemi, front, under };
+  const underLeft = new THREE.DirectionalLight(0xeaf5ff, 0.82);
+  underLeft.position.set(-5, 4, -4);
+  scene.add(underLeft);
+
+  const underRight = new THREE.DirectionalLight(0xfff8ec, 0.82);
+  underRight.position.set(5, -4, -4);
+  scene.add(underRight);
+
+  return { key, fill, rim, hemi, ambient, front, under, underLeft, underRight };
 }
 
 export function setupRenderer(renderer) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  // 1.1 keeps colours close to their real values without over-brightening;
-  // ACES at higher exposure shifts hues (gold → orange), so keep it modest.
-  renderer.toneMappingExposure = 1.1;
+  // Slightly brighter than the original dark studio so generated models do not
+  // lose underside detail.
+  renderer.toneMappingExposure = 1.28;
 }
 
 // ─── shadow floor ─────────────────────────────────────────────────────────────
@@ -239,10 +257,15 @@ function smoothDisplayGeometry(mesh) {
   const geo = mesh.geometry;
   if (!geo) return;
 
-  // STEP→GLB previews can contain imported vertex normals that interpolate
-  // across large flat CAD faces, creating diagonal "stretched" shading bands.
-  // Rebuild display normals from face angles instead: coplanar triangles shade
-  // flat as one face, shallow curved surfaces stay smooth, hard CAD edges split.
+  // text-to-cad bakes correct per-vertex normals into the GLB: planar CAD faces
+  // get flat normals and curved faces get smooth ones. Preserve them so the
+  // model renders exactly like the upstream cad-viewer. Re-creasing here would
+  // discard those baked normals and re-facet smooth surfaces (the "warped" look).
+  if (geo.attributes?.normal?.count) return;
+
+  // Only meshes WITHOUT baked normals (e.g. raw STL) need synthesized display
+  // normals. Rebuild them from face angles so coplanar triangles shade flat,
+  // shallow curves stay smooth, and hard edges split.
   if (geo.userData?.render3dCreasedNormals) return;
   const creased = toCreasedNormals(geo, THREE.MathUtils.degToRad(28));
   creased.userData = { ...(geo.userData || {}), render3dCreasedNormals: true };
@@ -270,7 +293,7 @@ function addVisibleEdges(mesh) {
       depthTest: true,
       depthWrite: false,
       transparent: true,
-      opacity: 0.96,
+      opacity: 1,
     })
   );
   crease.userData.isEdge = true;
@@ -289,7 +312,18 @@ function addVisibleEdges(mesh) {
       depthWrite: true,
     })
   );
-  shell.scale.multiplyScalar(FUSION.silhouetteScale);
+  // Inflate the shell about the geometry's centroid, not the mesh local origin.
+  // Scaling about the origin shifts the shell off-center for any body whose
+  // local origin isn't its centroid (placed/multi-body parts), producing a
+  // one-sided dark halo that reads as distortion. world = pos + s·p_local, so
+  // setting pos = c·(1−s) makes the scale pivot at the centroid c.
+  const s = FUSION.silhouetteScale;
+  shell.scale.setScalar(s);
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  if (geo.boundingBox) {
+    const c = geo.boundingBox.getCenter(new THREE.Vector3());
+    shell.position.copy(c).multiplyScalar(1 - s);
+  }
   shell.userData.isSilhouette = true;
   shell.renderOrder = 1;
   mesh.add(shell);
@@ -335,13 +369,14 @@ export function applyCadStyle(object3d) {
 
   const meshInfos = meshes.map((mesh) => ({ mesh, info: _meshColorInfo(mesh) }));
   const usePalette = _useGeneratedPalette(meshInfos);
+  const highFragmentModel = meshes.length > HIGH_FRAGMENT_MESH_COUNT;
 
   meshInfos.forEach(({ mesh: child, info }, index) => {
     const paletteColor = CAD_PART_PALETTE[index % CAD_PART_PALETTE.length].clone();
     const shouldPaletteColor = usePalette && (!info.hasColor || info.tooDark || info.source === "vertex");
 
-    child.castShadow = true;
-    child.receiveShadow = true;
+    child.castShadow = !highFragmentModel;
+    child.receiveShadow = !highFragmentModel;
     child.renderOrder = 2;
     smoothDisplayGeometry(child);
 
@@ -371,7 +406,9 @@ export function applyCadStyle(object3d) {
       envMapIntensity: shouldPaletteColor ? 0.82 : 0.62,
     });
 
-    addVisibleEdges(child);
+    if (!highFragmentModel) {
+      addVisibleEdges(child);
+    }
   });
 
   return object3d;

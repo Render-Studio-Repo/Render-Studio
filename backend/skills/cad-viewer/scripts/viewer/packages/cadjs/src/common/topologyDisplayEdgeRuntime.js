@@ -7,6 +7,9 @@ import {
 } from "./topologyDisplayEdges.js";
 
 const displayEdgeVisibilityClassRuntimeCache = new WeakMap();
+const transformedSelectorRuntimeCache = new WeakMap();
+const transformedDisplayEdgeRuntimeCache = new WeakMap();
+const MAX_TRANSFORMED_RUNTIME_CACHE_ENTRIES = 32;
 
 export function topologyDisplayEdgeSurfaceOffsetForSettings(edgeSettings = {}) {
   return 0;
@@ -69,6 +72,50 @@ export function rowMajorArrayFromMatrix4(matrix) {
     elements[2], elements[6], elements[10], elements[14],
     elements[3], elements[7], elements[11], elements[15],
   ];
+}
+
+function transformSignatureValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? String(number) : "0";
+}
+
+function transformEntriesSignature(transforms) {
+  if (!transforms?.size) {
+    return "";
+  }
+  return [...transforms.entries()]
+    .map(([partId, transform]) => {
+      const transformValues = Array.isArray(transform) || ArrayBuffer.isView(transform)
+        ? Array.from(transform, transformSignatureValue)
+        : [];
+      return `${String(partId || "").trim()}:${transformValues.join(",")}`;
+    })
+    .sort()
+    .join("|");
+}
+
+function cachedTransformedRuntime(cache, baseRuntime, transforms, buildRuntime) {
+  if (!baseRuntime || !transforms?.size) {
+    return null;
+  }
+  const signature = transformEntriesSignature(transforms);
+  if (!signature) {
+    return null;
+  }
+  let runtimeBySignature = cache.get(baseRuntime);
+  if (!runtimeBySignature) {
+    runtimeBySignature = new Map();
+    cache.set(baseRuntime, runtimeBySignature);
+  }
+  if (runtimeBySignature.has(signature)) {
+    return runtimeBySignature.get(signature);
+  }
+  const runtime = buildRuntime(baseRuntime, transforms);
+  runtimeBySignature.set(signature, runtime);
+  if (runtimeBySignature.size > MAX_TRANSFORMED_RUNTIME_CACHE_ENTRIES) {
+    runtimeBySignature.delete(runtimeBySignature.keys().next().value);
+  }
+  return runtime;
 }
 
 export function selectorTransformsFromDisplayRecords(displayRecords) {
@@ -146,10 +193,20 @@ export function resolveTopologyDisplayEdgeRuntimes({
   const selectorTransforms = selectorTransformsFromDisplayRecords(displayRecords);
   const baseDisplayEdgeRuntime = displayEdgeRuntimeWithSelectorVisibilityClasses(displayEdgeRuntime, selectorRuntime);
   const transformedSelectorRuntime = selectorTransforms.size && selectorRuntime
-    ? buildTransformedSelectorRuntime(selectorRuntime, selectorTransforms)
+    ? cachedTransformedRuntime(
+        transformedSelectorRuntimeCache,
+        selectorRuntime,
+        selectorTransforms,
+        buildTransformedSelectorRuntime
+      )
     : null;
   const transformedDisplayEdgeRuntime = transformDisplayEdges && selectorTransforms.size && baseDisplayEdgeRuntime
-    ? buildTransformedDisplayEdgeRuntime(baseDisplayEdgeRuntime, selectorTransforms)
+    ? cachedTransformedRuntime(
+        transformedDisplayEdgeRuntimeCache,
+        baseDisplayEdgeRuntime,
+        selectorTransforms,
+        buildTransformedDisplayEdgeRuntime
+      )
     : null;
   const activeSelectorRuntime = transformedSelectorRuntime || selectorRuntime || null;
   const activeDisplayEdgeRuntime = transformedDisplayEdgeRuntime || baseDisplayEdgeRuntime || null;

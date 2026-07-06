@@ -1,7 +1,7 @@
 /**
  * Section View — cross-section via renderer clipping planes.
  *
- * Cuts the model along X/Y/Z without cap fills or overlay planes.
+ * Cuts the model along X/Y/Z and keeps interior walls readable.
  *
  * Public API
  * ----------
@@ -33,6 +33,7 @@ export function createSectionView({ renderer, scene, camera, getModelBounds }) {
   let _flipped = false;
   let _panel = null;
   let _slider = null;
+  const _meshDisplayState = new Map();
 
   const _plane = new THREE.Plane();
 
@@ -74,6 +75,73 @@ export function createSectionView({ renderer, scene, camera, getModelBounds }) {
     renderer.localClippingEnabled = true;
   }
 
+  function _forEachBuildMesh(fn) {
+    scene.traverse((obj) => {
+      if (isBuildMesh(obj)) fn(obj);
+    });
+  }
+
+  function _setSectionDisplay(on) {
+    if (on) {
+      _forEachBuildMesh((mesh) => {
+        if (!_meshDisplayState.has(mesh)) {
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          _meshDisplayState.set(mesh, {
+            materialSides: mats.map((m) => m?.side),
+            childVisibility: mesh.children.map((child) => ({
+              child,
+              visible: child.visible,
+              material: child.material
+                ? {
+                    transparent: child.material.transparent,
+                    opacity: child.material.opacity,
+                    depthWrite: child.material.depthWrite,
+                    color: child.material.color?.clone?.() || null,
+                  }
+                : null,
+            })),
+          });
+        }
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((mat) => {
+          if (!mat) return;
+          mat.side = THREE.DoubleSide;
+          mat.needsUpdate = true;
+        });
+        mesh.children.forEach((child) => {
+          if (!child.userData.isSilhouette || !child.material) return;
+          child.visible = true;
+          child.material.transparent = true;
+          child.material.opacity = 0.34;
+          child.material.depthWrite = false;
+          child.material.color?.setHex?.(0x111827);
+          child.material.needsUpdate = true;
+        });
+      });
+      return;
+    }
+
+    for (const [mesh, state] of _meshDisplayState.entries()) {
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      mats.forEach((mat, idx) => {
+        if (!mat) return;
+        mat.side = state.materialSides[idx] ?? THREE.FrontSide;
+        mat.needsUpdate = true;
+      });
+      state.childVisibility.forEach(({ child, visible, material }) => {
+        if (child?.parent) child.visible = visible;
+        if (child?.material && material) {
+          child.material.transparent = material.transparent;
+          child.material.opacity = material.opacity;
+          child.material.depthWrite = material.depthWrite;
+          if (material.color) child.material.color.copy(material.color);
+          child.material.needsUpdate = true;
+        }
+      });
+    }
+    _meshDisplayState.clear();
+  }
+
   function _refresh() {
     if (!_active) return;
     _applyClipping(_getBounds());
@@ -107,7 +175,7 @@ export function createSectionView({ renderer, scene, camera, getModelBounds }) {
         <button type="button" class="sv-flip-btn">⇆ Flip</button>
         <button type="button" class="sv-reset-btn">Reset</button>
       </div>
-      <div class="sv-hint">Drag slider · click axis to rotate cut plane</div>
+      <div class="sv-hint">Drag slider · interior walls stay colored for clearer section viewing</div>
     `;
 
     _panel.querySelectorAll(".sv-axis-btn").forEach((btn) => {
@@ -149,6 +217,7 @@ export function createSectionView({ renderer, scene, camera, getModelBounds }) {
     if (_active) return;
     _active = true;
     _buildPanel();
+    _setSectionDisplay(true);
     _panel.classList.add("sv-visible");
     _refresh();
     document.getElementById("btn-section")?.classList.add("active");
@@ -161,6 +230,7 @@ export function createSectionView({ renderer, scene, camera, getModelBounds }) {
 
     renderer.clippingPlanes = [];
     renderer.localClippingEnabled = false;
+    _setSectionDisplay(false);
 
     _panel?.classList.remove("sv-visible");
     document.getElementById("btn-section")?.classList.remove("active");
@@ -198,7 +268,10 @@ export function createSectionView({ renderer, scene, camera, getModelBounds }) {
   }
 
   function onModelChanged() {
-    if (_active) _refresh();
+    if (_active) {
+      _setSectionDisplay(true);
+      _refresh();
+    }
   }
 
   return { activate, deactivate, isActive, setAxis, setOffset, flip, dispose, onModelChanged };

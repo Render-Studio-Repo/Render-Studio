@@ -18,10 +18,12 @@ live review links. The expected input is one or more explicit file paths.
 Start or reuse one local CAD Viewer with `npm run agent:start`, passing the
 absolute artifact directory as `--dir`. The `agent:start` launcher owns port
 selection, compatible-server reuse, directory activation, and the `?dir=` query
-parameter. It activates reused servers through the Viewer's lightweight
-directory activation API, without requiring agents to probe ports or trigger
-catalog scans manually. Use the Viewer URL printed by `agent:start` as-is, then
-add only a `file=` query value for the artifact you want to review.
+parameter. Dev-mode viewers are reused only for matching git identities; dist
+bundle viewers can be reused across git branches when their viewer versions
+match. It activates reused servers through the Viewer's lightweight directory
+activation API, without requiring agents to probe ports or trigger catalog
+scans manually. Use the Viewer URL printed by `agent:start` as-is, then add only
+a `file=` query value for the artifact you want to review.
 
 Choose `--dir` as the absolute directory that contains the model
 artifacts and sidecars, commonly `<repo>/models` or the consuming project's
@@ -29,15 +31,10 @@ equivalent model directory. The `file=` value must be relative to that `--dir`.
 Do not manually choose ports, probe servers, rewrite `?dir=`, or start a
 separate Viewer just to change directories.
 
-Always start new local Viewer servers with `--shutdown-after 12h` so forgotten
-review servers clean themselves up. Do not rely on a default shutdown; the
-server stays alive until stopped unless this flag or `VIEWER_SERVER_LIFETIME_MS`
-is set.
-
 Run from this skill directory:
 
 ```bash
-npm --prefix scripts/viewer run agent:start -- --host 127.0.0.1 --dir <absolute-model-root> --shutdown-after 12h
+npm --prefix scripts/viewer run agent:start -- --host 127.0.0.1 --dir <absolute-model-root>
 ```
 
 Use the printed Viewer URL and append `file=`:
@@ -74,7 +71,7 @@ worktrees. To integrate with the Claude Preview tool, add `--json` to the
 `agent:start` command:
 
 ```bash
-npm --prefix scripts/viewer run agent:start -- --host 127.0.0.1 --dir <absolute-model-root> --shutdown-after 12h --json
+npm --prefix scripts/viewer run agent:start -- --host 127.0.0.1 --dir <absolute-model-root> --json
 ```
 
 The launcher writes a JSON result line to stdout after the human-readable lines.
@@ -96,17 +93,3 @@ before passing the `url` value to the Claude Preview tool.
   iterate on CAD Viewer source.
 - Read `references/viewer-features.md` when you need supported file types, Viewer controls, or file-specific feature details.
 - Read `references/moveit2-server.md` only when the user specifically needs optional SRDF MoveIt2 IK or path-planning controls.
-
-<!-- render3d-studio -->
-
-## Render3D Studio
-
-On the Render3D server this skill lives at `backend/skills/cad-viewer/`.
-
-- **Python tools:** `backend/skills/cad-viewer/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/cad-viewer/references/`
-- **Prompts:** enabled skills inject guidance; emit Render3D JSON Feature Programs unless the user asks for Python source
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
-
-See `backend/skills/RENDER3D.md` for full integration notes.

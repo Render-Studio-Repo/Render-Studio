@@ -120,6 +120,13 @@ const CAD_SURFACE_EDGE_OPACITY_UNIFORMS = Object.freeze({
   degenerate: "cadSurfaceDegenerateOpacity"
 });
 
+const CAD_SURFACE_EDGE_COLOR_UNIFORMS = Object.freeze({
+  feature: "cadSurfaceFeatureColor",
+  tangent: "cadSurfaceTangentColor",
+  seam: "cadSurfaceSeamColor",
+  degenerate: "cadSurfaceDegenerateColor"
+});
+
 function syncCadSurfaceEdgeHighlight(THREE, record, edgeColor, edgeOpacity = null) {
   const material = record?.material;
   const userData = material?.userData;
@@ -142,6 +149,16 @@ function syncCadSurfaceEdgeHighlight(THREE, record, edgeColor, edgeOpacity = nul
     : null;
   const baseClassSettings = userData.cadSurfaceEdgeBaseClassSettings || {};
   const uniforms = userData.cadSurfaceEdgeShader?.uniforms || null;
+  const overrideClassColor = highlightedOpacity !== null ||
+    (nextColor?.isColor && userData.cadSurfaceEdgeBaseColor?.isColor && !nextColor.equals(userData.cadSurfaceEdgeBaseColor));
+  for (const [classId, uniformName] of Object.entries(CAD_SURFACE_EDGE_COLOR_UNIFORMS)) {
+    const baseClassColor = readSourceColor(THREE, baseClassSettings[classId]?.color) ||
+      userData.cadSurfaceEdgeBaseColor;
+    const nextClassColor = overrideClassColor ? nextColor : baseClassColor;
+    if (nextClassColor?.isColor && uniforms?.[uniformName]?.value?.copy) {
+      uniforms[uniformName].value.copy(nextClassColor);
+    }
+  }
   for (const [classId, uniformName] of Object.entries(CAD_SURFACE_EDGE_OPACITY_UNIFORMS)) {
     const baseOpacity = Number(baseClassSettings[classId]?.opacity);
     const nextOpacity = highlightedOpacity === null

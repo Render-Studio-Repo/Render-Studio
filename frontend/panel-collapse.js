@@ -1,12 +1,11 @@
 /**
- * Collapsible panels — left sidebar, right panel, ribbon toolbar, activity log.
+ * Collapsible panels — left sidebar, right panel, activity log.
  * Loaded as a module after app.js so all DOM elements exist.
  */
 
 const LS = {
   sidebar: "render3d:sidebarHidden",
   rightPanel: "render3d:rightPanelHidden",
-  ribbon: "render3d:ribbonHidden",
   log: "render3d:logCollapsed",
   timeline: "render3d:timelineCollapsed",
   timelineHeight: "render3d:timelineHeight",
@@ -36,6 +35,14 @@ document.body.appendChild(reopenTabRight);
 
 function notifyLayoutChange() {
   setTimeout(() => window.dispatchEvent(new Event("resize")), 240);
+}
+
+function readFlag(key) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch (_) {
+    return false;
+  }
 }
 
 function setSidebarHidden(v) {
@@ -114,36 +121,6 @@ function addGutterCollapseButtons() {
   }
 }
 
-// ── Ribbon toolbar ─────────────────────────────────────────────────────────
-
-const btnRibbon = document.getElementById("btn-toggle-ribbon");
-
-function getRibbonBar() {
-  return document.querySelector(".ribbon-bar");
-}
-
-function setRibbonHidden(v) {
-  const ribbonBar = getRibbonBar();
-  if (ribbonBar) ribbonBar.classList.toggle("ribbon-bar--hidden", v);
-  if (btnRibbon) {
-    btnRibbon.setAttribute("aria-pressed", String(v));
-    btnRibbon.title = v ? "Show primitives toolbar" : "Hide primitives toolbar";
-    const span = btnRibbon.querySelector(".btn-collapse-label");
-    if (span) span.textContent = v ? "Show ribbon" : "Hide ribbon";
-  }
-  try {
-    localStorage.setItem(LS.ribbon, v ? "1" : "0");
-  } catch (_) {}
-  notifyLayoutChange();
-}
-
-if (btnRibbon) {
-  btnRibbon.addEventListener("click", () => {
-    const ribbonBar = getRibbonBar();
-    setRibbonHidden(ribbonBar ? !ribbonBar.classList.contains("ribbon-bar--hidden") : false);
-  });
-}
-
 // ── Activity log ───────────────────────────────────────────────────────────
 
 const logDock = document.getElementById("activity-log-panel");
@@ -167,10 +144,21 @@ function setLogCollapsed(v) {
   } catch (_) {}
 }
 
-const _logBtn = getLogBtn();
-if (_logBtn && logDock) {
-  _logBtn.addEventListener("click", () =>
+function bindLogCollapseButton() {
+  const btn = getLogBtn();
+  if (!btn || !logDock || btn.dataset.collapseBound === "1") return false;
+  btn.dataset.collapseBound = "1";
+  btn.addEventListener("click", () =>
     setLogCollapsed(!logDock.classList.contains("log-dock--collapsed")));
+  setLogCollapsed(readFlag(LS.log));
+  return true;
+}
+
+if (!bindLogCollapseButton()) {
+  const logObserver = new MutationObserver(() => {
+    if (bindLogCollapseButton()) logObserver.disconnect();
+  });
+  logObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 // ── Timeline ───────────────────────────────────────────────────────────────
@@ -263,11 +251,12 @@ if (leftSidebar && !document.getElementById("btn-collapse-left-edge")) {
 }
 
 try {
-  if (localStorage.getItem(LS.sidebar) === "1") setSidebarHidden(true);
-  if (localStorage.getItem(LS.rightPanel) === "1") setRightPanelHidden(true);
-  if (localStorage.getItem(LS.ribbon) === "1") setRibbonHidden(true);
-  if (localStorage.getItem(LS.log) === "1") setLogCollapsed(true);
-  if (localStorage.getItem(LS.timeline) === "1") setTimelineCollapsed(true);
+  localStorage.removeItem("render3d:ribbonHidden");
+  if (readFlag(LS.sidebar)) setSidebarHidden(true);
+  if (readFlag(LS.rightPanel)) setRightPanelHidden(true);
+  if (readFlag(LS.log)) setLogCollapsed(true);
+  bindLogCollapseButton();
+  if (readFlag(LS.timeline)) setTimelineCollapsed(true);
   else {
     const saved = parseFloat(localStorage.getItem(LS.timelineHeight));
     if (!Number.isFinite(saved) || saved < 64) {
@@ -281,7 +270,7 @@ try {
 } catch (_) {}
 
 const _initialLogBtn = getLogBtn();
-if (_initialLogBtn && localStorage.getItem(LS.log) !== "1") {
+if (_initialLogBtn && !readFlag(LS.log)) {
   _initialLogBtn.innerHTML = '<span style="font-size:1em">▼</span> Activity log';
 }
 

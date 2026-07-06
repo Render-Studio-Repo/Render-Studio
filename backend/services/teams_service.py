@@ -59,7 +59,9 @@ def list_teams(user_id: str) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT t.id, t.name, t.created_by, t.created_at, tm.role
+            SELECT t.id, t.name, t.created_by, t.created_at, tm.role,
+                   t.render_folder_provider, t.render_folder_ref,
+                   t.render_folder_label, t.render_folder_connected_at
             FROM teams t
             JOIN team_members tm ON tm.team_id = t.id
             WHERE tm.user_id = ?
@@ -75,7 +77,7 @@ def list_team_members(team_id: str, user_id: str) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT u.id, u.email, u.display_name, tm.role, tm.joined_at
+            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
             WHERE tm.team_id = ?
@@ -84,6 +86,65 @@ def list_team_members(team_id: str, user_id: str) -> list[dict[str, Any]]:
             (team_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_render_agent_invite_candidates(user_id: str, team_id: str | None = None) -> list[dict[str, Any]]:
+    """People a user can add to a Render Agent thread.
+
+    Includes the current workspace first, then teammates from other workspaces.
+    """
+    rows: list[dict[str, Any]] = []
+    if team_id:
+        _require_team_member(team_id, user_id)
+        with get_conn() as conn:
+            current = conn.execute(
+                """
+                SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role,
+                       tm.team_id, t.name AS team_name, 'current_workspace' AS source
+                FROM team_members tm
+                JOIN teams t ON t.id = tm.team_id
+                JOIN users u ON u.id = tm.user_id
+                WHERE tm.team_id = ?
+                ORDER BY lower(u.display_name), lower(u.email)
+                """,
+                (team_id,),
+            ).fetchall()
+        rows.extend(dict(r) for r in current)
+
+    with get_conn() as conn:
+        others = conn.execute(
+            """
+            SELECT DISTINCT u.id, u.email, u.display_name, u.avatar_url, source_member.role,
+                   source_member.team_id, source_team.name AS team_name, 'shared_workspace' AS source
+            FROM team_members requester_tm
+            JOIN teams source_team ON source_team.id = requester_tm.team_id
+            JOIN team_members source_member ON source_member.team_id = requester_tm.team_id
+            JOIN users u ON u.id = source_member.user_id
+            WHERE requester_tm.user_id = ?
+              AND source_member.user_id != ?
+              AND (? IS NULL OR source_member.team_id != ?)
+            ORDER BY lower(u.display_name), lower(u.email)
+            """,
+            (user_id, user_id, team_id, team_id),
+        ).fetchall()
+    rows.extend(dict(r) for r in others)
+
+    by_user: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        target_id = str(row.get("id") or "")
+        if not target_id or target_id == user_id:
+            continue
+        existing = by_user.get(target_id)
+        if existing and existing.get("source") == "current_workspace":
+            continue
+        by_user[target_id] = row
+    return sorted(
+        by_user.values(),
+        key=lambda item: (
+            0 if item.get("source") == "current_workspace" else 1,
+            str(item.get("display_name") or item.get("email") or "").lower(),
+        ),
+    )
 
 
 def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
@@ -280,7 +341,17 @@ def create_team(name: str, user_id: str) -> dict[str, Any]:
             (team_id, user_id, "owner", now),
         )
         conn.commit()
-    return {"id": team_id, "name": name.strip(), "created_by": user_id, "created_at": now, "role": "owner"}
+    return {
+        "id": team_id,
+        "name": name.strip(),
+        "created_by": user_id,
+        "created_at": now,
+        "role": "owner",
+        "render_folder_provider": "render3d",
+        "render_folder_ref": None,
+        "render_folder_label": None,
+        "render_folder_connected_at": None,
+    }
 
 
 def invite_user_to_team(team_id: str, email: str, inviter_id: str) -> dict[str, Any]:
@@ -473,6 +544,57 @@ def user_project_access(user_id: str, team_id: str | None = None) -> list[dict[s
     return [dict(r) for r in rows]
 
 
+def get_team_for_user(team_id: str, user_id: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT t.id, t.name, t.created_by, t.created_at, tm.role,
+                   t.render_folder_provider, t.render_folder_ref,
+                   t.render_folder_label, t.render_folder_connected_at
+            FROM teams t
+            JOIN team_members tm ON tm.team_id = t.id AND tm.user_id = ?
+            WHERE t.id = ?
+            """,
+            (user_id, team_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_render_folder(
+    team_id: str,
+    user_id: str,
+    *,
+    provider: str,
+    folder_ref: str | None = None,
+    label: str | None = None,
+) -> dict[str, Any]:
+    _require_team_owner(team_id, user_id)
+    allowed = {"render3d", "fusion", "google_drive", "dropbox", "onedrive", "local", "onshape"}
+    clean_provider = (provider or "render3d").strip().lower()
+    if clean_provider not in allowed:
+        raise ValueError("Unsupported Render folder provider")
+    now = _now()
+    clean_ref = (folder_ref or "").strip() or None
+    clean_label = (label or "").strip() or clean_provider.replace("_", " ").title()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE teams
+            SET render_folder_provider = ?,
+                render_folder_ref = ?,
+                render_folder_label = ?,
+                render_folder_connected_at = ?
+            WHERE id = ?
+            """,
+            (clean_provider, clean_ref, clean_label, now, team_id),
+        )
+        conn.commit()
+    team = get_team_for_user(team_id, user_id)
+    if not team:
+        raise ValueError("Workspace not found")
+    return team
+
+
 def user_project_ids(user_id: str) -> list[str]:
     return [r["project_id"] for r in user_project_access(user_id)]
 
@@ -503,6 +625,15 @@ def team_project_ids(team_id: str) -> list[str]:
             (team_id,),
         ).fetchall()
     return [r["project_id"] for r in rows]
+
+
+def team_member_ids(team_id: str) -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT user_id FROM team_members WHERE team_id = ?",
+            (team_id,),
+        ).fetchall()
+    return [r["user_id"] for r in rows]
 
 
 def project_team_id(project_id: str) -> str | None:

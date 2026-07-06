@@ -319,30 +319,39 @@ export function applyLighting(scene, themeSettings) {
 export function addFloor(scene, bounds, themeSettings, sceneScale, settingsByScale) {
   const floor = themeSettings.floor || {};
   const mode = floor.mode || THEME_FLOOR_MODES.STAGE;
-  if (mode === THEME_FLOOR_MODES.NONE) {
+  const floorEnabled = floor.enabled === true || (
+    !Object.hasOwn(floor, "enabled")
+      && mode !== THEME_FLOOR_MODES.NONE
+      && mode !== THEME_FLOOR_MODES.GRID
+  );
+  const gridSettings = floor.grid && typeof floor.grid === "object" && !Array.isArray(floor.grid)
+    ? floor.grid
+    : {};
+  const gridEnabled = gridSettings.enabled === true || mode === THEME_FLOOR_MODES.GRID;
+  if (!floorEnabled && !gridEnabled) {
     return;
   }
   const settings = renderSceneScaleSettings(sceneScale, settingsByScale);
   const { center, radius } = centerAndRadiusFromBounds(bounds, sceneScale, settingsByScale);
   const minZ = Array.isArray(bounds?.min) ? toFiniteNumber(bounds.min[2]) : 0;
   const gridSize = Math.max(radius * 3, settings.minFloorSize);
-  if (mode === THEME_FLOOR_MODES.GRID) {
+  if (gridEnabled) {
     const gridDensity = clamp(
-      toFiniteNumber(floor.gridDensity, DEFAULT_FLOOR_GRID_SETTINGS.gridDensity),
+      toFiniteNumber(gridSettings.density ?? floor.gridDensity, DEFAULT_FLOOR_GRID_SETTINGS.gridDensity),
       MIN_FLOOR_GRID_DENSITY,
       MAX_FLOOR_GRID_DENSITY
     );
     const grid = new THREE.GridHelper(
       gridSize,
       Math.max(8, Math.round(28 * gridDensity)),
-      floor.gridCenterColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.gridCenterColor,
-      floor.gridCellColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.gridCellColor
+      gridSettings.centerColor || floor.gridCenterColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.gridCenterColor,
+      gridSettings.cellColor || floor.gridCellColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.gridCellColor
     );
     const materials = Array.isArray(grid.material) ? grid.material : [grid.material];
     for (const material of materials) {
       material.transparent = true;
       material.opacity = clamp(
-        toFiniteNumber(floor.gridOpacity, DEFAULT_FLOOR_GRID_SETTINGS.gridOpacity),
+        toFiniteNumber(gridSettings.opacity ?? floor.gridOpacity, DEFAULT_FLOOR_GRID_SETTINGS.gridOpacity),
         0,
         1
       );
@@ -352,6 +361,8 @@ export function addFloor(scene, bounds, themeSettings, sceneScale, settingsBySca
     grid.rotation.x = Math.PI / 2;
     grid.position.set(center.x, center.y, minZ - 0.02);
     scene.add(grid);
+  }
+  if (!floorEnabled) {
     return;
   }
   const plane = new THREE.Mesh(

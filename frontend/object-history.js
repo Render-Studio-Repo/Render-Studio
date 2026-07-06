@@ -28,6 +28,15 @@ export function createObjectHistoryUI({ listEl, onRestore, onHighlight }) {
     }
   }
 
+  function avatarHtml(e) {
+    const name = e.user_name || "Unknown";
+    const initial = escapeHtml(name.trim().charAt(0).toUpperCase() || "?");
+    if (e.user_avatar_url) {
+      return `<span class="oh-avatar oh-avatar--image" style="background-image:url('${escapeHtml(e.user_avatar_url)}')" title="${escapeHtml(name)}"></span>`;
+    }
+    return `<span class="oh-avatar" title="${escapeHtml(name)}">${initial}</span>`;
+  }
+
   function render(entries) {
     if (!listEl) return;
     if (!entries?.length) {
@@ -54,7 +63,7 @@ export function createObjectHistoryUI({ listEl, onRestore, onHighlight }) {
         return `<${el} type="button" class="object-history-item${restorable ? "" : " oh-static"}" data-index="${e.timeline_index ?? ""}" data-restorable="${restorable ? "1" : "0"}"${extra}>
           <span class="oh-head">
             <span class="oh-kind">${escapeHtml(kind)}</span>
-            <span class="oh-user">${who}</span>
+            <span class="oh-user">${avatarHtml(e)}${who}</span>
           </span>
           <span class="oh-label">${escapeHtml(e.label || kind)}</span>
           <span class="oh-meta">${meta}</span>

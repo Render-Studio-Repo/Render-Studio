@@ -38,6 +38,7 @@ STEP_ENVELOPE_FIELDS = {
     "shape",
     "instances",
     "children",
+    "assembly_mates",
     "stl",
     "3mf",
     "mesh_tolerance",

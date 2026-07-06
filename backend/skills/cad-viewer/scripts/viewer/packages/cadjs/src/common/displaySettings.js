@@ -3,6 +3,12 @@ import {
   normalizeStepClipSettings,
   stepClipSettingsEqual
 } from "../lib/viewer/clipPlane.js";
+import {
+  CAMERA_PROJECTION,
+  normalizeCameraProjection
+} from "../lib/perspective.js";
+
+export { CAMERA_PROJECTION, normalizeCameraProjection };
 
 export const CAD_DISPLAY_MODE = Object.freeze({
   HIDDEN_EDGES: "hidden_edges",
@@ -19,6 +25,52 @@ export const CAD_DISPLAY_MODE_VALUES = Object.freeze(Object.values(CAD_DISPLAY_M
 export const EXPLODED_VIEW_AXES = Object.freeze(["x", "y", "z", "radial"]);
 export const EXPLODED_VIEW_DIRECTIONS = Object.freeze(["positive", "negative"]);
 export const MAX_EXPLODED_VIEW_DEPTH = 8;
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
+
+export const CAD_EDGE_COLOR = "#132232";
+export const CAD_EDGE_HIGHLIGHT_COLOR = "#8dc5ff";
+export const CAD_EDGE_CLASS_IDS = Object.freeze(["feature", "tangent", "seam", "degenerate"]);
+
+export const DEFAULT_DISPLAY_EDGE_CLASS_SETTINGS = Object.freeze({
+  feature: Object.freeze({
+    color: CAD_EDGE_COLOR,
+    opacity: 1,
+    thickness: 1.15
+  }),
+  tangent: Object.freeze({
+    color: CAD_EDGE_COLOR,
+    opacity: 0.5,
+    thickness: 1.15
+  }),
+  seam: Object.freeze({
+    color: CAD_EDGE_COLOR,
+    opacity: 0.85,
+    thickness: 1.15
+  }),
+  degenerate: Object.freeze({
+    color: CAD_EDGE_COLOR,
+    opacity: 1,
+    thickness: 0
+  })
+});
+
+export const DEFAULT_DISPLAY_EDGE_SETTINGS = Object.freeze({
+  enabled: true,
+  contrastMode: "manual",
+  color: CAD_EDGE_COLOR,
+  thickness: 1,
+  classes: DEFAULT_DISPLAY_EDGE_CLASS_SETTINGS,
+  highlightColor: CAD_EDGE_HIGHLIGHT_COLOR,
+  highlightOpacity: 1,
+  highlightThickness: 3,
+  silhouette: false,
+  silhouetteScale: 0
+});
+
+export const DISABLED_DISPLAY_EDGE_SETTINGS = Object.freeze({
+  ...DEFAULT_DISPLAY_EDGE_SETTINGS,
+  enabled: false
+});
 
 export const DEFAULT_EXPLODED_VIEW_SETTINGS = Object.freeze({
   enabled: false,
@@ -32,9 +84,11 @@ export const DEFAULT_EXPLODED_VIEW_SETTINGS = Object.freeze({
 });
 
 export const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
+  projection: CAMERA_PROJECTION.ORTHOGRAPHIC,
   mode: CAD_DISPLAY_MODE.SOLID,
   clip: DEFAULT_STEP_CLIP_SETTINGS,
-  exploded: DEFAULT_EXPLODED_VIEW_SETTINGS
+  exploded: DEFAULT_EXPLODED_VIEW_SETTINGS,
+  edges: DEFAULT_DISPLAY_EDGE_SETTINGS
 });
 
 function isObject(value) {
@@ -53,8 +107,67 @@ function normalizeNumber(value, fallback, min = -Infinity, max = Infinity) {
   return clamp(numericValue, min, max);
 }
 
+function normalizeColor(value, fallback) {
+  const normalized = String(value || "").trim();
+  if (!HEX_COLOR_PATTERN.test(normalized)) {
+    return fallback;
+  }
+  return normalized.length === 4
+    ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`.toLowerCase()
+    : normalized.toLowerCase();
+}
+
 function normalizeBoolean(value, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeDisplayEdgeContrastMode(value, fallback = "manual") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["auto", "manual"].includes(normalized)
+    ? normalized
+    : fallback;
+}
+
+export function normalizeDisplayEdgeClassSettings(
+  value = {},
+  fallback = DEFAULT_DISPLAY_EDGE_CLASS_SETTINGS,
+  colorFallback = CAD_EDGE_COLOR
+) {
+  const source = isObject(value) ? value : {};
+  const fallbackColor = normalizeColor(colorFallback, CAD_EDGE_COLOR);
+  return Object.fromEntries(CAD_EDGE_CLASS_IDS.map((classId) => {
+    const classSource = isObject(source[classId]) ? source[classId] : {};
+    const classFallback = fallback?.[classId] || DEFAULT_DISPLAY_EDGE_CLASS_SETTINGS[classId];
+    const legacyDisabled = classSource.enabled === false;
+    return [classId, {
+      color: normalizeColor(classSource.color, fallbackColor),
+      opacity: normalizeNumber(classSource.opacity, classFallback.opacity, 0, 1),
+      thickness: legacyDisabled
+        ? 0
+        : normalizeNumber(classSource.thickness, classFallback.thickness, 0, 6)
+    }];
+  }));
+}
+
+export function normalizeDisplayEdgeSettings(value = null, fallback = DEFAULT_DISPLAY_EDGE_SETTINGS) {
+  const source = isObject(value) ? value : {};
+  const color = normalizeColor(source.color, fallback.color);
+  const normalized = {
+    enabled: normalizeBoolean(source.enabled, fallback.enabled),
+    contrastMode: normalizeDisplayEdgeContrastMode(source.contrastMode, fallback.contrastMode),
+    color,
+    thickness: normalizeNumber(source.thickness, fallback.thickness, 0.5, 6),
+    classes: normalizeDisplayEdgeClassSettings(source.classes, fallback.classes, color),
+    highlightColor: normalizeColor(source.highlightColor, fallback.highlightColor || CAD_EDGE_HIGHLIGHT_COLOR),
+    highlightOpacity: normalizeNumber(source.highlightOpacity, fallback.highlightOpacity || 1, 0, 1),
+    highlightThickness: normalizeNumber(source.highlightThickness, fallback.highlightThickness || 3, 0.5, 6),
+    silhouette: normalizeBoolean(source.silhouette, fallback.silhouette || false),
+    silhouetteScale: normalizeNumber(source.silhouetteScale, fallback.silhouetteScale || 0, 0, 0.04)
+  };
+  if (typeof source.depthTest === "boolean") {
+    normalized.depthTest = source.depthTest;
+  }
+  return normalized;
 }
 
 function normalizeModeText(value) {
@@ -173,9 +286,11 @@ export function normalizeDisplaySettings(value = null) {
     explodedOverrides.enabled = source.exploded.enabled;
   }
   return {
+    projection: normalizeCameraProjection(source.projection, DEFAULT_DISPLAY_SETTINGS.projection),
     mode: normalizeDisplayMode(source.mode),
     clip: normalizeStepClipSettings(source.clip),
-    exploded: normalizeExplodedViewSettings(source.exploded, explodedOverrides)
+    exploded: normalizeExplodedViewSettings(source.exploded, explodedOverrides),
+    edges: normalizeDisplayEdgeSettings(source.edges)
   };
 }
 
@@ -186,13 +301,19 @@ export function cloneDisplaySettings(value = DEFAULT_DISPLAY_SETTINGS) {
 export function displaySettingsEqual(left, right) {
   const a = normalizeDisplaySettings(left);
   const b = normalizeDisplaySettings(right);
-  return a.mode === b.mode &&
+  return a.projection === b.projection &&
+    a.mode === b.mode &&
     stepClipSettingsEqual(a.clip, b.clip) &&
-    JSON.stringify(a.exploded) === JSON.stringify(b.exploded);
+    JSON.stringify(a.exploded) === JSON.stringify(b.exploded) &&
+    JSON.stringify(a.edges) === JSON.stringify(b.edges);
 }
 
 export function resolveDisplayMode(displaySettings) {
   return normalizeDisplaySettings(displaySettings).mode;
+}
+
+export function resolveDisplayEdgeSettings(displaySettings) {
+  return normalizeDisplaySettings(displaySettings).edges;
 }
 
 export function displayModeIsWireframe(value) {

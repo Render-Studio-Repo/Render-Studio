@@ -29,6 +29,32 @@ const ENDPOINT_SNAP = 2.5;
 const AXIS_SNAP_DEG = 8;
 const ORTHO_HALF = 100;
 const POINT_EQ_TOL = 0.05;
+const INCH_TO_MM = 25.4;
+
+const SKETCH_SHORTCUTS = {
+  a: "arc",
+  c: "circle",
+  d: "dimension",
+  e: "equal",
+  h: "horizontal",
+  l: "line",
+  o: "offset",
+  p: "point",
+  r: "rectangle",
+  s: "spline",
+  t: "trim",
+  v: "select",
+};
+
+const SHIFT_SKETCH_SHORTCUTS = {
+  c: "coincident",
+  e: "equal",
+  f: "fix",
+  h: "horizontal",
+  p: "parallel",
+  v: "vertical",
+  x: "perpendicular",
+};
 
 function uid(prefix = "s") {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -284,25 +310,25 @@ export function createSketchEditor({
 
   function toolHint(t = tool) {
     const hints = {
-      line: "Click to place points · Esc or double-click to end chain",
-      rectangle: "Click first corner, drag to opposite corner",
-      circle: "Click center, drag to set radius",
-      arc: "Click three points on the arc",
+      line: "Line (L): click to place points · Esc or double-click to end chain",
+      rectangle: "Rectangle (R): click first corner, drag to opposite corner",
+      circle: "Circle (C): click center, drag to set radius",
+      arc: "Arc (A): click three points on the arc",
       polygon: "Click center, drag to set radius",
-      point: "Click to place a point",
-      spline: "Click fit points · double-click to finish",
-      select: "Click sketch geometry to select",
-      trim: "Click a segment to remove it",
-      offset: "Click a line to offset 5 mm",
+      point: "Point (P): click to place a point",
+      spline: "Spline (S): click fit points · double-click to finish",
+      select: "Select (V): click sketch geometry to select",
+      trim: "Trim (T): click a segment to remove it",
+      offset: "Offset (O): click a line to offset 5 mm",
       coincident: "Click two points to make coincident",
-      horizontal: "Click a line to constrain horizontal",
-      vertical: "Click a line to constrain vertical",
-      parallel: "Click two lines for parallel",
-      perpendicular: "Click two lines for perpendicular",
-      equal: "Click two lines or circles for equal",
-      dimension: "Click a line or circle, enter value",
+      horizontal: "Horizontal (H): click a line",
+      vertical: "Vertical (Shift+V): click a line",
+      parallel: "Parallel (Shift+P): click two lines",
+      perpendicular: "Perpendicular (Shift+X): click two lines",
+      equal: "Equal (E): click two lines or circles",
+      dimension: "Sketch Dimension (D): click a line/circle, then press Enter to keep or type a value",
       angle: "Click two lines, enter angle in degrees",
-      fix: "Click geometry to fix in place",
+      fix: "Fix (Shift+F): click geometry to lock it in place",
     };
     return hints[t] || `Tool: ${String(t).replace(/_/g, " ")}`;
   }
@@ -855,7 +881,8 @@ export function createSketchEditor({
       if (!sid) continue;
       try {
         const data = await apiFn(`/api/projects/${projectId}/sketches/${encodeURIComponent(sid)}`);
-        addViewportSketch(sid, data, { visible: true, focus: false });
+        const id = data?.id || sid;
+        addViewportSketch(id, { ...data, id }, { visible: true, focus: false });
       } catch (_) {
         /* skip missing/corrupt sketch files */
       }
@@ -1061,6 +1088,63 @@ export function createSketchEditor({
     }
   }
 
+  function measuredDimensionValue(e) {
+    if (!e) return null;
+    if (e.type === "line") {
+      return Math.hypot(e.data.b.u - e.data.a.u, e.data.b.v - e.data.a.v);
+    }
+    if (e.type === "circle") {
+      return e.data.r * 2;
+    }
+    return null;
+  }
+
+  function parseDimensionInput(input) {
+    const raw = String(input || "").trim().toLowerCase();
+    if (!raw) return null;
+    const match = raw.match(/^(-?\d+(?:\.\d+)?)(?:\s*(mm|millimeter|millimeters|cm|centimeter|centimeters|in|inch|inches|"))?$/);
+    if (!match) return Number.NaN;
+    let value = parseFloat(match[1]);
+    const unit = match[2] || "mm";
+    if (unit === "cm" || unit === "centimeter" || unit === "centimeters") value *= 10;
+    if (unit === "in" || unit === "inch" || unit === "inches" || unit === "\"") value *= INCH_TO_MM;
+    return value;
+  }
+
+  function setDrivenDimension(ent, value) {
+    if (!ent || !Number.isFinite(value) || value <= 0) return false;
+    const normalizedValue = ent.type === "circle" ? value / 2 : value;
+    pushUndo();
+    const existing = constraints.find((c) => c.type === "dimension" && c.entityId === ent.id);
+    if (existing) {
+      existing.value = normalizedValue;
+    } else {
+      constraints.push({ id: uid("c"), type: "dimension", entityId: ent.id, value: normalizedValue });
+    }
+    applyConstraints();
+    return true;
+  }
+
+  function promptDimension(ent) {
+    const current = measuredDimensionValue(ent);
+    if (!Number.isFinite(current) || current <= 0) {
+      onStatus?.("error", "Dimension: click a line or circle.");
+      return false;
+    }
+    const label = ent.type === "circle" ? "Diameter" : "Distance";
+    const input = window.prompt(`${label} (mm):`, `${current.toFixed(1)}mm`);
+    if (input == null) return false;
+    const num = parseDimensionInput(input);
+    if (!Number.isFinite(num) || num <= 0) {
+      onStatus?.("error", "Invalid dimension. Try values like 25mm or 1in.");
+      return false;
+    }
+    if (!setDrivenDimension(ent, num)) return false;
+    selectedId = ent.id;
+    onStatus?.("ok", `${label} set to ${num.toFixed(2)} mm.`);
+    return true;
+  }
+
   function lineAngleDeg(e) {
     const dx = e.data.b.u - e.data.a.u;
     const dy = e.data.b.v - e.data.a.v;
@@ -1105,6 +1189,11 @@ export function createSketchEditor({
   }
 
   function constraintLabel(c) {
+    if (c.type === "dimension" && c.value != null) {
+      const ent = entityById(c.entityId);
+      if (ent?.type === "circle") return `Ø${(c.value * 2).toFixed(1)} mm`;
+      return `${c.value.toFixed(1)} mm`;
+    }
     const map = {
       horizontal: "H",
       vertical: "V",
@@ -1115,7 +1204,7 @@ export function createSketchEditor({
       collinear: "—",
       concentric: "◎",
       fix: "🔒",
-      dimension: c.value != null ? `${c.value.toFixed(1)}` : "D",
+      dimension: "D",
       angle: c.value != null ? `${c.value.toFixed(0)}°` : "∠",
     };
     return map[c.type] || c.type[0]?.toUpperCase();
@@ -1146,30 +1235,40 @@ export function createSketchEditor({
     }
     const e = entityById(c.entityId || c.a);
     if (!e) return null;
-    if (e.type === "line") return { u: (e.data.a.u + e.data.b.u) / 2, v: (e.data.a.v + e.data.b.v) / 2 + 3 };
+    if (e.type === "line") {
+      const mid = { u: (e.data.a.u + e.data.b.u) / 2, v: (e.data.a.v + e.data.b.v) / 2 };
+      if (c.type === "dimension") {
+        const dx = e.data.b.u - e.data.a.u;
+        const dy = e.data.b.v - e.data.a.v;
+        const len = Math.hypot(dx, dy) || 1;
+        return { u: mid.u + (-dy / len) * 6, v: mid.v + (dx / len) * 6 };
+      }
+      return { u: mid.u, v: mid.v + 3 };
+    }
     if (e.type === "circle") return { u: e.data.c.u, v: e.data.c.v + e.data.r + 3 };
     return null;
   }
 
   function makeTextSprite(text) {
     const canvas = document.createElement("canvas");
-    canvas.width = 64;
+    const width = Math.max(64, Math.ceil(String(text).length * 10 + 18));
+    canvas.width = width;
     canvas.height = 32;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
     ctx.strokeStyle = "#5c2d91";
     ctx.lineWidth = 3;
-    ctx.fillRect(2, 2, 60, 28);
-    ctx.strokeRect(2, 2, 60, 28);
+    ctx.fillRect(2, 2, width - 4, 28);
+    ctx.strokeRect(2, 2, width - 4, 28);
     ctx.fillStyle = "#5c2d91";
     ctx.font = "bold 16px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, 32, 16);
+    ctx.fillText(text, width / 2, 16);
     const tex = new THREE.CanvasTexture(canvas);
     const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(8, 4, 1);
+    sprite.scale.set((width / 64) * 8, 4, 1);
     return sprite;
   }
 
@@ -1280,27 +1379,22 @@ export function createSketchEditor({
       return;
     }
     if (tool === "fix" && ent) {
-      ent.fixed = true;
-      addConstraint("fix", { entityId: ent.id });
-      onStatus?.("ok", "Geometry fixed.");
+      pushUndo();
+      ent.fixed = !ent.fixed;
+      constraints = constraints.filter((c) => !(c.type === "fix" && c.entityId === ent.id));
+      if (ent.fixed) constraints.push({ id: uid("c"), type: "fix", entityId: ent.id });
+      rebuildMeshes();
+      renderConstraints();
+      emitOverlay();
+      onStatus?.("ok", ent.fixed ? "Geometry fixed." : "Geometry unfixed.");
       return;
     }
     if (tool === "dimension" && ent) {
-      let val = null;
-      if (ent.type === "line") {
-        val = Math.hypot(ent.data.b.u - ent.data.a.u, ent.data.b.v - ent.data.a.v);
-      } else if (ent.type === "circle") {
-        val = ent.data.r;
-      }
-      const input = window.prompt("Dimension value (mm):", val?.toFixed(1) || "10");
-      if (input == null) return;
-      const num = parseFloat(input);
-      if (!Number.isFinite(num) || num <= 0) {
-        onStatus?.("error", "Invalid dimension.");
+      if (ent.type !== "line" && ent.type !== "circle") {
+        onStatus?.("error", "Dimension: click a line or circle.");
         return;
       }
-      addConstraint("dimension", { entityId: ent.id }, num);
-      onStatus?.("ok", `Dimension set to ${num} mm.`);
+      promptDimension(ent);
       return;
     }
     if (tool === "angle") {
@@ -1475,6 +1569,36 @@ export function createSketchEditor({
         onStatus?.("ok", `Sketch tool: ${next}`);
       }
     }
+  }
+
+  function deleteSelectedEntity() {
+    if (!selectedId) return false;
+    const exists = entities.some((e) => e.id === selectedId);
+    if (!exists) return false;
+    pushUndo();
+    entities = entities.filter((e) => e.id !== selectedId);
+    constraints = constraints.filter((c) => {
+      if (c.entityId === selectedId || c.a === selectedId || c.b === selectedId) return false;
+      if (c.a?.entityId === selectedId || c.b?.entityId === selectedId) return false;
+      return true;
+    });
+    selectedId = null;
+    rebuildMeshes();
+    renderConstraints();
+    emitOverlay();
+    onStatus?.("ok", "Selected sketch geometry deleted.");
+    return true;
+  }
+
+  function activateShortcutTool(next) {
+    setTool(next);
+    if (next === "dimension" && selectedId) {
+      const ent = entityById(selectedId);
+      if (ent?.type === "line" || ent?.type === "circle") {
+        promptDimension(ent);
+      }
+    }
+    return true;
   }
 
   function onPointerDown(e) {
@@ -1722,10 +1846,38 @@ export function createSketchEditor({
 
   function onKeyDown(e) {
     if (!active || e.target.matches("textarea, input, select")) return;
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      e.stopPropagation();
+      undo();
+      return;
+    }
+    if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z")) {
+      e.preventDefault();
+      e.stopPropagation();
+      redo();
+      return;
+    }
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       cancelCurrentAction();
+      return;
+    }
+    if (e.key === "Delete" || e.key === "Backspace") {
+      if (deleteSelectedEntity()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const key = e.key.toLowerCase();
+    const shortcut = e.shiftKey ? SHIFT_SKETCH_SHORTCUTS[key] : SKETCH_SHORTCUTS[key];
+    if (shortcut) {
+      e.preventDefault();
+      e.stopPropagation();
+      activateShortcutTool(shortcut);
     }
   }
 

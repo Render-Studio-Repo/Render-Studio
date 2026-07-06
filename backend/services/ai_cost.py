@@ -25,6 +25,7 @@ OPENAI_PRICING: dict[str, dict[str, float]] = {
 }
 
 ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
+    "claude-fable-5": {"input": 3.0, "output": 15.0},
     "claude-opus-4-8": {"input": 5.0, "output": 25.0},
     "claude-opus-4-7": {"input": 5.0, "output": 25.0},
     "claude-4.6-opus": {"input": 5.0, "output": 25.0},
@@ -322,6 +323,7 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     tracked = 0
     providers_seen: list[str] = []
     models_seen: list[str] = []
+    model_breakdown: dict[str, dict[str, Any]] = {}
     for entry in entries:
         usage = entry.get("usage") or {}
         entry_cost = entry_effective_cost(entry)
@@ -338,6 +340,28 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         model = entry.get("model") or ""
         if model and model not in models_seen:
             models_seen.append(model)
+        model_key = f"{prov}:{model or 'unknown'}"
+        model_item = model_breakdown.setdefault(
+            model_key,
+            {
+                "provider": prov,
+                "model": model or None,
+                "prompt_count": 0,
+                "tracked_count": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+                "ai_calls": 0,
+            },
+        )
+        model_item["prompt_count"] += 1
+        model_item["tracked_count"] += 1
+        model_item["input_tokens"] += int(usage.get("input_tokens") or 0)
+        model_item["output_tokens"] += int(usage.get("output_tokens") or 0)
+        model_item["total_tokens"] += int(usage.get("total_tokens") or 0)
+        model_item["cost_usd"] += entry_cost
+        model_item["ai_calls"] += int(entry.get("ai_calls") or 0)
         if prov == "openai":
             openai_cost_usd += entry_cost
         elif prov == "anthropic":
@@ -357,4 +381,15 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "anthropic_cost_usd": round(anthropic_cost_usd, 4),
         "provider": dominant_provider,
         "model": dominant_model,
+        "model_breakdown": sorted(
+            [
+                {
+                    **item,
+                    "cost_usd": round(float(item["cost_usd"]), 6),
+                }
+                for item in model_breakdown.values()
+            ],
+            key=lambda item: float(item.get("cost_usd") or 0),
+            reverse=True,
+        ),
     }

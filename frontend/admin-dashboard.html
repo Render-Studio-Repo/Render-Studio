@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Management Dashboard — Render3D</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260629-bigger" sizes="any" />
+  <link rel="apple-touch-icon" href="/render3d-logo.jpg?v=20260629" />
+  <link rel="stylesheet" href="/styles.css?v=20260701-admin-dashboard" />
+</head>
+<body class="info-page admin-dashboard-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/render3d-logo.jpg?v=20260629" alt="" width="120" height="60" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <a href="/" class="nav-tab">Studio</a>
+        <a href="/agent-store.html" class="nav-tab">Agent Store</a>
+        <a href="/skills.html" class="nav-tab">Skills Library</a>
+        <a href="/docs.html" class="nav-tab">Docs</a>
+        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+        <a href="/admin-dashboard.html" class="nav-tab active">Admin</a>
+      </nav>
+    </header>
+
+    <main class="info-main admin-main">
+      <article id="admin-dashboard-root" class="info-content admin-dashboard"></article>
+    </main>
+  </div>
+
+  <script type="module">
+    import { initAdminDashboard } from "./admin-dashboard.js?v=20260701-admin-dashboard";
+    initAdminDashboard();
+  </script>
+</body>
+</html>

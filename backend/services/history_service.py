@@ -12,6 +12,7 @@ from typing import Any
 from backend.services import cad_service
 
 _SNAPSHOT_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf", ".step", ".stp"}
+_MAX_SNAPSHOT_ENTRIES = 8
 
 
 def _timeline_path(project_path: Path) -> Path:
@@ -40,7 +41,7 @@ def _snapshotable_model_files(project_path: Path) -> list[Path]:
     for f in sorted(project_path.iterdir()):
         if not f.is_file():
             continue
-        if f.name.startswith("_active_") or f.name.startswith("_export_"):
+        if cad_service.is_internal_model_artifact(f):
             continue
         if f.suffix.lower() not in _SNAPSHOT_SUFFIXES:
             continue
@@ -78,6 +79,31 @@ def _delete_entry_snapshots(project_path: Path, entry: dict[str, Any]) -> None:
             snap_path.unlink()
 
 
+def prune_snapshot_history(project_path: Path, *, keep: int = _MAX_SNAPSHOT_ENTRIES) -> dict[str, int]:
+    """Keep only the newest snapshot entries to prevent model-copy bloat."""
+    data = load_timeline(project_path)
+    entries: list[dict[str, Any]] = data.get("entries", [])
+    keep = max(1, int(keep or 1))
+    if len(entries) <= keep:
+        return {"removed_entries": 0, "removed_files": 0}
+
+    old_entries = entries[:-keep]
+    before_files = set()
+    hist = _history_dir(project_path)
+    if hist.is_dir():
+        before_files = {p.name for p in hist.iterdir() if p.is_file()}
+    for old in old_entries:
+        _delete_entry_snapshots(project_path, old)
+    kept_entries = entries[-keep:]
+    for idx, entry in enumerate(kept_entries):
+        entry["index"] = idx
+    data["entries"] = kept_entries
+    data["current_index"] = len(kept_entries) - 1
+    save_timeline(project_path, data)
+    after_files = {p.name for p in hist.iterdir() if p.is_file()} if hist.is_dir() else set()
+    return {"removed_entries": len(old_entries), "removed_files": len(before_files - after_files)}
+
+
 def _remove_model_files_not_in(project_path: Path, keep: set[str]) -> None:
     for src in _snapshotable_model_files(project_path):
         if src.name not in keep:
@@ -101,6 +127,24 @@ def _restore_snapshot_manifest(project_path: Path, manifest: list[dict[str, str]
     return keep
 
 
+def _restore_snapshot_file_from_manifest(project_path: Path, manifest: list[dict[str, str]], filename: str) -> bool:
+    """Restore one file from a manifest without pruning the rest of the project."""
+    if not filename:
+        return False
+    for item in manifest:
+        if item.get("filename") != filename:
+            continue
+        snap = item.get("snapshot")
+        if not snap:
+            return False
+        snap_path = _history_dir(project_path) / snap
+        if not snap_path.is_file():
+            raise FileNotFoundError(f"Snapshot missing: {snap}")
+        shutil.copy2(snap_path, project_path / filename)
+        return True
+    return False
+
+
 def append_entry(
     project_path: Path,
     *,
@@ -110,6 +154,7 @@ def append_entry(
     meta: dict[str, Any] | None = None,
     user_id: str | None = None,
     user_name: str | None = None,
+    user_avatar_url: str | None = None,
 ) -> dict[str, Any]:
     """Record a timeline step and snapshot all model files in the project."""
     src = project_path / filename
@@ -146,11 +191,13 @@ def append_entry(
         "meta": meta or {},
         "user_id": user_id,
         "user_name": user_name,
+        "user_avatar_url": user_avatar_url,
     }
     entries.append(entry)
     data["entries"] = entries
     data["current_index"] = index
     save_timeline(project_path, data)
+    prune_snapshot_history(project_path)
     return entry
 
 
@@ -231,6 +278,9 @@ def _restore_entry_state(
     manifest = entry.get("snapshot_files") or []
 
     if manifest:
+        if kind in {"transform", "body_transform"} and filename:
+            if _restore_snapshot_file_from_manifest(project_path, manifest, filename):
+                return filename
         keep = _restore_snapshot_manifest(project_path, manifest)
         if kind == "delete_object":
             deleted = (entry.get("meta") or {}).get("deleted_file") or filename

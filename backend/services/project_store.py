@@ -147,6 +147,29 @@ def project_summary(project_path: Path) -> dict[str, Any]:
     }
 
 
+def project_list_summary(project_path: Path) -> dict[str, Any]:
+    """Fast sidebar summary; full browser/timeline data loads when opening a project."""
+    meta = load_meta(project_path)
+    touch = meta.get("updated_at")
+    if not touch:
+        try:
+            touch = datetime.fromtimestamp(project_path.stat().st_mtime, tz=timezone.utc).isoformat()
+        except OSError:
+            touch = meta.get("created_at")
+    return {
+        "id": project_path.name,
+        "name": meta.get("name") or project_path.name,
+        "created_at": meta.get("created_at"),
+        "updated_at": touch or meta.get("updated_at"),
+        "file_count": meta.get("file_count", 0),
+        "files": [],
+        "browser": {"components": [], "sketches": [], "wiring": []},
+        "latest_file": None,
+        "usage_summary": None,
+        "generation": None,
+    }
+
+
 def list_all_projects(projects_root: Path) -> list[dict[str, Any]]:
     items = []
     for d in projects_root.iterdir():

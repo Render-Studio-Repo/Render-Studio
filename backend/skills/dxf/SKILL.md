@@ -31,6 +31,7 @@ Use these defaults unless the user specifies otherwise:
 - Units: millimeters; set them explicitly on the document (`doc.units = ezdxf.units.MM`).
 - Geometry lives in modelspace at 1:1 scale.
 - Cut profiles are closed polylines or closed line/arc loops; open contours only for engraving or reference geometry.
+- For CAD-backed parts, prefer deriving DXF cut contours from the actual STEP/solid topology in the same generator script: build the 3D shape, select/project the real planar faces, unfold them into flat coordinates, and emit closed contours from those projected face wires. Use hand-drawn parametric outlines only when there is no reliable 3D topology to project.
 - Layers carry intent: keep cut geometry and bend/fold lines on separate layers, and include "bend" in bend-layer names so downstream tools classify them as bends rather than cuts.
 - DXF layers are drawing structure, not STEP part/assembly structure.
 
@@ -59,7 +60,7 @@ Plain generated Python targets write sibling `.dxf` outputs. Use `-o`/`--output`
 ## Workflow
 
 1. Convert the request into a short brief: outline dimensions, holes and slots, layers, units, output path, and validation targets.
-2. For CAD projections, generate and validate the STEP geometry with `$cad` first, then add or update `gen_dxf()` in the same source.
+2. For CAD projections, generate and validate the STEP geometry with `$cad` first, then add or update `gen_dxf()` in the same source. When possible, derive the DXF from in-memory STEP/solid topology rather than duplicating geometry formulas, so the DXF remains a direct projection/unfold of the part being exported.
 3. Write or edit the Python source with meaningful dimensions as named parameters.
 4. Run `scripts/dxf` on explicit Python source targets only; do not run directory-wide generation.
 
@@ -91,17 +92,3 @@ Report only checks that actually ran.
 After creating or modifying `.dxf` artifacts, you must ALWAYS hand the explicit file path(s) to `$cad-viewer` when that skill is installed and include its live viewer link(s) in the final response. If `$cad-viewer` is unavailable or startup fails, report that and rely on `ezdxf` checks instead of silently omitting the handoff.
 
 Final responses should include generated files, returned viewer links, validation actually run, and assumptions.
-
-<!-- render3d-studio -->
-
-## Render3D Studio
-
-On the Render3D server this skill lives at `backend/skills/dxf/`.
-
-- **Python tools:** `backend/skills/dxf/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/dxf/references/`
-- **Prompts:** enabled skills inject guidance; emit Render3D JSON Feature Programs unless the user asks for Python source
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
-
-See `backend/skills/RENDER3D.md` for full integration notes.

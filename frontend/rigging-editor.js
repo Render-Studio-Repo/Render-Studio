@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { createRiggingAnimationTimeline } from "./rigging-animation-timeline.js";
-import { createRiggingMeshDriver } from "./rigging-mesh-driver.js?v=20260612-spin-fix3";
+import { createRiggingMeshDriver } from "./rigging-mesh-driver.js?v=20260629-sim-joints";
 
 const BONE_COLOR = 0xf0883e;
 const BONE_SELECTED = 0x58a6ff;
@@ -56,6 +56,11 @@ function lerpAngle(a, b, t) {
 function eulerToQuat(euler) {
   const e = asVec3(euler);
   return new THREE.Euler(e[0], e[1], e[2], "XYZ");
+}
+
+function dominantAxisIndex(axis) {
+  const v = asVec3(axis, [0, 0, 1]).map((n) => Math.abs(n));
+  return v.indexOf(Math.max(...v));
 }
 
 function defaultAnimation(bones) {
@@ -482,7 +487,7 @@ export function createRiggingEditor({
     if (!projectId || !api) return;
     try {
       await api(`/api/projects/${projectId}/rigging`, {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(serialize()),
       });
@@ -573,6 +578,82 @@ export function createRiggingEditor({
     renderAll();
     scheduleSave();
     onStatus?.("ok", "Auto rig chain created — adjust bones and export URDF.");
+  }
+
+  function simulationBonesFromSim(sim) {
+    const joints = (sim?.joints || []).filter((joint) =>
+      ["continuous", "revolute", "prismatic"].includes(String(joint?.type || "").toLowerCase()) && joint.child
+    );
+    return joints.map((joint, idx) =>
+      normalizeBone({
+        id: `sim_${String(joint.child).replace(/[^A-Za-z0-9_]+/g, "_")}_${idx}`,
+        name: String(joint.child),
+        position: asVec3(joint.anchor_m, [idx * 0.15, 0, 0]),
+        parentId: null,
+        jointType: joint.type,
+        jointAxis: asVec3(joint.axis, [0, 0, 1]),
+        limits: joint.limits || { lower: -Math.PI, upper: Math.PI },
+      })
+    );
+  }
+
+  function simulationAnimationForBones(boneList, { previewOnly = false } = {}) {
+    const duration = previewOnly ? 6 : 4;
+    const start = {};
+    const end = {};
+    boneList.forEach((bone, idx) => {
+      const axisIdx = dominantAxisIndex(bone.jointAxis);
+      const direction = idx % 2 ? -1 : 1;
+      const rotation = [0, 0, 0];
+      rotation[axisIdx] = direction * (bone.jointType === "revolute" ? Math.PI * 0.75 : Math.PI * 2);
+      start[bone.id] = normalizePose({ position: bone.position, rotation: [0, 0, 0] }, bone);
+      end[bone.id] = normalizePose({ position: bone.position, rotation }, bone);
+    });
+    return {
+      id: uid(previewOnly ? "preview" : "sim"),
+      name: previewOnly ? "Model preview simulation" : "Simulation preview",
+      duration,
+      fps: 30,
+      keyframes: [
+        { time: 0, poses: start },
+        { time: duration, poses: end },
+      ],
+    };
+  }
+
+  function simulateModel() {
+    stopPlayback();
+    const sim = getSim?.();
+    const simBones = simulationBonesFromSim(sim);
+    const previewOnly = !simBones.length;
+    bones = previewOnly
+      ? [
+          normalizeBone({
+            id: "sim_model_preview",
+            name: "model_preview",
+            position: [0, 0, 0],
+            jointType: "continuous",
+            jointAxis: [0, 0, 1],
+          }),
+        ]
+      : simBones;
+    animations = [simulationAnimationForBones(bones, { previewOnly })];
+    activeAnimationId = animations[0].id;
+    selectedId = bones[0]?.id || null;
+    if (previewOnly) meshDriver.bindPreviewRoot?.();
+    else refreshMeshBindings();
+    renderAll();
+    animTimeline?.setTime(0);
+    animTimeline?.setPlaying(true);
+    startPlayback();
+    scheduleSave();
+    onStatus?.(
+      previewOnly ? "ok" : "ok",
+      previewOnly
+        ? "No joint sim metadata found, running a turntable preview. Add rig joints for true mechanism motion."
+        : `Simulation running — ${bones.length} joint${bones.length === 1 ? "" : "s"} animated from sim metadata.`
+    );
+    return { jointCount: previewOnly ? 0 : bones.length, previewOnly };
   }
 
   function deleteSelected() {
@@ -681,7 +762,8 @@ export function createRiggingEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(serialize()),
       });
-      onStatus?.("ok", data.message || "URDF exported.");
+      const sidecar = data.animation_filename ? ` Animation keyframes saved to ${data.animation_filename}.` : "";
+      onStatus?.("ok", `${data.message || "URDF exported."}${sidecar}`);
       onChange?.();
     } catch (err) {
       onStatus?.("error", err.message || "URDF export failed.");
@@ -863,6 +945,7 @@ export function createRiggingEditor({
     deleteSelected,
     setTool,
     autoRigChain,
+    simulateModel,
     insertKeyframe,
     exportUrdf,
     exportUrdfText,

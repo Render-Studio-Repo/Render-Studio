@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+from html import unescape
 from typing import Any
 
 from backend.services.ai_service import AIService
@@ -73,6 +78,7 @@ Layout rules (left → center → right signal flow):
 - Space parts so wire paths are readable; y between 96–280 on a ~900px canvas.
 - Place resistors, transistor, and diode ON the breadboard area (not floating far away).
 - Include ALL wires needed for the circuit to work; keep labels short (≤20 chars, e.g. "GPIO17 input").
+- Keep the JSON compact: use the smallest correct component/wire set, 2–4 notes, and no repeated explanatory text.
 - Wires auto-route above the breadboard — use breadboard grid holes (a1…j15) and rails for every junction.
 - Physical routing must stay on the chosen board/face lane: keep wires short, anchored to pins/grid holes, and routed around component bounding boxes. Do NOT draw big decorative loops over electronics unless the user explicitly asks for wire loops, clips, or strain-relief hoops.
 - If a user references a drawn path/face, treat it as a riveted route: follow those points exactly, snap the wire to that surface, and stop at the last referenced endpoint instead of continuing around nearby electronics.
@@ -125,6 +131,118 @@ DRIVER_OUT_PIN_IDS = ("out1", "out2", "out3", "out4", "mot_a", "mot_b")
 DEFAULT_ARDUINO_STEPPER_CTRL = ("d13", "d12", "d11", "a0")
 WIRE_COLORS = {"power": "#f85149", "gnd": "#6e7681", "signal": "#58a6ff"}
 
+COMMON_DRIVER_PROFILES: dict[str, dict[str, Any]] = {
+    "drv8825": {
+        "name": "DRV8825 stepper driver",
+        "aliases": ("drv8825", "pololu drv8825"),
+        "type": "bipolar_stepper_driver",
+        "simulator_label": "DRV8825",
+        "pin_map": {
+            "in1": "STEP",
+            "in2": "DIR",
+            "in3": "EN/SLEEP/RESET optional enable control",
+            "vcc": "logic VDD (3.3V/5V from controller)",
+            "gnd": "common ground shared by controller and motor supply",
+            "out1": "A1 / 1A coil",
+            "out2": "A2 / 1B coil",
+            "out3": "B1 / 2A coil",
+            "out4": "B2 / 2B coil",
+        },
+        "wiring_guidance": [
+            "Use a motor-driver component labeled DRV8825.",
+            "Wire controller d2 (or a GPIO output) to driver in1 as STEP.",
+            "Wire controller d3 (or a GPIO output) to driver in2 as DIR.",
+            "Connect controller GND to driver GND and the motor power supply GND.",
+            "Connect logic VDD from the controller 3.3V/5V rail to driver VCC/VDD.",
+            "Connect the bipolar stepper coil pairs to out1/out2 and out3/out4.",
+            "Do not power a NEMA stepper from Arduino 5V. Use an external VMOT supply and set the current limit before powering the motor.",
+        ],
+    },
+    "a4988": {
+        "name": "A4988 stepper driver",
+        "aliases": ("a4988",),
+        "type": "bipolar_stepper_driver",
+        "simulator_label": "A4988",
+        "pin_map": {
+            "in1": "STEP",
+            "in2": "DIR",
+            "in3": "EN optional enable control",
+            "vcc": "logic VDD",
+            "gnd": "common ground",
+            "out1": "1A coil",
+            "out2": "1B coil",
+            "out3": "2A coil",
+            "out4": "2B coil",
+        },
+        "wiring_guidance": [
+            "Use STEP and DIR control lines; do not wire four phase inputs like ULN2003.",
+            "Use an external motor supply for VMOT and common ground with the controller.",
+            "Connect coil pairs to out1/out2 and out3/out4.",
+        ],
+    },
+    "uln2003": {
+        "name": "ULN2003 driver board",
+        "aliases": ("uln2003", "28byj", "28byj-48"),
+        "type": "unipolar_stepper_driver",
+        "simulator_label": "ULN2003",
+        "pin_map": {
+            "in1": "IN1",
+            "in2": "IN2",
+            "in3": "IN3",
+            "in4": "IN4",
+            "vcc": "5V",
+            "gnd": "GND",
+        },
+        "wiring_guidance": [
+            "For 28BYJ-48, draw only controller IN1-IN4 plus VCC/GND.",
+            "The motor plugs into the white onboard socket; do not draw OUT wires to the motor.",
+        ],
+    },
+    "l298n": {
+        "name": "L298N motor driver",
+        "aliases": ("l298n", "l298"),
+        "type": "dual_h_bridge_driver",
+        "simulator_label": "L298N",
+        "pin_map": {
+            "in1": "IN1",
+            "in2": "IN2",
+            "in3": "IN3",
+            "in4": "IN4",
+            "vcc": "motor supply / logic supply depending module",
+            "gnd": "common ground",
+            "out1": "OUT1",
+            "out2": "OUT2",
+            "out3": "OUT3",
+            "out4": "OUT4",
+        },
+        "wiring_guidance": [
+            "Use IN1-IN4 for direction control and OUT pins for motor terminals or stepper coils.",
+            "Use an external motor supply and common ground with the controller.",
+        ],
+    },
+    "tb6600": {
+        "name": "TB6600 stepper driver",
+        "aliases": ("tb6600",),
+        "type": "external_bipolar_stepper_driver",
+        "simulator_label": "TB6600",
+        "pin_map": {
+            "in1": "PUL/STEP",
+            "in2": "DIR",
+            "in3": "ENA optional",
+            "gnd": "controller signal ground / common reference",
+            "out1": "A+",
+            "out2": "A-",
+            "out3": "B+",
+            "out4": "B-",
+        },
+        "wiring_guidance": [
+            "Wire STEP/PUL and DIR signals from the controller.",
+            "Use the TB6600 external motor supply terminals for motor power.",
+            "Connect motor coil pairs to A+/A- and B+/B-.",
+        ],
+    },
+}
+
 
 def _normalize_schematic(raw: dict[str, Any]) -> dict[str, Any]:
     components = raw.get("components") or []
@@ -136,6 +254,214 @@ def _normalize_schematic(raw: dict[str, Any]) -> dict[str, Any]:
         "components": components if isinstance(components, list) else [],
         "wires": wires if isinstance(wires, list) else [],
         "notes": raw.get("notes") if isinstance(raw.get("notes"), list) else [],
+    }
+
+
+def _clean_url(url: str | None) -> str | None:
+    text = (url or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = urllib.parse.urlparse(text)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", parsed.query, ""))
+
+
+def _urls_from_prompt(prompt: str) -> list[str]:
+    urls = re.findall(r"https?://[^\s<>\]\)\"']+", prompt or "")
+    cleaned: list[str] = []
+    for url in urls:
+        url = url.rstrip(".,;")
+        clean = _clean_url(url)
+        if clean and clean not in cleaned:
+            cleaned.append(clean)
+    return cleaned[:3]
+
+
+def _fetch_product_page_text(url: str) -> tuple[str, str | None]:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            raw = resp.read(64_000)
+            ctype = resp.headers.get_content_charset() or "utf-8"
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        return "", str(exc)
+    try:
+        html = raw.decode(ctype, errors="ignore")
+    except LookupError:
+        html = raw.decode("utf-8", errors="ignore")
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    meta = re.findall(
+        r"<meta[^>]+(?:name|property)=[\"'](?:description|og:title|og:description)[\"'][^>]+content=[\"'](.*?)[\"'][^>]*>",
+        html,
+        re.I | re.S,
+    )
+    chunks = []
+    if title_match:
+        chunks.append(title_match.group(1))
+    chunks.extend(meta[:4])
+    text = " ".join(chunks) or html[:1200]
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", unescape(text)).strip()
+    if re.search(r"continue shopping|captcha|robot check", text, re.I):
+        return text[:240], "Page appears blocked by anti-bot protection."
+    return text[:600], None
+
+
+def _infer_driver_profile(text: str) -> dict[str, Any] | None:
+    hay = (text or "").lower()
+    for key, profile in COMMON_DRIVER_PROFILES.items():
+        aliases = (key, *(profile.get("aliases") or ()))
+        if any(alias.lower() in hay for alias in aliases):
+            return {"key": key, **profile}
+    return None
+
+
+def analyze_driver_link(url: str | None) -> dict[str, Any] | None:
+    clean = _clean_url(url)
+    if not clean:
+        return None
+    parsed = urllib.parse.urlparse(clean)
+    url_text = " ".join(
+        [
+            parsed.netloc,
+            urllib.parse.unquote(parsed.path),
+            urllib.parse.unquote(parsed.query),
+        ]
+    )
+    page_text, fetch_error = _fetch_product_page_text(clean)
+    profile = _infer_driver_profile(f"{url_text} {page_text}") or {}
+    if not profile and not page_text:
+        return {
+            "url": clean,
+            "fetch_error": fetch_error or "Could not read product page.",
+            "summary": "Product link could not be identified. Ask the user for the driver chip name or datasheet.",
+        }
+    return {
+        "url": clean,
+        "page_excerpt": page_text[:240] if page_text else "",
+        "fetch_error": fetch_error,
+        "driver": profile or None,
+        "summary": (
+            f"Identified {profile['name']} from product link."
+            if profile
+            else "Read product page, but no known driver chip was identified."
+        ),
+    }
+
+
+def _driver_link_context(driver_links: list[str] | None, prompt: str) -> tuple[str | None, list[dict[str, Any]]]:
+    urls: list[str] = []
+    for url in driver_links or []:
+        clean = _clean_url(url)
+        if clean and clean not in urls:
+            urls.append(clean)
+    for url in _urls_from_prompt(prompt):
+        if url not in urls:
+            urls.append(url)
+    analyses = [a for u in urls[:2] if (a := analyze_driver_link(u))]
+    if not analyses:
+        return None, []
+    lines = ["\nRelevant product-link facts:"]
+    for idx, analysis in enumerate(analyses, 1):
+        parsed = urllib.parse.urlparse(analysis["url"])
+        compact_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+        lines.append(f"{idx}. URL: {compact_url}")
+        if analysis.get("fetch_error"):
+            lines.append(f"   Fetch note: {analysis['fetch_error']}")
+        driver = analysis.get("driver")
+        if driver:
+            lines.append(f"   Identified driver: {driver['name']} ({driver['type']})")
+            lines.append(f"   Simulator component: motor-driver labeled \"{driver['simulator_label']}\"")
+            lines.append(f"   Pin mapping: {json.dumps(driver['pin_map'], separators=(',', ':'))}")
+            guidance = driver.get("wiring_guidance", [])[:4]
+            if guidance:
+                lines.append("   Key wiring guidance:")
+                lines.extend(f"   - {note}" for note in guidance)
+        elif analysis.get("page_excerpt"):
+            lines.append(f"   Page clue: {analysis['page_excerpt'][:180]}")
+    lines.append(
+        "Use only these facts from the link. Do not infer unrelated product details from page boilerplate."
+    )
+    return "\n".join(lines), analyses
+
+
+def _prompt_terms(prompt: str) -> set[str]:
+    terms = set(re.findall(r"[a-z0-9]{3,}", (prompt or "").lower()))
+    return terms - {
+        "the", "this", "that", "with", "wire", "wiring", "schematic", "update",
+        "based", "from", "into", "link", "driver", "motor",
+    }
+
+
+def _component_is_relevant(component: dict[str, Any], prompt_terms: set[str], driver_keys: set[str]) -> bool:
+    ctype = str(component.get("type") or "").lower()
+    label = str(component.get("label") or "").lower()
+    cid = str(component.get("id") or "").lower()
+    if ctype in {"arduino-uno", "arduino-mega", "raspberry-pi", "breadboard", "motor-driver", "stepper", "motor"}:
+        return True
+    if any(key and key in label for key in driver_keys):
+        return True
+    return any(term in label or term in cid or term in ctype for term in prompt_terms)
+
+
+def _compact_current_schematic(
+    current: dict[str, Any] | None,
+    prompt: str,
+    driver_link_analysis: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not current or not (current.get("components") or current.get("wires")):
+        return None
+    prompt_terms = _prompt_terms(prompt)
+    driver_keys = {
+        str((analysis.get("driver") or {}).get("key") or "").lower()
+        for analysis in driver_link_analysis
+    }
+    components = [
+        {
+            "id": c.get("id"),
+            "type": c.get("type"),
+            "label": c.get("label"),
+        }
+        for c in (current.get("components") or [])
+        if isinstance(c, dict) and _component_is_relevant(c, prompt_terms, driver_keys)
+    ]
+    relevant_ids = {str(c.get("id")) for c in components if c.get("id")}
+    wires = []
+    for wire in current.get("wires") or []:
+        if not isinstance(wire, dict):
+            continue
+        from_id = str((wire.get("from") or {}).get("componentId") or "")
+        to_id = str((wire.get("to") or {}).get("componentId") or "")
+        if from_id not in relevant_ids and to_id not in relevant_ids:
+            continue
+        wires.append({
+            "id": wire.get("id"),
+            "from": wire.get("from"),
+            "to": wire.get("to"),
+            "label": wire.get("label"),
+        })
+        if len(wires) >= 24:
+            break
+    return {
+        "name": current.get("name"),
+        "description": current.get("description"),
+        "components": components[:12],
+        "wires": wires,
+        "component_count": len(current.get("components") or []),
+        "wire_count": len(current.get("wires") or []),
     }
 
 
@@ -168,6 +494,55 @@ def _is_uln2003(comp: dict[str, Any]) -> bool:
         return False
     label = (comp.get("label") or "").lower()
     return "uln2003" in label or "uln 2003" in label
+
+
+def _is_step_dir_driver(comp: dict[str, Any]) -> bool:
+    if not _is_driver(comp):
+        return False
+    label = (comp.get("label") or "").lower()
+    return any(token in label for token in ("drv8825", "a4988", "tb6600", "step/dir", "step dir", "expansion shield"))
+
+
+STEP_DIR_PIN_LABELS = {
+    "in1": "S",
+    "in2": "DIR",
+    "in3": "EN",
+    "in4": "MS",
+    "vcc": "V",
+    "gnd": "G",
+    "out1": "A1",
+    "out2": "A2",
+    "out3": "B1",
+    "out4": "B2",
+}
+
+
+def _apply_step_dir_driver_metadata(components: list[dict[str, Any]], wires: list[dict[str, Any]]) -> list[str]:
+    repairs: list[str] = []
+    step_dir_drivers = [d for d in components if _is_step_dir_driver(d)]
+    for driver in step_dir_drivers:
+        labels = dict(driver.get("pin_labels") or {})
+        changed_labels = False
+        for pin, label in STEP_DIR_PIN_LABELS.items():
+            if labels.get(pin) != label:
+                labels[pin] = label
+                changed_labels = True
+        if changed_labels:
+            driver["pin_labels"] = labels
+            repairs.append("Applied DRV8825/A4988 shield pin labels: S/STEP, DIR, V, G, A1/A2/B1/B2.")
+
+        for wire in wires:
+            if not _wire_touches(wire, driver["id"]):
+                continue
+            if _wire_touches(wire, driver["id"], {"in1"}) and "step" not in str(wire.get("label") or "").lower():
+                wire["label"] = "S (STEP)"
+            elif _wire_touches(wire, driver["id"], {"in2"}) and "dir" not in str(wire.get("label") or "").lower():
+                wire["label"] = "DIR"
+            elif _wire_touches(wire, driver["id"], {"vcc"}) and str(wire.get("label") or "").lower() in {"vcc", "5v", "v"}:
+                wire["label"] = "V (logic 5V)"
+            elif _wire_touches(wire, driver["id"], {"gnd"}) and str(wire.get("label") or "").lower() in {"gnd", "g"}:
+                wire["label"] = "G common GND"
+    return repairs
 
 
 def _looks_like_28byj(comp: dict[str, Any]) -> bool:
@@ -370,6 +745,7 @@ def validate_and_repair_schematic(schematic: dict[str, Any]) -> tuple[dict[str, 
         return schematic, repairs
 
     drivers = [c for c in components if _is_driver(c)]
+    repairs.extend(_apply_step_dir_driver_metadata(components, wires))
     uln_drivers = [d for d in drivers if _is_uln2003(d)]
     # Treat unlabeled drivers paired with 28BYJ-style steppers as ULN2003 boards.
     if not uln_drivers and steppers and any(_looks_like_28byj(s) for s in steppers):
@@ -512,27 +888,34 @@ def generate_wiring_schematic(
     *,
     current: dict[str, Any] | None = None,
     images: list[dict[str, Any]] | None = None,
+    driver_links: list[str] | None = None,
     trace_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     """Return (schematic, ai_trace, assistant_message)."""
     parts = [prompt.strip()]
+    driver_context, driver_link_analysis = _driver_link_context(driver_links, prompt)
+    if driver_context:
+        parts.append(driver_context)
     if current and (current.get("components") or current.get("wires")):
-        slim = {
-            "name": current.get("name"),
-            "components": current.get("components"),
-            "wires": current.get("wires"),
-        }
-        parts.append(f"\nCurrent schematic (edit/extend this):\n{json.dumps(slim, separators=(',', ':'))}")
+        compact = _compact_current_schematic(current, prompt, driver_link_analysis)
+        if compact:
+            parts.append(
+                "\nRelevant current schematic subset (preserve these IDs when editing):\n"
+                f"{json.dumps(compact, separators=(',', ':'))}"
+            )
 
     raw, trace = ai.generate_wiring(
         "\n".join(parts),
         trace_id=trace_id,
         images=images,
     )
+    trace = {**trace, "prompt_chars": sum(len(p) for p in parts)}
     schematic = _normalize_schematic(raw)
     schematic, repairs = validate_and_repair_schematic(schematic)
     if repairs:
         trace = {**trace, "wiring_repairs": repairs}
+    if driver_link_analysis:
+        trace = {**trace, "driver_link_analysis": driver_link_analysis}
     message = raw.get("message") or schematic.get("description") or f"Generated {schematic['name']}."
     return schematic, trace, message
 
@@ -563,13 +946,39 @@ Schema:
       "title": "LED connected without resistor",
       "description": "The LED's anode connects directly to pin D13 with no current-limiting resistor. Drawing ~40mA will damage the LED and potentially the Arduino output driver.",
       "location": "rows 10–12, right side of breadboard",
-      "fix": "Insert a 220Ω–470Ω resistor between pin D13 and the LED anode (row 10)."
+      "fix": "Insert a 220Ω–470Ω resistor between pin D13 and the LED anode (row 10).",
+      "related_wire_ids": ["w1", "w2"]
     }
   ],
   "correct_wiring": ["GND rail is connected to Arduino GND", "5V rail tied correctly"],
   "overall": "One critical error must be fixed before powering on — the LED will likely burn out immediately.",
-  "safe_to_power": false
+  "safe_to_power": false,
+  "focus_diagram": {
+    "title": "Missing resistor on D13 → LED",
+    "caption": "Only the connections visible as wrong in the photo — not the whole circuit.",
+    "schematic": {
+      "name": "Photo focus",
+      "components": [
+        { "id": "board", "type": "arduino-uno", "label": "Arduino Uno", "x": 32, "y": 96, "w": 140, "h": 90 },
+        { "id": "led1", "type": "led", "label": "Red LED", "x": 380, "y": 132, "w": 36, "h": 36 }
+      ],
+      "wires": [
+        { "id": "w1", "from": { "componentId": "board", "pinId": "d13" }, "to": { "componentId": "led1", "pinId": "anode" }, "color": "#58a6ff", "label": "D13→LED (no R)", "status": "issue" },
+        { "id": "w2", "from": { "componentId": "board", "pinId": "d13" }, "to": { "componentId": "led1", "pinId": "anode" }, "color": "#58a6ff", "label": "add 330Ω here", "status": "missing" }
+      ]
+    },
+    "issue_wire_ids": ["w1", "w2"]
+  }
 }
+
+CRITICAL — focus_diagram is a PHOTO-SPECIFIC highlight, NOT a full wiring diagram:
+- schematic.wires must contain ONLY connections that are wrong, missing, or need changing based on what you see in the photo (typically 1–3 wires).
+- Do NOT list correct signal lines, control pins, or rails that are already fine. If the problem is power (missing 5V, wrong GND, no VCC to driver), show ONLY those power wires — not D13/D12/IN1 control lines unless they are also wrong in the photo.
+- Include the minimum components (usually 2–4) needed to show those bad connections. Omit breadboard "Rails" unless a rail junction is directly part of the fault.
+- Set status "issue" | "missing" | "wrong" on every wire you include. Never include wires with status "correct".
+- Set focus_diagram.issue_wire_ids to the same wire ids. Link each issue to its wires via issues[].related_wire_ids.
+
+Use the same component types and pin IDs as the wiring generator (arduino-uno, breadboard, led, resistor, motor-driver, stepper, motor, etc.). Layout left → right: board on the left, driver/peripheral on the right; breadboard only when needed. Give each wire a short label (≤20 chars) such as "5V→VCC missing", "GND not connected". Use full component labels (e.g. "Arduino Uno R4 WiFi", "ULN2003", "28BYJ-48") — never truncate with "...".
 
 Severity levels:
 - "error"   — will cause immediate damage or complete circuit failure; fix before powering on
@@ -579,7 +988,232 @@ Severity levels:
 Be specific about physical locations (breadboard rows, pin numbers, wire colors) when visible.
 If the image is too blurry or a component is unclear, say so in the issue description rather than guessing.
 If no issues are found, return an empty issues array and set safe_to_power: true.
+Always return focus_diagram with at least two components and one wire when any issue exists; if the circuit is fully correct, return focus_diagram with an empty wires array and a caption explaining what looks good.
 """
+
+FOCUS_COMPONENT_DEFAULTS: dict[str, tuple[int, int]] = {
+    "raspberry-pi": (118, 88),
+    "arduino-uno": (118, 78),
+    "arduino-mega": (132, 86),
+    "breadboard": (64, 40),
+    "motor-driver": (96, 72),
+    "stepper": (72, 72),
+    "servo-motor": (72, 72),
+    "motor": (56, 56),
+    "led": (40, 40),
+    "resistor": (56, 22),
+    "transistor": (44, 52),
+    "diode": (48, 20),
+    "button": (40, 40),
+    "sensor": (56, 48),
+}
+
+
+def _order_focus_components(
+    components: list[dict[str, Any]],
+    wires: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_id = {str(c.get("id")): c for c in components if c.get("id")}
+    if not by_id:
+        return components
+    controller = next((c for c in components if c.get("type") in CONTROLLER_TYPES), components[0])
+    start_id = str(controller.get("id"))
+    visited: set[str] = set()
+    ordered: list[dict[str, Any]] = []
+
+    def visit(cid: str) -> None:
+        if cid in visited or cid not in by_id:
+            return
+        visited.add(cid)
+        ordered.append(by_id[cid])
+        for wire in wires:
+            for side in ("from", "to"):
+                end = _wire_endpoint(wire, side)
+                if not end or end[0] != cid:
+                    continue
+                other_side = "to" if side == "from" else "from"
+                other = _wire_endpoint(wire, other_side)
+                if other:
+                    visit(other[0])
+
+    visit(start_id)
+    for comp in components:
+        cid = str(comp.get("id") or "")
+        if cid and cid not in visited:
+            ordered.append(comp)
+    return ordered or components
+
+
+def _auto_layout_focus_schematic(schematic: dict[str, Any]) -> dict[str, Any]:
+    components = [dict(c) for c in (schematic.get("components") or [])]
+    wires = [dict(w) for w in (schematic.get("wires") or [])]
+    if not components:
+        return schematic
+
+    ordered = _order_focus_components(components, wires)
+    x = 20.0
+    y = 36.0
+    gap = 56.0
+    for comp in ordered:
+        ctype = str(comp.get("type") or "sensor")
+        default_w, default_h = FOCUS_COMPONENT_DEFAULTS.get(ctype, (80, 48))
+        comp["w"] = int(comp.get("w") or default_w)
+        comp["h"] = int(comp.get("h") or default_h)
+        comp["x"] = int(x)
+        comp["y"] = int(y)
+        if not comp.get("label"):
+            comp["label"] = ctype.replace("-", " ")
+        if not comp.get("id"):
+            comp["id"] = _new_component_id("focus")
+        x += comp["w"] + gap
+
+    for wire in wires:
+        if not wire.get("id"):
+            wire["id"] = _new_wire_id("fw")
+        if not wire.get("color"):
+            wire["color"] = WIRE_COLORS["signal"]
+
+    schematic["components"] = ordered
+    schematic["wires"] = wires
+    return schematic
+
+
+_FOCUS_ISSUE_STATUSES = {"issue", "missing", "wrong", "error", "fix", "broken"}
+_POWER_TERMS = ("5v", "vcc", "power", "gnd", "ground", "rail", "v+", "v-", "t+", "t-")
+_SIGNAL_TERMS = ("d13", "d12", "d11", "d10", "in1", "in2", "in3", "in4", "a0", "sda", "scl", "out1", "out2")
+
+
+def _issue_text_blob(issue: dict[str, Any]) -> str:
+    return " ".join(
+        str(issue.get(k) or "") for k in ("title", "description", "fix", "location")
+    ).lower()
+
+
+def _wire_pin_blob(wire: dict[str, Any]) -> str:
+    label = str(wire.get("label") or "").lower()
+    from_pin = str((wire.get("from") or {}).get("pinId") or "").lower()
+    to_pin = str((wire.get("to") or {}).get("pinId") or "").lower()
+    return f"{label} {from_pin} {to_pin}"
+
+
+def _infer_issue_wires_from_issues(
+    schematic: dict[str, Any],
+    issues: list[dict[str, Any]],
+) -> list[str]:
+    """Guess issue wire ids from issue text when the model omitted related_wire_ids."""
+    wires = schematic.get("wires") or []
+    if not wires or not issues:
+        return []
+    inferred: set[str] = set()
+    for issue in issues:
+        text = _issue_text_blob(issue)
+        is_power = any(t in text for t in _POWER_TERMS)
+        is_signal = any(t in text for t in _SIGNAL_TERMS)
+        for wire in wires:
+            wid = wire.get("id")
+            if not wid:
+                continue
+            blob = _wire_pin_blob(wire)
+            if is_power and any(t in blob for t in _POWER_TERMS + ("vcc", "gnd", "5v")):
+                inferred.add(str(wid))
+            elif is_signal and any(t in blob for t in _SIGNAL_TERMS):
+                inferred.add(str(wid))
+    return sorted(inferred)
+
+
+def _issue_wire_ids_from_focus(
+    raw: dict[str, Any],
+    schematic: dict[str, Any],
+    issues: list[dict[str, Any]],
+) -> list[str]:
+    ids: set[str] = set()
+    for wid in raw.get("issue_wire_ids") or []:
+        if wid:
+            ids.add(str(wid))
+    for issue in issues:
+        for wid in issue.get("related_wire_ids") or []:
+            if wid:
+                ids.add(str(wid))
+    for wire in schematic.get("wires") or []:
+        wid = wire.get("id")
+        if not wid:
+            continue
+        status = str(wire.get("status") or "").lower()
+        if wire.get("needs_fix") or wire.get("issue") is True or status in _FOCUS_ISSUE_STATUSES:
+            ids.add(str(wid))
+    if not ids:
+        ids.update(_infer_issue_wires_from_issues(schematic, issues))
+    return sorted(ids)
+
+
+def _narrow_focus_schematic(
+    schematic: dict[str, Any],
+    issue_wire_ids: list[str],
+) -> dict[str, Any]:
+    """Keep only issue wires and the components they connect — drop correct context wires."""
+    wires_all = [dict(w) for w in (schematic.get("wires") or [])]
+    id_set = {str(i) for i in issue_wire_ids if i}
+
+    if id_set:
+        issue_wires = [w for w in wires_all if str(w.get("id")) in id_set]
+    else:
+        issue_wires = [
+            w
+            for w in wires_all
+            if str(w.get("status") or "").lower() in _FOCUS_ISSUE_STATUSES
+            or w.get("needs_fix")
+            or w.get("issue") is True
+        ]
+
+    if not issue_wires:
+        return schematic
+
+    comp_ids: set[str] = set()
+    for wire in issue_wires:
+        for side in ("from", "to"):
+            end = wire.get(side)
+            if isinstance(end, dict) and end.get("componentId"):
+                comp_ids.add(str(end["componentId"]))
+
+    components = [
+        dict(c) for c in (schematic.get("components") or []) if str(c.get("id")) in comp_ids
+    ]
+    if len(components) < 2:
+        return {**schematic, "wires": issue_wires}
+
+    return {**schematic, "components": components, "wires": issue_wires}
+
+
+def _prepare_focus_diagram(
+    raw: Any,
+    *,
+    issues: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    schematic_raw = raw.get("schematic")
+    if not isinstance(schematic_raw, dict):
+        return None
+    schematic = _normalize_schematic(schematic_raw)
+    if len(schematic.get("components") or []) < 2:
+        return None
+    schematic, _repairs = validate_and_repair_schematic(schematic)
+    schematic = _auto_layout_focus_schematic(schematic)
+    if len(schematic.get("components") or []) < 2:
+        return None
+    title = str(raw.get("title") or schematic.get("name") or "Signal path").strip()
+    caption = str(raw.get("caption") or schematic.get("description") or "").strip()
+    issue_list = issues if isinstance(issues, list) else []
+    issue_wire_ids = _issue_wire_ids_from_focus(raw, schematic, issue_list)
+    schematic = _narrow_focus_schematic(schematic, issue_wire_ids)
+    schematic = _auto_layout_focus_schematic(schematic)
+    issue_wire_ids = _issue_wire_ids_from_focus(raw, schematic, issue_list)
+    return {
+        "title": title,
+        "caption": caption,
+        "schematic": schematic,
+        "issue_wire_ids": issue_wire_ids,
+    }
 
 
 def diagnose_circuit_photo(
@@ -601,11 +1235,12 @@ def diagnose_circuit_photo(
         parts.append("Please analyse this circuit photo and identify any wiring problems, errors, or safety issues.")
 
     if current_schematic and (current_schematic.get("components") or current_schematic.get("wires")):
+        wires = (current_schematic.get("wires") or [])[:40]
         slim = {
             "name": current_schematic.get("name"),
             "components": [
                 {"id": c.get("id"), "type": c.get("type"), "label": c.get("label")}
-                for c in (current_schematic.get("components") or [])
+                for c in (current_schematic.get("components") or [])[:24]
             ],
             "wires": [
                 {
@@ -614,7 +1249,7 @@ def diagnose_circuit_photo(
                     "color": w.get("color"),
                     "label": w.get("label"),
                 }
-                for w in (current_schematic.get("wires") or [])
+                for w in wires
             ],
         }
         parts.append(
@@ -626,6 +1261,7 @@ def diagnose_circuit_photo(
 
     # Normalise / validate output
     issues = raw.get("issues") if isinstance(raw.get("issues"), list) else []
+    focus_diagram = _prepare_focus_diagram(raw.get("focus_diagram"), issues=issues)
     return {
         "components_detected": raw.get("components_detected") or [],
         "summary": raw.get("summary") or f"{len(issues)} issue(s) found",
@@ -633,4 +1269,5 @@ def diagnose_circuit_photo(
         "correct_wiring": raw.get("correct_wiring") or [],
         "overall": raw.get("overall") or "",
         "safe_to_power": bool(raw.get("safe_to_power", len(issues) == 0)),
+        "focus_diagram": focus_diagram,
     }, trace

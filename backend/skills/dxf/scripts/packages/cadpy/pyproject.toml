@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cadpy"
-version = "0.3.0"
+version = "0.3.8"
 description = "Shared STEP/GLB topology artifact generation runtime for CAD skills."
 requires-python = ">=3.11"
 dependencies = [

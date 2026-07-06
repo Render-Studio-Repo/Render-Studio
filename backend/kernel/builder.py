@@ -17,6 +17,7 @@ from build123d import (
     Axis,
     Box,
     Cone,
+    Color,
     Cylinder,
     Kind,
     Plane,
@@ -40,6 +41,41 @@ logger = logging.getLogger(__name__)
 
 # A "part" object in build123d algebra mode (Part / Solid / Compound).
 Body = Any
+
+
+def _body_color(color: Any) -> Color | tuple[float, float, float, float] | None:
+    if color is None:
+        return None
+    try:
+        from backend.services.cad_service import _parse_color
+
+        rgba = _parse_color(color)
+        values = (
+            float(rgba[0]) / 255.0,
+            float(rgba[1]) / 255.0,
+            float(rgba[2]) / 255.0,
+            float(rgba[3]) / 255.0,
+        )
+        try:
+            return Color(*values)
+        except Exception:
+            return values
+    except Exception:
+        return None
+
+
+def _apply_part_metadata(body: Body, part: PartSpec) -> Body:
+    try:
+        body.label = part.id
+    except Exception:
+        pass
+    color = _body_color(part.color)
+    if color is not None:
+        try:
+            body.color = color
+        except Exception:
+            pass
+    return body
 
 
 @dataclass
@@ -860,7 +896,7 @@ def build_part(part: PartSpec) -> Body:
         raise KernelBuildError(f"part '{part.id}' produced no geometry")
     if part.placement and _nonzero(part.placement):
         running = Pos(*[float(v) for v in part.placement]) * running
-    return running
+    return _apply_part_metadata(running, part)
 
 
 def _part_features_are_origin_centered(part: PartSpec) -> bool:
@@ -955,6 +991,7 @@ def build_program(program: FeatureProgram, progress: Callable[[dict[str, Any]], 
         wp = world_positions.get(part.id, [0.0, 0.0, 0.0])
         if _nonzero(wp) and not (part.placement and _nonzero(part.placement)):
             body = Pos(float(wp[0]), float(wp[1]), float(wp[2])) * body
+            body = _apply_part_metadata(body, part)
 
         result.parts[part.id] = body
     return result

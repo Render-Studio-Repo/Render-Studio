@@ -10,7 +10,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+from backend.config import settings
+from backend.database import get_conn
+
 SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
+INSTALL_REQUIRED_SKILLS = {
+    "silicone-mold-generation": "silicone-mold-generation",
+}
 
 _RENDER3D_ADAPTER = """\
 ━━━ RENDER3D ADAPTATION (active skill: {skill_id}) ━━━
@@ -58,10 +64,17 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
 
 def get_skill_dir(skill_id: str) -> Path | None:
     skill_id = (skill_id or "").strip().lower()
-    if not skill_id:
+    if not skill_id or ".backup-" in skill_id:
         return None
     direct = SKILLS_DIR / skill_id
-    if direct.is_dir() and (direct / "SKILL.md").is_file():
+    if not direct.is_dir():
+        return None
+    # Prefer canonical skill bundles that include SKILL.md, but accept
+    # runtime-only bundles during sync windows so CAD v2 doesn't hard-fail.
+    if (direct / "SKILL.md").is_file():
+        return direct
+    scripts = direct / "scripts"
+    if scripts.is_dir():
         return direct
     return None
 
@@ -72,6 +85,8 @@ def _skill_paths() -> list[Path]:
     paths: list[Path] = []
     for child in sorted(SKILLS_DIR.iterdir()):
         if child.name.startswith("."):
+            continue
+        if ".backup-" in child.name:
             continue
         if child.is_dir():
             skill_md = child / "SKILL.md"
@@ -114,7 +129,12 @@ def _provenance() -> dict[str, str]:
     return out
 
 
-def list_skills() -> list[dict[str, Any]]:
+def _installed_skill_set(user_id: str | None) -> set[str]:
+    return set(_installed_marketplace_skill_ids(user_id))
+
+
+def list_skills(*, user_id: str | None = None) -> list[dict[str, Any]]:
+    installed = _installed_skill_set(user_id)
     out: list[dict[str, Any]] = []
     for path in _skill_paths():
         text = path.read_text(encoding="utf-8")
@@ -130,8 +150,8 @@ def list_skills() -> list[dict[str, Any]]:
                 for p in scripts.iterdir()
                 if (p.is_dir() and (p / "__main__.py").is_file()) or p.is_file()
             )
-        out.append(
-            {
+        install_slug = INSTALL_REQUIRED_SKILLS.get(skill_id)
+        item = {
                 "id": skill_id,
                 "name": meta.get("name") or skill_id,
                 "description": meta.get("description") or preview,
@@ -139,8 +159,12 @@ def list_skills() -> list[dict[str, Any]]:
                 "references": _list_references(skill_dir),
                 "tools": tools,
                 "provenance": _provenance(),
+                "install_required": bool(install_slug),
+                "installed": not install_slug or skill_id in installed,
+                "install_slug": install_slug,
+                "assets": list_skill_assets(user_id, skill_id) if user_id and install_slug else [],
             }
-        )
+        out.append(item)
     return out
 
 
@@ -174,6 +198,53 @@ def get_skill(skill_id: str, *, include_references: bool = False) -> dict[str, A
     return data
 
 
+def _asset_root(user_id: str, skill_id: str) -> Path:
+    safe_user = re.sub(r"[^A-Za-z0-9_-]", "_", str(user_id or "user"))[:120] or "user"
+    safe_skill = re.sub(r"[^a-z0-9_-]", "_", str(skill_id or "skill").lower())[:120] or "skill"
+    root = Path(settings.data_dir) / "skill_assets" / safe_user / safe_skill
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def list_skill_assets(user_id: str | None, skill_id: str) -> list[dict[str, Any]]:
+    if not user_id:
+        return []
+    root = _asset_root(user_id, skill_id)
+    assets: list[dict[str, Any]] = []
+    for path in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not path.is_file():
+            continue
+        kind = "image" if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} else "document"
+        assets.append(
+            {
+                "name": path.name,
+                "kind": kind,
+                "size": path.stat().st_size,
+            }
+        )
+    return assets
+
+
+def save_skill_asset(user_id: str, skill_id: str, filename: str, data: bytes) -> dict[str, Any]:
+    clean = re.sub(r"[^A-Za-z0-9._-]", "_", Path(filename or "asset").name)[:160] or "asset"
+    suffix = Path(clean).suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".txt", ".md", ".pdf", ".doc", ".docx"}:
+        raise ValueError("Upload images, markdown/text, PDF, or Word docs.")
+    if len(data) > 8 * 1024 * 1024:
+        raise ValueError("Skill assets must be under 8 MB.")
+    root = _asset_root(user_id, skill_id)
+    target = root / clean
+    if target.exists():
+        stem = target.stem
+        for i in range(2, 100):
+            candidate = root / f"{stem}_{i}{suffix}"
+            if not candidate.exists():
+                target = candidate
+                break
+    target.write_bytes(data)
+    return list_skill_assets(user_id, skill_id)[0]
+
+
 def get_reference(skill_id: str, ref_name: str) -> dict[str, Any] | None:
     skill_dir = get_skill_dir(skill_id)
     if not skill_dir:
@@ -184,18 +255,116 @@ def get_reference(skill_id: str, ref_name: str) -> dict[str, Any] | None:
     return {"skill_id": skill_id, "name": ref_name, "content": body}
 
 
-def resolve_prompt_skills(skill_ids: list[str] | None, *, has_images: bool = False) -> list[str]:
-    """Merge client-selected skills with image-triggered defaults."""
-    resolved: list[str] = []
+def _installed_marketplace_skill_ids(user_id: str | None) -> list[str]:
+    if not user_id:
+        return []
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT l.manifest_json
+                  FROM agent_app_installs i
+                  JOIN agent_app_listings l ON l.id = i.app_id
+                 WHERE i.user_id = ? AND i.status = 'installed' AND l.status = 'approved'
+                """,
+                (user_id,),
+            ).fetchall()
+    except Exception:
+        return []
+    out: list[str] = []
+    for row in rows:
+        try:
+            manifest = json.loads(row["manifest_json"] or "{}")
+        except Exception:
+            continue
+        skill_id = str(manifest.get("skill_id") or "").strip().lower()
+        if skill_id and get_skill_dir(skill_id):
+            out.append(skill_id)
+    return out
+
+
+def _available_skill_ids(skill_ids: list[str] | None, *, user_id: str | None = None) -> list[str]:
+    requested = [
+        (raw or "").strip().lower()
+        for raw in (skill_ids or [])
+        if (raw or "").strip()
+    ]
+    if not requested:
+        requested = [item["id"] for item in list_skills()]
+    installed = _installed_skill_set(user_id)
+    requested.extend(installed)
     seen: set[str] = set()
-    for raw in skill_ids or []:
-        skill_id = (raw or "").strip().lower()
-        if not skill_id or skill_id in seen:
+    out: list[str] = []
+    for skill_id in requested:
+        if skill_id in seen or not get_skill_dir(skill_id):
+            continue
+        if skill_id in INSTALL_REQUIRED_SKILLS and skill_id not in installed:
             continue
         seen.add(skill_id)
-        resolved.append(skill_id)
-    if has_images and "blueprint-vision" not in seen and get_skill_dir("blueprint-vision"):
-        resolved.append("blueprint-vision")
+        out.append(skill_id)
+    return out
+
+
+def _prompt_matches(prompt: str, *needles: str) -> bool:
+    lowered = prompt.lower()
+    return any(needle in lowered for needle in needles)
+
+
+def resolve_prompt_skills(
+    skill_ids: list[str] | None,
+    *,
+    has_images: bool = False,
+    prompt: str = "",
+    user_id: str | None = None,
+) -> list[str]:
+    """Select relevant skills from the user's available skill/app catalog."""
+    available = _available_skill_ids(skill_ids, user_id=user_id)
+    available_set = set(available)
+    resolved: list[str] = []
+
+    def add(skill_id: str) -> None:
+        if skill_id in available_set and skill_id not in resolved:
+            resolved.append(skill_id)
+
+    # CAD is the base skill for Render3D geometry generation.
+    add("cad")
+
+    if has_images or _prompt_matches(prompt, "blueprint", "schematic", "image", "photo", "drawing", "diagram"):
+        add("blueprint-vision")
+
+    if _prompt_matches(prompt, "mold", "mould", "silicone", "casting", "negative cavity", "parting plane", "sprue", "vent"):
+        add("silicone-mold-generation")
+
+    if _prompt_matches(prompt, "robot", "urdf", "ros", "joint", "linkage", "kinematic", "rigging", "animate", "simulation"):
+        add("urdf")
+    if _prompt_matches(prompt, "architect", "architecture", "house", "room", "wall panel", "window", "door", "roof", "floor plan", "modular home", "building kit"):
+        add("architect")
+    if _prompt_matches(prompt, "sdf", "gazebo", "physics simulation", "simulate", "mjcf"):
+        add("sdf")
+    if _prompt_matches(prompt, "srdf", "moveit", "planning group", "collision matrix"):
+        add("srdf")
+
+    if _prompt_matches(prompt, "dxf", "laser", "waterjet", "2d profile", "flat pattern", "sheet"):
+        add("dxf")
+    if _prompt_matches(prompt, "sendcutsend", "send cut send", "sheet metal", "bend allowance"):
+        add("sendcutsend")
+
+    if _prompt_matches(prompt, "g-code", "gcode", "toolpath", "cnc", "milling", "3d print", "slicer"):
+        add("gcode")
+    if _prompt_matches(prompt, "bambu", "ams", "bambu lab", "bambu-labs"):
+        add("bambu-labs")
+
+    if _prompt_matches(prompt, "step part", "part number", "supplier", "mcmaster", "download step", "component lookup"):
+        add("step-parts")
+    if _prompt_matches(prompt, "implicit", "signed distance", "sdf model", "metaball"):
+        add("implicit-cad")
+    if _prompt_matches(prompt, "viewer", "snapshot", "inspect", "measure", "selector", "topology"):
+        add("cad-viewer")
+    if _prompt_matches(prompt, "wire", "wiring", "circuit", "arduino", "motor driver", "electronics"):
+        add("wiring")
+
+    if not resolved:
+        add("cad")
     return resolved
 
 
@@ -227,8 +396,8 @@ def build_skills_prompt(skill_ids: list[str] | None, *, compact: bool = True) ->
     return "\n".join(parts).strip()
 
 
-def skills_manifest() -> dict[str, Any]:
+def skills_manifest(*, user_id: str | None = None) -> dict[str, Any]:
     return {
         "provenance": _provenance(),
-        "skills": list_skills(),
+        "skills": list_skills(user_id=user_id),
     }

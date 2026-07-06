@@ -6,6 +6,7 @@ const FORMAT_LABELS = {
   step: "STEP",
   "3mf": "3MF",
   obj: "OBJ",
+  source: "build123d source (.py)",
   program: "Program JSON",
   sim: "sim.json",
   urdf: "URDF",
@@ -13,7 +14,7 @@ const FORMAT_LABELS = {
 };
 
 const PRIMARY_FORMATS = ["glb", "stl", "step", "3mf"];
-const EXPORT_ORDER = ["glb", "stl", "step", "3mf", "obj", "program", "sim", "urdf", "mjcf"];
+const EXPORT_ORDER = ["glb", "stl", "step", "source", "3mf", "obj", "program", "sim", "urdf", "mjcf"];
 
 let openMenu = null;
 
@@ -31,6 +32,29 @@ function fileStem(filename) {
 function fallbackExports(filename) {
   const stem = fileStem(filename);
   return PRIMARY_FORMATS.map((fmt) => ({ name: `${stem}.${fmt}`, format: fmt, size: null }));
+}
+
+function exportPriority(item, targetStem) {
+  if (item.current || fileStem(item.name) === targetStem) return 0;
+  if (item.base) return 2;
+  return 1;
+}
+
+function exportLabel(item, targetStem) {
+  const base =
+    item.label ||
+    (
+      item.format === "step"
+        ? item.step_kind === "faceted_mesh"
+          ? "STEP (faceted mesh fallback)"
+          : String(item.name || "").startsWith("_export_visible_assembly")
+            ? "STEP (assembly)"
+            : "STEP (editable B-rep)"
+        : (FORMAT_LABELS[item.format] || item.format.toUpperCase())
+    );
+  if (item.current || fileStem(item.name) === targetStem) return `${base} · current updated`;
+  if (item.base) return `${base} · original/base`;
+  return base;
 }
 
 function formatApiError(err) {
@@ -72,6 +96,58 @@ async function copyText(text) {
   ta.remove();
 }
 
+function showStepModeChooser(menu, item, onChoose, anchorEl = null) {
+  menu.querySelector(".file-export-step-chooser")?.remove();
+  const chooser = document.createElement("div");
+  chooser.className = "file-export-step-chooser";
+  chooser.innerHTML = `
+    <div class="file-export-step-title">Export STEP as part or assembly?</div>
+    <button type="button" class="file-export-step-choice" data-step-mode="regular">
+      <strong>Part STEP</strong>
+      <span>Single flattened part for normal CAD import</span>
+    </button>
+    <button type="button" class="file-export-step-choice" data-step-mode="assembly">
+      <strong>Assembly STEP</strong>
+      <span>Preserve separate bodies/components and appearances</span>
+    </button>
+  `;
+  chooser.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-step-mode]");
+    if (!btn) return;
+    onChoose(btn.dataset.stepMode || "assembly", item);
+  });
+  if (anchorEl?.parentNode) anchorEl.insertAdjacentElement("afterend", chooser);
+  else menu.appendChild(chooser);
+  chooser.scrollIntoView({ block: "nearest" });
+}
+
+function showFusionActionChooser(menu, onChoose, anchorEl = null) {
+  menu.querySelector(".file-export-fusion-action-chooser")?.remove();
+  const chooser = document.createElement("div");
+  chooser.className = "file-export-step-chooser file-export-fusion-action-chooser";
+  chooser.innerHTML = `
+    <div class="file-export-step-title">How should Fusion handle this model?</div>
+    <button type="button" class="file-export-step-choice" data-fusion-action="push">
+      <strong>Update original Fusion file</strong>
+      <span>Push a new version back to the Fusion item this project came from.</span>
+    </button>
+    <button type="button" class="file-export-step-choice" data-fusion-action="shared">
+      <strong>Shared Fusion folder/link</strong>
+      <span>Choose a Fusion project folder so other Fusion users can access the uploaded STEP.</span>
+    </button>
+  `;
+  chooser.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-fusion-action]");
+    if (!btn) return;
+    chooser.remove();
+    onChoose(btn.dataset.fusionAction || "shared");
+  });
+  if (anchorEl?.parentNode) anchorEl.insertAdjacentElement("afterend", chooser);
+  else menu.appendChild(chooser);
+  chooser.scrollIntoView({ block: "nearest" });
+  keepMenuInViewport(menu);
+}
+
 async function checkOnshapeLinked() {
   if (!getToken()) return false;
   try {
@@ -84,6 +160,27 @@ async function checkOnshapeLinked() {
   }
 }
 
+async function checkAutodeskLinked() {
+  if (!getToken()) return false;
+  try {
+    const res = await fetch("/api/autodesk/status", { headers: authHeaders() });
+    if (!res.ok) return false;
+    const d = await res.json();
+    return d.linked === true;
+  } catch {
+    return false;
+  }
+}
+
+async function autodeskJson(path) {
+  const res = await fetch(path, { headers: authHeaders() });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Fusion request failed (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function openFileExportMenu({
   api,
   projectId,
@@ -92,11 +189,15 @@ export async function openFileExportMenu({
   title = null,
   hint = null,
   exportsRequest = null,
+  extraExports = [],
   allowOnshape = true,
+  allowFusion = true,
+  cloudFilename = null,
 }) {
   closeExportMenu();
 
   const onshapeLinked = allowOnshape ? await checkOnshapeLinked() : false;
+  const autodeskLinked = allowFusion ? await checkAutodeskLinked() : false;
 
   // Check if this project was imported from Onshape → show Push button
   let onshapeSource = null;
@@ -106,12 +207,19 @@ export async function openFileExportMenu({
       if (sr.ok) { const d = await sr.json(); onshapeSource = d.onshape_source || null; }
     } catch { /* non-critical */ }
   }
+  let autodeskSource = null;
+  if (allowFusion && autodeskLinked && projectId) {
+    try {
+      const sr = await fetch(`/api/projects/${projectId}/autodesk-source`, { headers: authHeaders() });
+      if (sr.ok) { const d = await sr.json(); autodeskSource = d.autodesk_source || null; }
+    } catch { /* non-critical */ }
+  }
 
   const menu = document.createElement("div");
   menu.className = "file-export-menu";
   menu.innerHTML = `
     <div class="file-export-title">${title || `Export ${filename}`}</div>
-    <p class="file-export-hint muted small">${hint || "Download GLB, STL, STEP, or 3MF — or copy a share link (workspace members must be signed in)."}</p>
+    <p class="file-export-hint muted small">${hint || "Download GLB, STL, STEP, or 3MF — or copy a public preview link with format downloads."}</p>
     <p class="file-export-status muted small">Preparing exports…</p>
     <div class="file-export-list"></div>
     <div class="file-export-actions">
@@ -125,6 +233,11 @@ export async function openFileExportMenu({
         <img src="/onshape-logo.png" width="14" height="14" alt="" style="vertical-align:-2px" />
         Export to Onshape
       </button>` : "")}
+      ${autodeskLinked ? `
+      <button type="button" class="btn file-export-fusion-action" title="${autodeskSource ? "Update the original Fusion file or upload to a shared Fusion folder" : "Pick a Fusion 360 project and folder, then upload this model as a new STEP file"}">
+        <img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" />
+        Fusion 360
+      </button>` : ""}
     </div>
   `;
   const rect = anchorEl.getBoundingClientRect();
@@ -146,7 +259,8 @@ export async function openFileExportMenu({
   const shareBtn  = menu.querySelector(".file-export-share");
   const onshapeBtn = menu.querySelector(".file-export-onshape");
   const pushBtn   = menu.querySelector(".file-export-onshape-push");
-  let shareUrl = `/api/projects/${projectId}/files/${encodeURIComponent(filename)}`;
+  const fusionActionBtn = menu.querySelector(".file-export-fusion-action");
+  let shareUrl = null;
 
   let data = null;
   let fetchError = null;
@@ -161,10 +275,14 @@ export async function openFileExportMenu({
   }
 
   let exports = data?.exports || [];
+  const shareFilename = data?.filename || filename;
   if (data?.share_url) shareUrl = data.share_url;
 
   if (!exports.length && !exportsRequest) {
     exports = fallbackExports(filename);
+  }
+  if (extraExports.length) {
+    exports = [...exports, ...extraExports];
   }
 
   if (fetchError && !(data?.exports?.length)) {
@@ -183,21 +301,62 @@ export async function openFileExportMenu({
 
   shareBtn.disabled = false;
 
+  const targetStem = fileStem(filename);
   const sorted = [...exports].sort(
-    (a, b) => EXPORT_ORDER.indexOf(a.format) - EXPORT_ORDER.indexOf(b.format) || a.name.localeCompare(b.name),
+    (a, b) =>
+      exportPriority(a, targetStem) - exportPriority(b, targetStem)
+      || EXPORT_ORDER.indexOf(a.format) - EXPORT_ORDER.indexOf(b.format)
+      || a.name.localeCompare(b.name),
   );
+  const cloudStep = sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || fileStem(item.name) === targetStem))
+    || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep")
+    || sorted.find((item) => item.format === "step" && (item.current || fileStem(item.name) === targetStem))
+    || sorted.find((item) => item.format === "step")
+    || null;
+  const resolvedCloudFilename = cloudFilename || cloudStep?.name || filename;
+  const resolvedCloudStepIsFaceted = cloudStep?.step_kind === "faceted_mesh";
 
   for (const item of sorted) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "file-export-dl";
     btn.dataset.fmt = item.format;
+    btn.dataset.current = item.current || fileStem(item.name) === targetStem ? "true" : "false";
+    if (item.base) btn.dataset.base = "true";
     const sizeKb = item.size ? ` · ${Math.max(1, Math.round(item.size / 1024))} KB` : "";
-    btn.textContent = `${FORMAT_LABELS[item.format] || item.format.toUpperCase()}${sizeKb}`;
+    const label = exportLabel(item, targetStem);
+    btn.textContent = `${label}${sizeKb}`;
     btn.title = item.name;
     btn.addEventListener("click", async () => {
       try {
-        const url = `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
+        if (item.format === "step" && item.step_kind !== "editable_brep") {
+          const ok = window.confirm(
+            "This STEP was generated from mesh triangles, so Fusion may import it but boolean Cut may fail. Download it anyway?"
+          );
+          if (!ok) return;
+        }
+        if (item.format === "step" && item.step_kind == null) {
+          showStepModeChooser(menu, item, async (mode, picked) => {
+            try {
+              const chooser = menu.querySelector(".file-export-step-chooser");
+              chooser?.querySelectorAll("button")?.forEach((b) => (b.disabled = true));
+              const title = chooser?.querySelector(".file-export-step-title");
+              if (title) title.textContent = "Preparing STEP download…";
+              const baseUrl = picked.url || `/api/projects/${projectId}/files/${encodeURIComponent(picked.name)}`;
+              const sep = baseUrl.includes("?") ? "&" : "?";
+              const url = `${baseUrl}${sep}step_mode=${encodeURIComponent(mode)}`;
+              const stem = picked.name.replace(/\.(step|stp)$/i, "");
+              const dlName = mode === "regular" ? `${stem}.part.step` : picked.name;
+              await downloadFile(url, dlName);
+              chooser?.remove();
+            } catch (err) {
+              alert(err.message || "Download failed");
+              menu.querySelector(".file-export-step-chooser")?.querySelectorAll("button")?.forEach((b) => (b.disabled = false));
+            }
+          }, btn);
+          return;
+        }
+        const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
         const dlName = item.format === "3mf"
           ? item.name.replace(/\.3mf$/i, ".3MF")
           : item.name;
@@ -210,12 +369,27 @@ export async function openFileExportMenu({
   }
 
   shareBtn?.addEventListener("click", async () => {
-    const abs = `${window.location.origin}${shareUrl}`;
     try {
+      shareBtn.disabled = true;
+      shareBtn.textContent = "Creating link...";
+      const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(shareFilename)}/share`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Could not create share link (${res.status})`);
+      }
+      const data = await res.json();
+      shareUrl = data.share_url || shareUrl;
+      const abs = shareUrl?.startsWith("http") ? shareUrl : `${window.location.origin}${shareUrl}`;
       await copyText(abs);
       shareBtn.textContent = "Link copied!";
-    } catch {
-      alert("Could not copy link");
+    } catch (err) {
+      shareBtn.textContent = "Copy share link";
+      alert(err.message || "Could not copy link");
+    } finally {
+      shareBtn.disabled = false;
     }
   });
 
@@ -245,8 +419,8 @@ export async function openFileExportMenu({
   onshapeBtn?.addEventListener("click", () =>
     onshapeAction(
       onshapeBtn,
-      `/api/projects/${projectId}/files/${encodeURIComponent(filename)}/export-to-onshape`,
-      {},
+      `/api/projects/${projectId}/files/${encodeURIComponent(resolvedCloudFilename)}/export-to-onshape`,
+      { allow_faceted_step: resolvedCloudStepIsFaceted },
       "Export to Onshape",
     )
   );
@@ -255,13 +429,318 @@ export async function openFileExportMenu({
     onshapeAction(
       pushBtn,
       `/api/projects/${projectId}/push-to-onshape`,
-      { filename },
+      { filename: resolvedCloudFilename, allow_faceted_step: resolvedCloudStepIsFaceted },
       "Push to Onshape",
     )
   );
 
+  async function pushToOriginalFusion(btn) {
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Pushing…`;
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: resolvedCloudFilename, allow_faceted_step: resolvedCloudStepIsFaceted }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Fusion push failed (${res.status})`);
+      }
+      const data = await res.json();
+      btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Pushed to Fusion ✓`;
+      const sourceNote = data.source_upload?.name ? ` Also uploaded ${data.source_upload.name}.` : "";
+      const mirrorCount = data.pushed_mirrors?.length || 0;
+      const mirrorErrors = data.push_errors?.length || 0;
+      const mirrorNote = mirrorErrors
+        ? ` Pushed to ${mirrorCount} teammate mirror${mirrorCount === 1 ? "" : "s"}; ${mirrorErrors} mirror push failed.`
+        : mirrorCount
+          ? ` Also pushed to ${mirrorCount} teammate mirror${mirrorCount === 1 ? "" : "s"}.`
+          : "";
+      alert(`Pushed ${data.name || resolvedCloudFilename} to Fusion.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = original;
+      alert(err.message || "Fusion push failed");
+    }
+  }
+
+  async function openSharedFusionExport(btn) {
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Loading Fusion…`;
+    try {
+      await showFusionExportPicker(menu, btn, {
+        projectId,
+        filename: resolvedCloudFilename,
+        allowFacetedStep: resolvedCloudStepIsFaceted,
+      });
+    } catch (err) {
+      alert(err.message || "Could not open Fusion export picker.");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+
+  fusionActionBtn?.addEventListener("click", async () => {
+    if (autodeskSource) {
+      showFusionActionChooser(menu, (choice) => {
+        if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
+        else void openSharedFusionExport(fusionActionBtn);
+      }, fusionActionBtn);
+      return;
+    }
+    await openSharedFusionExport(fusionActionBtn);
+  });
+
   const rect2 = anchorEl.getBoundingClientRect();
   menu.style.top = `${Math.min(rect2.bottom + 6, window.innerHeight - Math.max(220, menu.offsetHeight + 12))}px`;
+}
+
+async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, allowFacetedStep = false }) {
+  menu.querySelector(".file-export-fusion-picker")?.remove();
+  const picker = document.createElement("div");
+  picker.className = "file-export-fusion-picker";
+  picker.innerHTML = `
+    <div class="file-export-fusion-title">Export to Fusion 360</div>
+    <p class="muted small">Choose the Fusion hub, project, and folder. Exports STEP plus build123d parametric source when available.</p>
+    ${allowFacetedStep ? '<p class="status error small">Only faceted mesh STEP is available for this model. Export will work, but Fusion boolean Cut may be limited.</p>' : ""}
+    <label class="file-export-cloud-field">
+      <span>Hub</span>
+      <select data-fusion-hub disabled><option>Loading hubs...</option></select>
+    </label>
+    <label class="file-export-cloud-field">
+      <span>Project</span>
+      <select data-fusion-project disabled><option>Select a hub first</option></select>
+    </label>
+    <div class="file-export-cloud-field">
+      <span>Folder</span>
+      <div class="file-export-fusion-folder-browser" data-fusion-folder-browser>
+        <p class="muted small">Select a project first.</p>
+      </div>
+    </div>
+    <button type="button" class="btn primary file-export-fusion-submit" disabled>Upload STEP to Fusion</button>
+    <div class="file-export-fusion-status muted small"></div>
+  `;
+  anchorBtn.insertAdjacentElement("afterend", picker);
+  picker.scrollIntoView({ block: "nearest" });
+  keepMenuInViewport(menu);
+
+  const hubSelect = picker.querySelector("[data-fusion-hub]");
+  const projectSelect = picker.querySelector("[data-fusion-project]");
+  const folderBrowser = picker.querySelector("[data-fusion-folder-browser]");
+  const submit = picker.querySelector(".file-export-fusion-submit");
+  const status = picker.querySelector(".file-export-fusion-status");
+  let currentFolder = null;
+  let folderStack = [];
+  let selectedFolderId = "";
+  let selectedFolderName = "";
+
+  const setStatus = (text, isError = false) => {
+    status.textContent = text || "";
+    status.className = `file-export-fusion-status small ${isError ? "error" : "muted"}`;
+    keepMenuInViewport(menu);
+  };
+  const setStatusHtml = (html, isError = false) => {
+    status.innerHTML = html || "";
+    status.className = `file-export-fusion-status small ${isError ? "error" : "muted"}`;
+    keepMenuInViewport(menu);
+  };
+  const setOptions = (select, items, placeholder) => {
+    select.innerHTML = items.length
+      ? items.map((item) => `<option value="${escAttr(item.id)}">${escText(item.name || item.id)}</option>`).join("")
+      : `<option value="">${escText(placeholder)}</option>`;
+    select.disabled = !items.length;
+  };
+  const setSelectedFolder = (folder) => {
+    selectedFolderId = folder?.id || "";
+    selectedFolderName = folder?.name || selectedFolderId;
+    submit.disabled = !selectedFolderId;
+    setStatus(selectedFolderId ? `Selected folder: ${selectedFolderName}` : "");
+    renderFolderBrowser([], { loading: true });
+  };
+  const renderFolderBrowser = (folders, { loading = false, emptyText = "No folders found." } = {}) => {
+    if (loading) {
+      folderBrowser.innerHTML = `<p class="muted small">Loading folders...</p>`;
+      return;
+    }
+    const crumbs = ["Top folders", ...folderStack.map((f) => f.name || "Folder"), currentFolder?.name].filter(Boolean);
+    folderBrowser.innerHTML = `
+      <div class="file-export-fusion-folder-head">
+        <button type="button" class="btn secondary btn-compact" data-folder-back ${folderStack.length || currentFolder ? "" : "disabled"}>Back</button>
+        <span class="muted small">${escText(crumbs.join(" / "))}</span>
+      </div>
+      ${currentFolder ? `<button type="button" class="btn btn-compact file-export-fusion-use-current" data-folder-select-current>Use this folder</button>` : ""}
+      ${selectedFolderId ? `<p class="muted small">Selected: ${escText(selectedFolderName)}</p>` : ""}
+      <div class="file-export-fusion-folder-list">
+        ${folders.length ? folders.map((folder) => `
+          <div class="file-export-fusion-folder-row">
+            <span title="${escAttr(folder.name || folder.id)}">${escText(folder.name || "Folder")}</span>
+            <button type="button" class="btn secondary btn-compact" data-folder-open="${escAttr(folder.id)}">Open</button>
+            <button type="button" class="btn btn-compact" data-folder-select="${escAttr(folder.id)}">Select</button>
+          </div>
+        `).join("") : `<p class="muted small">${escText(emptyText)}</p>`}
+      </div>
+    `;
+    folderBrowser.querySelector("[data-folder-back]")?.addEventListener("click", () => {
+      if (currentFolder) {
+        currentFolder = folderStack.pop() || null;
+      }
+      loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
+    });
+    folderBrowser.querySelector("[data-folder-select-current]")?.addEventListener("click", () => {
+      setSelectedFolder(currentFolder);
+      loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
+    });
+    folderBrowser.querySelectorAll("[data-folder-open]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const folder = folders.find((item) => item.id === btn.dataset.folderOpen);
+        if (!folder) return;
+        if (currentFolder) folderStack.push(currentFolder);
+        currentFolder = folder;
+        loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
+      });
+    });
+    folderBrowser.querySelectorAll("[data-folder-select]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const folder = folders.find((item) => item.id === btn.dataset.folderSelect);
+        if (!folder) return;
+        setSelectedFolder(folder);
+        loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
+      });
+    });
+    keepMenuInViewport(menu);
+  };
+  const loadFolders = async () => {
+    submit.disabled = true;
+    const hubId = hubSelect.value;
+    const apsProjectId = projectSelect.value;
+    renderFolderBrowser([], { loading: true });
+    if (!hubId || !apsProjectId) return;
+    const data = currentFolder
+      ? await autodeskJson(`/api/autodesk/projects/${encodeURIComponent(apsProjectId)}/folders/${encodeURIComponent(currentFolder.id)}/contents`)
+      : await autodeskJson(`/api/autodesk/hubs/${encodeURIComponent(hubId)}/projects/${encodeURIComponent(apsProjectId)}/top-folders`);
+    renderFolderBrowser(data.folders || [], { emptyText: currentFolder ? "This folder has no subfolders." : "No top folders found." });
+    submit.disabled = !selectedFolderId;
+  };
+  const loadProjects = async () => {
+    submit.disabled = true;
+    currentFolder = null;
+    folderStack = [];
+    selectedFolderId = "";
+    selectedFolderName = "";
+    setOptions(projectSelect, [], "Loading projects...");
+    renderFolderBrowser([], { emptyText: "Select a project first." });
+    const hubId = hubSelect.value;
+    if (!hubId) return;
+    const data = await autodeskJson(`/api/autodesk/hubs/${encodeURIComponent(hubId)}/projects`);
+    setOptions(projectSelect, data.projects || [], "No projects found");
+    await loadFolders();
+  };
+
+  hubSelect.addEventListener("change", () => {
+    loadProjects().catch((err) => setStatus(err.message || "Could not load Fusion projects.", true));
+  });
+  projectSelect.addEventListener("change", () => {
+    currentFolder = null;
+    folderStack = [];
+    selectedFolderId = "";
+    selectedFolderName = "";
+    loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
+  });
+  submit.addEventListener("click", async () => {
+    if (!selectedFolderId) {
+      setStatus("Choose a Fusion folder first.", true);
+      return;
+    }
+    submit.disabled = true;
+    setStatus("Uploading STEP to Fusion...");
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hub_id: hubSelect.value,
+          hub_label: hubSelect.options[hubSelect.selectedIndex]?.textContent || "",
+          aps_project_id: projectSelect.value,
+          aps_project_label: projectSelect.options[projectSelect.selectedIndex]?.textContent || "",
+          folder_id: selectedFolderId,
+          folder_label: selectedFolderName,
+          filename,
+          allow_faceted_step: allowFacetedStep,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Fusion export failed (${res.status})`);
+      }
+      const data = await res.json();
+      let verified = false;
+      let verifiedItem = null;
+      try {
+        const folderData = await autodeskJson(`/api/autodesk/projects/${encodeURIComponent(projectSelect.value)}/folders/${encodeURIComponent(selectedFolderId)}/contents`);
+        verifiedItem = (folderData.items || []).find((item) => item.id === data.item_id)
+          || (folderData.items || []).find((item) => item.name === (data.name || filename))
+          || null;
+        verified = !!verifiedItem;
+      } catch {
+        // Upload succeeded; folder refresh is best-effort feedback only.
+      }
+      submit.textContent = "Uploaded to Fusion ✓";
+      const name = escText(data.name || filename);
+      const folder = escText(selectedFolderName || "selected folder");
+      const actionText = data.updated_existing ? "Updated the same Fusion file with a new version" : "Created and linked the Fusion mirror file";
+      const verifyText = verified
+        ? `${actionText} in ${folder}.`
+        : `${actionText} in ${folder}; refresh Fusion 360's Data Panel if it is not visible yet.`;
+      const webUrl = data.web_url || verifiedItem?.web_url || "";
+      const link = webUrl
+        ? ` <a href="${escAttr(webUrl)}" target="_blank" rel="noopener">Open in Fusion web</a>`
+        : "";
+      const sourceNote = data.source_upload?.name ? ` Also uploaded ${escText(data.source_upload.name)}.` : "";
+      setStatusHtml(`Uploaded ${name}.${sourceNote} Saved this as your personal Fusion mirror for the Render3D project. ${escText(verifyText)} Fredie can link his own Fusion folder to the same Render3D project and sync through Render3D.${link}`);
+    } catch (err) {
+      submit.disabled = false;
+      setStatus(err.message || "Fusion export failed.", true);
+    }
+  });
+
+  try {
+    const data = await autodeskJson("/api/autodesk/hubs");
+    setOptions(hubSelect, data.hubs || [], "No hubs found");
+    if (!hubSelect.value) {
+      setStatus("No Fusion hubs found for this Autodesk account.", true);
+      return;
+    }
+    await loadProjects();
+    setStatus("");
+  } catch (err) {
+    setStatus(err.message || "Could not load Fusion library.", true);
+  }
+}
+
+function keepMenuInViewport(menu) {
+  if (!menu) return;
+  requestAnimationFrame(() => {
+    const rect = menu.getBoundingClientRect();
+    if (rect.bottom > window.innerHeight - 8) {
+      const nextTop = Math.max(8, window.innerHeight - rect.height - 8);
+      menu.style.top = `${nextTop}px`;
+    }
+  });
+}
+
+function escText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escAttr(value) {
+  return escText(value).replace(/"/g, "&quot;");
 }
 
 export function closeFileExportMenu() {

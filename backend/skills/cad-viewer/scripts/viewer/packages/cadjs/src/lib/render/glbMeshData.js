@@ -90,7 +90,18 @@ function colorFromMaterial(material, useSourceColors, {
   return {
     rgb: [material.color.r, material.color.g, material.color.b],
     hex: `#${material.color.getHexString()}`,
+    opacity: materialOpacity(material, rawMaterial),
   };
+}
+
+function materialOpacity(material, rawMaterial = null) {
+  const materialValue = Number(material?.opacity);
+  if (Number.isFinite(materialValue)) {
+    return Math.min(Math.max(materialValue, 0), 1);
+  }
+  const rawAlpha = rawBaseColorFactor(rawMaterial)?.[3];
+  const rawValue = Number(rawAlpha);
+  return Number.isFinite(rawValue) ? Math.min(Math.max(rawValue, 0), 1) : 1;
 }
 
 function materialForGroup(material, group) {
@@ -271,6 +282,7 @@ function inspectGlbPrimitive(
     name: label || id,
     label: label || id,
     color: color?.hex || "",
+    opacity: color ? color.opacity : 1,
     hasSourceColors: Boolean(color),
     vertexCount,
     triangleCount,
@@ -356,6 +368,7 @@ function writeGlbPrimitive(THREE, descriptor, output, offsets) {
     label: descriptor.label,
     nodeType: "part",
     color: descriptor.color,
+    opacity: descriptor.opacity,
     hasSourceColors: descriptor.hasSourceColors,
     bounds: boundsFromAccumulator(partBounds),
     vertexOffset,

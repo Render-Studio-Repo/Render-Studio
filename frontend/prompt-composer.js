@@ -44,7 +44,7 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
     if (references.length <= INLINE_VISIBLE_LIMIT) inlineExpanded = false;
 
     const explorerRefs = references.filter(
-      (ref) => ref.type === "component" || ref.type === "sketch" || ref.type === "wiring"
+      (ref) => ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf"
     );
 
     references.forEach((ref) => {
@@ -57,8 +57,8 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
         count.className = "prompt-ref-count";
         count.textContent =
           explorerRefs.length === 1
-            ? "1 component referenced"
-            : `${explorerRefs.length} components referenced`;
+            ? "1 reference attached"
+            : `${explorerRefs.length} references attached`;
         inlineChipsEl.appendChild(count);
       }
       const inlineRefs = inlineExpanded ? references : references.slice(0, INLINE_VISIBLE_LIMIT);
@@ -100,6 +100,7 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
     if (ref.type === "component") return ref.label || ref.stem || ref.filename || "component";
     if (ref.type === "sketch") return ref.label || ref.stem || "sketch";
     if (ref.type === "wiring") return ref.label || ref.stem || "wiring";
+    if (ref.type === "dxf") return ref.label || ref.filename || "DXF";
     if (ref.type === "path") return ref.label || `${(ref.loop_points || []).length} pts`;
     return formatCoords(ref.position);
   }
@@ -179,6 +180,7 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
         face_key,
         planar_key,
         mesh_uuid,
+        face_area,
         vertex_index,
         selected_vertices,
         loop_points,
@@ -190,6 +192,8 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
         stem,
         format,
         viewer_filename,
+        text_content,
+        text_truncated,
         projectId,
         local_point,
         local_loop_points,
@@ -204,6 +208,7 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
         face_key,
         planar_key,
         mesh_uuid,
+        face_area,
         vertex_index,
         selected_vertices,
         loop_points,
@@ -215,6 +220,8 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
         stem,
         format,
         viewer_filename,
+        text_content,
+        text_truncated,
         projectId,
         local_point:
           local_point ||

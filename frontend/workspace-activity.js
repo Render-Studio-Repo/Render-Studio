@@ -6,6 +6,7 @@ const KIND_LABELS = {
   folder_deleted: "Folder deleted",
   folder_shared: "Folder shared",
   project_moved: "Project moved",
+  render_folder_connected: "Render folder connected",
 };
 
 export function createWorkspaceActivityUI({ listEl }) {

@@ -6,6 +6,9 @@ import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 const FOLDER_COLLAPSE_KEY = "render3d:folder-collapsed";
 const PROJECT_EXPAND_KEY = "render3d:project-expanded";
 const PROJECT_SEARCH_KEY = "render3d:project-search";
+const FOLDER_SHOW_ALL_KEY = "render3d:folder-show-all";
+const HIERARCHY_SHOW_ALL_KEY = "render3d:hierarchy-show-all";
+const COMPACT_LIST_LIMIT = 5;
 
 let projectSearchQuery = "";
 try {
@@ -41,6 +44,13 @@ function formatCostUsd(value) {
   return `$${n.toFixed(2)}`;
 }
 
+function compactTokenCount(value) {
+  const total = Number(value) || 0;
+  if (total >= 1_000_000) return `${(total / 1_000_000).toFixed(2)}M tokens`;
+  if (total >= 1000) return `${(total / 1000).toFixed(1)}k tokens`;
+  return `${total.toLocaleString()} tokens`;
+}
+
 function projectProviderLabel(summary) {
   const provider = (summary?.provider || "").toLowerCase();
   if (provider === "deterministic") return "Deterministic";
@@ -65,7 +75,9 @@ function projectPromptCostMeta(p) {
   const label = projectProviderLabel(summary);
   const untracked = summary.untracked_count ?? 0;
   const suffix = untracked > 0 ? "+" : "";
-  return ` · ${cost} ${label}${suffix} · ${tracked} prompt${tracked !== 1 ? "s" : ""}`;
+  const tokens = summary.usage?.total_tokens ?? 0;
+  const tokenLabel = tokens ? ` · ${compactTokenCount(tokens)}` : "";
+  return ` · ${cost} ${label}${suffix}${tokenLabel} · ${tracked} prompt${tracked !== 1 ? "s" : ""}`;
 }
 
 function hierarchyDisplayName(entry) {
@@ -127,6 +139,7 @@ export function createWorkspaceBrowser({
   onRenameProject,
   onDeleteProject,
   onExportProject,
+  onMakePublicProject,
   onOpenHierarchyItem,
   onEditHierarchyItem,
   onOpenProfile,
@@ -146,6 +159,8 @@ export function createWorkspaceBrowser({
   let renameModalEl = null;
   let shareModalFolder = null;
   let collapsedFolders = loadIdSet(FOLDER_COLLAPSE_KEY);
+  let showAllFolders = loadIdSet(FOLDER_SHOW_ALL_KEY);
+  let showAllHierarchySections = loadIdSet(HIERARCHY_SHOW_ALL_KEY);
   let expandedProjects = loadIdSet(PROJECT_EXPAND_KEY);
   const forceCollapsedProjects = new Set();
   const expandedSections = new Map();
@@ -178,9 +193,43 @@ export function createWorkspaceBrowser({
     return fid && folderIds.has(fid) ? fid : null;
   }
 
+  function folderListKey(folderId) {
+    return folderId || "__root__";
+  }
+
+  function hierarchyListKey(projectId, sectionId) {
+    return `${projectId}:${sectionId}`;
+  }
+
+  function visibleSlice(items, key, set, forceAll = false) {
+    const list = items || [];
+    if (forceAll || set.has(key) || list.length <= COMPACT_LIST_LIMIT) return list;
+    return list.slice(0, COMPACT_LIST_LIMIT);
+  }
+
+  function buildShowMoreControl({ total, shown, expanded, label, onToggle }) {
+    if (total <= COMPACT_LIST_LIMIT) return null;
+    const li = document.createElement("li");
+    li.className = "browser-show-more-row";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "browser-show-more-btn";
+    btn.textContent = expanded
+      ? `Show less ${label}`
+      : `Show ${total - shown} more ${label}`;
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggle?.();
+    });
+    li.appendChild(btn);
+    return li;
+  }
+
   async function moveProjectToFolder(projectId, folderId) {
     const projects = getProjects();
     const proj = projects.find((x) => x.id === projectId);
+    if (proj?.read_only_project) return;
     const targetFolder = folderId || null;
     if (proj && effectiveProjectFolderId(proj) === targetFolder) return;
     try {
@@ -198,6 +247,7 @@ export function createWorkspaceBrowser({
   }
 
   function openMoveProjectSubmenu(anchorBtn, project) {
+    if (project?.read_only_project) return;
     moveSubmenuEl?.remove();
     moveSubmenuEl = null;
     const submenu = document.createElement("div");
@@ -206,7 +256,9 @@ export function createWorkspaceBrowser({
     const currentFolderId = effectiveProjectFolderId(project);
     const targets = [
       { id: null, label: "Unfiled", icon: "📁" },
-      ...folders.map((f) => ({ id: f.id, label: f.name, icon: "📂" })),
+      ...folders
+        .filter((f) => !(f.virtual || f.read_only || f.public))
+        .map((f) => ({ id: f.id, label: f.name, icon: "📂" })),
     ];
 
     for (const target of targets) {
@@ -744,6 +796,7 @@ export function createWorkspaceBrowser({
     if (e?.stopPropagation) e.stopPropagation();
     closeContextMenu();
     const idToken = projectExplorerId(project);
+    const readOnly = !!project?.read_only_project;
     const menu = document.createElement("div");
     menu.className = "folder-context-menu project-context-menu";
     menu.innerHTML = `
@@ -753,11 +806,12 @@ export function createWorkspaceBrowser({
       </div>
       <button type="button" data-action="open">Open project</button>
       <button type="button" data-action="copy-id">Copy project ID</button>
-      <button type="button" data-action="move">Move to…</button>
+      ${readOnly || project?.public ? "" : `<button type="button" data-action="move">Move to…</button>`}
+      ${readOnly || project?.public ? "" : `<button type="button" data-action="make-public">Make public</button>`}
       <button type="button" data-action="export">Export / share…</button>
-      <button type="button" data-action="rename">Rename…</button>
+      ${readOnly ? "" : `<button type="button" data-action="rename">Rename…</button>
       <hr />
-      <button type="button" data-action="delete">Delete project</button>
+      <button type="button" data-action="delete">Delete project</button>`}
     `;
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();
@@ -783,6 +837,8 @@ export function createWorkspaceBrowser({
         await copyExplorerId(idToken);
       } else if (action === "export") {
         onExportProject?.(project);
+      } else if (action === "make-public") {
+        onMakePublicProject?.(project);
       } else if (action === "rename") {
         onRenameProject?.(project);
       } else if (action === "delete") {
@@ -1007,7 +1063,10 @@ export function createWorkspaceBrowser({
                 : "No wiring";
           list.appendChild(empty);
         } else {
-          for (const entry of section.items) {
+          const sectionKey = hierarchyListKey(project.id, section.id);
+          const sectionShowAll = showAllHierarchySections.has(sectionKey);
+          const visibleItems = visibleSlice(section.items, sectionKey, showAllHierarchySections);
+          for (const entry of visibleItems) {
             const item = document.createElement("li");
             item.className = "proj-hierarchy-item";
             const isComponent = section.id === "components";
@@ -1145,6 +1204,19 @@ export function createWorkspaceBrowser({
 
             list.appendChild(item);
           }
+          const more = buildShowMoreControl({
+            total: section.items.length,
+            shown: visibleItems.length,
+            expanded: sectionShowAll,
+            label: section.label.toLowerCase(),
+            onToggle: () => {
+              if (sectionShowAll) showAllHierarchySections.delete(sectionKey);
+              else showAllHierarchySections.add(sectionKey);
+              saveIdSet(HIERARCHY_SHOW_ALL_KEY, showAllHierarchySections);
+              render();
+            },
+          });
+          if (more) list.appendChild(more);
         }
         sectionEl.appendChild(list);
       }
@@ -1162,6 +1234,7 @@ export function createWorkspaceBrowser({
     const showSpinner = loading || generating;
     if (p.id === getActiveProjectId()) li.classList.add("active");
     if (showSpinner) li.classList.add("proj-item--loading");
+    const readOnly = !!p.read_only_project;
 
     const steps = p.timeline?.entries?.length || 0;
     const files = p.file_count ?? p.files?.length ?? 0;
@@ -1171,10 +1244,10 @@ export function createWorkspaceBrowser({
 
     const handle = document.createElement("span");
     handle.className = "proj-drag-handle";
-    handle.title = "Drag to move";
+    handle.title = readOnly ? "Read-only render" : "Drag to move";
     handle.setAttribute("aria-hidden", "true");
-    handle.draggable = true;
-    handle.textContent = "⠿";
+    handle.draggable = !readOnly;
+    handle.textContent = readOnly ? "👁" : "⠿";
 
     const hasHierarchy = hierarchyItemCount(p) > 0;
     const projectOpen = isProjectExpanded(p.id);
@@ -1217,7 +1290,11 @@ export function createWorkspaceBrowser({
       ? '<span class="proj-new-badge" title="New model ready — click to view" aria-label="New model ready">✓</span>'
       : "";
     if (isNew) li.classList.add("proj-item--new");
-    body.innerHTML = `${spinner}<span class="proj-name">${escapeHtml(p.name || p.id)}</span>${newBadge}<span class="proj-id-badge" title="${escapeHtml(projectIdToken)}">${escapeHtml(projectIdLabel)}</span>${loadingLabel}<span class="proj-meta">${files} file${files !== 1 ? "s" : ""} · ${steps} step${steps !== 1 ? "s" : ""}${promptCost}${when ? " · " + when : ""}</span>`;
+    const ownerLabel = [p.owner_name, p.owner_email].filter(Boolean).join(" · ");
+    const ownerMeta = readOnly && ownerLabel
+      ? `<span class="proj-owner-badge" title="Generated by ${escapeHtml(ownerLabel)}">Generated by ${escapeHtml(ownerLabel)}</span>`
+      : "";
+    body.innerHTML = `${spinner}<span class="proj-name">${escapeHtml(p.name || p.id)}</span>${newBadge}<span class="proj-id-badge" title="${escapeHtml(projectIdToken)}">${escapeHtml(projectIdLabel)}</span>${loadingLabel}${ownerMeta}<span class="proj-meta">${files} file${files !== 1 ? "s" : ""} · ${steps} step${steps !== 1 ? "s" : ""}${promptCost}${when ? " · " + when : ""}</span>`;
     body.addEventListener("click", (e) => {
       e.stopPropagation();
       onOpenProject?.(p.id);
@@ -1255,7 +1332,11 @@ export function createWorkspaceBrowser({
 
     const actions = document.createElement("div");
     actions.className = "proj-row-actions";
-    actions.append(exp, rename, del);
+    if (readOnly) {
+      actions.append(exp);
+    } else {
+      actions.append(exp, rename, del);
+    }
 
     const main = document.createElement("div");
     main.className = "proj-item-main";
@@ -1275,6 +1356,10 @@ export function createWorkspaceBrowser({
     }
 
     handle.addEventListener("dragstart", (e) => {
+      if (readOnly) {
+        e.preventDefault();
+        return;
+      }
       e.stopPropagation();
       dragProjectId = p.id;
       li.classList.add("dragging");
@@ -1295,6 +1380,8 @@ export function createWorkspaceBrowser({
   function setupDropZone(zoneEl, folderId) {
     zoneEl.addEventListener("dragover", (e) => {
       if (!dragProjectId) return;
+      const projects = getProjects();
+      if (projects.find((p) => p.id === dragProjectId)?.read_only_project) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       zoneEl.classList.add("drop-target-active");
@@ -1307,6 +1394,8 @@ export function createWorkspaceBrowser({
       zoneEl.classList.remove("drop-target-active");
       const pid = dragProjectId || e.dataTransfer.getData("text/plain");
       if (!pid) return;
+      const projects = getProjects();
+      if (projects.find((p) => p.id === pid)?.read_only_project) return;
       await moveProjectToFolder(pid, folderId || null);
     });
   }
@@ -1339,7 +1428,7 @@ export function createWorkspaceBrowser({
           <path d="M10 10l3.5 3.5" stroke-linecap="round"></path>
         </svg>
       </span>
-      <input type="search" class="project-search-input" placeholder="Search projects…" maxlength="120" autocomplete="off" spellcheck="false" />
+      <input type="search" class="project-search-input" placeholder="Search projects or objects…" maxlength="120" autocomplete="off" spellcheck="false" />
       <button type="button" class="project-search-clear${projectSearchQuery.trim() ? "" : " hidden"}" title="Clear search" aria-label="Clear search">
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
           <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"></path>
@@ -1376,18 +1465,21 @@ export function createWorkspaceBrowser({
       container.querySelector(".project-search-input")?.focus();
     });
 
+    const teamIdForControls = getWorkspaceId();
     const toolbar = document.createElement("div");
     toolbar.className = "folder-toolbar";
-    toolbar.innerHTML = `
-      <input type="text" class="folder-name-input" placeholder="Folder name" maxlength="120" />
-      <button type="button" class="btn-create-folder" title="Create folder" aria-label="Create folder">
-        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H6l1.2 1.2H12.5A1.5 1.5 0 0 1 14 5.7V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z" stroke-linejoin="round"></path>
-          <path d="M8 7v4M6 9h4" stroke-linecap="round"></path>
-        </svg>
-      </button>
-    `;
-    browserToolbar.appendChild(toolbar);
+    if (teamIdForControls) {
+      toolbar.innerHTML = `
+        <input type="text" class="folder-name-input" placeholder="Folder name" maxlength="120" />
+        <button type="button" class="btn-create-folder" title="Create folder" aria-label="Create folder">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H6l1.2 1.2H12.5A1.5 1.5 0 0 1 14 5.7V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z" stroke-linejoin="round"></path>
+            <path d="M8 7v4M6 9h4" stroke-linecap="round"></path>
+          </svg>
+        </button>
+      `;
+      browserToolbar.appendChild(toolbar);
+    }
     container.appendChild(browserToolbar);
 
     const input = toolbar.querySelector(".folder-name-input");
@@ -1447,8 +1539,24 @@ export function createWorkspaceBrowser({
       const rootList = document.createElement("ul");
       rootList.className = "project-list";
       if (!rootCollapsed) {
-        rootProjects.forEach((p) => rootList.appendChild(buildProjectRow(p)));
-        visibleProjectCount += rootProjects.length;
+        const rootKey = folderListKey(null);
+        const rootShowAll = showAllFolders.has(rootKey);
+        const visibleRootProjects = visibleSlice(rootProjects, rootKey, showAllFolders, searching);
+        visibleRootProjects.forEach((p) => rootList.appendChild(buildProjectRow(p)));
+        visibleProjectCount += visibleRootProjects.length;
+        const more = buildShowMoreControl({
+          total: rootProjects.length,
+          shown: visibleRootProjects.length,
+          expanded: rootShowAll || searching,
+          label: "projects",
+          onToggle: () => {
+            if (rootShowAll) showAllFolders.delete(rootKey);
+            else showAllFolders.add(rootKey);
+            saveIdSet(FOLDER_SHOW_ALL_KEY, showAllFolders);
+            render();
+          },
+        });
+        if (!searching && more) rootList.appendChild(more);
       }
       rootZone.appendChild(rootList);
       setupDropZone(rootZone, null);
@@ -1523,23 +1631,39 @@ export function createWorkspaceBrowser({
         if (!inFolder.length) {
           const empty = document.createElement("li");
           empty.className = "folder-drop-hint muted small";
-          empty.textContent = "Drop projects here";
+          empty.textContent = folder.virtual || folder.read_only ? "No renders yet" : "Drop projects here";
           list.appendChild(empty);
         } else {
-          inFolder.forEach((p) => list.appendChild(buildProjectRow(p)));
-          visibleProjectCount += inFolder.length;
+          const listKey = folderListKey(folder.id);
+          const folderShowAll = showAllFolders.has(listKey);
+          const visibleFolderProjects = visibleSlice(inFolder, listKey, showAllFolders, searching);
+          visibleFolderProjects.forEach((p) => list.appendChild(buildProjectRow(p)));
+          visibleProjectCount += visibleFolderProjects.length;
+          const more = buildShowMoreControl({
+            total: inFolder.length,
+            shown: visibleFolderProjects.length,
+            expanded: folderShowAll || searching,
+            label: "projects",
+            onToggle: () => {
+              if (folderShowAll) showAllFolders.delete(listKey);
+              else showAllFolders.add(listKey);
+              saveIdSet(FOLDER_SHOW_ALL_KEY, showAllFolders);
+              render();
+            },
+          });
+          if (!searching && more) list.appendChild(more);
         }
       }
 
       zone.append(header, list);
-      setupDropZone(zone, folder.id);
+      if (!(folder.virtual || folder.read_only)) setupDropZone(zone, folder.id);
       container.appendChild(zone);
     }
 
     if (searching && visibleProjectCount === 0) {
       const noMatch = document.createElement("p");
       noMatch.className = "muted small browser-empty project-search-empty";
-      noMatch.textContent = `No projects match “${projectSearchQuery.trim()}”`;
+      noMatch.textContent = `No projects or objects match “${projectSearchQuery.trim()}”`;
       container.appendChild(noMatch);
     } else if (!projects.length && !folders.length) {
       const empty = document.createElement("p");
@@ -1552,7 +1676,23 @@ export function createWorkspaceBrowser({
   async function refreshFolders() {
     const teamId = getWorkspaceId();
     if (!teamId) {
+      const seen = new Set();
       folders = [];
+      for (const project of getProjects() || []) {
+        const id = project?.folder_id;
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const isPublic = id === "__public__";
+        const isOtherRenders = id === "__other_user_renders__";
+        folders.push({
+          id,
+          team_id: project.team_id || null,
+          name: project.folder_name || (isPublic ? "Public" : isOtherRenders ? "New renders from other users" : "Folder"),
+          virtual: isPublic || isOtherRenders || !project.team_id,
+          read_only: isPublic || isOtherRenders || !!project.read_only_project,
+          public: isPublic,
+        });
+      }
       return;
     }
     try {

@@ -1,45 +1,18 @@
+import {
+  DEFAULT_DISPLAY_EDGE_SETTINGS,
+  DISABLED_DISPLAY_EDGE_SETTINGS
+} from "./displaySettings.js";
+
+export {
+  CAD_EDGE_CLASS_IDS,
+  CAD_EDGE_COLOR,
+  CAD_EDGE_HIGHLIGHT_COLOR
+} from "./displaySettings.js";
+
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
 export const MAX_THEME_FILL_COLORS = 50;
-export const CAD_EDGE_COLOR = "#132232";
-export const CAD_EDGE_HIGHLIGHT_COLOR = "#8dc5ff";
-export const CAD_EDGE_CLASS_IDS = Object.freeze(["feature", "tangent", "seam", "degenerate"]);
-
-const CAD_EDGE_CLASS_SETTINGS = Object.freeze({
-  feature: Object.freeze({
-    opacity: 1,
-    thickness: 1.15
-  }),
-  tangent: Object.freeze({
-    opacity: 0.5,
-    thickness: 1.15
-  }),
-  seam: Object.freeze({
-    opacity: 0.85,
-    thickness: 1.15
-  }),
-  degenerate: Object.freeze({
-    opacity: 1,
-    thickness: 0
-  })
-});
-
-const CAD_THEME_EDGE_SETTINGS = Object.freeze({
-  enabled: true,
-  contrastMode: "manual",
-  color: CAD_EDGE_COLOR,
-  thickness: 1,
-  classes: CAD_EDGE_CLASS_SETTINGS,
-  highlightColor: CAD_EDGE_HIGHLIGHT_COLOR,
-  highlightOpacity: 1,
-  highlightThickness: 3,
-  silhouette: false,
-  silhouetteScale: 0
-});
-
-const DISABLED_THEME_EDGE_SETTINGS = Object.freeze({
-  ...CAD_THEME_EDGE_SETTINGS,
-  enabled: false
-});
+const CAD_THEME_EDGE_SETTINGS = DEFAULT_DISPLAY_EDGE_SETTINGS;
+const DISABLED_THEME_EDGE_SETTINGS = DISABLED_DISPLAY_EDGE_SETTINGS;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -132,28 +105,6 @@ function normalizeMaterialTintMode(value, fallback = "multiply") {
     : fallback;
 }
 
-function normalizeEdgeContrastMode(value, fallback = "manual") {
-  const normalized = String(value || "").trim().toLowerCase();
-  return ["auto", "manual"].includes(normalized)
-    ? normalized
-    : fallback;
-}
-
-function normalizeEdgeClassSettings(value = {}, fallback = CAD_EDGE_CLASS_SETTINGS) {
-  const source = value && typeof value === "object" ? value : {};
-  return Object.fromEntries(CAD_EDGE_CLASS_IDS.map((classId) => {
-    const classSource = source[classId] && typeof source[classId] === "object" ? source[classId] : {};
-    const classFallback = fallback?.[classId] || CAD_EDGE_CLASS_SETTINGS[classId];
-    const legacyDisabled = classSource.enabled === false;
-    return [classId, {
-      opacity: normalizeNumber(classSource.opacity, classFallback.opacity, 0, 1),
-      thickness: legacyDisabled
-        ? 0
-        : normalizeNumber(classSource.thickness, classFallback.thickness, 0, 6)
-    }];
-  }));
-}
-
 export const THEME_FLOOR_MODES = Object.freeze({
   STAGE: "stage",
   GRID: "grid",
@@ -174,7 +125,6 @@ function normalizeThemeColorMode(value, fallback = THEME_COLOR_MODES.SYSTEM) {
 }
 
 const THEME_MODE_COLOR_PATHS = Object.freeze([
-  Object.freeze(["edges", "color"]),
   Object.freeze(["background", "solidColor"]),
   Object.freeze(["background", "linearStart"]),
   Object.freeze(["background", "linearEnd"]),
@@ -183,6 +133,8 @@ const THEME_MODE_COLOR_PATHS = Object.freeze([
   Object.freeze(["floor", "color"]),
   Object.freeze(["floor", "gridCenterColor"]),
   Object.freeze(["floor", "gridCellColor"]),
+  Object.freeze(["floor", "grid", "centerColor"]),
+  Object.freeze(["floor", "grid", "cellColor"]),
   Object.freeze(["lighting", "directional", "color"]),
   Object.freeze(["lighting", "spot", "color"]),
   Object.freeze(["lighting", "point", "color"]),
@@ -263,10 +215,15 @@ function applyThemeModeColorOverrides(target, overrides = {}) {
 export const MIN_FLOOR_GRID_DENSITY = 0.25;
 export const MAX_FLOOR_GRID_DENSITY = 4;
 export const DEFAULT_FLOOR_GRID_SETTINGS = Object.freeze({
+  enabled: true,
   gridCenterColor: "#6b7280",
   gridCellColor: "#cbd5e1",
   gridOpacity: 0.18,
-  gridDensity: 1
+  gridDensity: 1,
+  centerColor: "#6b7280",
+  cellColor: "#cbd5e1",
+  opacity: 0.18,
+  density: 1
 });
 
 function normalizeFloorMode(value, fallback = THEME_FLOOR_MODES.STAGE) {
@@ -409,21 +366,43 @@ function midpointPalette(primaryColors, secondaryColors) {
 
 function createFloorGridSettings(floorColor, options = {}) {
   const normalizedFloorColor = normalizeColor(floorColor, "#f1f5f9");
+  const enabled = normalizeBoolean(options.enabled, false);
   const lightFloor = relativeLuminance(normalizedFloorColor) >= 0.36;
-  return {
-    gridCenterColor: lightFloor
+  const centerColor = normalizeColor(
+    options.centerColor,
+    lightFloor
       ? mixHexColors(normalizedFloorColor, "#0f172a", 0.48)
-      : mixHexColors(normalizedFloorColor, "#f8fafc", 0.46),
-    gridCellColor: lightFloor
+      : mixHexColors(normalizedFloorColor, "#f8fafc", 0.46)
+  );
+  const cellColor = normalizeColor(
+    options.cellColor,
+    lightFloor
       ? mixHexColors(normalizedFloorColor, "#475569", 0.26)
-      : mixHexColors(normalizedFloorColor, "#cbd5e1", 0.22),
-    gridOpacity: normalizeNumber(options.opacity, DEFAULT_FLOOR_GRID_SETTINGS.gridOpacity, 0, 1),
-    gridDensity: normalizeNumber(
-      options.density,
-      DEFAULT_FLOOR_GRID_SETTINGS.gridDensity,
-      MIN_FLOOR_GRID_DENSITY,
-      MAX_FLOOR_GRID_DENSITY
-    )
+      : mixHexColors(normalizedFloorColor, "#cbd5e1", 0.22)
+  );
+  const opacity = normalizeNumber(options.opacity, DEFAULT_FLOOR_GRID_SETTINGS.opacity, 0, 1);
+  const density = normalizeNumber(
+    options.density,
+    DEFAULT_FLOOR_GRID_SETTINGS.density,
+    MIN_FLOOR_GRID_DENSITY,
+    MAX_FLOOR_GRID_DENSITY
+  );
+  return {
+    gridCenterColor: centerColor,
+    gridCellColor: cellColor,
+    gridOpacity: opacity,
+    gridDensity: density,
+    grid: {
+      enabled,
+      centerColor,
+      cellColor,
+      opacity,
+      density
+    },
+    centerColor,
+    cellColor,
+    opacity,
+    density
   };
 }
 
@@ -465,7 +444,8 @@ const CINEMATIC_THEME_SETTINGS = Object.freeze({
     reflectivity: 0.14,
     shadowOpacity: 0.16,
     horizonBlend: 0.18,
-    ...createFloorGridSettings("#edf3f8", { opacity: 0.2 })
+    ...createFloorGridSettings("#edf3f8", { opacity: 0.2 }),
+    enabled: false
   },
   environment: {
     enabled: true,
@@ -561,7 +541,8 @@ const DARK_STUDIO_THEME_SETTINGS = Object.freeze({
     reflectivity: 0.1,
     shadowOpacity: 0.42,
     horizonBlend: 0.1,
-    ...createFloorGridSettings("#0a2238", { opacity: 0.22 })
+    ...createFloorGridSettings("#0a2238", { opacity: 0.22 }),
+    enabled: false
   },
   environment: {
     enabled: true,
@@ -700,7 +681,8 @@ const BLUE_THEME_SETTINGS = Object.freeze({
     reflectivity: 0.2,
     shadowOpacity: 0.3,
     horizonBlend: 0.18,
-    ...createFloorGridSettings("#06324f", { opacity: 0.24 })
+    ...createFloorGridSettings("#06324f", { opacity: 0.24 }),
+    enabled: false
   },
   environment: DARK_STUDIO_THEME_SETTINGS.environment,
   lighting: DARK_STUDIO_THEME_SETTINGS.lighting
@@ -732,7 +714,8 @@ const PINK_THEME_SETTINGS = Object.freeze({
     reflectivity: 0.2,
     shadowOpacity: 0.26,
     horizonBlend: 0.22,
-    ...createFloorGridSettings("#4a1833", { opacity: 0.24 })
+    ...createFloorGridSettings("#4a1833", { opacity: 0.24 }),
+    enabled: false
   },
   environment: DARK_STUDIO_THEME_SETTINGS.environment,
   lighting: DARK_STUDIO_THEME_SETTINGS.lighting
@@ -764,7 +747,8 @@ const CLAY_SUNRISE_THEME_SETTINGS = Object.freeze({
     reflectivity: 0.14,
     shadowOpacity: 0.34,
     horizonBlend: 0.12,
-    ...createFloorGridSettings("#d4a070", { opacity: 0.18 })
+    ...createFloorGridSettings("#d4a070", { opacity: 0.18 }),
+    enabled: false
   },
   environment: DARK_STUDIO_THEME_SETTINGS.environment,
   lighting: DARK_STUDIO_THEME_SETTINGS.lighting
@@ -796,7 +780,8 @@ const BEACH_THEME_SETTINGS = Object.freeze({
     reflectivity: 0.18,
     shadowOpacity: 0.2,
     horizonBlend: 0.2,
-    ...createFloorGridSettings("#f2d59b", { opacity: 0.18 })
+    ...createFloorGridSettings("#f2d59b", { opacity: 0.18 }),
+    enabled: false
   },
   environment: {
     enabled: true,
@@ -914,7 +899,8 @@ const WORKBENCH_BASE_THEME_SETTINGS = Object.freeze({
   floor: {
     ...CINEMATIC_THEME_SETTINGS.floor,
     color: WORKBENCH_LIGHT_FLOOR_COLOR,
-    ...createFloorGridSettings(WORKBENCH_LIGHT_FLOOR_COLOR, { opacity: 0.2 })
+    enabled: true,
+    ...createFloorGridSettings(WORKBENCH_LIGHT_FLOOR_COLOR, { enabled: true, opacity: 0.2 })
   },
   environment: {
     ...CINEMATIC_THEME_SETTINGS.environment,
@@ -955,7 +941,8 @@ const WORKBENCH_DARK_THEME_SETTINGS = Object.freeze({
   floor: {
     ...DARKOAL_THEME_SETTINGS.floor,
     color: WORKBENCH_DARK_FLOOR_COLOR,
-    ...createFloorGridSettings(WORKBENCH_DARK_FLOOR_COLOR, { opacity: 0.22 })
+    enabled: true,
+    ...createFloorGridSettings(WORKBENCH_DARK_FLOOR_COLOR, { enabled: true, opacity: 0.22 })
   },
   lighting: {
     ...DARKOAL_THEME_SETTINGS.lighting,
@@ -1363,7 +1350,6 @@ function createThemeSettingsSignature(value = {}) {
     colorMode: value?.colorMode || THEME_COLOR_MODES.SYSTEM,
     modeColors: value?.modeColors || {},
     materials: value?.materials || {},
-    edges: value?.edges || {},
     background: value?.background || {},
     floor: value?.floor || {},
     environment: value?.environment || {},
@@ -1400,13 +1386,6 @@ function isMigratableCinematicThemeSettings(settings) {
     FEATURE_CONTRAST_CINEMATIC_MATERIALS,
     CINEMATIC_THEME_SETTINGS.materials
   ]);
-  const edgeMatches = valuesMatchAny(settings?.edges, [
-    LEGACY_CINEMATIC_EDGES,
-    PREVIOUS_CINEMATIC_EDGES,
-    DIM_CINEMATIC_EDGES,
-    LOW_CONTRAST_CINEMATIC_EDGES,
-    CINEMATIC_THEME_SETTINGS.edges
-  ]);
   const floorMatches = valuesMatchAny(settings?.floor, [
     LEGACY_CINEMATIC_FLOOR,
     PREVIOUS_CINEMATIC_FLOOR,
@@ -1432,7 +1411,6 @@ function isMigratableCinematicThemeSettings(settings) {
   ]);
   return (
     materialMatches &&
-    edgeMatches &&
     backgroundMatches &&
     floorMatches &&
     environmentMatches &&
@@ -1454,9 +1432,6 @@ export function normalizeThemeSettings(value = {}) {
   const floor = source.floor && typeof source.floor === "object"
     ? source.floor
     : {};
-  const edges = source.edges && typeof source.edges === "object"
-    ? source.edges
-    : {};
   const lighting = source.lighting && typeof source.lighting === "object"
     ? source.lighting
     : {};
@@ -1469,7 +1444,31 @@ export function normalizeThemeSettings(value = {}) {
   );
   const fillColors = normalizeThemeFillColors(materials.fillColors, normalizedDefaultColor);
   const normalizedFloorColor = normalizeColor(floor.color, DEFAULT_THEME_SETTINGS.floor?.color || "#141416");
+  const normalizedFloorMode = normalizeFloorMode(floor.mode, DEFAULT_THEME_SETTINGS.floor?.mode || THEME_FLOOR_MODES.STAGE);
+  const grid = floor.grid && typeof floor.grid === "object" && !Array.isArray(floor.grid)
+    ? floor.grid
+    : {};
   const fallbackGridSettings = createFloorGridSettings(normalizedFloorColor);
+  const normalizedGridCenterColor = normalizeColor(
+    grid.centerColor ?? floor.gridCenterColor ?? floor.gridCenter,
+    fallbackGridSettings.centerColor
+  );
+  const normalizedGridCellColor = normalizeColor(
+    grid.cellColor ?? floor.gridCellColor ?? floor.gridCell,
+    fallbackGridSettings.cellColor
+  );
+  const normalizedGridOpacity = normalizeNumber(
+    grid.opacity ?? floor.gridOpacity,
+    fallbackGridSettings.opacity,
+    0,
+    1
+  );
+  const normalizedGridDensity = normalizeNumber(
+    grid.density ?? floor.gridDensity,
+    fallbackGridSettings.density,
+    MIN_FLOOR_GRID_DENSITY,
+    MAX_FLOOR_GRID_DENSITY
+  );
   const colorMode = normalizeThemeColorMode(
     source.colorMode,
     DEFAULT_THEME_SETTINGS?.colorMode || THEME_COLOR_MODES.SYSTEM
@@ -1514,21 +1513,6 @@ export function normalizeThemeSettings(value = {}) {
         2
       )
     },
-    edges: {
-      enabled: normalizeBoolean(edges.enabled, DEFAULT_THEME_SETTINGS.edges.enabled),
-      contrastMode: normalizeEdgeContrastMode(edges.contrastMode, DEFAULT_THEME_SETTINGS.edges.contrastMode),
-      color: normalizeColor(edges.color, DEFAULT_THEME_SETTINGS.edges.color),
-      thickness: normalizeNumber(edges.thickness, DEFAULT_THEME_SETTINGS.edges.thickness, 0.5, 6),
-      classes: normalizeEdgeClassSettings(edges.classes, DEFAULT_THEME_SETTINGS.edges.classes),
-      highlightColor: normalizeColor(
-        edges.highlightColor,
-        DEFAULT_THEME_SETTINGS.edges.highlightColor || CAD_EDGE_HIGHLIGHT_COLOR
-      ),
-      highlightOpacity: normalizeNumber(edges.highlightOpacity, DEFAULT_THEME_SETTINGS.edges.highlightOpacity || 1, 0, 1),
-      highlightThickness: normalizeNumber(edges.highlightThickness, DEFAULT_THEME_SETTINGS.edges.highlightThickness || 3, 0.5, 6),
-      silhouette: normalizeBoolean(edges.silhouette, DEFAULT_THEME_SETTINGS.edges.silhouette || false),
-      silhouetteScale: normalizeNumber(edges.silhouetteScale, DEFAULT_THEME_SETTINGS.edges.silhouetteScale || 0.004, 0, 0.04)
-    },
     background: {
       type: normalizeBackgroundType(background.type, DEFAULT_THEME_SETTINGS.background.type),
       solidColor: normalizeColor(background.solidColor, DEFAULT_THEME_SETTINGS.background.solidColor),
@@ -1539,27 +1523,24 @@ export function normalizeThemeSettings(value = {}) {
       radialOuter: normalizeColor(background.radialOuter, DEFAULT_THEME_SETTINGS.background.radialOuter)
     },
     floor: {
-      mode: normalizeFloorMode(floor.mode, DEFAULT_THEME_SETTINGS.floor?.mode || THEME_FLOOR_MODES.STAGE),
+      mode: normalizedFloorMode,
+      enabled: normalizeBoolean(floor.enabled, normalizedFloorMode !== THEME_FLOOR_MODES.NONE),
       color: normalizedFloorColor,
       roughness: normalizeNumber(floor.roughness, DEFAULT_THEME_SETTINGS.floor?.roughness ?? 0.72, 0, 1),
       reflectivity: normalizeNumber(floor.reflectivity, DEFAULT_THEME_SETTINGS.floor?.reflectivity ?? 0.12, 0, 1),
       shadowOpacity: normalizeNumber(floor.shadowOpacity, DEFAULT_THEME_SETTINGS.floor?.shadowOpacity ?? 0.45, 0, 1),
       horizonBlend: normalizeNumber(floor.horizonBlend, DEFAULT_THEME_SETTINGS.floor?.horizonBlend ?? 0, 0, 1),
-      gridCenterColor: normalizeColor(
-        floor.gridCenterColor ?? floor.gridCenter,
-        fallbackGridSettings.gridCenterColor
-      ),
-      gridCellColor: normalizeColor(
-        floor.gridCellColor ?? floor.gridCell,
-        fallbackGridSettings.gridCellColor
-      ),
-      gridOpacity: normalizeNumber(floor.gridOpacity, fallbackGridSettings.gridOpacity, 0, 1),
-      gridDensity: normalizeNumber(
-        floor.gridDensity,
-        fallbackGridSettings.gridDensity,
-        MIN_FLOOR_GRID_DENSITY,
-        MAX_FLOOR_GRID_DENSITY
-      )
+      gridCenterColor: normalizedGridCenterColor,
+      gridCellColor: normalizedGridCellColor,
+      gridOpacity: normalizedGridOpacity,
+      gridDensity: normalizedGridDensity,
+      grid: {
+        enabled: normalizeBoolean(grid.enabled, normalizedFloorMode === THEME_FLOOR_MODES.GRID),
+        centerColor: normalizedGridCenterColor,
+        cellColor: normalizedGridCellColor,
+        opacity: normalizedGridOpacity,
+        density: normalizedGridDensity
+      }
     },
     environment: {
       enabled: normalizeBoolean(environment.enabled, DEFAULT_THEME_SETTINGS.environment.enabled),
@@ -1700,16 +1681,6 @@ export function inferThemeSettingsSceneTone(themeSettings, options = {}) {
 
 export function inferThemeSceneTone(themeSettings) {
   return inferThemeSettingsSceneTone(themeSettings);
-}
-
-export function resolveThemeSettingsDisplayEdgeSettings(themeSettings) {
-  const normalized = resolveThemeSettingsForColorMode(themeSettings);
-  const edges = normalized.edges || DEFAULT_THEME_SETTINGS.edges;
-  return { ...edges };
-}
-
-export function resolveThemeDisplayEdgeSettings(themeSettings) {
-  return resolveThemeSettingsDisplayEdgeSettings(themeSettings);
 }
 
 export function getEnvironmentPresetById(presetId) {

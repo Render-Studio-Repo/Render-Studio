@@ -98,6 +98,7 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
               <button class="canvas-tool-btn" id="canvas-undo-btn" title="Undo (⌘Z)" disabled>↶</button>
               <button class="canvas-tool-btn" id="canvas-redo-btn" title="Redo (⌘⇧Z)" disabled>↷</button>
               <button class="canvas-tool-btn canvas-clear-btn" id="canvas-clear-btn" title="Clear canvas">🗑</button>
+              <button class="canvas-tool-btn" id="canvas-attach-prompt-btn" title="Attach sketch to AI prompt">📎 Prompt</button>
             </div>
           </div>
           <canvas id="canvas-draw" class="canvas-draw"></canvas>
@@ -175,6 +176,9 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     containerEl.querySelector("#canvas-undo-btn")?.addEventListener("click", undo);
     containerEl.querySelector("#canvas-redo-btn")?.addEventListener("click", redo);
     containerEl.querySelector("#canvas-clear-btn")?.addEventListener("click", clearCanvas);
+    containerEl.querySelector("#canvas-attach-prompt-btn")?.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("canvas:attach-sketch"));
+    });
   }
 
   function updateCursor() {
@@ -457,6 +461,10 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     return canvas?.toDataURL("image/png") ?? null;
   }
 
+  function hasDrawing() {
+    return history.length > 0;
+  }
+
   function getTranscript() {
     return voiceTranscript.trim();
   }
@@ -491,5 +499,5 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
 
   init();
 
-  return { show, hide, destroy, rebuild, stopVoice, getCanvasDataUrl, getTranscript, clearCanvas };
+  return { show, hide, destroy, rebuild, stopVoice, getCanvasDataUrl, getTranscript, hasDrawing, clearCanvas };
 }

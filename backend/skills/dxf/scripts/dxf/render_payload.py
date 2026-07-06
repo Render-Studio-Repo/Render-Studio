@@ -53,11 +53,15 @@ def _normalize_angle(angle_deg: float) -> float:
     return value + 360.0 if value < 0.0 else value
 
 
-def _angle_in_ccw_sweep(angle_deg: float, start_angle_deg: float, sweep_angle_deg: float) -> bool:
-    if sweep_angle_deg >= 360.0 - ANGLE_EPSILON:
+def _angle_in_sweep(angle_deg: float, start_angle_deg: float, sweep_angle_deg: float) -> bool:
+    abs_sweep_angle_deg = abs(sweep_angle_deg)
+    if abs_sweep_angle_deg >= 360.0 - ANGLE_EPSILON:
         return True
-    normalized_delta = (_normalize_angle(angle_deg) - _normalize_angle(start_angle_deg)) % 360.0
-    return normalized_delta <= sweep_angle_deg + ANGLE_EPSILON
+    if sweep_angle_deg >= 0.0:
+        normalized_delta = (_normalize_angle(angle_deg) - _normalize_angle(start_angle_deg)) % 360.0
+        return normalized_delta <= abs_sweep_angle_deg + ANGLE_EPSILON
+    normalized_delta = (_normalize_angle(start_angle_deg) - _normalize_angle(angle_deg)) % 360.0
+    return normalized_delta <= abs_sweep_angle_deg + ANGLE_EPSILON
 
 
 def _point_on_circle(center: tuple[float, float], radius: float, angle_deg: float) -> tuple[float, float]:
@@ -74,7 +78,7 @@ def _arc_extrema_points(arc: ArcEntity) -> list[tuple[float, float]]:
         _point_on_circle(arc.center, arc.radius, arc.end_angle_deg),
     ]
     for candidate_angle in (0.0, 90.0, 180.0, 270.0):
-        if _angle_in_ccw_sweep(candidate_angle, arc.start_angle_deg, arc.sweep_angle_deg):
+        if _angle_in_sweep(candidate_angle, arc.start_angle_deg, arc.sweep_angle_deg):
             points.append(_point_on_circle(arc.center, arc.radius, candidate_angle))
     return points
 
@@ -125,28 +129,72 @@ def _build_path_record(layer_name: str, semantic_kind: str, path_data: str) -> d
     return {"layer": layer_name, "kind": semantic_kind, "d": path_data}
 
 
-def _lwpolyline_lines(entity, *, layer_name: str, dxf_path: Path) -> list[LineEntity]:
-    vertices: list[tuple[float, float]] = []
+def _arc_from_bulge_segment(
+    *,
+    layer_name: str,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    bulge: float,
+) -> ArcEntity | None:
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    chord_length = math.hypot(dx, dy)
+    if chord_length <= ANGLE_EPSILON or abs(bulge) <= ANGLE_EPSILON:
+        return None
+
+    included_angle_rad = 4.0 * math.atan(bulge)
+    radius = (chord_length * (1.0 + bulge * bulge)) / (4.0 * abs(bulge))
+    midpoint = ((start[0] + end[0]) / 2.0, (start[1] + end[1]) / 2.0)
+    left_normal = (-dy / chord_length, dx / chord_length)
+    center_offset = (chord_length * (1.0 - bulge * bulge)) / (4.0 * bulge)
+    center = (
+        midpoint[0] + left_normal[0] * center_offset,
+        midpoint[1] + left_normal[1] * center_offset,
+    )
+    start_angle_deg = _normalize_angle(math.degrees(math.atan2(start[1] - center[1], start[0] - center[0])))
+    return ArcEntity(
+        layer=layer_name,
+        center=center,
+        radius=radius,
+        start_angle_deg=start_angle_deg,
+        sweep_angle_deg=math.degrees(included_angle_rad),
+    )
+
+
+def _lwpolyline_entities(
+    entity,
+    *,
+    layer_name: str,
+    dxf_path: Path,
+) -> tuple[list[LineEntity], list[ArcEntity]]:
+    vertices: list[tuple[tuple[float, float], float]] = []
     for point in entity:
         bulge = float(point[4]) if len(point) > 4 else 0.0
-        if abs(bulge) > ANGLE_EPSILON:
-            raise ValueError(
-                f"Unsupported DXF LWPOLYLINE bulge in {dxf_path.as_posix()}; "
-                "only straight-segment LWPOLYLINE entities are supported"
-            )
-        vertices.append((float(point[0]), float(point[1])))
+        vertices.append(((float(point[0]), float(point[1])), bulge))
 
     if len(vertices) < 2:
         raise ValueError(f"Invalid DXF LWPOLYLINE in {dxf_path.as_posix()}: expected at least 2 vertices")
 
     lines: list[LineEntity] = []
-    for start, end in zip(vertices, vertices[1:]):
+    arcs: list[ArcEntity] = []
+
+    def add_segment(start_vertex: tuple[tuple[float, float], float], end_vertex: tuple[tuple[float, float], float]) -> None:
+        start, bulge = start_vertex
+        end, _ = end_vertex
         if start == end:
-            continue
+            return
+        if abs(bulge) > ANGLE_EPSILON:
+            arc = _arc_from_bulge_segment(layer_name=layer_name, start=start, end=end, bulge=bulge)
+            if arc is not None:
+                arcs.append(arc)
+            return
         lines.append(LineEntity(layer=layer_name, start=start, end=end))
-    if entity.closed and vertices[0] != vertices[-1]:
-        lines.append(LineEntity(layer=layer_name, start=vertices[-1], end=vertices[0]))
-    return lines
+
+    for start_vertex, end_vertex in zip(vertices, vertices[1:]):
+        add_segment(start_vertex, end_vertex)
+    if entity.closed:
+        add_segment(vertices[-1], vertices[0])
+    return lines, arcs
 
 
 def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list[ArcEntity], list[CircleEntity]]:
@@ -175,7 +223,9 @@ def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list
             continue
 
         if entity_type == "LWPOLYLINE":
-            lines.extend(_lwpolyline_lines(entity, layer_name=layer_name, dxf_path=dxf_path))
+            polyline_lines, polyline_arcs = _lwpolyline_entities(entity, layer_name=layer_name, dxf_path=dxf_path)
+            lines.extend(polyline_lines)
+            arcs.extend(polyline_arcs)
             continue
 
         if entity_type == "ARC":
@@ -278,7 +328,8 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
             min_x=min_x,
             max_y=max_y,
         )
-        large_arc_flag = 1 if arc.sweep_angle_deg > 180.0 + ANGLE_EPSILON else 0
+        large_arc_flag = 1 if abs(arc.sweep_angle_deg) > 180.0 + ANGLE_EPSILON else 0
+        sweep_flag = 0 if arc.sweep_angle_deg >= 0.0 else 1
         path_records.append(
             _build_path_record(
                 arc.layer,
@@ -286,7 +337,7 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
                 (
                     f"M {_format_number(start_point[0])} {_format_number(start_point[1])} "
                     f"A {_format_number(arc.radius)} {_format_number(arc.radius)} 0 "
-                    f"{large_arc_flag} 1 {_format_number(end_point[0])} {_format_number(end_point[1])}"
+                    f"{large_arc_flag} {sweep_flag} {_format_number(end_point[0])} {_format_number(end_point[1])}"
                 ),
             )
         )

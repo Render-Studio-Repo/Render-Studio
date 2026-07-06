@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Render3D — CAD Visualizer</title>
+  <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+    }
+  }
+  </script>
+  <link rel="stylesheet" href="/ribbon.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <a href="/" class="nav-tab active">Studio</a>
+        <a href="/docs.html" class="nav-tab">Docs</a>
+        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+      </nav>
+      <div class="toolbar-pick">
+        <span class="toolbar-pick-label">Pick</span>
+        <button type="button" id="btn-pick-corner" class="btn pick-btn" data-mode="corner">Corner</button>
+        <button type="button" id="btn-pick-face" class="btn pick-btn" data-mode="face">Face</button>
+        <button type="button" id="btn-pick-edge" class="btn pick-btn" data-mode="edge">Edge</button>
+        <button type="button" id="btn-pick-orbit" class="btn pick-btn active" data-mode="off">Orbit</button>
+      </div>
+      <div class="toolbar-actions">
+        <button id="btn-new-project" class="btn secondary">New project</button>
+        <label class="btn primary">
+          Upload CAD
+          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off" hidden />
+        </label>
+        <button id="btn-gizmo" class="btn secondary" title="Move/rotate part in viewer (G)">Gizmo</button>
+        <button id="btn-fit" class="btn secondary">Fit view</button>
+        <button id="btn-wireframe" class="btn secondary" title="Toggle wireframe (W)">Wireframe</button>
+        <button id="btn-grid" class="btn secondary active">Grid</button>
+        <div class="auth-widget">
+          <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Account">
+            <svg class="auth-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+            <span id="auth-avatar" class="auth-avatar hidden"></span>
+            <span id="collab-status" class="collab-dot collab-badge" title="Live collaboration"></span>
+          </button>
+          <div id="user-menu" class="user-menu hidden">
+            <div class="user-menu-header">
+              <span id="auth-avatar-lg" class="auth-avatar auth-avatar-lg"></span>
+              <div>
+                <strong id="user-label"></strong>
+                <span id="user-email" class="muted small"></span>
+              </div>
+            </div>
+            <div class="user-menu-meta">
+              <span id="collab-presence" class="collab-presence muted small"></span>
+            </div>
+            <button type="button" id="btn-logout" class="btn secondary btn-compact user-menu-logout">Log out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Ribbon toolbar: mounted by ribbon.js, spans all columns below header -->
+    <div id="ribbon-container"></div>
+
+    <aside class="sidebar left">
+      <div class="left-scroll">
+        <section class="team-panel workspace-panel">
+          <h2>Workspace</h2>
+          <div id="team-invites-alert" class="team-invites-alert hidden" aria-live="polite"></div>
+          <div class="workspace-create-row">
+            <input type="text" id="workspace-name" placeholder="New shared workspace" maxlength="120" />
+            <button type="button" id="btn-create-workspace" class="btn secondary btn-compact">Create</button>
+          </div>
+          <p id="workspace-create-status" class="muted small"></p>
+          <div class="workspace-switcher-row">
+            <select id="team-select" class="team-select" aria-label="Active workspace"></select>
+            <button type="button" id="btn-rename-workspace" class="btn-icon" title="Rename workspace" hidden aria-label="Rename workspace">
+              <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
+            </button>
+          </div>
+          <div class="team-invite-row">
+            <input type="email" id="team-invite-email" placeholder="Invite to workspace" />
+            <button type="button" id="btn-team-invite" class="btn secondary btn-compact">Invite</button>
+          </div>
+          <p id="team-invite-status" class="muted small"></p>
+          <ul id="team-members" class="team-members"></ul>
+        </section>
+        <section class="workspace-browser-section">
+          <h2>Projects</h2>
+          <p class="muted small">Drag projects into folders in this workspace</p>
+          <div id="project-browser" class="project-browser"></div>
+          <h3 class="workspace-activity-title">Workspace activity</h3>
+          <div id="workspace-activity-list" class="workspace-activity-list"></div>
+        </section>
+        <section>
+          <h2>Current project</h2>
+          <div class="project-current-row">
+            <p id="project-id" class="mono muted">—</p>
+            <button id="btn-rename-project" type="button" class="btn secondary btn-compact" disabled>Rename</button>
+          </div>
+        </section>
+        <section class="object-history-panel">
+          <h2>Project history</h2>
+          <p class="muted small">Full log with who did what — click extrude/build steps to jump to that timeline state</p>
+          <div id="object-history-list" class="object-history-list"></div>
+        </section>
+        <section>
+          <h2>Files</h2>
+          <ul id="file-list" class="file-list"></ul>
+        </section>
+        <section>
+          <h2>View</h2>
+          <div class="hint">
+            <kbd>LMB</kbd> orbit · <kbd>RMB</kbd> pan · <kbd>Scroll</kbd> zoom<br />
+            <kbd>C</kbd>/<kbd>F</kbd>/<kbd>E</kbd> pick · <kbd>G</kbd> gizmo · <kbd>W</kbd> wireframe · <kbd>Esc</kbd> orbit
+          </div>
+        </section>
+      </div>
+      <div id="activity-log-panel" class="left-log-dock"></div>
+    </aside>
+
+    <div class="main-column">
+      <main id="viewport">
+        <div id="viewport-hint" class="viewport-hint hidden">
+          <strong id="pick-hint-title">Pick mode</strong>
+          <span id="pick-hint-text">Click on the model to add a reference to your prompt</span>
+        </div>
+      </main>
+      <div id="timeline-panel" class="timeline-panel"></div>
+    </div>
+
+    <aside class="sidebar right">
+      <section class="edit-panel" id="edit-panel">
+        <h2>Edit tools</h2>
+        <div class="edit-tool-tabs">
+          <button type="button" class="edit-tool-tab active" data-tool="move">Move</button>
+          <button type="button" class="edit-tool-tab" data-tool="rotate">Rotate</button>
+          <button type="button" class="edit-tool-tab" data-tool="scale">Scale</button>
+          <button type="button" class="edit-tool-tab" data-tool="extrude">Extrude</button>
+        </div>
+
+        <div class="edit-step-row">
+          <label for="edit-step">Step</label>
+          <select id="edit-step">
+            <option value="0.1">0.1 mm</option>
+            <option value="1" selected>1 mm</option>
+            <option value="5">5 mm</option>
+            <option value="10">10 mm</option>
+          </select>
+        </div>
+
+        <div class="edit-tool-pane" data-tool="move">
+          <p class="muted small edit-hint">Delta move in model units (mm). Z is vertical.</p>
+          <div class="axis-field axis-x">
+            <span class="axis-label">X</span>
+            <input type="number" id="edit-dx" value="0" step="0.1" />
+            <button type="button" class="btn nudge" data-nudge="x,-1">−</button>
+            <button type="button" class="btn nudge" data-nudge="x,1">+</button>
+          </div>
+          <div class="axis-field axis-y">
+            <span class="axis-label">Y</span>
+            <input type="number" id="edit-dy" value="0" step="0.1" />
+            <button type="button" class="btn nudge" data-nudge="y,-1">−</button>
+            <button type="button" class="btn nudge" data-nudge="y,1">+</button>
+          </div>
+          <div class="axis-field axis-z">
+            <span class="axis-label">Z ↑</span>
+            <input type="number" id="edit-dz" value="0" step="0.1" />
+            <button type="button" class="btn nudge" data-nudge="z,-1">−</button>
+            <button type="button" class="btn nudge" data-nudge="z,1">+</button>
+          </div>
+        </div>
+
+        <div class="edit-tool-pane hidden" data-tool="rotate">
+          <p class="muted small edit-hint">Rotation in degrees (XYZ order).</p>
+          <div class="axis-field axis-x">
+            <span class="axis-label">X°</span>
+            <input type="number" id="edit-rx" value="0" step="1" />
+          </div>
+          <div class="axis-field axis-y">
+            <span class="axis-label">Y°</span>
+            <input type="number" id="edit-ry" value="0" step="1" />
+          </div>
+          <div class="axis-field axis-z">
+            <span class="axis-label">Z°</span>
+            <input type="number" id="edit-rz" value="0" step="1" />
+          </div>
+        </div>
+
+        <div class="edit-tool-pane hidden" data-tool="scale">
+          <p class="muted small edit-hint">Uniform scale factor (1 = no change).</p>
+          <label class="scale-field">Scale <input type="number" id="edit-scale-d" value="1" step="0.05" min="0.01" /></label>
+        </div>
+
+        <div class="edit-tool-pane hidden" data-tool="extrude">
+          <p class="muted small edit-hint">Pick a face, set distance, then extrude along its normal.</p>
+          <div id="extrude-target" class="extrude-target muted">Pick a face (F) on the model</div>
+          <label class="extrude-field">Distance (mm)
+            <input type="number" id="extrude-distance" value="10" step="0.5" min="0.1" />
+          </label>
+          <label class="checkbox-field">
+            <input type="checkbox" id="extrude-inward" />
+            Extrude inward (cut)
+          </label>
+          <button type="button" id="btn-extrude" class="btn accent full">Extrude face</button>
+        </div>
+
+        <div class="edit-actions">
+          <button type="button" id="btn-reset-transform" class="btn secondary">Reset</button>
+          <button type="button" id="btn-apply-transform" class="btn primary">Apply</button>
+        </div>
+        <div id="edit-status" class="status"></div>
+      </section>
+
+      <section class="reference-panel">
+        <h2>References</h2>
+        <p class="muted small">Use toolbar pick tools, click the model, then prompt below. Click again to deselect.</p>
+        <div id="ref-chips" class="ref-chips"></div>
+        <div id="ref-list" class="ref-list"></div>
+      </section>
+
+      <section class="prompt-panel">
+        <div class="prompt-panel-tabs">
+          <button type="button" class="prompt-tab active" data-pane="compose">Compose</button>
+          <button type="button" class="prompt-tab" data-pane="history">History</button>
+        </div>
+        <div id="prompt-pane-compose" class="prompt-pane active">
+          <h2>AI CAD Prompt</h2>
+          <textarea id="prompt-input" rows="4" placeholder="e.g. At @corner-1 add a 3mm hole through the part…"></textarea>
+          <button id="btn-prompt" class="btn accent full">Generate / modify with AI</button>
+          <div id="prompt-status" class="status"></div>
+          <div id="prompt-reply" class="reply"></div>
+        </div>
+        <div id="prompt-pane-history" class="prompt-pane hidden">
+          <p class="muted small">Past prompts for this project — shows who ran each. Click to reuse.</p>
+          <div id="prompt-history-list" class="prompt-history-list"></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <div id="workspace-rename-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-rename-title">
+    <div class="auth-backdrop" data-ws-rename-close></div>
+    <div class="auth-card app-dialog-card">
+      <button type="button" class="auth-close" data-ws-rename-close aria-label="Close">&times;</button>
+      <h2 id="workspace-rename-title" class="app-dialog-title">Rename workspace</h2>
+      <label class="app-dialog-label">Workspace name
+        <input type="text" id="workspace-rename-input" maxlength="120" placeholder="Workspace name" />
+      </label>
+      <p id="workspace-rename-error" class="auth-error hidden"></p>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn secondary" data-ws-rename-close>Cancel</button>
+        <button type="button" id="btn-workspace-rename-save" class="btn accent">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="auth-backdrop" data-auth-close></div>
+    <div class="auth-card">
+      <button type="button" class="auth-close" data-auth-close aria-label="Close">&times;</button>
+      <div class="auth-card-header">
+        <img class="auth-logo" src="/logo.png?v=3" alt="" width="40" height="40" />
+        <div>
+          <h2 id="auth-title">Welcome back</h2>
+          <p class="auth-subtitle">Sign in to access your shared workspaces</p>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Log in</button>
+        <button type="button" class="auth-tab" data-tab="register">Create account</button>
+      </div>
+      <p id="auth-error" class="auth-error"></p>
+      <form id="auth-form-login" class="auth-form">
+        <label>Email<input type="email" id="login-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" /></label>
+        <button type="submit" class="btn accent auth-submit">Log in</button>
+      </form>
+      <form id="auth-form-register" class="auth-form hidden">
+        <label>Name<input type="text" id="register-name" required autocomplete="name" placeholder="Your name" /></label>
+        <label>Email<input type="email" id="register-email" required autocomplete="email" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <button type="submit" class="btn accent auth-submit">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+  <script type="module" src="/engineering-panel.js"></script>
+  <!-- ribbon.js is imported inside app.js -->
+</body>
+</html>

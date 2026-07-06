@@ -17,23 +17,37 @@ from backend.database import get_conn
 security = HTTPBearer(auto_error=False)
 
 
+def _jwt_secret() -> str:
+    secret = (settings.jwt_secret or "").strip()
+    if not secret:
+        # Local/dev deployments may run without a provisioned env file. Keep
+        # auth usable instead of crashing login/websocket requests.
+        return "change-me-in-production-render3d"
+    return secret
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode(), password_hash.encode())
+    if not password_hash:
+        return False
+    try:
+        return bcrypt.checkpw(password.encode(), password_hash.encode())
+    except ValueError:
+        return False
 
 
 def create_access_token(user_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expire_hours)
     payload = {"sub": user_id, "exp": expire}
-    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+    return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
 
 
 def decode_token(token: str) -> str | None:
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        payload = jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
         return payload.get("sub")
     except JWTError:
         return None
@@ -46,6 +60,7 @@ def user_row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "id": row["id"],
         "email": row["email"],
         "display_name": row["display_name"],
+        "avatar_url": row["avatar_url"] if "avatar_url" in row.keys() else None,
         "created_at": row["created_at"],
     }
 
@@ -59,7 +74,7 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
 def get_user_by_email(email: str) -> dict[str, Any] | None:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, email, display_name, created_at FROM users WHERE email = ?",
+            "SELECT id, email, display_name, avatar_url, created_at FROM users WHERE email = ?",
             (email.strip().lower(),),
         ).fetchone()
     return user_row_to_dict(row)

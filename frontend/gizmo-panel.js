@@ -255,19 +255,12 @@ export function createGizmoPanel({
     onStatus?.(kind, text);
   }
 
-  function resetObjectTransform(mesh) {
-    if (!mesh) return;
-    mesh.position.set(0, 0, 0);
-    mesh.quaternion.set(0, 0, 0, 1);
-    mesh.scale.set(1, 1, 1);
-    mesh.updateMatrixWorld(true);
-  }
-
   async function apply(copy = false) {
     if (applying) return;
+    const mesh = targetObject();
     const { projectId, filename, bodyIndex = null, bodyCount = 1, isRoot = true } = getModelInfo();
     const d = deltas();
-    if (!projectId || !filename || !d) return;
+    if (!d) return;
     const body = { mode: "delta", copy };
     const hasT = d.translation.length() > 1e-12;
     const hasR = d.rotation.some((v) => Math.abs(v) > 1e-9);
@@ -278,10 +271,20 @@ export function createGizmoPanel({
     }
     applying = true;
     dragActive = false;
-    const mesh = targetObject();
     if (hasT) body.translation = [d.translation.x, d.translation.y, d.translation.z];
     if (hasR) body.rotation_deg = d.rotation;
     if (hasS) body.scale = d.scale;
+    if (mesh?.userData?.localOnly || mesh?.userData?.architectInstance) {
+      setStatus("ok", "Moved local Architect instance");
+      captureStart();
+      updateFields();
+      applying = false;
+      return;
+    }
+    if (!projectId || !filename) {
+      applying = false;
+      return;
+    }
     setStatus("loading", copy ? "Copying + transforming…" : "Applying transform…");
     try {
       const useBodyTransform = !copy && bodyIndex != null && bodyCount > 1 && !isRoot;
@@ -302,8 +305,9 @@ export function createGizmoPanel({
             scale: start.scale.toArray(),
           }
         : null;
-      // Geometry now owns the move — clear the temporary gizmo offset before reload.
-      if (mesh && !copy) resetObjectTransform(mesh);
+      // Keep the dragged object in place while the saved geometry reloads.
+      // The old object is removed by the assembly swap, so resetting it here
+      // creates a visible snap-back for imported components.
       setStatus("ok", `Saved ${data.filename}`);
       await onApplied?.({ ...data, placementBaseline });
       captureStart();

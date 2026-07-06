@@ -50,6 +50,15 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     return "▣";
   }
 
+  function userAvatar(entry) {
+    const name = entry.user_name || "User";
+    const initial = escapeHtml(name.trim().charAt(0).toUpperCase() || "?");
+    if (entry.user_avatar_url) {
+      return `<span class="timeline-user-avatar timeline-user-avatar--image" style="background-image:url('${escapeHtml(entry.user_avatar_url)}')" title="${escapeHtml(name)}"></span>`;
+    }
+    return `<span class="timeline-user-avatar" title="${escapeHtml(name)}">${initial}</span>`;
+  }
+
   function closeContextMenu() {
     contextMenu?.remove();
     contextMenu = null;
@@ -180,6 +189,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
           <span class="step-topline">
             <span class="timeline-step-icon" aria-hidden="true">${escapeHtml(iconForKind(e.kind))}</span>
             <span class="step-kind">${escapeHtml(e.kind)}</span>
+            ${e.user_name ? userAvatar(e) : ""}
           </span>
           <span class="step-label">${escapeHtml(e.label)}</span>
           ${e.user_name ? `<span class="step-user">${escapeHtml(e.user_name)}</span>` : ""}

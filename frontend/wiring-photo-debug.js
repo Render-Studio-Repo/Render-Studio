@@ -4,6 +4,14 @@
  * interface. Attaches to #wiring-debug-panel in index.html.
  */
 
+import { mountFocusDiagram } from "./wiring-focus-diagram.js?v=20260619-readable";
+
+const WDBG_STORAGE_PREFIX = "render3d:wdbg:v1:";
+
+function wdbgStorageKey(projectId) {
+  return `${WDBG_STORAGE_PREFIX}${projectId}`;
+}
+
 const SEVERITY_META = {
   error:   { icon: "✕", label: "Error",      cls: "wdbg-sev-error" },
   warning: { icon: "⚠", label: "Warning",   cls: "wdbg-sev-warning" },
@@ -14,6 +22,48 @@ function esc(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function formatCostUsd(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "$0.00";
+  const n = Number(value);
+  if (n === 0) return "$0.00";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+/** Resize/compress photos before upload — faster upload + vision processing. */
+async function compressPhoto(dataUrl, { maxDim = 1280, quality = 0.82 } = {}) {
+  if (!dataUrl || typeof dataUrl !== "string") return { dataUrl, type: "image/jpeg" };
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      const scale = Math.min(1, maxDim / Math.max(width, height, 1));
+      width = Math.max(1, Math.round(width * scale));
+      height = Math.max(1, Math.round(height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      resolve({ dataUrl: canvas.toDataURL("image/jpeg", quality), type: "image/jpeg" });
+    };
+    img.onerror = () => resolve({ dataUrl, type: "image/jpeg" });
+    img.src = dataUrl;
+  });
+}
+
+async function compressPhotos(photos) {
+  const out = [];
+  for (const p of photos) {
+    if (!p?.dataUrl || p.photoMissing) {
+      out.push(p);
+      continue;
+    }
+    const compressed = await compressPhoto(p.dataUrl);
+    out.push({ ...p, dataUrl: compressed.dataUrl, type: compressed.type });
+  }
+  return out;
 }
 
 // ── Camera capture helper ────────────────────────────────────────────────────
@@ -63,7 +113,7 @@ function openCameraCapture(onCapture) {
 }
 
 // ── Main factory ─────────────────────────────────────────────────────────────
-export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
+export function createWiringDebugPanel({ getProjectId, getSchematic, getAiKeyBodyFields, onApplyFocusDiagram, apiFn }) {
   const panel       = document.getElementById("wiring-debug-panel");
   const chat        = document.getElementById("wdbg-chat");
   const photoRow    = document.getElementById("wdbg-photo-row");
@@ -75,6 +125,7 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
   const addPhotoBtn = document.getElementById("wdbg-add-photo-btn");
   const cameraBtn   = document.getElementById("wdbg-camera-btn");
   const schemBadge  = document.getElementById("wdbg-schematic-badge");
+  const sessionCostEl = document.getElementById("wdbg-session-cost");
   const schemChk    = document.getElementById("wdbg-include-schematic");
   const contentArea = panel?.closest(".wiring-content-area");
   const debugBtn    = document.getElementById("btn-wiring-photo-debug");
@@ -84,8 +135,364 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
   // Pending attachment images for the current compose
   let pendingPhotos = [];
 
-  // Conversation history (kept in memory for multi-turn context)
-  let history = [];   // [{ role: "user"|"ai", text, photos?, diagnosis? }]
+  // Conversation history (persisted per project in localStorage)
+  let history = [];   // [{ role: "user"|"ai", text?, photos?, diagnosis?, error?, costUsd? }]
+  let sessionCostUsd = 0;
+  let activeStorageProjectId = null;
+  let restoringChat = false;
+  let diagnosePollTimer = null;
+  let inFlightTraceId = null;
+  let pendingTraceId = null;
+  let activeLoadingBubble = null;
+
+  const DIAGNOSE_POLL_MS = 2000;
+  const DIAGNOSE_MAX_MS = 5 * 60 * 1000;
+
+  function _photosForRequest(newPhotos) {
+    if (newPhotos.length) {
+      return newPhotos.filter((p) => p.dataUrl && !p.photoMissing);
+    }
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const entry = history[i];
+      if (entry.role === "user" && entry.photos?.length) {
+        return entry.photos.filter((p) => p.dataUrl && !p.photoMissing);
+      }
+    }
+    return [];
+  }
+
+  function _slimHistoryForStorage(entries) {
+    let keptPhotoTurn = -1;
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      if (entries[i].role === "user" && entries[i].photos?.length) {
+        keptPhotoTurn = i;
+        break;
+      }
+    }
+    return entries.map((entry, idx) => {
+      if (entry.role !== "user" || !entry.photos?.length) return entry;
+      if (idx === keptPhotoTurn) return entry;
+      return {
+        ...entry,
+        photos: entry.photos.map((p) => ({
+          name: p.name,
+          type: p.type,
+          dataUrl: "",
+          photoMissing: true,
+        })),
+      };
+    });
+  }
+
+  function _persistHistory(projectId = activeStorageProjectId) {
+    if (!projectId || typeof localStorage === "undefined") return;
+    const payload = {
+      v: 1,
+      sessionCostUsd,
+      history: _slimHistoryForStorage(history),
+      pendingTraceId,
+      savedAt: Date.now(),
+    };
+    const key = wdbgStorageKey(projectId);
+    try {
+      localStorage.setItem(key, JSON.stringify(payload));
+      return;
+    } catch (_) {
+      // Photos can exceed quota — keep text + diagnoses, drop image data.
+      try {
+        localStorage.setItem(key, JSON.stringify({
+          ...payload,
+          history: history.map((entry) => {
+            if (entry.role !== "user" || !entry.photos?.length) return entry;
+            return {
+              ...entry,
+              photos: entry.photos.map((p) => ({
+                name: p.name,
+                type: p.type,
+                dataUrl: "",
+                photoMissing: true,
+              })),
+            };
+          }),
+        }));
+      } catch (_) {
+        try { localStorage.removeItem(key); } catch (_) {}
+      }
+    }
+  }
+
+  function _loadPersistedHistory(projectId) {
+    if (!projectId || typeof localStorage === "undefined") {
+      return { history: [], sessionCostUsd: 0 };
+    }
+    try {
+      const raw = localStorage.getItem(wdbgStorageKey(projectId));
+      if (!raw) return { history: [], sessionCostUsd: 0 };
+      const data = JSON.parse(raw);
+      const entries = Array.isArray(data?.history) ? data.history : [];
+      const cleaned = entries.filter((e) => e && (e.role === "user" || e.role === "ai"));
+      const cost = Number(data?.sessionCostUsd);
+      return {
+        history: cleaned,
+        sessionCostUsd: Number.isFinite(cost) && cost > 0 ? cost : 0,
+        pendingTraceId: data?.pendingTraceId || null,
+      };
+    } catch (_) {
+      return { history: [], sessionCostUsd: 0 };
+    }
+  }
+
+  function _showWelcome() {
+    if (!chat) return;
+    chat.innerHTML = `
+      <div class="wdbg-welcome">
+        <div class="wdbg-welcome-icon">📷</div>
+        <div class="wdbg-welcome-title">Circuit Debugger</div>
+        <div class="wdbg-welcome-body">Upload a photo of your physical wiring and ask what's wrong. The AI cross-references it against your schematic, returns a fault report, and draws the signal path from your board to the area under review. Analysis runs in the background — safe to refresh.</div>
+        <div class="wdbg-welcome-tips">
+          <span>💡 Tip: use good lighting</span>
+          <span>💡 Multiple photos welcome</span>
+          <span>💡 Describe the symptom</span>
+        </div>
+      </div>`;
+  }
+
+  function _restoreChatFromHistory() {
+    if (!chat) return;
+    if (!history.length) {
+      _showWelcome();
+      _updateSessionCostDisplay();
+      return;
+    }
+    restoringChat = true;
+    chat.innerHTML = "";
+    for (const entry of history) {
+      if (entry.role === "user") appendUserBubble(entry);
+      else if (entry.role === "ai" && entry.diagnosis) appendAiBubble(entry);
+      else if (entry.role === "ai" && entry.error) appendErrorBubble(entry.error);
+    }
+    restoringChat = false;
+    chat.lastElementChild?.scrollIntoView({ block: "end" });
+    _updateSessionCostDisplay();
+  }
+
+  function setProjectId(projectId) {
+    if (projectId === activeStorageProjectId) return;
+    if (activeStorageProjectId) _persistHistory(activeStorageProjectId);
+    activeStorageProjectId = projectId || null;
+    if (!projectId) {
+      history = [];
+      sessionCostUsd = 0;
+      pendingPhotos = [];
+      renderPhotoRow();
+      _showWelcome();
+      _updateSessionCostDisplay();
+      return;
+    }
+    const loaded = _loadPersistedHistory(projectId);
+    history = loaded.history;
+    sessionCostUsd = loaded.sessionCostUsd;
+    pendingTraceId = loaded.pendingTraceId;
+    pendingPhotos = [];
+    renderPhotoRow();
+    if (textInput) textInput.value = "";
+    _restoreChatFromHistory();
+    void _resumePendingDiagnosis(projectId);
+  }
+
+  function _historyHasTrace(traceId) {
+    if (!traceId) return false;
+    return history.some((h) => h.role === "ai" && h.traceId === traceId);
+  }
+
+  function stopDiagnosePoll() {
+    if (diagnosePollTimer) {
+      clearInterval(diagnosePollTimer);
+      diagnosePollTimer = null;
+    }
+  }
+
+  function _setWaitingUi(waiting) {
+    if (sendBtn) {
+      sendBtn.disabled = waiting;
+      sendBtn.innerHTML = waiting
+        ? `<span class="wdbg-spinner"></span> Analysing…`
+        : `<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M2 14V9l6-1-6-1V2l13 6-13 6z"/></svg> Analyse`;
+    }
+    if (textInput) textInput.disabled = waiting;
+    if (!waiting && sendBtn) {
+      sendBtn.disabled = pendingPhotos.length === 0 && !textInput?.value.trim();
+    }
+  }
+
+  function _applyDiagnoseResult(job) {
+    const diagnosis = job?.diagnosis;
+    const traceId = job?.trace_id || job?.traceId;
+    if (!diagnosis) return false;
+    if (_historyHasTrace(traceId)) return true;
+
+    activeLoadingBubble?.remove();
+    activeLoadingBubble = null;
+
+    const callCost = Number(job?.trace?.ai?.cost_usd);
+    if (Number.isFinite(callCost) && callCost > 0) {
+      sessionCostUsd += callCost;
+      _updateSessionCostDisplay();
+    }
+
+    const aiEntry = { role: "ai", diagnosis, traceId, costUsd: callCost };
+    history.push(aiEntry);
+    appendAiBubble(aiEntry);
+    pendingTraceId = null;
+    inFlightTraceId = null;
+    setTimeout(() => _persistHistory(), 0);
+    return true;
+  }
+
+  function _clearLoadingBubbles() {
+    chat?.querySelectorAll(".wdbg-msg-loading").forEach((el) => el.remove());
+    if (activeLoadingBubble) activeLoadingBubble = null;
+  }
+
+  async function cancelDiagnosis() {
+    stopDiagnosePoll();
+    const projectId = getProjectId?.();
+    try {
+      if (projectId) {
+        await apiFn(`/api/projects/${projectId}/wiring/diagnose-photo/cancel`, { method: "POST" });
+      }
+    } catch (_) {}
+    _clearLoadingBubbles();
+    pendingTraceId = null;
+    inFlightTraceId = null;
+    _setWaitingUi(false);
+    history.push({ role: "ai", error: "Diagnosis canceled." });
+    appendErrorBubble("Diagnosis canceled.");
+    setTimeout(() => _persistHistory(), 0);
+  }
+
+  async function _pollDiagnoseJob(projectId, traceId, loadingBubble) {
+    stopDiagnosePoll();
+    inFlightTraceId = traceId;
+    pendingTraceId = traceId;
+    activeLoadingBubble = loadingBubble;
+    _setWaitingUi(true);
+
+    const t0 = Date.now();
+    let slowMsgShown = false;
+
+    return new Promise((resolve, reject) => {
+      const tick = async () => {
+        if (Date.now() - t0 > DIAGNOSE_MAX_MS) {
+          stopDiagnosePoll();
+          reject(new Error("Diagnosis timed out — try again or switch to a faster model in the account menu."));
+          return;
+        }
+        try {
+          const job = await apiFn(`/api/projects/${projectId}/wiring/diagnose-photo/status`);
+          if (job.status === "running") {
+            if (!slowMsgShown && Date.now() - t0 > 45000) {
+              slowMsgShown = true;
+              const label = loadingBubble?.querySelector(".wdbg-loading-text");
+              if (label) {
+                label.textContent = "Still analysing — safe to refresh; result appears when ready…";
+              }
+            }
+            return;
+          }
+          stopDiagnosePoll();
+          if (job.status === "complete") {
+            _applyDiagnoseResult(job);
+            resolve(job);
+          } else {
+            reject(new Error(job.error || "Diagnosis failed."));
+          }
+        } catch (err) {
+          stopDiagnosePoll();
+          reject(err);
+        }
+      };
+
+      diagnosePollTimer = setInterval(tick, DIAGNOSE_POLL_MS);
+      tick();
+    });
+  }
+
+  function _lastUserAwaitingReply() {
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      if (history[i].role === "ai") return false;
+      if (history[i].role === "user") return true;
+    }
+    return false;
+  }
+
+  async function _resumePendingDiagnosis(projectId) {
+    if (!projectId) return;
+    try {
+      const job = await apiFn(`/api/projects/${projectId}/wiring/diagnose-photo/status`);
+      if (job.status === "idle") {
+        if (pendingTraceId === "starting") return;
+        pendingTraceId = null;
+        _persistHistory();
+        return;
+      }
+      if (job.status === "complete") {
+        if (!_historyHasTrace(job.trace_id)) {
+          _applyDiagnoseResult(job);
+        } else {
+          pendingTraceId = null;
+          _persistHistory();
+        }
+        return;
+      }
+      if (job.status === "failed") {
+        _clearLoadingBubbles();
+        if ((pendingTraceId || _lastUserAwaitingReply()) && !_historyHasTrace(job.trace_id)) {
+          const msg = job.error || "Diagnosis failed.";
+          history.push({ role: "ai", error: msg, traceId: job.trace_id });
+          appendErrorBubble(msg);
+          pendingTraceId = null;
+          _persistHistory();
+        } else {
+          pendingTraceId = null;
+          _persistHistory();
+        }
+        _setWaitingUi(false);
+        return;
+      }
+      if (job.status !== "running") return;
+      if (!pendingTraceId && !_lastUserAwaitingReply()) return;
+
+      const traceId = job.trace_id || pendingTraceId;
+      if (_historyHasTrace(traceId)) {
+        pendingTraceId = traceId;
+        void _pollDiagnoseJob(projectId, traceId, null);
+        return;
+      }
+
+      let loadingBubble = activeLoadingBubble;
+      if (!loadingBubble || !chat?.contains(loadingBubble)) {
+        loadingBubble = appendLoadingBubble();
+        const label = loadingBubble.querySelector(".wdbg-loading-text");
+        if (label) label.textContent = "Resuming analysis… safe to refresh.";
+      }
+      pendingTraceId = traceId;
+      _persistHistory();
+      await _pollDiagnoseJob(projectId, traceId, loadingBubble);
+    } catch (_) {
+      // Server unreachable — keep pendingTraceId for next load
+    } finally {
+      _setWaitingUi(false);
+    }
+  }
+
+  function _updateSessionCostDisplay() {
+    if (!sessionCostEl) return;
+    sessionCostEl.textContent = formatCostUsd(sessionCostUsd);
+    sessionCostEl.title = sessionCostUsd > 0
+      ? `Estimated total cost for ${history.filter((h) => h.role === "ai").length} debugger prompt(s) this session`
+      : "Estimated total cost for this debugger session";
+  }
 
   // ── Open / close ──────────────────────────────────────────────────────────
   function isOpen() { return !panel.hidden; }
@@ -162,11 +569,17 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
   // ── Send a message ────────────────────────────────────────────────────────
   async function send() {
     const text    = textInput?.value.trim() ?? "";
-    const photos  = [...pendingPhotos];
-    if (!photos.length && !text) return;
+    const newPhotos = [...pendingPhotos];
+    if (!newPhotos.length && !text) return;
     const projectId = getProjectId?.();
     if (!projectId) {
       appendErrorBubble("Open or create a project before running circuit diagnosis.");
+      return;
+    }
+
+    const photos = await compressPhotos(_photosForRequest(newPhotos));
+    if (!photos.length) {
+      appendErrorBubble("Add a circuit photo — the debugger needs an image to analyse.");
       return;
     }
 
@@ -176,9 +589,17 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
     textInput.disabled = true;
 
     // Add user bubble
-    const userEntry = { role: "user", text, photos };
+    const userEntry = { role: "user", text, photos: newPhotos.length ? photos : [] };
     history.push(userEntry);
-    appendUserBubble(userEntry);
+    appendUserBubble({
+      role: "user",
+      text,
+      photos: newPhotos.length ? photos : [{ name: "Previous photo", photoMissing: true, type: "image/jpeg" }],
+    });
+    setTimeout(() => _persistHistory(), 0);
+
+    pendingTraceId = "starting";
+    setTimeout(() => _persistHistory(), 0);
 
     // Clear compose area
     pendingPhotos = [];
@@ -187,6 +608,10 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
 
     // Add loading bubble
     const loadingBubble = appendLoadingBubble();
+    const loadingTimer = setTimeout(() => {
+      const label = loadingBubble.querySelector(".wdbg-loading-text");
+      if (label) label.textContent = "Still analysing — safe to refresh; result appears when ready…";
+    }, 45000);
 
     // Build request - include conversation history as context
     const schematic = schemChk?.checked ? (getSchematic?.() ?? null) : null;
@@ -202,35 +627,39 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
         })),
         description: contextDescription || null,
         include_schematic: !!schematic,
+        speed: "fast",
+        ...(getAiKeyBodyFields?.() || {}),
       };
 
-      const resp = await apiFn(
+      const start = await apiFn(
         `/api/projects/${getProjectId()}/wiring/diagnose-photo`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-        }
+        },
+        120000,
       );
 
-      if (!resp.ok) {
-        const errText = await resp.text();
-        throw new Error(`Server error ${resp.status}: ${errText}`);
-      }
+      const traceId = start.trace_id || start.job?.trace_id;
+      pendingTraceId = traceId;
+      setTimeout(() => _persistHistory(), 0);
 
-      const data = await resp.json();
-      loadingBubble.remove();
-
-      const aiEntry = { role: "ai", diagnosis: data.diagnosis };
-      history.push(aiEntry);
-      appendAiBubble(aiEntry);
+      await _pollDiagnoseJob(getProjectId(), traceId, loadingBubble);
     } catch (err) {
       loadingBubble.remove();
-      appendErrorBubble(err.message);
+      activeLoadingBubble = null;
+      pendingTraceId = null;
+      inFlightTraceId = null;
+      const msg = typeof formatUserError === "function" ? formatUserError(err) : err.message;
+      history.push({ role: "ai", error: msg });
+      appendErrorBubble(msg);
+      setTimeout(() => _persistHistory(), 0);
     } finally {
-      sendBtn.disabled  = false;
-      sendBtn.innerHTML = `<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M2 14V9l6-1-6-1V2l13 6-13 6z"/></svg> Analyse`;
-      textInput.disabled = false;
+      clearTimeout(loadingTimer);
+      stopDiagnosePoll();
+      activeLoadingBubble = null;
+      _setWaitingUi(false);
       textInput?.focus();
     }
   }
@@ -255,7 +684,11 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
     if (photos.length > 0) {
       html += `<div class="wdbg-msg-photos">`;
       photos.forEach(p => {
-        html += `<img class="wdbg-msg-photo" src="${esc(p.dataUrl)}" alt="${esc(p.name)}" />`;
+        if (p.photoMissing || !p.dataUrl) {
+          html += `<div class="wdbg-msg-photo wdbg-msg-photo-missing" title="Photo not restored after refresh">📷 ${esc(p.name || "photo")}</div>`;
+        } else {
+          html += `<img class="wdbg-msg-photo" src="${esc(p.dataUrl)}" alt="${esc(p.name)}" />`;
+        }
       });
       html += `</div>`;
     }
@@ -269,6 +702,18 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
     el.className = "wdbg-msg wdbg-msg-ai";
     el.innerHTML = _renderDiagnosis(d);
     _scrollAppend(el);
+
+    const diagramSlot = el.querySelector(".wdbg-focus-diagram-slot");
+    if (diagramSlot && d?.focus_diagram) {
+      mountFocusDiagram(diagramSlot, d.focus_diagram, { issues: d.issues || [] });
+    }
+
+    el.querySelector(".wdbg-apply-focus-btn")?.addEventListener("click", () => {
+      const schematic = d?.focus_diagram?.schematic;
+      if (schematic && typeof onApplyFocusDiagram === "function") {
+        onApplyFocusDiagram(schematic, { ...d.focus_diagram, issues: d.issues || [] });
+      }
+    });
 
     // Wire accordion toggles
     el.querySelectorAll(".wdbg-issue-hdr").forEach(hdr => {
@@ -286,7 +731,11 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
   function appendLoadingBubble() {
     const el = document.createElement("div");
     el.className = "wdbg-msg wdbg-msg-ai wdbg-msg-loading";
-    el.innerHTML = `<span class="wdbg-spinner"></span><span class="wdbg-loading-text">Analysing your circuit…</span>`;
+    el.innerHTML = `
+      <span class="wdbg-spinner"></span>
+      <span class="wdbg-loading-text">Analysing your circuit… usually under a minute</span>
+      <button type="button" class="wdbg-cancel-btn">Cancel</button>`;
+    el.querySelector(".wdbg-cancel-btn")?.addEventListener("click", () => void cancelDiagnosis());
     _scrollAppend(el);
     return el;
   }
@@ -300,7 +749,7 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
 
   function _scrollAppend(el) {
     chat.appendChild(el);
-    el.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (!restoringChat) el.scrollIntoView({ behavior: "smooth", block: "end" });
   }
 
   function _renderDiagnosis(d) {
@@ -336,6 +785,19 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
     // Overall assessment
     if (d.overall) {
       html += `<div class="wdbg-overall">${esc(d.overall)}</div>`;
+    }
+
+    // Focus signal-path diagram (controller → area of interest)
+    const focus = d.focus_diagram;
+    if (focus?.schematic?.components?.length >= 2) {
+      html += `<div class="wdbg-section-title">${esc(focus.title || "Signal path")}</div>`;
+      if (focus.caption) {
+        html += `<div class="wdbg-focus-caption">${esc(focus.caption)}</div>`;
+      }
+      html += `<div class="wdbg-focus-diagram-slot" aria-hidden="false"></div>`;
+      if (typeof onApplyFocusDiagram === "function") {
+        html += `<button type="button" class="wdbg-apply-focus-btn">Open path in wiring canvas</button>`;
+      }
     }
 
     // Issues list
@@ -379,23 +841,26 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
 
   // ── Clear conversation ────────────────────────────────────────────────────
   function clearChat() {
+    stopDiagnosePoll();
+    _clearLoadingBubbles();
+    pendingTraceId = null;
+    inFlightTraceId = null;
+    const pid = activeStorageProjectId;
+    if (pid) {
+      apiFn(`/api/projects/${pid}/wiring/diagnose-photo/cancel`, { method: "POST" }).catch(() => {});
+    }
+    inFlightTraceId = null;
+    activeLoadingBubble = null;
+    if (activeStorageProjectId) {
+      try { localStorage.removeItem(wdbgStorageKey(activeStorageProjectId)); } catch (_) {}
+    }
     history = [];
     pendingPhotos = [];
+    sessionCostUsd = 0;
+    _updateSessionCostDisplay();
     renderPhotoRow();
     if (textInput) textInput.value = "";
-
-    // Restore welcome message
-    chat.innerHTML = `
-      <div class="wdbg-welcome">
-        <div class="wdbg-welcome-icon">📷</div>
-        <div class="wdbg-welcome-title">Circuit Debugger</div>
-        <div class="wdbg-welcome-body">Upload a photo of your physical wiring and ask what's wrong. The AI cross-references it against your schematic and returns a structured fault report.</div>
-        <div class="wdbg-welcome-tips">
-          <span>💡 Tip: use good lighting</span>
-          <span>💡 Multiple photos welcome</span>
-          <span>💡 Describe the symptom</span>
-        </div>
-      </div>`;
+    _showWelcome();
   }
 
   // ── Event wiring ──────────────────────────────────────────────────────────
@@ -446,5 +911,9 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, apiFn }) {
   // Disable send until there's something to send
   if (sendBtn) sendBtn.disabled = true;
 
-  return { toggle, isOpen, open, close };
+  window.addEventListener("beforeunload", () => {
+    if (activeStorageProjectId) _persistHistory(activeStorageProjectId);
+  });
+
+  return { toggle, isOpen, open, close, setProjectId };
 }

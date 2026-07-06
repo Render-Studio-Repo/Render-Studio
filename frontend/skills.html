@@ -7,7 +7,7 @@
   <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
-  <link rel="stylesheet" href="/styles.css?v=20260610-info-layout" />
+  <link rel="stylesheet" href="/styles.css?v=20260630-mold-skill-download" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -20,6 +20,7 @@
       </div>
       <nav class="toolbar-nav" aria-label="Main">
         <a href="/" class="nav-tab">Studio</a>
+        <a href="/agent-store.html" class="nav-tab">Agent Store</a>
         <a href="/skills.html" class="nav-tab active">Skills Library</a>
         <a href="/docs.html" class="nav-tab">Docs</a>
         <a href="/roadmap.html" class="nav-tab">Roadmap</a>
@@ -35,8 +36,9 @@
             Agent skills from
             <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener">text-to-cad</a>
             — full Python tooling (step, inspect, snapshot, URDF, SDF, DXF, and more) synced to the server.
-            Enable skills to inject guidance into AI prompts; with <strong>CAD</strong> enabled, exported STEP files
-            are validated via the skill's Python inspect tools after each build.
+            Skills are available by default; Render3D auto-selects the relevant ones for each prompt instead of
+            injecting every skill every time. With <strong>CAD</strong> available, exported STEP files are validated
+            via the skill's Python inspect tools after each build.
           </p>
         </header>
 
@@ -47,9 +49,9 @@
         <section class="info-section">
           <h3>How it works</h3>
           <ul class="info-list">
-            <li><strong>12 skills</strong> — CAD, Blueprint Vision, URDF, SDF, SRDF, DXF, step-parts, gcode, bambu-labs, cad-viewer, implicit-cad, sendcutsend.</li>
-            <li><strong>Auto Blueprint Vision</strong> — attaching an image to a prompt automatically enables schematic analysis; disable it in Skills Library if you only want a visual reference.</li>
-            <li><strong>Python tools</strong> — each skill ships <code>scripts/</code> CLIs; Render3D runs CAD inspect on STEP after builds when CAD is enabled.</li>
+            <li><strong>Skills available by default</strong> — CAD, Blueprint Vision, URDF, SDF, SRDF, DXF, step-parts, gcode, bambu-labs, cad-viewer, implicit-cad, sendcutsend, mold generation, and installed Agent Store skills.</li>
+            <li><strong>Auto routing</strong> — prompts only inject the relevant skills, such as Blueprint Vision for images or Silicone Mold Generation for mold/casting requests.</li>
+            <li><strong>Python tools</strong> — many skills ship <code>scripts/</code> CLIs; Render3D runs CAD inspect on STEP after builds when CAD is selected.</li>
             <li><strong>Sync updates</strong> — run <code>scripts/sync-skills-from-text-to-cad.sh</code> on the server to pull latest from GitHub.</li>
           </ul>
         </section>
@@ -58,7 +60,7 @@
   </div>
 
   <script type="module">
-    import { initSkillsLibraryPage } from "./skills-library.js?v=20260610-text-to-cad";
+    import { initSkillsLibraryPage } from "./skills-library.js?v=20260630-mold-skill-download";
     initSkillsLibraryPage({
       listEl: document.getElementById("skills-list"),
       detailEl: document.getElementById("skill-detail"),

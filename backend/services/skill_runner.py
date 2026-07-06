@@ -16,6 +16,15 @@ logger = logging.getLogger(__name__)
 # Skill id → script subfolder names under scripts/
 KNOWN_TOOLS = ("step", "inspect", "snapshot", "dxf", "urdf", "srdf", "sdf")
 
+# Common fatal signals for surfacing native CAD-kernel crashes in tool output.
+_SIGNAL_NAMES = {
+    4: "SIGILL",
+    6: "SIGABRT",
+    8: "SIGFPE",
+    11: "SIGSEGV (segmentation fault)",
+    9: "SIGKILL",
+}
+
 
 def list_skill_tools(skill_id: str) -> list[str]:
     skill_dir = get_skill_dir(skill_id)
@@ -70,7 +79,13 @@ def run_skill_tool(
     """
     skill_dir = get_skill_dir(skill_id)
     if not skill_dir:
-        raise FileNotFoundError(f"Skill '{skill_id}' not found")
+        # During code sync/restart windows skill metadata can briefly be missed.
+        # Fall back to the conventional on-disk location before failing.
+        fallback = Path(__file__).resolve().parent.parent / "skills" / skill_id
+        if fallback.is_dir() and (fallback / "scripts").is_dir():
+            skill_dir = fallback
+        else:
+            raise FileNotFoundError(f"Skill '{skill_id}' not found")
 
     script = skill_dir / "scripts" / tool
     if script.is_dir():
@@ -95,11 +110,29 @@ def run_skill_tool(
             text=True,
             timeout=timeout_sec,
         )
+        stderr = proc.stderr
+        # A negative return code means the child was killed by a signal.
+        # Native crashes in the OCCT/build123d kernel (e.g. a fillet/chamfer or
+        # boolean on fragile geometry) raise SIGSEGV/SIGABRT and print nothing
+        # useful to stderr, so surface a diagnostic the repair loop can act on.
+        if proc.returncode is not None and proc.returncode < 0:
+            signal_num = -proc.returncode
+            signal_name = _SIGNAL_NAMES.get(signal_num, f"signal {signal_num}")
+            crash_hint = (
+                f"\n[kernel crash] scripts/{tool} was killed by {signal_name} "
+                f"(exit {proc.returncode}). This is a native CAD-kernel crash, not a "
+                "Python exception, so it cannot be caught with try/except. It is "
+                "usually caused by fillet/chamfer on degenerate or self-intersecting "
+                "edges, a boolean on non-manifold solids, or a loft/sweep with a "
+                "bad profile. Remove or shrink the offending operation and tighten "
+                "the edge/face selection."
+            )
+            stderr = (stderr or "") + crash_hint
         return {
             "ok": proc.returncode == 0,
             "exit_code": proc.returncode,
             "stdout": proc.stdout,
-            "stderr": proc.stderr,
+            "stderr": stderr,
             "command": cmd,
             "skill_dir": str(skill_dir),
             "cwd": str(run_cwd),

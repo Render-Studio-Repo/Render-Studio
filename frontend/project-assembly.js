@@ -1,7 +1,7 @@
 /** Multi-component project assembly — Fusion-style browser + viewport. */
 
 import * as THREE from "three";
-import { disposeStyledModel } from "./scene-style.js?v=20260605-smooth-boolean-normals";
+import { disposeStyledModel } from "./scene-style.js?v=20260629-high-fragment-fast-path";
 
 export function createProjectAssembly(scene) {
   const root = new THREE.Group();
@@ -39,6 +39,7 @@ export function createProjectAssembly(scene) {
     return String(name || "")
       .toLowerCase()
       .replace(/\.[^.]+$/, "")
+      .replace(/^.+?__\d+_/, "")
       .replace(/_edited(?:_\d+)?$/i, "")
       .replace(/_cleaned(?:_\d+)?$/i, "")
       .replace(/_(loops|duct|hole|extruded|pulled|mirrored)(?:_\d+)?$/i, "")
@@ -143,8 +144,13 @@ export function filesToBrowserComponents(files = []) {
   const byStem = new Map();
   const preferred = [".glb", ".gltf", ".step", ".stp", ".3mf", ".stl", ".obj", ".ply", ".off"];
   const baseStem = (name = "") => name.replace(/\.[^.]+$/, "").replace(/_edited(?:_\d+)?$/i, "");
+  const isInternalModelArtifact = (name = "") => {
+    const lower = String(name || "").toLowerCase();
+    return lower.startsWith("_active_") || lower.startsWith("_export_") || (lower.startsWith(".") && lower.endsWith(".step.glb"));
+  };
   for (const f of files) {
     if (!f?.name) continue;
+    if (isInternalModelArtifact(f.name)) continue;
     const stem = baseStem(f.name);
     if (!byStem.has(stem)) byStem.set(stem, []);
     byStem.get(stem).push(f);

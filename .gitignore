@@ -25,6 +25,9 @@ __pycache__/
 .local/
 *.log
 
+# Generated viewer bundles
+backend/skills/cad-viewer/scripts/viewer/dist/
+
 # Secrets / keys
 *.pem
 *.key

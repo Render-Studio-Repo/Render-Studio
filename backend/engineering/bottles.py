@@ -157,7 +157,7 @@ def pet_soda_bottle_program(
     volume_ml: int = 591,
     capacity_ml: int | None = None,
     material: str = "pet",
-    body_color: str = "#d4e8f0",
+    body_color: str | list[float] | None = None,
     cap_color: str = "#c41e3a",
     color: str | None = None,
     with_cap: bool = True,
@@ -168,6 +168,8 @@ def pet_soda_bottle_program(
     """Coke-style PET bottle: contour revolve, grip grooves, base flutes, screw cap."""
     if capacity_ml is not None:
         volume_ml = int(capacity_ml)
+    if body_color is None:
+        body_color = [0.72, 0.9, 0.96, 0.42]
     if color is not None:
         body_color = color
     if include_cap is not None:

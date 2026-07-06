@@ -21,12 +21,17 @@ function normalizeAngle(angleDeg) {
   return value < 0 ? value + 360 : value;
 }
 
-function angleInCcwSweep(angleDeg, startAngleDeg, sweepAngleDeg) {
-  if (sweepAngleDeg >= 360 - ANGLE_EPSILON) {
+function angleInSweep(angleDeg, startAngleDeg, sweepAngleDeg) {
+  const absSweepAngleDeg = Math.abs(sweepAngleDeg);
+  if (absSweepAngleDeg >= 360 - ANGLE_EPSILON) {
     return true;
   }
-  const normalizedDelta = (normalizeAngle(angleDeg) - normalizeAngle(startAngleDeg) + 360) % 360;
-  return normalizedDelta <= sweepAngleDeg + ANGLE_EPSILON;
+  if (sweepAngleDeg >= 0) {
+    const normalizedDelta = (normalizeAngle(angleDeg) - normalizeAngle(startAngleDeg) + 360) % 360;
+    return normalizedDelta <= absSweepAngleDeg + ANGLE_EPSILON;
+  }
+  const normalizedDelta = (normalizeAngle(startAngleDeg) - normalizeAngle(angleDeg) + 360) % 360;
+  return normalizedDelta <= absSweepAngleDeg + ANGLE_EPSILON;
 }
 
 function pointOnCircle(center, radius, angleDeg) {
@@ -38,12 +43,13 @@ function pointOnCircle(center, radius, angleDeg) {
 }
 
 function arcExtremaPoints(arc) {
+  const endAngleDeg = arc.startAngleDeg + arc.sweepAngleDeg;
   const points = [
     pointOnCircle(arc.center, arc.radius, arc.startAngleDeg),
-    pointOnCircle(arc.center, arc.radius, arc.endAngleDeg)
+    pointOnCircle(arc.center, arc.radius, endAngleDeg)
   ];
   for (const candidateAngle of [0, 90, 180, 270]) {
-    if (angleInCcwSweep(candidateAngle, arc.startAngleDeg, arc.sweepAngleDeg)) {
+    if (angleInSweep(candidateAngle, arc.startAngleDeg, arc.sweepAngleDeg)) {
       points.push(pointOnCircle(arc.center, arc.radius, candidateAngle));
     }
   }
@@ -200,6 +206,35 @@ function parseCircleEntity(records) {
   };
 }
 
+function arcFromBulgeSegment(layer, start, end, bulge) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const chordLength = Math.hypot(dx, dy);
+  if (chordLength <= ANGLE_EPSILON || Math.abs(bulge) <= ANGLE_EPSILON) {
+    return null;
+  }
+
+  const includedAngleRad = 4 * Math.atan(bulge);
+  const radius = (chordLength * (1 + bulge * bulge)) / (4 * Math.abs(bulge));
+  const midpoint = [
+    (start[0] + end[0]) / 2,
+    (start[1] + end[1]) / 2
+  ];
+  const leftNormal = [-dy / chordLength, dx / chordLength];
+  const centerOffset = (chordLength * (1 - bulge * bulge)) / (4 * bulge);
+  const center = [
+    midpoint[0] + leftNormal[0] * centerOffset,
+    midpoint[1] + leftNormal[1] * centerOffset
+  ];
+  return {
+    layer,
+    center,
+    radius,
+    startAngleDeg: normalizeAngle((Math.atan2(start[1] - center[1], start[0] - center[0]) * 180) / Math.PI),
+    sweepAngleDeg: (includedAngleRad * 180) / Math.PI
+  };
+}
+
 function parseLwpolylineEntity(records) {
   const layer = normalizeLayerName(records.find((record) => record.code === 8)?.value);
   const flags = Math.trunc(toFiniteNumber(records.find((record) => record.code === 70)?.value, 0));
@@ -207,46 +242,50 @@ function parseLwpolylineEntity(records) {
   let currentVertex = null;
   for (const record of records) {
     if (record.code === 10) {
-      if (currentVertex && Number.isFinite(currentVertex[0]) && Number.isFinite(currentVertex[1])) {
+      if (currentVertex && Number.isFinite(currentVertex.point[0]) && Number.isFinite(currentVertex.point[1])) {
         vertices.push(currentVertex);
       }
-      currentVertex = [toFiniteNumber(record.value), Number.NaN];
+      currentVertex = { point: [toFiniteNumber(record.value), Number.NaN], bulge: 0 };
       continue;
     }
     if (record.code === 20 && currentVertex) {
-      currentVertex[1] = toFiniteNumber(record.value);
+      currentVertex.point[1] = toFiniteNumber(record.value);
       continue;
     }
-    if (record.code === 42) {
-      const bulge = toFiniteNumber(record.value);
-      if (Math.abs(bulge) > ANGLE_EPSILON) {
-        throw new Error("Unsupported DXF LWPOLYLINE bulge; only straight segments are supported");
-      }
+    if (record.code === 42 && currentVertex) {
+      currentVertex.bulge = toFiniteNumber(record.value);
     }
   }
-  if (currentVertex && Number.isFinite(currentVertex[0]) && Number.isFinite(currentVertex[1])) {
+  if (currentVertex && Number.isFinite(currentVertex.point[0]) && Number.isFinite(currentVertex.point[1])) {
     vertices.push(currentVertex);
   }
   if (vertices.length < 2) {
     throw new Error("Invalid DXF LWPOLYLINE; expected at least 2 vertices");
   }
   const lines = [];
-  for (let index = 0; index < vertices.length - 1; index += 1) {
-    const start = vertices[index];
-    const end = vertices[index + 1];
+  const arcs = [];
+  const addSegment = (startVertex, endVertex) => {
+    const start = startVertex.point;
+    const end = endVertex.point;
     if (start[0] === end[0] && start[1] === end[1]) {
-      continue;
+      return;
+    }
+    if (Math.abs(startVertex.bulge) > ANGLE_EPSILON) {
+      const arc = arcFromBulgeSegment(layer, start, end, startVertex.bulge);
+      if (arc) {
+        arcs.push(arc);
+      }
+      return;
     }
     lines.push({ layer, start, end });
+  };
+  for (let index = 0; index < vertices.length - 1; index += 1) {
+    addSegment(vertices[index], vertices[index + 1]);
   }
   if ((flags & 1) !== 0) {
-    const start = vertices[vertices.length - 1];
-    const end = vertices[0];
-    if (!(start[0] === end[0] && start[1] === end[1])) {
-      lines.push({ layer, start, end });
-    }
+    addSegment(vertices[vertices.length - 1], vertices[0]);
   }
-  return lines;
+  return { lines, arcs };
 }
 
 function parseEntities(records) {
@@ -285,7 +324,9 @@ function parseEntities(records) {
       circles.push(parseCircleEntity(entityRecords));
       continue;
     }
-    lines.push(...parseLwpolylineEntity(entityRecords));
+    const polyline = parseLwpolylineEntity(entityRecords);
+    lines.push(...polyline.lines);
+    arcs.push(...polyline.arcs);
   }
   if (!lines.length && !arcs.length && !circles.length) {
     throw new Error("No supported DXF entities found");
@@ -387,16 +428,17 @@ export function parseDxf(dxfText, { fileRef = "", sourceUrl = "" } = {}) {
       minX: rawBounds.minX,
       maxY: rawBounds.maxY
     });
-    const end = screenPoint(pointOnCircle(arc.center, arc.radius, arc.endAngleDeg), {
+    const end = screenPoint(pointOnCircle(arc.center, arc.radius, arc.startAngleDeg + arc.sweepAngleDeg), {
       minX: rawBounds.minX,
       maxY: rawBounds.maxY
     });
-    const largeArcFlag = arc.sweepAngleDeg > 180 + ANGLE_EPSILON ? 1 : 0;
+    const largeArcFlag = Math.abs(arc.sweepAngleDeg) > 180 + ANGLE_EPSILON ? 1 : 0;
+    const sweepFlag = arc.sweepAngleDeg >= 0 ? 0 : 1;
     pathRecords.push(
       buildPathRecord(
         arc.layer,
         semanticKindForLayer(arc.layer),
-        `M ${formatNumber(start[0])} ${formatNumber(start[1])} A ${formatNumber(arc.radius)} ${formatNumber(arc.radius)} 0 ${largeArcFlag} 1 ${formatNumber(end[0])} ${formatNumber(end[1])}`
+        `M ${formatNumber(start[0])} ${formatNumber(start[1])} A ${formatNumber(arc.radius)} ${formatNumber(arc.radius)} 0 ${largeArcFlag} ${sweepFlag} ${formatNumber(end[0])} ${formatNumber(end[1])}`
       )
     );
     touchLayer(layerSummary, arc.layer).pathCount += 1;

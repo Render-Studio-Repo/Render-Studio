@@ -4,6 +4,7 @@ export const WORKSPACE_MODES = [
   { id: "design", label: "Design", icon: "◧", enabled: true },
   { id: "simulation", label: "Simulation", icon: "◎", enabled: false },
   { id: "manufacture", label: "Manufacture", icon: "⚙", enabled: false },
+  { id: "architect", label: "Architect", icon: "⌂", enabled: true },
   { id: "wiring", label: "Wiring Simulator", icon: "⎍", enabled: true },
 ];
 
@@ -12,6 +13,7 @@ const DESIGN_TABS = [
   { id: "SOLID", label: "SOLID", enabled: true },
   { id: "SKETCH", label: "SKETCH", enabled: true },
   { id: "RIGGING", label: "RIGGING", enabled: true },
+  { id: "ARCHITECT", label: "ARCHITECT", enabled: true },
   { id: "SURFACE", label: "SURFACE", enabled: false },
   { id: "MESH", label: "MESH", enabled: false },
   { id: "SHEET METAL", label: "SHEET METAL", enabled: false },
@@ -21,29 +23,47 @@ const DESIGN_TABS = [
   { id: "CANVAS", label: "CANVAS", enabled: true },
 ];
 
+const WIRING_TABS = [
+  { id: "WIRING", label: "WIRING", enabled: true },
+  { id: "CATALOG", label: "CATALOG", enabled: true },
+];
+
 export function createWorkspaceModes(options = {}) {
-  const { barEl, menuEl, tabsEl, onChange, onDesignTabChange } = options;
+  const { barEl, menuEl, tabsEl, onChange, onDesignTabChange, onWiringTabChange } = options;
   let mode = "design";
   let designTab = "SOLID";
+  let wiringTab = "WIRING";
 
   function renderTabs() {
     if (!tabsEl) return;
     tabsEl.innerHTML = "";
-    if (mode !== "design") {
+    const tabs = mode === "design" || mode === "architect" ? DESIGN_TABS : mode === "wiring" ? WIRING_TABS : [];
+    if (!tabs.length) {
       tabsEl.classList.add("hidden");
       return;
     }
     tabsEl.classList.remove("hidden");
-    for (const tab of DESIGN_TABS) {
+    for (const tab of tabs) {
+      const activeTab = mode === "wiring" ? wiringTab : designTab;
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "workspace-tab" + (tab.id === designTab ? " active" : "");
+      btn.className = "workspace-tab" + (tab.id === activeTab ? " active" : "");
       btn.textContent = tab.label;
       btn.disabled = !tab.enabled;
-      btn.dataset.designTab = tab.id;
+      btn.dataset[mode === "wiring" ? "wiringTab" : "designTab"] = tab.id;
       btn.title = tab.enabled ? `${tab.label} workspace` : "Coming soon";
       btn.addEventListener("click", () => {
         if (!tab.enabled) return;
+        if (mode === "wiring") {
+          if (wiringTab === tab.id) {
+            if (tab.id === "CATALOG") onWiringTabChange?.(wiringTab);
+            return;
+          }
+          wiringTab = tab.id;
+          renderTabs();
+          onWiringTabChange?.(wiringTab);
+          return;
+        }
         if (designTab === tab.id) {
           if (tab.id === "CATALOG" || tab.id === "CANVAS") onDesignTabChange?.(designTab);
           return;
@@ -94,6 +114,8 @@ export function createWorkspaceModes(options = {}) {
   function setMode(next) {
     if (mode === next) return;
     mode = next;
+    if (mode === "wiring") wiringTab = "WIRING";
+    if (mode === "architect") designTab = "ARCHITECT";
     updateButton();
     renderTabs();
     onChange?.(mode);
@@ -106,6 +128,15 @@ export function createWorkspaceModes(options = {}) {
     designTab = tab;
     renderTabs();
     onDesignTabChange?.(designTab);
+  }
+
+  function setWiringTab(tab) {
+    const match = WIRING_TABS.find((t) => t.id === tab);
+    if (!match?.enabled) return;
+    if (wiringTab === tab) return;
+    wiringTab = tab;
+    renderTabs();
+    onWiringTabChange?.(wiringTab);
   }
 
   barEl?.addEventListener("click", (e) => {
@@ -129,8 +160,12 @@ export function createWorkspaceModes(options = {}) {
       return designTab;
     },
     setDesignTab,
+    getWiringTab() {
+      return wiringTab;
+    },
+    setWiringTab,
     isDesign() {
-      return mode === "design";
+      return mode === "design" || mode === "architect";
     },
     isWiring() {
       return mode === "wiring";

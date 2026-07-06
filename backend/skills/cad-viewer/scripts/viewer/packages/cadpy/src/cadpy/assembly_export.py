@@ -27,7 +27,7 @@ from cadpy.catalog import (
 )
 from cadpy.glb import read_step_topology_manifest_from_glb
 from cadpy.render import existing_part_glb_path, part_glb_path
-from cadpy.step_export import create_bin_xcaf_doc, export_xcaf_doc_step_scene
+from cadpy.step_export import create_bin_xcaf_doc, export_xcaf_doc_step_scene, quantity_color_rgba_from_color
 from cadpy.step_scene import (
     LoadedStepScene,
     _shape_hash,
@@ -539,12 +539,13 @@ class _DirectXcafAssemblyWriter:
             return
         from OCP.XCAFDoc import XCAFDoc_ColorType
 
-        if isinstance(color, tuple):
-            wrapped = self._quantity_color_rgba(color)
-        else:
-            wrapped = getattr(color, "wrapped", None)
-            if wrapped is None:
-                return
+        wrapped = (
+            self._quantity_color_rgba(color)
+            if isinstance(color, tuple)
+            else quantity_color_rgba_from_color(color)
+        )
+        if wrapped is None:
+            return
         self.color_tool.SetColor(label, wrapped, XCAFDoc_ColorType.XCAFDoc_ColorSurf)
 
     def _set_shape_face_colors(
@@ -569,8 +570,6 @@ class _DirectXcafAssemblyWriter:
             explorer.Next()
 
     def _quantity_color_rgba(self, color: tuple[float, ...]) -> object:
-        from OCP.Quantity import Quantity_ColorRGBA
-
         values = tuple(max(0.0, min(1.0, float(component))) for component in color)
         if len(values) == 3:
             rgba = (values[0], values[1], values[2], 1.0)
@@ -580,7 +579,7 @@ class _DirectXcafAssemblyWriter:
             rgba = (0.72, 0.72, 0.72, 1.0)
         cached = self.colors_by_rgba.get(rgba)
         if cached is None:
-            cached = Quantity_ColorRGBA(*rgba)
+            cached = quantity_color_rgba_from_color(rgba)
             self.colors_by_rgba[rgba] = cached
         return cached
 

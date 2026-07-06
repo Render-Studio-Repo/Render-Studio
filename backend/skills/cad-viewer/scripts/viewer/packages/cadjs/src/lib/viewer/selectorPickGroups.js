@@ -130,6 +130,12 @@ export function buildGlbFaceIdsForMesh(meshData, selectorRuntime) {
   return matched ? faceIds : null;
 }
 
+function sourcePartForRecord(record, partId) {
+  const sourcePart = record?.sourcePart || record?.part || null;
+  const sourcePartId = String(sourcePart?.id || sourcePart?.occurrenceId || "").trim();
+  return sourcePartId && sourcePartId === partId ? sourcePart : null;
+}
+
 export function syncDisplayMeshFaceIds(runtime, meshData, selectorRuntime) {
   const records = Array.isArray(runtime?.displayRecords) ? runtime.displayRecords : [];
   if (!records.length) {
@@ -148,7 +154,7 @@ export function syncDisplayMeshFaceIds(runtime, meshData, selectorRuntime) {
     let faceIds = null;
     const partId = String(record?.partId || "").trim();
     if (partId && partId !== "__model__") {
-      const part = partsById.get(partId);
+      const part = partsById.get(partId) || sourcePartForRecord(record, partId);
       faceIds = part ? buildGlbFaceIdsForPart(part, selectorRuntime) : null;
     } else {
       faceIds = buildGlbFaceIdsForMesh(meshData, selectorRuntime);

@@ -14,7 +14,8 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
   let labelRenderer = null;
   let viewportEl = null;
   const remoteMarkers = new Map();
-  /** @type {Map<string, { id: string, display_name: string, color: string, picks: object[] }>} */
+  const remoteTransformPreviews = new Map();
+  /** @type {Map<string, { id: string, display_name: string, color: string, avatar_url?: string, picks: object[] }>} */
   const remoteUsers = new Map();
 
   function wsUrl(projectId) {
@@ -36,15 +37,41 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     remoteMarkers.delete(userId);
   }
 
+  function restorePreviewEntry(entry) {
+    const target = entry?.target;
+    if (!target) return;
+    target.position.copy(entry.position);
+    target.quaternion.copy(entry.quaternion);
+    target.scale.copy(entry.scale);
+    target.updateMatrixWorld?.(true);
+  }
+
+  function restoreRemoteTransforms(userId = null) {
+    if (userId) {
+      const previews = remoteTransformPreviews.get(userId);
+      previews?.forEach(restorePreviewEntry);
+      remoteTransformPreviews.delete(userId);
+      return;
+    }
+    remoteTransformPreviews.forEach((previews) => previews.forEach(restorePreviewEntry));
+    remoteTransformPreviews.clear();
+  }
+
   function labelOffset(meshRoot) {
     if (!meshRoot) return 0.02;
     return Math.max(new THREE.Box3().setFromObject(meshRoot).getSize(new THREE.Vector3()).length() * 0.04, 0.012);
   }
 
-  function createNameLabel(displayName, color) {
+  function createNameLabel(displayName, color, avatarUrl = "") {
     const div = document.createElement("div");
     div.className = "remote-pick-label";
-    div.textContent = displayName;
+    const safeName = String(displayName || "User");
+    const safeText = safeName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const safeUrl = String(avatarUrl || "").replace(/'/g, "%27").replace(/"/g, "%22");
+    const initial = safeName.trim().charAt(0).toUpperCase() || "?";
+    div.innerHTML = avatarUrl
+      ? `<span class="remote-pick-avatar remote-pick-avatar--image" style="background-image:url('${safeUrl}')"></span><span>${safeText}</span>`
+      : `<span class="remote-pick-avatar">${initial}</span><span>${safeText}</span>`;
     div.style.borderColor = color || "#58a6ff";
     div.style.color = color || "#58a6ff";
     const label = new CSS2DObject(div);
@@ -52,8 +79,8 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     return label;
   }
 
-  function attachNameLabel(group, worldPos, displayName, color, lift = 0) {
-    const label = createNameLabel(displayName, color);
+  function attachNameLabel(group, worldPos, displayName, color, lift = 0, avatarUrl = "") {
+    const label = createNameLabel(displayName, color, avatarUrl);
     label.position.copy(worldPos);
     label.position.y += lift;
     group.add(label);
@@ -75,6 +102,73 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
       if (ref.mesh_uuid && c.uuid === ref.mesh_uuid) match = c;
     });
     return match || first;
+  }
+
+  function resolveObjectTarget(meshRoot, ref) {
+    if (!meshRoot) return null;
+    let match = null;
+    if (ref.catalog_name) {
+      meshRoot.traverse((c) => {
+        if (!match && c.userData?.catalogFilename === ref.catalog_name) match = c;
+      });
+    }
+    if (!match && ref.mesh_uuid) {
+      meshRoot.traverse((c) => {
+        if (!match && c.uuid === ref.mesh_uuid) match = c;
+      });
+    }
+    return match || resolvePickMesh(meshRoot, ref);
+  }
+
+  function refTransformKey(ref, target) {
+    return String(ref.catalog_name || ref.mesh_uuid || ref.id || target?.uuid || "");
+  }
+
+  function hasTransformPayload(ref) {
+    return (
+      Array.isArray(ref.transform_position) &&
+      ref.transform_position.length === 3 &&
+      Array.isArray(ref.transform_quaternion) &&
+      ref.transform_quaternion.length === 4 &&
+      Array.isArray(ref.transform_scale) &&
+      ref.transform_scale.length === 3
+    );
+  }
+
+  function applyRemoteObjectTransform(userId, meshRoot, ref, target) {
+    if (!target || !hasTransformPayload(ref)) return null;
+    const key = refTransformKey(ref, target);
+    if (!key) return null;
+    let previews = remoteTransformPreviews.get(userId);
+    if (!previews) {
+      previews = new Map();
+      remoteTransformPreviews.set(userId, previews);
+    }
+    if (!previews.has(key)) {
+      previews.set(key, {
+        target,
+        position: target.position.clone(),
+        quaternion: target.quaternion.clone(),
+        scale: target.scale.clone(),
+      });
+    } else {
+      const entry = previews.get(key);
+      if (entry.target !== target) {
+        restorePreviewEntry(entry);
+        previews.set(key, {
+          target,
+          position: target.position.clone(),
+          quaternion: target.quaternion.clone(),
+          scale: target.scale.clone(),
+        });
+      }
+    }
+    target.position.set(ref.transform_position[0], ref.transform_position[1], ref.transform_position[2]);
+    target.quaternion.set(ref.transform_quaternion[0], ref.transform_quaternion[1], ref.transform_quaternion[2], ref.transform_quaternion[3]);
+    target.scale.set(ref.transform_scale[0], ref.transform_scale[1], ref.transform_scale[2]);
+    target.updateMatrixWorld?.(true);
+    meshRoot?.updateMatrixWorld?.(true);
+    return key;
   }
 
   function pickWorldPosition(meshRoot, ref) {
@@ -107,7 +201,7 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     return meshRoot ? meshRoot.localToWorld(local) : local;
   }
 
-  function renderRemoteLasso(group, meshRoot, ref, displayName, color, lift) {
+  function renderRemoteLasso(group, meshRoot, ref, displayName, color, lift, avatarUrl) {
     if (!ref.loop_points?.length) return false;
     const useLocal = Array.isArray(ref.local_loop_points) && ref.local_loop_points.length > 0;
     const points = (useLocal ? ref.local_loop_points : ref.loop_points)
@@ -134,8 +228,53 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     line.renderOrder = 1001;
     group.add(line);
     const center = points.slice(0, -1).reduce((acc, p) => acc.add(p), new THREE.Vector3()).divideScalar(points.length - 1);
-    attachNameLabel(group, center, displayName, color, lift);
+    attachNameLabel(group, center, displayName, color, lift, avatarUrl);
     return true;
+  }
+
+  function remoteBoxFromRef(meshRoot, ref, target) {
+    if (Array.isArray(ref.local_box_min) && Array.isArray(ref.local_box_max) && ref.local_box_min.length === 3 && ref.local_box_max.length === 3) {
+      const min = localToWorld(meshRoot, ref.local_box_min);
+      const max = localToWorld(meshRoot, ref.local_box_max);
+      return new THREE.Box3().setFromPoints([min, max]);
+    }
+    return target ? new THREE.Box3().setFromObject(target) : null;
+  }
+
+  function renderRemoteObject(group, meshRoot, ref, displayName, color, lift, avatarUrl, userId) {
+    const target = resolveObjectTarget(meshRoot, ref);
+    const transformKey = applyRemoteObjectTransform(userId, meshRoot, ref, target);
+    const box = remoteBoxFromRef(meshRoot, ref, target);
+    if (!box || box.isEmpty()) return false;
+    const helper = new THREE.Box3Helper(box, new THREE.Color(color || "#58a6ff"));
+    helper.renderOrder = 1001;
+    helper.material.depthTest = false;
+    helper.material.transparent = true;
+    helper.material.opacity = ref.moving ? 0.98 : 0.78;
+    group.add(helper);
+    const center = box.getCenter(new THREE.Vector3());
+    const top = center.clone();
+    top.y = box.max.y;
+    attachNameLabel(
+      group,
+      top,
+      ref.moving ? `${displayName || "User"} moving ${ref.label || "object"}` : `${displayName || "User"} selected ${ref.label || "object"}`,
+      color,
+      lift,
+      avatarUrl
+    );
+    return transformKey || true;
+  }
+
+  function reconcileRemoteTransformPreviews(userId, activeKeys) {
+    const previews = remoteTransformPreviews.get(userId);
+    if (!previews) return;
+    for (const [key, entry] of previews.entries()) {
+      if (activeKeys.has(key)) continue;
+      restorePreviewEntry(entry);
+      previews.delete(key);
+    }
+    if (!previews.size) remoteTransformPreviews.delete(userId);
   }
 
   function updatePresenceLabel() {
@@ -156,10 +295,11 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     }
   }
 
-  function renderRemotePicks(userId, displayName, color, picks, meshRoot) {
+  function renderRemotePicks(userId, displayName, color, picks, meshRoot, avatarUrl = "") {
     clearRemoteUser(userId);
-    remoteUsers.set(userId, { id: userId, display_name: displayName, color, picks: picks || [] });
+    remoteUsers.set(userId, { id: userId, display_name: displayName, color, avatar_url: avatarUrl, picks: picks || [] });
     if (!picks?.length) {
+      restoreRemoteTransforms(userId);
       updatePresenceLabel();
       return;
     }
@@ -169,19 +309,27 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     const threeColor = new THREE.Color(color || "#58a6ff");
 
     const lift = labelOffset(meshRoot);
+    const activeTransformKeys = new Set();
 
     for (const ref of picks) {
       if (!["face", "edge", "corner", "lasso", "object"].includes(ref.type)) continue;
       const meshObj = resolvePickMesh(meshRoot, ref);
-      if (ref.type === "lasso" && renderRemoteLasso(g, meshRoot, ref, displayName, color, lift)) {
+      if (ref.type === "lasso" && renderRemoteLasso(g, meshRoot, ref, displayName, color, lift, avatarUrl)) {
         continue;
+      }
+      if (ref.type === "object") {
+        const rendered = renderRemoteObject(g, meshRoot, ref, displayName, color, lift, avatarUrl, userId);
+        if (typeof rendered === "string") activeTransformKeys.add(rendered);
+        if (rendered) {
+          continue;
+        }
       }
       if (ref.type === "face" && ref.face_indices?.length && meshObj) {
         const highlight = buildFaceHighlightMesh(meshObj, ref.face_indices, threeColor, 0.42);
         if (highlight) {
           highlight.renderOrder = 1001;
           g.add(highlight);
-          attachNameLabel(g, meshWorldCenter(highlight), displayName, color, lift);
+          attachNameLabel(g, meshWorldCenter(highlight), displayName, color, lift, avatarUrl);
         }
         continue;
       }
@@ -206,17 +354,18 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
       m.renderOrder = 1001;
       m.position.copy(world);
       g.add(m);
-      attachNameLabel(g, world, displayName, color, lift);
+      attachNameLabel(g, world, displayName, color, lift, avatarUrl);
     }
 
     remoteGroup.add(g);
     remoteMarkers.set(userId, g);
+    reconcileRemoteTransformPreviews(userId, activeTransformKeys);
     updatePresenceLabel();
   }
 
   function refreshAllRemote(meshRoot) {
     remoteUsers.forEach((u) => {
-      renderRemotePicks(u.id, u.display_name, u.color, u.picks, meshRoot);
+      renderRemotePicks(u.id, u.display_name, u.color, u.picks, meshRoot, u.avatar_url);
     });
   }
 
@@ -245,24 +394,26 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
       const meshRoot = handlers.getMeshRoot?.();
 
       if (msg.type === "presence.sync") {
+        restoreRemoteTransforms();
         remoteUsers.clear();
         msg.users?.forEach((u) => {
-          renderRemotePicks(u.id, u.display_name, u.color, u.picks, meshRoot);
+          renderRemotePicks(u.id, u.display_name, u.color, u.picks, meshRoot, u.avatar_url);
         });
       } else if (msg.type === "presence.join") {
         handlers.onPresence?.();
       } else if (msg.type === "presence.leave") {
         remoteUsers.delete(msg.user_id);
         clearRemoteUser(msg.user_id);
+        restoreRemoteTransforms(msg.user_id);
         updatePresenceLabel();
       } else if (msg.type === "pick.update") {
-        renderRemotePicks(msg.user_id, msg.display_name, msg.color, msg.picks, meshRoot);
+        renderRemotePicks(msg.user_id, msg.display_name, msg.color, msg.picks, meshRoot, msg.avatar_url);
       } else if (msg.type === "pick.clear") {
         remoteUsers.delete(msg.user_id);
         clearRemoteUser(msg.user_id);
+        restoreRemoteTransforms(msg.user_id);
         updatePresenceLabel();
       } else if (msg.type === "model.reload") {
-        if (msg.by_user_id && msg.by_user_id === localUserId) return;
         handlers.onModelReload?.(msg);
       } else if (msg.type === "project.meta") {
         handlers.onProjectMeta?.(msg);
@@ -287,6 +438,7 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
   function disconnect() {
     ws?.close();
     ws = null;
+    restoreRemoteTransforms();
     remoteUsers.clear();
     remoteMarkers.forEach((_, uid) => clearRemoteUser(uid));
     updatePresenceLabel();

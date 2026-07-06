@@ -31,6 +31,7 @@ function eyeSvg(hidden) {
 }
 
 function displayName(entry) {
+  if (entry.label) return entry.label;
   if (entry.format === "program") {
     return entry.stem || entry.name.replace(/\.program\.json$/i, "");
   }
@@ -65,6 +66,8 @@ export function createProjectTree(options = {}) {
   const browserEntryCache = new Map();
   let loading = false;
   let expanded = { components: true, sketches: true, wiring: true };
+  const childGroupsExpanded = new Set();
+  const childGroupsInitialized = new Set();
   let suppressBrowserClick = false;
 
   function clearBrowserClickSuppress() {
@@ -138,6 +141,9 @@ export function createProjectTree(options = {}) {
         }
         for (const entry of items) {
           list.appendChild(renderItem(entry, section.id));
+          if (section.id === "components" && entry.children?.length) {
+            list.appendChild(renderChildGroup(entry, section.id));
+          }
         }
         sectionEl.appendChild(list);
       }
@@ -169,10 +175,16 @@ export function createProjectTree(options = {}) {
         type: "component",
         projectId: pid,
         name: entry.name,
-        filename: entry.name,
+        filename: entry.source_filename || entry.filename || entry.name,
         stem: safeStem,
         format: entry.format,
         viewer_filename: entry.viewer_filename,
+        body_index: Number.isInteger(entry.body_index) ? entry.body_index : null,
+        body_name: entry.body_name || null,
+        component_index: Number.isInteger(entry.component_index) ? entry.component_index : null,
+        component_name: entry.component_name || entry.node_name || null,
+        virtual_component: !!entry.virtual_component,
+        virtual_body: !!entry.virtual_body,
         label: safeStored?.label || displayName(entry),
         wiringType: safeWiringType,
         part: safeStored
@@ -216,9 +228,44 @@ export function createProjectTree(options = {}) {
     return selected;
   }
 
-  function renderItem(entry, sectionId) {
+  function renderChildGroup(parentEntry, sectionId) {
+    const li = document.createElement("li");
+    li.className = "browser-child-group";
+    const groupKey = `${sectionId}:${parentEntry.name}:children`;
+    if (!childGroupsInitialized.has(groupKey)) {
+      childGroupsInitialized.add(groupKey);
+      childGroupsExpanded.add(groupKey);
+    }
+    const isOpen = childGroupsExpanded.has(groupKey);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "browser-child-group-toggle";
+    btn.innerHTML = `
+      <span class="browser-chevron">${isOpen ? "▾" : "▸"}</span>
+      <span class="browser-section-label">${parentEntry.children_label || "Parts"}</span>
+      <span class="browser-section-count">${parentEntry.children.length}</span>
+    `;
+    btn.addEventListener("click", () => {
+      if (childGroupsExpanded.has(groupKey)) childGroupsExpanded.delete(groupKey);
+      else childGroupsExpanded.add(groupKey);
+      render();
+    });
+    li.appendChild(btn);
+    if (isOpen) {
+      const nested = document.createElement("ul");
+      nested.className = "browser-item-list browser-item-list--children";
+      for (const child of parentEntry.children || []) {
+        nested.appendChild(renderItem(child, sectionId, { child: true }));
+      }
+      li.appendChild(nested);
+    }
+    return li;
+  }
+
+  function renderItem(entry, sectionId, { child = false } = {}) {
     const li = document.createElement("li");
     li.className = "browser-item";
+    if (child) li.classList.add("browser-item--child");
     const selectionKey = browserSelectionKey(sectionId, entry);
     browserEntryCache.set(selectionKey, { entry, sectionId });
     if (entry.name === selectedName || entry.id === selectedName) {
@@ -241,7 +288,11 @@ export function createProjectTree(options = {}) {
       const sourced = !!stored?.source;
       li.classList.add("browser-item--draggable");
       li.draggable = true;
-      li.title = sourced
+      li.title = entry.virtual_component
+        ? `${displayName(entry)} — component inside ${entry.source_filename || entry.parent_filename || entry.viewer_filename || entry.name}. Click to select this component in the viewport.`
+        : entry.virtual_body
+        ? `${displayName(entry)} — generated body inside ${entry.source_filename || entry.parent_filename || entry.viewer_filename || entry.name}. Drag into the AI prompt to target this body.`
+        : sourced
         ? `${entry.name} — sourced as "${stored.label || kindLabel}". Drag into the Wiring Simulator to drop the exact part with its pins & stats.`
         : kindLabel
         ? `${entry.name} — recognized as ${kindLabel}. Click the ⓘ profile to source it online. Drag into the AI prompt or Wiring Simulator.`
@@ -317,43 +368,47 @@ export function createProjectTree(options = {}) {
     actions.className = "browser-item-actions";
     if (sectionId === "components") {
       actions.classList.add("browser-item-actions--profile-visible");
-      const prof = document.createElement("button");
-      prof.type = "button";
-      prof.className = "browser-action-btn browser-action-profile";
-      prof.textContent = "ⓘ";
-      prof.title = "View component ID, tags, part profile, and 3D preview";
-      prof.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onOpenProfile?.(entry);
-      });
-      const exp = document.createElement("button");
-      exp.type = "button";
-      exp.className = "browser-action-btn";
-      exp.textContent = "Export";
-      exp.disabled = isHidden;
-      exp.title = isHidden ? "Show this component before exporting it" : "Export component";
-      exp.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (isHidden) return;
-        onExport?.(entry, exp);
-      });
-      const ren = document.createElement("button");
-      ren.type = "button";
-      ren.className = "browser-action-btn";
-      ren.textContent = "Rename";
-      ren.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onRename?.(entry);
-      });
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "browser-action-btn danger";
-      del.textContent = "Delete";
-      del.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onDelete?.(entry);
-      });
-      actions.append(prof, exp, ren, del);
+      if (entry.virtual_body || entry.virtual_component) {
+        actions.classList.remove("browser-item-actions--profile-visible");
+      } else {
+        const prof = document.createElement("button");
+        prof.type = "button";
+        prof.className = "browser-action-btn browser-action-profile";
+        prof.textContent = "ⓘ";
+        prof.title = "View component ID, tags, part profile, and 3D preview";
+        prof.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onOpenProfile?.(entry);
+        });
+        const exp = document.createElement("button");
+        exp.type = "button";
+        exp.className = "browser-action-btn";
+        exp.textContent = "Export";
+        exp.disabled = isHidden;
+        exp.title = isHidden ? "Show this component before exporting it" : "Export component";
+        exp.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (isHidden) return;
+          onExport?.(entry, exp);
+        });
+        const ren = document.createElement("button");
+        ren.type = "button";
+        ren.className = "browser-action-btn";
+        ren.textContent = "Rename";
+        ren.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onRename?.(entry);
+        });
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "browser-action-btn danger";
+        del.textContent = "Delete";
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onDelete?.(entry);
+        });
+        actions.append(prof, exp, ren, del);
+      }
     }
 
     li.append(vis, body, actions);
@@ -378,6 +433,17 @@ export function createProjectTree(options = {}) {
     },
     setSelected(name) {
       selectedName = name;
+      selectedBrowserKeys.clear();
+      render();
+    },
+    setSelectedMany(names = []) {
+      selectedBrowserKeys.clear();
+      const orderedNames = [...new Set((names || []).filter(Boolean).map(String))];
+      selectedName = orderedNames[0] || null;
+      for (const name of orderedNames) {
+        const entry = (browser.components || []).find((item) => item?.name === name || item?.viewer_filename === name);
+        if (entry) selectedBrowserKeys.add(browserSelectionKey("components", entry));
+      }
       render();
     },
     setPartProfiles(map) {

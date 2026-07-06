@@ -1,17 +1,19 @@
-import { VIEWER_SCENE_SCALE, getSceneScaleSettings } from "./sceneScale.js";
 import {
-  BASE_VIEWER_THEME,
-  getStageFloorSize
-} from "./stageTheme.js";
+  clampSceneModelRadius,
+  VIEWER_SCENE_SCALE,
+  getSceneScaleSettings
+} from "./sceneScale.js";
+import { BASE_VIEWER_THEME } from "./stageTheme.js";
 import {
   DEFAULT_FLOOR_GRID_SETTINGS,
   MAX_FLOOR_GRID_DENSITY,
   MIN_FLOOR_GRID_DENSITY,
   THEME_FLOOR_MODES
 } from "../themeSettings.js";
+import { DEFAULT_AUTO_ZOOM_PADDING } from "./autoZoom.js";
 
 export const DEFAULT_GRID_DIVISIONS = 28;
-export const GRID_TARGET_DIVISIONS = 40;
+export const GRID_TARGET_VISIBLE_CELLS = 1.25;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -21,20 +23,25 @@ function normalizeGridDensity(value) {
   const density = Number(value);
   return Number.isFinite(density)
     ? clamp(density, MIN_FLOOR_GRID_DENSITY, MAX_FLOOR_GRID_DENSITY)
-    : DEFAULT_FLOOR_GRID_SETTINGS.gridDensity;
+    : DEFAULT_FLOOR_GRID_SETTINGS.density;
 }
 
 function resolveGridStyle(viewerTheme = {}, floorSettings = {}) {
+  const gridSettings = floorSettings?.grid || {};
   return {
-    centerColor: floorSettings?.gridCenterColor
+    centerColor: gridSettings?.centerColor
+      || floorSettings?.gridCenterColor
       || floorSettings?.gridCenter
       || viewerTheme?.gridCenter
       || BASE_VIEWER_THEME.gridCenter,
-    cellColor: floorSettings?.gridCellColor
+    cellColor: gridSettings?.cellColor
+      || floorSettings?.gridCellColor
       || floorSettings?.gridCell
       || viewerTheme?.gridCell
       || BASE_VIEWER_THEME.gridCell,
-    opacity: Number.isFinite(Number(floorSettings?.gridOpacity))
+    opacity: Number.isFinite(Number(gridSettings?.opacity))
+      ? clamp(Number(gridSettings.opacity), 0, 1)
+      : Number.isFinite(Number(floorSettings?.gridOpacity))
       ? clamp(Number(floorSettings.gridOpacity), 0, 1)
       : (viewerTheme?.gridOpacity ?? BASE_VIEWER_THEME.gridOpacity)
   };
@@ -56,17 +63,18 @@ export function niceGridStep(minimumStep) {
 }
 
 export function buildGridConfig(radius, sceneScaleMode, floorSettings = {}) {
-  const desiredSize = getStageFloorSize(radius, sceneScaleMode);
-  const gridDensity = normalizeGridDensity(floorSettings?.gridDensity);
-  const targetDivisions = GRID_TARGET_DIVISIONS * gridDensity;
-  const cellSize = niceGridStep(desiredSize / targetDivisions);
-  let divisions = Math.ceil(desiredSize / cellSize);
+  const gridDensity = normalizeGridDensity(floorSettings?.grid?.density ?? floorSettings?.gridDensity);
+  const safeRadius = clampSceneModelRadius(radius, sceneScaleMode);
+  const targetVisibleCells = GRID_TARGET_VISIBLE_CELLS * gridDensity;
+  const cellSize = (safeRadius * 2 * DEFAULT_AUTO_ZOOM_PADDING) / targetVisibleCells;
+  let divisions = Math.max(2, Math.round(DEFAULT_GRID_DIVISIONS * gridDensity));
   if (divisions % 2 !== 0) {
     divisions += 1;
   }
   return {
-    size: Math.max(desiredSize, cellSize * divisions),
-    divisions: Math.max(DEFAULT_GRID_DIVISIONS, divisions)
+    size: cellSize * divisions,
+    cellSize,
+    divisions
   };
 }
 
@@ -84,8 +92,9 @@ export function updateGridHelper(
   }
   runtime.gridRadius = radius;
   runtime.gridFloorZ = floorZ;
-  runtime.floorMode = floorMode;
-  if (floorMode !== THEME_FLOOR_MODES.GRID) {
+  const gridEnabled = floorSettings?.grid?.enabled === true || floorMode === THEME_FLOOR_MODES.GRID;
+  runtime.floorMode = gridEnabled ? THEME_FLOOR_MODES.GRID : floorMode;
+  if (!gridEnabled) {
     disposeSceneObject(runtime.gridHelper);
     runtime.gridHelper = null;
     runtime.gridConfig = null;
@@ -99,6 +108,7 @@ export function updateGridHelper(
   if (
     currentConfig &&
     currentConfig.size === nextConfig.size &&
+    currentConfig.cellSize === nextConfig.cellSize &&
     currentConfig.divisions === nextConfig.divisions &&
     currentConfig.centerColor === nextConfig.centerColor &&
     currentConfig.cellColor === nextConfig.cellColor &&

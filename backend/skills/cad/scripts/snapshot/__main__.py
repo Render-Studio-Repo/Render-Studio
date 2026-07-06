@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import sys
 import time
 from collections.abc import Iterable, Mapping, Sequence
@@ -61,7 +62,7 @@ ORBIT_RENDER_HEIGHT = 640
 CONTACT_SHEET_RENDER_WIDTH = 2400
 CONTACT_SHEET_RENDER_HEIGHT = 1600
 
-DISPLAY_OPTION_KEYS = {"mode", "clip", "exploded"}
+DISPLAY_OPTION_KEYS = {"projection", "mode", "clip", "exploded", "edges"}
 DISPLAY_MODE_ALIASES = {
     "solid": "solid",
     "edges": "solid",
@@ -100,7 +101,6 @@ DISPLAY_MODE_ALIASES = {
 }
 APPEARANCE_OPTION_KEYS = {
     "materials",
-    "edges",
     "background",
     "floor",
     "environment",
@@ -151,7 +151,7 @@ def help_text() -> str:
   python scripts/snapshot --job -
   python scripts/snapshot --input models/part.step --output /tmp/part.png --appearance workbench
 
-Shortcut flags are for common STEP/STP snapshots. --job accepts one render job, an array of render jobs, or { "jobs": [...] }. Every job input must be a relative or absolute .step/.stp path, or a same-stem Python generator; direct GLB/STL/3MF/DXF/G-code/robot-description inputs are unsupported. The default appearance is the workbench saved theme. --appearance accepts a saved theme name, an inline JSON appearance settings object, or a JSON appearance settings file path. --display accepts solid, rendered, transparent, hidden_edges, hidden_lines_removed, unshaded, wireframe, an inline JSON display settings object, or a JSON display settings file path. Enable exploded view with display JSON such as {"mode":"rendered","exploded":{"enabled":true,"axis":"z","spacing":1.6}}; use {"axis":"radial"} for outward radial disassembly. --camera accepts a preset, azimuth:elevation pair, or JSON object with preset, position, target, up, and zoom fields. --focus and --hide accept one or more selector refs such as #o1.2 for parts or subassemblies; pass the flag repeatedly or list refs after the flag. Option JSON is direct settings JSON, not a wrapped job fragment. Full JSON jobs use top-level appearance and display. Use --view-labels to burn the camera/view label into shortcut outputs. Use --params with STEP parameter sidecar JSON values, and --size-profile for default dimensions such as simple, diagnostic, labeled, assembly, presentation, orbit, or contact-sheet. Output file names are saved with a shared UTC seconds timestamp before the extension.
+Shortcut flags are for common STEP/STP snapshots. --job accepts one render job, an array of render jobs, or { "jobs": [...] }. Every job input must be a relative or absolute .step/.stp path, or a same-stem Python generator; direct GLB/STL/3MF/DXF/G-code/robot-description inputs are unsupported. The default appearance is the workbench saved theme. --appearance accepts a saved theme name, an inline JSON appearance settings object, or a JSON appearance settings file path. --display accepts solid, rendered, transparent, hidden_edges, hidden_lines_removed, unshaded, wireframe, an inline JSON display settings object, or a JSON display settings file path. Projection, exploded view, and edge styling belong in display JSON, for example {"projection":"orthographic","mode":"rendered","exploded":{"enabled":true,"axis":"z","spacing":1.6},"edges":{"color":"#132232"}}. Use {"axis":"radial"} for outward radial disassembly. --camera accepts a preset, azimuth:elevation pair, or JSON object with preset, position, target, up, and zoom fields. --focus and --hide accept one or more selector refs such as #o1.2 for parts or subassemblies; pass the flag repeatedly or list refs after the flag. Option JSON is direct settings JSON, not a wrapped job fragment. Full JSON jobs use top-level appearance and display. Use --view-labels to burn the camera/view label into shortcut outputs. Use --params with STEP parameter sidecar JSON values, and --size-profile for default dimensions such as simple, diagnostic, labeled, assembly, presentation, orbit, or contact-sheet. Output file names are saved with a shared UTC seconds timestamp before the extension.
 """
 
 
@@ -1040,10 +1040,19 @@ class BatchSnapshotRenderer:
                     "Install the CAD skill requirements, then run `python -m playwright install chromium` if needed."
                 ) from exc
             self.playwright = await async_playwright().start()
-            self.browser = await self.playwright.chromium.launch(
-                headless=True,
-                timeout=RENDER_BROWSER_STARTUP_TIMEOUT_MS,
+            launch_kwargs = {
+                "headless": True,
+                "timeout": RENDER_BROWSER_STARTUP_TIMEOUT_MS,
+            }
+            chromium_path = (
+                shutil.which("chromium")
+                or shutil.which("chromium-browser")
+                or shutil.which("google-chrome")
+                or shutil.which("google-chrome-stable")
             )
+            if chromium_path:
+                launch_kwargs["executable_path"] = chromium_path
+            self.browser = await self.playwright.chromium.launch(**launch_kwargs)
             self.context = await self.browser.new_context(
                 viewport={"width": SIMPLE_RENDER_WIDTH, "height": SIMPLE_RENDER_HEIGHT},
                 device_scale_factor=1,

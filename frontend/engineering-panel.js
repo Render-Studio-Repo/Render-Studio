@@ -154,7 +154,6 @@ function _buildCheckItems(dfmParts, globalWarnings) {
 function render(data) {
   injectStyle();
   const panel = ensurePanel();
-  panel.classList.remove("hidden");
   const body = panel.querySelector("#eng-body");
   const intentEl = panel.querySelector("#eng-intent");
   if (data.intent) {
@@ -249,7 +248,14 @@ function render(data) {
     .join("");
   if (dls) blocks.push(`<div class="eng-block"><h3>Downloads</h3><div class="eng-downloads">${dls}</div></div>`);
 
-  body.innerHTML = blocks.join("") || `<p class="eng-empty">Model built. No engineering metadata available for this edit.</p>`;
+  if (!blocks.length) {
+    body.innerHTML = "";
+    panel.classList.add("hidden");
+    return;
+  }
+
+  body.innerHTML = blocks.join("");
+  panel.classList.remove("hidden");
 
   body.querySelectorAll(".eng-dl").forEach((btn) => {
     btn.addEventListener("click", () => download(btn.dataset.url, btn.dataset.name));

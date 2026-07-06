@@ -53,6 +53,13 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
         <div class="v2-orbit v2-orbit--inner"></div>
         <span class="v2-orbit-badge">2.0</span>
       </div>
+      <div class="viewport-spinner-fusion">
+        <div class="fusion-loader-ring"></div>
+        <div class="fusion-loader-core">F</div>
+        <span class="fusion-loader-drop fusion-loader-drop--a"></span>
+        <span class="fusion-loader-drop fusion-loader-drop--b"></span>
+        <span class="fusion-loader-drop fusion-loader-drop--c"></span>
+      </div>
     </div>
     <div class="viewport-spinner-body">
       <p class="viewport-spinner-label">Generating…</p>
@@ -62,7 +69,6 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
         </div>
         <div class="viewport-progress-meta">
           <span class="viewport-progress-pct">0%</span>
-          <span class="viewport-progress-eta muted small"></span>
         </div>
       </div>
       <button type="button" class="btn danger viewport-stop-btn hidden" aria-label="Stop generating">Stop generating</button>
@@ -72,7 +78,6 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const stopBtn = spinner.querySelector(".viewport-stop-btn");
   const progressFill = spinner.querySelector(".viewport-progress-fill");
   const progressPct = spinner.querySelector(".viewport-progress-pct");
-  const progressEta = spinner.querySelector(".viewport-progress-eta");
 
   const banner = document.createElement("div");
   banner.className = "viewport-error-banner hidden";
@@ -118,53 +123,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }
   }
 
-  function formatEta(remainingMs) {
-    if (remainingMs <= 0) return "Finishing up…";
-    const sec = Math.ceil(remainingMs / 1000);
-    if (sec < 60) return `~${sec}s left`;
-    const min = Math.floor(sec / 60);
-    const rem = sec % 60;
-    return rem ? `~${min}m ${rem}s left` : `~${min}m left`;
-  }
-
-  function computeRemainingMs() {
-    const elapsed = Date.now() - progressStart;
-    if (progressValue >= 98) return 0;
-
-    const budgetLeft = estimateMs - elapsed;
-
-    // Over budget: be honest instead of showing "~0s left" for minutes on end.
-    if (budgetLeft <= 0) {
-      return null;
-    }
-
-    // Stage-informed extrapolation once trace logs have moved the needle.
-    if (traceProgress >= 18) {
-      const projectedTotal = elapsed / (traceProgress / 100);
-      const extrapolated = projectedTotal - elapsed;
-      // Blend budget and extrapolation — conservative (use the larger remaining time).
-      return Math.max(budgetLeft, extrapolated);
-    }
-
-    return budgetLeft;
-  }
-
-  function formatEtaLabel() {
-    const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
-    if (pct >= 98) return "Finishing up…";
-    const remaining = computeRemainingMs();
-    if (remaining == null) return "Taking longer than usual…";
-    return formatEta(remaining);
-  }
-
   function renderProgress() {
     const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
     if (progressFill) progressFill.style.width = `${pct}%`;
     if (progressPct) progressPct.textContent = `${pct}%`;
     if (spinnerLabel) spinnerLabel.textContent = progressLabel;
-    if (progressEta && progressStart) {
-      progressEta.textContent = formatEtaLabel();
-    }
   }
 
   function bumpProgress(pct, label) {
@@ -211,11 +174,35 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   }
 
   function isV2Overlay(opts = {}) {
-    return (opts.promptMode || "").toLowerCase() === "v2";
+    const values = [
+      opts.promptMode,
+      opts.prompt_mode,
+      opts.mode,
+      opts.generationMode,
+      opts.generation_mode,
+      opts.variant,
+      opts.message,
+    ];
+    return values.some((value) => /\b(v2|2\.0)\b/i.test(String(value || "")));
+  }
+
+  function isFusionOverlay(opts = {}) {
+    const values = [
+      opts.promptMode,
+      opts.prompt_mode,
+      opts.mode,
+      opts.generationMode,
+      opts.generation_mode,
+      opts.variant,
+      opts.message,
+    ];
+    return values.some((value) => /\bfusion\b/i.test(String(value || "")));
   }
 
   function applySpinnerVariant(opts = {}) {
-    spinner.classList.toggle("viewport-spinner--v2", isV2Overlay(opts));
+    const fusion = isFusionOverlay(opts);
+    spinner.classList.toggle("viewport-spinner--fusion", fusion);
+    spinner.classList.toggle("viewport-spinner--v2", !fusion && isV2Overlay(opts));
   }
 
   function startProgress(message, opts = {}) {
@@ -243,6 +230,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     clearProgressTimers();
     spinner.classList.add("hidden");
     spinner.classList.remove("viewport-spinner--v2");
+    spinner.classList.remove("viewport-spinner--fusion");
     if (stopBtn) stopBtn.classList.add("hidden");
     progressValue = 0;
     traceProgress = 0;
@@ -286,11 +274,17 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       if (generating) {
         if (message) progressLabel = message;
         if (opts.estimateMs) estimateMs = opts.estimateMs;
+        if (opts.progress?.pct != null) {
+          bumpProgress(Number(opts.progress.pct), opts.progress.label || message);
+        }
         applySpinnerVariant(opts);
         renderProgress();
         return;
       }
       startProgress(message, opts);
+      if (opts.progress?.pct != null) {
+        bumpProgress(Number(opts.progress.pct), opts.progress.label || message);
+      }
       return;
     }
     if (opts.complete && generating) finishProgress();

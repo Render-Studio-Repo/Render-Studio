@@ -754,7 +754,16 @@ def _normalize_step_payload(
     if isinstance(result, list):
         return {"children": result}
     if isinstance(result, dict):
-        allowed_fields = {"shape", "instances", "children", "stl", "3mf", "mesh_tolerance", "mesh_angular_tolerance"}
+        allowed_fields = {
+            "shape",
+            "instances",
+            "children",
+            "assembly_mates",
+            "stl",
+            "3mf",
+            "mesh_tolerance",
+            "mesh_angular_tolerance",
+        }
         extra_fields = sorted(str(key) for key in result if key not in allowed_fields)
         if extra_fields:
             joined = ", ".join(extra_fields)
@@ -765,7 +774,13 @@ def _normalize_step_payload(
                 f"{_display_path(script_path)} gen_step() envelope must define exactly one of "
                 "'shape', 'instances', or 'children'"
             )
-        return {content_fields[0]: result[content_fields[0]]}
+        normalized = {content_fields[0]: result[content_fields[0]]}
+        if "assembly_mates" in result:
+            raw_mates = result["assembly_mates"]
+            if not isinstance(raw_mates, list):
+                raise TypeError(f"{_display_path(script_path)} gen_step() assembly_mates must be a list")
+            normalized["assembly_mates"] = raw_mates
+        return normalized
     raise TypeError(
         f"{_display_path(script_path)} gen_step() must return a build123d Shape, assembly list, "
         "or legacy envelope dict"
@@ -955,6 +970,7 @@ def _write_assembly_step_payload(
             )
             _mark_scene_python_backed(scene, source_identity=source_identity, source_path=script_path)
             _mark_scene_step_payload(scene, entry_kind="assembly", payload_kind="assembly_spec")
+            _attach_envelope_assembly_mates(scene, envelope, script_path=script_path)
             return scene
     with logger.timed(f"write assembly STEP {relative_to_repo(output_path)}"):
         scene = export_assembly_step_scene(
@@ -968,7 +984,41 @@ def _write_assembly_step_payload(
         )
     _mark_scene_python_backed(scene, source_identity=source_identity, source_path=script_path)
     _mark_scene_step_payload(scene, entry_kind="assembly", payload_kind="assembly_spec")
+    _attach_envelope_assembly_mates(scene, envelope, script_path=script_path)
     return scene
+
+
+def _attach_envelope_assembly_mates(
+    scene: LoadedStepScene | None,
+    envelope: Mapping[str, object],
+    *,
+    script_path: Path,
+) -> None:
+    if not isinstance(scene, LoadedStepScene) or "assembly_mates" not in envelope:
+        return
+    raw_mates = envelope["assembly_mates"]
+    if not isinstance(raw_mates, list):
+        raise TypeError(f"{_display_path(script_path)} gen_step() assembly_mates must be a list")
+    mates: list[dict[str, object]] = []
+    for index, raw_mate in enumerate(raw_mates, start=1):
+        if not isinstance(raw_mate, Mapping):
+            raise TypeError(f"{_display_path(script_path)} gen_step() assembly_mates[{index}] must be an object")
+        mate = dict(raw_mate)
+        mate_id = f"m{index}"
+        source_label = str(
+            mate.get("sourceLabel")
+            or mate.get("name")
+            or mate.get("label")
+            or mate.get("id")
+            or ""
+        ).strip()
+        mate["id"] = mate_id
+        mate["label"] = mate_id
+        if source_label and source_label != mate_id:
+            mate["sourceLabel"] = source_label
+        mates.append(mate)
+    if mates:
+        scene.assembly_mates = mates
 
 
 def _write_dxf_payload(

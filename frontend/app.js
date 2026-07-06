@@ -1183,6 +1183,12 @@ function droppedImageFiles(e) {
   return [...(e.dataTransfer?.files || [])].filter((file) => file.type?.startsWith("image/"));
 }
 
+function droppedDxfFiles(e) {
+  return [...(e.dataTransfer?.files || [])].filter(
+    (file) => /\.dxf$/i.test(file.name) || file.type === "application/dxf" || file.type === "image/vnd.dxf"
+  );
+}
+
 function droppedExplorerRefs(e) {
   return readExplorerDragPayloads(e);
 }
@@ -1195,8 +1201,36 @@ function isExplorerComponentDrag(e) {
 
 function isPromptImageDrag(e) {
   if (droppedImageFiles(e).length) return true;
+  if (droppedDxfFiles(e).length) return true;
   const types = e.dataTransfer?.types;
   return types && [...types].includes("Files");
+}
+
+async function addPromptDxfFiles(files) {
+  const MAX_DXF_CHARS = 400_000;
+  for (const file of [...files]) {
+    if (file.size > 8 * 1024 * 1024) {
+      viewerOverlay?.showError?.(`${file.name} is too large for a DXF reference (max 8 MB).`);
+      continue;
+    }
+    const text = await file.text();
+    const stem = file.name.replace(/\.dxf$/i, "");
+    const id = `dxf:${stem}:${Date.now()}`;
+    const token = `@${stem.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "dxf"}`;
+    const truncated = text.length > MAX_DXF_CHARS;
+    composer.addReference({
+      id,
+      type: "dxf",
+      token,
+      label: file.name,
+      filename: file.name,
+      stem,
+      format: "dxf",
+      text_content: truncated ? text.slice(0, MAX_DXF_CHARS) : text,
+      text_truncated: truncated,
+    });
+  }
+  if (!restoringModelPromptState) saveActiveModelPromptState();
 }
 
 function handlePromptComposeDragover(e) {
@@ -1228,6 +1262,14 @@ async function handlePromptComposeDrop(e) {
           : `Referenced ${added} items in the AI prompt (${componentCount} component${componentCount === 1 ? "" : "s"} total).`
       );
     }
+    return;
+  }
+  const dxfFiles = droppedDxfFiles(e);
+  if (dxfFiles.length) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptImageDrop?.classList.remove("dragging");
+    await addPromptDxfFiles(dxfFiles);
     return;
   }
   const files = droppedImageFiles(e);
@@ -1284,6 +1326,14 @@ promptImageDrop?.addEventListener("dragleave", () => promptImageDrop.classList.r
 promptImageDrop?.addEventListener("drop", async (e) => {
   if (isExplorerComponentDrag(e) && droppedExplorerRefs(e).length) {
     await handlePromptComposeDrop(e);
+    return;
+  }
+  const dxfFiles = droppedDxfFiles(e);
+  if (dxfFiles.length) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptImageDrop.classList.remove("dragging");
+    await addPromptDxfFiles(dxfFiles);
     return;
   }
   e.preventDefault();

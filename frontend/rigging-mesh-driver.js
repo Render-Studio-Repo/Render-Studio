@@ -25,6 +25,17 @@ const MESH_ALIASES = {
 };
 
 const ROTATING_PARTS = new Set(["gear_input", "gear_output"]);
+const MOVING_JOINT_TYPES = new Set(["continuous", "revolute", "prismatic"]);
+const ROOT_PREVIEW_PART = "__model_preview__";
+
+function normName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
 
 export function partIdForBone(bone) {
   const id = String(bone?.id || "").toLowerCase();
@@ -38,6 +49,7 @@ export function partIdForBone(bone) {
     return stem;
   }
   if (name === "gear_input" || name === "gear_output") return name;
+  if (name === "model_preview" || name === ROOT_PREVIEW_PART) return ROOT_PREVIEW_PART;
   return name || null;
 }
 
@@ -48,14 +60,28 @@ function isDecorMesh(obj) {
 export function findPartMesh(root, canonicalId) {
   if (!root || !canonicalId) return null;
   const names = MESH_ALIASES[canonicalId] || [canonicalId];
+  const normalized = new Set(names.map(normName));
   for (const name of names) {
     let found = null;
     root.traverse((obj) => {
       if (found || !obj?.isMesh || isDecorMesh(obj)) return;
-      if (String(obj.name) === name) found = obj;
+      const objName = normName(obj.name || obj.userData?.name || obj.userData?.partId);
+      if (String(obj.name) === name || normalized.has(objName)) found = obj;
     });
     if (found) return found;
   }
+  let fuzzy = null;
+  root.traverse((obj) => {
+    if (fuzzy || !obj?.isMesh || isDecorMesh(obj)) return;
+    const objName = normName(obj.name || obj.userData?.name || obj.userData?.partId);
+    for (const wanted of normalized) {
+      if (wanted && (objName.includes(wanted) || wanted.includes(objName))) {
+        fuzzy = obj;
+        return;
+      }
+    }
+  });
+  if (fuzzy) return fuzzy;
   return null;
 }
 
@@ -75,8 +101,10 @@ export function findGearTrainRoot(getCatalogObjects) {
 
 function jointForPart(sim, partId) {
   const aliases = MESH_ALIASES[partId] || [partId];
+  const normalized = new Set(aliases.map(normName));
   for (const joint of sim?.joints || []) {
-    if (aliases.includes(joint.child) || joint.child === partId) return joint;
+    const child = normName(joint.child);
+    if (aliases.includes(joint.child) || joint.child === partId || normalized.has(child)) return joint;
   }
   return null;
 }
@@ -85,8 +113,30 @@ function eulerZ(rotation) {
   return Number(rotation?.[2]) || 0;
 }
 
+function axisVector(joint) {
+  const axis = Array.isArray(joint?.axis) ? joint.axis : [0, 0, 1];
+  const v = new THREE.Vector3(Number(axis[0]) || 0, Number(axis[1]) || 0, Number(axis[2]) || 1);
+  if (v.lengthSq() < 1e-8) v.set(0, 0, 1);
+  return v.normalize();
+}
+
+function dominantAxisIndex(axis) {
+  const values = [Math.abs(axis.x), Math.abs(axis.y), Math.abs(axis.z)];
+  return values.indexOf(Math.max(...values));
+}
+
+function movablePartIds(sim) {
+  const ids = [];
+  for (const joint of sim?.joints || []) {
+    const child = joint?.child;
+    if (!child || !MOVING_JOINT_TYPES.has(String(joint.type || "").toLowerCase())) continue;
+    if (!ids.includes(child)) ids.push(child);
+  }
+  return ids;
+}
+
 export function createRiggingMeshDriver({ getPartRoot, getSim }) {
-  /** @type {Map<string, { mesh: THREE.Object3D, restPos: THREE.Vector3, restQuat: THREE.Quaternion, axisIdx: number }>} */
+    /** @type {Map<string, { mesh: THREE.Object3D, restPos: THREE.Vector3, restQuat: THREE.Quaternion, axis: THREE.Vector3, axisIdx: number }>} */
   let bindings = new Map();
 
   function resetBinding(binding) {
@@ -106,22 +156,41 @@ export function createRiggingMeshDriver({ getPartRoot, getSim }) {
     if (!root) return 0;
 
     const sim = getSim?.();
+    const partIds = movablePartIds(sim);
+    if (!partIds.length) partIds.push(...ROTATING_PARTS);
     let bound = 0;
-    for (const partId of ROTATING_PARTS) {
+    for (const partId of partIds) {
       const mesh = findPartMesh(root, partId);
       if (!mesh) continue;
       const joint = sim ? jointForPart(sim, partId) : null;
       if (joint?.type === "fixed") continue;
+      const axis = axisVector(joint);
       mesh.updateMatrixWorld(true);
       bindings.set(partId, {
         mesh,
         restPos: mesh.position.clone(),
         restQuat: mesh.quaternion.clone(),
-        axisIdx: 2,
+        axis,
+        axisIdx: dominantAxisIndex(axis),
       });
       bound += 1;
     }
     return bound;
+  }
+
+  function bindPreviewRoot() {
+    clear();
+    const root = getPartRoot?.();
+    if (!root) return 0;
+    root.updateMatrixWorld(true);
+    bindings.set(ROOT_PREVIEW_PART, {
+      mesh: root,
+      restPos: root.position.clone(),
+      restQuat: root.quaternion.clone(),
+      axis: new THREE.Vector3(0, 0, 1),
+      axisIdx: 2,
+    });
+    return 1;
   }
 
   function applyBoneRotations(bones, poses) {
@@ -131,17 +200,17 @@ export function createRiggingMeshDriver({ getPartRoot, getSim }) {
     let moved = false;
     for (const bone of bones || []) {
       const partId = partIdForBone(bone);
-      if (!partId || !ROTATING_PARTS.has(partId)) continue;
+      if (!partId) continue;
       const binding = bindings.get(partId);
       if (!binding) continue;
       const pose = poses[bone.id];
       if (!pose) continue;
 
-      const angle = eulerZ(pose.rotation);
-      const { mesh, restPos, restQuat } = binding;
+      const angle = Number(pose.rotation?.[binding.axisIdx]) || eulerZ(pose.rotation);
+      const { mesh, restPos, restQuat, axis } = binding;
       mesh.position.copy(restPos);
       mesh.quaternion.copy(restQuat);
-      mesh.rotateZ(angle);
+      mesh.rotateOnAxis(axis, angle);
       mesh.updateMatrixWorld(true);
       moved = true;
     }
@@ -158,6 +227,7 @@ export function createRiggingMeshDriver({ getPartRoot, getSim }) {
 
   return {
     rebind,
+    bindPreviewRoot,
     clear,
     applyBoneRotations,
     resetMeshes,

@@ -4,6 +4,7 @@ const MODEL_LABELS = {
   "gpt-5.5": "GPT-5.5",
   "gpt-5.5-pro": "GPT-5.5 Pro",
   "gpt-5.3-codex": "GPT-5.3 Codex",
+  "claude-fable-5": "Claude Fable 5",
   "claude-sonnet-4-5": "Claude Sonnet 4.5",
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-4.6-sonnet": "Claude Sonnet 4.6",

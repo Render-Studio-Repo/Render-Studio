@@ -19,12 +19,14 @@ class Client:
     user_id: str
     display_name: str
     color: str
+    avatar_url: str | None = None
     picks: list[dict[str, Any]] = field(default_factory=list)
 
 
 class CollabHub:
     def __init__(self) -> None:
         self._rooms: dict[str, dict[str, Client]] = {}
+        self._workspace_rooms: dict[str, dict[str, Client]] = {}
         self._user_sockets: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
@@ -40,6 +42,7 @@ class CollabHub:
             user_id=user["id"],
             display_name=user["display_name"],
             color=self._color(user["id"]),
+            avatar_url=user.get("avatar_url"),
         )
         async with self._lock:
             room = self._rooms.setdefault(project_id, {})
@@ -49,7 +52,12 @@ class CollabHub:
             project_id,
             {
                 "type": "presence.join",
-                "user": {"id": client.user_id, "display_name": client.display_name, "color": client.color},
+                "user": {
+                    "id": client.user_id,
+                    "display_name": client.display_name,
+                    "color": client.color,
+                    "avatar_url": client.avatar_url,
+                },
             },
             skip_user_id=client.user_id,
         )
@@ -61,6 +69,7 @@ class CollabHub:
                         "id": c.user_id,
                         "display_name": c.display_name,
                         "color": c.color,
+                        "avatar_url": c.avatar_url,
                         "picks": c.picks,
                     }
                     for c in self._rooms.get(project_id, {}).values()
@@ -109,6 +118,80 @@ class CollabHub:
             loop.create_task(self.broadcast(project_id, message))
         except RuntimeError:
             logger.debug("no event loop for ws notify")
+
+    async def connect_workspace(self, team_id: str, websocket: WebSocket, user: dict[str, Any]) -> Client:
+        await websocket.accept()
+        client = Client(
+            websocket=websocket,
+            user_id=user["id"],
+            display_name=user["display_name"],
+            color=self._color(user["id"]),
+            avatar_url=user.get("avatar_url"),
+        )
+        async with self._lock:
+            room = self._workspace_rooms.setdefault(team_id, {})
+            room[user["id"]] = client
+            users = list(room.values())
+        await websocket.send_json(
+            {
+                "type": "workspace.presence.sync",
+                "team_id": team_id,
+                "users": [
+                    {
+                        "id": c.user_id,
+                        "display_name": c.display_name,
+                        "color": c.color,
+                        "avatar_url": c.avatar_url,
+                    }
+                    for c in users
+                ],
+            }
+        )
+        await self.broadcast_workspace(
+            team_id,
+            {
+                "type": "workspace.presence.join",
+                "team_id": team_id,
+                "user": {
+                    "id": client.user_id,
+                    "display_name": client.display_name,
+                    "color": client.color,
+                    "avatar_url": client.avatar_url,
+                },
+            },
+            skip_user_id=client.user_id,
+        )
+        return client
+
+    async def disconnect_workspace(self, team_id: str, user_id: str) -> None:
+        async with self._lock:
+            room = self._workspace_rooms.get(team_id, {})
+            room.pop(user_id, None)
+            if not room:
+                self._workspace_rooms.pop(team_id, None)
+        await self.broadcast_workspace(team_id, {"type": "workspace.presence.leave", "team_id": team_id, "user_id": user_id})
+
+    async def broadcast_workspace(self, team_id: str, message: dict[str, Any], *, skip_user_id: str | None = None) -> None:
+        async with self._lock:
+            clients = list(self._workspace_rooms.get(team_id, {}).values())
+        dead: list[tuple[str, str]] = []
+        for client in clients:
+            if skip_user_id and client.user_id == skip_user_id:
+                continue
+            try:
+                await client.websocket.send_json(message)
+            except Exception as exc:
+                logger.debug("workspace ws send failed: %s", exc)
+                dead.append((team_id, client.user_id))
+        for tid, uid in dead:
+            await self.disconnect_workspace(tid, uid)
+
+    def notify_workspace(self, team_id: str, message: dict[str, Any]) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.broadcast_workspace(team_id, message))
+        except RuntimeError:
+            logger.debug("no event loop for workspace ws notify")
 
     async def connect_user(self, websocket: WebSocket, user: dict[str, Any]) -> None:
         await websocket.accept()
@@ -172,6 +255,7 @@ class CollabHub:
                     "user_id": client.user_id,
                     "display_name": client.display_name,
                     "color": client.color,
+                    "avatar_url": client.avatar_url,
                     "picks": client.picks,
                 },
                 skip_user_id=client.user_id,

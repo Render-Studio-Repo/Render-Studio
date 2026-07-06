@@ -1,0 +1,10 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "addin",
+  "id": "Render3DLink",
+  "author": "Render3D",
+  "description": "Local bridge for Render3D Fusion mode. Receives Fusion 360 Python API scripts from Render3D and runs them in the active design.",
+  "version": "0.1.0",
+  "runOnStartup": false,
+  "supportedOS": "windows|mac"
+}
