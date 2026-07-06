@@ -9,7 +9,7 @@
   <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=3" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=3" />
-  <link rel="stylesheet" href="/styles.css?v=20260619-prompt-mic-v2" />
+  <link rel="stylesheet" href="/styles.css?v=20260706-restore" />
   <script type="importmap">
   {
     "imports": {
@@ -20,21 +20,28 @@
   </script>
   <link rel="stylesheet" href="/ribbon.css?v=20260616-no-newmodel" />
 </head>
-<body>
+<body class="theme-dark">
   <div id="app">
     <header class="toolbar">
+      <!-- Sidebar toggle (always visible) -->
       <button id="btn-toggle-sidebar" class="btn-collapse" title="Hide sidebar" aria-label="Toggle left panel" aria-pressed="false">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75ZM1 7.75A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"/></svg>
         <span class="btn-collapse-label">Sidebar</span>
       </button>
+      <!-- Management button — admin only, shown by auth.js -->
+      <a id="btn-admin-dashboard-toolbar" class="btn-collapse hidden" href="/admin-dashboard.html" title="Open management dashboard" aria-label="Open management dashboard">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2 2.75A.75.75 0 0 1 2.75 2h10.5a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75H2.75A.75.75 0 0 1 2 13.25V2.75Zm1.5.75v3h9v-3h-9Zm0 4.5v4.5h2.75V8H3.5Zm4.25 4.5h4.75V8H7.75v4.5Z"/></svg>
+        <span class="btn-collapse-label">Management</span>
+      </a>
       <div class="brand">
         <a href="/" class="brand-link">
-          <img class="logo" src="/logo.png?v=3" alt="" width="42" height="42" />
+          <img class="logo" src="/render3d-logo.jpg?v=20260706" alt="Render3D" width="52" height="52" style="border-radius:8px;object-fit:cover;" />
           <h1>Render3D</h1>
         </a>
       </div>
       <nav class="toolbar-nav" aria-label="Main">
         <a href="/" class="nav-tab active">Studio</a>
+        <a href="/agent-store.html" class="nav-tab">Agent Store</a>
         <a href="/skills.html" class="nav-tab">Skills Library</a>
         <a href="/docs.html" class="nav-tab">Docs</a>
         <a href="/roadmap.html" class="nav-tab">Roadmap</a>
@@ -74,6 +81,9 @@
           <span id="onshape-badge" class="onshape-badge hidden" title="Signed in via Onshape" aria-hidden="true">
             <img src="/onshape-logo.png?v=20260617-small" width="16" height="16" alt="" />
           </span>
+          <span id="fusion-badge" class="fusion-badge hidden" title="Fusion 360 connected" aria-hidden="true">
+            <img src="/fusion-360-logo.png?v=20260629" alt="" width="16" height="16" />
+          </span>
           <span id="collab-status" class="collab-dot collab-badge" title="Live collaboration"></span>
         </button>
         <div id="user-menu" class="user-menu hidden">
@@ -92,6 +102,31 @@
             <strong id="user-menu-ai-cost-value" class="user-menu-ai-cost-value">—</strong>
             <span id="user-menu-ai-cost-hint" class="muted small">Estimated from tracked prompts</span>
           </div>
+          <!-- Cloud connections: Onshape + Fusion 360 -->
+          <div id="cloud-connections-card" class="cloud-connections-card">
+            <div class="cloud-connections-head">
+              <span>CAD cloud connections</span>
+              <small>Import, export, and plugin handoff</small>
+            </div>
+            <button type="button" id="btn-onshape-connect" class="cloud-connection-row" data-cloud-row="onshape">
+              <span class="cloud-connection-icon cloud-connection-icon--onshape">
+                <img src="/onshape-logo.png?v=20260617-small" width="22" height="22" alt="" />
+              </span>
+              <div>
+                <strong>Onshape</strong>
+                <small id="onshape-connection-status">Disconnected</small>
+              </div>
+            </button>
+            <button type="button" id="btn-fusion-connect" class="cloud-connection-row" data-cloud-row="fusion">
+              <span class="cloud-connection-icon cloud-connection-icon--fusion">
+                <img src="/fusion-360-logo.png?v=20260629" width="22" height="22" alt="" />
+              </span>
+              <div>
+                <strong>Fusion 360</strong>
+                <small id="fusion-connection-status">Disconnected</small>
+              </div>
+            </button>
+          </div>
           <button type="button" id="btn-ai-key-menu" class="user-menu-item">
             <span id="ai-key-menu-label">Add AI API key</span>
             <small id="ai-key-menu-hint">Required for prompts</small>
@@ -101,6 +136,16 @@
             <small>Total, shared users, and trend</small>
           </button>
           <div id="profile-costs-panel" class="profile-costs-panel hidden"></div>
+          <!-- Admin dashboard — shown only for admin users by auth.js -->
+          <a href="/admin-dashboard.html" id="btn-admin-dashboard" class="user-menu-item hidden">
+            <span>Management dashboard</span>
+            <small>Users, projects, prompt history, and site stats</small>
+          </a>
+          <button type="button" id="btn-preferences-menu" class="user-menu-item">
+            <span>Preferences</span>
+            <small>General settings and viewport controls</small>
+          </button>
+          <div id="profile-preferences-panel" class="profile-preferences-panel hidden"></div>
           <button type="button" id="btn-workspace-menu" class="user-menu-item">
             <span>Team workspaces</span>
             <small>Members, invites, visibility, leave</small>
@@ -560,6 +605,7 @@
               <button type="button" class="prompt-mode-btn active" data-prompt-mode="render">Render</button>
               <button type="button" class="prompt-mode-btn" data-prompt-mode="draw">Draw</button>
               <button type="button" class="prompt-mode-btn prompt-mode-btn--v2" data-prompt-mode="v2">2.0</button>
+              <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
             </div>
           </div>
