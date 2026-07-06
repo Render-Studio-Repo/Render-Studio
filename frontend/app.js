@@ -45,7 +45,7 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260628-baked-normals";
+} from "./scene-style.js?v=20260617-creased-normals";
 import { createEditTools } from "./edit-tools.js?v=20260611-sketch-extrude";
 import { createTimelineUI } from "./timeline.js?v=20260618-restore-assembly";
 import { createPromptComposer } from "./prompt-composer.js?v=20260618-multi-drag";
@@ -57,8 +57,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260619-folder-icon";
 import { readExplorerDragPayloads } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser, clearSession } from "./auth.js";
-import { createApiKeyUI } from "./api-key-ui.js";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js";
 import { initFusionPanel } from "./fusion-panel.js?v=20260706";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260618-shared-key-dollar-limits";
 import { createCollab } from "./collab.js?v=20260617-local-path-markers";
@@ -72,19 +71,19 @@ import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=202
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260618-transform-placement";
 import { createDirectModeling } from "./direct-modeling.js?v=20260615-fillet-chamfer";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
-import { createObjectTools } from "./object-tools.js?v=20260702-delete-fix";
+import { createObjectTools } from "./object-tools.js?v=20260617-marquee-bodies";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { createProjectTree } from "./project-tree.js?v=20260618-hide-tags";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260618-explorer-ids";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260619-canvas-tab";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260619-wiring-viewport-fix";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-fix";
-import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-sketch-fix";
+import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-compose";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260618-hide-tags";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
+import { createMiniViewer } from "./mini-viewer.js?v=20260617-visible-mini-viewer";
 import { createSketchEditor } from "./sketch-editor.js?v=20260615-load-entities";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260612-spin-fix3";
@@ -104,128 +103,21 @@ let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
 let currentUser = null;
-let apiKeyUi = null;
-let openaiStatus = null;
 let selectedFile = null;
 let currentMesh = null;
 let meshCenterOffset = new THREE.Vector3();
-let modelUnitScale = { toMm: 1 };
 let timelineData = null;
 let aiStatus = null;
-let workspaceAiUsage = null;
 let workspaceAiUsage = null;
 let aiKeyUi = null;
 let restoringModelPromptState = false;
 let promptImages = [];
-let loadModelGeneration = 0;
-let loadProjectGeneration = 0;
-const loadingProjectIds = new Set();
-let promptHistoryEntries = [];
-let activePromptEntry = null;
-let authUi = null;
 let suppressAiComposePanelSwitch = false;
 let loadModelGeneration = 0;
 let loadProjectGeneration = 0;
 let currentSim = null;
 const loadingProjectIds = new Set();
 let generationPollTimer = null;
-let generationWatchPid = null;
-let generationWatchOverlay = null;
-let viewportOverlayPid = null;
-let viewportOverlayState = null;
-
-function syncViewportGenerationOverlay(completeOpts = {}) {
-  const overlayPid = generationWatchPid || viewportOverlayPid;
-  if (overlayPid && overlayPid === projectId) {
-    if (generationWatchPid === projectId && generationWatchOverlay) {
-      viewerOverlay.setGenerating(true, generationWatchOverlay.message, generationWatchOverlay);
-    } else if (viewportOverlayPid === projectId && viewportOverlayState) {
-      viewerOverlay.setGenerating(true, viewportOverlayState.message, viewportOverlayState);
-    }
-    return;
-  }
-  viewerOverlay.setGenerating(false, null, { complete: completeOpts.complete ?? false });
-}
-
-function showViewportOverlay(pid, message, opts = {}) {
-  if (!pid) return;
-  viewportOverlayPid = pid;
-  viewportOverlayState = { message, ...opts };
-  syncViewportGenerationOverlay();
-}
-
-function hideViewportOverlay(pid, completeOpts = {}) {
-  if (pid != null && viewportOverlayPid !== pid) return;
-  viewportOverlayPid = null;
-  viewportOverlayState = null;
-  syncViewportGenerationOverlay(completeOpts);
-}
-
-function isProjectGenerating(id) {
-  if (!id) return false;
-  if (generationWatchPid === id) return true;
-  const proj = allProjects.find((p) => p.id === id);
-  return proj?.generation?.status === "running";
-}
-
-const LS_CANVAS_GEN = "render3d:canvas-gen-pending";
-
-function markCanvasGenerationPending(pid = projectId) {
-  if (!pid || !document.body.classList.contains("canvas-design-tab")) return;
-  try {
-    sessionStorage.setItem(LS_CANVAS_GEN, JSON.stringify({ pid, at: Date.now() }));
-  } catch (_) {}
-}
-
-function clearCanvasGenerationPending(pid = projectId) {
-  try {
-    const raw = sessionStorage.getItem(LS_CANVAS_GEN);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    if (!pid || data?.pid === pid) sessionStorage.removeItem(LS_CANVAS_GEN);
-  } catch (_) {}
-}
-
-function syncCanvasGenerationUi() {
-  const banner = document.getElementById("canvas-generation-banner");
-  const messageEl = document.getElementById("canvas-generation-message");
-  if (!banner) return;
-  const active =
-    document.body.classList.contains("canvas-design-tab")
-    && projectId
-    && isGenerationUiActive(projectId)
-    && isCadGenerationActive(projectId);
-  banner.classList.toggle("hidden", !active);
-  if (!active) return;
-  const msg =
-    generationWatchOverlay?.message
-    || "Generating 3D model in background — safe to switch tabs or refresh.";
-  if (messageEl) {
-    messageEl.textContent = msg.replace(/\s*\(safe to refresh\)/i, " — safe to switch tabs or refresh");
-  }
-  const statusEl = document.getElementById("prompt-status");
-  if (statusEl && !statusEl.textContent) {
-    statusEl.className = "status loading";
-    statusEl.textContent = "Generating in background… safe to switch tabs or refresh.";
-  }
-}
-
-async function resumeGenerationFromProjects() {
-  if (!projectId) return;
-  const proj = allProjects.find((p) => p.id === projectId);
-  if (proj?.generation) {
-    await resumeGenerationIfNeeded(projectId, proj.generation);
-    return;
-  }
-  try {
-    const gen = await api(`/api/projects/${projectId}/generation`);
-    if (gen?.status === "running") {
-      const cached = allProjects.find((p) => p.id === projectId);
-      if (cached) cached.generation = gen;
-      await resumeGenerationIfNeeded(projectId, gen);
-    }
-  } catch (_) {}
-}
 let generationWatchPid = null;
 let generationWatchOverlay = null;
 let viewportOverlayPid = null;
@@ -330,12 +222,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
     await refreshPromptHistory();
     showAiComposePanel();
     clearPromptComposeResult();
-    if (document.body.classList.contains("canvas-design-tab")) {
-      workspaceModes?.setDesignTab?.("SOLID");
-      setEditStatus("ok", "Model ready — opened in 3D view.");
-    }
   }
-  clearCanvasGenerationPending(pid);
   markGenerationApplied(pid, gen.trace_id);
 }
 
@@ -398,7 +285,6 @@ function syncStopButtonVisibility() {
   if (wiringToolbeltBtn) wiringToolbeltBtn.classList.toggle("hidden", !wiringGenerating);
   viewerOverlay.setStopVisible?.(cadGenerating);
   wiringOverlay?.setStopVisible?.(wiringGenerating);
-  syncCanvasGenerationUi();
 }
 
 function stopGenerationWatch() {
@@ -410,7 +296,6 @@ function stopGenerationWatch() {
   generationWatchPid = null;
   generationWatchOverlay = null;
   if (pid) setProjectLoading(pid, false);
-  clearCanvasGenerationPending(pid);
   syncViewportGenerationOverlay({ complete: true });
   document.getElementById("btn-prompt")?.removeAttribute("disabled");
   document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
@@ -608,7 +493,6 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         if (generationWatchOverlay) generationWatchOverlay.pendingStart = false;
         syncExplorerLoadingUI();
         syncStopButtonVisibility();
-        syncCanvasGenerationUi();
         return;
       }
       if (gen.status === "idle" && generationWatchOverlay?.pendingStart) {
@@ -679,7 +563,6 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
   poll();
   generationPollTimer = setInterval(poll, 2500);
   syncStopButtonVisibility();
-  syncCanvasGenerationUi();
 }
 
 async function resumeGenerationIfNeeded(pid, generation) {
@@ -704,47 +587,12 @@ async function resumeGenerationIfNeeded(pid, generation) {
 }
 
 initPanelResize();
-const mobileUI = initMobileUI({
-  onResize: () => {
-    resize();
-    collab?.resizeLabels();
-  },
-});
 
 const viewportHint = document.getElementById("viewport-hint");
 const pickHintTitle = document.getElementById("pick-hint-title");
 const pickHintText = document.getElementById("pick-hint-text");
 
 const viewport = document.getElementById("viewport");
-if (!viewport) {
-  throw new Error("Render3D: #viewport element missing from page");
-}
-const viewerOverlay = createViewerOverlay(viewport, {
-  fetchLogs: () => rawFetch("/api/logs?limit=40"),
-});
-const viewerToast = createViewerToast(viewport);
-
-function inferMeshUsesMm() {
-  if (!currentMesh) return true;
-  const box = new THREE.Box3().setFromObject(currentMesh);
-  const size = box.getSize(new THREE.Vector3());
-  return Math.max(size.x, size.y, size.z) >= 1.0;
-}
-
-function viewerToastForCollab(msg) {
-  const action = msg.action;
-  const by = msg.by;
-  if (!action || !by) return;
-  const verbs = {
-    extrude: "extruded",
-    transform: "edited",
-    upload: "uploaded",
-    prompt: "updated",
-    build: "built",
-  };
-  const verb = verbs[action] || action;
-  viewerToast.show(`${by} ${verb} the model`, { kind: "info", durationMs: 2800 });
-}
 if (!viewport) {
   throw new Error("Render3D: #viewport element missing from page");
 }
@@ -809,20 +657,6 @@ controls.panSpeed     = 0.8;
 controls.staticMoving = true;   // no inertia (matches enableDamping=false)
 controls.minDistance  = 0.05;
 controls.maxDistance  = 5000;
-
-// ── Section View (cross-section clipping plane) ───────────────────────────
-const sectionView = createSectionView({
-  renderer,
-  scene,
-  camera,
-  getModelBounds: () => {
-    if (!currentMesh) return null;
-    const box = new THREE.Box3();
-    box.setFromObject(currentMesh);
-    if (!box.isEmpty()) return box;
-    return null;
-  },
-});
 
 const LEFT_DRAG_MODE_KEY = "render3d:left-drag-mode:v1";
 const MOBILE_INTERACTION_QUERY = window.matchMedia?.("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)");
@@ -1023,8 +857,6 @@ scene.add(transformControls.getHelper());
 
 let gridVisible = true;
 let gridHelper = null;
-const SKETCH_CANVAS = 0xe8e8e8;
-let savedSceneBg = null;
 const SKETCH_CANVAS = 0xe8e8e8;
 let savedSceneBg = null;
 let gridAxesGroup = null;
@@ -1310,11 +1142,6 @@ function renderPromptImages() {
   });
   syncBlueprintVisionForImages(promptImages.length);
   skillsPromptUI.render();
-  if (promptImages.length > 0) {
-    requestAnimationFrame(() => {
-      document.getElementById("btn-prompt")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
-  }
 }
 
 function readImageFile(file) {
@@ -1540,7 +1367,6 @@ collab = createCollab({
   scene,
 });
 collab.setupLabels(viewport);
-collab.setupLabels(viewport);
 
 function userRealtimeUrl() {
   const token = encodeURIComponent(getToken());
@@ -1735,48 +1561,35 @@ function renderUserMenuAiCost() {
   const usage = workspaceAiUsage;
   if (!usage) {
     valueEl.textContent = "—";
-    if (labelEl) labelEl.textContent = "AI est. · this month · your prompts";
-    if (hintEl) hintEl.textContent = "Estimated from tracked token usage (input + output)";
+    if (labelEl) labelEl.textContent = "OpenAI est. · this month";
+    if (hintEl) hintEl.textContent = "Estimated from tracked prompts";
     return;
   }
 
+  const projectCount = usage.project_count ?? 0;
   const monthLabel = usage.month_label || "This month";
-  const projectsWithPrompts = usage.projects_with_prompts ?? usage.project_count ?? 0;
-  const totalCost = Number(usage.cost_usd) || 0;
-  const openaiCost = Number(usage.openai_cost_usd) || 0;
-  const anthropicCost = Number(usage.anthropic_cost_usd) || 0;
-  const inputTokens = Number(usage.usage?.input_tokens) || 0;
-  const outputTokens = Number(usage.usage?.output_tokens) || 0;
-
   if (labelEl) {
-    labelEl.textContent = `AI est. · ${monthLabel} · ${projectsWithPrompts} project${projectsWithPrompts === 1 ? "" : "s"} with prompts`;
+    labelEl.textContent = `OpenAI est. · ${monthLabel} · ${projectCount} project${projectCount === 1 ? "" : "s"}`;
   }
 
-  valueEl.textContent = formatCostUsd(totalCost) ?? "$0.00";
+  const openaiTotal = Number(usage.openai_cost_usd ?? usage.cost_usd) || 0;
+  valueEl.textContent = formatCostUsd(openaiTotal) ?? "$0.00";
 
   if (hintEl) {
     const tracked = usage.tracked_count ?? 0;
     const untracked = usage.untracked_count ?? Math.max(0, (usage.prompt_count ?? 0) - tracked);
-    const aiCalls = Number(usage.ai_calls) || 0;
-    const parts = [];
-    if (tracked > 0) {
-      parts.push(`${tracked} tracked prompt${tracked === 1 ? "" : "s"}`);
-      if (aiCalls > tracked) parts.push(`${aiCalls} API calls`);
-    } else {
-      parts.push("No tracked prompts this month");
-    }
-    const providerBits = [];
-    if (openaiCost > 0.0001) providerBits.push(`OpenAI ${formatCostUsd(openaiCost)}`);
-    if (anthropicCost > 0.0001) providerBits.push(`Claude ${formatCostUsd(anthropicCost)}`);
-    if (providerBits.length) parts.push(providerBits.join(" · "));
-    if (inputTokens || outputTokens) {
-      parts.push(`${compactTokenCount(inputTokens)} in · ${compactTokenCount(outputTokens)} out`);
-    }
+    let hint =
+      tracked > 0
+        ? `${tracked} tracked prompt${tracked === 1 ? "" : "s"} · estimated from token usage`
+        : "No tracked prompts this month";
     if (untracked > 0) {
-      parts.push(`${untracked} prompt${untracked === 1 ? "" : "s"} missing usage (not included)`);
+      hint += ` · ${untracked} older prompt${untracked === 1 ? "" : "s"} missing usage (not included)`;
     }
-    parts.push("all keys · estimated list prices");
-    hintEl.textContent = parts.join(" · ");
+    const allProviders = Number(usage.cost_usd) || 0;
+    if (allProviders > openaiTotal + 0.0001) {
+      hint += ` · all providers ${formatCostUsd(allProviders)}`;
+    }
+    hintEl.textContent = hint;
   }
 }
 
@@ -2253,7 +2066,7 @@ function handlePendingSnapTarget(event) {
 const gizmoPanel = createGizmoPanel({
   viewport,
   transformControls,
-  getMesh: () => projectAssembly.getRoot() || currentMesh,
+  getMesh: () => currentMesh,
   getModelInfo: () => {
     const selection = objectTools?.getSelection?.();
     return {
@@ -2403,22 +2216,6 @@ function finishActiveSketch() {
   }
 }
 
-function finishActiveSketch() {
-  if (!sketchEditor.isActive()) {
-    setEditStatus("error", "No active sketch to finish.");
-    return false;
-  }
-  try {
-    return sketchEditor.finish();
-  } catch (err) {
-    console.error("Finish sketch failed:", err);
-    setEditStatus("error", err?.message || "Finish sketch failed.");
-    sketchEditor.cancel();
-    exitSketchMode();
-    return false;
-  }
-}
-
 function enterRiggingMode() {
   transformControls.detach();
   gizmoPanel.hide();
@@ -2463,12 +2260,6 @@ function enterCanvasTab() {
   canvasModeInstance?.show?.();
   showAiComposePanel();
   ribbon?.setDesignTab?.("CANVAS");
-  syncCanvasGenerationUi();
-  const hint = document.getElementById("prompt-mode-hint");
-  if (hint) {
-    hint.dataset.prevHint = hint.textContent || "";
-    hint.textContent = "Generation keeps running if you switch tabs or refresh. Sketch is attached when you Generate.";
-  }
   window.dispatchEvent(new Event("resize"));
 }
 
@@ -2477,13 +2268,6 @@ function exitCanvasTab() {
   document.getElementById("app")?.classList.remove("canvas-design-tab");
   document.body.classList.remove("canvas-design-tab");
   canvasModeInstance?.hide?.();
-  syncCanvasGenerationUi();
-  refreshViewportAfterLayoutChange({ fit: !!currentMesh });
-  const hint = document.getElementById("prompt-mode-hint");
-  if (hint && hint.dataset.prevHint != null) {
-    hint.textContent = hint.dataset.prevHint;
-    delete hint.dataset.prevHint;
-  }
 }
 
 function handleDesignTabChange(tab) {
@@ -2500,7 +2284,7 @@ function handleDesignTabChange(tab) {
   if (tab === "SKETCH") {
     setEditStatus("ok", "Sketch mode — click Create Sketch to enter locked 2D edit.");
   } else if (tab === "RIGGING") {
-    setEditStatus("ok", "Rigging — bones, keyframes, play timeline. Use Rigging AI panel for URDF.");
+    setEditStatus("ok", "Rigging mode — Add Bone, Connect hierarchy, Save Rig.");
   } else if (tab === "CATALOG") {
     exitCanvasTab();
     exitSketchMode();
@@ -2682,16 +2466,6 @@ function handleRiggingAction(action, entry, data = {}) {
   if (action === "export_urdf") {
     riggingEditor.exportUrdf();
     return;
-  }
-}
-
-function syncSketchVisibilityFromTree(browser) {
-  for (const entry of browser?.sketches || []) {
-    if (entry.format !== "sketch") continue;
-    const key = entry.stem || entry.id;
-    if (projectTree.isHidden?.(key)) {
-      sketchEditor.setViewportSketchVisible?.(key, false);
-    }
   }
 }
 
@@ -2907,491 +2681,6 @@ document.getElementById("btn-sketch-demo-plate")?.addEventListener("click", () =
   }
   runSketchPrompt();
 });
-
-async function runSketchPrompt() {
-  if (!projectId) {
-    setEditStatus("error", "Select a project in the sidebar first.");
-    return;
-  }
-  const input = document.getElementById("sketch-prompt-input");
-  const status = document.getElementById("sketch-prompt-status");
-  const prompt = input?.value?.trim();
-  if (!prompt) {
-    if (status) {
-      status.className = "status error";
-      status.textContent = "Describe the 2D sketch you want.";
-    }
-    return;
-  }
-  if (status) {
-    status.className = "status loading";
-    status.textContent = "Generating sketch…";
-  }
-  try {
-    const data = await api(`/api/projects/${projectId}/sketch/prompt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        speed: document.getElementById("prompt-speed")?.value || "fast",
-      }),
-    });
-    const sketch = data.sketch;
-    if (sketchEditor.isActive()) {
-      sketchEditor.applySketchData(sketch);
-    } else {
-      workspaceModes.setDesignTab("SKETCH");
-      ribbon?.setDesignTab("SKETCH");
-      sketchEditor.applySketchData(sketch);
-      enterSketchMode();
-    }
-    if (status) {
-      status.className = "status ok";
-      status.textContent = data.message || "Sketch generated — edit or Finish Sketch.";
-    }
-    setEditStatus("ok", data.message || "Sketch generated.");
-  } catch (err) {
-    if (status) {
-      status.className = "status error";
-      status.textContent = err.message || "Sketch prompt failed.";
-    }
-    setEditStatus("error", err.message || "Sketch prompt failed.");
-  }
-}
-
-document.getElementById("btn-sketch-prompt")?.addEventListener("click", () => {
-  runSketchPrompt();
-});
-
-document.getElementById("btn-sketch-demo-plate")?.addEventListener("click", () => {
-  const input = document.getElementById("sketch-prompt-input");
-  if (input) {
-    input.value =
-      "40×30 mm rectangular mounting plate on XY with a 10 mm diameter hole centered. Add horizontal and vertical constraints and dimensions.";
-  }
-  runSketchPrompt();
-});
-document.querySelectorAll(".sketch-quick-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const tool = btn.dataset.sketchTool;
-    if (!tool) return;
-    handleSketchAction("tool", { sketchTool: tool }, { tool });
-  });
-});
-
-let ribbon = null;
-
-function setSketchModelDim(active) {
-  const root = projectAssembly.getRoot();
-  root?.traverse((obj) => {
-    const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : [];
-    for (const mat of mats) {
-      if (!mat) continue;
-      if (active) {
-        if (mat.userData._sketchOrigOpacity == null) {
-          mat.userData._sketchOrigOpacity = mat.opacity ?? 1;
-        }
-        mat.transparent = true;
-        mat.opacity = 0.12;
-      } else if (mat.userData._sketchOrigOpacity != null) {
-        mat.opacity = mat.userData._sketchOrigOpacity;
-        mat.transparent = mat.opacity < 1;
-      }
-      mat.needsUpdate = true;
-    }
-  });
-  if (currentMesh && !root) {
-    currentMesh.traverse((obj) => {
-      const mat = obj.material;
-      if (!mat) return;
-      if (active) {
-        if (mat.userData._sketchOrigOpacity == null) mat.userData._sketchOrigOpacity = mat.opacity ?? 1;
-        mat.transparent = true;
-        mat.opacity = 0.12;
-      } else if (mat.userData._sketchOrigOpacity != null) {
-        mat.opacity = mat.userData._sketchOrigOpacity;
-        mat.transparent = mat.opacity < 1;
-      }
-      mat.needsUpdate = true;
-    });
-  }
-}
-
-function formatSketchTool(tool) {
-  return String(tool || "line").replace(/_/g, " ");
-}
-
-function enterSketchVisualMode() {
-  savedSceneBg = scene.background?.getHex?.() ?? FUSION.canvas;
-  scene.background.setHex(SKETCH_CANVAS);
-  if (gridHelper) gridHelper.visible = false;
-  ribbon?.setSketchEditing?.(true);
-  document.querySelector(".sketch-mode-tab")?.classList.remove("hidden");
-  setRightTab("sketch");
-}
-
-function exitSketchVisualMode() {
-  scene.background.setHex(savedSceneBg ?? FUSION.canvas);
-  savedSceneBg = null;
-  if (gridHelper) gridHelper.visible = gridVisible;
-  ribbon?.setSketchEditing?.(false);
-  ribbon?.setActiveSketchTool?.(null);
-  document.querySelector(".sketch-mode-tab")?.classList.add("hidden");
-  document.querySelectorAll(".sketch-quick-btn").forEach((b) => b.classList.remove("active"));
-}
-
-function updateSketchChrome({ visible, plane, tool, hint, entities = 0, constraints = 0 } = {}) {
-  const chrome = document.getElementById("sketch-chrome");
-  if (!chrome) return;
-  chrome.classList.toggle("hidden", !visible);
-
-  const planeLabel = document.getElementById("sketch-plane-label");
-  const statusTool = document.getElementById("sketch-status-tool");
-  const statusHint = document.getElementById("sketch-status-hint");
-  const statusStats = document.getElementById("sketch-status-stats");
-  const inspPlane = document.getElementById("sketch-inspector-plane");
-  const inspTool = document.getElementById("sketch-inspector-tool");
-  const inspEntities = document.getElementById("sketch-inspector-entities");
-  const inspConstraints = document.getElementById("sketch-inspector-constraints");
-  const inspHint = document.getElementById("sketch-inspector-hint");
-
-  const toolLabel = formatSketchTool(tool);
-  if (planeLabel && visible) planeLabel.textContent = `${plane || "XY"} Plane · Edit Sketch`;
-  if (statusTool) statusTool.textContent = toolLabel;
-  if (statusHint) {
-    statusHint.textContent = hint || "";
-    statusHint.classList.toggle("sketch-status-hint--error", !!hint && /closed profile|draw a closed|constraints/i.test(hint));
-  }
-  if (statusStats) statusStats.textContent = `${entities} ent · ${constraints} constraints`;
-  if (inspPlane) inspPlane.textContent = plane || "XY";
-  if (inspTool) inspTool.textContent = toolLabel;
-  if (inspEntities) inspEntities.textContent = String(entities);
-  if (inspConstraints) inspConstraints.textContent = String(constraints);
-  if (inspHint) inspHint.textContent = hint || "";
-
-  document.querySelectorAll(".sketch-quick-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.sketchTool === tool);
-  });
-  ribbon?.setActiveSketchTool?.(tool);
-}
-
-function enterSketchMode() {
-  transformControls.detach();
-  gizmoPanel.hide();
-  document.getElementById("btn-gizmo")?.classList.remove("active");
-  objectTools.clearSelection();
-  activatePickMode("off");
-  directModeling.setTool?.(null);
-}
-
-function exitSketchMode() {
-  if (sketchEditor.isActive()) sketchEditor.cancel();
-  else {
-    setSketchModelDim(false);
-    document.getElementById("app")?.classList.remove("sketch-editing");
-    updateSketchChrome({ visible: false });
-    exitSketchVisualMode();
-    controls.enabled = true;
-  }
-}
-
-function enterRiggingMode() {
-  transformControls.detach();
-  gizmoPanel.hide();
-  document.getElementById("btn-gizmo")?.classList.remove("active");
-  objectTools.clearSelection();
-  controls.enabled = true;
-  document.getElementById("rigging-chrome")?.classList.remove("hidden");
-  refreshRiggingPromptHistory();
-  setRightTab("rigging");
-  riggingPromptHistory.setTab("compose");
-  riggingEditor.show();
-  syncRiggingToolbelt();
-}
-
-function exitRiggingMode() {
-  document.getElementById("rigging-chrome")?.classList.add("hidden");
-  riggingEditor.hide();
-}
-
-function syncRiggingToolbelt() {
-  const tool = riggingEditor.getTool();
-  document.querySelectorAll("[data-rig-tool]").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.rigTool === tool);
-  });
-}
-
-function enterCanvasTab() {
-  catalogPanel?.close?.();
-  exitRiggingMode();
-  document.getElementById("canvas-workspace")?.classList.remove("hidden");
-  document.getElementById("app")?.classList.add("canvas-design-tab");
-  document.body.classList.add("canvas-design-tab");
-  canvasModeInstance?.show?.();
-  setRightTab("prompt");
-  ribbon?.setDesignTab?.("CANVAS");
-  window.dispatchEvent(new Event("resize"));
-}
-
-function exitCanvasTab() {
-  document.getElementById("canvas-workspace")?.classList.add("hidden");
-  document.getElementById("app")?.classList.remove("canvas-design-tab");
-  document.body.classList.remove("canvas-design-tab");
-  canvasModeInstance?.hide?.();
-}
-
-function handleDesignTabChange(tab) {
-  const app = document.getElementById("app");
-  if (tab !== "SKETCH" && sketchEditor.isActive()) {
-    if (!finishActiveSketch()) sketchEditor.cancel();
-  }
-  if (tab === "RIGGING") {
-    exitSketchMode();
-    enterRiggingMode();
-  } else {
-    exitRiggingMode();
-  }
-  if (tab === "SKETCH") {
-    setEditStatus("ok", "Sketch mode — click Create Sketch to enter locked 2D edit.");
-  } else if (tab === "RIGGING") {
-    setEditStatus("ok", "Rigging mode — Add Bone, Connect hierarchy, Save Rig.");
-  } else {
-    exitSketchMode();
-  }
-  ribbon?.setDesignTab(tab);
-  app?.classList.toggle("sketch-design-tab", tab === "SKETCH");
-  app?.classList.toggle("rigging-design-tab", tab === "RIGGING");
-}
-
-let sketchFacePickActive = false;
-
-function pickFaceHit(event) {
-  if (!currentMesh) return null;
-  const rect = renderer.domElement.getBoundingClientRect();
-  const ndc = new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1
-  );
-  const rc = new THREE.Raycaster();
-  rc.setFromCamera(ndc, camera);
-  const hits = rc.intersectObject(currentMesh, true).filter((h) => h.object.isMesh && h.faceIndex != null);
-  return hits[0] || null;
-}
-
-function beginSketchFacePick() {
-  if (!currentMesh) {
-    setEditStatus("error", "Load a model first, then pick a face for the sketch.");
-    return false;
-  }
-  if (sketchEditor.isActive?.()) {
-    setEditStatus("ok", "Already editing a sketch — use Finish Sketch or Cancel.");
-    return false;
-  }
-  sketchFacePickActive = true;
-  activatePickMode("off");
-  transformControls.detach();
-  gizmoPanel.hide();
-  document.getElementById("btn-gizmo")?.classList.remove("active");
-  setEditStatus("ok", "Click a face on the model to sketch on it. Esc to cancel.");
-  return true;
-}
-
-function cancelSketchFacePick() {
-  if (!sketchFacePickActive) return;
-  sketchFacePickActive = false;
-  clearHover();
-  setEditStatus("", "");
-}
-
-function maybeStartSketch(data = {}) {
-  const planeChoice = data?.plane || "XY";
-  workspaceModes.setDesignTab("SKETCH");
-  ribbon?.setDesignTab("SKETCH");
-  applyWorkspaceMode("design");
-  if (planeChoice === "Face") {
-    beginSketchFacePick();
-    return;
-  }
-  sketchEditor.start(planeChoice);
-  enterSketchMode();
-}
-
-function handleSketchAction(action, entry, data = {}) {
-  if (action === "start_tab") {
-    if (sketchEditor.isActive()) {
-      setEditStatus("ok", "Already editing a sketch — use Finish Sketch or Cancel.");
-      return;
-    }
-    workspaceModes.setDesignTab("SKETCH");
-    maybeStartSketch(data);
-    return;
-  }
-  if (action === "start") {
-    if (sketchEditor.isActive()) {
-      setEditStatus("ok", "Already editing a sketch — use Finish Sketch or Cancel.");
-      return;
-    }
-    if (workspaceModes.getDesignTab() !== "SKETCH") {
-      workspaceModes.setDesignTab("SKETCH");
-    }
-    maybeStartSketch(data);
-    return;
-  }
-  if (action === "tool") {
-    if (!sketchEditor.isActive()) {
-      workspaceModes.setDesignTab("SKETCH");
-      sketchEditor.start("XY");
-      enterSketchMode();
-    }
-    sketchEditor.setTool(data?.tool || entry?.sketchTool || "line");
-    ribbon?.setActiveSketchTool?.(data?.tool || entry?.sketchTool || "line");
-    return;
-  }
-  if (action === "finish") {
-    finishActiveSketch();
-    return;
-  }
-  if (action === "cancel") {
-    sketchEditor.cancel();
-    exitSketchMode();
-    return;
-  }
-  if (action === "extrude") {
-    if (sketchEditor.isActive()) {
-      setEditStatus("error", "Finish the sketch first.");
-      return;
-    }
-    const finished = sketchEditor.getFinishedSketch?.() || sketchEditor.getActiveViewportSketch?.();
-    if (!startExtrudeFromSketchData(finished)) {
-      setEditStatus("error", "Finish the sketch with a closed profile first, or click a sketch in the browser.");
-    }
-    return;
-  }
-}
-
-function handleRiggingAction(action, entry, data = {}) {
-  if (workspaceModes.getDesignTab() !== "RIGGING") {
-    workspaceModes.setDesignTab("RIGGING");
-  }
-  if (action === "tool") {
-    riggingEditor.setTool(data?.tool || entry?.rigTool || "select");
-    syncRiggingToolbelt();
-    return;
-  }
-  if (action === "add") {
-    riggingEditor.setTool("add");
-    syncRiggingToolbelt();
-    setEditStatus("ok", "Click the model or grid to place a bone.");
-    return;
-  }
-  if (action === "connect") {
-    riggingEditor.setTool("connect");
-    syncRiggingToolbelt();
-    setEditStatus("ok", "Connect: click parent bone, then child bone.");
-    return;
-  }
-  if (action === "delete") {
-    riggingEditor.deleteSelected();
-    return;
-  }
-  if (action === "clear") {
-    if (window.confirm("Clear all bones from this rig?")) riggingEditor.clearRig();
-    return;
-  }
-  if (action === "save") {
-    riggingEditor.save().then(() => setEditStatus("ok", "Rig saved."));
-    return;
-  }
-  if (action === "reload") {
-    riggingEditor.load().then(() => setEditStatus("ok", "Rig reloaded."));
-    return;
-  }
-  if (action === "auto") {
-    riggingEditor.autoRigChain();
-    return;
-  }
-  if (action === "keyframe") {
-    riggingEditor.insertKeyframe();
-    return;
-  }
-  if (action === "play") {
-    riggingEditor.togglePlay();
-    return;
-  }
-  if (action === "stop") {
-    riggingEditor.setPlaying(false);
-    return;
-  }
-  if (action === "export_urdf") {
-    riggingEditor.exportUrdf();
-    return;
-  }
-}
-
-const sketchEditor = createSketchEditor({
-  scene,
-  camera,
-  renderer,
-  controls,
-  viewport,
-  onStatus: setEditStatus,
-  onOverlay: updateSketchChrome,
-  onModeChange: (active) => {
-    controls.enabled = !active;
-    document.getElementById("app")?.classList.toggle("sketch-editing", active);
-    setSketchModelDim(active);
-    if (active) enterSketchVisualMode();
-    else {
-      updateSketchChrome({ visible: false });
-      exitSketchVisualMode();
-      setRightTab("prompt");
-    }
-  },
-  onFinished: ({ plane, profile }) => {
-    ribbon?.setSketchProfile(profile, plane);
-    setSketchModelDim(false);
-    document.getElementById("app")?.classList.remove("sketch-editing");
-    updateSketchChrome({ visible: false });
-    exitSketchVisualMode();
-    workspaceModes.setDesignTab("SOLID");
-    ribbon?.setDesignTab("SOLID");
-    setRightTab("prompt");
-    controls.enabled = true;
-    setEditStatus("ok", "Sketch finished — profile ready for Extrude.");
-  },
-});
-
-const riggingEditor = createRiggingEditor({
-  scene,
-  camera,
-  renderer,
-  controls,
-  getMeshRoot: () => projectAssembly.getRoot() || currentMesh,
-  api,
-  getProjectId: () => projectId,
-  onStatus: setEditStatus,
-  onChange: () => refreshFiles(),
-  timelineContainer: document.getElementById("rigging-anim-panel"),
-});
-
-document.getElementById("btn-sketch-finish")?.addEventListener("click", () => {
-  finishActiveSketch();
-});
-document.getElementById("btn-sketch-cancel")?.addEventListener("click", () => {
-  if (sketchEditor.isActive()) {
-    sketchEditor.cancel();
-    exitSketchMode();
-  }
-});
-document.getElementById("btn-sketch-panel-finish")?.addEventListener("click", () => {
-  finishActiveSketch();
-});
-document.getElementById("btn-sketch-panel-cancel")?.addEventListener("click", () => {
-  if (sketchEditor.isActive()) {
-    sketchEditor.cancel();
-    exitSketchMode();
-  }
-});
 document.querySelectorAll(".sketch-quick-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     const tool = btn.dataset.sketchTool;
@@ -3407,10 +2696,7 @@ const directModeling = createDirectModeling({
   controls,
   viewport,
   getMesh: () => projectAssembly.getRoot() || currentMesh,
-  getModelInfo: () => ({
-    projectId,
-    filename: catalogNameForMesh(transformControls.object) || selectedFile,
-  }),
+  getModelInfo: () => ({ projectId, filename: selectedFile }),
   api,
   onApplied: afterModelEdit,
   onStatus: setEditStatus,
@@ -3440,7 +2726,6 @@ const directModeling = createDirectModeling({
       transformControls.detach();
       gizmoPanel.hide();
       document.getElementById("btn-gizmo")?.classList.remove("active");
-      document.querySelectorAll(".edit-tool-tab").forEach((btn) => btn.classList.remove("active"));
       viewportHint?.classList.remove("hidden");
       if (pickHintTitle) pickHintTitle.textContent = tool === "presspull" ? "Press-Pull" : "Mirror";
       if (pickHintText) {
@@ -3451,7 +2736,6 @@ const directModeling = createDirectModeling({
       }
     } else {
       viewportHint?.classList.add("hidden");
-      setEditStatus("muted", "");
     }
   },
 });
@@ -3495,14 +2779,12 @@ const meshCleanup = createMeshCleanup({
   getReferences: () => composer.getReferences?.() || [],
   onApplied: afterModelEdit,
   onStatus: setEditStatus,
-  onTransformPreview: clearDirectModelingSelection,
 });
 
 const objectTools = createObjectTools({
   scene,
   getMeshRoot: () => currentMesh,
   getModelInfo: () => ({ projectId, filename: selectedFile }),
-  getMmPerModelUnit: currentMmPerModelUnit,
   api,
   onApplied: afterModelEdit,
   onStatus: setEditStatus,
@@ -3632,12 +2914,6 @@ document.getElementById("btn-split-bodies")?.addEventListener("click", () => {
 });
 
 document.getElementById("btn-delete-object")?.addEventListener("click", () => {
-  if (!objectTools.getSelection()?.mesh) {
-    setRightTab("tools");
-    activatePickMode("object");
-    setEditStatus("error", "Click an object in the viewport to select it, then Delete again.");
-    return;
-  }
   deleteSelectedObject();
 });
 
@@ -4437,67 +3713,14 @@ const featureEditor = createFeatureEditor({
 function resize() {
   const w = viewport.clientWidth;
   const h = viewport.clientHeight;
-  // Viewport is display:none in Canvas / Wiring modes — skip so we don't shrink to 0×0.
-  if (!w || !h) return;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
   sketchEditor.resize?.();
   collab?.resizeLabels();
 }
-
-function refreshViewportAfterLayoutChange({ fit = false } = {}) {
-  requestAnimationFrame(() => {
-    resize();
-    controls.update();
-    viewCube.update?.();
-    if (fit && currentMesh) fitCamera();
-  });
-}
 window.addEventListener("resize", resize);
 resize();
-
-const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp)$/i;
-let viewportDragDepth = 0;
-const viewportDropOverlay = document.getElementById("viewport-drop-overlay");
-
-viewport.addEventListener("dragenter", (e) => {
-  e.preventDefault();
-  if (workspaceModes?.getMode?.() !== "design") return;
-  viewportDragDepth += 1;
-  viewport.classList.add("viewport-drag-over");
-  viewportDropOverlay?.classList.remove("hidden");
-});
-viewport.addEventListener("dragleave", (e) => {
-  if (workspaceModes?.getMode?.() !== "design") return;
-  if (e.currentTarget.contains(e.relatedTarget)) return;
-  viewportDragDepth = Math.max(0, viewportDragDepth - 1);
-  if (viewportDragDepth === 0) {
-    viewport.classList.remove("viewport-drag-over");
-    viewportDropOverlay?.classList.add("hidden");
-  }
-});
-viewport.addEventListener("dragover", (e) => {
-  if (workspaceModes?.getMode?.() !== "design") return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = "copy";
-});
-viewport.addEventListener("drop", async (e) => {
-  e.preventDefault();
-  viewportDragDepth = 0;
-  viewport.classList.remove("viewport-drag-over");
-  viewportDropOverlay?.classList.add("hidden");
-  if (workspaceModes?.getMode?.() !== "design") return;
-  const file = [...(e.dataTransfer.files || [])].find((f) => IMPORT_ACCEPT.test(f.name));
-  if (!file) return;
-  try {
-    const choice = await askDropDestination(file);
-    if (!choice) return;
-    await uploadProjectFile(file, choice);
-  } catch (err) {
-    alert(err.message || "Upload failed");
-  }
-});
 
 const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp)$/i;
 let viewportDragDepth = 0;
@@ -4650,35 +3873,8 @@ function prepareViewportForModels() {
   controls.enabled = true;
 }
 
-function prepareViewportForModels() {
-  if (sketchEditor.isActive?.()) sketchEditor.cancel();
-  setSketchModelDim(false);
-  document.getElementById("app")?.classList.remove("sketch-editing");
-  updateSketchChrome({ visible: false });
-  controls.enabled = true;
-}
-
 function fileStem(name) {
   return String(name || "").replace(/\.[^.]+$/, "");
-}
-
-function primaryViewportComponent(comps = [], latestFile = null) {
-  const auto = comps.filter((c) => c.auto_load !== false);
-  const assembly = auto.find((c) => c.primary) || comps.find((c) => c.primary);
-  if (latestFile) {
-    const latest =
-      auto.find((c) => c.name === latestFile || c.viewer_filename === latestFile) ||
-      comps.find((c) => c.name === latestFile || c.viewer_filename === latestFile);
-    if (latest?.primary) return latest;
-    if (assembly) return assembly;
-    if (latest) return latest;
-  }
-  return assembly || auto[0] || comps[0] || null;
-}
-
-function componentsAlreadyLoaded(comps = [], latestFile = null) {
-  const primary = primaryViewportComponent(comps, latestFile);
-  return primary ? projectAssembly.has(primary.name) : false;
 }
 
 async function loadSimForFile(filename) {
@@ -4753,16 +3949,6 @@ function hasBakedPlacement(filenameOrEntry) {
   if (filenameOrEntry && typeof filenameOrEntry === "object" && filenameOrEntry.baked_placement) return true;
   const name = typeof filenameOrEntry === "string" ? filenameOrEntry : filenameOrEntry?.name || filenameOrEntry?.viewer_filename || "";
   return /(?:_edited(?:_\d+)?|_copy\d*|component_mounting_fixture)\.(glb|gltf|stl|obj|ply|off)$/i.test(String(name || ""));
-}
-
-function isFixtureArtifactFilename(name) {
-  return /component_mounting_fixture|fixture_base|mounting_plate|mount_plate/i.test(String(name || ""));
-}
-
-function promptBaseFilename({ canvasAttached = false } = {}) {
-  if (canvasAttached) return null;
-  if (selectedFile && isFixtureArtifactFilename(selectedFile)) return null;
-  return selectedFile;
 }
 
 function materializeObject(object3d, { center = true, normalizePivot = center } = {}) {
@@ -4879,45 +4065,6 @@ function _apiPath(url) {
   }
 }
 
-function formatApiDetail(detail, statusText = "", status = 0) {
-  if (typeof detail === "string" && detail.trim()) return detail.trim();
-  if (detail && typeof detail === "object") {
-    if (Array.isArray(detail)) {
-      const parts = detail
-        .map((item) => item?.msg || item?.message || (typeof item === "string" ? item : ""))
-        .filter(Boolean);
-      if (parts.length) return parts.join("; ");
-    } else if (detail.msg || detail.message) {
-      return String(detail.msg || detail.message);
-    } else {
-      const encoded = JSON.stringify(detail);
-      if (encoded && encoded !== "{}" && encoded !== "null") return encoded;
-    }
-  }
-  if (status === 502 || status === 503 || status === 504) {
-    return "Server is restarting or busy — wait a few seconds and try Generate again.";
-  }
-  if (status === 409) {
-    return "A generation is already running for this project. Wait for it to finish or cancel it first.";
-  }
-  return (statusText || "").trim() || "Request failed";
-}
-
-function formatUserError(err, fallback = "Something went wrong — check Prompt History or the Activity Log.") {
-  if (!err) return fallback;
-  if (typeof err === "string" && err.trim()) return err.trim();
-  const name = err.name || "";
-  const msg = (err.message || "").trim();
-  if (name === "AbortError" || /aborted a request/i.test(msg)) {
-    if (userCancelRequested) return "Generation canceled.";
-    return "Generation was interrupted (page refresh or navigation). The server may still be building — wait a minute, refresh, and check Prompt History before retrying.";
-  }
-  if (msg === "Failed to fetch" || /networkerror/i.test(msg)) {
-    return "Connection lost during generation. The server may still be building — wait a minute, refresh, and check Prompt History before retrying.";
-  }
-  return msg || fallback;
-}
-
 function formatApiDetail(detail, statusText = "") {
   if (typeof detail === "string" && detail.trim()) return detail.trim();
   if (detail && typeof detail === "object") {
@@ -4942,12 +4089,19 @@ function formatUserError(err, fallback = "Something went wrong — check Prompt 
   const name = err.name || "";
   const msg = (err.message || "").trim();
   if (name === "AbortError" || /aborted a request/i.test(msg)) {
+    if (userCancelRequested) return "Generation canceled.";
     return "Generation was interrupted (page refresh or navigation). The server may still be building — wait a minute, refresh, and check Prompt History before retrying.";
   }
   if (msg === "Failed to fetch" || /networkerror/i.test(msg)) {
     return "Connection lost during generation. The server may still be building — wait a minute, refresh, and check Prompt History before retrying.";
   }
   return msg || fallback;
+}
+
+function _cacheBustModelPath(path) {
+  if (!path?.startsWith("/api/projects/") || !path.includes("/files/")) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}_=${Date.now()}`;
 }
 
 function sleep(ms) {
@@ -5128,7 +4282,7 @@ async function api(path, options = {}, timeoutMs = 200000) {
 
     if (!res.ok) {
       const detail = data.detail;
-      const msg = formatApiDetail(detail, res.statusText, res.status);
+      const msg = formatApiDetail(detail, res.statusText);
       if (!skipLog) {
         activityLog.push({
           level: "error",
@@ -5426,22 +4580,6 @@ function renderPromptKeyPopup(status) {
     const active = isSelected(source, key.id);
     const badge = BADGE_CLASS_MAP[key.provider] || "badge-openai";
     const providerLabel = key.provider_label || (key.provider === "anthropic" ? "Claude" : "OpenAI");
-    const limitLabel = limitButtonLabel(key.daily_limit_usd);
-    const spentToday = Number(key.spent_today_usd || 0);
-    const limitHtml = source === "team" ? `
-      <button type="button"
-        class="prompt-key-limit-btn"
-        data-action="set-daily-limit"
-        data-team-id="${key.team_id || ""}"
-        data-key-id="${key.id}"
-        data-limit="${key.daily_limit_usd == null ? "" : key.daily_limit_usd}"
-        data-spent="${spentToday}"
-        title="Set daily spend limit for this shared key">
-        ${limitLabel}
-      </button>` : "";
-    const usageHtml = source === "team" && (spentToday > 0 || key.daily_limit_usd != null)
-      ? `<span class="prompt-key-limit-usage">${formatLimitUsd(spentToday)} today</span>`
-      : "";
     return `<div class="prompt-key-popup-row${active ? " active" : ""}"
          data-action="select-key" data-source="${source}" data-key-id="${key.id}">
       <div class="prompt-key-popup-check">
@@ -5452,7 +4590,6 @@ function renderPromptKeyPopup(status) {
           ${key.name || "Key"}
           <span class="prompt-key-popup-badge ${badge}">${providerLabel}</span>
         </span>
-        ${usageHtml}
       </div>
       <div class="prompt-key-popup-model-wrap">
         <select class="prompt-key-popup-model-select"
@@ -5462,7 +4599,6 @@ function renderPromptKeyPopup(status) {
           title="Model for this key">
           ${buildModelOptionsHTML(key.provider, key.model || key.effective_model || "")}
         </select>
-        ${limitHtml}
       </div>
     </div>`;
   };
@@ -5494,7 +4630,7 @@ function positionPromptKeyPopup() {
   const popup = document.getElementById("prompt-key-popup");
   if (!anchor || !popup) return;
   const rect = anchor.getBoundingClientRect();
-  const popupW = 320;
+  const popupW = 296;
   const vw = window.innerWidth;
   let left = rect.right - popupW;
   if (left < 8) left = 8;
@@ -5561,37 +4697,6 @@ function initPromptKeyPopup() {
 
   // Delegate clicks/changes in popup
   popup.addEventListener("click", async (e) => {
-    const limitBtn = e.target.closest("[data-action='set-daily-limit']");
-    if (limitBtn) {
-      e.stopPropagation();
-      const teamId = limitBtn.dataset.teamId;
-      const keyId = limitBtn.dataset.keyId;
-      const userId = currentUser?.id;
-      if (!teamId || !keyId || !userId) return;
-      const rawLimit = limitBtn.dataset.limit;
-      const currentLimit = rawLimit === "" ? null : Number(rawLimit);
-      const spentToday = Number(limitBtn.dataset.spent || 0);
-      const key = (aiStatus?.team_keys || []).find((k) => k.id === keyId);
-      openDailyLimitPicker({
-        title: `Daily limit · ${key?.name || "Shared key"}`,
-        description: "Cap your estimated AI cost per day when using this shared key.",
-        currentLimit: Number.isFinite(currentLimit) ? currentLimit : null,
-        spentToday,
-        onSave: async (value) => {
-          await api(`/api/teams/${teamId}/ai-keys/${keyId}/members/${userId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ daily_limit_usd: value }),
-          });
-          const data = await api("/api/user/ai-keys");
-          const updatedAi = { ...(data.ai || {}), keys: data.keys || data.ai?.keys || [] };
-          aiKeyUi?.render(updatedAi);
-          renderPromptKeyPopup(aiStatus);
-        },
-      });
-      return;
-    }
-
     const manageBtn = e.target.closest("[data-action='open-key-manager']");
     if (manageBtn) {
       closePromptKeyPopup();
@@ -5663,39 +4768,6 @@ function saveLastProjectId(id) {
 
 function getSelectedWorkspaceId() {
   return document.getElementById("team-select")?.value || allTeams[0]?.id || null;
-}
-
-/** Prefer owner workspace, then saved, then workspace that holds the last project. */
-function pickDefaultWorkspaceId() {
-  if (!allTeams.length) return null;
-  const lastProject = localStorage.getItem(LS_LAST_PROJECT);
-  const savedWs = localStorage.getItem(LS_LAST_WORKSPACE);
-  const owner = allTeams.find((t) => t.role === "owner");
-  if (savedWs && allTeams.some((t) => t.id === savedWs)) return savedWs;
-  if (owner) return owner.id;
-  return allTeams[0].id;
-}
-
-/** If last project is in another workspace, switch the dropdown before loading projects. */
-async function ensureWorkspaceForLastProject() {
-  const last = localStorage.getItem(LS_LAST_PROJECT);
-  if (!last) return;
-  if (allProjects.some((p) => p.id === last)) return;
-  try {
-    const data = await api("/api/projects");
-    const proj = (data.projects || []).find((p) => p.id === last);
-    if (!proj?.team_id) return;
-    const sel = document.getElementById("team-select");
-    if (sel && allTeams.some((t) => t.id === proj.team_id)) {
-      sel.value = proj.team_id;
-      try {
-        localStorage.setItem(LS_LAST_WORKSPACE, proj.team_id);
-      } catch (_) {}
-      await fetchAllProjects();
-    }
-  } catch {
-    /* ignore */
-  }
 }
 
 function upsertProjectInList(summary = {}) {
@@ -5778,7 +4850,6 @@ async function fetchAllProjects() {
     await ensureActiveProjectListed(projectId);
   }
   await workspaceBrowser.refreshFolders();
-  void resumeGenerationFromProjects();
   return allProjects;
 }
 
@@ -5843,110 +4914,6 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
   } catch (err) {
     lastError = err;
     console.error("loadModel failed:", primary.name, err);
-    const msg = lastError?.message || "Could not load model into the viewport.";
-    setEditStatus("error", msg);
-    viewerOverlay.showError(msg);
-    return false;
-  }
-}
-
-async function openSketchInViewport(entry) {
-  if (!projectId || !entry || entry.format !== "sketch") return;
-  workspaceModes.setMode("design");
-  applyWorkspaceMode("design");
-  workspaceModes.setDesignTab("SKETCH");
-  try {
-    const sketch = await api(`/api/projects/${projectId}/sketches/${encodeURIComponent(entry.stem)}`);
-    sketchEditor.loadSketch(sketch);
-    ribbon?.setSketchProfile(sketch.profile, sketch.plane || "XY");
-    projectTree.setSelected(entry.name);
-    setEditStatus("ok", `Loaded sketch “${sketch.name || entry.name}”.`);
-    setRightTab("sketch");
-  } catch (err) {
-    setEditStatus("error", err.message || "Could not load sketch.");
-  }
-}
-
-async function openSketchForEdit(entry) {
-  if (!projectId || !entry || entry.format !== "sketch") return;
-  if (sketchEditor.isActive()) {
-    setEditStatus("ok", "Already editing a sketch — finish or cancel first.");
-    return;
-  }
-  workspaceModes.setMode("design");
-  applyWorkspaceMode("design");
-  workspaceModes.setDesignTab("SKETCH");
-  try {
-    const sketch = await api(`/api/projects/${projectId}/sketches/${encodeURIComponent(entry.stem)}`);
-    sketchEditor.applySketchData(sketch);
-    enterSketchMode();
-    const nameEl = document.getElementById("sketch-name");
-    if (nameEl && sketch.name) nameEl.textContent = sketch.name;
-    ribbon?.setSketchProfile(sketch.profile, sketch.plane || "XY");
-    projectTree.setSelected(entry.name);
-    setEditStatus("ok", `Editing sketch “${sketch.name || entry.name}”.`);
-    setRightTab("sketch");
-  } catch (err) {
-    setEditStatus("error", err.message || "Could not open sketch for editing.");
-  }
-}
-
-async function openProgramForEdit(entry) {
-  if (!projectId || !entry || entry.format !== "program") return;
-  setEditStatus("loading", `Opening ${entry.stem}…`);
-  try {
-    // Load the GLB in the viewport
-    const data = await api(`/api/projects/${projectId}`);
-    const comp = (data.browser?.components || []).find((c) => c.stem === entry.stem);
-    if (comp) {
-      await openBrowserComponent(comp);
-    } else {
-      // Fall back: just set the selected file
-      selectedFile = `${entry.stem}.glb`;
-      featureEditor.setModel(projectId, selectedFile);
-    }
-    // Show the feature editor (History tab on right panel)
-    setRightTab("history");
-    featureEditor.setModel(projectId, `${entry.stem}.glb`);
-    setEditStatus("ok", `Editing features for "${entry.stem}" — modify values then Rebuild.`);
-  } catch (err) {
-    setEditStatus("error", err.message || "Could not open program for editing.");
-  }
-}
-
-async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true } = {}) {
-  if (!comps?.length) return false;
-  prepareViewportForModels();
-  const comp = primaryViewportComponent(comps, latestFile);
-  if (!comp) return false;
-  if (loadGen != null && loadGen !== loadProjectGeneration) return false;
-  const viewer = comp.viewer_filename || comp.name;
-  selectedFile = comp.name;
-  let lastError = null;
-  try {
-    const ok = await loadModel(
-      `/api/projects/${pid}/files/${encodeURIComponent(viewer)}`,
-      viewer,
-      {
-        projectId: pid,
-        append: false,
-        catalogFilename: comp.name,
-        fitView: false,
-        autoGizmo: false,
-      },
-    );
-    if (loadGen != null && loadGen !== loadProjectGeneration) return false;
-    if (!ok) {
-      throw new Error("Model load was cancelled or did not complete.");
-    }
-    projectTree.setSelected(comp.name);
-    selectAssemblyComponent(comp.name, { fitView });
-    setEditStatus("ok", "Loaded model in viewport.");
-    viewerOverlay.clearError();
-    return true;
-  } catch (err) {
-    lastError = err;
-    console.error("loadModel failed:", comp.name, err);
     const msg = lastError?.message || "Could not load model into the viewport.";
     setEditStatus("error", msg);
     viewerOverlay.showError(msg);
@@ -6084,11 +5051,9 @@ const workspaceBrowser = createWorkspaceBrowser({
   container: document.getElementById("project-browser"),
   api,
   getWorkspaceId: getSelectedWorkspaceId,
-  getWorkspaceName: getActiveWorkspaceName,
   getProjects: () => allProjects,
   getActiveProjectId: () => projectId,
   isProjectLoading: (id) => loadingProjectIds.has(id),
-  isProjectGenerating: (id) => isProjectGenerating(id),
   isProjectGenerating: (id) => isProjectGenerating(id),
   isProjectNew: (id) => newlyCompletedProjects.has(id),
   onOpenProject: (id) => openProjectById(id),
@@ -6483,7 +5448,6 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Export model", hint: "Download visible part/assembly", run: () => document.getElementById("btn-export-model")?.click() },
         { label: "Catalog", hint: "Search STEP models, suppliers, datasheets", run: () => openMobileDesignTab("CATALOG") },
         { label: "Canvas", hint: "2D grid sketch pad with pen tools", run: () => openMobileDesignTab("CANVAS") },
-        { label: "Canvas", hint: "2D grid sketch pad with pen tools", run: () => openMobileDesignTab("CANVAS") },
       ]);
       return;
     }
@@ -6506,7 +5470,6 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Prompt history", hint: "Reuse previous prompts and references", run: () => { openMobileRightPanel("prompt"); promptHistory.setTab("history"); } },
         { label: "References", hint: "View picked faces, paths, and refs", run: () => openMobileRightPanel("refs") },
         { label: "Sketch", hint: "2D sketch and constraints", run: () => openMobileDesignTab("SKETCH") },
-        { label: "Canvas", hint: "Freehand grid sketch for AI prompts", run: () => openMobileDesignTab("CANVAS") },
         { label: "Canvas", hint: "Freehand grid sketch for AI prompts", run: () => openMobileDesignTab("CANVAS") },
         { label: "Wiring", hint: "Breadboard wiring simulator and AI", run: () => openMobileDesignTab("WIRING") },
         { label: "Rigging", hint: "Joints, bones, animation, URDF", run: () => openMobileDesignTab("RIGGING") },
@@ -6633,7 +5596,7 @@ document.getElementById("btn-wiring-photo-debug")?.addEventListener("click", () 
 
 // ── Canvas mode ───────────────────────────────────────────────────────────
 function attachCanvasSketchImage(dataUrl, target = "design") {
-  if (!dataUrl) return false;
+  if (!dataUrl) return;
   const entry = {
     id: `canvas-${Date.now()}`,
     name: "canvas-sketch.png",
@@ -6646,61 +5609,123 @@ function attachCanvasSketchImage(dataUrl, target = "design") {
       wiringPromptImages.push(entry);
       renderWiringPromptImages();
     }
-    return true;
+    return;
   }
   promptImages = promptImages.filter((img) => img.name !== "canvas-sketch.png");
   if (promptImages.length < 4) {
     promptImages.push(entry);
     renderPromptImages();
-    if (!restoringModelPromptState) saveActiveModelPromptState();
-    return true;
   }
-  return false;
 }
 
-const CANVAS_SKETCH_PROMPT_HINT =
-  "Build a 3D CAD model from my attached canvas sketch reference image.";
-
-function augmentPromptForCanvasSketch(prompt) {
-  const text = String(prompt || "").trim();
-  if (!text) return CANVAS_SKETCH_PROMPT_HINT;
-  if (/\b(sketch|drawing|reference image|attached canvas|canvas sketch)\b/i.test(text)) return text;
-  return `${text}\n\nUse the attached canvas sketch as a visual reference for the design.`;
+function syncCanvasGenerateButtonLabel() {
+  const btn = document.getElementById("btn-canvas-generate");
+  const target = document.getElementById("canvas-prompt-target")?.value || "design";
+  if (!btn) return;
+  btn.textContent = target === "wiring" ? "Generate schematic" : "Generate 3D model";
 }
 
-function applyCanvasSketchToPrompt({ showFeedback = false } = {}) {
-  if (!document.body.classList.contains("canvas-design-tab")) return false;
+async function runCanvasGenerate() {
+  const statusEl = document.getElementById("canvas-prompt-status");
+  const promptInput = document.getElementById("canvas-prompt-input");
+  let prompt = promptInput?.value?.trim() || "";
+  const transcript = canvasModeInstance.getTranscript?.() || "";
+  if (transcript && !prompt.includes(transcript)) {
+    prompt = prompt ? `${prompt}\n\n${transcript}` : transcript;
+  }
+  if (!prompt) {
+    if (statusEl) {
+      statusEl.className = "status error";
+      statusEl.textContent = "Enter a prompt or record a voice note first.";
+    }
+    return;
+  }
+
   canvasModeInstance.stopVoice?.();
-  if (!canvasModeInstance.hasDrawing?.()) {
-    if (showFeedback) {
-      const status = document.getElementById("prompt-status");
-      if (status) {
-        status.className = "status error";
-        status.textContent = "Draw something on the canvas first.";
-      }
-    }
-    return false;
-  }
+  const target = document.getElementById("canvas-prompt-target")?.value || "design";
   const dataUrl = canvasModeInstance.getCanvasDataUrl?.();
-  if (!dataUrl || !attachCanvasSketchImage(dataUrl, "design")) return false;
-  showAiComposePanel();
-  promptImageList?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
-  if (showFeedback) {
-    const status = document.getElementById("prompt-status");
-    if (status) {
-      status.className = "status ok";
-      status.textContent = "Canvas sketch attached to AI prompt.";
+
+  if (target === "wiring") {
+    workspaceModes.setMode("wiring");
+    applyWorkspaceMode("wiring");
+    const inp = document.getElementById("wiring-prompt-input");
+    if (inp) inp.value = prompt;
+    attachCanvasSketchImage(dataUrl, "wiring");
+    if (statusEl) {
+      statusEl.className = "status loading";
+      statusEl.textContent = "Generating wiring schematic from sketch…";
     }
+    document.getElementById("btn-wiring-prompt")?.click();
+    return;
   }
-  return true;
+
+  workspaceModes.setMode("design");
+  applyWorkspaceMode("design");
+  composer.setPromptText(prompt);
+  if (promptInput) promptInput.value = prompt;
+  attachCanvasSketchImage(dataUrl, "design");
+  if (statusEl) {
+    statusEl.className = "status loading";
+    statusEl.textContent = "Generating 3D model from sketch…";
+  }
+  suppressAiComposePanelSwitch = true;
+  document.getElementById("btn-prompt")?.click();
 }
 
 const canvasModeInstance = createCanvasMode({
   containerEl: document.getElementById("canvas-mode-container"),
+  voiceEls: {
+    recordBtn: document.getElementById("canvas-voice-btn"),
+    timer: document.getElementById("canvas-voice-timer"),
+    time: document.getElementById("canvas-voice-time"),
+    clearTranscriptBtn: document.getElementById("btn-canvas-clear-transcript"),
+    transcriptPanel: document.getElementById("canvas-panel-transcript"),
+  },
 });
 
-window.addEventListener("canvas:attach-sketch", () => {
-  applyCanvasSketchToPrompt({ showFeedback: true });
+document.getElementById("btn-canvas-generate")?.addEventListener("click", () => {
+  void runCanvasGenerate();
+});
+document.getElementById("btn-canvas-clear-panel")?.addEventListener("click", () => {
+  canvasModeInstance.clearCanvas?.();
+});
+document.getElementById("canvas-prompt-target")?.addEventListener("change", syncCanvasGenerateButtonLabel);
+syncCanvasGenerateButtonLabel();
+
+function mirrorStatusToCanvasPanel(sourceEl) {
+  if (!document.body.classList.contains("canvas-design-tab")) return;
+  const canvasStatus = document.getElementById("canvas-prompt-status");
+  if (!sourceEl || !canvasStatus || !sourceEl.textContent) return;
+  canvasStatus.className = sourceEl.className;
+  canvasStatus.textContent = sourceEl.textContent;
+}
+
+const promptStatusEl = document.getElementById("prompt-status");
+if (promptStatusEl) {
+  new MutationObserver(() => mirrorStatusToCanvasPanel(promptStatusEl)).observe(promptStatusEl, {
+    attributes: true,
+    attributeFilter: ["class"],
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+}
+const wiringPromptStatusEl = document.getElementById("wiring-prompt-status");
+if (wiringPromptStatusEl) {
+  new MutationObserver(() => mirrorStatusToCanvasPanel(wiringPromptStatusEl)).observe(wiringPromptStatusEl, {
+    attributes: true,
+    attributeFilter: ["class"],
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+}
+
+document.getElementById("canvas-prompt-input")?.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    e.preventDefault();
+    void runCanvasGenerate();
+  }
 });
 wiringOverlay = createViewerOverlay(document.getElementById("wiring-viewport"), {
   fetchLogs: () => rawFetch("/api/logs?limit=40"),
@@ -7004,10 +6029,6 @@ document.getElementById("btn-wiring-demo-motor")?.addEventListener("click", asyn
   await loadWiringDemo("pi-button-motor");
 });
 
-document.getElementById("btn-wiring-demo-motor")?.addEventListener("click", async () => {
-  await loadWiringDemo("pi-button-motor");
-});
-
 document.getElementById("btn-wiring-demo")?.addEventListener("click", async () => {
   await loadWiringDemo("pi-servo");
 });
@@ -7091,175 +6112,6 @@ async function loadGearTrainDemo({ switchToRigging = false } = {}) {
     hideViewportOverlay(projectId, { complete: !failed });
   }
 }
-
-function clearWiringPrompts() {
-  const input = document.getElementById("wiring-prompt-input");
-  if (input) input.value = "";
-  wiringPromptImages = [];
-  renderWiringPromptImages();
-  const status = document.getElementById("wiring-prompt-status");
-  if (status) {
-    status.className = "status";
-    status.textContent = "";
-  }
-}
-
-let riggingPromptImages = [];
-
-function renderRiggingPromptImages() {
-  const list = document.getElementById("rigging-prompt-image-list");
-  if (!list) return;
-  list.innerHTML = riggingPromptImages
-    .map(
-      (img) => `<div class="prompt-image-card" data-id="${img.id}">
-        <img src="${img.data_url}" alt="${escapeHtml(img.name)}" />
-        <button type="button" class="prompt-image-remove" title="Remove">×</button>
-      </div>`
-    )
-    .join("");
-  list.querySelectorAll(".prompt-image-remove").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.closest(".prompt-image-card")?.dataset.id;
-      riggingPromptImages = riggingPromptImages.filter((img) => img.id !== id);
-      renderRiggingPromptImages();
-    });
-  });
-}
-
-async function addRiggingPromptImages(files) {
-  const allowed = ["image/png", "image/jpeg", "image/webp"];
-  for (const file of [...files]) {
-    if (riggingPromptImages.length >= 4) break;
-    if (!allowed.includes(file.type)) continue;
-    const dataUrl = await readImageFile(file);
-    riggingPromptImages.push({
-      id: `rimg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      name: file.name,
-      media_type: file.type,
-      data_url: dataUrl,
-    });
-  }
-  renderRiggingPromptImages();
-}
-
-const riggingImageDrop = document.getElementById("rigging-prompt-image-drop");
-const riggingImageInput = document.getElementById("rigging-prompt-image-input");
-riggingImageDrop?.addEventListener("click", () => riggingImageInput?.click());
-riggingImageDrop?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") riggingImageInput?.click();
-});
-riggingImageInput?.addEventListener("change", async (e) => {
-  await addRiggingPromptImages(e.target.files || []);
-  e.target.value = "";
-});
-riggingImageDrop?.addEventListener("dragover", (e) => e.preventDefault());
-riggingImageDrop?.addEventListener("drop", async (e) => {
-  e.preventDefault();
-  await addRiggingPromptImages(e.dataTransfer?.files || []);
-});
-
-document.getElementById("btn-rigging-prompt")?.addEventListener("click", () => {
-  runRiggingPrompt();
-});
-
-async function runRiggingPrompt() {
-  if (!projectId) {
-    setEditStatus("error", "Select a project in the sidebar first.");
-    return;
-  }
-  const input = document.getElementById("rigging-prompt-input");
-  const status = document.getElementById("rigging-prompt-status");
-  const prompt = input?.value?.trim();
-  if (!prompt) {
-    if (status) {
-      status.className = "status error";
-      status.textContent = "Describe the robot rig or animation you want.";
-    }
-    return;
-  }
-  if (status) {
-    status.className = "status loading";
-    status.textContent = "Generating rig…";
-  }
-  try {
-    const data = await api(`/api/projects/${projectId}/rigging/prompt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        images: riggingPromptImages.map(({ id, name, media_type, data_url }) => ({
-          id,
-          name,
-          media_type,
-          data_url,
-        })),
-        speed: document.getElementById("prompt-speed")?.value || "fast",
-      }),
-    });
-    riggingEditor.applyRigData(data.rigging);
-    await refreshFiles();
-    await refreshRiggingPromptHistory();
-    if (status) {
-      status.className = "status ok";
-      status.textContent = data.message || "Rig updated.";
-    }
-    riggingPromptImages = [];
-    renderRiggingPromptImages();
-  } catch (err) {
-    await refreshRiggingPromptHistory();
-    if (status) {
-      status.className = "status error";
-      status.textContent = err.message || "Rigging prompt failed.";
-    }
-  }
-}
-
-document.getElementById("btn-rigging-toolbelt-generate")?.addEventListener("click", () => {
-  runRiggingPrompt();
-});
-
-document.getElementById("btn-rigging-toolbelt-save")?.addEventListener("click", async () => {
-  await riggingEditor.save();
-  setEditStatus("ok", "Rig saved.");
-});
-
-document.getElementById("btn-rigging-toolbelt-export")?.addEventListener("click", () => {
-  riggingEditor.exportUrdf();
-});
-
-document.getElementById("btn-rigging-toolbelt-auto")?.addEventListener("click", () => {
-  handleRiggingAction("auto");
-});
-
-document.getElementById("btn-rigging-demo-arm")?.addEventListener("click", () => {
-  const input = document.getElementById("rigging-prompt-input");
-  if (input) {
-    input.value =
-      "4-DOF robot arm: base_link fixed at origin, link_1 shoulder revolute Z (+/- 180°), link_2 upper arm revolute Z, link_3 forearm revolute Z, ee_link gripper. Animate a 4-second pick cycle: home → reach → grasp → home.";
-  }
-  runRiggingPrompt();
-});
-
-document.querySelectorAll("[data-rig-tool]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    handleRiggingAction("tool", { rigTool: btn.dataset.rigTool }, { tool: btn.dataset.rigTool });
-  });
-});
-
-document.querySelectorAll("[data-rig-action]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    handleRiggingAction(btn.dataset.rigAction);
-  });
-});
-
-document.querySelectorAll("[data-rig-pick]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    activatePickMode(btn.dataset.rigPick);
-    document.querySelectorAll("[data-rig-pick]").forEach((b) => {
-      b.classList.toggle("active", b.dataset.rigPick === btn.dataset.rigPick);
-    });
-  });
-});
 
 function clearWiringPrompts() {
   const input = document.getElementById("wiring-prompt-input");
@@ -7488,27 +6340,10 @@ const workspaceModes = createWorkspaceModes({
   onDesignTabChange: (tab) => handleDesignTabChange(tab),
 });
 
-document.getElementById("canvas-gen-view-solid")?.addEventListener("click", () => {
-  workspaceModes?.setDesignTab?.("SOLID");
-  refreshViewportAfterLayoutChange({ fit: !!currentMesh });
-});
-
 document.addEventListener("workspace-folders-changed", () => {
   refreshWorkspaceHistory();
   fetchAllProjects().then(() => renderProjectList());
 });
-
-function syncExplorerLoadingUI() {
-  workspaceBrowser?.render?.();
-  projectTree?.setLoading?.(!!(projectId && loadingProjectIds.has(projectId)));
-}
-
-function setProjectLoading(id, loading) {
-  if (!id) return;
-  if (loading) loadingProjectIds.add(id);
-  else loadingProjectIds.delete(id);
-  syncExplorerLoadingUI();
-}
 
 function syncExplorerLoadingUI() {
   workspaceBrowser?.render?.();
@@ -7647,8 +6482,6 @@ async function deleteProject(p) {
     alert(err.message || "Failed to delete project");
     return;
   }
-
-  if (generationWatchPid === p.id) stopGenerationWatch();
 
   if (generationWatchPid === p.id) stopGenerationWatch();
 
@@ -7823,12 +6656,6 @@ async function loadProject(id) {
       },
       onProjectMeta: (msg) => handleRealtimeEvent(msg),
       onTimeline: () => refreshTimeline(),
-    onProjectHistory: () => refreshObjectHistory(),
-    onWorkspaceUpdated: (msg) => {
-      if (msg.entry) workspaceActivity.prependEntry(msg.entry);
-      workspaceBrowser.refresh();
-      fetchAllProjects().then(() => renderProjectList());
-    },
       onProjectHistory: () => refreshObjectHistory(),
       onWorkspaceUpdated: (msg) => handleRealtimeEvent(msg),
     });
@@ -7904,8 +6731,6 @@ async function loadProject(id) {
       wiringSim.load();
       refreshWiringPromptHistory();
       showAiComposePanel();
-    } else if (workspaceModes.getDesignTab() === "RIGGING") {
-      refreshRiggingPromptHistory();
     } else {
       showAiComposePanel();
     }
@@ -7970,12 +6795,8 @@ async function ensureProject() {
     await loadProject(allProjects[0].id);
     return projectId;
   }
-  renderProjectList();
-  const status = document.getElementById("workspace-create-status");
-  if (status) {
-    status.textContent = `No projects in "${getActiveWorkspaceName()}". Use + New project or switch workspace above.`;
-  }
-  return null;
+  await createNewProject();
+  return projectId;
 }
 
 /** Keep viewport drops on the active project — never switch projects or auto-create when one is open. */
@@ -8184,7 +7005,6 @@ async function refreshFiles() {
   if (!projectId) await ensureProject();
   await fetchAllProjects();
   const data = await api(`/api/projects/${projectId}`);
-  timelineData = data.timeline;
   timelineData = data.timeline;
   timeline.setTimeline(data.timeline);
   renderProjectList();
@@ -8415,12 +7235,6 @@ function activatePickMode(mode) {
 
 document.querySelectorAll(".pick-btn").forEach((btn) => {
   btn.addEventListener("click", () => activatePickMode(btn.dataset.mode || "off"));
-});
-
-document.getElementById("btn-measure")?.addEventListener("click", () => {
-  const next = !measureTool.isActive();
-  if (next) activateMeasureMode(true);
-  else activateMeasureMode(false);
 });
 
 let pointerDownPos = null;
@@ -9237,17 +8051,8 @@ document.getElementById("file-upload")?.addEventListener("change", async (e) => 
   e.target.value = "";
 });
 
-document.getElementById("btn-fit")?.addEventListener("click", fitCamera);
 document.getElementById("btn-fit-sidebar")?.addEventListener("click", fitCamera);
 document.getElementById("btn-grid-viewport")?.addEventListener("click", toggleGrid);
-document.getElementById("btn-sketches-viewport")?.addEventListener("click", () => {
-  const btn = document.getElementById("btn-sketches-viewport");
-  const next = !sketchEditor.isGlobalSketchesVisible?.();
-  sketchEditor.setAllViewportSketchesVisible?.(next);
-  btn?.classList.toggle("active", next);
-  btn?.setAttribute("aria-pressed", next ? "true" : "false");
-  setEditStatus("ok", next ? "Sketches shown in viewport." : "Sketches hidden in viewport.");
-});
 
 // Delegated listeners for view buttons that live inside the ribbon (inserted after module eval)
 document.addEventListener("click", (e) => {
@@ -9497,12 +8302,7 @@ document.getElementById("btn-stop-generation")?.addEventListener("click", () => 
   void cancelActiveGeneration();
 });
 
-document.getElementById("btn-stop-generation")?.addEventListener("click", () => {
-  void cancelActiveGeneration();
-});
-
 document.getElementById("btn-prompt")?.addEventListener("click", async () => {
-  applyCanvasSketchToPrompt();
   const prompt = composer.getPromptText();
   if (!prompt) return;
   if (!suppressAiComposePanelSwitch) showAiComposePanel();
@@ -9569,16 +8369,15 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     ? `Generating + pushing to Fusion 360… (runs in background — safe to refresh)`
     : `Generating with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
   reply.textContent = "";
-  if (canvasAttached) markCanvasGenerationPending(projectId);
   beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
   const genId = ++activePromptGenerationId;
   userCancelRequested = false;
-  activePromptAbort = null;
+  activePromptAbort = new AbortController();
   let promptFailed = false;
   try {
     const body = {
       prompt,
-      base_filename: promptBaseFilename({ canvasAttached }),
+      base_filename: selectedFile,
       references: composer.getReferences(),
       images: promptImages,
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
@@ -9592,6 +8391,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+        signal: activePromptAbort.signal,
       },
       120000
     );
@@ -9630,9 +8430,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       }
       status.textContent = promptMode === "v2"
         ? "Generating with 2.0 in background… refresh anytime; model loads when ready."
-        : "Generating in background… safe to switch tabs or refresh; model loads when ready.";
+        : "Generating in background… refresh anytime; model loads when ready.";
       syncStopButtonVisibility();
-      syncCanvasGenerationUi();
       return;
     }
     stopGenerationWatch();
@@ -9743,12 +8542,6 @@ window.addEventListener("keydown", (e) => {
       else setEditStatus("error", "Nothing to redo.");
       return;
     }
-    if (mod && key === "z" && e.shiftKey) {
-      e.preventDefault();
-      if (sketchEditor.redo()) setEditStatus("ok", "Sketch redo.");
-      else setEditStatus("error", "Nothing to redo.");
-      return;
-    }
     if (e.key === "Enter") {
       e.preventDefault();
       finishActiveSketch();
@@ -9786,15 +8579,6 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "w" || e.key === "W") document.getElementById("btn-wireframe")?.click();
-  if (e.shiftKey && key === "x") {
-    e.preventDefault();
-    document.getElementById("btn-section")?.click();
-    return;
-  }
-  if (e.shiftKey && (key === "g")) {
-    e.preventDefault();
-    toggleGrid();
-  }
   if (e.shiftKey && key === "x") {
     e.preventDefault();
     document.getElementById("btn-section")?.click();
@@ -9919,7 +8703,7 @@ window.addEventListener("keydown", (e) => {
     },
   });
 
-  authUi = createAuthUI({
+  const auth = createAuthUI({
     api,
     onUserMenuOpen: () => {
       void refreshWorkspaceAiUsage();
@@ -9993,7 +8777,6 @@ window.addEventListener("keydown", (e) => {
       }
       await onWorkspaceChange();
   await ensureProject();
-      await resumeGenerationFromProjects();
       showAiComposePanel();
   activityLog.refreshServerDebounced();
     } catch (err) {
@@ -11064,37 +9847,6 @@ window.addEventListener("keydown", (e) => {
     }
   });
 
-  document.getElementById("btn-create-workspace")?.addEventListener("click", async () => {
-    const name = document.getElementById("workspace-name")?.value?.trim();
-    const status = document.getElementById("workspace-create-status");
-    if (!name) {
-      if (status) status.textContent = "Enter a workspace name.";
-      return;
-    }
-    try {
-      const data = await api("/api/teams", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const team = data.team;
-      if (team && !allTeams.some((t) => t.id === team.id)) {
-        allTeams.push(team);
-      } else if (team) {
-        const idx = allTeams.findIndex((t) => t.id === team.id);
-        if (idx >= 0) allTeams[idx] = team;
-      }
-      document.getElementById("workspace-name").value = "";
-      if (status) status.textContent = `Created workspace "${team.name}"`;
-      renderTeams();
-      const sel = document.getElementById("team-select");
-      if (sel && team) sel.value = team.id;
-      await onWorkspaceChange();
-    } catch (err) {
-      if (status) status.textContent = err.message;
-    }
-  });
-
   document.getElementById("btn-team-invite")?.addEventListener("click", async () => {
     const teamId = document.getElementById("team-select")?.value;
     const email = document.getElementById("team-invite-email")?.value?.trim();
@@ -11107,24 +9859,17 @@ window.addEventListener("keydown", (e) => {
         body: JSON.stringify({ email }),
       });
       status.textContent =
-        res.status === "added"
-          ? `${email} added to this workspace`
-          : res.status === "invited"
-            ? `Invite sent to ${email}`
-            : `${email} is already in this workspace`;
+        res.status === "invited"
+          ? `Invite sent to ${email}`
+          : `${email} is already in this workspace`;
       document.getElementById("team-invite-email").value = "";
       await refreshTeamMembers();
-      if (res.status === "added") {
-        const data = await api("/api/auth/me");
-        allTeams = data.teams || allTeams;
-        renderTeams();
-      }
     } catch (err) {
       status.textContent = err.message;
     }
   });
 
-  const session = await authUi.bootstrap();
+  const session = await auth.bootstrap();
   if (session) {
     currentUser = session.user;
     allTeams = session.teams || [];
