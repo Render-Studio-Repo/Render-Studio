@@ -15753,3 +15753,244 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .prompt-skills-plan.hidden {
   display: none;
 }
+
+/* ── Management / Admin dashboard ─────────────────────────────────────── */
+.admin-dashboard-page .info-content.admin-dashboard {
+  max-width: 1180px;
+}
+
+.admin-hero-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255, 179, 0, 0.08), rgba(13, 17, 23, 0.2));
+}
+
+.admin-hero-card h2 {
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.admin-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.admin-stat-card span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.admin-stat-card strong {
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+.admin-stat-card small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-grid--wide-left {
+  grid-template-columns: 1.4fr 1fr;
+}
+
+.admin-grid--wide-right {
+  grid-template-columns: 1fr 1.4fr;
+}
+
+.admin-panel {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.admin-panel h3 {
+  margin: 0 0 14px;
+  font-size: 1rem;
+}
+
+.admin-subhead {
+  margin: 18px 0 10px !important;
+}
+
+.admin-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.82rem;
+}
+
+.admin-pill em {
+  font-style: normal;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.admin-daily-chart {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+  min-height: 140px;
+  padding-top: 8px;
+}
+
+.admin-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-day i {
+  display: block;
+  width: 100%;
+  max-width: 18px;
+  border-radius: 4px 4px 0 0;
+}
+
+.admin-day i.prompts { background: #58a6ff; }
+.admin-day i.projects { background: #3fb950; }
+.admin-day i.users { background: #ffb300; }
+
+.admin-day span {
+  font-size: 0.62rem;
+  color: var(--muted);
+}
+
+.admin-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.admin-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.admin-legend i.prompts { background: #58a6ff; }
+.admin-legend i.projects { background: #3fb950; }
+.admin-legend i.users { background: #ffb300; }
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-list--prompts {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.admin-user-row,
+.admin-project-row,
+.admin-prompt-row {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-prompt-row--error {
+  border-color: rgba(248, 81, 73, 0.35);
+  background: rgba(248, 81, 73, 0.06);
+}
+
+.admin-user-row > div:first-child,
+.admin-project-row > div:first-child,
+.admin-prompt-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.admin-user-row span,
+.admin-project-row span,
+.admin-prompt-head span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.admin-row-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.admin-prompt-row p {
+  margin: 6px 0;
+  line-height: 1.45;
+}
+
+.admin-prompt-row small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+  .admin-grid,
+  .admin-grid--wide-left,
+  .admin-grid--wide-right {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-hero-card {
+    flex-direction: column;
+  }
+}

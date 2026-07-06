@@ -1,4 +1,4 @@
-import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260701-autodesk-token-compat";
+import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260706-admin-fusion-fix";
 
 const ADMIN_EMAIL = "a1projects@protonmail.com";
 

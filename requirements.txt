@@ -20,3 +20,6 @@ cadquery-ocp>=7.8,<7.9
 PyYAML>=6.0.0
 scipy>=1.13.0
 rtree>=1.3.0
+google-api-python-client>=2.160.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0

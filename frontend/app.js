@@ -57,7 +57,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260630-compact-search";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-management-restore";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-admin-fusion-fix";
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
@@ -67,7 +67,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loade
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260630-teammate-mirror-status";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260630-teammate-mirror-status";
+import { initFusionPanel } from "./fusion-panel.js?v=20260706-admin-fusion-fix";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
@@ -10727,7 +10727,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
     }
   `;
   folderEl.querySelector("[data-workspace-fusion-open]")?.addEventListener("click", () => {
-    document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.dispatchEvent(new CustomEvent("render3d:open-fusion-library"));
     setEditStatus("ok", "Fusion is already connected to this workspace. Use Fusion Library to link a project mirror or sync the latest version.");
   });
   folderEl.querySelector("[data-workspace-fusion-link]")?.addEventListener("click", () => {
@@ -13188,6 +13188,21 @@ window.addEventListener("keydown", (e) => {
     },
   });
   authUi = auth;
+
+  window.addEventListener("render3d:open-fusion-library", () => {
+    const appEl = document.getElementById("app");
+    if (appEl?.classList.contains("left-panel-hidden")) {
+      appEl.classList.remove("left-panel-hidden");
+      const reopen = document.getElementById("sidebar-reopen-tab");
+      if (reopen) reopen.style.display = "none";
+      try {
+        localStorage.setItem("render3d:sidebarHidden", "0");
+      } catch (_) {}
+    }
+    requestAnimationFrame(() => {
+      document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 
   // Onshape Library panel — initialised once; auto-loads when scrolled into view
   initOnshapePanel({

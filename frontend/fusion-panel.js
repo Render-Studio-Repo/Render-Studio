@@ -638,6 +638,9 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     loadHubs();
     section?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   });
+  window.addEventListener("render3d:open-fusion-library", () => {
+    loadHubs();
+  });
   const observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) {
       observer.disconnect();

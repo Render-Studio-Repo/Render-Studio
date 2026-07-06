@@ -31,5 +31,11 @@ class Settings(BaseSettings):
     onshape_client_secret: str = ""
     onshape_redirect_uri: str = "https://smartcallusa.com/oauth/callback"
 
+    # Autodesk / Fusion 360 OAuth
+    autodesk_client_id: str = ""
+    autodesk_client_secret: str = ""
+    autodesk_redirect_uri: str = "https://render3d.app/oauth/autodesk/callback"
+    autodesk_scopes: str = "data:read data:write data:create viewables:read"
+
 
 settings = Settings()

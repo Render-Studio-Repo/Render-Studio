@@ -32,6 +32,8 @@ backend/skills/cad-viewer/scripts/viewer/dist/
 *.pem
 *.key
 id_rsa*
+.config/ohio/
+scripts/credentials_google*.json
 
 # Home dotfiles
 .bash_history

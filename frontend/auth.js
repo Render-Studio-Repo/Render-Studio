@@ -250,6 +250,10 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     }
   });
 
+function openFusionLibraryPanel() {
+  window.dispatchEvent(new CustomEvent("render3d:open-fusion-library"));
+}
+
   async function startAutodeskConnect({ promptForCredentials = true } = {}) {
     if (!loggedInUser) {
       showModal(true);
@@ -260,7 +264,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       const status = await api("/api/autodesk/status");
       if (status?.linked) {
         setFusionBadge(true);
-        document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        openFusionLibraryPanel();
         return status;
       }
     } catch {
@@ -284,7 +288,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   document.getElementById("btn-fusion-connect")?.addEventListener("click", () => {
     closeUserMenu();
     if (fusionBadge && !fusionBadge.classList.contains("hidden")) {
-      document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      openFusionLibraryPanel();
     } else {
       void startAutodeskConnect({ promptForCredentials: false });
     }
