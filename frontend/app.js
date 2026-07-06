@@ -88,6 +88,10 @@ import { createSketchEditor } from "./sketch-editor.js?v=20260615-load-entities"
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260612-spin-fix3";
 import { createSectionView } from "./section-view.js?v=20260618-section-clean";
+import { createViewerToast, flashViewport } from "./viewer-toast.js";
+import { initMobileUI } from "./mobile-ui.js";
+import { createExtrudeDragTool } from "./extrude-drag.js";
+import { detectModelUnitScale } from "./measure.js";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = 480000;
@@ -587,6 +591,12 @@ async function resumeGenerationIfNeeded(pid, generation) {
 }
 
 initPanelResize();
+const mobileUI = initMobileUI({
+  onResize: () => {
+    resize();
+    collab?.resizeLabels();
+  },
+});
 
 const viewportHint = document.getElementById("viewport-hint");
 const pickHintTitle = document.getElementById("pick-hint-title");
@@ -596,6 +606,30 @@ const viewport = document.getElementById("viewport");
 if (!viewport) {
   throw new Error("Render3D: #viewport element missing from page");
 }
+const viewerToast = createViewerToast(viewport);
+
+function inferMeshUsesMm() {
+  if (!currentMesh) return true;
+  const box = new THREE.Box3().setFromObject(currentMesh);
+  const size = box.getSize(new THREE.Vector3());
+  return Math.max(size.x, size.y, size.z) >= 1.0;
+}
+
+function viewerToastForCollab(msg) {
+  const action = msg.action;
+  const by = msg.by;
+  if (!action || !by) return;
+  const verbs = {
+    extrude: "extruded",
+    transform: "edited",
+    upload: "uploaded",
+    prompt: "updated",
+    build: "built",
+  };
+  const verb = verbs[action] || action;
+  viewerToast.show(`${by} ${verb} the model`, { kind: "info", durationMs: 2800 });
+}
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FUSION.canvas);
 
@@ -854,6 +888,21 @@ transformControls.addEventListener("dragging-changed", (e) => {
 });
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
+
+const extrudeDragTool = createExtrudeDragTool({
+  scene,
+  camera,
+  domElement: renderer.domElement,
+  getMeshRoot: () => currentMesh,
+  getMeshCenterOffset: () => meshCenterOffset,
+  getUnitScale: () => detectModelUnitScale(currentMesh),
+  api,
+  onApplied: () => {
+    viewport.classList.remove("extrude-drag-mode");
+    controls.enabled = true;
+  },
+  onStatus: (msg) => viewerToast?.show(msg, { kind: "info" }),
+});
 
 let gridVisible = true;
 let gridHelper = null;
