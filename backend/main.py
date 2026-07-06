@@ -2818,7 +2818,7 @@ def autodesk_oauth_url(
     """Create an Autodesk OAuth URL for the currently signed-in user."""
     try:
         from backend.services.autodesk_oauth import build_authorization_url
-        origin = _autodesk_return_origin()
+        origin = _request_origin(request)
         logger.info("autodesk oauth-url start user_id=%s email=%s origin=%s", user.get("id"), user.get("email"), origin)
         return {"url": build_authorization_url(user_id=user["id"], return_url=origin)}
     except Exception as exc:
@@ -2837,7 +2837,7 @@ def autodesk_oauth_start(
         return RedirectResponse("/?autodesk_error=login_required", status_code=302)
     try:
         from backend.services.autodesk_oauth import build_authorization_url
-        origin = _autodesk_return_origin()
+        origin = _request_origin(request)
         logger.info("autodesk oauth start user_id=%s email=%s origin=%s", user.get("id"), user.get("email"), origin)
         url = build_authorization_url(user_id=user["id"], return_url=origin)
     except Exception as exc:

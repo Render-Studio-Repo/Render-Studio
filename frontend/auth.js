@@ -96,16 +96,32 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     adminDashboardToolbar?.classList.add("hidden");
   }
 
+  function applyAvatarEl(el, user) {
+    if (!el || !user) return;
+    const avatar = String(user.avatar_url || "").trim();
+    const initial = userInitial(user);
+    if (avatar) {
+      el.textContent = "";
+      el.classList.add("auth-avatar--image");
+      el.style.backgroundImage = `url('${avatar.replace(/'/g, "%27")}')`;
+      el.setAttribute("aria-label", user.display_name || "Account");
+    } else {
+      el.textContent = initial;
+      el.classList.remove("auth-avatar--image");
+      el.style.backgroundImage = "";
+      el.removeAttribute("aria-label");
+    }
+  }
+
   function setUserUI(user) {
     loggedInUser = user;
     btnAuth?.classList.add("signed-in");
     authIcon?.classList.add("hidden");
-    const initial = userInitial(user);
     if (authAvatar) {
-      authAvatar.textContent = initial;
+      applyAvatarEl(authAvatar, user);
       authAvatar.classList.remove("hidden");
     }
-    if (authAvatarLg) authAvatarLg.textContent = initial;
+    if (authAvatarLg) applyAvatarEl(authAvatarLg, user);
     if (userLabel) userLabel.textContent = user.display_name;
     if (userEmail) userEmail.textContent = user.email;
     btnAuth?.setAttribute("title", user.display_name);
@@ -227,13 +243,43 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     }
   });
 
+  async function startAutodeskConnect({ promptForCredentials = true } = {}) {
+    if (!loggedInUser) {
+      showModal(true);
+      switchTab("login");
+      throw new Error("Sign in to Render3D first, then connect Autodesk Fusion 360.");
+    }
+    try {
+      const status = await api("/api/autodesk/status");
+      if (status?.linked) {
+        setFusionBadge(true);
+        document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return status;
+      }
+    } catch {
+      /* continue to OAuth */
+    }
+    try {
+      const oauth = await api("/api/autodesk/oauth-url", { method: "POST" });
+      if (oauth?.url) {
+        window.location.href = oauth.url;
+        return { linked: false, redirecting: true };
+      }
+    } catch (err) {
+      if (promptForCredentials && /not configured|AUTODESK_CLIENT/i.test(err.message || "")) {
+        throw err;
+      }
+    }
+    window.location.href = "/oauth/autodesk/start";
+    return { linked: false, redirecting: true };
+  }
+
   document.getElementById("btn-fusion-connect")?.addEventListener("click", () => {
     closeUserMenu();
     if (fusionBadge && !fusionBadge.classList.contains("hidden")) {
-      // Already connected — toggle Fusion library section
-      document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth" });
+      document.getElementById("fusion-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
-      window.location.href = "/oauth/autodesk/start";
+      void startAutodeskConnect({ promptForCredentials: false });
     }
   });
 
@@ -244,6 +290,11 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       showModal(true);
       switchTab("login");
     },
+    setUser(user) {
+      if (user) setUserUI(user);
+      else setLoggedOutUI();
+    },
+    startAutodeskConnect,
     async bootstrap() {
       // Handle redirect back from Onshape: /oauth/callback → /?onshape_token=JWT
       const params = new URLSearchParams(window.location.search);
@@ -269,6 +320,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
           setUserUI(data.user);
           setFusionBadge(true);
           showModal(false);
+          window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
           return data;
         } catch {
           clearSession();
@@ -321,6 +373,9 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
         try {
           const fs = await api("/api/autodesk/status");
           setFusionBadge(fs.linked === true);
+          if (fs.linked === true) {
+            window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
+          }
         } catch { /* non-critical */ }
         return data;
       } catch {

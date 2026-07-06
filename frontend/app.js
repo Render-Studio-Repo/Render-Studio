@@ -102,6 +102,7 @@ const LS_HIDDEN_WORKSPACES = "render3d:hiddenWorkspaces:v1";
 const LS_WORKSPACE_REALTIME_COLLAPSED = "render3d:workspaceRealtimeCollapsed:v1";
 
 let projectId = null;
+let lastProjectBrowser = { components: [], sketches: [], wiring: [] };
 let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
@@ -987,8 +988,8 @@ function createFallbackRenderer(error) {
 let renderer;
 let webglAvailable = true;
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
   setupRenderer(renderer);
 } catch (err) {
   webglAvailable = false;
@@ -1505,6 +1506,9 @@ transformControls.addEventListener("dragging-changed", (e) => {
       suppressNextObjectClick = false;
     }, 350);
     sendCollabPresence({ moving: false });
+    if (document.body.classList.contains("architect-design-tab")) {
+      tryArchitectLegoSnap(transformControls.object);
+    }
   }
   controls.enabled = !e.value;
 });
@@ -3572,18 +3576,31 @@ function architectBoxFeature(length, width, height, at = [0, 0, 0], combine = "a
 
 let architectInstanceSerial = 0;
 
+function sceneMmPerModelUnit() {
+  const box = projectAssembly.boundingBox();
+  const extent = box ? box.getSize(new THREE.Vector3()).length() : NaN;
+  return Number(mmPerModelUnit(extent) || 1) || 1;
+}
+
 function architectInstanceScale() {
-  const unit = Number(mmPerModelUnit?.() || 1) || 1;
+  const unit = sceneMmPerModelUnit();
   return 1 / unit;
+}
+
+function architectGridModelUnits() {
+  const gridMm = Number(document.getElementById("architect-grid-size")?.value || 1000);
+  return gridMm / sceneMmPerModelUnit();
 }
 
 function architectBoxMesh({ length, width, height, at = [0, 0, 0], color = "#d8cab0", name = "architect_part", opacity = 1 }) {
   const scale = architectInstanceScale();
-  const geom = new THREE.BoxGeometry(length * scale, width * scale, height * scale);
-  const mat = new THREE.MeshStandardMaterial({
+  const geom = new THREE.BoxGeometry(length * scale, width * scale, height * scale, 2, 2, 2);
+  const mat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(color),
-    roughness: 0.72,
-    metalness: 0.02,
+    roughness: 0.58,
+    metalness: 0.04,
+    clearcoat: 0.12,
+    clearcoatRoughness: 0.35,
     transparent: opacity < 1,
     opacity,
   });
@@ -3763,7 +3780,9 @@ function placeArchitectModuleInstant(kind = "wall") {
   objectTools.selectObject?.({ mesh: object, root: object, bodyIndex: 0, catalogName, isRoot: true });
   showObjectGizmo(object, "translate", { switchTab: false });
   rebuildGrid();
-  setEditStatus("ok", `Placed ${label} instantly. Drag it with the gizmo or use Snap Grid.`);
+  fitCameraToComponent(catalogName);
+  refreshArchitectBrowserEntries();
+  setEditStatus("ok", `Placed ${label} instantly. Drag it with the gizmo — modules snap together like LEGO when you release.`);
   return object;
 }
 
@@ -3969,12 +3988,6 @@ function setArchitectPromptForSelectedEdit(kind = "customize") {
   openArchitectLibrary();
 }
 
-function architectGridModelUnits() {
-  const gridMm = Number(document.getElementById("architect-grid-size")?.value || 1000);
-  const unit = Number(mmPerModelUnit?.() || 1) || 1;
-  return gridMm / unit;
-}
-
 function architectSelectedMesh() {
   const selection = objectTools?.getSelection?.();
   if (selection?.mesh) return selection.mesh;
@@ -4035,6 +4048,95 @@ function nearestArchitectFloorSnap(mesh) {
   const targetCenter = best.point.clone();
   targetCenter.z = center.z + (best.floorBox.max.z - selBox.min.z);
   return { targetCenter, rotation: best.rotation, side: best.side, floorName: best.floorName };
+}
+
+function nearestArchitectModuleSnap(mesh) {
+  if (!mesh?.userData?.architectInstance) return null;
+  mesh.updateMatrixWorld(true);
+  const selBox = new THREE.Box3().setFromObject(mesh);
+  if (selBox.isEmpty()) return null;
+  const center = selBox.getCenter(new THREE.Vector3());
+  const grid = architectGridModelUnits();
+  let best = null;
+  for (const [name, obj] of projectAssembly.list()) {
+    if (obj === mesh || !obj?.userData?.architectInstance) continue;
+    obj.updateMatrixWorld(true);
+    const otherBox = new THREE.Box3().setFromObject(obj);
+    if (otherBox.isEmpty()) continue;
+    const otherCenter = otherBox.getCenter(new THREE.Vector3());
+    const dx = otherCenter.x - center.x;
+    const dy = otherCenter.y - center.y;
+    const axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+    const sign = axis === "x" ? Math.sign(dx || 1) : Math.sign(dy || 1);
+    const target = center.clone();
+    if (axis === "x") {
+      target.x = otherCenter.x + sign * grid;
+      target.y = Math.round(center.y / grid) * grid;
+    } else {
+      target.y = otherCenter.y + sign * grid;
+      target.x = Math.round(center.x / grid) * grid;
+    }
+    target.z = center.z;
+    const dist = target.distanceTo(center);
+    if (dist > grid * 1.35 || dist < grid * 0.25) continue;
+    if (!best || dist < best.dist) best = { targetCenter: target, dist, mateName: name, axis };
+  }
+  return best;
+}
+
+function tryArchitectLegoSnap(mesh = architectSelectedMesh()) {
+  if (!mesh?.userData?.architectInstance) return false;
+  if (!document.body.classList.contains("architect-design-tab")) return false;
+  const moduleSnap = nearestArchitectModuleSnap(mesh);
+  if (moduleSnap) {
+    const center = objectWorldBoxCenter(mesh);
+    const delta = worldDeltaToParentDelta(mesh, moduleSnap.targetCenter.clone().sub(center));
+    if (gizmoPanel.translateBy?.(delta, { autoApply: true })) {
+      setEditStatus("ok", `Snapped to ${moduleSnap.mateName} — LEGO-style connector aligned.`);
+      return true;
+    }
+  }
+  const floorSnap = nearestArchitectFloorSnap(mesh);
+  if (floorSnap) {
+    if (mesh.userData?.architectInstance) mesh.rotation.z = floorSnap.rotation;
+    mesh.updateMatrixWorld(true);
+    const center = objectWorldBoxCenter(mesh);
+    const delta = worldDeltaToParentDelta(mesh, floorSnap.targetCenter.clone().sub(center));
+    if (gizmoPanel.translateBy?.(delta, { autoApply: true })) {
+      setEditStatus("ok", `Snapped to ${floorSnap.side} floor edge.`);
+      return true;
+    }
+  }
+  const grid = architectGridModelUnits();
+  const center = objectWorldBoxCenter(mesh);
+  const target = center.clone();
+  target.x = Math.round(target.x / grid) * grid;
+  target.y = Math.round(target.y / grid) * grid;
+  const delta = worldDeltaToParentDelta(mesh, target.sub(center));
+  if (!gizmoPanel.translateBy?.(delta, { autoApply: true })) return false;
+  setEditStatus("ok", "Snapped module to Architect grid.");
+  return true;
+}
+
+function refreshArchitectBrowserEntries() {
+  const localComponents = projectAssembly
+    .list()
+    .filter(([name, obj]) => String(name).startsWith("__architect_") || obj?.userData?.architectInstance)
+    .map(([name, obj]) => ({
+      id: name,
+      name,
+      stem: name.replace(/^__architect_|\.local$/g, ""),
+      format: "architect",
+      viewer_filename: name,
+      label: obj?.userData?.architectKind || name,
+      localOnly: true,
+    }));
+  if (!localComponents.length) return;
+  const merged = [
+    ...localComponents,
+    ...(lastProjectBrowser.components || []).filter((c) => !String(c.name).startsWith("__architect_")),
+  ];
+  renderProjectBrowser({ ...lastProjectBrowser, components: merged });
 }
 
 function snapArchitectSelectionToGrid() {
@@ -7410,6 +7512,7 @@ async function loadModel(url, filename, opts = {}) {
   try {
     if (viewExt === "stl") {
       const geo = new STLLoader().parse(await blob.arrayBuffer());
+      geo.computeVertexNormals();
       object = new THREE.Mesh(geo);
     } else if (viewExt === "obj") {
       object = new OBJLoader().parse(await blob.text());
@@ -8866,6 +8969,7 @@ async function hydrateBrowserBodyChildren(browser) {
 }
 
 function renderProjectBrowser(browser) {
+  lastProjectBrowser = browser || lastProjectBrowser;
   mobileBrowserComponents = browser?.components || [];
   promptTargetBodyCache.clear();
   promptTargetSelectedBody = null;

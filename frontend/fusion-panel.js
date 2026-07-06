@@ -634,6 +634,10 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   }
 
   btnRefresh?.addEventListener("click", () => loadHubs());
+  window.addEventListener("render3d:autodesk-linked", () => {
+    loadHubs();
+    section?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  });
   const observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) {
       observer.disconnect();
