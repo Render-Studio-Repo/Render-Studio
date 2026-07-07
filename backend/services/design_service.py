@@ -2142,8 +2142,15 @@ def _run_text_to_cad_v2(
             "preserving all functional support/contact geometry. If Project context contains a component/object ref, "
             "that is the object being iterated."
         )
+    # Mirror upstream text-to-cad modeling behavior by default: keep the
+    # generation prompt focused on the user request + edit lineage, while
+    # preserving our upload/reference/inspect/selector tooling around it.
+    mirror_upstream_modeling = bool((context or {}).get("mirror_upstream_modeling", True))
+    generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
+    if mirror_upstream_modeling:
+        trace_add("info", "[2.0/text-to-cad] Using upstream-mirrored modeling prompt mode.", trace_id=trace_id)
     cad_brief, brief_trace = ai.generate_cad_brief(
-        prompt + edit_note + workflow_note,
+        generation_prompt,
         context,
         trace_id=trace_id,
         images=images,
@@ -2169,7 +2176,7 @@ def _run_text_to_cad_v2(
                 trace_add("info", "[2.0/text-to-cad] Using canonical benchmark-style source.", trace_id=trace_id)
             else:
                 source, ai_trace = ai.generate_cad_python_source(
-                    prompt + edit_note + workflow_note,
+                    generation_prompt,
                     context,
                     trace_id=trace_id,
                     repair_note=repair_note,
