@@ -994,12 +994,16 @@ def _maybe_rewrite_incomplete_dxf_source(
 ) -> tuple[str, str | None]:
     """Replace truncated or naive DXF scripts with a layer-aware mold builder."""
     undefined = _gen_step_local_undefined_names(source)
-    helper_missing = any(name.startswith("_") for name in undefined)
+    helper_missing = any(
+        name.startswith("_")
+        or name.lower().startswith(("make_", "build_", "create_"))
+        for name in undefined
+    )
     dxf_helper_missing = any(
         "dxf" in name.lower()
         or (
             name.lower().startswith(("make_", "build_", "create_"))
-            and any(token in name.lower() for token in ("extrude", "part", "profile", "drawing"))
+            and any(token in name.lower() for token in ("extrude", "part", "profile", "drawing", "mount", "box", "frame", "housing"))
         )
         for name in undefined
     )
