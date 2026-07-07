@@ -72,7 +72,7 @@ import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=202
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
-import { createObjectTools } from "./object-tools.js?v=20260707-delete-selected-object";
+import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-live-adjustments";
 import { createProjectTree } from "./project-tree.js?v=20260707-dxf-drawings-section";
@@ -781,6 +781,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     generationWatchOverlay = {
       kind,
       promptMode: "wiring",
+      startedAt: Date.now(),
       pendingStart: !!pendingStart,
       message: "Generating wiring schematic… (safe to refresh)",
       mode: "ai",
@@ -790,6 +791,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     generationWatchOverlay = {
       kind,
       promptMode: "build",
+      startedAt: Date.now(),
       pendingStart: !!pendingStart,
       message: "Building in background… (safe to refresh)",
       mode: "build",
@@ -799,6 +801,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     generationWatchOverlay = {
       kind,
       promptMode: mode,
+      startedAt: Date.now(),
       pendingStart: !!pendingStart,
       ...promptGenerationOverlayOpts(mode),
     };
@@ -857,7 +860,11 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         syncCanvasGenerationUi();
         return;
       }
-      if (generationWatchOverlay?.pendingStart && (!gen.status || gen.status === "idle")) {
+      const watchAgeMs = Math.max(0, Date.now() - Number(generationWatchOverlay?.startedAt || Date.now()));
+      if (
+        (!gen.status || gen.status === "idle") &&
+        (generationWatchOverlay?.pendingStart || watchAgeMs < 20_000)
+      ) {
         syncStopButtonVisibility();
         syncCanvasGenerationUi();
         return;
@@ -4451,7 +4458,7 @@ async function buildArchitectModule(kind = "wall") {
     body: JSON.stringify(architectModuleProgram(kind)),
   }, 120000);
   if (data.accepted || data.status === "running") {
-    beginGenerationWatch(projectId, { kind: "build", mode: "architect" });
+    beginGenerationWatch(projectId, { kind: "build", mode: "architect", pendingStart: true });
     setEditStatus("ok", `${label} is building. Drag/scale it after it appears in the viewport.`);
     return data;
   }
@@ -10570,7 +10577,7 @@ async function runWiringPrompt() {
     promptText: wiringPromptTextWithRefs(prompt),
   };
   showAiComposePanel();
-  beginGenerationWatch(projectId, { kind: "wiring" });
+  beginGenerationWatch(projectId, { kind: "wiring", pendingStart: true });
   try {
     const data = await api(`/api/projects/${projectId}/wiring/prompt`, {
       method: "POST",
@@ -14050,9 +14057,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
     if (data.accepted || data.status === "running") {
       if (!generationWatchOverlay || generationWatchPid !== projectId) {
-        beginGenerationWatch(projectId, { kind: "prompt", mode: genMode });
-      } else {
-        generationWatchOverlay.pendingStart = false;
+        beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
       }
       lastPromptCopyContext = {
         ...lastPromptCopyContext,
@@ -14134,7 +14139,7 @@ ribbon = createRibbon({
     }
   },
   onGenerationStarted: (data) => {
-    beginGenerationWatch(projectId, { kind: data?.generation?.kind || "build" });
+    beginGenerationWatch(projectId, { kind: data?.generation?.kind || "build", pendingStart: true });
   },
   onBuildError: (message) => viewerOverlay.showError(message || "Build failed — see ribbon status or Activity Log."),
   onViewportTool: (toolId) => launchViewportTool(toolId),

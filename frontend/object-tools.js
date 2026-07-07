@@ -64,7 +64,8 @@ export function createObjectTools({
   function meshLabel(mesh, root, bodyIndex) {
     const meshes = listSelectableMeshes(root);
     if (bodyInfo?.count > 1) {
-      return bodyInfo.body_names?.[bodyIndex] || `Body ${bodyIndex + 1}`;
+      const safe = Math.max(0, Math.min(Number(bodyIndex) || 0, (bodyInfo.count || 1) - 1));
+      return bodyInfo.body_names?.[safe] || `Body ${safe + 1}`;
     }
     if (meshes.length > 1) {
       const idx = meshes.indexOf(mesh);
@@ -110,7 +111,7 @@ export function createObjectTools({
 
   function addSelectionHighlight(item) {
     let h = null;
-    if ((bodyInfo?.count || 1) > 1 && item.bodyIndex != null) {
+    if ((item.bodyCount || 1) > 1 && item.bodyIndex != null) {
       h = new THREE.Box3Helper(bodyBounds(item.mesh, item.bodyIndex), 0x58a6ff);
     } else {
       h = new THREE.BoxHelper(item.mesh, 0x58a6ff);
@@ -123,25 +124,40 @@ export function createObjectTools({
   function selectObject({ mesh, root, faceIndex = null, bodyIndex = null, catalogName = null }) {
     if (!mesh || !root) return;
     const meshes = listSelectableMeshes(root);
-    const resolvedBody = bodyIndex ?? bodyIndexForFace(faceIndex);
-    const isRoot = mesh === root && meshes.length <= 1;
     const resolvedCatalog = catalogName || root.userData?.catalogFilename || null;
+    const hasMatchingBodyInfo =
+      !resolvedCatalog || !bodyInfoFilename || String(bodyInfoFilename) === String(resolvedCatalog);
+    const activeBodyCount = hasMatchingBodyInfo ? Math.max(1, Number(bodyInfo?.count) || 1) : 1;
+    const candidateBody = Number.isInteger(bodyIndex) ? bodyIndex : bodyIndexForFace(faceIndex);
+    const resolvedBody =
+      activeBodyCount > 1 ? Math.max(0, Math.min(candidateBody, activeBodyCount - 1)) : 0;
+    const isRoot = mesh === root && meshes.length <= 1;
+    const bodyNames = hasMatchingBodyInfo ? bodyInfo?.body_names : null;
     selected = {
       mesh,
       root,
       bodyIndex: resolvedBody,
       faceIndex,
-      label: (bodyInfo?.count || 1) > 1
-        ? meshLabel(mesh, root, resolvedBody)
+      label: activeBodyCount > 1
+        ? bodyNames?.[resolvedBody] || meshLabel(mesh, root, resolvedBody)
         : resolvedCatalog
         ? resolvedCatalog.replace(/\.[^.]+$/, "")
         : meshLabel(mesh, root, resolvedBody),
       isRoot,
       meshCount: meshes.length,
-      bodyCount: bodyInfo?.count || 1,
+      bodyCount: activeBodyCount,
       catalogName: resolvedCatalog,
     };
-    selected.selections = [{ mesh, root, bodyIndex: resolvedBody, catalogName: resolvedCatalog, label: selected.label }];
+    selected.selections = [
+      {
+        mesh,
+        root,
+        bodyIndex: resolvedBody,
+        bodyCount: activeBodyCount,
+        catalogName: resolvedCatalog,
+        label: selected.label,
+      },
+    ];
     removeHighlight();
     addSelectionHighlight(selected.selections[0]);
     transformControls?.attach?.(mesh);
@@ -170,6 +186,7 @@ export function createObjectTools({
       selections: normalized.map((item) => ({
         ...item,
         bodyIndex: item.bodyIndex ?? 0,
+        bodyCount: item.bodyCount ?? 1,
         catalogName: item.catalogName || item.root.userData?.catalogFilename || null,
         label: item.label || meshLabel(item.mesh, item.root, item.bodyIndex || 0),
       })),

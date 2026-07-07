@@ -1063,6 +1063,7 @@ class AIService:
             )
             system += (
                 "\n\nDXF import workflow:\n"
+                "- If Project context.refs includes type:\"dxf\" with text_content, treat that as the authoritative drawing payload and parse it carefully.\n"
                 "- Use one complete Python file. Every helper function and module constant referenced by gen_step() "
                 "must be defined in that same file.\n"
                 "- For multi-layer mold/profile DXFs, do NOT call import_dxf() on the whole file. Process layers "

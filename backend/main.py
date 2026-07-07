@@ -2021,9 +2021,28 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
                 ref["format"] = r.format
             if r.label:
                 ref["label"] = r.label
-            if r.text_content and str(r.type or "").lower() in {"dxf", "document", "text", "spec"}:
-                ref["text_content"] = r.text_content[:60000]
-                ref["text_truncated"] = bool(r.text_truncated or len(r.text_content) > 60000)
+            ref_type = str(r.type or "").lower()
+            if ref_type in {"dxf", "document", "text", "spec"}:
+                text_content = r.text_content or ""
+                text_truncated = bool(r.text_truncated or len(text_content) > 60000)
+                # If DXF reference text was not inlined (e.g. restored from history),
+                # hydrate it from the saved project file so text-to-cad keeps rich DXF context.
+                if ref_type == "dxf" and not text_content.strip():
+                    raw_name = r.filename or r.label or ""
+                    safe_name = Path(str(raw_name)).name.strip()
+                    if safe_name and not safe_name.lower().endswith(".dxf"):
+                        safe_name = f"{Path(safe_name).stem or 'reference'}.dxf"
+                    dxf_path = (project_path / safe_name) if safe_name else None
+                    if dxf_path and dxf_path.is_file():
+                        try:
+                            loaded = dxf_path.read_text(encoding="utf-8", errors="ignore")
+                            text_content = loaded
+                            text_truncated = len(text_content) > 60000
+                        except Exception:
+                            text_content = ""
+                if text_content:
+                    ref["text_content"] = text_content[:60000]
+                    ref["text_truncated"] = text_truncated
             if r.body_index is not None:
                 ref["body_index"] = r.body_index
             if r.body_name:
