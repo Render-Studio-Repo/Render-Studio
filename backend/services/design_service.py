@@ -34,8 +34,42 @@ def _slug(text: str, fallback: str = "text_to_cad_model") -> str:
     return (slug or fallback)[:64]
 
 
-_BLOCKED_IMPORT_ROOTS = frozenset({"os", "subprocess", "socket", "requests", "sys", "shutil"})
-_BLOCKED_CALL_NAMES = frozenset({"exec", "eval", "open", "__import__"})
+_BLOCKED_IMPORT_ROOTS = frozenset({"subprocess", "socket", "requests", "sys", "shutil"})
+_BLOCKED_CALL_NAMES = frozenset({"exec", "eval", "__import__"})
+_BLOCKED_OS_ATTRS = frozenset({
+    "system",
+    "popen",
+    "spawn",
+    "spawnl",
+    "spawnle",
+    "spawnlp",
+    "spawnlpe",
+    "spawnv",
+    "spawnve",
+    "spawnvp",
+    "spawnvpe",
+    "execv",
+    "execve",
+    "execvp",
+    "execvpe",
+    "execl",
+    "execlp",
+    "execle",
+    "execlpe",
+    "remove",
+    "unlink",
+    "rmdir",
+    "removedirs",
+    "chmod",
+    "chown",
+    "chroot",
+    "kill",
+    "killpg",
+    "getenv",
+    "putenv",
+    "unsetenv",
+    "environ",
+})
 
 
 def _validate_generated_source(source: str) -> None:
@@ -60,6 +94,9 @@ def _validate_generated_source(source: str) -> None:
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id in _BLOCKED_CALL_NAMES:
                 blocked.append(f"{node.func.id}()")
+        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "os":
+            if node.attr in _BLOCKED_OS_ATTRS:
+                blocked.append(f"os.{node.attr}")
 
     if blocked:
         raise ValueError(f"Generated source contains blocked operation(s): {', '.join(sorted(set(blocked)))}")
