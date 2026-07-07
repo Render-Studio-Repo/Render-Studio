@@ -111,14 +111,6 @@ def _recover_stuck_generations() -> None:
         new_trace = str(_uuid.uuid4())[:8]
         restart_count = original_data.get("restart_count", 0) + 1
         original_mode = str(original_data.get("mode") or request_body.get("mode") or "").lower()
-        if original_mode in {"v2", "fusion"}:
-            generation_service.fail(
-                project_path_,
-                "Generation was interrupted while waiting on the 2.0 CAD model. Please retry the prompt.",
-                trace_id=original_trace,
-            )
-            logger.info("Marked interrupted %s job failed project=%s trace=%s", original_mode, project_id_, original_trace)
-            continue
         user_ = {
             "id": original_data.get("by_user_id") or "",
             "display_name": original_data.get("by_user_name") or "System",
@@ -145,8 +137,14 @@ def _recover_stuck_generations() -> None:
                 trace_id=original_trace,
             )
             continue
-        logger.info("Recovering stuck job project=%s old_trace=%s new_trace=%s (restart #%d)",
-                    project_id_, original_trace, new_trace, restart_count)
+        logger.info(
+            "Recovering stuck %s job project=%s old_trace=%s new_trace=%s (restart #%d)",
+            original_mode or "prompt",
+            project_id_,
+            original_trace,
+            new_trace,
+            restart_count,
+        )
         try:
             generation_service.start(
                 project_path_,
@@ -161,6 +159,11 @@ def _recover_stuck_generations() -> None:
             )
         except Exception as exc:
             logger.warning("Could not restart stuck job %s: %s", project_id_, exc)
+            generation_service.fail(
+                project_path_,
+                "Generation was interrupted by server restart. Please retry the prompt.",
+                trace_id=original_trace,
+            )
             continue
         import threading
         t = threading.Thread(
@@ -7995,7 +7998,6 @@ def prompt_cad(
                 "base_filename": None,
                 "references": [],
                 "fusion_target": "in_app",
-                "speed": "quality",
                 "skills": ["cad"],
             })
         design_body = body.model_copy(update=updates)

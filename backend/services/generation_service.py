@@ -83,6 +83,7 @@ def start(
     mode: str | None = None,
     request_body: dict[str, Any] | None = None,
     restart_count: int = 0,
+    replace_running: bool = False,
 ) -> dict[str, Any]:
     if is_canceled(project_path):
         if is_running(project_path):
@@ -90,9 +91,11 @@ def start(
         # Stale cancel flag from a previous run that already finished — clear it so a
         # new generation can start without being rejected.
         _CANCELED_PROJECTS.discard(project_path.name)
-    if is_running(project_path):
+    if is_running(project_path) and not replace_running:
         current = load(project_path) or {}
         raise GenerationInProgress(current)
+    if replace_running:
+        _RUNNING_TRACES.pop(project_path.name, None)
     data: dict[str, Any] = {
         "status": "running",
         "kind": kind,
