@@ -180,12 +180,28 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
         return []
 
     defined = _defined_module_names(source)
+    star_import_roots: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            if any(alias.name == "*" for alias in node.names):
+                star_import_roots.add((node.module or "").split(".")[0])
+
     referenced: set[str] = set()
     for node in ast.walk(gen_step):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             referenced.add(node.id)
 
     skip = set(dir(__builtins__)) | {"True", "False", "None"}
+    if "build123d" in star_import_roots:
+        # Star import supplies the CAD API; only enforce local helpers/constants.
+        return sorted(
+            name
+            for name in referenced
+            if name not in defined
+            and name not in skip
+            and (name.startswith("_") or name in _DXF_CONFIG_NAMES or name.endswith("_layer"))
+        )
+
     return sorted(name for name in referenced if name not in defined and name not in skip)
 
 
