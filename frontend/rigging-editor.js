@@ -134,8 +134,8 @@ export function createRiggingEditor({
   });
 
   function refreshMeshBindings() {
-    const n = meshDriver.rebind();
-    if (active && n >= 2) {
+    const n = meshDriver.rebind(bones);
+    if (active && n >= 1) {
       applyAnimationTime(animTimeline?.getTime?.() ?? 0);
     }
     return n;
@@ -188,6 +188,8 @@ export function createRiggingEditor({
     if (sorted.length <= 3) return sorted;
 
     const spinBones = gearSpinBoneIds(boneList);
+    const looksLikeGearTrain = spinBones.some((id) => /gear/i.test(id));
+    if (!looksLikeGearTrain) return sorted;
     const zAt = (kf, boneId) => Number(kf.poses?.[boneId]?.rotation?.[2]) || 0;
     const isSpinPoint = (kf) => spinBones.some((id) => Math.abs(zAt(kf, id)) > 0.05);
     const isAccidentalReset = (kf, prev) =>
@@ -414,11 +416,25 @@ export function createRiggingEditor({
     meshDriver.applyBoneRotations(bones, poses);
   }
 
+  function currentAnimationPoses() {
+    const t = animTimeline?.getTime?.() ?? 0;
+    const interpolated = interpolatePoses(t);
+    if (interpolated) {
+      return Object.fromEntries(
+        bones.map((bone) => {
+          const raw = interpolated[bone.id];
+          return [bone.id, raw ? normalizePose(raw, bone) : normalizePose(bone, bone)];
+        }),
+      );
+    }
+    return clonePose(bones);
+  }
+
   function insertKeyframe(atTime) {
     const anim = activeAnimation();
     if (!anim) return;
     const t = atTime ?? animTimeline?.getTime?.() ?? 0;
-    const poses = clonePose(bones);
+    const poses = currentAnimationPoses();
     const existing = anim.keyframes.findIndex((k) => Math.abs(k.time - t) < 0.02);
     if (existing >= 0) {
       anim.keyframes[existing].poses = poses;

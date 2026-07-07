@@ -297,6 +297,11 @@ class VisibleAssemblyExportRequest(BaseModel):
     name: str | None = Field(default=None, max_length=120)
 
 
+class CadParamsUpdateRequest(BaseModel):
+    params: dict[str, float | int | str | bool] = Field(default_factory=dict, max_length=80)
+    part: str | None = Field(default=None, max_length=120)
+
+
 class ExtrudeRequest(BaseModel):
     face_index: int | None = None
     at_ref: str | None = None
@@ -5821,6 +5826,66 @@ def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Dep
         "filename": safe,
         "exports": exports,
         "share_url": f"/api/projects/{project_id}/files/{safe}",
+    }
+
+
+@app.get("/api/projects/{project_id}/files/{filename}/cad-params")
+def get_cad_params(
+    project_id: str,
+    filename: str,
+    part: str | None = Query(None, description="Optional part/body name to filter parameters"),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import text_to_cad_params
+
+    path = _require_project_read(user, project_id)
+    safe = Path(filename).name
+    resolved = text_to_cad_params.resolve_source_for_model(path, safe)
+    if resolved is None:
+        raise HTTPException(404, "No text-to-cad Python source found for this model")
+    source_path, source_name = resolved
+    source = source_path.read_text(encoding="utf-8", errors="ignore")
+    params = text_to_cad_params.list_parameters(source, part_filter=part)
+    return {
+        "filename": safe,
+        "source": source_name,
+        "part": part,
+        "params": params,
+    }
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/cad-params")
+def update_cad_params(
+    project_id: str,
+    filename: str,
+    body: CadParamsUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import text_to_cad_params
+
+    path = _require_project(user, project_id)
+    safe = Path(filename).name
+    resolved = text_to_cad_params.resolve_source_for_model(path, safe)
+    if resolved is None:
+        raise HTTPException(404, "No text-to-cad Python source found for this model")
+    source_path, source_name = resolved
+    if not body.params:
+        raise HTTPException(422, "No parameter updates provided")
+    source = source_path.read_text(encoding="utf-8", errors="ignore")
+    patched = text_to_cad_params.patch_parameters(source, body.params)
+    if patched == source:
+        raise HTTPException(422, "Could not apply parameter updates to source")
+    source_path.write_text(patched, encoding="utf-8")
+    try:
+        artifacts = text_to_cad_params.regenerate_model(path, source_name)
+    except Exception as exc:
+        raise HTTPException(422, f"Regeneration failed: {exc}") from exc
+    return {
+        "ok": True,
+        "filename": safe,
+        "source": source_name,
+        "params": text_to_cad_params.list_parameters(patched, part_filter=body.part),
+        "artifacts": artifacts,
     }
 
 

@@ -1384,6 +1384,7 @@ function _buildRibbonDOM() {
     { id: "btn-wireframe", label: "Wire",    title: "Toggle wireframe (W)",                              svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="6" width="14" height="10" rx="1"/><path d="M3 6l4-3h6l4 3"/><path d="M17 6l-4 3H7L3 6"/><path d="M7 9v7m6-7v7"/></svg>` },
     { id: "btn-section",   label: "Section", title: "Section view — cut model to see inside (Shift+X)",  svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="1.5"/><path d="M3 10h14" stroke-dasharray="3 2"/><path d="M10 3v7" stroke-dasharray="3 2"/></svg>`, pressed: false },
     { id: "btn-grid",      label: "Grid",    title: "Toggle grid (Shift+G)",                             svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7h14M3 13h14M7 3v14M13 3v14"/></svg>`, active: true, pressed: true },
+    { id: "btn-history-tree", label: "Tree", title: "Parametric parts & history tree",                  svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3v5"/><path d="M6 8h8"/><path d="M4 8v3"/><path d="M10 8v3"/><path d="M16 8v3"/><path d="M2 14h4"/><path d="M8 14h4"/><path d="M14 14h4"/></svg>`, pressed: false },
   ];
 
   for (const def of viewBtns) {

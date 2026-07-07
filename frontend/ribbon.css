@@ -383,6 +383,82 @@
   text-align: center;
 }
 
+.cad-param-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.72);
+}
+
+.cad-param-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cad-param-head strong,
+.cad-param-panel > strong {
+  display: block;
+  font-size: 0.78rem;
+}
+
+.cad-param-head span,
+.cad-param-hint,
+.cad-param-actions small {
+  display: block;
+  color: #8b949e;
+  font-size: 0.68rem;
+}
+
+.cad-param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cad-param-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) 1fr 72px auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.72rem;
+}
+
+.cad-param-row--bool {
+  grid-template-columns: 1fr auto;
+}
+
+.cad-param-row input[type="range"] {
+  width: 100%;
+}
+
+.cad-param-row input[type="number"],
+.cad-param-row input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+}
+
+.cad-param-row em {
+  font-style: normal;
+  color: #8b949e;
+  font-size: 0.66rem;
+}
+
+.cad-param-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .ribbon-status {
   font-size: 0.72rem;
   color: #8b949e;

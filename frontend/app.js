@@ -61,7 +61,7 @@ import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
-import { createRibbon } from "./ribbon.js?v=20260630-architect-local-tools";
+import { createRibbon } from "./ribbon.js?v=20260707-tree-sliders";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loader";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
@@ -74,6 +74,7 @@ import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260617-marquee-bodies";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
+import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-tree-sliders";
 import { createProjectTree } from "./project-tree.js?v=20260706-dxf-drawings";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
@@ -6390,6 +6391,13 @@ function formatHistoryWhen(iso) {
   }
 }
 
+function selectedPartFilterName() {
+  const selection = objectTools.getSelection?.();
+  const bodyName = selection?.label || promptTargetSelectedBody?.bodyName || null;
+  if (bodyName && !/^body\s+\d+$/i.test(String(bodyName))) return bodyName;
+  return null;
+}
+
 function closeObjectIterationTree() {
   objectIterationPopover?.remove();
   objectIterationPopover = null;
@@ -6661,7 +6669,7 @@ function bindObjectSizeControls(pop, filename) {
   });
 }
 
-function openObjectIterationTree(anchor = document.getElementById("btn-history-tree")) {
+async function openObjectIterationTree(anchor = document.getElementById("btn-history-tree")) {
   if (objectIterationPopover) {
     closeObjectIterationTree();
     return;
@@ -6671,6 +6679,8 @@ function openObjectIterationTree(anchor = document.getElementById("btn-history-t
     setEditStatus("error", "Select an object first to view its iteration tree.");
     return;
   }
+  const partFilter = selectedPartFilterName();
+  const cadParams = await fetchCadParams(rawFetch, projectId, filename, { part: partFilter });
   const pop = document.createElement("div");
   pop.className = "object-iteration-popover";
   pop.innerHTML = `
@@ -6682,6 +6692,7 @@ function openObjectIterationTree(anchor = document.getElementById("btn-history-t
       <button type="button" class="object-iteration-close" aria-label="Close history tree">✕</button>
     </div>
     <div class="object-iteration-list">
+      ${cadParamControlsHtml(cadParams, { partLabel: partFilter })}
       ${objectSizeControlsHtml(filename)}
       <div class="object-iteration-history-head">History Tree</div>
       ${objectIterationTreeHtml(filename)}
@@ -6696,6 +6707,26 @@ function openObjectIterationTree(anchor = document.getElementById("btn-history-t
   pop.style.top = `${top}px`;
   pop.style.right = `${right}px`;
   pop.querySelector(".object-iteration-close")?.addEventListener("click", closeObjectIterationTree);
+  bindCadParamControls(pop, {
+    projectId,
+    filename,
+    part: partFilter,
+    initialData: cadParams,
+    api,
+    rawFetch,
+    onStatus: setEditStatus,
+    onApplied: async (result) => {
+      await refreshFiles();
+      const browser = lastProjectBrowser;
+      if (browser) await hydrateBrowserBodyChildren(browser);
+      const reloadName = result?.artifacts?.glb || filename;
+      if (projectAssembly.has(reloadName)) {
+        await loadModel(_cacheBustModelPath(projectFileUrl(projectId, reloadName)), reloadName, { fitView: false });
+        selectAssemblyComponent(reloadName, { fitView: false });
+        featureEditor.setModel(projectId, reloadName);
+      }
+    },
+  });
   bindObjectSizeControls(pop, filename);
   pop.querySelectorAll("[data-history-view]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -10524,6 +10555,7 @@ async function loadProject(id) {
     });
     renderProjectList();
     renderProjectBrowser(browser);
+    await hydrateBrowserBodyChildren(browser);
     if (currentUser) await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
     syncSketchVisibilityFromTree(browser);
     const comps = browser.components || [];

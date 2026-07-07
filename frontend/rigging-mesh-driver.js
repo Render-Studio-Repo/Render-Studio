@@ -150,7 +150,7 @@ export function createRiggingMeshDriver({ getPartRoot, getSim }) {
     bindings.clear();
   }
 
-  function rebind() {
+  function rebind(bones = []) {
     clear();
     const root = getPartRoot?.();
     if (!root) return 0;
@@ -158,6 +158,12 @@ export function createRiggingMeshDriver({ getPartRoot, getSim }) {
     const sim = getSim?.();
     const partIds = movablePartIds(sim);
     if (!partIds.length) partIds.push(...ROTATING_PARTS);
+    for (const bone of bones || []) {
+      const partId = partIdForBone(bone);
+      if (partId && !partIds.includes(partId)) partIds.push(partId);
+      const boneName = String(bone?.name || "").trim();
+      if (boneName && !partIds.includes(boneName)) partIds.push(boneName);
+    }
     let bound = 0;
     for (const partId of partIds) {
       const mesh = findPartMesh(root, partId);
@@ -222,7 +228,7 @@ export function createRiggingMeshDriver({ getPartRoot, getSim }) {
   }
 
   function isMeshDriven() {
-    return bindings.size >= 2;
+    return bindings.size >= 1;
   }
 
   return {
