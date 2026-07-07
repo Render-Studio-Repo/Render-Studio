@@ -206,10 +206,7 @@ def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list
     for entity in modelspace:
         entity_type = entity.dxftype()
         if entity_type not in SUPPORTED_ENTITY_TYPES:
-            raise ValueError(
-                f"Unsupported DXF entity {entity_type} in {dxf_path.as_posix()}; "
-                f"supported types: {', '.join(sorted(SUPPORTED_ENTITY_TYPES))}"
-            )
+            continue
 
         layer_name = _normalize_layer_name(entity.dxf.layer)
         if entity_type == "LINE":
