@@ -54,7 +54,7 @@ import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260707-project-folder-create";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260707-gen-user-badge";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-fusion-disconnect";
@@ -747,6 +747,20 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     generationPollTimer = null;
   }
   generationWatchPid = pid;
+  if (currentUser) {
+    upsertProjectInList({
+      id: pid,
+      generation: {
+        ...(allProjects.find((p) => p.id === pid)?.generation || {}),
+        status: "running",
+        kind,
+        by_user_id: currentUser.id,
+        by_user_name: currentUser.display_name,
+        by_avatar_url: currentUser.avatar_url,
+      },
+    });
+    renderProjectList();
+  }
   if (kind === "wiring") {
     generationWatchOverlay = {
       kind,
@@ -10508,6 +10522,16 @@ function projectSummaryFromRealtime(msg = {}) {
 function handleRealtimeEvent(msg = {}) {
   if (!msg?.type) return;
   if (msg.entry) workspaceActivity.prependEntry(msg.entry);
+
+  if (msg.type === "generation.updated") {
+    const pid = msg.project_id;
+    if (pid) {
+      upsertProjectInList({ id: pid, generation: msg.generation || { status: "idle" } });
+      renderProjectList();
+      if (pid === projectId) syncViewportGenerationOverlay();
+    }
+    return;
+  }
 
   if (msg.type === "project.meta" || msg.type === "project.renamed") {
     updateProjectNameLocal(msg.project_id || projectId, msg.name, msg.meta);

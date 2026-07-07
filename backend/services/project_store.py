@@ -166,7 +166,7 @@ def project_list_summary(project_path: Path) -> dict[str, Any]:
         "browser": {"components": [], "sketches": [], "wiring": [], "drawings": []},
         "latest_file": None,
         "usage_summary": None,
-        "generation": None,
+        "generation": generation_service.public_summary(project_path),
     }
 
 

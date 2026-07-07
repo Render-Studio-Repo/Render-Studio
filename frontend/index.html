@@ -427,6 +427,13 @@
           <strong id="pick-hint-title">Pick mode</strong>
           <span id="pick-hint-text">Click on the model to add a reference to your prompt</span>
         </div>
+        <button
+          type="button"
+          id="viewport-generation-user"
+          class="viewport-generation-user hidden"
+          title="Someone is generating with AI"
+          aria-label="Someone is generating with AI"
+        ></button>
         <div class="viewport-view-bar" aria-label="Viewport display">
           <button type="button" id="btn-grid-viewport" class="viewport-view-btn active" data-toggle-grid title="Toggle grid (Shift+G)" aria-pressed="true">Grid</button>
           <button type="button" id="btn-sketches-viewport" class="viewport-view-btn active" title="Toggle sketches in viewport" aria-pressed="true">Sketches</button>
@@ -1382,7 +1389,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260707-wdbg-model-select"></script>
+  <script type="module" src="/app.js?v=20260707-gen-user-badge"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

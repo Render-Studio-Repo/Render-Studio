@@ -16,6 +16,32 @@ MAX_RUNNING_SECONDS = 20 * 60
 _RUNNING_TRACES: dict[str, str] = {}
 _CANCELED_PROJECTS: set[str] = set()
 _CANCELED_TRACES: set[str] = set()
+_listeners: list[Any] = []
+
+
+def register_listener(fn: Any) -> None:
+    _listeners.append(fn)
+
+
+def _emit(project_path: Path, data: dict[str, Any]) -> None:
+    for fn in _listeners:
+        try:
+            fn(project_path, data)
+        except Exception as exc:
+            logger.debug("generation listener failed: %s", exc)
+
+
+def _user_avatar_url(user: dict[str, Any] | None) -> str | None:
+    if not user:
+        return None
+    existing = str(user.get("avatar_url") or user.get("by_avatar_url") or "").strip()
+    if existing.startswith("/api/users/"):
+        return existing.split("?", 1)[0]
+    uid = user.get("id")
+    if not uid:
+        return None
+    safe_id = "".join(ch for ch in str(uid) if ch.isalnum() or ch in {"-", "_"})[:80]
+    return f"/api/users/{safe_id}/avatar" if safe_id else None
 
 
 def _path(project_path: Path) -> Path:
@@ -107,6 +133,7 @@ def start(
         "mode": (mode or "standard").lower() if mode else "standard",
         "by_user_id": user.get("id") if user else None,
         "by_user_name": user.get("display_name") if user else None,
+        "by_avatar_url": _user_avatar_url(user),
         "restart_count": restart_count,
     }
     if request_body:
@@ -114,7 +141,9 @@ def start(
     _CANCELED_PROJECTS.discard(project_path.name)
     _CANCELED_TRACES.discard(trace_id)
     _RUNNING_TRACES[project_path.name] = trace_id
-    return save(project_path, data)
+    out = save(project_path, data)
+    _emit(project_path, out)
+    return out
 
 
 def complete(project_path: Path, result: dict[str, Any]) -> dict[str, Any]:
@@ -127,6 +156,7 @@ def complete(project_path: Path, result: dict[str, Any]) -> dict[str, Any]:
     data["finished_at"] = _now_iso()
     out = save(project_path, data)
     _RUNNING_TRACES.pop(project_path.name, None)
+    _emit(project_path, out)
     return out
 
 
@@ -144,6 +174,7 @@ def fail(project_path: Path, error: str, *, trace_id: str | None = None, extra: 
         data.update({k: v for k, v in extra.items() if v is not None and k != "status"})
     out = save(project_path, data)
     _RUNNING_TRACES.pop(project_path.name, None)
+    _emit(project_path, out)
     return out
 
 
@@ -231,7 +262,7 @@ def public_summary(project_path: Path) -> dict[str, Any]:
     out = {k: data.get(k) for k in (
         "status", "kind", "trace_id", "started_at", "updated_at", "finished_at",
         "prompt", "label", "message", "filename", "url", "error",
-        "timeline_index", "prompt_id", "by_user_id", "by_user_name", "mode",
+        "timeline_index", "prompt_id", "by_user_id", "by_user_name", "by_avatar_url", "mode",
     )}
     if data.get("progress"):
         out["progress"] = data.get("progress")

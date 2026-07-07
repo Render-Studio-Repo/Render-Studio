@@ -893,6 +893,34 @@ def _notify_project(project_id: str, message: dict[str, Any]) -> None:
     hub.notify(project_id, {**message, "project_id": message.get("project_id") or project_id})
 
 
+def _broadcast_generation_update(project_path: Path) -> None:
+    if not project_path.is_dir():
+        return
+    summary = generation_service.public_summary(project_path)
+    project_id = project_path.name
+    payload = {
+        "type": "generation.updated",
+        "project_id": project_id,
+        "generation": summary,
+    }
+    _notify_project(project_id, payload)
+    team_id = None
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT team_id FROM project_access WHERE project_id = ? LIMIT 1",
+                (project_id,),
+            ).fetchone()
+            team_id = row["team_id"] if row else None
+    except Exception:
+        team_id = None
+    if team_id:
+        _notify_workspace(team_id, payload)
+
+
+generation_service.register_listener(_broadcast_generation_update)
+
+
 def _notify_workspace(team_id: str, message: dict[str, Any]) -> None:
     payload = {**message, "team_id": message.get("team_id") or team_id}
     hub.notify_workspace(team_id, payload)

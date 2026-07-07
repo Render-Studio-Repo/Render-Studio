@@ -5422,8 +5422,9 @@ label.btn { display: inline-flex; align-items: center; }
 
 .viewport-generation-user {
   position: absolute;
-  left: 14px;
-  top: 58px;
+  right: 14px;
+  top: 14px;
+  left: auto;
   z-index: 24;
   display: inline-flex;
   align-items: center;
@@ -8155,6 +8156,44 @@ section h2 {
   border-radius: 50%;
   animation: proj-loading-spin 0.75s linear infinite;
   flex-shrink: 0;
+}
+
+.proj-gen-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.proj-gen-avatar,
+.proj-gen-avatar--image {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(88, 166, 255, 0.18);
+  color: #79c0ff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  background-size: cover !important;
+  background-position: center !important;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.28);
+}
+
+.proj-gen-avatar--image {
+  color: transparent;
+}
+
+.proj-gen-ai {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.16);
+  color: #79c0ff;
+  font-size: 0.55rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
 .proj-loading-label {
