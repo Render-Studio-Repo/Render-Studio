@@ -1974,7 +1974,11 @@ promptImageDrop?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") promptImageInput?.click();
 });
 promptImageInput?.addEventListener("change", async (e) => {
-  await addPromptImages(e.target.files || []);
+  const selected = [...(e.target.files || [])];
+  const dxfFiles = selected.filter((file) => /\.dxf$/i.test(file.name));
+  const imageFiles = selected.filter((file) => !/\.dxf$/i.test(file.name));
+  if (dxfFiles.length) await addPromptDxfFiles(dxfFiles);
+  if (imageFiles.length) await addPromptImages(imageFiles);
   e.target.value = "";
 });
 
@@ -2025,22 +2029,39 @@ async function addPromptDxfFiles(files) {
       viewerOverlay?.showError?.(`${file.name} is too large for a DXF reference (max 8 MB).`);
       continue;
     }
+    let uploaded = null;
+    try {
+      await ensureProject();
+      const form = new FormData();
+      form.append("file", file, file.name);
+      uploaded = await api(`/api/projects/${projectId}/upload`, {
+        method: "POST",
+        body: form,
+      });
+      await refreshFiles();
+    } catch (err) {
+      console.warn("DXF project upload failed; falling back to inline DXF reference", err);
+      setEditStatus("warn", `Attached ${file.name} as inline DXF; project upload failed.`);
+    }
     const text = await file.text();
-    const stem = file.name.replace(/\.dxf$/i, "");
-    const id = `dxf:${stem}:${Date.now()}`;
+    const filename = uploaded?.filename || file.name;
+    const stem = filename.replace(/\.dxf$/i, "");
+    const id = `dxf:${projectId || "project"}:${filename}`;
     const token = `@${stem.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "dxf"}`;
     const truncated = text.length > MAX_DXF_CHARS;
     composer.addReference({
       id,
       type: "dxf",
       token,
-      label: file.name,
-      filename: file.name,
+      label: filename,
+      filename,
       stem,
       format: "dxf",
       text_content: truncated ? text.slice(0, MAX_DXF_CHARS) : text,
       text_truncated: truncated,
+      projectId,
     });
+    setEditStatus("ok", `Attached DXF reference ${filename}.`);
   }
   if (!restoringModelPromptState) saveActiveModelPromptState();
 }

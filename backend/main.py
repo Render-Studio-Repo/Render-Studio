@@ -1936,7 +1936,15 @@ def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[
     for ref in refs:
         if str(ref.get("type") or "").lower() != "dxf":
             continue
-        name = str(ref.get("filename") or "").strip()
+        name = Path(str(ref.get("filename") or ref.get("label") or "")).name.strip()
+        if name and not name.lower().endswith(".dxf"):
+            name = f"{Path(name).stem or 'reference'}.dxf"
+        text_content = ref.get("text_content")
+        if name and isinstance(text_content, str) and text_content.strip():
+            target = project_path / name
+            if not target.is_file():
+                target.write_text(text_content, encoding="utf-8", errors="ignore")
+                project_store.touch_project(project_path)
         if name and name not in seen:
             seen.add(name)
             candidates.append(name)
