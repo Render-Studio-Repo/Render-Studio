@@ -708,6 +708,8 @@ def _should_use_dxf_mold_template(
     context: dict[str, Any] | None,
     prompt: str,
 ) -> bool:
+    if _looks_like_dxf_connector(source, prompt, ""):
+        return False
     if re.search(r"\bmold\b", prompt or "", re.I):
         return True
     layers: list[str] = []
@@ -718,6 +720,15 @@ def _should_use_dxf_mold_template(
     if "import_dxf" in source and "_collect_dxf_geometry" not in source and len(layers) >= 2:
         return True
     return False
+
+
+def _looks_like_dxf_connector(source: str, prompt: str, dxf_filename: str = "") -> bool:
+    text = " ".join([prompt or "", dxf_filename or "", source or ""])
+    return bool(re.search(
+        r"\b(connector|snap|clip|bracket|fixture|robot|socket|tab|flex|male|female|clearance|snap_bumps|part)\b",
+        text,
+        re.I,
+    ))
 
 
 def _prompt_needs_semantic_dxf_model(prompt: str) -> bool:
@@ -1001,9 +1012,18 @@ def _maybe_rewrite_incomplete_dxf_source(
         )
     )
     naive_import = "import_dxf" in source and "_extrude_polyline" not in source
+    connector_like = _looks_like_dxf_connector(source, prompt, dxf_filename)
     use_mold = _should_use_dxf_mold_template(source, context, prompt)
 
-    if not (helper_missing or dxf_helper_missing or config_missing or uses_custom_dxf_parser or (naive_import and use_mold)):
+    canonical_mold_fallback = "mold_from_dxf" in source and "outline_layers" in source and "No outline polylines found in DXF" in source
+    if not (
+        helper_missing
+        or dxf_helper_missing
+        or config_missing
+        or uses_custom_dxf_parser
+        or (naive_import and use_mold)
+        or (connector_like and canonical_mold_fallback)
+    ):
         return source, None
 
     thickness = 25.0
@@ -1015,6 +1035,17 @@ def _maybe_rewrite_incomplete_dxf_source(
             continue
     label = "mold_from_dxf" if use_mold or re.search(r"\bmold\b", prompt or "", re.I) else "dxf_model"
     outline_layers, cavity_layers, hole_layers = _dxf_layer_sets_from_context(context, prompt)
+    if connector_like:
+        note = (
+            "Rewrote DXF source to a connector/part layer parser because this is a connector-style drawing, "
+            "not a mold outline/cavity drawing."
+            if canonical_mold_fallback
+            else "Rewrote incomplete semantic DXF source to a layer-aware connector/part builder because "
+            f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
+            f"{'...' if len(undefined) > 8 else ''}."
+        )
+        return _canonical_dxf_connector_source(dxf_filename, thickness=min(thickness, 12.0), label="dxf_connector"), note
+
     if use_mold:
         note = (
             "Rewrote DXF source to a layer-aware mold builder (outline extrude + cavity/hole cuts) because "
@@ -1033,11 +1064,6 @@ def _maybe_rewrite_incomplete_dxf_source(
         ), note
 
     if _prompt_needs_semantic_dxf_model(prompt):
-        connector_like = re.search(
-            r"\b(connector|snap|clip|bracket|fixture|robot|socket|tab|flex|part)\b",
-            " ".join([prompt or "", dxf_filename or "", source or ""]),
-            re.I,
-        )
         if connector_like or dxf_helper_missing or helper_missing:
             note = (
                 "Rewrote incomplete semantic DXF source to a layer-aware connector/part builder because "
@@ -1950,7 +1976,7 @@ def _run_text_to_cad_v2(
                         f"Full error:\n{detail}"
                     )
                 else:
-            repair_note = f"scripts/step failed:\n{detail}"
+                    repair_note = f"scripts/step failed:\n{detail}"
             trace_add("error", f"[2.0/text-to-cad] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
             continue
 
