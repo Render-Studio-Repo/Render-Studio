@@ -3622,6 +3622,7 @@ body.canvas-design-tab .main-column {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   pointer-events: none;
   box-shadow: 0 2px 7px rgba(0, 0, 0, 0.35);
+  opacity: 1;
 }
 
 .wiring-pin--label-left::after {
@@ -3671,9 +3672,16 @@ body.canvas-design-tab .main-column {
 
 .wiring-pin:hover,
 .wiring-pin-hover {
-  transform: scale(1.35);
+  transform: scale(1.2);
   background: #58a6ff;
   box-shadow: 0 0 6px #58a6ff;
+}
+
+.wiring-pin--labeled:hover::after,
+.wiring-pin--labeled.wiring-pin-hover::after,
+.wiring-pin--labeled.wiring-pin-active::after {
+  opacity: 1;
+  border-color: rgba(88, 166, 255, 0.85);
 }
 
 .wiring-pin-hole {
@@ -3957,6 +3965,19 @@ body.canvas-design-tab .main-column {
   top: 48%;
   height: 2px;
   background: #ccc;
+}
+
+.wiring-bb-holes {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 22%;
+  bottom: 10%;
+  opacity: 0.55;
+  pointer-events: none;
+  background-image: radial-gradient(circle, #8b949e 2px, transparent 2.5px);
+  background-size: 6.29% 7.69%;
+  background-position: 0 0;
 }
 
 .wiring-bb-hole {

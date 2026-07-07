@@ -79,7 +79,7 @@ import { createProjectTree } from "./project-tree.js?v=20260706-dxf-drawings";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260707-wiring-load-fast";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260707-pin-labels";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
 import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-sketch-fix";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
@@ -10566,11 +10566,14 @@ function handleRealtimeEvent(msg = {}) {
 async function loadProject(id) {
   const loadGen = ++loadProjectGeneration;
   setProjectLoading(id, true);
+  const wiringMode = workspaceModes?.isWiring?.() ?? false;
+  let wiringLoadPromise = null;
   try {
     saveActiveModelPromptState();
     const prevProjectId = projectId;
     prefetchWiringForProject(id);
     projectId = id;
+    if (wiringMode) wiringLoadPromise = wiringSim.load();
     renderPromptAiKeySelect(aiStatus, { preserveSelection: prevProjectId === id });
     wiringDebug.setProjectId?.(id);
     ribbon?.setProjectId?.(id);
@@ -10630,12 +10633,18 @@ async function loadProject(id) {
     });
     renderProjectList();
     renderProjectBrowser(browser);
-    await hydrateBrowserBodyChildren(browser);
-    if (currentUser) await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
+    if (wiringMode) {
+      void hydrateBrowserBodyChildren(browser);
+    } else {
+      await hydrateBrowserBodyChildren(browser);
+    }
+    if (currentUser && !wiringMode) {
+      await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
+    }
     syncSketchVisibilityFromTree(browser);
     const comps = browser.components || [];
-    prepareViewportForModels();
-    if (comps.length) {
+    if (!wiringMode) prepareViewportForModels();
+    if (comps.length && !wiringMode) {
       const alreadyLoaded = prevProjectId === id && componentsAlreadyLoaded(comps, data.latest_file);
       if (alreadyLoaded) {
         for (const comp of comps) {
@@ -10661,12 +10670,17 @@ async function loadProject(id) {
         });
         if (currentUser) await refreshPromptHistory();
       }
-  } else {
+    } else if (!comps.length) {
       showEmptyProjectViewport();
       if (currentUser) await refreshPromptHistory();
+    } else if (currentUser) {
+      await refreshPromptHistory();
     }
     if (loadGen !== loadProjectGeneration) return;
     safeRestoreActiveModelPromptState();
+    if (wiringMode && wiringLoadPromise) {
+      await wiringLoadPromise;
+    }
     if (currentUser) await resumeGenerationIfNeeded(id, data.generation);
     if (loadGen !== loadProjectGeneration) return;
     // If resumeGenerationIfNeeded applied a completion for this project,
@@ -10679,9 +10693,9 @@ async function loadProject(id) {
     syncStopButtonVisibility();
     if (!currentUser) {
       showAiComposePanel();
-    } else if (workspaceModes.isWiring()) {
+    } else if (wiringMode) {
       clearWiringPrompts();
-      wiringSim.load();
+      if (!wiringLoadPromise) await wiringSim.load();
       refreshWiringPromptHistory();
       showAiComposePanel();
     } else {

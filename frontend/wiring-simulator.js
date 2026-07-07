@@ -987,15 +987,27 @@ export function createWiringSimulator(options = {}) {
     if (loadInFlight?.projectId === projectId) return loadInFlight.promise;
 
     const run = async () => {
-      if (
-        schematicProjectId === projectId
-        && (localEditVersion > savedVersion || saveInFlight)
-      ) {
+      const needsSave = schematicProjectId === projectId
+        && (localEditVersion > savedVersion || saveInFlight);
+      const prefetch = getWiringPrefetch?.();
+      const cached = prefetch?.projectId === projectId ? prefetch.data : null;
+
+      if (!needsSave && cached) {
+        clearHistory();
+        applySchematic(cached, { save: false, skipHistory: true, deferWires: true });
+        schematicProjectId = projectId;
+        savedVersion = localEditVersion;
+        requestAnimationFrame(fitView);
+        notifyHistoryChange();
+        return;
+      }
+
+      if (needsSave) {
         const saved = await save();
         if (!saved) return;
       }
       clearHistory();
-      const data = await fetchWiringData(projectId);
+      const data = cached || await fetchWiringData(projectId);
       applySchematic(data, { save: false, skipHistory: true, deferWires: true });
       schematicProjectId = projectId;
       savedVersion = localEditVersion;
@@ -1301,21 +1313,11 @@ export function createWiringSimulator(options = {}) {
   }
 
   function breadboardMarkup() {
-    const cols = 15;
-    const rows = "abcdefghij";
-    let holes = "";
-    for (let r = 0; r < rows.length; r++) {
-      for (let c = 1; c <= cols; c++) {
-        const x = 0.06 + ((c - 1) / (cols - 1)) * 0.88;
-        const y = 0.22 + (r / (rows.length - 1)) * 0.68;
-        holes += `<span class="wiring-bb-hole" style="left:${x * 100}%;top:${y * 100}%"></span>`;
-      }
-    }
     return `<div class="wiring-vis-breadboard">
       <span class="wiring-bb-rail wiring-bb-rail-plus"></span>
       <span class="wiring-bb-rail wiring-bb-rail-minus"></span>
       <span class="wiring-bb-divider"></span>
-      ${holes}
+      <span class="wiring-bb-holes" aria-hidden="true"></span>
     </div>`;
   }
 
@@ -1507,25 +1509,38 @@ export function createWiringSimulator(options = {}) {
     return el;
   }
 
+  function pinLabelText(pin) {
+    if (pin.alias || pin.hole) return "";
+    return String(pin.displayLabel || pin.label || pin.id || "").trim();
+  }
+
+  function applyPinLabelClasses(el, pin) {
+    const text = pinLabelText(pin);
+    if (!text) return;
+    el.dataset.pinLabel = text;
+    el.classList.add("wiring-pin--labeled");
+    if (pin.compactLabel) {
+      el.classList.add("wiring-pin--label-inside");
+      return;
+    }
+    if (pin.x < 0.25) el.classList.add("wiring-pin--label-right");
+    else if (pin.x > 0.75) el.classList.add("wiring-pin--label-left");
+    else el.classList.add(pin.y > 0.5 ? "wiring-pin--label-top" : "wiring-pin--label-bottom");
+  }
+
   function renderPin(c, pin) {
     if (pin.alias) return null;
     const p = document.createElement("button");
     p.type = "button";
     p.className = "wiring-pin";
-    if (pin.label && !pin.hole) p.dataset.pinLabel = pin.displayLabel || pin.label;
-    if (["motor", "stepper", "motor-driver", "servo-motor"].includes(c.type)) {
-      p.classList.add("wiring-pin--labeled");
-      if (pin.compactLabel) p.classList.add("wiring-pin--label-inside");
-      else if (pin.x < 0.25) p.classList.add("wiring-pin--label-right");
-      else if (pin.x > 0.75) p.classList.add("wiring-pin--label-left");
-      else p.classList.add(pin.y > 0.5 ? "wiring-pin--label-top" : "wiring-pin--label-bottom");
-    }
+    applyPinLabelClasses(p, pin);
     if (pin.hole) p.classList.add("wiring-pin-hole");
     if (pin.rail === "plus") p.classList.add("wiring-pin-rail", "wiring-pin-power");
     if (pin.rail === "minus") p.classList.add("wiring-pin-rail", "wiring-pin-ground");
     p.dataset.componentId = c.id;
     p.dataset.pinId = pin.id;
-    p.title = pin.title || pin.label || pin.id;
+    if (pin.title) p.title = pin.title;
+    else if (!p.classList.contains("wiring-pin--labeled")) p.title = pin.label || pin.id;
     p.style.left = `${c.x + c.w * pin.x}px`;
     p.style.top = `${c.y + c.h * pin.y}px`;
     p.addEventListener("pointerdown", (e) => {
@@ -1661,6 +1676,83 @@ export function createWiringSimulator(options = {}) {
     parent.appendChild(inner);
   }
 
+  function wireById(wireId) {
+    return wires.find((w) => w.id === wireId) || null;
+  }
+
+  function wireHandleFor(wire) {
+    const wireIndex = wires.indexOf(wire);
+    if (wireIndex < 0) return null;
+    const a = pinPosition(wire.from.componentId, wire.from.pinId);
+    const b = pinPosition(wire.to.componentId, wire.to.pinId);
+    if (!a || !b) return null;
+    return wireGeometry(wire, wireIndex, a, b).handle;
+  }
+
+  function wireGroupFromEvent(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    return target?.closest("[data-wire-id]") || null;
+  }
+
+  function bindWireEvents() {
+    if (wiresSvg.dataset.eventsBound === "1") return;
+    wiresSvg.dataset.eventsBound = "1";
+
+    wiresSvg.addEventListener("pointerdown", (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (!target?.classList.contains("wiring-wire-handle")) return;
+      const g = wireGroupFromEvent(e);
+      const wire = g ? wireById(g.dataset.wireId) : null;
+      const handle = wire ? wireHandleFor(wire) : null;
+      if (wire && handle) startWireControlDrag(wire, handle, e);
+    });
+
+    wiresSvg.addEventListener("click", (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const g = wireGroupFromEvent(e);
+      if (!g || !target) return;
+      const wire = wireById(g.dataset.wireId);
+      if (!wire) return;
+      e.stopPropagation();
+      if (suppressNextWireClick) {
+        suppressNextWireClick = false;
+        return;
+      }
+      if (target.classList.contains("wiring-wire-label-bg")
+        || target.classList.contains("wiring-wire-label")) {
+        e.preventDefault();
+        openWireEditor(wire.id, wireHandleFor(wire));
+        return;
+      }
+      if (target.classList.contains("wiring-wire-handle")) {
+        selectWire(wire.id);
+        renderWires();
+        renderSelectedParts();
+        return;
+      }
+      if (target.classList.contains("wiring-wire-path")) {
+        selectWire(wire.id, e.shiftKey || e.metaKey || e.ctrlKey);
+        renderWires();
+        renderSelectedParts();
+      }
+    });
+
+    wiresSvg.addEventListener("dblclick", (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const g = wireGroupFromEvent(e);
+      if (!g || !target) return;
+      const wire = wireById(g.dataset.wireId);
+      if (!wire) return;
+      if (!target.classList.contains("wiring-wire-path")
+        && !target.classList.contains("wiring-wire-label")
+        && !target.classList.contains("wiring-wire-label-bg")) return;
+      e.stopPropagation();
+      e.preventDefault();
+      openWireEditor(wire.id, wireHandleFor(wire));
+    });
+  }
+  bindWireEvents();
+
   function startWireControlDrag(wire, handle, event) {
     event.stopPropagation();
     event.preventDefault();
@@ -1706,21 +1798,6 @@ export function createWiringSimulator(options = {}) {
         title.textContent = wire.label;
         path.appendChild(title);
       }
-      path.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (suppressNextWireClick) {
-          suppressNextWireClick = false;
-          return;
-        }
-        selectWire(wire.id, e.shiftKey || e.metaKey || e.ctrlKey);
-        renderWires();
-        renderSelectedParts();
-      });
-      path.addEventListener("dblclick", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        openWireEditor(wire.id, handle);
-      });
       g.appendChild(path);
 
       if (focusWireIds.has(wire.id)) {
@@ -1750,33 +1827,12 @@ export function createWiringSimulator(options = {}) {
         bg.setAttribute("width", textW);
         bg.setAttribute("height", 18);
         bg.setAttribute("rx", 5);
-        bg.addEventListener("pointerdown", (e) => {
-          e.stopPropagation();
-        });
-        bg.addEventListener("click", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          openWireEditor(wire.id, handle);
-        });
         g.appendChild(bg);
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
         label.setAttribute("class", "wiring-wire-label");
         label.setAttribute("x", handle.x);
         label.setAttribute("y", handle.y - 14);
         label.textContent = wire.label;
-        label.addEventListener("pointerdown", (e) => {
-          e.stopPropagation();
-        });
-        label.addEventListener("click", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          openWireEditor(wire.id, handle);
-        });
-        label.addEventListener("dblclick", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          openWireEditor(wire.id, handle);
-        });
         g.appendChild(label);
       }
 
@@ -1785,17 +1841,6 @@ export function createWiringSimulator(options = {}) {
       handleEl.setAttribute("cx", handle.x);
       handleEl.setAttribute("cy", handle.y);
       handleEl.setAttribute("r", wire.id === selectedWireId || selectedWireIds.has(wire.id) ? 7 : 5);
-      handleEl.addEventListener("pointerdown", (e) => startWireControlDrag(wire, handle, e));
-      handleEl.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (suppressNextWireClick) {
-          suppressNextWireClick = false;
-          return;
-        }
-        selectWire(wire.id);
-        renderWires();
-        renderSelectedParts();
-      });
       g.appendChild(handleEl);
 
       frag.appendChild(g);
