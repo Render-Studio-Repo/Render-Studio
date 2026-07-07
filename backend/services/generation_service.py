@@ -85,7 +85,10 @@ def save(project_path: Path, data: dict[str, Any]) -> dict[str, Any]:
         return {**data, "status": "canceled", "error": data.get("error") or "Generation canceled."}
     data = dict(data)
     data["updated_at"] = _now_iso()
-    _path(project_path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+    path = _path(project_path)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp_path.replace(path)
     return data
 
 
