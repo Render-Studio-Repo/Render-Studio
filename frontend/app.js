@@ -449,6 +449,8 @@ async function applyGenerationComplete(gen, pid = projectId) {
     );
     saveActiveModelPromptState();
     selectedFile = gen.filename;
+    const hiddenAfterReveal = setStoredComponentHidden(pid, gen.filename, false);
+    projectTree.setHidden?.([...hiddenAfterReveal]);
     await refreshFiles();
     const placedFiles = (gen.placed_parts || []).map((part) => part.filename).filter(Boolean);
     await reloadViewportFromProject({
@@ -508,6 +510,8 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   );
   saveActiveModelPromptState();
   selectedFile = msg.filename;
+  const hiddenAfterReveal = setStoredComponentHidden(pid, msg.filename, false);
+  projectTree.setHidden?.([...hiddenAfterReveal]);
   await refreshFiles();
   const placedFiles = (msg.placed_parts || []).map((part) => part.filename).filter(Boolean);
   await reloadViewportFromProject({

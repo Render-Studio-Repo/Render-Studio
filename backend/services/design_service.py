@@ -1479,6 +1479,10 @@ top_edge_chamfer = min(1.0, max(0.35, wall_thickness * 0.3))
 arduino_floor_relief_depth = min(1.2, max(0.6, base_thickness * 0.35))
 arduino_floor_relief_length = min(inside_length * 0.8, arduino_board_length + 8.0)
 arduino_floor_relief_width = min(inside_width - 6.0, arduino_board_width + 6.0)
+marker_thickness = 0.8
+label_box = "enclosure_box"
+label_arduino_marker = "arduino_mount_zone"
+label_nema_marker = "nema17_mount_zone"
 nema_mount_hole_positions = [
     (nema_center_x - nema_mount_spacing / 2.0, nema_center_y - nema_mount_spacing / 2.0),
     (nema_center_x + nema_mount_spacing / 2.0, nema_center_y - nema_mount_spacing / 2.0),
@@ -1594,8 +1598,27 @@ def gen_step():
                 chamfer(top_edges, length=top_edge_chamfer)
 
     body = part_builder.part
-    body.label = model_label
-    return body
+    body.label = label_box
+
+    arduino_marker = Box(
+        arduino_floor_relief_length,
+        arduino_floor_relief_width,
+        marker_thickness,
+        align=(Align.CENTER, Align.CENTER, Align.MIN),
+    ).located(Location((arduino_center_x, arduino_center_y, base_thickness + 0.02)))
+    arduino_marker.label = label_arduino_marker
+
+    nema_marker = Box(
+        nema_face_size,
+        nema_face_size,
+        marker_thickness,
+        align=(Align.CENTER, Align.CENTER, Align.MIN),
+    ).located(Location((nema_center_x, nema_center_y, base_thickness + 0.02)))
+    nema_marker.label = label_nema_marker
+
+    assembly = Compound(children=[body, arduino_marker, nema_marker], label=model_label)
+    assembly.label = model_label
+    return assembly
 '''
 
 
