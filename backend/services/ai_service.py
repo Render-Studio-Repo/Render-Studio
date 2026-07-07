@@ -1017,6 +1017,8 @@ class AIService:
             "gen_step() must return the STEP-ready shape or labeled compound; do not write file paths inside gen_step().\n"
             "Use millimeters. Define every named parameter at module scope before gen_step(), including file names, "
             "thicknesses, labels, and helper functions you reference.\n"
+            "If you assign shape.label, also define model_label or part_label at module scope (for example "
+            'model_label = "cooling_fan").\n'
             "When importing a project DXF with import_dxf(), set a module-level constant such as "
             'dxf_filename = "part.dxf" and use Path(dxf_filename) inside gen_step().\n'
             "Follow the CAD brief exactly.\n"

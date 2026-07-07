@@ -211,10 +211,58 @@ _DXF_CONFIG_NAMES = frozenset({
 })
 
 
+def _assignment_target_names(target: ast.AST) -> set[str]:
+    names: set[str] = set()
+    if isinstance(target, ast.Name):
+        names.add(target.id)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            names.update(_assignment_target_names(elt))
+    return names
+
+
+def _function_assigned_names(func: ast.FunctionDef) -> set[str]:
+    names: set[str] = set()
+    for arg in (*func.args.args, *func.args.kwonlyargs):
+        names.add(arg.arg)
+    if func.args.vararg:
+        names.add(func.args.vararg.arg)
+    if func.args.kwarg:
+        names.add(func.args.kwarg.arg)
+    for node in ast.walk(func):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                names.update(_assignment_target_names(target))
+        elif isinstance(node, ast.AnnAssign) and node.target is not None:
+            names.update(_assignment_target_names(node.target))
+        elif isinstance(node, ast.For):
+            names.update(_assignment_target_names(node.target))
+        elif isinstance(node, ast.With):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    names.update(_assignment_target_names(item.optional_vars))
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            names.add(node.name)
+    return names
+
+
+def _config_like_name(name: str) -> bool:
+    return (
+        name in _DXF_CONFIG_NAMES
+        or name.endswith("_layer")
+        or name.endswith("_label")
+        or name.endswith("_filename")
+        or name.endswith("_path")
+        or name.startswith("_")
+    )
+
+
 def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
     safe_label = re.sub(r"[^a-zA-Z0-9_]+", "_", base).strip("_") or "model"
-    if name in {"model_label", "part_label", "solid_label"}:
+    if name in {"model_label", "part_label", "solid_label"} or name.endswith("_label"):
         return f'"{safe_label}"'
+    if name.endswith("_filename"):
+        return f'"{safe_label}.step"'
     if name in {"model_thickness", "mold_thickness", "w_extrude_depth"}:
         dims = _requested_mm_dimensions(prompt)
         if len(dims) >= 3:
@@ -235,9 +283,38 @@ def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
     return None
 
 
+def _missing_config_constants(source: str) -> list[str]:
+    """Module constants/helpers referenced anywhere in generated source but not defined."""
+    tree = ast.parse(source)
+    defined = _defined_module_names(source)
+    star_import_roots: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            if any(alias.name == "*" for alias in node.names):
+                star_import_roots.add((node.module or "").split(".")[0])
+
+    skip = set(dir(__builtins__)) | {"True", "False", "None"}
+    missing: set[str] = set()
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        local_defined = _function_assigned_names(node)
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Name) or not isinstance(sub.ctx, ast.Load):
+                continue
+            name = sub.id
+            if name in defined or name in local_defined or name in skip:
+                continue
+            if "build123d" in star_import_roots and not _config_like_name(name):
+                continue
+            if _config_like_name(name):
+                missing.add(name)
+    return sorted(missing)
+
+
 def _augment_common_constants(source: str, *, base: str, prompt: str) -> str:
     """Inject missing module-level constants referenced by gen_step()."""
-    undefined = _gen_step_local_undefined_names(source)
+    undefined = _missing_config_constants(source)
     if not undefined:
         return source
     defined = _defined_module_names(source)
@@ -264,6 +341,7 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
         return []
 
     defined = _defined_module_names(source)
+    local_defined = _function_assigned_names(gen_step)
     star_import_roots: set[str] = set()
     for node in tree.body:
         if isinstance(node, ast.ImportFrom):
@@ -274,6 +352,7 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
     for node in ast.walk(gen_step):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             referenced.add(node.id)
+    referenced -= local_defined
 
     skip = set(dir(__builtins__)) | {"True", "False", "None"}
     if "build123d" in star_import_roots:
@@ -283,7 +362,7 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
             for name in referenced
             if name not in defined
             and name not in skip
-            and (name.startswith("_") or name in _DXF_CONFIG_NAMES or name.endswith("_layer"))
+            and _config_like_name(name)
         )
 
     return sorted(name for name in referenced if name not in defined and name not in skip)
@@ -1671,8 +1750,10 @@ def _looks_like_cooking_appliance(prompt: str, images: list[dict[str, Any]] | No
 
 
 def _max_repairs_for_speed(speed: str | None) -> int:
-    """Return extra repair attempts beyond the first try (0 = one attempt only)."""
-    return 0
+    """Return extra repair attempts beyond the first try."""
+    if (speed or "").strip().lower() in {"quality", "pro", "slow"}:
+        return 3
+    return 2
 
 
 def _maybe_run_cad_inspect(result: dict[str, Any], project_path: Path, skills: list[str] | None, trace_id: str | None) -> None:
