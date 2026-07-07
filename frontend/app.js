@@ -89,7 +89,7 @@ import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
-import { createRiggingEditor } from "./rigging-editor.js?v=20260630-rigging-post-save";
+import { createRiggingEditor } from "./rigging-editor.js?v=20260707-urdf-sliders";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
 
 const API = "";
@@ -137,6 +137,7 @@ function invalidateWiringPrefetch() {
   wiringLoadCache.data = null;
 }
 let lastProjectBrowser = { components: [], sketches: [], wiring: [] };
+let lastProjectFiles = [];
 let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
@@ -156,6 +157,15 @@ let suppressAiComposePanelSwitch = false;
 let loadModelGeneration = 0;
 let loadProjectGeneration = 0;
 let currentSim = null;
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 const loadingProjectIds = new Set();
 let generationPollTimer = null;
 let generationWatchPid = null;
@@ -5660,6 +5670,68 @@ function setRightTab(tab) {
     panel.classList.toggle("active", panel.dataset.rightPanel === tab);
   });
   document.getElementById("project-cost-thumb")?.classList.toggle("hidden", tab !== "prompt");
+  if (tab === "urdf") renderUrdfPanel();
+}
+
+function renderUrdfPanel() {
+  const artifactList = document.getElementById("urdf-artifact-list");
+  const sliders = document.getElementById("urdf-joint-sliders");
+  const summary = document.getElementById("urdf-joint-summary");
+  const status = document.getElementById("urdf-panel-status");
+  const artifacts = (lastProjectFiles || []).filter((file) => /\.(urdf|srdf|sdf|mjcf|xml|animation\.json)$/i.test(String(file)));
+  if (artifactList) {
+    artifactList.innerHTML = artifacts.length
+      ? artifacts.map((file) => `<a class="urdf-artifact-chip" href="/api/projects/${projectId}/files/${encodeURIComponent(file)}" target="_blank" rel="noopener">${file}</a>`).join("")
+      : `<p class="muted small">No URDF/SRDF/SDF artifacts yet. Generate a rig or export URDF from this tab.</p>`;
+  }
+  const joints = riggingEditor?.getJointControls?.() || [];
+  if (summary) summary.textContent = joints.length ? `${joints.length} movable joint${joints.length === 1 ? "" : "s"}` : "No movable joints";
+  if (!sliders) return;
+  if (!joints.length) {
+    sliders.innerHTML = `<p class="cad-param-hint">Open Rigging or generate a robot rig to show Jake-style joint sliders here.</p>`;
+    if (status) {
+      status.className = "status";
+      status.textContent = "";
+    }
+    return;
+  }
+  sliders.innerHTML = joints.map((joint) => {
+    const deg = Math.round((Number(joint.value) || 0) * 180 / Math.PI);
+    const lower = Math.round((Number(joint.lower) || -3.14) * 180 / Math.PI);
+    const upper = Math.round((Number(joint.upper) || 3.14) * 180 / Math.PI);
+    return `<label class="cad-param-row urdf-joint-row" data-joint-id="${joint.id}">
+      <span>${escapeHtml(joint.name)}</span>
+      <input type="range" min="${lower}" max="${upper}" step="1" value="${deg}" data-urdf-joint="${joint.id}" />
+      <input type="number" step="1" value="${deg}" data-urdf-joint-number="${joint.id}" />
+      <em>deg</em>
+    </label>`;
+  }).join("");
+}
+
+function bindUrdfPanel() {
+  document.getElementById("btn-urdf-refresh")?.addEventListener("click", () => renderUrdfPanel());
+  document.getElementById("btn-urdf-open-rigging")?.addEventListener("click", () => {
+    workspaceModes?.setDesignTab?.("RIGGING");
+    renderUrdfPanel();
+  });
+  document.getElementById("btn-urdf-play")?.addEventListener("click", () => riggingEditor?.togglePlay?.());
+  document.getElementById("btn-urdf-export")?.addEventListener("click", async () => {
+    await riggingEditor?.exportUrdf?.();
+    await refreshFiles();
+    renderUrdfPanel();
+  });
+  document.getElementById("urdf-joint-sliders")?.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const id = input.dataset.urdfJoint || input.dataset.urdfJointNumber;
+    if (!id) return;
+    const deg = Number(input.value) || 0;
+    const row = input.closest("[data-joint-id]");
+    row?.querySelectorAll(`[data-urdf-joint="${CSS.escape(id)}"], [data-urdf-joint-number="${CSS.escape(id)}"]`).forEach((el) => {
+      if (el !== input) el.value = String(deg);
+    });
+    riggingEditor?.setJointValue?.(id, deg * Math.PI / 180);
+  });
 }
 
 /** Right panel → AI (CAD or Wiring) with Compose sub-tab active. */
@@ -5690,6 +5762,7 @@ function activateArchitectPrompt(kind = "room") {
 document.querySelectorAll("[data-right-tab]").forEach((btn) => {
   btn.addEventListener("click", () => setRightTab(btn.dataset.rightTab));
 });
+bindUrdfPanel();
 
 async function currentProjectModelFiles() {
   if (!projectId) return [];
@@ -11462,6 +11535,7 @@ async function refreshFiles() {
   if (!projectId) await ensureProject();
   await fetchAllProjects();
   const data = await api(`/api/projects/${projectId}`);
+  lastProjectFiles = data.files || [];
   timelineData = data.timeline;
   timeline.setTimeline(data.timeline);
   renderProjectList();
@@ -11472,6 +11546,7 @@ async function refreshFiles() {
   syncSketchVisibilityFromTree(browser);
   if (selectedFile) projectTree.setSelected(selectedFile);
   syncPromptTargetUI();
+  if (document.querySelector('[data-right-panel="urdf"]')?.classList.contains("active")) renderUrdfPanel();
   refreshPartProfiles();
 }
 

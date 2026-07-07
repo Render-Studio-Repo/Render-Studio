@@ -739,6 +739,46 @@ export function createRiggingEditor({
     scheduleSave();
   }
 
+  function jointAxisIndex(bone) {
+    const axis = asVec3(bone?.jointAxis, [0, 0, 1]);
+    return Math.abs(axis[0]) > 0.5 ? 0 : Math.abs(axis[1]) > 0.5 ? 1 : 2;
+  }
+
+  function jointControls() {
+    return bones
+      .filter((bone) => bone.jointType !== "fixed")
+      .map((bone) => {
+        const idx = jointAxisIndex(bone);
+        const lim = bone.limits || { lower: -3.14, upper: 3.14 };
+        const rotation = asVec3(bone.rotation);
+        return {
+          id: bone.id,
+          name: bone.name || bone.id,
+          jointType: bone.jointType || "revolute",
+          axis: asVec3(bone.jointAxis, [0, 0, 1]),
+          lower: Number.isFinite(Number(lim.lower)) ? Number(lim.lower) : -3.14,
+          upper: Number.isFinite(Number(lim.upper)) ? Number(lim.upper) : 3.14,
+          value: Number(rotation[idx]) || 0,
+        };
+      });
+  }
+
+  function setJointValue(id, valueRad) {
+    const bone = boneById(id);
+    if (!bone || bone.jointType === "fixed") return false;
+    const idx = jointAxisIndex(bone);
+    const lim = bone.limits || { lower: -3.14, upper: 3.14 };
+    const lower = Number.isFinite(Number(lim.lower)) ? Number(lim.lower) : -3.14;
+    const upper = Number.isFinite(Number(lim.upper)) ? Number(lim.upper) : 3.14;
+    const value = Math.max(lower, Math.min(upper, Number(valueRad) || 0));
+    bone.rotation = asVec3(bone.rotation);
+    bone.rotation[idx] = value;
+    selectedId = id;
+    renderAll();
+    scheduleSave();
+    return true;
+  }
+
   function exportUrdfText() {
     const lines = ['<?xml version="1.0"?>', '<robot name="render3d_rig">'];
     for (const bone of bones) {
@@ -970,6 +1010,8 @@ export function createRiggingEditor({
     isActive: () => active,
     getTool: () => tool,
     getBones: () => bones,
+    getJointControls: jointControls,
+    setJointValue,
     getSelectedId: () => selectedId,
     togglePlay: () => animTimeline?.togglePlay(),
     setPlaying: (p) => (p ? startPlayback() : stopPlayback()),

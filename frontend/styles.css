@@ -1,3 +1,36 @@
+/* URDF / SRDF motion panel */
+.urdf-artifact-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.urdf-artifact-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--panel);
+  padding: 6px 10px;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.urdf-artifact-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.urdf-joint-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  padding: 10px;
+}
+
+.urdf-joint-row span {
+  text-transform: none;
+}
 :root {
   --bg: #0d1117;
   --panel: #161b22;

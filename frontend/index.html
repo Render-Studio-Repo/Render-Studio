@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260707-vgu-top-left" />
+  <link rel="stylesheet" href="/styles.css?v=20260707-urdf-tab" />
   <script type="importmap">
   {
     "imports": {
@@ -592,6 +592,7 @@
         <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
         <button type="button" class="right-panel-tab wiring-mode-tab" data-right-tab="wiring">Wiring</button>
         <button type="button" class="right-panel-tab rigging-mode-tab" data-right-tab="rigging">Rigging</button>
+        <button type="button" class="right-panel-tab urdf-mode-tab" data-right-tab="urdf">URDF/SRDF</button>
       </div>
       <div id="project-cost-thumb" class="project-cost-thumb" aria-live="polite">
         <div class="project-cost-thumb-head">
@@ -966,6 +967,32 @@
           <p class="muted small">Click a prompt to reuse its text and <strong>copy a chat reference ID</strong> (<code>@prompt:…</code>).</p>
           <p id="rigging-prompt-ref-status" class="prompt-ref-status hidden"></p>
           <div id="rigging-prompt-history-list" class="prompt-history-list"></div>
+        </div>
+      </section>
+
+      <section class="rigging-prompt-panel right-tab-panel" data-right-panel="urdf" id="urdf-prompt-panel">
+        <div class="panel-section-head rigging-panel-head">
+          <h2>URDF / SRDF Motion</h2>
+          <button type="button" id="btn-urdf-refresh" class="btn secondary small">Refresh</button>
+        </div>
+        <div class="prompt-pane active">
+          <p class="muted small">Jake-style robot controls: load generated URDF/SRDF artifacts, move joints with sliders, play the rigging timeline, and export URDF from the current rig.</p>
+          <div class="urdf-artifact-list" id="urdf-artifact-list"></div>
+          <div class="urdf-joint-panel">
+            <div class="cad-param-head">
+              <div>
+                <strong>Joints</strong>
+                <span id="urdf-joint-summary">No rig loaded</span>
+              </div>
+              <button type="button" class="btn secondary btn-compact" id="btn-urdf-open-rigging">Open Rigging</button>
+            </div>
+            <div id="urdf-joint-sliders" class="cad-param-list"></div>
+            <div class="cad-param-actions">
+              <button type="button" class="btn accent btn-compact" id="btn-urdf-play">Play / Pause</button>
+              <button type="button" class="btn secondary btn-compact" id="btn-urdf-export">Export URDF</button>
+            </div>
+          </div>
+          <div id="urdf-panel-status" class="status"></div>
         </div>
       </section>
 
@@ -1389,7 +1416,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260707-gen-user-badge"></script>
+  <script type="module" src="/app.js?v=20260707-urdf-tab"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
