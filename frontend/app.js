@@ -4366,6 +4366,7 @@ function handleDesignTabChange(tab) {
     exitArchitectMode();
   }
   if (tab === "SKETCH") {
+    setRightTab("sketch");
     setEditStatus("ok", "Sketch mode — click Create Sketch to enter locked 2D edit.");
   } else if (tab === "RIGGING") {
     setEditStatus("ok", "Rigging mode — Add Bone, Connect hierarchy, Save Rig.");
@@ -4375,6 +4376,7 @@ function handleDesignTabChange(tab) {
     exitCanvasTab();
     exitSketchMode();
     catalogPanel?.open?.();
+    setRightTab("prompt");
     setEditStatus("ok", "Catalog — search STEP models, compare supplier prices, and import parts.");
   } else if (tab === "CANVAS") {
     exitSketchMode();
@@ -4383,6 +4385,8 @@ function handleDesignTabChange(tab) {
   } else {
     exitCanvasTab();
     exitSketchMode();
+    setRightTab("prompt");
+    promptHistory.setTab("compose");
   }
   if (tab !== "CANVAS") ribbon?.setDesignTab(tab);
   app?.classList.toggle("sketch-design-tab", tab === "SKETCH");
@@ -10915,10 +10919,15 @@ async function loadProject(id) {
 
 async function createNewProject() {
   saveActiveModelPromptState();
-  const teamId = getSelectedWorkspaceId();
+  const teamId = getFolderTeamId();
   if (!teamId) {
-    alert("Create or select a workspace first.");
+    setEditStatus("error", "Could not find a workspace for the new project.");
     return;
+  }
+  writeSavedWorkspaceId(teamId);
+  const teamSelect = document.getElementById("team-select");
+  if (teamSelect && [...teamSelect.options].some((opt) => opt.value === teamId)) {
+    teamSelect.value = teamId;
   }
   const qs = `?team_id=${encodeURIComponent(teamId)}`;
   const { project_id, meta } = await api(`/api/projects${qs}`, { method: "POST" });

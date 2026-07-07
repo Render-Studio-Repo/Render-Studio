@@ -437,6 +437,16 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
 
 
 def _source_generation_repair_note(error: str) -> str:
+    if "DXF/VXF semantic modeling failed" in error:
+        return (
+            "The previous source failed because it treated the DXF/VXF like a flat sketch and extruded the whole drawing.\n"
+            "Repair by interpreting the drawing semantically. Use ezdxf to inspect modelspace entities/layers and build real 3D CAD:\n"
+            "- identify outer profiles, holes, cavities/pockets, bolt holes, flanges, tabs, panels, windows/cutouts, and separate physical parts;\n"
+            "- create named build123d solids for those features/bodies with real thickness/depth and booleans;\n"
+            "- return a labeled Compound/assembly of independent bodies when the drawing represents multiple parts;\n"
+            "- do not use import_dxf() + make_face() + extrude() as the final model unless the user explicitly asks for a flat plate.\n"
+            f"Original error:\n{error}"
+        )
     missing_match = re.search(
         r"gen_step\(\) references undefined names:\s*(.+)$",
         error,
@@ -459,7 +469,8 @@ def _source_generation_repair_note(error: str) -> str:
         "The previous Python source was incomplete because gen_step() called helper functions "
         "that were never defined in the same file.\n"
         f"Missing names: {', '.join(helper_names)}\n"
-        "Fix this by returning ONE complete Python file. Do not remove the calls unless you inline their full geometry logic.\n"
+        "Fix this by editing the existing source into ONE complete Python file. Either define the missing helpers above "
+        "gen_step() or inline their full geometry logic inside gen_step(). Do not restart from an unrelated model.\n"
         f"{examples}\n"
         "Every helper called by gen_step() must have a real function body before gen_step(); no stubs, no pass, no ellipsis.\n"
         f"Original error: {error}"
@@ -547,6 +558,60 @@ def _should_use_dxf_mold_template(
     if "import_dxf" in source and "_collect_dxf_geometry" not in source and len(layers) >= 2:
         return True
     return False
+
+
+def _prompt_needs_semantic_dxf_model(prompt: str) -> bool:
+    text = prompt or ""
+    if not _prompt_mentions_dxf_import(text):
+        return False
+    if re.search(r"\b(flat|2d|profile only|outline only|simple plate|laser cut|waterjet)\b", text, re.I):
+        return False
+    return bool(re.search(r"\b(3d|model|mold|part|assembly|fixture|housing|bracket|enclosure|object)\b", text, re.I))
+
+
+def _is_naive_dxf_flat_extrude(source: str) -> bool:
+    lowered = source.lower()
+    if "import_dxf" not in lowered or "make_face" not in lowered or "extrude" not in lowered:
+        return False
+    semantic_markers = (
+        "import ezdxf",
+        "ezdxf.readfile",
+        "modelspace",
+        ".dxf.layer",
+        "layer",
+        "cavity",
+        "hole",
+        "flange",
+        "outline_layers",
+        "cavity_layers",
+        "hole_layers",
+        "assemblyhelper",
+        "compound(",
+    )
+    return not any(marker in lowered for marker in semantic_markers)
+
+
+def _dxf_semantic_source_issue(source: str, prompt: str, context: dict[str, Any] | None) -> str | None:
+    if not _prompt_needs_semantic_dxf_model(prompt):
+        return None
+    if not _is_naive_dxf_flat_extrude(source):
+        return None
+    dxf_files = []
+    for info in (context or {}).get("dxf_files") or []:
+        if isinstance(info, dict):
+            name = str(info.get("readable_filename") or info.get("filename") or "").strip()
+            if name:
+                dxf_files.append(name)
+    target = dxf_files[0] if dxf_files else "the attached DXF/VXF drawing"
+    return (
+        "DXF/VXF semantic modeling failed: the source imports the entire drawing with import_dxf(), "
+        "calls make_face(), and extrudes it into a flat slab. That is only valid for an explicitly "
+        "requested flat plate/profile, not for a 3D model from a drawing.\n"
+        f"Fix: parse {target} as drawing intent. Use ezdxf/modelspace entities and layers to identify "
+        "outer profiles, cavities/pockets, bolt holes, windows/cutouts, flanges, tabs, and separate "
+        "physical parts. Build those as named build123d solids/Compounds with real thickness, cuts, "
+        "and independent bodies. Do not call import_dxf() on the whole file as the final model."
+    )
 
 
 def _canonical_dxf_mold_source(
@@ -703,6 +768,9 @@ def _maybe_rewrite_incomplete_dxf_source(
             cavity_layers=cavity_layers,
             hole_layers=hole_layers,
         ), note
+
+    if _prompt_needs_semantic_dxf_model(prompt):
+        return source, None
 
     note = (
         "Rewrote incomplete DXF source to a simple outline extrude template because "
@@ -1294,6 +1362,10 @@ def _run_text_to_cad_v2(
                 fusion_mode=fusion_mode,
             )
             ai_traces.append(ai_trace)
+            # Preserve the exact source that failed validation so the next
+            # repair pass can edit it, matching the upstream text-to-cad
+            # source -> step -> repair loop.
+            current_source = source
             _validate_generated_source(source)
             source = _augment_text_to_cad_source(
                 source,
@@ -1302,6 +1374,9 @@ def _run_text_to_cad_v2(
                 prompt=prompt,
             )
             source = _augment_common_constants(source, base=base, prompt=prompt)
+            dxf_issue = _dxf_semantic_source_issue(source, prompt, context)
+            if dxf_issue:
+                raise ValueError(dxf_issue)
             remaining = _gen_step_local_undefined_names(source)
             if remaining:
                 if _looks_like_pc_cooling_fan(prompt, images):
