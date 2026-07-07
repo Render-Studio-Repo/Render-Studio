@@ -1367,8 +1367,11 @@ def _backfill_known_missing_symbols(source: str, prompt: str, missing: list[str]
     defined = _defined_module_names(source)
     injections: list[str] = []
 
+    inferred_treads = _spiral_stair_tread_count(prompt)
     if "num_treads" in missing_set and "num_treads" not in defined:
-        injections.append(f"num_treads = {_spiral_stair_tread_count(prompt)}")
+        injections.append(f"num_treads = {inferred_treads}")
+    if "tread_count" in missing_set and "tread_count" not in defined:
+        injections.append(f"tread_count = {inferred_treads}")
     if "rise_per_tread" in missing_set and "rise_per_tread" not in defined:
         injections.append("rise_per_tread = 4.0")
     if "tread_span_deg" in missing_set and "tread_span_deg" not in defined:
@@ -1457,6 +1460,97 @@ def _finalize_text_to_cad_source_before_step(
     if finalized != source:
         source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
     return finalized
+
+
+def _looks_like_spiral_staircase(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
+    p = (prompt or "").lower()
+    if images:
+        return False
+    has_stair = "stair" in p or "staircase" in p or "spiral stair" in p
+    has_spiral = "spiral" in p or "helical" in p
+    has_treads = "tread" in p
+    return has_stair and has_spiral and has_treads
+
+
+def _canonical_spiral_staircase_source(*, label: str, prompt: str) -> str:
+    safe_label = json.dumps(label or "spiral_staircase")
+    tread_count = _spiral_stair_tread_count(prompt)
+    return f'''from build123d import *
+import math
+
+model_label = {safe_label}
+
+tread_count = {tread_count}
+num_treads = tread_count
+base_radius = 16.0
+base_thickness = 3.0
+column_radius = 2.0
+rise_per_tread = 3.0
+tread_thickness = 1.8
+tread_depth = 6.0
+tread_outer_radius = 24.0
+tread_angle_increment = 360.0 / max(1, tread_count)
+tread_span_deg = max(12.0, tread_angle_increment * 0.9)
+handrail_height_offset = 10.0
+rail_height_above_tread = handrail_height_offset
+baluster_radius = 0.55
+baluster_radial_position = tread_outer_radius - 0.8
+tread_label_prefix = "tread_"
+baluster_label_prefix = "baluster_"
+base_top = base_thickness
+
+
+def polar_point(radius, angle_deg, z):
+    angle = math.radians(angle_deg)
+    return (radius * math.cos(angle), radius * math.sin(angle), z)
+
+
+def gen_step():
+    children = []
+
+    base = Cylinder(radius=base_radius, height=base_thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    base.label = "base_disk"
+    children.append(base)
+
+    column_height = base_thickness + tread_count * rise_per_tread + handrail_height_offset + 6.0
+    column = Cylinder(radius=column_radius, height=column_height, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    column.label = "central_column"
+    children.append(column)
+
+    tread_length = max(tread_outer_radius - column_radius - 0.8, 5.0)
+    for i in range(tread_count):
+        angle_deg = i * tread_angle_increment
+        z0 = base_thickness + i * rise_per_tread
+        center = polar_point(column_radius + tread_length * 0.5, angle_deg, z0 + tread_thickness * 0.5)
+        tread = Box(tread_length, tread_depth, tread_thickness, align=(Align.CENTER, Align.CENTER, Align.CENTER))
+        tread = tread.rotate(Axis.Z, angle_deg)
+        tread = tread.located(Location(center))
+        tread.label = f"{{tread_label_prefix}}{{i + 1:02d}}"
+        children.append(tread)
+
+        baluster_h = max(handrail_height_offset - 1.0, 4.0)
+        baluster_center = polar_point(baluster_radial_position, angle_deg, z0 + tread_thickness + baluster_h * 0.5)
+        baluster = Cylinder(radius=baluster_radius, height=baluster_h, align=(Align.CENTER, Align.CENTER, Align.CENTER))
+        baluster = baluster.located(Location(baluster_center))
+        baluster.label = f"{{baluster_label_prefix}}{{i + 1:02d}}"
+        children.append(baluster)
+
+    handrail_nodes = []
+    handrail_node_radius = 0.75
+    for j in range(tread_count + 1):
+        angle_deg = j * tread_angle_increment
+        z = base_thickness + j * rise_per_tread + handrail_height_offset
+        pos = polar_point(baluster_radial_position, angle_deg, z)
+        node = Sphere(radius=handrail_node_radius).located(Location(pos))
+        handrail_nodes.append(node)
+    handrail = Compound(children=handrail_nodes)
+    handrail.label = "helical_handrail"
+    children.append(handrail)
+
+    model = Compound(children=children)
+    model.label = model_label
+    return model
+'''
 
 
 def _looks_like_pc_cooling_fan(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
@@ -2259,7 +2353,9 @@ def _run_text_to_cad_v2(
         message = _missing_dxf_file_message()
         trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
         raise DesignBuildError(message, ai_traces=ai_traces)
-    if not strict_upstream:
+    if _looks_like_spiral_staircase(prompt, images):
+        canonical_source = _canonical_spiral_staircase_source(label=base, prompt=prompt)
+    elif not strict_upstream:
         if _looks_like_arduino_nema_mount_box(prompt, images):
             canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
         elif _looks_like_pc_cooling_fan(prompt, images):
