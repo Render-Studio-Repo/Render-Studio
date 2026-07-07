@@ -143,6 +143,7 @@ export function createWorkspaceBrowser({
   onExportProject,
   onMakePublicProject,
   onOpenHierarchyItem,
+  canDeleteProject,
   onEditHierarchyItem,
   onOpenProfile,
   onRenameHierarchyItem,
@@ -813,6 +814,7 @@ export function createWorkspaceBrowser({
     closeContextMenu();
     const idToken = projectExplorerId(project);
     const readOnly = !!project?.read_only_project;
+    const canDelete = !readOnly || !!canDeleteProject?.(project);
     const menu = document.createElement("div");
     menu.className = "folder-context-menu project-context-menu";
     menu.innerHTML = `
@@ -825,9 +827,9 @@ export function createWorkspaceBrowser({
       ${readOnly || project?.public ? "" : `<button type="button" data-action="move">Move to…</button>`}
       ${readOnly || project?.public ? "" : `<button type="button" data-action="make-public">Make public</button>`}
       <button type="button" data-action="export">Export / share…</button>
-      ${readOnly ? "" : `<button type="button" data-action="rename">Rename…</button>
-      <hr />
-      <button type="button" data-action="delete">Delete project</button>`}
+      ${readOnly ? "" : `<button type="button" data-action="rename">Rename…</button>`}
+      ${canDelete ? `<hr />
+      <button type="button" data-action="delete">Delete project</button>` : ""}
     `;
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();

@@ -59,7 +59,10 @@ AVATARS = ROOT / "data" / "avatars"
 PROJECTS.mkdir(parents=True, exist_ok=True)
 AVATARS.mkdir(parents=True, exist_ok=True)
 
-A1PROJECTS_ADMIN_EMAIL = "a1projects@protonmail.com"
+A1PROJECTS_ADMIN_EMAILS = {
+    "a1projects@protonmail.com",
+    "a1projects.usa@gmail.com",
+}
 OTHER_USER_RENDERS_FOLDER_ID = "__other_user_renders__"
 OTHER_USER_RENDERS_FOLDER_NAME = "New renders from other users"
 PUBLIC_FOLDER_ID = "__public__"
@@ -648,8 +651,19 @@ def _require_project(user: dict[str, Any], project_id: str) -> Path:
     return path
 
 
+def _require_project_delete(user: dict[str, Any], project_id: str) -> Path:
+    path = PROJECTS / project_id
+    if not path.is_dir():
+        raise HTTPException(404, "Project not found")
+    if teams_service.can_access_project(user["id"], project_id):
+        return path
+    if _is_a1projects_admin(user) and _is_public_project(project_id):
+        return path
+    raise HTTPException(404, "Project not found")
+
+
 def _is_a1projects_admin(user: dict[str, Any] | None) -> bool:
-    return (user or {}).get("email", "").strip().lower() == A1PROJECTS_ADMIN_EMAIL
+    return (user or {}).get("email", "").strip().lower() in A1PROJECTS_ADMIN_EMAILS
 
 
 def _require_a1projects_admin(user: dict[str, Any]) -> None:
@@ -5137,7 +5151,7 @@ def rename_project_endpoint(
 
 @app.delete("/api/projects/{project_id}")
 def delete_project(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
-    path = _require_project(user, project_id)
+    path = _require_project_delete(user, project_id)
     team_id = teams_service.project_team_id(project_id)
     generation_service.cancel_project(path)
     fusion_deleted, fusion_delete_errors = _delete_fusion_mirror_items(

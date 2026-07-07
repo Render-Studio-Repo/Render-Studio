@@ -2155,7 +2155,8 @@ def _run_text_to_cad_v2(
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
 
-    for attempt in range(max_repairs + 1):
+    total_attempts = 1 if canonical_source else (max_repairs + 1)
+    for attempt in range(total_attempts):
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
         if progress_callback:
@@ -2165,9 +2166,9 @@ def _run_text_to_cad_v2(
                 "label": f"Writing build123d source with {label_prefix} CAD skill (attempt {attempt + 1})...",
             })
         try:
-            if attempt == 0 and canonical_source:
+            if canonical_source:
                 source = canonical_source
-                trace_add("info", "[2.0/text-to-cad] Using canonical benchmark-style source for first attempt.", trace_id=trace_id)
+                trace_add("info", "[2.0/text-to-cad] Using canonical benchmark-style source.", trace_id=trace_id)
             else:
                 source, ai_trace = ai.generate_cad_python_source(
                     prompt + edit_note + workflow_note,

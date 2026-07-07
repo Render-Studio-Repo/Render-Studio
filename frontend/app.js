@@ -144,6 +144,7 @@ let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
 let currentUser = null;
+const A1PROJECTS_ADMIN_EMAILS = new Set(["a1projects@protonmail.com", "a1projects.usa@gmail.com"]);
 let authUi = null;
 let renderAgentUi = null;
 let selectedFile = null;
@@ -166,6 +167,11 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function isA1ProjectsAdminUser() {
+  const email = String(currentUser?.email || "").trim().toLowerCase();
+  return !!email && A1PROJECTS_ADMIN_EMAILS.has(email);
 }
 
 const loadingProjectIds = new Set();
@@ -10006,6 +10012,7 @@ const workspaceBrowser = createWorkspaceBrowser({
   onOpenProject: (id) => openProjectById(id),
   onRenameProject: (p) => renameProject(p),
   onDeleteProject: (p) => deleteProject(p),
+  canDeleteProject: (p) => !!p?.public && isA1ProjectsAdminUser(),
   onExportProject: (p) => exportProject(p),
   onMakePublicProject: (p) => makeProjectPublic(p),
   onOpenHierarchyItem: (project, entry, sectionId) => openHierarchyItem(project, entry, sectionId),
