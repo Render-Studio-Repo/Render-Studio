@@ -3512,6 +3512,93 @@ def _delete_fusion_mirror_items(
     return deleted, errors
 
 
+def _background_push_new_file_to_fusion(project_id: str, project_path: Path, filename: str) -> None:
+    """Best-effort Fusion mirror upload for newly generated/uploaded files.
+
+    This must never affect local model generation. If Fusion is not linked, the
+    selected file is mesh-only, or APS rejects the upload, generation should
+    still remain successful and the error should only be logged.
+    """
+    safe = Path(str(filename or "")).name
+    if not safe:
+        return
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT project_id, user_id, aps_project_id, folder_id, last_item_id
+                  FROM project_fusion_mirrors
+                 WHERE project_id = ?
+                """,
+                (project_id,),
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("Fusion mirror lookup failed for project=%s file=%s: %s", project_id, safe, exc)
+        return
+    if not rows:
+        return
+
+    try:
+        step_path = _step_for_cloud_cad(project_path, safe, allow_faceted=False)
+    except HTTPException as exc:
+        logger.info("Fusion mirror skipped for project=%s file=%s: %s", project_id, safe, exc.detail)
+        return
+    except Exception as exc:
+        logger.warning("Fusion mirror STEP resolution failed for project=%s file=%s: %s", project_id, safe, exc)
+        return
+
+    try:
+        from backend.services.autodesk_oauth import get_valid_access_token, upload_step_to_folder
+    except Exception as exc:
+        logger.warning("Fusion mirror unavailable for project=%s file=%s: %s", project_id, safe, exc)
+        return
+
+    upload_name = f"{step_path.stem}.step"
+    data = step_path.read_bytes()
+    for row in rows:
+        mirror = dict(row)
+        user_id = str(mirror.get("user_id") or "")
+        aps_project_id = str(mirror.get("aps_project_id") or "")
+        folder_id = str(mirror.get("folder_id") or "")
+        if not user_id or not aps_project_id or not folder_id:
+            continue
+        try:
+            token = get_valid_access_token(user_id)
+            if not token:
+                logger.info("Fusion mirror skipped, Autodesk token missing user=%s project=%s", user_id, project_id)
+                continue
+            result = upload_step_to_folder(
+                token,
+                project_id=aps_project_id,
+                folder_id=folder_id,
+                filename=upload_name,
+                data=data,
+            )
+            now = datetime.now(timezone.utc).isoformat()
+            with get_conn() as conn:
+                conn.execute(
+                    """
+                    UPDATE project_fusion_mirrors
+                       SET last_item_id = COALESCE(?, last_item_id),
+                           last_version_id = COALESCE(?, last_version_id),
+                           last_pushed_at = ?,
+                           updated_at = ?
+                     WHERE project_id = ? AND user_id = ?
+                    """,
+                    (
+                        result.get("item_id"),
+                        result.get("version_id"),
+                        now,
+                        now,
+                        project_id,
+                        user_id,
+                    ),
+                )
+            logger.info("Fusion mirror pushed project=%s file=%s user=%s", project_id, upload_name, user_id)
+        except Exception as exc:
+            logger.warning("Fusion mirror push failed project=%s file=%s user=%s: %s", project_id, upload_name, user_id, exc)
+
+
 @app.get("/api/projects/{project_id}/fusion-mirrors")
 def get_project_fusion_mirrors(
     project_id: str,

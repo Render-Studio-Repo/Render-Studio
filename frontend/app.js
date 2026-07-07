@@ -3741,6 +3741,40 @@ function addArchitectBox(group, box) {
   return mesh;
 }
 
+function architectCylinderMesh({
+  radius,
+  depth,
+  at = [0, 0, 0],
+  color = "#d8cab0",
+  name = "architect_round_part",
+  axis = "y",
+  segments = 24,
+}) {
+  const scale = architectInstanceScale();
+  const geom = new THREE.CylinderGeometry(radius * scale, radius * scale, depth * scale, segments);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(color),
+    roughness: 0.5,
+    metalness: 0.18,
+    clearcoat: 0.2,
+    clearcoatRoughness: 0.28,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.name = name;
+  mesh.position.set(at[0] * scale, at[1] * scale, at[2] * scale);
+  if (axis === "x") mesh.rotation.z = Math.PI / 2;
+  if (axis === "z") mesh.rotation.x = Math.PI / 2;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function addArchitectCylinder(group, cylinder) {
+  const mesh = architectCylinderMesh(cylinder);
+  group.add(mesh);
+  return mesh;
+}
+
 function markArchitectInstance(obj, catalogName, kind) {
   obj.traverse((child) => {
     child.userData.catalogFilename = catalogName;
@@ -3758,36 +3792,91 @@ function createArchitectInstance(kind = "wall") {
   group.userData.architectKind = kind;
   const add = (length, width, height, at, color, name, opacity = 1) =>
     addArchitectBox(group, { length, width, height, at, color, name, opacity });
+  const cyl = (radius, depth, at, color, name, axis = "y", segments = 24) =>
+    addArchitectCylinder(group, { radius, depth, at, color, name, axis, segments });
   const wallColor = "#e8e1d2";
   const trim = "#f7f0de";
   const connector = "#5c6b73";
   const wood = "#c79552";
   const roof = "#3f3f46";
   const glass = "#6fb6ff";
+  const darkWood = "#7b5436";
+  const metal = "#c8a75a";
+
+  const addWallDetails = (length = wallLength, h = wallHeight, prefix = "wall") => {
+    add(length, 26, 62, [0, -thickness / 2 - 18, 90], trim, `${prefix}_baseboard_front`);
+    add(length, 22, 48, [0, -thickness / 2 - 16, h - 52], trim, `${prefix}_crown_trim_front`);
+    add(48, 24, h * 0.76, [-length * 0.28, -thickness / 2 - 18, h * 0.52], "#ddd6c5", `${prefix}_subtle_vertical_panel_seam_left`);
+    add(48, 24, h * 0.76, [length * 0.28, -thickness / 2 - 18, h * 0.52], "#ddd6c5", `${prefix}_subtle_vertical_panel_seam_right`);
+    add(130, thickness + 52, 130, [-length / 2 + 105, 0, 185], connector, `${prefix}_left_snap_socket`);
+    add(130, thickness + 52, 130, [length / 2 - 105, 0, 185], connector, `${prefix}_right_snap_socket`);
+    add(125, 48, 44, [0, -thickness / 2 - 28, h * 0.62], "#b8c0c8", `${prefix}_robot_grip_pad`);
+  };
+
+  const addWindowDetails = (cx = 0, zc = wallHeight * 0.58, w = grid * 0.52, h = wallHeight * 0.36, y = -thickness / 2 - 28) => {
+    add(w, 30, h, [cx, y - 4, zc], glass, "blue_glass_pane", 0.72);
+    add(w + 155, 58, 72, [cx, y - 8, zc - h / 2 - 58], trim, "deep_window_sill_with_lip");
+    add(w + 135, 52, 68, [cx, y - 7, zc + h / 2 + 54], trim, "window_lintel_header_trim");
+    add(64, 52, h + 140, [cx - w / 2 - 62, y - 7, zc], trim, "window_left_jamb_trim");
+    add(64, 52, h + 140, [cx + w / 2 + 62, y - 7, zc], trim, "window_right_jamb_trim");
+    add(42, 42, h, [cx, y - 16, zc], "#f1f5f9", "window_center_mullion");
+    add(w, 42, 42, [cx, y - 17, zc], "#f1f5f9", "window_cross_mullion");
+    add(95, 58, 82, [cx - w / 2 - 130, y - 2, zc], connector, "window_left_snap_tab");
+    add(95, 58, 82, [cx + w / 2 + 130, y - 2, zc], connector, "window_right_snap_tab");
+  };
+
+  const addDoorDetails = (cx = 0, y = -thickness / 2 - 24, w = grid * 0.5, h = wallHeight * 0.72) => {
+    add(w, 42, h, [cx, y, h / 2], darkWood, "recessed_wood_door_slab");
+    add(w * 0.34, 16, h * 0.25, [cx - w * 0.18, y - 26, h * 0.68], "#8f6844", "upper_left_raised_door_panel");
+    add(w * 0.34, 16, h * 0.25, [cx + w * 0.18, y - 26, h * 0.68], "#8f6844", "upper_right_raised_door_panel");
+    add(w * 0.34, 16, h * 0.32, [cx - w * 0.18, y - 26, h * 0.34], "#8f6844", "lower_left_raised_door_panel");
+    add(w * 0.34, 16, h * 0.32, [cx + w * 0.18, y - 26, h * 0.34], "#8f6844", "lower_right_raised_door_panel");
+    add(w + 175, 72, 78, [cx, y - 8, h + 38], trim, "door_header_casing");
+    add(78, 70, h + 120, [cx - w / 2 - 78, y - 8, (h + 120) / 2], trim, "door_left_jamb_casing");
+    add(78, 70, h + 120, [cx + w / 2 + 78, y - 8, (h + 120) / 2], trim, "door_right_jamb_casing");
+    add(w + 210, 92, 70, [cx, y - 12, 35], "#d6b37a", "door_threshold_sill");
+    cyl(34, 32, [cx + w * 0.34, y - 54, h * 0.52], metal, "round_brass_door_knob", "y", 28);
+    add(95, 70, 100, [cx - w / 2 - 145, y + 10, h * 0.35], connector, "door_left_snap_pocket");
+    add(95, 70, 100, [cx + w / 2 + 145, y + 10, h * 0.35], connector, "door_right_snap_pocket");
+  };
 
   if (kind === "floor" || kind === "floor-small" || kind === "floor-wide") {
     const lx = kind === "floor-small" ? grid : kind === "floor-wide" ? grid * 2 : wallLength;
     const ly = kind === "floor-small" ? grid : kind === "floor-wide" ? grid * 2 : grid * 1.5;
     add(lx, ly, 90, [0, 0, 45], wood, "floor_slab_wood");
+    for (let i = -3; i <= 3; i += 1) {
+      add(lx - 120, 18, 8, [0, (i * ly) / 8, 94], i % 2 ? "#d2a45f" : "#bb8343", `floor_plank_gap_${i + 4}`);
+    }
+    for (let i = -2; i <= 2; i += 1) {
+      add(16, ly - 140, 10, [(i * lx) / 6, 0, 98], "#b77738", `floor_cross_grain_seam_${i + 3}`);
+    }
     add(lx + 140, 55, 70, [0, -ly / 2 - 70, 125], "#d8b074", "floor_snap_rail_south");
     add(lx + 140, 55, 70, [0, ly / 2 + 70, 125], "#d8b074", "floor_snap_rail_north");
     add(55, ly + 140, 70, [-lx / 2 - 70, 0, 125], "#d8b074", "floor_snap_rail_west");
     add(55, ly + 140, 70, [lx / 2 + 70, 0, 125], "#d8b074", "floor_snap_rail_east");
+    add(150, 150, 42, [-lx / 2, -ly / 2, 132], connector, "floor_corner_socket_sw");
+    add(150, 150, 42, [lx / 2, -ly / 2, 132], connector, "floor_corner_socket_se");
+    add(150, 150, 42, [-lx / 2, ly / 2, 132], connector, "floor_corner_socket_nw");
+    add(150, 150, 42, [lx / 2, ly / 2, 132], connector, "floor_corner_socket_ne");
     return group;
   }
 
   if (kind === "wall" || kind === "wall-half" || kind === "wall-low") {
     const h = kind === "wall-half" ? wallHeight * 0.52 : kind === "wall-low" ? wallHeight * 0.28 : wallHeight;
     add(wallLength, thickness, h, [0, 0, h / 2], wallColor, "wall_panel_light_plaster");
-    add(wallLength, 35, 70, [0, -thickness / 2 - 22, 105], trim, "baseboard_trim");
-    add(120, thickness + 40, 120, [-wallLength / 2 + 90, 0, 170], connector, "left_snap_socket");
-    add(120, thickness + 40, 120, [wallLength / 2 - 90, 0, 170], connector, "right_snap_socket");
+    addWallDetails(wallLength, h, kind);
     return group;
   }
 
   if (kind === "pillar" || kind === "pillar-tall") {
     const h = kind === "pillar-tall" ? wallHeight : wallHeight * 0.58;
     add(180, 180, h, [0, 0, h / 2], trim, "pillar_body_printable");
+    add(132, 132, 70, [0, 0, 35], "#d6b37a", "pillar_foot_plate");
+    add(132, 132, 70, [0, 0, h - 35], "#f8eed8", "pillar_cap_plate");
+    add(34, 34, h * 0.78, [-72, -72, h * 0.5], "#e9dcc6", "pillar_corner_bead_sw");
+    add(34, 34, h * 0.78, [72, -72, h * 0.5], "#e9dcc6", "pillar_corner_bead_se");
+    add(34, 34, h * 0.78, [-72, 72, h * 0.5], "#e9dcc6", "pillar_corner_bead_nw");
+    add(34, 34, h * 0.78, [72, 72, h * 0.5], "#e9dcc6", "pillar_corner_bead_ne");
     add(95, 220, 160, [0, -160, 160], connector, "wall_socket_south");
     add(95, 220, 160, [0, 160, 160], connector, "wall_socket_north");
     add(220, 95, 160, [-160, 0, 160], connector, "wall_socket_west");
@@ -3800,6 +3889,12 @@ function createArchitectInstance(kind = "wall") {
     add(grid, thickness, wallHeight, [grid / 2, 0, wallHeight / 2], wallColor, "corner_wall_east");
     add(thickness, grid, wallHeight, [0, grid / 2, wallHeight / 2], wallColor, "corner_wall_north");
     add(130, 130, wallHeight, [0, 0, wallHeight / 2], trim, "corner_connector_post");
+    add(grid, 28, 64, [grid / 2, -thickness / 2 - 20, 94], trim, "corner_east_baseboard");
+    add(28, grid, 64, [-thickness / 2 - 20, grid / 2, 94], trim, "corner_north_baseboard");
+    add(grid, 24, 50, [grid / 2, -thickness / 2 - 18, wallHeight - 52], trim, "corner_east_crown_trim");
+    add(24, grid, 50, [-thickness / 2 - 18, grid / 2, wallHeight - 52], trim, "corner_north_crown_trim");
+    add(135, thickness + 48, 125, [grid - 95, 0, 185], connector, "corner_east_snap_socket");
+    add(thickness + 48, 135, 125, [0, grid - 95, 185], connector, "corner_north_snap_socket");
     return group;
   }
 
@@ -3807,35 +3902,28 @@ function createArchitectInstance(kind = "wall") {
     const side = (wallLength - grid * 0.62) / 2;
     add(side, thickness, wallHeight, [-wallLength / 2 + side / 2, 0, wallHeight / 2], wallColor, "wall_left_piece");
     add(side, thickness, wallHeight, [wallLength / 2 - side / 2, 0, wallHeight / 2], wallColor, "wall_right_piece");
+    add(wallLength, 22, 54, [0, -thickness / 2 - 18, wallHeight - 52], trim, "continuous_top_crown_trim");
+    add(120, thickness + 50, 130, [-wallLength / 2 + 95, 0, 185], connector, "left_connector_pocket");
+    add(120, thickness + 50, 130, [wallLength / 2 - 95, 0, 185], connector, "right_connector_pocket");
     if (kind === "window-wall") {
       add(grid * 0.62, thickness, wallHeight * 0.28, [0, 0, wallHeight * 0.14], wallColor, "wall_under_window");
       add(grid * 0.62, thickness, wallHeight * 0.22, [0, 0, wallHeight * 0.89], wallColor, "wall_above_window");
-      add(grid * 0.5, 28, wallHeight * 0.34, [0, -thickness / 2 - 18, wallHeight * 0.58], glass, "window_glass_insert", 0.78);
-      add(grid * 0.72, 45, 70, [0, -thickness / 2 - 28, wallHeight * 0.38], trim, "window_sill_trim");
-      add(grid * 0.72, 45, 70, [0, -thickness / 2 - 28, wallHeight * 0.79], trim, "window_lintel_trim");
+      addWindowDetails();
+      add(grid * 0.62, 30, 46, [0, -thickness / 2 - 20, wallHeight * 0.22], "#ddd6c5", "under_window_panel_seam");
     } else {
       add(grid * 0.62, thickness, wallHeight * 0.18, [0, 0, wallHeight * 0.91], wallColor, "wall_header_above_door");
-      add(grid * 0.48, 38, wallHeight * 0.68, [0, -thickness / 2 - 18, wallHeight * 0.34], "#7b5436", "door_insert_wood");
-      add(grid * 0.68, 55, 70, [0, -thickness / 2 - 28, 35], trim, "door_threshold_trim");
+      addDoorDetails(0, -thickness / 2 - 24, grid * 0.5, wallHeight * 0.78);
     }
     return group;
   }
 
   if (kind === "window") {
-    add(grid * 0.58, 24, wallHeight * 0.34, [0, 0, wallHeight * 0.58], glass, "window_glass_insert", 0.78);
-    add(grid * 0.72, 44, 70, [0, 0, wallHeight * 0.38], trim, "window_sill");
-    add(grid * 0.72, 44, 70, [0, 0, wallHeight * 0.79], trim, "window_lintel");
-    add(70, 44, wallHeight * 0.48, [-grid * 0.36, 0, wallHeight * 0.58], trim, "window_left_trim");
-    add(70, 44, wallHeight * 0.48, [grid * 0.36, 0, wallHeight * 0.58], trim, "window_right_trim");
+    addWindowDetails(0, wallHeight * 0.58, grid * 0.58, wallHeight * 0.36, -6);
     return group;
   }
 
   if (kind === "door") {
-    add(grid * 0.52, 38, wallHeight * 0.72, [0, 0, wallHeight * 0.36], "#7b5436", "door_panel_wood");
-    add(grid * 0.7, 58, 75, [0, 0, wallHeight * 0.75], trim, "door_header_trim");
-    add(70, 58, wallHeight * 0.78, [-grid * 0.35, 0, wallHeight * 0.39], trim, "door_left_frame");
-    add(70, 58, wallHeight * 0.78, [grid * 0.35, 0, wallHeight * 0.39], trim, "door_right_frame");
-    add(grid * 0.74, 70, 70, [0, 0, 35], trim, "door_threshold");
+    addDoorDetails(0, -8, grid * 0.52, wallHeight * 0.72);
     return group;
   }
 
@@ -3846,12 +3934,26 @@ function createArchitectInstance(kind = "wall") {
       group.children[0].rotation.x = THREE.MathUtils.degToRad(-12);
       group.children[1].rotation.x = THREE.MathUtils.degToRad(12);
       add(wallLength + 220, 80, 90, [0, 0, wallHeight + 260], "#27272a", "roof_ridge_cap");
+      add(wallLength + 260, 70, 70, [0, -grid * 0.68, wallHeight + 88], "#27272a", "gable_eave_trim_south");
+      add(wallLength + 260, 70, 70, [0, grid * 0.68, wallHeight + 88], "#27272a", "gable_eave_trim_north");
+      for (let i = -3; i <= 3; i += 1) {
+        add(wallLength + 80, 18, 12, [0, (i * grid) / 7, wallHeight + 210], "#52525b", `gable_roof_shingle_line_${i + 4}`);
+      }
+      add(160, 120, 70, [-wallLength / 2, 0, wallHeight + 95], "#94a3b8", "gable_left_alignment_socket");
+      add(160, 120, 70, [wallLength / 2, 0, wallHeight + 95], "#94a3b8", "gable_right_alignment_socket");
     } else {
       const lx = kind === "roof-corner" ? grid * 1.15 : wallLength + 180;
       const ly = kind === "roof-corner" ? grid * 1.15 : grid * 1.5 + 180;
       add(lx, ly, 120, [0, 0, wallHeight + 80], roof, "flat_roof_panel");
       add(lx + 80, 70, 80, [0, -ly / 2 - 25, wallHeight + 130], "#27272a", "roof_edge_trim_south");
       add(lx + 80, 70, 80, [0, ly / 2 + 25, wallHeight + 130], "#27272a", "roof_edge_trim_north");
+      add(70, ly + 80, 80, [-lx / 2 - 25, 0, wallHeight + 130], "#27272a", "roof_edge_trim_west");
+      add(70, ly + 80, 80, [lx / 2 + 25, 0, wallHeight + 130], "#27272a", "roof_edge_trim_east");
+      for (let i = -3; i <= 3; i += 1) {
+        add(lx - 180, 20, 12, [0, (i * ly) / 8, wallHeight + 146], "#52525b", `roof_panel_seam_${i + 4}`);
+      }
+      add(180, 180, 48, [-lx / 2 + 120, -ly / 2 + 120, wallHeight + 166], "#94a3b8", "roof_corner_socket_sw");
+      add(180, 180, 48, [lx / 2 - 120, ly / 2 - 120, wallHeight + 166], "#94a3b8", "roof_corner_socket_ne");
     }
     return group;
   }
@@ -3860,6 +3962,11 @@ function createArchitectInstance(kind = "wall") {
     add(grid, thickness, wallHeight, [0, 0, wallHeight / 2], wallColor, "service_wall_panel");
     add(grid * 0.24, 40, wallHeight * 0.82, [0, -thickness / 2 - 26, wallHeight * 0.5], "#94a3b8", "removable_service_cover");
     add(80, 60, wallHeight * 0.7, [-grid * 0.28, -thickness / 2 - 30, wallHeight * 0.52], "#475569", "conduit_chase");
+    add(46, 72, wallHeight * 0.62, [grid * 0.24, -thickness / 2 - 34, wallHeight * 0.48], "#64748b", "plumbing_chase_pipe");
+    cyl(26, wallHeight * 0.58, [grid * 0.24, -thickness / 2 - 78, wallHeight * 0.5], "#78909c", "round_service_pipe", "z", 20);
+    add(grid * 0.18, 54, 70, [0, -thickness / 2 - 56, wallHeight * 0.16], "#334155", "low_access_panel");
+    add(grid * 0.18, 54, 70, [0, -thickness / 2 - 56, wallHeight * 0.82], "#334155", "upper_access_panel");
+    addWallDetails(grid, wallHeight, "service");
     return group;
   }
 
@@ -3875,7 +3982,13 @@ function createArchitectInstance(kind = "wall") {
   east.position.x = wallLength * architectInstanceScale() / 2;
   const south = createArchitectInstance("wall-half");
   south.position.y = -grid * architectInstanceScale() * 0.75;
-  room.add(north, west, east, south);
+  const door = createArchitectInstance("door");
+  door.position.set(wallLength * architectInstanceScale() * 0.24, grid * architectInstanceScale() * 0.75 + thickness * architectInstanceScale(), 0);
+  const window = createArchitectInstance("window");
+  window.position.set(-wallLength * architectInstanceScale() * 0.26, -grid * architectInstanceScale() * 0.75 - thickness * architectInstanceScale(), 0);
+  const roofEdge = createArchitectInstance("roof-flat");
+  roofEdge.position.z = wallHeight * architectInstanceScale() * 0.02;
+  room.add(north, west, east, south, door, window, roofEdge);
   return room;
 }
 
