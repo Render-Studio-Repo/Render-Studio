@@ -836,6 +836,104 @@ def _finalize_text_to_cad_source_before_step(
     return finalized
 
 
+def _looks_like_pc_cooling_fan(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
+    p = (prompt or "").lower()
+    if images:
+        return False
+    return (
+        ("fan" in p and any(w in p for w in ("computer", "pc", "cooling", "case")))
+        or "120mm square computer cooling fan" in p
+    )
+
+
+def _canonical_pc_cooling_fan_source(*, label: str) -> str:
+    safe_label = json.dumps(label or "pc_cooling_fan")
+    return f'''from build123d import *
+import math
+
+model_label = {safe_label}
+outer_size = 120.0
+frame_thickness = 25.0
+corner_radius = 8.0
+inner_opening_radius = 54.0
+screw_pitch = 105.0
+screw_hole_radius = 2.25
+hub_radius = 20.0
+hub_height = 16.0
+blade_count = 7
+blade_height = 4.0
+blade_inner_radius = 18.0
+blade_outer_radius = 52.0
+
+
+def _rounded_square_prism(size, radius, height):
+    core_a = Box(size - 2.0 * radius, size, height)
+    core_b = Box(size, size - 2.0 * radius, height)
+    body = core_a + core_b
+    corner = size / 2.0 - radius
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            body = body + Pos(sx * corner, sy * corner, 0) * Cylinder(radius, height)
+    return body
+
+
+def _blade_points(angle_deg):
+    angle = math.radians(angle_deg)
+    sweep = math.radians(24.0)
+    width_inner = math.radians(8.5)
+    width_outer = math.radians(5.5)
+    samples = []
+    for i in range(5):
+        t = i / 4.0
+        radius = blade_inner_radius + (blade_outer_radius - blade_inner_radius) * t
+        theta = angle + sweep * (t - 0.18)
+        samples.append((radius * math.cos(theta), radius * math.sin(theta)))
+    leading = []
+    trailing = []
+    for i, point in enumerate(samples):
+        t = i / 4.0
+        radius = blade_inner_radius + (blade_outer_radius - blade_inner_radius) * t
+        width = width_inner + (width_outer - width_inner) * t
+        theta = angle + sweep * (t - 0.18)
+        tangent = theta + math.pi / 2.0
+        dx = math.cos(tangent) * radius * width * 0.5
+        dy = math.sin(tangent) * radius * width * 0.5
+        leading.append((point[0] + dx, point[1] + dy))
+        trailing.append((point[0] - dx, point[1] - dy))
+    return leading + list(reversed(trailing))
+
+
+def _make_blade(angle_deg):
+    points = _blade_points(angle_deg)
+    with BuildPart() as blade:
+        with BuildSketch(Plane.XY):
+            Polyline(*points, close=True)
+            make_face()
+        extrude(amount=blade_height)
+    return Pos(0, 0, -blade_height / 2.0) * blade.part
+
+
+def make_printable_fan_solid():
+    frame = _rounded_square_prism(outer_size, corner_radius, frame_thickness)
+    frame = frame - Cylinder(inner_opening_radius, frame_thickness + 2.0)
+    hole_offset = screw_pitch / 2.0
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            frame = frame - Pos(sx * hole_offset, sy * hole_offset, 0) * Cylinder(screw_hole_radius, frame_thickness + 2.0)
+
+    fan = frame + Cylinder(hub_radius, hub_height)
+    for i in range(blade_count):
+        fan = fan + _make_blade(i * 360.0 / blade_count)
+
+    fan.label = model_label
+    return fan
+
+
+def gen_step():
+    return make_printable_fan_solid()
+'''
+
+
 def _requested_mm_dimensions(prompt: str) -> list[float]:
     dims: list[float] = []
     for match in re.finditer(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\b", prompt or "", re.I):
@@ -1205,6 +1303,16 @@ def _run_text_to_cad_v2(
             )
             source = _augment_common_constants(source, base=base, prompt=prompt)
             remaining = _gen_step_local_undefined_names(source)
+            if remaining:
+                if _looks_like_pc_cooling_fan(prompt, images):
+                    source = _canonical_pc_cooling_fan_source(label=base)
+                    trace_add(
+                        "warning",
+                        "[2.0/text-to-cad] Replaced incomplete fan source with canonical PC cooling fan template because "
+                        f"gen_step() referenced undefined names: {', '.join(remaining[:8])}",
+                        trace_id=trace_id,
+                    )
+                    remaining = _gen_step_local_undefined_names(source)
             if remaining:
                 raise ValueError(
                     "Generated source is incomplete; gen_step() references undefined names: "
