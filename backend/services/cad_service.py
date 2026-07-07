@@ -670,6 +670,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         if f.is_file()
         and not f.name.startswith("_active_")
         and not f.name.startswith("_export_")
+        and f.suffix.lower() != ".dxf"
         and f.suffix.lower() in SUPPORTED_IMPORT | SUPPORTED_EXPORT
     ]
     by_stem: dict[str, list[Path]] = {}

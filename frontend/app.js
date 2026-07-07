@@ -75,7 +75,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-delete-selected-object";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-tree-sliders";
-import { createProjectTree } from "./project-tree.js?v=20260706-dxf-drawings";
+import { createProjectTree } from "./project-tree.js?v=20260707-dxf-drawings-section";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -488,6 +488,11 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   if (pid !== projectId) {
     newlyCompletedProjects.add(pid);
     renderProjectList();
+    return;
+  }
+  if (isDxfDrawingFilename(msg.filename)) {
+    await refreshFiles();
+    setEditStatus("ok", `Added DXF drawing ${msg.filename}. Open it from DXF Drawings when needed.`);
     return;
   }
   const reloadMode = generationPromptMode(
@@ -11269,6 +11274,14 @@ function handleRealtimeEvent(msg = {}) {
   if (msg.type === "model.reload") {
     void applyLiveModelReload(msg, msg.project_id || projectId);
     if (msg.timeline_entry) void refreshTimeline();
+    return;
+  }
+
+  if (msg.type === "drawing.added") {
+    if ((msg.project_id || projectId) === projectId) {
+      void refreshFiles();
+      setEditStatus("ok", `Added DXF drawing ${msg.filename}. Open it from DXF Drawings when needed.`);
+    }
     return;
   }
 

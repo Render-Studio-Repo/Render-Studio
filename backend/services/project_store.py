@@ -106,15 +106,18 @@ def latest_model_file(project_path: Path) -> str | None:
     candidate: str | None = None
     if 0 <= idx < len(entries):
         fn = entries[idx].get("filename")
-        if fn and (project_path / fn).is_file():
+        if fn and Path(str(fn)).suffix.lower() != ".dxf" and (project_path / fn).is_file():
             candidate = fn
     elif entries:
         fn = entries[-1].get("filename")
-        if fn and (project_path / fn).is_file():
+        if fn and Path(str(fn)).suffix.lower() != ".dxf" and (project_path / fn).is_file():
             candidate = fn
     if candidate:
         return cad_service.resolve_viewport_filename(project_path, candidate)
-    files = cad_service.list_project_files(project_path)
+    files = [
+        f for f in cad_service.list_project_files(project_path)
+        if Path(str(f.get("name") or "")).suffix.lower() != ".dxf"
+    ]
     if not files:
         return None
     newest = max(files, key=lambda f: (project_path / f["name"]).stat().st_mtime)["name"]

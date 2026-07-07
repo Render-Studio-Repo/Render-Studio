@@ -544,12 +544,57 @@ def _iter_build123d_leaf_children(shape: Any, *, max_depth: int = 4) -> list[Any
     return out
 
 
+_ARCHITECT_MAJOR_PART_RE = re.compile(
+    r"(^|_)(floor|slab|wall|panel|pillar|post|column|roof|ceiling|door|window|stair|stairs|service|core|room|bay)(_|$)",
+    re.I,
+)
+
+_ARCHITECT_DETAIL_PART_RE = re.compile(
+    r"(trim|baseboard|crown|sill|lintel|jamb|casing|mullion|glass_pane|pane|"
+    r"connector|socket|snap|tab|tongue|rail|key|cavity|lead_in|chamfer|lip|"
+    r"relief|lock|bar|grip|label|mark|seam|groove|plank|grain|knob|handle|"
+    r"threshold|plate|cap|edge|bead|alignment|pick)",
+    re.I,
+)
+
+
+def _architect_major_build123d_children(children: list[Any]) -> list[Any]:
+    """Keep only useful top-level Architect browser modules.
+
+    Upstream text-to-cad treats the STEP/GLB as the primary assembly and relies on
+    native labels for internals. Render3D previously promoted every labeled leaf
+    into a separate browser component, which turns trim, connector lips, grooves,
+    and snap details into dozens of files. Architect mode should expose only
+    coarse modules users actually move: floors, walls, doors/windows, pillars,
+    roofs, stairs, and service cores.
+    """
+    selected: list[Any] = []
+    used: set[str] = set()
+    for child in children:
+        label = str(getattr(child, "label", "") or "").strip()
+        slug = _part_artifact_slug(label, "")
+        if not slug:
+            continue
+        if _ARCHITECT_DETAIL_PART_RE.search(slug):
+            continue
+        if not _ARCHITECT_MAJOR_PART_RE.search(slug):
+            continue
+        family = re.sub(r"_(north|south|east|west|front|back|left|right|[0-9]+)$", "", slug)
+        key = slug if any(token in slug for token in ("north", "south", "east", "west", "front", "back")) else family
+        if key in used:
+            continue
+        used.add(key)
+        selected.append(child)
+    return selected
+
+
 def _promote_build123d_children_from_source(
     project_path: Path,
     source_name: str,
     *,
     base: str,
     max_parts: int = 96,
+    major_only: bool = False,
 ) -> list[str]:
     """Export source-level Compound children as real browser components.
 
@@ -592,7 +637,10 @@ def _promote_build123d_children_from_source(
 
     outputs: list[str] = []
     used_names: set[str] = set()
-    for idx, child in enumerate(leaves[:max_parts], start=1):
+    candidates = leaves
+    if major_only:
+        candidates = _architect_major_build123d_children(leaves)
+    for idx, child in enumerate(candidates[:max_parts], start=1):
         label = str(getattr(child, "label", "") or "").strip()
         slug = _part_artifact_slug(label, f"part_{idx:02d}")
         if slug in used_names:
@@ -1601,9 +1649,9 @@ def _run_text_to_cad_v2(
             "\n\nARCHITECT MODE WORKFLOW:\n"
             "Design room-first modular house CAD made from separate pieces, not generic blocks or a sealed decorative box.\n"
             "- Use XY as the floor plan grid and Z as vertical. Default grid is 1000 mm; default wall height is 2800 mm unless the prompt says otherwise.\n"
-            "- The default unit is one complete room module at a time. A room must include separate pieces: floor slab, north/south/east/west wall panels, at least one door/opening, at least one window when reasonable, trim/baseboards, corner connectors, and ceiling/roof attachment sockets.\n"
-            "- Never fuse the room into one solid. Keep floors, walls, windows, doors, trims, and connectors as distinct named components/bodies so Render3D can select and edit one wall at a time.\n"
-            "- Room output contract: include named/selectable pieces for room_floor, wall_north, wall_south, wall_east, wall_west, corner_connectors, baseboard_trim, roof/ceiling sockets, and separate window/door inserts when present.\n"
+            "- The default unit is one complete room module at a time. A room must include meaningful major modules: floor slab, north/south/east/west wall panels, at least one door/opening, at least one window when reasonable, corner pillars/connectors, and ceiling/roof panels.\n"
+            "- Follow upstream text-to-cad structure: return one STEP-ready labeled Compound/assembly. Do not create or rely on one browser component per decorative shape. Major movable modules may be separate labeled solids; small trims, grooves, rails, sockets, connector lips, labels, and panel seams should remain child/detail geometry inside those modules.\n"
+            "- Room output contract: include named/selectable major modules for room_floor, wall_north, wall_south, wall_east, wall_west, roof/ceiling panels, corner pillars, and separate window/door inserts only when those inserts are meant to move independently.\n"
             "- House output contract: if the user asks for a house, produce a kit of separate editable bodies, not a monolith. Each wall must be independently movable/resizable with its own length, label, snap endpoints, connector metadata, and printable mating features.\n"
             "- Starter house recipe: one or two floor slabs, separate exterior wall panels, optional interior divider wall, corner pillars/posts, one framed front door, at least two framed blue-glass windows, separate roof panels/caps, and an open/cutaway side or removable roof so it reads as a house layout.\n"
             "- Make the preview read as a house room: leave one wall open, lowered, or cut away unless the user asks for a sealed module; add wall thickness, baseboards, sill/lintel parts, trim frames, panel seams, and recognizable window/door inserts.\n"
@@ -1612,7 +1660,7 @@ def _run_text_to_cad_v2(
             "- Include print-friendly snap interfaces: chunky tabs, sockets, rails, alignment keys, peg/hole connectors, dovetail-like guides, corner posts, chamfered lead-ins, and 0.2-0.4 mm prototype clearance notes when relevant. Make them visible, named, grid-aligned, and not fragile.\n"
             "- Add robot assembly intent in source comments and labels: pick points, oversized lift tabs, grip flats, lift holes, assembly order, connector side, mating target, and orientation labels like TOP/INSIDE/NORTH.\n"
             "- Apply house-like visual materials/colors: warm wood/tan floor, light wall/plaster panels, darker roof, blue glass inserts, and contrasting trim/connectors.\n"
-            "- Keep STEP-valid solids with semantic labels. Prefer assemblies/compounds of named parts when the user asks for multiple modules.\n"
+            "- Keep STEP-valid solids with semantic labels. Prefer a compact assembly hierarchy: about 6-18 top-level parts for a room/house kit, not dozens of separate trim/connector components.\n"
             "- Do not make a plain house-shaped shell, blank cuboid, sci-fi bunker, random skyscraper block, or greeble panel. Include readable residential floors, walls, doors, windows, roof pieces, pillars, and snap connectors.\n"
         )
     if progress_callback:
@@ -1862,8 +1910,14 @@ def _run_text_to_cad_v2(
             "step": step_name,
             "glb": glb_name,
         }
-        promoted_parts = _promote_disconnected_bodies(project_path, glb_name, base=base)
-        source_parts = _promote_build123d_children_from_source(project_path, source_name, base=base)
+        promoted_parts = [] if architect_mode else _promote_disconnected_bodies(project_path, glb_name, base=base)
+        source_parts = _promote_build123d_children_from_source(
+            project_path,
+            source_name,
+            base=base,
+            max_parts=18 if architect_mode else 96,
+            major_only=architect_mode,
+        )
         if source_parts:
             promoted_parts.extend(name for name in source_parts if name not in promoted_parts)
         if promoted_parts:

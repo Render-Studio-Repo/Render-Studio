@@ -5,7 +5,7 @@ import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 
 const SECTIONS = [
   { id: "components", label: "Components", icon: "cube" },
-  { id: "drawings", label: "Drawings", icon: "drawing" },
+  { id: "drawings", label: "DXF Drawings", icon: "drawing" },
   { id: "sketches", label: "Sketches", icon: "sketch" },
   { id: "wiring", label: "Wiring", icon: "wire" },
 ];

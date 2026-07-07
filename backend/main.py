@@ -5731,6 +5731,27 @@ async def upload_file(
     dest = path / (file.filename or f"upload{suffix}")
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
+    if suffix == ".dxf":
+        project_store.touch_project(path)
+        _notify_project(
+            project_id,
+            {
+                "type": "drawing.added",
+                "filename": dest.name,
+                "url": f"/api/projects/{project_id}/files/{dest.name}",
+                "uploaded_filename": dest.name,
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "action": "upload_dxf",
+            },
+        )
+        return {
+            "filename": dest.name,
+            "viewer_filename": dest.name,
+            "url": f"/api/projects/{project_id}/files/{dest.name}",
+            "timeline_index": None,
+            "drawing": True,
+        }
     # 3MF / STEP have no browser loader — tessellate to GLB for the viewer.
     viewer_filename = dest.name
     if suffix == ".3mf":
