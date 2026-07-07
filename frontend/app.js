@@ -4367,10 +4367,13 @@ function handleDesignTabChange(tab) {
   }
   if (tab === "SKETCH") {
     setRightTab("sketch");
+    focusViewportForShortcuts();
     setEditStatus("ok", "Sketch mode — click Create Sketch to enter locked 2D edit.");
   } else if (tab === "RIGGING") {
+    focusViewportForShortcuts();
     setEditStatus("ok", "Rigging mode — Add Bone, Connect hierarchy, Save Rig.");
   } else if (tab === "ARCHITECT") {
+    focusViewportForShortcuts();
     setEditStatus("ok", "Architect mode — modular house CAD with grid snapping and robot assembly labels.");
   } else if (tab === "CATALOG") {
     exitCanvasTab();
@@ -4387,6 +4390,7 @@ function handleDesignTabChange(tab) {
     exitSketchMode();
     setRightTab("prompt");
     promptHistory.setTab("compose");
+    focusViewportForShortcuts();
   }
   if (tab !== "CANVAS") ribbon?.setDesignTab(tab);
   app?.classList.toggle("sketch-design-tab", tab === "SKETCH");
@@ -13442,6 +13446,14 @@ function shouldUseNativeClipboardShortcut(event, key, mod) {
   const selection = window.getSelection?.();
   if (selection && !selection.isCollapsed) return true;
   return isUiPanelShortcutTarget(event.target);
+}
+
+function focusViewportForShortcuts() {
+  const active = document.activeElement;
+  if (active && isEditableShortcutTarget(active)) {
+    active.blur?.();
+  }
+  renderer.domElement.focus({ preventScroll: true });
 }
 
 window.addEventListener("keydown", (e) => {
