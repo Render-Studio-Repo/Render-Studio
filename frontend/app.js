@@ -2068,6 +2068,7 @@ function isPromptImageDrag(e) {
 
 async function addPromptDxfFiles(files) {
   const MAX_DXF_CHARS = 400_000;
+  let added = 0;
   for (const file of [...files]) {
     if (file.size > 8 * 1024 * 1024) {
       viewerOverlay?.showError?.(`${file.name} is too large for a DXF reference (max 8 MB).`);
@@ -2105,7 +2106,13 @@ async function addPromptDxfFiles(files) {
       text_truncated: truncated,
       projectId,
     });
+    added += 1;
     setEditStatus("ok", `Attached DXF reference ${filename}.`);
+  }
+  if (added > 0) {
+    setSkillEnabled("dxf", true);
+    skillsPromptUI?.render?.();
+    skillsPromptUI?.updatePlan?.();
   }
   if (!restoringModelPromptState) saveActiveModelPromptState();
 }
