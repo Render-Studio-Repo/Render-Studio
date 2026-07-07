@@ -354,16 +354,43 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
             referenced.add(node.id)
     referenced -= local_defined
 
+    # Also collect names called as functions inside gen_step — user-defined
+    # helpers that the model must define at module scope.
+    called_as_func: set[str] = set()
+    for node in ast.walk(gen_step):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            called_as_func.add(node.func.id)
+    called_as_func -= local_defined
+
     skip = set(dir(__builtins__)) | {"True", "False", "None"}
+
     if "build123d" in star_import_roots:
-        # Star import supplies the CAD API; only enforce local helpers/constants.
-        return sorted(
+        # Star import supplies the CAD API (Box, Cylinder, Extrude, …).
+        # build123d exports are PascalCase; user-defined helpers are
+        # snake_case — e.g. make_frame(), build_blade(), create_hub().
+        # Catch any snake_case function call that isn't defined in this file.
+        undefined_helpers = sorted(
+            name
+            for name in called_as_func
+            if name not in defined
+            and name not in skip
+            and name[0].islower()  # snake_case → user helper, not build123d primitive
+        )
+        undefined_config = sorted(
             name
             for name in referenced
             if name not in defined
             and name not in skip
             and _config_like_name(name)
         )
+        # Deduplicate while preserving sort
+        seen: set[str] = set()
+        result: list[str] = []
+        for name in sorted(set(undefined_helpers + undefined_config)):
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+        return result
 
     return sorted(name for name in referenced if name not in defined and name not in skip)
 
@@ -1139,7 +1166,21 @@ def _run_text_to_cad_v2(
                     f"{detail}"
                 )
             else:
-                repair_note = f"scripts/step failed:\n{detail}"
+                # Check for NameError — undefined helper function that gen_step() calls
+                name_err_match = re.search(r"NameError: name '(\w+)' is not defined", detail)
+                if name_err_match:
+                    missing_fn = name_err_match.group(1)
+                    repair_note = (
+                        f"NameError: '{missing_fn}' is called in gen_step() but was never defined in this file. "
+                        "This is the #1 source of failure: you wrote a function call without writing the function body. "
+                        f"Fix: define '{missing_fn}' at module scope BEFORE gen_step(), "
+                        "OR inline its logic directly inside gen_step(). "
+                        "Rule: every function called in gen_step() MUST be fully defined in this same file — "
+                        "do not reference any name that you have not explicitly def'd.\n"
+                        f"Full error:\n{detail}"
+                    )
+                else:
+                    repair_note = f"scripts/step failed:\n{detail}"
             trace_add("error", f"[2.0/text-to-cad] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
             continue
 

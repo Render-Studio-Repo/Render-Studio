@@ -1139,8 +1139,13 @@ def _get_ai_for_user(
     try:
         provider = effective.get("provider") or "openai"
         if provider == "openai":
-            # Speed toggle picks the OpenAI model; saved key model is only a fallback.
-            model = settings.openai_model_quality if speed == "quality" else settings.openai_model
+            key_model = (effective.get("model") or "").strip()
+            if key_model:
+                # User explicitly set a model on their key — respect it always.
+                model = key_model
+            else:
+                # No model pinned — use speed toggle default.
+                model = settings.openai_model_quality if speed == "quality" else settings.openai_model
         else:
             model = (effective.get("model") or "").strip() or settings.anthropic_model
         return AIService(model=model, api_key=effective["api_key"], provider=provider)
