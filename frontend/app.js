@@ -72,7 +72,7 @@ import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=202
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
-import { createObjectTools } from "./object-tools.js?v=20260617-marquee-bodies";
+import { createObjectTools } from "./object-tools.js?v=20260707-delete-selected-object";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-tree-sliders";
 import { createProjectTree } from "./project-tree.js?v=20260706-dxf-drawings";
@@ -3001,6 +3001,10 @@ async function afterModelEdit(data) {
       fitView: false,
     });
   }
+  if (data.timeline) {
+    timelineData = data.timeline;
+    timeline.setTimeline(data.timeline, { scroll: true, scrollAlign: "end" });
+  }
   await refreshTimeline();
   await refreshPromptHistory();
 }
@@ -4898,7 +4902,10 @@ const meshCleanup = createMeshCleanup({
 const objectTools = createObjectTools({
   scene,
   getMeshRoot: () => currentMesh,
-  getModelInfo: () => ({ projectId, filename: selectedFile }),
+  getModelInfo: () => {
+    const selection = objectTools?.getSelection?.();
+    return { projectId, filename: selection?.catalogName || selectedFile };
+  },
   api,
   onApplied: afterModelEdit,
   onStatus: setEditStatus,
@@ -10723,6 +10730,7 @@ function handleRealtimeEvent(msg = {}) {
 
   if (msg.type === "model.reload") {
     void applyLiveModelReload(msg, msg.project_id || projectId);
+    if (msg.timeline_entry) void refreshTimeline();
     return;
   }
 
@@ -13467,7 +13475,7 @@ window.addEventListener("keydown", (e) => {
       wiringSim.undo();
       return;
     }
-    if (mod && key === "z" && e.shiftKey) {
+    if ((mod && key === "y") || (mod && key === "z" && e.shiftKey)) {
       e.preventDefault();
       wiringSim.redo();
       return;
@@ -13480,7 +13488,7 @@ window.addEventListener("keydown", (e) => {
       else setEditStatus("error", "Nothing to undo.");
       return;
     }
-    if (mod && key === "z" && e.shiftKey) {
+    if ((mod && key === "y") || (mod && key === "z" && e.shiftKey)) {
       e.preventDefault();
       if (sketchEditor.redo()) setEditStatus("ok", "Sketch redo.");
       else setEditStatus("error", "Nothing to redo.");
@@ -13497,7 +13505,13 @@ window.addEventListener("keydown", (e) => {
       return;
     }
   }
-  if (inField) return;
+  if (inField && e.key === "Escape") {
+    e.preventDefault();
+    e.target?.blur?.();
+    focusViewportForShortcuts();
+  } else if (inField) {
+    return;
+  }
   if (mod && key === "c") {
     if (selectedObjectFilename()) {
       e.preventDefault();
@@ -13536,7 +13550,7 @@ window.addEventListener("keydown", (e) => {
     undoTimeline();
     return;
   }
-  if (mod && key === "z" && e.shiftKey) {
+  if ((mod && key === "y") || (mod && key === "z" && e.shiftKey)) {
     e.preventDefault();
     redoTimeline();
     return;

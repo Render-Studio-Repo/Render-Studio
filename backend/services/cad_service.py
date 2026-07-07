@@ -2099,6 +2099,55 @@ def face_pull(
     return _reassemble_bodies(bodies)
 
 
+def face_pull_many(
+    mesh: trimesh.Trimesh,
+    face_indices: list[int],
+    *,
+    distance: float,
+    op: str = "auto",
+    direction: str = "one",
+    distance2: float = 0.0,
+    taper_deg: float = 0.0,
+    through: bool = False,
+    normal: list[float] | None = None,
+) -> trimesh.Trimesh:
+    """Compatibility wrapper for Press-Pull on one or more picked faces."""
+    indices = sorted({int(i) for i in face_indices if int(i) >= 0})
+    if not indices:
+        raise ValueError("Pick one or more faces before applying Press-Pull.")
+
+    result = face_pull(
+        mesh,
+        indices[0],
+        distance=distance,
+        op=op,
+        direction=direction,
+        distance2=distance2,
+        taper_deg=taper_deg,
+        through=through,
+        normal=normal,
+    )
+    for face_index in indices[1:]:
+        try:
+            result = face_pull(
+                result,
+                face_index,
+                distance=distance,
+                op=op,
+                direction=direction,
+                distance2=distance2,
+                taper_deg=taper_deg,
+                through=through,
+                normal=normal,
+            )
+        except ValueError as exc:
+            # A first face often expands to the full coplanar region, and
+            # boolean topology can renumber later face indices. Keep the
+            # successful pull rather than failing the whole tool.
+            logger.info("Skipping additional Press-Pull face %s after topology changed: %s", face_index, exc)
+    return result
+
+
 _PLANE_NORMALS = {"YZ": [1.0, 0.0, 0.0], "XZ": [0.0, 1.0, 0.0], "XY": [0.0, 0.0, 1.0]}
 
 

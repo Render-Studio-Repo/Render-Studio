@@ -28,6 +28,7 @@ export function createObjectTools({
   let selected = null;
   let highlights = [];
   let bodyInfo = null;
+  let bodyInfoFilename = null;
 
   function setStatus(kind, text) {
     onStatus?.(kind, text);
@@ -187,16 +188,20 @@ export function createObjectTools({
     selectObject({ mesh: meshes[0] || root, root, bodyIndex: 0 });
   }
 
-  async function refreshBodyInfo() {
-    const { projectId, filename } = getModelInfo?.() || {};
+  async function refreshBodyInfo(filenameOverride = null) {
+    const { projectId, filename: modelFilename } = getModelInfo?.() || {};
+    const filename = filenameOverride || modelFilename;
     if (!projectId || !filename) {
       bodyInfo = null;
+      bodyInfoFilename = null;
       return null;
     }
     try {
       bodyInfo = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/bodies`);
+      bodyInfoFilename = filename;
     } catch {
       bodyInfo = null;
+      bodyInfoFilename = null;
     }
     return bodyInfo;
   }
@@ -269,6 +274,9 @@ export function createObjectTools({
     const selections = selected.selections?.length ? selected.selections : [selected];
     const label = selected.label;
     const targetFile = selected.catalogName || activeFilename;
+    if (bodyInfoFilename !== targetFile) {
+      await refreshBodyInfo(targetFile);
+    }
     const multiBody = (bodyInfo?.count || 1) > 1;
 
     const selectedBodyIndices = [...new Set(selections.map((s) => s.bodyIndex).filter((n) => Number.isInteger(n)))]
