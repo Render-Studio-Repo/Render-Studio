@@ -8472,16 +8472,25 @@ def prompt_cad(
         user_id=user["id"],
     )
     if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
-        missing_dxf_content = [
-            ref.filename or ref.label or ref.id
-            for ref in body.references
-            if str(ref.type or "").lower() == "dxf" and not (ref.text_content or "").strip()
-        ]
+        missing_dxf_content: list[str] = []
+        for ref in body.references:
+            if str(ref.type or "").lower() != "dxf":
+                continue
+            if (ref.text_content or "").strip():
+                continue
+            raw_name = ref.filename or ref.label or ""
+            safe_name = Path(str(raw_name)).name.strip()
+            if safe_name and not safe_name.lower().endswith(".dxf"):
+                safe_name = f"{Path(safe_name).stem or 'reference'}.dxf"
+            if safe_name and (project_path / safe_name).is_file():
+                continue
+            missing_dxf_content.append(ref.filename or ref.label or ref.id)
         if missing_dxf_content:
             raise HTTPException(
                 422,
-                "DXF reference content was not attached. Reload the app, drop the DXF into the AI prompt again, "
-                f"and retry. Missing DXF content for: {', '.join(missing_dxf_content[:3])}",
+                "DXF reference content was not attached and the DXF file is not saved in this project. "
+                "Drop the DXF into the AI prompt or upload it to DXF Drawings, then retry. "
+                f"Missing DXF content for: {', '.join(missing_dxf_content[:3])}",
             )
         resolved_skills = [*resolved_skills, "dxf"] if "dxf" not in {s.lower() for s in resolved_skills} else resolved_skills
 
