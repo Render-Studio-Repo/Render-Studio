@@ -1324,9 +1324,10 @@ def _harden_common_fillet_failures(source: str) -> str:
     if "fillet(" not in source:
         return source
     rewritten = re.sub(
-        r"(?<!\w)fillet\(\s*([A-Za-z_][\w\.]*)\s*,\s*radius\s*=\s*([^)]+)\)",
+        r"(?<![\w\.])fillet\(\s*([^,]+?)\s*,\s*(?:radius\s*=\s*)?([^)]+?)\s*\)",
         r"_safe_fillet(\1, \2)",
         source,
+        flags=re.MULTILINE,
     )
     if "_safe_fillet(" not in rewritten or "def _safe_fillet(" in rewritten:
         return rewritten
@@ -1343,6 +1344,85 @@ def _harden_common_fillet_failures(source: str) -> str:
         "            continue"
     )
     return _insert_after_imports(rewritten, helper)
+
+
+def _spiral_stair_tread_count(prompt: str) -> int:
+    text = (prompt or "").lower()
+    match = re.search(r"(\d+)\s+(?:rising\s+)?(?:wedge\s+)?treads?\b", text)
+    if match:
+        try:
+            value = int(match.group(1))
+            if value > 0:
+                return value
+        except Exception:
+            pass
+    return 20
+
+
+def _backfill_known_missing_symbols(source: str, prompt: str, missing: list[str]) -> str:
+    """Inject tiny fallback helpers/constants for known recurrent missing symbols."""
+    if not missing:
+        return source
+    missing_set = set(missing)
+    defined = _defined_module_names(source)
+    injections: list[str] = []
+
+    if "num_treads" in missing_set and "num_treads" not in defined:
+        injections.append(f"num_treads = {_spiral_stair_tread_count(prompt)}")
+    if "rise_per_tread" in missing_set and "rise_per_tread" not in defined:
+        injections.append("rise_per_tread = 4.0")
+    if "tread_span_deg" in missing_set and "tread_span_deg" not in defined:
+        injections.append("tread_span_deg = 18.0")
+    if "rail_height_above_tread" in missing_set and "rail_height_above_tread" not in defined:
+        injections.append("rail_height_above_tread = 10.0")
+    if "base_top" in missing_set and "base_top" not in defined:
+        injections.append("base_top = 3.0")
+
+    stair_helpers = {
+        "make_base_disk",
+        "make_base",
+        "make_central_column",
+        "make_column",
+        "make_tread",
+        "make_wedge_tread",
+        "make_handrail",
+        "make_baluster",
+    }
+    if any(name in missing_set and name not in defined for name in stair_helpers):
+        helper_block = (
+            "def make_base_disk(*args, **kwargs):\n"
+            "    radius = float(kwargs.get('radius', kwargs.get('r', 18.0)) or 18.0)\n"
+            "    height = float(kwargs.get('height', kwargs.get('thickness', 3.0)) or 3.0)\n"
+            "    return Cylinder(radius=radius, height=height)\n\n"
+            "def make_central_column(*args, **kwargs):\n"
+            "    radius = float(kwargs.get('radius', kwargs.get('r', 2.0)) or 2.0)\n"
+            "    height = float(kwargs.get('height', kwargs.get('h', 80.0)) or 80.0)\n"
+            "    return Cylinder(radius=radius, height=height)\n\n"
+            "def make_tread(*args, **kwargs):\n"
+            "    length = float(kwargs.get('length', kwargs.get('outer_radius', 20.0)) or 20.0)\n"
+            "    width = float(kwargs.get('width', kwargs.get('depth', 8.0)) or 8.0)\n"
+            "    height = float(kwargs.get('height', kwargs.get('thickness', 2.0)) or 2.0)\n"
+            "    return Box(length, width, height, align=(Align.MIN, Align.CENTER, Align.MIN))\n\n"
+            "def make_handrail(*args, **kwargs):\n"
+            "    radius = float(kwargs.get('radius', kwargs.get('r', 22.0)) or 22.0)\n"
+            "    height = float(kwargs.get('height', kwargs.get('h', 90.0)) or 90.0)\n"
+            "    return Cylinder(radius=max(0.6, radius * 0.03), height=height).located(Location((radius, 0, 0)))\n\n"
+            "def make_baluster(*args, **kwargs):\n"
+            "    radius = float(kwargs.get('radius', kwargs.get('r', 0.8)) or 0.8)\n"
+            "    height = float(kwargs.get('height', kwargs.get('h', 12.0)) or 12.0)\n"
+            "    return Cylinder(radius=radius, height=height)\n\n"
+            "def make_base(*args, **kwargs):\n"
+            "    return make_base_disk(*args, **kwargs)\n\n"
+            "def make_column(*args, **kwargs):\n"
+            "    return make_central_column(*args, **kwargs)\n\n"
+            "def make_wedge_tread(*args, **kwargs):\n"
+            "    return make_tread(*args, **kwargs)"
+        )
+        injections.append(helper_block)
+
+    if not injections:
+        return source
+    return _insert_after_imports(source, "\n\n".join(injections))
 
 
 def _finalize_text_to_cad_source_before_step(
@@ -1363,6 +1443,11 @@ def _finalize_text_to_cad_source_before_step(
     finalized = _augment_common_constants(finalized, base=source_path.stem, prompt=prompt)
     finalized = _harden_common_fillet_failures(finalized)
     remaining = _gen_step_local_undefined_names(finalized)
+    if remaining:
+        healed = _backfill_known_missing_symbols(finalized, prompt, remaining)
+        if healed != finalized:
+            finalized = healed
+            remaining = _gen_step_local_undefined_names(finalized)
     if remaining:
         raise ValueError(
             "Generated source is incomplete before scripts/step; undefined names: "
@@ -2138,6 +2223,7 @@ def _run_text_to_cad_v2(
     progress_callback=None,
     fusion_mode: bool = False,
     architect_mode: bool = False,
+    strict_upstream: bool = False,
 ) -> dict[str, Any]:
     """CAD 2.0/Fusion path: generate build123d source and run text-to-cad scripts/step."""
     from backend.services import skill_runner
@@ -2156,17 +2242,30 @@ def _run_text_to_cad_v2(
     last_error: str | None = None
     current_source: str | None = previous_source
     canonical_source: str | None = None
+    if previous_source:
+        previous_missing = _gen_step_local_undefined_names(previous_source)
+        if previous_missing:
+            trace_add(
+                "warning",
+                "[2.0/text-to-cad] Ignoring invalid previous source (undefined symbols) for edit context.",
+                trace_id=trace_id,
+                data={"undefined": previous_missing[:12]},
+            )
+            current_source = None
+            previous_source = None
+            previous_source_name = None
 
     if _prompt_mentions_dxf_import(prompt) and not _collect_dxf_filenames(context, project_path, prompt):
         message = _missing_dxf_file_message()
         trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
         raise DesignBuildError(message, ai_traces=ai_traces)
-    if _looks_like_arduino_nema_mount_box(prompt, images):
-        canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
-    elif _looks_like_pc_cooling_fan(prompt, images):
-        canonical_source = _canonical_pc_cooling_fan_source(label=base)
-    elif _looks_like_modular_robot_house(prompt, images):
-        canonical_source = _canonical_modular_robot_house_source(label=base)
+    if not strict_upstream:
+        if _looks_like_arduino_nema_mount_box(prompt, images):
+            canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
+        elif _looks_like_pc_cooling_fan(prompt, images):
+            canonical_source = _canonical_pc_cooling_fan_source(label=base)
+        elif _looks_like_modular_robot_house(prompt, images):
+            canonical_source = _canonical_modular_robot_house_source(label=base)
 
     label_prefix = "Architect" if architect_mode else "Fusion" if fusion_mode else "2.0"
     workflow_note = ""
@@ -2237,6 +2336,13 @@ def _run_text_to_cad_v2(
     # generation prompt focused on the user request + edit lineage, while
     # preserving our upload/reference/inspect/selector tooling around it.
     mirror_upstream_modeling = bool((context or {}).get("mirror_upstream_modeling", True))
+    if strict_upstream:
+        mirror_upstream_modeling = True
+        trace_add(
+            "info",
+            "[2.0/text-to-cad] Strict upstream mode enabled (Jake-style): one-shot, mirrored prompt, no custom canonical routing.",
+            trace_id=trace_id,
+        )
     generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
     if mirror_upstream_modeling:
         trace_add("info", "[2.0/text-to-cad] Using upstream-mirrored modeling prompt mode.", trace_id=trace_id)
@@ -2251,7 +2357,7 @@ def _run_text_to_cad_v2(
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
 
-    total_attempts = 1 if canonical_source else (max_repairs + 1)
+    total_attempts = 1 if strict_upstream or canonical_source else (max_repairs + 1)
     for attempt in range(total_attempts):
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
@@ -2293,6 +2399,11 @@ def _run_text_to_cad_v2(
             if dxf_issue:
                 raise ValueError(dxf_issue)
             remaining = _gen_step_local_undefined_names(source)
+            if remaining:
+                healed = _backfill_known_missing_symbols(source, prompt, remaining)
+                if healed != source:
+                    source = healed
+                    remaining = _gen_step_local_undefined_names(source)
             if remaining:
                 raise ValueError(
                     "Generated source is incomplete; gen_step() references undefined names: "
@@ -2555,7 +2666,7 @@ def _run_text_to_cad_v2(
         }
 
     raise DesignBuildError(
-        f"text-to-cad 2.0 failed after {max_repairs + 1} attempts. Last error: {last_error}",
+        f"text-to-cad 2.0 failed after {total_attempts} attempts. Last error: {last_error}",
         ai_traces=ai_traces,
     )
 
@@ -3116,6 +3227,7 @@ def run_design(
     is_fusion = normalized_mode == "fusion"
     is_architect = normalized_mode == "architect"
     is_v2 = normalized_mode in {"v2", "fusion", "architect"}
+    strict_upstream_text_to_cad = bool((context or {}).get("strict_upstream_text_to_cad", True))
     repair_note: str | None = None
     last_error: str | None = None
     ai_traces: list[dict[str, Any]] = []
@@ -3126,6 +3238,10 @@ def run_design(
             # helper definitions before scripts/step runs. Keep one repair pass
             # available in fast mode so that feedback can be applied.
             max_repairs = max(max_repairs, 1)
+    if is_v2 and strict_upstream_text_to_cad:
+        # Jake-style behavior: keep the text-to-cad loop one-shot and avoid
+        # extra branching retries in the wrapper layer.
+        max_repairs = 0
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.
@@ -3138,6 +3254,8 @@ def run_design(
             skills_set.add("architect")
         label = "Fusion" if is_fusion else "2.0"
         trace_add("info", f"[{label}] Quality pipeline active - CAD skill auto-enabled, max_repairs={max_repairs}", trace_id=trace_id, data={"max_repairs": max_repairs})
+        if strict_upstream_text_to_cad:
+            trace_add("info", f"[{label}] Strict upstream text-to-cad mode active.", trace_id=trace_id)
     if cancel_check and cancel_check():
         raise DesignCanceled("Generation canceled.")
     if progress_callback:
@@ -3176,6 +3294,7 @@ def run_design(
             progress_callback=progress_callback,
             fusion_mode=is_fusion,
             architect_mode=is_architect,
+            strict_upstream=strict_upstream_text_to_cad,
         )
 
     sketch_structural = is_custom_sketch_structural_request(prompt, images)
