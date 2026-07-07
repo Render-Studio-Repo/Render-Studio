@@ -3715,6 +3715,70 @@ function architectDimensions() {
   };
 }
 
+const ARCHITECT_CONNECTOR_PROFILE_KEY = "render3d:architect-connector-profile:v1";
+
+function clampArchitectConnectorSize(value) {
+  return Math.round(THREE.MathUtils.clamp(Number(value) || 180, 60, 600));
+}
+
+function storedArchitectConnectorProfile() {
+  try {
+    return JSON.parse(localStorage.getItem(ARCHITECT_CONNECTOR_PROFILE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function architectConnectorSettings() {
+  const profile = storedArchitectConnectorProfile();
+  const preset = document.getElementById("architect-connector-preset")?.value || (profile ? "dxf_profile" : "robot_snap");
+  const sizeInput = document.getElementById("architect-connector-size");
+  const size = clampArchitectConnectorSize(sizeInput?.value || profile?.size_mm || 180);
+  return {
+    preset,
+    profileName: profile?.name || "",
+    size,
+    width: size,
+    depth: Math.max(75, Math.round(size * 0.58)),
+    height: Math.max(62, Math.round(size * 0.42)),
+  };
+}
+
+function parseArchitectConnectorDxfProfile(text = "", name = "connector.dxf") {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim());
+  const xs = [];
+  const ys = [];
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    const code = Number(lines[i]);
+    const value = Number(lines[i + 1]);
+    if (!Number.isFinite(code) || !Number.isFinite(value)) continue;
+    if (code >= 10 && code <= 18) xs.push(value);
+    if (code >= 20 && code <= 28) ys.push(value);
+    if (code === 40) {
+      xs.push(-value, value);
+      ys.push(-value, value);
+    }
+  }
+  const width = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
+  const height = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
+  const footprint = Math.max(width, height);
+  return {
+    name,
+    size_mm: clampArchitectConnectorSize(footprint || 180),
+    width_mm: Math.round(width || footprint || 180),
+    height_mm: Math.round(height || footprint || 180),
+  };
+}
+
+function updateArchitectConnectorStatus() {
+  const status = document.getElementById("architect-connector-status");
+  if (!status) return;
+  const settings = architectConnectorSettings();
+  status.textContent = settings.preset === "dxf_profile" && settings.profileName
+    ? `Using DXF connector profile: ${settings.profileName} (${settings.size} mm).`
+    : `Using ${settings.preset === "simple" ? "simple block" : "built-in no-screw robot snap"} connector (${settings.size} mm).`;
+}
+
 function architectBoxFeature(length, width, height, at = [0, 0, 0], combine = "add") {
   return { op: "box", combine, length, width, height, at };
 }
@@ -3808,6 +3872,7 @@ function markArchitectInstance(obj, catalogName, kind) {
 
 function createArchitectInstance(kind = "wall") {
   const { grid, wallHeight, thickness, wallLength } = architectDimensions();
+  const connectorProfile = architectConnectorSettings();
   const group = new THREE.Group();
   group.userData.localOnly = true;
   group.userData.architectInstance = true;
@@ -3825,13 +3890,55 @@ function createArchitectInstance(kind = "wall") {
   const darkWood = "#7b5436";
   const metal = "#c8a75a";
 
+  const addSnapConnector = ({
+    side = "east",
+    type = "male",
+    at = [0, 0, 0],
+    name = "robot_snap_connector",
+    size = connectorProfile.size,
+  } = {}) => {
+    const simple = connectorProfile.preset === "simple";
+    const width = size;
+    const depth = Math.max(65, Math.round(size * 0.55));
+    const height = Math.max(55, Math.round(size * 0.38));
+    const axisX = side === "east" || side === "west";
+    const sign = side === "east" || side === "north" ? 1 : -1;
+    const cx = at[0] + (axisX ? sign * depth / 2 : 0);
+    const cy = at[1] + (!axisX ? sign * depth / 2 : 0);
+    const lx = axisX ? depth : width;
+    const ly = axisX ? width : depth;
+    const railX = axisX ? depth * 0.82 : width * 0.24;
+    const railY = axisX ? width * 0.24 : depth * 0.82;
+    const faceX = at[0] + (axisX ? sign * (depth + 10) : 0);
+    const faceY = at[1] + (!axisX ? sign * (depth + 10) : 0);
+    if (type === "female") {
+      add(lx, ly, height, [cx, cy, at[2] + height / 2], connector, `${name}_female_outer_socket`);
+      if (!simple) {
+        add(axisX ? 18 : width * 0.72, axisX ? width * 0.72 : 18, height * 0.62, [faceX, faceY, at[2] + height * 0.52], "#1f2937", `${name}_visible_snap_cavity`);
+        add(axisX ? depth * 0.72 : 22, axisX ? 22 : depth * 0.72, height * 0.18, [cx, cy, at[2] + height + 10], "#94a3b8", `${name}_lead_in_chamfer_lip`);
+        add(axisX ? 24 : width * 0.16, axisX ? width * 0.16 : 24, height * 0.5, [cx - (axisX ? 0 : width * 0.28), cy - (axisX ? width * 0.28 : 0), at[2] + height * 0.55], "#334155", `${name}_left_lock_relief`);
+        add(axisX ? 24 : width * 0.16, axisX ? width * 0.16 : 24, height * 0.5, [cx + (axisX ? 0 : width * 0.28), cy + (axisX ? width * 0.28 : 0), at[2] + height * 0.55], "#334155", `${name}_right_lock_relief`);
+      }
+      return;
+    }
+    add(lx, ly, height, [cx, cy, at[2] + height / 2], "#64748b", `${name}_male_tongue`);
+    if (!simple) {
+      add(railX, railY, height * 0.32, [cx, cy, at[2] + height + height * 0.16], "#cbd5e1", `${name}_raised_center_key`);
+      add(axisX ? depth * 0.22 : width * 0.72, axisX ? width * 0.72 : depth * 0.22, height * 0.28, [faceX, faceY, at[2] + height * 0.64], "#94a3b8", `${name}_rounded_lead_in_nose`);
+      cyl(Math.max(14, size * 0.075), axisX ? width * 0.72 : depth * 0.72, [cx, cy, at[2] + height * 0.72], "#e2e8f0", `${name}_spring_lock_bar`, axisX ? "y" : "x", 18);
+      add(axisX ? depth * 0.18 : width * 0.16, axisX ? width * 0.16 : depth * 0.18, height * 0.25, [cx, cy, at[2] + height * 1.48], "#f8fafc", `${name}_robot_visual_alignment_mark`);
+    }
+  };
+
   const addWallDetails = (length = wallLength, h = wallHeight, prefix = "wall") => {
     add(length, 26, 62, [0, -thickness / 2 - 18, 90], trim, `${prefix}_baseboard_front`);
     add(length, 22, 48, [0, -thickness / 2 - 16, h - 52], trim, `${prefix}_crown_trim_front`);
     add(48, 24, h * 0.76, [-length * 0.28, -thickness / 2 - 18, h * 0.52], "#ddd6c5", `${prefix}_subtle_vertical_panel_seam_left`);
     add(48, 24, h * 0.76, [length * 0.28, -thickness / 2 - 18, h * 0.52], "#ddd6c5", `${prefix}_subtle_vertical_panel_seam_right`);
-    add(130, thickness + 52, 130, [-length / 2 + 105, 0, 185], connector, `${prefix}_left_snap_socket`);
-    add(130, thickness + 52, 130, [length / 2 - 105, 0, 185], connector, `${prefix}_right_snap_socket`);
+    addSnapConnector({ side: "west", type: "male", at: [-length / 2, 0, 125], name: `${prefix}_west_robot_snap` });
+    addSnapConnector({ side: "east", type: "male", at: [length / 2, 0, 125], name: `${prefix}_east_robot_snap` });
+    addSnapConnector({ side: "south", type: "male", at: [-length * 0.28, -thickness / 2, 0], name: `${prefix}_floor_left_robot_snap`, size: connectorProfile.size * 0.75 });
+    addSnapConnector({ side: "south", type: "male", at: [length * 0.28, -thickness / 2, 0], name: `${prefix}_floor_right_robot_snap`, size: connectorProfile.size * 0.75 });
     add(125, 48, 44, [0, -thickness / 2 - 28, h * 0.62], "#b8c0c8", `${prefix}_robot_grip_pad`);
   };
 
@@ -3843,8 +3950,8 @@ function createArchitectInstance(kind = "wall") {
     add(64, 52, h + 140, [cx + w / 2 + 62, y - 7, zc], trim, "window_right_jamb_trim");
     add(42, 42, h, [cx, y - 16, zc], "#f1f5f9", "window_center_mullion");
     add(w, 42, 42, [cx, y - 17, zc], "#f1f5f9", "window_cross_mullion");
-    add(95, 58, 82, [cx - w / 2 - 130, y - 2, zc], connector, "window_left_snap_tab");
-    add(95, 58, 82, [cx + w / 2 + 130, y - 2, zc], connector, "window_right_snap_tab");
+    addSnapConnector({ side: "west", type: "male", at: [cx - w / 2 - 80, y - 2, zc - 70], name: "window_left_robot_snap", size: connectorProfile.size * 0.62 });
+    addSnapConnector({ side: "east", type: "male", at: [cx + w / 2 + 80, y - 2, zc - 70], name: "window_right_robot_snap", size: connectorProfile.size * 0.62 });
   };
 
   const addDoorDetails = (cx = 0, y = -thickness / 2 - 24, w = grid * 0.5, h = wallHeight * 0.72) => {
@@ -3858,8 +3965,8 @@ function createArchitectInstance(kind = "wall") {
     add(78, 70, h + 120, [cx + w / 2 + 78, y - 8, (h + 120) / 2], trim, "door_right_jamb_casing");
     add(w + 210, 92, 70, [cx, y - 12, 35], "#d6b37a", "door_threshold_sill");
     cyl(34, 32, [cx + w * 0.34, y - 54, h * 0.52], metal, "round_brass_door_knob", "y", 28);
-    add(95, 70, 100, [cx - w / 2 - 145, y + 10, h * 0.35], connector, "door_left_snap_pocket");
-    add(95, 70, 100, [cx + w / 2 + 145, y + 10, h * 0.35], connector, "door_right_snap_pocket");
+    addSnapConnector({ side: "west", type: "male", at: [cx - w / 2 - 85, y + 10, h * 0.35], name: "door_left_robot_snap", size: connectorProfile.size * 0.64 });
+    addSnapConnector({ side: "east", type: "male", at: [cx + w / 2 + 85, y + 10, h * 0.35], name: "door_right_robot_snap", size: connectorProfile.size * 0.64 });
   };
 
   if (kind === "floor" || kind === "floor-small" || kind === "floor-wide") {
@@ -3876,10 +3983,18 @@ function createArchitectInstance(kind = "wall") {
     add(lx + 140, 55, 70, [0, ly / 2 + 70, 125], "#d8b074", "floor_snap_rail_north");
     add(55, ly + 140, 70, [-lx / 2 - 70, 0, 125], "#d8b074", "floor_snap_rail_west");
     add(55, ly + 140, 70, [lx / 2 + 70, 0, 125], "#d8b074", "floor_snap_rail_east");
-    add(150, 150, 42, [-lx / 2, -ly / 2, 132], connector, "floor_corner_socket_sw");
-    add(150, 150, 42, [lx / 2, -ly / 2, 132], connector, "floor_corner_socket_se");
-    add(150, 150, 42, [-lx / 2, ly / 2, 132], connector, "floor_corner_socket_nw");
-    add(150, 150, 42, [lx / 2, ly / 2, 132], connector, "floor_corner_socket_ne");
+    [-0.25, 0.25].forEach((t, i) => {
+      addSnapConnector({ side: "south", type: "female", at: [lx * t, -ly / 2 - 50, 96], name: `floor_south_robot_socket_${i + 1}` });
+      addSnapConnector({ side: "north", type: "female", at: [lx * t, ly / 2 + 50, 96], name: `floor_north_robot_socket_${i + 1}` });
+    });
+    [-0.25, 0.25].forEach((t, i) => {
+      addSnapConnector({ side: "west", type: "female", at: [-lx / 2 - 50, ly * t, 96], name: `floor_west_robot_socket_${i + 1}` });
+      addSnapConnector({ side: "east", type: "female", at: [lx / 2 + 50, ly * t, 96], name: `floor_east_robot_socket_${i + 1}` });
+    });
+    addSnapConnector({ side: "south", type: "female", at: [-lx / 2, -ly / 2, 132], name: "floor_corner_socket_sw", size: connectorProfile.size * 0.78 });
+    addSnapConnector({ side: "south", type: "female", at: [lx / 2, -ly / 2, 132], name: "floor_corner_socket_se", size: connectorProfile.size * 0.78 });
+    addSnapConnector({ side: "north", type: "female", at: [-lx / 2, ly / 2, 132], name: "floor_corner_socket_nw", size: connectorProfile.size * 0.78 });
+    addSnapConnector({ side: "north", type: "female", at: [lx / 2, ly / 2, 132], name: "floor_corner_socket_ne", size: connectorProfile.size * 0.78 });
     return group;
   }
 
@@ -3899,10 +4014,11 @@ function createArchitectInstance(kind = "wall") {
     add(34, 34, h * 0.78, [72, -72, h * 0.5], "#e9dcc6", "pillar_corner_bead_se");
     add(34, 34, h * 0.78, [-72, 72, h * 0.5], "#e9dcc6", "pillar_corner_bead_nw");
     add(34, 34, h * 0.78, [72, 72, h * 0.5], "#e9dcc6", "pillar_corner_bead_ne");
-    add(95, 220, 160, [0, -160, 160], connector, "wall_socket_south");
-    add(95, 220, 160, [0, 160, 160], connector, "wall_socket_north");
-    add(220, 95, 160, [-160, 0, 160], connector, "wall_socket_west");
-    add(220, 95, 160, [160, 0, 160], connector, "wall_socket_east");
+    addSnapConnector({ side: "south", type: "female", at: [0, -90, 120], name: "pillar_wall_socket_south" });
+    addSnapConnector({ side: "north", type: "female", at: [0, 90, 120], name: "pillar_wall_socket_north" });
+    addSnapConnector({ side: "west", type: "female", at: [-90, 0, 120], name: "pillar_wall_socket_west" });
+    addSnapConnector({ side: "east", type: "female", at: [90, 0, 120], name: "pillar_wall_socket_east" });
+    addSnapConnector({ side: "south", type: "male", at: [0, 0, 0], name: "pillar_floor_robot_snap", size: connectorProfile.size * 0.7 });
     add(120, 120, 70, [0, 0, h + 35], "#94a3b8", "robot_pick_tab_top");
     return group;
   }
@@ -4349,8 +4465,37 @@ function architectModuleSnapAnchors(obj, box = architectWorldBox(obj)) {
   return anchors;
 }
 
+function architectNamedConnectorAnchors(obj) {
+  const anchors = [];
+  obj?.updateMatrixWorld?.(true);
+  obj?.traverse?.((child) => {
+    if (!child?.isMesh) return;
+    const name = String(child.name || "").toLowerCase();
+    const isMale = name.includes("_male_tongue") || name.includes("male_tongue");
+    const isFemale = name.includes("_female_outer_socket") || name.includes("female_outer_socket") || name.includes("visible_snap_cavity");
+    if (!isMale && !isFemale) return;
+    const box = new THREE.Box3().setFromObject(child);
+    if (box.isEmpty()) return;
+    const side =
+      name.includes("west") || name.includes("_left_") ? "west" :
+      name.includes("east") || name.includes("_right_") ? "east" :
+      name.includes("south") ? "south" :
+      name.includes("north") ? "north" :
+      "connector";
+    anchors.push({
+      role: isMale ? "connector-male" : "connector-female",
+      side,
+      point: box.getCenter(new THREE.Vector3()),
+      label: `${side} ${isMale ? "tongue" : "socket"}`,
+    });
+  });
+  return anchors;
+}
+
 function architectAnchorsCompatible(a, b) {
   if (!a || !b) return false;
+  if (a.role === "connector-male" && b.role === "connector-female") return true;
+  if (a.role === "connector-female" && b.role === "connector-male") return true;
   if (a.role === "floor-foot" && (b.role === "floor-edge" || b.role === "floor-corner")) return true;
   if (b.role === "floor-foot" && (a.role === "floor-edge" || a.role === "floor-corner")) return true;
   if (a.role === "module-side" && (b.role === "module-side" || b.role === "pillar-socket")) return true;
@@ -4359,13 +4504,15 @@ function architectAnchorsCompatible(a, b) {
 }
 
 function architectSelectedSnapAnchors(mesh) {
-  return architectModuleSnapAnchors(mesh);
+  const named = architectNamedConnectorAnchors(mesh);
+  return named.length ? named : architectModuleSnapAnchors(mesh);
 }
 
 function architectTargetSnapAnchors(obj) {
   const kind = selectedArchitectKind(obj);
-  if (architectSnapRole(kind) === "floor") return architectFloorSnapAnchors(obj);
-  return architectModuleSnapAnchors(obj);
+  const named = architectNamedConnectorAnchors(obj);
+  if (architectSnapRole(kind) === "floor") return [...named, ...architectFloorSnapAnchors(obj)];
+  return named.length ? named : architectModuleSnapAnchors(obj);
 }
 
 function nearestArchitectConnectorSnap(mesh) {
@@ -6362,6 +6509,42 @@ document.querySelectorAll("[data-architect-library-close]").forEach((el) => {
 document.getElementById("architect-library-search")?.addEventListener("input", () => {
   void renderArchitectLibrary();
 });
+
+function initializeArchitectConnectorControls() {
+  const presetEl = document.getElementById("architect-connector-preset");
+  const sizeEl = document.getElementById("architect-connector-size");
+  const inputEl = document.getElementById("architect-connector-dxf-input");
+  const buttonEl = document.getElementById("btn-architect-connector-dxf");
+  const storedProfile = storedArchitectConnectorProfile();
+  if (storedProfile) {
+    if (presetEl) presetEl.value = "dxf_profile";
+    if (sizeEl) sizeEl.value = String(clampArchitectConnectorSize(storedProfile.size_mm));
+  }
+  updateArchitectConnectorStatus();
+  presetEl?.addEventListener("change", updateArchitectConnectorStatus);
+  sizeEl?.addEventListener("input", updateArchitectConnectorStatus);
+  buttonEl?.addEventListener("click", () => inputEl?.click());
+  inputEl?.addEventListener("change", async () => {
+    const file = inputEl.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const profile = parseArchitectConnectorDxfProfile(text, file.name);
+      localStorage.setItem(ARCHITECT_CONNECTOR_PROFILE_KEY, JSON.stringify(profile));
+      if (presetEl) presetEl.value = "dxf_profile";
+      if (sizeEl) sizeEl.value = String(profile.size_mm);
+      updateArchitectConnectorStatus();
+      setEditStatus("ok", `Loaded Architect connector DXF profile ${file.name}. New modules use that snap size.`);
+    } catch (err) {
+      setEditStatus("error", err.message || "Could not read connector DXF.");
+    } finally {
+      inputEl.value = "";
+    }
+  });
+}
+
+initializeArchitectConnectorControls();
+
 document.querySelectorAll("[data-architect-module]").forEach((btn) => {
   btn.addEventListener("click", () => {
     void buildArchitectModule(btn.dataset.architectModule || "wall").catch((err) => {

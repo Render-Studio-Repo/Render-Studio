@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import re
 import ast
 import base64
@@ -517,6 +518,100 @@ def _promote_disconnected_bodies(
             outputs.append(name)
         except Exception as exc:
             logger.debug("could not promote text-to-cad body %s from %s: %s", idx, glb_name, exc)
+    return outputs
+
+
+def _part_artifact_slug(label: str | None, fallback: str) -> str:
+    raw = (label or fallback or "part").strip()
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", raw).strip("_").lower()
+    return slug[:80] or fallback
+
+
+def _iter_build123d_leaf_children(shape: Any, *, max_depth: int = 4) -> list[Any]:
+    """Return labeled leaf children from a build123d Compound without flattening solids into faces."""
+    out: list[Any] = []
+
+    def visit(node: Any, depth: int) -> None:
+        children = list(getattr(node, "children", []) or [])
+        if children and depth < max_depth:
+            for child in children:
+                visit(child, depth + 1)
+            return
+        if depth > 0:
+            out.append(node)
+
+    visit(shape, 0)
+    return out
+
+
+def _promote_build123d_children_from_source(
+    project_path: Path,
+    source_name: str,
+    *,
+    base: str,
+    max_parts: int = 96,
+) -> list[str]:
+    """Export source-level Compound children as real browser components.
+
+    text-to-cad's GLB export can collapse a named build123d Compound into one mesh.
+    Running the already-validated source lets us recover the intended independent
+    parts and publish them as separate GLBs for the Fusion-style browser tree.
+    """
+    source_path = project_path / source_name
+    if not source_path.is_file():
+        return []
+    try:
+        from build123d import export_stl
+    except Exception as exc:
+        logger.debug("build123d child promotion unavailable: %s", exc)
+        return []
+
+    old_cwd = Path.cwd()
+    namespace: dict[str, Any] = {"__name__": "__render3d_child_promotion__"}
+    try:
+        os.chdir(project_path)
+        code = source_path.read_text(encoding="utf-8", errors="ignore")
+        exec(compile(code, str(source_path), "exec"), namespace)
+        gen_step = namespace.get("gen_step")
+        if not callable(gen_step):
+            return []
+        shape = gen_step()
+        leaves = _iter_build123d_leaf_children(shape)
+    except Exception as exc:
+        logger.debug("could not evaluate build123d children for %s: %s", source_name, exc)
+        return []
+    finally:
+        try:
+            os.chdir(old_cwd)
+        except Exception:
+            pass
+
+    # Ignore trivial assemblies; disconnected mesh promotion already covers them.
+    if len(leaves) <= 1:
+        return []
+
+    outputs: list[str] = []
+    used_names: set[str] = set()
+    for idx, child in enumerate(leaves[:max_parts], start=1):
+        label = str(getattr(child, "label", "") or "").strip()
+        slug = _part_artifact_slug(label, f"part_{idx:02d}")
+        if slug in used_names:
+            slug = f"{slug}_{idx:02d}"
+        used_names.add(slug)
+        stl_name = f"{base}__part_{idx:02d}_{slug}.stl"
+        glb_name = f"{base}__part_{idx:02d}_{slug}.glb"
+        stl_path = project_path / stl_name
+        glb_path = project_path / glb_name
+        try:
+            export_stl(child, str(stl_path))
+            mesh = cad_service.load_mesh(stl_path)
+            cad_service.export_mesh(mesh, glb_path)
+            stl_path.unlink(missing_ok=True)
+            outputs.append(glb_name)
+        except Exception as exc:
+            logger.debug("could not export build123d child %s from %s: %s", idx, source_name, exc)
+            stl_path.unlink(missing_ok=True)
+            glb_path.unlink(missing_ok=True)
     return outputs
 
 
@@ -1768,6 +1863,9 @@ def _run_text_to_cad_v2(
             "glb": glb_name,
         }
         promoted_parts = _promote_disconnected_bodies(project_path, glb_name, base=base)
+        source_parts = _promote_build123d_children_from_source(project_path, source_name, base=base)
+        if source_parts:
+            promoted_parts.extend(name for name in source_parts if name not in promoted_parts)
         if promoted_parts:
             files["parts"] = promoted_parts
         if (project_path / stl_name).is_file():

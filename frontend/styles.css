@@ -15777,6 +15777,7 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 }
 
 .architect-kit-card,
+.architect-connector-card,
 .architect-snap-card {
   display: grid;
   gap: 6px;
@@ -15785,6 +15786,12 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   border: 1px solid var(--border);
   border-radius: 10px;
   background: rgba(88, 166, 255, 0.06);
+}
+
+.architect-connector-card {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(249, 115, 22, 0.14), transparent 38%),
+    rgba(88, 166, 255, 0.06);
 }
 
 .architect-grid-row {
@@ -15798,6 +15805,17 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .architect-grid-row input {
   width: 100%;
   margin-top: 4px;
+}
+
+.architect-connector-card label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.76rem;
+}
+
+.architect-connector-card input,
+.architect-connector-card select {
+  width: 100%;
 }
 
 .architect-preset-list {
