@@ -1014,6 +1014,107 @@ def _ensure_default_appearance(mesh: trimesh.Trimesh, *, seed: str | None = None
     return m
 
 
+def _prompt_appearance_palette(prompt: str, seed: str | None = None) -> list[np.ndarray]:
+    p = (prompt or "").lower()
+    if any(word in p for word in ("coke", "cola", "soda", "pepsi", "sprite", "fanta", "pet bottle", "plastic bottle")):
+        return [
+            np.array([212, 232, 240, 235], dtype=np.uint8),  # clear PET body
+            np.array([196, 30, 58, 255], dtype=np.uint8),    # red cap/label
+            np.array([255, 255, 255, 220], dtype=np.uint8),  # label band
+            np.array([28, 28, 32, 255], dtype=np.uint8),     # dark base ring
+        ]
+    if any(word in p for word in ("sunglass", "glasses", "eyewear", "lens", "wayfarer")):
+        return [
+            np.array([18, 20, 24, 255], dtype=np.uint8),
+            np.array([44, 86, 118, 190], dtype=np.uint8),
+            np.array([204, 216, 224, 255], dtype=np.uint8),
+            np.array([232, 226, 210, 235], dtype=np.uint8),
+        ]
+    if any(word in p for word in ("circuit", "pcb", "arduino", "electronics", "sensor", "wiring", "driver")):
+        return [
+            np.array([18, 112, 72, 255], dtype=np.uint8),
+            np.array([30, 34, 42, 255], dtype=np.uint8),
+            np.array([196, 196, 184, 255], dtype=np.uint8),
+            np.array([218, 70, 54, 255], dtype=np.uint8),
+            np.array([54, 132, 218, 255], dtype=np.uint8),
+        ]
+    if any(word in p for word in ("robot", "mechanical", "bracket", "clamp", "mount", "arm", "gear")):
+        return [
+            np.array([78, 92, 108, 255], dtype=np.uint8),
+            np.array([36, 42, 50, 255], dtype=np.uint8),
+            np.array([176, 184, 192, 255], dtype=np.uint8),
+            np.array([88, 166, 255, 255], dtype=np.uint8),
+        ]
+    if any(word in p for word in ("dxf", "drawing", "blueprint", "laser", "cut", "flat pattern")):
+        return [
+            np.array([88, 166, 255, 255], dtype=np.uint8),
+            np.array([48, 54, 61, 255], dtype=np.uint8),
+            np.array([196, 196, 196, 255], dtype=np.uint8),
+        ]
+    base = _palette_color_for_name(seed)
+    accent = np.array(
+        [max(0, int(base[0]) - 42), max(0, int(base[1]) - 42), max(0, int(base[2]) - 42), 255],
+        dtype=np.uint8,
+    )
+    highlight = np.array(
+        [min(255, int(base[0]) + 48), min(255, int(base[1]) + 48), min(255, int(base[2]) + 48), 255],
+        dtype=np.uint8,
+    )
+    return [base, accent, highlight]
+
+
+def apply_prompt_appearance(mesh: trimesh.Trimesh, prompt: str, *, seed: str | None = None) -> trimesh.Trimesh:
+    """Best-effort multi-color fallback for uncoloured generated preview meshes."""
+    colors = _snapshot_face_colors(mesh)
+    if colors is not None and not _colors_are_default_grey(colors):
+        return mesh
+    m = mesh_copy(mesh)
+    if not len(m.faces):
+        return m
+    palette = _prompt_appearance_palette(prompt, seed=seed)
+    face_colors = np.tile(palette[0], (len(m.faces), 1))
+    try:
+        normals = np.asarray(m.face_normals, dtype=float)
+        centers = np.asarray(m.triangles_center, dtype=float)
+        extents = np.asarray(m.extents, dtype=float)
+        bounds = np.asarray(m.bounds, dtype=float)
+        dominant_axis = int(np.argmax(np.maximum(extents, 1e-9)))
+        if len(palette) > 1:
+            side_mask = np.abs(normals[:, dominant_axis]) > 0.72
+            face_colors[side_mask] = palette[1 % len(palette)]
+        if len(palette) > 2:
+            z = centers[:, 2]
+            top_cut = bounds[0, 2] + extents[2] * 0.62 if extents.shape[0] >= 3 else np.inf
+            top_mask = (z >= top_cut) & (np.abs(normals[:, 2]) > 0.35)
+            face_colors[top_mask] = palette[2 % len(palette)]
+        if len(palette) > 3 and centers.shape[1] >= 2:
+            y = centers[:, 1]
+            band = y >= (bounds[0, 1] + extents[1] * 0.55)
+            face_colors[band & (np.abs(normals[:, 1]) > 0.35)] = palette[3 % len(palette)]
+    except Exception:
+        pass
+    m.visual.face_colors = face_colors
+    return m
+
+
+def apply_prompt_appearance_to_file(path: Path, prompt: str, *, seed: str | None = None) -> bool:
+    """Apply fallback prompt-aware colors to an uncolored GLB/STL/mesh preview."""
+    if not path.is_file() or path.suffix.lower() not in {".glb", ".gltf", ".stl", ".obj", ".ply", ".off"}:
+        return False
+    try:
+        mesh = load_mesh(path)
+        styled = apply_prompt_appearance(mesh, prompt, seed=seed or path.stem)
+        colors = _snapshot_face_colors(styled)
+        original = _snapshot_face_colors(mesh)
+        if colors is None or (original is not None and not _colors_are_default_grey(original)):
+            return False
+        export_mesh(styled, path)
+        return True
+    except Exception as exc:
+        logger.warning("Could not apply generated appearance to %s: %s", path.name, exc)
+        return False
+
+
 def export_mesh(mesh: trimesh.Trimesh, path: Path) -> Path:
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_EXPORT:
