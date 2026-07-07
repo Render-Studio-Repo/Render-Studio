@@ -1140,12 +1140,15 @@ def _get_ai_for_user(
         provider = effective.get("provider") or "openai"
         if provider == "openai":
             key_model = (effective.get("model") or "").strip()
-            if key_model:
-                # User explicitly set a model on their key — respect it always.
+            if speed == "fast":
+                # Speed mode always uses the fast model — ignore key's pinned model.
+                # gpt-5.5-pro is too slow for speed mode (~5-8 min vs ~30s for gpt-5.5).
+                model = settings.openai_model
+            elif key_model:
+                # Quality mode respects the key's pinned model (e.g. gpt-5.5-pro).
                 model = key_model
             else:
-                # No model pinned — use speed toggle default.
-                model = settings.openai_model_quality if speed == "quality" else settings.openai_model
+                model = settings.openai_model_quality
         else:
             model = (effective.get("model") or "").strip() or settings.anthropic_model
         return AIService(model=model, api_key=effective["api_key"], provider=provider)
