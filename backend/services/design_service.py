@@ -29,36 +29,40 @@ from backend.services.trace_log import add as trace_add
 logger = logging.getLogger(__name__)
 
 
-_BLOCKED_SOURCE_TOKENS = (
-    "import os",
-    "import subprocess",
-    "import socket",
-    "import requests",
-    "from os ",
-    "from subprocess ",
-    "open(",
-    "exec(",
-    "eval(",
-    "__import__",
-)
-
-
 def _slug(text: str, fallback: str = "text_to_cad_model") -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", (text or "").strip().lower()).strip("_")
     return (slug or fallback)[:64]
 
 
+_BLOCKED_IMPORT_ROOTS = frozenset({"os", "subprocess", "socket", "requests", "sys", "shutil"})
+_BLOCKED_CALL_NAMES = frozenset({"exec", "eval", "open", "__import__"})
+
+
 def _validate_generated_source(source: str) -> None:
-    lowered = source.lower()
     if "def gen_step" not in source:
         raise ValueError("Generated source must define gen_step().")
     try:
-        ast.parse(source)
+        tree = ast.parse(source)
     except SyntaxError as exc:
         raise ValueError(f"Generated Python source has syntax error: {exc}") from exc
-    blocked = [token for token in _BLOCKED_SOURCE_TOKENS if token in lowered]
+
+    blocked: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = (alias.name or "").split(".")[0]
+                if root in _BLOCKED_IMPORT_ROOTS:
+                    blocked.append(f"import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if root in _BLOCKED_IMPORT_ROOTS:
+                blocked.append(f"from {node.module} import ...")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in _BLOCKED_CALL_NAMES:
+                blocked.append(f"{node.func.id}()")
+
     if blocked:
-        raise ValueError(f"Generated source contains blocked operation(s): {', '.join(blocked)}")
+        raise ValueError(f"Generated source contains blocked operation(s): {', '.join(sorted(set(blocked)))}")
 
 
 def _requested_mm_dimensions(prompt: str) -> list[float]:

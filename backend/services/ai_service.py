@@ -1017,7 +1017,11 @@ class AIService:
             "gen_step() must return the STEP-ready shape or labeled compound; do not write file paths inside gen_step().\n"
             "Use millimeters. Put dimensions in named parameters. Follow the CAD brief exactly.\n"
             "Return ONLY Python source — no markdown fences, no explanation before or after the code.\n"
-            "If editing an existing model, preserve working geometry and change only what the prompt or repair note requires.\n\n"
+            "If editing an existing model, preserve working geometry and change only what the prompt or repair note requires.\n"
+            "Security/runtime rules: scripts run in the project folder as cwd. Use pathlib.Path for any file paths. "
+            "Never import os, subprocess, socket, requests, sys, or shutil; never call open(), exec(), eval(), or __import__(). "
+            "Reference project files by bare filename (example: \"part.dxf\"). "
+            "build123d names like import_step are allowed.\n\n"
             f"CAD skill:\n{skill_md}\n\n"
             + "\n\n".join(ref_blocks)
         )
