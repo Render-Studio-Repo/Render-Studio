@@ -79,10 +79,38 @@ def _iter_module_assignments(tree: ast.Module) -> list[tuple[str, ast.AST, ast.A
     return out
 
 
+def _iter_gen_step_assignments(tree: ast.Module) -> list[tuple[str, ast.AST, ast.AST]]:
+    gen_step = next((node for node in tree.body if _is_gen_step_node(node)), None)
+    if gen_step is None:
+        return []
+    out: list[tuple[str, ast.AST, ast.AST]] = []
+    for node in gen_step.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    out.append((target.id, node.value, node))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            out.append((node.target.id, node.value, node))
+    return out
+
+
+def _collect_assignments(tree: ast.Module) -> list[tuple[str, ast.AST, ast.AST, str]]:
+    module_items = [(name, value, node, "module") for name, value, node in _iter_module_assignments(tree)]
+    step_items = [(name, value, node, "gen_step") for name, value, node in _iter_gen_step_assignments(tree)]
+    merged: list[tuple[str, ast.AST, ast.AST, str]] = []
+    seen: set[str] = set()
+    for item in module_items + step_items:
+        if item[0] in seen:
+            continue
+        seen.add(item[0])
+        merged.append(item)
+    return merged
+
+
 def list_parameters(source: str, *, part_filter: str | None = None) -> list[dict[str, Any]]:
     tree = ast.parse(source)
     params: list[dict[str, Any]] = []
-    for name, value_node, node in _iter_module_assignments(tree):
+    for name, value_node, node, scope in _collect_assignments(tree):
         if name.startswith("_") or name in _SKIP_PARAM_NAMES:
             continue
         value = _literal_value(value_node)
@@ -100,6 +128,7 @@ def list_parameters(source: str, *, part_filter: str | None = None) -> list[dict
                 "name": name,
                 "value": value,
                 "kind": kind,
+                "scope": scope,
                 "line": getattr(node, "lineno", None),
             }
         )
@@ -112,7 +141,7 @@ def patch_parameters(source: str, updates: dict[str, Any]) -> str:
     tree = ast.parse(source)
     lines = source.splitlines(keepends=True)
     pending: dict[int, str] = {}
-    for name, value_node, node in _iter_module_assignments(tree):
+    for name, value_node, node, _scope in _collect_assignments(tree):
         if name not in updates:
             continue
         new_value = updates[name]
