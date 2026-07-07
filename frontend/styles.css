@@ -15911,6 +15911,28 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   margin-bottom: 12px;
 }
 
+.architect-library-filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.architect-library-filter-tab {
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  background: rgba(13, 17, 23, 0.82);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.architect-library-filter-tab.active {
+  color: var(--text);
+  border-color: rgba(88, 166, 255, 0.8);
+  background: rgba(88, 166, 255, 0.22);
+}
+
 .architect-library-toolbar input {
   width: 100%;
 }

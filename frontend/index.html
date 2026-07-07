@@ -1449,12 +1449,16 @@
         <button type="button" class="auth-close" data-architect-library-close aria-label="Close Architect Library">&times;</button>
       </header>
       <div class="architect-library-toolbar">
+        <div id="architect-library-filter-tabs" class="architect-library-filter-tabs" role="tablist" aria-label="Architect library filters">
+          <button type="button" class="architect-library-filter-tab active" data-architect-filter-view="all" aria-selected="true">All</button>
+          <button type="button" class="architect-library-filter-tab" data-architect-filter-view="favorites" aria-selected="false">Favorites</button>
+        </div>
         <input id="architect-library-search" type="search" placeholder="Search walls, windows, rooms, uploaded models..." />
       </div>
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260707-generation-auto-reload"></script>
+  <script type="module" src="/app.js?v=20260707-architect-library-favorites-filter-tab"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

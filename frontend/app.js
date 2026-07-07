@@ -4,6 +4,7 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import {
   pickGeometry,
   pickObject,
@@ -1648,6 +1649,7 @@ let gridHelper = null;
 const SKETCH_CANVAS = 0xe8e8e8;
 let savedSceneBg = null;
 let gridAxesGroup = null;
+let gridDotsGroup = null;
 let axesHelper = null;
 
 function disposeSceneObject(obj) {
@@ -1691,6 +1693,32 @@ function makeGridDepthAware(grid) {
   }
 }
 
+function buildGridDots(size, step, color = 0x6a7d99) {
+  const half = size / 2;
+  const points = [];
+  const dotStep = Math.max(step, 0.5);
+  for (let x = -half; x <= half + 1e-6; x += dotStep) {
+    for (let y = -half; y <= half + 1e-6; y += dotStep) {
+      points.push(x, y, -0.0015);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  const mat = new THREE.PointsMaterial({
+    color,
+    size: Math.max(dotStep * 0.06, 0.02),
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.34,
+    depthTest: true,
+    depthWrite: false,
+  });
+  const dots = new THREE.Points(geo, mat);
+  dots.renderOrder = -11;
+  dots.name = "architect-grid-dots";
+  return dots;
+}
+
 function rebuildGrid() {
   if (gridHelper) {
     scene.remove(gridHelper);
@@ -1699,6 +1727,10 @@ function rebuildGrid() {
   if (gridAxesGroup) {
     scene.remove(gridAxesGroup);
     disposeSceneObject(gridAxesGroup);
+  }
+  if (gridDotsGroup) {
+    scene.remove(gridDotsGroup);
+    disposeSceneObject(gridDotsGroup);
   }
   if (axesHelper) {
     scene.remove(axesHelper);
@@ -1722,6 +1754,11 @@ scene.add(gridHelper);
   gridAxesGroup.visible = gridVisible;
   scene.add(gridAxesGroup);
 
+  const dotStep = Math.max(size / 70, size >= 100 ? 5 : 0.5);
+  gridDotsGroup = buildGridDots(size, dotStep, themeColors.gridMinor);
+  gridDotsGroup.visible = gridVisible;
+  scene.add(gridDotsGroup);
+
   axesHelper = new THREE.AxesHelper(Math.max(size * 0.035, 1));
   axesHelper.visible = gridVisible;
   scene.add(axesHelper);
@@ -1731,6 +1768,7 @@ function setGridVisible(visible) {
   gridVisible = visible;
   if (gridHelper) gridHelper.visible = visible;
   if (gridAxesGroup) gridAxesGroup.visible = visible;
+  if (gridDotsGroup) gridDotsGroup.visible = visible;
   if (axesHelper) axesHelper.visible = visible;
   syncGridToggleButtons();
 }
@@ -3716,6 +3754,23 @@ function architectEditPrompt(kind = "customize", filename = selectedObjectFilena
   return `${architectPromptPrefix()}\n\n${prompts[kind] || prompts.customize}`;
 }
 
+function architectTexturePatternPrompt(filename = selectedObjectFilename()) {
+  const target = architectSelectedEditTarget(filename);
+  return `${architectPromptPrefix()}
+
+${target}Generate a realistic surface texture/color pattern on this selected wall module for Bambu multi-color printing.
+
+Requirements:
+- Keep the wall footprint, sockets, and snap connectors unchanged.
+- Add printable pattern regions as separate named solids/material zones, not just visual color: pattern_color_1, pattern_color_2, pattern_color_3 (use fewer if prompt only implies 2 colors).
+- Pattern bodies must be shallow raised/inlaid features on the wall skin (about 0.4 mm to 1.2 mm deep), manifold, and fully attached (no floating islands).
+- Use realistic interior style details: cabinet grain bands, shelving accents, trim stripes, tile/plaster motif, or brick/plank style as appropriate.
+- Keep all pattern geometry printable and easy to assign to separate filament colors in the slicer.
+- Return separate editable parts/bodies so the viewport tree can select/move each pattern piece if needed.
+
+If no style is specified, produce a clean 3-color modern wall pattern with printable stripe and panel accents.`;
+}
+
 function architectSelectedEditTarget(filename = selectedObjectFilename()) {
   const selection = objectTools?.getSelection?.();
   const selectedBody = selection && Number.isInteger(selection.bodyIndex) && (selection.bodyCount || 1) > 1
@@ -3777,6 +3832,24 @@ const ARCHITECT_LOCAL_MODULES = [
     description: "L-shaped corner wall piece with two snap faces.",
   },
   {
+    id: "wall-window-wide",
+    title: "Wide Window Wall",
+    category: "Walls",
+    description: "Wide wall segment with a larger window opening and reinforced side rails.",
+  },
+  {
+    id: "wall-double-window",
+    title: "Double Window Wall",
+    category: "Walls",
+    description: "Long wall panel with two window bays and center support.",
+  },
+  {
+    id: "wall-shelf",
+    title: "Shelved Utility Wall",
+    category: "Walls",
+    description: "Wall panel with integrated shelf and bracket details for room interiors.",
+  },
+  {
     id: "pillar",
     title: "Snap Pillar",
     category: "Walls",
@@ -3793,6 +3866,12 @@ const ARCHITECT_LOCAL_MODULES = [
     title: "Window Insert",
     category: "Openings",
     description: "Separate blue-glass window insert with frame, sill, lintel, and snap tabs.",
+  },
+  {
+    id: "window-large",
+    title: "Large Window Insert",
+    category: "Openings",
+    description: "Panoramic style window insert with broader glass and trim.",
   },
   {
     id: "door",
@@ -3849,6 +3928,41 @@ const ARCHITECT_LOCAL_MODULES = [
     description: "Wall utility chase with removable cover and robot pick tabs.",
   },
 ];
+
+const ARCHITECT_FAVORITES_KEY = "render3d:architect-favorites:v1";
+
+function readArchitectFavorites() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ARCHITECT_FAVORITES_KEY) || "null");
+    const modules = Array.isArray(raw?.modules) ? raw.modules.filter((item) => typeof item === "string") : [];
+    const files = Array.isArray(raw?.files) ? raw.files.filter((item) => typeof item === "string") : [];
+    return { modules, files };
+  } catch {
+    return { modules: [], files: [] };
+  }
+}
+
+function writeArchitectFavorites(value) {
+  try {
+    localStorage.setItem(ARCHITECT_FAVORITES_KEY, JSON.stringify({
+      modules: [...new Set([...(value?.modules || [])])],
+      files: [...new Set([...(value?.files || [])])],
+    }));
+  } catch {
+    /* local storage is best-effort */
+  }
+}
+
+function toggleArchitectFavorite(kind, value) {
+  const favorites = readArchitectFavorites();
+  const key = kind === "file" ? "files" : "modules";
+  const items = new Set(favorites[key] || []);
+  if (items.has(value)) items.delete(value);
+  else items.add(value);
+  favorites[key] = [...items];
+  writeArchitectFavorites(favorites);
+  return items.has(value);
+}
 
 function architectDimensions() {
   const grid = Number(document.getElementById("architect-grid-size")?.value || 1000);
@@ -4081,6 +4195,23 @@ function createArchitectInstance(kind = "wall") {
     add(length, 22, 48, [0, -thickness / 2 - 16, h - 52], trim, `${prefix}_crown_trim_front`);
     add(48, 24, h * 0.76, [-length * 0.28, -thickness / 2 - 18, h * 0.52], "#ddd6c5", `${prefix}_subtle_vertical_panel_seam_left`);
     add(48, 24, h * 0.76, [length * 0.28, -thickness / 2 - 18, h * 0.52], "#ddd6c5", `${prefix}_subtle_vertical_panel_seam_right`);
+    for (let i = -2; i <= 2; i += 1) {
+      add(12, 18, h * 0.84, [i * (length / 5), -thickness / 2 - 12, h * 0.52], "#e1d8c7", `${prefix}_wall_texture_batten_${i + 3}`);
+    }
+    const shelfWidth = Math.max(220, length * 0.42);
+    const shelfUpperZ = h * 0.66;
+    add(shelfWidth, 36, 24, [0, -thickness / 2 - 46, shelfUpperZ], wood, `${prefix}_floating_shelf_upper`);
+    add(shelfWidth * 0.9, 34, 22, [0, -thickness / 2 - 46, shelfUpperZ - 92], wood, `${prefix}_floating_shelf_lower`);
+    add(16, 44, 64, [-shelfWidth * 0.35, -thickness / 2 - 48, shelfUpperZ - 28], "#a67c52", `${prefix}_shelf_bracket_left`);
+    add(16, 44, 64, [shelfWidth * 0.35, -thickness / 2 - 48, shelfUpperZ - 28], "#a67c52", `${prefix}_shelf_bracket_right`);
+    const cabinetWidth = Math.max(240, length * 0.48);
+    const cabinetHeight = Math.max(130, h * 0.34);
+    const cabinetCenterZ = cabinetHeight / 2 + 72;
+    add(cabinetWidth, 74, cabinetHeight, [0, -thickness / 2 - 68, cabinetCenterZ], "#d6cfbf", `${prefix}_base_cabinet_body`);
+    add(cabinetWidth * 0.48, 18, cabinetHeight * 0.92, [-cabinetWidth * 0.24, -thickness / 2 - 108, cabinetCenterZ], "#ece6d9", `${prefix}_cabinet_door_left`);
+    add(cabinetWidth * 0.48, 18, cabinetHeight * 0.92, [cabinetWidth * 0.24, -thickness / 2 - 108, cabinetCenterZ], "#ece6d9", `${prefix}_cabinet_door_right`);
+    cyl(7, 14, [-cabinetWidth * 0.03, -thickness / 2 - 122, cabinetCenterZ + cabinetHeight * 0.2], metal, `${prefix}_cabinet_handle_left`, "y", 16);
+    cyl(7, 14, [cabinetWidth * 0.03, -thickness / 2 - 122, cabinetCenterZ + cabinetHeight * 0.2], metal, `${prefix}_cabinet_handle_right`, "y", 16);
     addSnapConnector({ side: "west", type: "male", at: [-length / 2, 0, 125], name: `${prefix}_west_robot_snap` });
     addSnapConnector({ side: "east", type: "male", at: [length / 2, 0, 125], name: `${prefix}_east_robot_snap` });
     addSnapConnector({ side: "south", type: "male", at: [-length * 0.28, -thickness / 2, 0], name: `${prefix}_floor_left_robot_snap`, size: connectorProfile.size * 0.75 });
@@ -4151,6 +4282,40 @@ function createArchitectInstance(kind = "wall") {
     return group;
   }
 
+  if (kind === "wall-window-wide") {
+    add(wallLength * 1.1, thickness, wallHeight, [0, 0, wallHeight / 2], wallColor, "wall_panel_light_plaster");
+    addWallDetails(wallLength * 1.1, wallHeight, "wall");
+    const openingW = grid * 0.8;
+    const openingH = wallHeight * 0.42;
+    add(openingW, thickness + 18, openingH, [0, 0, wallHeight * 0.56], "#111827", "window_opening_cut", 0.02);
+    addWindowDetails(0, wallHeight * 0.56, openingW, openingH, -6);
+    add(140, thickness + 54, 150, [-wallLength * 0.55 + 110, 0, 210], connector, "left_connector_pocket");
+    add(140, thickness + 54, 150, [wallLength * 0.55 - 110, 0, 210], connector, "right_connector_pocket");
+    return group;
+  }
+
+  if (kind === "wall-double-window") {
+    add(wallLength * 1.2, thickness, wallHeight, [0, 0, wallHeight / 2], wallColor, "wall_panel_light_plaster");
+    addWallDetails(wallLength * 1.2, wallHeight, "wall");
+    const openingW = grid * 0.48;
+    const openingH = wallHeight * 0.38;
+    add(openingW, thickness + 18, openingH, [-grid * 0.43, 0, wallHeight * 0.57], "#111827", "window_opening_left", 0.02);
+    add(openingW, thickness + 18, openingH, [grid * 0.43, 0, wallHeight * 0.57], "#111827", "window_opening_right", 0.02);
+    addWindowDetails(-grid * 0.43, wallHeight * 0.57, openingW, openingH, -6);
+    addWindowDetails(grid * 0.43, wallHeight * 0.57, openingW, openingH, -6);
+    add(120, thickness + 20, wallHeight * 0.62, [0, 0, wallHeight * 0.42], trim, "window_center_post");
+    return group;
+  }
+
+  if (kind === "wall-shelf") {
+    add(wallLength, thickness, wallHeight, [0, 0, wallHeight / 2], wallColor, "wall_panel_light_plaster");
+    addWallDetails(wallLength, wallHeight, "wall");
+    add(grid * 0.58, 160, 36, [0, -thickness / 2 - 85, wallHeight * 0.62], "#d4a574", "integrated_shelf");
+    add(52, 108, 128, [-grid * 0.24, -thickness / 2 - 58, wallHeight * 0.56], "#8b7355", "shelf_bracket_left");
+    add(52, 108, 128, [grid * 0.24, -thickness / 2 - 58, wallHeight * 0.56], "#8b7355", "shelf_bracket_right");
+    return group;
+  }
+
   if (kind === "pillar" || kind === "pillar-tall") {
     const h = kind === "pillar-tall" ? wallHeight : wallHeight * 0.58;
     add(180, 180, h, [0, 0, h / 2], trim, "pillar_body_printable");
@@ -4203,6 +4368,13 @@ function createArchitectInstance(kind = "wall") {
 
   if (kind === "window") {
     addWindowDetails(0, wallHeight * 0.58, grid * 0.58, wallHeight * 0.36, -6);
+    return group;
+  }
+
+  if (kind === "window-large") {
+    addWindowDetails(0, wallHeight * 0.56, grid * 0.85, wallHeight * 0.44, -6);
+    add(grid * 0.9, 22, 30, [0, 0, wallHeight * 0.8], "#f6e7cf", "window_top_trim_wide");
+    add(grid * 0.9, 22, 30, [0, 0, wallHeight * 0.32], "#f6e7cf", "window_bottom_trim_wide");
     return group;
   }
 
@@ -4282,6 +4454,58 @@ function nextArchitectInstancePosition() {
   return new THREE.Vector3((count % 6) * grid * 0.35, Math.floor(count / 6) * grid * 0.35, 0);
 }
 
+function architectSavedFilename(kind = "wall") {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const clean = String(kind || "module").toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "module";
+  return `architect_${clean}_${stamp}.glb`;
+}
+
+async function exportArchitectObjectToGlb(object) {
+  const clone = object.clone(true);
+  clone.updateMatrixWorld(true);
+  const exporter = new GLTFExporter();
+  return await new Promise((resolve, reject) => {
+    exporter.parse(
+      clone,
+      (result) => {
+        if (result instanceof ArrayBuffer) {
+          resolve(result);
+          return;
+        }
+        try {
+          const text = JSON.stringify(result);
+          resolve(new TextEncoder().encode(text).buffer);
+        } catch (err) {
+          reject(err);
+        }
+      },
+      (err) => reject(err),
+      { binary: true, onlyVisible: true, trs: false },
+    );
+  });
+}
+
+async function persistArchitectModulePlacement(object, kind = "wall") {
+  try {
+    await ensureProject();
+    if (!projectId || !object) return;
+    const glbBuffer = await exportArchitectObjectToGlb(object);
+    const filename = architectSavedFilename(kind);
+    const blob = new Blob([glbBuffer], { type: "model/gltf-binary" });
+    const form = new FormData();
+    form.append("file", new File([blob], filename, { type: "model/gltf-binary" }), filename);
+    const uploaded = await api(`/api/projects/${projectId}/upload`, {
+      method: "POST",
+      body: form,
+    });
+    object.userData.persistedFilename = uploaded?.name || filename;
+    await refreshFiles();
+    refreshArchitectBrowserEntries();
+  } catch (err) {
+    console.warn("Architect auto-save failed", err);
+  }
+}
+
 function placeArchitectModuleInstant(kind = "wall") {
   const localKind = localArchitectKind(kind);
   if (!localKind) {
@@ -4302,6 +4526,7 @@ function placeArchitectModuleInstant(kind = "wall") {
   rebuildGrid();
   fitCameraToComponent(catalogName);
   refreshArchitectBrowserEntries();
+  void persistArchitectModulePlacement(object, localKind);
   setEditStatus("ok", `Placed ${label} instantly. Drag it with the gizmo — modules snap together like LEGO when you release.`);
   return object;
 }
@@ -4496,6 +4721,24 @@ function setArchitectPromptForSelectedEdit(kind = "customize") {
     setEditStatus("ok", "Architect library opened. Pick a local module, then drag, scale, or snap it into the room.");
     return;
   }
+  if (kind === "texture_ai") {
+    applyPromptModeUI("architect");
+    const input = document.getElementById("prompt-input");
+    const prompt = architectTexturePatternPrompt();
+    if (input) {
+      input.value = prompt;
+      input.focus();
+      input.select();
+    }
+    showAiComposePanel?.();
+    setRightTab("prompt");
+    syncPromptTargetUI();
+    setEditStatus(
+      "ok",
+      "AI texture prompt ready for the selected wall. Edit color/pattern wording if needed, then click Generate."
+    );
+    return;
+  }
   const mesh = architectSelectedMesh();
   if (mesh) {
     showObjectGizmo(mesh);
@@ -4649,6 +4892,25 @@ function architectAnchorsCompatible(a, b) {
   return false;
 }
 
+function hideArchitectMergedConnectors(obj, side = "") {
+  const sideToken = String(side || "").toLowerCase();
+  const sideAliases = {
+    west: ["west", "left"],
+    east: ["east", "right"],
+    south: ["south", "front"],
+    north: ["north", "back"],
+  };
+  const aliases = sideAliases[sideToken] || [];
+  obj?.traverse?.((child) => {
+    if (!child?.isMesh) return;
+    const name = String(child.name || "").toLowerCase();
+    const isConnector = /(connector|snap|socket|tongue|cavity|lock_relief|lead_in|raised_center_key)/.test(name);
+    if (!isConnector) return;
+    if (aliases.length && !aliases.some((token) => name.includes(token))) return;
+    child.visible = false;
+  });
+}
+
 function architectSelectedSnapAnchors(mesh) {
   const named = architectNamedConnectorAnchors(mesh);
   return named.length ? named : architectModuleSnapAnchors(mesh);
@@ -4772,6 +5034,9 @@ function tryArchitectLegoSnap(mesh = architectSelectedMesh()) {
     }
     const delta = worldDeltaToParentDelta(mesh, connectorSnap.delta);
     if (gizmoPanel.translateBy?.(delta, { autoApply: true })) {
+      const mateObj = connectorSnap.mateName ? projectAssembly.get(connectorSnap.mateName) : null;
+      hideArchitectMergedConnectors(mesh, connectorSnap.selectedAnchor?.side || "");
+      hideArchitectMergedConnectors(mateObj, connectorSnap.targetAnchor?.side || "");
       const targetLabel = connectorSnap.targetAnchor?.label || "connector";
       setEditStatus("ok", `Snapped ${connectorSnap.selectedAnchor?.label || "module"} to ${connectorSnap.mateName} ${targetLabel}.`);
       return true;
@@ -6486,6 +6751,7 @@ async function currentProjectModelFiles() {
 
 let architectLibraryFilter = "";
 let architectLibraryViewers = [];
+let architectLibraryView = "all";
 
 function disposeArchitectLibraryViewers() {
   architectLibraryViewers.forEach((viewer) => viewer?.dispose?.());
@@ -6549,16 +6815,78 @@ function architectPreviewMarkup(item = {}) {
   </div>`;
 }
 
+function architectCustomCategoryPrompt(category = "Walls") {
+  const prefix = architectPromptPrefix();
+  const section = String(category || "Walls");
+  const detail = {
+    Walls: "Generate a custom wall module variant with separate named parts, snap connectors, and printable details.",
+    Openings: "Generate a custom opening module (window/door insert or wall opening system) with separate named parts.",
+    Floors: "Generate a custom floor module with rails/sockets and realistic texture-ready details.",
+    Roof: "Generate a custom roof/ceiling module with alignment sockets and printable segments.",
+    Rooms: "Generate a full custom room kit composed of separate floor, walls, and openings.",
+    Utilities: "Generate a custom utility wall/core module with removable service panels and channels.",
+  }[section] || "Generate a custom architect module with separate named parts and snap interfaces.";
+  return `${prefix}
+
+${detail}
+
+Use any attached references as authoritative:
+- DXF drawings for exact profile/layout
+- images for style and proportions
+- txt/md/csv/json/yaml/log documents for specs, requirements, and instructions
+
+Return separate editable bodies/components and keep parts printable for multi-part assembly.`;
+}
+
+function startArchitectCategoryPrompt(category = "Walls", { openRefPicker = false } = {}) {
+  applyPromptModeUI("architect");
+  const input = document.getElementById("prompt-input");
+  const prompt = architectCustomCategoryPrompt(category);
+  if (input) {
+    input.value = prompt;
+    input.focus();
+    input.select();
+  }
+  showAiComposePanel?.();
+  setRightTab("prompt");
+  syncPromptTargetUI();
+  if (openRefPicker) promptImageInput?.click();
+  setEditStatus(
+    "ok",
+    openRefPicker
+      ? `${category}: custom Architect prompt ready. Add DXF/image/txt refs, then Generate.`
+      : `${category}: custom Architect prompt ready. Add refs if needed, then Generate.`
+  );
+}
+
 async function renderArchitectLibrary() {
   const grid = document.getElementById("architect-library-grid");
   const search = document.getElementById("architect-library-search");
+  const tabButtons = [...document.querySelectorAll("[data-architect-filter-view]")];
   if (!grid) return;
   disposeArchitectLibraryViewers();
+  tabButtons.forEach((btn) => {
+    const active = btn.dataset.architectFilterView === architectLibraryView;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
   const query = (search?.value || architectLibraryFilter || "").trim().toLowerCase();
   const models = await currentProjectModelFiles();
-  const moduleCards = ARCHITECT_LOCAL_MODULES
-    .filter((item) => `${item.title} ${item.category} ${item.description}`.toLowerCase().includes(query))
-    .map((item) => `
+  const favorites = readArchitectFavorites();
+  const favoriteModules = new Set(favorites.modules || []);
+  const favoriteFiles = new Set(favorites.files || []);
+  const visibleModules = ARCHITECT_LOCAL_MODULES
+    .filter((item) => (architectLibraryView === "favorites" ? favoriteModules.has(item.id) : true))
+    .filter((item) => `${item.title} ${item.category} ${item.description}`.toLowerCase().includes(query));
+  const categoryMap = new Map();
+  for (const item of visibleModules) {
+    const key = item.category || "Other";
+    if (!categoryMap.has(key)) categoryMap.set(key, []);
+    categoryMap.get(key).push(item);
+  }
+  const moduleCards = [...categoryMap.entries()].map(([category, items]) => {
+    const sortedItems = [...items].sort((a, b) => Number(favoriteModules.has(b.id)) - Number(favoriteModules.has(a.id)) || a.title.localeCompare(b.title));
+    const cards = sortedItems.map((item) => `
       <article class="architect-library-item architect-library-item--module" draggable="true" data-architect-library-drag="${appEscapeHtml(item.id)}">
         <div class="architect-library-preview">${architectPreviewMarkup(item)}</div>
         <div>
@@ -6566,11 +6894,32 @@ async function renderArchitectLibrary() {
           <strong>${appEscapeHtml(item.title)}</strong>
           <p>${appEscapeHtml(item.description)}</p>
         </div>
-        <button type="button" class="btn accent full" data-architect-library-module="${appEscapeHtml(item.id)}">Place module</button>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn accent" data-architect-library-module="${appEscapeHtml(item.id)}">Place module</button>
+          <button type="button" class="btn secondary" data-architect-fav-module="${appEscapeHtml(item.id)}">${favoriteModules.has(item.id) ? "★ Favorited" : "☆ Favorite"}</button>
+        </div>
       </article>
-    `);
+    `).join("");
+    return `
+      <section class="architect-library-section">
+        <div class="row" style="justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <h4 style="margin:0">${appEscapeHtml(category)}</h4>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn secondary btn-compact" data-architect-category-prompt="${appEscapeHtml(category)}">Generate custom</button>
+            <button type="button" class="btn secondary btn-compact" data-architect-category-prompt-refs="${appEscapeHtml(category)}">Generate + attach refs</button>
+          </div>
+        </div>
+        <div class="architect-library-section-grid">${cards}</div>
+      </section>
+    `;
+  });
   const modelCards = models
+    .filter((file) => (architectLibraryView === "favorites" ? favoriteFiles.has(String(file.name || "")) : true))
     .filter((file) => `${file.name || ""}`.toLowerCase().includes(query))
+    .sort((a, b) =>
+      Number(favoriteFiles.has(String(b.name || ""))) - Number(favoriteFiles.has(String(a.name || "")))
+      || String(a.name || "").localeCompare(String(b.name || ""))
+    )
     .map((file) => {
       const previewName = architectPreviewFilename(file, models);
       const previewMarkup = previewName
@@ -6584,7 +6933,10 @@ async function renderArchitectLibrary() {
           <strong>${appEscapeHtml(file.name || "Model")}</strong>
           <p>${file.size ? `${Math.round(Number(file.size) / 1024)} KB` : "Saved in current project"}</p>
         </div>
-        <button type="button" class="btn secondary full" data-architect-library-open="${appEscapeHtml(file.name || "")}">Open / place</button>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn secondary" data-architect-library-open="${appEscapeHtml(file.name || "")}">Open / place</button>
+          <button type="button" class="btn secondary" data-architect-fav-file="${appEscapeHtml(file.name || "")}">${favoriteFiles.has(String(file.name || "")) ? "★ Favorited" : "☆ Favorite"}</button>
+        </div>
       </article>
     `;
     });
@@ -6633,6 +6985,36 @@ async function renderArchitectLibrary() {
       setEditStatus("ok", `Opened ${filename}. Drag it by hand or use grid snap.`);
     });
   });
+  grid.querySelectorAll("[data-architect-category-prompt]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const category = btn.dataset.architectCategoryPrompt || "Walls";
+      closeArchitectLibrary();
+      startArchitectCategoryPrompt(category, { openRefPicker: false });
+    });
+  });
+  grid.querySelectorAll("[data-architect-category-prompt-refs]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const category = btn.dataset.architectCategoryPromptRefs || "Walls";
+      closeArchitectLibrary();
+      startArchitectCategoryPrompt(category, { openRefPicker: true });
+    });
+  });
+  grid.querySelectorAll("[data-architect-fav-module]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.architectFavModule || "";
+      if (!id) return;
+      toggleArchitectFavorite("module", id);
+      void renderArchitectLibrary();
+    });
+  });
+  grid.querySelectorAll("[data-architect-fav-file]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.architectFavFile || "";
+      if (!name) return;
+      toggleArchitectFavorite("file", name);
+      void renderArchitectLibrary();
+    });
+  });
 }
 
 function openArchitectLibrary(filter = "") {
@@ -6656,6 +7038,14 @@ document.querySelectorAll("[data-architect-library-close]").forEach((el) => {
 });
 document.getElementById("architect-library-search")?.addEventListener("input", () => {
   void renderArchitectLibrary();
+});
+document.querySelectorAll("[data-architect-filter-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const next = btn.dataset.architectFilterView === "favorites" ? "favorites" : "all";
+    if (next === architectLibraryView) return;
+    architectLibraryView = next;
+    void renderArchitectLibrary();
+  });
 });
 
 function initializeArchitectConnectorControls() {
@@ -6906,6 +7296,7 @@ function openMarkingMenu(event) {
       objectTools.splitBodies();
     }],
     ["🎨", "Color", () => showColorTool()],
+    ["🧱", "AI Wall Texture", () => setArchitectPromptForSelectedEdit("texture_ai")],
     ["▣", "Pick Face", () => { activatePickMode("face"); setEditStatus("ok", "Click faces on the model to add @face references."); }],
     ["⌁", "Pick Edge", () => { activatePickMode("edge"); setEditStatus("ok", "Click near edges on the model to add @edge references."); }],
     ["▣", "Select object", () => { activatePickMode("object"); setEditStatus("ok", "Click objects in the viewport · Delete / Backspace / X to delete · Cmd+Z to undo."); }],

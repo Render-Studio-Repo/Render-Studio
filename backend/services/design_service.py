@@ -485,6 +485,15 @@ def _source_generation_repair_note(error: str) -> str:
     )
 
 
+def _is_dxf_polyline_kernel_failure(detail: str) -> bool:
+    text = str(detail or "")
+    lowered = text.lower()
+    return (
+        ("stdfail_notdone" in lowered or "brep_api: command not done" in lowered)
+        and ("polyline" in lowered or "objects_curve.py" in lowered or "topology/one_d.py" in lowered)
+    )
+
+
 def _promote_disconnected_bodies(
     project_path: Path,
     glb_name: str,
@@ -811,10 +820,27 @@ def _canonical_dxf_mold_source(
         "    points = [(float(p[0]), float(p[1])) for p in entity.get_points('xy')]\n"
         "    if len(points) < 3:\n"
         "        raise ValueError('DXF polyline has fewer than 3 points')\n"
+        "    if points and points[0] == points[-1]:\n"
+        "        points = points[:-1]\n"
+        "    cleaned = []\n"
+        "    for x, y in points:\n"
+        "        if not cleaned or abs(x - cleaned[-1][0]) > 1e-6 or abs(y - cleaned[-1][1]) > 1e-6:\n"
+        "            cleaned.append((x, y))\n"
+        "    if len(cleaned) >= 2 and abs(cleaned[0][0] - cleaned[-1][0]) <= 1e-6 and abs(cleaned[0][1] - cleaned[-1][1]) <= 1e-6:\n"
+        "        cleaned = cleaned[:-1]\n"
+        "    if len(cleaned) < 3:\n"
+        "        raise ValueError('DXF polyline has fewer than 3 unique points')\n"
+        "    area2 = 0.0\n"
+        "    for i in range(len(cleaned)):\n"
+        "        x1, y1 = cleaned[i]\n"
+        "        x2, y2 = cleaned[(i + 1) % len(cleaned)]\n"
+        "        area2 += (x1 * y2) - (x2 * y1)\n"
+        "    if abs(area2) <= 1e-6:\n"
+        "        raise ValueError('DXF polyline is degenerate (zero area)')\n"
         "    with BuildPart() as part_builder:\n"
         "        with BuildSketch(Plane.XY) as sketch_builder:\n"
         "            with BuildLine() as line_builder:\n"
-        "                Polyline(*points, close=True)\n"
+        "                Polyline(*cleaned, close=True)\n"
         "            make_face()\n"
         "        extrude(amount=amount)\n"
         "        return part_builder.part\n\n"
@@ -830,7 +856,10 @@ def _canonical_dxf_mold_source(
         "            continue\n"
         "        if entity.dxf.layer.upper() not in outline_names:\n"
         "            continue\n"
-        "        piece = _extrude_polyline(entity, mold_thickness)\n"
+        "        try:\n"
+        "            piece = _extrude_polyline(entity, mold_thickness)\n"
+        "        except Exception:\n"
+        "            continue\n"
         "        body = piece if body is None else body + piece\n"
         "    if body is None:\n"
         "        raise ValueError('No outline polylines found in DXF')\n"
@@ -839,7 +868,10 @@ def _canonical_dxf_mold_source(
         "            continue\n"
         "        if entity.dxf.layer.upper() not in cavity_names:\n"
         "            continue\n"
-        "        body = body - _extrude_polyline(entity, mold_thickness)\n"
+        "        try:\n"
+        "            body = body - _extrude_polyline(entity, mold_thickness)\n"
+        "        except Exception:\n"
+        "            continue\n"
         "    cut_height = mold_thickness + 2.0\n"
         "    for entity in modelspace:\n"
         "        if entity.dxftype() != 'CIRCLE':\n"
@@ -921,10 +953,25 @@ def _canonical_dxf_connector_source(
         "    pts = _points(entity)\n"
         "    if pts and pts[0] == pts[-1]:\n"
         "        pts = pts[:-1]\n"
+        "    cleaned = []\n"
+        "    for x, y in pts:\n"
+        "        if not cleaned or abs(x - cleaned[-1][0]) > 1e-6 or abs(y - cleaned[-1][1]) > 1e-6:\n"
+        "            cleaned.append((x, y))\n"
+        "    if len(cleaned) >= 2 and abs(cleaned[0][0] - cleaned[-1][0]) <= 1e-6 and abs(cleaned[0][1] - cleaned[-1][1]) <= 1e-6:\n"
+        "        cleaned = cleaned[:-1]\n"
+        "    if len(cleaned) < 3:\n"
+        "        raise ValueError('DXF polyline has fewer than 3 unique points')\n"
+        "    area2 = 0.0\n"
+        "    for i in range(len(cleaned)):\n"
+        "        x1, y1 = cleaned[i]\n"
+        "        x2, y2 = cleaned[(i + 1) % len(cleaned)]\n"
+        "        area2 += (x1 * y2) - (x2 * y1)\n"
+        "    if abs(area2) <= 1e-6:\n"
+        "        raise ValueError('DXF polyline is degenerate (zero area)')\n"
         "    with BuildPart() as part_builder:\n"
         "        with BuildSketch(Plane.XY):\n"
         "            with BuildLine():\n"
-        "                Polyline(*pts, close=True)\n"
+        "                Polyline(*cleaned, close=True)\n"
         "            make_face()\n"
         "        extrude(amount=amount)\n"
         "    return part_builder.part\n\n"
@@ -958,7 +1005,10 @@ def _canonical_dxf_connector_source(
         "        kind = _classify_poly(entity)\n"
         "        if kind == 'ignore':\n"
         "            continue\n"
-        "        solid = _poly_solid(entity, model_thickness + (2.0 if kind == 'cut' else 0.0))\n"
+        "        try:\n"
+        "            solid = _poly_solid(entity, model_thickness + (2.0 if kind == 'cut' else 0.0))\n"
+        "        except Exception:\n"
+        "            continue\n"
         "        if kind == 'cut':\n"
         "            cut_tools.append(solid)\n"
         "            continue\n"
@@ -1979,56 +2029,106 @@ def _run_text_to_cad_v2(
             repair_note = f"Source finalize failed before scripts/step:\n{last_error}"
             trace_add("error", f"[2.0/text-to-cad] pre-step finalize failed: {exc}", trace_id=trace_id)
             continue
+        step_args = [
+            source_name,
+            "-o",
+            step_name,
+            "--glb",
+            glb_name,
+            "--stl",
+            stl_name,
+            "--3mf",
+            three_mf_name,
+            "--force",
+        ]
         step_out = skill_runner.run_skill_tool(
             "cad",
             "step",
-            [
-                source_name,
-                "-o",
-                step_name,
-                "--glb",
-                glb_name,
-                "--stl",
-                stl_name,
-                "--3mf",
-                three_mf_name,
-                "--force",
-            ],
+            step_args,
             cwd=project_path,
             timeout_sec=240.0,
         )
         if not step_out.get("ok"):
             detail = _error_tail(step_out, "scripts/step failed")
             last_error = detail
-            exit_code = step_out.get("exit_code")
-            if isinstance(exit_code, int) and exit_code < 0:
-                repair_note = (
-                    "scripts/step crashed the CAD kernel (native signal, not a Python "
-                    "exception — try/except will NOT catch it). Rewrite the source to "
-                    "avoid the crash: remove or replace the failing fillet/chamfer, "
-                    "boolean, loft, or sweep; do not wrap it in try/except. If a fillet "
-                    "or chamfer is needed, use a much smaller radius and select only the "
-                    "specific edges that truly need it instead of a broad edge filter.\n"
-                    f"{detail}"
-                )
-            else:
-                # Check for NameError — undefined helper function that gen_step() calls
-                name_err_match = re.search(r"NameError: name '(\w+)' is not defined", detail)
-                if name_err_match:
-                    missing_fn = name_err_match.group(1)
+            if _is_dxf_polyline_kernel_failure(detail):
+                dxf_names = _collect_dxf_filenames(context, project_path, prompt)
+                if dxf_names:
+                    readable_map = _ensure_project_dxf_files_readable(project_path, dxf_names)
+                    primary_dxf = readable_map.get(dxf_names[0], dxf_names[0])
+                    source_for_rewrite = current_source or source_path.read_text(encoding="utf-8", errors="ignore")
+                    rewritten_source, rewrite_note = _maybe_rewrite_incomplete_dxf_source(
+                        source_for_rewrite,
+                        dxf_filename=primary_dxf,
+                        prompt=prompt,
+                        context=context,
+                    )
+                    if rewritten_source == source_for_rewrite:
+                        if _should_use_dxf_mold_template(source_for_rewrite, context, prompt):
+                            outline_layers, cavity_layers, hole_layers = _dxf_layer_sets_from_context(context, prompt)
+                            rewritten_source = _canonical_dxf_mold_source(
+                                primary_dxf,
+                                thickness=25.0,
+                                label=base,
+                                outline_layers=outline_layers,
+                                cavity_layers=cavity_layers,
+                                hole_layers=hole_layers,
+                            )
+                        else:
+                            rewritten_source = _canonical_dxf_connector_source(
+                                primary_dxf,
+                                thickness=12.0,
+                                label=base,
+                            )
+                        rewrite_note = (
+                            "Detected DXF polyline kernel failure and force-rewrote source to a polyline-safe canonical DXF template."
+                        )
+                    source_path.write_text(rewritten_source.rstrip() + "\n", encoding="utf-8")
+                    current_source = rewritten_source
+                    trace_add("warning", f"[2.0/text-to-cad] {rewrite_note}", trace_id=trace_id)
+                    retry_step_out = skill_runner.run_skill_tool(
+                        "cad",
+                        "step",
+                        step_args,
+                        cwd=project_path,
+                        timeout_sec=240.0,
+                    )
+                    if retry_step_out.get("ok"):
+                        step_out = retry_step_out
+                        source = rewritten_source
+                    else:
+                        detail = _error_tail(retry_step_out, "scripts/step failed after DXF rewrite")
+                        last_error = detail
+            if not step_out.get("ok"):
+                exit_code = step_out.get("exit_code")
+                if isinstance(exit_code, int) and exit_code < 0:
                     repair_note = (
-                        f"NameError: '{missing_fn}' is called in gen_step() but was never defined in this file. "
-                        "This is the #1 source of failure: you wrote a function call without writing the function body. "
-                        f"Fix: define '{missing_fn}' at module scope BEFORE gen_step(), "
-                        "OR inline its logic directly inside gen_step(). "
-                        "Rule: every function called in gen_step() MUST be fully defined in this same file — "
-                        "do not reference any name that you have not explicitly def'd.\n"
-                        f"Full error:\n{detail}"
+                        "scripts/step crashed the CAD kernel (native signal, not a Python "
+                        "exception — try/except will NOT catch it). Rewrite the source to "
+                        "avoid the crash: remove or replace the failing fillet/chamfer, "
+                        "boolean, loft, or sweep; do not wrap it in try/except. If a fillet "
+                        "or chamfer is needed, use a much smaller radius and select only the "
+                        "specific edges that truly need it instead of a broad edge filter.\n"
+                        f"{detail}"
                     )
                 else:
-                    repair_note = f"scripts/step failed:\n{detail}"
-            trace_add("error", f"[2.0/text-to-cad] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
-            continue
+                    # Check for NameError — undefined helper function that gen_step() calls
+                    name_err_match = re.search(r"NameError: name '(\w+)' is not defined", detail)
+                    if name_err_match:
+                        missing_fn = name_err_match.group(1)
+                        repair_note = (
+                            f"NameError: '{missing_fn}' is called in gen_step() but was never defined in this file. "
+                            "This is the #1 source of failure: you wrote a function call without writing the function body. "
+                            f"Fix: define '{missing_fn}' at module scope BEFORE gen_step(), "
+                            "OR inline its logic directly inside gen_step(). "
+                            "Rule: every function called in gen_step() MUST be fully defined in this same file — "
+                            "do not reference any name that you have not explicitly def'd.\n"
+                            f"Full error:\n{detail}"
+                        )
+                    else:
+                        repair_note = f"scripts/step failed:\n{detail}"
+                trace_add("error", f"[2.0/text-to-cad] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
+                continue
 
         _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
         cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
