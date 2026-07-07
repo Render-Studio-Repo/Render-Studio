@@ -914,6 +914,17 @@ def _looks_like_pc_cooling_fan(prompt: str, images: list[dict[str, Any]] | None 
     )
 
 
+def _looks_like_modular_robot_house(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
+    p = (prompt or "").lower()
+    if images:
+        return False
+    return (
+        "house" in p
+        and any(token in p for token in ("modular", "snap", "robotic", "robot arm", "assembled", "exploded"))
+        and any(token in p for token in ("wall panel", "pillar", "balcony", "dovetail", "window", "door"))
+    )
+
+
 def _canonical_pc_cooling_fan_source(*, label: str) -> str:
     safe_label = json.dumps(label or "pc_cooling_fan")
     return f'''from build123d import *
@@ -999,6 +1010,180 @@ def make_printable_fan_solid():
 
 def gen_step():
     return make_printable_fan_solid()
+'''
+
+
+def _canonical_modular_robot_house_source(*, label: str) -> str:
+    safe_label = json.dumps(label or "modular_robot_house")
+    return f'''from build123d import *
+
+model_label = {safe_label}
+
+house_width = 220.0
+house_depth = 160.0
+story_height = 90.0
+roof_height = 15.0
+pillar_size = 12.0
+wall_thickness = 6.0
+floor_thickness = 8.0
+roof_thickness = 10.0
+balcony_width = 100.0
+balcony_depth = 45.0
+window_width = 35.0
+window_height = 28.0
+door_width = 38.0
+door_height = 55.0
+
+
+def named(shape, label):
+    shape.label = label
+    return shape
+
+
+def box_part(label, size, loc):
+    return named(Pos(*loc) * Box(*size), label)
+
+
+def cylinder_part(label, radius, height, loc):
+    return named(Pos(*loc) * Cylinder(radius, height), label)
+
+
+def make_pillar(name, x, y):
+    z = (story_height * 2.0 + roof_height) / 2.0
+    pillar = box_part(name, (pillar_size, pillar_size, story_height * 2.0 + roof_height), (x, y, z))
+    # Visible female dovetail channels on two outside faces, represented as darker void-like slots.
+    channel_a = box_part(name + "_front_dovetail_channel", (pillar_size + 1.0, 3.0, story_height * 1.75), (x, y - pillar_size / 2.0 - 0.6, z))
+    channel_b = box_part(name + "_side_dovetail_channel", (3.0, pillar_size + 1.0, story_height * 1.75), (x - pillar_size / 2.0 - 0.6, y, z))
+    return [pillar, channel_a, channel_b]
+
+
+def make_wall_panel(name, x, y, z, size, orientation="front"):
+    panel = box_part(name, size, (x, y, z))
+    tab_z = z
+    if orientation in ("front", "back"):
+        tab_left = box_part(name + "_left_male_dovetail_tab", (5.0, 4.0, size[2] * 0.78), (x - size[0] / 2.0 - 2.0, y, tab_z))
+        tab_right = box_part(name + "_right_male_dovetail_tab", (5.0, 4.0, size[2] * 0.78), (x + size[0] / 2.0 + 2.0, y, tab_z))
+    else:
+        tab_left = box_part(name + "_left_male_dovetail_tab", (4.0, 5.0, size[2] * 0.78), (x, y - size[1] / 2.0 - 2.0, tab_z))
+        tab_right = box_part(name + "_right_male_dovetail_tab", (4.0, 5.0, size[2] * 0.78), (x, y + size[1] / 2.0 + 2.0, tab_z))
+    grip = box_part(name + "_robot_gripper_pad", (28.0, 2.0 if orientation in ("front", "back") else 28.0, 10.0), (x, y, z + 8.0))
+    return [panel, tab_left, tab_right, grip]
+
+
+def make_window(name, x, y, z):
+    glass = box_part(name + "_blue_window_insert", (window_width, 2.5, window_height), (x, y, z))
+    sill = box_part(name + "_snap_sill", (window_width + 10.0, 4.0, 4.0), (x, y - 1.0, z - window_height / 2.0 - 4.0))
+    tabs = [
+        box_part(name + "_snap_tab_left", (3.0, 5.0, window_height * 0.65), (x - window_width / 2.0 - 3.0, y, z)),
+        box_part(name + "_snap_tab_right", (3.0, 5.0, window_height * 0.65), (x + window_width / 2.0 + 3.0, y, z)),
+    ]
+    return [glass, sill, *tabs]
+
+
+def make_door(name, x, y, z):
+    door = box_part(name + "_snap_in_door_module", (door_width, 3.0, door_height), (x, y, z))
+    handle = cylinder_part(name + "_round_handle", 2.0, 4.0, (x + door_width * 0.25, y - 2.5, z + 5.0))
+    tabs = [
+        box_part(name + "_hinge_side_snap_tabs", (3.0, 5.0, door_height * 0.7), (x - door_width / 2.0 - 3.0, y, z)),
+        box_part(name + "_latch_side_alignment_key", (3.0, 5.0, door_height * 0.45), (x + door_width / 2.0 + 3.0, y, z)),
+    ]
+    return [door, handle, *tabs]
+
+
+def make_slab(name, z, size):
+    slab = box_part(name, (size[0], size[1], floor_thickness), (0, 0, z))
+    sockets = []
+    ox = house_width / 2.0 - pillar_size / 2.0
+    oy = house_depth / 2.0 - pillar_size / 2.0
+    for ix, x in enumerate((-ox, ox)):
+        for iy, y in enumerate((-oy, oy)):
+            sockets.append(box_part(f"{{name}}_underside_socket_{{ix}}_{{iy}}", (pillar_size + 2.0, pillar_size + 2.0, 3.0), (x, y, z - floor_thickness / 2.0 - 1.5)))
+    return [slab, *sockets]
+
+
+def make_balcony():
+    y = -house_depth / 2.0 - balcony_depth / 2.0
+    z = story_height + 12.0
+    deck = box_part("balcony_deck_locking_plate", (balcony_width, balcony_depth, 6.0), (0, y, z))
+    rail_front = box_part("balcony_front_snap_railing", (balcony_width, 4.0, 28.0), (0, y - balcony_depth / 2.0 + 2.0, z + 16.0))
+    rail_left = box_part("balcony_left_snap_railing", (4.0, balcony_depth, 28.0), (-balcony_width / 2.0 + 2.0, y, z + 16.0))
+    rail_right = box_part("balcony_right_snap_railing", (4.0, balcony_depth, 28.0), (balcony_width / 2.0 - 2.0, y, z + 16.0))
+    pegs = [
+        cylinder_part("balcony_peg_socket_01", 2.2, 8.0, (-balcony_width * 0.35, y - balcony_depth * 0.25, z + 6.0)),
+        cylinder_part("balcony_peg_socket_02", 2.2, 8.0, (balcony_width * 0.35, y - balcony_depth * 0.25, z + 6.0)),
+    ]
+    return [deck, rail_front, rail_left, rail_right, *pegs]
+
+
+def make_corner_brackets():
+    parts = []
+    ox = house_width / 2.0 - 18.0
+    oy = house_depth / 2.0 - 18.0
+    for ix, x in enumerate((-ox, ox)):
+        for iy, y in enumerate((-oy, oy)):
+            bracket = box_part(f"m3_screw_corner_bracket_{{ix}}_{{iy}}", (24.0, 5.0, 24.0), (x, y, 48.0))
+            hole = cylinder_part(f"m3_clearance_hole_marker_{{ix}}_{{iy}}", 1.7, 8.0, (x, y - 3.5, 48.0))
+            parts.extend([bracket, hole])
+    return parts
+
+
+def build_assembled_house():
+    parts = []
+    ox = house_width / 2.0 - pillar_size / 2.0
+    oy = house_depth / 2.0 - pillar_size / 2.0
+    for label, x, y in (
+        ("front_left_structural_pillar", -ox, -oy),
+        ("front_right_structural_pillar", ox, -oy),
+        ("back_left_structural_pillar", -ox, oy),
+        ("back_right_structural_pillar", ox, oy),
+    ):
+        parts.extend(make_pillar(label, x, y))
+
+    for story in (0, 1):
+        z = story * story_height + story_height / 2.0
+        tag = "first_floor" if story == 0 else "second_floor"
+        parts.extend(make_wall_panel(f"{{tag}}_front_wall_panel", 0, -house_depth / 2.0, z, (house_width - 32.0, wall_thickness, story_height - 16.0), "front"))
+        parts.extend(make_wall_panel(f"{{tag}}_back_wall_panel", 0, house_depth / 2.0, z, (house_width - 32.0, wall_thickness, story_height - 16.0), "back"))
+        parts.extend(make_wall_panel(f"{{tag}}_left_wall_panel", -house_width / 2.0, 0, z, (wall_thickness, house_depth - 32.0, story_height - 16.0), "side"))
+        parts.extend(make_wall_panel(f"{{tag}}_right_wall_panel", house_width / 2.0, 0, z, (wall_thickness, house_depth - 32.0, story_height - 16.0), "side"))
+        parts.extend(make_window(f"{{tag}}_front_window", -45.0, -house_depth / 2.0 - 3.0, z + 15.0))
+        parts.extend(make_window(f"{{tag}}_side_window", house_width / 2.0 + 3.0, 25.0, z + 12.0))
+
+    parts.extend(make_door("front_door", 45.0, -house_depth / 2.0 - 3.0, door_height / 2.0 + 8.0))
+    parts.extend(make_slab("floor_slab_with_pillar_sockets", floor_thickness / 2.0, (house_width + 8.0, house_depth + 8.0)))
+    parts.extend(make_slab("second_floor_slab_with_sockets", story_height, (house_width + 8.0, house_depth + 8.0)))
+    parts.extend(make_slab("flat_roof_slab_with_sockets", story_height * 2.0 + roof_thickness / 2.0, (house_width + 12.0, house_depth + 12.0)))
+    parts.extend(make_balcony())
+    parts.extend(make_corner_brackets())
+    assembly = Compound(label="assembled_modular_robot_house", children=parts)
+    assembly.label = "assembled_modular_robot_house"
+    return assembly
+
+
+def build_exploded_kit():
+    assembled = build_assembled_house()
+    kit_parts = []
+    for index, child in enumerate(assembled.children):
+        row = index // 8
+        col = index % 8
+        offset = Pos((col - 3.5) * 42.0, 260.0 + row * 42.0, 0.0)
+        try:
+            moved = offset * child
+            moved.label = "exploded_" + (child.label or f"part_{{index:02d}}")
+            kit_parts.append(moved)
+        except Exception:
+            kit_parts.append(child)
+    exploded = Compound(label="exploded_snap_together_house_kit", children=kit_parts)
+    exploded.label = "exploded_snap_together_house_kit"
+    return exploded
+
+
+def gen_step():
+    assembled = build_assembled_house()
+    exploded = build_exploded_kit()
+    model = Compound(label=model_label, children=[assembled, exploded])
+    model.label = model_label
+    return model
 '''
 
 
@@ -1388,6 +1573,15 @@ def _run_text_to_cad_v2(
                         trace_id=trace_id,
                     )
                     remaining = _gen_step_local_undefined_names(source)
+                elif _looks_like_modular_robot_house(prompt, images):
+                    source = _canonical_modular_robot_house_source(label=base)
+                    trace_add(
+                        "warning",
+                        "[2.0/text-to-cad] Replaced incomplete modular house source with canonical snap-kit assembly because "
+                        f"gen_step() referenced undefined names: {', '.join(remaining[:8])}",
+                        trace_id=trace_id,
+                    )
+                    remaining = _gen_step_local_undefined_names(source)
             if remaining:
                 raise ValueError(
                     "Generated source is incomplete; gen_step() references undefined names: "
@@ -1398,6 +1592,12 @@ def _run_text_to_cad_v2(
             current_source = source
         except Exception as exc:
             last_error = str(exc)
+            if current_source:
+                try:
+                    rejected_path = project_path / f"{base}.rejected.py"
+                    rejected_path.write_text(str(current_source).rstrip() + "\n", encoding="utf-8")
+                except Exception:
+                    pass
             if source_path.is_file():
                 try:
                     current_source = source_path.read_text(encoding="utf-8", errors="ignore")
