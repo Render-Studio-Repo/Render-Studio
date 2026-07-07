@@ -5569,10 +5569,11 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
         for suffix in (".step", ".stp", ".glb", ".gltf", ".stl", ".obj", ".ply", ".off"):
             src = project_path / f"{stem}{suffix}"
             if src.is_file():
-                try:
-                    cad_service.ensure_mesh_exports(project_path, src.name, missing_only=True)
-                except Exception as exc:
-                    logger.warning("3MF refresh failed for %s: %s", src.name, exc)
+                if cad_service._export_is_stale(src.stat().st_mtime, file_path, "3mf"):
+                    try:
+                        cad_service.ensure_mesh_exports(project_path, src.name, missing_only=True)
+                    except Exception as exc:
+                        logger.warning("3MF refresh failed for %s: %s", src.name, exc)
                 break
     download_name = safe
     if file_path.suffix.lower() == ".3mf":

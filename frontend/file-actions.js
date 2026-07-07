@@ -66,21 +66,39 @@ function formatApiError(err) {
   return "Could not list exports — showing usual download formats below.";
 }
 
-async function downloadFile(url, filename) {
-  const res = await fetch(url, { headers: authHeaders() });
-  if (!res.ok) {
+async function downloadFile(url, filename, { retries = 3 } = {}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+    }
+    let res;
+    try {
+      res = await fetch(url, { headers: authHeaders() });
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries - 1) continue;
+      throw err;
+    }
+    if (res.ok) {
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      return;
+    }
+    const retryable = [502, 503, 504].includes(res.status);
     const data = await res.json().catch(() => ({}));
     const detail = typeof data.detail === "string" ? data.detail : res.statusText;
-    throw new Error(detail || `Download failed (${res.status})`);
+    lastErr = new Error(detail || `Download failed (${res.status})`);
+    if (retryable && attempt < retries - 1) continue;
+    throw lastErr;
   }
-  const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  throw lastErr || new Error("Download failed");
 }
 
 async function copyText(text) {
