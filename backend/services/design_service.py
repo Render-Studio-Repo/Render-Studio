@@ -1149,118 +1149,12 @@ def _maybe_rewrite_incomplete_dxf_source(
     prompt: str,
     context: dict[str, Any] | None = None,
 ) -> tuple[str, str | None]:
-    """Deprecated: keep generated source in Jake's repair loop instead of templating it.
+    """Deprecated: keep generated source in Jake's repair loop.
 
-    This helper used to replace failed DXF source with Render3D-owned
-    dxf_connector/mold/outline templates. Those templates can produce flat
-    bounding-box plates that pass export while ignoring the user's requested
-    CAD intent, so the active 2.0 path must not rewrite source here.
+    Render3D-specific DXF template rewrites were removed because they could
+    convert failed CAD generation into flat fallback geometry.
     """
     return source, None
-
-    # Legacy fallback code below is intentionally unreachable and retained only
-    # for short-term diff context while the text-to-cad wrapper stabilizes.
-    undefined = _gen_step_local_undefined_names(source)
-    helper_missing = any(
-        name.startswith("_")
-        or name.lower().startswith(("make_", "build_", "create_"))
-        for name in undefined
-    )
-    dxf_helper_missing = any(
-        "dxf" in name.lower()
-        or (
-            name.lower().startswith(("make_", "build_", "create_"))
-            and any(token in name.lower() for token in ("extrude", "part", "profile", "drawing", "mount", "box", "frame", "housing"))
-        )
-        for name in undefined
-    )
-    config_missing = any(name in _DXF_CONFIG_NAMES or name.endswith("_layer") for name in undefined)
-    uses_custom_dxf_parser = any(
-        token in source
-        for token in (
-            "_collect_dxf_geometry",
-            "_make_outline_body",
-            "_largest_closed_face",
-            "_apply_cut_polygons",
-            "_apply_add_polygons",
-        )
-    )
-    naive_import = "import_dxf" in source and "_extrude_polyline" not in source
-    connector_like = _looks_like_dxf_connector(source, prompt, dxf_filename)
-    use_mold = _should_use_dxf_mold_template(source, context, prompt)
-    unsafe_polyline_template = (
-        "def _poly_solid" in source
-        and "Polyline(*pts" in source
-        and "DXF polyline is degenerate" not in source
-    )
-
-    canonical_mold_fallback = "mold_from_dxf" in source and "outline_layers" in source and "No outline polylines found in DXF" in source
-    if not (
-        helper_missing
-        or dxf_helper_missing
-        or config_missing
-        or uses_custom_dxf_parser
-        or naive_import
-        or unsafe_polyline_template
-        or (connector_like and canonical_mold_fallback)
-    ):
-        return source, None
-
-    thickness = 25.0
-    for match in re.finditer(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\b", prompt or "", re.I):
-        try:
-            thickness = float(match.group(1))
-            break
-        except ValueError:
-            continue
-    label = "mold_from_dxf" if use_mold or re.search(r"\bmold\b", prompt or "", re.I) else "dxf_model"
-    outline_layers, cavity_layers, hole_layers = _dxf_layer_sets_from_context(context, prompt)
-    if connector_like:
-        note = (
-            "Rewrote DXF source to a connector/part layer parser because this is a connector-style drawing, "
-            "not a mold outline/cavity drawing."
-            if canonical_mold_fallback
-            else "Rewrote unsafe DXF polyline source to a polyline-safe connector/part builder."
-            if unsafe_polyline_template
-            else "Rewrote incomplete semantic DXF source to a layer-aware connector/part builder because "
-            f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
-            f"{'...' if len(undefined) > 8 else ''}."
-        )
-        return _canonical_dxf_connector_source(dxf_filename, thickness=min(thickness, 12.0), label="dxf_connector"), note
-
-    if use_mold:
-        note = (
-            "Rewrote DXF source to a layer-aware mold builder (outline extrude + cavity/hole cuts) because "
-            f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
-            f"{'...' if len(undefined) > 8 else ''}."
-            if undefined
-            else "Rewrote naive import_dxf() mold source to layer-aware outline/cavity/hole processing."
-        )
-        return _canonical_dxf_mold_source(
-            dxf_filename,
-            thickness=thickness,
-            label=label,
-            outline_layers=outline_layers,
-            cavity_layers=cavity_layers,
-            hole_layers=hole_layers,
-        ), note
-
-    if _prompt_needs_semantic_dxf_model(prompt):
-        if connector_like or dxf_helper_missing or helper_missing:
-            note = (
-                "Rewrote incomplete semantic DXF source to a layer-aware connector/part builder because "
-                f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
-                f"{'...' if len(undefined) > 8 else ''}."
-            )
-            return _canonical_dxf_connector_source(dxf_filename, thickness=min(thickness, 12.0), label=label), note
-        return source, None
-
-    note = (
-        "Rewrote incomplete DXF source to a simple outline extrude template because "
-        f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
-        f"{'...' if len(undefined) > 8 else ''}."
-    )
-    return _canonical_dxf_extrude_source(dxf_filename, thickness=thickness, label=label), note
 
 
 def _insert_after_imports(source: str, block: str) -> str:
