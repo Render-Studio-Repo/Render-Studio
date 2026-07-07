@@ -1319,6 +1319,32 @@ def _augment_text_to_cad_source(
     return source
 
 
+def _harden_common_fillet_failures(source: str) -> str:
+    """Rewrite fragile fillet(...) calls to a guarded helper before scripts/step."""
+    if "fillet(" not in source:
+        return source
+    rewritten = re.sub(
+        r"(?<!\w)fillet\(\s*([A-Za-z_][\w\.]*)\s*,\s*radius\s*=\s*([^)]+)\)",
+        r"_safe_fillet(\1, \2)",
+        source,
+    )
+    if "_safe_fillet(" not in rewritten or "def _safe_fillet(" in rewritten:
+        return rewritten
+    helper = (
+        "def _safe_fillet(edges, radius):\n"
+        "    for scale in (1.0, 0.75, 0.5, 0.3):\n"
+        "        candidate = float(radius) * scale\n"
+        "        if candidate <= 0.05:\n"
+        "            continue\n"
+        "        try:\n"
+        "            fillet(edges, radius=candidate)\n"
+        "            return\n"
+        "        except Exception:\n"
+        "            continue"
+    )
+    return _insert_after_imports(rewritten, helper)
+
+
 def _finalize_text_to_cad_source_before_step(
     source_path: Path,
     *,
@@ -1335,6 +1361,7 @@ def _finalize_text_to_cad_source_before_step(
         prompt=prompt,
     )
     finalized = _augment_common_constants(finalized, base=source_path.stem, prompt=prompt)
+    finalized = _harden_common_fillet_failures(finalized)
     remaining = _gen_step_local_undefined_names(finalized)
     if remaining:
         raise ValueError(
