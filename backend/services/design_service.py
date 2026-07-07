@@ -289,6 +289,8 @@ def _function_assigned_names(func: ast.FunctionDef) -> set[str]:
             for item in node.items:
                 if item.optional_vars is not None:
                     names.update(_assignment_target_names(item.optional_vars))
+        elif isinstance(node, ast.comprehension):
+            names.update(_assignment_target_names(node.target))
         elif isinstance(node, ast.ExceptHandler) and node.name:
             names.add(node.name)
     return names
