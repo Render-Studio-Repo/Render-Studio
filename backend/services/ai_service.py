@@ -1021,7 +1021,10 @@ class AIService:
             "Every function that gen_step() calls (e.g. make_frame(), build_blade(), create_hub()) "
             "MUST be fully defined (def make_frame(): ...) in this same Python file BEFORE gen_step(). "
             "Do NOT call a function you have not written. Do NOT rely on any helper that is not in this file. "
-            "If you plan to call make_frame() or any snake_case helper, write the full function body first.\n\n"
+            "If you plan to call make_frame() or any snake_case helper, write the full function body first. "
+            "For speed-mode style prompts, prefer writing compact inline geometry inside gen_step() over splitting "
+            "the model into many helper functions. Before returning, audit every Name(...) and helper(...) used by "
+            "gen_step(): Python builtins are fine, but every custom snake_case helper must be defined above gen_step().\n\n"
             "If you assign shape.label, also define model_label or part_label at module scope (for example "
             'model_label = "cooling_fan").\n'
             "When importing a project DXF with import_dxf(), set a module-level constant such as "

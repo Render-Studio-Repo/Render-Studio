@@ -16,6 +16,7 @@ import re
 import ast
 import base64
 import json
+import builtins
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ from backend.services.ai_service import AIService
 from backend.services.trace_log import add as trace_add
 
 logger = logging.getLogger(__name__)
+
+_BUILTIN_NAMES = set(dir(builtins)) | {"True", "False", "None"}
 
 
 def _slug(text: str, fallback: str = "text_to_cad_model") -> str:
@@ -293,7 +296,7 @@ def _missing_config_constants(source: str) -> list[str]:
             if any(alias.name == "*" for alias in node.names):
                 star_import_roots.add((node.module or "").split(".")[0])
 
-    skip = set(dir(__builtins__)) | {"True", "False", "None"}
+    skip = _BUILTIN_NAMES
     missing: set[str] = set()
     for node in tree.body:
         if not isinstance(node, ast.FunctionDef):
@@ -362,7 +365,7 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
             called_as_func.add(node.func.id)
     called_as_func -= local_defined
 
-    skip = set(dir(__builtins__)) | {"True", "False", "None"}
+    skip = _BUILTIN_NAMES
 
     if "build123d" in star_import_roots:
         # Star import supplies the CAD API (Box, Cylinder, Extrude, …).
@@ -393,6 +396,36 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
         return result
 
     return sorted(name for name in referenced if name not in defined and name not in skip)
+
+
+def _source_generation_repair_note(error: str) -> str:
+    missing_match = re.search(
+        r"gen_step\(\) references undefined names:\s*(.+)$",
+        error,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not missing_match:
+        return f"Source generation failed: {error}"
+
+    missing = [
+        name.strip()
+        for name in re.split(r",|\s+and\s+", missing_match.group(1))
+        if name.strip() and name.strip() != "..."
+    ]
+    helper_names = [name for name in missing if re.match(r"^[a-z][a-z0-9_]*$", name) and name not in _BUILTIN_NAMES]
+    if not helper_names:
+        return f"Source generation failed: {error}"
+
+    examples = "\n".join(f"- define `{name}(...)` at module scope before `gen_step()`" for name in helper_names)
+    return (
+        "The previous Python source was incomplete because gen_step() called helper functions "
+        "that were never defined in the same file.\n"
+        f"Missing names: {', '.join(helper_names)}\n"
+        "Fix this by returning ONE complete Python file. Do not remove the calls unless you inline their full geometry logic.\n"
+        f"{examples}\n"
+        "Every helper called by gen_step() must have a real function body before gen_step(); no stubs, no pass, no ellipsis.\n"
+        f"Original error: {error}"
+    )
 
 
 def _dxf_layer_sets_from_context(context: dict[str, Any] | None, prompt: str) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
@@ -1113,7 +1146,7 @@ def _run_text_to_cad_v2(
                     current_source = source_path.read_text(encoding="utf-8", errors="ignore")
                 except Exception:
                     pass
-            repair_note = f"Source generation failed: {last_error}"
+            repair_note = _source_generation_repair_note(last_error)
             trace_add("error", f"[2.0/text-to-cad] Source generation failed: {exc}", trace_id=trace_id)
             continue
 
@@ -1794,7 +1827,7 @@ def _max_repairs_for_speed(speed: str | None) -> int:
     """Return extra repair attempts beyond the first try."""
     if (speed or "").strip().lower() in {"quality", "pro", "slow"}:
         return 3
-    return 2
+    return 0
 
 
 def _maybe_run_cad_inspect(result: dict[str, Any], project_path: Path, skills: list[str] | None, trace_id: str | None) -> None:
