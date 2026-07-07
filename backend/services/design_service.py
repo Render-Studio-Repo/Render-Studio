@@ -1745,7 +1745,7 @@ def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any
     except Exception:
         face_count = 0
     has_functional_detail = any(token in source_lower for token in ("slot", "rail", "rib", "boss", "hole", "fillet", "chamfer", "trapezoid", "dovetail", "clearance"))
-    if functional and ((face_count > 0 and face_count < 36) or not has_functional_detail):
+    if functional and not dxf_workflow and ((face_count > 0 and face_count < 36) or not has_functional_detail):
         return (
             "The geometry passed export but is too primitive for CAD 2.0/text-to-cad quality. "
             f"Inspect reports faceCount={face_count}. "
