@@ -795,6 +795,25 @@ def _is_naive_dxf_flat_extrude(source: str) -> bool:
 def _dxf_semantic_source_issue(source: str, prompt: str, context: dict[str, Any] | None) -> str | None:
     if not _prompt_needs_semantic_dxf_model(prompt):
         return None
+    lowered = (source or "").lower()
+    if any(
+        token in lowered
+        for token in (
+            "fallback_body",
+            "dxf_connector",
+            "mold_from_dxf",
+            "rectangle(width, depth)",
+            "simple outline extrude template",
+        )
+    ):
+        return (
+            "DXF/VXF semantic modeling failed: the source uses a generic Render3D fallback template "
+            "or bounding-box plate instead of reconstructing the requested 3D CAD from the drawing.\n"
+            "Fix: follow the upstream text-to-cad loop. Parse the DXF/VXF intent and write real build123d "
+            "source with named solids for the frame, walls, bosses, mounting holes, pockets, cutouts, tabs, "
+            "clearances, and separate physical parts. Do not return dxf_connector, mold_from_dxf, "
+            "fallback_body, or a Rectangle(width, depth) slab."
+        )
     if not _is_naive_dxf_flat_extrude(source):
         return None
     dxf_files = []
@@ -1130,7 +1149,17 @@ def _maybe_rewrite_incomplete_dxf_source(
     prompt: str,
     context: dict[str, Any] | None = None,
 ) -> tuple[str, str | None]:
-    """Replace truncated or naive DXF scripts with a layer-aware mold builder."""
+    """Deprecated: keep generated source in Jake's repair loop instead of templating it.
+
+    This helper used to replace failed DXF source with Render3D-owned
+    dxf_connector/mold/outline templates. Those templates can produce flat
+    bounding-box plates that pass export while ignoring the user's requested
+    CAD intent, so the active 2.0 path must not rewrite source here.
+    """
+    return source, None
+
+    # Legacy fallback code below is intentionally unreachable and retained only
+    # for short-term diff context while the text-to-cad wrapper stabilizes.
     undefined = _gen_step_local_undefined_names(source)
     helper_missing = any(
         name.startswith("_")
@@ -1318,16 +1347,7 @@ def _augment_text_to_cad_source(
 
     if injections:
         source = _insert_after_imports(source, "\n\n".join(injections))
-
-    rewritten, rewrite_note = _maybe_rewrite_incomplete_dxf_source(
-        source,
-        dxf_filename=primary,
-        prompt=prompt,
-        context=context,
-    )
-    if rewrite_note:
-        logger.info(rewrite_note)
-    return rewritten
+    return source
 
 
 def _finalize_text_to_cad_source_before_step(
@@ -2026,25 +2046,6 @@ def _run_text_to_cad_v2(
                 raise ValueError(dxf_issue)
             remaining = _gen_step_local_undefined_names(source)
             if remaining:
-                if _looks_like_pc_cooling_fan(prompt, images):
-                    source = _canonical_pc_cooling_fan_source(label=base)
-                    trace_add(
-                        "warning",
-                        "[2.0/text-to-cad] Replaced incomplete fan source with canonical PC cooling fan template because "
-                        f"gen_step() referenced undefined names: {', '.join(remaining[:8])}",
-                        trace_id=trace_id,
-                    )
-                    remaining = _gen_step_local_undefined_names(source)
-                elif _looks_like_modular_robot_house(prompt, images):
-                    source = _canonical_modular_robot_house_source(label=base)
-                    trace_add(
-                        "warning",
-                        "[2.0/text-to-cad] Replaced incomplete modular house source with canonical snap-kit assembly because "
-                        f"gen_step() referenced undefined names: {', '.join(remaining[:8])}",
-                        trace_id=trace_id,
-                    )
-                    remaining = _gen_step_local_undefined_names(source)
-            if remaining:
                 raise ValueError(
                     "Generated source is incomplete; gen_step() references undefined names: "
                     + ", ".join(remaining[:12])
@@ -2129,51 +2130,15 @@ def _run_text_to_cad_v2(
             if _is_dxf_polyline_kernel_failure(detail):
                 dxf_names = _collect_dxf_filenames(context, project_path, prompt)
                 if dxf_names:
-                    readable_map = _ensure_project_dxf_files_readable(project_path, dxf_names)
-                    primary_dxf = readable_map.get(dxf_names[0], dxf_names[0])
-                    source_for_rewrite = current_source or source_path.read_text(encoding="utf-8", errors="ignore")
-                    rewritten_source, rewrite_note = _maybe_rewrite_incomplete_dxf_source(
-                        source_for_rewrite,
-                        dxf_filename=primary_dxf,
-                        prompt=prompt,
-                        context=context,
+                    repair_note = (
+                        "scripts/step failed on DXF polyline geometry. Do NOT replace the model with a "
+                        "generic fallback plate. Repair the actual upstream text-to-cad build123d source: "
+                        "clean duplicate/degenerate DXF points, close profiles explicitly, parse modelspace "
+                        "entities/layers with ezdxf, and reconstruct the requested 3D part as named solids "
+                        "with holes/cutouts/pockets/clearances. Avoid whole-file import_dxf()+make_face()+extrude "
+                        "unless the prompt explicitly asks for a flat plate.\n"
+                        f"{detail}"
                     )
-                    if rewritten_source == source_for_rewrite:
-                        if _should_use_dxf_mold_template(source_for_rewrite, context, prompt):
-                            outline_layers, cavity_layers, hole_layers = _dxf_layer_sets_from_context(context, prompt)
-                            rewritten_source = _canonical_dxf_mold_source(
-                                primary_dxf,
-                                thickness=25.0,
-                                label=base,
-                                outline_layers=outline_layers,
-                                cavity_layers=cavity_layers,
-                                hole_layers=hole_layers,
-                            )
-                        else:
-                            rewritten_source = _canonical_dxf_connector_source(
-                                primary_dxf,
-                                thickness=12.0,
-                                label=base,
-                            )
-                        rewrite_note = (
-                            "Detected DXF polyline kernel failure and force-rewrote source to a polyline-safe canonical DXF template."
-                        )
-                    source_path.write_text(rewritten_source.rstrip() + "\n", encoding="utf-8")
-                    current_source = rewritten_source
-                    trace_add("warning", f"[2.0/text-to-cad] {rewrite_note}", trace_id=trace_id)
-                    retry_step_out = skill_runner.run_skill_tool(
-                        "cad",
-                        "step",
-                        step_args,
-                        cwd=project_path,
-                        timeout_sec=240.0,
-                    )
-                    if retry_step_out.get("ok"):
-                        step_out = retry_step_out
-                        source = rewritten_source
-                    else:
-                        detail = _error_tail(retry_step_out, "scripts/step failed after DXF rewrite")
-                        last_error = detail
             if not step_out.get("ok"):
                 exit_code = step_out.get("exit_code")
                 if isinstance(exit_code, int) and exit_code < 0:
