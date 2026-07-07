@@ -1123,7 +1123,7 @@ def _maybe_rewrite_incomplete_dxf_source(
         or dxf_helper_missing
         or config_missing
         or uses_custom_dxf_parser
-        or (naive_import and use_mold)
+        or naive_import
         or unsafe_polyline_template
         or (connector_like and canonical_mold_fallback)
     ):
