@@ -89,7 +89,7 @@ import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
-import { createRiggingEditor } from "./rigging-editor.js?v=20260707-urdf-sliders";
+import { createRiggingEditor } from "./rigging-editor.js?v=20260707-robot-joint-sliders";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
 
 const API = "";
@@ -138,6 +138,7 @@ function invalidateWiringPrefetch() {
 }
 let lastProjectBrowser = { components: [], sketches: [], wiring: [] };
 let lastProjectFiles = [];
+let robotArtifactData = null;
 let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
@@ -5670,46 +5671,88 @@ function setRightTab(tab) {
     panel.classList.toggle("active", panel.dataset.rightPanel === tab);
   });
   document.getElementById("project-cost-thumb")?.classList.toggle("hidden", tab !== "prompt");
-  if (tab === "urdf") renderUrdfPanel();
+  if (tab === "urdf" || tab === "rigging") refreshRobotArtifacts({ quiet: true });
+}
+
+async function refreshRobotArtifacts({ quiet = false } = {}) {
+  if (!projectId) return null;
+  try {
+    robotArtifactData = await api(`/api/projects/${projectId}/rigging/artifacts`);
+    renderRobotArtifacts();
+    return robotArtifactData;
+  } catch (err) {
+    if (!quiet) setEditStatus("error", err?.message || "Could not load robot artifacts.");
+    return null;
+  }
+}
+
+function artifactLinksHtml(artifacts = []) {
+  return artifacts.length
+    ? artifacts.map((file) => `<a class="urdf-artifact-chip" href="/api/projects/${projectId}/files/${encodeURIComponent(file)}" target="_blank" rel="noopener">${escapeHtml(file)}</a>`).join("")
+    : `<p class="muted small">No URDF/SRDF/SDF artifacts yet. Generate robot artifacts from a Python source.</p>`;
+}
+
+function robotSrdfGroupsHtml(srdf = {}) {
+  const groups = srdf.groups || [];
+  const states = srdf.states || [];
+  if (!groups.length && !states.length) return `<p class="cad-param-hint">No SRDF planning groups or group states found yet.</p>`;
+  return `<div class="urdf-planning-grid">
+    ${groups.map((group) => `<span class="urdf-artifact-chip">Group: ${escapeHtml(group.name)}${group.file ? ` · ${escapeHtml(group.file)}` : ""}</span>`).join("")}
+    ${states.map((state) => `<span class="urdf-artifact-chip">Pose: ${escapeHtml(state.name)}${state.group ? ` · ${escapeHtml(state.group)}` : ""}</span>`).join("")}
+  </div>`;
+}
+
+function robotJointSlidersHtml(joints = []) {
+  if (!joints.length) return `<p class="cad-param-hint">No URDF movable joints found. Export/generate URDF with revolute or prismatic joints.</p>`;
+  return joints
+    .filter((joint) => joint.type !== "fixed")
+    .map((joint) => {
+      const lower = Math.round((Number(joint.lower) || -3.14159) * 180 / Math.PI);
+      const upper = Math.round((Number(joint.upper) || 3.14159) * 180 / Math.PI);
+      return `<label class="cad-param-row urdf-joint-row" data-joint-id="${escapeHtml(joint.name)}">
+        <span>${escapeHtml(joint.name)}</span>
+        <input type="range" min="${lower}" max="${upper}" step="1" value="0" data-robot-urdf-joint="${escapeHtml(joint.name)}" />
+        <input type="number" step="1" value="0" data-robot-urdf-joint-number="${escapeHtml(joint.name)}" />
+        <em>${joint.type === "prismatic" ? "mm" : "deg"}</em>
+      </label>`;
+    })
+    .join("");
+}
+
+function renderRobotArtifacts() {
+  const data = robotArtifactData || { sources: [], artifacts: [], joints: [], srdf: { groups: [], states: [] } };
+  const sourceSelect = document.getElementById("rigging-artifact-source");
+  if (sourceSelect) {
+    const current = sourceSelect.value;
+    sourceSelect.innerHTML = (data.sources || []).length
+      ? (data.sources || []).map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")
+      : `<option value="">No Python source files</option>`;
+    if (current && [...sourceSelect.options].some((opt) => opt.value === current)) sourceSelect.value = current;
+  }
+  const artifactHtml = artifactLinksHtml(data.artifacts || []);
+  const srdfHtml = robotSrdfGroupsHtml(data.srdf || {});
+  const jointHtml = robotJointSlidersHtml(data.joints || []);
+  const rigList = document.getElementById("rigging-artifact-list");
+  if (rigList) rigList.innerHTML = artifactHtml;
+  const rigGroups = document.getElementById("rigging-srdf-groups");
+  if (rigGroups) rigGroups.innerHTML = srdfHtml;
+  const rigSliders = document.getElementById("rigging-urdf-joint-sliders");
+  if (rigSliders) rigSliders.innerHTML = jointHtml;
+
+  const artifactList = document.getElementById("urdf-artifact-list");
+  if (artifactList) artifactList.innerHTML = artifactHtml;
+  const sliders = document.getElementById("urdf-joint-sliders");
+  if (sliders) sliders.innerHTML = jointHtml;
+  const summary = document.getElementById("urdf-joint-summary");
+  if (summary) summary.textContent = `${(data.joints || []).filter((joint) => joint.type !== "fixed").length} movable joint(s)`;
 }
 
 function renderUrdfPanel() {
-  const artifactList = document.getElementById("urdf-artifact-list");
-  const sliders = document.getElementById("urdf-joint-sliders");
-  const summary = document.getElementById("urdf-joint-summary");
-  const status = document.getElementById("urdf-panel-status");
-  const artifacts = (lastProjectFiles || []).filter((file) => /\.(urdf|srdf|sdf|mjcf|xml|animation\.json)$/i.test(String(file)));
-  if (artifactList) {
-    artifactList.innerHTML = artifacts.length
-      ? artifacts.map((file) => `<a class="urdf-artifact-chip" href="/api/projects/${projectId}/files/${encodeURIComponent(file)}" target="_blank" rel="noopener">${file}</a>`).join("")
-      : `<p class="muted small">No URDF/SRDF/SDF artifacts yet. Generate a rig or export URDF from this tab.</p>`;
-  }
-  const joints = riggingEditor?.getJointControls?.() || [];
-  if (summary) summary.textContent = joints.length ? `${joints.length} movable joint${joints.length === 1 ? "" : "s"}` : "No movable joints";
-  if (!sliders) return;
-  if (!joints.length) {
-    sliders.innerHTML = `<p class="cad-param-hint">Open Rigging or generate a robot rig to show Jake-style joint sliders here.</p>`;
-    if (status) {
-      status.className = "status";
-      status.textContent = "";
-    }
-    return;
-  }
-  sliders.innerHTML = joints.map((joint) => {
-    const deg = Math.round((Number(joint.value) || 0) * 180 / Math.PI);
-    const lower = Math.round((Number(joint.lower) || -3.14) * 180 / Math.PI);
-    const upper = Math.round((Number(joint.upper) || 3.14) * 180 / Math.PI);
-    return `<label class="cad-param-row urdf-joint-row" data-joint-id="${joint.id}">
-      <span>${escapeHtml(joint.name)}</span>
-      <input type="range" min="${lower}" max="${upper}" step="1" value="${deg}" data-urdf-joint="${joint.id}" />
-      <input type="number" step="1" value="${deg}" data-urdf-joint-number="${joint.id}" />
-      <em>deg</em>
-    </label>`;
-  }).join("");
+  renderRobotArtifacts();
 }
 
 function bindUrdfPanel() {
-  document.getElementById("btn-urdf-refresh")?.addEventListener("click", () => renderUrdfPanel());
+  document.getElementById("btn-urdf-refresh")?.addEventListener("click", () => refreshRobotArtifacts());
   document.getElementById("btn-urdf-open-rigging")?.addEventListener("click", () => {
     workspaceModes?.setDesignTab?.("RIGGING");
     renderUrdfPanel();
@@ -5718,20 +5761,22 @@ function bindUrdfPanel() {
   document.getElementById("btn-urdf-export")?.addEventListener("click", async () => {
     await riggingEditor?.exportUrdf?.();
     await refreshFiles();
-    renderUrdfPanel();
+    await refreshRobotArtifacts({ quiet: true });
   });
-  document.getElementById("urdf-joint-sliders")?.addEventListener("input", (event) => {
+  const onJointInput = (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement)) return;
-    const id = input.dataset.urdfJoint || input.dataset.urdfJointNumber;
+    const id = input.dataset.urdfJoint || input.dataset.urdfJointNumber || input.dataset.robotUrdfJoint || input.dataset.robotUrdfJointNumber;
     if (!id) return;
     const deg = Number(input.value) || 0;
     const row = input.closest("[data-joint-id]");
-    row?.querySelectorAll(`[data-urdf-joint="${CSS.escape(id)}"], [data-urdf-joint-number="${CSS.escape(id)}"]`).forEach((el) => {
+    row?.querySelectorAll(`[data-urdf-joint="${CSS.escape(id)}"], [data-urdf-joint-number="${CSS.escape(id)}"], [data-robot-urdf-joint="${CSS.escape(id)}"], [data-robot-urdf-joint-number="${CSS.escape(id)}"]`).forEach((el) => {
       if (el !== input) el.value = String(deg);
     });
     riggingEditor?.setJointValue?.(id, deg * Math.PI / 180);
-  });
+  };
+  document.getElementById("urdf-joint-sliders")?.addEventListener("input", onJointInput);
+  document.getElementById("rigging-urdf-joint-sliders")?.addEventListener("input", onJointInput);
 }
 
 /** Right panel → AI (CAD or Wiring) with Compose sub-tab active. */
@@ -10063,6 +10108,7 @@ async function runRiggingPrompt() {
     });
     riggingEditor.applyRigData(data.rigging);
     await refreshFiles();
+    await refreshRobotArtifacts({ quiet: true });
     await refreshRiggingPromptHistory();
     if (status) {
       status.className = "status ok";
@@ -10088,8 +10134,10 @@ document.getElementById("btn-rigging-toolbelt-save")?.addEventListener("click", 
   setEditStatus("ok", "Rig saved.");
 });
 
-document.getElementById("btn-rigging-toolbelt-export")?.addEventListener("click", () => {
-  riggingEditor.exportUrdf();
+document.getElementById("btn-rigging-toolbelt-export")?.addEventListener("click", async () => {
+  await riggingEditor.exportUrdf();
+  await refreshFiles();
+  await refreshRobotArtifacts({ quiet: true });
 });
 
 async function simulateRiggingModel() {
@@ -10107,6 +10155,60 @@ document.getElementById("btn-rigging-toolbelt-simulate")?.addEventListener("clic
 document.getElementById("btn-rigging-toolbelt-auto")?.addEventListener("click", () => {
   handleRiggingAction("auto");
 });
+
+async function generateRobotArtifacts(kind = "both") {
+  if (!projectId) {
+    setEditStatus("error", "Select a project first.");
+    return;
+  }
+  const source = document.getElementById("rigging-artifact-source")?.value;
+  const status = document.getElementById("rigging-prompt-status");
+  if (!source) {
+    setEditStatus("error", "No Python source selected for URDF/SRDF generation.");
+    if (status) {
+      status.className = "status error";
+      status.textContent = "No Python source selected.";
+    }
+    return;
+  }
+  if (status) {
+    status.className = "status loading";
+    status.textContent = `Generating ${kind.toUpperCase()} robot artifacts…`;
+  }
+  try {
+    const data = await api(`/api/projects/${projectId}/rigging/generate-artifacts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, kind }),
+    });
+    robotArtifactData = data;
+    await refreshFiles();
+    renderRobotArtifacts();
+    const outputs = (data.outputs || []).map((out) => out.filename).filter(Boolean).join(", ");
+    const errors = (data.errors || []).length;
+    const msg = outputs
+      ? `Generated ${outputs}${errors ? ` (${errors} warning${errors === 1 ? "" : "s"})` : ""}.`
+      : data.message || "No robot artifacts generated.";
+    setEditStatus(errors ? "error" : "ok", msg);
+    if (status) {
+      status.className = errors ? "status error" : "status ok";
+      status.textContent = msg;
+    }
+  } catch (err) {
+    await refreshRobotArtifacts({ quiet: true });
+    const msg = err?.message || "Robot artifact generation failed.";
+    setEditStatus("error", msg);
+    if (status) {
+      status.className = "status error";
+      status.textContent = msg;
+    }
+  }
+}
+
+document.getElementById("btn-rigging-artifacts-refresh")?.addEventListener("click", () => refreshRobotArtifacts());
+document.getElementById("btn-rigging-generate-urdf")?.addEventListener("click", () => generateRobotArtifacts("urdf"));
+document.getElementById("btn-rigging-generate-srdf")?.addEventListener("click", () => generateRobotArtifacts("srdf"));
+document.getElementById("btn-rigging-generate-robot")?.addEventListener("click", () => generateRobotArtifacts("both"));
 
 document.getElementById("btn-rigging-demo-gear-train")?.addEventListener("click", () => {
   loadGearTrainDemo({ switchToRigging: true });
@@ -11546,7 +11648,12 @@ async function refreshFiles() {
   syncSketchVisibilityFromTree(browser);
   if (selectedFile) projectTree.setSelected(selectedFile);
   syncPromptTargetUI();
-  if (document.querySelector('[data-right-panel="urdf"]')?.classList.contains("active")) renderUrdfPanel();
+  if (
+    document.querySelector('[data-right-panel="urdf"]')?.classList.contains("active") ||
+    document.querySelector('[data-right-panel="rigging"]')?.classList.contains("active")
+  ) {
+    await refreshRobotArtifacts({ quiet: true });
+  }
   refreshPartProfiles();
 }
 

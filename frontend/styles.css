@@ -31,6 +31,18 @@
 .urdf-joint-row span {
   text-transform: none;
 }
+
+.rigging-robot-artifacts {
+  margin: 12px 0;
+}
+
+.urdf-planning-groups,
+.urdf-planning-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
 :root {
   --bg: #0d1117;
   --panel: #161b22;

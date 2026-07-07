@@ -599,6 +599,11 @@ class RiggingPromptRequest(BaseModel):
     speed: str = "fast"
 
 
+class RiggingArtifactGenerateRequest(BaseModel):
+    source: str = Field(..., min_length=1, max_length=240)
+    kind: str = Field(default="both", description="urdf | srdf | both")
+
+
 class SketchSaveRequest(BaseModel):
     name: str | None = None
     plane: str = "XY"
@@ -3370,6 +3375,91 @@ def _fusion_mirror_summary(row: dict[str, Any], *, include_contents: bool = Fals
     except Exception as exc:
         mirror["contents"]["error"] = str(exc)
     return mirror
+
+
+def _delete_fusion_mirror_items(
+    *,
+    project_id: str,
+    project_path: Path,
+    filename: str | None = None,
+    delete_mirror_rows: bool = False,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Best-effort deletion for Autodesk items created by project Fusion mirrors."""
+    del project_path, filename  # Reserved for future per-file mirror tracking.
+    deleted: list[dict[str, Any]] = []
+    errors: list[str] = []
+    mirrors: list[dict[str, Any]] = []
+
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT project_id, user_id, aps_project_id, folder_id, last_item_id
+                  FROM project_fusion_mirrors
+                 WHERE project_id = ?
+                """,
+                (project_id,),
+            ).fetchall()
+            mirrors = [dict(row) for row in rows]
+    except Exception as exc:
+        return deleted, [f"Could not load Fusion mirror records: {exc}"]
+
+    seen: set[tuple[str, str, str]] = set()
+    deleted_keys: set[tuple[str, str, str]] = set()
+    try:
+        from backend.services.autodesk_oauth import delete_item, get_valid_access_token
+    except Exception as exc:
+        errors.append(f"Fusion cleanup unavailable: {exc}")
+        delete_item = None
+        get_valid_access_token = None
+
+    for mirror in mirrors:
+        user_id = str(mirror.get("user_id") or "")
+        aps_project_id = str(mirror.get("aps_project_id") or "")
+        item_id = str(mirror.get("last_item_id") or "")
+        if not user_id or not aps_project_id or not item_id:
+            continue
+        key = (user_id, aps_project_id, item_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not delete_item or not get_valid_access_token:
+            continue
+        try:
+            token = get_valid_access_token(user_id)
+            if not token:
+                errors.append(f"Autodesk account not linked for user {user_id}; skipped {item_id}.")
+                continue
+            result = delete_item(token, aps_project_id, item_id)
+            deleted.append({"user_id": user_id, "aps_project_id": aps_project_id, **result})
+            deleted_keys.add(key)
+        except Exception as exc:
+            errors.append(f"Could not delete Autodesk item {item_id}: {exc}")
+
+    try:
+        with get_conn() as conn:
+            if delete_mirror_rows:
+                conn.execute("DELETE FROM project_fusion_mirrors WHERE project_id = ?", (project_id,))
+            elif deleted_keys:
+                for user_id, aps_project_id, item_id in deleted_keys:
+                    conn.execute(
+                        """
+                        UPDATE project_fusion_mirrors
+                           SET last_item_id = NULL,
+                               last_version_id = NULL,
+                               last_pushed_at = NULL,
+                               updated_at = ?
+                         WHERE project_id = ?
+                           AND user_id = ?
+                           AND aps_project_id = ?
+                           AND last_item_id = ?
+                        """,
+                        (datetime.now(timezone.utc).isoformat(), project_id, user_id, aps_project_id, item_id),
+                    )
+    except Exception as exc:
+        errors.append(f"Could not update Fusion mirror records: {exc}")
+
+    return deleted, errors
 
 
 @app.get("/api/projects/{project_id}/fusion-mirrors")
@@ -6311,6 +6401,85 @@ def save_wiring(
     return payload
 
 
+def _robot_float(value: str | None, fallback: float) -> float:
+    try:
+        return float(value) if value not in (None, "") else fallback
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _parse_robot_urdf_joints(path: Path) -> list[dict[str, Any]]:
+    try:
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return []
+    joints: list[dict[str, Any]] = []
+    for joint in root.findall(".//joint"):
+        name = joint.get("name") or f"joint_{len(joints) + 1}"
+        jtype = joint.get("type") or "fixed"
+        limit = joint.find("limit")
+        axis = joint.find("axis")
+        joints.append({
+            "name": name,
+            "type": jtype,
+            "axis": axis.get("xyz") if axis is not None else "0 0 1",
+            "lower": _robot_float(limit.get("lower") if limit is not None else None, -3.14159),
+            "upper": _robot_float(limit.get("upper") if limit is not None else None, 3.14159),
+            "file": path.name,
+        })
+    return joints
+
+
+def _parse_robot_srdf_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
+    try:
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return {"groups": [], "states": []}
+    groups = [
+        {"name": group.get("name") or f"group_{i + 1}", "file": path.name}
+        for i, group in enumerate(root.findall(".//group"))
+    ]
+    states = [
+        {
+            "name": state.get("name") or f"state_{i + 1}",
+            "group": state.get("group") or "",
+            "file": path.name,
+        }
+        for i, state in enumerate(root.findall(".//group_state"))
+    ]
+    return {"groups": groups, "states": states}
+
+
+def _robot_artifact_summary(project_path: Path) -> dict[str, Any]:
+    sources = sorted(path.name for path in project_path.glob("*.py") if path.is_file())
+    artifacts = sorted(
+        path.name
+        for path in project_path.iterdir()
+        if path.is_file() and path.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf"}
+    )
+    joints: list[dict[str, Any]] = []
+    srdf = {"groups": [], "states": []}
+    for name in artifacts:
+        path = project_path / name
+        suffix = path.suffix.lower()
+        if suffix == ".urdf":
+            joints.extend(_parse_robot_urdf_joints(path))
+        elif suffix == ".srdf":
+            parsed = _parse_robot_srdf_groups(path)
+            srdf["groups"].extend(parsed["groups"])
+            srdf["states"].extend(parsed["states"])
+    return {
+        "sources": sources,
+        "artifacts": artifacts,
+        "joints": joints,
+        "srdf": srdf,
+    }
+
+
 @app.get("/api/projects/{project_id}/rigging")
 def get_rigging(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
     path = _require_project(user, project_id)
@@ -6321,6 +6490,76 @@ def get_rigging(project_id: str, user: dict[str, Any] = Depends(get_current_user
         return json.loads(rigging_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise HTTPException(400, f"Invalid rigging.json: {exc}") from exc
+
+
+@app.get("/api/projects/{project_id}/rigging/artifacts")
+def get_rigging_artifacts(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    path = _require_project(user, project_id)
+    return _robot_artifact_summary(path)
+
+
+@app.post("/api/projects/{project_id}/rigging/generate-artifacts")
+def generate_rigging_artifacts(
+    project_id: str,
+    body: RiggingArtifactGenerateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Run Jake-style gen_urdf()/gen_srdf() from a project Python source."""
+    from backend.services import skill_runner
+
+    path = _require_project(user, project_id)
+    source = Path(body.source).name
+    source_path = path / source
+    if not source_path.is_file() or source_path.suffix.lower() != ".py":
+        raise HTTPException(404, "Python source file not found")
+    kind = (body.kind or "both").strip().lower()
+    if kind not in {"urdf", "srdf", "both"}:
+        raise HTTPException(422, "kind must be urdf, srdf, or both")
+
+    outputs: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    stem = source_path.stem
+
+    def run_one(tool: str, output_name: str, timeout: float = 90.0) -> None:
+        result = skill_runner.run_skill_tool(
+            tool,
+            tool,
+            [f"{source}={output_name}"],
+            cwd=path,
+            timeout_sec=timeout,
+        )
+        payload = {
+            "tool": tool,
+            "filename": output_name,
+            "stdout": (result.get("stdout") or "")[-4000:],
+            "stderr": (result.get("stderr") or "")[-4000:],
+            "exit_code": result.get("exit_code"),
+        }
+        if result.get("ok") and (path / output_name).is_file():
+            outputs.append(payload)
+        else:
+            errors.append(payload)
+
+    if kind in {"urdf", "both"}:
+        run_one("urdf", f"{stem}.urdf")
+    if kind in {"srdf", "both"}:
+        run_one("srdf", f"{stem}.srdf")
+
+    project_store.touch_project(path)
+    summary = _robot_artifact_summary(path)
+    if errors and not outputs:
+        raise HTTPException(422, {
+            "message": "Robot artifact generation failed.",
+            "outputs": outputs,
+            "errors": errors,
+            "summary": summary,
+        })
+    return {
+        "message": "Generated robot artifacts." if outputs else "No robot artifacts generated.",
+        "outputs": outputs,
+        "errors": errors,
+        **summary,
+    }
 
 
 @app.put("/api/projects/{project_id}/rigging")

@@ -764,7 +764,7 @@ export function createRiggingEditor({
   }
 
   function setJointValue(id, valueRad) {
-    const bone = boneById(id);
+    const bone = boneById(id) || bones.find((b) => b.name === id);
     if (!bone || bone.jointType === "fixed") return false;
     const idx = jointAxisIndex(bone);
     const lim = bone.limits || { lower: -3.14, upper: 3.14 };

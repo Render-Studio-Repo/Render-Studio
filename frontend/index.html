@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260707-urdf-tab" />
+  <link rel="stylesheet" href="/styles.css?v=20260707-rigging-robot-artifacts" />
   <script type="importmap">
   {
     "imports": {
@@ -961,6 +961,27 @@
           <button type="button" id="btn-rigging-prompt" class="btn accent full">Generate rig / animation</button>
           <button type="button" id="btn-rigging-demo-gear-train" class="btn secondary full">Build mounted 2-gear model</button>
           <button type="button" id="btn-rigging-demo-arm" class="btn secondary full">Load demo (4-DOF arm)</button>
+          <div class="urdf-joint-panel rigging-robot-artifacts">
+            <div class="cad-param-head">
+              <div>
+                <strong>Robot Artifacts</strong>
+                <span>Run Jake gen_urdf()/gen_srdf() and inspect joints/groups</span>
+              </div>
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-artifacts-refresh">Refresh</button>
+            </div>
+            <label class="cad-param-row">
+              <span>Python source</span>
+              <select id="rigging-artifact-source"></select>
+            </label>
+            <div class="cad-param-actions">
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-urdf">Generate URDF</button>
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-srdf">Generate SRDF</button>
+              <button type="button" class="btn accent btn-compact" id="btn-rigging-generate-robot">Generate Both</button>
+            </div>
+            <div class="urdf-artifact-list" id="rigging-artifact-list"></div>
+            <div id="rigging-srdf-groups" class="urdf-planning-groups"></div>
+            <div id="rigging-urdf-joint-sliders" class="cad-param-list"></div>
+          </div>
           <div id="rigging-prompt-status" class="status"></div>
         </div>
         <div id="rigging-prompt-pane-history" class="prompt-pane hidden">
@@ -1416,7 +1437,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260707-urdf-tab"></script>
+  <script type="module" src="/app.js?v=20260707-rigging-robot-artifacts"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
