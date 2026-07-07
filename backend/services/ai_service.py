@@ -1064,6 +1064,9 @@ class AIService:
             system += (
                 "\n\nDXF import workflow:\n"
                 "- If Project context.refs includes type:\"dxf\" with text_content, treat that as the authoritative drawing payload and parse it carefully.\n"
+                "- CRITICAL for DXF prompts: avoid custom helper calls in gen_step() unless you define them fully in this same file. "
+                "Best default: inline the geometry directly inside gen_step() using clear local blocks so no make_*/add_*/build_* "
+                "function names are left undefined.\n"
                 "- Use one complete Python file. Every helper function and module constant referenced by gen_step() "
                 "must be defined in that same file.\n"
                 "- For multi-layer mold/profile DXFs, do NOT call import_dxf() on the whole file. Process layers "

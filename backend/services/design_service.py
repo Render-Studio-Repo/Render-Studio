@@ -480,6 +480,8 @@ def _source_generation_repair_note(error: str) -> str:
         "Fix this by editing the existing source into ONE complete Python file. Either define the missing helpers above "
         "gen_step() or inline their full geometry logic inside gen_step(). Do not restart from an unrelated model.\n"
         f"{examples}\n"
+        "If this is a DXF/VXF workflow, prefer zero custom helper calls in gen_step(): inline the modeling blocks "
+        "directly so names like make_*/add_*/build_* cannot be left undefined.\n"
         "Every helper called by gen_step() must have a real function body before gen_step(); no stubs, no pass, no ellipsis.\n"
         f"Original error: {error}"
     )
