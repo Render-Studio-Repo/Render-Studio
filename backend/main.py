@@ -1326,6 +1326,56 @@ def _measure_model_dimensions(project_path: Path, filename: str | None = None) -
     }
 
 
+def _step_for_cloud_cad(project_path: Path, filename: str, *, allow_faceted: bool = False) -> Path:
+    """Return a Fusion/Onshape-editable STEP, refusing mesh-derived faceted STEP by default."""
+    safe = Path(filename).name
+    src = project_path / safe
+    if not src.is_file():
+        raise HTTPException(404, "File not found")
+
+    suffix = src.suffix.lower()
+    stem = src.stem
+    if suffix in cad_service.STEP_SUFFIXES:
+        if "__faceted" in stem.lower() and not allow_faceted:
+            raise HTTPException(
+                422,
+                "This STEP is mesh-derived/faceted, so Fusion may not allow reliable solid cuts. "
+                "Use the original generated STEP/B-rep model, regenerate from source, or explicitly allow a faceted STEP export.",
+            )
+        return src
+
+    step_path = project_path / f"{stem}.step"
+    source_path = project_path / f"{stem}.py"
+    program_path = project_path / f"{stem}.program.json"
+    if step_path.is_file():
+        # Native generators write STEP first and then a GLB preview; mesh export
+        # creates STEP after the mesh. Use provenance files as the stronger signal.
+        has_native_source = source_path.is_file() or program_path.is_file()
+        try:
+            step_is_mesh_derived = step_path.stat().st_mtime >= src.stat().st_mtime and not has_native_source
+        except OSError:
+            step_is_mesh_derived = not has_native_source
+        if not step_is_mesh_derived or allow_faceted:
+            return step_path
+        raise HTTPException(
+            422,
+            "The selected file is mesh-based and its STEP sibling is faceted, not a native B-rep solid. "
+            "Fusion can import it for viewing, but solid cuts/booleans may fail. Select the original .step model "
+            "or regenerate the edit as build123d/text-to-CAD source before pushing to Fusion.",
+        )
+
+    if allow_faceted:
+        cad_service.ensure_mesh_exports(project_path, safe)
+        if step_path.is_file():
+            return step_path
+
+    raise HTTPException(
+        422,
+        "No native editable STEP/B-rep file exists for this model. The current object is mesh-only, so Fusion cannot "
+        "use it reliably as a cut tool. Regenerate it through the CAD/text-to-CAD pipeline or push the original .step file.",
+    )
+
+
 def _is_dimension_question(prompt: str) -> bool:
     text = (prompt or "").strip().lower()
     if not text or len(text) > 240:
