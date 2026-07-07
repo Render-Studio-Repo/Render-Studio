@@ -7865,6 +7865,45 @@ body.panel-resizing-row * {
   line-height: 1.5;
 }
 
+.ref-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.ref-line-details {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-line-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.ref-line-remove:hover,
+.ref-line-remove:focus-visible {
+  border-color: rgba(248, 81, 73, 0.35);
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--danger);
+  outline: none;
+}
+
 .ref-list .ref-line code {
   color: var(--accent);
   background: #21262d;

@@ -35,6 +35,51 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
     return chip;
   }
 
+  function createRefLineElement(ref) {
+    const line = document.createElement("div");
+    line.className = "ref-line";
+    line.dataset.refId = ref.id;
+    const token = formatToken(ref);
+
+    const details = document.createElement("span");
+    details.className = "ref-line-details";
+    const code = document.createElement("code");
+    code.textContent = token;
+    details.appendChild(code);
+    details.append(` → ${ref.label || formatRefDetail(ref)}`);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ref-line-remove";
+    remove.title = "Remove reference";
+    remove.setAttribute("aria-label", `Remove ${ref.label || token || "reference"}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeRef(ref.id);
+    });
+
+    line.append(details, remove);
+    return line;
+  }
+
+  function renderRefsList(summary = "") {
+    refsListEl.innerHTML = "";
+    if (!references.length) {
+      refsListEl.innerHTML = '<span class="muted small">Click the model to pick; click again to deselect. Drag components from the explorer into the prompt.</span>';
+      return;
+    }
+    if (summary) {
+      const summaryEl = document.createElement("div");
+      summaryEl.className = "ref-summary";
+      summaryEl.textContent = `${references.length} references active`;
+      refsListEl.appendChild(summaryEl);
+    }
+    for (const ref of references) {
+      refsListEl.appendChild(createRefLineElement(ref));
+    }
+  }
+
   function renderChips() {
     chipsEl.innerHTML = "";
     if (inlineChipsEl) {
@@ -82,13 +127,7 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
       }
     }
 
-    const summary =
-      references.length > INLINE_VISIBLE_LIMIT
-        ? `<div class="ref-summary">${references.length} references active</div>`
-        : "";
-    refsListEl.innerHTML = references.length
-      ? `${summary}${references.map((r) => `<div class="ref-line"><code>${r.token}</code> → ${r.label || formatRefDetail(r)}</div>`).join("")}`
-      : '<span class="muted small">Click the model to pick; click again to deselect. Drag components from the explorer into the prompt.</span>';
+    renderRefsList(references.length > INLINE_VISIBLE_LIMIT);
   }
 
   function formatCoords(pos) {

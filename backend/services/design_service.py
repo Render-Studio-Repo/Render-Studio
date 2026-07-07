@@ -876,6 +876,101 @@ def _canonical_dxf_extrude_source(
     )
 
 
+def _canonical_dxf_connector_source(
+    dxf_filename: str,
+    *,
+    thickness: float = 8.0,
+    label: str = "dxf_connector",
+) -> str:
+    """Layer-aware connector/part builder for DXFs with additive and clearance profiles."""
+    safe_name = dxf_filename.replace("\\", "\\\\").replace('"', '\\"')
+    safe_label = label.replace("\\", "\\\\").replace('"', '\\"')
+    return (
+        "from pathlib import Path\n\n"
+        "import ezdxf\n"
+        "from build123d import *\n\n"
+        f'dxf_filename = "{safe_name}"\n'
+        f"model_thickness = {thickness}\n"
+        f'model_label = "{safe_label}"\n\n'
+        "ADD_LAYER_HINTS = ('BASE', 'RIB', 'WEDGE', 'SHOULDER', 'ARM', 'BUMPS', 'BLOCK', 'FACE', 'TAB', 'BODY', 'OUTLINE', 'PROFILE')\n"
+        "CUT_LAYER_HINTS = ('CLEARANCE', 'SOCKET', 'CUT', 'CUTOUT', 'SLOT', 'HOLE', 'POCKET', 'CAVITY')\n"
+        "IGNORE_LAYER_HINTS = ('TEXT', 'CENTERLINE', 'LEAD_IN', 'PICK', 'MARK', 'DIM', 'CONSTRUCTION')\n\n"
+        "def _layer(entity):\n"
+        "    return str(entity.dxf.layer or '').upper()\n\n"
+        "def _points(entity):\n"
+        "    return [(float(p[0]), float(p[1])) for p in entity.get_points('xy')]\n\n"
+        "def _is_closed_poly(entity):\n"
+        "    if entity.dxftype() != 'LWPOLYLINE':\n"
+        "        return False\n"
+        "    pts = _points(entity)\n"
+        "    if len(pts) < 3:\n"
+        "        return False\n"
+        "    return bool(entity.closed) or pts[0] == pts[-1]\n\n"
+        "def _poly_solid(entity, amount):\n"
+        "    pts = _points(entity)\n"
+        "    if pts and pts[0] == pts[-1]:\n"
+        "        pts = pts[:-1]\n"
+        "    with BuildPart() as part_builder:\n"
+        "        with BuildSketch(Plane.XY):\n"
+        "            with BuildLine():\n"
+        "                Polyline(*pts, close=True)\n"
+        "            make_face()\n"
+        "        extrude(amount=amount)\n"
+        "    return part_builder.part\n\n"
+        "def _circle_solid(entity, amount):\n"
+        "    center = entity.dxf.center\n"
+        "    return Location((float(center.x), float(center.y), amount / 2.0)) * Cylinder(radius=float(entity.dxf.radius), height=amount + 2.0)\n\n"
+        "def _classify_poly(entity):\n"
+        "    layer = _layer(entity)\n"
+        "    if any(token in layer for token in IGNORE_LAYER_HINTS):\n"
+        "        return 'ignore'\n"
+        "    if any(token in layer for token in CUT_LAYER_HINTS):\n"
+        "        return 'cut'\n"
+        "    if any(token in layer for token in ADD_LAYER_HINTS):\n"
+        "        return 'add'\n"
+        "    return 'add'\n\n"
+        "def _compound_from_parts(parts, label):\n"
+        "    if len(parts) == 1:\n"
+        "        parts[0].label = label\n"
+        "        return parts[0]\n"
+        "    assembly = Compound(children=parts)\n"
+        "    assembly.label = label\n"
+        "    return assembly\n\n"
+        "def gen_step():\n"
+        "    doc = ezdxf.readfile(str(Path(dxf_filename)))\n"
+        "    modelspace = list(doc.modelspace())\n"
+        "    body = None\n"
+        "    separate_parts = []\n"
+        "    cut_tools = []\n"
+        "    for entity in modelspace:\n"
+        "        if not _is_closed_poly(entity):\n"
+        "            continue\n"
+        "        kind = _classify_poly(entity)\n"
+        "        if kind == 'ignore':\n"
+        "            continue\n"
+        "        solid = _poly_solid(entity, model_thickness + (2.0 if kind == 'cut' else 0.0))\n"
+        "        if kind == 'cut':\n"
+        "            cut_tools.append(solid)\n"
+        "            continue\n"
+        "        solid.label = _layer(entity).lower() or 'dxf_profile'\n"
+        "        separate_parts.append(solid)\n"
+        "        body = solid if body is None else body + solid\n"
+        "    if body is None:\n"
+        "        raise ValueError('No closed DXF profiles found for connector body')\n"
+        "    for entity in modelspace:\n"
+        "        layer = _layer(entity)\n"
+        "        if entity.dxftype() == 'CIRCLE' and not any(token in layer for token in IGNORE_LAYER_HINTS):\n"
+        "            cut_tools.append(_circle_solid(entity, model_thickness))\n"
+        "    for tool in cut_tools:\n"
+        "        try:\n"
+        "            body = body - tool\n"
+        "        except Exception:\n"
+        "            pass\n"
+        "    body.label = model_label\n"
+        "    return body if body is not None else _compound_from_parts(separate_parts, model_label)\n"
+    )
+
+
 def _maybe_rewrite_incomplete_dxf_source(
     source: str,
     *,
@@ -938,6 +1033,18 @@ def _maybe_rewrite_incomplete_dxf_source(
         ), note
 
     if _prompt_needs_semantic_dxf_model(prompt):
+        connector_like = re.search(
+            r"\b(connector|snap|clip|bracket|fixture|robot|socket|tab|flex|part)\b",
+            " ".join([prompt or "", dxf_filename or "", source or ""]),
+            re.I,
+        )
+        if connector_like or dxf_helper_missing or helper_missing:
+            note = (
+                "Rewrote incomplete semantic DXF source to a layer-aware connector/part builder because "
+                f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
+                f"{'...' if len(undefined) > 8 else ''}."
+            )
+            return _canonical_dxf_connector_source(dxf_filename, thickness=min(thickness, 12.0), label=label), note
         return source, None
 
     note = (

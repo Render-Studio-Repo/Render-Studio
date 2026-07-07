@@ -48,7 +48,7 @@ import {
 } from "./scene-style.js?v=20260629-high-fragment-fast-path";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
-import { createPromptComposer } from "./prompt-composer.js?v=20260629-face-edit-refs";
+import { createPromptComposer } from "./prompt-composer.js?v=20260707-reference-remove-buttons";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -1830,7 +1830,7 @@ const composer = createPromptComposer({
 });
 
 function isExplorerPromptRef(ref) {
-  return ref?.type === "component" || ref?.type === "sketch" || ref?.type === "wiring";
+  return ref?.type === "component" || ref?.type === "sketch" || ref?.type === "wiring" || ref?.type === "dxf";
 }
 
 function dedupeRefsById(refs = []) {
@@ -1845,25 +1845,21 @@ function dedupeRefsById(refs = []) {
 }
 
 function mergePromptReferenceSnapshots(modelState, projectState, globalState) {
-  const modelRefs = modelState?.references || [];
-  const projectRefs = projectState?.references || [];
-  const globalRefs = globalState?.references || [];
-  const explorerRefs = dedupeRefsById([
-    ...projectRefs.filter(isExplorerPromptRef),
-    ...globalRefs.filter(isExplorerPromptRef),
-    ...modelRefs.filter(isExplorerPromptRef),
-  ]);
-  const geometryRefs = dedupeRefsById([
-    ...modelRefs.filter((ref) => !isExplorerPromptRef(ref)),
-    ...projectRefs.filter((ref) => !isExplorerPromptRef(ref)),
-  ]);
-  const references = dedupeRefsById([...explorerRefs, ...geometryRefs]);
   const candidates = [modelState, projectState, globalState].filter(Boolean);
   candidates.sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
   const newest = candidates[0] || null;
+  if (Array.isArray(newest?.references)) {
+    return {
+      prompt: newest?.prompt || "",
+      references: dedupeRefsById(newest.references),
+      images: newest?.images,
+    };
+  }
+  const modelRefs = modelState?.references || [];
+  const projectRefs = projectState?.references || [];
   return {
     prompt: newest?.prompt || "",
-    references,
+    references: dedupeRefsById([...modelRefs, ...projectRefs]),
     images: newest?.images,
   };
 }
@@ -9732,6 +9728,17 @@ const dxfViewer = createDxfViewer({
   getProjectId: () => projectId,
   onStatus: (kind, text) => {
     if (text) setEditStatus(kind || "ok", text);
+  },
+  onActiveChange: (filename) => {
+    if (filename) {
+      selectedFile = filename;
+      projectTree?.setSelected?.(filename);
+      return;
+    }
+    if (isDxfDrawingFilename(selectedFile)) {
+      selectedFile = projectAssembly.list?.()[0]?.[0] || null;
+      projectTree?.setSelected?.(selectedFile);
+    }
   },
 });
 
