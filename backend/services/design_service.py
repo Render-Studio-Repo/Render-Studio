@@ -131,7 +131,15 @@ def _defined_module_names(source: str) -> set[str]:
     tree = ast.parse(source)
     names: set[str] = set()
     for node in tree.body:
-        if isinstance(node, ast.Assign):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                names.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     names.add(target.id)
@@ -140,6 +148,106 @@ def _defined_module_names(source: str) -> set[str]:
         elif isinstance(node, ast.FunctionDef):
             names.add(node.name)
     return names
+
+
+_DXF_CONFIG_NAMES = frozenset({
+    "model_label",
+    "cut_overshoot",
+    "alignment_pin_height",
+    "alignment_socket_depth",
+    "click_lug_height",
+    "cavity_layer",
+    "holes_layer",
+    "bolt_flaps_layer",
+    "alignment_pin_layer",
+    "alignment_socket_layer",
+    "click_lugs_layer",
+    "click_receivers_layer",
+    "split_line_layer",
+    "outline_layer",
+    "mold_outline_layer",
+})
+
+
+def _gen_step_local_undefined_names(source: str) -> list[str]:
+    """Names referenced in gen_step() that are not defined/imported at module scope."""
+    tree = ast.parse(source)
+    gen_step = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "gen_step"),
+        None,
+    )
+    if gen_step is None:
+        return []
+
+    defined = _defined_module_names(source)
+    referenced: set[str] = set()
+    for node in ast.walk(gen_step):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            referenced.add(node.id)
+
+    skip = set(dir(__builtins__)) | {"True", "False", "None"}
+    return sorted(name for name in referenced if name not in defined and name not in skip)
+
+
+def _canonical_dxf_extrude_source(
+    dxf_filename: str,
+    *,
+    thickness: float = 25.0,
+    label: str = "dxf_model",
+) -> str:
+    """Minimal proven build123d source for importing a project DXF and extruding it."""
+    safe_name = dxf_filename.replace("\\", "\\\\").replace('"', '\\"')
+    safe_label = label.replace("\\", "\\\\").replace('"', '\\"')
+    return (
+        "from pathlib import Path\n"
+        "from build123d import *\n\n"
+        f'dxf_filename = "{safe_name}"\n'
+        f"model_thickness = {thickness}\n"
+        f'solid_label = "{safe_label}"\n\n'
+        "def gen_step():\n"
+        "    with BuildPart() as part_builder:\n"
+        "        with BuildSketch(Plane.XY) as sketch_builder:\n"
+        "            add(import_dxf(str(Path(dxf_filename))))\n"
+        "            make_face()\n"
+        "        extrude(amount=model_thickness)\n"
+        "    body = part_builder.part\n"
+        "    body.label = solid_label\n"
+        "    return body\n"
+    )
+
+
+def _maybe_rewrite_incomplete_dxf_source(
+    source: str,
+    *,
+    dxf_filename: str,
+    prompt: str,
+) -> tuple[str, str | None]:
+    """Replace truncated DXF helper scripts with the canonical import_dxf extrude path."""
+    undefined = _gen_step_local_undefined_names(source)
+    if not undefined:
+        return source, None
+
+    helper_missing = any(name.startswith("_") for name in undefined)
+    config_missing = any(name in _DXF_CONFIG_NAMES or name.endswith("_layer") for name in undefined)
+    uses_custom_dxf_parser = "_collect_dxf_geometry" in source or "_make_outline_body" in source
+
+    if helper_missing or config_missing or uses_custom_dxf_parser:
+        thickness = 25.0
+        for match in re.finditer(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\b", prompt or "", re.I):
+            try:
+                thickness = float(match.group(1))
+                break
+            except ValueError:
+                continue
+        label = "mold_from_dxf" if re.search(r"\bmold\b", prompt or "", re.I) else "dxf_model"
+        note = (
+            "Rewrote incomplete DXF source to the canonical import_dxf() + extrude() template because "
+            f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
+            f"{'...' if len(undefined) > 8 else ''}."
+        )
+        return _canonical_dxf_extrude_source(dxf_filename, thickness=thickness, label=label), note
+
+    return source, None
 
 
 def _insert_after_imports(source: str, block: str) -> str:
@@ -220,7 +328,17 @@ def _augment_text_to_cad_source(
     if "_bbox_center_xy" in source and "_bbox_center_xy" not in defined:
         injections.append(helper_block)
 
-    return _insert_after_imports(source, "\n\n".join(injections))
+    if injections:
+        source = _insert_after_imports(source, "\n\n".join(injections))
+
+    rewritten, rewrite_note = _maybe_rewrite_incomplete_dxf_source(
+        source,
+        dxf_filename=primary,
+        prompt=prompt,
+    )
+    if rewrite_note:
+        logger.info(rewrite_note)
+    return rewritten
 
 
 def _requested_mm_dimensions(prompt: str) -> list[float]:
@@ -590,6 +708,13 @@ def _run_text_to_cad_v2(
                 project_path=project_path,
                 prompt=prompt,
             )
+            remaining = _gen_step_local_undefined_names(source)
+            if remaining:
+                raise ValueError(
+                    "Generated source is incomplete; gen_step() references undefined names: "
+                    + ", ".join(remaining[:12])
+                    + ("..." if len(remaining) > 12 else "")
+                )
             source_path.write_text(source.rstrip() + "\n", encoding="utf-8")
             current_source = source
         except Exception as exc:

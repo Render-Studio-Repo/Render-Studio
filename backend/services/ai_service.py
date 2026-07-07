@@ -1034,6 +1034,26 @@ class AIService:
                 "\n\nFusion mode: structure source like a Fusion 360 timeline with named phase functions, "
                 "explicit datums, and functional interfaces before cosmetic fillets/chamfers."
             )
+        dxf_files = (project_context or {}).get("dxf_files") if isinstance(project_context, dict) else None
+        if dxf_files:
+            readable = next(
+                (
+                    str(item.get("readable_filename") or item.get("filename") or "").strip()
+                    for item in dxf_files
+                    if isinstance(item, dict) and (item.get("readable_filename") or item.get("filename"))
+                ),
+                "",
+            )
+            system += (
+                "\n\nDXF import workflow:\n"
+                "- Use one complete Python file. Every helper function and module constant referenced by gen_step() "
+                "must be defined in that same file.\n"
+                "- Prefer import_dxf() + make_face() + extrude() using a module-level dxf_filename constant.\n"
+                "- Do NOT call undefined helpers such as _collect_dxf_geometry unless you also define them fully.\n"
+                "- Do not split the script across missing helper stubs; truncated output fails at runtime.\n"
+            )
+            if readable:
+                system += f'- Project DXF to import: "{readable}".\n'
 
         parts: list[str] = []
         if cad_brief:
