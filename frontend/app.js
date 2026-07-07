@@ -48,7 +48,7 @@ import {
 } from "./scene-style.js?v=20260629-high-fragment-fast-path";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
-import { createPromptComposer } from "./prompt-composer.js?v=20260707-reference-remove-buttons";
+import { createPromptComposer } from "./prompt-composer.js?v=20260707-doc-references";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -1391,6 +1391,14 @@ async function openDxfDrawingByName(filename, opts = {}) {
 
 let mobileBrowserComponents = [];
 
+function formatComponentDisplayLabel(value = "") {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b[a-z]/g, (ch) => ch.toUpperCase()) || "Model";
+}
+
 function renderMobileModelPicker() {
   const list = document.getElementById("mobile-model-list");
   if (!list) return;
@@ -1402,7 +1410,7 @@ function renderMobileModelPicker() {
   list.innerHTML = comps
     .map((entry) => {
       const active = entry.name === selectedFile || entry.viewer_filename === selectedFile;
-      const label = entry.stem || entry.name || "Model";
+      const label = formatComponentDisplayLabel(entry.label || entry.stem || entry.name || "Model");
       const format = String(entry.format || entry.name?.split(".").pop() || "model").toUpperCase();
       return `<button type="button" class="mobile-model-item ${active ? "active" : ""}" data-mobile-model="${appEscapeHtml(entry.name)}">
         <span><strong>${appEscapeHtml(label)}</strong><span>${appEscapeHtml(entry.name || "")}</span></span>
@@ -1841,7 +1849,13 @@ const composer = createPromptComposer({
 });
 
 function isExplorerPromptRef(ref) {
-  return ref?.type === "component" || ref?.type === "sketch" || ref?.type === "wiring" || ref?.type === "dxf";
+  return (
+    ref?.type === "component" ||
+    ref?.type === "sketch" ||
+    ref?.type === "wiring" ||
+    ref?.type === "dxf" ||
+    ref?.type === "document"
+  );
 }
 
 function dedupeRefsById(refs = []) {
@@ -1988,8 +2002,10 @@ promptImageDrop?.addEventListener("keydown", (e) => {
 promptImageInput?.addEventListener("change", async (e) => {
   const selected = [...(e.target.files || [])];
   const dxfFiles = selected.filter((file) => /\.dxf$/i.test(file.name));
-  const imageFiles = selected.filter((file) => !/\.dxf$/i.test(file.name));
+  const docFiles = selected.filter((file) => !/\.dxf$/i.test(file.name) && isPromptDocumentFile(file));
+  const imageFiles = selected.filter((file) => !/\.dxf$/i.test(file.name) && !isPromptDocumentFile(file));
   if (dxfFiles.length) await addPromptDxfFiles(dxfFiles);
+  if (docFiles.length) await addPromptDocumentFiles(docFiles);
   if (imageFiles.length) await addPromptImages(imageFiles);
   e.target.value = "";
 });
@@ -2014,6 +2030,22 @@ function droppedImageFiles(e) {
 function droppedDxfFiles(e) {
   return [...(e.dataTransfer?.files || [])].filter(
     (file) => /\.dxf$/i.test(file.name) || file.type === "application/dxf" || file.type === "image/vnd.dxf"
+  );
+}
+
+const PROMPT_DOC_EXT_RE = /\.(txt|md|csv|tsv|json|ya?ml|log)$/i;
+
+function isPromptDocumentFile(file) {
+  const name = String(file?.name || "");
+  if (!name) return false;
+  if (PROMPT_DOC_EXT_RE.test(name)) return true;
+  const mime = String(file?.type || "").toLowerCase();
+  return mime.startsWith("text/") || mime === "application/json" || mime.includes("yaml");
+}
+
+function droppedDocumentFiles(e) {
+  return [...(e.dataTransfer?.files || [])].filter(
+    (file) => isPromptDocumentFile(file) && !/\.dxf$/i.test(file.name) && !file.type?.startsWith?.("image/")
   );
 }
 
@@ -2078,6 +2110,42 @@ async function addPromptDxfFiles(files) {
   if (!restoringModelPromptState) saveActiveModelPromptState();
 }
 
+async function addPromptDocumentFiles(files) {
+  const MAX_DOC_BYTES = 2 * 1024 * 1024;
+  const MAX_DOC_CHARS = 100_000;
+  let added = 0;
+  for (const file of [...files]) {
+    if (!isPromptDocumentFile(file)) continue;
+    if (file.size > MAX_DOC_BYTES) {
+      viewerOverlay?.showError?.(`${file.name} is too large for a prompt document (max 2 MB).`);
+      continue;
+    }
+    const text = await file.text();
+    if (!text.trim()) continue;
+    const filename = file.name;
+    const stem = filename.replace(/\.[^.]+$/, "");
+    const tokenStem = String(stem || "doc").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "doc";
+    const truncated = text.length > MAX_DOC_CHARS;
+    composer.addReference({
+      id: `document:${projectId || "project"}:${filename}`,
+      type: "document",
+      token: `@doc-${tokenStem}`,
+      label: filename,
+      filename,
+      stem,
+      format: filename.split(".").pop()?.toLowerCase() || "txt",
+      text_content: truncated ? text.slice(0, MAX_DOC_CHARS) : text,
+      text_truncated: truncated,
+      projectId,
+    });
+    added += 1;
+  }
+  if (added > 0) {
+    setEditStatus("ok", added === 1 ? "Attached 1 document reference." : `Attached ${added} document references.`);
+  }
+  if (!restoringModelPromptState) saveActiveModelPromptState();
+}
+
 function handlePromptComposeDragover(e) {
   if (!isPromptImageDrag(e) && !isExplorerComponentDrag(e)) return;
   e.preventDefault();
@@ -2119,6 +2187,15 @@ async function handlePromptComposeDrop(e) {
     e.stopPropagation();
     promptImageDrop?.classList.remove("dragging");
     await addPromptDxfFiles(dxfFiles);
+    return;
+  }
+  const docFiles = droppedDocumentFiles(e);
+  if (docFiles.length) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptPaneCompose?.classList.remove("dragging-image");
+    promptImageDrop?.classList.remove("dragging");
+    await addPromptDocumentFiles(docFiles);
     return;
   }
   const files = droppedImageFiles(e);
@@ -2184,6 +2261,14 @@ promptImageDrop?.addEventListener("drop", async (e) => {
     e.stopPropagation();
     promptImageDrop.classList.remove("dragging");
     await addPromptDxfFiles(dxfFiles);
+    return;
+  }
+  const docFiles = droppedDocumentFiles(e);
+  if (docFiles.length) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptImageDrop.classList.remove("dragging");
+    await addPromptDocumentFiles(docFiles);
     return;
   }
   e.preventDefault();

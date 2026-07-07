@@ -35,13 +35,18 @@ function eyeSvg(hidden) {
 }
 
 function displayName(entry) {
-  if (entry.label) return entry.label;
+  const formatLabel = (value = "") => String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+  if (entry.label) return formatLabel(entry.label);
   if (entry.format === "program") {
-    return entry.stem || entry.name.replace(/\.program\.json$/i, "");
+    return formatLabel(entry.stem || entry.name.replace(/\.program\.json$/i, ""));
   }
   if (entry.format === "wiring") return entry.name;
   const stem = entry.stem || entry.name.replace(/\.[^.]+$/, "");
-  return stem;
+  return formatLabel(stem);
 }
 
 export function createProjectTree(options = {}) {

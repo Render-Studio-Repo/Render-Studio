@@ -864,10 +864,10 @@
           <div id="prompt-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Prompt references"></div>
           <textarea id="prompt-input" rows="6" placeholder="Describe what to make or edit. Drag parts/faces here to add @ reference chips…"></textarea>
           <div id="prompt-image-drop" class="prompt-image-drop" role="button" tabindex="0">
-            <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp,.dxf" multiple hidden />
+            <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp,.dxf,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log" multiple hidden />
             <div>
-              <strong>Add image or DXF references</strong>
-              <span>Drop images or .dxf files here, paste screenshots, or drag components from the browser. Up to 4 images; DXFs upload into DXF Drawings.</span>
+              <strong>Add image, DXF, or document references</strong>
+              <span>Drop images, .dxf, or text docs (.txt/.md/.csv/.json), paste screenshots, or drag components from the browser. Up to 4 images; DXFs upload into DXF Drawings.</span>
             </div>
           </div>
           <div id="prompt-image-list" class="prompt-image-list"></div>
@@ -1454,7 +1454,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260707-live-adjustments"></script>
+  <script type="module" src="/app.js?v=20260707-doc-references"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

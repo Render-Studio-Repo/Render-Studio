@@ -217,7 +217,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 class GeoReference(BaseModel):
     id: str
-    type: str = Field(..., description="vertex | edge | face | corner | lasso | path | component | dxf")
+    type: str = Field(..., description="vertex | edge | face | corner | lasso | path | component | dxf | document")
     position: list[float] | None = None
     normal: list[float] | None = None
     local_point: list[float] | None = None
@@ -2021,7 +2021,7 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
                 ref["format"] = r.format
             if r.label:
                 ref["label"] = r.label
-            if r.type == "dxf" and r.text_content:
+            if r.text_content and str(r.type or "").lower() in {"dxf", "document", "text", "spec"}:
                 ref["text_content"] = r.text_content[:60000]
                 ref["text_truncated"] = bool(r.text_truncated or len(r.text_content) > 60000)
             if r.body_index is not None:

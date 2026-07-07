@@ -89,7 +89,12 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
     if (references.length <= INLINE_VISIBLE_LIMIT) inlineExpanded = false;
 
     const explorerRefs = references.filter(
-      (ref) => ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf"
+      (ref) =>
+        ref.type === "component" ||
+        ref.type === "sketch" ||
+        ref.type === "wiring" ||
+        ref.type === "dxf" ||
+        ref.type === "document"
     );
 
     references.forEach((ref) => {
@@ -140,6 +145,7 @@ export function createPromptComposer({ textarea, chipsEl, inlineChipsEl = null, 
     if (ref.type === "sketch") return ref.label || ref.stem || "sketch";
     if (ref.type === "wiring") return ref.label || ref.stem || "wiring";
     if (ref.type === "dxf") return ref.label || ref.filename || "DXF";
+    if (ref.type === "document") return ref.label || ref.filename || "document";
     if (ref.type === "path") return ref.label || `${(ref.loop_points || []).length} pts`;
     return formatCoords(ref.position);
   }

@@ -1551,6 +1551,8 @@ def _inspect_summary(inspect_out: dict[str, Any]) -> dict[str, Any] | None:
 
 def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any]) -> str | None:
     summary = _inspect_summary(inspect_out) or {}
+    source_lower = (source or "").lower()
+    dxf_workflow = ".dxf" in source_lower or "ezdxf" in source_lower or "readfile(" in source_lower
     bounds = summary.get("bounds") if isinstance(summary, dict) else None
     if isinstance(bounds, dict) and isinstance(bounds.get("min"), list) and isinstance(bounds.get("max"), list):
         try:
@@ -1573,7 +1575,9 @@ def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any
                         "Revise the named parameters so the exported model's overall axis dimension matches the requested dimension."
                     )
         requested = _requested_mm_dimensions(prompt)
-        if requested and size and not axis_requested:
+        # Generic mm-token scale checks are too noisy for DXF-derived models:
+        # drawings often include local feature dimensions that are not global envelope targets.
+        if requested and size and not axis_requested and not dxf_workflow:
             largest_requested = max(requested)
             largest_actual = max(size)
             if largest_requested >= 25 and abs(largest_actual - largest_requested) > max(6.0, largest_requested * 0.12):
@@ -1590,7 +1594,6 @@ def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any
         face_count = int(summary.get("faceCount") or 0)
     except Exception:
         face_count = 0
-    source_lower = source.lower()
     has_functional_detail = any(token in source_lower for token in ("slot", "rail", "rib", "boss", "hole", "fillet", "chamfer", "trapezoid", "dovetail", "clearance"))
     if functional and ((face_count > 0 and face_count < 36) or not has_functional_detail):
         return (

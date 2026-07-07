@@ -457,6 +457,47 @@ def _artifact_stem(name: str) -> str:
     return Path(name).stem
 
 
+def _humanize_component_stem(stem: str) -> str:
+    value = str(stem or "").strip()
+    if not value:
+        return "Component"
+    value = re.sub(r"^(improved_)?text[-_]?to[-_]?cad[_-]?prompt_", "", value, flags=re.I)
+    value = re.sub(r"^generated_", "", value, flags=re.I)
+    value = re.sub(r"__part_\d+_", "", value, flags=re.I)
+    value = re.sub(r"_part\d+_", "", value, flags=re.I)
+    value = value.strip("_-")
+    if not value:
+        value = str(stem or "component")
+    return value[:96]
+
+
+def _extract_source_model_label(project_path: Path, stem: str) -> str | None:
+    source_path = project_path / f"{stem}.py"
+    if not source_path.is_file():
+        return None
+    try:
+        source = source_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return None
+    match = re.search(r'^\s*model_label\s*=\s*["\']([^"\']+)["\']', source, re.M)
+    if match:
+        return match.group(1).strip()[:120] or None
+    return None
+
+
+def _component_display_label(project_path: Path, stem: str) -> str:
+    source_label = _extract_source_model_label(project_path, stem)
+    if source_label:
+        return source_label
+    part_label = re.search(r"__part_\d+_([a-zA-Z0-9_]+)$", stem)
+    if part_label:
+        return part_label.group(1)[:96]
+    compact_part = re.search(r"_part\d+_([a-zA-Z0-9_]+)$", stem)
+    if compact_part:
+        return compact_part.group(1)[:96]
+    return _humanize_component_stem(stem)
+
+
 def _logical_component_root(stem: str) -> str:
     """Collapse generated component variants to the source component stem.
 
@@ -745,6 +786,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
                 "id": stem,
                 "name": canonical_file.name,
                 "stem": stem,
+                "label": _component_display_label(project_path, stem),
                 "format": canonical_file.suffix.lower().lstrip("."),
                 "viewer_filename": viewer,
                 "size": canonical_file.stat().st_size,

@@ -62,7 +62,7 @@ def _safe_history_references(references: list[dict[str, Any]] | None) -> list[di
             value = ref.get(key)
             if value is not None:
                 item[key] = value
-        if ref.get("text_content") and str(ref.get("type") or "").lower() == "dxf":
+        if ref.get("text_content") and str(ref.get("type") or "").lower() in {"dxf", "document", "text", "spec"}:
             text = str(ref.get("text_content") or "")
             item["text_content"] = text[:100_000]
             item["text_truncated"] = bool(ref.get("text_truncated") or len(text) > 100_000)
