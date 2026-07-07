@@ -247,13 +247,133 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
     return sorted(name for name in referenced if name not in defined and name not in skip)
 
 
+def _dxf_layer_sets_from_context(context: dict[str, Any] | None, prompt: str) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    layers: list[str] = []
+    for info in (context or {}).get("dxf_files") or []:
+        if not isinstance(info, dict):
+            continue
+        for name in info.get("layers") or []:
+            cleaned = str(name or "").strip()
+            if cleaned and cleaned not in layers:
+                layers.append(cleaned)
+
+    def pick(*keywords: str) -> tuple[str, ...]:
+        upper = [layer.upper() for layer in layers]
+        return tuple(
+            layer
+            for layer, layer_upper in zip(layers, upper)
+            if any(keyword in layer_upper for keyword in keywords)
+        )
+
+    outline = pick("OUTLINE", "MOLD", "PROFILE", "PERIM", "FOOTPRINT")
+    cavity = pick("CAVITY", "POCKET", "CUTOUT", "RECESS", "W_CAV")
+    holes = pick("HOLE", "DRILL", "BORE")
+    if not outline:
+        outline = ("MOLD_OUTLINE",)
+    if not cavity:
+        cavity = ("W_CAVITY",)
+    if not holes:
+        holes = ("HOLES",)
+    return outline, cavity, holes
+
+
+def _should_use_dxf_mold_template(
+    source: str,
+    context: dict[str, Any] | None,
+    prompt: str,
+) -> bool:
+    if re.search(r"\bmold\b", prompt or "", re.I):
+        return True
+    layers: list[str] = []
+    for info in (context or {}).get("dxf_files") or []:
+        layers.extend(info.get("layers") or [])
+    if len(layers) >= 2 and (any("HOLE" in str(layer).upper() for layer in layers) or any("CAVITY" in str(layer).upper() for layer in layers)):
+        return True
+    if "import_dxf" in source and "_collect_dxf_geometry" not in source and len(layers) >= 2:
+        return True
+    return False
+
+
+def _canonical_dxf_mold_source(
+    dxf_filename: str,
+    *,
+    thickness: float = 25.0,
+    label: str = "mold_from_dxf",
+    outline_layers: tuple[str, ...] = ("MOLD_OUTLINE",),
+    cavity_layers: tuple[str, ...] = ("W_CAVITY",),
+    hole_layers: tuple[str, ...] = ("HOLES",),
+) -> str:
+    """Layer-aware mold builder: extrude outline polylines, cut cavities and holes."""
+    safe_name = dxf_filename.replace("\\", "\\\\").replace('"', '\\"')
+    safe_label = label.replace("\\", "\\\\").replace('"', '\\"')
+    return (
+        "from pathlib import Path\n\n"
+        "import ezdxf\n"
+        "from build123d import *\n\n"
+        f'dxf_filename = "{safe_name}"\n'
+        f"mold_thickness = {thickness}\n"
+        f'solid_label = "{safe_label}"\n'
+        f"outline_layers = {outline_layers!r}\n"
+        f"cavity_layers = {cavity_layers!r}\n"
+        f"hole_layers = {hole_layers!r}\n\n"
+        "def _extrude_polyline(entity, amount):\n"
+        "    points = [(float(p[0]), float(p[1])) for p in entity.get_points('xy')]\n"
+        "    if len(points) < 3:\n"
+        "        raise ValueError('DXF polyline has fewer than 3 points')\n"
+        "    with BuildPart() as part_builder:\n"
+        "        with BuildSketch(Plane.XY) as sketch_builder:\n"
+        "            with BuildLine() as line_builder:\n"
+        "                Polyline(*points, close=True)\n"
+        "            make_face()\n"
+        "        extrude(amount=amount)\n"
+        "        return part_builder.part\n\n"
+        "def gen_step():\n"
+        "    doc = ezdxf.readfile(str(Path(dxf_filename)))\n"
+        "    modelspace = doc.modelspace()\n"
+        "    body = None\n"
+        "    outline_names = {name.upper() for name in outline_layers}\n"
+        "    cavity_names = {name.upper() for name in cavity_layers}\n"
+        "    hole_names = {name.upper() for name in hole_layers}\n"
+        "    for entity in modelspace:\n"
+        "        if entity.dxftype() != 'LWPOLYLINE':\n"
+        "            continue\n"
+        "        if entity.dxf.layer.upper() not in outline_names:\n"
+        "            continue\n"
+        "        piece = _extrude_polyline(entity, mold_thickness)\n"
+        "        body = piece if body is None else body + piece\n"
+        "    if body is None:\n"
+        "        raise ValueError('No outline polylines found in DXF')\n"
+        "    for entity in modelspace:\n"
+        "        if entity.dxftype() != 'LWPOLYLINE':\n"
+        "            continue\n"
+        "        if entity.dxf.layer.upper() not in cavity_names:\n"
+        "            continue\n"
+        "        body = body - _extrude_polyline(entity, mold_thickness)\n"
+        "    cut_height = mold_thickness + 2.0\n"
+        "    for entity in modelspace:\n"
+        "        if entity.dxftype() != 'CIRCLE':\n"
+        "            continue\n"
+        "        if entity.dxf.layer.upper() not in hole_names:\n"
+        "            continue\n"
+        "        radius = float(entity.dxf.radius)\n"
+        "        center_x = float(entity.dxf.center.x)\n"
+        "        center_y = float(entity.dxf.center.y)\n"
+        "        body = body - Location((center_x, center_y, mold_thickness / 2.0)) * Cylinder(\n"
+        "            radius=radius,\n"
+        "            height=cut_height,\n"
+        "        )\n"
+        "    body.label = solid_label\n"
+        "    return body\n"
+    )
+
+
 def _canonical_dxf_extrude_source(
     dxf_filename: str,
     *,
     thickness: float = 25.0,
     label: str = "dxf_model",
 ) -> str:
-    """Minimal proven build123d source for importing a project DXF and extruding it."""
+    """Simple single-profile DXF extrude for drawings with one closed outline."""
     safe_name = dxf_filename.replace("\\", "\\\\").replace('"', '\\"')
     safe_label = label.replace("\\", "\\\\").replace('"', '\\"')
     return (
@@ -265,7 +385,9 @@ def _canonical_dxf_extrude_source(
         "def gen_step():\n"
         "    with BuildPart() as part_builder:\n"
         "        with BuildSketch(Plane.XY) as sketch_builder:\n"
-        "            add(import_dxf(str(Path(dxf_filename))))\n"
+        "            shapes = import_dxf(str(Path(dxf_filename)))\n"
+        "            for shape in shapes:\n"
+        "                add(shape)\n"
         "            make_face()\n"
         "        extrude(amount=model_thickness)\n"
         "    body = part_builder.part\n"
@@ -279,12 +401,10 @@ def _maybe_rewrite_incomplete_dxf_source(
     *,
     dxf_filename: str,
     prompt: str,
+    context: dict[str, Any] | None = None,
 ) -> tuple[str, str | None]:
-    """Replace truncated DXF helper scripts with the canonical import_dxf extrude path."""
+    """Replace truncated or naive DXF scripts with a layer-aware mold builder."""
     undefined = _gen_step_local_undefined_names(source)
-    if not undefined:
-        return source, None
-
     helper_missing = any(name.startswith("_") for name in undefined)
     config_missing = any(name in _DXF_CONFIG_NAMES or name.endswith("_layer") for name in undefined)
     uses_custom_dxf_parser = any(
@@ -297,24 +417,44 @@ def _maybe_rewrite_incomplete_dxf_source(
             "_apply_add_polygons",
         )
     )
+    naive_import = "import_dxf" in source and "_extrude_polyline" not in source
+    use_mold = _should_use_dxf_mold_template(source, context, prompt)
 
-    if helper_missing or config_missing or uses_custom_dxf_parser:
-        thickness = 25.0
-        for match in re.finditer(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\b", prompt or "", re.I):
-            try:
-                thickness = float(match.group(1))
-                break
-            except ValueError:
-                continue
-        label = "mold_from_dxf" if re.search(r"\bmold\b", prompt or "", re.I) else "dxf_model"
+    if not (helper_missing or config_missing or uses_custom_dxf_parser or (naive_import and use_mold)):
+        return source, None
+
+    thickness = 25.0
+    for match in re.finditer(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\b", prompt or "", re.I):
+        try:
+            thickness = float(match.group(1))
+            break
+        except ValueError:
+            continue
+    label = "mold_from_dxf" if use_mold or re.search(r"\bmold\b", prompt or "", re.I) else "dxf_model"
+    outline_layers, cavity_layers, hole_layers = _dxf_layer_sets_from_context(context, prompt)
+    if use_mold:
         note = (
-            "Rewrote incomplete DXF source to the canonical import_dxf() + extrude() template because "
+            "Rewrote DXF source to a layer-aware mold builder (outline extrude + cavity/hole cuts) because "
             f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
             f"{'...' if len(undefined) > 8 else ''}."
+            if undefined
+            else "Rewrote naive import_dxf() mold source to layer-aware outline/cavity/hole processing."
         )
-        return _canonical_dxf_extrude_source(dxf_filename, thickness=thickness, label=label), note
+        return _canonical_dxf_mold_source(
+            dxf_filename,
+            thickness=thickness,
+            label=label,
+            outline_layers=outline_layers,
+            cavity_layers=cavity_layers,
+            hole_layers=hole_layers,
+        ), note
 
-    return source, None
+    note = (
+        "Rewrote incomplete DXF source to a simple outline extrude template because "
+        f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
+        f"{'...' if len(undefined) > 8 else ''}."
+    )
+    return _canonical_dxf_extrude_source(dxf_filename, thickness=thickness, label=label), note
 
 
 def _insert_after_imports(source: str, block: str) -> str:
@@ -406,6 +546,7 @@ def _augment_text_to_cad_source(
         source,
         dxf_filename=primary,
         prompt=prompt,
+        context=context,
     )
     if rewrite_note:
         logger.info(rewrite_note)

@@ -1048,7 +1048,9 @@ class AIService:
                 "\n\nDXF import workflow:\n"
                 "- Use one complete Python file. Every helper function and module constant referenced by gen_step() "
                 "must be defined in that same file.\n"
-                "- Prefer import_dxf() + make_face() + extrude() using a module-level dxf_filename constant.\n"
+                "- For multi-layer mold/profile DXFs, do NOT call import_dxf() on the whole file. Process layers "
+                "separately: extrude outline polylines, subtract cavity polylines, cut hole circles, then add flanges if needed.\n"
+                "- Prefer ezdxf layer reads + build123d Polyline/extrude/boolean logic, or parametric dimensions from the brief.\n"
                 "- Do NOT call undefined helpers such as _collect_dxf_geometry unless you also define them fully.\n"
                 "- Do not split the script across missing helper stubs; truncated output fails at runtime.\n"
             )
