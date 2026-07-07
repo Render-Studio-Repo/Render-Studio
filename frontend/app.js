@@ -54,14 +54,14 @@ import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260630-compact-search";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260707-project-folder-create";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-fusion-disconnect";
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
-import { createRibbon } from "./ribbon.js?v=20260707-tree-sliders";
+import { createRibbon } from "./ribbon.js?v=20260707-render-agent-restore";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loader";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
@@ -79,7 +79,7 @@ import { createProjectTree } from "./project-tree.js?v=20260706-dxf-drawings";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260621-driver-3x3-grid";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260707-wiring-load-fast";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
 import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-sketch-fix";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
@@ -104,6 +104,38 @@ const LS_HIDDEN_WORKSPACES = "render3d:hiddenWorkspaces:v1";
 const LS_WORKSPACE_REALTIME_COLLAPSED = "render3d:workspaceRealtimeCollapsed:v1";
 
 let projectId = null;
+const wiringLoadCache = { projectId: null, promise: null, data: null };
+
+function prefetchWiringForProject(id) {
+  if (!id || !currentUser) {
+    wiringLoadCache.projectId = null;
+    wiringLoadCache.promise = null;
+    wiringLoadCache.data = null;
+    return;
+  }
+  if (wiringLoadCache.projectId === id && (wiringLoadCache.data || wiringLoadCache.promise)) return;
+  wiringLoadCache.projectId = id;
+  wiringLoadCache.data = null;
+  wiringLoadCache.promise = api(`/api/projects/${encodeURIComponent(id)}/wiring`)
+    .then((data) => {
+      if (wiringLoadCache.projectId === id) wiringLoadCache.data = data;
+      return data;
+    })
+    .catch(() => {
+      const empty = { components: [], wires: [], notes: [] };
+      if (wiringLoadCache.projectId === id) wiringLoadCache.data = empty;
+      return empty;
+    });
+}
+
+function getWiringPrefetch() {
+  if (!projectId || wiringLoadCache.projectId !== projectId) return null;
+  return wiringLoadCache;
+}
+
+function invalidateWiringPrefetch() {
+  wiringLoadCache.data = null;
+}
 let lastProjectBrowser = { components: [], sketches: [], wiring: [] };
 let allProjects = [];
 let projectsFetchGeneration = 0;
@@ -489,6 +521,7 @@ async function applyWiringGenerationComplete(gen, pid = projectId) {
   if (pid === projectId) {
     const schematic = await api(`/api/projects/${pid}/wiring`);
     wiringSim.applySchematic(schematic);
+    invalidateWiringPrefetch();
     wiringOverlay?.clearError();
     await refreshFiles();
     await refreshWiringPromptHistory();
@@ -808,6 +841,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           } else if (pid === projectId) {
             const schematic = await api(`/api/projects/${pid}/wiring`);
             wiringSim.applySchematic(schematic);
+            invalidateWiringPrefetch();
             await refreshFiles();
             await refreshWiringPromptHistory();
           }
@@ -2258,9 +2292,39 @@ const promptHistory = createPromptHistoryUI({
 
 let promptMode = "v2";
 const PROMPT_SPEED_KEY = "render3d:prompt-speed:v1";
+const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
 
 function getPromptGenerationSpeed() {
   return document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
+}
+
+function getWiringGenerationSpeed() {
+  const value = document.getElementById("wiring-speed")?.value
+    ?? document.getElementById("wiring-toolbelt-speed")?.value
+    ?? document.getElementById("wdbg-speed")?.value;
+  return value === "quality" ? "quality" : "fast";
+}
+
+function setWiringGenerationSpeed(value, { persist = true } = {}) {
+  const next = value === "quality" ? "quality" : "fast";
+  for (const id of ["wiring-speed", "wiring-toolbelt-speed", "wdbg-speed"]) {
+    const select = document.getElementById(id);
+    if (select) select.value = next;
+  }
+  if (persist) {
+    try { localStorage.setItem(WIRING_SPEED_KEY, next); } catch {}
+  }
+}
+
+function initWiringGenerationSpeed() {
+  let saved = "fast";
+  try { saved = localStorage.getItem(WIRING_SPEED_KEY) || "fast"; } catch {}
+  setWiringGenerationSpeed(saved, { persist: false });
+  for (const id of ["wiring-speed", "wiring-toolbelt-speed", "wdbg-speed"]) {
+    document.getElementById(id)?.addEventListener("change", (e) => {
+      setWiringGenerationSpeed(e.currentTarget.value);
+    });
+  }
 }
 
 function setPromptGenerationSpeed(value, { persist = true } = {}) {
@@ -8298,6 +8362,13 @@ function getSelectedWorkspaceId() {
   return value || allTeams[0]?.id || null;
 }
 
+function getFolderTeamId() {
+  const selected = getSelectedWorkspaceId();
+  if (selected) return selected;
+  const owned = allTeams.find((team) => team.role === "owner");
+  return owned?.id || allTeams[0]?.id || null;
+}
+
 function userWorkspaceStorageKey(user = currentUser) {
   return user?.id ? `${LS_LAST_WORKSPACE}:${user.id}` : LS_LAST_WORKSPACE;
 }
@@ -8654,6 +8725,7 @@ const workspaceBrowser = createWorkspaceBrowser({
   container: document.getElementById("project-browser"),
   api,
   getWorkspaceId: getSelectedWorkspaceId,
+  getFolderTeamId,
   getProjects: () => allProjects,
   getActiveProjectId: () => projectId,
   isProjectLoading: (id) => loadingProjectIds.has(id),
@@ -9234,6 +9306,7 @@ const wiringSim = createWiringSimulator({
   paletteEl: document.getElementById("wiring-palette-list"),
   api,
   getProjectId: () => projectId,
+  getWiringPrefetch,
   onChange: () => refreshFiles(),
   onHistoryChange: (state) => {
     updateWiringToolbelt(state);
@@ -9254,6 +9327,7 @@ const wiringDebug = createWiringDebugPanel({
   getProjectId: () => projectId,
   getSchematic: () => wiringSim.getSchematic?.(),
   getAiKeyBodyFields: () => getPromptAiKeyBodyFields(),
+  getGenerationSpeed: () => getWiringGenerationSpeed(),
   onApplyFocusDiagram: (schematic, focusMeta) => {
     if (!schematic) return;
     wiringSim.applyFocusPath?.(schematic, focusMeta || {});
@@ -9625,7 +9699,7 @@ async function runWiringPrompt() {
           data_url,
         })),
         driver_links: driverLink ? [driverLink] : [],
-        speed: document.getElementById("prompt-speed")?.value || "fast",
+        speed: getWiringGenerationSpeed(),
         ...getPromptAiKeyBodyFields(),
       }),
     });
@@ -10495,6 +10569,7 @@ async function loadProject(id) {
   try {
     saveActiveModelPromptState();
     const prevProjectId = projectId;
+    prefetchWiringForProject(id);
     projectId = id;
     renderPromptAiKeySelect(aiStatus, { preserveSelection: prevProjectId === id });
     wiringDebug.setProjectId?.(id);
@@ -13347,6 +13422,7 @@ window.addEventListener("keydown", (e) => {
 (async function init() {
   initPromptKeyPopup();
   initPromptGenerationSpeed();
+  initWiringGenerationSpeed();
 
   aiKeyUi = createAIKeyUI({
     api,

@@ -130,6 +130,7 @@ export function createWorkspaceBrowser({
   container,
   api,
   getWorkspaceId,
+  getFolderTeamId = getWorkspaceId,
   getProjects,
   getActiveProjectId,
   isProjectLoading,
@@ -168,6 +169,12 @@ export function createWorkspaceBrowser({
   /** @type {Map<string, { project: object, sectionId: string, entry: object }>} */
   const hierarchyEntryCache = new Map();
   let suppressHierarchyClick = false;
+
+  function resolveTeamId() {
+    const folderTeamId = getFolderTeamId?.();
+    if (folderTeamId) return folderTeamId;
+    return getWorkspaceId?.() || null;
+  }
 
   function clearHierarchyClickSuppress() {
     window.setTimeout(() => {
@@ -1465,17 +1472,18 @@ export function createWorkspaceBrowser({
       container.querySelector(".project-search-input")?.focus();
     });
 
-    const teamIdForControls = getWorkspaceId();
+    const folderTeamId = resolveTeamId();
     const toolbar = document.createElement("div");
     toolbar.className = "folder-toolbar";
-    if (teamIdForControls) {
+    if (folderTeamId) {
       toolbar.innerHTML = `
-        <input type="text" class="folder-name-input" placeholder="Folder name" maxlength="120" />
+        <input type="text" class="folder-name-input" placeholder="New folder name" maxlength="120" aria-label="New folder name" />
         <button type="button" class="btn-create-folder" title="Create folder" aria-label="Create folder">
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H6l1.2 1.2H12.5A1.5 1.5 0 0 1 14 5.7V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z" stroke-linejoin="round"></path>
             <path d="M8 7v4M6 9h4" stroke-linecap="round"></path>
           </svg>
+          <span class="btn-create-folder-label">New folder</span>
         </button>
       `;
       browserToolbar.appendChild(toolbar);
@@ -1484,7 +1492,7 @@ export function createWorkspaceBrowser({
 
     const input = toolbar.querySelector(".folder-name-input");
     const createFolder = async () => {
-      const teamId = getWorkspaceId();
+      const teamId = resolveTeamId();
       const name = input?.value?.trim();
       if (!teamId || !name) return;
       try {
@@ -1692,6 +1700,19 @@ export function createWorkspaceBrowser({
           read_only: isPublic || isOtherRenders || !!project.read_only_project,
           public: isPublic,
         });
+      }
+      const folderTeamId = resolveTeamId();
+      if (folderTeamId) {
+        try {
+          const data = await api(`/api/teams/${folderTeamId}/folders`);
+          for (const folder of data.folders || []) {
+            if (!folder?.id || seen.has(folder.id)) continue;
+            seen.add(folder.id);
+            folders.push(folder);
+          }
+        } catch {
+          /* keep virtual folders only */
+        }
       }
       return;
     }

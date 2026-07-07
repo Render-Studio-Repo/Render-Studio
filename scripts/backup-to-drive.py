@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Daily backup of Render3D code + project models to Google Drive.
 
-Creates /home/ubuntu/backups/drive-daily/YYYY-MM-DD/render3d-backup.tar.gz,
-uploads it under PARENT_FOLDER_ID/YYYY-MM-DD/, and prunes backups older than
+Creates /home/ubuntu/backups/drive-daily/M-D-YYYY/render3d-backup.tar.gz,
+uploads it under PARENT_FOLDER_ID/M-D-YYYY/, and prunes backups older than
 RETENTION_DAYS locally and on Drive.
 
 Excludes installed packages (.venv, myenv, node_modules, __pycache__, etc.).
@@ -189,9 +189,34 @@ def collect_paths() -> tuple[list[Path], list[Path]]:
     return dirs, files
 
 
+def backup_folder_name(day: date) -> str:
+    """US-style m-d-y folder name, e.g. 7-6-2026."""
+    return f"{day.month}-{day.day}-{day.year}"
+
+
+def parse_backup_date(name: str) -> date | None:
+    try:
+        return datetime.strptime(name, "%Y-%m-%d").date()
+    except ValueError:
+        pass
+    parts = name.split("-")
+    if len(parts) != 3:
+        return None
+    try:
+        a, b, c = (int(part) for part in parts)
+    except ValueError:
+        return None
+    if c >= 1000:
+        return date(c, a, b)
+    if a >= 1000:
+        return date(a, b, c)
+    return None
+
+
 def create_archive(day: date, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
-    archive = dest_dir / f"render3d-backup-{day.isoformat()}.tar.gz"
+    folder = backup_folder_name(day)
+    archive = dest_dir / f"render3d-backup-{folder}.tar.gz"
     if archive.is_file():
         LOG.info("Archive already exists for %s; reusing %s", day, archive)
         return archive
@@ -216,7 +241,7 @@ def create_archive(day: date, dest_dir: Path) -> Path:
         "\n".join(
             [
                 f"created_utc={datetime.now(timezone.utc).isoformat()}",
-                f"backup_date={day.isoformat()}",
+                f"backup_date={backup_folder_name(day)}",
                 f"git_head={git_head()}",
                 f"archive={archive.name}",
                 f"archive_bytes={archive.stat().st_size}",
@@ -307,18 +332,11 @@ def drive_find_file(service, name: str, parent_id: str) -> str | None:
 
 
 def upload_day_backup(service, day: date, local_dir: Path, archive: Path) -> None:
-    folder_id = drive_create_folder(service, day.isoformat(), PARENT_FOLDER_ID)
+    folder_id = drive_create_folder(service, backup_folder_name(day), PARENT_FOLDER_ID)
     drive_upload_file(service, archive, folder_id)
     manifest = local_dir / "MANIFEST.txt"
     if manifest.is_file():
         drive_upload_file(service, manifest, folder_id)
-
-
-def parse_backup_date(name: str) -> date | None:
-    try:
-        return datetime.strptime(name, "%Y-%m-%d").date()
-    except ValueError:
-        return None
 
 
 def prune_local(cutoff: date) -> None:
@@ -373,7 +391,8 @@ def prune_drive(service, cutoff: date) -> None:
 
 def run_backup(*, skip_upload: bool = False) -> None:
     day = datetime.now(timezone.utc).date()
-    local_dir = LOCAL_BACKUP_ROOT / day.isoformat()
+    folder = backup_folder_name(day)
+    local_dir = LOCAL_BACKUP_ROOT / folder
     archive = create_archive(day, local_dir)
 
     if not skip_upload:
@@ -384,7 +403,7 @@ def run_backup(*, skip_upload: bool = False) -> None:
 
     cutoff = day - timedelta(days=RETENTION_DAYS)
     prune_local(cutoff)
-    LOG.info("Daily backup complete for %s", day.isoformat())
+    LOG.info("Daily backup complete for %s", folder)
 
 
 def main() -> int:

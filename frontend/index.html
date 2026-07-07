@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260707-sidebar-scroll-top" />
+  <link rel="stylesheet" href="/styles.css?v=20260707-wdbg-model-select" />
   <script type="importmap">
   {
     "imports": {
@@ -480,6 +480,12 @@
             <button type="button" id="btn-wiring-redo" class="wiring-tool-btn" title="Redo (⌘⇧Z)" disabled>↷ Redo</button>
             <span class="wiring-tool-sep" aria-hidden="true"></span>
             <button type="button" id="btn-wiring-toolbelt-generate" class="wiring-tool-btn wiring-tool-accent" title="Generate schematic with Wiring AI">⚡ Generate</button>
+            <label class="wiring-toolbelt-mode-wrap" title="Speed uses a faster model; Quality uses the deeper Pro path">
+              <select id="wiring-toolbelt-speed" class="wiring-toolbelt-mode" aria-label="Wiring generation mode">
+                <option value="fast" selected>Speed</option>
+                <option value="quality">Quality</option>
+              </select>
+            </label>
             <button type="button" id="btn-wiring-toolbelt-stop" class="wiring-tool-btn wiring-tool-danger hidden" title="Stop wiring generation">Stop generating</button>
             <button type="button" id="btn-wiring-run-schematic" class="wiring-tool-btn wiring-tool-accent" title="Run the current schematic loop in the simulator">▶ Run schematic</button>
             <button type="button" id="btn-wiring-code" class="wiring-tool-btn wiring-tool-accent" title="Generate code, edit it, and run a live simulation">&lt;/&gt; Code &amp; Simulate</button>
@@ -527,6 +533,21 @@
                   <input type="file" id="wdbg-file-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
                 </div>
                 <textarea id="wdbg-text-input" class="wdbg-text-input" rows="2" placeholder="Describe the problem (optional) — e.g. 'LED doesn't light up' or 'motor doesn't spin'"></textarea>
+                <div class="wdbg-controls-row" role="group" aria-label="Debugger AI settings">
+                  <button type="button" id="wdbg-key-picker-btn" class="prompt-key-pill wdbg-key-pill" aria-haspopup="dialog" aria-expanded="false" title="Select AI key and model">
+                    <span class="prompt-key-pill-kw">Key</span>
+                    <span id="wdbg-key-pill-name" class="prompt-key-pill-name">Default key</span>
+                    <span id="wdbg-key-pill-model" class="prompt-key-pill-model"></span>
+                    <svg class="prompt-key-pill-arrow" viewBox="0 0 10 6" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M1 1l4 4 4-4"/></svg>
+                  </button>
+                  <label class="wiring-speed-toggle wdbg-speed-toggle" title="Speed uses a faster model; Quality uses the deeper Pro path when selected.">
+                    <span>Mode</span>
+                    <select id="wdbg-speed" aria-label="Debugger generation mode">
+                      <option value="fast" selected>Speed</option>
+                      <option value="quality">Quality</option>
+                    </select>
+                  </label>
+                </div>
                 <div class="wdbg-send-row">
                   <label class="wdbg-schematic-toggle" title="Cross-reference the AI schematic when analysing your photo">
                     <input type="checkbox" id="wdbg-include-schematic" checked />
@@ -862,6 +883,16 @@
             <span>Add reference photo (optional)</span>
           </div>
           <div id="wiring-prompt-image-list" class="wiring-prompt-image-list"></div>
+          <div class="wiring-mode-row" role="group" aria-label="Wiring generation settings">
+            <label class="wiring-speed-toggle" title="Speed uses a faster model; Quality uses the deeper Pro path when selected.">
+              <span>Mode</span>
+              <select id="wiring-speed" aria-label="Wiring generation mode">
+                <option value="fast" selected>Speed</option>
+                <option value="quality">Quality</option>
+              </select>
+            </label>
+            <span class="muted small wiring-mode-hint">Key/model: use the Key pill below.</span>
+          </div>
           <!-- Generate row: key pill + generate/stop button (stop replaces generate while running) -->
           <div class="wiring-generate-row">
             <button id="wiring-key-picker-btn" type="button" class="prompt-key-pill wiring-key-pill" aria-haspopup="dialog" aria-expanded="false" title="Select AI key and model">
@@ -1296,6 +1327,45 @@
       <p class="fusion-capability-note">You can reopen this by clicking the Fusion tab again. The selected target is remembered on this device.</p>
     </div>
   </div>
+  <section id="render-agent-panel" class="render-agent-panel hidden" aria-label="Render Agent assistant">
+    <header class="render-agent-head">
+      <button type="button" id="render-agent-thread-menu" class="render-agent-menu-btn" aria-label="Open Render Agent threads" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="render-agent-title">
+        <strong>Render Agent</strong>
+        <span id="render-agent-active-thread-label">Ask about tools, projects, Fusion, files, and workflows</span>
+      </div>
+      <img class="render-agent-head-logo" src="/favicon.svg" alt="Render3D" />
+      <button type="button" id="render-agent-close" class="render-agent-close" aria-label="Close Render Agent">&times;</button>
+    </header>
+    <div id="render-agent-thread-popover" class="render-agent-thread-popover hidden">
+      <div id="render-agent-thread-list" class="render-agent-thread-list"></div>
+      <button type="button" id="render-agent-new-thread" class="btn secondary btn-compact">New</button>
+    </div>
+    <div class="render-agent-people-row">
+      <div id="render-agent-members" class="render-agent-members" aria-label="Thread members"></div>
+      <select id="render-agent-invite-select" class="render-agent-invite-select" aria-label="Invite teammate to thread">
+        <option value="">Invite teammate…</option>
+      </select>
+      <button type="button" id="render-agent-invite-btn" class="btn secondary btn-compact">Invite</button>
+    </div>
+    <div id="render-agent-onboarding" class="render-agent-onboarding hidden">
+      <strong>Need help?</strong>
+      <span>Upload a reference or ask how to use Render3D. Sam's default agent answers tooling questions; switch to your AI key in the Agent row.</span>
+    </div>
+    <div id="render-agent-messages" class="render-agent-messages" aria-live="polite"></div>
+    <div id="render-agent-attachments" class="render-agent-attachments"></div>
+    <form id="render-agent-form" class="render-agent-form">
+      <label class="render-agent-upload">
+        Upload
+        <input type="file" id="render-agent-file-input" multiple accept="image/png,image/jpeg,image/webp,.txt,.md,.csv,.json,.svg,.dxf,.step,.stp,.pdf" hidden />
+      </label>
+      <textarea id="render-agent-input" rows="2" placeholder="Ask about Render3D tools, current project, Fusion sync, STEP files, wiring, BOMs..."></textarea>
+      <button type="submit" class="btn accent btn-compact">Ask</button>
+    </form>
+    <p id="render-agent-status" class="render-agent-status muted small"></p>
+  </section>
   <div id="architect-library-modal" class="architect-library-modal hidden" role="dialog" aria-modal="true" aria-labelledby="architect-library-title">
     <div class="architect-library-backdrop" data-architect-library-close></div>
     <div class="architect-library-card">
@@ -1312,7 +1382,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260707-sidebar-scroll-top"></script>
+  <script type="module" src="/app.js?v=20260707-wdbg-model-select"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

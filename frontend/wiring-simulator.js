@@ -349,11 +349,16 @@ function findBreadboard() {
 let componentsRef = [];
 
 export function createWiringSimulator(options = {}) {
-  const { root, paletteEl, api, getProjectId, onChange, onHistoryChange } = options;
+  const { root, paletteEl, api, getProjectId, getWiringPrefetch, onChange, onHistoryChange } = options;
 
   let components = [];
   componentsRef = components;
   let wires = [];
+  let schematicProjectId = null;
+  let loadInFlight = null;
+  const pinLayoutByComponentId = new Map();
+  const pinPositionMap = new Map();
+  let wiresRenderScheduled = false;
   let wireStart = null;
   let wireCreateDrag = null;
   let dragState = null;
@@ -921,23 +926,90 @@ export function createWiringSimulator(options = {}) {
     }
   }
 
+  function clearPinCaches() {
+    pinLayoutByComponentId.clear();
+    pinPositionMap.clear();
+  }
+
+  function getPinLayout(c) {
+    if (!c?.id) return pinLayout(c);
+    const sig = `${c.type}|${c.w}|${c.h}|${c.label}|${JSON.stringify(c.pin_labels || {})}`;
+    const cached = pinLayoutByComponentId.get(c.id);
+    if (cached?.sig === sig) return cached.layout;
+    const layout = pinLayout(c);
+    pinLayoutByComponentId.set(c.id, { sig, layout });
+    return layout;
+  }
+
+  function rebuildPinPositionMap() {
+    pinPositionMap.clear();
+    for (const c of components) {
+      for (const pin of getPinLayout(c)) {
+        pinPositionMap.set(`${c.id}|${pin.id}`, {
+          x: c.x + c.w * pin.x,
+          y: c.y + c.h * pin.y,
+        });
+      }
+    }
+  }
+
+  function scheduleRenderWires() {
+    if (wiresRenderScheduled) return;
+    wiresRenderScheduled = true;
+    requestAnimationFrame(() => {
+      wiresRenderScheduled = false;
+      renderWires();
+    });
+  }
+
+  async function fetchWiringData(projectId) {
+    const prefetch = getWiringPrefetch?.();
+    if (prefetch?.projectId === projectId && prefetch.data) {
+      return prefetch.data;
+    }
+    if (prefetch?.projectId === projectId && prefetch.promise) {
+      try {
+        return await prefetch.promise;
+      } catch {
+        return { components: [], wires: [], notes: [] };
+      }
+    }
+    try {
+      return await api(`/api/projects/${projectId}/wiring`);
+    } catch {
+      return { components: [], wires: [], notes: [] };
+    }
+  }
+
   async function load() {
     const projectId = getProjectId?.();
     if (!projectId || !api) return;
-    if (localEditVersion > savedVersion || saveInFlight) {
-      const saved = await save();
-      if (!saved) return;
-    }
-    clearHistory();
-    try {
-      const data = await api(`/api/projects/${projectId}/wiring`);
-      applySchematic(data, { save: false, skipHistory: true });
+    if (loadInFlight?.projectId === projectId) return loadInFlight.promise;
+
+    const run = async () => {
+      if (
+        schematicProjectId === projectId
+        && (localEditVersion > savedVersion || saveInFlight)
+      ) {
+        const saved = await save();
+        if (!saved) return;
+      }
+      clearHistory();
+      const data = await fetchWiringData(projectId);
+      applySchematic(data, { save: false, skipHistory: true, deferWires: true });
+      schematicProjectId = projectId;
       savedVersion = localEditVersion;
-    } catch {
-      applySchematic({ components: [], wires: [], notes: [] }, { save: false, skipHistory: true });
+      requestAnimationFrame(fitView);
+      notifyHistoryChange();
+    };
+
+    const promise = run();
+    loadInFlight = { projectId, promise };
+    try {
+      await promise;
+    } finally {
+      if (loadInFlight?.projectId === projectId) loadInFlight = null;
     }
-    requestAnimationFrame(fitView);
-    notifyHistoryChange();
   }
 
   function renderNotes() {
@@ -1067,10 +1139,17 @@ export function createWiringSimulator(options = {}) {
     return { matched: focusWireIds.size, mode: "replace" };
   }
 
-  function applySchematic(data, { save = true, skipHistory = false, highlightFocusPath = false, issueWireIds = null } = {}) {
+  function applySchematic(data, {
+    save = true,
+    skipHistory = false,
+    highlightFocusPath = false,
+    issueWireIds = null,
+    deferWires = false,
+  } = {}) {
     if (!data) return;
     if (!skipHistory) pushHistory();
     notesCollapsed = true;
+    clearPinCaches();
     schematicMeta = {
       name: data.name || "",
       description: data.description || "",
@@ -1122,9 +1201,18 @@ export function createWiringSimulator(options = {}) {
     } else {
       focusWireIds = new Set();
     }
-    renderAll();
+    schematicProjectId = getProjectId?.() || schematicProjectId;
+    renderParts();
     renderNotes();
-    if (highlightFocusPath) requestAnimationFrame(fitView);
+    const paintWires = () => {
+      renderWires();
+      if (highlightFocusPath) requestAnimationFrame(fitView);
+    };
+    if (deferWires) {
+      requestAnimationFrame(paintWires);
+    } else {
+      paintWires();
+    }
     if (save) scheduleSave();
     notifyHistoryChange();
   }
@@ -1188,19 +1276,28 @@ export function createWiringSimulator(options = {}) {
     };
   }
 
-  function renderAll() {
+  function renderParts() {
     partsLayer.innerHTML = "";
     pinsLayer.innerHTML = "";
     applyViewTransform();
+    const partsFrag = document.createDocumentFragment();
+    const pinsFrag = document.createDocumentFragment();
     for (const c of components) {
-      partsLayer.appendChild(renderPartBody(c));
-      for (const pin of pinLayout(c)) {
+      partsFrag.appendChild(renderPartBody(c));
+      for (const pin of getPinLayout(c)) {
         const pinEl = renderPin(c, pin);
-        if (pinEl) pinsLayer.appendChild(pinEl);
+        if (pinEl) pinsFrag.appendChild(pinEl);
       }
     }
-    renderWires();
+    partsLayer.appendChild(partsFrag);
+    pinsLayer.appendChild(pinsFrag);
+    rebuildPinPositionMap();
     hint?.classList.toggle("hidden", components.length > 0);
+  }
+
+  function renderAll() {
+    renderParts();
+    renderWires();
   }
 
   function breadboardMarkup() {
@@ -1400,7 +1497,7 @@ export function createWiringSimulator(options = {}) {
         }
         updatePinPositions(comp.id);
       }
-      renderWires();
+      scheduleRenderWires();
       scheduleSave(1200);
     });
     el.addEventListener("pointerup", finishDrag);
@@ -1524,26 +1621,24 @@ export function createWiringSimulator(options = {}) {
   function updatePinPositions(compId) {
     const c = components.find((x) => x.id === compId);
     if (!c) return;
-    for (const pin of pinLayout(c)) {
+    for (const pin of getPinLayout(c)) {
+      const pos = {
+        x: c.x + c.w * pin.x,
+        y: c.y + c.h * pin.y,
+      };
+      pinPositionMap.set(`${compId}|${pin.id}`, pos);
       const el = pinsLayer.querySelector(
         `[data-component-id="${compId}"][data-pin-id="${pin.id}"]`,
       );
       if (el) {
-        el.style.left = `${c.x + c.w * pin.x}px`;
-        el.style.top = `${c.y + c.h * pin.y}px`;
+        el.style.left = `${pos.x}px`;
+        el.style.top = `${pos.y}px`;
       }
     }
   }
 
   function pinPosition(compId, pinId) {
-    const c = components.find((x) => x.id === compId);
-    if (!c) return null;
-    const pin = pinLayout(c).find((p) => p.id === pinId);
-    if (!pin) return null;
-    return {
-      x: c.x + c.w * pin.x,
-      y: c.y + c.h * pin.y,
-    };
+    return pinPositionMap.get(`${compId}|${pinId}`) || null;
   }
 
   function addConnector(parent, x, y, color) {
@@ -1589,6 +1684,7 @@ export function createWiringSimulator(options = {}) {
     wiresSvg.setAttribute("width", world.w);
     wiresSvg.setAttribute("height", world.h);
 
+    const frag = document.createDocumentFragment();
     wires.forEach((wire, wireIndex) => {
       const a = pinPosition(wire.from.componentId, wire.from.pinId);
       const b = pinPosition(wire.to.componentId, wire.to.pinId);
@@ -1702,8 +1798,9 @@ export function createWiringSimulator(options = {}) {
       });
       g.appendChild(handleEl);
 
-      wiresSvg.appendChild(g);
+      frag.appendChild(g);
     });
+    wiresSvg.appendChild(frag);
   }
 
   function onPinClick(componentId, pinId) {
@@ -2211,7 +2308,9 @@ export function createWiringSimulator(options = {}) {
       selectedWireId = null;
       focusWireIds = new Set();
       schematicMeta = { name: "", description: "", notes: [] };
+      schematicProjectId = null;
       notesCollapsed = true;
+      clearPinCaches();
       clearHistory();
       renderAll();
       renderNotes();

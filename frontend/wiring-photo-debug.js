@@ -113,7 +113,7 @@ function openCameraCapture(onCapture) {
 }
 
 // ── Main factory ─────────────────────────────────────────────────────────────
-export function createWiringDebugPanel({ getProjectId, getSchematic, getAiKeyBodyFields, onApplyFocusDiagram, apiFn }) {
+export function createWiringDebugPanel({ getProjectId, getSchematic, getAiKeyBodyFields, getGenerationSpeed, onApplyFocusDiagram, apiFn }) {
   const panel       = document.getElementById("wiring-debug-panel");
   const chat        = document.getElementById("wdbg-chat");
   const photoRow    = document.getElementById("wdbg-photo-row");
@@ -627,7 +627,7 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, getAiKeyBod
         })),
         description: contextDescription || null,
         include_schematic: !!schematic,
-        speed: "fast",
+        speed: getGenerationSpeed?.() || "fast",
         ...(getAiKeyBodyFields?.() || {}),
       };
 

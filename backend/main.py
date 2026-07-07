@@ -1120,6 +1120,33 @@ def _get_ai_for_user(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+def _ai_from_request_body(
+    user: dict[str, Any],
+    body: Any,
+    *,
+    project_id: str | None = None,
+) -> AIService:
+    return _get_ai_for_user(
+        user,
+        getattr(body, "speed", None) or "fast",
+        key_id=getattr(body, "ai_key_id", None),
+        key_source=getattr(body, "ai_key_source", None),
+        project_id=project_id,
+    )
+
+
+def _get_ai_for_prompt(user: dict[str, Any], body: Any, project_id: str | None = None) -> AIService:
+    return _ai_from_request_body(user, body, project_id=project_id)
+
+
+def _get_ai_for_wiring(user: dict[str, Any], body: Any, project_id: str | None = None) -> AIService:
+    return _ai_from_request_body(user, body, project_id=project_id)
+
+
+def _get_ai_for_diagnose(user: dict[str, Any], body: Any, project_id: str | None = None) -> AIService:
+    return _ai_from_request_body(user, body, project_id=project_id)
+
+
 # Standard mounting/footprint data for common off-the-shelf parts. Keyed by
 # substrings matched against the component stem/label (lower-cased). Used as a
 # hint so the AI sizes pockets/holes/standoffs to real hardware; the measured
@@ -6792,7 +6819,7 @@ def wiring_diagnose_photo(
     trace_id = getattr(request.state, "trace_id", new_trace_id())
     path = _require_project(user, project_id)
 
-    ai = _get_ai_for_prompt(user, body, project_id=project_id)
+    ai = _get_ai_for_diagnose(user, body, project_id=project_id)
 
     current_schematic: dict[str, Any] | None = None
     if body.include_schematic:

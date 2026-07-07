@@ -1398,6 +1398,20 @@ function _buildRibbonDOM() {
     viewControls.appendChild(btn);
   }
 
+  const renderAgentBtn = document.createElement("button");
+  renderAgentBtn.type = "button";
+  renderAgentBtn.id = "btn-render-agent";
+  renderAgentBtn.className = "ribbon-view-btn ribbon-view-btn--render-agent";
+  renderAgentBtn.title = "Ask Render Agent";
+  renderAgentBtn.innerHTML = `
+    <svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 5.5h12v8H9l-4 3v-3H4z"/>
+      <path d="M7 8h6M7 11h4"/>
+    </svg>
+    <span class="ribbon-view-label">Agent</span>
+  `;
+  viewControls.appendChild(renderAgentBtn);
+
   // Chevron
   const chev = document.createElement("button");
   chev.type = "button";
