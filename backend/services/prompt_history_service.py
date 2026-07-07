@@ -36,6 +36,41 @@ PRICING_REFRESH_PREFIXES = (
 )
 
 
+def _safe_history_references(references: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    safe_refs: list[dict[str, Any]] = []
+    for ref in (references or [])[:20]:
+        if not isinstance(ref, dict):
+            continue
+        item: dict[str, Any] = {}
+        for key in (
+            "id",
+            "type",
+            "label",
+            "token",
+            "filename",
+            "stem",
+            "format",
+            "viewer_filename",
+            "projectId",
+            "body_index",
+            "body_name",
+            "component_index",
+            "component_name",
+            "source_filename",
+            "parent_filename",
+        ):
+            value = ref.get(key)
+            if value is not None:
+                item[key] = value
+        if ref.get("text_content") and str(ref.get("type") or "").lower() == "dxf":
+            text = str(ref.get("text_content") or "")
+            item["text_content"] = text[:100_000]
+            item["text_truncated"] = bool(ref.get("text_truncated") or len(text) > 100_000)
+        if item:
+            safe_refs.append(item)
+    return safe_refs
+
+
 def _path(project_path: Path) -> Path:
     return project_path / HISTORY_FILE
 
@@ -113,6 +148,9 @@ def append_entry(
         "kind": kind,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    safe_refs = _safe_history_references(references)
+    if safe_refs:
+        entry["references"] = safe_refs
     if prompt_mode:
         entry["prompt_mode"] = str(prompt_mode).lower()
     if usage:
@@ -288,6 +326,9 @@ def _backfill_from_timeline(project_path: Path) -> None:
             "created_at": e.get("created_at") or datetime.now(timezone.utc).isoformat(),
             "recovered_from_timeline": True,
         }
+        safe_refs = _safe_history_references(meta.get("references") or [])
+        if safe_refs:
+            row["references"] = safe_refs
         if usage:
             row["usage"] = usage
         if meta.get("cost_usd") is not None:

@@ -553,7 +553,15 @@ _ARCHITECT_DETAIL_PART_RE = re.compile(
     r"(trim|baseboard|crown|sill|lintel|jamb|casing|mullion|glass_pane|pane|"
     r"connector|socket|snap|tab|tongue|rail|key|cavity|lead_in|chamfer|lip|"
     r"relief|lock|bar|grip|label|mark|seam|groove|plank|grain|knob|handle|"
-    r"threshold|plate|cap|edge|bead|alignment|pick)",
+    r"threshold|plate|cap|edge|bead|alignment|pick|channel|dovetail|bracket|hole)",
+    re.I,
+)
+
+_ARCHITECT_MAJOR_MODULE_RE = re.compile(
+    r"(floor_slab(?:_with_[a-z0-9_]+)?$|second_floor_slab(?:_with_[a-z0-9_]+)?$|"
+    r"flat_roof_slab(?:_with_[a-z0-9_]+)?$|roof_panel$|wall_panel$|"
+    r"structural_pillar$|corner_pillar$|door_module$|window_insert$|"
+    r"^wall_(north|south|east|west)$|^room_floor$|^roof_(north|south|east|west)?)",
     re.I,
 )
 
@@ -575,7 +583,9 @@ def _architect_major_build123d_children(children: list[Any]) -> list[Any]:
         slug = _part_artifact_slug(label, "")
         if not slug:
             continue
-        if _ARCHITECT_DETAIL_PART_RE.search(slug):
+        if slug.startswith("exploded_"):
+            continue
+        if _ARCHITECT_DETAIL_PART_RE.search(slug) and not _ARCHITECT_MAJOR_MODULE_RE.search(slug):
             continue
         if not _ARCHITECT_MAJOR_PART_RE.search(slug):
             continue

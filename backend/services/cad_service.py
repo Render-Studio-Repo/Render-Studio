@@ -508,6 +508,48 @@ def _is_prompt_artifact_stem(stem: str) -> bool:
     return any(marker in low for marker in ("_whisk_end", "_whisk", "_generated"))
 
 
+def _architect_text_to_cad_bases(project_path: Path) -> set[str]:
+    """Base stems for Architect text-to-CAD assemblies.
+
+    Older Architect runs could export every build123d child as
+    ``<base>__part_...`` or ``<base>_partNN...`` browser files. Those are detail
+    artifacts; the main STEP/GLB remains the upstream text-to-cad assembly.
+    """
+    bases: set[str] = set()
+    for path in project_path.glob("*.py"):
+        if path.name.startswith("_active_"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")[:12000].lower()
+        except Exception:
+            continue
+        if (
+            "architect_text_to_cad" in text
+            or "modular_robot_house" in text
+            or "assembled_modular_robot_house" in text
+            or ("room_floor" in text and "wall_north" in text)
+            or ("architect" in text and "snap" in text and "wall" in text)
+        ):
+            bases.add(path.stem)
+    for brief in project_path.glob("*.brief.md"):
+        try:
+            text = brief.read_text(encoding="utf-8", errors="ignore")[:12000].lower()
+        except Exception:
+            continue
+        if "architect mode workflow" in text or "modular house" in text:
+            bases.add(brief.name[: -len(".brief.md")])
+    return bases
+
+
+def _is_architect_promoted_part_stem(stem: str, architect_bases: set[str]) -> bool:
+    for base in architect_bases:
+        if stem.startswith(f"{base}__part_"):
+            return True
+        if re.match(rf"^{re.escape(base)}_part\d+", stem):
+            return True
+    return False
+
+
 def _canonical_assembly_stem(project_path: Path) -> str | None:
     """Newest kernel export that has both program + sim metadata."""
     best: tuple[float, str] | None = None
@@ -527,6 +569,7 @@ def _viewport_component_stems(project_path: Path, stems: set[str]) -> set[str]:
     """Stems eligible for the design browser — hide sim exports and duplicate cleaned variants."""
     visible = set(stems)
     sim_bases = _load_sim_assembly_parts(project_path)
+    architect_bases = _architect_text_to_cad_bases(project_path)
 
     for stem in list(visible):
         if _is_sim_part_stem(stem, sim_bases):
@@ -534,6 +577,10 @@ def _viewport_component_stems(project_path: Path, stems: set[str]) -> set[str]:
 
     for stem in list(visible):
         if _is_prompt_artifact_stem(stem):
+            visible.discard(stem)
+
+    for stem in list(visible):
+        if _is_architect_promoted_part_stem(stem, architect_bases):
             visible.discard(stem)
 
     canonical = _canonical_assembly_stem(project_path)

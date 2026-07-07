@@ -49,7 +49,7 @@ import {
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260629-face-edit-refs";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260629-wrap-cost-meta";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
@@ -2333,12 +2333,17 @@ const promptHistory = createPromptHistoryUI({
     if (["v2", "fusion", "architect", "draw", "standard"].includes(reusedMode)) {
       applyPromptModeUI(reusedMode === "standard" ? "render" : reusedMode);
     }
-    const ta = document.getElementById("prompt-input");
-    if (ta) {
-      ta.value = entry.prompt;
-      ta.focus();
-      saveActiveModelPromptState();
-    }
+    const refs = promptHistoryReferencesForReuse(entry);
+    restoringModelPromptState = true;
+    composer.setPromptText(entry.prompt || "");
+    composer.replaceReferences(refs);
+    restoringModelPromptState = false;
+    promptImages = [];
+    renderPromptImages();
+    saveActiveModelPromptState();
+    document.getElementById("prompt-input")?.focus();
+    const refCount = refs.length;
+    setEditStatus("ok", refCount ? `Reused prompt with ${refCount} reference${refCount === 1 ? "" : "s"}.` : "Reused prompt.");
   },
 });
 
@@ -2766,6 +2771,36 @@ function renderProjectCostThumb(entries = [], summary = null) {
       .join("");
   }
   wrap.classList.toggle("is-empty", !tracked);
+}
+
+function promptHistoryReferencesForReuse(entry = {}) {
+  const saved = Array.isArray(entry.references) ? entry.references : [];
+  const refs = saved
+    .filter((ref) => ref?.id && ref?.type)
+    .map((ref) => ({
+      ...ref,
+      projectId: ref.projectId || projectId || null,
+    }));
+  if (refs.length) return refs;
+
+  const prompt = String(entry.prompt || "");
+  const asksForDxf = /\b(dxf|dwg|drawing|blueprint|from this .* file)\b/i.test(prompt);
+  if (!asksForDxf) return [];
+  const drawings = (lastProjectBrowser?.drawings || []).filter((drawing) => /\.dxf$/i.test(String(drawing?.name || "")));
+  return drawings.slice(0, 4).map((drawing) => {
+    const filename = drawing.name || drawing.filename;
+    const stem = drawing.stem || fileStem(filename);
+    return {
+      id: `dxf:${projectId || "project"}:${filename}`,
+      type: "dxf",
+      token: `@${String(stem || "dxf").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "dxf"}`,
+      label: filename,
+      filename,
+      stem,
+      format: "dxf",
+      projectId,
+    };
+  });
 }
 
 async function refreshPromptHistory() {
