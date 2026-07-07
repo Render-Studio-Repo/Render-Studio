@@ -1493,11 +1493,10 @@ export function createWorkspaceBrowser({
       toolbar.innerHTML = `
         <input type="text" class="folder-name-input" placeholder="New folder name" maxlength="120" aria-label="New folder name" />
         <button type="button" class="btn-create-folder" title="Create folder" aria-label="Create folder">
-          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H6l1.2 1.2H12.5A1.5 1.5 0 0 1 14 5.7V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z" stroke-linejoin="round"></path>
-            <path d="M8 7v4M6 9h4" stroke-linecap="round"></path>
+          <svg class="btn-create-folder-icon" viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+            <path d="M2.75 5.75c0-.97.78-1.75 1.75-1.75h3.15l1.55 1.65h6.3c.97 0 1.75.78 1.75 1.75v7.1c0 .97-.78 1.75-1.75 1.75h-11c-.97 0-1.75-.78-1.75-1.75V5.75z" stroke="currentColor" stroke-width="1.55" stroke-linejoin="round"></path>
+            <path d="M10 8.25v5M7.5 10.75h5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"></path>
           </svg>
-          <span class="btn-create-folder-label">New folder</span>
         </button>
       `;
       browserToolbar.appendChild(toolbar);

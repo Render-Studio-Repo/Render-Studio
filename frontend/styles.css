@@ -8087,10 +8087,9 @@ section h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  min-width: 36px;
-  padding: 0 12px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   flex-shrink: 0;
   border: 1px solid rgba(88, 166, 255, 0.35);
   border-radius: 8px;
@@ -8103,8 +8102,9 @@ section h2 {
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
-.btn-create-folder-label {
-  line-height: 1;
+.btn-create-folder-icon {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .btn-create-folder:hover {
