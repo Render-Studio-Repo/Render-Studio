@@ -1437,6 +1437,8 @@ arduino_standoff_positions = [
 divider_thickness = 3.0
 divider_center_x = 0.0
 divider_height = max(outer_height - base_thickness - 4.0, 8.0)
+divider_wire_slot_width = 14.0
+divider_wire_slot_height = 8.0
 
 nema_center_x = outer_length * 0.24
 nema_center_y = 0.0
@@ -1446,6 +1448,10 @@ nema_pocket_depth = max(1.2, min(2.5, base_thickness - 0.4))
 nema_shaft_clearance_radius = 11.5
 nema_mount_hole_radius = 1.7
 nema_mount_spacing = 31.0
+top_edge_chamfer = min(1.0, max(0.35, wall_thickness * 0.3))
+arduino_floor_relief_depth = min(1.2, max(0.6, base_thickness * 0.35))
+arduino_floor_relief_length = min(inside_length * 0.8, arduino_board_length + 8.0)
+arduino_floor_relief_width = min(inside_width - 6.0, arduino_board_width + 6.0)
 nema_mount_hole_positions = [
     (nema_center_x - nema_mount_spacing / 2.0, nema_center_y - nema_mount_spacing / 2.0),
     (nema_center_x + nema_mount_spacing / 2.0, nema_center_y - nema_mount_spacing / 2.0),
@@ -1481,6 +1487,14 @@ def gen_step():
                 align=(Align.CENTER, Align.CENTER, Align.MIN),
                 mode=Mode.ADD,
             )
+        with Locations((divider_center_x, 0.0, base_thickness + divider_wire_slot_height / 2.0)):
+            Box(
+                divider_thickness + 0.4,
+                divider_wire_slot_width,
+                divider_wire_slot_height,
+                align=(Align.CENTER, Align.CENTER, Align.CENTER),
+                mode=Mode.SUBTRACT,
+            )
 
         with Locations(*[(x, y, base_thickness) for x, y in arduino_standoff_positions]):
             Cylinder(
@@ -1494,6 +1508,15 @@ def gen_step():
             Cylinder(
                 radius=standoff_hole_radius,
                 height=min(standoff_height, 8.0),
+                align=(Align.CENTER, Align.CENTER, Align.MAX),
+                mode=Mode.SUBTRACT,
+            )
+
+        with Locations((arduino_center_x, arduino_center_y, base_thickness + arduino_floor_relief_depth)):
+            Box(
+                arduino_floor_relief_length,
+                arduino_floor_relief_width,
+                arduino_floor_relief_depth + 0.02,
                 align=(Align.CENTER, Align.CENTER, Align.MAX),
                 mode=Mode.SUBTRACT,
             )
@@ -1526,6 +1549,10 @@ def gen_step():
         vertical_edges = part_builder.edges().filter_by(Axis.Z)
         if vertical_edges:
             fillet(vertical_edges, radius=outside_corner_fillet)
+        if top_edge_chamfer > 0.0:
+            top_edges = part_builder.edges().filter_by_position(Axis.Z, outer_height - 0.12, outer_height + 0.12)
+            if top_edges:
+                chamfer(top_edges, length=top_edge_chamfer)
 
     body = part_builder.part
     body.label = model_label
