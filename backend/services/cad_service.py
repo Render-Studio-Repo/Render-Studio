@@ -70,6 +70,21 @@ def _is_internal_dxf_sidecar(name: str) -> bool:
     return name.lower().endswith(".ezdxf.dxf")
 
 
+def is_internal_model_artifact(path: Path | str) -> bool:
+    """Files used by previews/sidecars should not become timeline model snapshots."""
+    name = Path(path).name
+    lower = name.lower()
+    if name.startswith("_active_") or name.startswith("_export_"):
+        return True
+    if _is_internal_dxf_sidecar(name):
+        return True
+    if lower.endswith((".program.json", ".sketch.json", ".sim.json", ".mjcf.xml", ".urdf", ".srdf")):
+        return True
+    if "_snapshot" in lower:
+        return True
+    return False
+
+
 def list_project_files(project_path: Path) -> list[dict[str, Any]]:
     files = []
     for f in sorted(project_path.iterdir()):

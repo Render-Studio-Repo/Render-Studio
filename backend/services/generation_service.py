@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,22 @@ def _path(project_path: Path) -> Path:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _process_is_alive(pid: Any) -> bool:
+    try:
+        value = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if value <= 0:
+        return False
+    try:
+        os.kill(value, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def load(project_path: Path) -> dict[str, Any] | None:
@@ -135,6 +152,7 @@ def start(
         "by_user_name": user.get("display_name") if user else None,
         "by_avatar_url": _user_avatar_url(user),
         "restart_count": restart_count,
+        "worker_pid": os.getpid(),
     }
     if request_body:
         data["request_body"] = request_body
@@ -299,6 +317,8 @@ def find_stuck_jobs(projects_root: Path) -> list[dict[str, Any]]:
         if not data.get("request_body"):
             continue
         if data.get("restart_count", 0) >= 2:
+            continue
+        if _process_is_alive(data.get("worker_pid")):
             continue
         started = data.get("started_at")
         if not started:
