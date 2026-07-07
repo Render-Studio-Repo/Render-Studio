@@ -1015,7 +1015,11 @@ class AIService:
             "(https://github.com/earthtojake/text-to-cad).\n"
             "Write ONLY valid Python source for build123d with a top-level gen_step() function.\n"
             "gen_step() must return the STEP-ready shape or labeled compound; do not write file paths inside gen_step().\n"
-            "Use millimeters. Put dimensions in named parameters. Follow the CAD brief exactly.\n"
+            "Use millimeters. Define every named parameter at module scope before gen_step(), including file names, "
+            "thicknesses, labels, and helper functions you reference.\n"
+            "When importing a project DXF with import_dxf(), set a module-level constant such as "
+            'dxf_filename = "part.dxf" and use Path(dxf_filename) inside gen_step().\n'
+            "Follow the CAD brief exactly.\n"
             "Return ONLY Python source — no markdown fences, no explanation before or after the code.\n"
             "If editing an existing model, preserve working geometry and change only what the prompt or repair note requires.\n"
             "Security/runtime rules: scripts run in the project folder as cwd. Prefer pathlib.Path for file paths. "

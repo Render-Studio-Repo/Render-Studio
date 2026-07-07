@@ -102,6 +102,127 @@ def _validate_generated_source(source: str) -> None:
         raise ValueError(f"Generated source contains blocked operation(s): {', '.join(sorted(set(blocked)))}")
 
 
+def _collect_dxf_filenames(context: dict[str, Any] | None, project_path: Path, prompt: str) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str | None) -> None:
+        cleaned = (name or "").strip()
+        if not cleaned or cleaned in seen:
+            return
+        seen.add(cleaned)
+        names.append(cleaned)
+
+    for ref in (context or {}).get("refs") or []:
+        if str(ref.get("type") or "").lower() == "dxf":
+            add(ref.get("filename"))
+    for info in (context or {}).get("dxf_files") or []:
+        add(info.get("filename"))
+        add(info.get("readable_filename"))
+    if re.search(r"\bdxf\b", prompt or "", re.I):
+        for path in sorted(project_path.glob("*.dxf")):
+            if path.name.endswith(".ezdxf.dxf"):
+                continue
+            add(path.name)
+    return names
+
+
+def _defined_module_names(source: str) -> set[str]:
+    tree = ast.parse(source)
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.FunctionDef):
+            names.add(node.name)
+    return names
+
+
+def _insert_after_imports(source: str, block: str) -> str:
+    if not block.strip():
+        return source
+    lines = source.splitlines()
+    insert_at = 0
+    idx = 0
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if stripped.startswith("from ") or stripped.startswith("import ") or stripped == "from __future__ import annotations":
+            insert_at = idx + 1
+            idx += 1
+            continue
+        if stripped == "" and insert_at > 0:
+            insert_at = idx + 1
+            idx += 1
+            continue
+        break
+    injected = [*lines[:insert_at], "", block.rstrip(), "", *lines[insert_at:]]
+    return "\n".join(injected).rstrip() + "\n"
+
+
+def _ensure_project_dxf_files_readable(project_path: Path, filenames: list[str]) -> dict[str, str]:
+    from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
+
+    readable: dict[str, str] = {}
+    for name in filenames:
+        source_path = project_path / name
+        if not source_path.is_file():
+            continue
+        readable_path = ensure_ezdxf_readable_dxf(source_path)
+        readable[name] = readable_path.name
+    return readable
+
+
+def _augment_text_to_cad_source(
+    source: str,
+    *,
+    context: dict[str, Any] | None,
+    project_path: Path,
+    prompt: str,
+) -> str:
+    """Inject missing module-level DXF constants/helpers the model often omits."""
+    dxf_names = _collect_dxf_filenames(context, project_path, prompt)
+    if not dxf_names:
+        return source
+
+    readable_map = _ensure_project_dxf_files_readable(project_path, dxf_names)
+    primary = readable_map.get(dxf_names[0], dxf_names[0])
+    defined = _defined_module_names(source)
+    injections: list[str] = []
+
+    if "dxf_filename" in source and "dxf_filename" not in defined:
+        injections.append(f'dxf_filename = "{primary}"')
+    elif "import_dxf" in source and "dxf_filename" not in defined:
+        injections.append(f'dxf_filename = "{primary}"')
+
+    defaults = {
+        "mold_thickness": "25.0",
+        "plate_thickness": "25.0",
+        "extrusion_thickness": "25.0",
+        "solid_label": '"mold_box"',
+        "origin_center_on_dxf_bbox": "True",
+    }
+    for name, value in defaults.items():
+        if name in source and name not in defined:
+            injections.append(f"{name} = {value}")
+
+    helper_block = (
+        "def _bbox_center_xy(shape):\n"
+        "    bb = shape.bounding_box()\n"
+        "    center = bb.center()\n"
+        "    return (center.X, center.Y)\n\n"
+        "def _bbox_min_z(shape):\n"
+        "    return shape.bounding_box().min.Z"
+    )
+    if "_bbox_center_xy" in source and "_bbox_center_xy" not in defined:
+        injections.append(helper_block)
+
+    return _insert_after_imports(source, "\n\n".join(injections))
+
+
 def _requested_mm_dimensions(prompt: str) -> list[float]:
     dims: list[float] = []
     for match in re.finditer(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\b", prompt or "", re.I):
@@ -463,6 +584,12 @@ def _run_text_to_cad_v2(
             )
             ai_traces.append(ai_trace)
             _validate_generated_source(source)
+            source = _augment_text_to_cad_source(
+                source,
+                context=context,
+                project_path=project_path,
+                prompt=prompt,
+            )
             source_path.write_text(source.rstrip() + "\n", encoding="utf-8")
             current_source = source
         except Exception as exc:

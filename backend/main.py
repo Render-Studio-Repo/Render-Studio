@@ -1803,6 +1803,55 @@ def _reference_edit_guidance(prompt: str, refs: list[dict[str, Any]]) -> str | N
     )
 
 
+def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Summarize project DXF files for text-to-cad prompts."""
+    from backend.skills.dxf.scripts.dxf.render_payload import build_dxf_render_payload
+    from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        if str(ref.get("type") or "").lower() != "dxf":
+            continue
+        name = str(ref.get("filename") or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            candidates.append(name)
+    if re.search(r"\bdxf\b", prompt or "", re.I):
+        for path in sorted(project_path.glob("*.dxf")):
+            if path.name.endswith(".ezdxf.dxf") or path.name in seen:
+                continue
+            seen.add(path.name)
+            candidates.append(path.name)
+
+    entries: list[dict[str, Any]] = []
+    for name in candidates[:4]:
+        source_path = project_path / name
+        if not source_path.is_file():
+            continue
+        try:
+            readable_path = ensure_ezdxf_readable_dxf(source_path)
+            payload = build_dxf_render_payload(source_path, file_ref=name)
+            bounds = payload.get("bounds") or {}
+            layers = payload.get("layers") or []
+            entries.append(
+                {
+                    "filename": name,
+                    "readable_filename": readable_path.name,
+                    "bounds_mm": bounds,
+                    "layer_count": len(layers),
+                    "layers": [layer.get("name") for layer in layers[:12] if isinstance(layer, dict)],
+                    "import_hint": (
+                        f"Define module-level constants before gen_step(), for example "
+                        f'dxf_filename = "{readable_path.name}" and mold_thickness = 25.0.'
+                    ),
+                }
+            )
+        except Exception as exc:
+            entries.append({"filename": name, "error": str(exc)[:240]})
+    return entries
+
+
 def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> dict[str, Any]:
     files = cad_service.list_project_files(project_path)
     refs = []
@@ -1887,6 +1936,9 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
         ],
         "reference_edit_guidance": _reference_edit_guidance(body.prompt, refs),
     }
+    dxf_files = _build_dxf_context_entries(project_path, body.prompt, refs)
+    if dxf_files:
+        context["dxf_files"] = dxf_files
     if (body.mode or "standard").lower() == "fusion":
         context["fusion_target"] = "fusion360" if (body.fusion_target or "").lower() == "fusion360" else "in_app"
     if (body.mode or "standard").lower() == "architect":

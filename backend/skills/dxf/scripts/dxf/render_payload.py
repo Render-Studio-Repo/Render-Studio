@@ -266,7 +266,9 @@ def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list
 
 
 def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, object]:
-    source_path = dxf_path.resolve()
+    from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
+
+    source_path = ensure_ezdxf_readable_dxf(dxf_path.resolve())
     document = ezdxf.readfile(source_path)
     lines, arcs, circles = _load_dxf_entities(document, source_path)
 
