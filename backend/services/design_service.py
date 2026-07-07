@@ -1111,6 +1111,11 @@ def _maybe_rewrite_incomplete_dxf_source(
     naive_import = "import_dxf" in source and "_extrude_polyline" not in source
     connector_like = _looks_like_dxf_connector(source, prompt, dxf_filename)
     use_mold = _should_use_dxf_mold_template(source, context, prompt)
+    unsafe_polyline_template = (
+        "def _poly_solid" in source
+        and "Polyline(*pts" in source
+        and "DXF polyline is degenerate" not in source
+    )
 
     canonical_mold_fallback = "mold_from_dxf" in source and "outline_layers" in source and "No outline polylines found in DXF" in source
     if not (
@@ -1119,6 +1124,7 @@ def _maybe_rewrite_incomplete_dxf_source(
         or config_missing
         or uses_custom_dxf_parser
         or (naive_import and use_mold)
+        or unsafe_polyline_template
         or (connector_like and canonical_mold_fallback)
     ):
         return source, None
@@ -1137,6 +1143,8 @@ def _maybe_rewrite_incomplete_dxf_source(
             "Rewrote DXF source to a connector/part layer parser because this is a connector-style drawing, "
             "not a mold outline/cavity drawing."
             if canonical_mold_fallback
+            else "Rewrote unsafe DXF polyline source to a polyline-safe connector/part builder."
+            if unsafe_polyline_template
             else "Rewrote incomplete semantic DXF source to a layer-aware connector/part builder because "
             f"gen_step() referenced undefined names: {', '.join(undefined[:8])}"
             f"{'...' if len(undefined) > 8 else ''}."
