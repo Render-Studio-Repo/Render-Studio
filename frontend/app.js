@@ -3705,12 +3705,77 @@ function enterRiggingMode() {
       setEditStatus("error", "Open the gear model on SOLID first, then return to RIGGING and press Play.");
     }
     syncRiggingToolbelt();
+    syncRiggingViewportPlaybackUi();
   })();
+  setRiggingViewportPlaybackVisible(true);
 }
 
 function exitRiggingMode() {
   document.getElementById("rigging-chrome")?.classList.add("hidden");
   riggingEditor.hide();
+  setRiggingViewportPlaybackVisible(false);
+}
+
+const riggingViewportPlaybackUi = {
+  container: null,
+  button: null,
+  pollTimer: null,
+};
+
+function ensureRiggingViewportPlaybackUi() {
+  if (riggingViewportPlaybackUi.container) return riggingViewportPlaybackUi;
+  if (!viewport) return riggingViewportPlaybackUi;
+  const computed = window.getComputedStyle(viewport);
+  if (computed.position === "static") viewport.style.position = "relative";
+
+  const container = document.createElement("div");
+  container.id = "rigging-viewport-playback";
+  container.style.position = "absolute";
+  container.style.left = "50%";
+  container.style.bottom = "14px";
+  container.style.transform = "translateX(-50%)";
+  container.style.zIndex = "18";
+  container.style.display = "none";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = "btn-rigging-viewport-play";
+  button.className = "btn";
+  button.textContent = "Play";
+  button.title = "Play/pause rig animation";
+  button.addEventListener("click", () => {
+    riggingEditor?.togglePlay?.();
+    syncRiggingViewportPlaybackUi();
+  });
+
+  container.appendChild(button);
+  viewport.appendChild(container);
+  riggingViewportPlaybackUi.container = container;
+  riggingViewportPlaybackUi.button = button;
+  return riggingViewportPlaybackUi;
+}
+
+function syncRiggingViewportPlaybackUi() {
+  const ui = ensureRiggingViewportPlaybackUi();
+  if (!ui.button) return;
+  const playing = !!riggingEditor?.isPlaying?.();
+  ui.button.textContent = playing ? "Pause" : "Play";
+  ui.button.classList.toggle("active", playing);
+}
+
+function setRiggingViewportPlaybackVisible(visible) {
+  const ui = ensureRiggingViewportPlaybackUi();
+  if (!ui.container) return;
+  ui.container.style.display = visible ? "block" : "none";
+  if (visible) {
+    syncRiggingViewportPlaybackUi();
+    if (!ui.pollTimer) {
+      ui.pollTimer = window.setInterval(syncRiggingViewportPlaybackUi, 350);
+    }
+  } else if (ui.pollTimer) {
+    window.clearInterval(ui.pollTimer);
+    ui.pollTimer = null;
+  }
 }
 
 function architectPromptPrefix() {
@@ -5400,10 +5465,12 @@ function handleRiggingAction(action, entry, data = {}) {
   }
   if (action === "play") {
     riggingEditor.togglePlay();
+    syncRiggingViewportPlaybackUi();
     return;
   }
   if (action === "stop") {
     riggingEditor.setPlaying(false);
+    syncRiggingViewportPlaybackUi();
     return;
   }
   if (action === "export_urdf") {
@@ -6693,7 +6760,10 @@ function bindUrdfPanel() {
     workspaceModes?.setDesignTab?.("RIGGING");
     renderUrdfPanel();
   });
-  document.getElementById("btn-urdf-play")?.addEventListener("click", () => riggingEditor?.togglePlay?.());
+  document.getElementById("btn-urdf-play")?.addEventListener("click", () => {
+    riggingEditor?.togglePlay?.();
+    syncRiggingViewportPlaybackUi();
+  });
   document.getElementById("btn-urdf-export")?.addEventListener("click", async () => {
     await riggingEditor?.exportUrdf?.();
     await refreshFiles();

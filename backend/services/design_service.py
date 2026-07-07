@@ -1548,7 +1548,19 @@ def gen_step():
 
         vertical_edges = part_builder.edges().filter_by(Axis.Z)
         if vertical_edges:
-            fillet(vertical_edges, radius=outside_corner_fillet)
+            for candidate in (
+                outside_corner_fillet,
+                outside_corner_fillet * 0.75,
+                outside_corner_fillet * 0.5,
+                outside_corner_fillet * 0.3,
+            ):
+                if candidate <= 0.05:
+                    continue
+                try:
+                    fillet(vertical_edges, radius=candidate)
+                    break
+                except Exception:
+                    continue
         if top_edge_chamfer > 0.0:
             top_edges = part_builder.edges().filter_by_position(Axis.Z, outer_height - 0.12, outer_height + 0.12)
             if top_edges:

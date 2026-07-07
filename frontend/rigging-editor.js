@@ -1015,5 +1015,6 @@ export function createRiggingEditor({
     getSelectedId: () => selectedId,
     togglePlay: () => animTimeline?.togglePlay(),
     setPlaying: (p) => (p ? startPlayback() : stopPlayback()),
+    isPlaying: () => !!animTimeline?.isPlaying?.(),
   };
 }
