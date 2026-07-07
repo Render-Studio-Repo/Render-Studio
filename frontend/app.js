@@ -5596,6 +5596,20 @@ async function currentProjectModelFiles() {
 }
 
 let architectLibraryFilter = "";
+let architectLibraryViewers = [];
+
+function disposeArchitectLibraryViewers() {
+  architectLibraryViewers.forEach((viewer) => viewer?.dispose?.());
+  architectLibraryViewers = [];
+}
+
+function architectPreviewFilename(file, allFiles = []) {
+  const name = String(file?.name || "");
+  if (/\.(glb|gltf)$/i.test(name)) return name;
+  const stem = name.replace(/\.[^.]+$/, "");
+  const glb = allFiles.find((entry) => String(entry?.name || "").toLowerCase() === `${stem.toLowerCase()}.glb`);
+  return glb?.name || null;
+}
 
 function architectLibraryQueryForTool(tool = "") {
   const value = String(tool || "").toLowerCase();
@@ -5650,8 +5664,9 @@ async function renderArchitectLibrary() {
   const grid = document.getElementById("architect-library-grid");
   const search = document.getElementById("architect-library-search");
   if (!grid) return;
+  disposeArchitectLibraryViewers();
   const query = (search?.value || architectLibraryFilter || "").trim().toLowerCase();
-  const models = [];
+  const models = await currentProjectModelFiles();
   const moduleCards = ARCHITECT_LOCAL_MODULES
     .filter((item) => `${item.title} ${item.category} ${item.description}`.toLowerCase().includes(query))
     .map((item) => `
@@ -5667,9 +5682,14 @@ async function renderArchitectLibrary() {
     `);
   const modelCards = models
     .filter((file) => `${file.name || ""}`.toLowerCase().includes(query))
-    .map((file) => `
+    .map((file) => {
+      const previewName = architectPreviewFilename(file, models);
+      const previewMarkup = previewName
+        ? `<div class="architect-library-preview architect-library-preview--model" data-architect-glb-preview="${appEscapeHtml(previewName)}" aria-hidden="true"></div>`
+        : `<div class="architect-library-preview architect-library-preview--file" aria-hidden="true">${appEscapeHtml((file.name || "CAD").split(".").pop()?.toUpperCase() || "CAD")}</div>`;
+      return `
       <article class="architect-library-item">
-        <div class="architect-library-preview architect-library-preview--file" aria-hidden="true">CAD</div>
+        ${previewMarkup}
         <div>
           <small>Uploaded / saved model</small>
           <strong>${appEscapeHtml(file.name || "Model")}</strong>
@@ -5677,8 +5697,22 @@ async function renderArchitectLibrary() {
         </div>
         <button type="button" class="btn secondary full" data-architect-library-open="${appEscapeHtml(file.name || "")}">Open / place</button>
       </article>
-    `);
+    `;
+    });
   grid.innerHTML = [...moduleCards, ...modelCards].join("") || `<p class="muted small">No Architect modules or saved models match that search.</p>`;
+  if (projectId) {
+    grid.querySelectorAll("[data-architect-glb-preview]").forEach((el) => {
+      const filename = el.dataset.architectGlbPreview;
+      if (!filename) return;
+      const viewer = createMiniViewer(el, { autoRotate: true });
+      architectLibraryViewers.push(viewer);
+      void viewer.load(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}`).catch(() => {
+        el.classList.remove("architect-library-preview--model");
+        el.classList.add("architect-library-preview--file");
+        el.textContent = filename.split(".").pop()?.toUpperCase() || "CAD";
+      });
+    });
+  }
   grid.querySelectorAll("[data-architect-library-module]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       await buildArchitectModule(btn.dataset.architectLibraryModule || "wall");
@@ -5722,6 +5756,7 @@ function openArchitectLibrary(filter = "") {
 }
 
 function closeArchitectLibrary() {
+  disposeArchitectLibraryViewers();
   document.getElementById("architect-library-modal")?.classList.add("hidden");
   architectLibraryFilter = "";
 }

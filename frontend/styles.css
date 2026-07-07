@@ -15675,6 +15675,458 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   gap: 10px;
 }
 
+.architect-library-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.55);
+  min-height: 0;
+}
+
+.architect-library-item small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.architect-library-item strong {
+  display: block;
+  font-size: 0.84rem;
+  line-height: 1.25;
+}
+
+.architect-library-item p {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.architect-library-item--module {
+  cursor: grab;
+}
+
+.architect-library-item--module:active {
+  cursor: grabbing;
+}
+
+.architect-library-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  border-radius: 8px;
+  border: 1px solid rgba(48, 54, 61, 0.85);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(88, 166, 255, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(22, 27, 34, 0.96), rgba(13, 17, 23, 0.9));
+}
+
+.architect-library-preview--file {
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(139, 148, 158, 0.85);
+}
+
+.architect-library-preview--model canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.architect-part-preview {
+  position: relative;
+  width: 88px;
+  height: 72px;
+}
+
+.architect-part-preview [class^="ap-"],
+.architect-part-preview [class*=" ap-"] {
+  position: absolute;
+  display: none;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.architect-part-preview .ap-grid {
+  display: block;
+  inset: 6px;
+  border: 1px dashed rgba(88, 166, 255, 0.16);
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.architect-part-preview--wall .ap-wall-a,
+.architect-part-preview--low-wall .ap-wall-a {
+  display: block;
+  left: 30%;
+  top: 14%;
+  width: 40%;
+  height: 72%;
+  background: linear-gradient(180deg, #f3ede1, #e8e1d2 58%, #d5cdb9);
+}
+
+.architect-part-preview--low-wall .ap-wall-a {
+  top: 34%;
+  height: 52%;
+}
+
+.architect-part-preview--wall .ap-connector-a,
+.architect-part-preview--wall .ap-connector-b,
+.architect-part-preview--low-wall .ap-connector-a,
+.architect-part-preview--low-wall .ap-connector-b {
+  display: block;
+  width: 12%;
+  height: 16%;
+  top: 44%;
+  background: #5c6b73;
+}
+
+.architect-part-preview--wall .ap-connector-a,
+.architect-part-preview--low-wall .ap-connector-a {
+  left: 12%;
+}
+
+.architect-part-preview--wall .ap-connector-b,
+.architect-part-preview--low-wall .ap-connector-b {
+  right: 12%;
+}
+
+.architect-part-preview--corner .ap-wall-a,
+.architect-part-preview--corner .ap-wall-b {
+  display: block;
+  background: linear-gradient(180deg, #f3ede1, #e8e1d2);
+}
+
+.architect-part-preview--corner .ap-wall-a {
+  left: 46%;
+  top: 12%;
+  width: 14%;
+  height: 76%;
+}
+
+.architect-part-preview--corner .ap-wall-b {
+  left: 12%;
+  top: 12%;
+  width: 58%;
+  height: 14%;
+}
+
+.architect-part-preview--corner .ap-connector-a {
+  display: block;
+  left: 12%;
+  top: 12%;
+  width: 18%;
+  height: 18%;
+  background: #f7f0de;
+}
+
+.architect-part-preview--pillar .ap-wall-a {
+  display: block;
+  left: 34%;
+  top: 10%;
+  width: 32%;
+  height: 78%;
+  background: linear-gradient(180deg, #f7f0de, #e8e1d2);
+}
+
+.architect-part-preview--pillar .ap-tab-a {
+  display: block;
+  left: 38%;
+  top: 2%;
+  width: 24%;
+  height: 10%;
+  background: #94a3b8;
+}
+
+.architect-part-preview--pillar .ap-connector-a,
+.architect-part-preview--pillar .ap-connector-b {
+  display: block;
+  width: 10%;
+  height: 22%;
+  top: 38%;
+  background: #5c6b73;
+}
+
+.architect-part-preview--pillar .ap-connector-a {
+  left: 16%;
+}
+
+.architect-part-preview--pillar .ap-connector-b {
+  right: 16%;
+}
+
+.architect-part-preview--floor .ap-floor {
+  display: block;
+  left: 10%;
+  top: 28%;
+  width: 80%;
+  height: 44%;
+  background: linear-gradient(180deg, #d8a866, #c79552 55%, #a8743d);
+}
+
+.architect-part-preview--floor .ap-connector-a,
+.architect-part-preview--floor .ap-connector-b {
+  display: block;
+  height: 10%;
+  background: #d8b074;
+}
+
+.architect-part-preview--floor .ap-connector-a {
+  left: 10%;
+  top: 18%;
+  width: 80%;
+}
+
+.architect-part-preview--floor .ap-connector-b {
+  left: 10%;
+  bottom: 18%;
+  width: 80%;
+}
+
+.architect-part-preview--window .ap-window {
+  display: block;
+  left: 24%;
+  top: 24%;
+  width: 52%;
+  height: 42%;
+  background: linear-gradient(180deg, rgba(111, 182, 255, 0.92), rgba(79, 143, 214, 0.88));
+  box-shadow: inset 0 0 0 3px #f7f0de;
+}
+
+.architect-part-preview--window .ap-tab-a,
+.architect-part-preview--window .ap-tab-b {
+  display: block;
+  left: 18%;
+  width: 64%;
+  height: 8%;
+  background: #f7f0de;
+}
+
+.architect-part-preview--window .ap-tab-a {
+  top: 16%;
+}
+
+.architect-part-preview--window .ap-tab-b {
+  bottom: 24%;
+}
+
+.architect-part-preview--door .ap-door {
+  display: block;
+  left: 30%;
+  top: 18%;
+  width: 40%;
+  height: 58%;
+  background: linear-gradient(180deg, #8a613f, #7b5436);
+  box-shadow: inset 0 0 0 3px #f7f0de;
+}
+
+.architect-part-preview--door .ap-tab-a {
+  display: block;
+  left: 22%;
+  bottom: 16%;
+  width: 56%;
+  height: 8%;
+  background: #f7f0de;
+}
+
+.architect-part-preview--window-wall .ap-wall-a,
+.architect-part-preview--window-wall .ap-wall-b,
+.architect-part-preview--door-wall .ap-wall-a,
+.architect-part-preview--door-wall .ap-wall-b {
+  display: block;
+  top: 12%;
+  width: 18%;
+  height: 76%;
+  background: #e8e1d2;
+}
+
+.architect-part-preview--window-wall .ap-wall-a,
+.architect-part-preview--door-wall .ap-wall-a {
+  left: 10%;
+}
+
+.architect-part-preview--window-wall .ap-wall-b,
+.architect-part-preview--door-wall .ap-wall-b {
+  right: 10%;
+}
+
+.architect-part-preview--window-wall .ap-window {
+  display: block;
+  left: 32%;
+  top: 30%;
+  width: 36%;
+  height: 34%;
+  background: rgba(111, 182, 255, 0.88);
+  box-shadow: inset 0 0 0 2px #f7f0de;
+}
+
+.architect-part-preview--door-wall .ap-door {
+  display: block;
+  left: 34%;
+  top: 24%;
+  width: 32%;
+  height: 52%;
+  background: #7b5436;
+  box-shadow: inset 0 0 0 2px #f7f0de;
+}
+
+.architect-part-preview--room .ap-floor {
+  display: block;
+  left: 16%;
+  top: 42%;
+  width: 68%;
+  height: 34%;
+  background: #c79552;
+}
+
+.architect-part-preview--room .ap-wall-a,
+.architect-part-preview--room .ap-wall-b,
+.architect-part-preview--room .ap-wall-c {
+  display: block;
+  background: #e8e1d2;
+}
+
+.architect-part-preview--room .ap-wall-a {
+  left: 16%;
+  top: 10%;
+  width: 68%;
+  height: 12%;
+}
+
+.architect-part-preview--room .ap-wall-b {
+  left: 16%;
+  top: 22%;
+  width: 12%;
+  height: 54%;
+}
+
+.architect-part-preview--room .ap-wall-c {
+  right: 16%;
+  top: 22%;
+  width: 12%;
+  height: 54%;
+}
+
+.architect-part-preview--room .ap-window {
+  display: block;
+  left: 58%;
+  top: 28%;
+  width: 18%;
+  height: 18%;
+  background: rgba(111, 182, 255, 0.88);
+}
+
+.architect-part-preview--room .ap-door {
+  display: block;
+  left: 34%;
+  top: 28%;
+  width: 14%;
+  height: 24%;
+  background: #7b5436;
+}
+
+.architect-part-preview--roof .ap-roof-a,
+.architect-part-preview--roof-corner .ap-roof-a {
+  display: block;
+  left: 10%;
+  top: 34%;
+  width: 80%;
+  height: 24%;
+  background: linear-gradient(180deg, #52525b, #3f3f46);
+}
+
+.architect-part-preview--roof .ap-tab-a,
+.architect-part-preview--roof .ap-tab-b {
+  display: block;
+  width: 10%;
+  height: 18%;
+  top: 28%;
+  background: #71717a;
+}
+
+.architect-part-preview--roof .ap-tab-a {
+  left: 8%;
+}
+
+.architect-part-preview--roof .ap-tab-b {
+  right: 8%;
+}
+
+.architect-part-preview--roof-gable .ap-roof-a,
+.architect-part-preview--roof-gable .ap-roof-b {
+  display: block;
+  top: 34%;
+  width: 42%;
+  height: 24%;
+  background: #3f3f46;
+}
+
+.architect-part-preview--roof-gable .ap-roof-a {
+  left: 8%;
+  transform: skewY(-16deg);
+}
+
+.architect-part-preview--roof-gable .ap-roof-b {
+  right: 8%;
+  transform: skewY(16deg);
+}
+
+.architect-part-preview--roof-gable .ap-tab-a {
+  display: block;
+  left: 44%;
+  top: 24%;
+  width: 12%;
+  height: 16%;
+  background: #71717a;
+}
+
+.architect-part-preview--roof-corner .ap-roof-b {
+  display: block;
+  right: 10%;
+  top: 18%;
+  width: 34%;
+  height: 18%;
+  background: #52525b;
+  transform: rotate(90deg);
+  transform-origin: top right;
+}
+
+.architect-part-preview--service .ap-wall-a {
+  display: block;
+  left: 24%;
+  top: 12%;
+  width: 52%;
+  height: 76%;
+  background: #e8e1d2;
+}
+
+.architect-part-preview--service .ap-tab-a {
+  display: block;
+  left: 30%;
+  top: 24%;
+  width: 40%;
+  height: 34%;
+  background: #5c6b73;
+}
+
+.architect-part-preview--service .ap-tab-b {
+  display: block;
+  left: 34%;
+  bottom: 14%;
+  width: 32%;
+  height: 10%;
+  background: #94a3b8;
+}
+
 .workspace-fusion-row {
   display: flex;
   align-items: center;
