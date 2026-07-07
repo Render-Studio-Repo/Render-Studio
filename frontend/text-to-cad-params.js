@@ -147,6 +147,9 @@ export function bindCadParamControls(panel, {
   const root = panel?.querySelector?.(".cad-param-panel[data-cad-source]");
   if (!root || !projectId || !filename) return;
   let baseline = structuredClone(initialData?.params || []);
+  let applyTimer = null;
+  let applying = false;
+  let queued = false;
 
   const syncNumber = (name, value) => {
     const num = root.querySelector(`[data-cad-number="${name}"]`);
@@ -159,11 +162,64 @@ export function bindCadParamControls(panel, {
     if (range) range.value = String(value);
   };
 
+  const runApply = async (statusMessage = "Rebuilding model from updated parameters...") => {
+    if (applying) {
+      queued = true;
+      return;
+    }
+    const params = readParamValues(root);
+    if (!Object.keys(params).length) {
+      onStatus?.("error", "No parameter values to apply.");
+      return;
+    }
+    applying = true;
+    const applyBtn = root.querySelector("[data-cad-param-apply]");
+    onStatus?.("loading", statusMessage);
+    if (applyBtn) applyBtn.disabled = true;
+    try {
+      const res = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/cad-params`, {
+        method: "POST",
+        body: JSON.stringify({ params, part }),
+      });
+      baseline = structuredClone(res.params || []);
+      onStatus?.("ok", "Model rebuilt from updated parameters.");
+      await onApplied?.(res);
+    } catch (err) {
+      onStatus?.("error", err?.message || "Could not rebuild model.");
+    } finally {
+      applying = false;
+      if (applyBtn) applyBtn.disabled = false;
+      if (queued) {
+        queued = false;
+        await runApply("Applying latest parameter changes...");
+      }
+    }
+  };
+
+  const scheduleApply = (delayMs = 350) => {
+    if (applyTimer) window.clearTimeout(applyTimer);
+    applyTimer = window.setTimeout(() => {
+      applyTimer = null;
+      void runApply("Applying live parameter change...");
+    }, delayMs);
+  };
+
   root.querySelectorAll("[data-cad-range]").forEach((range) => {
-    range.addEventListener("input", () => syncNumber(range.dataset.cadRange, range.value));
+    range.addEventListener("input", () => {
+      syncNumber(range.dataset.cadRange, range.value);
+      scheduleApply(280);
+    });
   });
   root.querySelectorAll("[data-cad-number]").forEach((num) => {
     num.addEventListener("input", () => syncRange(num.dataset.cadNumber, num.value));
+    num.addEventListener("change", () => scheduleApply(120));
+  });
+  root.querySelectorAll("[data-cad-param]").forEach((input) => {
+    if (input.type === "checkbox") {
+      input.addEventListener("change", () => scheduleApply(120));
+    } else if (input.type === "text") {
+      input.addEventListener("change", () => scheduleApply(120));
+    }
   });
 
   root.querySelector("[data-cad-param-reset]")?.addEventListener("click", () => {
@@ -184,25 +240,10 @@ export function bindCadParamControls(panel, {
   });
 
   root.querySelector("[data-cad-param-apply]")?.addEventListener("click", async () => {
-    const params = readParamValues(root);
-    if (!Object.keys(params).length) {
-      onStatus?.("error", "No parameter values to apply.");
-      return;
+    if (applyTimer) {
+      window.clearTimeout(applyTimer);
+      applyTimer = null;
     }
-    onStatus?.("loading", "Rebuilding model from updated parameters...");
-    root.querySelector("[data-cad-param-apply]").disabled = true;
-    try {
-      const res = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/cad-params`, {
-        method: "POST",
-        body: JSON.stringify({ params, part }),
-      });
-      baseline = structuredClone(res.params || []);
-      onStatus?.("ok", "Model rebuilt from updated parameters.");
-      await onApplied?.(res);
-    } catch (err) {
-      onStatus?.("error", err?.message || "Could not rebuild model.");
-    } finally {
-      root.querySelector("[data-cad-param-apply]").disabled = false;
-    }
+    await runApply();
   });
 }

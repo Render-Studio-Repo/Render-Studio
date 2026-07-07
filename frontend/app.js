@@ -74,7 +74,7 @@ import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-delete-selected-object";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
-import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-tree-sliders";
+import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-live-adjustments";
 import { createProjectTree } from "./project-tree.js?v=20260707-dxf-drawings-section";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
@@ -7386,6 +7386,11 @@ function objectSizeControlsHtml(filename) {
 function bindObjectSizeControls(pop, filename) {
   const panel = pop.querySelector(".object-size-panel[data-resize-filename]");
   if (!panel) return;
+  let applyTimer = null;
+  let applying = false;
+  let queued = false;
+  let lastAppliedKey = "";
+
   const syncNumber = (axis, value) => {
     const num = panel.querySelector(`[data-size-number="${axis}"]`);
     if (num) num.value = Number(value).toFixed(2);
@@ -7394,11 +7399,72 @@ function bindObjectSizeControls(pop, filename) {
     const range = panel.querySelector(`[data-size-range="${axis}"]`);
     if (range) range.value = String(value);
   };
+  const currentSizeValues = () => ["width", "depth", "height"].map((axis) => Number(panel.querySelector(`[data-size-number="${axis}"]`)?.value));
+
+  const applySizeChange = async (status = "Applying size change...") => {
+    if (applying) {
+      queued = true;
+      return;
+    }
+    const target = objectResizeTarget(filename);
+    if (!target) {
+      setEditStatus("error", "Select an object or body first.");
+      return;
+    }
+    const values = currentSizeValues();
+    if (!values.every((value) => Number.isFinite(value) && value > 0)) return;
+    const valueKey = `${target.filename}:${target.bodyIndex ?? "all"}:${values.map((v) => v.toFixed(3)).join(":")}`;
+    if (valueKey === lastAppliedKey) return;
+    const bases = [target.size.x, target.size.y, target.size.z].map((value) => Math.max(0.01, value));
+    const scale = values.map((value, idx) => value / bases[idx]);
+    applying = true;
+    const applyBtn = panel.querySelector("[data-size-apply]");
+    if (applyBtn) applyBtn.disabled = true;
+    setEditStatus("loading", status);
+    try {
+      const endpoint = target.bodyCount > 1 && target.bodyIndex != null
+        ? `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform-body`
+        : `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform`;
+      const body = target.bodyCount > 1 && target.bodyIndex != null
+        ? { body_index: target.bodyIndex, scale }
+        : { scale };
+      const data = await api(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await afterModelEdit({ ...data, replaceCatalog: target.filename });
+      lastAppliedKey = valueKey;
+      setEditStatus("ok", `Resized ${target.label}.`);
+    } catch (err) {
+      setEditStatus("error", err.message || "Could not apply size change.");
+    } finally {
+      applying = false;
+      if (applyBtn) applyBtn.disabled = false;
+      if (queued) {
+        queued = false;
+        await applySizeChange("Applying latest size change...");
+      }
+    }
+  };
+
+  const scheduleApply = (delayMs = 260) => {
+    if (applyTimer) window.clearTimeout(applyTimer);
+    applyTimer = window.setTimeout(() => {
+      applyTimer = null;
+      void applySizeChange("Applying live size change...");
+    }, delayMs);
+  };
+
   panel.querySelectorAll("[data-size-range]").forEach((range) => {
-    range.addEventListener("input", () => syncNumber(range.dataset.sizeRange, range.value));
+    range.addEventListener("input", () => {
+      syncNumber(range.dataset.sizeRange, range.value);
+      scheduleApply(220);
+    });
   });
   panel.querySelectorAll("[data-size-number]").forEach((num) => {
     num.addEventListener("input", () => syncRange(num.dataset.sizeNumber, num.value));
+    num.addEventListener("change", () => scheduleApply(80));
   });
   const applyUniform = (percent) => {
     const factor = Math.max(0.01, Number(percent || 100) / 100);
@@ -7414,12 +7480,14 @@ function bindObjectSizeControls(pop, filename) {
     const number = panel.querySelector("[data-size-uniform-number]");
     if (number) number.value = value;
     applyUniform(value);
+    scheduleApply(220);
   });
   panel.querySelector("[data-size-uniform-number]")?.addEventListener("input", (event) => {
     const value = event.currentTarget.value;
     const range = panel.querySelector("[data-size-uniform]");
     if (range) range.value = value;
     applyUniform(value);
+    scheduleApply(120);
   });
   panel.querySelector("[data-size-reset]")?.addEventListener("click", () => {
     panel.querySelectorAll("[data-size-range]").forEach((range) => {
@@ -7431,39 +7499,14 @@ function bindObjectSizeControls(pop, filename) {
     const uniformNumber = panel.querySelector("[data-size-uniform-number]");
     if (uniform) uniform.value = "100";
     if (uniformNumber) uniformNumber.value = "100";
+    scheduleApply(60);
   });
   panel.querySelector("[data-size-apply]")?.addEventListener("click", async () => {
-    const target = objectResizeTarget(filename);
-    if (!target) {
-      setEditStatus("error", "Select an object or body first.");
-      return;
+    if (applyTimer) {
+      window.clearTimeout(applyTimer);
+      applyTimer = null;
     }
-    const values = ["width", "depth", "height"].map((axis) => Number(panel.querySelector(`[data-size-number="${axis}"]`)?.value));
-    if (!values.every((value) => Number.isFinite(value) && value > 0)) {
-      setEditStatus("error", "Width, depth, and height must be positive numbers.");
-      return;
-    }
-    const bases = [target.size.x, target.size.y, target.size.z].map((value) => Math.max(0.01, value));
-    const scale = values.map((value, idx) => value / bases[idx]);
-    setEditStatus("loading", "Applying size change...");
-    try {
-      const endpoint = target.bodyCount > 1 && target.bodyIndex != null
-        ? `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform-body`
-        : `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform`;
-      const body = target.bodyCount > 1 && target.bodyIndex != null
-        ? { body_index: target.bodyIndex, scale }
-        : { scale };
-      const data = await api(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      closeObjectIterationTree();
-      await afterModelEdit({ ...data, replaceCatalog: target.filename });
-      setEditStatus("ok", `Resized ${target.label}.`);
-    } catch (err) {
-      setEditStatus("error", err.message || "Could not apply size change.");
-    }
+    await applySizeChange();
   });
 }
 
