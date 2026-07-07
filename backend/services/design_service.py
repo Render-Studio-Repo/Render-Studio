@@ -1904,7 +1904,10 @@ def _max_repairs_for_speed(speed: str | None) -> int:
     """Return extra repair attempts beyond the first try."""
     if (speed or "").strip().lower() in {"quality", "pro", "slow"}:
         return 3
-    return 0
+    # Fast mode still needs one cheap source-repair pass. The common failure is
+    # incomplete AI source (gen_step() calls make_* helpers the model forgot to
+    # define); without one repair pass the targeted repair note never runs.
+    return 1
 
 
 def _maybe_run_cad_inspect(result: dict[str, Any], project_path: Path, skills: list[str] | None, trace_id: str | None) -> None:
