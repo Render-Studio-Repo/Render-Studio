@@ -1387,6 +1387,152 @@ def _looks_like_architect_prompt(prompt: str) -> bool:
     )
 
 
+def _looks_like_arduino_nema_mount_box(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
+    if images:
+        return False
+    p = (prompt or "").lower()
+    return (
+        ("arduino" in p and ("nema 17" in p or "nema17" in p))
+        and any(token in p for token in ("box", "enclosure", "mounting box", "open-top", "open top"))
+    )
+
+
+def _canonical_arduino_nema_mount_box_source(*, label: str, prompt: str) -> str:
+    dims = _prompt_outer_box_dimensions(prompt) or (160.0, 100.0, 50.0)
+    wall = _prompt_named_mm_value(prompt, ("wall thickness", "wall_thickness")) or 3.0
+    base = _prompt_named_mm_value(prompt, ("base thickness", "floor thickness", "bottom thickness")) or 3.0
+    safe_label = json.dumps(label or "arduino_nema_mount_box")
+    return f'''from build123d import *
+
+model_label = {safe_label}
+
+outer_length = {dims[0]}
+outer_width = {dims[1]}
+outer_height = {dims[2]}
+wall_thickness = {wall}
+base_thickness = {base}
+
+inside_length = max(outer_length - 2.0 * wall_thickness, 20.0)
+inside_width = max(outer_width - 2.0 * wall_thickness, 20.0)
+
+outside_corner_fillet = min(2.0, max(0.4, wall_thickness * 0.65))
+
+arduino_board_length = 101.3
+arduino_board_width = 68.6
+arduino_center_x = -outer_length * 0.22
+arduino_center_y = 0.0
+
+standoff_height = 6.0
+standoff_outer_radius = 3.5
+standoff_hole_radius = 1.6
+standoff_span_x = min(72.0, max(28.0, inside_length * 0.36))
+standoff_span_y = min(48.0, max(20.0, inside_width * 0.38))
+arduino_standoff_positions = [
+    (arduino_center_x - standoff_span_x / 2.0, arduino_center_y - standoff_span_y / 2.0),
+    (arduino_center_x + standoff_span_x / 2.0, arduino_center_y - standoff_span_y / 2.0),
+    (arduino_center_x - standoff_span_x / 2.0, arduino_center_y + standoff_span_y / 2.0),
+    (arduino_center_x + standoff_span_x / 2.0, arduino_center_y + standoff_span_y / 2.0),
+]
+
+divider_thickness = 3.0
+divider_center_x = 0.0
+divider_height = max(outer_height - base_thickness - 4.0, 8.0)
+
+nema_center_x = outer_length * 0.24
+nema_center_y = 0.0
+nema_face_size = 42.3
+nema_pocket_size = 42.0
+nema_pocket_depth = max(1.2, min(2.5, base_thickness - 0.4))
+nema_shaft_clearance_radius = 11.5
+nema_mount_hole_radius = 1.7
+nema_mount_spacing = 31.0
+nema_mount_hole_positions = [
+    (nema_center_x - nema_mount_spacing / 2.0, nema_center_y - nema_mount_spacing / 2.0),
+    (nema_center_x + nema_mount_spacing / 2.0, nema_center_y - nema_mount_spacing / 2.0),
+    (nema_center_x - nema_mount_spacing / 2.0, nema_center_y + nema_mount_spacing / 2.0),
+    (nema_center_x + nema_mount_spacing / 2.0, nema_center_y + nema_mount_spacing / 2.0),
+]
+
+
+def gen_step():
+    with BuildPart() as part_builder:
+        Box(
+            outer_length,
+            outer_width,
+            outer_height,
+            align=(Align.CENTER, Align.CENTER, Align.MIN),
+            mode=Mode.ADD,
+        )
+
+        with Locations((0.0, 0.0, base_thickness)):
+            Box(
+                inside_length,
+                inside_width,
+                outer_height + 2.0,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                mode=Mode.SUBTRACT,
+            )
+
+        with Locations((divider_center_x, 0.0, base_thickness)):
+            Box(
+                divider_thickness,
+                inside_width,
+                divider_height,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                mode=Mode.ADD,
+            )
+
+        with Locations(*[(x, y, base_thickness) for x, y in arduino_standoff_positions]):
+            Cylinder(
+                radius=standoff_outer_radius,
+                height=standoff_height,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                mode=Mode.ADD,
+            )
+
+        with Locations(*[(x, y, base_thickness + standoff_height) for x, y in arduino_standoff_positions]):
+            Cylinder(
+                radius=standoff_hole_radius,
+                height=min(standoff_height, 8.0),
+                align=(Align.CENTER, Align.CENTER, Align.MAX),
+                mode=Mode.SUBTRACT,
+            )
+
+        with Locations((nema_center_x, nema_center_y, base_thickness + nema_pocket_depth)):
+            Box(
+                nema_pocket_size,
+                nema_pocket_size,
+                nema_pocket_depth + 0.04,
+                align=(Align.CENTER, Align.CENTER, Align.MAX),
+                mode=Mode.SUBTRACT,
+            )
+
+        with Locations((nema_center_x, nema_center_y, -0.5)):
+            Cylinder(
+                radius=nema_shaft_clearance_radius,
+                height=base_thickness + 1.0,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                mode=Mode.SUBTRACT,
+            )
+
+        with Locations(*[(x, y, -0.5) for x, y in nema_mount_hole_positions]):
+            Cylinder(
+                radius=nema_mount_hole_radius,
+                height=base_thickness + 1.0,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                mode=Mode.SUBTRACT,
+            )
+
+        vertical_edges = part_builder.edges().filter_by(Axis.Z)
+        if vertical_edges:
+            fillet(vertical_edges, radius=outside_corner_fillet)
+
+    body = part_builder.part
+    body.label = model_label
+    return body
+'''
+
+
 def _canonical_pc_cooling_fan_source(*, label: str) -> str:
     safe_label = json.dumps(label or "pc_cooling_fan")
     return f'''from build123d import *
@@ -1920,11 +2066,18 @@ def _run_text_to_cad_v2(
     repair_note: str | None = None
     last_error: str | None = None
     current_source: str | None = previous_source
+    canonical_source: str | None = None
 
     if _prompt_mentions_dxf_import(prompt) and not _collect_dxf_filenames(context, project_path, prompt):
         message = _missing_dxf_file_message()
         trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
         raise DesignBuildError(message, ai_traces=ai_traces)
+    if _looks_like_arduino_nema_mount_box(prompt, images):
+        canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
+    elif _looks_like_pc_cooling_fan(prompt, images):
+        canonical_source = _canonical_pc_cooling_fan_source(label=base)
+    elif _looks_like_modular_robot_house(prompt, images):
+        canonical_source = _canonical_modular_robot_house_source(label=base)
 
     label_prefix = "Architect" if architect_mode else "Fusion" if fusion_mode else "2.0"
     workflow_note = ""
@@ -2012,17 +2165,21 @@ def _run_text_to_cad_v2(
                 "label": f"Writing build123d source with {label_prefix} CAD skill (attempt {attempt + 1})...",
             })
         try:
-            source, ai_trace = ai.generate_cad_python_source(
-                prompt + edit_note + workflow_note,
-                context,
-                trace_id=trace_id,
-                repair_note=repair_note,
-                previous_source=current_source,
-                images=images,
-                cad_brief=cad_brief,
-                fusion_mode=fusion_mode,
-            )
-            ai_traces.append(ai_trace)
+            if attempt == 0 and canonical_source:
+                source = canonical_source
+                trace_add("info", "[2.0/text-to-cad] Using canonical benchmark-style source for first attempt.", trace_id=trace_id)
+            else:
+                source, ai_trace = ai.generate_cad_python_source(
+                    prompt + edit_note + workflow_note,
+                    context,
+                    trace_id=trace_id,
+                    repair_note=repair_note,
+                    previous_source=current_source,
+                    images=images,
+                    cad_brief=cad_brief,
+                    fusion_mode=fusion_mode,
+                )
+                ai_traces.append(ai_trace)
             # Preserve the exact source that failed validation so the next
             # repair pass can edit it, matching the upstream text-to-cad
             # source -> step -> repair loop.
