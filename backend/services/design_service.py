@@ -31,6 +31,43 @@ logger = logging.getLogger(__name__)
 
 _BUILTIN_NAMES = set(dir(builtins)) | {"True", "False", "None"}
 
+_BUILD123D_LOWERCASE_EXPORTS = frozenset({
+    "add",
+    "bounding_box",
+    "chamfer",
+    "clean",
+    "compound",
+    "copy",
+    "export_brep",
+    "export_dxf",
+    "export_gltf",
+    "export_stl",
+    "export_step",
+    "extrude",
+    "fillet",
+    "full_round",
+    "import_brep",
+    "import_dxf",
+    "import_step",
+    "loft",
+    "make_brake_formed",
+    "make_face",
+    "make_hull",
+    "make_loft",
+    "make_slot_center",
+    "make_slot_center_to_center",
+    "make_slot_overall",
+    "mirror",
+    "offset",
+    "project",
+    "revolve",
+    "scale",
+    "section",
+    "split",
+    "sweep",
+    "thicken",
+})
+
 
 def _slug(text: str, fallback: str = "text_to_cad_model") -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", (text or "").strip().lower()).strip("_")
@@ -377,6 +414,7 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
             for name in called_as_func
             if name not in defined
             and name not in skip
+            and name not in _BUILD123D_LOWERCASE_EXPORTS
             and name[0].islower()  # snake_case → user helper, not build123d primitive
         )
         undefined_config = sorted(
@@ -426,6 +464,42 @@ def _source_generation_repair_note(error: str) -> str:
         "Every helper called by gen_step() must have a real function body before gen_step(); no stubs, no pass, no ellipsis.\n"
         f"Original error: {error}"
     )
+
+
+def _promote_disconnected_bodies(
+    project_path: Path,
+    glb_name: str,
+    *,
+    base: str,
+    max_bodies: int = 64,
+) -> list[str]:
+    """Expose disconnected text-to-cad bodies as separate browser components."""
+    glb_path = project_path / glb_name
+    if not glb_path.is_file():
+        return []
+    try:
+        mesh = cad_service.load_mesh(glb_path)
+        bodies = cad_service.split_mesh_bodies(mesh)
+    except Exception:
+        return []
+    if len(bodies) <= 1 or len(bodies) > max_bodies:
+        return []
+
+    outputs: list[str] = []
+    for idx, body in enumerate(bodies, start=1):
+        name = f"{base}_part{idx:02d}.glb"
+        out = project_path / name
+        n = 2
+        while out.exists():
+            name = f"{base}_part{idx:02d}_{n}.glb"
+            out = project_path / name
+            n += 1
+        try:
+            cad_service.export_mesh(body, out)
+            outputs.append(name)
+        except Exception as exc:
+            logger.debug("could not promote text-to-cad body %s from %s: %s", idx, glb_name, exc)
+    return outputs
 
 
 def _dxf_layer_sets_from_context(context: dict[str, Any] | None, prompt: str) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
@@ -1290,6 +1364,9 @@ def _run_text_to_cad_v2(
             "step": step_name,
             "glb": glb_name,
         }
+        promoted_parts = _promote_disconnected_bodies(project_path, glb_name, base=base)
+        if promoted_parts:
+            files["parts"] = promoted_parts
         if (project_path / stl_name).is_file():
             files["stl"] = stl_name
         if (project_path / three_mf_name).is_file():
@@ -1319,7 +1396,7 @@ def _run_text_to_cad_v2(
                 "primary": glb_name,
                 "basename": base,
                 "files": files,
-                "parts": [],
+                "parts": [{"name": Path(name).stem, "filename": name} for name in promoted_parts],
                 "sim": None,
                 "dfm": None,
                 "warnings": [],
@@ -1908,6 +1985,11 @@ def run_design(
     ai_traces: list[dict[str, Any]] = []
     if max_repairs is None:
         max_repairs = _max_repairs_for_speed(speed)
+        if normalized_mode == "v2":
+            # Text-to-CAD source validation often catches truncation or omitted
+            # helper definitions before scripts/step runs. Keep one repair pass
+            # available in fast mode so that feedback can be applied.
+            max_repairs = max(max_repairs, 1)
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.
