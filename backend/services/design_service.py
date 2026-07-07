@@ -186,10 +186,13 @@ def _defined_module_names(source: str) -> set[str]:
 
 
 _DXF_CONFIG_NAMES = frozenset({
+    "dxf_filename",
+    "dxf_path",
     "model_label",
     "part_label",
     "solid_label",
     "model_thickness",
+    "mold_thickness",
     "w_extrude_depth",
     "cut_overshoot",
     "alignment_pin_height",
@@ -407,6 +410,33 @@ def _augment_text_to_cad_source(
     if rewrite_note:
         logger.info(rewrite_note)
     return rewritten
+
+
+def _finalize_text_to_cad_source_before_step(
+    source_path: Path,
+    *,
+    context: dict[str, Any] | None,
+    project_path: Path,
+    prompt: str,
+) -> str:
+    """Last-chance DXF repair immediately before scripts/step executes the file."""
+    source = source_path.read_text(encoding="utf-8", errors="ignore")
+    finalized = _augment_text_to_cad_source(
+        source,
+        context=context,
+        project_path=project_path,
+        prompt=prompt,
+    )
+    remaining = _gen_step_local_undefined_names(finalized)
+    if remaining:
+        raise ValueError(
+            "Generated source is incomplete before scripts/step; undefined names: "
+            + ", ".join(remaining[:12])
+            + ("..." if len(remaining) > 12 else "")
+        )
+    if finalized != source:
+        source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
+    return finalized
 
 
 def _requested_mm_dimensions(prompt: str) -> list[float]:
@@ -800,6 +830,18 @@ def _run_text_to_cad_v2(
             raise DesignCanceled("Generation canceled.")
         if progress_callback:
             progress_callback({"stage": "step", "pct": 32, "label": "Running text-to-cad scripts/step..."})
+        try:
+            current_source = _finalize_text_to_cad_source_before_step(
+                source_path,
+                context=context,
+                project_path=project_path,
+                prompt=prompt,
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            repair_note = f"Source finalize failed before scripts/step:\n{last_error}"
+            trace_add("error", f"[2.0/text-to-cad] pre-step finalize failed: {exc}", trace_id=trace_id)
+            continue
         step_out = skill_runner.run_skill_tool(
             "cad",
             "step",
