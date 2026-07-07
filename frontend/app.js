@@ -1437,7 +1437,7 @@ function selectionTargetFromMesh(hitMesh) {
   const catalogName = catalogNameForMesh(hitMesh);
   const comp = catalogName ? projectAssembly.get(catalogName) : null;
   const root = comp || componentRootForMesh(hitMesh) || currentMesh;
-  const mesh = hitMesh || comp;
+  const mesh = comp && isLocalAssemblyObject(catalogName, comp) ? comp : (hitMesh || comp);
   return { mesh, root, catalogName };
 }
 
@@ -1488,14 +1488,15 @@ function browserBodySelectionName(catalogName, bodyIndex) {
 function selectObjectHit(hit, { showGizmo = true } = {}) {
   if (!hit?.mesh) return null;
   const target = selectionTargetFromMesh(hit.mesh);
-  const bodyIndex = bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
+  const wholeLocalModule = target.catalogName && isLocalAssemblyObject(target.catalogName, target.root);
+  const bodyIndex = wholeLocalModule ? 0 : bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
   if (target.catalogName) {
     selectedFile = target.catalogName;
     syncPromptTargetUI();
-    projectTree.setSelected(browserBodySelectionName(target.catalogName, bodyIndex));
+    projectTree.setSelected(wholeLocalModule ? target.catalogName : browserBodySelectionName(target.catalogName, bodyIndex));
     featureEditor.setModel(projectId, target.catalogName);
   }
-  objectTools.selectObject({ ...target, faceIndex: hit.faceIndex, bodyIndex });
+  objectTools.selectObject({ ...target, faceIndex: wholeLocalModule ? null : hit.faceIndex, bodyIndex });
   if (showGizmo) showObjectGizmo(target.mesh, "translate", { switchTab: false });
   renderer.domElement.focus({ preventScroll: true });
   syncExportButton();
@@ -4253,6 +4254,131 @@ function selectedArchitectKind(mesh) {
   return "";
 }
 
+function architectWorldBox(obj) {
+  obj?.updateMatrixWorld?.(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  return box.isEmpty() ? null : box;
+}
+
+function architectSnapRole(kind = "") {
+  if (kind.startsWith("floor") || kind === "room") return "floor";
+  if (kind.includes("wall") || kind === "service" || kind === "window" || kind === "door") return "wall";
+  if (kind.includes("pillar")) return "pillar";
+  if (kind.includes("roof")) return "roof";
+  return "module";
+}
+
+function architectFloorSnapAnchors(obj, box = architectWorldBox(obj)) {
+  if (!box) return [];
+  const floorBox = new THREE.Box3();
+  let foundFloorGeometry = false;
+  obj?.traverse?.((child) => {
+    if (!child?.isMesh) return;
+    const name = String(child.name || "").toLowerCase();
+    if (!name.includes("floor_slab") && !name.includes("floor_snap_rail") && !name.includes("floor_corner_socket")) return;
+    child.updateMatrixWorld?.(true);
+    floorBox.union(new THREE.Box3().setFromObject(child));
+    foundFloorGeometry = true;
+  });
+  if (foundFloorGeometry && !floorBox.isEmpty()) box = floorBox;
+  const grid = architectGridModelUnits();
+  const z = box.max.z;
+  const xs = [];
+  const ys = [];
+  for (let x = box.min.x + grid / 2; x < box.max.x; x += grid) xs.push(x);
+  for (let y = box.min.y + grid / 2; y < box.max.y; y += grid) ys.push(y);
+  if (!xs.length) xs.push((box.min.x + box.max.x) / 2);
+  if (!ys.length) ys.push((box.min.y + box.max.y) / 2);
+  return [
+    ...xs.map((x, i) => ({ role: "floor-edge", side: "south", rotation: 0, point: new THREE.Vector3(x, box.min.y, z), label: `south socket ${i + 1}` })),
+    ...xs.map((x, i) => ({ role: "floor-edge", side: "north", rotation: 0, point: new THREE.Vector3(x, box.max.y, z), label: `north socket ${i + 1}` })),
+    ...ys.map((y, i) => ({ role: "floor-edge", side: "west", rotation: Math.PI / 2, point: new THREE.Vector3(box.min.x, y, z), label: `west socket ${i + 1}` })),
+    ...ys.map((y, i) => ({ role: "floor-edge", side: "east", rotation: Math.PI / 2, point: new THREE.Vector3(box.max.x, y, z), label: `east socket ${i + 1}` })),
+    { role: "floor-corner", side: "south-west", rotation: 0, point: new THREE.Vector3(box.min.x, box.min.y, z), label: "south-west corner socket" },
+    { role: "floor-corner", side: "south-east", rotation: 0, point: new THREE.Vector3(box.max.x, box.min.y, z), label: "south-east corner socket" },
+    { role: "floor-corner", side: "north-west", rotation: Math.PI / 2, point: new THREE.Vector3(box.min.x, box.max.y, z), label: "north-west corner socket" },
+    { role: "floor-corner", side: "north-east", rotation: Math.PI / 2, point: new THREE.Vector3(box.max.x, box.max.y, z), label: "north-east corner socket" },
+  ];
+}
+
+function architectModuleSnapAnchors(obj, box = architectWorldBox(obj)) {
+  if (!box) return [];
+  const kind = selectedArchitectKind(obj);
+  const role = architectSnapRole(kind);
+  const center = box.getCenter(new THREE.Vector3());
+  const bottom = box.min.z;
+  const midZ = THREE.MathUtils.lerp(box.min.z, box.max.z, role === "pillar" ? 0.32 : 0.18);
+  const anchors = [
+    { role: "module-side", side: "west", point: new THREE.Vector3(box.min.x, center.y, midZ), label: "west connector" },
+    { role: "module-side", side: "east", point: new THREE.Vector3(box.max.x, center.y, midZ), label: "east connector" },
+    { role: "module-side", side: "south", point: new THREE.Vector3(center.x, box.min.y, midZ), label: "south connector" },
+    { role: "module-side", side: "north", point: new THREE.Vector3(center.x, box.max.y, midZ), label: "north connector" },
+  ];
+  if (role !== "floor" && role !== "roof") {
+    anchors.push({ role: "floor-foot", side: "bottom", point: new THREE.Vector3(center.x, center.y, bottom), label: "floor foot" });
+  }
+  if (role === "pillar") {
+    anchors.push(
+      { role: "pillar-socket", side: "west", point: new THREE.Vector3(box.min.x, center.y, midZ), label: "west pillar socket" },
+      { role: "pillar-socket", side: "east", point: new THREE.Vector3(box.max.x, center.y, midZ), label: "east pillar socket" },
+      { role: "pillar-socket", side: "south", point: new THREE.Vector3(center.x, box.min.y, midZ), label: "south pillar socket" },
+      { role: "pillar-socket", side: "north", point: new THREE.Vector3(center.x, box.max.y, midZ), label: "north pillar socket" },
+    );
+  }
+  return anchors;
+}
+
+function architectAnchorsCompatible(a, b) {
+  if (!a || !b) return false;
+  if (a.role === "floor-foot" && (b.role === "floor-edge" || b.role === "floor-corner")) return true;
+  if (b.role === "floor-foot" && (a.role === "floor-edge" || a.role === "floor-corner")) return true;
+  if (a.role === "module-side" && (b.role === "module-side" || b.role === "pillar-socket")) return true;
+  if (b.role === "module-side" && (a.role === "module-side" || a.role === "pillar-socket")) return true;
+  return false;
+}
+
+function architectSelectedSnapAnchors(mesh) {
+  return architectModuleSnapAnchors(mesh);
+}
+
+function architectTargetSnapAnchors(obj) {
+  const kind = selectedArchitectKind(obj);
+  if (architectSnapRole(kind) === "floor") return architectFloorSnapAnchors(obj);
+  return architectModuleSnapAnchors(obj);
+}
+
+function nearestArchitectConnectorSnap(mesh) {
+  if (!mesh?.userData?.architectInstance) return null;
+  const grid = architectGridModelUnits();
+  const snapRadius = grid * 0.42;
+  const selectedAnchors = architectSelectedSnapAnchors(mesh);
+  let best = null;
+  for (const [name, obj] of projectAssembly.list()) {
+    if (obj === mesh || !obj?.userData?.architectInstance) continue;
+    const targetAnchors = architectTargetSnapAnchors(obj);
+    for (const selectedAnchor of selectedAnchors) {
+      for (const targetAnchor of targetAnchors) {
+        if (!architectAnchorsCompatible(selectedAnchor, targetAnchor)) continue;
+        const dist = selectedAnchor.point.distanceTo(targetAnchor.point);
+        if (dist > snapRadius) continue;
+        const score = dist + (targetAnchor.role === "floor-edge" ? -grid * 0.08 : 0);
+        if (!best || score < best.score) {
+          best = {
+            score,
+            dist,
+            mateName: name,
+            selectedAnchor,
+            targetAnchor,
+            delta: targetAnchor.point.clone().sub(selectedAnchor.point),
+            rotation: targetAnchor.rotation,
+          };
+        }
+      }
+    }
+  }
+  return best;
+}
+
 function nearestArchitectFloorSnap(mesh) {
   const kind = selectedArchitectKind(mesh);
   const snapsToFloor = kind.includes("wall") || kind.includes("pillar") || kind === "door" || kind === "window" || kind === "service";
@@ -4323,6 +4449,20 @@ function nearestArchitectModuleSnap(mesh) {
 function tryArchitectLegoSnap(mesh = architectSelectedMesh()) {
   if (!mesh?.userData?.architectInstance) return false;
   if (!document.body.classList.contains("architect-design-tab")) return false;
+  let connectorSnap = nearestArchitectConnectorSnap(mesh);
+  if (connectorSnap) {
+    if (Number.isFinite(connectorSnap.rotation)) {
+      mesh.rotation.z = connectorSnap.rotation;
+      mesh.updateMatrixWorld(true);
+      connectorSnap = nearestArchitectConnectorSnap(mesh) || connectorSnap;
+    }
+    const delta = worldDeltaToParentDelta(mesh, connectorSnap.delta);
+    if (gizmoPanel.translateBy?.(delta, { autoApply: true })) {
+      const targetLabel = connectorSnap.targetAnchor?.label || "connector";
+      setEditStatus("ok", `Snapped ${connectorSnap.selectedAnchor?.label || "module"} to ${connectorSnap.mateName} ${targetLabel}.`);
+      return true;
+    }
+  }
   const moduleSnap = nearestArchitectModuleSnap(mesh);
   if (moduleSnap) {
     const center = objectWorldBoxCenter(mesh);
@@ -4367,10 +4507,12 @@ function refreshArchitectBrowserEntries() {
       label: obj?.userData?.architectKind || name,
       localOnly: true,
     }));
-  if (!localComponents.length) return;
+  const persistedComponents = (lastProjectBrowser.components || [])
+    .filter((c) => !String(c.name).startsWith("__architect_") && !String(c.name).endsWith(".local"));
+  if (!localComponents.length && persistedComponents.length === (lastProjectBrowser.components || []).length) return;
   const merged = [
     ...localComponents,
-    ...(lastProjectBrowser.components || []).filter((c) => !String(c.name).startsWith("__architect_")),
+    ...persistedComponents,
   ];
   renderProjectBrowser({ ...lastProjectBrowser, components: merged });
 }
@@ -5195,7 +5337,7 @@ document.getElementById("btn-split-bodies")?.addEventListener("click", () => {
 });
 
 document.getElementById("btn-delete-object")?.addEventListener("click", () => {
-  deleteSelectedObject();
+  void deleteActiveAssemblyObject();
 });
 
 function isDimensionQuestion(text) {
@@ -5763,8 +5905,87 @@ async function syncAfterObjectDelete(result) {
   await refreshObjectHistory();
 }
 
+function isLocalAssemblyObject(name, obj = null) {
+  const value = String(name || obj?.userData?.catalogFilename || "");
+  if (value.endsWith(".local") || value.startsWith("__architect_")) return true;
+  let local = Boolean(obj?.userData?.localOnly);
+  obj?.traverse?.((child) => {
+    if (child?.userData?.localOnly) local = true;
+  });
+  return local;
+}
+
+function localSelectionCatalogNames(selection = objectTools.getSelection?.()) {
+  const names = new Set();
+  const selections = selection?.selections?.length ? selection.selections : selection ? [selection] : [];
+  for (const item of selections) {
+    const catalogName = item.catalogName || catalogNameForMesh(item.mesh) || item.root?.userData?.catalogFilename;
+    const obj = catalogName ? projectAssembly.get(catalogName) : item.root;
+    if (!catalogName || !isLocalAssemblyObject(catalogName, obj)) continue;
+    names.add(catalogName);
+  }
+  if (!names.size && selectedFile && projectAssembly.has(selectedFile)) {
+    const obj = projectAssembly.get(selectedFile);
+    if (isLocalAssemblyObject(selectedFile, obj)) names.add(selectedFile);
+  }
+  return [...names];
+}
+
+function deleteLocalAssemblyObjects(names = []) {
+  const targets = [...new Set(names)].filter((name) => projectAssembly.has(name));
+  if (!targets.length) return false;
+  for (const name of targets) projectAssembly.remove(name);
+  objectTools.clearSelection();
+  transformControls.detach();
+  gizmoPanel.hide();
+  document.getElementById("btn-gizmo")?.classList.remove("active");
+  currentMesh = projectAssembly.count() ? projectAssembly.getRoot() : null;
+  selectedFile = projectAssembly.list()[0]?.[0] || null;
+  if (selectedFile) {
+    projectTree.setSelected?.(selectedFile);
+    featureEditor.setModel(projectId, selectedFile);
+  }
+  refreshArchitectBrowserEntries();
+  rebuildGrid();
+  setEditStatus("ok", `Deleted ${targets.length} local module${targets.length === 1 ? "" : "s"}.`);
+  return true;
+}
+
+async function deleteActiveAssemblyObject() {
+  if (objectTools.getSelection?.()) {
+    await deleteSelectedObject();
+    return true;
+  }
+  const catalogName = selectedFile && projectAssembly.has(selectedFile) ? selectedFile : null;
+  if (!catalogName) return false;
+  const obj = projectAssembly.get(catalogName);
+  if (isLocalAssemblyObject(catalogName, obj)) {
+    deleteLocalAssemblyObjects([catalogName]);
+    return true;
+  }
+  if (!projectId) {
+    setEditStatus("error", "Select an object first (V).");
+    return true;
+  }
+  setEditStatus("loading", `Deleting ${catalogName.replace(/\.[^.]+$/, "")}...`);
+  try {
+    const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(catalogName)}`, { method: "DELETE" });
+    await syncAfterObjectDelete({ deletedFile: catalogName, deleted_files: [catalogName], ...data });
+    setEditStatus("ok", `Deleted ${catalogName}.`);
+  } catch (err) {
+    setEditStatus("error", err.message || "Delete failed.");
+  }
+  return true;
+}
+
 async function deleteSelectedObject() {
   const sel = objectTools.getSelection();
+  const localTargets = localSelectionCatalogNames(sel);
+  if (localTargets.length) {
+    deleteLocalAssemblyObjects(localTargets);
+    return;
+  }
+
   if (!sel?.mesh || !projectId) {
     setEditStatus("error", "Select an object first (V).");
     return;
@@ -13577,6 +13798,25 @@ function focusViewportForShortcuts() {
   renderer.domElement.focus({ preventScroll: true });
 }
 
+function isObjectDeleteShortcut(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  const key = String(e.key || "").toLowerCase();
+  if (key === "x") return !e.shiftKey;
+  return key === "delete" || key === "backspace" || key === "del" || key === "x";
+}
+
+function hasDeletableObjectSelection() {
+  return Boolean(objectTools.getSelection?.() || (selectedFile && projectAssembly.has(selectedFile)));
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!isObjectDeleteShortcut(e) || isEditableShortcutTarget(e.target)) return;
+  if (!hasDeletableObjectSelection()) return;
+  e.preventDefault();
+  e.stopPropagation();
+  void deleteActiveAssemblyObject();
+}, true);
+
 window.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
   const key = String(e.key || "").toLowerCase();
@@ -13681,10 +13921,10 @@ window.addEventListener("keydown", (e) => {
   if (key === "g" || key === "t") openTransformMode("translate");
   if (key === "r") openTransformMode("rotate");
   if (key === "s") openTransformMode("scale");
-  if (key === "x" || key === "backspace" || key === "delete") {
-    if (objectTools.getSelection()) {
+  if (isObjectDeleteShortcut(e)) {
+    if (hasDeletableObjectSelection()) {
       e.preventDefault();
-      deleteSelectedObject();
+      void deleteActiveAssemblyObject();
       return;
     }
   }

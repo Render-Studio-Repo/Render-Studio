@@ -167,6 +167,13 @@ def _prompt_mentions_dxf_import(prompt: str) -> bool:
     return False
 
 
+def _missing_dxf_file_message() -> str:
+    return (
+        "No DXF file is attached to this project. Upload or attach the DXF first, then retry. "
+        "The prompt asks to generate from a DXF, but the request had no references and the project folder has no .dxf file."
+    )
+
+
 def _source_mentions_dxf_import(source: str) -> bool:
     markers = (
         "dxf_filename",
@@ -726,6 +733,14 @@ def _maybe_rewrite_incomplete_dxf_source(
     """Replace truncated or naive DXF scripts with a layer-aware mold builder."""
     undefined = _gen_step_local_undefined_names(source)
     helper_missing = any(name.startswith("_") for name in undefined)
+    dxf_helper_missing = any(
+        "dxf" in name.lower()
+        or (
+            name.lower().startswith(("make_", "build_", "create_"))
+            and any(token in name.lower() for token in ("extrude", "part", "profile", "drawing"))
+        )
+        for name in undefined
+    )
     config_missing = any(name in _DXF_CONFIG_NAMES or name.endswith("_layer") for name in undefined)
     uses_custom_dxf_parser = any(
         token in source
@@ -740,7 +755,7 @@ def _maybe_rewrite_incomplete_dxf_source(
     naive_import = "import_dxf" in source and "_extrude_polyline" not in source
     use_mold = _should_use_dxf_mold_template(source, context, prompt)
 
-    if not (helper_missing or config_missing or uses_custom_dxf_parser or (naive_import and use_mold)):
+    if not (helper_missing or dxf_helper_missing or config_missing or uses_custom_dxf_parser or (naive_import and use_mold)):
         return source, None
 
     thickness = 25.0
@@ -1455,6 +1470,11 @@ def _run_text_to_cad_v2(
     repair_note: str | None = None
     last_error: str | None = None
     current_source: str | None = previous_source
+
+    if _prompt_mentions_dxf_import(prompt) and not _collect_dxf_filenames(context, project_path, prompt):
+        message = _missing_dxf_file_message()
+        trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
+        raise DesignBuildError(message, ai_traces=ai_traces)
 
     label_prefix = "Architect" if architect_mode else "Fusion" if fusion_mode else "2.0"
     workflow_note = ""

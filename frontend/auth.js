@@ -245,6 +245,12 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     });
   });
 
+  document.querySelectorAll("[data-autodesk-login]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      window.location.href = "/oauth/autodesk/start";
+    });
+  });
+
   // Cloud connection buttons in user menu
   document.getElementById("btn-onshape-connect")?.addEventListener("click", () => {
     closeUserMenu();
