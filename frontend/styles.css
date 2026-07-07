@@ -5198,6 +5198,7 @@ label.btn { display: inline-flex; align-items: center; }
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
   padding: 14px;
 }
 

@@ -874,7 +874,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   btnRefresh?.addEventListener("click", () => loadHubs());
   window.addEventListener("render3d:autodesk-linked", () => {
     loadHubs();
-    section?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   });
   window.addEventListener("render3d:open-fusion-library", () => {
     loadHubs();

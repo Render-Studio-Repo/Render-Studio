@@ -67,7 +67,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loade
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260707-download-retry";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260706-fusion-disconnect";
+import { initFusionPanel } from "./fusion-panel.js?v=20260707-sidebar-scroll-top";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
@@ -13464,6 +13464,9 @@ window.addEventListener("keydown", (e) => {
       await resumeGenerationFromProjects();
       showAiComposePanel();
   activityLog.refreshServerDebounced();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.querySelector(".sidebar.left .left-scroll")?.scrollTo?.({ top: 0, left: 0 });
+  }));
     } catch (err) {
       console.error("startApp failed:", err);
       setEditStatus("error", err.message || "Failed to load workspace");

@@ -37,6 +37,18 @@ function notifyLayoutChange() {
   setTimeout(() => window.dispatchEvent(new Event("resize")), 240);
 }
 
+function resetLeftSidebarScroll() {
+  const scroller = document.querySelector(".sidebar.left .left-scroll");
+  if (scroller) scroller.scrollTop = 0;
+}
+
+if (typeof history !== "undefined" && "scrollRestoration" in history) {
+  history.scrollRestoration = "manual";
+}
+
+window.addEventListener("DOMContentLoaded", resetLeftSidebarScroll);
+window.addEventListener("pageshow", resetLeftSidebarScroll);
+
 function readFlag(key) {
   try {
     return localStorage.getItem(key) === "1";
@@ -274,4 +286,4 @@ if (_initialLogBtn && !readFlag(LS.log)) {
   _initialLogBtn.innerHTML = '<span style="font-size:1em">▼</span> Activity log';
 }
 
-export { setSidebarHidden, setRightPanelHidden };
+export { setSidebarHidden, setRightPanelHidden, resetLeftSidebarScroll };
