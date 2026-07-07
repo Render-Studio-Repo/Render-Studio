@@ -1817,7 +1817,11 @@ def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[
         if name and name not in seen:
             seen.add(name)
             candidates.append(name)
-    if re.search(r"\bdxf\b", prompt or "", re.I):
+    if re.search(r"\b(dxf|vxf|dwg|drawing|blueprint)\b", prompt or "", re.I) or re.search(
+        r"\bfrom\s+this\s+\w+\s+file\b",
+        prompt or "",
+        re.I,
+    ):
         for path in sorted(project_path.glob("*.dxf")):
             if path.name.endswith(".ezdxf.dxf") or path.name in seen:
                 continue

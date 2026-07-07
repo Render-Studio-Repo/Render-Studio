@@ -102,6 +102,43 @@ def _validate_generated_source(source: str) -> None:
         raise ValueError(f"Generated source contains blocked operation(s): {', '.join(sorted(set(blocked)))}")
 
 
+def _project_dxf_filenames(project_path: Path) -> list[str]:
+    return sorted(
+        path.name
+        for path in project_path.glob("*.dxf")
+        if path.is_file() and not path.name.endswith(".ezdxf.dxf")
+    )
+
+
+def _prompt_mentions_dxf_import(prompt: str) -> bool:
+    text = prompt or ""
+    if re.search(r"\b(dxf|vxf|dwg|drawing|blueprint)\b", text, re.I):
+        return True
+    if re.search(r"\b2d\s+(profile|outline|drawing|file)\b", text, re.I):
+        return True
+    if re.search(r"\bfrom\s+this\s+\w+\s+file\b", text, re.I):
+        return True
+    if re.search(r"\b(from|off|using)\s+(this|the)\b", text, re.I) and re.search(
+        r"\b(model|mold|part|file|drawing|profile|outline|vxf|dxf)\b",
+        text,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def _source_mentions_dxf_import(source: str) -> bool:
+    markers = (
+        "dxf_filename",
+        "import_dxf",
+        "_collect_dxf_geometry",
+        "_make_outline_body",
+        "_largest_closed_face",
+        "import_svg",
+    )
+    return any(marker in source for marker in markers)
+
+
 def _collect_dxf_filenames(context: dict[str, Any] | None, project_path: Path, prompt: str) -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
@@ -119,11 +156,9 @@ def _collect_dxf_filenames(context: dict[str, Any] | None, project_path: Path, p
     for info in (context or {}).get("dxf_files") or []:
         add(info.get("filename"))
         add(info.get("readable_filename"))
-    if re.search(r"\bdxf\b", prompt or "", re.I):
-        for path in sorted(project_path.glob("*.dxf")):
-            if path.name.endswith(".ezdxf.dxf"):
-                continue
-            add(path.name)
+    if _prompt_mentions_dxf_import(prompt):
+        for name in _project_dxf_filenames(project_path):
+            add(name)
     return names
 
 
@@ -152,6 +187,10 @@ def _defined_module_names(source: str) -> set[str]:
 
 _DXF_CONFIG_NAMES = frozenset({
     "model_label",
+    "part_label",
+    "solid_label",
+    "model_thickness",
+    "w_extrude_depth",
     "cut_overshoot",
     "alignment_pin_height",
     "alignment_socket_depth",
@@ -245,7 +284,16 @@ def _maybe_rewrite_incomplete_dxf_source(
 
     helper_missing = any(name.startswith("_") for name in undefined)
     config_missing = any(name in _DXF_CONFIG_NAMES or name.endswith("_layer") for name in undefined)
-    uses_custom_dxf_parser = "_collect_dxf_geometry" in source or "_make_outline_body" in source
+    uses_custom_dxf_parser = any(
+        token in source
+        for token in (
+            "_collect_dxf_geometry",
+            "_make_outline_body",
+            "_largest_closed_face",
+            "_apply_cut_polygons",
+            "_apply_add_polygons",
+        )
+    )
 
     if helper_missing or config_missing or uses_custom_dxf_parser:
         thickness = 25.0
@@ -309,6 +357,8 @@ def _augment_text_to_cad_source(
 ) -> str:
     """Inject missing module-level DXF constants/helpers the model often omits."""
     dxf_names = _collect_dxf_filenames(context, project_path, prompt)
+    if not dxf_names and _source_mentions_dxf_import(source):
+        dxf_names = _project_dxf_filenames(project_path)
     if not dxf_names:
         return source
 
@@ -317,16 +367,18 @@ def _augment_text_to_cad_source(
     defined = _defined_module_names(source)
     injections: list[str] = []
 
-    if "dxf_filename" in source and "dxf_filename" not in defined:
-        injections.append(f'dxf_filename = "{primary}"')
-    elif "import_dxf" in source and "dxf_filename" not in defined:
+    uses_dxf_file = any(token in source for token in ("dxf_filename", "import_dxf", "import_svg", "dxf_path"))
+    if uses_dxf_file and "dxf_filename" not in defined:
         injections.append(f'dxf_filename = "{primary}"')
 
     defaults = {
         "mold_thickness": "25.0",
         "plate_thickness": "25.0",
         "extrusion_thickness": "25.0",
-        "solid_label": '"mold_box"',
+        "model_thickness": "25.0",
+        "w_extrude_depth": "25.0",
+        "solid_label": '"dxf_model"',
+        "part_label": '"dxf_model"',
         "origin_center_on_dxf_bbox": "True",
     }
     for name, value in defaults.items():
