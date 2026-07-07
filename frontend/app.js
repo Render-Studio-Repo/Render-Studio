@@ -54,7 +54,7 @@ import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260707-gen-user-badge";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260707-dxf-drawings-section";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-fusion-disconnect";
@@ -136,7 +136,7 @@ function getWiringPrefetch() {
 function invalidateWiringPrefetch() {
   wiringLoadCache.data = null;
 }
-let lastProjectBrowser = { components: [], sketches: [], wiring: [] };
+let lastProjectBrowser = { components: [], drawings: [], sketches: [], wiring: [] };
 let lastProjectFiles = [];
 let robotArtifactData = null;
 let allProjects = [];
@@ -1336,13 +1336,24 @@ function normalizeBrowser(data) {
   const browser = data?.browser || {};
   let components = (browser.components || []).filter((entry) => !isInternalCadSidecar(entry?.name) && !isInternalCadSidecar(entry?.viewer_filename));
   if (!components.length && data?.files?.length) {
-    components = filesToBrowserComponents(data.files);
+    components = filesToBrowserComponents((data.files || []).filter((file) => !isDxfDrawingFilename(file?.name)));
   }
+  const browserDrawings = (browser.drawings || []).filter((entry) => !isInternalCadSidecar(entry?.name));
+  const seenDrawings = new Set(browserDrawings.map((entry) => entry.name).filter(Boolean));
+  const fileDrawings = (data?.files || [])
+    .filter((file) => isDxfDrawingFilename(file?.name) && !isInternalCadSidecar(file?.name) && !seenDrawings.has(file.name))
+    .map((file) => ({
+      id: file.id || file.stem || fileStem(file.name),
+      name: file.name,
+      stem: file.stem || fileStem(file.name),
+      format: "dxf",
+      size: file.size,
+    }));
   return {
     components,
     sketches: browser.sketches || [],
     wiring: browser.wiring || [],
-    drawings: (browser.drawings || []).filter((entry) => !isInternalCadSidecar(entry?.name)),
+    drawings: [...browserDrawings, ...fileDrawings],
   };
 }
 
@@ -5974,6 +5985,8 @@ async function answerDimensionPrompt(prompt) {
 async function reloadViewportFromProject({ fitView = false, latestFile = null, placedFiles = [], loadAll = false } = {}) {
   if (!projectId) return;
   const data = await api(`/api/projects/${projectId}`);
+  const modelLatestFile = isDxfDrawingFilename(latestFile) ? null : latestFile;
+  const serverLatestFile = isDxfDrawingFilename(data.latest_file) ? null : data.latest_file;
   timelineData = data.timeline;
   const cur = timelineData?.current_index ?? -1;
   const max = Math.max(0, (timelineData?.entries?.length || 1) - 1);
@@ -6015,21 +6028,21 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
       ...comps,
     ];
   };
-  ensureLoadFile(latestFile, { primary: true });
+  ensureLoadFile(modelLatestFile, { primary: true });
   for (const filename of placedFiles || []) ensureLoadFile(filename);
   if (
-    latestFile &&
-    !comps.some((c) => c.name === latestFile || c.viewer_filename === latestFile) &&
-    projectFiles.some((f) => f.name === latestFile)
+    modelLatestFile &&
+    !comps.some((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile) &&
+    projectFiles.some((f) => f.name === modelLatestFile)
   ) {
     comps = [
       {
-        id: fileStem(latestFile),
-        name: latestFile,
-        stem: fileStem(latestFile),
-        format: latestFile.slice(latestFile.lastIndexOf(".") + 1).toLowerCase(),
-        viewer_filename: latestFile,
-        size: projectFiles.find((f) => f.name === latestFile)?.size,
+        id: fileStem(modelLatestFile),
+        name: modelLatestFile,
+        stem: fileStem(modelLatestFile),
+        format: modelLatestFile.slice(modelLatestFile.lastIndexOf(".") + 1).toLowerCase(),
+        viewer_filename: modelLatestFile,
+        size: projectFiles.find((f) => f.name === modelLatestFile)?.size,
         primary: true,
         auto_load: true,
         baked_placement: true,
@@ -6041,7 +6054,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
   if (comps.length) {
     await loadProjectComponents(comps, {
       projectId,
-      latestFile: latestFile || data.latest_file,
+      latestFile: modelLatestFile || serverLatestFile,
       fitView,
       loadAll,
     });
@@ -9389,6 +9402,11 @@ async function openHierarchyItem(project, entry, sectionId) {
     await openBrowserComponent(entry);
     return;
   }
+  if (sectionId === "drawings") {
+    await openDxfDrawing(entry);
+    showAiComposePanel();
+    return;
+  }
   if (sectionId === "sketches") {
     if (entry.format === "sketch") {
       await openSketchInViewport(entry);
@@ -11433,6 +11451,7 @@ async function loadProject(id) {
   renderProjectList();
     renderFileList(data.files || []);
     const browser = normalizeBrowser(data);
+    const modelLatestFile = isDxfDrawingFilename(data.latest_file) ? null : data.latest_file;
     upsertProjectInList({
       id,
       ...data,
@@ -11453,13 +11472,13 @@ async function loadProject(id) {
     const comps = browser.components || [];
     if (!wiringMode) prepareViewportForModels();
     if (comps.length && !wiringMode) {
-      const alreadyLoaded = prevProjectId === id && componentsAlreadyLoaded(comps, data.latest_file);
+      const alreadyLoaded = prevProjectId === id && componentsAlreadyLoaded(comps, modelLatestFile);
       if (alreadyLoaded) {
         for (const comp of comps) {
           setAssemblyComponentVisible(comp, !isBrowserComponentHidden(comp));
         }
         const visibleComps = comps.filter((c) => !isBrowserComponentHidden(c));
-        selectedFile = (visibleComps.find((c) => c.name === data.latest_file || c.viewer_filename === data.latest_file) || visibleComps[0])?.name || null;
+        selectedFile = (visibleComps.find((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile) || visibleComps[0])?.name || null;
         projectTree.setSelected(selectedFile);
         if (selectedFile) selectAssemblyComponent(selectedFile, { fitView: true });
         else {
@@ -11472,7 +11491,7 @@ async function loadProject(id) {
       } else {
         await loadProjectComponents(comps, {
           projectId: id,
-          latestFile: data.latest_file,
+          latestFile: modelLatestFile,
           loadGen,
           fitView: true,
         });

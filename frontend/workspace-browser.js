@@ -31,6 +31,7 @@ function hierarchyItemCount(project) {
   const browser = project.browser || {};
   return (
     (browser.components?.length || 0) +
+    (browser.drawings?.length || 0) +
     (browser.sketches?.length || 0) +
     (browser.wiring?.length || 0)
   );
@@ -101,7 +102,7 @@ function projectSearchHaystack(project, folderName = "") {
     project?.usage_summary?.model,
   ];
   const browser = project?.browser || {};
-  for (const list of [browser.components, browser.sketches, browser.wiring]) {
+  for (const list of [browser.components, browser.drawings, browser.sketches, browser.wiring]) {
     for (const entry of list || []) {
       parts.push(entry?.name, entry?.stem, hierarchyDisplayName(entry));
     }
@@ -588,7 +589,7 @@ export function createWorkspaceBrowser({
   function folderHasExpandedProjects(folderId) {
     return projectsInFolder(folderId).some((p) => {
       if (isProjectExpanded(p.id)) return true;
-      return ["components", "sketches", "wiring"].some((sectionId) => sectionExpanded(p.id, sectionId));
+      return ["components", "drawings", "sketches", "wiring"].some((sectionId) => sectionExpanded(p.id, sectionId));
     });
   }
 
@@ -603,7 +604,7 @@ export function createWorkspaceBrowser({
         expandedProjects.delete(p.id);
         changed = true;
       }
-      for (const sectionId of ["components", "sketches", "wiring"]) {
+      for (const sectionId of ["components", "drawings", "sketches", "wiring"]) {
         const key = `${p.id}:${sectionId}`;
         if (!expandedSections.has(key) || expandedSections.get(key) !== false) {
           expandedSections.set(key, false);
@@ -698,7 +699,15 @@ export function createWorkspaceBrowser({
     const pid = project?.id || "";
     const key = hierarchyEntryKey(project, sectionId, entry);
     const kind =
-      sectionId === "components" ? "component" : sectionId === "sketches" ? "sketch" : sectionId === "wiring" ? "wiring" : sectionId;
+      sectionId === "components"
+        ? "component"
+        : sectionId === "drawings"
+          ? "dxf"
+          : sectionId === "sketches"
+            ? "sketch"
+            : sectionId === "wiring"
+              ? "wiring"
+              : sectionId;
     return `${kind}:${pid}:${key}`;
   }
 
@@ -767,7 +776,7 @@ export function createWorkspaceBrowser({
     const filename = entry.filename || entry.name;
     const stem = entry.stem || entry.id || String(filename || entry.name || sectionId).replace(/\.[^.]+$/, "");
     return {
-      type: sectionId === "sketches" ? "sketch" : "wiring",
+      type: sectionId === "drawings" ? "dxf" : sectionId === "sketches" ? "sketch" : "wiring",
       projectId: project?.id || null,
       projectName: project?.name || project?.id || "Project",
       name: entry.name,
@@ -860,7 +869,15 @@ export function createWorkspaceBrowser({
     closeContextMenu();
     const idToken = explorerIdToken(project, sectionId, entry);
     const kindLabel =
-      sectionId === "components" ? "component" : sectionId === "sketches" ? "sketch" : sectionId === "wiring" ? "wiring" : "item";
+      sectionId === "components"
+        ? "component"
+        : sectionId === "drawings"
+          ? "DXF drawing"
+          : sectionId === "sketches"
+            ? "sketch"
+            : sectionId === "wiring"
+              ? "wiring"
+              : "item";
     const menu = document.createElement("div");
     menu.className = "folder-context-menu component-context-menu";
     menu.innerHTML = `
@@ -1024,12 +1041,13 @@ export function createWorkspaceBrowser({
   }
 
   function buildProjectHierarchy(project) {
-    const browser = project.browser || { components: [], sketches: [], wiring: [] };
+    const browser = project.browser || { components: [], drawings: [], sketches: [], wiring: [] };
     const wrap = document.createElement("div");
     wrap.className = "proj-hierarchy";
 
     const sections = [
       { id: "components", label: "Components", items: browser.components || [] },
+      { id: "drawings", label: "DXF Drawings", items: browser.drawings || [] },
       { id: "sketches", label: "Sketches", items: browser.sketches || [] },
       { id: "wiring", label: "Wiring", items: browser.wiring || [] },
     ];
@@ -1065,9 +1083,11 @@ export function createWorkspaceBrowser({
           empty.textContent =
             section.id === "components"
               ? "No components"
-              : section.id === "sketches"
-                ? "No sketches"
-                : "No wiring";
+              : section.id === "drawings"
+                ? "No DXF drawings"
+                : section.id === "sketches"
+                  ? "No sketches"
+                  : "No wiring";
           list.appendChild(empty);
         } else {
           const sectionKey = hierarchyListKey(project.id, section.id);
@@ -1077,6 +1097,7 @@ export function createWorkspaceBrowser({
             const item = document.createElement("li");
             item.className = "proj-hierarchy-item";
             const isComponent = section.id === "components";
+            const isDrawing = section.id === "drawings";
             const isEditableSketch = section.id === "sketches";
             const itemHidden = isComponent && (entry.__hidden ?? !!isHierarchyItemHidden?.(project, entry, section.id));
             const selectionKey = hierarchySelectionKey(project, section.id, entry);
@@ -1101,6 +1122,8 @@ export function createWorkspaceBrowser({
             btn.innerHTML = `<span class="proj-hierarchy-item-name">${escapeHtml(hierarchyDisplayName(entry))}</span>${editHint}`;
             btn.title = isEditableSketch
               ? `${entry.name} — double-click to open in feature editor`
+              : isDrawing
+              ? `${entry.name} — click to open this DXF drawing preview.`
               : isComponent
               ? `${entry.name} — drag into the AI prompt to reference it, or into the Wiring Simulator. Shift-click to select multiple. Click ⓘ for ID, tags, and part profile.`
               : entry.name;
@@ -1131,8 +1154,8 @@ export function createWorkspaceBrowser({
                 onEditHierarchyItem?.(project, entry, section.id);
               });
             }
-            btn.draggable = true;
-            item.draggable = true;
+            btn.draggable = !isDrawing;
+            item.draggable = !isDrawing;
 
             if (isComponent) {
               const visBtn = document.createElement("button");
@@ -1188,6 +1211,10 @@ export function createWorkspaceBrowser({
                 onOpenProfile?.(project, entry);
               });
               item.appendChild(prof);
+            } else if (isDrawing) {
+              const payload = hierarchyPayload(project, section.id, entry);
+              item.classList.add("proj-hierarchy-item--drawing");
+              item.addEventListener("contextmenu", (e) => showHierarchyItemContextMenu(e, project, entry, section.id, payload));
             } else {
               const payload = hierarchyPayload(project, section.id, entry);
               item.addEventListener("contextmenu", (e) => showHierarchyItemContextMenu(e, project, entry, section.id, payload));

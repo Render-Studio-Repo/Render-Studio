@@ -1950,7 +1950,7 @@ def _run_text_to_cad_v2(
                         f"Full error:\n{detail}"
                     )
                 else:
-                    repair_note = f"scripts/step failed:\n{detail}"
+            repair_note = f"scripts/step failed:\n{detail}"
             trace_add("error", f"[2.0/text-to-cad] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
             continue
 
