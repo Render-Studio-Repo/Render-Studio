@@ -1366,6 +1366,27 @@ def _looks_like_modular_robot_house(prompt: str, images: list[dict[str, Any]] | 
     )
 
 
+def _looks_like_architect_prompt(prompt: str) -> bool:
+    p = (prompt or "").lower()
+    return any(
+        token in p
+        for token in (
+            "architect",
+            "room",
+            "house",
+            "building",
+            "wall",
+            "window",
+            "door",
+            "ceiling",
+            "roof",
+            "floor plan",
+            "floorplan",
+            "pillar",
+        )
+    )
+
+
 def _canonical_pc_cooling_fan_source(*, label: str) -> str:
     safe_label = json.dumps(label or "pc_cooling_fan")
     return f'''from build123d import *
@@ -1931,24 +1952,30 @@ def _run_text_to_cad_v2(
                 "- Still satisfy the Render3D build123d source contract for now; the local plugin bridge will consume generated code/scripts in a separate connection path.\n"
             )
     elif architect_mode:
-        workflow_note = (
-            "\n\nARCHITECT MODE WORKFLOW:\n"
-            "Design room-first modular house CAD made from separate pieces, not generic blocks or a sealed decorative box.\n"
-            "- Use XY as the floor plan grid and Z as vertical. Default grid is 1000 mm; default wall height is 2800 mm unless the prompt says otherwise.\n"
-            "- The default unit is one complete room module at a time. A room must include meaningful major modules: floor slab, north/south/east/west wall panels, at least one door/opening, at least one window when reasonable, corner pillars/connectors, and ceiling/roof panels.\n"
-            "- Follow upstream text-to-cad structure: return one STEP-ready labeled Compound/assembly. Do not create or rely on one browser component per decorative shape. Major movable modules may be separate labeled solids; small trims, grooves, rails, sockets, connector lips, labels, and panel seams should remain child/detail geometry inside those modules.\n"
-            "- Room output contract: include named/selectable major modules for room_floor, wall_north, wall_south, wall_east, wall_west, roof/ceiling panels, corner pillars, and separate window/door inserts only when those inserts are meant to move independently.\n"
-            "- House output contract: if the user asks for a house, produce a kit of separate editable bodies, not a monolith. Each wall must be independently movable/resizable with its own length, label, snap endpoints, connector metadata, and printable mating features.\n"
-            "- Starter house recipe: one or two floor slabs, separate exterior wall panels, optional interior divider wall, corner pillars/posts, one framed front door, at least two framed blue-glass windows, separate roof panels/caps, and an open/cutaway side or removable roof so it reads as a house layout.\n"
-            "- Make the preview read as a house room: leave one wall open, lowered, or cut away unless the user asks for a sealed module; add wall thickness, baseboards, sill/lintel parts, trim frames, panel seams, and recognizable window/door inserts.\n"
-            "- Generate reusable modules: room bays, wall panels, window inserts, door panels, roof/ceiling modules, floor slabs, corner connectors, stairs, and service cores.\n"
-            "- For wall-level edits from Architect ribbon tools, preserve the selected wall as its own piece and only modify that wall plus separate child parts such as window_insert, door_insert, sill, lintel, trim, rails, connectors, or generative details.\n"
-            "- Include print-friendly snap interfaces: chunky tabs, sockets, rails, alignment keys, peg/hole connectors, dovetail-like guides, corner posts, chamfered lead-ins, and 0.2-0.4 mm prototype clearance notes when relevant. Make them visible, named, grid-aligned, and not fragile.\n"
-            "- Add robot assembly intent in source comments and labels: pick points, oversized lift tabs, grip flats, lift holes, assembly order, connector side, mating target, and orientation labels like TOP/INSIDE/NORTH.\n"
-            "- Apply house-like visual materials/colors: warm wood/tan floor, light wall/plaster panels, darker roof, blue glass inserts, and contrasting trim/connectors.\n"
-            "- Keep STEP-valid solids with semantic labels. Prefer a compact assembly hierarchy: about 6-18 top-level parts for a room/house kit, not dozens of separate trim/connector components.\n"
-            "- Do not make a plain house-shaped shell, blank cuboid, sci-fi bunker, random skyscraper block, or greeble panel. Include readable residential floors, walls, doors, windows, roof pieces, pillars, and snap connectors.\n"
-        )
+        if _looks_like_architect_prompt(prompt):
+            workflow_note = (
+                "\n\nARCHITECT MODE WORKFLOW:\n"
+                "Design room-first modular house CAD made from separate pieces, not generic blocks or a sealed decorative box.\n"
+                "- Use XY as the floor plan grid and Z as vertical. Default grid is 1000 mm; default wall height is 2800 mm unless the prompt says otherwise.\n"
+                "- The default unit is one complete room module at a time. A room must include meaningful major modules: floor slab, north/south/east/west wall panels, at least one door/opening, at least one window when reasonable, corner pillars/connectors, and ceiling/roof panels.\n"
+                "- Follow upstream text-to-cad structure: return one STEP-ready labeled Compound/assembly. Do not create or rely on one browser component per decorative shape. Major movable modules may be separate labeled solids; small trims, grooves, rails, sockets, connector lips, labels, and panel seams should remain child/detail geometry inside those modules.\n"
+                "- Room output contract: include named/selectable major modules for room_floor, wall_north, wall_south, wall_east, wall_west, roof/ceiling panels, corner pillars, and separate window/door inserts only when those inserts are meant to move independently.\n"
+                "- House output contract: if the user asks for a house, produce a kit of separate editable bodies, not a monolith. Each wall must be independently movable/resizable with its own length, label, snap endpoints, connector metadata, and printable mating features.\n"
+                "- Starter house recipe: one or two floor slabs, separate exterior wall panels, optional interior divider wall, corner pillars/posts, one framed front door, at least two framed blue-glass windows, separate roof panels/caps, and an open/cutaway side or removable roof so it reads as a house layout.\n"
+                "- Make the preview read as a house room: leave one wall open, lowered, or cut away unless the user asks for a sealed module; add wall thickness, baseboards, sill/lintel parts, trim frames, panel seams, and recognizable window/door inserts.\n"
+                "- Generate reusable modules: room bays, wall panels, window inserts, door panels, roof/ceiling modules, floor slabs, corner connectors, stairs, and service cores.\n"
+                "- For wall-level edits from Architect ribbon tools, preserve the selected wall as its own piece and only modify that wall plus separate child parts such as window_insert, door_insert, sill, lintel, trim, rails, connectors, or generative details.\n"
+                "- Include print-friendly snap interfaces: chunky tabs, sockets, rails, alignment keys, peg/hole connectors, dovetail-like guides, corner posts, chamfered lead-ins, and 0.2-0.4 mm prototype clearance notes when relevant. Make them visible, named, grid-aligned, and not fragile.\n"
+                "- Add robot assembly intent in source comments and labels: pick points, oversized lift tabs, grip flats, lift holes, assembly order, connector side, mating target, and orientation labels like TOP/INSIDE/NORTH.\n"
+                "- Apply house-like visual materials/colors: warm wood/tan floor, light wall/plaster panels, darker roof, blue glass inserts, and contrasting trim/connectors.\n"
+                "- Keep STEP-valid solids with semantic labels. Prefer a compact assembly hierarchy: about 6-18 top-level parts for a room/house kit, not dozens of separate trim/connector components.\n"
+                "- Do not make a plain house-shaped shell, blank cuboid, sci-fi bunker, random skyscraper block, or greeble panel. Include readable residential floors, walls, doors, windows, roof pieces, pillars, and snap connectors.\n"
+            )
+        else:
+            workflow_note = (
+                "\n\nARCHITECT MODE NOTE:\n"
+                "This prompt is not a room/house/building request. Follow the user request directly and do not force house-specific modules.\n"
+            )
     if progress_callback:
         progress_callback({"stage": "brief", "pct": 10, "label": f"Writing {label_prefix} CAD brief with text-to-cad skill..."})
     edit_note = ""
