@@ -1388,11 +1388,9 @@ def _looks_like_architect_prompt(prompt: str) -> bool:
 
 
 def _looks_like_arduino_nema_mount_box(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
-    if images:
-        return False
     p = (prompt or "").lower()
     return (
-        ("arduino" in p and ("nema 17" in p or "nema17" in p))
+        ("arduino" in p and ("nema 17" in p or "nema17" in p or "nema" in p))
         and any(token in p for token in ("box", "enclosure", "mounting box", "open-top", "open top"))
     )
 
