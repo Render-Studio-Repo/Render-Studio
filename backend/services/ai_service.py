@@ -1318,6 +1318,10 @@ class AIService:
 
         model = self.model
         use_responses = model in RESPONSES_ONLY_MODELS or model.startswith("gpt-5.5-pro") or model.startswith("gpt-5.5")
+        # Hard wall-clock timeout: httpx read-timeout resets on every received byte,
+        # so gpt-5.5-pro (which streams keepalives) can hang indefinitely despite
+        # timeout=300 on the client.  Enforce a true total elapsed limit here.
+        hard_timeout = 480.0 if (model in PRO_MODELS or model.startswith("gpt-5.5")) else 300.0
         t0 = time.perf_counter()
         trace: dict[str, Any] = {
             "model": model,
@@ -1330,6 +1334,11 @@ class AIService:
         }
         extra = self._reasoning_param() or {}
 
+        import concurrent.futures as _cf
+
+        def _do_responses_create(kwargs: dict[str, Any]) -> Any:
+            return self.client.responses.create(**kwargs)
+
         try:
             trace_add("info", f"OpenAI Responses → {model}", trace_id=trace_id, data=trace)
             create_kwargs: dict[str, Any] = {
@@ -1340,7 +1349,18 @@ class AIService:
             }
             if json_response:
                 create_kwargs["text"] = {"format": {"type": "json_object"}}
-            response = self.client.responses.create(**create_kwargs)
+            # Run in a thread with a hard wall-clock deadline
+            with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-resp") as _pool:
+                _fut = _pool.submit(_do_responses_create, create_kwargs)
+                try:
+                    response = _fut.result(timeout=hard_timeout)
+                except _cf.TimeoutError:
+                    _fut.cancel()
+                    raise TimeoutError(
+                        f"OpenAI {model} did not respond within {hard_timeout:.0f}s. "
+                        "This can happen with large code-generation prompts on pro models. "
+                        "Try again or switch to a faster model (gpt-5.5 fast mode)."
+                    )
             text = response.output_text or ""
             finish_reason = getattr(response, "status", None) or ""
             incomplete = getattr(response, "incomplete_details", None)

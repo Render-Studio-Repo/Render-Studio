@@ -4814,6 +4814,11 @@ body.canvas-design-tab .main-column {
     bottom: 72px;
   }
 
+  .viewport-generation-user {
+    left: 12px;
+    top: 86px;
+  }
+
   .viewport-error-banner {
     width: calc(100vw - 28px);
     bottom: 78px;
@@ -5422,9 +5427,9 @@ label.btn { display: inline-flex; align-items: center; }
 
 .viewport-generation-user {
   position: absolute;
-  right: 14px;
+  left: 14px;
   top: 14px;
-  left: auto;
+  right: auto;
   z-index: 24;
   display: inline-flex;
   align-items: center;
