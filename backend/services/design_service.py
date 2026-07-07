@@ -494,6 +494,27 @@ def _is_dxf_polyline_kernel_failure(detail: str) -> bool:
     )
 
 
+def _is_noncritical_3mf_export_failure(detail: str) -> bool:
+    text = str(detail or "")
+    lowered = text.lower()
+    return (
+        "threemf.py" in lowered
+        and "cannot write empty 3mf mesh object" in lowered
+    )
+
+
+def _step_args_without_3mf(step_args: list[str]) -> list[str]:
+    trimmed: list[str] = []
+    i = 0
+    while i < len(step_args):
+        if step_args[i] == "--3mf":
+            i += 2
+            continue
+        trimmed.append(step_args[i])
+        i += 1
+    return trimmed
+
+
 def _promote_disconnected_bodies(
     project_path: Path,
     glb_name: str,
@@ -2059,6 +2080,25 @@ def _run_text_to_cad_v2(
         if not step_out.get("ok"):
             detail = _error_tail(step_out, "scripts/step failed")
             last_error = detail
+            if _is_noncritical_3mf_export_failure(detail):
+                trace_add(
+                    "warning",
+                    "[2.0/text-to-cad] 3MF sidecar export failed on empty mesh object; retrying step without 3MF artifact.",
+                    trace_id=trace_id,
+                )
+                retry_no3mf = skill_runner.run_skill_tool(
+                    "cad",
+                    "step",
+                    _step_args_without_3mf(step_args),
+                    cwd=project_path,
+                    timeout_sec=240.0,
+                )
+                if retry_no3mf.get("ok"):
+                    step_out = retry_no3mf
+                    detail = ""
+                else:
+                    detail = _error_tail(retry_no3mf, "scripts/step failed after removing 3MF")
+                    last_error = detail
             if _is_dxf_polyline_kernel_failure(detail):
                 dxf_names = _collect_dxf_filenames(context, project_path, prompt)
                 if dxf_names:
