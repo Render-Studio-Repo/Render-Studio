@@ -305,7 +305,63 @@ def _config_like_name(name: str) -> bool:
     )
 
 
+def _prompt_outer_box_dimensions(prompt: str) -> tuple[float, float, float] | None:
+    text = prompt or ""
+    patterns = [
+        r"\bouter\s+box\s+size\D{0,40}(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\b",
+        r"\boutside\s+size\D{0,40}(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\b",
+        r"\boverall\s+size\D{0,40}(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)?\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        try:
+            return (float(match.group(1)), float(match.group(2)), float(match.group(3)))
+        except ValueError:
+            continue
+    return None
+
+
+def _prompt_named_mm_value(prompt: str, labels: tuple[str, ...]) -> float | None:
+    text = prompt or ""
+    alternation = "|".join(re.escape(label) for label in labels)
+    patterns = [
+        rf"\b(?:{alternation})\b\D{{0,24}}(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\b",
+        rf"\b(\d+(?:\.\d+)?)\s*(?:mm|millimeter|millimeters)\s+\b(?:{alternation})\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        try:
+            return float(match.group(1))
+        except ValueError:
+            continue
+    return None
+
+
 def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
+    outer_dims = _prompt_outer_box_dimensions(prompt)
+    if outer_dims:
+        if name == "outer_length":
+            return str(outer_dims[0])
+        if name == "outer_width":
+            return str(outer_dims[1])
+        if name == "outer_height":
+            return str(outer_dims[2])
+
+    if name == "wall_thickness":
+        wall = _prompt_named_mm_value(prompt, ("wall thickness", "wall_thickness"))
+        if wall is not None:
+            return str(wall)
+        return "3.0"
+    if name == "base_thickness":
+        base_mm = _prompt_named_mm_value(prompt, ("base thickness", "floor thickness", "bottom thickness"))
+        if base_mm is not None:
+            return str(base_mm)
+        return "3.0"
+
     safe_label = re.sub(r"[^a-zA-Z0-9_]+", "_", base).strip("_") or "model"
     if name in {"model_label", "part_label", "solid_label"} or name.endswith("_label"):
         return f'"{safe_label}"'
@@ -362,12 +418,15 @@ def _missing_config_constants(source: str) -> list[str]:
 
 def _augment_common_constants(source: str, *, base: str, prompt: str) -> str:
     """Inject missing module-level constants referenced by gen_step()."""
-    undefined = _missing_config_constants(source)
+    undefined = set(_missing_config_constants(source))
+    for name in _gen_step_local_undefined_names(source):
+        if _default_constant_value(name, base=base, prompt=prompt) is not None:
+            undefined.add(name)
     if not undefined:
         return source
     defined = _defined_module_names(source)
     injections: list[str] = []
-    for name in undefined:
+    for name in sorted(undefined):
         if name in defined or name.startswith("_"):
             continue
         rendered = _default_constant_value(name, base=base, prompt=prompt)
@@ -432,10 +491,18 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
             and name not in skip
             and _config_like_name(name)
         )
+        undefined_symbols = sorted(
+            name
+            for name in referenced
+            if name not in defined
+            and name not in skip
+            and name not in _BUILD123D_LOWERCASE_EXPORTS
+            and (name[0].islower() or "_" in name)
+        )
         # Deduplicate while preserving sort
         seen: set[str] = set()
         result: list[str] = []
-        for name in sorted(set(undefined_helpers + undefined_config)):
+        for name in sorted(set(undefined_helpers + undefined_config + undefined_symbols)):
             if name not in seen:
                 seen.add(name)
                 result.append(name)
@@ -468,21 +535,25 @@ def _source_generation_repair_note(error: str) -> str:
         for name in re.split(r",|\s+and\s+", missing_match.group(1))
         if name.strip() and name.strip() != "..."
     ]
-    helper_names = [name for name in missing if re.match(r"^[a-z][a-z0-9_]*$", name) and name not in _BUILTIN_NAMES]
-    if not helper_names:
+    symbol_names = [name for name in missing if re.match(r"^[a-z][a-z0-9_]*$", name) and name not in _BUILTIN_NAMES]
+    if not symbol_names:
         return f"Source generation failed: {error}"
 
-    examples = "\n".join(f"- define `{name}(...)` at module scope before `gen_step()`" for name in helper_names)
+    examples = "\n".join(
+        f"- define `{name}` at module scope before `gen_step()` (constant/import/helper)"
+        for name in symbol_names
+    )
     return (
-        "The previous Python source was incomplete because gen_step() called helper functions "
+        "The previous Python source was incomplete because gen_step() referenced symbols "
         "that were never defined in the same file.\n"
-        f"Missing names: {', '.join(helper_names)}\n"
+        f"Missing names: {', '.join(symbol_names)}\n"
         "Fix this by editing the existing source into ONE complete Python file. Either define the missing helpers above "
-        "gen_step() or inline their full geometry logic inside gen_step(). Do not restart from an unrelated model.\n"
+        "gen_step() or inline their full geometry logic inside gen_step(). Also define all missing module constants/imports. "
+        "Do not restart from an unrelated model.\n"
         f"{examples}\n"
         "If this is a DXF/VXF workflow, prefer zero custom helper calls in gen_step(): inline the modeling blocks "
         "directly so names like make_*/add_*/build_* cannot be left undefined.\n"
-        "Every helper called by gen_step() must have a real function body before gen_step(); no stubs, no pass, no ellipsis.\n"
+        "Every symbol used by gen_step() must exist before gen_step(); no stubs, no pass, no ellipsis.\n"
         f"Original error: {error}"
     )
 
@@ -2048,17 +2119,15 @@ def _run_text_to_cad_v2(
                         f"{detail}"
                     )
                 else:
-                    # Check for NameError — undefined helper function that gen_step() calls
+                    # Check for NameError — undefined symbol referenced by gen_step()
                     name_err_match = re.search(r"NameError: name '(\w+)' is not defined", detail)
                     if name_err_match:
-                        missing_fn = name_err_match.group(1)
+                        missing_name = name_err_match.group(1)
                         repair_note = (
-                            f"NameError: '{missing_fn}' is called in gen_step() but was never defined in this file. "
-                            "This is the #1 source of failure: you wrote a function call without writing the function body. "
-                            f"Fix: define '{missing_fn}' at module scope BEFORE gen_step(), "
-                            "OR inline its logic directly inside gen_step(). "
-                            "Rule: every function called in gen_step() MUST be fully defined in this same file — "
-                            "do not reference any name that you have not explicitly def'd.\n"
+                            f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
+                            "Fix: define it at module scope BEFORE gen_step() as a constant/import/helper as appropriate, "
+                            "or inline the logic inside gen_step(). "
+                            "Rule: every symbol referenced by gen_step() must be defined in this same file.\n"
                             f"Full error:\n{detail}"
                         )
                     else:
