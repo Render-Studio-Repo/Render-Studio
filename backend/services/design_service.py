@@ -1169,7 +1169,7 @@ def run_design(
     last_error: str | None = None
     ai_traces: list[dict[str, Any]] = []
     if max_repairs is None:
-        min_repairs = 5 if is_fusion else 3
+        min_repairs = 5 if is_fusion else (1 if (speed or "fast").lower() == "fast" else 3)
         max_repairs = max(_max_repairs_for_speed(speed), min_repairs) if is_v2 else _max_repairs_for_speed(speed)
 
     if is_v2:

@@ -1145,12 +1145,13 @@ def _get_ai_for_user(
                 ),
             )
     try:
-        model = (effective.get("model") or "").strip()
-        if not model and effective["provider"] == "openai":
+        provider = effective.get("provider") or "openai"
+        if provider == "openai":
+            # Speed toggle picks the OpenAI model; saved key model is only a fallback.
             model = settings.openai_model_quality if speed == "quality" else settings.openai_model
-        elif not model:
-            model = settings.anthropic_model
-        return AIService(model=model, api_key=effective["api_key"], provider=effective["provider"])
+        else:
+            model = (effective.get("model") or "").strip() or settings.anthropic_model
+        return AIService(model=model, api_key=effective["api_key"], provider=provider)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
