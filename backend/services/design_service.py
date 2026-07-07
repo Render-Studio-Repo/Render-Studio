@@ -211,6 +211,48 @@ _DXF_CONFIG_NAMES = frozenset({
 })
 
 
+def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
+    safe_label = re.sub(r"[^a-zA-Z0-9_]+", "_", base).strip("_") or "model"
+    if name in {"model_label", "part_label", "solid_label"}:
+        return f'"{safe_label}"'
+    if name in {"model_thickness", "mold_thickness", "w_extrude_depth"}:
+        dims = _requested_mm_dimensions(prompt)
+        if len(dims) >= 3:
+            return str(dims[2])
+        if dims:
+            return str(dims[-1])
+        return "25.0"
+    if name == "cut_overshoot":
+        return "5.0"
+    if name == "alignment_pin_height":
+        return "6.0"
+    if name == "alignment_socket_depth":
+        return "6.2"
+    if name == "click_lug_height":
+        return "4.0"
+    if name.endswith("_layer"):
+        return f'"{name[:-6].upper()}"'
+    return None
+
+
+def _augment_common_constants(source: str, *, base: str, prompt: str) -> str:
+    """Inject missing module-level constants referenced by gen_step()."""
+    undefined = _gen_step_local_undefined_names(source)
+    if not undefined:
+        return source
+    defined = _defined_module_names(source)
+    injections: list[str] = []
+    for name in undefined:
+        if name in defined or name.startswith("_"):
+            continue
+        rendered = _default_constant_value(name, base=base, prompt=prompt)
+        if rendered is not None:
+            injections.append(f"{name} = {rendered}")
+    if not injections:
+        return source
+    return _insert_after_imports(source, "\n\n".join(injections))
+
+
 def _gen_step_local_undefined_names(source: str) -> list[str]:
     """Names referenced in gen_step() that are not defined/imported at module scope."""
     tree = ast.parse(source)
@@ -568,6 +610,7 @@ def _finalize_text_to_cad_source_before_step(
         project_path=project_path,
         prompt=prompt,
     )
+    finalized = _augment_common_constants(finalized, base=source_path.stem, prompt=prompt)
     remaining = _gen_step_local_undefined_names(finalized)
     if remaining:
         raise ValueError(
@@ -947,6 +990,7 @@ def _run_text_to_cad_v2(
                 project_path=project_path,
                 prompt=prompt,
             )
+            source = _augment_common_constants(source, base=base, prompt=prompt)
             remaining = _gen_step_local_undefined_names(source)
             if remaining:
                 raise ValueError(
