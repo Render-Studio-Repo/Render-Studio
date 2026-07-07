@@ -8568,9 +8568,10 @@ def prompt_cad(
         updates: dict[str, Any] = {"skills": resolved_skills}
         normalized_mode = (body.mode or "standard").lower()
         if normalized_mode == "v2":
+            # Keep user-provided refs (especially DXF attachments/context) in 2.0 mode.
+            # Only force pipeline knobs that are specific to v2 routing.
             updates.update({
                 "base_filename": None,
-                "references": [],
                 "fusion_target": "in_app",
                 "skills": ["cad"],
             })
