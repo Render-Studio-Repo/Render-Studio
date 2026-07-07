@@ -1277,13 +1277,40 @@ function normalizeBrowser(data) {
     components,
     sketches: browser.sketches || [],
     wiring: browser.wiring || [],
-    drawings: browser.drawings || [],
+    drawings: (browser.drawings || []).filter((entry) => !isInternalCadSidecar(entry?.name)),
   };
 }
 
 function isInternalCadSidecar(name = "") {
   const lower = String(name || "").toLowerCase();
-  return lower.startsWith("_active_") || lower.startsWith("_export_") || (lower.startsWith(".") && lower.endsWith(".step.glb"));
+  return (
+    lower.startsWith("_active_")
+    || lower.startsWith("_export_")
+    || lower.endsWith(".ezdxf.dxf")
+    || (lower.startsWith(".") && lower.endsWith(".step.glb"))
+  );
+}
+
+function isDxfDrawingFilename(name = "") {
+  return /\.dxf$/i.test(String(name || ""));
+}
+
+async function openDxfDrawingByName(filename, opts = {}) {
+  if (!filename) return false;
+  const pid = opts.projectId ?? projectId;
+  if (!pid) {
+    setEditStatus("error", "Select a project before opening a DXF drawing.");
+    return false;
+  }
+  selectedFile = filename;
+  projectTree.setSelected(filename);
+  await dxfViewer.openTab(filename, {
+    projectId: pid,
+    label: opts.label || filename.replace(/\.dxf$/i, ""),
+  });
+  viewerOverlay.clearError();
+  setEditStatus("ok", `Opened ${filename.replace(/\.dxf$/i, "")} in Drawings.`);
+  return true;
 }
 
 let mobileBrowserComponents = [];
@@ -7524,6 +7551,12 @@ async function fetchModelBlob(path, { retries = 2 } = {}) {
 
 async function loadModel(url, filename, opts = {}) {
   const expectedProjectId = opts.projectId ?? projectId;
+  if (isDxfDrawingFilename(filename)) {
+    return openDxfDrawingByName(filename, {
+      projectId: expectedProjectId,
+      label: opts.label,
+    });
+  }
   const append = opts.append === true;
   const catalogName = opts.catalogFilename || filename;
   const preservePlacement = opts.preservePlacement === true;
@@ -8763,6 +8796,12 @@ async function setHierarchyComponentVisible(project, entry, visible) {
 
 async function openBrowserComponent(entry) {
   if (!projectId || !entry) return;
+  if (entry.format === "dxf" || isDxfDrawingFilename(entry.name)) {
+    await openDxfDrawing(entry);
+    await refreshPromptHistory();
+    showAiComposePanel();
+    return;
+  }
   saveActiveModelPromptState();
   prepareViewportForModels();
   try {
@@ -8870,8 +8909,7 @@ const dxfViewer = createDxfViewer({
 
 async function openDxfDrawing(entry) {
   if (!entry?.name) return;
-  projectTree.setSelected(entry.name);
-  await dxfViewer.openTab(entry.name, {
+  await openDxfDrawingByName(entry.name, {
     projectId,
     label: entry.stem || entry.name.replace(/\.dxf$/i, ""),
   });
@@ -11143,6 +11181,11 @@ function renderFileList(files = []) {
       list.querySelectorAll(".file-item").forEach((el) => el.classList.remove("active"));
       li.classList.add("active");
       try {
+        if (isDxfDrawingFilename(f.name)) {
+          await openDxfDrawingByName(f.name, { projectId });
+          if (currentUser) await refreshPromptHistory();
+          return;
+        }
         const viewer = f.viewer_filename || f.name;
         await loadModel(projectFileUrl(projectId, viewer), viewer, {
           projectId,

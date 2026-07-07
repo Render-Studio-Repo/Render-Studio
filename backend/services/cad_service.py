@@ -66,11 +66,15 @@ def project_dir(base: Path, project_id: str) -> Path:
     return path
 
 
+def _is_internal_dxf_sidecar(name: str) -> bool:
+    return name.lower().endswith(".ezdxf.dxf")
+
+
 def list_project_files(project_path: Path) -> list[dict[str, Any]]:
     files = []
     for f in sorted(project_path.iterdir()):
         if f.is_file() and f.suffix.lower() in SUPPORTED_IMPORT | SUPPORTED_EXPORT:
-            if f.name.startswith("_active_") or f.name.startswith("_export_"):
+            if f.name.startswith("_active_") or f.name.startswith("_export_") or _is_internal_dxf_sidecar(f.name):
                 continue
             files.append(
                 {
@@ -740,7 +744,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
 
     drawings: list[dict[str, Any]] = []
     for f in sorted(project_path.glob("*.dxf")):
-        if not f.is_file() or f.name.startswith("_active_") or f.name.startswith("_export_"):
+        if not f.is_file() or f.name.startswith("_active_") or f.name.startswith("_export_") or _is_internal_dxf_sidecar(f.name):
             continue
         drawings.append(
             {
