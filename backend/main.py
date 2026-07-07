@@ -85,12 +85,11 @@ app = FastAPI(title="Render3D", description="CAD project visualizer with AI prom
 
 
 def _recover_stuck_generations() -> None:
-    """Re-queue prompt jobs that were in-flight when the server last stopped.
+    """Mark in-flight jobs as failed after a server stop — do not auto re-run them.
 
-    Called once at startup. Only recovers jobs whose full request_body was
-    persisted — those without it are left for _normalize_stale to expire.
+    Re-queuing prompt jobs burns API credits on duplicate AI calls. Users can
+    retry manually once the server is back up.
     """
-    import uuid as _uuid
     import fcntl
 
     lock_path = PROJECTS / ".generation-recovery.lock"
@@ -99,7 +98,7 @@ def _recover_stuck_generations() -> None:
     try:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        logger.info("Another worker is recovering stuck generations; skipping")
+        logger.info("Another worker is clearing stuck generations; skipping")
         lock_file.close()
         return
 
@@ -107,86 +106,24 @@ def _recover_stuck_generations() -> None:
         stuck = generation_service.find_stuck_jobs(PROJECTS)
         if not stuck:
             return
-        logger.info("Found %d stuck generation(s) to recover on startup", len(stuck))
+        logger.info("Found %d stuck generation(s) to mark failed on startup", len(stuck))
         for job in stuck:
-            project_id_ = job["project_id"]
             project_path_ = job["project_path"]
-            original_data = job["data"]
-            if (original_data.get("kind") or "prompt") != "prompt":
-                generation_service.fail(
-                    project_path_,
-                    "Generation interrupted by server restart. Please retry.",
-                    trace_id=job.get("trace_id"),
-                )
-                continue
-            request_body = original_data.get("request_body") or {}
             original_trace = job.get("trace_id") or ""
-            new_trace = str(_uuid.uuid4())[:8]
-            restart_count = original_data.get("restart_count", 0) + 1
-            original_mode = str(original_data.get("mode") or request_body.get("mode") or "").lower()
-            user_ = {
-                "id": original_data.get("by_user_id") or "",
-                "display_name": original_data.get("by_user_name") or "System",
-            }
-            try:
-                body_ = PromptRequest.model_validate(request_body)
-            except Exception as exc:
-                logger.warning("Cannot recover stuck job %s/%s: bad request_body: %s", project_id_, original_trace, exc)
-                generation_service.fail(project_path_, f"Recovery failed: {exc}", trace_id=original_trace)
-                continue
-            try:
-                _get_ai_for_user(
-                    user_,
-                    body_.speed,
-                    key_id=body_.ai_key_id,
-                    key_source=body_.ai_key_source,
-                    project_id=project_id_,
-                )
-            except HTTPException as exc:
-                logger.warning("Cannot recover stuck job %s: no AI key available: %s", project_id_, exc.detail)
-                generation_service.fail(
-                    project_path_,
-                    "Recovered after restart — original AI key unavailable. Please re-run.",
-                    trace_id=original_trace,
-                )
-                continue
+            original_data = job["data"] or {}
+            original_mode = str(original_data.get("mode") or (original_data.get("request_body") or {}).get("mode") or "").lower()
+            message = (
+                "Generation was interrupted by server restart. Please retry the prompt."
+                if original_mode in {"v2", "fusion", "architect"}
+                else "Generation interrupted by server restart. Please retry."
+            )
+            generation_service.fail(project_path_, message, trace_id=original_trace)
             logger.info(
-                "Recovering stuck %s job project=%s old_trace=%s new_trace=%s (restart #%d)",
+                "Marked interrupted %s job failed project=%s trace=%s",
                 original_mode or "prompt",
-                project_id_,
+                job["project_id"],
                 original_trace,
-                new_trace,
-                restart_count,
             )
-            try:
-                generation_service.start(
-                    project_path_,
-                    kind="prompt",
-                    trace_id=new_trace,
-                    user=user_,
-                    prompt=body_.prompt,
-                    mode=getattr(body_, "mode", "standard") or "standard",
-                    request_body=request_body,
-                    restart_count=restart_count,
-                    replace_running=True,
-                )
-            except Exception as exc:
-                logger.warning("Could not restart stuck job %s: %s", project_id_, exc)
-                generation_service.fail(
-                    project_path_,
-                    "Generation was interrupted by server restart. Please retry the prompt.",
-                    trace_id=original_trace,
-                )
-                continue
-            import threading
-            t = threading.Thread(
-                target=_background_prompt_kernel,
-                args=(project_id_, body_.model_dump(mode="json"), new_trace, dict(user_)),
-                daemon=True,
-                name=f"recover-{project_id_}-{new_trace}",
-            )
-            t.start()
-            logger.info("Recovery thread started for project=%s trace=%s", project_id_, new_trace)
     finally:
         try:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)

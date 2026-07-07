@@ -1083,10 +1083,8 @@ def _looks_like_cooking_appliance(prompt: str, images: list[dict[str, Any]] | No
 
 
 def _max_repairs_for_speed(speed: str | None) -> int:
-    s = (speed or "fast").lower()
-    if s == "quality":
-        return 2
-    return 1
+    """Return extra repair attempts beyond the first try (0 = one attempt only)."""
+    return 0
 
 
 def _maybe_run_cad_inspect(result: dict[str, Any], project_path: Path, skills: list[str] | None, trace_id: str | None) -> None:
@@ -1156,10 +1154,7 @@ def run_design(
     ``mode="v2"`` enables the 2.0 quality pipeline; ``mode="fusion"``
     uses the same text-to-cad/build123d path with stricter phased review:
     - Auto-enables the ``cad`` skill for geometry inspection.
-    - Forces at least 3 repair attempts.
-    - Gates on ``design_plan.brief`` presence — retries without it.
-    - After a successful build, runs CAD inspect as a blocking gate; geometry
-      failures re-enter the repair loop with specific feedback.
+    - Single attempt only (no automatic repair retries).
     """
     normalized_mode = (mode or "standard").lower()
     is_fusion = normalized_mode == "fusion"
@@ -1169,8 +1164,7 @@ def run_design(
     last_error: str | None = None
     ai_traces: list[dict[str, Any]] = []
     if max_repairs is None:
-        min_repairs = 5 if is_fusion else (1 if (speed or "fast").lower() == "fast" else 3)
-        max_repairs = max(_max_repairs_for_speed(speed), min_repairs) if is_v2 else _max_repairs_for_speed(speed)
+        max_repairs = _max_repairs_for_speed(speed)
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.
