@@ -1240,6 +1240,9 @@ def apply_prompt_appearance_to_file(path: Path, prompt: str, *, seed: str | None
     if not path.is_file() or path.suffix.lower() not in {".glb", ".gltf", ".stl", ".obj", ".ply", ".off"}:
         return False
     try:
+        # Prefer Jake-style per-part colours on hierarchical assembly GLBs.
+        if path.suffix.lower() in {".glb", ".gltf"} and colorize_assembly_glb_parts(path):
+            return True
         mesh = load_mesh(path)
         styled = apply_prompt_appearance(mesh, prompt, seed=seed or path.stem)
         colors = _snapshot_face_colors(styled)
@@ -1250,6 +1253,95 @@ def apply_prompt_appearance_to_file(path: Path, prompt: str, *, seed: str | None
         return True
     except Exception as exc:
         logger.warning("Could not apply generated appearance to %s: %s", path.name, exc)
+        return False
+
+
+# Jake CAD Viewer / hero assembly palette (distinct per occurrence).
+JAKE_ASSEMBLY_PART_PALETTE: list[tuple[float, float, float, float]] = [
+    (0.47, 0.68, 0.91, 1.0),  # blue
+    (0.56, 0.82, 0.50, 1.0),  # green
+    (0.94, 0.76, 0.35, 1.0),  # yellow
+    (0.91, 0.54, 0.45, 1.0),  # coral
+    (0.72, 0.61, 0.91, 1.0),  # purple
+    (0.42, 0.78, 0.78, 1.0),  # teal
+    (0.84, 0.63, 0.42, 1.0),  # tan
+    (0.78, 0.82, 0.85, 1.0),  # light steel
+    (0.22, 0.25, 0.29, 1.0),  # dark
+    (0.12, 0.66, 0.92, 1.0),  # bright blue
+]
+
+
+def _rgba_is_neutral_grey(rgba: Sequence[float] | None, *, tol: float = 0.045) -> bool:
+    if not rgba or len(rgba) < 3:
+        return True
+    r, g, b = float(rgba[0]), float(rgba[1]), float(rgba[2])
+    # cadpy DEFAULT_MATERIAL ≈ (0.47, 0.55, 0.62) or flat 184/255 greys
+    chroma = max(r, g, b) - min(r, g, b)
+    avg = (r + g + b) / 3.0
+    if chroma < tol and 0.35 <= avg <= 0.85:
+        return True
+    # Explicit cadpy default-ish steel blue-grey
+    if abs(r - 0.468) < 0.08 and abs(g - 0.552) < 0.08 and abs(b - 0.617) < 0.08:
+        return True
+    return False
+
+
+def colorize_assembly_glb_parts(path: Path) -> bool:
+    """Assign distinct Jake-like part colours to hierarchical GLB nodes when monochrome.
+
+    Jake's hero planetary GLB stores a different ``baseColorFactor`` per occurrence.
+    Generated assemblies often export every node as cadpy DEFAULT_MATERIAL grey;
+    this restores multi-part colouring without flattening the scene.
+    """
+    if not path.is_file() or path.suffix.lower() not in {".glb", ".gltf"}:
+        return False
+    try:
+        import pygltflib
+    except Exception:
+        return False
+    try:
+        gltf = pygltflib.GLTF2().load(str(path))
+    except Exception as exc:
+        logger.warning("Could not open GLB for part colouring (%s): %s", path.name, exc)
+        return False
+    materials = list(gltf.materials or [])
+    if not materials:
+        return False
+
+    def mat_rgba(mat) -> tuple[float, float, float, float] | None:
+        pbr = getattr(mat, "pbrMetallicRoughness", None)
+        if not pbr:
+            return None
+        factor = getattr(pbr, "baseColorFactor", None)
+        if not factor or len(factor) < 3:
+            return None
+        return (float(factor[0]), float(factor[1]), float(factor[2]), float(factor[3] if len(factor) > 3 else 1.0))
+
+    colors = [mat_rgba(m) for m in materials]
+    meaningful = [c for c in colors if c is not None and not _rgba_is_neutral_grey(c)]
+    if len(meaningful) >= 2:
+        return False  # already Jake/Onshape-coloured
+
+    # Remap each material to a palette colour (stable by material index/name).
+    changed = False
+    for idx, mat in enumerate(materials):
+        pbr = getattr(mat, "pbrMetallicRoughness", None)
+        if pbr is None:
+            try:
+                pbr = pygltflib.PbrMetallicRoughness()
+                mat.pbrMetallicRoughness = pbr
+            except Exception:
+                continue
+        rgba = JAKE_ASSEMBLY_PART_PALETTE[idx % len(JAKE_ASSEMBLY_PART_PALETTE)]
+        pbr.baseColorFactor = list(rgba)
+        changed = True
+    if not changed:
+        return False
+    try:
+        gltf.save(str(path))
+        return True
+    except Exception as exc:
+        logger.warning("Could not save colourized GLB (%s): %s", path.name, exc)
         return False
 
 

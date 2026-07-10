@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260629-cad-outline-contrast";
+import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260710-jake-part-colors";
 
 const PREVIEW_PALETTE = [0x78aee8, 0x8fd17f, 0xf0c15a, 0xe88974, 0xb79be8, 0x6bc7c6];
 

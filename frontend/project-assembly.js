@@ -1,7 +1,7 @@
 /** Multi-component project assembly — Fusion-style browser + viewport. */
 
 import * as THREE from "three";
-import { disposeStyledModel } from "./scene-style.js?v=20260629-high-fragment-fast-path";
+import { disposeStyledModel } from "./scene-style.js?v=20260710-jake-part-colors";
 
 export function createProjectAssembly(scene) {
   const root = new THREE.Group();

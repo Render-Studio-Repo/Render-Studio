@@ -145,6 +145,12 @@ function _useGeneratedPalette(meshInfos) {
     }
   }
 
+  // Jake CAD Viewer / hero assemblies use distinct per-part colours. Uniform
+  // cadpy DEFAULT_MATERIAL grey (or any monochrome multi-body GLB) should get
+  // the generated part palette — not stay one flat grey.
+  const monochromeAssembly = meshInfos.length > 1 && maxDist < 0.18;
+  if (monochromeAssembly) return true;
+
   if (materialCount > 0 && missingCount === 0) return false;
 
   // Generated models often arrive as many dark vertex-coloured bodies. Imports
@@ -347,7 +353,13 @@ function _extractExistingColor(mesh) {
     const fusionG = ((FUSION.body >>  8) & 0xff) / 255;
     const fusionB = ( FUSION.body        & 0xff) / 255;
     const dist = Math.abs(c.r - fusionR) + Math.abs(c.g - fusionG) + Math.abs(c.b - fusionB);
-    if (dist > 0.06) return c.clone(); // real, non-default colour
+    if (dist <= 0.06) continue;
+    // Skip cadpy DEFAULT_MATERIAL / neutral greys (~0.72) — Jake hero parts are
+    // distinctly coloured; flat grey is not a meaningful appearance.
+    const chroma = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+    const avg = (c.r + c.g + c.b) / 3;
+    if (chroma < 0.04 && avg > 0.55 && avg < 0.85) continue;
+    return c.clone(); // real, non-default colour
   }
   return null;
 }

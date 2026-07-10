@@ -46,7 +46,7 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260629-high-fragment-fast-path";
+} from "./scene-style.js?v=20260710-jake-part-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260707-doc-references";
