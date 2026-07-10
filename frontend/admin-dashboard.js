@@ -1,6 +1,4 @@
-import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260706-admin-fusion-fix";
-
-const ADMIN_EMAIL = "a1projects@protonmail.com";
+import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260709-admin-matt";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -215,11 +213,11 @@ function renderDashboard(root, data) {
 async function loadDashboard(root) {
   const user = getStoredUser();
   if (!getToken()) {
-    root.innerHTML = '<section class="admin-hero-card"><h2>Sign in required</h2><p class="muted">Sign in as the a1projects user to view the management dashboard.</p><a class="btn primary" href="/">Go to Studio</a></section>';
+    root.innerHTML = '<section class="admin-hero-card"><h2>Sign in required</h2><p class="muted">Sign in with an admin account to view the management dashboard.</p><a class="btn primary" href="/">Go to Studio</a></section>';
     return;
   }
-  if (user?.email && String(user.email).toLowerCase() !== ADMIN_EMAIL) {
-    root.innerHTML = '<section class="admin-hero-card"><h2>Admin only</h2><p class="muted">This dashboard is only visible to the a1projects user.</p><a class="btn secondary" href="/">Back to Studio</a></section>';
+  if (!isAdminUser(user)) {
+    root.innerHTML = '<section class="admin-hero-card"><h2>Admin only</h2><p class="muted">This dashboard is only visible to admin users.</p><a class="btn secondary" href="/">Back to Studio</a></section>';
     return;
   }
   root.innerHTML = '<section class="admin-hero-card"><h2>Loading dashboard…</h2><p class="muted">Aggregating users, projects, and prompt histories.</p></section>';

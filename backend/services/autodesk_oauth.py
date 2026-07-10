@@ -191,14 +191,77 @@ def _auth_headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
-def _raise_aps(resp: httpx.Response) -> None:
+def _aps_error_detail(resp: httpx.Response) -> Any:
+    try:
+        return resp.json()
+    except Exception:
+        return resp.text
+
+
+def _aps_forbidden_hint(*, context: str = "") -> str:
+    ctx = f" while {context}" if context else ""
+    return (
+        f"Autodesk denied access{ctx}. Common fixes: "
+        "1) In APS My Apps, enable Data Management API (and Manufacturing Data Model API for Fusion imports). "
+        "2) Disconnect and reconnect Autodesk in Render3D so scopes refresh. "
+        "3) Re-link the Fusion mirror folder to a hub/project you still have access to. "
+        "4) For ACC/BIM 360 hubs, add this app's Client ID under Account Admin → Custom Integrations."
+    )
+
+
+def _raise_aps(resp: httpx.Response, *, context: str = "") -> None:
     if resp.is_success:
         return
+    detail = _aps_error_detail(resp)
+    message = f"Autodesk APS {resp.status_code}: {detail}"
+    if resp.status_code == 403:
+        message = f"{message} {_aps_forbidden_hint(context=context)}"
+    raise RuntimeError(message)
+
+
+def fusion_mirror_access_issue(token: str, mirror: dict[str, Any]) -> str | None:
+    """Return a user-facing error when a saved Fusion mirror no longer matches APS access."""
+    hub_id = str(mirror.get("hub_id") or "").strip()
+    aps_project_id = str(mirror.get("aps_project_id") or "").strip()
+    folder_id = str(mirror.get("folder_id") or "").strip()
+    if not hub_id or not aps_project_id or not folder_id:
+        return "Fusion mirror is incomplete. Re-link a hub, project, and folder in Fusion Library."
+
     try:
-        detail = resp.json()
-    except Exception:
-        detail = resp.text
-    raise RuntimeError(f"Autodesk APS {resp.status_code}: {detail}")
+        hubs = list_hubs(token)
+    except RuntimeError as exc:
+        return str(exc)
+
+    hub_ids = {str(h.get("id") or "") for h in hubs}
+    if hub_id not in hub_ids:
+        label = str(mirror.get("hub_label") or hub_id)
+        return (
+            f'Your linked Fusion hub "{label}" is no longer accessible with this Autodesk account. '
+            "Open Fusion Library → Unlink mirror, then link the folder again on a hub you can still open."
+        )
+
+    try:
+        projects = list_projects(token, hub_id)
+    except RuntimeError as exc:
+        return str(exc)
+
+    project_ids = {str(p.get("id") or "") for p in projects}
+    if aps_project_id not in project_ids:
+        label = str(mirror.get("aps_project_label") or aps_project_id)
+        return (
+            f'Your linked Fusion project "{label}" is no longer available in hub '
+            f'"{mirror.get("hub_label") or hub_id}". Re-link the mirror folder in Fusion Library.'
+        )
+
+    try:
+        list_folder_contents(token, aps_project_id, folder_id)
+    except RuntimeError as exc:
+        label = str(mirror.get("folder_label") or folder_id)
+        return (
+            f'Cannot read Fusion folder "{label}" ({exc}). '
+            "You may have lost folder access — re-link the mirror in Fusion Library."
+        )
+    return None
 
 
 def list_hubs(access_token: str) -> list[dict[str, Any]]:
@@ -249,7 +312,7 @@ def list_folder_contents(access_token: str, project_id: str, folder_id: str) -> 
         headers=_auth_headers(access_token),
         timeout=20,
     )
-    _raise_aps(resp)
+    _raise_aps(resp, context="reading Fusion folder contents")
     payload = resp.json()
     included_by_id = {item.get("id"): item for item in payload.get("included", []) or [] if item.get("id")}
     folders: list[dict[str, Any]] = []

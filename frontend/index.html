@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260707-reference-remove-buttons" />
+  <link rel="stylesheet" href="/styles.css?v=20260709-left-panel-trim" />
   <script type="importmap">
   {
     "imports": {
@@ -157,6 +157,14 @@
         <div id="workspace-mode-menu" class="workspace-mode-menu hidden" role="menu"></div>
       </div>
       <nav id="workspace-tabs" class="workspace-tabs" aria-label="Design tabs"></nav>
+      <div class="workspace-activity-switcher">
+        <button type="button" id="btn-workspace-activity-toggle" class="workspace-activity-tab" aria-expanded="false" aria-controls="workspace-activity-dropdown">
+          Activity <span class="workspace-activity-caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="workspace-activity-dropdown" class="workspace-activity-dropdown hidden" role="region" aria-label="Workspace activity">
+          <div id="workspace-activity-list" class="workspace-activity-list"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Ribbon toolbar: mounted by ribbon.js (skeleton visible until app loads) -->
@@ -228,22 +236,6 @@
             <p class="workspace-browser-hint muted small">Drag into folders · ▾ to expand</p>
           </div>
           <div id="project-browser" class="project-browser"></div>
-          <h3 class="workspace-activity-title">Workspace activity</h3>
-          <div id="workspace-activity-list" class="workspace-activity-list"></div>
-        </section>
-        <section>
-          <h2>Current project</h2>
-          <div class="project-current-row">
-            <p id="project-id" class="mono muted">—</p>
-            <button id="btn-export-model" type="button" class="btn secondary btn-compact" disabled title="Download GLB, STL, STEP, or 3MF">Export</button>
-            <button id="btn-rename-project" type="button" class="btn secondary btn-compact" disabled>Rename</button>
-          </div>
-        </section>
-        <section class="design-browser-section">
-          <h2>Browser</h2>
-          <p class="muted small">Components, sketches, and wiring for this project</p>
-          <div id="design-browser" class="design-browser-root"></div>
-          <ul id="file-list" class="file-list hidden" aria-hidden="true"></ul>
         </section>
         <section id="onshape-library-section" class="onshape-library-section">
           <div class="onshape-library-header">
@@ -268,9 +260,19 @@
               <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.06-3.36L10 7h5V2l-1.35.35z"/></svg>
             </button>
           </div>
+          <div class="fusion-library-tabs" role="tablist" aria-label="Fusion Library">
+            <button type="button" class="fusion-library-tab active" data-fusion-tab="browse">Browse</button>
+            <button type="button" class="fusion-library-tab" data-fusion-tab="mirrors">Linked mirrors</button>
+          </div>
           <p class="fusion-status muted small">Connect Autodesk to browse Fusion hubs and push STEP files.</p>
-          <div class="fusion-library-controls"></div>
-          <div class="fusion-doc-list"></div>
+          <div class="fusion-library-panel" data-fusion-panel="browse">
+            <div class="fusion-library-controls"></div>
+            <div class="fusion-doc-list"></div>
+          </div>
+          <div class="fusion-library-panel hidden" data-fusion-panel="mirrors">
+            <div class="fusion-mirrors-summary muted small"></div>
+            <div class="fusion-mirrors-list"></div>
+          </div>
         </section>
         <section class="object-history-panel">
           <h2>Project history</h2>
@@ -291,6 +293,14 @@
       </div>
       <div id="activity-log-panel" class="left-log-dock"></div>
     </aside>
+
+    <div id="project-chrome-hidden" hidden aria-hidden="true">
+      <p id="project-id" class="mono muted">—</p>
+      <button id="btn-export-model" type="button" class="btn secondary btn-compact" disabled title="Download GLB, STL, STEP, or 3MF">Export</button>
+      <button id="btn-rename-project" type="button" class="btn secondary btn-compact" disabled>Rename</button>
+      <div id="design-browser" class="design-browser-root"></div>
+      <ul id="file-list" class="file-list hidden" aria-hidden="true"></ul>
+    </div>
 
     <div class="main-column">
       <div id="dxf-tab-bar" class="dxf-tab-bar hidden" role="tablist" aria-label="Open drawings"></div>

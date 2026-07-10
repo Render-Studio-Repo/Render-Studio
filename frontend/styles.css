@@ -603,6 +603,63 @@ html, body {
   min-width: 0;
 }
 
+.workspace-activity-switcher {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.workspace-activity-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  min-height: 34px;
+  padding: 0 12px;
+  border: none;
+  border-left: 1px solid #21262d;
+  background: transparent;
+  color: #e6edf3;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.workspace-activity-tab:hover {
+  background: #21262d;
+}
+
+.workspace-activity-tab[aria-expanded="true"] {
+  background: #21262d;
+  color: #58a6ff;
+}
+
+.workspace-activity-caret {
+  font-size: 0.65rem;
+  color: #8b949e;
+}
+
+.workspace-activity-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 1200;
+  width: min(360px, 92vw);
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+}
+
+.workspace-activity-dropdown .workspace-activity-list {
+  max-height: min(380px, 55vh);
+}
+
+#project-chrome-hidden {
+  display: none !important;
+}
+
 .workspace-tab {
   border: none;
   border-right: 1px solid transparent;
@@ -7169,6 +7226,107 @@ body.panel-resizing-row * {
   margin: 6px 0;
 }
 
+.fusion-library-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 6px;
+}
+
+.fusion-library-tab {
+  flex: 1;
+  border: 1px solid rgba(0, 120, 212, 0.28);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted, #8b949e);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.fusion-library-tab.active {
+  background: rgba(0, 120, 212, 0.14);
+  color: var(--text);
+  border-color: rgba(0, 120, 212, 0.45);
+}
+
+.fusion-library-panel.hidden {
+  display: none;
+}
+
+.fusion-mirrors-summary {
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.fusion-mirrors-list {
+  display: grid;
+  gap: 8px;
+}
+
+.fusion-mirror-card {
+  border: 1px solid rgba(0, 120, 212, 0.22);
+  border-radius: 10px;
+  background: rgba(0, 120, 212, 0.05);
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.fusion-mirror-card.stale {
+  border-color: rgba(248, 81, 73, 0.35);
+  background: rgba(248, 81, 73, 0.06);
+}
+
+.fusion-mirror-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fusion-mirror-card-title {
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.fusion-mirror-card-badge {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(46, 160, 67, 0.16);
+  color: #3fb950;
+}
+
+.fusion-mirror-card.stale .fusion-mirror-card-badge {
+  background: rgba(248, 81, 73, 0.16);
+  color: #f85149;
+}
+
+.fusion-mirror-card-meta {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.fusion-mirror-card-path {
+  margin: 0;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.fusion-mirror-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .fusion-account-row {
   display: flex;
   align-items: center;
@@ -7187,6 +7345,21 @@ body.panel-resizing-row * {
   white-space: nowrap;
   font-size: 0.72rem;
   color: var(--text);
+}
+
+.fusion-mirror-target {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.fusion-mirror-target strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.fusion-mirror-stale {
+  margin: 0;
+  line-height: 1.35;
 }
 
 .fusion-library-actions {
@@ -7538,13 +7711,12 @@ body.panel-resizing-row * {
   color: var(--muted);
 }
 
-.workspace-activity-title {
-  margin: 14px 0 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
+.proj-row-actions--menu-only {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
 }
 
 .workspace-activity-list {
@@ -16513,6 +16685,42 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   max-width: 100%;
   min-width: 0;
   overflow-x: hidden;
+}
+
+.workspace-fusion-project-card--current {
+  border-color: rgba(0, 120, 212, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(0, 120, 212, 0.12);
+}
+
+.workspace-fusion-project-card--stale,
+.workspace-fusion-mirror-card--stale {
+  border-color: rgba(248, 81, 73, 0.35);
+  background: rgba(248, 81, 73, 0.05);
+}
+
+.workspace-fusion-stale-banner {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid rgba(248, 81, 73, 0.28);
+  border-radius: 8px;
+  background: rgba(248, 81, 73, 0.06);
+}
+
+.workspace-fusion-stale-badge {
+  color: #f85149;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.62rem;
+}
+
+.fusion-mirrors-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .workspace-fusion-project-head,

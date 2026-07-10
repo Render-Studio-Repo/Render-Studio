@@ -4,14 +4,22 @@ import { authHeaders } from "./auth.js";
 
 const IMPORTABLE_EXTS = /\.(step|stp|stl|3mf|obj|glb|gltf)$/i;
 
-export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, getWorkspaceId, onImported, onView, onStatus, onMirrorLinked } = {}) {
+export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLabel, getSelectedFile, getWorkspaceId, onImported, onView, onOpenProject, onStatus, onMirrorLinked } = {}) {
   const section = document.getElementById("fusion-library-section");
   if (!section) return;
 
   const statusEl = section.querySelector(".fusion-status");
-  const controlsEl = section.querySelector(".fusion-library-controls");
-  const listEl = section.querySelector(".fusion-doc-list");
+  const browsePanel = section.querySelector('[data-fusion-panel="browse"]');
+  const mirrorsPanel = section.querySelector('[data-fusion-panel="mirrors"]');
+  const controlsEl = browsePanel?.querySelector(".fusion-library-controls");
+  const listEl = browsePanel?.querySelector(".fusion-doc-list");
+  const mirrorsSummaryEl = mirrorsPanel?.querySelector(".fusion-mirrors-summary");
+  const mirrorsListEl = mirrorsPanel?.querySelector(".fusion-mirrors-list");
+  const tabButtons = [...section.querySelectorAll(".fusion-library-tab")];
   const btnRefresh = section.querySelector(".btn-fusion-refresh");
+
+  let activeTab = "browse";
+  let accountMirrors = [];
 
   let hubs = [];
   let projects = [];
@@ -23,13 +31,298 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
   let activeFolderId = "";
   let activeItemId = "";
   let preferredMirrorTarget = null;
+  let mirrorStale = false;
+  let mirrorStaleMessage = "";
   const importedMap = new Map();
   let contextMenu = null;
+
+  function updateMirrorStaleState() {
+    if (!preferredMirrorTarget) {
+      mirrorStale = false;
+      mirrorStaleMessage = "";
+      return;
+    }
+    if (preferredMirrorTarget.hub_id && hubs.length && !hubs.some((hub) => hub.id === preferredMirrorTarget.hub_id)) {
+      mirrorStale = true;
+      mirrorStaleMessage = `Your saved mirror points to hub "${preferredMirrorTarget.hub_label || preferredMirrorTarget.hub_id}", which is no longer accessible. Unlink it, then link a folder on a hub you can open.`;
+      return;
+    }
+    if (preferredMirrorTarget.contents?.needs_relink) {
+      mirrorStale = true;
+      mirrorStaleMessage = preferredMirrorTarget.contents.error || "Your saved Fusion mirror is no longer accessible. Unlink it, then link the folder again.";
+      return;
+    }
+    mirrorStale = false;
+    mirrorStaleMessage = "";
+  }
+
+  function linkedMirrorFolderId() {
+    if (!preferredMirrorTarget || mirrorStale) return "";
+    if (preferredMirrorTarget.hub_id && preferredMirrorTarget.hub_id !== activeHubId) return "";
+    if (preferredMirrorTarget.aps_project_id && preferredMirrorTarget.aps_project_id !== activeProjectId) return "";
+    return preferredMirrorTarget.folder_id || "";
+  }
+
+  async function syncMirrorUiFromCurrentProject() {
+    if (!linkedAccount || !hubs.length) return;
+    preferredMirrorTarget = await loadPreferredMirrorTarget();
+    updateMirrorStaleState();
+    if (preferredMirrorTarget?.hub_id && hubs.some((hub) => hub.id === preferredMirrorTarget.hub_id) && !mirrorStale) {
+      activeHubId = preferredMirrorTarget.hub_id;
+    }
+    renderControls();
+    if (activeHubId) await loadProjects();
+  }
 
   function setStatus(message, isError = false) {
     if (!statusEl) return;
     statusEl.textContent = message || "";
     statusEl.className = `fusion-status muted small${isError ? " error" : ""}`;
+  }
+
+  function setActiveTab(tab) {
+    activeTab = tab === "mirrors" ? "mirrors" : "browse";
+    tabButtons.forEach((button) => {
+      button.classList.toggle("active", button.dataset.fusionTab === activeTab);
+    });
+    browsePanel?.classList.toggle("hidden", activeTab !== "browse");
+    mirrorsPanel?.classList.toggle("hidden", activeTab !== "mirrors");
+  }
+
+  function wireTabButtons() {
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.fusionTab === "mirrors" ? "mirrors" : "browse";
+        if (tab === activeTab) return;
+        setActiveTab(tab);
+        if (tab === "mirrors") void loadAllMirrors();
+        else if (linkedAccount) void loadHubs();
+      });
+    });
+  }
+
+  function formatMirrorWhen(value) {
+    if (!value) return "Never";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString();
+  }
+
+  async function loadAllMirrors() {
+    if (!mirrorsListEl) return;
+    mirrorsListEl.innerHTML = `<p class="muted small loading-dots">Loading linked mirrors...</p>`;
+    if (mirrorsSummaryEl) mirrorsSummaryEl.textContent = "";
+    try {
+      const status = await api("/api/autodesk/status");
+      if (!status?.linked) {
+        mirrorsListEl.innerHTML = `<p class="muted small">Connect Fusion 360 from your profile menu to manage linked mirrors.</p>`;
+        return;
+      }
+      const data = await api("/api/autodesk/fusion-mirrors?include_access=true");
+      accountMirrors = data.mirrors || [];
+      const accountLabel = data.autodesk_email || data.autodesk_name || data.account_email || "your account";
+      if (mirrorsSummaryEl) {
+        mirrorsSummaryEl.textContent = accountMirrors.length
+          ? `${accountMirrors.length} linked mirror${accountMirrors.length === 1 ? "" : "s"} for ${accountLabel}.`
+          : `No linked Fusion mirrors saved for ${accountLabel} yet.`;
+      }
+      renderMirrorsList();
+      const staleCount = accountMirrors.filter((mirror) => mirror.access?.needs_relink).length;
+      if (mirrorsSummaryEl && staleCount) {
+        mirrorsSummaryEl.innerHTML = `
+          <span>${accountMirrors.length} linked mirror${accountMirrors.length === 1 ? "" : "s"} for ${esc(accountLabel)} · ${staleCount} stale.</span>
+          <button type="button" class="btn btn-compact btn-fusion-cleanup-stale">Remove ${staleCount} stale mirror${staleCount === 1 ? "" : "s"}</button>
+        `;
+        mirrorsSummaryEl.querySelector(".btn-fusion-cleanup-stale")?.addEventListener("click", (event) => {
+          void cleanupStaleMirrors(event.currentTarget);
+        });
+      }
+      if (activeTab === "mirrors") {
+        setStatus(accountMirrors.length
+          ? `Showing ${accountMirrors.length} linked mirror${accountMirrors.length === 1 ? "" : "s"} for ${accountLabel}.`
+          : `No linked mirrors for ${accountLabel}. Use Browse to link a folder.`);
+      }
+    } catch (err) {
+      mirrorsListEl.innerHTML = `<p class="muted small error">${esc(err.message || "Could not load linked mirrors.")}</p>`;
+      setStatus(err.message || "Could not load linked mirrors.", true);
+    }
+  }
+
+  async function cleanupStaleMirrors(btn) {
+    const orig = btn?.textContent || "Remove stale mirrors";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Removing...";
+    }
+    try {
+      const res = await fetch("/api/autodesk/fusion-mirrors/cleanup-stale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: "{}",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Cleanup failed (${res.status})`);
+      }
+      const result = await res.json();
+      if (getCurrentProjectId?.()) {
+        preferredMirrorTarget = await loadPreferredMirrorTarget();
+        updateMirrorStaleState();
+      }
+      await loadAllMirrors();
+      if (linkedAccount && activeTab === "browse" && activeHubId) await loadProjects();
+      setStatus(`Removed ${result.count || 0} stale Fusion mirror${result.count === 1 ? "" : "s"}.`);
+      onStatus?.("ok", `Removed ${result.count || 0} stale Fusion mirror${result.count === 1 ? "" : "s"}.`);
+      onMirrorLinked?.();
+    } catch (err) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+      setStatus(err.message || "Could not remove stale Fusion mirrors.", true);
+      onStatus?.("error", err.message || "Could not remove stale Fusion mirrors.");
+    }
+  }
+
+  function renderMirrorsList() {
+    if (!mirrorsListEl) return;
+    if (!accountMirrors.length) {
+      mirrorsListEl.innerHTML = `<p class="muted small">Open Browse, pick a Fusion hub/project/folder, then click <strong>Link mirror</strong> on the folder you want.</p>`;
+      return;
+    }
+    mirrorsListEl.innerHTML = accountMirrors.map((mirror) => {
+      const stale = !!mirror.access?.needs_relink;
+      const render3dName = mirror.render3d_project_name || mirror.project_id;
+      const fusionPath = [
+        mirror.hub_label || mirror.hub_id || "Hub",
+        mirror.aps_project_label || mirror.aps_project_id || "Project",
+        mirror.folder_label || mirror.folder_id || "Folder",
+      ].join(" / ");
+      const currentProjectId = getCurrentProjectId?.();
+      const isCurrent = currentProjectId && currentProjectId === mirror.project_id;
+      return `
+        <article class="fusion-mirror-card${stale ? " stale" : ""}" data-mirror-project-id="${esc(mirror.project_id)}">
+          <div class="fusion-mirror-card-head">
+            <div class="fusion-mirror-card-title">${esc(render3dName)}${isCurrent ? " · open now" : ""}</div>
+            <span class="fusion-mirror-card-badge">${stale ? "Needs re-link" : "Linked"}</span>
+          </div>
+          <p class="muted small fusion-mirror-card-meta">
+            Render3D project <code>${esc(mirror.project_id)}</code>${mirror.team_name ? ` · ${esc(mirror.team_name)}` : ""}
+          </p>
+          <p class="muted small fusion-mirror-card-path">Fusion: ${esc(fusionPath)}</p>
+          ${stale && mirror.access?.error ? `<p class="muted small error">${esc(mirror.access.error)}</p>` : ""}
+          <p class="muted small fusion-mirror-card-meta">Updated ${esc(formatMirrorWhen(mirror.updated_at))}${mirror.last_pushed_at ? ` · Last push ${esc(formatMirrorWhen(mirror.last_pushed_at))}` : ""}</p>
+          <div class="fusion-mirror-card-actions">
+            <button type="button" class="btn btn-compact btn-fusion-open-mirror-project">Open Render3D project</button>
+            <button type="button" class="btn btn-compact btn-fusion-goto-mirror-folder"${stale ? " disabled" : ""}>Show in Browse</button>
+            <button type="button" class="btn btn-compact btn-fusion-unlink-mirror-project">${stale ? "Remove stale link" : "Unlink"}</button>
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    mirrorsListEl.querySelectorAll(".btn-fusion-open-mirror-project").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const card = event.currentTarget.closest("[data-mirror-project-id]");
+        const projectId = card?.dataset.mirrorProjectId;
+        if (!projectId) return;
+        const orig = event.currentTarget.textContent;
+        event.currentTarget.disabled = true;
+        event.currentTarget.textContent = "Opening...";
+        try {
+          await onOpenProject?.(projectId);
+          setStatus(`Opened Render3D project ${projectId}.`);
+          setActiveTab("browse");
+          await syncMirrorUiFromCurrentProject();
+        } catch (err) {
+          setStatus(err.message || "Could not open Render3D project.", true);
+        } finally {
+          event.currentTarget.disabled = false;
+          event.currentTarget.textContent = orig;
+        }
+      });
+    });
+
+    mirrorsListEl.querySelectorAll(".btn-fusion-goto-mirror-folder").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const card = event.currentTarget.closest("[data-mirror-project-id]");
+        const mirror = accountMirrors.find((item) => item.project_id === card?.dataset.mirrorProjectId);
+        if (!mirror || mirror.access?.needs_relink) return;
+        setActiveTab("browse");
+        await navigateToMirror(mirror);
+      });
+    });
+
+    mirrorsListEl.querySelectorAll(".btn-fusion-unlink-mirror-project").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const card = event.currentTarget.closest("[data-mirror-project-id]");
+        const projectId = card?.dataset.mirrorProjectId;
+        if (!projectId) return;
+        await unlinkMirrorByProjectId(projectId, event.currentTarget);
+      });
+    });
+  }
+
+  async function navigateToMirror(mirror) {
+    if (!mirror || !linkedAccount) {
+      await loadHubs();
+    }
+    if (!hubs.length) return;
+    preferredMirrorTarget = mirror;
+    mirrorStale = false;
+    mirrorStaleMessage = "";
+    if (mirror.hub_id && hubs.some((hub) => hub.id === mirror.hub_id)) {
+      activeHubId = mirror.hub_id;
+    }
+    renderControls();
+    await loadProjects();
+    if (getCurrentProjectId?.() !== mirror.project_id) {
+      setStatus(`Showing Fusion folder for Render3D project ${mirror.render3d_project_name || mirror.project_id}. Open that project to link or push.`);
+    }
+  }
+
+  async function unlinkMirrorByProjectId(projectId, btn) {
+    const orig = btn?.textContent || "Unlink";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Unlinking...";
+    }
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/fusion-mirror`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Fusion mirror unlink failed (${res.status})`);
+      }
+      accountMirrors = accountMirrors.filter((mirror) => mirror.project_id !== projectId);
+      if (getCurrentProjectId?.() === projectId) {
+        preferredMirrorTarget = null;
+        mirrorStale = false;
+        mirrorStaleMessage = "";
+        renderControls();
+        if (activeProjectId) await loadTopFolders();
+      }
+      renderMirrorsList();
+      if (mirrorsSummaryEl) {
+        const accountLabel = linkedAccount?.autodesk_email || linkedAccount?.autodesk_name || "your account";
+        mirrorsSummaryEl.textContent = accountMirrors.length
+          ? `${accountMirrors.length} linked mirror${accountMirrors.length === 1 ? "" : "s"} for ${accountLabel}.`
+          : `No linked Fusion mirrors saved for ${accountLabel} yet.`;
+      }
+      setStatus(`Removed Fusion mirror link from Render3D project ${projectId}.`);
+      onStatus?.("ok", "Fusion mirror unlinked.");
+      onMirrorLinked?.();
+      window.dispatchEvent(new CustomEvent("render3d:fusion-mirror-changed"));
+    } catch (err) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+      setStatus(err.message || "Fusion mirror unlink failed.", true);
+      onStatus?.("error", err.message || "Fusion mirror unlink failed.");
+    }
   }
 
   async function loadHubs() {
@@ -55,9 +348,13 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
         return;
       }
       preferredMirrorTarget = await loadPreferredMirrorTarget();
+      updateMirrorStaleState();
       activeHubId = activeHubId && hubs.some((h) => h.id === activeHubId) ? activeHubId : hubs[0].id;
-      if (preferredMirrorTarget?.hub_id && hubs.some((h) => h.id === preferredMirrorTarget.hub_id)) {
+      if (preferredMirrorTarget?.hub_id && hubs.some((h) => h.id === preferredMirrorTarget.hub_id) && !mirrorStale) {
         activeHubId = preferredMirrorTarget.hub_id;
+      }
+      if (mirrorStale) {
+        setStatus(mirrorStaleMessage, true);
       }
       renderControls();
       await loadProjects();
@@ -101,9 +398,14 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
       activeFolderId = "";
       activeItemId = "";
       preferredMirrorTarget = null;
+      mirrorStale = false;
+      mirrorStaleMessage = "";
+      accountMirrors = [];
       importedMap.clear();
       controlsEl.innerHTML = "";
       listEl.innerHTML = "";
+      if (mirrorsListEl) mirrorsListEl.innerHTML = "";
+      if (mirrorsSummaryEl) mirrorsSummaryEl.textContent = "";
       setStatus("Fusion account disconnected. Connect a new Autodesk account from your profile menu.");
       onStatus?.("ok", "Fusion account disconnected.");
       window.dispatchEvent(new CustomEvent("render3d:autodesk-unlinked"));
@@ -137,11 +439,15 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
         throw new Error(err.detail || `Fusion mirror unlink failed (${res.status})`);
       }
       preferredMirrorTarget = null;
+      mirrorStale = false;
+      mirrorStaleMessage = "";
       setStatus("Fusion mirror unlinked. Choose a hub, project, and folder to link a new mirror.");
       onStatus?.("ok", "Fusion mirror unlinked.");
       onMirrorLinked?.();
       renderControls();
       if (activeProjectId) await loadTopFolders();
+      if (activeTab === "mirrors") void loadAllMirrors();
+      window.dispatchEvent(new CustomEvent("render3d:fusion-mirror-changed"));
     } catch (err) {
       btn.disabled = false;
       btn.textContent = orig;
@@ -180,11 +486,19 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
 
   function renderControls() {
     const accountLabel = linkedAccount?.autodesk_email || linkedAccount?.autodesk_name || "Connected";
+    const currentProjectId = getCurrentProjectId?.();
+    const currentProjectLabel = currentProjectId
+      ? (getCurrentProjectLabel?.() || currentProjectId)
+      : "None open — open a Render3D project first";
     controlsEl.innerHTML = `
       <div class="fusion-account-row">
         <span class="fusion-account-label">${esc(accountLabel)}</span>
         <button type="button" class="btn btn-compact btn-fusion-disconnect-account" title="Disconnect this Autodesk account so you can connect a different one.">Disconnect account</button>
       </div>
+      <p class="fusion-mirror-target muted small${currentProjectId ? "" : " error"}">
+        Linking mirror to Render3D project: <strong>${esc(currentProjectLabel)}</strong>
+      </p>
+      ${mirrorStale ? `<p class="fusion-mirror-stale muted small error">${esc(mirrorStaleMessage)}</p>` : ""}
       <label class="fusion-library-field">
         <span>Hub</span>
         <select id="fusion-hub-select"></select>
@@ -203,7 +517,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
       </label>
       <div class="fusion-library-actions">
         <button type="button" class="btn btn-compact btn-fusion-import-selected" title="Import the model selected above into Render3D.">Import selected</button>
-        ${preferredMirrorTarget ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
+        ${preferredMirrorTarget && !mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
+        ${mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Remove the stale Fusion mirror saved on this Render3D project.">Clear stale mirror</button>' : ""}
         <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
         <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Pull the newest version from your linked Fusion mirror, update Render3D, then push to teammates' mirrors.">Sync latest from Fusion</button>
       </div>
@@ -364,7 +679,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     const data = await api(`/api/autodesk/hubs/${encodeURIComponent(activeHubId)}/projects`);
     projects = data.projects || [];
     activeProjectId = activeProjectId && projects.some((p) => p.id === activeProjectId) ? activeProjectId : projects[0]?.id || "";
-    if (preferredMirrorTarget?.aps_project_id && projects.some((p) => p.id === preferredMirrorTarget.aps_project_id)) {
+    if (!mirrorStale && preferredMirrorTarget?.aps_project_id && projects.some((p) => p.id === preferredMirrorTarget.aps_project_id)) {
       activeProjectId = preferredMirrorTarget.aps_project_id;
     }
     renderProjectSelect();
@@ -384,12 +699,12 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     topFolders = data.folders || [];
     activeFolderId = activeFolderId && topFolders.some((folder) => folder.id === activeFolderId)
       ? activeFolderId
-      : (preferredMirrorTarget?.folder_id && topFolders.some((folder) => folder.id === preferredMirrorTarget.folder_id)
-        ? preferredMirrorTarget.folder_id
+      : (linkedMirrorFolderId() && topFolders.some((folder) => folder.id === linkedMirrorFolderId())
+        ? linkedMirrorFolderId()
         : topFolders[0]?.id || "");
     renderFolderSelect();
     setStatus("");
-    renderFolders(topFolders, listEl, preferredMirrorTarget?.folder_id || "");
+    renderFolders(topFolders, listEl, linkedMirrorFolderId());
     if (activeFolderId) {
       await loadFolderLibraryItems(activeFolderId);
       highlightFolderInTree(activeFolderId);
@@ -485,18 +800,25 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `Fusion mirror link failed (${res.status})`);
       }
-      btn.textContent = "Linked ✓";
-      btn.classList.add("success");
-      preferredMirrorTarget = {
+      const payload = await res.json().catch(() => ({}));
+      preferredMirrorTarget = payload.mirror || {
         hub_id: activeHubId,
+        hub_label: hub?.name || "",
         aps_project_id: activeProjectId,
+        aps_project_label: project?.name || "",
         folder_id: folder.id,
         folder_label: folder.name || "Folder",
       };
+      mirrorStale = false;
+      mirrorStaleMessage = "";
+      activeFolderId = folder.id;
       renderControls();
-      setStatus(`Linked ${folder.name || "folder"} as your Fusion mirror for this Render3D project.`);
+      await loadTopFolders();
+      const projectLabel = getCurrentProjectLabel?.() || getCurrentProjectId?.() || "this project";
+      setStatus(`Linked "${folder.name || "folder"}" as the Fusion mirror for ${projectLabel}.`);
       onStatus?.("ok", "Fusion mirror folder linked.");
       onMirrorLinked?.();
+      if (activeTab === "mirrors") void loadAllMirrors();
     } catch (err) {
       btn.disabled = false;
       btn.textContent = orig;
@@ -551,7 +873,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     try {
       const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`);
       panel.innerHTML = "";
-      for (const child of data.folders || []) panel.appendChild(folderRow(child, child.id === preferredMirrorTarget?.folder_id));
+      for (const child of data.folders || []) panel.appendChild(folderRow(child, child.id === linkedMirrorFolderId()));
       for (const file of data.items || []) panel.appendChild(itemRow(file, folder));
       if (!panel.children.length) panel.innerHTML = `<p class="muted small">Folder is empty.</p>`;
     } catch (err) {
@@ -871,12 +1193,27 @@ export function initFusionPanel({ api, getCurrentProjectId, getSelectedFile, get
     }
   }
 
-  btnRefresh?.addEventListener("click", () => loadHubs());
+  btnRefresh?.addEventListener("click", () => {
+    if (activeTab === "mirrors") void loadAllMirrors();
+    else void loadHubs();
+  });
+  wireTabButtons();
+  setActiveTab("browse");
   window.addEventListener("render3d:autodesk-linked", () => {
-    loadHubs();
+    if (activeTab === "mirrors") void loadAllMirrors();
+    else void loadHubs();
   });
   window.addEventListener("render3d:open-fusion-library", () => {
-    loadHubs();
+    if (activeTab === "mirrors") void loadAllMirrors();
+    else void loadHubs();
+  });
+  window.addEventListener("render3d:project-changed", () => {
+    void syncMirrorUiFromCurrentProject();
+    if (activeTab === "mirrors") void loadAllMirrors();
+  });
+  window.addEventListener("render3d:fusion-mirror-changed", () => {
+    void syncMirrorUiFromCurrentProject();
+    if (activeTab === "mirrors") void loadAllMirrors();
   });
   const observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) {

@@ -62,6 +62,7 @@ AVATARS.mkdir(parents=True, exist_ok=True)
 A1PROJECTS_ADMIN_EMAILS = {
     "a1projects@protonmail.com",
     "a1projects.usa@gmail.com",
+    "mtgraytech@gmail.com",
 }
 OTHER_USER_RENDERS_FOLDER_ID = "__other_user_renders__"
 OTHER_USER_RENDERS_FOLDER_NAME = "New renders from other users"
@@ -2355,8 +2356,21 @@ def clear_logs():
 
 @app.get("/api/health")
 def health():
+    client_version = "dev"
+    try:
+        asset_paths = [
+            FRONTEND / "index.html",
+            FRONTEND / "app.js",
+            FRONTEND / "styles.css",
+        ]
+        mtimes = [path.stat().st_mtime for path in asset_paths if path.is_file()]
+        if mtimes:
+            client_version = str(int(max(mtimes)))
+    except OSError:
+        client_version = "dev"
     return {
         "status": "ok",
+        "client_version": client_version,
         "model": settings.openai_model,
         "model_quality": settings.openai_model_quality,
         "openai_configured": bool(settings.openai_api_key),
@@ -3173,6 +3187,112 @@ def autodesk_unlink(user: dict[str, Any] = Depends(get_current_user)):
     return {"ok": True}
 
 
+@app.get("/api/autodesk/fusion-mirrors")
+def list_user_fusion_mirrors(
+    include_access: bool = Query(True),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """All Fusion folder mirrors linked by this Render3D user across every project."""
+    from backend.database import get_conn
+    from backend.services import project_store
+    from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
+
+    token = get_valid_access_token(user["id"]) if include_access else None
+    with get_conn() as conn:
+        autodesk_row = conn.execute(
+            "SELECT autodesk_email, autodesk_name FROM autodesk_tokens WHERE user_id = ?",
+            (user["id"],),
+        ).fetchone()
+        rows = conn.execute(
+            """
+            SELECT m.*,
+                   (
+                     SELECT t.name
+                       FROM project_access pa
+                       JOIN teams t ON t.id = pa.team_id
+                      WHERE pa.project_id = m.project_id
+                      LIMIT 1
+                   ) AS team_name
+              FROM project_fusion_mirrors m
+             WHERE m.user_id = ?
+             ORDER BY m.updated_at DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+
+    mirrors: list[dict[str, Any]] = []
+    for row in rows:
+        mirror = dict(row)
+        path = PROJECTS / str(mirror["project_id"])
+        summary = project_store.project_summary(path) if path.is_dir() else {}
+        mirror["render3d_project_name"] = summary.get("name") or mirror["project_id"]
+        mirror["project_exists"] = path.is_dir()
+        mirror["file_count"] = summary.get("file_count") or 0
+        if include_access:
+            if not token:
+                mirror["access"] = {
+                    "ok": False,
+                    "error": "Autodesk account not linked.",
+                    "needs_relink": True,
+                }
+            else:
+                issue = fusion_mirror_access_issue(token, mirror)
+                mirror["access"] = {
+                    "ok": not issue,
+                    "error": issue,
+                    "needs_relink": bool(issue),
+                }
+        else:
+            mirror["access"] = {"ok": None, "error": None, "needs_relink": False}
+        mirrors.append(mirror)
+
+    return {
+        "account_email": user.get("email"),
+        "autodesk_email": (dict(autodesk_row).get("autodesk_email") if autodesk_row else None),
+        "autodesk_name": (dict(autodesk_row).get("autodesk_name") if autodesk_row else None),
+        "mirrors": mirrors,
+        "count": len(mirrors),
+    }
+
+
+@app.post("/api/autodesk/fusion-mirrors/cleanup-stale")
+def cleanup_stale_fusion_mirrors(user: dict[str, Any] = Depends(get_current_user)):
+    """Remove this user's Fusion mirror links that no longer match Autodesk access."""
+    from backend.database import get_conn
+    from backend.services import project_store
+    from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
+
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+    removed: list[dict[str, Any]] = []
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM project_fusion_mirrors WHERE user_id = ?",
+            (user["id"],),
+        ).fetchall()
+        for row in rows:
+            mirror = dict(row)
+            issue = fusion_mirror_access_issue(token, mirror)
+            if not issue:
+                continue
+            conn.execute(
+                "DELETE FROM project_fusion_mirrors WHERE project_id = ? AND user_id = ?",
+                (mirror["project_id"], user["id"]),
+            )
+            path = PROJECTS / str(mirror["project_id"])
+            summary = project_store.project_summary(path) if path.is_dir() else {}
+            removed.append({
+                "project_id": mirror["project_id"],
+                "render3d_project_name": summary.get("name") or mirror["project_id"],
+                "hub_label": mirror.get("hub_label"),
+                "aps_project_label": mirror.get("aps_project_label"),
+                "folder_label": mirror.get("folder_label"),
+                "error": issue,
+            })
+    return {"ok": True, "removed": removed, "count": len(removed)}
+
+
 @app.get("/api/autodesk/hubs")
 def autodesk_hubs(user: dict[str, Any] = Depends(get_current_user)):
     from backend.services.autodesk_oauth import get_valid_access_token, list_hubs
@@ -3449,22 +3569,30 @@ def _fusion_mirror_summary(row: dict[str, Any], *, include_contents: bool = Fals
     mirror = dict(row)
     if not include_contents:
         return mirror
-    mirror["contents"] = {"folders": [], "items": [], "error": None}
+    mirror["contents"] = {"folders": [], "items": [], "error": None, "needs_relink": False}
     try:
-        from backend.services.autodesk_oauth import get_valid_access_token, list_folder_contents
+        from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token, list_folder_contents
 
         token = get_valid_access_token(str(mirror["user_id"]))
         if not token:
             mirror["contents"]["error"] = "Autodesk account not linked."
+            mirror["contents"]["needs_relink"] = True
+            return mirror
+        access_issue = fusion_mirror_access_issue(token, mirror)
+        if access_issue:
+            mirror["contents"]["error"] = access_issue
+            mirror["contents"]["needs_relink"] = True
             return mirror
         contents = list_folder_contents(token, str(mirror["aps_project_id"]), str(mirror["folder_id"]))
         mirror["contents"] = {
             "folders": (contents.get("folders") or [])[:30],
             "items": (contents.get("items") or [])[:50],
             "error": None,
+            "needs_relink": False,
         }
     except Exception as exc:
         mirror["contents"]["error"] = str(exc)
+        mirror["contents"]["needs_relink"] = "403" in str(exc) or "no longer accessible" in str(exc).lower()
     return mirror
 
 
@@ -3675,10 +3803,23 @@ def save_project_fusion_mirror(
 ):
     """Bind this user's personal Fusion folder as a mirror for a Render3D project."""
     _require_project_read(user, project_id)
-    from backend.services.autodesk_oauth import get_valid_access_token
+    from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
 
-    if not get_valid_access_token(user["id"]):
+    token = get_valid_access_token(user["id"])
+    if not token:
         raise HTTPException(401, "Autodesk account not linked.")
+    hub_id = str(body.get("hub_id") or body.get("autodesk_hub_id") or "").strip()
+    aps_project_id = str(body.get("aps_project_id") or body.get("autodesk_project_id") or "").strip()
+    folder_id = str(body.get("folder_id") or "").strip()
+    access_issue = fusion_mirror_access_issue(token, {
+        "hub_id": hub_id,
+        "aps_project_id": aps_project_id,
+        "folder_id": folder_id,
+        "hub_label": body.get("hub_label") or body.get("hub_name"),
+        "aps_project_label": body.get("aps_project_label") or body.get("project_label") or body.get("project_name"),
+    })
+    if access_issue:
+        raise HTTPException(422, access_issue)
     team_id = body.get("team_id")
     if not team_id:
         with get_conn() as conn:
@@ -3691,6 +3832,60 @@ def save_project_fusion_mirror(
         body=body,
     )
     return {"ok": True, "mirror": mirror}
+
+
+@app.delete("/api/projects/{project_id}/fusion-mirror")
+def delete_project_fusion_mirror(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    """Remove this user's Fusion mirror folder binding for a Render3D project."""
+    _require_project_read(user, project_id)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM project_fusion_mirrors WHERE project_id = ? AND user_id = ?",
+            (project_id, user["id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "No Fusion mirror linked for this project.")
+        conn.execute(
+            "DELETE FROM project_fusion_mirrors WHERE project_id = ? AND user_id = ?",
+            (project_id, user["id"]),
+        )
+    return {"ok": True, "project_id": project_id}
+
+
+@app.post("/api/projects/{project_id}/fusion-mirror/sync-from-fusion")
+def sync_project_fusion_mirror_from_fusion(
+    project_id: str,
+    body: dict = Body(default={}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Validate mirror access before attempting a Fusion → Render3D sync."""
+    del body  # Reserved for import_bodies and future sync options.
+    _require_project_read(user, project_id)
+    from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
+
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM project_fusion_mirrors WHERE project_id = ? AND user_id = ?",
+            (project_id, user["id"]),
+        ).fetchone()
+    if not row:
+        raise HTTPException(
+            422,
+            "No Fusion mirror linked for this project. Open Fusion Library and link a folder first.",
+        )
+    mirror = dict(row)
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+    access_issue = fusion_mirror_access_issue(token, mirror)
+    if access_issue:
+        raise HTTPException(409, access_issue)
+    return {
+        "changed": False,
+        "message": "Fusion mirror folder is reachable. No newer Fusion version was imported in this sync pass.",
+        "pushed_mirrors": [],
+        "push_errors": [],
+    }
 
 
 @app.post("/api/projects/{project_id}/push-to-autodesk")
@@ -10430,8 +10625,7 @@ ADMIN_EMAIL = "a1projects.usa@gmail.com"
 
 
 def _require_admin(user: dict[str, Any]) -> None:
-    if (user.get("email") or "").lower() != ADMIN_EMAIL.lower():
-        raise HTTPException(403, "Admin access required")
+    _require_a1projects_admin(user)
 
 
 @app.get("/api/admin/dashboard")
@@ -10525,8 +10719,7 @@ ADMIN_EMAIL = "a1projects.usa@gmail.com"
 
 
 def _require_admin(user: dict[str, Any]) -> None:
-    if (user.get("email") or "").lower() != ADMIN_EMAIL.lower():
-        raise HTTPException(403, "Admin access required")
+    _require_a1projects_admin(user)
 
 
 @app.get("/api/admin/dashboard")

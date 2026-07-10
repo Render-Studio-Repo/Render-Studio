@@ -1350,42 +1350,10 @@ export function createWorkspaceBrowser({
       onOpenProject?.(p.id);
     });
 
-    const exp = document.createElement("button");
-    exp.type = "button";
-    exp.className = "btn-proj-export";
-    exp.title = "Export / share model";
-    exp.textContent = "Export";
-    exp.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onExportProject?.(p);
-    });
-
-    const rename = document.createElement("button");
-    rename.type = "button";
-    rename.className = "btn-proj-rename";
-    rename.title = "Rename project";
-    rename.textContent = "Rename";
-    rename.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onRenameProject?.(p);
-    });
-
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "btn-proj-delete";
-    del.title = "Delete project";
-    del.textContent = "Delete";
-    del.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onDeleteProject?.(p);
-    });
-
     const actions = document.createElement("div");
-    actions.className = "proj-row-actions";
-    if (readOnly) {
-      actions.append(exp);
-    } else {
-      actions.append(exp, rename, del);
+    actions.className = "proj-row-actions proj-row-actions--menu-only";
+    if (!readOnly) {
+      actions.title = "Right-click project for export, rename, and delete";
     }
 
     const main = document.createElement("div");

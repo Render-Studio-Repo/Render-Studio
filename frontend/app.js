@@ -55,10 +55,10 @@ import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260707-dxf-drawings-section";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260709-left-panel-trim";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260706-fusion-disconnect";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
@@ -68,7 +68,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loade
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260707-download-retry";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260707-sidebar-scroll-top";
+import { initFusionPanel } from "./fusion-panel.js?v=20260709-unlink-clear";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
@@ -77,6 +77,12 @@ import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-f
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-live-adjustments";
 import { createProjectTree } from "./project-tree.js?v=20260707-dxf-drawings-section";
+import {
+  saveSessionSnapshot,
+  clearPendingRestore,
+  readPendingRestore,
+  initClientVersionWatcher,
+} from "./client-reload.js?v=20260709-graceful-reload";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -3136,6 +3142,32 @@ const objectHistory = createObjectHistoryUI({
 const workspaceActivity = createWorkspaceActivityUI({
   listEl: document.getElementById("workspace-activity-list"),
 });
+
+function initWorkspaceActivityDropdown() {
+  const toggle = document.getElementById("btn-workspace-activity-toggle");
+  const panel = document.getElementById("workspace-activity-dropdown");
+  if (!toggle || !panel) return;
+  const close = () => {
+    toggle.setAttribute("aria-expanded", "false");
+    panel.classList.add("hidden");
+  };
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = toggle.getAttribute("aria-expanded") !== "true";
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    panel.classList.toggle("hidden", !open);
+  });
+  document.addEventListener("click", (event) => {
+    if (!panel.classList.contains("hidden") && !event.target.closest(".workspace-activity-switcher")) {
+      close();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close();
+  });
+}
+
+initWorkspaceActivityDropdown();
 
 const activityLog = createActivityLog(document.getElementById("activity-log-panel"), rawFetch);
 
@@ -9701,6 +9733,16 @@ function saveLastProjectId(id) {
   try {
     localStorage.setItem(LS_LAST_PROJECT, id);
   } catch (_) {}
+  captureSessionSnapshot();
+}
+
+function captureSessionSnapshot() {
+  if (!projectId) return;
+  saveSessionSnapshot({
+    projectId,
+    selectedFile: selectedFile || null,
+    workspaceId: document.getElementById("team-select")?.value || readSavedWorkspaceId() || null,
+  });
 }
 
 function getSelectedWorkspaceId() {
@@ -12027,6 +12069,7 @@ async function loadProject(id) {
       viewportUndoStack.length = 0;
       dxfViewer?.closeAll?.();
       showEmptyProjectViewport({ keepBrowser: true });
+      window.dispatchEvent(new CustomEvent("render3d:project-changed", { detail: { projectId: id } }));
       // If this project is known to be generating (from cache) but we're not watching it,
       // start the watch immediately so the stop button appears before the API call returns.
       if (generationWatchPid !== id && isProjectGenerating(id)) {
@@ -12073,6 +12116,7 @@ async function loadProject(id) {
       name: data.name || id,
     });
     renderProjectList();
+    captureSessionSnapshot();
     renderProjectBrowser(browser);
     if (wiringMode) {
       void hydrateBrowserBodyChildren(browser);
@@ -12282,6 +12326,64 @@ let workspaceFusionAutoSyncTargets = [];
 let workspaceFusionAutoSyncInFlight = false;
 let workspaceFusionAutoSyncLastRun = new Map();
 
+function userFusionMirror(project) {
+  const userId = getStoredUser()?.id || "";
+  return (project?.fusion_mirrors || []).find((mirror) => mirror.user_id === userId) || null;
+}
+
+function mirrorUpdatedAt(mirror) {
+  const value = Date.parse(mirror?.updated_at || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function sortFusionWorkspaceProjects(projects = []) {
+  return [...projects].sort((a, b) => {
+    if (a.id === projectId) return -1;
+    if (b.id === projectId) return 1;
+    const aMirror = userFusionMirror(a);
+    const bMirror = userFusionMirror(b);
+    const aStale = !!aMirror?.contents?.needs_relink;
+    const bStale = !!bMirror?.contents?.needs_relink;
+    if (aStale !== bStale) return aStale ? 1 : -1;
+    return mirrorUpdatedAt(bMirror) - mirrorUpdatedAt(aMirror);
+  });
+}
+
+function fusionWorkspaceProjects(projects = []) {
+  return (projects || []).filter((project) => {
+    const mirrors = project.fusion_mirrors || [];
+    if (!mirrors.length) return !!project.fusion_source;
+    return mirrors.some((mirror) => !mirror.contents?.needs_relink);
+  });
+}
+
+function countStaleFusionMirrors(projects = []) {
+  return (projects || []).filter((project) => {
+    const mirrors = project.fusion_mirrors || [];
+    if (!mirrors.length) return false;
+    return mirrors.every((mirror) => mirror.contents?.needs_relink);
+  }).length;
+}
+
+function fusionMirrorPathLabel(mirror = {}) {
+  return [
+    mirror.hub_label || mirror.hub_id || "Hub",
+    mirror.aps_project_label || mirror.aps_project_id || "Project",
+    mirror.folder_label || mirror.folder_id || "Folder",
+  ].join(" · ");
+}
+
+async function cleanupStaleFusionMirrors() {
+  const result = await api("/api/autodesk/fusion-mirrors/cleanup-stale", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  await refreshWorkspaceRealtimeEditor();
+  window.dispatchEvent(new CustomEvent("render3d:open-fusion-library"));
+  return result;
+}
+
 function updateWorkspaceFusionAutoSync(data = null) {
   const userId = getStoredUser()?.id || "";
   workspaceFusionAutoSyncTargets = (data?.projects || [])
@@ -12290,7 +12392,7 @@ function updateWorkspaceFusionAutoSync(data = null) {
       projectId: project.id,
       mirror: (project.fusion_mirrors || []).find((mirror) => mirror.user_id === userId),
     }))
-    .filter((entry) => entry.mirror);
+    .filter((entry) => entry.mirror && !entry.mirror.contents?.needs_relink);
   if (!workspaceFusionAutoSyncTargets.length) {
     if (workspaceFusionAutoSyncTimer) {
       clearInterval(workspaceFusionAutoSyncTimer);
@@ -12409,7 +12511,9 @@ function renderWorkspaceRealtimeEditor(data = null) {
   folderEl.querySelector("[data-workspace-fusion-link]")?.addEventListener("click", () => {
     void linkActiveWorkspaceToFusion();
   });
-  const fusionProjects = (data.projects || []).filter((p) => p.fusion_source || (p.fusion_mirrors || []).length);
+  const allFusionProjects = (data.projects || []).filter((p) => p.fusion_source || (p.fusion_mirrors || []).length);
+  const staleMirrorCount = countStaleFusionMirrors(allFusionProjects);
+  const fusionProjects = sortFusionWorkspaceProjects(fusionWorkspaceProjects(allFusionProjects));
   updateWorkspaceFusionAutoSync({ ...data, projects: fusionProjects });
   if (!fusionProjects.length) {
     projectsEl.innerHTML = `
@@ -12421,19 +12525,46 @@ function renderWorkspaceRealtimeEditor(data = null) {
   projectsEl.innerHTML = `
     <strong>Fusion linked folders</strong>
     <p class="muted small">Auto-sync checks your linked Fusion folder every 30 seconds, pulls newer versions into Render3D, then pushes them to teammate mirrors.</p>
+    ${staleMirrorCount ? `
+      <div class="workspace-fusion-stale-banner">
+        <p class="muted small error">${staleMirrorCount} stale Fusion mirror${staleMirrorCount === 1 ? "" : "s"} on old Render3D projects still point at hubs you no longer have access to. They do not affect your current link.</p>
+        <button type="button" class="btn btn-compact" data-workspace-cleanup-stale-fusion>Remove ${staleMirrorCount} stale mirror${staleMirrorCount === 1 ? "" : "s"}</button>
+      </div>
+    ` : ""}
     <div class="workspace-fusion-project-list">
-      ${fusionProjects.slice(0, 5).map((p) => `
-        <div class="workspace-fusion-project-card">
+      ${fusionProjects.slice(0, 8).map((p) => {
+        const mine = userFusionMirror(p);
+        const isCurrent = p.id === projectId;
+        const isStale = !!mine?.contents?.needs_relink;
+        return `
+        <div class="workspace-fusion-project-card${isCurrent ? " workspace-fusion-project-card--current" : ""}${isStale ? " workspace-fusion-project-card--stale" : ""}">
           <div class="workspace-fusion-project-head">
-            <span>${appEscapeHtml(p.name || p.id)}</span>
+            <span>${appEscapeHtml(p.name || p.id)}${isCurrent ? " · open now" : ""}</span>
+            ${isStale ? `<small class="workspace-fusion-stale-badge">Stale mirror</small>` : ""}
           </div>
           <small>${appEscapeHtml(p.latest_file || "No preview file")} · ${appEscapeHtml(p.fusion_source?.item_name || "Fusion item")}</small>
           ${renderWorkspaceFusionComponents(p)}
           ${renderWorkspaceFusionMirrors(p)}
         </div>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
   `;
+  projectsEl.querySelector("[data-workspace-cleanup-stale-fusion]")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Removing...";
+    try {
+      const result = await cleanupStaleFusionMirrors();
+      setEditStatus("ok", `Removed ${result.count || 0} stale Fusion mirror${result.count === 1 ? "" : "s"}.`);
+      window.dispatchEvent(new CustomEvent("render3d:fusion-mirror-changed"));
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = original;
+      setEditStatus("error", err.message || "Could not remove stale Fusion mirrors.");
+    }
+  });
   projectsEl.querySelectorAll("[data-workspace-open-component]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const pid = btn.dataset.projectId;
@@ -12490,6 +12621,25 @@ function renderWorkspaceRealtimeEditor(data = null) {
         btn.disabled = false;
         btn.textContent = original;
         setEditStatus("error", err.message || "Could not sync Fusion folder.");
+      }
+    });
+  });
+  projectsEl.querySelectorAll("[data-workspace-relink-fusion]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pid = btn.dataset.workspaceRelinkFusion;
+      if (!pid) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Removing...";
+      try {
+        await api(`/api/projects/${encodeURIComponent(pid)}/fusion-mirror`, { method: "DELETE" });
+        setEditStatus("ok", "Stale Fusion mirror removed.");
+        await refreshWorkspaceRealtimeEditor();
+        window.dispatchEvent(new CustomEvent("render3d:fusion-mirror-changed"));
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = original;
+        setEditStatus("error", err.message || "Could not unlink Fusion mirror.");
       }
     });
   });
@@ -12574,23 +12724,23 @@ function renderWorkspaceFusionMirrors(project) {
         const activeItems = activeFusionMirrorItems(mirror, items);
         const latestLink = renderFusionLatestVersionLink(mirror, activeItems);
         const contentRows = contents.error
-          ? `<p class="muted small error">${appEscapeHtml(contents.error)}</p>`
+          ? `<p class="muted small error">${appEscapeHtml(contents.error)}</p>${contents.needs_relink && mirror.user_id === getStoredUser()?.id ? `<button type="button" class="btn btn-compact" data-workspace-relink-fusion="${appEscapeHtml(project.id)}">Remove stale link</button>` : ""}`
           : [
               ...folders.map((folder) => renderFusionFolderRow("Folder", folder.name || "Folder", "▸")),
               ...activeItems.map((item) => renderFusionFolderRow("File", item.name || "Untitled", "□")),
             ].join("") || renderFusionEmptyRow("Folder is empty.");
         return `
-          <div class="workspace-fusion-mirror-card">
+          <div class="workspace-fusion-mirror-card${contents.needs_relink ? " workspace-fusion-mirror-card--stale" : ""}">
             <div class="workspace-fusion-mirror-head">
               <span>${appEscapeHtml(mirror.display_name || mirror.email || "Teammate")}</span>
-              <small>${mirror.user_id === getStoredUser()?.id ? "Your mirror" : "Teammate mirror"}</small>
+              <small>${mirror.user_id === getStoredUser()?.id ? "Your mirror" : "Teammate mirror"}${contents.needs_relink ? " · stale" : ""}</small>
             </div>
             <p class="muted small workspace-fusion-mirror-meta">
-              <span>${appEscapeHtml(mirror.folder_label || "Fusion folder")} · ${appEscapeHtml(mirror.aps_project_label || mirror.aps_project_id || "Fusion project")}</span>
+              <span>${appEscapeHtml(fusionMirrorPathLabel(mirror))}</span>
               ${latestLink}
             </p>
             <div class="workspace-fusion-browser">
-              ${renderFusionBrowserSection("Shared Folder", folders.length + activeItems.length, contentRows, true)}
+              ${renderFusionBrowserSection(mirror.folder_label || "Fusion folder", folders.length + activeItems.length, contentRows, !contents.needs_relink)}
             </div>
             ${mirror.user_id === getStoredUser()?.id
               ? `<button type="button" class="btn btn-compact" data-workspace-sync-fusion="${appEscapeHtml(project.id)}">Sync latest from Fusion</button>`
@@ -15001,6 +15151,7 @@ window.addEventListener("keydown", (e) => {
   initFusionPanel({
     api,
     getCurrentProjectId: () => projectId,
+    getCurrentProjectLabel: () => currentProjectLabel(),
     getSelectedFile: () => selectedFile,
     getWorkspaceId: () => getSelectedWorkspaceId(),
     onImported: async (importedProjectId, filename, name) => {
@@ -15019,9 +15170,52 @@ window.addEventListener("keydown", (e) => {
         label: name,
       });
     },
+    onOpenProject: async (openProjectId) => {
+      await loadProject(openProjectId);
+    },
     onStatus: (kind, message) => setEditStatus(kind, message),
     onMirrorLinked: () => void refreshWorkspaceRealtimeEditor(),
   });
+
+  async function restoreSessionSnapshot() {
+    const snap = readPendingRestore();
+    if (!snap?.projectId) return false;
+    clearPendingRestore();
+    try {
+      const sel = document.getElementById("team-select");
+      if (snap.workspaceId && sel && [...sel.options].some((opt) => opt.value === snap.workspaceId)) {
+        if (sel.value !== snap.workspaceId) {
+          sel.value = snap.workspaceId;
+          await onWorkspaceChange({ deferProjectPick: true });
+        }
+      }
+      if (!allProjects.some((project) => project.id === snap.projectId)) {
+        await fetchAllProjects();
+      }
+      if (!allProjects.some((project) => project.id === snap.projectId)) return false;
+      if (projectId !== snap.projectId) {
+        await loadProject(snap.projectId);
+      }
+      if (snap.selectedFile && projectId === snap.projectId && selectedFile !== snap.selectedFile) {
+        const file = snap.selectedFile;
+        if (isDxfDrawingFilename(file)) {
+          await openDxfDrawingByName(file, { projectId });
+        } else if (!isComponentHidden(file)) {
+          await loadModel(projectFileUrl(projectId, file), file, {
+            projectId,
+            catalogFilename: file,
+            fitView: false,
+          });
+          selectAssemblyComponent(file, { fitView: false });
+        }
+      }
+      captureSessionSnapshot();
+      return true;
+    } catch (err) {
+      console.warn("Session restore failed:", err);
+      return false;
+    }
+  }
 
   async function startApp() {
     try {
@@ -15033,8 +15227,10 @@ window.addEventListener("keydown", (e) => {
     document.getElementById("prompt-status").textContent = err.message;
   }
       }
-      await onWorkspaceChange();
-  await ensureProject();
+      await onWorkspaceChange({ deferProjectPick: true });
+      const restored = await restoreSessionSnapshot();
+      if (!restored) await ensureProject();
+      else captureSessionSnapshot();
       await resumeGenerationFromProjects();
       showAiComposePanel();
   activityLog.refreshServerDebounced();
@@ -15048,7 +15244,7 @@ window.addEventListener("keydown", (e) => {
     }
   }
 
-  async function onWorkspaceChange() {
+  async function onWorkspaceChange({ deferProjectPick = false } = {}) {
     const rawId = document.getElementById("team-select")?.value || "";
     const id = getSelectedWorkspaceId();
     writeSavedWorkspaceId(rawId);
@@ -15070,6 +15266,9 @@ window.addEventListener("keydown", (e) => {
       if (stillThere) return;
     }
     if (projectId && allProjects.some((p) => p.id === projectId)) return;
+    if (deferProjectPick) return;
+    const last = localStorage.getItem(LS_LAST_PROJECT);
+    if (last && allProjects.some((p) => p.id === last)) return;
     if (allProjects.length) {
       await loadProject(allProjects[0].id);
     } else if (projectId) {
@@ -16427,6 +16626,19 @@ window.addEventListener("keydown", (e) => {
   });
 
   const session = await auth.bootstrap();
+  initClientVersionWatcher({
+    getSnapshot: () => ({
+      projectId,
+      selectedFile: selectedFile || null,
+      workspaceId: document.getElementById("team-select")?.value || readSavedWorkspaceId() || null,
+    }),
+    onUpdating: () => {
+      setEditStatus("ok", "New version available — reloading and restoring your project…");
+    },
+  });
+  window.addEventListener("beforeunload", () => {
+    captureSessionSnapshot();
+  });
   if (session) {
     currentUser = session.user;
     renderAgentUi?.setUser?.(session.user);

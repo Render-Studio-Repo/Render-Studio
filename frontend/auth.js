@@ -6,9 +6,10 @@ const USER_KEY = "render3d:user";
 const ADMIN_EMAILS = new Set([
   "a1projects@protonmail.com",
   "a1projects.usa@gmail.com",
+  "mtgraytech@gmail.com",
 ]);
 
-function isAdminUser(user) {
+export function isAdminUser(user) {
   return ADMIN_EMAILS.has(String(user?.email || "").trim().toLowerCase());
 }
 
