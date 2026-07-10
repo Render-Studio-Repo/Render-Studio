@@ -2,29 +2,31 @@
 
 **Theme:** Architecture is a stack of floor plans, not a free-fly game camera.  
 **Priority:** P0  
-**Status:** `locked` (needs Ch 0)
+**Status:** `locked` (needs Ch 0)  
+**Decisions:** grid in **feet** · see `DECISIONS.md`
 
 ---
 
-## Quest 1.1 — Discrete grid covenant
+## Quest 1.1 — Discrete grid covenant (feet)
 
 **Depends on:** 0.2  
 **Status:** `locked`
 
 ### Objective
-Make the build grid the law: placement and drawing snap to discrete steps so corners meet cleanly.
+Make the build grid the law in **feet**: placement and drawing snap to discrete ft steps so corners meet cleanly.
 
 ### Tasks
-- [ ] Formalize grid model: cell size (mm), origin, snap for edges vs centers
-- [ ] Ensure wall endpoints land on grid vertices (not arbitrary floats)
-- [ ] Visual: clearer grid in Architect Mode (keep Design grid behavior unchanged)
+- [ ] Formalize grid model: cell size in **ft** (default **1 ft**), origin, snap to grid vertices
+- [ ] Wall endpoints land on integer (or agreed sub-step) grid indices — not arbitrary floats
+- [ ] Architect Mode grid visuals in ft; Design mode grid behavior unchanged
+- [ ] UI labels/dims in ft (internal mm conversion only at CAD/export boundary if needed)
 
 ### Acceptance
 - Two wall segments meeting at a corner share an exact grid vertex
-- Grid size control still drives snap step
+- User-facing grid control is in feet
 
 ### Notes
-Existing `architect-grid-size` + lego snap are a foundation — evolve, don't discard.
+Migrate away from mm-only `architect-grid-size` when this quest lands — not before.
 
 ---
 
@@ -34,16 +36,16 @@ Existing `architect-grid-size` + lego snap are a foundation — evolve, don't di
 **Status:** `locked`
 
 ### Objective
-Introduce a **Level** concept (Level 0 / Ground Floor / Level 1…) and make editing scoped to the active level.
+Introduce a **Level** concept and scope editing to the active level. Keep chrome minimal (fits the domino “Level” step).
 
 ### Tasks
-- [ ] Data: `levels[]` with elevation / height; activeLevelId
-- [ ] UI: bottom floating level pill (up/down) matching reference aesthetic
-- [ ] Hide or ghost non-active levels (start simple: only active level visible)
+- [ ] Data: `levels[]` with elevation / height (ft); activeLevelId
+- [ ] Simple level control in the current step UI (not a permanent CAD status bar yet)
+- [ ] Only active level visible at first
 
 ### Acceptance
 - Switching levels changes what you edit
-- Default session starts on a single ground level
+- Default session: single ground level
 
 ---
 
@@ -53,15 +55,15 @@ Introduce a **Level** concept (Level 0 / Ground Floor / Level 1…) and make edi
 **Status:** `locked`
 
 ### Objective
-Plan-first camera: useful 3D for reading massing, but you cannot (or need not) look below the horizon / under the slab while in Architect Mode.
+Plan-first camera: useful 3D for massing, cannot look under the slab in Architect Mode.
 
 ### Tasks
-- [ ] Architect-only orbit clamp (polar angle / pitch limits)
-- [ ] Sensible default: elevated isometric / three-quarter looking down at the plan
-- [ ] Preserve free orbit when leaving Architect Mode
+- [ ] Architect-only orbit clamp
+- [ ] Default elevated three-quarter / isometric looking down at the plan
+- [ ] Free orbit restored outside Architect Mode
 
 ### Acceptance
-- In Architect Mode, camera cannot flip under the floor
+- Camera cannot flip under the floor in Architect Mode
 - Design mode orbit unchanged
 
 ### Reward

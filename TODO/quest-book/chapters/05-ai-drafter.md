@@ -14,10 +14,10 @@
 ### Objective
 Define a small JSON op set the UI already applies:
 
-- `set_grid`, `ensure_level`
-- `draw_wall`, `remove_wall`
+- `set_grid` (ft), `ensure_level`
+- `draw_wall`, `remove_wall` (centerline; no connector ops)
 - `add_opening`, `update_opening`, `remove_opening`
-- `place_library_module` (escape hatch)
+- `place_library_module` — **not** in v1 critical path (side quest / later)
 
 ### Tasks
 - [ ] Schema + validator (pydantic or JSON schema)

@@ -1,8 +1,9 @@
 # Chapter 2 — Raise the Walls
 
-**Theme:** Manual construction tools — draw like an architect, snap like Lego.  
-**Priority:** P0  
-**Status:** `locked` (needs Ch 1)
+**Theme:** Manual construction first — draw centerlines, corners connect, no connector noise.  
+**Priority:** P0 · **Do this before UI chrome**  
+**Status:** `locked` (needs Ch 1)  
+**Decisions:** centerline walls · `architect/building.json` · no connectors in design · see `DECISIONS.md`
 
 ---
 
@@ -12,17 +13,19 @@
 **Status:** `locked`
 
 ### Objective
-Replace "only place prefab wall chunks" as the primary path with a **draw wall** tool: click-click (or click-drag) along the grid to create wall segments.
+Primary path: **draw wall** on the ft grid (click–click or click–drag). Ghost preview. No kit placement required. No connector generation.
 
 ### Tasks
-- [ ] Left tool rail: Select + Wall tools (Architect Mode only)
-- [ ] Preview ghost segment while drawing
-- [ ] Commit creates a wall entity with start/end grid points, thickness, height from level defaults
-- [ ] Keep existing "Place wall panel" as a fallback / advanced path during migration
+- [ ] Minimal wall tool in the **Walls** domino step only (select + draw + delete)
+- [ ] Ghost segment while drawing; snap to ft grid vertices
+- [ ] Commit → centerline wall entity: start/end grid points, thickness, height from level defaults
+- [ ] Do **not** generate tongue/socket/pillar connectors
+- [ ] Existing “place wall panel” / connector UI: leave alone or hide in Architect stepped flow — not the primary path
 
 ### Acceptance
-- User can draw a rectangular room in four segments without placing a room kit
-- Undo/redo or at least delete selection works for new walls
+- Draw a rectangular room in four segments without a room kit
+- Delete selection works for new walls
+- No connector meshes appear as part of drawing
 
 ---
 
@@ -32,44 +35,47 @@ Replace "only place prefab wall chunks" as the primary path with a **draw wall**
 **Status:** `locked`
 
 ### Objective
-When wall endpoints share a grid vertex, they form a clean corner (topology + visuals).
+Shared grid vertices → clean corners (topology + simple visuals). Abutment/miter is enough; no corner pillars required in design.
 
 ### Tasks
-- [ ] Corner join rule: coincident endpoints merge into a vertex
-- [ ] Optional auto-miter / shared pillar at corners (start with clean abutment)
-- [ ] Prevent tiny sliver walls below min length (1 grid cell or configurable)
+- [ ] Coincident endpoints merge into a vertex
+- [ ] Clean abutment at 90° (optional simple miter later)
+- [ ] Min length: 1 grid cell (1 ft default)
 
 ### Acceptance
-- Closed loop of walls reads as one room outline
-- No visible gaps at 90° corners on-grid
+- Closed loop reads as one room outline
+- No visible gaps at on-grid 90° corners
 
 ---
 
-## Quest 2.3 — Building model (lightweight)
+## Quest 2.3 — Building model + `architect/building.json`
 
 **Depends on:** 2.2  
 **Status:** `locked`
 
 ### Objective
-Store architecture as structured data, not only free meshes — so AI and UI share one model.
+Structured building data is the source of truth; viewport meshes are derived. Persist under the project as `architect/building.json`.
 
-### Suggested schema (draft — discuss)
+### Schema (draft)
 ```
 Building
-  levels[]: { id, name, elevationMm, heightMm }
-  walls[]: { id, levelId, a: [i,j], b: [i,j], thicknessMm, kind }
-  openings[]: { id, wallId, type, offsetMm, widthMm, heightMm, sillMm, preset }
-  spaces[]?: inferred from closed loops (side quest OK)
+  units: "ft"
+  grid: { stepFt: 1 }
+  levels[]: { id, name, elevationFt, heightFt }
+  walls[]: { id, levelId, a: [i,j], b: [i,j], thicknessFt, heightFt? }
+  openings[]: { id, wallId, type, offsetFt, widthFt, heightFt, sillFt, preset? }
+  # no connectors[] in v1 design model
 ```
 
 ### Tasks
-- [ ] Persist building JSON alongside project (path TBD)
-- [ ] Viewport meshes generated *from* the model (single source of truth)
-- [ ] Migration: existing architect module placements can remain as "furniture/kit" objects initially
+- [ ] Create/read/write `projects/<id>/architect/building.json`
+- [ ] Mesh generation from model (simple extruded centerlines)
+- [ ] Reload restores walls from JSON
+- [ ] Manual draw updates JSON first, then mesh
 
 ### Acceptance
-- Reloading a project restores walls/openings from structured data
-- Manual edit updates the model, then the mesh
+- Round-trip save/load of a drawn room
+- Design timeline / kernel paths untouched
 
 ### Reward
-Unlocked: Chapter 3 + Chapter 4 can start in parallel after 2.3
+Unlocked: openings (Ch 4) and thin stepped UI (Ch 3) — walls already work

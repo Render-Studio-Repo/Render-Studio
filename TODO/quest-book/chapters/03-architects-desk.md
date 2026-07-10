@@ -1,70 +1,73 @@
-# Chapter 3 — The Architect's Desk
+# Chapter 3 — Domino Desk (stepped UI)
 
-**Theme:** Redo the interface to match the platform + reference grammar — without a full product rewrite.  
-**Priority:** P1 (starts after walls exist; can prototype chrome earlier behind a flag)  
-**Status:** `locked`
+**Theme:** Progression UI — low noise, high APM. Only show what the current step needs.  
+**Priority:** P1 but **thin** — after walls draw (2.1+); do not build a full CAD chrome suite first  
+**Status:** `locked`  
+**Decisions:** draw walls first · domino order tracker · simpler than typical CAD · see `DECISIONS.md`
 
 ---
 
-## Quest 3.1 — Layout grammar
+## Quest 3.1 — Domino order tracker
 
-**Depends on:** 2.1 (minimum: tools exist to put in the rail)  
+**Depends on:** 2.1  
 **Status:** `locked`
 
 ### Objective
-Reskin Architect Mode chrome to the reference layout:
+A simple **step progression** control (domino / order tracker): past steps · **current** · upcoming. Switching steps changes which tools and panels exist — not a permanent left rail of every tool at once.
 
-| Zone | Content |
-|------|---------|
-| Left | Vertical tool rail (select, wall, window, door, library…) |
-| Right | Property / component inspector for selection |
-| Bottom | Floating pill: environment (optional) + **Level** + settings |
-| Viewport | Orientation cube + 2D/3D (or Plan/3D) toggle |
+### Draft steps
+1. **Level** — pick / name active floor  
+2. **Walls** — draw / select / delete walls  
+3. **Openings** — window / door on selected walls  
+4. **Review** — look around (clamped 3D / plan), light confirm  
 
 ### Tasks
-- [ ] Architect-only CSS shell (dark charcoal panels, light canvas — match existing Render3D tokens)
-- [ ] Hide or collapse non-architect noise while in Architect Mode (careful: don't delete Design UI)
-- [ ] Motion: 2–3 subtle transitions (panel open, tool switch, level change) — purposeful, not noisy
+- [ ] Step tracker UI (compact, Architect-only) — always visible but small
+- [ ] Each step mounts **only** its controls; unmount or hide the rest
+- [ ] Motion: short step-advance transition (1 intentional motion, not noise)
+- [ ] Do **not** port the full reference tool rail + property sheet yet
 
 ### Acceptance
-- First viewport in Architect Mode reads as one composition: canvas + tools + inspector + level
-- Design mode layout unchanged when not in Architect
+- User can tell what step they’re on in under a second
+- Walls step has no openings chrome; openings step has no wall-draw chrome (except selection if needed)
+- Design mode UI unchanged
 
 ---
 
-## Quest 3.2 — Property inspector
+## Quest 3.2 — Step-local controls (not a permanent inspector)
 
 **Depends on:** 3.1, 2.3  
 **Status:** `locked`
 
 ### Objective
-Selecting a wall or opening shows typed controls: dimensions, presets, materials — inspired by the window panel (Fixed / Hinged / Sliding / Skylight, frame, width/height).
+When something is selected, show **only the few fields that matter for this step** (e.g. wall thickness in Walls; width/height in Openings). No dense multi-tab inspector in v1.
 
 ### Tasks
-- [ ] Wall: length (derived), thickness, height, exterior/interior
-- [ ] Opening: type tabs, width/height inputs + sliders, simple pane presets
-- [ ] Live update of model + mesh on change
+- [ ] Walls step: thickness (ft), maybe height override, delete
+- [ ] Openings step: type, width, height (ft) — presets can wait for 4.2
+- [ ] Live update model → mesh
 
 ### Acceptance
-- Changing width from 100→120 updates the opening without regenerating the whole building
+- Changing a dimension updates without regenerating the whole building
+- No connector / material / comfort controls in these steps
 
 ---
 
-## Quest 3.3 — Plan / 3D toggle (lightweight)
+## Quest 3.3 — Plan / 3D (lightweight, Review-friendly)
 
 **Depends on:** 3.1, 1.3  
 **Status:** `locked`
 
 ### Objective
-Top-right (or top-left) **3D / 2D** toggle. 2D = true plan orthographic looking down; 3D = clamped perspective.
+Simple Plan vs 3D toggle — especially natural on the Review step; available earlier if it helps drawing.
 
 ### Tasks
-- [ ] Orthographic top view for 2D
+- [ ] Orthographic plan vs clamped 3D
 - [ ] Remember last mode per session
-- [ ] Full split view deferred to Chapter 6 / side quest
+- [ ] Split view stays Ch 6 / side quest
 
 ### Acceptance
-- Toggle is one click; drawing tools work in both views
+- One-click toggle; draw still works in both if exposed during Walls
 
 ### Reward
-Architect Mode feels like a product, not a panel bolted onto CAD
+Architect feels walkable and calm — not a second Fusion

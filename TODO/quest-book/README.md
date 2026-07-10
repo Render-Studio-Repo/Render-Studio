@@ -42,14 +42,14 @@ TODO/quest-book/
 ## Chapter order (critical path)
 
 1. **Ch 0 — Do No Harm** — isolate Architect Mode so we cannot break the rest of the app
-2. **Ch 1 — The Floor Plan Realm** — discrete grid + one-level-at-a-time camera
-3. **Ch 2 — Raise the Walls** — manual wall / corner / opening construction
-4. **Ch 3 — The Architect's Desk** — UI redo (tool rail, property panel, level bar)
-5. **Ch 4 — Openings & Inserts** — windows, doors, presets, dimensions
-6. **Ch 5 — The AI Drafter** — AI places the same structured components humans can
-7. **Ch 6 — Split Sight** — 2D plan + 3D preview (optional polish after core works)
+2. **Ch 1 — The Floor Plan Realm** — **ft** grid + one-level-at-a-time camera
+3. **Ch 2 — Raise the Walls** — draw centerline walls · corners connect · `building.json` (**before** heavy UI)
+4. **Ch 3 — Domino Desk** — stepped order tracker; only current-step controls
+5. **Ch 4 — Openings** — windows/doors on the Openings step
+6. **Ch 5 — The AI Drafter** — AI emits the same ops
+7. **Ch 6 — Split Sight** — optional polish
 
-Side Quests live in `side-quests/` and are never blockers.
+Locked product calls: [`DECISIONS.md`](./DECISIONS.md). Side Quests never block.
 
 ## Making the quest book itself fun
 

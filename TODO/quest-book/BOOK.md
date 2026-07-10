@@ -2,43 +2,52 @@
 
 ## The fantasy
 
-You are drafting a building the way an architect thinks: **one floor, one level, discrete steps**. Corners connect. Walls snap. Windows and doors are typed inserts with real dimensions. The 3D view is really a **segmented 2D plan** extruded upward — you should not need to look below the horizon.
+You are drafting a building the way an architect thinks: **one floor, one level, discrete steps in feet**. Corners connect. Walls are centerlines you draw. Windows and doors are typed openings. The 3D view is really a **segmented 2D plan** extruded upward — you should not need to look below the horizon.
 
-Manual tools and AI speak the **same language**: place a wall segment, set an opening, choose a frame preset. Humans drag; AI emits the same structured ops.
+The UI is a **domino progression**: each step shows only what you need right now, with a simple order tracker so you always know the current move. Manual tools and AI speak the **same language** (structured ops on the building model).
 
-## Reference vibes (from the mood boards)
+**Connectors are standardized and out of band** — not generated during design steps.
 
-1. **Light architect studio** — Design / Structure / Comfort modes, left tool rail, right property sheet (window type, frame material, width/height, pane presets), bottom level pill, orientation cube, 2D/3D toggle.
-2. **Dark split editor** — 2D schematic plan beside 3D isometric kitchen; Ground Floor pill; snap/transform bottom bar; FPS-clean SaaS chrome.
-3. **Dark modular placer** — outlined illustrative 3D, selection gizmos, object detail card, keyboard hints — modular cabinets today, walls/windows tomorrow.
+## Locked decisions
 
-Render3D already leans **dark charcoal chrome + light canvas**. Architect Mode should keep that platform DNA while borrowing the *layout grammar* of those references: tool rail, property panel, level control, plan-first camera.
+See [DECISIONS.md](./DECISIONS.md) for the full write-up. Short form:
 
-## What already exists (do not throw away)
+| # | Decision |
+|---|----------|
+| 1 | Grid in **feet**, discrete snap |
+| 2 | **Centerline walls** (+ thickness); not panel-first |
+| 3 | Persist as **`architect/building.json`** in the project |
+| 4 | **Draw walls first**; stepped low-noise UI; no unnecessary chrome |
 
-- Architect workspace mode + right panel (`frontend/workspace-modes.js`, `index.html` architect panel)
-- Local module catalog (floors, walls, windows, doors, roofs, pillars) + instant place
-- Grid size / wall height inputs, lego-style snap anchors, nudge controls
-- Architect skill for AI room kits (`backend/skills/architect/SKILL.md`)
-- Robot snap connector presets / DXF profile hooks
+## Reference vibes (mood boards) — borrow carefully
 
-## What we are aiming for (delta)
+The references show rich tool rails and property sheets. We **steal the clarity** (plan focus, level control, typed openings) but **not the CAD density**. Our bar: simpler than typical CAD; one step at a time; high APM.
+
+Render3D dark charcoal chrome + light canvas stays the platform DNA — Architect Mode just shows less of it per step.
+
+## What already exists (reuse selectively)
+
+- Architect workspace mode + panel, module catalog, mm grid, lego snap, connector UI, architect skill
+- **Keep mode entry + viewport**; **do not** lead with connector generation or kit-place as the structure path
+- Kits / connectors → later library or export side quests
+
+## Target delta
 
 | Today | Target |
 |-------|--------|
-| Place prebuilt module chunks | **Draw** walls on a discrete grid; corners auto-connect |
-| Free orbit 3D camera | **Plan-first** camera; clamp below-horizon; level stack |
-| Prompt-heavy AI kits | AI emits **same ops** as manual tools |
-| Dense right-panel form | Clean tool rail + property inspector + bottom level bar |
-| Modules as loose meshes | Building model: levels → spaces → walls → openings |
+| Place prebuilt modules + connectors | **Draw** centerline walls on a **ft** grid |
+| Free orbit 3D | Plan-first camera; no under-horizon |
+| Dense architect panel | **Domino steps** — only current-step controls |
+| AI room kits / connector prompts | AI emits **same wall/opening ops** |
+| Loose meshes | `architect/building.json` → derived meshes |
 
-## Non-goals (for the main quest line)
+## Non-goals (main quest line)
 
-- Full BIM / code compliance / structural engineering
-- Multi-story free flythrough with basements in view
-- Photoreal materials pipeline (can stay illustrative)
-- Replacing Design mode CAD kernel work
+- Generating snap connectors / robot tabs during design
+- Full BIM, multi-story flythrough, photoreal materials
+- Full CAD-style permanent tool rail + inspector before walls work
+- Breaking Design / Wiring / Engineering
 
 ## Success snapshot
 
-A user can: pick Architect Mode → stay on Level 1 → draw a closed room on the grid → punch a window → tweak width/height in the property panel → ask AI to "add a sliding door on the south wall" → get the same structured opening a human would place — without Design mode regressing.
+Architect Mode → Level 1 → draw a closed room on a **ft** grid → add a window opening → step tracker advances → AI can add a door via the same ops — Design mode untouched; no connector geometry in the design model.
