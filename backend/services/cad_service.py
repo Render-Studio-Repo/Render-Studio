@@ -607,6 +607,11 @@ def _is_promoted_detail_part_stem(stem: str, project_path: Path) -> bool:
     )
 
 
+def _is_jake_topology_sidecar_stem(stem: str) -> bool:
+    """Jake cadpy topology sidecar: ``.part.step.glb`` → stem ``.part.step``."""
+    return stem.startswith(".") and (stem.endswith(".step") or stem.endswith(".stp"))
+
+
 def _canonical_assembly_stem(project_path: Path) -> str | None:
     """Newest kernel export that has both program + sim metadata."""
     best: tuple[float, str] | None = None
@@ -642,6 +647,10 @@ def _viewport_component_stems(project_path: Path, stems: set[str]) -> set[str]:
 
     for stem in list(visible):
         if _is_promoted_detail_part_stem(stem, project_path):
+            visible.discard(stem)
+
+    for stem in list(visible):
+        if _is_jake_topology_sidecar_stem(stem):
             visible.discard(stem)
 
     canonical = _canonical_assembly_stem(project_path)
