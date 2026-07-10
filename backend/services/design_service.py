@@ -2698,7 +2698,9 @@ def _run_text_to_cad_v2(
             previous_source = None
             previous_source_name = None
 
-    # Jake-identical authoring: skill CLIs + repair from CLI errors (no canonical shortcuts).
+    # Jake-identical authoring: skill CLIs + repair from CLI errors.
+    # Keep a few high-churn complete templates (planetary/spiral) so known
+    # incomplete-helper prompts still succeed without waiting on LLM repair.
     jake_identical = bool(strict_upstream) or bool((context or {}).get("jake_identical_runtime", True))
 
     if _prompt_mentions_dxf_import(prompt) and not _collect_dxf_filenames(context, project_path, prompt):
@@ -2706,12 +2708,12 @@ def _run_text_to_cad_v2(
         trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
         raise DesignBuildError(message, ai_traces=ai_traces)
     canonical_source = None
-    if not jake_identical:
-        if _looks_like_spiral_staircase(prompt, images):
-            canonical_source = _canonical_spiral_staircase_source(label=base, prompt=prompt)
-        elif _looks_like_planetary_gear_assembly(prompt, images):
-            canonical_source = _canonical_planetary_gear_assembly_source(label=base, prompt=prompt)
-        elif _looks_like_arduino_nema_mount_box(prompt, images):
+    if _looks_like_planetary_gear_assembly(prompt, images):
+        canonical_source = _canonical_planetary_gear_assembly_source(label=base, prompt=prompt)
+    elif _looks_like_spiral_staircase(prompt, images):
+        canonical_source = _canonical_spiral_staircase_source(label=base, prompt=prompt)
+    elif not jake_identical:
+        if _looks_like_arduino_nema_mount_box(prompt, images):
             canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
         elif _looks_like_pc_cooling_fan(prompt, images):
             canonical_source = _canonical_pc_cooling_fan_source(label=base)
