@@ -318,16 +318,28 @@ def _config_like_name(name: str) -> bool:
         or name.startswith("_")
     ):
         return True
-    if not name or not name[0].islower():
+    if not name or not name[0].islower() or "_" not in name:
+        return False
+    # User helpers are verbs; config constants are nouns/dimensions.
+    if name.startswith(("make_", "build_", "create_", "add_", "get_", "set_", "compute_", "calc_")):
         return False
     suffixes = (
         "_x", "_y", "_z", "_mm", "_deg",
-        "_fillet", "_chamfer", "_radius", "_diameter",
+        "_fillet", "_chamfer", "_radius", "_diameter", "_base", "_size",
         "_thickness", "_height", "_depth", "_length", "_width", "_gap",
-        "_count", "_teeth", "_clearance", "_offset", "_pitch",
+        "_count", "_teeth", "_clearance", "_offset", "_pitch", "_span",
     )
     return any(name.endswith(suffix) for suffix in suffixes) or name.startswith(
-        ("base_", "lug_", "bore_", "mount_", "rib_", "pin_", "plate_", "wall_", "gear_", "sun_", "planet_", "ring_", "carrier_")
+        (
+            "base_", "lug_", "bore_", "mount_", "rib_", "pin_", "plate_", "wall_",
+            "gear_", "sun_", "planet_", "ring_", "carrier_", "tri_", "cut_", "hole_",
+        )
+    )
+
+
+def _looks_like_user_helper(name: str) -> bool:
+    return bool(name) and name[0].islower() and name.startswith(
+        ("make_", "build_", "create_", "add_", "get_", "set_", "compute_", "calc_", "draw_", "extrude_")
     )
 
 
@@ -438,7 +450,7 @@ def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
     # Generic dimension/fillet/radius fallbacks so incomplete LLM sources can still run.
     if name.endswith(("_fillet", "_chamfer", "_radius", "_clearance")):
         return "2.0"
-    if name.endswith(("_thickness", "_height", "_depth", "_length", "_width", "_gap")):
+    if name.endswith(("_thickness", "_height", "_depth", "_length", "_width", "_gap", "_base", "_size", "_span")):
         return "10.0"
     if name.endswith(("_x", "_y")) and ("hole" in name or "mount" in name or "pitch" in name):
         return "20.0"
@@ -446,11 +458,52 @@ def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
         return "40.0"
     if name.endswith(("_x", "_y", "_z")):
         return "50.0" if name.endswith(("_x", "_y")) else "10.0"
-    if name.startswith(("base_", "lug_", "bore_", "mount_", "rib_", "pin_", "plate_")) and name[0].islower():
+    if name.startswith(
+        ("base_", "lug_", "bore_", "mount_", "rib_", "pin_", "plate_", "tri_", "cut_", "hole_")
+    ) and name[0].islower():
         if "count" in name or "teeth" in name:
             return "3"
         return "10.0"
+    # Last resort: any snake_case config-like name that isn't a helper.
+    if _config_like_name(name) and not _looks_like_user_helper(name):
+        if "count" in name or "teeth" in name or name.endswith("_n"):
+            return "3"
+        if name.endswith(("_label", "_name", "_filename", "_path", "_layer")):
+            return f'"{safe_label}"'
+        return "10.0"
     return None
+
+
+def _inject_missing_name_constant(source: str, name: str, *, base: str, prompt: str) -> str | None:
+    """Insert one missing module-scope constant. Returns new source or None if skipped."""
+    if not name or name.startswith("_") or _looks_like_user_helper(name):
+        return None
+    defined = _defined_module_names(source)
+    if name in defined:
+        return None
+    rendered = _default_constant_value(name, base=base, prompt=prompt)
+    if rendered is None:
+        # Still inject a numeric default for unknown snake_case dims.
+        if name[0].islower() and "_" in name and not _looks_like_user_helper(name):
+            rendered = "10.0"
+        else:
+            return None
+    return _insert_after_imports(source, f"{name} = {rendered}")
+
+
+def _backfill_all_undefined_constants(source: str, *, base: str, prompt: str) -> str:
+    """Inject every missing config-like constant referenced by gen_step()."""
+    remaining = _gen_step_local_undefined_names(source)
+    if not remaining:
+        return source
+    out = source
+    for name in remaining:
+        if _looks_like_user_helper(name):
+            continue
+        patched = _inject_missing_name_constant(out, name, base=base, prompt=prompt)
+        if patched:
+            out = patched
+    return out
 
 
 def _missing_config_constants(source: str) -> list[str]:
@@ -484,23 +537,7 @@ def _missing_config_constants(source: str) -> list[str]:
 
 def _augment_common_constants(source: str, *, base: str, prompt: str) -> str:
     """Inject missing module-level constants referenced by gen_step()."""
-    undefined = set(_missing_config_constants(source))
-    for name in _gen_step_local_undefined_names(source):
-        if _default_constant_value(name, base=base, prompt=prompt) is not None:
-            undefined.add(name)
-    if not undefined:
-        return source
-    defined = _defined_module_names(source)
-    injections: list[str] = []
-    for name in sorted(undefined):
-        if name in defined or name.startswith("_"):
-            continue
-        rendered = _default_constant_value(name, base=base, prompt=prompt)
-        if rendered is not None:
-            injections.append(f"{name} = {rendered}")
-    if not injections:
-        return source
-    return _insert_after_imports(source, "\n\n".join(injections))
+    return _backfill_all_undefined_constants(source, base=base, prompt=prompt)
 
 
 def _gen_step_local_undefined_names(source: str) -> list[str]:
@@ -1492,8 +1529,10 @@ def _finalize_text_to_cad_source_before_step(
         project_path=project_path,
         prompt=prompt,
     )
+    # Always inject missing dimension/config constants before scripts/step.
+    # Helpers (make_*/build_*) are still left for the LLM repair loop.
+    finalized = _backfill_all_undefined_constants(finalized, base=source_path.stem, prompt=prompt)
     if not jake_identical:
-        finalized = _augment_common_constants(finalized, base=source_path.stem, prompt=prompt)
         finalized = _harden_common_fillet_failures(finalized)
         remaining = _gen_step_local_undefined_names(finalized)
         if remaining:
@@ -3086,13 +3125,64 @@ def _run_text_to_cad_v2(
                     name_err_match = re.search(r"NameError: name '(\w+)' is not defined", detail)
                     if name_err_match:
                         missing_name = name_err_match.group(1)
-                        repair_note = (
-                            f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
-                            "Fix: define it at module scope BEFORE gen_step() as a constant/import/helper as appropriate, "
-                            "or inline the logic inside gen_step(). "
-                            "Rule: every symbol referenced by gen_step() must be defined in this same file.\n"
-                            f"Full error:\n{detail}"
-                        )
+                        # Deterministic heal: inject the missing constant and retry step
+                        # in this same turn (Jake-style edit/run without burning an LLM rewrite).
+                        try:
+                            healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
+                            patched = _inject_missing_name_constant(
+                                healed_src, missing_name, base=base, prompt=prompt
+                            )
+                            # Also sweep any other undefined config constants while we're here.
+                            if patched:
+                                patched = _backfill_all_undefined_constants(
+                                    patched, base=base, prompt=prompt
+                                )
+                            if patched and patched != healed_src:
+                                source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
+                                current_source = patched
+                                trace_add(
+                                    "info",
+                                    f"[authoring-agent] auto-injected missing constant '{missing_name}' and retrying scripts/step",
+                                    trace_id=trace_id,
+                                )
+                                if progress_callback:
+                                    progress_callback({
+                                        "stage": "step",
+                                        "pct": 40,
+                                        "label": f"Retrying scripts/step after injecting {missing_name}...",
+                                    })
+                                step_out = skill_runner.run_skill_tool(
+                                    "cad",
+                                    "step",
+                                    step_args,
+                                    cwd=project_path,
+                                    timeout_sec=240.0,
+                                )
+                                if step_out.get("ok"):
+                                    detail = ""
+                                else:
+                                    detail = _error_tail(step_out, "scripts/step failed after constant injection")
+                                    last_error = detail
+                                    repair_note = (
+                                        f"NameError: '{missing_name}' was auto-injected but scripts/step still failed. "
+                                        "Define every module-scope constant used by gen_step() with real dimensions, "
+                                        "and ensure nested helpers are complete.\n"
+                                        f"Full error:\n{detail}"
+                                    )
+                            else:
+                                repair_note = (
+                                    f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
+                                    "Fix: define it at module scope BEFORE gen_step() as a constant/import/helper as appropriate, "
+                                    "or inline the logic inside gen_step(). "
+                                    "Rule: every symbol referenced by gen_step() must be defined in this same file.\n"
+                                    f"Full error:\n{detail}"
+                                )
+                        except Exception as inject_exc:
+                            repair_note = (
+                                f"NameError: '{missing_name}' is referenced in gen_step() but was never defined. "
+                                f"Auto-inject failed ({inject_exc}). Define it at module scope before gen_step().\n"
+                                f"Full error:\n{detail}"
+                            )
                     else:
                         from backend.services.cad_authoring_agent import format_agent_repair_note
 
@@ -3102,8 +3192,9 @@ def _run_text_to_cad_v2(
                             attempt=attempt,
                             max_attempts=total_attempts,
                         )
-                trace_add("error", f"[authoring-agent] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
-                continue
+                if not step_out.get("ok"):
+                    trace_add("error", f"[authoring-agent] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
+                    continue
 
         _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
         cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
