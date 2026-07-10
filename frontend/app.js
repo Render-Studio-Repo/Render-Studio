@@ -9444,6 +9444,7 @@ const PROMPT_KEY_MODEL_OPTIONS = {
     { value: "gpt-5.5", label: "GPT-5.5" },
     { value: "gpt-5.5-pro", label: "GPT-5.5 Pro" },
     { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ],
   anthropic: [
     { value: "claude-fable-5", label: "Claude Fable 5" },
