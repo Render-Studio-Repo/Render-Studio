@@ -133,6 +133,72 @@ def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, 
     return exports
 
 
+def resolve_step_module_sidecar(project_path: Path, filename: str) -> Path | None:
+    """Resolve Jake-style `.<stem>.step.js` parameter/animation module for a model file.
+
+    Motion is not inferred from geometry. A sidecar module (or URDF) is the contract
+    that declares joints/features and viewer-time kinematics — see parameters.md.
+    """
+    safe = Path(filename).name
+    if not safe:
+        return None
+    project_path = Path(project_path)
+    candidates: list[Path] = []
+
+    # generation.json may record jake_params from a prior text-to-cad run.
+    gen_path = project_path / "generation.json"
+    if gen_path.is_file():
+        try:
+            gen = json.loads(gen_path.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            gen = None
+        if isinstance(gen, dict):
+            for key in ("jake_params", "step_module", "params_module"):
+                name = gen.get(key)
+                if isinstance(name, str) and name.strip():
+                    candidates.append(project_path / Path(name).name)
+            files = gen.get("files") if isinstance(gen.get("files"), dict) else {}
+            for key in ("jake_params", "step_module", "params"):
+                name = files.get(key) if isinstance(files, dict) else None
+                if isinstance(name, str) and name.strip():
+                    candidates.append(project_path / Path(name).name)
+
+    lower = safe.lower()
+    if lower.endswith(".step.js"):
+        candidates.append(project_path / (safe if safe.startswith(".") else f".{safe}"))
+    elif lower.endswith(".step") or lower.endswith(".stp"):
+        candidates.append(project_path / f".{safe}.js")
+        stem = Path(safe).stem
+        candidates.append(project_path / f".{stem}.step.js")
+    else:
+        stem = Path(safe).stem
+        # foo_edited.glb → prefer sibling STEP stem module
+        for suffix in (".step", ".stp"):
+            step = project_path / f"{stem}{suffix}"
+            if step.is_file():
+                candidates.append(project_path / f".{step.name}.js")
+                candidates.append(project_path / f".{stem}.step.js")
+        # Strip common edit suffixes to find the generative STEP module.
+        base_stem = re.sub(r"(_edited|_clean|_v\d+)$", "", stem, flags=re.I)
+        if base_stem != stem:
+            for suffix in (".step", ".stp"):
+                step = project_path / f"{base_stem}{suffix}"
+                if step.is_file():
+                    candidates.append(project_path / f".{step.name}.js")
+            candidates.append(project_path / f".{base_stem}.step.js")
+        candidates.append(project_path / f".{stem}.step.js")
+
+    seen: set[str] = set()
+    for path in candidates:
+        key = path.name
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.is_file() and path.name.endswith(".js"):
+            return path
+    return None
+
+
 def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, stem: str = "_export_visible_assembly") -> list[dict[str, Any]]:
     """Build downloadable artifacts for the currently visible browser components."""
     safe_names: list[str] = []

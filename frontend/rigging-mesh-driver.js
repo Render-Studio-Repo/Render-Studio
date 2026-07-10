@@ -22,9 +22,15 @@ const BONE_ID_ALIASES = {
 const MESH_ALIASES = {
   gear_input: ["gear_input", "gear_1_link", "gear_1"],
   gear_output: ["gear_output", "gear_2_link", "gear_2"],
+  sun: ["sun", "sun_gear"],
+  ring: ["ring", "ring_gear"],
+  carrier: ["carrier", "carrier_plate"],
+  planet_1: ["planet_1", "planet1", "planet_gear_1"],
+  planet_2: ["planet_2", "planet2", "planet_gear_2"],
+  planet_3: ["planet_3", "planet3", "planet_gear_3"],
 };
 
-const ROTATING_PARTS = new Set(["gear_input", "gear_output"]);
+const ROTATING_PARTS = new Set(["gear_input", "gear_output", "sun", "planet_1", "planet_2", "planet_3", "carrier"]);
 const MOVING_JOINT_TYPES = new Set(["continuous", "revolute", "prismatic"]);
 const ROOT_PREVIEW_PART = "__model_preview__";
 

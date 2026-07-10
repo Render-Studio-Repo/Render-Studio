@@ -1016,6 +1016,7 @@ class AIService:
             "positioning.md",
             "snapshot-review.md",
             "inspection-and-validation.md",
+            "parameters.md",
         ):
             ref = get_reference("cad", name)
             if ref and ref.get("content"):
@@ -1037,6 +1038,9 @@ class AIService:
             "grippers, fixtures, and editable designs this is mandatory. If the user explicitly asks for one printable "
             "solid/manifold part, still keep named construction variables for major pieces, and only then create a final "
             "fused printable solid.\n"
+            "For mechanisms (gears, hinges, linkages, lids, sliders, robots), label every moving part with a stable "
+            "snake_case id that a later .<stem>.step.js sidecar can target as manifest.features — motion is NOT "
+            "inferred from geometry; the sidecar declares joints/kinematics explicitly (see parameters.md).\n"
             "\n⚠️  CRITICAL RULE — UNDEFINED FUNCTION CALLS ARE THE #1 CAUSE OF FAILURE:\n"
             "Every function that gen_step() calls (e.g. make_frame(), build_blade(), create_hub()) "
             "MUST be fully defined (def make_frame(): ...) in this same Python file BEFORE gen_step(). "
@@ -1202,6 +1206,67 @@ class AIService:
         call_trace["bone_count"] = len(rig.get("bones") or [])
         call_trace["animation_count"] = len(rig.get("animations") or [])
         return rig, call_trace
+
+    def generate_step_module(
+        self,
+        *,
+        user_prompt: str,
+        step_name: str,
+        part_labels: list[str] | None = None,
+        source: str | None = None,
+        inspect_summary: str | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Author a Jake-style .<stem>.step.js motion/parameter sidecar for a mechanism."""
+        from backend.services.skills_service import get_reference
+
+        params_ref = get_reference("cad", "parameters.md")
+        params_md = (params_ref or {}).get("content") or ""
+        labels = [str(x).strip() for x in (part_labels or []) if str(x).strip()]
+        label_block = ", ".join(labels[:40]) if labels else "(infer from prompt and source labels)"
+        system = (
+            "You author Jake text-to-cad STEP parameter modules (.<stem>.step.js).\n"
+            "Motion is NEVER inferred from mesh names alone — this module IS the joint/kinematics contract.\n"
+            "Return ONLY a complete ES module with `export default { manifest, setup?, update }`.\n"
+            "Follow parameters.md: schemaVersion 1, manifest.features keyed by stable snake_case ids matching "
+            "build123d part labels, manifest.parameters, manifest.animations, and update({params, features, effects, time}).\n"
+            "Use effects.transform / visible / style / highlight. Derive kinematics from constraints "
+            "(gear ratios, hinge axes, link lengths) — do not eyeball keyframes.\n"
+            "Feature ids MUST match the provided part labels exactly when labels are given "
+            "(e.g. sun, planet_1, lid, link_a).\n"
+            "Set manifest.step.path to the STEP filename. Prefer one drive/travel parameter and derive the rest.\n"
+            "Include at least one looping animation that sets the drive parameter from cycle.\n"
+            "No markdown fences. No explanation.\n\n"
+            f"parameters.md:\n{params_md[:12000]}"
+        )
+        user = (
+            f"User prompt:\n{user_prompt}\n\n"
+            f"STEP filename: {step_name}\n"
+            f"Part labels: {label_block}\n\n"
+            f"Inspect summary (optional):\n{(inspect_summary or '')[:3000]}\n\n"
+            f"Python source excerpt (optional):\n{(source or '')[:6000]}\n"
+        )
+        raw, call_trace = self._call_model(
+            system,
+            user,
+            trace_id=trace_id,
+            max_tokens=8192,
+        )
+        text = (raw or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        if "export default" not in text:
+            raise ValueError("STEP module must include export default")
+        if "manifest" not in text or "update" not in text:
+            raise ValueError("STEP module must define manifest and update")
+        call_trace["parsed_ok"] = True
+        call_trace["step_module_chars"] = len(text)
+        return text, call_trace
 
     def chat_json(
         self,

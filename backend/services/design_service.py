@@ -1557,6 +1557,120 @@ def _looks_like_planetary_gear_assembly(prompt: str, images: list[dict[str, Any]
     return has_planetary and has_gear
 
 
+def _prompt_implies_mechanism_motion(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
+    """True when the user asked for something that should get a .step.js motion sidecar.
+
+    Jake does not infer joints from BREP — mechanisms need an explicit parameter module
+    (or URDF). This only decides whether to *author* that sidecar after STEP succeeds.
+    """
+    if images:
+        return False
+    p = (prompt or "").lower()
+    keywords = (
+        "gear",
+        "planetary",
+        "hinge",
+        "linkage",
+        "linkage",
+        "slider",
+        "piston",
+        "crank",
+        "cam",
+        "lid",
+        "door",
+        "animate",
+        "animation",
+        "motion",
+        "rotate",
+        "spin",
+        "joint",
+        "mechanism",
+        "robot",
+        "arm",
+        "gripper",
+        "meshing",
+        "teeth",
+        "sprocket",
+        "pulley",
+        "belt",
+        "fold",
+        "open/close",
+        "open and close",
+    )
+    return any(k in p for k in keywords)
+
+
+def _extract_part_labels_from_source(source: str) -> list[str]:
+    """Collect stable snake_case labels from build123d source for .step.js features."""
+    labels: list[str] = []
+    seen: set[str] = set()
+    patterns = (
+        r'\.label\s*=\s*["\']([A-Za-z_][A-Za-z0-9_]*)["\']',
+        r'label\s*=\s*["\']([A-Za-z_][A-Za-z0-9_]*)["\']',
+        r'(?:sun|planet|ring|carrier|pin|lid|link|gear|arm|joint)_label[s]?\s*=\s*["\']([A-Za-z_][A-Za-z0-9_]*)["\']',
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, source or ""):
+            label = match.group(1)
+            if label in {"model_label", "part_label"} or label in seen:
+                continue
+            if len(label) < 2:
+                continue
+            seen.add(label)
+            labels.append(label)
+    # planet_labels = ["planet_1", ...]
+    for match in re.finditer(
+        r'(?:planet_labels|pin_labels|part_labels)\s*=\s*\[([^\]]+)\]',
+        source or "",
+        re.I,
+    ):
+        for item in re.findall(r'["\']([A-Za-z_][A-Za-z0-9_]*)["\']', match.group(1)):
+            if item not in seen:
+                seen.add(item)
+                labels.append(item)
+    return labels
+
+
+def _maybe_author_step_module(
+    *,
+    ai: Any,
+    project_path: Path,
+    prompt: str,
+    step_name: str,
+    source: str,
+    inspect_out: dict[str, Any] | None,
+    trace_id: str | None,
+    ai_traces: list[dict[str, Any]],
+    images: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Write .<step>.js motion sidecar when the prompt implies a mechanism."""
+    if not _prompt_implies_mechanism_motion(prompt, images):
+        return None
+    module_name = f".{Path(step_name).name}.js"
+    module_path = project_path / module_name
+    labels = _extract_part_labels_from_source(source)
+    inspect_summary = ""
+    if isinstance(inspect_out, dict):
+        inspect_summary = ((inspect_out.get("stdout") or "") + "\n" + (inspect_out.get("stderr") or ""))[-3000:]
+    try:
+        module_src, trace = ai.generate_step_module(
+            user_prompt=prompt,
+            step_name=step_name,
+            part_labels=labels,
+            source=source,
+            inspect_summary=inspect_summary,
+            trace_id=trace_id,
+        )
+        if trace:
+            ai_traces.append(trace)
+        module_path.write_text(module_src, encoding="utf-8")
+        trace_add("info", f"[authoring-agent] wrote STEP motion module {module_name}", trace_id=trace_id)
+        return module_name
+    except Exception as exc:
+        trace_add("warning", f"[authoring-agent] STEP module authoring skipped: {exc}", trace_id=trace_id)
+        return None
+
+
 def _canonical_planetary_gear_assembly_source(*, label: str, prompt: str) -> str:
     """Jake benchmark 10 planetary stage — trapezoidal teeth, correct internal ring.
 
@@ -3112,6 +3226,21 @@ def _run_text_to_cad_v2(
             files["3mf"] = three_mf_name
         if snapshot_info and snapshot_info.get("file"):
             files["snapshot"] = snapshot_info["file"]
+        step_module_name = _maybe_author_step_module(
+            ai=ai,
+            project_path=project_path,
+            prompt=prompt,
+            step_name=step_name,
+            source=source,
+            inspect_out=inspect_out,
+            trace_id=trace_id,
+            ai_traces=ai_traces,
+            images=images,
+        )
+        if step_module_name:
+            files["jake_params"] = step_module_name
+            files["step_module"] = step_module_name
+            wired_names["jake_params"] = step_module_name
         return {
             "intent": "generative",
             "message": f"Built {base} with the {'Architect modular ' if architect_mode else 'Fusion-style ' if fusion_mode else ''}text-to-cad build123d workflow.",

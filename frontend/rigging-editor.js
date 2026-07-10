@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { createRiggingAnimationTimeline } from "./rigging-animation-timeline.js";
-import { createRiggingMeshDriver } from "./rigging-mesh-driver.js?v=20260629-sim-joints";
+import { createRiggingMeshDriver } from "./rigging-mesh-driver.js?v=20260710-planetary-play";
 
 const BONE_COLOR = 0xf0883e;
 const BONE_SELECTED = 0x58a6ff;

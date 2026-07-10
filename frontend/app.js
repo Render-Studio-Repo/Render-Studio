@@ -98,8 +98,10 @@ import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
-import { createRiggingEditor } from "./rigging-editor.js?v=20260710-urdf-jake-panel";
+import { createRiggingEditor } from "./rigging-editor.js?v=20260710-step-module";
 import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260710-jake-runtime";
+import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
+import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
 
 const API = "";
@@ -3738,10 +3740,24 @@ function enterRiggingMode() {
     if (selectedFile) await loadSimForFile(selectedFile);
     await riggingEditor.show();
     const bound = riggingEditor.refreshMeshBindings?.() ?? 0;
-    if (bound >= 2) {
+    const root = getRiggingPartRoot() || projectAssembly.getRoot() || currentMesh;
+    // Jake contract: motion comes from .step.js (or URDF), not mesh-name heuristics.
+    const stepBound = await stepModuleRuntime.bind(root);
+    if (stepBound > 0 && stepModuleRuntime.hasModule()) {
+      setEditStatus(
+        "ok",
+        `STEP module ready (${stepBound} features from ${stepModuleRuntime.moduleName() || ".step.js"}). Press Play.`
+      );
+    } else if (detectPlanetaryGearAssembly(root)) {
+      const n = planetaryGearRuntime.bind(root);
+      setEditStatus("ok", `Planetary fallback ready (${n} parts). Prefer authoring a .step.js module.`);
+    } else if (bound >= 2) {
       setEditStatus("ok", `Rigging ready — ${bound} parts bound for animation. Press Play.`);
     } else if (selectedFile) {
-      setEditStatus("error", "Open the gear model on SOLID first, then return to RIGGING and press Play.");
+      setEditStatus(
+        "error",
+        "No .step.js motion module for this model. Mechanisms need a Jake-style parameter sidecar."
+      );
     }
     syncRiggingToolbelt();
     syncRiggingViewportPlaybackUi();
@@ -3751,6 +3767,8 @@ function enterRiggingMode() {
 
 function exitRiggingMode() {
   document.getElementById("rigging-chrome")?.classList.add("hidden");
+  stepModuleRuntime?.stop?.({ reset: true });
+  planetaryGearRuntime?.stop?.({ reset: true });
   riggingEditor.hide();
   setRiggingViewportPlaybackVisible(false);
 }
@@ -3783,8 +3801,7 @@ function ensureRiggingViewportPlaybackUi() {
   button.textContent = "Play";
   button.title = "Play/pause rig animation";
   button.addEventListener("click", () => {
-    riggingEditor?.togglePlay?.();
-    syncRiggingViewportPlaybackUi();
+    toggleRiggingPlayback();
   });
 
   container.appendChild(button);
@@ -3797,7 +3814,11 @@ function ensureRiggingViewportPlaybackUi() {
 function syncRiggingViewportPlaybackUi() {
   const ui = ensureRiggingViewportPlaybackUi();
   if (!ui.button) return;
-  const playing = !!riggingEditor?.isPlaying?.();
+  const playing = !!(
+    riggingEditor?.isPlaying?.() ||
+    stepModuleRuntime?.isPlaying?.() ||
+    planetaryGearRuntime?.isPlaying?.()
+  );
   ui.button.textContent = playing ? "Pause" : "Play";
   ui.button.classList.toggle("active", playing);
 }
@@ -5529,11 +5550,12 @@ function handleRiggingAction(action, entry, data = {}) {
     return;
   }
   if (action === "play") {
-    riggingEditor.togglePlay();
-    syncRiggingViewportPlaybackUi();
+    toggleRiggingPlayback();
     return;
   }
   if (action === "stop") {
+    stepModuleRuntime?.stop?.({ reset: true });
+    planetaryGearRuntime?.stop?.({ reset: true });
     riggingEditor.setPlaying(false);
     syncRiggingViewportPlaybackUi();
     return;
@@ -5635,6 +5657,7 @@ function getRiggingPartRoot() {
       if (o.name === "world") world = o;
     });
     const root = world || obj;
+    if (detectPlanetaryGearAssembly(root)) return root;
     const hasGears =
       root.children?.some((c) => /gear_input|gear_1_link|gear_1/i.test(c.name || "")) &&
       root.children?.some((c) => /gear_output|gear_2_link|gear_2/i.test(c.name || ""));
@@ -5678,6 +5701,16 @@ const urdfRobotRuntime = createUrdfRobotRuntime({
   scene,
   authHeaders: () => authHeaders(),
 });
+const planetaryGearRuntime = createPlanetaryGearRuntime({
+  getRoot: () => getRiggingPartRoot() || projectAssembly.getRoot() || currentMesh,
+});
+const stepModuleRuntime = createStepModuleRuntime({
+  getRoot: () => getRiggingPartRoot() || projectAssembly.getRoot() || currentMesh,
+  getProjectId: () => projectId,
+  getFilename: () => selectedFile,
+  authHeaders: () => authHeaders(),
+  requestRender: () => {},
+});
 const moveIt2Client = createMoveIt2Client({
   url: (() => {
     try {
@@ -5688,6 +5721,47 @@ const moveIt2Client = createMoveIt2Client({
   })(),
 });
 let urdfRobotBusy = false;
+
+async function toggleRiggingPlayback() {
+  const root = getRiggingPartRoot() || projectAssembly.getRoot() || currentMesh;
+  // 1) Jake contract: .step.js module (works for gears, hinges, linkages, …)
+  try {
+    if (!stepModuleRuntime.hasModule()) await stepModuleRuntime.ensureLoaded();
+    if (stepModuleRuntime.hasModule()) {
+      if (!stepModuleRuntime.isBound()) await stepModuleRuntime.bind(root);
+      if (planetaryGearRuntime.isPlaying()) planetaryGearRuntime.stop({ reset: false });
+      riggingEditor?.setPlaying?.(false);
+      const playing = stepModuleRuntime.togglePlay();
+      setEditStatus(
+        "ok",
+        playing
+          ? `Playing STEP module (${stepModuleRuntime.moduleName() || ".step.js"}).`
+          : "STEP module paused."
+      );
+      syncRiggingViewportPlaybackUi();
+      return;
+    }
+  } catch (err) {
+    console.warn("STEP module playback failed", err);
+  }
+  // 2) Temporary planetary name heuristic only if no module exists
+  if (detectPlanetaryGearAssembly(root)) {
+    if (!planetaryGearRuntime.isBound()) planetaryGearRuntime.bind(root);
+    const playing = planetaryGearRuntime.togglePlay();
+    if (playing) {
+      riggingEditor?.setPlaying?.(false);
+      setEditStatus("ok", "Planetary fallback playing (no .step.js module found).");
+    } else {
+      setEditStatus("ok", "Planetary playback paused.");
+    }
+    syncRiggingViewportPlaybackUi();
+    return;
+  }
+  if (planetaryGearRuntime.isPlaying()) planetaryGearRuntime.stop({ reset: false });
+  if (stepModuleRuntime.isPlaying()) stepModuleRuntime.stop({ reset: false });
+  riggingEditor?.togglePlay?.();
+  syncRiggingViewportPlaybackUi();
+}
 
 document.getElementById("btn-sketch-finish")?.addEventListener("click", () => {
   finishActiveSketch();
@@ -7346,8 +7420,7 @@ function bindUrdfPanel() {
         return;
       }
     }
-    riggingEditor?.togglePlay?.();
-    syncRiggingViewportPlaybackUi();
+    toggleRiggingPlayback();
   });
   document.getElementById("btn-urdf-export")?.addEventListener("click", async () => {
     await riggingEditor?.exportUrdf?.();

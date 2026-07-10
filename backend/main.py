@@ -6150,6 +6150,14 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
     download_name = safe
     if file_path.suffix.lower() == ".3mf":
         download_name = f"{file_path.stem}.3MF"
+    # ES module imports require a JavaScript MIME type (hidden .*.step.js sidecars).
+    if file_path.suffix.lower() in {".js", ".mjs"} or file_path.name.endswith(".step.js"):
+        return FileResponse(
+            file_path,
+            filename=download_name,
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-cache"},
+        )
     return FileResponse(file_path, filename=download_name)
 
 
@@ -6393,6 +6401,27 @@ def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Dep
         "filename": safe,
         "exports": exports,
         "share_url": f"/api/projects/{project_id}/files/{safe}",
+    }
+
+
+@app.get("/api/projects/{project_id}/files/{filename}/step-module")
+def get_step_module(
+    project_id: str,
+    filename: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Locate Jake-style `.<stem>.step.js` motion/parameter sidecar for a model."""
+    project_path = _require_project_read(user, project_id)
+    safe = Path(filename).name
+    module_path = cad_service.resolve_step_module_sidecar(project_path, safe)
+    if module_path is None:
+        raise HTTPException(404, "No STEP parameter module (.step.js) found for this model")
+    return {
+        "filename": safe,
+        "module": module_path.name,
+        "url": f"/api/projects/{project_id}/files/{module_path.name}",
+        "mtime": int(module_path.stat().st_mtime),
+        "size": module_path.stat().st_size,
     }
 
 
