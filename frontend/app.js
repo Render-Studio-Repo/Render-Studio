@@ -71,6 +71,8 @@ import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260709-unlink-clear";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
+import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260710-bay-lattice";
+import { createArchitectSession } from "./architect-session.js?v=20260710-usable";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
@@ -4168,6 +4170,32 @@ function architectGridModelUnits() {
   return gridMm / sceneMmPerModelUnit();
 }
 
+/** Architect 3 ft bay overlay — separate from Design GridHelper; hidden outside Architect. */
+const architectBayGrid = createArchitectBayGrid({
+  scene,
+  getMmPerModelUnit: () => sceneMmPerModelUnit(),
+  getExtentModel: () => Math.max(sceneRadius() * 2, architectGridModelUnits() * 8),
+});
+
+/** Architect session (building + draw + mesh + camera). Created lazily after api() exists… 
+ *  api is defined later — we bind getProjectId/api via closures that read live bindings. */
+let architectSession = null;
+function getArchitectSession() {
+  if (architectSession) return architectSession;
+  architectSession = createArchitectSession({
+    scene,
+    camera,
+    controls,
+    domElement: renderer.domElement,
+    getMmPerModelUnit: () => sceneMmPerModelUnit(),
+    bayGrid: architectBayGrid,
+    api: (...args) => api(...args),
+    getProjectId: () => projectId,
+    onStatus: (tone, msg) => setEditStatus(tone, msg),
+  });
+  return architectSession;
+}
+
 function architectBoxMesh({ length, width, height, at = [0, 0, 0], color = "#d8cab0", name = "architect_part", opacity = 1 }) {
   const scale = architectInstanceScale();
   const geom = new THREE.BoxGeometry(length * scale, width * scale, height * scale, 2, 2, 2);
@@ -5256,12 +5284,12 @@ function enterArchitectMode() {
   skillsPromptUI.render();
   skillsPromptUI.updatePlan?.();
   setGridVisible(true);
-  fitCamera();
-  setEditStatus("ok", "Architect mode — place wall/floor modules from the panel. They snap together like LEGO when you release the gizmo.");
+  void getArchitectSession().enter();
 }
 
 function exitArchitectMode() {
-  // Architect is a permanent right-panel tab; leaving the design mode should not hide it.
+  architectSession?.exit?.();
+  architectBayGrid?.setActive(false);
 }
 
 function syncRiggingToolbelt() {
@@ -7232,6 +7260,15 @@ document.querySelectorAll("[data-architect-nudge]").forEach((btn) => {
     else if (dir === "y-") nudgeArchitectSelection(0, -1);
   });
 });
+document.querySelectorAll("[data-architect-step]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const step = btn.getAttribute("data-architect-step") || "draw";
+    getArchitectSession().setStep(step);
+  });
+});
+document.getElementById("btn-architect-clear-plan")?.addEventListener("click", () => {
+  getArchitectSession().clearPlan();
+});
 
 document.getElementById("btn-feature-collapse")?.addEventListener("click", (e) => {
   const panel = document.querySelector("[data-right-panel='history']");
@@ -7683,6 +7720,7 @@ const promptTargetBodyCache = new Map();
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  architectSession?.frame?.();
   if (promptTargetPreview?.active) {
     promptTargetPreview.angle += 0.008;
     const center = promptTargetPreview.center;
@@ -12071,6 +12109,10 @@ async function loadProject(id) {
       dxfViewer?.closeAll?.();
       showEmptyProjectViewport({ keepBrowser: true });
       window.dispatchEvent(new CustomEvent("render3d:project-changed", { detail: { projectId: id } }));
+      // If Architect is open, reload that project's building.json (additive; Design path unchanged).
+      if (architectSession?.isActive?.()) {
+        void architectSession.enter();
+      }
       // If this project is known to be generating (from cache) but we're not watching it,
       // start the watch immediately so the stop button appears before the API call returns.
       if (generationWatchPid !== id && isProjectGenerating(id)) {
@@ -13682,6 +13724,9 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
 }, true);
 
 renderer.domElement.addEventListener("pointermove", (e) => {
+  if (architectSession?.isActive?.()) {
+    architectSession.handleMove(e);
+  }
   if (viewportSelectDrag?.pointerId === e.pointerId) {
     const moved = Math.hypot(e.clientX - viewportSelectDrag.startX, e.clientY - viewportSelectDrag.startY);
     if (moved > 6 && !viewportSelectDrag.marquee) {
@@ -13817,6 +13862,11 @@ renderer.domElement.addEventListener("pointercancel", (e) => {
 renderer.domElement.addEventListener("click", (e) => {
   if (suppressNextObjectClick) {
     suppressNextObjectClick = false;
+    e.preventDefault();
+    return;
+  }
+  if (architectSession?.isActive?.()) {
+    architectSession.handleClick(e);
     e.preventDefault();
     return;
   }
@@ -14851,6 +14901,13 @@ function hasDeletableObjectSelection() {
 }
 
 document.addEventListener("keydown", (e) => {
+  if (architectSession?.isActive?.() && !isEditableShortcutTarget(e.target)) {
+    if (architectSession.handleKey(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+  }
   if (!isObjectDeleteShortcut(e) || isEditableShortcutTarget(e.target)) return;
   if (!hasDeletableObjectSelection()) return;
   e.preventDefault();

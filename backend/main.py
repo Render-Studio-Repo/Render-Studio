@@ -6754,6 +6754,47 @@ def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(g
     }
 
 
+@app.get("/api/projects/{project_id}/architect/building")
+def get_architect_building(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    """Architect Mode building.json — additive; does not touch Design timeline."""
+    path = _require_project(user, project_id)
+    building_path = path / "architect" / "building.json"
+    if not building_path.is_file():
+        return {
+            "units": "ft",
+            "grid": {"segmentFt": 3},
+            "levels": [{"id": "level_0", "name": "Ground Floor", "elevationFt": 0, "heightFt": 9}],
+            "activeLevelId": "level_0",
+            "segments": [],
+        }
+    try:
+        return json.loads(building_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, f"Invalid architect/building.json: {exc}") from exc
+
+
+@app.put("/api/projects/{project_id}/architect/building")
+async def save_architect_building(
+    project_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Persist Architect building model under projects/<id>/architect/building.json."""
+    path = _require_project(user, project_id)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid JSON body: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Body must be a JSON object")
+    arch_dir = path / "architect"
+    arch_dir.mkdir(parents=True, exist_ok=True)
+    building_path = arch_dir / "building.json"
+    building_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    project_store.touch_project(path)
+    return {"ok": True, "path": "architect/building.json", "segment_count": len(payload.get("segments") or [])}
+
+
 @app.get("/api/projects/{project_id}/wiring")
 def get_wiring(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
     path = _require_project(user, project_id)

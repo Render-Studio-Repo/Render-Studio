@@ -1,73 +1,71 @@
-# Chapter 3 — Domino Desk (stepped UI)
+# Chapter 3 — Domino Desk (Wall ⇄ Window ⇄ Door)
 
-**Theme:** Progression UI — low noise, high APM. Only show what the current step needs.  
-**Priority:** P1 but **thin** — after walls draw (2.1+); do not build a full CAD chrome suite first  
+**Theme:** Low-noise stepped UI. Walls first, then features — but you can **go back and forth**.  
+**Priority:** P1 thin — after 2.1+  
 **Status:** `locked`  
-**Decisions:** draw walls first · domino order tracker · simpler than typical CAD · see `DECISIONS.md`
+**Decisions:** see `DECISIONS.md`
 
 ---
 
-## Quest 3.1 — Domino order tracker
+## Quest 3.1 — Domino order tracker (bidirectional)
 
 **Depends on:** 2.1  
 **Status:** `locked`
 
 ### Objective
-A simple **step progression** control (domino / order tracker): past steps · **current** · upcoming. Switching steps changes which tools and panels exist — not a permanent left rail of every tool at once.
+Compact step tracker. Not a one-way wizard: user can jump **Walls ↔ Window ↔ Door** anytime after walls exist. Each step mounts **only** its controls.
 
 ### Draft steps
-1. **Level** — pick / name active floor  
-2. **Walls** — draw / select / delete walls  
-3. **Openings** — window / door on selected walls  
-4. **Review** — look around (clamped 3D / plan), light confirm  
+1. **Level** — active floor  
+2. **Walls** — place / chain / delete **blank** 3 ft segments  
+3. **Window** — stamp `feature: "window"` on a segment (snap to bay)  
+4. **Door** — stamp `feature: "door"` on a segment  
+5. **Review** — plan / clamped 3D lookover  
+
+Suggested default order for new users: Level → Walls → (Window/Door as needed) → Review. Power users bounce freely among Walls / Window / Door.
 
 ### Tasks
-- [ ] Step tracker UI (compact, Architect-only) — always visible but small
-- [ ] Each step mounts **only** its controls; unmount or hide the rest
-- [ ] Motion: short step-advance transition (1 intentional motion, not noise)
-- [ ] Do **not** port the full reference tool rail + property sheet yet
+- [ ] Always-visible compact tracker (Architect-only)
+- [ ] Clicking a step switches toolset; unmount others
+- [ ] One short transition on step change
+- [ ] No full CAD tool rail / dense inspector
 
 ### Acceptance
-- User can tell what step they’re on in under a second
-- Walls step has no openings chrome; openings step has no wall-draw chrome (except selection if needed)
+- Current step obvious in &lt;1s
+- From Window you can return to Walls and extend the plan
 - Design mode UI unchanged
 
 ---
 
-## Quest 3.2 — Step-local controls (not a permanent inspector)
+## Quest 3.2 — Step-local controls
 
 **Depends on:** 3.1, 2.3  
 **Status:** `locked`
 
 ### Objective
-When something is selected, show **only the few fields that matter for this step** (e.g. wall thickness in Walls; width/height in Openings). No dense multi-tab inspector in v1.
+Few fields only.
 
 ### Tasks
-- [ ] Walls step: thickness (ft), maybe height override, delete
-- [ ] Openings step: type, width, height (ft) — presets can wait for 4.2
-- [ ] Live update model → mesh
+- [ ] Walls: thickness (ft), delete segment, maybe height
+- [ ] Window / Door: confirm feature on selected bay; clear → blank wall; optional height/sill later
+- [ ] Live model → mesh (feature changes visual: blank vs glazed vs door cut)
 
 ### Acceptance
-- Changing a dimension updates without regenerating the whole building
-- No connector / material / comfort controls in these steps
+- Changing feature on one bay does not rebuild unrelated segments
+- No connector / material chrome
 
 ---
 
-## Quest 3.3 — Plan / 3D (lightweight, Review-friendly)
+## Quest 3.3 — Plan / 3D (lightweight)
 
 **Depends on:** 3.1, 1.3  
 **Status:** `locked`
 
 ### Objective
-Simple Plan vs 3D toggle — especially natural on the Review step; available earlier if it helps drawing.
-
-### Tasks
-- [ ] Orthographic plan vs clamped 3D
-- [ ] Remember last mode per session
-- [ ] Split view stays Ch 6 / side quest
+Plan vs clamped 3D toggle — especially on Review; OK earlier if it helps.
 
 ### Acceptance
-- One-click toggle; draw still works in both if exposed during Walls
+- One-click; placing bays still works in both if exposed
 
 ### Reward
-Architect feels walkable and calm — not a second Fusion
+Calm, walkable Architect — not a second Fusion

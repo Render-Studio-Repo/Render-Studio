@@ -15994,6 +15994,53 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   display: inline-flex;
 }
 
+.architect-domino-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  margin: 10px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.architect-domino-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.architect-domino-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.architect-domino-steps .btn.active {
+  border-color: rgba(88, 166, 255, 0.7);
+  background: rgba(88, 166, 255, 0.2);
+}
+
+.architect-domino-hint {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.architect-legacy-details {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.architect-legacy-details > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--muted, #8b949e);
+  margin-bottom: 8px;
+}
+
 .architect-kit-card,
 .architect-connector-card,
 .architect-snap-card {

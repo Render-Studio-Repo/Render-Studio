@@ -750,50 +750,69 @@
       <section class="architect-prompt-panel right-tab-panel" data-right-panel="architect" id="architect-prompt-panel">
         <div class="panel-section-head architect-panel-head">
           <h2>Architect Mode</h2>
-          <button type="button" id="btn-architect-advanced" class="btn secondary small">Advanced</button>
+          <button type="button" id="btn-architect-advanced" class="btn secondary small">Library</button>
         </div>
-        <p class="muted small">Modular house builder: place grid-snapping walls, windows, doors, rooms, and roof pieces. Drag modules in the viewport, then snap or nudge them into position.</p>
-        <div class="architect-kit-card">
-          <strong>Architect skill auto-enabled</strong>
-          <span>AI stays out of the default Architect workflow. Open the AI panel manually if you want generative architect prompts.</span>
-        </div>
-        <div class="architect-grid-row">
-          <label>Grid (mm) <input type="number" id="architect-grid-size" value="1000" min="100" step="100" /></label>
-          <label>Wall height (mm) <input type="number" id="architect-wall-height" value="2800" min="500" step="100" /></label>
-        </div>
-        <div class="architect-connector-card">
-          <strong>Robot snap connectors</strong>
-          <span>No-screw tongue/socket connectors for pillars, walls, floors, and robot placement.</span>
-          <label>Connector preset
-            <select id="architect-connector-preset">
-              <option value="robot_snap">Robot snap tongue/socket</option>
-              <option value="dxf_profile">Use uploaded DXF profile</option>
-              <option value="simple">Simple block connectors</option>
-            </select>
-          </label>
-          <label>Connector size (mm)
-            <input type="number" id="architect-connector-size" value="180" min="60" max="600" step="10" />
-          </label>
-          <button type="button" id="btn-architect-connector-dxf" class="btn secondary full">Use connector DXF</button>
-          <input type="file" id="architect-connector-dxf-input" accept=".dxf" hidden />
-          <small id="architect-connector-status" class="muted">Using built-in no-screw robot snap connector.</small>
-        </div>
-        <div class="architect-preset-list">
-          <button type="button" class="btn secondary full" data-architect-module="wall">Place wall panel</button>
-          <button type="button" class="btn secondary full" data-architect-module="window-wall">Place wall with window</button>
-          <button type="button" class="btn secondary full" data-architect-module="door-wall">Place wall with door</button>
-          <button type="button" class="btn secondary full" data-architect-module="room">Place starter room kit</button>
-        </div>
-        <div class="architect-snap-card">
-          <strong>Grid placement</strong>
-          <button type="button" id="btn-architect-snap-grid" class="btn secondary full">Snap selection to grid</button>
-          <div class="architect-nudge-grid">
-            <button type="button" class="btn secondary btn-compact" data-architect-nudge="y+">↑</button>
-            <button type="button" class="btn secondary btn-compact" data-architect-nudge="x-">←</button>
-            <button type="button" class="btn secondary btn-compact" data-architect-nudge="x+">→</button>
-            <button type="button" class="btn secondary btn-compact" data-architect-nudge="y-">↓</button>
+        <p class="muted small">Build with <strong>3 ft wall bays</strong>. Draw walls first, then stamp window/door features on a bay. Connectors are not part of design.</p>
+
+        <div class="architect-domino-card" id="architect-domino-card">
+          <div class="architect-domino-meta">
+            <span id="architect-active-level">Ground Floor</span>
+            <span class="muted"><span id="architect-segment-count">0</span> bays</span>
           </div>
+          <div class="architect-domino-steps" role="toolbar" aria-label="Architect steps">
+            <button type="button" class="btn secondary btn-compact active" data-architect-step="draw">Walls</button>
+            <button type="button" class="btn secondary btn-compact" data-architect-step="window">Window</button>
+            <button type="button" class="btn secondary btn-compact" data-architect-step="door">Door</button>
+            <button type="button" class="btn secondary btn-compact" data-architect-step="select">Select</button>
+          </div>
+          <p class="muted small architect-domino-hint">Click lattice points to chain 3 ft bays. Esc clears anchor. Delete removes selected bay.</p>
+          <button type="button" id="btn-architect-clear-plan" class="btn secondary full">Clear level bays</button>
         </div>
+
+        <details class="architect-legacy-details">
+          <summary>Legacy kit tools (optional)</summary>
+          <div class="architect-kit-card">
+            <strong>Architect skill auto-enabled</strong>
+            <span>AI stays out of the default Architect workflow. Open the AI panel manually if you want generative architect prompts.</span>
+          </div>
+          <div class="architect-grid-row">
+            <label>Grid (mm) <input type="number" id="architect-grid-size" value="1000" min="100" step="100" /></label>
+            <label>Wall height (mm) <input type="number" id="architect-wall-height" value="2800" min="500" step="100" /></label>
+          </div>
+          <div class="architect-connector-card">
+            <strong>Robot snap connectors</strong>
+            <span>No-screw tongue/socket connectors for pillars, walls, floors, and robot placement.</span>
+            <label>Connector preset
+              <select id="architect-connector-preset">
+                <option value="robot_snap">Robot snap tongue/socket</option>
+                <option value="dxf_profile">Use uploaded DXF profile</option>
+                <option value="simple">Simple block connectors</option>
+              </select>
+            </label>
+            <label>Connector size (mm)
+              <input type="number" id="architect-connector-size" value="180" min="60" max="600" step="10" />
+            </label>
+            <button type="button" id="btn-architect-connector-dxf" class="btn secondary full">Use connector DXF</button>
+            <input type="file" id="architect-connector-dxf-input" accept=".dxf" hidden />
+            <small id="architect-connector-status" class="muted">Using built-in no-screw robot snap connector.</small>
+          </div>
+          <div class="architect-preset-list">
+            <button type="button" class="btn secondary full" data-architect-module="wall">Place wall panel</button>
+            <button type="button" class="btn secondary full" data-architect-module="window-wall">Place wall with window</button>
+            <button type="button" class="btn secondary full" data-architect-module="door-wall">Place wall with door</button>
+            <button type="button" class="btn secondary full" data-architect-module="room">Place starter room kit</button>
+          </div>
+          <div class="architect-snap-card">
+            <strong>Grid placement</strong>
+            <button type="button" id="btn-architect-snap-grid" class="btn secondary full">Snap selection to grid</button>
+            <div class="architect-nudge-grid">
+              <button type="button" class="btn secondary btn-compact" data-architect-nudge="y+">↑</button>
+              <button type="button" class="btn secondary btn-compact" data-architect-nudge="x-">←</button>
+              <button type="button" class="btn secondary btn-compact" data-architect-nudge="x+">→</button>
+              <button type="button" class="btn secondary btn-compact" data-architect-nudge="y-">↓</button>
+            </div>
+          </div>
+        </details>
       </section>
 
       <section class="prompt-panel right-tab-panel active" data-right-panel="prompt">
@@ -1453,7 +1472,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260707-architect-library-favorites-filter-tab"></script>
+  <script type="module" src="/app.js?v=20260710-architect-usable-walls"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

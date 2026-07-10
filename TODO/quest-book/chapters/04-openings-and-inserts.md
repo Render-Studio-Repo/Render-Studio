@@ -1,46 +1,47 @@
-# Chapter 4 — Openings
+# Chapter 4 — Features on 3 ft segments (Window / Door)
 
-**Theme:** Windows and doors as typed openings on centerline walls — Openings domino step only.  
+**Theme:** Windows and doors are **features snapped onto a whole 3 ft wall segment** — not free-floating cutouts.  
 **Priority:** P1  
 **Status:** `locked` (needs 2.3)  
-**Decisions:** ft dims · step-local UI · no connectors · see `DECISIONS.md`
+**Decisions:** see `DECISIONS.md`
 
 ---
 
-## Quest 4.1 — Host openings on walls
+## Quest 4.1 — Snap feature onto a bay
 
 **Depends on:** 2.3, 3.1  
 **Status:** `locked`
 
 ### Objective
-On the **Openings** step only: place a window/door opening on a selected wall (offset + width along the centerline), snapped in ft.
+On **Window** or **Door** step: select (or click) a **3 ft segment** → set its `feature` to `window` or `door`. Visual updates for that bay only. One feature per segment in v1.
 
 ### Tasks
-- [ ] Window / Door actions visible only in Openings step
-- [ ] Opening cannot exceed wall length; width snaps to ft step (or 0.5 ft if we add it)
-- [ ] Simple cutout visual (frame detail optional / minimal)
-- [ ] No connector generation
+- [ ] Window step: click segment → `feature: "window"`
+- [ ] Door step: click segment → `feature: "door"`
+- [ ] Re-click / clear / Walls-step action → back to `feature: "wall"`
+- [ ] Reject if segment already has a conflicting rule (v1: just replace)
+- [ ] No connectors; no arbitrary width offsets along a multi-bay run
 
 ### Acceptance
-- Place window on a drawn wall; resize via step-local fields
-- Delete opening without deleting the wall
+- A 12 ft wall (4 bays) can be wall | window | wall | door by stamping three different bays
+- Feature always aligns to the 3 ft segment bounds
 
 ---
 
-## Quest 4.2 — Preset library (Simple) — thin
+## Quest 4.2 — Feature look (thin presets)
 
 **Depends on:** 4.1  
 **Status:** `locked`
 
 ### Objective
-Small deterministic presets (fixed / sliding / etc.) — only if they stay low-noise. Defer dense “Simple” grids if they clutter the step.
+Readable blank / window / door visuals. Optional tiny presets later — skip if noisy.
 
 ### Tasks
-- [ ] Tiny preset set OR skip until users ask
-- [ ] Presets change parameters, not AI meshes
+- [ ] Distinct illustrative mesh per feature type
+- [ ] Presets only if they stay one-tap and low chrome
 
 ### Acceptance
-- Switching preset is instant and deterministic — or quest deferred to side quest if too noisy
+- At a glance you can tell which bays are openings
 
 ---
 
@@ -50,14 +51,10 @@ Small deterministic presets (fixed / sliding / etc.) — only if they stay low-n
 **Status:** `locked`
 
 ### Objective
-Existing module catalog is **not** how you build walls. Library / kits = later side quest or a far domino — not required for openings v1.
-
-### Tasks
-- [ ] Confirm stepped flow does not surface kit-place as structure
-- [ ] Document kits → SQ / future step
+Old module catalog is not how you build. Structure = 3 ft segments + features.
 
 ### Acceptance
-- Structure path remains: draw walls → openings
+- Stepped flow never requires kit-place to make a room
 
 ### Reward
-Unlocked: Chapter 5 (AI ops on the same model)
+Chapter 5 — AI sets the same `feature` on segment ids

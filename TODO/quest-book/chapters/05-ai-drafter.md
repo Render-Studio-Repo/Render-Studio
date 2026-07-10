@@ -14,10 +14,11 @@
 ### Objective
 Define a small JSON op set the UI already applies:
 
-- `set_grid` (ft), `ensure_level`
-- `draw_wall`, `remove_wall` (centerline; no connector ops)
-- `add_opening`, `update_opening`, `remove_opening`
-- `place_library_module` — **not** in v1 critical path (side quest / later)
+- `ensure_level`
+- `place_segment` / `remove_segment` (exactly 3 ft bay; `feature: "wall"` by default)
+- `set_feature(segmentId, "wall" | "window" | "door")`
+- no connector ops in v1
+- library/kit ops — **not** critical path
 
 ### Tasks
 - [ ] Schema + validator (pydantic or JSON schema)

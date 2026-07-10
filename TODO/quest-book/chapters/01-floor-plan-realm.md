@@ -1,70 +1,41 @@
 # Chapter 1 — The Floor Plan Realm
 
-**Theme:** Architecture is a stack of floor plans, not a free-fly game camera.  
+**Theme:** Architecture is a stack of floor plans on a **3 ft bay** lattice.  
 **Priority:** P0  
-**Status:** `locked` (needs Ch 0)  
-**Decisions:** grid in **feet** · see `DECISIONS.md`
+**Status:** `done` (usable slice 2026-07-10)  
+**Decisions:** see `DECISIONS.md`
 
 ---
 
-## Quest 1.1 — Discrete grid covenant (feet)
+## Quest 1.1 — 3 ft bay lattice
 
 **Depends on:** 0.2  
-**Status:** `locked`
+**Status:** `done` (2026-07-10)
 
 ### Objective
-Make the build grid the law in **feet**: placement and drawing snap to discrete ft steps so corners meet cleanly.
+Formalize the Architect grid so every wall endpoint lands on the **3 ft segment** lattice.
 
 ### Tasks
-- [ ] Formalize grid model: cell size in **ft** (default **1 ft**), origin, snap to grid vertices
-- [ ] Wall endpoints land on integer (or agreed sub-step) grid indices — not arbitrary floats
-- [ ] Architect Mode grid visuals in ft; Design mode grid behavior unchanged
-- [ ] UI labels/dims in ft (internal mm conversion only at CAD/export boundary if needed)
-
-### Acceptance
-- Two wall segments meeting at a corner share an exact grid vertex
-- User-facing grid control is in feet
-
-### Notes
-Migrate away from mm-only `architect-grid-size` when this quest lands — not before.
+- [x] Grid model in `frontend/architect-lattice.js`
+- [x] Architect-only overlay `architect-grid-visual.js`
+- [x] enter/exit hooks; Design `rebuildGrid` untouched
 
 ---
 
 ## Quest 1.2 — One level at a time
 
 **Depends on:** 1.1  
-**Status:** `locked`
+**Status:** `done` (stub in building model)
 
-### Objective
-Introduce a **Level** concept and scope editing to the active level. Keep chrome minimal (fits the domino “Level” step).
-
-### Tasks
-- [ ] Data: `levels[]` with elevation / height (ft); activeLevelId
-- [ ] Simple level control in the current step UI (not a permanent CAD status bar yet)
-- [ ] Only active level visible at first
-
-### Acceptance
-- Switching levels changes what you edit
-- Default session: single ground level
+### Notes
+`levels[]` + `activeLevelId` in `architect-building.js` / `building.json`. UI shows Ground Floor label. Multi-level switcher still thin (single level is enough to use).
 
 ---
 
 ## Quest 1.3 — Horizon leash (camera)
 
 **Depends on:** 1.2  
-**Status:** `locked`
+**Status:** `done`
 
-### Objective
-Plan-first camera: useful 3D for massing, cannot look under the slab in Architect Mode.
-
-### Tasks
-- [ ] Architect-only orbit clamp
-- [ ] Default elevated three-quarter / isometric looking down at the plan
-- [ ] Free orbit restored outside Architect Mode
-
-### Acceptance
-- Camera cannot flip under the floor in Architect Mode
-- Design mode orbit unchanged
-
-### Reward
-Unlocked: Chapter 2
+### Notes
+`architect-camera.js` — default elevated view on enter; per-frame clamp while Architect active. Design TrackballControls unchanged when exited.

@@ -41,15 +41,15 @@ TODO/quest-book/
 
 ## Chapter order (critical path)
 
-1. **Ch 0 — Do No Harm** — isolate Architect Mode so we cannot break the rest of the app
-2. **Ch 1 — The Floor Plan Realm** — **ft** grid + one-level-at-a-time camera
-3. **Ch 2 — Raise the Walls** — draw centerline walls · corners connect · `building.json` (**before** heavy UI)
-4. **Ch 3 — Domino Desk** — stepped order tracker; only current-step controls
-5. **Ch 4 — Openings** — windows/doors on the Openings step
-6. **Ch 5 — The AI Drafter** — AI emits the same ops
+1. **Ch 0 — Do No Harm** — isolate Architect Mode
+2. **Ch 1 — Floor Plan Realm** — **3 ft bay** lattice + one-level camera
+3. **Ch 2 — Raise the Walls** — place/chain blank 3 ft segments · `building.json`
+4. **Ch 3 — Domino Desk** — Level → Walls ⇄ Window ⇄ Door → Review
+5. **Ch 4 — Features** — window/door snap onto a whole 3 ft segment
+6. **Ch 5 — AI Drafter** — same segment/feature ops
 7. **Ch 6 — Split Sight** — optional polish
 
-Locked product calls: [`DECISIONS.md`](./DECISIONS.md). Side Quests never block.
+Locked calls: [`DECISIONS.md`](./DECISIONS.md). Side Quests never block.
 
 ## Making the quest book itself fun
 

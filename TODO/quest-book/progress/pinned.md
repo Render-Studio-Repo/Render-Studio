@@ -1,7 +1,6 @@
 # Pinned quest
 
-**Current pin:** Quest 0.1 — Draw the boundary  
-**Chapter:** 0 — Do No Harm  
-**Why:** Establish safe edit zones before any Architect rewrite.
+**Current pin:** Polish / smoke the usable wall builder  
+**Why:** Core loop works — draw 3 ft bays, stamp window/door, save `architect/building.json`. Next: user smoke + any sharp edges (then AI ops / richer domino).
 
-When you finish a quest, move the pin forward and add a line to `log.md`.
+**Shipped this session:** 1.1 lattice · levels stub · horizon leash · place/chain walls · features · persist · thin Walls⇄Window⇄Door steps

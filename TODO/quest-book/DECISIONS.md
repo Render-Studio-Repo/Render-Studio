@@ -1,62 +1,70 @@
 # Locked decisions — Architect Mode
 
-Updated: 2026-07-09 · from planning discussion (no code yet)
+Updated: 2026-07-09 · planning only (no code yet)
 
-## 1. Grid — feet
+## 1. Grid & segment — **3 ft bays**
 
-- Architect build grid is in **feet** (imperial), discrete steps.
-- Default snap step: **1 ft** (confirm finer opening snap later if needed, e.g. 0.5 ft / 6 in).
-- Internal storage may still use mm for the CAD kernel; **UI + grid math + user-facing dims are ft**.
-- Existing `architect-grid-size` (mm) will be migrated / replaced when Ch 1 lands — not before.
+- Architect grid is in **feet**.
+- **Atomic wall unit = 3 ft segment** (one bay). You never draw a 7 ft wall as one free length — a 12 ft run is **four** 3 ft segments in a chain.
+- Grid vertices are spaced so segment endpoints land cleanly (segment length = **3 ft**; drawing snaps along the 3 ft lattice).
+- Internal storage may use mm at the CAD boundary; **UI + model + user dims are ft**.
 
-## 2. Wall representation — **centerline walls** (recommended & locked unless you veto)
+## 2. Wall representation — **3 ft centerline segments + features**
 
-See clarification below. We draw **wall centerlines** on the grid; thickness is a property; corners share vertices. We are **not** leading with placeable face-panels as the structure path.
-
-**Connectors are out of the design loop:** standardized later (export / kit / robot assembly). Design steps do **not** generate tongue/socket/pillar connector geometry. That keeps the model simple and the UI quiet.
-
-## 3. Persistence — **`architect/building.json` in the project folder** (recommended)
-
-| Option | Verdict |
-|--------|---------|
-| Embed in timeline / scene metadata | Couples Architect to Design history; harder to diff/AI-read |
-| Only GLB meshes | No structured ops; AI + reload fragile |
-| **`projects/<id>/architect/building.json`** | Additive, mode-owned, easy replay, doesn't touch Design kernel |
-
-Meshes in the viewport are **derived** from that JSON (cache OK). Design mode files stay untouched.
-
-## 4. Build order & UI — **draw walls first · stepped “domino” flow · low noise**
-
-- **Ship walls before** full tool-rail / property-sheet chrome.
-- Interface is a **progression of steps** (domino / order tracker): you always see where you are, what you just did, and what’s next — but **only the controls for the current step**.
-- Visual language: **simpler than typical CAD** — fewer panels, less permanent chrome, higher APM / clearer focus.
-- Unnecessary for v1 design path: connector generation, dense inspectors, library kits as primary structure, Comfort/materials tabs, split view.
-
-### Draft step ladder (domino)
+Each wall piece in the model is one **segment**:
 
 ```
-1. Level / floor   →  2. Walls (draw)  →  3. Openings  →  4. Review
-        ●────────────────●────────────────●──────────────○
+segment: {
+  id, levelId,
+  a: [i, j], b: [i, j],   // endpoints exactly 3 ft apart on-grid
+  thicknessFt, heightFt?,
+  feature: "wall" | "window" | "door",   // default "wall"
+  featurePreset?: string                 // optional later
+}
 ```
 
-Later steps (finishes, furniture, kit export) stay side quests / future dominos.
+- **Corners:** segment endpoints that share a grid vertex connect.
+- **Features:** a window or door **snaps onto a whole 3 ft segment** (replaces/occupies that bay’s feature). Not an arbitrary offset along a long polyline.
+- **Connectors:** still **out of design** — standardized later on export. Design never generates tongue/socket geometry.
 
-## Clarification: question 2 (wall representation)
+### Why this beats free-length centerlines
 
-**What I was asking:** when you draw a wall, what is the *thing* in the data model?
+Matches modular thinking, makes AI ops trivial (`set_feature(segmentId, "window")`), and keeps openings aligned to the same lattice as walls.
 
-### A) Centerline wall (floor-plan style) — **pick this**
+## 3. Persistence — **`architect/building.json`**
 
-- You click two grid points. The wall is a **line segment** (centerline) plus `thickness` and `height`.
-- At a corner, two walls share the **same grid vertex** → corners connect naturally.
-- Openings are parameters *on* that segment (offset + width along the wall).
-- Matches “discrete steps / corners connect / one floor at a time.”
-- Connectors don’t need to exist in the design model; a later export pass can stamp standardized connectors onto centerlines if needed.
+`projects/<id>/architect/building.json` — additive, mode-owned. Meshes derived from JSON. Design kernel untouched.
 
-### B) Face / panel wall (today’s Lego modules)
+## 4. Build order & UI — **walls first · domino with free back-and-forth**
 
-- Each wall is a **solid panel mesh** you place like a brick.
-- Corners often need **extra pieces** (pillars, connectors) to look joined.
-- Great for printable kits; noisier for fast plan drafting and AI ops.
+- **Ship wall drawing first** (blank 3 ft segments).
+- Then add **Window** and **Door** as ways to set a segment’s feature.
+- Domino is a **progression you can reverse**: Wall ↔ Window ↔ Door freely (plus Level / Review). Not a one-way wizard that locks you out of walls after openings.
+- Each step shows **only** that step’s controls (low noise, high APM).
+- Typical flow: lay blank wall segments → stamp windows/doors on bays → jump back to Walls to extend the plan → Review.
 
-**Why A for this quest line:** you asked for draw-walls, corner connect, standardized connectors *outside* design, and a simple stepped UI. Centerlines are the smallest model that supports that.
+### Domino ladder (v1)
+
+```
+Level  →  Walls  ⇄  Window  ⇄  Door  →  Review
+              └────────┬────────┘
+                 (same segment model;
+                  feature tool changes)
+```
+
+- **Walls** — place / chain / delete **blank** 3 ft segments (`feature: "wall"`).
+- **Window** — pick a segment → set `feature: "window"` (snap to that bay).
+- **Door** — pick a segment → set `feature: "door"`.
+- Clearing a feature returns the bay to blank wall (or explicit “Wall” tool on that segment).
+
+## Clarification log
+
+| Topic | Choice |
+|-------|--------|
+| Grid unit | Feet |
+| Wall atom | **3 ft segment** |
+| Openings | Feature **on** a segment (1 bay = 1 feature) |
+| Long walls | Chains of 3 ft segments |
+| Connectors | Export-time only |
+| Persist | `architect/building.json` |
+| UI | Domino; walls first; Wall⇄Window⇄Door |

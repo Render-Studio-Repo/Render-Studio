@@ -2,52 +2,32 @@
 
 ## The fantasy
 
-You are drafting a building the way an architect thinks: **one floor, one level, discrete steps in feet**. Corners connect. Walls are centerlines you draw. Windows and doors are typed openings. The 3D view is really a **segmented 2D plan** extruded upward — you should not need to look below the horizon.
+You draft on a **3 ft bay** lattice, one level at a time. Walls are chains of **3 ft segments**. Windows and doors are **features snapped onto a whole bay**. The 3D view is a plan extruded up — no looking under the floor.
 
-The UI is a **domino progression**: each step shows only what you need right now, with a simple order tracker so you always know the current move. Manual tools and AI speak the **same language** (structured ops on the building model).
-
-**Connectors are standardized and out of band** — not generated during design steps.
+UI is a **domino** you can reverse: lay walls first, then stamp window/door features, jump back to walls anytime. Only current-step controls. **Connectors stay out of design** (standardized on export).
 
 ## Locked decisions
 
-See [DECISIONS.md](./DECISIONS.md) for the full write-up. Short form:
+See [DECISIONS.md](./DECISIONS.md).
 
-| # | Decision |
-|---|----------|
-| 1 | Grid in **feet**, discrete snap |
-| 2 | **Centerline walls** (+ thickness); not panel-first |
-| 3 | Persist as **`architect/building.json`** in the project |
-| 4 | **Draw walls first**; stepped low-noise UI; no unnecessary chrome |
-
-## Reference vibes (mood boards) — borrow carefully
-
-The references show rich tool rails and property sheets. We **steal the clarity** (plan focus, level control, typed openings) but **not the CAD density**. Our bar: simpler than typical CAD; one step at a time; high APM.
-
-Render3D dark charcoal chrome + light canvas stays the platform DNA — Architect Mode just shows less of it per step.
-
-## What already exists (reuse selectively)
-
-- Architect workspace mode + panel, module catalog, mm grid, lego snap, connector UI, architect skill
-- **Keep mode entry + viewport**; **do not** lead with connector generation or kit-place as the structure path
-- Kits / connectors → later library or export side quests
+| # | Choice |
+|---|--------|
+| Grid / atom | **3 ft segments** |
+| Walls | Centerline **bays**; chain for longer runs |
+| Openings | `feature` on a segment (`wall` \| `window` \| `door`) |
+| Persist | `architect/building.json` |
+| UI | Domino: Level → Walls ⇄ Window ⇄ Door → Review |
+| Connectors | Export-time only |
 
 ## Target delta
 
 | Today | Target |
 |-------|--------|
-| Place prebuilt modules + connectors | **Draw** centerline walls on a **ft** grid |
-| Free orbit 3D | Plan-first camera; no under-horizon |
-| Dense architect panel | **Domino steps** — only current-step controls |
-| AI room kits / connector prompts | AI emits **same wall/opening ops** |
-| Loose meshes | `architect/building.json` → derived meshes |
-
-## Non-goals (main quest line)
-
-- Generating snap connectors / robot tabs during design
-- Full BIM, multi-story flythrough, photoreal materials
-- Full CAD-style permanent tool rail + inspector before walls work
-- Breaking Design / Wiring / Engineering
+| Free / mm modules + kits | **3 ft** blank segments, then features |
+| Connector generation in design | Never in design steps |
+| Dense CAD chrome | Domino · one step’s tools only |
+| AI room kits | AI sets segment features / places bays |
 
 ## Success snapshot
 
-Architect Mode → Level 1 → draw a closed room on a **ft** grid → add a window opening → step tracker advances → AI can add a door via the same ops — Design mode untouched; no connector geometry in the design model.
+Architect → Level → chain blank 3 ft walls into a room → Window step stamps glazed bays → Door step stamps entries → bounce back to Walls to add a wing → Review — Design mode untouched.
