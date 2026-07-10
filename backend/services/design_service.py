@@ -271,14 +271,26 @@ def _assignment_target_names(target: ast.AST) -> set[str]:
 
 def _function_assigned_names(func: ast.FunctionDef) -> set[str]:
     names: set[str] = set()
-    for arg in (*func.args.args, *func.args.kwonlyargs):
-        names.add(arg.arg)
-    if func.args.vararg:
-        names.add(func.args.vararg.arg)
-    if func.args.kwarg:
-        names.add(func.args.kwarg.arg)
+
+    def _add_args(fn: ast.AST) -> None:
+        args = getattr(fn, "args", None)
+        if args is None:
+            return
+        for arg in (*args.args, *args.kwonlyargs):
+            names.add(arg.arg)
+        if args.vararg:
+            names.add(args.vararg.arg)
+        if args.kwarg:
+            names.add(args.kwarg.arg)
+
+    _add_args(func)
     for node in ast.walk(func):
-        if isinstance(node, ast.Assign):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(node.name)
+            _add_args(node)
+        elif isinstance(node, ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
             for target in node.targets:
                 names.update(_assignment_target_names(target))
         elif isinstance(node, ast.AnnAssign) and node.target is not None:
@@ -297,13 +309,25 @@ def _function_assigned_names(func: ast.FunctionDef) -> set[str]:
 
 
 def _config_like_name(name: str) -> bool:
-    return (
+    if (
         name in _DXF_CONFIG_NAMES
         or name.endswith("_layer")
         or name.endswith("_label")
         or name.endswith("_filename")
         or name.endswith("_path")
         or name.startswith("_")
+    ):
+        return True
+    if not name or not name[0].islower():
+        return False
+    suffixes = (
+        "_x", "_y", "_z", "_mm", "_deg",
+        "_fillet", "_chamfer", "_radius", "_diameter",
+        "_thickness", "_height", "_depth", "_length", "_width", "_gap",
+        "_count", "_teeth", "_clearance", "_offset", "_pitch",
+    )
+    return any(name.endswith(suffix) for suffix in suffixes) or name.startswith(
+        ("base_", "lug_", "bore_", "mount_", "rib_", "pin_", "plate_", "wall_", "gear_", "sun_", "planet_", "ring_", "carrier_")
     )
 
 
@@ -411,6 +435,21 @@ def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
         return '["pin_1", "pin_2", "pin_3"]'
     if name.endswith("_layer"):
         return f'"{name[:-6].upper()}"'
+    # Generic dimension/fillet/radius fallbacks so incomplete LLM sources can still run.
+    if name.endswith(("_fillet", "_chamfer", "_radius", "_clearance")):
+        return "2.0"
+    if name.endswith(("_thickness", "_height", "_depth", "_length", "_width", "_gap")):
+        return "10.0"
+    if name.endswith(("_x", "_y")) and ("hole" in name or "mount" in name or "pitch" in name):
+        return "20.0"
+    if name.endswith("_z") and ("axis" in name or "bore" in name or "center" in name):
+        return "40.0"
+    if name.endswith(("_x", "_y", "_z")):
+        return "50.0" if name.endswith(("_x", "_y")) else "10.0"
+    if name.startswith(("base_", "lug_", "bore_", "mount_", "rib_", "pin_", "plate_")) and name[0].islower():
+        if "count" in name or "teeth" in name:
+            return "3"
+        return "10.0"
     return None
 
 
@@ -2909,8 +2948,9 @@ def _run_text_to_cad_v2(
                 project_path=project_path,
                 prompt=prompt,
             )
-            if not jake_identical:
-                source = _augment_common_constants(source, base=base, prompt=prompt)
+            # Always backfill missing numeric/string config constants (not helpers).
+            # Jake path still forbids helper injection; constants prevent NameError loops.
+            source = _augment_common_constants(source, base=base, prompt=prompt)
             dxf_issue = _dxf_semantic_source_issue(source, prompt, context)
             if dxf_issue:
                 raise ValueError(dxf_issue)
