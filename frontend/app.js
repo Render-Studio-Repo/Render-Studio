@@ -11111,11 +11111,27 @@ function bodyChildrenFromInfo(entry, info) {
 async function hydrateBrowserBodyChildren(browser) {
   const run = ++browserBodyHydrationRun;
   if (!projectId || !browser?.components?.length) return;
+  // Dense text-to-cad Compounds (stairs, gearsets) tessellate into dozens of
+  // disconnected solids. Expanding them under Components → Parts recreates the
+  // "59 components" explosion even when only one assembly file exists.
+  const MAX_BROWSER_BODY_CHILDREN = 24;
   let changed = false;
   await Promise.all((browser.components || []).map(async (entry) => {
     if (!entry?.name || entry.children?.length || entry.format === "body") return;
     try {
-      const info = await api(`/api/projects/${projectId}/files/${encodeURIComponent(entry.name)}/bodies`);
+      // Prefer the viewport mesh (.glb) — STEP often reports 100+ solids for the
+      // same assembly the viewer already shows as one model.
+      const bodySource = entry.viewer_filename || entry.name;
+      const info = await api(`/api/projects/${projectId}/files/${encodeURIComponent(bodySource)}/bodies`);
+      const count = Number(info?.count || 0);
+      if (count > MAX_BROWSER_BODY_CHILDREN) {
+        if (entry.children) {
+          delete entry.children;
+          delete entry.children_label;
+          changed = true;
+        }
+        return;
+      }
       const children = bodyChildrenFromInfo(entry, info);
       if (!children.length || run !== browserBodyHydrationRun) return;
       entry.children_label = entry.children_label || "Parts";

@@ -10577,7 +10577,17 @@ def mesh_bodies_info(
     src = project_path / filename
     if not src.is_file():
         raise HTTPException(404, "File not found")
-    mesh = cad_service.load_mesh(src)
+    # Prefer the viewport GLB when the client asks about a STEP assembly: dense
+    # Compounds (stairs, etc.) report 50–100+ solids from STEP while the viewer
+    # mesh is already a single assembly shell.
+    mesh_src = src
+    suffix = src.suffix.lower()
+    if suffix in {".step", ".stp"}:
+        viewer = cad_service.viewer_filename_for_model(src.name, project_path)
+        viewer_path = project_path / viewer if viewer else None
+        if viewer_path is not None and viewer_path.is_file() and viewer_path.suffix.lower() in {".glb", ".gltf"}:
+            mesh_src = viewer_path
+    mesh = cad_service.load_mesh(mesh_src)
     return cad_service.mesh_body_info(mesh)
 
 
