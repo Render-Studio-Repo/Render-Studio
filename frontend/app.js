@@ -99,7 +99,7 @@ import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260710-urdf-jake-panel";
-import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260710-urdf-fk2";
+import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260710-jake-runtime";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
 
 const API = "";
@@ -6762,6 +6762,7 @@ async function refreshRobotArtifacts({ quiet = false } = {}) {
   try {
     robotArtifactData = await api(`/api/projects/${projectId}/rigging/artifacts`);
     renderRobotArtifacts();
+    await refreshMoveIt2ProjectContext({ quiet: true });
     await ensureUrdfRobotScene({ quiet });
     return robotArtifactData;
   } catch (err) {
@@ -6851,6 +6852,24 @@ function jointValuesForMoveIt2Display() {
   return out;
 }
 
+let moveIt2Context = null;
+
+async function refreshMoveIt2ProjectContext({ quiet = false } = {}) {
+  if (!projectId) {
+    moveIt2Context = null;
+    return null;
+  }
+  try {
+    moveIt2Context = await api(`/api/projects/${projectId}/rigging/moveit2-context`);
+    const hint = document.getElementById("urdf-moveit2-hint");
+    if (hint && moveIt2Context?.hint) hint.textContent = moveIt2Context.hint;
+    return moveIt2Context;
+  } catch (err) {
+    if (!quiet) setEditStatus("error", err?.message || "Could not load MoveIt2 context.");
+    return null;
+  }
+}
+
 function buildMoveIt2Payload() {
   const { urdfFile, srdfFile } = pickPreferredRobotFiles(robotArtifactData || {});
   const group = document.getElementById("urdf-moveit2-group")?.value || "";
@@ -6863,10 +6882,12 @@ function buildMoveIt2Payload() {
   const apiEe = (robotArtifactData?.srdf?.end_effectors || []).find((item) => item.name === ee) || null;
   const targetLink = eeMeta?.parentLink || eeMeta?.link || apiEe?.parent_link || "";
   const displayJoints = jointValuesForMoveIt2Display();
+  const preferredSrdf = moveIt2Context?.file || srdfFile || "";
+  const preferredUrdf = moveIt2Context?.urdfFile || urdfFile || "";
   return {
-    dir: "",
-    file: srdfFile || "",
-    urdfFile: urdfFile || "",
+    dir: moveIt2Context?.dir || "",
+    file: preferredSrdf,
+    urdfFile: preferredUrdf,
     startJointValuesByName: { ...(urdfRobotRuntime.getState()?.jointValuesRad || {}) },
     startJointValuesByNameDeg: displayJoints,
     target: {
@@ -6938,15 +6959,34 @@ function updateMoveIt2StatusUi({ connected = false, detail = "" } = {}) {
 }
 
 async function refreshMoveIt2Connection({ quiet = false } = {}) {
+  await refreshMoveIt2ProjectContext({ quiet: true });
   updateMoveIt2StatusUi({ connected: false, detail: "connecting…" });
   const result = await moveIt2Client.connect();
   if (result?.ok) {
-    updateMoveIt2StatusUi({ connected: true, detail: result.url || "" });
-    if (!quiet) setEditStatus("ok", "MoveIt2 server connected.");
+    const root = moveIt2Context?.repoRoot ? PathBasename(moveIt2Context.repoRoot) : "";
+    updateMoveIt2StatusUi({
+      connected: true,
+      detail: root ? `${result.url || ""} · ${root}` : (result.url || ""),
+    });
+    if (!quiet) {
+      const hint = moveIt2Context?.hint || "MoveIt2 server connected.";
+      setEditStatus("ok", hint);
+    }
     return true;
   }
   updateMoveIt2StatusUi({ connected: false, detail: result?.reason || "not running" });
+  if (!quiet) {
+    setEditStatus(
+      "error",
+      "MoveIt2 offline. Start with: scripts/run-moveit2-for-project.sh <projectId>",
+    );
+  }
   return false;
+}
+
+function PathBasename(path) {
+  const parts = String(path || "").split("/").filter(Boolean);
+  return parts[parts.length - 1] || path || "";
 }
 
 async function runMoveIt2Solve() {

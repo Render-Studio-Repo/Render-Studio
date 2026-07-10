@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260710-urdf-fk2" />
+  <link rel="stylesheet" href="/styles.css?v=20260710-jake-runtime" />
   <script type="importmap">
   {
     "imports": {
@@ -1107,7 +1107,7 @@
                 <button type="button" class="btn accent btn-compact" id="btn-urdf-moveit2-solve">Solve IK</button>
                 <button type="button" class="btn accent btn-compact" id="btn-urdf-moveit2-plan">Plan path</button>
               </div>
-              <p class="muted small">Requires Jake MoveIt2 server on <code>ws://127.0.0.1:8765/ws</code> (override with <code>?moveit2Ws=</code>). Start it with <code>--repo-root</code> set to this project folder.</p>
+              <p class="muted small" id="urdf-moveit2-hint">Requires Jake MoveIt2 server. Start with <code>scripts/run-moveit2-for-project.sh &lt;projectId&gt;</code> (default <code>ws://127.0.0.1:8765/ws</code>, override with <code>?moveit2Ws=</code>).</p>
             </div>
           </div>
           <div id="urdf-panel-status" class="status"></div>
@@ -1538,7 +1538,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260710-urdf-fk2"></script>
+  <script type="module" src="/app.js?v=20260710-jake-runtime"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

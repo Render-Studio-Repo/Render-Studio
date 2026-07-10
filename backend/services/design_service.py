@@ -1564,6 +1564,7 @@ def _finalize_text_to_cad_source_before_step(
     context: dict[str, Any] | None,
     project_path: Path,
     prompt: str,
+    jake_identical: bool = True,
 ) -> str:
     """Last-chance DXF repair immediately before scripts/step executes the file."""
     source = source_path.read_text(encoding="utf-8", errors="ignore")
@@ -1581,7 +1582,7 @@ def _finalize_text_to_cad_source_before_step(
         if healed != finalized:
             finalized = healed
             remaining = _gen_step_local_undefined_names(finalized)
-    if remaining:
+    if remaining and not jake_identical:
         raise ValueError(
             "Generated source is incomplete before scripts/step; undefined names: "
             + ", ".join(remaining[:12])
@@ -1590,6 +1591,47 @@ def _finalize_text_to_cad_source_before_step(
     if finalized != source:
         source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
     return finalized
+
+
+def jake_hidden_glb_name(step_name: str) -> str:
+    """Jake cadpy sidecar: part.step → .part.step.glb"""
+    return f".{Path(step_name).name}.glb"
+
+
+def _wire_jake_artifacts_to_product_shell(
+    project_path: Path,
+    *,
+    base: str,
+    source_name: str,
+    step_name: str,
+    glb_name: str,
+) -> dict[str, str]:
+    """Keep Jake sibling/hidden naming and expose product-shell viewport names."""
+    wired: dict[str, str] = {
+        "source": source_name,
+        "step": step_name,
+        "glb": glb_name,
+        "cad_ref": str(Path(step_name).with_suffix("").as_posix()),
+    }
+    step_path = project_path / step_name
+    shell_glb = project_path / glb_name
+    jake_glb = project_path / jake_hidden_glb_name(step_name)
+    if step_path.is_file():
+        # Prefer Jake topology sidecar when present; always keep shell GLB for viewport.
+        if jake_glb.is_file() and (not shell_glb.is_file() or jake_glb.stat().st_mtime >= shell_glb.stat().st_mtime):
+            shell_glb.write_bytes(jake_glb.read_bytes())
+        elif shell_glb.is_file() and not jake_glb.is_file():
+            jake_glb.write_bytes(shell_glb.read_bytes())
+        if jake_glb.is_file():
+            wired["jake_glb"] = jake_glb.name
+    # Optional parameter module Jake may emit.
+    param_js = project_path / f".{Path(step_name).name}.js"
+    if param_js.is_file():
+        wired["jake_params"] = param_js.name
+    brief = project_path / f"{base}.brief.md"
+    if brief.is_file():
+        wired["brief"] = brief.name
+    return wired
 
 
 def _looks_like_spiral_staircase(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
@@ -2656,16 +2698,20 @@ def _run_text_to_cad_v2(
             previous_source = None
             previous_source_name = None
 
+    # Jake-identical authoring: skill CLIs + repair from CLI errors (no canonical shortcuts).
+    jake_identical = bool(strict_upstream) or bool((context or {}).get("jake_identical_runtime", True))
+
     if _prompt_mentions_dxf_import(prompt) and not _collect_dxf_filenames(context, project_path, prompt):
         message = _missing_dxf_file_message()
         trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
         raise DesignBuildError(message, ai_traces=ai_traces)
-    if _looks_like_spiral_staircase(prompt, images):
-        canonical_source = _canonical_spiral_staircase_source(label=base, prompt=prompt)
-    elif _looks_like_planetary_gear_assembly(prompt, images):
-        canonical_source = _canonical_planetary_gear_assembly_source(label=base, prompt=prompt)
-    elif not strict_upstream:
-        if _looks_like_arduino_nema_mount_box(prompt, images):
+    canonical_source = None
+    if not jake_identical:
+        if _looks_like_spiral_staircase(prompt, images):
+            canonical_source = _canonical_spiral_staircase_source(label=base, prompt=prompt)
+        elif _looks_like_planetary_gear_assembly(prompt, images):
+            canonical_source = _canonical_planetary_gear_assembly_source(label=base, prompt=prompt)
+        elif _looks_like_arduino_nema_mount_box(prompt, images):
             canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
         elif _looks_like_pc_cooling_fan(prompt, images):
             canonical_source = _canonical_pc_cooling_fan_source(label=base)
@@ -2741,11 +2787,11 @@ def _run_text_to_cad_v2(
     # generation prompt focused on the user request + edit lineage, while
     # preserving our upload/reference/inspect/selector tooling around it.
     mirror_upstream_modeling = bool((context or {}).get("mirror_upstream_modeling", True))
-    if strict_upstream:
+    if jake_identical or strict_upstream:
         mirror_upstream_modeling = True
         trace_add(
             "info",
-            "[2.0/text-to-cad] Upstream-mirrored mode: Jake CAD skill prompts + scripts/step/inspect/snapshot repair loop.",
+            "[2.0/text-to-cad] Jake-identical runtime: gen_step → scripts/step → inspect → snapshot → repair from CLI errors.",
             trace_id=trace_id,
         )
     generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
@@ -2810,11 +2856,19 @@ def _run_text_to_cad_v2(
                 if healed != source:
                     source = healed
                     remaining = _gen_step_local_undefined_names(source)
-            if remaining:
+            if remaining and not jake_identical:
                 raise ValueError(
                     "Generated source is incomplete; gen_step() references undefined names: "
                     + ", ".join(remaining[:12])
                     + ("..." if len(remaining) > 12 else "")
+                )
+            if remaining and jake_identical:
+                # Jake loop: write source and let scripts/step surface NameError for repair.
+                trace_add(
+                    "warning",
+                    "[2.0/text-to-cad] Undefined symbols remain after soft heal; continuing to scripts/step for Jake-style repair.",
+                    trace_id=trace_id,
+                    data={"undefined": remaining[:12]},
                 )
             source_path.write_text(source.rstrip() + "\n", encoding="utf-8")
             current_source = source
@@ -2845,6 +2899,7 @@ def _run_text_to_cad_v2(
                 context=context,
                 project_path=project_path,
                 prompt=prompt,
+                jake_identical=jake_identical,
             )
         except Exception as exc:
             last_error = str(exc)
@@ -2935,6 +2990,17 @@ def _run_text_to_cad_v2(
 
         _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
         cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
+        wired_names = _wire_jake_artifacts_to_product_shell(
+            project_path,
+            base=base,
+            source_name=source_name,
+            step_name=step_name,
+            glb_name=glb_name,
+        )
+        # Re-apply Z-up/appearance if shell GLB was refreshed from Jake sidecar.
+        if (project_path / glb_name).is_file():
+            _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
+            cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
 
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
@@ -2958,16 +3024,26 @@ def _run_text_to_cad_v2(
             raise DesignCanceled("Generation canceled.")
         quality_note = _v2_quality_repair_note(prompt, source, inspect_out)
         if quality_note:
-            last_error = quality_note
-            repair_note = quality_note
-            trace_add("warning", f"[2.0/text-to-cad] quality gate failed: {quality_note[:500]}", trace_id=trace_id)
-            continue
+            if jake_identical:
+                # Jake loop relies on inspect/snapshot findings, not Render3D heuristic gates.
+                trace_add("warning", f"[2.0/text-to-cad] quality hint (non-blocking in Jake mode): {quality_note[:500]}", trace_id=trace_id)
+            else:
+                last_error = quality_note
+                repair_note = quality_note
+                trace_add("warning", f"[2.0/text-to-cad] quality gate failed: {quality_note[:500]}", trace_id=trace_id)
+                continue
 
         missing = [name for name in (step_name, glb_name) if not (project_path / name).is_file()]
         if missing:
-            last_error = f"text-to-cad did not produce required artifact(s): {', '.join(missing)}"
-            repair_note = last_error
-            continue
+            # Fall back to Jake hidden GLB if shell GLB missing.
+            jake_glb = project_path / jake_hidden_glb_name(step_name)
+            if glb_name in missing and jake_glb.is_file():
+                (project_path / glb_name).write_bytes(jake_glb.read_bytes())
+                missing = [name for name in (step_name, glb_name) if not (project_path / name).is_file()]
+            if missing:
+                last_error = f"text-to-cad did not produce required artifact(s): {', '.join(missing)}"
+                repair_note = last_error
+                continue
 
         if progress_callback:
             progress_callback({"stage": "snapshot", "pct": 90, "label": f"Rendering {label_prefix} CAD snapshot review..."})
@@ -3002,6 +3078,7 @@ def _run_text_to_cad_v2(
         if progress_callback:
             progress_callback({"stage": "finalize", "pct": 96, "label": "Finalizing text-to-cad artifacts..."})
         files = {
+            **wired_names,
             "source": source_name,
             "step": step_name,
             "glb": glb_name,
@@ -3052,6 +3129,14 @@ def _run_text_to_cad_v2(
                 "dfm": None,
                 "warnings": [],
                 "text_to_cad": {
+                    "runtime": "jake_identical" if jake_identical else "render3d",
+                    "naming": {
+                        "source": source_name,
+                        "step": step_name,
+                        "shell_glb": glb_name,
+                        "jake_glb": jake_hidden_glb_name(step_name),
+                        "cad_ref": str(Path(step_name).with_suffix("").as_posix()),
+                    },
                     "step": {
                         "stdout": (step_out.get("stdout") or "")[-4000:],
                         "stderr": (step_out.get("stderr") or "")[-4000:],
@@ -3067,6 +3152,7 @@ def _run_text_to_cad_v2(
             "ai_trace": ai_traces,
             "dfm_warnings": [],
             "v2_text_to_cad": True,
+            "jake_identical_runtime": jake_identical,
             "fusion_text_to_cad": fusion_mode,
             "architect_text_to_cad": architect_mode,
         }
