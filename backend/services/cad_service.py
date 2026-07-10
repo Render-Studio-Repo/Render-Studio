@@ -591,6 +591,22 @@ def _is_architect_promoted_part_stem(stem: str, architect_bases: set[str]) -> bo
     return False
 
 
+def _is_promoted_detail_part_stem(stem: str, project_path: Path) -> bool:
+    """Hide ``<base>__part_01_baluster`` when the parent assembly ``<base>.glb`` exists.
+
+    Dense text-to-cad Compounds (stairs, gearsets) used to explode into dozens of
+    browser components that render as floating debris beside the intact assembly.
+    """
+    match = re.match(r"^(.+)__part_\d+_", stem, re.I)
+    if not match:
+        return False
+    base = match.group(1)
+    return any(
+        (project_path / f"{base}{ext}").is_file()
+        for ext in (".glb", ".gltf", ".step", ".stp", ".stl", ".3mf")
+    )
+
+
 def _canonical_assembly_stem(project_path: Path) -> str | None:
     """Newest kernel export that has both program + sim metadata."""
     best: tuple[float, str] | None = None
@@ -622,6 +638,10 @@ def _viewport_component_stems(project_path: Path, stems: set[str]) -> set[str]:
 
     for stem in list(visible):
         if _is_architect_promoted_part_stem(stem, architect_bases):
+            visible.discard(stem)
+
+    for stem in list(visible):
+        if _is_promoted_detail_part_stem(stem, project_path):
             visible.discard(stem)
 
     canonical = _canonical_assembly_stem(project_path)

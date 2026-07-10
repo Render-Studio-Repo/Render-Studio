@@ -735,6 +735,7 @@ def _promote_build123d_children_from_source(
     base: str,
     max_parts: int = 96,
     major_only: bool = False,
+    skip_if_more_than: int | None = None,
 ) -> list[str]:
     """Export source-level Compound children as real browser components.
 
@@ -774,12 +775,26 @@ def _promote_build123d_children_from_source(
     # Ignore trivial assemblies; disconnected mesh promotion already covers them.
     if len(leaves) <= 1:
         return []
+    if skip_if_more_than is not None and len(leaves) > int(skip_if_more_than):
+        logger.info(
+            "Skipping child promotion for %s (%s leaves > %s); keep primary assembly GLB only.",
+            source_name,
+            len(leaves),
+            skip_if_more_than,
+        )
+        return []
 
     outputs: list[str] = []
     used_names: set[str] = set()
     candidates = leaves
     if major_only:
         candidates = _architect_major_build123d_children(leaves)
+    # Drop tiny detail leaves that clutter the viewport when also shown as parts.
+    detail_re = re.compile(r"(baluster|handrail|pin|dowel|screw|bolt|nut|washer|rivet)", re.I)
+    if not major_only:
+        filtered = [child for child in candidates if not detail_re.search(str(getattr(child, "label", "") or ""))]
+        if filtered:
+            candidates = filtered
     for idx, child in enumerate(candidates[:max_parts], start=1):
         label = str(getattr(child, "label", "") or "").strip()
         slug = _part_artifact_slug(label, f"part_{idx:02d}")
@@ -3086,12 +3101,16 @@ def _run_text_to_cad_v2(
             "glb": glb_name,
         }
         promoted_parts = [] if architect_mode else _promote_disconnected_bodies(project_path, glb_name, base=base)
+        # Avoid exploding dense assemblies (stairs, gearsets) into dozens of browser
+        # part GLBs — that makes balusters/pins look like floating debris beside the
+        # intact primary assembly mesh.
         source_parts = _promote_build123d_children_from_source(
             project_path,
             source_name,
             base=base,
-            max_parts=18 if architect_mode else 96,
+            max_parts=18 if architect_mode else 12,
             major_only=architect_mode,
+            skip_if_more_than=24 if not architect_mode else None,
         )
         if source_parts:
             promoted_parts.extend(name for name in source_parts if name not in promoted_parts)
