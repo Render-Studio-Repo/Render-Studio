@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260709-left-panel-trim" />
+  <link rel="stylesheet" href="/styles.css?v=20260710-urdf-jake-panel" />
   <script type="importmap">
   {
     "imports": {
@@ -996,7 +996,7 @@
             <div class="cad-param-head">
               <div>
                 <strong>Robot Artifacts</strong>
-                <span>Run Jake gen_urdf()/gen_srdf() and inspect joints/groups</span>
+                <span>Jake-style gen_urdf()/gen_srdf() + joint/group controls</span>
               </div>
               <button type="button" class="btn secondary btn-compact" id="btn-rigging-artifacts-refresh">Refresh</button>
             </div>
@@ -1010,8 +1010,16 @@
               <button type="button" class="btn accent btn-compact" id="btn-rigging-generate-robot">Generate Both</button>
             </div>
             <div class="urdf-artifact-list" id="rigging-artifact-list"></div>
+            <div class="urdf-section-label">Link tree</div>
+            <div id="rigging-urdf-link-tree" class="urdf-link-tree"></div>
+            <div class="urdf-section-label">SRDF planning</div>
             <div id="rigging-srdf-groups" class="urdf-planning-groups"></div>
+            <div class="urdf-section-label">Joints</div>
             <div id="rigging-urdf-joint-sliders" class="cad-param-list"></div>
+            <div class="cad-param-actions">
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-urdf-reset">Reset pose</button>
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-urdf-copy">Copy angles</button>
+            </div>
           </div>
           <div id="rigging-prompt-status" class="status"></div>
         </div>
@@ -1028,10 +1036,24 @@
           <button type="button" id="btn-urdf-refresh" class="btn secondary small">Refresh</button>
         </div>
         <div class="prompt-pane active">
-          <p class="muted small">Jake-style robot controls: load generated URDF/SRDF artifacts, move joints with sliders, play the rigging timeline, and export URDF from the current rig.</p>
+          <p class="muted small">Jake-style robot sheet: link tree, SRDF group-state presets, joint sliders (deg/m), reset pose, play timeline, export URDF.</p>
           <div class="urdf-artifact-list" id="urdf-artifact-list"></div>
           <div class="urdf-joint-panel">
             <div class="cad-param-head">
+              <div>
+                <strong>Link tree</strong>
+                <span id="urdf-link-summary">No robot loaded</span>
+              </div>
+            </div>
+            <div id="urdf-link-tree" class="urdf-link-tree"></div>
+            <div class="cad-param-head" style="margin-top:10px">
+              <div>
+                <strong>SRDF planning</strong>
+                <span>Groups + named poses</span>
+              </div>
+            </div>
+            <div id="urdf-srdf-groups" class="urdf-planning-groups"></div>
+            <div class="cad-param-head" style="margin-top:10px">
               <div>
                 <strong>Joints</strong>
                 <span id="urdf-joint-summary">No rig loaded</span>
@@ -1041,6 +1063,8 @@
             <div id="urdf-joint-sliders" class="cad-param-list"></div>
             <div class="cad-param-actions">
               <button type="button" class="btn accent btn-compact" id="btn-urdf-play">Play / Pause</button>
+              <button type="button" class="btn secondary btn-compact" id="btn-urdf-reset">Reset pose</button>
+              <button type="button" class="btn secondary btn-compact" id="btn-urdf-copy">Copy angles</button>
               <button type="button" class="btn secondary btn-compact" id="btn-urdf-export">Export URDF</button>
             </div>
           </div>
@@ -1472,7 +1496,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260710-architect-usable-walls"></script>
+  <script type="module" src="/app.js?v=20260710-urdf-jake-panel"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

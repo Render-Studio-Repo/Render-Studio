@@ -6856,15 +6856,32 @@ def _parse_robot_urdf_joints(path: Path) -> list[dict[str, Any]]:
         jtype = joint.get("type") or "fixed"
         limit = joint.find("limit")
         axis = joint.find("axis")
+        parent = joint.find("parent")
+        child = joint.find("child")
         joints.append({
             "name": name,
             "type": jtype,
             "axis": axis.get("xyz") if axis is not None else "0 0 1",
+            "parent": parent.get("link") if parent is not None else "",
+            "child": child.get("link") if child is not None else "",
             "lower": _robot_float(limit.get("lower") if limit is not None else None, -3.14159),
             "upper": _robot_float(limit.get("upper") if limit is not None else None, 3.14159),
             "file": path.name,
         })
     return joints
+
+
+def _parse_robot_urdf_links(path: Path) -> list[dict[str, Any]]:
+    try:
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return []
+    return [
+        {"name": link.get("name") or f"link_{i + 1}", "file": path.name}
+        for i, link in enumerate(root.findall(".//link"))
+    ]
 
 
 def _parse_robot_srdf_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
@@ -6874,18 +6891,38 @@ def _parse_robot_srdf_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
         root = ET.fromstring(path.read_text(encoding="utf-8", errors="ignore"))
     except Exception:
         return {"groups": [], "states": []}
-    groups = [
-        {"name": group.get("name") or f"group_{i + 1}", "file": path.name}
-        for i, group in enumerate(root.findall(".//group"))
-    ]
-    states = [
-        {
+    groups = []
+    for i, group in enumerate(root.findall(".//group")):
+        joint_names = [
+            (item.get("name") or "").strip()
+            for item in group.findall("joint")
+            if (item.get("name") or "").strip()
+        ]
+        link_names = [
+            (item.get("name") or "").strip()
+            for item in group.findall("link")
+            if (item.get("name") or "").strip()
+        ]
+        groups.append({
+            "name": group.get("name") or f"group_{i + 1}",
+            "file": path.name,
+            "joints": joint_names,
+            "links": link_names,
+        })
+    states = []
+    for i, state in enumerate(root.findall(".//group_state")):
+        joint_values: dict[str, float] = {}
+        for item in state.findall("joint"):
+            jname = (item.get("name") or "").strip()
+            if not jname:
+                continue
+            joint_values[jname] = _robot_float(item.get("value"), 0.0)
+        states.append({
             "name": state.get("name") or f"state_{i + 1}",
             "group": state.get("group") or "",
             "file": path.name,
-        }
-        for i, state in enumerate(root.findall(".//group_state"))
-    ]
+            "joint_values": joint_values,
+        })
     return {"groups": groups, "states": states}
 
 
@@ -6897,12 +6934,14 @@ def _robot_artifact_summary(project_path: Path) -> dict[str, Any]:
         if path.is_file() and path.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf"}
     )
     joints: list[dict[str, Any]] = []
+    links: list[dict[str, Any]] = []
     srdf = {"groups": [], "states": []}
     for name in artifacts:
         path = project_path / name
         suffix = path.suffix.lower()
         if suffix == ".urdf":
             joints.extend(_parse_robot_urdf_joints(path))
+            links.extend(_parse_robot_urdf_links(path))
         elif suffix == ".srdf":
             parsed = _parse_robot_srdf_groups(path)
             srdf["groups"].extend(parsed["groups"])
@@ -6911,6 +6950,7 @@ def _robot_artifact_summary(project_path: Path) -> dict[str, Any]:
         "sources": sources,
         "artifacts": artifacts,
         "joints": joints,
+        "links": links,
         "srdf": srdf,
     }
 

@@ -6759,35 +6759,111 @@ function artifactLinksHtml(artifacts = []) {
     : `<p class="muted small">No URDF/SRDF/SDF artifacts yet. Generate robot artifacts from a Python source.</p>`;
 }
 
+function isAngularRobotJoint(joint) {
+  const type = String(joint?.type || "").toLowerCase();
+  return type === "revolute" || type === "continuous";
+}
+
+function robotJointDisplayLimits(joint) {
+  const lowerRad = Number(joint?.lower);
+  const upperRad = Number(joint?.upper);
+  if (isAngularRobotJoint(joint)) {
+    return {
+      lower: Math.round((Number.isFinite(lowerRad) ? lowerRad : -Math.PI) * 180 / Math.PI),
+      upper: Math.round((Number.isFinite(upperRad) ? upperRad : Math.PI) * 180 / Math.PI),
+      step: 1,
+      unit: "deg",
+    };
+  }
+  return {
+    lower: Number.isFinite(lowerRad) ? lowerRad : -0.2,
+    upper: Number.isFinite(upperRad) ? upperRad : 0.2,
+    step: 0.001,
+    unit: "m",
+  };
+}
+
 function robotSrdfGroupsHtml(srdf = {}) {
   const groups = srdf.groups || [];
   const states = srdf.states || [];
-  if (!groups.length && !states.length) return `<p class="cad-param-hint">No SRDF planning groups or group states found yet.</p>`;
+  if (!groups.length && !states.length) {
+    return `<p class="cad-param-hint">No SRDF planning groups or group states found yet.</p>`;
+  }
+  const stateOptions = states.map((state) => {
+    const label = state.group ? `${state.name} · ${state.group}` : state.name;
+    const payload = encodeURIComponent(JSON.stringify(state.joint_values || {}));
+    return `<option value="${escapeHtml(state.name)}" data-group="${escapeHtml(state.group || "")}" data-joint-values="${payload}">${escapeHtml(label)}</option>`;
+  }).join("");
   return `<div class="urdf-planning-grid">
-    ${groups.map((group) => `<span class="urdf-artifact-chip">Group: ${escapeHtml(group.name)}${group.file ? ` · ${escapeHtml(group.file)}` : ""}</span>`).join("")}
-    ${states.map((state) => `<span class="urdf-artifact-chip">Pose: ${escapeHtml(state.name)}${state.group ? ` · ${escapeHtml(state.group)}` : ""}</span>`).join("")}
+    ${groups.map((group) => `<span class="urdf-artifact-chip">Group: ${escapeHtml(group.name)}${group.joints?.length ? ` · ${group.joints.length} joints` : ""}</span>`).join("")}
+    <label class="cad-param-row urdf-group-state-row">
+      <span>Group state</span>
+      <select id="urdf-group-state-select" data-urdf-group-state>
+        <option value="">custom / none</option>
+        ${stateOptions}
+      </select>
+    </label>
   </div>`;
 }
 
+function robotLinkTreeHtml(links = [], joints = []) {
+  if (!links.length && !joints.length) {
+    return `<p class="cad-param-hint">No URDF links yet. Generate a URDF artifact to populate the tree.</p>`;
+  }
+  const byParent = new Map();
+  const childLinks = new Set();
+  for (const joint of joints) {
+    const parent = String(joint.parent || "").trim();
+    const child = String(joint.child || "").trim();
+    if (!parent || !child) continue;
+    childLinks.add(child);
+    if (!byParent.has(parent)) byParent.set(parent, []);
+    byParent.get(parent).push({ child, joint });
+  }
+  const roots = (links.map((l) => l.name).filter(Boolean)).filter((name) => !childLinks.has(name));
+  const fallbackRoots = roots.length ? roots : [...new Set((links.map((l) => l.name).filter(Boolean)))];
+
+  const renderNode = (linkName, depth = 0) => {
+    const kids = byParent.get(linkName) || [];
+    const jointHint = kids.length ? `${kids.length} child joint(s)` : "leaf";
+    return `<div class="urdf-tree-node" style="--depth:${depth}">
+      <button type="button" class="urdf-tree-row" data-urdf-link="${escapeHtml(linkName)}">
+        <span class="urdf-tree-glyph">${kids.length ? "▣" : "●"}</span>
+        <span class="urdf-tree-label">${escapeHtml(linkName)}</span>
+        <em>${escapeHtml(jointHint)}</em>
+      </button>
+      ${kids.map(({ child, joint }) => `
+        <div class="urdf-tree-joint" style="--depth:${depth + 1}">
+          <span class="urdf-tree-glyph">⟷</span>
+          <span>${escapeHtml(joint.name)} <em>(${escapeHtml(joint.type || "joint")})</em></span>
+        </div>
+        ${renderNode(child, depth + 1)}
+      `).join("")}
+    </div>`;
+  };
+
+  return `<div class="urdf-tree-root" role="tree">${fallbackRoots.map((name) => renderNode(name)).join("")}</div>`;
+}
+
 function robotJointSlidersHtml(joints = []) {
-  if (!joints.length) return `<p class="cad-param-hint">No URDF movable joints found. Export/generate URDF with revolute or prismatic joints.</p>`;
-  return joints
-    .filter((joint) => joint.type !== "fixed")
-    .map((joint) => {
-      const lower = Math.round((Number(joint.lower) || -3.14159) * 180 / Math.PI);
-      const upper = Math.round((Number(joint.upper) || 3.14159) * 180 / Math.PI);
-      return `<label class="cad-param-row urdf-joint-row" data-joint-id="${escapeHtml(joint.name)}">
-        <span>${escapeHtml(joint.name)}</span>
-        <input type="range" min="${lower}" max="${upper}" step="1" value="0" data-robot-urdf-joint="${escapeHtml(joint.name)}" />
-        <input type="number" step="1" value="0" data-robot-urdf-joint-number="${escapeHtml(joint.name)}" />
-        <em>${joint.type === "prismatic" ? "mm" : "deg"}</em>
-      </label>`;
-    })
-    .join("");
+  const movable = joints.filter((joint) => String(joint.type || "").toLowerCase() !== "fixed");
+  if (!movable.length) {
+    return `<p class="cad-param-hint">No URDF movable joints found. Export/generate URDF with revolute or prismatic joints.</p>`;
+  }
+  return movable.map((joint) => {
+    const limits = robotJointDisplayLimits(joint);
+    const child = String(joint.child || "").trim();
+    return `<label class="cad-param-row urdf-joint-row" data-joint-id="${escapeHtml(joint.name)}" data-joint-type="${escapeHtml(joint.type || "")}" data-joint-child="${escapeHtml(child)}">
+      <span>${escapeHtml(joint.name)}${child ? ` → ${escapeHtml(child)}` : ""}</span>
+      <input type="range" min="${limits.lower}" max="${limits.upper}" step="${limits.step}" value="0" data-robot-urdf-joint="${escapeHtml(joint.name)}" />
+      <input type="number" step="${limits.step}" value="0" data-robot-urdf-joint-number="${escapeHtml(joint.name)}" />
+      <em>${limits.unit}</em>
+    </label>`;
+  }).join("");
 }
 
 function renderRobotArtifacts() {
-  const data = robotArtifactData || { sources: [], artifacts: [], joints: [], srdf: { groups: [], states: [] } };
+  const data = robotArtifactData || { sources: [], artifacts: [], joints: [], links: [], srdf: { groups: [], states: [] } };
   const sourceSelect = document.getElementById("rigging-artifact-source");
   if (sourceSelect) {
     const current = sourceSelect.value;
@@ -6799,23 +6875,97 @@ function renderRobotArtifacts() {
   const artifactHtml = artifactLinksHtml(data.artifacts || []);
   const srdfHtml = robotSrdfGroupsHtml(data.srdf || {});
   const jointHtml = robotJointSlidersHtml(data.joints || []);
+  const treeHtml = robotLinkTreeHtml(data.links || [], data.joints || []);
+  const movableCount = (data.joints || []).filter((joint) => String(joint.type || "").toLowerCase() !== "fixed").length;
+
   const rigList = document.getElementById("rigging-artifact-list");
   if (rigList) rigList.innerHTML = artifactHtml;
   const rigGroups = document.getElementById("rigging-srdf-groups");
   if (rigGroups) rigGroups.innerHTML = srdfHtml;
   const rigSliders = document.getElementById("rigging-urdf-joint-sliders");
   if (rigSliders) rigSliders.innerHTML = jointHtml;
+  const rigTree = document.getElementById("rigging-urdf-link-tree");
+  if (rigTree) rigTree.innerHTML = treeHtml;
 
   const artifactList = document.getElementById("urdf-artifact-list");
   if (artifactList) artifactList.innerHTML = artifactHtml;
+  const urdfGroups = document.getElementById("urdf-srdf-groups");
+  if (urdfGroups) urdfGroups.innerHTML = srdfHtml;
   const sliders = document.getElementById("urdf-joint-sliders");
   if (sliders) sliders.innerHTML = jointHtml;
+  const tree = document.getElementById("urdf-link-tree");
+  if (tree) tree.innerHTML = treeHtml;
   const summary = document.getElementById("urdf-joint-summary");
-  if (summary) summary.textContent = `${(data.joints || []).filter((joint) => joint.type !== "fixed").length} movable joint(s)`;
+  if (summary) summary.textContent = `${movableCount} movable joint(s)`;
+  const linkSummary = document.getElementById("urdf-link-summary");
+  if (linkSummary) linkSummary.textContent = `${(data.links || []).length} link(s) · ${movableCount} joint(s)`;
 }
 
 function renderUrdfPanel() {
   renderRobotArtifacts();
+}
+
+function applyRobotJointDisplayValue(jointName, displayValue, jointMeta = null) {
+  const joint = jointMeta || (robotArtifactData?.joints || []).find((item) => item.name === jointName) || { name: jointName, type: "revolute" };
+  const angular = isAngularRobotJoint(joint);
+  const value = Number(displayValue) || 0;
+  const rad = angular ? value * Math.PI / 180 : value;
+  document.querySelectorAll(`[data-robot-urdf-joint="${CSS.escape(jointName)}"], [data-robot-urdf-joint-number="${CSS.escape(jointName)}"]`).forEach((el) => {
+    el.value = String(value);
+  });
+  const child = String(joint.child || "").trim();
+  const candidates = [jointName, child, jointName.replace(/^joint_/, ""), jointName.replace(/^joint_/, "").replace(/_to_/g, "_")];
+  let applied = false;
+  for (const id of candidates) {
+    if (!id) continue;
+    if (riggingEditor?.setJointValue?.(id, rad)) {
+      applied = true;
+      break;
+    }
+  }
+  return applied;
+}
+
+function resetRobotJointPose() {
+  const joints = (robotArtifactData?.joints || []).filter((joint) => String(joint.type || "").toLowerCase() !== "fixed");
+  joints.forEach((joint) => applyRobotJointDisplayValue(joint.name, 0, joint));
+  const select = document.getElementById("urdf-group-state-select");
+  if (select) select.value = "";
+  setEditStatus("ok", "Robot pose reset to zero.");
+}
+
+async function copyRobotJointAngles() {
+  const joints = (robotArtifactData?.joints || []).filter((joint) => String(joint.type || "").toLowerCase() !== "fixed");
+  const payload = {};
+  joints.forEach((joint) => {
+    const input = document.querySelector(`[data-robot-urdf-joint="${CSS.escape(joint.name)}"]`);
+    payload[joint.name] = Number(input?.value || 0);
+  });
+  const text = JSON.stringify(payload, null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    setEditStatus("ok", "Copied joint angles JSON.");
+  } catch {
+    setEditStatus("error", "Could not copy joint angles.");
+  }
+}
+
+function applySrdfGroupStateFromSelect(selectEl) {
+  if (!(selectEl instanceof HTMLSelectElement) || !selectEl.value) return;
+  const option = selectEl.selectedOptions?.[0];
+  if (!option) return;
+  let values = {};
+  try {
+    values = JSON.parse(decodeURIComponent(option.dataset.jointValues || "%7B%7D"));
+  } catch {
+    values = {};
+  }
+  Object.entries(values).forEach(([jointName, radValue]) => {
+    const joint = (robotArtifactData?.joints || []).find((item) => item.name === jointName) || { name: jointName, type: "revolute" };
+    const display = isAngularRobotJoint(joint) ? (Number(radValue) || 0) * 180 / Math.PI : (Number(radValue) || 0);
+    applyRobotJointDisplayValue(jointName, display, joint);
+  });
+  setEditStatus("ok", `Applied SRDF group state “${selectEl.value}”.`);
 }
 
 function bindUrdfPanel() {
@@ -6833,20 +6983,29 @@ function bindUrdfPanel() {
     await refreshFiles();
     await refreshRobotArtifacts({ quiet: true });
   });
+  document.getElementById("btn-urdf-reset")?.addEventListener("click", () => resetRobotJointPose());
+  document.getElementById("btn-rigging-urdf-reset")?.addEventListener("click", () => resetRobotJointPose());
+  document.getElementById("btn-urdf-copy")?.addEventListener("click", () => copyRobotJointAngles());
+  document.getElementById("btn-rigging-urdf-copy")?.addEventListener("click", () => copyRobotJointAngles());
+
   const onJointInput = (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement)) return;
     const id = input.dataset.urdfJoint || input.dataset.urdfJointNumber || input.dataset.robotUrdfJoint || input.dataset.robotUrdfJointNumber;
     if (!id) return;
-    const deg = Number(input.value) || 0;
-    const row = input.closest("[data-joint-id]");
-    row?.querySelectorAll(`[data-urdf-joint="${CSS.escape(id)}"], [data-urdf-joint-number="${CSS.escape(id)}"], [data-robot-urdf-joint="${CSS.escape(id)}"], [data-robot-urdf-joint-number="${CSS.escape(id)}"]`).forEach((el) => {
-      if (el !== input) el.value = String(deg);
-    });
-    riggingEditor?.setJointValue?.(id, deg * Math.PI / 180);
+    const joint = (robotArtifactData?.joints || []).find((item) => item.name === id) || null;
+    applyRobotJointDisplayValue(id, input.value, joint);
   };
   document.getElementById("urdf-joint-sliders")?.addEventListener("input", onJointInput);
   document.getElementById("rigging-urdf-joint-sliders")?.addEventListener("input", onJointInput);
+
+  const onGroupState = (event) => {
+    const select = event.target;
+    if (!(select instanceof HTMLSelectElement) || !select.matches("[data-urdf-group-state]")) return;
+    applySrdfGroupStateFromSelect(select);
+  };
+  document.getElementById("urdf-srdf-groups")?.addEventListener("change", onGroupState);
+  document.getElementById("rigging-srdf-groups")?.addEventListener("change", onGroupState);
 }
 
 /** Right panel → AI (CAD or Wiring) with Compose sub-tab active. */

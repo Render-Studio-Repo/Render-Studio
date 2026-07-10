@@ -764,7 +764,16 @@ export function createRiggingEditor({
   }
 
   function setJointValue(id, valueRad) {
-    const bone = boneById(id) || bones.find((b) => b.name === id);
+    const raw = String(id || "").trim();
+    let bone = boneById(raw) || bones.find((b) => b.name === raw);
+    if (!bone && raw.includes("_to_")) {
+      const childName = raw.split("_to_").pop();
+      bone = bones.find((b) => b.name === childName || b.id === childName);
+    }
+    if (!bone && raw.startsWith("joint_")) {
+      const stripped = raw.slice("joint_".length);
+      bone = bones.find((b) => b.name === stripped || b.id === stripped);
+    }
     if (!bone || bone.jointType === "fixed") return false;
     const idx = jointAxisIndex(bone);
     const lim = bone.limits || { lower: -3.14, upper: 3.14 };
@@ -773,7 +782,7 @@ export function createRiggingEditor({
     const value = Math.max(lower, Math.min(upper, Number(valueRad) || 0));
     bone.rotation = asVec3(bone.rotation);
     bone.rotation[idx] = value;
-    selectedId = id;
+    selectedId = bone.id;
     renderAll();
     scheduleSave();
     return true;
