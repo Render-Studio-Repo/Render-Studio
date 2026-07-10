@@ -384,6 +384,31 @@ def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
         return "6.2"
     if name == "click_lug_height":
         return "4.0"
+    if name == "gear_thickness":
+        return "8.0"
+    if name == "planet_orbit_radius":
+        return str(_planetary_orbit_radius_mm(prompt))
+    if name == "planet_angles_deg":
+        return "[0.0, 120.0, 240.0]"
+    if name in {"sun_root_radius", "sun_outer_radius", "sun_bore_radius", "planet_root_radius", "planet_outer_radius", "planet_bore_radius", "pin_radius", "pin_height", "pin_z", "carrier_thickness", "carrier_z"}:
+        defaults = {
+            "sun_root_radius": "14.0",
+            "sun_outer_radius": "18.0",
+            "sun_bore_radius": "4.0",
+            "planet_root_radius": "9.0",
+            "planet_outer_radius": "12.0",
+            "planet_bore_radius": "3.0",
+            "pin_radius": "2.6",
+            "pin_height": "12.0",
+            "pin_z": "-1.0",
+            "carrier_thickness": "3.0",
+            "carrier_z": "-3.0",
+        }
+        return defaults.get(name)
+    if name == "planet_labels":
+        return '["planet_1", "planet_2", "planet_3"]'
+    if name == "pin_labels":
+        return '["pin_1", "pin_2", "pin_3"]'
     if name.endswith("_layer"):
         return f'"{name[:-6].upper()}"'
     return None
@@ -1384,6 +1409,108 @@ def _backfill_known_missing_symbols(source: str, prompt: str, missing: list[str]
     if "base_top" in missing_set and "base_top" not in defined:
         injections.append("base_top = 3.0")
 
+    # Planetary / spur gear stubs the model often emits without defining.
+    orbit = _planetary_orbit_radius_mm(prompt)
+    gear_defaults = {
+        "model_label": '"planetary_gear_assembly"',
+        "gear_thickness": "8.0",
+        "planet_orbit_radius": f"{orbit:.3f}",
+        "planet_angles_deg": "[0.0, 120.0, 240.0]",
+        "planet_count": "3",
+        "sun_teeth": "18",
+        "planet_teeth": "12",
+        "ring_teeth": "42",
+        "sun_root_radius": "14.0",
+        "sun_outer_radius": "18.0",
+        "sun_bore_radius": "4.0",
+        "planet_root_radius": "9.0",
+        "planet_outer_radius": "12.0",
+        "planet_bore_radius": "3.0",
+        "ring_outer_radius": f"{orbit + 18.0:.3f}",
+        "ring_root_radius": f"{orbit + 9.0:.3f}",
+        "ring_inner_clearance": f"{max(orbit - 13.0, 8.0):.3f}",
+        "carrier_radius": f"{orbit + 6.0:.3f}",
+        "carrier_thickness": "3.0",
+        "carrier_z": "-3.0",
+        "pin_radius": "2.6",
+        "pin_height": "12.0",
+        "pin_z": "-1.0",
+        "planet_labels": '["planet_1", "planet_2", "planet_3"]',
+        "pin_labels": '["pin_1", "pin_2", "pin_3"]',
+        "sun_label": '"sun"',
+        "ring_label": '"ring"',
+        "carrier_label": '"carrier"',
+    }
+    for name, value in gear_defaults.items():
+        if name in missing_set and name not in defined:
+            injections.append(f"{name} = {value}")
+
+    gear_helpers = {
+        "make_external_gear",
+        "make_ring_gear",
+        "make_carrier",
+        "make_pin",
+        "_trapezoid_tooth",
+    }
+    if any(name in missing_set and name not in defined for name in gear_helpers):
+        injections.append(
+            "def _trapezoid_tooth(root_r, tip_r, teeth, thickness, *, inward=False):\n"
+            "    from math import pi\n"
+            "    pitch = (2.0 * pi * max(float(root_r), 1.0)) / max(int(teeth), 1)\n"
+            "    w_root = pitch * 0.52\n"
+            "    w_tip = pitch * 0.28\n"
+            "    y0, y1 = (float(tip_r), float(root_r)) if inward else (float(root_r), float(tip_r))\n"
+            "    pts = [(-w_root / 2.0, y0), (-w_tip / 2.0, y1), (w_tip / 2.0, y1), (w_root / 2.0, y0)]\n"
+            "    with BuildSketch() as sk:\n"
+            "        Polygon(*pts)\n"
+            "    return extrude(sk.sketch, amount=float(thickness))\n\n"
+            "def make_external_gear(root_r, outer_r, teeth, thickness, bore_radius=0.0, label='gear', *args, **kwargs):\n"
+            "    body = Cylinder(radius=float(root_r), height=float(thickness), align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
+            "    for i in range(int(teeth)):\n"
+            "        tooth = _trapezoid_tooth(root_r, outer_r, teeth, thickness, inward=False)\n"
+            "        tooth = tooth.rotate(Axis.Z, i * (360.0 / max(int(teeth), 1)))\n"
+            "        body = body + tooth\n"
+            "    if bore_radius and float(bore_radius) > 0:\n"
+            "        body = body - Cylinder(radius=float(bore_radius), height=float(thickness) + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
+            "    body.label = label\n"
+            "    return body\n\n"
+            "def make_ring_gear(label='ring', *args, **kwargs):\n"
+            "    outer_r = float(globals().get('ring_outer_radius', 60.0))\n"
+            "    inner_r = float(globals().get('ring_inner_clearance', 28.0))\n"
+            "    root_r = float(globals().get('ring_root_radius', 50.0))\n"
+            "    teeth = int(globals().get('ring_teeth', 42))\n"
+            "    thick = float(globals().get('gear_thickness', 8.0))\n"
+            "    shell = Cylinder(radius=outer_r, height=thick, align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
+            "    shell = shell - Cylinder(radius=max(inner_r, 1.0), height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
+            "    for i in range(teeth):\n"
+            "        pocket = _trapezoid_tooth(root_r, inner_r + 0.5, teeth, thick + 0.4, inward=True)\n"
+            "        pocket = pocket.rotate(Axis.Z, i * (360.0 / teeth)).moved(Location((0, 0, -0.2)))\n"
+            "        shell = shell - pocket\n"
+            "    shell.label = label\n"
+            "    return shell\n\n"
+            "def make_carrier(*args, **kwargs):\n"
+            "    from math import cos, sin, radians\n"
+            "    radius = float(globals().get('carrier_radius', 48.0))\n"
+            "    thick = float(globals().get('carrier_thickness', 3.0))\n"
+            "    z0 = float(globals().get('carrier_z', -3.0))\n"
+            "    orbit = float(globals().get('planet_orbit_radius', 42.0))\n"
+            "    pin_r = float(globals().get('pin_radius', 2.6))\n"
+            "    sun_bore = float(globals().get('sun_bore_radius', 4.0))\n"
+            "    angles = list(globals().get('planet_angles_deg', [0.0, 120.0, 240.0]))\n"
+            "    plate = Cylinder(radius=radius, height=thick, align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
+            "    plate = plate - Cylinder(radius=sun_bore + 1.5, height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
+            "    for angle_deg in angles:\n"
+            "        ang = radians(float(angle_deg))\n"
+            "        plate = plate - Cylinder(radius=pin_r + 0.2, height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((orbit * cos(ang), orbit * sin(ang), -1)))\n"
+            "    plate = plate.moved(Location((0, 0, z0)))\n"
+            "    plate.label = str(globals().get('carrier_label', 'carrier'))\n"
+            "    return plate\n\n"
+            "def make_pin(label='pin', *args, **kwargs):\n"
+            "    pin = Cylinder(radius=float(globals().get('pin_radius', 2.6)), height=float(globals().get('pin_height', 12.0)), align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
+            "    pin.label = label\n"
+            "    return pin"
+        )
+
     stair_helpers = {
         "make_base_disk",
         "make_base",
@@ -1473,6 +1600,183 @@ def _looks_like_spiral_staircase(prompt: str, images: list[dict[str, Any]] | Non
     has_spiral = "spiral" in p or "helical" in p
     has_treads = "tread" in p
     return has_stair and has_spiral and has_treads
+
+
+def _planetary_orbit_radius_mm(prompt: str) -> float:
+    match = re.search(
+        r"(\d+(?:\.\d+)?)\s*mm\s*(?:radius\s*)?(?:circle|orbit|pcd|pitch)",
+        prompt or "",
+        re.I,
+    )
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            pass
+    match = re.search(
+        r"(?:on\s+a|orbit(?:al)?|circle(?:\s+of)?|radius)\s+(\d+(?:\.\d+)?)\s*mm",
+        prompt or "",
+        re.I,
+    )
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            pass
+    return 42.0
+
+
+def _looks_like_planetary_gear_assembly(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
+    p = (prompt or "").lower()
+    if images:
+        return False
+    has_planetary = "planetary" in p or ("sun" in p and "planet" in p and "ring" in p)
+    has_gear = "gear" in p or "teeth" in p or "tooth" in p
+    return has_planetary and has_gear
+
+
+def _canonical_planetary_gear_assembly_source(*, label: str, prompt: str) -> str:
+    """Complete flat planetary gearset — avoids LLM stub helpers (make_external_gear, …)."""
+    safe_label = json.dumps(label or "planetary_gear_assembly")
+    orbit = _planetary_orbit_radius_mm(prompt)
+    return f'''from math import cos, sin, pi, radians
+from build123d import *
+
+model_label = {safe_label}
+gear_thickness = 8.0
+planet_count = 3
+planet_orbit_radius = {orbit:.3f}
+planet_angles_deg = [i * (360.0 / planet_count) for i in range(planet_count)]
+
+sun_teeth = 18
+planet_teeth = 12
+ring_teeth = sun_teeth + 2 * planet_teeth
+
+sun_root_radius = 14.0
+sun_outer_radius = 18.0
+sun_bore_radius = 4.0
+sun_label = "sun"
+
+planet_root_radius = 9.0
+planet_outer_radius = 12.0
+planet_bore_radius = 3.0
+planet_labels = [f"planet_{{i + 1}}" for i in range(planet_count)]
+
+ring_outer_radius = planet_orbit_radius + planet_outer_radius + 6.0
+ring_root_radius = planet_orbit_radius + planet_root_radius
+ring_inner_clearance = planet_orbit_radius - planet_outer_radius - 1.0
+ring_label = "ring"
+
+carrier_radius = planet_orbit_radius + 6.0
+carrier_thickness = 3.0
+carrier_z = -carrier_thickness
+carrier_label = "carrier"
+
+pin_radius = 2.6
+pin_height = gear_thickness + 4.0
+pin_z = -1.0
+pin_labels = [f"pin_{{i + 1}}" for i in range(planet_count)]
+
+
+def _trapezoid_tooth(root_r, tip_r, teeth, thickness, *, inward=False):
+    pitch = (2.0 * pi * max(root_r, 1.0)) / max(teeth, 1)
+    w_root = pitch * 0.52
+    w_tip = pitch * 0.28
+    y0, y1 = (tip_r, root_r) if inward else (root_r, tip_r)
+    pts = [
+        (-w_root / 2.0, y0),
+        (-w_tip / 2.0, y1),
+        (w_tip / 2.0, y1),
+        (w_root / 2.0, y0),
+    ]
+    with BuildSketch() as sk:
+        Polygon(*pts)
+    return extrude(sk.sketch, amount=thickness)
+
+
+def make_external_gear(root_r, outer_r, teeth, thickness, bore_radius=0.0, label="gear"):
+    body = Cylinder(radius=root_r, height=thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    for i in range(int(teeth)):
+        tooth = _trapezoid_tooth(root_r, outer_r, teeth, thickness, inward=False)
+        tooth = tooth.rotate(Axis.Z, i * (360.0 / teeth))
+        body = body + tooth
+    if bore_radius and bore_radius > 0:
+        body = body - Cylinder(radius=bore_radius, height=thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))
+    body.label = label
+    return body
+
+
+def make_ring_gear(label=ring_label):
+    shell = Cylinder(radius=ring_outer_radius, height=gear_thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    shell = shell - Cylinder(radius=max(ring_inner_clearance, 1.0), height=gear_thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))
+    for i in range(int(ring_teeth)):
+        pocket = _trapezoid_tooth(ring_root_radius, ring_inner_clearance + 0.5, ring_teeth, gear_thickness + 0.4, inward=True)
+        pocket = pocket.rotate(Axis.Z, i * (360.0 / ring_teeth)).moved(Location((0, 0, -0.2)))
+        shell = shell - pocket
+    shell.label = label
+    return shell
+
+
+def make_carrier():
+    plate = Cylinder(radius=carrier_radius, height=carrier_thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    plate = plate - Cylinder(radius=sun_bore_radius + 1.5, height=carrier_thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))
+    for angle_deg in planet_angles_deg:
+        ang = radians(angle_deg)
+        px = planet_orbit_radius * cos(ang)
+        py = planet_orbit_radius * sin(ang)
+        plate = plate - Cylinder(radius=pin_radius + 0.2, height=carrier_thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((px, py, -1)))
+    plate = plate.moved(Location((0, 0, carrier_z)))
+    plate.label = carrier_label
+    return plate
+
+
+def make_pin(label="pin"):
+    pin = Cylinder(radius=pin_radius, height=pin_height, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    pin.label = label
+    return pin
+
+
+def gen_step():
+    sun = make_external_gear(
+        sun_root_radius,
+        sun_outer_radius,
+        sun_teeth,
+        gear_thickness,
+        bore_radius=sun_bore_radius,
+        label=sun_label,
+    )
+    ring = make_ring_gear(ring_label)
+    carrier = make_carrier()
+
+    planets = []
+    pins = []
+    for idx, angle_deg in enumerate(planet_angles_deg):
+        ang = radians(angle_deg)
+        px = planet_orbit_radius * cos(ang)
+        py = planet_orbit_radius * sin(ang)
+        planet = make_external_gear(
+            planet_root_radius,
+            planet_outer_radius,
+            planet_teeth,
+            gear_thickness,
+            bore_radius=planet_bore_radius,
+            label=planet_labels[idx],
+        ).located(Location((px, py, 0), (0, 0, angle_deg / 2.0)))
+        planet.label = planet_labels[idx]
+        planets.append(planet)
+
+        pin = make_pin(pin_labels[idx]).located(Location((px, py, pin_z)))
+        pin.label = pin_labels[idx]
+        pins.append(pin)
+
+    sun.label = sun_label
+    ring.label = ring_label
+    carrier.label = carrier_label
+    return Compound(
+        children=[ring, carrier, sun, *planets, *pins],
+        label=model_label,
+    )
+'''
 
 
 def _canonical_spiral_staircase_source(*, label: str, prompt: str) -> str:
@@ -2358,6 +2662,8 @@ def _run_text_to_cad_v2(
         raise DesignBuildError(message, ai_traces=ai_traces)
     if _looks_like_spiral_staircase(prompt, images):
         canonical_source = _canonical_spiral_staircase_source(label=base, prompt=prompt)
+    elif _looks_like_planetary_gear_assembly(prompt, images):
+        canonical_source = _canonical_planetary_gear_assembly_source(label=base, prompt=prompt)
     elif not strict_upstream:
         if _looks_like_arduino_nema_mount_box(prompt, images):
             canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
