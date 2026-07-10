@@ -3025,6 +3025,10 @@ def _run_text_to_cad_v2(
                 )
         except Exception as exc:
             last_error = str(exc)
+            if cancel_check and cancel_check():
+                raise DesignCanceled("Generation canceled.") from exc
+            if "Generation canceled" in last_error:
+                raise DesignCanceled("Generation canceled.") from exc
             if current_source:
                 try:
                     rejected_path = project_path / f"{base}.rejected.py"
@@ -3075,10 +3079,13 @@ def _run_text_to_cad_v2(
             step_args,
             cwd=project_path,
             timeout_sec=240.0,
+            cancel_check=cancel_check,
         )
         if not step_out.get("ok"):
             detail = _error_tail(step_out, "scripts/step failed")
             last_error = detail
+            if step_out.get("canceled") or (cancel_check and cancel_check()) or "Canceled:" in detail:
+                raise DesignCanceled("Generation canceled.")
             if _is_noncritical_3mf_export_failure(detail):
                 trace_add(
                     "warning",
@@ -3091,6 +3098,7 @@ def _run_text_to_cad_v2(
                     _step_args_without_3mf(step_args),
                     cwd=project_path,
                     timeout_sec=240.0,
+                    cancel_check=cancel_check,
                 )
                 if retry_no3mf.get("ok"):
                     step_out = retry_no3mf
@@ -3159,6 +3167,7 @@ def _run_text_to_cad_v2(
                                     step_args,
                                     cwd=project_path,
                                     timeout_sec=240.0,
+                                    cancel_check=cancel_check,
                                 )
                                 if step_out.get("ok"):
                                     detail = ""
@@ -3222,7 +3231,10 @@ def _run_text_to_cad_v2(
             ["refs", step_name, "--facts", "--planes", "--positioning"],
             cwd=project_path,
             timeout_sec=90.0,
+            cancel_check=cancel_check,
         )
+        if inspect_out.get("canceled") or (cancel_check and cancel_check()):
+            raise DesignCanceled("Generation canceled.")
         if not inspect_out.get("ok"):
             detail = _error_tail(inspect_out, "scripts/inspect failed")
             last_error = detail

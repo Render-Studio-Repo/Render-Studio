@@ -8381,6 +8381,8 @@ def _prompt_via_kernel(
     timer = TraceTimer("Design pipeline", trace_id)
     cancel_check = lambda: generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir()
     try:
+        if hasattr(ai, "set_cancel_check"):
+            ai.set_cancel_check(cancel_check)
         if cancel_check():
             raise DesignCanceled("Generation canceled.")
         out = design_service.run_design(
@@ -8539,6 +8541,10 @@ def _background_prompt_kernel(
         def progress_callback(progress: dict[str, Any]) -> None:
             generation_service.update_progress(project_path, progress, trace_id=trace_id)
 
+        if hasattr(ai, "set_cancel_check"):
+            ai.set_cancel_check(
+                lambda: generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir()
+            )
         result = _prompt_via_kernel(
             project_id,
             body,

@@ -649,12 +649,12 @@ async function cancelActiveGeneration() {
       if (statusEl) {
         statusEl.className = "status";
         statusEl.textContent = isWiring
-          ? "Stopping… (finishes current AI call, then cancels schematic save)"
+          ? "Stopping… killing generation now"
           : isFusion
-            ? "Stopping Fusion mode... (finishes current AI call, then cancels build)"
+            ? "Stopping Fusion mode… killing generation now"
           : isV2
-            ? "Stopping 2.0... (finishes current AI call, then cancels build)"
-            : "Stopping... (finishes current AI call, then cancels build)";
+            ? "Stopping 2.0… killing generation now"
+            : "Stopping… killing generation now";
       }
     }
     let gen;

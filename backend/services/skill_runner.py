@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from backend.services.skills_service import get_skill_dir
 
@@ -23,7 +26,12 @@ _SIGNAL_NAMES = {
     8: "SIGFPE",
     11: "SIGSEGV (segmentation fault)",
     9: "SIGKILL",
+    15: "SIGTERM",
 }
+
+_ACTIVE_LOCK = threading.Lock()
+# cwd -> list of (Popen, process group id)
+_ACTIVE_PROCS: dict[str, list[tuple[subprocess.Popen, int]]] = {}
 
 
 def list_skill_tools(skill_id: str) -> list[str]:
@@ -64,6 +72,71 @@ def _pythonpath_for_skill(skill_dir: Path) -> str:
     return os.pathsep.join(parts)
 
 
+def _cwd_key(cwd: Path | str) -> str:
+    return str(Path(cwd).resolve())
+
+
+def _register_proc(cwd: Path | str, proc: subprocess.Popen, pgid: int) -> None:
+    key = _cwd_key(cwd)
+    with _ACTIVE_LOCK:
+        _ACTIVE_PROCS.setdefault(key, []).append((proc, pgid))
+
+
+def _unregister_proc(cwd: Path | str, proc: subprocess.Popen) -> None:
+    key = _cwd_key(cwd)
+    with _ACTIVE_LOCK:
+        entries = _ACTIVE_PROCS.get(key) or []
+        _ACTIVE_PROCS[key] = [(p, g) for p, g in entries if p is not proc]
+        if not _ACTIVE_PROCS[key]:
+            _ACTIVE_PROCS.pop(key, None)
+
+
+def _kill_process_group(pgid: int, proc: subprocess.Popen | None = None) -> bool:
+    """Terminate a skill-tool process group. Returns True if a signal was sent."""
+    sent = False
+    if pgid > 0:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(pgid, sig)
+                sent = True
+            except ProcessLookupError:
+                break
+            except PermissionError:
+                break
+            if sig == signal.SIGTERM:
+                time.sleep(0.15)
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.kill()
+            sent = True
+        except Exception:
+            pass
+    if proc is not None:
+        try:
+            proc.wait(timeout=2.0)
+        except Exception:
+            pass
+    return sent
+
+
+def kill_active_for_cwd(cwd: Path | str, *, reason: str = "canceled") -> int:
+    """Kill all in-flight skill-tool subprocesses for a project/workdir."""
+    key = _cwd_key(cwd)
+    with _ACTIVE_LOCK:
+        entries = list(_ACTIVE_PROCS.get(key) or [])
+        _ACTIVE_PROCS.pop(key, None)
+    killed = 0
+    for proc, pgid in entries:
+        if _kill_process_group(pgid, proc):
+            killed += 1
+            logger.info("Killed skill tool pid=%s pgid=%s cwd=%s (%s)", getattr(proc, "pid", None), pgid, key, reason)
+    return killed
+
+
+def kill_active_for_project(project_path: Path | str, *, reason: str = "canceled") -> int:
+    return kill_active_for_cwd(project_path, reason=reason)
+
+
 def run_skill_tool(
     skill_id: str,
     tool: str,
@@ -71,11 +144,16 @@ def run_skill_tool(
     *,
     cwd: Path | str | None = None,
     timeout_sec: float = 120.0,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Run ``python scripts/<tool>`` with cwd set to the artifact workspace.
 
     text-to-cad CLIs resolve STEP/CAD paths relative to ``cwd``. The skill scripts
     themselves live under ``backend/skills/<skill_id>/scripts/``.
+
+    When ``cancel_check`` returns True (or the project is marked canceled), the
+    child process group is killed immediately so Stop Generating does not wait
+    for scripts/step to finish.
     """
     skill_dir = get_skill_dir(skill_id)
     if not skill_dir:
@@ -101,54 +179,121 @@ def run_skill_tool(
     env = os.environ.copy()
     env["PYTHONPATH"] = _pythonpath_for_skill(skill_dir)
 
+    def _is_canceled() -> bool:
+        if cancel_check and cancel_check():
+            return True
+        try:
+            from backend.services import generation_service
+
+            return bool(generation_service.is_canceled(run_cwd))
+        except Exception:
+            return False
+
+    if _is_canceled():
+        return {
+            "ok": False,
+            "exit_code": -15,
+            "stdout": "",
+            "stderr": "Generation canceled before scripts/%s started." % tool,
+            "command": cmd,
+            "skill_dir": str(skill_dir),
+            "cwd": str(run_cwd),
+            "canceled": True,
+        }
+
+    proc: subprocess.Popen | None = None
+    pgid = -1
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=str(run_cwd),
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout_sec,
+            start_new_session=True,  # own process group → killpg on cancel
         )
-        stderr = proc.stderr
+        try:
+            pgid = os.getpgid(proc.pid)
+        except Exception:
+            pgid = proc.pid
+        _register_proc(run_cwd, proc, pgid)
+
+        deadline = time.monotonic() + max(float(timeout_sec), 1.0)
+        while True:
+            if _is_canceled():
+                _kill_process_group(pgid, proc)
+                stdout, stderr = ("", "")
+                try:
+                    out_b, err_b = proc.communicate(timeout=1.0)
+                    stdout, stderr = out_b or "", err_b or ""
+                except Exception:
+                    pass
+                return {
+                    "ok": False,
+                    "exit_code": -15,
+                    "stdout": stdout,
+                    "stderr": (stderr or "") + f"\nCanceled: scripts/{tool} was killed.",
+                    "command": cmd,
+                    "skill_dir": str(skill_dir),
+                    "cwd": str(run_cwd),
+                    "canceled": True,
+                }
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _kill_process_group(pgid, proc)
+                stdout, stderr = ("", "")
+                try:
+                    out_b, err_b = proc.communicate(timeout=1.0)
+                    stdout, stderr = out_b or "", err_b or ""
+                except Exception:
+                    pass
+                return {
+                    "ok": False,
+                    "exit_code": -1,
+                    "stdout": stdout,
+                    "stderr": (stderr or "") + f"\nTimed out after {timeout_sec}s",
+                    "command": cmd,
+                    "skill_dir": str(skill_dir),
+                    "cwd": str(run_cwd),
+                }
+            try:
+                stdout, stderr = proc.communicate(timeout=min(0.5, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
+
         # A negative return code means the child was killed by a signal.
-        # Native crashes in the OCCT/build123d kernel (e.g. a fillet/chamfer or
-        # boolean on fragile geometry) raise SIGSEGV/SIGABRT and print nothing
-        # useful to stderr, so surface a diagnostic the repair loop can act on.
         if proc.returncode is not None and proc.returncode < 0:
             signal_num = -proc.returncode
             signal_name = _SIGNAL_NAMES.get(signal_num, f"signal {signal_num}")
-            crash_hint = (
-                f"\n[kernel crash] scripts/{tool} was killed by {signal_name} "
-                f"(exit {proc.returncode}). This is a native CAD-kernel crash, not a "
-                "Python exception, so it cannot be caught with try/except. It is "
-                "usually caused by fillet/chamfer on degenerate or self-intersecting "
-                "edges, a boolean on non-manifold solids, or a loft/sweep with a "
-                "bad profile. Remove or shrink the offending operation and tighten "
-                "the edge/face selection."
-            )
+            if signal_num in {9, 15} and _is_canceled():
+                crash_hint = f"\nCanceled: scripts/{tool} was killed by {signal_name}."
+            else:
+                crash_hint = (
+                    f"\n[kernel crash] scripts/{tool} was killed by {signal_name} "
+                    f"(exit {proc.returncode}). This is a native CAD-kernel crash, not a "
+                    "Python exception, so it cannot be caught with try/except. It is "
+                    "usually caused by fillet/chamfer on degenerate or self-intersecting "
+                    "edges, a boolean on non-manifold solids, or a loft/sweep with a "
+                    "bad profile. Remove or shrink the offending operation and tighten "
+                    "the edge/face selection."
+                )
             stderr = (stderr or "") + crash_hint
         return {
             "ok": proc.returncode == 0,
             "exit_code": proc.returncode,
-            "stdout": proc.stdout,
+            "stdout": stdout,
             "stderr": stderr,
             "command": cmd,
             "skill_dir": str(skill_dir),
             "cwd": str(run_cwd),
-        }
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "ok": False,
-            "exit_code": -1,
-            "stdout": exc.stdout or "",
-            "stderr": (exc.stderr or "") + f"\nTimed out after {timeout_sec}s",
-            "command": cmd,
-            "skill_dir": str(skill_dir),
-            "cwd": str(run_cwd),
+            "canceled": bool(proc.returncode is not None and proc.returncode < 0 and _is_canceled()),
         }
     except Exception as exc:
         logger.warning("skill tool failed: %s", exc)
+        if proc is not None:
+            _kill_process_group(pgid, proc)
         return {
             "ok": False,
             "exit_code": -1,
@@ -158,6 +303,9 @@ def run_skill_tool(
             "skill_dir": str(skill_dir),
             "cwd": str(run_cwd),
         }
+    finally:
+        if proc is not None:
+            _unregister_proc(run_cwd, proc)
 
 
 def _validate_step_basic(step_path: Path) -> dict[str, Any]:

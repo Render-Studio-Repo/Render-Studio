@@ -855,12 +855,44 @@ class AIService:
         if not self.api_key:
             raise RuntimeError("Add your AI provider API key from the account menu before generating.")
         self.client = None
+        self.cancel_check = None  # optional Callable[[], bool] set by generation runners
         if self.provider == "openai":
             # Pro / reasoning models routinely exceed 90s, especially with skills + images.
             ai_timeout = 300.0 if self.model in PRO_MODELS or str(self.model).startswith("gpt-5.5") else 180.0
             self.client = OpenAI(api_key=self.api_key, timeout=ai_timeout)
         elif self.provider != "anthropic":
             raise RuntimeError(f"Unsupported AI provider: {self.provider}")
+
+    def set_cancel_check(self, cancel_check) -> None:
+        self.cancel_check = cancel_check
+
+    def _raise_if_canceled(self) -> None:
+        check = self.cancel_check
+        if check and check():
+            raise RuntimeError("Generation canceled.")
+
+    def _wait_future(self, fut, *, hard_timeout: float):
+        """Wait on a thread future, aborting within ~1s when cancel_check trips."""
+        import concurrent.futures as _cf
+
+        deadline = time.perf_counter() + max(float(hard_timeout), 1.0)
+        while True:
+            self._raise_if_canceled()
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                fut.cancel()
+                raise TimeoutError(
+                    f"OpenAI {self.model} did not respond within {hard_timeout:.0f}s. "
+                    "This can happen with large code-generation prompts on pro models. "
+                    "Try again or switch to a faster model (gpt-5.5 fast mode)."
+                )
+            try:
+                return fut.result(timeout=min(1.0, remaining))
+            except _cf.TimeoutError:
+                continue
+            except TimeoutError:
+                # Python's built-in TimeoutError from some futures backends
+                continue
 
     def generate_cad_plan(
         self,
@@ -1451,18 +1483,16 @@ class AIService:
             }
             if json_response:
                 create_kwargs["text"] = {"format": {"type": "json_object"}}
-            # Run in a thread with a hard wall-clock deadline
+            # Run in a thread with a hard wall-clock deadline; poll cancel every ~1s.
             with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-resp") as _pool:
                 _fut = _pool.submit(_do_responses_create, create_kwargs)
                 try:
-                    response = _fut.result(timeout=hard_timeout)
-                except _cf.TimeoutError:
+                    response = self._wait_future(_fut, hard_timeout=hard_timeout)
+                except TimeoutError:
+                    raise
+                except RuntimeError:
                     _fut.cancel()
-                    raise TimeoutError(
-                        f"OpenAI {model} did not respond within {hard_timeout:.0f}s. "
-                        "This can happen with large code-generation prompts on pro models. "
-                        "Try again or switch to a faster model (gpt-5.5 fast mode)."
-                    )
+                    raise
             text = response.output_text or ""
             finish_reason = getattr(response, "status", None) or ""
             incomplete = getattr(response, "incomplete_details", None)
@@ -1502,7 +1532,9 @@ class AIService:
                 }
                 if json_response:
                     chat_kwargs["response_format"] = {"type": "json_object"}
-                completion = self.client.chat.completions.create(**chat_kwargs)
+                with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-chat") as _pool:
+                    _fut = _pool.submit(self.client.chat.completions.create, **chat_kwargs)
+                    completion = self._wait_future(_fut, hard_timeout=hard_timeout)
                 choice = completion.choices[0]
                 text = choice.message.content or "{}"
                 chat_finish = choice.finish_reason or ""

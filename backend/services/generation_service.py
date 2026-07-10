@@ -235,10 +235,11 @@ def update_progress(
 
 
 def request_cancel(project_path: Path, *, reason: str = "Canceled by user.") -> dict[str, Any]:
-    """Mark any in-flight job for this project as canceled.
+    """Mark any in-flight job for this project as canceled and kill CAD subprocesses.
 
-    BackgroundTasks run in-process and cannot be killed while an OpenAI request is
-    blocking, so workers check this token before building/exporting/writing.
+    BackgroundTasks run in-process, so we cannot kill the uvicorn worker itself.
+    We do kill scripts/step (and other skill tools) immediately, and AI calls
+    poll the cancel flag so they abort within ~1s.
     """
     project_id = project_path.name
     _CANCELED_PROJECTS.add(project_id)
@@ -247,6 +248,15 @@ def request_cancel(project_path: Path, *, reason: str = "Canceled by user.") -> 
     trace_id = trace_id or data.get("trace_id")
     if trace_id:
         _CANCELED_TRACES.add(str(trace_id))
+
+    killed = 0
+    try:
+        from backend.services import skill_runner
+
+        killed = skill_runner.kill_active_for_project(project_path, reason=reason)
+    except Exception as exc:
+        logger.warning("Failed to kill skill tools on cancel for %s: %s", project_id, exc)
+
     if project_path.is_dir() and data.get("status") == "running":
         data.update(
             {
@@ -254,13 +264,25 @@ def request_cancel(project_path: Path, *, reason: str = "Canceled by user.") -> 
                 "error": reason,
                 "trace_id": trace_id,
                 "finished_at": _now_iso(),
+                "killed_subprocesses": killed,
             }
         )
         try:
-            save(project_path, data)
+            # Bypass is_canceled rewrite in save() by writing directly once marked.
+            path = _path(project_path)
+            data["updated_at"] = _now_iso()
+            tmp_path = path.with_name(f"{path.name}.tmp")
+            tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.replace(path)
+            _emit(project_path, data)
         except OSError:
             pass
-    return {"status": "canceled", "trace_id": trace_id, "error": reason}
+    return {
+        "status": "canceled",
+        "trace_id": trace_id,
+        "error": reason,
+        "killed_subprocesses": killed,
+    }
 
 
 def cancel_project(project_path: Path) -> dict[str, Any]:
