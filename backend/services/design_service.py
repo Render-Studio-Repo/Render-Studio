@@ -324,7 +324,7 @@ def _config_like_name(name: str) -> bool:
     if name.startswith(("make_", "build_", "create_", "add_", "get_", "set_", "compute_", "calc_")):
         return False
     suffixes = (
-        "_x", "_y", "_z", "_mm", "_deg",
+        "_x", "_y", "_z", "_mm", "_deg", "_r",
         "_fillet", "_chamfer", "_radius", "_diameter", "_base", "_size",
         "_thickness", "_height", "_depth", "_length", "_width", "_gap",
         "_count", "_teeth", "_clearance", "_offset", "_pitch", "_span",
@@ -448,7 +448,9 @@ def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
     if name.endswith("_layer"):
         return f'"{name[:-6].upper()}"'
     # Generic dimension/fillet/radius fallbacks so incomplete LLM sources can still run.
-    if name.endswith(("_fillet", "_chamfer", "_radius", "_clearance")):
+    if name.endswith(("_fillet", "_chamfer", "_radius", "_clearance")) or (
+        name.endswith("_r") and ("corner" in name or "fillet" in name or "bore" in name or "hole" in name)
+    ):
         return "2.0"
     if name.endswith(("_thickness", "_height", "_depth", "_length", "_width", "_gap", "_base", "_size", "_span")):
         return "10.0"
