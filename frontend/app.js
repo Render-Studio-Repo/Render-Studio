@@ -6754,7 +6754,7 @@ function setRightTab(tab) {
     panel.classList.toggle("active", panel.dataset.rightPanel === tab);
   });
   document.getElementById("project-cost-thumb")?.classList.toggle("hidden", tab !== "prompt");
-  if (tab === "urdf" || tab === "rigging") refreshRobotArtifacts({ quiet: true });
+  if (tab === "rigging") refreshRobotArtifacts({ quiet: true });
 }
 
 async function refreshRobotArtifacts({ quiet = false } = {}) {
@@ -7204,12 +7204,6 @@ function renderRobotArtifacts() {
 
   const rigList = document.getElementById("rigging-artifact-list");
   if (rigList) rigList.innerHTML = artifactHtml;
-  const rigGroups = document.getElementById("rigging-srdf-groups");
-  if (rigGroups) rigGroups.innerHTML = srdfHtml;
-  const rigSliders = document.getElementById("rigging-urdf-joint-sliders");
-  if (rigSliders) rigSliders.innerHTML = jointHtml;
-  const rigTree = document.getElementById("rigging-urdf-link-tree");
-  if (rigTree) rigTree.innerHTML = treeHtml;
 
   const artifactList = document.getElementById("urdf-artifact-list");
   if (artifactList) artifactList.innerHTML = artifactHtml;
@@ -7224,6 +7218,24 @@ function renderRobotArtifacts() {
   const linkSummary = document.getElementById("urdf-link-summary");
   if (linkSummary) linkSummary.textContent = `${(data.links || []).length} link(s) · ${movableCount} joint(s)`;
   fillMoveIt2Selectors(data);
+}
+
+function isUrdfMotionModalOpen() {
+  return !document.getElementById("urdf-motion-modal")?.classList.contains("hidden");
+}
+
+function openUrdfMotionModal() {
+  const modal = document.getElementById("urdf-motion-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  document.body.classList.add("urdf-motion-open");
+  renderUrdfPanel();
+  void refreshRobotArtifacts({ quiet: true });
+}
+
+function closeUrdfMotionModal() {
+  document.getElementById("urdf-motion-modal")?.classList.add("hidden");
+  document.body.classList.remove("urdf-motion-open");
 }
 
 function renderUrdfPanel() {
@@ -7304,14 +7316,19 @@ function applySrdfGroupStateFromSelect(selectEl) {
 }
 
 function bindUrdfPanel() {
-  document.getElementById("btn-urdf-refresh")?.addEventListener("click", () => refreshRobotArtifacts());
-  document.getElementById("btn-urdf-open-rigging")?.addEventListener("click", () => {
-    workspaceModes?.setDesignTab?.("RIGGING");
-    renderUrdfPanel();
+  document.getElementById("btn-open-urdf-motion")?.addEventListener("click", () => openUrdfMotionModal());
+  document.querySelectorAll(".btn-rigging-toolbelt-motion").forEach((btn) => {
+    btn.addEventListener("click", () => openUrdfMotionModal());
   });
+  document.querySelectorAll("[data-urdf-motion-close]").forEach((el) => {
+    el.addEventListener("click", () => closeUrdfMotionModal());
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && isUrdfMotionModalOpen()) closeUrdfMotionModal();
+  });
+  document.getElementById("btn-urdf-refresh")?.addEventListener("click", () => refreshRobotArtifacts());
   document.getElementById("btn-urdf-play")?.addEventListener("click", () => {
     if (urdfRobotRuntime.isLoaded()) {
-      // Prefer robot FK demo sweep when a robot scene is loaded.
       const joints = (robotArtifactData?.joints || []).filter((j) => String(j.type || "").toLowerCase() !== "fixed");
       if (joints.length) {
         const points = [];
@@ -7338,11 +7355,8 @@ function bindUrdfPanel() {
     await refreshRobotArtifacts({ quiet: true });
   });
   document.getElementById("btn-urdf-reset")?.addEventListener("click", () => resetRobotJointPose());
-  document.getElementById("btn-rigging-urdf-reset")?.addEventListener("click", () => resetRobotJointPose());
   document.getElementById("btn-urdf-copy")?.addEventListener("click", () => copyRobotJointAngles());
-  document.getElementById("btn-rigging-urdf-copy")?.addEventListener("click", () => copyRobotJointAngles());
   document.getElementById("btn-urdf-load-scene")?.addEventListener("click", () => ensureUrdfRobotScene({ force: true }));
-  document.getElementById("btn-rigging-urdf-load-scene")?.addEventListener("click", () => ensureUrdfRobotScene({ force: true }));
   document.getElementById("btn-urdf-moveit2-connect")?.addEventListener("click", () => refreshMoveIt2Connection());
   document.getElementById("btn-urdf-moveit2-solve")?.addEventListener("click", () => runMoveIt2Solve());
   document.getElementById("btn-urdf-moveit2-plan")?.addEventListener("click", () => runMoveIt2Plan());
@@ -7356,7 +7370,6 @@ function bindUrdfPanel() {
     applyRobotJointDisplayValue(id, input.value, joint);
   };
   document.getElementById("urdf-joint-sliders")?.addEventListener("input", onJointInput);
-  document.getElementById("rigging-urdf-joint-sliders")?.addEventListener("input", onJointInput);
 
   const onGroupState = (event) => {
     const select = event.target;
@@ -7364,7 +7377,6 @@ function bindUrdfPanel() {
     applySrdfGroupStateFromSelect(select);
   };
   document.getElementById("urdf-srdf-groups")?.addEventListener("change", onGroupState);
-  document.getElementById("rigging-srdf-groups")?.addEventListener("change", onGroupState);
 }
 
 /** Right panel → AI (CAD or Wiring) with Compose sub-tab active. */
@@ -13607,7 +13619,7 @@ async function refreshFiles() {
   if (selectedFile) projectTree.setSelected(selectedFile);
   syncPromptTargetUI();
   if (
-    document.querySelector('[data-right-panel="urdf"]')?.classList.contains("active") ||
+    isUrdfMotionModalOpen() ||
     document.querySelector('[data-right-panel="rigging"]')?.classList.contains("active")
   ) {
     await refreshRobotArtifacts({ quiet: true });

@@ -5212,6 +5212,13 @@ def list_projects(
         projects.append(p)
     projects.sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
     projects.extend(_other_user_render_summaries(user, team_id))
+    # Public is a virtual folder. Always attach public projects with folder_id=__public__,
+    # and remove any earlier copies so they don't also appear under root / other folders.
+    public_projects = _public_project_summaries(viewer_user=user)
+    public_ids = {p["id"] for p in public_projects}
+    if public_ids:
+        projects = [p for p in projects if p.get("id") not in public_ids]
+        projects.extend(public_projects)
     return {"projects": projects}
 
 
