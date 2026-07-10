@@ -6860,7 +6860,8 @@ function buildMoveIt2Payload() {
   const y = Number(document.getElementById("urdf-moveit2-y")?.value || 0);
   const z = Number(document.getElementById("urdf-moveit2-z")?.value || 0);
   const eeMeta = (urdfRobotRuntime.getState()?.srdf?.endEffectors || []).find((item) => item.name === ee) || null;
-  const targetLink = eeMeta?.parentLink || eeMeta?.link || "";
+  const apiEe = (robotArtifactData?.srdf?.end_effectors || []).find((item) => item.name === ee) || null;
+  const targetLink = eeMeta?.parentLink || eeMeta?.link || apiEe?.parent_link || "";
   const displayJoints = jointValuesForMoveIt2Display();
   return {
     dir: "",
@@ -6909,6 +6910,17 @@ function applyMoveIt2Result(payload) {
   const values = payload.jointValuesByName || payload.joint_values || null;
   if (values) {
     urdfRobotRuntime.setJointValues(values);
+    syncUrdfSlidersFromRuntime();
+    return "pose";
+  }
+  const degValues = payload.jointValuesByNameDeg || null;
+  if (degValues && typeof degValues === "object") {
+    const radMap = {};
+    Object.entries(degValues).forEach(([name, display]) => {
+      const joint = (robotArtifactData?.joints || []).find((item) => item.name === name) || { name, type: "revolute" };
+      radMap[name] = isAngularRobotJoint(joint) ? (Number(display) || 0) * Math.PI / 180 : (Number(display) || 0);
+    });
+    urdfRobotRuntime.setJointValues(radMap);
     syncUrdfSlidersFromRuntime();
     return "pose";
   }

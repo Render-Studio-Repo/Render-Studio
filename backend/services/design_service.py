@@ -1254,7 +1254,10 @@ def _insert_after_imports(source: str, block: str) -> str:
 
 
 def _ensure_project_dxf_files_readable(project_path: Path, filenames: list[str]) -> dict[str, str]:
-    from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
+    try:
+        from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
+    except ImportError:
+        return {name: name for name in filenames if (project_path / name).is_file()}
 
     readable: dict[str, str] = {}
     for name in filenames:

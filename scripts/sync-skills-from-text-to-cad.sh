@@ -28,8 +28,14 @@ for skill in "${LOCAL_SKILLS[@]}"; do
   LOCAL_EXCLUDES+=(--exclude="${skill}/")
 done
 
+# Render3D-local files inside upstream skill trees (not in text-to-cad)
+LOCAL_FILE_EXCLUDES=(
+  --exclude='dxf/scripts/dxf/repair.py'
+)
+
 rsync -a --delete \
   "${LOCAL_EXCLUDES[@]}" \
+  "${LOCAL_FILE_EXCLUDES[@]}" \
   --exclude='node_modules' \
   --exclude='__pycache__' \
   --exclude='*.pyc' \

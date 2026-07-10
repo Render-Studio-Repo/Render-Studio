@@ -1944,7 +1944,12 @@ def _reference_edit_guidance(prompt: str, refs: list[dict[str, Any]]) -> str | N
 def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Summarize project DXF files for text-to-cad prompts."""
     from backend.skills.dxf.scripts.dxf.render_payload import build_dxf_render_payload
-    from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
+
+    try:
+        from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
+    except ImportError:
+        def ensure_ezdxf_readable_dxf(source_path: Path) -> Path:  # type: ignore[misc]
+            return Path(source_path)
 
     candidates: list[str] = []
     seen: set[str] = set()
@@ -1973,6 +1978,9 @@ def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[
                 continue
             seen.add(path.name)
             candidates.append(path.name)
+
+    if not candidates:
+        return []
 
     entries: list[dict[str, Any]] = []
     for name in candidates[:4]:
