@@ -1441,7 +1441,11 @@ def _finalize_text_to_cad_source_before_step(
     prompt: str,
     jake_identical: bool = True,
 ) -> str:
-    """Last-chance DXF repair immediately before scripts/step executes the file."""
+    """Last-chance prep immediately before scripts/step executes the file.
+
+    On Jake-identical path: only wire project DXF filenames — never inject
+    geometry helpers, fillet rewrites, or symbol backfills (those hide generative failures).
+    """
     source = source_path.read_text(encoding="utf-8", errors="ignore")
     finalized = _augment_text_to_cad_source(
         source,
@@ -1449,20 +1453,21 @@ def _finalize_text_to_cad_source_before_step(
         project_path=project_path,
         prompt=prompt,
     )
-    finalized = _augment_common_constants(finalized, base=source_path.stem, prompt=prompt)
-    finalized = _harden_common_fillet_failures(finalized)
-    remaining = _gen_step_local_undefined_names(finalized)
-    if remaining:
-        healed = _backfill_known_missing_symbols(finalized, prompt, remaining)
-        if healed != finalized:
-            finalized = healed
-            remaining = _gen_step_local_undefined_names(finalized)
-    if remaining and not jake_identical:
-        raise ValueError(
-            "Generated source is incomplete before scripts/step; undefined names: "
-            + ", ".join(remaining[:12])
-            + ("..." if len(remaining) > 12 else "")
-        )
+    if not jake_identical:
+        finalized = _augment_common_constants(finalized, base=source_path.stem, prompt=prompt)
+        finalized = _harden_common_fillet_failures(finalized)
+        remaining = _gen_step_local_undefined_names(finalized)
+        if remaining:
+            healed = _backfill_known_missing_symbols(finalized, prompt, remaining)
+            if healed != finalized:
+                finalized = healed
+                remaining = _gen_step_local_undefined_names(finalized)
+        if remaining:
+            raise ValueError(
+                "Generated source is incomplete before scripts/step; undefined names: "
+                + ", ".join(remaining[:12])
+                + ("..." if len(remaining) > 12 else "")
+            )
     if finalized != source:
         source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
     return finalized
@@ -2427,35 +2432,78 @@ def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any
     return None
 
 
-def _run_v2_snapshot(skill_runner, project_path: Path, step_name: str, base: str, trace_id: str | None) -> dict[str, Any] | None:
+def _run_v2_snapshot(
+    skill_runner,
+    project_path: Path,
+    step_name: str,
+    base: str,
+    trace_id: str | None,
+    *,
+    prompt: str = "",
+    source: str = "",
+    inspect_summary: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Mandatory Jake-style snapshot packet (multi-view for assemblies/gears/stairs)."""
+    from backend.services.cad_authoring_agent import (
+        build_snapshot_job,
+        collect_snapshot_pngs,
+        needs_multi_view_packet,
+        write_snapshot_job_file,
+    )
+
     before = {p.name for p in project_path.glob(f"{base}_snapshot*.png")}
+    multi = needs_multi_view_packet(prompt, source, inspect_summary)
+    job = build_snapshot_job(step_name=step_name, base=base, multi_view=multi)
+    job_path = write_snapshot_job_file(project_path, job, base)
     out = skill_runner.run_skill_tool(
         "cad",
         "snapshot",
-        [
-            "--input",
-            step_name,
-            "--output",
-            f"{base}_snapshot.png",
-            "--mode",
-            "view",
-            "--camera",
-            "iso",
-            "--size-profile",
-            "diagnostic",
-        ],
+        ["--job", job_path.name],
         cwd=project_path,
-        timeout_sec=180.0,
+        timeout_sec=240.0,
     )
     if not out.get("ok"):
+        # Fall back to single-view shortcut flags if --job fails on older runtimes.
         detail = (out.get("stderr") or out.get("stdout") or "snapshot failed")[:400]
-        trace_add("warning", f"[2.0/text-to-cad] snapshot failed: {detail}", trace_id=trace_id)
+        trace_add("warning", f"[2.0/text-to-cad] snapshot --job failed, retrying single iso: {detail}", trace_id=trace_id)
+        out = skill_runner.run_skill_tool(
+            "cad",
+            "snapshot",
+            [
+                "--input",
+                step_name,
+                "--output",
+                f"{base}_snapshot.png",
+                "--mode",
+                "view",
+                "--camera",
+                "iso",
+                "--size-profile",
+                "diagnostic",
+            ],
+            cwd=project_path,
+            timeout_sec=180.0,
+        )
+    if not out.get("ok"):
+        detail = (out.get("stderr") or out.get("stdout") or "snapshot failed")[:800]
+        trace_add("error", f"[2.0/text-to-cad] snapshot failed: {detail}", trace_id=trace_id)
         return None
     after = {p.name for p in project_path.glob(f"{base}_snapshot*.png")}
     created = sorted(after - before)
-    if not created and (project_path / f"{base}_snapshot.png").is_file():
-        created = [f"{base}_snapshot.png"]
-    return {"file": created[-1], "stdout": (out.get("stdout") or "")[-2000:], "stderr": (out.get("stderr") or "")[-2000:]} if created else {"stdout": (out.get("stdout") or "")[-2000:], "stderr": (out.get("stderr") or "")[-2000:]}
+    files = collect_snapshot_pngs(project_path, base)
+    if not files and created:
+        files = created
+    if not files and (project_path / f"{base}_snapshot.png").is_file():
+        files = [f"{base}_snapshot.png"]
+    if not files:
+        return None
+    return {
+        "file": files[0],
+        "files": files,
+        "multi_view": multi,
+        "stdout": (out.get("stdout") or "")[-2000:],
+        "stderr": (out.get("stderr") or "")[-2000:],
+    }
 
 
 def _error_tail(out: dict[str, Any], fallback: str, *, limit: int = 2400) -> str:
@@ -2467,19 +2515,24 @@ def _error_tail(out: dict[str, Any], fallback: str, *, limit: int = 2400) -> str
 
 
 def _snapshot_image_payload(project_path: Path, snapshot_info: dict[str, Any] | None) -> list[dict[str, Any]]:
-    name = snapshot_info.get("file") if snapshot_info else None
-    if not name:
+    if not snapshot_info:
         return []
-    path = project_path / str(name)
-    if not path.is_file() or path.suffix.lower() != ".png":
-        return []
-    data = base64.b64encode(path.read_bytes()).decode("ascii")
-    return [{
-        "id": "cad-snapshot",
-        "name": path.name,
-        "media_type": "image/png",
-        "data_url": f"data:image/png;base64,{data}",
-    }]
+    names = list(snapshot_info.get("files") or [])
+    if snapshot_info.get("file") and snapshot_info["file"] not in names:
+        names.insert(0, str(snapshot_info["file"]))
+    images: list[dict[str, Any]] = []
+    for name in names[:4]:
+        path = project_path / str(name)
+        if not path.is_file() or path.suffix.lower() != ".png":
+            continue
+        data = base64.b64encode(path.read_bytes()).decode("ascii")
+        images.append({
+            "id": f"cad-snapshot-{len(images)}",
+            "name": path.name,
+            "media_type": "image/png",
+            "data_url": f"data:image/png;base64,{data}",
+        })
+    return images
 
 
 def _v2_snapshot_review_repair_note(
@@ -2517,7 +2570,8 @@ Fusion mode extra review:
         f"Inspect summary:\n{json.dumps(_inspect_summary(inspect_out) or {}, separators=(',', ':'))}\n\n"
         "Current source excerpt:\n"
         f"{source[:9000]}\n\n"
-        "Review the attached snapshot. Does it visually and functionally match the brief?"
+        "Review ALL attached snapshot views (iso / opposite / top / front when present). "
+        "Does the model visually and functionally match the brief from every view?"
     )
     review, trace = ai.chat_json(
         system,
@@ -2526,7 +2580,7 @@ Fusion mode extra review:
         trace_id=trace_id,
         max_tokens=4096,
         retry_on_truncation=False,
-        reasoning_effort="low",
+        reasoning_effort="medium",
         pro_floor=None,
     )
     if review.get("pass") is True:
@@ -2601,27 +2655,16 @@ def _run_text_to_cad_v2(
             previous_source = None
             previous_source_name = None
 
-    # Jake-identical authoring: skill CLIs + repair from CLI errors.
-    # Keep a few high-churn complete templates (planetary/spiral) so known
-    # incomplete-helper prompts still succeed without waiting on LLM repair.
+    # Jake-identical authoring agent: LLM writes gen_step → scripts/step →
+    # inspect → mandatory multi-view snapshot review → repair from CLI/visual errors.
+    # Never inject hand-authored geometry templates (that is not Jake).
     jake_identical = bool(strict_upstream) or bool((context or {}).get("jake_identical_runtime", True))
+    canonical_source = None
 
     if _prompt_mentions_dxf_import(prompt) and not _collect_dxf_filenames(context, project_path, prompt):
         message = _missing_dxf_file_message()
         trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
         raise DesignBuildError(message, ai_traces=ai_traces)
-    # Never inject hand-authored geometry templates. Jake's text-to-cad path is:
-    # LLM writes gen_step() → scripts/step → inspect → snapshot review → repair.
-    # Hardcoded "canonical" sources short-circuit that and hide generative failures.
-    canonical_source = None
-    if not jake_identical:
-        # Legacy non-Jake fallbacks only (explicitly off the Jake-identical path).
-        if _looks_like_arduino_nema_mount_box(prompt, images):
-            canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
-        elif _looks_like_pc_cooling_fan(prompt, images):
-            canonical_source = _canonical_pc_cooling_fan_source(label=base)
-        elif _looks_like_modular_robot_house(prompt, images):
-            canonical_source = _canonical_modular_robot_house_source(label=base)
 
     label_prefix = "Architect" if architect_mode else "Fusion" if fusion_mode else "2.0"
     workflow_note = ""
@@ -2696,7 +2739,8 @@ def _run_text_to_cad_v2(
         mirror_upstream_modeling = True
         trace_add(
             "info",
-            "[2.0/text-to-cad] Jake-identical runtime: gen_step → scripts/step → inspect → snapshot → repair from CLI errors.",
+            "[2.0/text-to-cad] Jake authoring agent: write gen_step → scripts/step → inspect → "
+            "multi-view snapshot (mandatory) → visual review (fail-closed) → repair-loop edit.",
             trace_id=trace_id,
         )
     generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
@@ -2745,18 +2789,20 @@ def _run_text_to_cad_v2(
             # source -> step -> repair loop.
             current_source = source
             _validate_generated_source(source)
+            # DXF filename wiring only — never inject geometry templates/helpers on Jake path.
             source = _augment_text_to_cad_source(
                 source,
                 context=context,
                 project_path=project_path,
                 prompt=prompt,
             )
-            source = _augment_common_constants(source, base=base, prompt=prompt)
+            if not jake_identical:
+                source = _augment_common_constants(source, base=base, prompt=prompt)
             dxf_issue = _dxf_semantic_source_issue(source, prompt, context)
             if dxf_issue:
                 raise ValueError(dxf_issue)
             remaining = _gen_step_local_undefined_names(source)
-            if remaining:
+            if remaining and not jake_identical:
                 healed = _backfill_known_missing_symbols(source, prompt, remaining)
                 if healed != source:
                     source = healed
@@ -2768,15 +2814,21 @@ def _run_text_to_cad_v2(
                     + ("..." if len(remaining) > 12 else "")
                 )
             if remaining and jake_identical:
-                # Jake loop: write source and let scripts/step surface NameError for repair.
+                # Jake agent: write source and let scripts/step surface NameError for repair.
                 trace_add(
                     "warning",
-                    "[2.0/text-to-cad] Undefined symbols remain after soft heal; continuing to scripts/step for Jake-style repair.",
+                    "[authoring-agent] Undefined symbols left for scripts/step (no helper injection).",
                     trace_id=trace_id,
-                    data={"undefined": remaining[:12]},
+                    data={"undefined": remaining[:12], "turn": attempt + 1},
                 )
             source_path.write_text(source.rstrip() + "\n", encoding="utf-8")
             current_source = source
+            if jake_identical:
+                trace_add(
+                    "info",
+                    f"[authoring-agent] turn {attempt + 1}/{total_attempts}: wrote {source_name}",
+                    trace_id=trace_id,
+                )
         except Exception as exc:
             last_error = str(exc)
             if current_source:
@@ -2889,8 +2941,15 @@ def _run_text_to_cad_v2(
                             f"Full error:\n{detail}"
                         )
                     else:
-                        repair_note = f"scripts/step failed:\n{detail}"
-                trace_add("error", f"[2.0/text-to-cad] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
+                        from backend.services.cad_authoring_agent import format_agent_repair_note
+
+                        repair_note = format_agent_repair_note(
+                            stage="scripts/step",
+                            detail=detail,
+                            attempt=attempt,
+                            max_attempts=total_attempts,
+                        )
+                trace_add("error", f"[authoring-agent] scripts/step failed (exit {exit_code}): {detail[:500]}", trace_id=trace_id)
                 continue
 
         _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
@@ -2921,22 +2980,34 @@ def _run_text_to_cad_v2(
         if not inspect_out.get("ok"):
             detail = _error_tail(inspect_out, "scripts/inspect failed")
             last_error = detail
-            repair_note = f"scripts/inspect failed:\n{detail}"
-            trace_add("warning", f"[2.0/text-to-cad] inspect failed: {detail[:500]}", trace_id=trace_id)
+            from backend.services.cad_authoring_agent import format_agent_repair_note
+
+            repair_note = format_agent_repair_note(
+                stage="scripts/inspect",
+                detail=detail,
+                attempt=attempt,
+                max_attempts=total_attempts,
+            )
+            trace_add("warning", f"[authoring-agent] inspect failed: {detail[:500]}", trace_id=trace_id)
             continue
 
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
+        # Deterministic quality heuristics are blocking — Jake also refuses to
+        # ship when inspect facts clearly contradict the brief (too primitive).
         quality_note = _v2_quality_repair_note(prompt, source, inspect_out)
         if quality_note:
-            if jake_identical:
-                # Jake loop relies on inspect/snapshot findings, not Render3D heuristic gates.
-                trace_add("warning", f"[2.0/text-to-cad] quality hint (non-blocking in Jake mode): {quality_note[:500]}", trace_id=trace_id)
-            else:
-                last_error = quality_note
-                repair_note = quality_note
-                trace_add("warning", f"[2.0/text-to-cad] quality gate failed: {quality_note[:500]}", trace_id=trace_id)
-                continue
+            last_error = quality_note
+            from backend.services.cad_authoring_agent import format_agent_repair_note
+
+            repair_note = format_agent_repair_note(
+                stage="inspect-quality",
+                detail=quality_note,
+                attempt=attempt,
+                max_attempts=total_attempts,
+            )
+            trace_add("warning", f"[authoring-agent] quality gate failed: {quality_note[:500]}", trace_id=trace_id)
+            continue
 
         missing = [name for name in (step_name, glb_name) if not (project_path / name).is_file()]
         if missing:
@@ -2951,10 +3022,33 @@ def _run_text_to_cad_v2(
                 continue
 
         if progress_callback:
-            progress_callback({"stage": "snapshot", "pct": 90, "label": f"Rendering {label_prefix} CAD snapshot review..."})
-        snapshot_info = _run_v2_snapshot(skill_runner, project_path, step_name, base, trace_id)
+            progress_callback({"stage": "snapshot", "pct": 90, "label": f"Rendering {label_prefix} CAD multi-view snapshot packet..."})
+        snapshot_info = _run_v2_snapshot(
+            skill_runner,
+            project_path,
+            step_name,
+            base,
+            trace_id,
+            prompt=prompt,
+            source=source,
+            inspect_summary=_inspect_summary(inspect_out),
+        )
+        # Jake: snapshot validation is mandatory. Fail closed if render fails.
+        if not snapshot_info or not (snapshot_info.get("files") or snapshot_info.get("file")):
+            detail = (snapshot_info or {}).get("stderr") or (snapshot_info or {}).get("stdout") or "scripts/snapshot produced no PNG"
+            last_error = f"scripts/snapshot failed (mandatory visual gate):\n{detail}"
+            from backend.services.cad_authoring_agent import format_agent_repair_note
+
+            repair_note = format_agent_repair_note(
+                stage="scripts/snapshot",
+                detail=last_error,
+                attempt=attempt,
+                max_attempts=total_attempts,
+            )
+            trace_add("error", f"[authoring-agent] snapshot gate failed: {last_error[:500]}", trace_id=trace_id)
+            continue
         if progress_callback:
-            progress_callback({"stage": "snapshot_review", "pct": 92, "label": f"Reviewing {label_prefix} CAD snapshot for quality..."})
+            progress_callback({"stage": "snapshot_review", "pct": 92, "label": f"Reviewing {label_prefix} CAD snapshot packet (fail-closed)..."})
         try:
             snapshot_note, snapshot_trace = _v2_snapshot_review_repair_note(
                 ai,
@@ -2970,12 +3064,20 @@ def _run_text_to_cad_v2(
             if snapshot_trace:
                 ai_traces.append(snapshot_trace)
         except Exception as exc:
-            snapshot_note = None
-            trace_add("warning", f"[2.0/text-to-cad] snapshot review skipped: {exc}", trace_id=trace_id)
+            # Fail closed — Jake does not skip visual review on agent errors.
+            snapshot_note = f"Snapshot visual review crashed (mandatory gate): {exc}"
+            trace_add("error", f"[authoring-agent] snapshot review exception: {exc}", trace_id=trace_id)
         if snapshot_note:
             last_error = snapshot_note
-            repair_note = snapshot_note
-            trace_add("warning", f"[2.0/text-to-cad] snapshot review failed: {snapshot_note[:500]}", trace_id=trace_id)
+            from backend.services.cad_authoring_agent import format_agent_repair_note
+
+            repair_note = format_agent_repair_note(
+                stage="snapshot-review",
+                detail=snapshot_note,
+                attempt=attempt,
+                max_attempts=total_attempts,
+            )
+            trace_add("warning", f"[authoring-agent] visual gate failed: {snapshot_note[:500]}", trace_id=trace_id)
             continue
 
         if cancel_check and cancel_check():
@@ -3038,7 +3140,9 @@ def _run_text_to_cad_v2(
                 "dfm": None,
                 "warnings": [],
                 "text_to_cad": {
-                    "runtime": "jake_identical" if jake_identical else "render3d",
+                    "runtime": "jake_authoring_agent" if jake_identical else "render3d",
+                    "authoring_agent": bool(jake_identical),
+                    "visual_gate": "fail_closed_multi_view",
                     "naming": {
                         "source": source_name,
                         "step": step_name,
@@ -3547,12 +3651,12 @@ def _looks_like_cooking_appliance(prompt: str, images: list[dict[str, Any]] | No
 
 
 def _max_repairs_for_speed(speed: str | None) -> int:
-    """Return extra repair attempts beyond the first try."""
-    # Reliability > latency: helper-omission and CAD kernel repair often need
-    # multiple source iterations even in fast mode.
+    """Return extra repair attempts beyond the first try (Jake agent turns − 1)."""
+    # Jake Codex agents iterate until visual+CLI gates pass; give quality mode
+    # enough turns for step/inspect/snapshot repair cycles.
     if (speed or "").strip().lower() in {"quality", "pro", "slow"}:
-        return 3
-    return 3
+        return 5
+    return 4
 
 
 def _maybe_run_cad_inspect(result: dict[str, Any], project_path: Path, skills: list[str] | None, trace_id: str | None) -> None:
@@ -3638,9 +3742,8 @@ def run_design(
     if max_repairs is None:
         max_repairs = _max_repairs_for_speed(speed)
         if is_v2:
-            # Incomplete gen_step() / fillet / inspect failures need Jake-style
-            # source repair passes. Keep at least 3 attempts total.
-            max_repairs = max(max_repairs, 3)
+            # Jake authoring agent needs enough turns for step/inspect/snapshot repair.
+            max_repairs = max(max_repairs, 5)
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.

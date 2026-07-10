@@ -1111,7 +1111,10 @@ class AIService:
             )
         if repair_note:
             parts.append(
-                "\n\nThe previous attempt FAILED. Fix the source and return corrected Python only.\n"
+                "\n\nThe previous authoring-agent attempt FAILED (Jake skill loop: "
+                "scripts/step → inspect → snapshot → visual review). "
+                "Classify the failure, edit the existing source with the smallest responsible change, "
+                "and return corrected Python only. Do not restart from an unrelated model.\n"
                 f"Error/feedback:\n{repair_note}"
             )
 
