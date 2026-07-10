@@ -1009,7 +1009,14 @@ class AIService:
         if marker in skill_md:
             skill_md = skill_md.split(marker, 1)[0].rstrip()
         ref_blocks: list[str] = []
-        for name in ("build123d-modeling.md", "step-generation.md", "repair-loop.md", "positioning.md"):
+        for name in (
+            "build123d-modeling.md",
+            "step-generation.md",
+            "repair-loop.md",
+            "positioning.md",
+            "snapshot-review.md",
+            "inspection-and-validation.md",
+        ):
             ref = get_reference("cad", name)
             if ref and ref.get("content"):
                 ref_blocks.append(f"### {name}\n{ref['content']}")

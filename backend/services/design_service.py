@@ -1424,149 +1424,9 @@ def _backfill_known_missing_symbols(source: str, prompt: str, missing: list[str]
     if "base_top" in missing_set and "base_top" not in defined:
         injections.append("base_top = 3.0")
 
-    # Planetary / spur gear stubs the model often emits without defining.
-    orbit = _planetary_orbit_radius_mm(prompt)
-    gear_defaults = {
-        "model_label": '"planetary_gear_assembly"',
-        "gear_thickness": "8.0",
-        "planet_orbit_radius": f"{orbit:.3f}",
-        "planet_angles_deg": "[0.0, 120.0, 240.0]",
-        "planet_count": "3",
-        "sun_teeth": "24",
-        "planet_teeth": "18",
-        "ring_teeth": "60",
-        "sun_root_radius": "21.0",
-        "sun_outer_radius": "27.0",
-        "sun_bore_radius": "5.0",
-        "planet_root_radius": "15.5",
-        "planet_outer_radius": "20.5",
-        "planet_bore_radius": "3.0",
-        "ring_outer_radius": "70.0",
-        "ring_root_radius": "63.0",
-        "ring_tip_radius": "57.0",
-        "carrier_radius": "52.5",
-        "carrier_thickness": "4.0",
-        "carrier_z": "-5.0",
-        "pin_radius": "3.0",
-        "pin_height": "14.0",
-        "pin_z": "-5.0",
-        "planet_labels": '["planet_1", "planet_2", "planet_3"]',
-        "pin_labels": '["pin_1", "pin_2", "pin_3"]',
-        "sun_label": '"sun"',
-        "ring_label": '"ring"',
-        "carrier_label": '"carrier"',
-    }
-    for name, value in gear_defaults.items():
-        if name in missing_set and name not in defined:
-            injections.append(f"{name} = {value}")
-
-    gear_helpers = {
-        "make_external_gear",
-        "make_ring_gear",
-        "make_carrier",
-        "make_pin",
-        "_trapezoid_tooth",
-    }
-    if any(name in missing_set and name not in defined for name in gear_helpers):
-        injections.append(
-            "def _trapezoid_tooth(root_r, tip_r, teeth, thickness, *, inward=False):\n"
-            "    from math import pi\n"
-            "    pitch = (2.0 * pi * max(float(root_r), 1.0)) / max(int(teeth), 1)\n"
-            "    w_root = pitch * 0.52\n"
-            "    w_tip = pitch * 0.28\n"
-            "    y0, y1 = (float(tip_r), float(root_r)) if inward else (float(root_r), float(tip_r))\n"
-            "    pts = [(-w_root / 2.0, y0), (-w_tip / 2.0, y1), (w_tip / 2.0, y1), (w_root / 2.0, y0)]\n"
-            "    with BuildSketch() as sk:\n"
-            "        Polygon(*pts)\n"
-            "    return extrude(sk.sketch, amount=float(thickness))\n\n"
-            "def make_external_gear(root_r, outer_r, teeth, thickness, bore_radius=0.0, label='gear', *args, **kwargs):\n"
-            "    body = Cylinder(radius=float(root_r), height=float(thickness), align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
-            "    for i in range(int(teeth)):\n"
-            "        tooth = _trapezoid_tooth(root_r, outer_r, teeth, thickness, inward=False)\n"
-            "        tooth = tooth.rotate(Axis.Z, i * (360.0 / max(int(teeth), 1)))\n"
-            "        body = body + tooth\n"
-            "    if bore_radius and float(bore_radius) > 0:\n"
-            "        body = body - Cylinder(radius=float(bore_radius), height=float(thickness) + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
-            "    body.label = label\n"
-            "    return body\n\n"
-            "def make_ring_gear(label='ring', *args, **kwargs):\n"
-            "    outer_r = float(globals().get('ring_outer_radius', 70.0))\n"
-            "    tip_r = float(globals().get('ring_tip_radius', 57.0))\n"
-            "    root_r = float(globals().get('ring_root_radius', 63.0))\n"
-            "    teeth = int(globals().get('ring_teeth', 60))\n"
-            "    thick = float(globals().get('gear_thickness', 8.0))\n"
-            "    rim = Cylinder(radius=outer_r, height=thick, align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
-            "    rim = rim - Cylinder(radius=root_r, height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
-            "    for i in range(teeth):\n"
-            "        tooth = _trapezoid_tooth(root_r, tip_r, teeth, thick, inward=True)\n"
-            "        tooth = tooth.rotate(Axis.Z, i * (360.0 / teeth))\n"
-            "        rim = rim + tooth\n"
-            "    rim.label = label\n"
-            "    return rim\n\n"
-            "def make_carrier(*args, **kwargs):\n"
-            "    from math import cos, sin, radians\n"
-            "    radius = float(globals().get('carrier_radius', 48.0))\n"
-            "    thick = float(globals().get('carrier_thickness', 3.0))\n"
-            "    z0 = float(globals().get('carrier_z', -3.0))\n"
-            "    orbit = float(globals().get('planet_orbit_radius', 42.0))\n"
-            "    pin_r = float(globals().get('pin_radius', 2.6))\n"
-            "    sun_bore = float(globals().get('sun_bore_radius', 4.0))\n"
-            "    angles = list(globals().get('planet_angles_deg', [0.0, 120.0, 240.0]))\n"
-            "    plate = Cylinder(radius=radius, height=thick, align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
-            "    plate = plate - Cylinder(radius=sun_bore + 1.5, height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
-            "    for angle_deg in angles:\n"
-            "        ang = radians(float(angle_deg))\n"
-            "        plate = plate - Cylinder(radius=pin_r + 0.2, height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((orbit * cos(ang), orbit * sin(ang), -1)))\n"
-            "    plate = plate.moved(Location((0, 0, z0)))\n"
-            "    plate.label = str(globals().get('carrier_label', 'carrier'))\n"
-            "    return plate\n\n"
-            "def make_pin(label='pin', *args, **kwargs):\n"
-            "    pin = Cylinder(radius=float(globals().get('pin_radius', 2.6)), height=float(globals().get('pin_height', 12.0)), align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
-            "    pin.label = label\n"
-            "    return pin"
-        )
-
-    stair_helpers = {
-        "make_base_disk",
-        "make_base",
-        "make_central_column",
-        "make_column",
-        "make_tread",
-        "make_wedge_tread",
-        "make_handrail",
-        "make_baluster",
-    }
-    if any(name in missing_set and name not in defined for name in stair_helpers):
-        helper_block = (
-            "def make_base_disk(*args, **kwargs):\n"
-            "    radius = float(kwargs.get('radius', kwargs.get('r', 18.0)) or 18.0)\n"
-            "    height = float(kwargs.get('height', kwargs.get('thickness', 3.0)) or 3.0)\n"
-            "    return Cylinder(radius=radius, height=height)\n\n"
-            "def make_central_column(*args, **kwargs):\n"
-            "    radius = float(kwargs.get('radius', kwargs.get('r', 2.0)) or 2.0)\n"
-            "    height = float(kwargs.get('height', kwargs.get('h', 80.0)) or 80.0)\n"
-            "    return Cylinder(radius=radius, height=height)\n\n"
-            "def make_tread(*args, **kwargs):\n"
-            "    length = float(kwargs.get('length', kwargs.get('outer_radius', 20.0)) or 20.0)\n"
-            "    width = float(kwargs.get('width', kwargs.get('depth', 8.0)) or 8.0)\n"
-            "    height = float(kwargs.get('height', kwargs.get('thickness', 2.0)) or 2.0)\n"
-            "    return Box(length, width, height, align=(Align.MIN, Align.CENTER, Align.MIN))\n\n"
-            "def make_handrail(*args, **kwargs):\n"
-            "    radius = float(kwargs.get('radius', kwargs.get('r', 22.0)) or 22.0)\n"
-            "    height = float(kwargs.get('height', kwargs.get('h', 90.0)) or 90.0)\n"
-            "    return Cylinder(radius=max(0.6, radius * 0.03), height=height).located(Location((radius, 0, 0)))\n\n"
-            "def make_baluster(*args, **kwargs):\n"
-            "    radius = float(kwargs.get('radius', kwargs.get('r', 0.8)) or 0.8)\n"
-            "    height = float(kwargs.get('height', kwargs.get('h', 12.0)) or 12.0)\n"
-            "    return Cylinder(radius=radius, height=height)\n\n"
-            "def make_base(*args, **kwargs):\n"
-            "    return make_base_disk(*args, **kwargs)\n\n"
-            "def make_column(*args, **kwargs):\n"
-            "    return make_central_column(*args, **kwargs)\n\n"
-            "def make_wedge_tread(*args, **kwargs):\n"
-            "    return make_tread(*args, **kwargs)"
-        )
-        injections.append(helper_block)
+    # Do NOT inject hand-authored gear/stair make_* helpers or gear dimensions.
+    # That bypasses generative CAD (and previously shipped broken ring-gear
+    # pockets). Missing helpers must fail into Jake's scripts/step → LLM repair.
 
     if not injections:
         return source
@@ -2641,7 +2501,9 @@ def _v2_snapshot_review_repair_note(
 Return ONLY JSON: {"pass": boolean, "repair_note": string, "issues": [string]}.
 Pass only if the visible model appears to satisfy the user's prompt and CAD brief.
 Fail when the model is a primitive placeholder, misses key functional interfaces, ignores explicit dimensions, lacks requested holes/slots/bosses/mounting features, or looks semantically unlike the requested object.
-If failing, repair_note must be concrete source-level guidance for the next build123d repair attempt."""
+For gears / planetary assemblies: FAIL if ring teeth look like long radial fins/slats, if planets do not sit between sun and ring, if teeth clearly do not mesh, or if carrier/pins are missing when requested. Internal ring teeth must be short inward teeth on a solid rim — not deep cuts to the center.
+For spiral stairs: FAIL if treads are not rising around a central column, or if balusters/handrail are floating debris unrelated to the stair.
+If failing, repair_note must be concrete source-level guidance for the next build123d repair attempt (edit the existing gen_step source; do not restart from scratch)."""
     if fusion_mode:
         system += """
 
@@ -2748,12 +2610,12 @@ def _run_text_to_cad_v2(
         message = _missing_dxf_file_message()
         trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
         raise DesignBuildError(message, ai_traces=ai_traces)
+    # Never inject hand-authored geometry templates. Jake's text-to-cad path is:
+    # LLM writes gen_step() → scripts/step → inspect → snapshot review → repair.
+    # Hardcoded "canonical" sources short-circuit that and hide generative failures.
     canonical_source = None
-    if _looks_like_planetary_gear_assembly(prompt, images):
-        canonical_source = _canonical_planetary_gear_assembly_source(label=base, prompt=prompt)
-    elif _looks_like_spiral_staircase(prompt, images):
-        canonical_source = _canonical_spiral_staircase_source(label=base, prompt=prompt)
-    elif not jake_identical:
+    if not jake_identical:
+        # Legacy non-Jake fallbacks only (explicitly off the Jake-identical path).
         if _looks_like_arduino_nema_mount_box(prompt, images):
             canonical_source = _canonical_arduino_nema_mount_box_source(label=base, prompt=prompt)
         elif _looks_like_pc_cooling_fan(prompt, images):
