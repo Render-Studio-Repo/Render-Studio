@@ -1571,7 +1571,6 @@ def _prompt_implies_mechanism_motion(prompt: str, images: list[dict[str, Any]] |
         "planetary",
         "hinge",
         "linkage",
-        "linkage",
         "slider",
         "piston",
         "crank",

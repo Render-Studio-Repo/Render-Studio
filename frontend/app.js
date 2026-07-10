@@ -77,7 +77,7 @@ import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
-import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260707-live-adjustments";
+import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
 import { createProjectTree } from "./project-tree.js?v=20260707-dxf-drawings-section";
 import {
   saveSessionSnapshot,
@@ -8621,7 +8621,7 @@ function objectSizeControlsHtml(filename) {
     </label>
     <div class="object-size-actions">
       <button type="button" class="btn accent btn-compact" data-size-apply>Apply size change</button>
-      <small>Scales around the selected object/body center.</small>
+      <small>Drag for live preview; release to bake the size into the model.</small>
     </div>
   </section>`;
 }
@@ -8633,6 +8633,13 @@ function bindObjectSizeControls(pop, filename) {
   let applying = false;
   let queued = false;
   let lastAppliedKey = "";
+  let previewObj = null;
+  let previewBaseScale = null;
+  const originalBases = {
+    width: Number(panel.querySelector('[data-size-range="width"]')?.dataset.base),
+    depth: Number(panel.querySelector('[data-size-range="depth"]')?.dataset.base),
+    height: Number(panel.querySelector('[data-size-range="height"]')?.dataset.base),
+  };
 
   const syncNumber = (axis, value) => {
     const num = panel.querySelector(`[data-size-number="${axis}"]`);
@@ -8643,6 +8650,35 @@ function bindObjectSizeControls(pop, filename) {
     if (range) range.value = String(value);
   };
   const currentSizeValues = () => ["width", "depth", "height"].map((axis) => Number(panel.querySelector(`[data-size-number="${axis}"]`)?.value));
+
+  const ensurePreviewObj = () => {
+    const target = objectResizeTarget(filename);
+    if (!target) return null;
+    const obj = projectAssembly.get(target.filename);
+    if (!obj) return null;
+    if (previewObj !== obj) {
+      previewObj = obj;
+      previewBaseScale = obj.scale.clone();
+    }
+    return previewObj;
+  };
+
+  const applyLivePreview = () => {
+    const obj = ensurePreviewObj();
+    if (!obj || !previewBaseScale) return;
+    const values = currentSizeValues();
+    if (!values.every((value) => Number.isFinite(value) && value > 0)) return;
+    const bases = [originalBases.width, originalBases.depth, originalBases.height].map((v) => Math.max(0.01, Number(v) || 0.01));
+    obj.scale.set(
+      previewBaseScale.x * (values[0] / bases[0]),
+      previewBaseScale.y * (values[1] / bases[1]),
+      previewBaseScale.z * (values[2] / bases[2])
+    );
+  };
+
+  const resetLivePreview = () => {
+    if (previewObj && previewBaseScale) previewObj.scale.copy(previewBaseScale);
+  };
 
   const applySizeChange = async (status = "Applying size change...") => {
     if (applying) {
@@ -8656,14 +8692,17 @@ function bindObjectSizeControls(pop, filename) {
     }
     const values = currentSizeValues();
     if (!values.every((value) => Number.isFinite(value) && value > 0)) return;
-    const valueKey = `${target.filename}:${target.bodyIndex ?? "all"}:${values.map((v) => v.toFixed(3)).join(":")}`;
-    if (valueKey === lastAppliedKey) return;
-    const bases = [target.size.x, target.size.y, target.size.z].map((value) => Math.max(0.01, value));
+    // Scale against the panel's original bases (file geometry), not the live-preview bounds.
+    const bases = [originalBases.width, originalBases.depth, originalBases.height].map((v) => Math.max(0.01, Number(v) || 0.01));
     const scale = values.map((value, idx) => value / bases[idx]);
+    const valueKey = `${target.filename}:${target.bodyIndex ?? "all"}:${scale.map((v) => v.toFixed(4)).join(":")}`;
+    if (valueKey === lastAppliedKey) return;
     applying = true;
     const applyBtn = panel.querySelector("[data-size-apply]");
     if (applyBtn) applyBtn.disabled = true;
     setEditStatus("loading", status);
+    // Reset viewport preview so the reloaded baked mesh isn't double-scaled.
+    resetLivePreview();
     try {
       const endpoint = target.bodyCount > 1 && target.bodyIndex != null
         ? `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform-body`
@@ -8678,9 +8717,37 @@ function bindObjectSizeControls(pop, filename) {
       });
       await afterModelEdit({ ...data, replaceCatalog: target.filename });
       lastAppliedKey = valueKey;
+      // Refresh bases to the newly baked size.
+      const next = objectResizeTarget(data.filename || target.filename);
+      if (next) {
+        originalBases.width = next.size.x;
+        originalBases.depth = next.size.y;
+        originalBases.height = next.size.z;
+        ["width", "depth", "height"].forEach((axis, idx) => {
+          const range = panel.querySelector(`[data-size-range="${axis}"]`);
+          const val = [next.size.x, next.size.y, next.size.z][idx];
+          if (range) {
+            range.dataset.base = String(val);
+            const min = Math.max(0.1, val * 0.2);
+            const max = Math.max(val * 2.5, min + 1);
+            range.min = String(min);
+            range.max = String(max);
+            range.value = String(val);
+          }
+          syncNumber(axis, val);
+        });
+        const uniform = panel.querySelector("[data-size-uniform]");
+        const uniformNumber = panel.querySelector("[data-size-uniform-number]");
+        if (uniform) uniform.value = "100";
+        if (uniformNumber) uniformNumber.value = "100";
+      }
+      previewObj = null;
+      previewBaseScale = null;
+      ensurePreviewObj();
       setEditStatus("ok", `Resized ${target.label}.`);
     } catch (err) {
       setEditStatus("error", err.message || "Could not apply size change.");
+      applyLivePreview();
     } finally {
       applying = false;
       if (applyBtn) applyBtn.disabled = false;
@@ -8695,18 +8762,23 @@ function bindObjectSizeControls(pop, filename) {
     if (applyTimer) window.clearTimeout(applyTimer);
     applyTimer = window.setTimeout(() => {
       applyTimer = null;
-      void applySizeChange("Applying live size change...");
+      void applySizeChange("Applying size change...");
     }, delayMs);
   };
 
   panel.querySelectorAll("[data-size-range]").forEach((range) => {
     range.addEventListener("input", () => {
       syncNumber(range.dataset.sizeRange, range.value);
-      scheduleApply(220);
+      applyLivePreview();
     });
+    range.addEventListener("change", () => scheduleApply(60));
+    range.addEventListener("pointerup", () => scheduleApply(40));
   });
   panel.querySelectorAll("[data-size-number]").forEach((num) => {
-    num.addEventListener("input", () => syncRange(num.dataset.sizeNumber, num.value));
+    num.addEventListener("input", () => {
+      syncRange(num.dataset.sizeNumber, num.value);
+      applyLivePreview();
+    });
     num.addEventListener("change", () => scheduleApply(80));
   });
   const applyUniform = (percent) => {
@@ -8723,15 +8795,18 @@ function bindObjectSizeControls(pop, filename) {
     const number = panel.querySelector("[data-size-uniform-number]");
     if (number) number.value = value;
     applyUniform(value);
-    scheduleApply(220);
+    applyLivePreview();
   });
+  panel.querySelector("[data-size-uniform]")?.addEventListener("change", () => scheduleApply(60));
+  panel.querySelector("[data-size-uniform]")?.addEventListener("pointerup", () => scheduleApply(40));
   panel.querySelector("[data-size-uniform-number]")?.addEventListener("input", (event) => {
     const value = event.currentTarget.value;
     const range = panel.querySelector("[data-size-uniform]");
     if (range) range.value = value;
     applyUniform(value);
-    scheduleApply(120);
+    applyLivePreview();
   });
+  panel.querySelector("[data-size-uniform-number]")?.addEventListener("change", () => scheduleApply(80));
   panel.querySelector("[data-size-reset]")?.addEventListener("click", () => {
     panel.querySelectorAll("[data-size-range]").forEach((range) => {
       const base = Number(range.dataset.base || range.value || 1);
@@ -8742,7 +8817,7 @@ function bindObjectSizeControls(pop, filename) {
     const uniformNumber = panel.querySelector("[data-size-uniform-number]");
     if (uniform) uniform.value = "100";
     if (uniformNumber) uniformNumber.value = "100";
-    scheduleApply(60);
+    resetLivePreview();
   });
   panel.querySelector("[data-size-apply]")?.addEventListener("click", async () => {
     if (applyTimer) {
@@ -8799,16 +8874,21 @@ async function openObjectIterationTree(anchor = document.getElementById("btn-his
     api,
     rawFetch,
     onStatus: setEditStatus,
+    getPreviewRoot: () => {
+      const name = selectedObjectFilename() || filename;
+      return (name && projectAssembly.get(name)) || currentMesh || null;
+    },
     onApplied: async (result) => {
-      await refreshFiles();
-      const browser = lastProjectBrowser;
-      if (browser) await hydrateBrowserBodyChildren(browser);
       const reloadName = result?.artifacts?.glb || filename;
-      if (projectAssembly.has(reloadName)) {
-        await loadModel(_cacheBustModelPath(projectFileUrl(projectId, reloadName)), reloadName, { fitView: false });
-        selectAssemblyComponent(reloadName, { fitView: false });
-        featureEditor.setModel(projectId, reloadName);
-      }
+      const url = projectFileUrl(projectId, reloadName);
+      // Always swap the selected catalog for the rebuilt generative GLB.
+      await afterModelEdit({
+        filename: reloadName,
+        url,
+        replaceCatalog: filename,
+      });
+      featureEditor.setModel(projectId, reloadName);
+      selectedFile = reloadName;
     },
   });
   bindObjectSizeControls(pop, filename);

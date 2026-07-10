@@ -144,11 +144,14 @@ def patch_parameters(source: str, updates: dict[str, Any]) -> str:
     for name, value_node, node, _scope in _collect_assignments(tree):
         if name not in updates:
             continue
-        new_value = updates[name]
+        old_value = _literal_value(value_node)
+        new_value = _coerce_param_update(updates[name], old_value)
         if isinstance(new_value, bool):
             rendered = "True" if new_value else "False"
-        elif isinstance(new_value, (int, float)) and not isinstance(new_value, bool):
-            rendered = repr(float(new_value) if isinstance(new_value, float) else int(new_value))
+        elif isinstance(new_value, int) and not isinstance(new_value, bool):
+            rendered = repr(int(new_value))
+        elif isinstance(new_value, float):
+            rendered = repr(float(new_value))
         elif isinstance(new_value, str):
             rendered = repr(new_value)
         else:
@@ -174,6 +177,30 @@ def patch_parameters(source: str, updates: dict[str, Any]) -> str:
     return "".join(out)
 
 
+def _coerce_param_update(new_value: Any, old_value: Any) -> Any:
+    """Keep Python literal kinds stable so range(planet_count) etc. keep working."""
+    if isinstance(old_value, bool):
+        if isinstance(new_value, bool):
+            return new_value
+        if isinstance(new_value, (int, float)) and not isinstance(new_value, bool):
+            return bool(new_value)
+        text = str(new_value).strip().lower()
+        return text in {"1", "true", "yes", "on"}
+    if isinstance(old_value, int) and not isinstance(old_value, bool):
+        try:
+            return int(round(float(new_value)))
+        except (TypeError, ValueError):
+            return old_value
+    if isinstance(old_value, float):
+        try:
+            return float(new_value)
+        except (TypeError, ValueError):
+            return old_value
+    if isinstance(old_value, str):
+        return str(new_value)
+    return new_value
+
+
 def resolve_source_for_model(project_path: Path, filename: str) -> tuple[Path, str] | None:
     safe = Path(filename).name
     stem = Path(safe).stem
@@ -184,6 +211,17 @@ def resolve_source_for_model(project_path: Path, filename: str) -> tuple[Path, s
     edited = re.sub(r"(_edited(?:_\d+)?)+$", "", stem, flags=re.I)
     if edited != stem:
         candidate = project_path / f"{edited}.py"
+        if candidate.is_file():
+            return candidate, candidate.name
+    # Strip other generative suffixes (pulled/mirrored/…) to find the authoring source.
+    stripped = re.sub(
+        r"(_edited|_pulled|_mirrored|_extruded|_copy\d*|_body\d*|_clean(?:_parametric)?)+$",
+        "",
+        stem,
+        flags=re.I,
+    )
+    if stripped != stem:
+        candidate = project_path / f"{stripped}.py"
         if candidate.is_file():
             return candidate, candidate.name
     return None
@@ -221,7 +259,17 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
         raise RuntimeError(detail[:2000] or "scripts/step failed")
     glb_path = project_path / glb_name
     if glb_path.is_file():
-        cad_service.apply_prompt_appearance_to_file(glb_path, "", seed=stem)
+        # scripts/step writes native Y-up meter GLBs; Render3D viewport is Z-up mm.
+        _convert_regenerated_glb_to_z_up(glb_path)
+        try:
+            cad_service.colorize_assembly_glb_parts(glb_path)
+        except Exception:
+            cad_service.apply_prompt_appearance_to_file(glb_path, "", seed=stem)
+        jake_glb = project_path / f".{step_name}.glb"
+        try:
+            jake_glb.write_bytes(glb_path.read_bytes())
+        except Exception:
+            pass
     return {
         "source": source_path.name,
         "step": step_name,
@@ -229,3 +277,14 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
         "stl": stl_name,
         "three_mf": three_mf_name,
     }
+
+
+def _convert_regenerated_glb_to_z_up(glb_path: Path) -> None:
+    """Match design_service: rotate native Y-up text-to-cad GLB into Render3D Z-up."""
+    import math
+
+    import trimesh
+
+    scene = trimesh.load(glb_path, force="scene")
+    scene.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2.0, [1, 0, 0]))
+    scene.export(glb_path, file_type="glb")

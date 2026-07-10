@@ -1,9 +1,9 @@
 /**
- * Jake-style planetary gear mesh playback for Render3D rigging Play.
+ * Fallback planetary mesh playback when no Jake `.step.js` sidecar exists.
  *
- * Upstream text-to-cad drives this via `.step.js` parameter modules
- * (see planetary_gear_assembly.step.js). We mirror that kinematics on the
- * loaded GLB part meshes when the user hits Play in Rigging.
+ * Prefer `step-module-runtime.js`: Jake does not infer joints from geometry.
+ * Motion comes from an explicit parameter module (or URDF). This file is only
+ * a temporary name-heuristic fallback for older planetary GLBs.
  */
 
 import * as THREE from "three";
