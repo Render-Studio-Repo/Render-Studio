@@ -67,6 +67,14 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating } = {}) {
       const nextVersion = String(data.client_version || "dev");
       if (currentVersion && nextVersion !== currentVersion) {
         reloading = true;
+        // Persist the new version BEFORE reload so the next boot does not
+        // see a stale session value and loop forever.
+        try {
+          sessionStorage.setItem(LS_CLIENT_VERSION, nextVersion);
+        } catch {
+          /* ignore */
+        }
+        currentVersion = nextVersion;
         const snapshot = getSnapshot?.();
         if (snapshot?.projectId) markPendingRestore(snapshot);
         onUpdating?.(nextVersion);

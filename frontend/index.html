@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260710-urdf-jake-panel" />
+  <link rel="stylesheet" href="/styles.css?v=20260710-urdf-fk2" />
   <script type="importmap">
   {
     "imports": {
@@ -1019,6 +1019,7 @@
             <div class="cad-param-actions">
               <button type="button" class="btn secondary btn-compact" id="btn-rigging-urdf-reset">Reset pose</button>
               <button type="button" class="btn secondary btn-compact" id="btn-rigging-urdf-copy">Copy angles</button>
+              <button type="button" class="btn accent btn-compact" id="btn-rigging-urdf-load-scene">Load robot scene</button>
             </div>
           </div>
           <div id="rigging-prompt-status" class="status"></div>
@@ -1036,7 +1037,7 @@
           <button type="button" id="btn-urdf-refresh" class="btn secondary small">Refresh</button>
         </div>
         <div class="prompt-pane active">
-          <p class="muted small">Jake-style robot sheet: link tree, SRDF group-state presets, joint sliders (deg/m), reset pose, play timeline, export URDF.</p>
+          <p class="muted small">In-viewport URDF FK mesh posing, SRDF group states, joint sliders (deg/m), trajectory play, and MoveIt2 IK/plan when the Jake server is online.</p>
           <div class="urdf-artifact-list" id="urdf-artifact-list"></div>
           <div class="urdf-joint-panel">
             <div class="cad-param-head">
@@ -1062,10 +1063,51 @@
             </div>
             <div id="urdf-joint-sliders" class="cad-param-list"></div>
             <div class="cad-param-actions">
+              <button type="button" class="btn accent btn-compact" id="btn-urdf-load-scene">Load robot scene</button>
               <button type="button" class="btn accent btn-compact" id="btn-urdf-play">Play / Pause</button>
               <button type="button" class="btn secondary btn-compact" id="btn-urdf-reset">Reset pose</button>
               <button type="button" class="btn secondary btn-compact" id="btn-urdf-copy">Copy angles</button>
               <button type="button" class="btn secondary btn-compact" id="btn-urdf-export">Export URDF</button>
+            </div>
+            <div class="cad-param-head" style="margin-top:12px">
+              <div>
+                <strong>MoveIt2</strong>
+                <span id="urdf-moveit2-status">MoveIt2: offline</span>
+              </div>
+            </div>
+            <div class="urdf-moveit2-panel">
+              <label class="cad-param-row">
+                <span>Planning group</span>
+                <select id="urdf-moveit2-group"></select>
+              </label>
+              <label class="cad-param-row">
+                <span>End effector</span>
+                <select id="urdf-moveit2-ee"></select>
+              </label>
+              <label class="cad-param-row">
+                <span>Target frame</span>
+                <select id="urdf-moveit2-frame"></select>
+              </label>
+              <div class="urdf-moveit2-xyz">
+                <label class="cad-param-row">
+                  <span>X</span>
+                  <input id="urdf-moveit2-x" type="number" step="0.01" value="0.2" />
+                </label>
+                <label class="cad-param-row">
+                  <span>Y</span>
+                  <input id="urdf-moveit2-y" type="number" step="0.01" value="0" />
+                </label>
+                <label class="cad-param-row">
+                  <span>Z</span>
+                  <input id="urdf-moveit2-z" type="number" step="0.01" value="0.2" />
+                </label>
+              </div>
+              <div class="cad-param-actions">
+                <button type="button" class="btn secondary btn-compact" id="btn-urdf-moveit2-connect">Connect</button>
+                <button type="button" class="btn accent btn-compact" id="btn-urdf-moveit2-solve">Solve IK</button>
+                <button type="button" class="btn accent btn-compact" id="btn-urdf-moveit2-plan">Plan path</button>
+              </div>
+              <p class="muted small">Requires Jake MoveIt2 server on <code>ws://127.0.0.1:8765/ws</code> (override with <code>?moveit2Ws=</code>). Start it with <code>--repo-root</code> set to this project folder.</p>
             </div>
           </div>
           <div id="urdf-panel-status" class="status"></div>
@@ -1496,7 +1538,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260710-urdf-jake-panel"></script>
+  <script type="module" src="/app.js?v=20260710-urdf-fk2"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

@@ -6890,7 +6890,7 @@ def _parse_robot_srdf_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
 
         root = ET.fromstring(path.read_text(encoding="utf-8", errors="ignore"))
     except Exception:
-        return {"groups": [], "states": []}
+        return {"groups": [], "states": [], "end_effectors": []}
     groups = []
     for i, group in enumerate(root.findall(".//group")):
         joint_names = [
@@ -6923,7 +6923,17 @@ def _parse_robot_srdf_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
             "file": path.name,
             "joint_values": joint_values,
         })
-    return {"groups": groups, "states": states}
+    end_effectors = []
+    for i, ee in enumerate(root.findall(".//end_effector")):
+        name = (ee.get("name") or "").strip() or f"ee_{i + 1}"
+        end_effectors.append({
+            "name": name,
+            "group": (ee.get("group") or "").strip(),
+            "parent_link": (ee.get("parent_link") or "").strip(),
+            "parent_group": (ee.get("parent_group") or "").strip(),
+            "file": path.name,
+        })
+    return {"groups": groups, "states": states, "end_effectors": end_effectors}
 
 
 def _robot_artifact_summary(project_path: Path) -> dict[str, Any]:
@@ -6935,7 +6945,7 @@ def _robot_artifact_summary(project_path: Path) -> dict[str, Any]:
     )
     joints: list[dict[str, Any]] = []
     links: list[dict[str, Any]] = []
-    srdf = {"groups": [], "states": []}
+    srdf = {"groups": [], "states": [], "end_effectors": []}
     for name in artifacts:
         path = project_path / name
         suffix = path.suffix.lower()
@@ -6946,6 +6956,7 @@ def _robot_artifact_summary(project_path: Path) -> dict[str, Any]:
             parsed = _parse_robot_srdf_groups(path)
             srdf["groups"].extend(parsed["groups"])
             srdf["states"].extend(parsed["states"])
+            srdf["end_effectors"].extend(parsed.get("end_effectors") or [])
     return {
         "sources": sources,
         "artifacts": artifacts,
@@ -6971,6 +6982,38 @@ def get_rigging(project_id: str, user: dict[str, Any] = Depends(get_current_user
 def get_rigging_artifacts(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
     path = _require_project(user, project_id)
     return _robot_artifact_summary(path)
+
+
+@app.get("/api/projects/{project_id}/rigging/moveit2-context")
+def get_moveit2_context(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    """Paths Jake's MoveIt2 server needs: --repo-root = repoRoot, payload.file = srdfFile."""
+    path = _require_project(user, project_id)
+    summary = _robot_artifact_summary(path)
+    artifacts = summary.get("artifacts") or []
+    urdf_file = next((name for name in artifacts if str(name).lower().endswith(".urdf")), None)
+    stem = Path(urdf_file).stem if urdf_file else ""
+    srdf_file = None
+    if stem:
+        srdf_file = next(
+            (name for name in artifacts if str(name).lower() == f"{stem.lower()}.srdf"),
+            None,
+        )
+    if not srdf_file:
+        srdf_file = next((name for name in artifacts if str(name).lower().endswith(".srdf")), None)
+    return {
+        "repoRoot": str(path.resolve()),
+        "dir": "",
+        "file": srdf_file,
+        "urdfFile": urdf_file,
+        "wsDefault": "ws://127.0.0.1:8765/ws",
+        "hint": (
+            f"Start Jake MoveIt2 with --repo-root {path.resolve()} "
+            "then Connect / Solve IK / Plan path from the URDF panel."
+            if srdf_file
+            else "Generate an SRDF artifact before using MoveIt2."
+        ),
+        **summary,
+    }
 
 
 @app.post("/api/projects/{project_id}/rigging/generate-artifacts")

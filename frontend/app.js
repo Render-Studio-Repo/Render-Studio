@@ -84,7 +84,7 @@ import {
   clearPendingRestore,
   readPendingRestore,
   initClientVersionWatcher,
-} from "./client-reload.js?v=20260709-graceful-reload";
+} from "./client-reload.js?v=20260710-fix-reload-loop";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -98,7 +98,8 @@ import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
-import { createRiggingEditor } from "./rigging-editor.js?v=20260707-robot-joint-sliders";
+import { createRiggingEditor } from "./rigging-editor.js?v=20260710-urdf-jake-panel";
+import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260710-urdf-fk2";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
 
 const API = "";
@@ -5673,6 +5674,21 @@ const riggingEditor = createRiggingEditor({
   timelineContainer: document.getElementById("rigging-anim-panel"),
 });
 
+const urdfRobotRuntime = createUrdfRobotRuntime({
+  scene,
+  authHeaders: () => authHeaders(),
+});
+const moveIt2Client = createMoveIt2Client({
+  url: (() => {
+    try {
+      return new URLSearchParams(window.location.search).get("moveit2Ws") || "ws://127.0.0.1:8765/ws";
+    } catch {
+      return "ws://127.0.0.1:8765/ws";
+    }
+  })(),
+});
+let urdfRobotBusy = false;
+
 document.getElementById("btn-sketch-finish")?.addEventListener("click", () => {
   finishActiveSketch();
 });
@@ -6746,10 +6762,266 @@ async function refreshRobotArtifacts({ quiet = false } = {}) {
   try {
     robotArtifactData = await api(`/api/projects/${projectId}/rigging/artifacts`);
     renderRobotArtifacts();
+    await ensureUrdfRobotScene({ quiet });
     return robotArtifactData;
   } catch (err) {
     if (!quiet) setEditStatus("error", err?.message || "Could not load robot artifacts.");
     return null;
+  }
+}
+
+function pickPreferredRobotFiles(data = {}) {
+  const artifacts = data.artifacts || [];
+  const urdfFile = artifacts.find((name) => /\.urdf$/i.test(name)) || null;
+  const stem = urdfFile ? String(urdfFile).replace(/\.urdf$/i, "") : "";
+  const srdfFile =
+    (stem && artifacts.find((name) => name.toLowerCase() === `${stem.toLowerCase()}.srdf`))
+    || artifacts.find((name) => /\.srdf$/i.test(name))
+    || null;
+  return { urdfFile, srdfFile };
+}
+
+async function ensureUrdfRobotScene({ quiet = false, force = false } = {}) {
+  if (!projectId || urdfRobotBusy) return null;
+  const { urdfFile, srdfFile } = pickPreferredRobotFiles(robotArtifactData || {});
+  if (!urdfFile) {
+    urdfRobotRuntime.clear();
+    setCadAssemblyHiddenForUrdf(false);
+    updateMoveIt2StatusUi({ connected: false, detail: "No URDF loaded" });
+    return null;
+  }
+  const current = urdfRobotRuntime.getState();
+  if (!force && current.urdfFile === urdfFile && current.srdfFile === (srdfFile || null) && current.loaded) {
+    return current;
+  }
+  urdfRobotBusy = true;
+  try {
+    const state = await urdfRobotRuntime.loadFromProject(projectId, { urdfFile, srdfFile });
+    setCadAssemblyHiddenForUrdf(true);
+    const box = urdfRobotRuntime.fitBox();
+    if (box && !box.isEmpty()) {
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      controls.target.copy(center);
+      const radius = Math.max(size.x, size.y, size.z, 0.2);
+      camera.position.set(center.x + radius * 1.6, center.y + radius * 1.1, center.z + radius * 1.6);
+      camera.near = Math.max(0.001, radius / 200);
+      camera.far = Math.max(1000, radius * 40);
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
+    if (!quiet) setEditStatus("ok", `Loaded robot scene from ${urdfFile}${srdfFile ? ` + ${srdfFile}` : ""}.`);
+    syncUrdfSlidersFromRuntime();
+    fillMoveIt2Selectors(robotArtifactData || {});
+    void refreshMoveIt2Connection({ quiet: true });
+    return state;
+  } catch (err) {
+    if (!quiet) setEditStatus("error", err?.message || "Could not load URDF robot scene.");
+    return null;
+  } finally {
+    urdfRobotBusy = false;
+  }
+}
+
+function setCadAssemblyHiddenForUrdf(hidden) {
+  const root = projectAssembly?.getRoot?.() || currentMesh;
+  if (root) root.visible = !hidden;
+}
+
+function syncUrdfSlidersFromRuntime() {
+  const values = urdfRobotRuntime.getState()?.jointValuesRad || {};
+  (robotArtifactData?.joints || []).forEach((joint) => {
+    if (String(joint.type || "").toLowerCase() === "fixed") return;
+    const rad = Number(values[joint.name] || 0);
+    const display = isAngularRobotJoint(joint) ? rad * 180 / Math.PI : rad;
+    document.querySelectorAll(`[data-robot-urdf-joint="${CSS.escape(joint.name)}"], [data-robot-urdf-joint-number="${CSS.escape(joint.name)}"]`).forEach((el) => {
+      el.value = String(Number(display.toFixed(isAngularRobotJoint(joint) ? 1 : 4)));
+    });
+  });
+}
+
+function jointValuesForMoveIt2Display() {
+  const values = urdfRobotRuntime.getState()?.jointValuesRad || {};
+  const out = {};
+  (robotArtifactData?.joints || []).forEach((joint) => {
+    if (String(joint.type || "").toLowerCase() === "fixed") return;
+    const rad = Number(values[joint.name] || 0);
+    out[joint.name] = isAngularRobotJoint(joint) ? rad * 180 / Math.PI : rad;
+  });
+  return out;
+}
+
+function buildMoveIt2Payload() {
+  const { urdfFile, srdfFile } = pickPreferredRobotFiles(robotArtifactData || {});
+  const group = document.getElementById("urdf-moveit2-group")?.value || "";
+  const ee = document.getElementById("urdf-moveit2-ee")?.value || "";
+  const frame = document.getElementById("urdf-moveit2-frame")?.value || "";
+  const x = Number(document.getElementById("urdf-moveit2-x")?.value || 0);
+  const y = Number(document.getElementById("urdf-moveit2-y")?.value || 0);
+  const z = Number(document.getElementById("urdf-moveit2-z")?.value || 0);
+  const eeMeta = (urdfRobotRuntime.getState()?.srdf?.endEffectors || []).find((item) => item.name === ee) || null;
+  const targetLink = eeMeta?.parentLink || eeMeta?.link || "";
+  const displayJoints = jointValuesForMoveIt2Display();
+  return {
+    dir: "",
+    file: srdfFile || "",
+    urdfFile: urdfFile || "",
+    startJointValuesByName: { ...(urdfRobotRuntime.getState()?.jointValuesRad || {}) },
+    startJointValuesByNameDeg: displayJoints,
+    target: {
+      endEffector: ee,
+      frame: frame || urdfRobotRuntime.getState()?.urdf?.rootLink || "",
+      targetLink,
+      xyz: [x, y, z],
+    },
+    moveit2: {
+      planningGroup: group,
+      endEffector: ee,
+      targetLink,
+      targetFrame: frame || urdfRobotRuntime.getState()?.urdf?.rootLink || "",
+      ik: {
+        positionOnly: true,
+        timeout: 0.05,
+        attempts: 1,
+        tolerance: 0.002,
+      },
+      planning: {
+        pipeline: "ompl",
+        plannerId: "RRTConnectkConfigDefault",
+        planningTime: 1,
+        maxVelocityScalingFactor: 1,
+        maxAccelerationScalingFactor: 1,
+      },
+    },
+  };
+}
+
+function applyMoveIt2Result(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  const trajectory = payload.trajectory || null;
+  if (trajectory?.points?.length) {
+    urdfRobotRuntime.playTrajectory(trajectory, {
+      durationSec: Math.max(0.8, Math.min(4, (trajectory.points.length || 8) * 0.08)),
+      onFrame: () => syncUrdfSlidersFromRuntime(),
+    });
+    return "trajectory";
+  }
+  const values = payload.jointValuesByName || payload.joint_values || null;
+  if (values) {
+    urdfRobotRuntime.setJointValues(values);
+    syncUrdfSlidersFromRuntime();
+    return "pose";
+  }
+  return false;
+}
+
+function updateMoveIt2StatusUi({ connected = false, detail = "" } = {}) {
+  const el = document.getElementById("urdf-moveit2-status");
+  if (!el) return;
+  el.textContent = connected
+    ? `MoveIt2: connected${detail ? ` · ${detail}` : ""}`
+    : `MoveIt2: offline${detail ? ` · ${detail}` : ""}`;
+  el.classList.toggle("ok", !!connected);
+  el.classList.toggle("error", !connected);
+}
+
+async function refreshMoveIt2Connection({ quiet = false } = {}) {
+  updateMoveIt2StatusUi({ connected: false, detail: "connecting…" });
+  const result = await moveIt2Client.connect();
+  if (result?.ok) {
+    updateMoveIt2StatusUi({ connected: true, detail: result.url || "" });
+    if (!quiet) setEditStatus("ok", "MoveIt2 server connected.");
+    return true;
+  }
+  updateMoveIt2StatusUi({ connected: false, detail: result?.reason || "not running" });
+  return false;
+}
+
+async function runMoveIt2Solve() {
+  if (!urdfRobotRuntime.isLoaded()) {
+    setEditStatus("error", "Load a URDF robot scene first.");
+    return;
+  }
+  const payloadBase = buildMoveIt2Payload();
+  if (!payloadBase.file) {
+    setEditStatus("error", "MoveIt2 needs an SRDF artifact in this project.");
+    return;
+  }
+  const connected = moveIt2Client.isConnected() || await refreshMoveIt2Connection({ quiet: true });
+  if (!connected) {
+    setEditStatus("error", "MoveIt2 server offline. Start it or pass ?moveit2Ws=ws://host:8765/ws");
+    return;
+  }
+  try {
+    const payload = await moveIt2Client.request("srdf.solvePose", payloadBase);
+    const kind = applyMoveIt2Result(payload);
+    if (kind) setEditStatus("ok", kind === "trajectory" ? "Playing MoveIt2 IK trajectory." : "MoveIt2 IK solve applied.");
+    else setEditStatus("error", "MoveIt2 solve returned no joint values.");
+  } catch (err) {
+    setEditStatus("error", err?.message || "MoveIt2 solve failed.");
+  }
+}
+
+async function runMoveIt2Plan() {
+  if (!urdfRobotRuntime.isLoaded()) {
+    setEditStatus("error", "Load a URDF robot scene first.");
+    return;
+  }
+  const payloadBase = buildMoveIt2Payload();
+  if (!payloadBase.file) {
+    setEditStatus("error", "MoveIt2 needs an SRDF artifact in this project.");
+    return;
+  }
+  const connected = moveIt2Client.isConnected() || await refreshMoveIt2Connection({ quiet: true });
+  if (!connected) {
+    setEditStatus("error", "MoveIt2 server offline.");
+    return;
+  }
+  try {
+    const payload = await moveIt2Client.request("srdf.planToPose", payloadBase);
+    const kind = applyMoveIt2Result(payload);
+    if (kind) setEditStatus("ok", kind === "trajectory" ? "Playing MoveIt2 planned trajectory." : "MoveIt2 plan goal applied.");
+    else setEditStatus("error", "MoveIt2 plan returned no trajectory.");
+  } catch (err) {
+    setEditStatus("error", err?.message || "MoveIt2 plan failed.");
+  }
+}
+
+function fillMoveIt2Selectors(data = {}) {
+  const groups = data?.srdf?.groups || urdfRobotRuntime.getState()?.srdf?.groups || [];
+  const groupSelect = document.getElementById("urdf-moveit2-group");
+  if (groupSelect) {
+    const current = groupSelect.value;
+    groupSelect.innerHTML = groups.length
+      ? groups.map((g) => `<option value="${escapeHtml(g.name)}">${escapeHtml(g.name)}</option>`).join("")
+      : `<option value="">No SRDF groups</option>`;
+    if (current && [...groupSelect.options].some((opt) => opt.value === current)) groupSelect.value = current;
+  }
+  const eeSelect = document.getElementById("urdf-moveit2-ee");
+  if (eeSelect) {
+    const runtimeEe = urdfRobotRuntime.getState()?.srdf?.endEffectors || [];
+    const apiEe = data?.srdf?.end_effectors || [];
+    const names = [
+      ...runtimeEe.map((ee) => ee.name),
+      ...apiEe.map((ee) => ee.name),
+    ].filter(Boolean);
+    const unique = [...new Set(names)];
+    eeSelect.innerHTML = unique.length
+      ? unique.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")
+      : `<option value="">No end effectors</option>`;
+  }
+  const frameSelect = document.getElementById("urdf-moveit2-frame");
+  if (frameSelect) {
+    const links = (urdfRobotRuntime.getState()?.urdf?.links || data.links || [])
+      .map((link) => (typeof link === "string" ? link : link?.name))
+      .filter(Boolean);
+    const current = frameSelect.value;
+    const root = urdfRobotRuntime.getState()?.urdf?.rootLink || links[0] || "";
+    frameSelect.innerHTML = links.length
+      ? links.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")
+      : `<option value="">No links</option>`;
+    if (current && [...frameSelect.options].some((opt) => opt.value === current)) frameSelect.value = current;
+    else if (root) frameSelect.value = root;
   }
 }
 
@@ -6798,7 +7070,7 @@ function robotSrdfGroupsHtml(srdf = {}) {
     ${groups.map((group) => `<span class="urdf-artifact-chip">Group: ${escapeHtml(group.name)}${group.joints?.length ? ` · ${group.joints.length} joints` : ""}</span>`).join("")}
     <label class="cad-param-row urdf-group-state-row">
       <span>Group state</span>
-      <select id="urdf-group-state-select" data-urdf-group-state>
+      <select data-urdf-group-state>
         <option value="">custom / none</option>
         ${stateOptions}
       </select>
@@ -6899,6 +7171,7 @@ function renderRobotArtifacts() {
   if (summary) summary.textContent = `${movableCount} movable joint(s)`;
   const linkSummary = document.getElementById("urdf-link-summary");
   if (linkSummary) linkSummary.textContent = `${(data.links || []).length} link(s) · ${movableCount} joint(s)`;
+  fillMoveIt2Selectors(data);
 }
 
 function renderUrdfPanel() {
@@ -6913,9 +7186,12 @@ function applyRobotJointDisplayValue(jointName, displayValue, jointMeta = null) 
   document.querySelectorAll(`[data-robot-urdf-joint="${CSS.escape(jointName)}"], [data-robot-urdf-joint-number="${CSS.escape(jointName)}"]`).forEach((el) => {
     el.value = String(value);
   });
-  const child = String(joint.child || "").trim();
-  const candidates = [jointName, child, jointName.replace(/^joint_/, ""), jointName.replace(/^joint_/, "").replace(/_to_/g, "_")];
   let applied = false;
+  if (urdfRobotRuntime.isLoaded()) {
+    applied = urdfRobotRuntime.setJointValue(jointName, rad) || applied;
+  }
+  const child = String(joint.child || joint.childLink || "").trim();
+  const candidates = [jointName, child, jointName.replace(/^joint_/, ""), jointName.replace(/^joint_/, "").replace(/_to_/g, "_")];
   for (const id of candidates) {
     if (!id) continue;
     if (riggingEditor?.setJointValue?.(id, rad)) {
@@ -6928,9 +7204,11 @@ function applyRobotJointDisplayValue(jointName, displayValue, jointMeta = null) 
 
 function resetRobotJointPose() {
   const joints = (robotArtifactData?.joints || []).filter((joint) => String(joint.type || "").toLowerCase() !== "fixed");
+  if (urdfRobotRuntime.isLoaded()) urdfRobotRuntime.resetPose();
   joints.forEach((joint) => applyRobotJointDisplayValue(joint.name, 0, joint));
-  const select = document.getElementById("urdf-group-state-select");
-  if (select) select.value = "";
+  document.querySelectorAll("[data-urdf-group-state]").forEach((el) => {
+    el.value = "";
+  });
   setEditStatus("ok", "Robot pose reset to zero.");
 }
 
@@ -6954,6 +7232,11 @@ function applySrdfGroupStateFromSelect(selectEl) {
   if (!(selectEl instanceof HTMLSelectElement) || !selectEl.value) return;
   const option = selectEl.selectedOptions?.[0];
   if (!option) return;
+  if (urdfRobotRuntime.isLoaded() && urdfRobotRuntime.applyGroupState(selectEl.value)) {
+    syncUrdfSlidersFromRuntime();
+    setEditStatus("ok", `Applied SRDF group state “${selectEl.value}”.`);
+    return;
+  }
   let values = {};
   try {
     values = JSON.parse(decodeURIComponent(option.dataset.jointValues || "%7B%7D"));
@@ -6975,6 +7258,25 @@ function bindUrdfPanel() {
     renderUrdfPanel();
   });
   document.getElementById("btn-urdf-play")?.addEventListener("click", () => {
+    if (urdfRobotRuntime.isLoaded()) {
+      // Prefer robot FK demo sweep when a robot scene is loaded.
+      const joints = (robotArtifactData?.joints || []).filter((j) => String(j.type || "").toLowerCase() !== "fixed");
+      if (joints.length) {
+        const points = [];
+        for (let i = 0; i <= 20; i += 1) {
+          const t = i / 20;
+          const values = {};
+          joints.forEach((joint, idx) => {
+            const amp = isAngularRobotJoint(joint) ? (Math.PI / 4) : 0.05;
+            values[joint.name] = Math.sin((t * Math.PI * 2) + idx) * amp;
+          });
+          points.push({ jointValuesByName: values });
+        }
+        urdfRobotRuntime.playTrajectory({ points }, { durationSec: 2.4, onFrame: () => syncUrdfSlidersFromRuntime() });
+        setEditStatus("ok", "Playing URDF joint sweep.");
+        return;
+      }
+    }
     riggingEditor?.togglePlay?.();
     syncRiggingViewportPlaybackUi();
   });
@@ -6987,6 +7289,11 @@ function bindUrdfPanel() {
   document.getElementById("btn-rigging-urdf-reset")?.addEventListener("click", () => resetRobotJointPose());
   document.getElementById("btn-urdf-copy")?.addEventListener("click", () => copyRobotJointAngles());
   document.getElementById("btn-rigging-urdf-copy")?.addEventListener("click", () => copyRobotJointAngles());
+  document.getElementById("btn-urdf-load-scene")?.addEventListener("click", () => ensureUrdfRobotScene({ force: true }));
+  document.getElementById("btn-rigging-urdf-load-scene")?.addEventListener("click", () => ensureUrdfRobotScene({ force: true }));
+  document.getElementById("btn-urdf-moveit2-connect")?.addEventListener("click", () => refreshMoveIt2Connection());
+  document.getElementById("btn-urdf-moveit2-solve")?.addEventListener("click", () => runMoveIt2Solve());
+  document.getElementById("btn-urdf-moveit2-plan")?.addEventListener("click", () => runMoveIt2Plan());
 
   const onJointInput = (event) => {
     const input = event.target;
