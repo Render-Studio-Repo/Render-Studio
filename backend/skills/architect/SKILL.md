@@ -155,3 +155,18 @@ When the user asks for robot construction instructions, include:
 - Do not fuse all parts if the prompt asks for modular construction.
 - Do not generate a single closed house shell, random skyscraper-like block, sci-fi bunker, or generic cube with bumps. A house must have readable floors, walls, doors, windows, roof pieces, and separate connector/pillar bodies.
 - Do not claim code compliance, structural certification, or safety certification.
+
+<!-- render3d-studio -->
+
+## Render3D Studio
+
+On the Render3D server this skill lives at `backend/skills/architect/`.
+
+- **Python tools:** `backend/skills/architect/scripts/` (run from the **project directory**, not the skill folder)
+- **References:** `backend/skills/architect/references/`
+- **CAD 2.0 / Fusion / Architect modes:** follow this skill exactly — author complete build123d Python with `gen_step()`, then run `scripts/step`, `scripts/inspect`, and `scripts/snapshot` like upstream text-to-cad. Do **not** emit Render3D JSON Feature Programs in those modes.
+- **Standard mode only:** when the product asks for a Feature Program, emit Render3D JSON Feature Programs instead of Python.
+- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library; Render3D's own viewer loads the generated STEP/GLB.
+- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
+
+See `backend/skills/RENDER3D.md` for full integration notes.

@@ -206,7 +206,10 @@ def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list
     for entity in modelspace:
         entity_type = entity.dxftype()
         if entity_type not in SUPPORTED_ENTITY_TYPES:
-            continue
+            raise ValueError(
+                f"Unsupported DXF entity {entity_type} in {dxf_path.as_posix()}; "
+                f"supported types: {', '.join(sorted(SUPPORTED_ENTITY_TYPES))}"
+            )
 
         layer_name = _normalize_layer_name(entity.dxf.layer)
         if entity_type == "LINE":
@@ -263,9 +266,7 @@ def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list
 
 
 def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, object]:
-    from backend.skills.dxf.scripts.dxf.repair import ensure_ezdxf_readable_dxf
-
-    source_path = ensure_ezdxf_readable_dxf(dxf_path.resolve())
+    source_path = dxf_path.resolve()
     document = ezdxf.readfile(source_path)
     lines, arcs, circles = _load_dxf_entities(document, source_path)
 

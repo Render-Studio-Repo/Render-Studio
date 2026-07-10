@@ -60,3 +60,18 @@ Return separate solid bodies/components:
 - Optional `sprue_plug` or `casting_core` if needed
 
 The final model should show the mold halves aligned but separable, with visible registration and closing features.
+
+<!-- render3d-studio -->
+
+## Render3D Studio
+
+On the Render3D server this skill lives at `backend/skills/silicone-mold-generation/`.
+
+- **Python tools:** `backend/skills/silicone-mold-generation/scripts/` (run from the **project directory**, not the skill folder)
+- **References:** `backend/skills/silicone-mold-generation/references/`
+- **CAD 2.0 / Fusion / Architect modes:** follow this skill exactly — author complete build123d Python with `gen_step()`, then run `scripts/step`, `scripts/inspect`, and `scripts/snapshot` like upstream text-to-cad. Do **not** emit Render3D JSON Feature Programs in those modes.
+- **Standard mode only:** when the product asks for a Feature Program, emit Render3D JSON Feature Programs instead of Python.
+- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library; Render3D's own viewer loads the generated STEP/GLB.
+- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
+
+See `backend/skills/RENDER3D.md` for full integration notes.

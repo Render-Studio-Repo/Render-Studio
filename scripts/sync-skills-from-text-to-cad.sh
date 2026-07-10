@@ -17,7 +17,12 @@ fi
 
 mkdir -p "${DEST}"
 # Render3D-local skills (not in text-to-cad) — exclude from sync/delete
-LOCAL_SKILLS=(blueprint-vision)
+LOCAL_SKILLS=(
+  architect
+  blueprint-vision
+  silicone-mold-generation
+  wiring
+)
 LOCAL_EXCLUDES=()
 for skill in "${LOCAL_SKILLS[@]}"; do
   LOCAL_EXCLUDES+=(--exclude="${skill}/")
@@ -29,7 +34,16 @@ rsync -a --delete \
   --exclude='__pycache__' \
   --exclude='*.pyc' \
   --exclude='.pytest_cache' \
+  --exclude='cad.backup-*' \
   "${REPO}/skills/" "${DEST}/"
+
+# Keep top-level package mirrors available for tooling that imports from packages/
+mkdir -p "${ROOT}/backend/skills/_packages"
+rsync -a --delete \
+  --exclude='node_modules' \
+  --exclude='__pycache__' \
+  --exclude='*.pyc' \
+  "${REPO}/packages/" "${ROOT}/backend/skills/_packages/"
 
 git -C "${REPO}" rev-parse HEAD > "${DEST}/.source_rev"
 date -u +%Y%m%d-%H%M%S > "${DEST}/.synced_at"

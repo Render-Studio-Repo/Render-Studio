@@ -8,4 +8,5 @@ __pycache__
 .pytest_cache
 tmp
 
-dist/
+!dist
+!dist/**

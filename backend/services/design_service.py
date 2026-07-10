@@ -2436,7 +2436,7 @@ def _run_text_to_cad_v2(
         mirror_upstream_modeling = True
         trace_add(
             "info",
-            "[2.0/text-to-cad] Strict upstream mode enabled (Jake-style): one-shot, mirrored prompt, no custom canonical routing.",
+            "[2.0/text-to-cad] Upstream-mirrored mode: Jake CAD skill prompts + scripts/step/inspect/snapshot repair loop.",
             trace_id=trace_id,
         )
     generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
@@ -2453,7 +2453,8 @@ def _run_text_to_cad_v2(
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
 
-    total_attempts = 1 if strict_upstream or canonical_source else (max_repairs + 1)
+    # Canonical templates are one-shot; free-form AI source uses Jake's repair loop.
+    total_attempts = 1 if canonical_source else (max_repairs + 1)
     for attempt in range(total_attempts):
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
@@ -3317,27 +3318,25 @@ def run_design(
     ``mode="v2"`` enables the 2.0 quality pipeline; ``mode="fusion"``
     uses the same text-to-cad/build123d path with stricter phased review:
     - Auto-enables the ``cad`` skill for geometry inspection.
-    - Single attempt only (no automatic repair retries).
+    - Mirrors upstream text-to-cad: generate source → scripts/step → inspect →
+      snapshot → repair incomplete/failed source (Jake's repair loop).
     """
     normalized_mode = (mode or "standard").lower()
     is_fusion = normalized_mode == "fusion"
     is_architect = normalized_mode == "architect"
     is_v2 = normalized_mode in {"v2", "fusion", "architect"}
+    # Jake-style means mirrored prompts + CAD skill CLIs + repair loop.
+    # It does NOT mean zero repairs — upstream agents iterate on source errors.
     strict_upstream_text_to_cad = bool((context or {}).get("strict_upstream_text_to_cad", True))
     repair_note: str | None = None
     last_error: str | None = None
     ai_traces: list[dict[str, Any]] = []
     if max_repairs is None:
         max_repairs = _max_repairs_for_speed(speed)
-        if normalized_mode == "v2":
-            # Text-to-CAD source validation often catches truncation or omitted
-            # helper definitions before scripts/step runs. Keep one repair pass
-            # available in fast mode so that feedback can be applied.
-            max_repairs = max(max_repairs, 1)
-    if is_v2 and strict_upstream_text_to_cad:
-        # Jake-style behavior: keep the text-to-cad loop one-shot and avoid
-        # extra branching retries in the wrapper layer.
-        max_repairs = 0
+        if is_v2:
+            # Incomplete gen_step() / fillet / inspect failures need Jake-style
+            # source repair passes. Keep at least 3 attempts total.
+            max_repairs = max(max_repairs, 3)
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.
@@ -3351,7 +3350,11 @@ def run_design(
         label = "Fusion" if is_fusion else "2.0"
         trace_add("info", f"[{label}] Quality pipeline active - CAD skill auto-enabled, max_repairs={max_repairs}", trace_id=trace_id, data={"max_repairs": max_repairs})
         if strict_upstream_text_to_cad:
-            trace_add("info", f"[{label}] Strict upstream text-to-cad mode active.", trace_id=trace_id)
+            trace_add(
+                "info",
+                f"[{label}] Upstream-mirrored text-to-cad mode active (Jake skill docs + repair loop).",
+                trace_id=trace_id,
+            )
     if cancel_check and cancel_check():
         raise DesignCanceled("Generation canceled.")
     if progress_callback:

@@ -1004,6 +1004,10 @@ class AIService:
             raise RuntimeError("CAD skill not installed")
 
         skill_md = skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8", errors="ignore")
+        # Keep Jake skill body; drop Render3D Studio appendix so it cannot contradict gen_step().
+        marker = "<!-- render3d-studio -->"
+        if marker in skill_md:
+            skill_md = skill_md.split(marker, 1)[0].rstrip()
         ref_blocks: list[str] = []
         for name in ("build123d-modeling.md", "step-generation.md", "repair-loop.md", "positioning.md"):
             ref = get_reference("cad", name)
@@ -1017,6 +1021,8 @@ class AIService:
             "gen_step() must return the STEP-ready shape or labeled compound; do not write file paths inside gen_step().\n"
             "Use millimeters. Define every named parameter at module scope before gen_step(), including file names, "
             "thicknesses, labels, and helper functions you reference.\n"
+            "The returned file must be COMPLETE and runnable by itself. Prefer compact inline geometry inside gen_step() "
+            "over many helper functions. If you use helpers, define every helper fully above gen_step() in this same file.\n"
             "Default output structure must match upstream text-to-cad CAD Explorer behavior: create independent named "
             "parts/bodies first, then return a labeled Compound/assembly that preserves those subparts. Give every "
             "major physical piece a stable label (frame, hub, blade_01, bracket, link_1, joint_mount, gripper, etc.). "
