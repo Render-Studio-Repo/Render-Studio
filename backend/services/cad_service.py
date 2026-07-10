@@ -9,7 +9,7 @@ import re
 import uuid
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from xml.etree import ElementTree as ET
 
 import numpy as np
@@ -1296,49 +1296,65 @@ def colorize_assembly_glb_parts(path: Path) -> bool:
     if not path.is_file() or path.suffix.lower() not in {".glb", ".gltf"}:
         return False
     try:
-        import pygltflib
-    except Exception:
-        return False
-    try:
-        gltf = pygltflib.GLTF2().load(str(path))
+        scene = trimesh.load(path, force="scene")
     except Exception as exc:
         logger.warning("Could not open GLB for part colouring (%s): %s", path.name, exc)
         return False
-    materials = list(gltf.materials or [])
-    if not materials:
+    if not isinstance(scene, trimesh.Scene) or len(scene.geometry) < 2:
         return False
 
-    def mat_rgba(mat) -> tuple[float, float, float, float] | None:
-        pbr = getattr(mat, "pbrMetallicRoughness", None)
-        if not pbr:
+    def geom_rgba(geom) -> tuple[float, float, float, float] | None:
+        mat = getattr(getattr(geom, "visual", None), "material", None)
+        factor = getattr(mat, "baseColorFactor", None) if mat is not None else None
+        if factor is None:
+            main = getattr(getattr(geom, "visual", None), "main_color", None)
+            if main is None:
+                return None
+            arr = np.asarray(main, dtype=float).reshape(-1)
+            if arr.size < 3:
+                return None
+            scale = 255.0 if arr.max() > 1.5 else 1.0
+            return (float(arr[0] / scale), float(arr[1] / scale), float(arr[2] / scale), float(arr[3] / scale) if arr.size > 3 else 1.0)
+        arr = np.asarray(factor, dtype=float).reshape(-1)
+        if arr.size < 3:
             return None
-        factor = getattr(pbr, "baseColorFactor", None)
-        if not factor or len(factor) < 3:
-            return None
-        return (float(factor[0]), float(factor[1]), float(factor[2]), float(factor[3] if len(factor) > 3 else 1.0))
+        scale = 255.0 if arr.max() > 1.5 else 1.0
+        return (float(arr[0] / scale), float(arr[1] / scale), float(arr[2] / scale), float(arr[3] / scale) if arr.size > 3 else 1.0)
 
-    colors = [mat_rgba(m) for m in materials]
+    colors = [geom_rgba(g) for g in scene.geometry.values()]
     meaningful = [c for c in colors if c is not None and not _rgba_is_neutral_grey(c)]
     if len(meaningful) >= 2:
         return False  # already Jake/Onshape-coloured
 
-    # Remap each material to a palette colour (stable by material index/name).
-    changed = False
-    for idx, mat in enumerate(materials):
-        pbr = getattr(mat, "pbrMetallicRoughness", None)
-        if pbr is None:
+    try:
+        from trimesh.visual.material import PBRMaterial, SimpleMaterial
+    except Exception:
+        PBRMaterial = None  # type: ignore
+        SimpleMaterial = None  # type: ignore
+
+    for idx, (name, geom) in enumerate(scene.geometry.items()):
+        rgba = JAKE_ASSEMBLY_PART_PALETTE[idx % len(JAKE_ASSEMBLY_PART_PALETTE)]
+        rgba_u8 = np.array([int(round(c * 255)) for c in rgba], dtype=np.uint8)
+        visual = getattr(geom, "visual", None)
+        if visual is None:
+            continue
+        mat = getattr(visual, "material", None)
+        if PBRMaterial is not None and (mat is None or mat.__class__.__name__ in {"PBRMaterial", "SimpleMaterial"}):
             try:
-                pbr = pygltflib.PbrMetallicRoughness()
-                mat.pbrMetallicRoughness = pbr
+                visual.material = PBRMaterial(baseColorFactor=np.array(rgba, dtype=np.float64))
+            except Exception:
+                if SimpleMaterial is not None:
+                    visual.material = SimpleMaterial(diffuse=rgba_u8)
+        elif hasattr(visual, "face_colors") and getattr(geom, "faces", None) is not None and len(geom.faces):
+            visual.face_colors = np.tile(rgba_u8, (len(geom.faces), 1))
+        else:
+            try:
+                visual.material = PBRMaterial(baseColorFactor=np.array(rgba, dtype=np.float64)) if PBRMaterial else mat
             except Exception:
                 continue
-        rgba = JAKE_ASSEMBLY_PART_PALETTE[idx % len(JAKE_ASSEMBLY_PART_PALETTE)]
-        pbr.baseColorFactor = list(rgba)
-        changed = True
-    if not changed:
-        return False
+
     try:
-        gltf.save(str(path))
+        scene.export(path, file_type="glb")
         return True
     except Exception as exc:
         logger.warning("Could not save colourized GLB (%s): %s", path.name, exc)
