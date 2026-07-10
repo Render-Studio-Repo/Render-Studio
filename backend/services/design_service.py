@@ -1432,24 +1432,24 @@ def _backfill_known_missing_symbols(source: str, prompt: str, missing: list[str]
         "planet_orbit_radius": f"{orbit:.3f}",
         "planet_angles_deg": "[0.0, 120.0, 240.0]",
         "planet_count": "3",
-        "sun_teeth": "18",
-        "planet_teeth": "12",
-        "ring_teeth": "42",
-        "sun_root_radius": "14.0",
-        "sun_outer_radius": "18.0",
-        "sun_bore_radius": "4.0",
-        "planet_root_radius": "9.0",
-        "planet_outer_radius": "12.0",
+        "sun_teeth": "24",
+        "planet_teeth": "18",
+        "ring_teeth": "60",
+        "sun_root_radius": "21.0",
+        "sun_outer_radius": "27.0",
+        "sun_bore_radius": "5.0",
+        "planet_root_radius": "15.5",
+        "planet_outer_radius": "20.5",
         "planet_bore_radius": "3.0",
-        "ring_outer_radius": f"{orbit + 18.0:.3f}",
-        "ring_root_radius": f"{orbit + 9.0:.3f}",
-        "ring_inner_clearance": f"{max(orbit - 13.0, 8.0):.3f}",
-        "carrier_radius": f"{orbit + 6.0:.3f}",
-        "carrier_thickness": "3.0",
-        "carrier_z": "-3.0",
-        "pin_radius": "2.6",
-        "pin_height": "12.0",
-        "pin_z": "-1.0",
+        "ring_outer_radius": "70.0",
+        "ring_root_radius": "63.0",
+        "ring_tip_radius": "57.0",
+        "carrier_radius": "52.5",
+        "carrier_thickness": "4.0",
+        "carrier_z": "-5.0",
+        "pin_radius": "3.0",
+        "pin_height": "14.0",
+        "pin_z": "-5.0",
         "planet_labels": '["planet_1", "planet_2", "planet_3"]',
         "pin_labels": '["pin_1", "pin_2", "pin_3"]',
         "sun_label": '"sun"',
@@ -1490,19 +1490,19 @@ def _backfill_known_missing_symbols(source: str, prompt: str, missing: list[str]
             "    body.label = label\n"
             "    return body\n\n"
             "def make_ring_gear(label='ring', *args, **kwargs):\n"
-            "    outer_r = float(globals().get('ring_outer_radius', 60.0))\n"
-            "    inner_r = float(globals().get('ring_inner_clearance', 28.0))\n"
-            "    root_r = float(globals().get('ring_root_radius', 50.0))\n"
-            "    teeth = int(globals().get('ring_teeth', 42))\n"
+            "    outer_r = float(globals().get('ring_outer_radius', 70.0))\n"
+            "    tip_r = float(globals().get('ring_tip_radius', 57.0))\n"
+            "    root_r = float(globals().get('ring_root_radius', 63.0))\n"
+            "    teeth = int(globals().get('ring_teeth', 60))\n"
             "    thick = float(globals().get('gear_thickness', 8.0))\n"
-            "    shell = Cylinder(radius=outer_r, height=thick, align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
-            "    shell = shell - Cylinder(radius=max(inner_r, 1.0), height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
+            "    rim = Cylinder(radius=outer_r, height=thick, align=(Align.CENTER, Align.CENTER, Align.MIN))\n"
+            "    rim = rim - Cylinder(radius=root_r, height=thick + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))\n"
             "    for i in range(teeth):\n"
-            "        pocket = _trapezoid_tooth(root_r, inner_r + 0.5, teeth, thick + 0.4, inward=True)\n"
-            "        pocket = pocket.rotate(Axis.Z, i * (360.0 / teeth)).moved(Location((0, 0, -0.2)))\n"
-            "        shell = shell - pocket\n"
-            "    shell.label = label\n"
-            "    return shell\n\n"
+            "        tooth = _trapezoid_tooth(root_r, tip_r, teeth, thick, inward=True)\n"
+            "        tooth = tooth.rotate(Axis.Z, i * (360.0 / teeth))\n"
+            "        rim = rim + tooth\n"
+            "    rim.label = label\n"
+            "    return rim\n\n"
             "def make_carrier(*args, **kwargs):\n"
             "    from math import cos, sin, radians\n"
             "    radius = float(globals().get('carrier_radius', 48.0))\n"
@@ -1693,7 +1693,12 @@ def _looks_like_planetary_gear_assembly(prompt: str, images: list[dict[str, Any]
 
 
 def _canonical_planetary_gear_assembly_source(*, label: str, prompt: str) -> str:
-    """Complete flat planetary gearset — avoids LLM stub helpers (make_external_gear, …)."""
+    """Jake benchmark 10 planetary stage — trapezoidal teeth, correct internal ring.
+
+    Matches ``tmp_jake_text_to_cad/benchmarks/10-planetary-gear-stage.md``.
+    Ring teeth are *added inward* from the root circle (not cut as deep radial
+    slots), which was producing the fin/radiator look in the viewport.
+    """
     safe_label = json.dumps(label or "planetary_gear_assembly")
     orbit = _planetary_orbit_radius_mm(prompt)
     return f'''from math import cos, sin, pi, radians
@@ -1705,41 +1710,43 @@ planet_count = 3
 planet_orbit_radius = {orbit:.3f}
 planet_angles_deg = [i * (360.0 / planet_count) for i in range(planet_count)]
 
-sun_teeth = 18
-planet_teeth = 12
-ring_teeth = sun_teeth + 2 * planet_teeth
+# Jake benchmark 10 diameters (mm) → radii
+sun_teeth = 24
+planet_teeth = 18
+ring_teeth = 60
 
-sun_root_radius = 14.0
-sun_outer_radius = 18.0
-sun_bore_radius = 4.0
+sun_root_radius = 21.0
+sun_outer_radius = 27.0
+sun_bore_radius = 5.0
 sun_label = "sun"
 
-planet_root_radius = 9.0
-planet_outer_radius = 12.0
+planet_root_radius = 15.5
+planet_outer_radius = 20.5
 planet_bore_radius = 3.0
 planet_labels = [f"planet_{{i + 1}}" for i in range(planet_count)]
 
-ring_outer_radius = planet_orbit_radius + planet_outer_radius + 6.0
-ring_root_radius = planet_orbit_radius + planet_root_radius
-ring_inner_clearance = planet_orbit_radius - planet_outer_radius - 1.0
+ring_outer_radius = 70.0
+ring_root_radius = 63.0
+ring_tip_radius = 57.0
 ring_label = "ring"
 
-carrier_radius = planet_orbit_radius + 6.0
-carrier_thickness = 3.0
-carrier_z = -carrier_thickness
+carrier_radius = 52.5
+carrier_thickness = 4.0
+carrier_z = -5.0
 carrier_label = "carrier"
 
-pin_radius = 2.6
-pin_height = gear_thickness + 4.0
-pin_z = -1.0
+pin_radius = 3.0
+pin_height = 14.0
+pin_z = -5.0
 pin_labels = [f"pin_{{i + 1}}" for i in range(planet_count)]
 
 
 def _trapezoid_tooth(root_r, tip_r, teeth, thickness, *, inward=False):
-    pitch = (2.0 * pi * max(root_r, 1.0)) / max(teeth, 1)
+    """Straight-sided trapezoid tooth in the XY plane, radial along +Y."""
+    pitch = (2.0 * pi * max(float(root_r), 1.0)) / max(int(teeth), 1)
     w_root = pitch * 0.52
     w_tip = pitch * 0.28
-    y0, y1 = (tip_r, root_r) if inward else (root_r, tip_r)
+    y0, y1 = (float(tip_r), float(root_r)) if inward else (float(root_r), float(tip_r))
     pts = [
         (-w_root / 2.0, y0),
         (-w_tip / 2.0, y1),
@@ -1748,40 +1755,58 @@ def _trapezoid_tooth(root_r, tip_r, teeth, thickness, *, inward=False):
     ]
     with BuildSketch() as sk:
         Polygon(*pts)
-    return extrude(sk.sketch, amount=thickness)
+    return extrude(sk.sketch, amount=float(thickness))
 
 
 def make_external_gear(root_r, outer_r, teeth, thickness, bore_radius=0.0, label="gear"):
-    body = Cylinder(radius=root_r, height=thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    body = Cylinder(radius=float(root_r), height=float(thickness), align=(Align.CENTER, Align.CENTER, Align.MIN))
     for i in range(int(teeth)):
         tooth = _trapezoid_tooth(root_r, outer_r, teeth, thickness, inward=False)
-        tooth = tooth.rotate(Axis.Z, i * (360.0 / teeth))
+        tooth = tooth.rotate(Axis.Z, i * (360.0 / max(int(teeth), 1)))
         body = body + tooth
-    if bore_radius and bore_radius > 0:
-        body = body - Cylinder(radius=bore_radius, height=thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))
+    if bore_radius and float(bore_radius) > 0:
+        body = body - Cylinder(
+            radius=float(bore_radius),
+            height=float(thickness) + 2.0,
+            align=(Align.CENTER, Align.CENTER, Align.MIN),
+        ).moved(Location((0, 0, -1)))
     body.label = label
     return body
 
 
 def make_ring_gear(label=ring_label):
-    shell = Cylinder(radius=ring_outer_radius, height=gear_thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
-    shell = shell - Cylinder(radius=max(ring_inner_clearance, 1.0), height=gear_thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))
+    # Solid rim from root → OD, then add shallow internal teeth tip←root.
+    # Do NOT subtract deep pockets from the bore — that creates radial fins.
+    rim = Cylinder(radius=ring_outer_radius, height=gear_thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    rim = rim - Cylinder(
+        radius=ring_root_radius,
+        height=gear_thickness + 2.0,
+        align=(Align.CENTER, Align.CENTER, Align.MIN),
+    ).moved(Location((0, 0, -1)))
     for i in range(int(ring_teeth)):
-        pocket = _trapezoid_tooth(ring_root_radius, ring_inner_clearance + 0.5, ring_teeth, gear_thickness + 0.4, inward=True)
-        pocket = pocket.rotate(Axis.Z, i * (360.0 / ring_teeth)).moved(Location((0, 0, -0.2)))
-        shell = shell - pocket
-    shell.label = label
-    return shell
+        tooth = _trapezoid_tooth(ring_root_radius, ring_tip_radius, ring_teeth, gear_thickness, inward=True)
+        tooth = tooth.rotate(Axis.Z, i * (360.0 / ring_teeth))
+        rim = rim + tooth
+    rim.label = label
+    return rim
 
 
 def make_carrier():
     plate = Cylinder(radius=carrier_radius, height=carrier_thickness, align=(Align.CENTER, Align.CENTER, Align.MIN))
-    plate = plate - Cylinder(radius=sun_bore_radius + 1.5, height=carrier_thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((0, 0, -1)))
+    plate = plate - Cylinder(
+        radius=sun_bore_radius + 1.5,
+        height=carrier_thickness + 2.0,
+        align=(Align.CENTER, Align.CENTER, Align.MIN),
+    ).moved(Location((0, 0, -1)))
     for angle_deg in planet_angles_deg:
         ang = radians(angle_deg)
         px = planet_orbit_radius * cos(ang)
         py = planet_orbit_radius * sin(ang)
-        plate = plate - Cylinder(radius=pin_radius + 0.2, height=carrier_thickness + 2.0, align=(Align.CENTER, Align.CENTER, Align.MIN)).moved(Location((px, py, -1)))
+        plate = plate - Cylinder(
+            radius=pin_radius + 0.2,
+            height=carrier_thickness + 2.0,
+            align=(Align.CENTER, Align.CENTER, Align.MIN),
+        ).moved(Location((px, py, -1)))
     plate = plate.moved(Location((0, 0, carrier_z)))
     plate.label = carrier_label
     return plate
@@ -1811,6 +1836,7 @@ def gen_step():
         ang = radians(angle_deg)
         px = planet_orbit_radius * cos(ang)
         py = planet_orbit_radius * sin(ang)
+        # Half-pitch rotation so planet teeth mesh with sun/ring visually.
         planet = make_external_gear(
             planet_root_radius,
             planet_outer_radius,
@@ -1818,7 +1844,7 @@ def gen_step():
             gear_thickness,
             bore_radius=planet_bore_radius,
             label=planet_labels[idx],
-        ).located(Location((px, py, 0), (0, 0, angle_deg / 2.0)))
+        ).located(Location((px, py, 0), (0, 0, angle_deg * (sun_teeth / planet_teeth) + 180.0 / planet_teeth)))
         planet.label = planet_labels[idx]
         planets.append(planet)
 
