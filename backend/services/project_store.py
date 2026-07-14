@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,7 +44,95 @@ def is_default_project_name(project_path: Path, meta: dict[str, Any] | None = No
         return True
     if current == f"Project {pid}":
         return True
+    # Hex-ish bare ids (8–12 chars) that slipped in as the display name.
+    if re.fullmatch(r"[0-9a-fA-F]{6,12}", current) and current.lower() == pid.lower():
+        return True
     return False
+
+
+def title_from_prompt(prompt: str, *, max_len: int = 64) -> str:
+    """Human project/file title from a prompt: Capitalization And Spaces."""
+    text = (prompt or "").strip()
+    if not text:
+        return "New Model"
+    # First sentence / clause only.
+    text = re.split(r"[.!?\n]", text, maxsplit=1)[0]
+    text = re.split(
+        r",\s+(?:it|and|because|with|that|which|so|then|for|where|when)\b",
+        text,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    text = re.sub(
+        r"^(?:i\s+(?:need|want|would like)\s+to\s+)?"
+        r"(?:please\s+)?"
+        r"(?:make|create|generate|design|build|model|draw)\s+"
+        r"(?:me\s+)?"
+        r"(?:a|an|the)?\s*",
+        "",
+        text,
+        flags=re.I,
+    ).strip()
+    text = re.sub(r"^(?:a|an|the)\s+", "", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text).strip(" -_")
+    if not text:
+        return "New Model"
+    words = text.split()
+    # Drop trailing filler like "than is on the ground..."
+    stop_at = None
+    for i, word in enumerate(words):
+        lower = word.lower()
+        if lower in {"than", "that", "which", "because"} and i >= 1:
+            stop_at = i
+            break
+        if lower == "with" and i >= 2:
+            stop_at = i
+            break
+    if stop_at is not None:
+        words = words[:stop_at]
+    if len(words) > 8:
+        words = words[:8]
+    title = " ".join(words).strip(" -_")
+    if not title:
+        return "New Model"
+    # Title case; keep short all-caps tokens (FANUC, CNC, PET).
+    parts: list[str] = []
+    for word in title.split():
+        if word.isupper() and 2 <= len(word) <= 6:
+            parts.append(word)
+        else:
+            parts.append(word[:1].upper() + word[1:].lower() if word else word)
+    titled = " ".join(parts)
+    if len(titled) > max_len:
+        titled = titled[:max_len].rsplit(" ", 1)[0].strip() or titled[:max_len].strip()
+    return titled or "New Model"
+
+
+def file_stem_from_prompt(prompt: str, *, max_len: int = 80) -> str:
+    """Filesystem stem with spaces + capitalization (illegal path chars stripped)."""
+    title = title_from_prompt(prompt, max_len=max_len)
+    stem = re.sub(r'[\\/:*?"<>|]+', "", title).strip(" .")
+    return (stem or "New Model")[:max_len]
+
+
+def apply_prompt_project_name(project_path: Path, prompt: str, *, fallback: str | None = None) -> dict[str, Any]:
+    """Rename a default-id project from the prompt (Capitalization And Spaces)."""
+    meta = load_meta(project_path)
+    if not _ai_may_set_project_name(project_path, meta):
+        return meta
+    title = title_from_prompt(prompt)
+    if (not title or title == "New Model") and fallback:
+        fb = str(fallback).strip()
+        if " " in fb and not fb.islower():
+            title = fb
+        else:
+            pretty = re.sub(r"_+", " ", fb).strip()
+            title = " ".join(
+                (p.upper() if p.isupper() and 2 <= len(p) <= 6 else p[:1].upper() + p[1:].lower())
+                for p in pretty.split()
+                if p
+            ) or "New Model"
+    return touch_project(project_path, name=title or "New Model")
 
 
 def _ai_may_set_project_name(project_path: Path, meta: dict[str, Any]) -> bool:

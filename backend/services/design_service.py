@@ -3179,9 +3179,19 @@ def _run_text_to_cad_v2(
     """CAD 2.0/Fusion path: generate build123d source and run text-to-cad scripts/step."""
     from backend.services import skill_runner
 
-    base = Path(previous_source_name).stem if previous_source_name else _slug(prompt)
-    if base in {"create", "make", "build", "design"}:
-        base = "text_to_cad_model"
+    base = Path(previous_source_name).stem if previous_source_name else ""
+    if not base:
+        from backend.services.project_store import file_stem_from_prompt
+
+        base = file_stem_from_prompt(prompt)
+    if base in {"create", "make", "build", "design", "New Model"}:
+        from backend.services.project_store import file_stem_from_prompt
+
+        better = file_stem_from_prompt(prompt)
+        if better and better != "New Model":
+            base = better
+        elif base in {"create", "make", "build", "design"}:
+            base = "text_to_cad_model"
     source_name = f"{base}.py"
     step_name = f"{base}.step"
     glb_name = f"{base}.glb"
@@ -3842,9 +3852,14 @@ def _run_text_to_cad_v2(
             files["jake_params"] = step_module_name
             files["step_module"] = step_module_name
             wired_names["jake_params"] = step_module_name
+        # Default Project {id} → human title from the prompt (Capitalization And Spaces).
+        from backend.services.project_store import apply_prompt_project_name, title_from_prompt
+
+        display_name = title_from_prompt(prompt)
+        apply_prompt_project_name(project_path, prompt, fallback=display_name)
         return {
             "intent": "generative",
-            "message": f"Built {base} with the {'Architect modular ' if architect_mode else 'Fusion-style ' if fusion_mode else ''}text-to-cad build123d workflow.",
+            "message": f"Built {display_name} with the {'Architect modular ' if architect_mode else 'Fusion-style ' if fusion_mode else ''}text-to-cad build123d workflow.",
             "design_plan": {
                 "requirements_analysis": f"CAD {label_prefix} routed to text-to-cad source generation.",
                 "cad_feature_plan": "Generated build123d Python source with gen_step(), then ran CAD skill scripts/step, inspect, snapshot, visual review, and source repair.",
@@ -3855,7 +3870,7 @@ def _run_text_to_cad_v2(
             "part_placements": [],
             "result": {
                 "program": {
-                    "name": base,
+                    "name": display_name,
                     "source": "text-to-cad",
                     "source_file": source_name,
                     "entrypoint": "gen_step",
@@ -3879,6 +3894,7 @@ def _run_text_to_cad_v2(
                         "shell_glb": glb_name,
                         "jake_glb": jake_hidden_glb_name(step_name),
                         "cad_ref": str(Path(step_name).with_suffix("").as_posix()),
+                        "display_name": display_name,
                     },
                     "step": {
                         "stdout": (step_out.get("stdout") or "")[-4000:],

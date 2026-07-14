@@ -8853,7 +8853,12 @@ def _prompt_via_kernel(
     )
     if cancel_check():
         raise DesignCanceled("Generation canceled.")
-    project_store.touch_project(project_path, name=result.get("program", {}).get("name"))
+    program_name = (result.get("program") or {}).get("name")
+    meta = project_store.apply_prompt_project_name(
+        project_path,
+        body.prompt,
+        fallback=program_name,
+    )
     trace_add("info", f"Design done → {primary} ({out.get('attempts')} attempt(s))", trace_id=trace_id)
     _notify_project(
         project_id,
@@ -8863,6 +8868,16 @@ def _prompt_via_kernel(
             "placed_parts": placed_parts,
             "by": user["display_name"], "by_user_id": user["id"],
             "action": "prompt", "timeline_entry": entry,
+            "project_name": meta.get("name"),
+        },
+    )
+    _notify_project_workspace(
+        project_id,
+        {
+            "type": "project.updated",
+            "project_id": project_id,
+            "name": meta.get("name"),
+            "meta": meta,
         },
     )
     usage_meta = _usage_history_fields(out.get("ai_trace"))
