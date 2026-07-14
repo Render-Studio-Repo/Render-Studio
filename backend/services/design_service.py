@@ -3391,14 +3391,16 @@ def _run_text_to_cad_v2(
                     locations_float_err = bool(
                         re.search(
                             r"TypeError:.*(?:argument after \* must be an iterable, not float|"
-                            r"Locations\(\).*float|float is not iterable)",
+                            r"'float'\s+object\s+is\s+not\s+iterable|"
+                            r"float(?:'|\s).*not iterable|"
+                            r"Locations\(\).*float)",
                             detail,
                             flags=re.IGNORECASE | re.DOTALL,
                         )
                     ) or (
-                        "Locations" in detail
+                        "TypeError" in detail
                         and "float" in detail
-                        and "TypeError" in detail
+                        and ("not iterable" in detail or "Locations" in detail or "_positions" in detail)
                     )
                     if name_err_match:
                         missing_name = name_err_match.group(1)

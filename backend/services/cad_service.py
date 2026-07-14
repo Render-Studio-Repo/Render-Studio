@@ -1615,18 +1615,18 @@ def _legacy_3mf_needs_regeneration(path: Path) -> bool:
             if "ns0:" in rels or "xmlns:ns0" in rels:
                 return True
             root = ET.fromstring(zf.read("3D/3dmodel.model"))
-        items = root.findall(f".//{THREEMF_CORE_NS}}}item")
+        items = root.findall(f".//{{{THREEMF_CORE_NS}}}item")
         if not items:
             return True
         if not any(item.get("transform") for item in items):
             return True
-        tris = root.findall(f".//{THREEMF_CORE_NS}}}triangle")
+        tris = root.findall(f".//{{{THREEMF_CORE_NS}}}triangle")
         if not tris:
             return True
         first = tris[0]
         if first.get("p2") is not None or first.get("p3") is not None:
             return True
-        objs = root.findall(f".//{THREEMF_CORE_NS}}}object[@type='model']")
+        objs = root.findall(f".//{{{THREEMF_CORE_NS}}}object[@type='model']")
         if objs and objs[0].get("type") != "model":
             return True
     except Exception:

@@ -9926,10 +9926,8 @@ function resolveViewerPaths(filename, url) {
   let viewFilename = filename;
   let viewUrl = url;
   const ext = filename.split(".").pop().toLowerCase();
-  if (ext === "3mf") {
-    viewFilename = filename.replace(/\.3mf$/i, ".glb");
-    viewUrl = url.replace(/\/files\/[^/?#]+/, `/files/${encodeURIComponent(viewFilename)}`);
-  } else if (ext === "step" || ext === "stp") {
+  // Formats without a browser loader are previewed via a sibling .glb from upload.
+  if (ext === "3mf" || ext === "ply" || ext === "off" || ext === "step" || ext === "stp") {
     viewFilename = `${fileStem(filename)}.glb`;
     viewUrl = url.replace(/\/files\/[^/?#]+/, `/files/${encodeURIComponent(viewFilename)}`);
   }

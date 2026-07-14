@@ -1348,37 +1348,60 @@ def _step_for_cloud_cad(project_path: Path, filename: str, *, allow_faceted: boo
 
     suffix = src.suffix.lower()
     stem = src.stem
+
+    # Prefer generative parent B-rep when the selection is an edited/pulled mesh.
+    native = cad_service.resolve_native_brep_step(project_path, safe)
+    if native is not None:
+        return native
+
     if suffix in cad_service.STEP_SUFFIXES:
+        kind = cad_service.classify_step_file_kind(src)
+        if kind == "faceted_mesh" and not allow_faceted:
+            raise HTTPException(
+                422,
+                "This STEP is mesh-derived/faceted (open shells), so Fusion cannot do reliable solid cuts. "
+                "Push the original text-to-cad .step (B-rep) instead, regenerate from Python source, "
+                "or explicitly allow a faceted STEP export.",
+            )
+        if kind == "editable_brep" or allow_faceted:
+            return src
         if "__faceted" in stem.lower() and not allow_faceted:
             raise HTTPException(
                 422,
                 "This STEP is mesh-derived/faceted, so Fusion may not allow reliable solid cuts. "
                 "Use the original generated STEP/B-rep model, regenerate from source, or explicitly allow a faceted STEP export.",
             )
+        # Unknown STEP content — only allow if caller opts into faceted risk.
+        if not allow_faceted:
+            raise HTTPException(
+                422,
+                "Could not verify this STEP as a solid B-rep. Fusion solid cuts need MANIFOLD_SOLID_BREP. "
+                "Use the original text-to-cad .step, or allow a faceted STEP export.",
+            )
         return src
 
     step_path = project_path / f"{stem}.step"
-    source_path = project_path / f"{stem}.py"
-    program_path = project_path / f"{stem}.program.json"
     if step_path.is_file():
-        # Native generators write STEP first and then a GLB preview; mesh export
-        # creates STEP after the mesh. Use provenance files as the stronger signal.
-        has_native_source = source_path.is_file() or program_path.is_file()
-        try:
-            step_is_mesh_derived = step_path.stat().st_mtime >= src.stat().st_mtime and not has_native_source
-        except OSError:
-            step_is_mesh_derived = not has_native_source
-        if not step_is_mesh_derived or allow_faceted:
+        kind = cad_service.classify_step_file_kind(step_path)
+        if kind == "editable_brep":
             return step_path
-        raise HTTPException(
-            422,
-            "The selected file is mesh-based and its STEP sibling is faceted, not a native B-rep solid. "
-            "Fusion can import it for viewing, but solid cuts/booleans may fail. Select the original .step model "
-            "or regenerate the edit as build123d/text-to-CAD source before pushing to Fusion.",
-        )
+        if kind == "faceted_mesh" and not allow_faceted:
+            raise HTTPException(
+                422,
+                "The selected file is mesh-based and its STEP sibling is faceted, not a native B-rep solid. "
+                "Fusion can import it for viewing, but solid cuts/booleans may fail. Select the original .step model "
+                "or regenerate the edit as build123d/text-to-CAD source before pushing to Fusion.",
+            )
+        if allow_faceted:
+            return step_path
 
+    faceted_path = project_path / cad_service.faceted_step_name(stem)
     if allow_faceted:
+        if faceted_path.is_file():
+            return faceted_path
         cad_service.ensure_mesh_exports(project_path, safe)
+        if faceted_path.is_file():
+            return faceted_path
         if step_path.is_file():
             return step_path
 
@@ -6012,8 +6035,18 @@ async def upload_file(
     path = _require_project(user, project_id)
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in cad_service.SUPPORTED_IMPORT:
-        raise HTTPException(400, f"Unsupported format. Use: {cad_service.SUPPORTED_IMPORT}")
+        raise HTTPException(400, f"Unsupported format. Use: {sorted(cad_service.SUPPORTED_IMPORT)}")
     dest = path / (file.filename or f"upload{suffix}")
+    # Avoid silent overwrites when dropping the same name repeatedly.
+    if dest.exists():
+        stem = dest.stem
+        n = 2
+        while True:
+            candidate = path / f"{stem}_{n}{suffix}"
+            if not candidate.exists():
+                dest = candidate
+                break
+            n += 1
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
     if suffix == ".dxf":
@@ -6037,40 +6070,27 @@ async def upload_file(
             "timeline_index": None,
             "drawing": True,
         }
-    # 3MF / STEP have no browser loader — tessellate to GLB for the viewer.
+
+    # Browser can load STL/OBJ/GLB/GLTF natively. Everything else needs a GLB sidecar.
     viewer_filename = dest.name
-    if suffix == ".3mf":
+    needs_viewer_glb = suffix in {".3mf", ".ply", ".off"} | cad_service.STEP_SUFFIXES
+    if needs_viewer_glb:
+        glb_dest = dest.with_suffix(".glb")
         try:
-            mesh = cad_service.load_mesh(dest)
-            glb_dest = dest.with_suffix(".glb")
-            cad_service.export_mesh(mesh, glb_dest)
+            if suffix in cad_service.STEP_SUFFIXES:
+                cad_service.tessellate_step_to_glb(dest, glb_dest)
+            else:
+                mesh = cad_service.load_mesh(dest)
+                cad_service.export_mesh(mesh, glb_dest)
             viewer_filename = glb_dest.name
         except Exception as exc:
-            logger.warning("3MF preview GLB failed for %s: %s", dest.name, exc)
-    elif suffix in cad_service.STEP_SUFFIXES:
-        try:
-            glb_dest = dest.with_suffix(".glb")
-            cad_service.tessellate_step_to_glb(dest, glb_dest)
-            viewer_filename = glb_dest.name
-        except Exception as exc:
-            logger.warning("STEP preview GLB failed for %s: %s", dest.name, exc)
-    # 3MF / STEP have no browser loader — tessellate to GLB for the viewer.
-    viewer_filename = dest.name
-    if suffix == ".3mf":
-        try:
-            mesh = cad_service.load_mesh(dest)
-            glb_dest = dest.with_suffix(".glb")
-            cad_service.export_mesh(mesh, glb_dest)
-            viewer_filename = glb_dest.name
-        except Exception as exc:
-            logger.warning("3MF preview GLB failed for %s: %s", dest.name, exc)
-    elif suffix in cad_service.STEP_SUFFIXES:
-        try:
-            glb_dest = dest.with_suffix(".glb")
-            cad_service.tessellate_step_to_glb(dest, glb_dest)
-            viewer_filename = glb_dest.name
-        except Exception as exc:
-            logger.warning("STEP preview GLB failed for %s: %s", dest.name, exc)
+            logger.warning("Viewer GLB conversion failed for %s: %s", dest.name, exc)
+            raise HTTPException(
+                422,
+                f"Uploaded {dest.name}, but could not build a 3D preview ({exc}). "
+                "Try exporting as STL or GLB, or repair the file.",
+            ) from exc
+
     entry = _record_history(path, "upload", f"Upload {dest.name}", dest.name, user=user)
     project_store.touch_project(path)
     background_tasks.add_task(_background_push_new_file_to_fusion, project_id, path, dest.name)

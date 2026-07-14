@@ -104,11 +104,19 @@ def classify_cli_failure(stderr_or_note: str) -> dict[str, str]:
         }
     if (
         "typeerror" in lower
-        and any(tok in lower for tok in ("locations", "not iterable", "after * must be an iterable", "float"))
+        and any(
+            tok in lower
+            for tok in (
+                "locations",
+                "not iterable",
+                "after * must be an iterable",
+                "'float' object is not iterable",
+                "float' object is not iterable",
+                "_positions",
+            )
+        )
     ) or (
         "float" in lower and "not iterable" in lower
-    ) or (
-        "locations" in lower and "iterable" in lower
     ):
         return {
             "class": "locations_or_positions_type",
