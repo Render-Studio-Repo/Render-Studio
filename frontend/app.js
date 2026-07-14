@@ -6430,8 +6430,6 @@ function ensureMeasureModal() {
 
 function syncMeasureButtons() {
   document.getElementById("btn-measure")?.classList.toggle("active", measureModeActive);
-  document.getElementById("btn-measure-tool")?.classList.toggle("active", measureModeActive);
-  document.getElementById("btn-measure-viewport")?.classList.toggle("active", measureModeActive);
   updateMeasureReadout();
 }
 
@@ -6663,14 +6661,6 @@ async function showDimensions({ promptMode = false } = {}) {
 
 document.getElementById("btn-show-dimensions")?.addEventListener("click", () => {
   beginMeasureMode("edge");
-});
-document.getElementById("btn-measure-viewport")?.addEventListener("click", () => {
-  if (measureModeActive) endMeasureMode();
-  else beginMeasureMode(measurePickMode || "edge");
-});
-document.getElementById("btn-measure-tool")?.addEventListener("click", () => {
-  if (measureModeActive) endMeasureMode();
-  else beginMeasureMode(measurePickMode || "edge");
 });
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("#btn-measure");
@@ -11716,7 +11706,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Team workspaces", hint: "Members, invites, visibility", run: () => openMobileAccountMenu("workspaces") },
         { label: "Fit view", hint: "Center the current model", run: () => fitCamera() },
         { label: "Toggle grid", hint: "Show or hide viewport grid", run: () => document.getElementById("btn-grid-viewport")?.click() },
-        { label: "Measure", hint: "Open model measurement tool", run: () => document.getElementById("btn-measure-viewport")?.click() },
+        { label: "Measure", hint: "Open model measurement tool", run: () => document.getElementById("btn-measure")?.click() },
         { label: "Color", hint: "Color selected object or faces", run: () => document.getElementById("btn-color-viewport")?.click() },
       ]);
       return;
@@ -13811,9 +13801,8 @@ function renderWorkspaceFusionMirrors(project) {
         const contentRows = contents.error
           ? `<p class="muted small error">${appEscapeHtml(contents.error)}</p>${contents.needs_relink && mirror.user_id === getStoredUser()?.id ? `<button type="button" class="btn btn-compact" data-workspace-relink-fusion="${appEscapeHtml(project.id)}">Remove stale link</button>` : ""}`
           : [
-              ...folders.map((folder) => renderFusionFolderRow("Folder", folder.name || "Folder", "▸")),
               ...activeItems.map((item) => renderFusionFolderRow("File", item.name || "Untitled", "□")),
-            ].join("") || renderFusionEmptyRow("Folder is empty.");
+            ].join("") || renderFusionEmptyRow("No files in linked mirror yet.");
         return `
           <div class="workspace-fusion-mirror-card${contents.needs_relink ? " workspace-fusion-mirror-card--stale" : ""}">
             <div class="workspace-fusion-mirror-head">
@@ -15469,14 +15458,6 @@ document.addEventListener("click", async (e) => {
   }
 
   if (e.target.closest("#btn-grid")) { toggleGrid(); return; }
-});
-document.getElementById("btn-sketches-viewport")?.addEventListener("click", () => {
-  const btn = document.getElementById("btn-sketches-viewport");
-  const next = !sketchEditor.isGlobalSketchesVisible?.();
-  sketchEditor.setAllViewportSketchesVisible?.(next);
-  btn?.classList.toggle("active", next);
-  btn?.setAttribute("aria-pressed", next ? "true" : "false");
-  setEditStatus("ok", next ? "Sketches shown in viewport." : "Sketches hidden in viewport.");
 });
 function formatDesignPlanReply(plan) {
   if (!plan || typeof plan !== "object") return "";

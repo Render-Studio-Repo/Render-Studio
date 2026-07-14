@@ -508,10 +508,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         <select id="fusion-project-select"></select>
       </label>
       <label class="fusion-library-field">
-        <span>Folder</span>
-        <select id="fusion-folder-select"></select>
-      </label>
-      <label class="fusion-library-field">
         <span>Model</span>
         <select id="fusion-model-select"></select>
       </label>
@@ -550,7 +546,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       await loadProjects();
     };
     renderProjectSelect();
-    renderFolderSelect();
     renderModelSelect();
   }
 
@@ -559,30 +554,15 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   }
 
   function renderFolderSelect() {
-    const folderSelect = controlsEl?.querySelector("#fusion-folder-select");
-    if (!folderSelect) return;
-    if (!topFolders.length) {
-      folderSelect.innerHTML = `<option value="">No folders in this project</option>`;
-      folderSelect.disabled = true;
-      return;
-    }
-    folderSelect.disabled = false;
-    folderSelect.innerHTML = topFolders
-      .map((folder) => `<option value="${esc(folder.id)}"${folder.id === activeFolderId ? " selected" : ""}>${esc(folder.name || "Folder")}</option>`)
-      .join("");
-    folderSelect.onchange = async () => {
-      activeFolderId = folderSelect.value;
-      activeItemId = "";
-      await loadFolderLibraryItems(activeFolderId);
-      highlightFolderInTree(activeFolderId);
-    };
+    // Folder dropdown removed from the Hub/Project/Model selectors.
+    // activeFolderId is still set from the linked mirror or first top-level folder.
   }
 
   function renderModelSelect() {
     const modelSelect = controlsEl?.querySelector("#fusion-model-select");
     if (!modelSelect) return;
     if (!activeFolderId) {
-      modelSelect.innerHTML = `<option value="">Select a folder first</option>`;
+      modelSelect.innerHTML = `<option value="">Select a project first</option>`;
       modelSelect.disabled = true;
       return;
     }
@@ -649,7 +629,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   async function importSelectedModel(btn) {
     const file = libraryItems.find((item) => item.id === activeItemId);
     if (!file || !activeFolderId) {
-      setStatus("Select a folder and model from the dropdowns first.", true);
+      setStatus("Select a project and model from the dropdowns first.", true);
       return;
     }
     await importItem(folderById(activeFolderId), file, null, btn);
@@ -666,7 +646,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       activeItemId = "";
       libraryItems = [];
       topFolders = [];
-      renderFolderSelect();
       renderModelSelect();
       await loadTopFolders();
     };
@@ -683,7 +662,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       activeProjectId = preferredMirrorTarget.aps_project_id;
     }
     renderProjectSelect();
-    renderFolderSelect();
     renderModelSelect();
     if (!activeProjectId) {
       setStatus("No Fusion projects found in this hub.");
@@ -702,7 +680,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       : (linkedMirrorFolderId() && topFolders.some((folder) => folder.id === linkedMirrorFolderId())
         ? linkedMirrorFolderId()
         : topFolders[0]?.id || "");
-    renderFolderSelect();
     setStatus("");
     renderFolders(topFolders, listEl, linkedMirrorFolderId());
     if (activeFolderId) {
@@ -732,7 +709,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     item._fusionFolder = folder;
     item.innerHTML = `
       <div class="onshape-doc-header">
-        <span class="onshape-doc-name"><span class="fusion-folder-glyph" aria-hidden="true">Folder</span> ${esc(folder.name || "Folder")}</span>
+        <span class="onshape-doc-name">${esc(folder.name || "Untitled")}</span>
         <div class="fusion-row-actions">
           <button type="button" class="btn btn-compact btn-fusion-link-mirror${autoOpen ? " success" : ""}">${autoOpen ? "Linked mirror" : "Link mirror"}</button>
           <button type="button" class="btn btn-compact btn-fusion-import-folder">Import all</button>
