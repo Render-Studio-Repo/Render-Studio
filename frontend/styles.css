@@ -1600,11 +1600,13 @@ body.canvas-design-tab .main-column {
   pointer-events: none;
 }
 
-#viewport.viewport-drag-over .viewport-drop-overlay {
+#viewport.viewport-drag-over .viewport-drop-overlay,
+#app.workspace-drag-over #viewport .viewport-drop-overlay {
   display: flex;
 }
 
-#viewport.viewport-drag-over .viewport-drop-card {
+#viewport.viewport-drag-over .viewport-drop-card,
+#app.workspace-drag-over #viewport .viewport-drop-card {
   border-color: #388bfd;
   box-shadow: 0 0 0 2px #388bfd55;
 }

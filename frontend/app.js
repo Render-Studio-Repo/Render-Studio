@@ -8426,20 +8426,21 @@ function isViewportImportFile(name = "") {
   return IMPORT_ACCEPT.test(name) || DXF_ACCEPT.test(name);
 }
 
-let viewportDragDepth = 0;
 const viewportDropOverlay = document.getElementById("viewport-drop-overlay");
+const workspaceAppEl = document.getElementById("app");
 
 function isCadFileDrag(e) {
   const types = [...(e.dataTransfer?.types || [])];
   if (!types.includes("Files")) return false;
   const items = [...(e.dataTransfer?.items || [])];
+  // During dragover, browsers often omit filenames/MIME — still treat as a CAD drop candidate.
   if (!items.length) return true;
   return items.some((item) => {
     if (item.kind !== "file") return false;
     const file = item.getAsFile?.();
-    if (file?.name && isViewportImportFile(file.name)) return true;
-    if (!item.type) return true;
-    return /model|mesh|octet|zip|step|stl|gltf|3mf|dxf/i.test(item.type);
+    if (file?.name) return isViewportImportFile(file.name);
+    if (!item.type || item.type === "application/octet-stream") return true;
+    return /model|mesh|octet|zip|step|stl|gltf|glb|3mf|dxf|sla|wavefront|ply/i.test(item.type);
   });
 }
 
@@ -8480,28 +8481,66 @@ function isDesignLikeWorkspaceMode() {
 }
 
 function clearViewportDropOverlay() {
-  viewportDragDepth = 0;
   viewport.classList.remove("viewport-drag-over");
+  workspaceAppEl?.classList.remove("workspace-drag-over");
   viewportDropOverlay?.classList.add("hidden");
 }
 
-viewport.addEventListener("dragenter", (e) => {
-  if (!isDesignLikeWorkspaceMode()) return;
+function showViewportDropOverlay() {
+  viewport.classList.add("viewport-drag-over");
+  workspaceAppEl?.classList.add("workspace-drag-over");
+  viewportDropOverlay?.classList.remove("hidden");
+}
+
+async function importDroppedCadFiles(files) {
+  const cadFiles = [...(files || [])].filter((f) => isViewportImportFile(f.name));
+  if (!cadFiles.length) {
+    setEditStatus("error", "Drop STL, STEP, GLB, 3MF, OBJ, PLY, OFF, or DXF files.");
+    return;
+  }
+  // Fast path: drop straight into the open workspace project.
+  let choice;
+  if (projectId) {
+    choice = { destination: "current", projectId };
+  } else {
+    choice = await askDropDestination(cadFiles);
+    if (!choice) return;
+  }
+  setEditStatus("ok", `Importing ${cadFiles.length === 1 ? cadFiles[0].name : `${cadFiles.length} files`}…`);
+  await uploadProjectFiles(cadFiles, choice);
+}
+
+// Accept CAD drops anywhere in the workspace (sidebar, viewport, main column).
+workspaceAppEl?.addEventListener("dragenter", (e) => {
+  if (!isDesignLikeWorkspaceMode() || !isCadFileDrag(e)) return;
+  e.preventDefault();
+  showViewportDropOverlay();
+});
+workspaceAppEl?.addEventListener("dragover", (e) => {
+  if (!isDesignLikeWorkspaceMode() || !isCadFileDrag(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+  showViewportDropOverlay();
+});
+workspaceAppEl?.addEventListener("dragleave", (e) => {
+  if (!workspaceAppEl.contains(e.relatedTarget)) clearViewportDropOverlay();
+});
+workspaceAppEl?.addEventListener("drop", async (e) => {
+  // Architect / Fusion component drops are handled on the viewport below.
+  if (isArchitectModuleDrag(e) || isExplorerComponentDrag(e)) return;
   if (!isCadFileDrag(e)) return;
   e.preventDefault();
-  viewportDragDepth += 1;
-  viewport.classList.add("viewport-drag-over");
-  viewportDropOverlay?.classList.remove("hidden");
-});
-viewport.addEventListener("dragleave", (e) => {
+  e.stopPropagation();
+  clearViewportDropOverlay();
   if (!isDesignLikeWorkspaceMode()) return;
-  if (!isCadFileDrag(e)) return;
-  if (e.currentTarget.contains(e.relatedTarget)) return;
-  viewportDragDepth = Math.max(0, viewportDragDepth - 1);
-  if (viewportDragDepth === 0) {
-    clearViewportDropOverlay();
+  try {
+    await importDroppedCadFiles(e.dataTransfer?.files || []);
+  } catch (err) {
+    setEditStatus("error", err.message || "Upload failed");
+    alert(err.message || "Upload failed");
   }
 });
+
 viewport.addEventListener("dragover", (e) => {
   if (!isDesignLikeWorkspaceMode()) return;
   if (!isCadFileDrag(e) && !isExplorerComponentDrag(e) && !isArchitectModuleDrag(e)) return;
@@ -8511,6 +8550,7 @@ viewport.addEventListener("dragover", (e) => {
 viewport.addEventListener("drop", async (e) => {
   if (isArchitectModuleDrag(e)) {
     e.preventDefault();
+    e.stopPropagation();
     clearViewportDropOverlay();
     if (!isDesignLikeWorkspaceMode()) return;
     const kind = droppedArchitectModuleKind(e) || "wall";
@@ -8526,6 +8566,7 @@ viewport.addEventListener("drop", async (e) => {
   }
   if (isExplorerComponentDrag(e)) {
     e.preventDefault();
+    e.stopPropagation();
     clearViewportDropOverlay();
     if (!isDesignLikeWorkspaceMode()) return;
     const payload = droppedExplorerRefs(e)[0];
@@ -8563,26 +8604,18 @@ viewport.addEventListener("drop", async (e) => {
     } catch (err) {
       setEditStatus("error", err.message || "Could not open dropped Fusion component.");
     }
-    return;
   }
-  if (!isCadFileDrag(e)) {
-    clearViewportDropOverlay();
-    return;
-  }
-  e.preventDefault();
-  clearViewportDropOverlay();
-  if (!isDesignLikeWorkspaceMode()) return;
-  const files = [...(e.dataTransfer.files || [])].filter((f) => isViewportImportFile(f.name));
-  if (!files.length) return;
-  try {
-    const choice = await askDropDestination(files);
-    if (!choice) return;
-    await uploadProjectFiles(files, choice);
-  } catch (err) {
-    alert(err.message || "Upload failed");
-  }
+  // CAD file drops bubble to #app and are imported there.
 });
-window.addEventListener("drop", clearViewportDropOverlay, true);
+
+window.addEventListener("dragover", (e) => {
+  // Prevent the browser from navigating away when a CAD file is dragged over the page.
+  if (isCadFileDrag(e)) e.preventDefault();
+}, true);
+window.addEventListener("drop", (e) => {
+  if (isCadFileDrag(e)) e.preventDefault();
+  clearViewportDropOverlay();
+}, true);
 window.addEventListener("dragend", clearViewportDropOverlay, true);
 window.addEventListener("blur", clearViewportDropOverlay);
 document.addEventListener("dragleave", (e) => {

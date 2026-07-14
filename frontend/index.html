@@ -300,8 +300,8 @@
       <main id="viewport">
         <div id="viewport-drop-overlay" class="viewport-drop-overlay hidden" aria-hidden="true">
           <div class="viewport-drop-card">
-            <strong>Drop CAD or DXF files</strong>
-            <span>STEP, STL, GLB, OBJ, 3MF, DXF…</span>
+            <strong>Drop to view in workspace</strong>
+            <span>STL · STEP · GLB · 3MF · OBJ · DXF…</span>
           </div>
         </div>
         <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
@@ -1348,7 +1348,7 @@
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-new-project">New project</button>
           <label class="btn primary mobile-tool-btn mobile-upload-label">
             Upload
-            <input type="file" class="mobile-upload-input" accept=".stl,.obj,.glb,.gltf,.ply,.off" hidden />
+            <input type="file" class="mobile-upload-input" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.dxf" hidden />
           </label>
         </div>
       </section>
@@ -1714,7 +1714,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260714-measure-hud"></script>
+  <script type="module" src="/app.js?v=20260714-cad-drop"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
