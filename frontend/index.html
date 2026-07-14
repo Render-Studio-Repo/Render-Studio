@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260714-project-reorder" />
+  <link rel="stylesheet" href="/styles.css?v=20260714-cozy-build" />
   <script type="importmap">
   {
     "imports": {
@@ -765,7 +765,7 @@
         <div class="architect-phase-body" id="architect-phase-body">
           <!-- BUILD: wireframe with three tile types only -->
           <div class="architect-phase-pane active" data-architect-phase-pane="build" role="tabpanel">
-            <p class="muted small architect-phase-lead">Wireframe the floor plan. One style only — blank wall, window bay, or door bay. All tiles are the same 3&nbsp;ft size.</p>
+            <p class="muted small architect-phase-lead">Each tile is a <strong>3&nbsp;ft × 9&nbsp;ft</strong> wall panel. Drag to paint walls · Shift+drag for a room · Right-click deletes.</p>
 
             <div class="architect-domino-card" id="architect-domino-card">
               <div class="architect-domino-meta">
@@ -777,21 +777,21 @@
                 <button type="button" class="architect-tile-btn active" data-architect-step="draw" title="Blank wall bay">
                   <span class="architect-tile-preview architect-tile-preview--wall" aria-hidden="true"></span>
                   <span class="architect-tile-label">Wall</span>
-                  <span class="architect-tile-desc">Blank 3 ft bay</span>
+                  <span class="architect-tile-desc">3×9 ft blank</span>
                 </button>
                 <button type="button" class="architect-tile-btn" data-architect-step="door" title="Door bay">
                   <span class="architect-tile-preview architect-tile-preview--door" aria-hidden="true"></span>
                   <span class="architect-tile-label">Door</span>
-                  <span class="architect-tile-desc">Wall with door</span>
+                  <span class="architect-tile-desc">3×9 ft door</span>
                 </button>
                 <button type="button" class="architect-tile-btn" data-architect-step="window" title="Window bay">
                   <span class="architect-tile-preview architect-tile-preview--window" aria-hidden="true"></span>
                   <span class="architect-tile-label">Window</span>
-                  <span class="architect-tile-desc">Wall with window</span>
+                  <span class="architect-tile-desc">3×9 ft window</span>
                 </button>
               </div>
 
-              <p class="muted small architect-domino-hint" id="architect-domino-hint">Wall — click lattice points to chain blank 3 ft bays. Esc clears anchor. Delete removes a selected bay.</p>
+              <p class="muted small architect-domino-hint" id="architect-domino-hint">Drag walls · Shift+drag room · Shift+right-drag erases area · Middle pans · Shift+middle orbits / pans up-down</p>
               <div class="architect-build-actions">
                 <button type="button" class="btn secondary btn-compact" data-architect-step="select">Select</button>
                 <button type="button" id="btn-architect-clear-plan" class="btn secondary btn-compact">Clear level</button>
@@ -1687,7 +1687,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260714-project-reorder"></script>
+  <script type="module" src="/app.js?v=20260714-erase-grid"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

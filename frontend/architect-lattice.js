@@ -8,6 +8,8 @@
  */
 
 export const SEGMENT_FT = 3;
+export const WALL_HEIGHT_FT = 9;
+export const WALL_THICKNESS_FT = 0.5;
 export const FT_TO_MM = 304.8;
 export const SEGMENT_MM = SEGMENT_FT * FT_TO_MM; // 914.4
 
@@ -182,13 +184,13 @@ export function enumerateBaysInBounds(bounds = {}) {
 export function createEmptyBuilding({ levelId = "level_0", levelName = "Ground Floor" } = {}) {
   return {
     units: "ft",
-    grid: { segmentFt: SEGMENT_FT },
+    grid: { segmentFt: SEGMENT_FT, wallHeightFt: WALL_HEIGHT_FT, wallThicknessFt: WALL_THICKNESS_FT },
     levels: [
       {
         id: levelId,
         name: levelName,
         elevationFt: 0,
-        heightFt: 9,
+        heightFt: WALL_HEIGHT_FT,
       },
     ],
     activeLevelId: levelId,

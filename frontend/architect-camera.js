@@ -4,7 +4,7 @@
  */
 
 import * as THREE from "three";
-import { segmentLengthModel } from "./architect-lattice.js?v=20260710-bay-lattice";
+import { segmentLengthModel } from "./architect-lattice.js?v=20260714-erase-grid";
 
 /**
  * Elevated three-quarter view looking down at the plan origin.

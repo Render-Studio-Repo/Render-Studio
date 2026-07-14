@@ -1,12 +1,16 @@
 /**
  * Derive Three.js meshes from architect building segments.
  * Separate scene group — does not touch Design assembly.
+ *
+ * Segment size: 3 ft wide (bay length) × 9 ft tall (wall height).
  */
 
 import * as THREE from "three";
-import { ftToMm, vertexToModel } from "./architect-lattice.js?v=20260710-bay-lattice";
+import { ftToMm, vertexToModel } from "./architect-lattice.js?v=20260714-erase-grid";
 
 const GROUP_NAME = "architect-building-mesh";
+const DEFAULT_HEIGHT_FT = 9;
+const DEFAULT_THICKNESS_FT = 0.5;
 
 const FEATURE_COLORS = {
   wall: 0xd8cab0,
@@ -21,6 +25,8 @@ export function createArchitectMeshLayer(opts) {
   const { scene, getMmPerModelUnit } = opts;
   let group = null;
   let selectedId = null;
+  /** @type {Set<string>} */
+  let pendingDeleteIds = new Set();
 
   function disposeObject(obj) {
     obj?.traverse?.((child) => {
@@ -37,6 +43,26 @@ export function createArchitectMeshLayer(opts) {
     group = null;
   }
 
+  function applyHighlight(root, { selected = false, pendingDelete = false } = {}) {
+    if (!root) return;
+    root.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      const mat = child.material;
+      if (!mat.emissive) return;
+      if (pendingDelete) {
+        mat.emissive = new THREE.Color(0xb42318);
+        mat.emissiveIntensity = 0.55;
+        mat.color = new THREE.Color(0xf97066);
+      } else if (selected) {
+        mat.emissive = new THREE.Color(0x1a4a8a);
+        mat.emissiveIntensity = 0.35;
+      } else {
+        mat.emissive = new THREE.Color(0x000000);
+        mat.emissiveIntensity = 0;
+      }
+    });
+  }
+
   function rebuild(building) {
     clear();
     if (!building) return;
@@ -44,8 +70,8 @@ export function createArchitectMeshLayer(opts) {
     const level = building.levels.find((l) => l.id === building.activeLevelId) || building.levels[0];
     const elev = ftToMm(level?.elevationFt || 0) / mmPer;
 
-    group = new THREE.Group();
-    group.name = GROUP_NAME;
+    const next = new THREE.Group();
+    next.name = GROUP_NAME;
 
     const segs = (building.segments || []).filter((s) => s.levelId === building.activeLevelId);
     for (const seg of segs) {
@@ -53,17 +79,22 @@ export function createArchitectMeshLayer(opts) {
       if (!mesh) continue;
       mesh.userData.architectSegmentId = seg.id;
       mesh.userData.architectFeature = seg.feature;
-      if (seg.id === selectedId) {
-        mesh.material.emissive = new THREE.Color(0x1a4a8a);
-        mesh.material.emissiveIntensity = 0.35;
-      }
-      group.add(mesh);
+      applyHighlight(mesh, {
+        selected: seg.id === selectedId,
+        pendingDelete: pendingDeleteIds.has(seg.id),
+      });
+      next.add(mesh);
     }
+    group = next;
     scene.add(group);
   }
 
   function setSelected(id) {
     selectedId = id || null;
+  }
+
+  function setPendingDeleteIds(ids) {
+    pendingDeleteIds = new Set(ids || []);
   }
 
   function getSelected() {
@@ -81,7 +112,15 @@ export function createArchitectMeshLayer(opts) {
     return null;
   }
 
-  return { rebuild, clear, setSelected, getSelected, pickSegmentId, dispose: clear };
+  return {
+    rebuild,
+    clear,
+    setSelected,
+    setPendingDeleteIds,
+    getSelected,
+    pickSegmentId,
+    dispose: clear,
+  };
 }
 
 function buildSegmentMesh(seg, mmPer, elevZ) {
@@ -92,8 +131,8 @@ function buildSegmentMesh(seg, mmPer, elevZ) {
   const length = Math.hypot(dx, dy);
   if (!(length > 0)) return null;
 
-  const thickness = ftToMm(seg.thicknessFt || 0.5) / mmPer;
-  const height = ftToMm(seg.heightFt || 9) / mmPer;
+  const thickness = ftToMm(seg.thicknessFt || DEFAULT_THICKNESS_FT) / mmPer;
+  const height = ftToMm(seg.heightFt || DEFAULT_HEIGHT_FT) / mmPer;
   const feature = seg.feature || "wall";
   const color = FEATURE_COLORS[feature] || FEATURE_COLORS.wall;
 
@@ -106,7 +145,6 @@ function buildSegmentMesh(seg, mmPer, elevZ) {
   root.rotation.z = angle;
 
   if (feature === "window") {
-    // Solid wall bands + glass middle
     const sillH = height * 0.28;
     const headH = height * 0.18;
     const glassH = Math.max(height - sillH - headH, height * 0.4);
@@ -118,7 +156,6 @@ function buildSegmentMesh(seg, mmPer, elevZ) {
     const headH = height - doorH;
     addBox(root, length * 0.55, thickness * 0.5, doorH, 0, thickness * 0.15, doorH / 2, color);
     if (headH > 0) addBox(root, length, thickness, headH, 0, 0, doorH + headH / 2, FEATURE_COLORS.wall);
-    // side jambs
     const jamb = length * 0.12;
     addBox(root, jamb, thickness, doorH, -length / 2 + jamb / 2, 0, doorH / 2, FEATURE_COLORS.wall);
     addBox(root, jamb, thickness, doorH, length / 2 - jamb / 2, 0, doorH / 2, FEATURE_COLORS.wall);
@@ -131,10 +168,12 @@ function buildSegmentMesh(seg, mmPer, elevZ) {
 
 function addBox(parent, sx, sy, sz, x, y, z, color, opacity = 1) {
   const geom = new THREE.BoxGeometry(sx, sy, sz);
-  const mat = new THREE.MeshPhysicalMaterial({
+  const mat = new THREE.MeshStandardMaterial({
     color,
-    roughness: 0.62,
-    metalness: 0.04,
+    roughness: 0.72,
+    metalness: 0.02,
+    emissive: new THREE.Color(0x000000),
+    emissiveIntensity: 0,
     transparent: opacity < 1,
     opacity,
     depthWrite: opacity >= 1,

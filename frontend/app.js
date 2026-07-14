@@ -55,7 +55,7 @@ import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-project-reorder";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-project-reorder2";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
@@ -71,8 +71,8 @@ import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260709-unlink-clear";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
-import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260710-bay-lattice";
-import { createArchitectSession } from "./architect-session.js?v=20260714-architect-phases";
+import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
+import { createArchitectSession } from "./architect-session.js?v=20260714-erase-grid";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
@@ -1258,8 +1258,19 @@ if (isCadMousePreset()) {
   leftDragMode = "select";
 }
 
+let architectControlsActive = false;
+/** @type {null | { pointerId: number, lastX: number, lastY: number, controlsWereEnabled: boolean }} */
+let architectZOrbit = null;
+
 function applyLeftDragMouseButtons() {
   if (!controls?.mouseButtons) return;
+  // Architect owns LMB for painting walls; MMB pans; Shift+MMB orbits Z in custom handlers.
+  if (architectControlsActive) {
+    controls.mouseButtons.LEFT = -1;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+    controls.mouseButtons.RIGHT = -1;
+    return;
+  }
   const effectiveMode = isMobileInteraction() ? "rotate" : leftDragMode;
   if (isCadMousePreset()) {
     controls.mouseButtons.LEFT = -1; // CAD presets keep left click/drag available for selection.
@@ -1315,6 +1326,7 @@ function setMouseControlPreset(preset, { announce = false } = {}) {
 }
 
 function withCadMiddleMouseModifier(event) {
+  if (architectControlsActive) return;
   if (!isCadMousePreset() || event.button !== 1 || !controls?.mouseButtons) return;
   if (mouseControlPreset === "solidworks") {
     if (event.ctrlKey || event.metaKey) controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
@@ -4196,7 +4208,8 @@ function architectGridModelUnits() {
 const architectBayGrid = createArchitectBayGrid({
   scene,
   getMmPerModelUnit: () => sceneMmPerModelUnit(),
-  getExtentModel: () => Math.max(sceneRadius() * 2, architectGridModelUnits() * 8),
+  // Large field: ~100+ bays across so the plan never feels like a tiny postage stamp.
+  getExtentModel: () => Math.max(sceneRadius() * 10, architectGridModelUnits() * 64),
 });
 
 /** Architect session (building + draw + mesh + camera). Created lazily after api() exists… 
@@ -5322,13 +5335,36 @@ function enterArchitectMode() {
   setSkillEnabled("architect", true);
   skillsPromptUI.render();
   skillsPromptUI.updatePlan?.();
-  setGridVisible(true);
+  // Suspend Design pick/select so lattice clicks build walls instead of selecting CAD.
+  try {
+    objectTools.clearSelection?.();
+  } catch (_) {}
+  activatePickMode("off");
+  // Bay lattice is the only grid that matters in Architect Build.
+  setGridVisible(false);
+  // Tuck Design CAD away so the plan lattice is the stage.
+  const designRoot = projectAssembly?.getRoot?.() || currentMesh;
+  if (designRoot && !Object.prototype.hasOwnProperty.call(designRoot.userData || {}, "_architectHidden")) {
+    designRoot.userData._architectHidden = designRoot.visible;
+    designRoot.visible = false;
+  }
   void getArchitectSession().enter();
+  architectControlsActive = true;
+  applyLeftDragMouseButtons();
+  controls.enabled = true;
 }
 
 function exitArchitectMode() {
+  architectZOrbit = null;
+  architectControlsActive = false;
   architectSession?.exit?.();
   architectBayGrid?.setActive(false);
+  const designRoot = projectAssembly?.getRoot?.() || currentMesh;
+  if (designRoot && Object.prototype.hasOwnProperty.call(designRoot.userData || {}, "_architectHidden")) {
+    designRoot.visible = designRoot.userData._architectHidden !== false;
+    delete designRoot.userData._architectHidden;
+  }
+  applyLeftDragMouseButtons();
 }
 
 function syncRiggingToolbelt() {
@@ -5386,7 +5422,7 @@ function handleDesignTabChange(tab) {
     setEditStatus("ok", "Rigging mode — Add Bone, Connect hierarchy, Save Rig.");
   } else if (tab === "ARCHITECT") {
     focusViewportForShortcuts();
-    setEditStatus("ok", "Architect mode — modular house CAD with grid snapping and robot assembly labels.");
+    setEditStatus("ok", "Architect — drag walls, Shift+drag rooms, right-click delete. Middle pans; Shift+middle orbits.");
   } else if (tab === "CATALOG") {
     exitCanvasTab();
     exitSketchMode();
@@ -12445,7 +12481,7 @@ function applyWorkspaceMode(mode) {
       promptHistory.setTab("compose");
     }
     resize();
-    if (currentMesh && tab !== "CANVAS") fitCamera();
+    if (currentMesh && tab !== "CANVAS" && tab !== "ARCHITECT") fitCamera();
     if (tab === "RIGGING") enterRiggingMode();
     else exitRiggingMode();
     if (tab === "ARCHITECT") enterArchitectMode();
@@ -14258,6 +14294,7 @@ MOBILE_INTERACTION_QUERY?.addEventListener?.("change", () => {
 });
 
 function canUseViewportSelectGesture(e) {
+  if (architectControlsActive || architectSession?.isActive?.()) return false;
   if (isMobileInteraction()) return false;
   if (leftDragMode === "rotate") return false;
   if (isTransformEditActive() || shouldSuppressViewportSelection()) return false;
@@ -14540,6 +14577,35 @@ function selectFromViewportMarquee(drag, e) {
 renderer.domElement.addEventListener("pointerdown", (e) => {
   pointerDownPos = { x: e.clientX, y: e.clientY };
   if (handleReferenceRemove(e)) return;
+
+  // Architect Build owns LMB paint / RMB delete; Shift+MMB orbits around Z; MMB pans via Trackball.
+  if (architectControlsActive && architectSession?.isActive?.()) {
+    if (e.button === 1 && e.shiftKey) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      architectZOrbit = {
+        pointerId: e.pointerId,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        controlsWereEnabled: controls.enabled,
+      };
+      controls.enabled = false;
+      renderer.domElement.setPointerCapture?.(e.pointerId);
+      return;
+    }
+    if (e.button === 0 || e.button === 2) {
+      const handled = architectSession.handlePointerDown(e);
+      if (handled) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        try {
+          renderer.domElement.setPointerCapture?.(e.pointerId);
+        } catch (_) {}
+        return;
+      }
+    }
+  }
+
   if (canUseViewportSelectGesture(e)) {
     controlsEnabledBeforeViewportSelect = controls.enabled;
     controls.enabled = false;
@@ -14585,8 +14651,38 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
 }, true);
 
 renderer.domElement.addEventListener("pointermove", (e) => {
+  if (architectZOrbit?.pointerId === e.pointerId) {
+    const dx = e.clientX - architectZOrbit.lastX;
+    const dy = e.clientY - architectZOrbit.lastY;
+    architectZOrbit.lastX = e.clientX;
+    architectZOrbit.lastY = e.clientY;
+    const t = controls.target;
+    // Horizontal drag → yaw around world Z
+    if (dx) {
+      const angle = -dx * 0.0075;
+      const ox = camera.position.x - t.x;
+      const oy = camera.position.y - t.y;
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      camera.position.x = t.x + ox * c - oy * s;
+      camera.position.y = t.y + ox * s + oy * c;
+    }
+    // Vertical drag → pan up/down along world Z (camera + target together)
+    if (dy) {
+      const dist = camera.position.distanceTo(t);
+      const zPan = dy * Math.max(dist * 0.0025, 0.02);
+      camera.position.z += zPan;
+      t.z += zPan;
+    }
+    camera.up.set(0, 0, 1);
+    camera.lookAt(t);
+    controls._eye?.subVectors(camera.position, controls.target);
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
   if (architectSession?.isActive?.()) {
-    architectSession.handleMove(e);
+    architectSession.handlePointerMove(e);
   }
   if (viewportSelectDrag?.pointerId === e.pointerId) {
     const moved = Math.hypot(e.clientX - viewportSelectDrag.startX, e.clientY - viewportSelectDrag.startY);
@@ -14688,6 +14784,24 @@ function finishActiveLasso(e) {
 
 renderer.domElement.addEventListener("pointerup", finishActiveLasso, true);
 renderer.domElement.addEventListener("pointerup", (e) => {
+  if (architectZOrbit?.pointerId === e.pointerId) {
+    controls.enabled = architectZOrbit.controlsWereEnabled !== false;
+    architectZOrbit = null;
+    try {
+      renderer.domElement.releasePointerCapture?.(e.pointerId);
+    } catch (_) {}
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
+  if (architectSession?.isActive?.()) {
+    if (architectSession.handlePointerUp(e)) {
+      try {
+        renderer.domElement.releasePointerCapture?.(e.pointerId);
+      } catch (_) {}
+      e.preventDefault();
+    }
+  }
   if (viewportSelectDrag?.pointerId !== e.pointerId) return;
   const drag = viewportSelectDrag;
   viewportSelectDrag = null;
@@ -14707,6 +14821,13 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   }
 }, true);
 renderer.domElement.addEventListener("pointercancel", (e) => {
+  if (architectZOrbit?.pointerId === e.pointerId) {
+    controls.enabled = architectZOrbit.controlsWereEnabled !== false;
+    architectZOrbit = null;
+  }
+  if (architectSession?.isActive?.()) {
+    architectSession.handlePointerUp(e);
+  }
   if (viewportSelectDrag?.pointerId === e.pointerId) {
     viewportSelectDrag = null;
     setViewportMarqueeVisible(false);
@@ -14720,14 +14841,19 @@ renderer.domElement.addEventListener("pointercancel", (e) => {
   lassoPointerActive = false;
 }, true);
 
+renderer.domElement.addEventListener("contextmenu", (e) => {
+  if (!architectControlsActive || !architectSession?.isActive?.()) return;
+  e.preventDefault();
+}, true);
+
 renderer.domElement.addEventListener("click", (e) => {
-  if (suppressNextObjectClick) {
-    suppressNextObjectClick = false;
+  // Architect uses pointerdown/move/up for paint — ignore leftover clicks.
+  if (architectSession?.isActive?.()) {
     e.preventDefault();
     return;
   }
-  if (architectSession?.isActive?.()) {
-    architectSession.handleClick(e);
+  if (suppressNextObjectClick) {
+    suppressNextObjectClick = false;
     e.preventDefault();
     return;
   }

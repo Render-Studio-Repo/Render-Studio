@@ -3,13 +3,13 @@
  * Host calls enter/exit/frame; Design mode never constructs this until Architect opens.
  */
 
-import { createArchitectBuilding } from "./architect-building.js?v=20260710-usable";
-import { createArchitectMeshLayer } from "./architect-mesh.js?v=20260710-usable";
-import { createArchitectDrawTool } from "./architect-draw.js?v=20260710-usable";
+import { createArchitectBuilding } from "./architect-building.js?v=20260714-erase-grid";
+import { createArchitectMeshLayer } from "./architect-mesh.js?v=20260714-erase-grid";
+import { createArchitectDrawTool } from "./architect-draw.js?v=20260714-erase-grid";
 import {
   applyArchitectDefaultView,
   clampArchitectHorizon,
-} from "./architect-camera.js?v=20260710-usable";
+} from "./architect-camera.js?v=20260714-erase-grid";
 
 /**
  * @param {{
@@ -49,8 +49,15 @@ export function createArchitectSession(opts) {
   });
 
   let active = false;
+  let loadedProjectId = null;
   let saveTimer = null;
   let suppressSave = false;
+
+  draw.setOnPendingDeleteChange?.((ids) => {
+    meshLayer.setPendingDeleteIds?.(ids);
+    meshLayer.setSelected(draw.getSelectedId());
+    meshLayer.rebuild(building.getBuilding());
+  });
 
   building.onChange((b) => {
     meshLayer.setSelected(draw.getSelectedId());
@@ -58,6 +65,12 @@ export function createArchitectSession(opts) {
     syncToolbar();
     if (!suppressSave) scheduleSave();
   });
+
+  function syncAfterDraw() {
+    meshLayer.setSelected(draw.getSelectedId());
+    meshLayer.rebuild(building.getBuilding());
+    syncToolbar();
+  }
 
   function syncToolbar() {
     const mode = draw.getMode();
@@ -67,13 +80,13 @@ export function createArchitectSession(opts) {
     const hintEl = document.getElementById("architect-domino-hint");
     if (hintEl) {
       if (mode === "draw") {
-        hintEl.textContent = "Wall — click lattice points to chain blank 3 ft bays. Esc clears anchor. Delete removes a selected bay.";
+        hintEl.textContent = "Drag walls · Shift+drag room · Right-click deletes one · Shift+right-drag erases area · Middle pans · Shift+middle orbits/pans up-down";
       } else if (mode === "window") {
-        hintEl.textContent = "Window — click an existing wall bay to stamp a window into that same-size tile.";
+        hintEl.textContent = "Drag window tiles · Right-click deletes · Shift+right-drag erases area · Middle pans";
       } else if (mode === "door") {
-        hintEl.textContent = "Door — click an existing wall bay to stamp a door into that same-size tile.";
+        hintEl.textContent = "Drag door tiles · Right-click deletes · Shift+right-drag erases area · Middle pans";
       } else {
-        hintEl.textContent = "Select — click a bay to select it. Delete removes it. Switch tiles above to draw or stamp openings.";
+        hintEl.textContent = "Click to select · Right-click or Delete removes · Shift+right-drag erases area";
       }
     }
     const levelEl = document.getElementById("architect-active-level");
@@ -114,33 +127,41 @@ export function createArchitectSession(opts) {
     const pid = getProjectId?.();
     if (!pid || !api) {
       building.reset();
+      loadedProjectId = null;
       return;
     }
     suppressSave = true;
     try {
       const data = await api(`/api/projects/${encodeURIComponent(pid)}/architect/building`);
       building.loadSnapshot(data);
+      loadedProjectId = pid;
     } catch (err) {
       console.warn("architect load failed", err);
       building.reset();
+      loadedProjectId = pid;
     } finally {
       suppressSave = false;
     }
   }
 
   async function enter() {
+    const pid = getProjectId?.() || null;
+    const skipReload = active && loadedProjectId === pid;
     active = true;
     bayGrid?.setActive(true);
     bayGrid?.syncFromScene();
-    await loadFromServer();
+    if (!skipReload) {
+      clearTimeout(saveTimer);
+      await loadFromServer();
+    }
     meshLayer.rebuild(building.getBuilding());
     draw.setEnabled(true);
-    draw.setMode("draw");
+    if (!skipReload) draw.setMode("draw");
     applyArchitectDefaultView(camera, controls, getMmPerModelUnit());
     syncToolbar();
     onStatus?.(
       "ok",
-      "Architect Build — wireframe with Wall, Door, or Window tiles (same 3 ft size). Style kits open in later phases.",
+      "Architect — drag walls, Shift+drag rooms, Shift+right-drag erase. Middle pans; Shift+middle orbits & pans up/down.",
     );
   }
 
@@ -149,9 +170,9 @@ export function createArchitectSession(opts) {
     draw.setEnabled(false);
     draw.dispose();
     bayGrid?.setActive(false);
-    // Keep meshes visible if user peeks back? Clear to avoid polluting Design view.
     meshLayer.clear();
     clearTimeout(saveTimer);
+    void persist();
   }
 
   function isActive() {
@@ -163,13 +184,31 @@ export function createArchitectSession(opts) {
     clampArchitectHorizon(camera, controls, getMmPerModelUnit());
   }
 
+  function handlePointerDown(e) {
+    if (!active) return false;
+    const handled = draw.handlePointerDown(e, meshLayer);
+    if (handled) syncAfterDraw();
+    return handled;
+  }
+
+  function handlePointerMove(e) {
+    if (!active) return false;
+    const handled = draw.handlePointerMove(e);
+    if (handled && draw.isStrokeActive?.()) syncAfterDraw();
+    else if (handled) syncToolbar();
+    return handled;
+  }
+
+  function handlePointerUp(e) {
+    if (!active) return false;
+    const handled = draw.handlePointerUp(e);
+    if (handled) syncAfterDraw();
+    return handled;
+  }
+
   function handleClick(e) {
     if (!active) return false;
-    const handled = draw.handleClick(e, meshLayer);
-    meshLayer.setSelected(draw.getSelectedId());
-    meshLayer.rebuild(building.getBuilding());
-    syncToolbar();
-    return handled;
+    return draw.handleClick(e, meshLayer);
   }
 
   function handleMove(e) {
@@ -180,11 +219,7 @@ export function createArchitectSession(opts) {
   function handleKey(e) {
     if (!active) return false;
     const handled = draw.handleKey(e);
-    if (handled) {
-      meshLayer.setSelected(draw.getSelectedId());
-      meshLayer.rebuild(building.getBuilding());
-      syncToolbar();
-    }
+    if (handled) syncAfterDraw();
     return handled;
   }
 
@@ -207,6 +242,9 @@ export function createArchitectSession(opts) {
     exit,
     isActive,
     frame,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
     handleClick,
     handleMove,
     handleKey,

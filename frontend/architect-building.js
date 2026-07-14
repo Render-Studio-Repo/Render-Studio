@@ -5,10 +5,12 @@
 
 import {
   SEGMENT_FT,
+  WALL_HEIGHT_FT,
+  WALL_THICKNESS_FT,
   bayKey,
   createEmptyBuilding,
   isValidBay,
-} from "./architect-lattice.js?v=20260710-bay-lattice";
+} from "./architect-lattice.js?v=20260714-erase-grid";
 
 function uid(prefix = "seg") {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -82,9 +84,9 @@ export function createArchitectBuilding(initial) {
   }
 
   /**
-   * Place one 3 ft bay. Returns the segment or null if invalid/duplicate.
+   * Place one 3 ft × 9 ft wall bay. Returns the segment or null if invalid/duplicate.
    */
-  function placeSegment(a, b, { feature = "wall", thicknessFt = 0.5 } = {}) {
+  function placeSegment(a, b, { feature = "wall", thicknessFt = WALL_THICKNESS_FT } = {}) {
     if (!isValidBay(a, b)) return null;
     const key = bayKey(a, b);
     if (!key || hasBay(a, b)) return null;
@@ -96,7 +98,7 @@ export function createArchitectBuilding(initial) {
       b: [Number(b[0]), Number(b[1])],
       key,
       thicknessFt,
-      heightFt: level.heightFt ?? 9,
+      heightFt: level.heightFt ?? WALL_HEIGHT_FT,
       feature: feature === "window" || feature === "door" ? feature : "wall",
     };
     building.segments.push(seg);
@@ -151,7 +153,7 @@ function normalizeBuilding(raw) {
         id: String(l.id || `level_${i}`),
         name: String(l.name || `Level ${i}`),
         elevationFt: Number(l.elevationFt) || 0,
-        heightFt: Number(l.heightFt) || 9,
+        heightFt: Number(l.heightFt) || WALL_HEIGHT_FT,
       }))
     : base.levels;
   const activeLevelId = levels.some((l) => l.id === raw.activeLevelId)
@@ -170,8 +172,8 @@ function normalizeBuilding(raw) {
             a,
             b,
             key,
-            thicknessFt: Number(s.thicknessFt) || 0.5,
-            heightFt: Number(s.heightFt) || 9,
+            thicknessFt: Number(s.thicknessFt) || WALL_THICKNESS_FT,
+            heightFt: Number(s.heightFt) || WALL_HEIGHT_FT,
             feature: s.feature === "window" || s.feature === "door" ? s.feature : "wall",
           };
         })
@@ -179,7 +181,7 @@ function normalizeBuilding(raw) {
     : [];
   return {
     units: "ft",
-    grid: { segmentFt: SEGMENT_FT },
+    grid: { segmentFt: SEGMENT_FT, wallHeightFt: WALL_HEIGHT_FT, wallThicknessFt: WALL_THICKNESS_FT },
     levels,
     activeLevelId,
     segments,

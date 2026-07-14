@@ -11,7 +11,7 @@ import {
   enumerateBaysInBounds,
   segmentLengthModel,
   vertexToModel,
-} from "./architect-lattice.js?v=20260710-bay-lattice";
+} from "./architect-lattice.js?v=20260714-erase-grid";
 
 const GROUP_NAME = "architect-bay-lattice";
 
@@ -26,7 +26,7 @@ const GROUP_NAME = "architect-bay-lattice";
 export function createArchitectBayGrid(opts) {
   const scene = opts.scene;
   const getMmPerModelUnit = opts.getMmPerModelUnit;
-  const getExtentModel = opts.getExtentModel || (() => segmentLengthModel(getMmPerModelUnit()) * 20);
+  const getExtentModel = opts.getExtentModel || (() => segmentLengthModel(getMmPerModelUnit()) * 80);
 
   let group = null;
   let active = false;
@@ -54,8 +54,8 @@ export function createArchitectBayGrid(opts) {
     const step = segmentLengthModel(mmPer);
     if (!(step > 0)) return;
 
-    const extent = Math.max(Number(getExtentModel()) || step * 20, step * 8);
-    const halfCells = Math.max(4, Math.ceil(extent / step / 2));
+    const extent = Math.max(Number(getExtentModel()) || step * 80, step * 60);
+    const halfCells = Math.max(40, Math.ceil(extent / step / 2));
     const bounds = {
       iMin: -halfCells,
       iMax: halfCells,
@@ -80,7 +80,7 @@ export function createArchitectBayGrid(opts) {
     const mat = new THREE.LineBasicMaterial({
       color: 0x5b8def,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.62,
       depthTest: true,
       depthWrite: false,
     });
