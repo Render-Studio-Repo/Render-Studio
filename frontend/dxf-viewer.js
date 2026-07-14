@@ -30,9 +30,25 @@ function renderPayloadSvg(payload) {
       return `<circle cx="${entry.cx}" cy="${entry.cy}" r="${entry.r}" fill="none" stroke="${stroke}" stroke-width="1.25" vector-effect="non-scaling-stroke" data-layer="${escapeHtml(entry.layer || "")}" />`;
     })
     .join("");
+  const texts = (payload?.texts || [])
+    .map((entry) => {
+      const fill = strokeForKind(entry.kind);
+      const size = Math.max(Number(entry.height) || 2.5, 0.5);
+      const anchor = entry.align === "middle" || entry.align === "center"
+        ? "middle"
+        : entry.align === "end" || entry.align === "right"
+          ? "end"
+          : "start";
+      const rot = Number(entry.rotation) || 0;
+      const transform = rot
+        ? ` transform="rotate(${rot} ${entry.x} ${entry.y})"`
+        : "";
+      return `<text x="${entry.x}" y="${entry.y}" fill="${fill}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="alphabetic"${transform} data-layer="${escapeHtml(entry.layer || "")}">${escapeHtml(entry.text || "")}</text>`;
+    })
+    .join("");
   return `<svg class="dxf-svg" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
     <rect class="dxf-svg-bg" x="${-pad}" y="${-pad}" width="${width + pad * 2}" height="${height + pad * 2}" />
-    <g class="dxf-svg-geometry">${paths}${circles}</g>
+    <g class="dxf-svg-geometry">${paths}${circles}${texts}</g>
   </svg>`;
 }
 

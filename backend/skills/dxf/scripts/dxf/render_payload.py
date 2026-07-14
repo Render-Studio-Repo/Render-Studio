@@ -8,7 +8,33 @@ import ezdxf
 
 
 DXF_RENDER_SCHEMA_VERSION = 1
-SUPPORTED_ENTITY_TYPES = {"LINE", "ARC", "CIRCLE", "LWPOLYLINE"}
+SUPPORTED_ENTITY_TYPES = {"LINE", "ARC", "CIRCLE", "LWPOLYLINE", "TEXT", "MTEXT"}
+# Common annotation / block entities we ignore so drawings still preview.
+SKIPPED_ENTITY_TYPES = {
+    "INSERT",
+    "DIMENSION",
+    "LEADER",
+    "MLEADER",
+    "HATCH",
+    "SOLID",
+    "TRACE",
+    "POINT",
+    "SPLINE",
+    "ELLIPSE",
+    "POLYLINE",
+    "3DFACE",
+    "ATTRIB",
+    "ATTDEF",
+    "VIEWPORT",
+    "IMAGE",
+    "WIPEOUT",
+    "MLINE",
+    "XLINE",
+    "RAY",
+    "REGION",
+    "BODY",
+    "3DSOLID",
+}
 ANGLE_EPSILON = 1e-9
 
 
@@ -38,6 +64,15 @@ class CircleEntity:
     center: tuple[float, float]
     radius: float
 
+
+@dataclass(frozen=True)
+class TextEntity:
+    layer: str
+    text: str
+    position: tuple[float, float]
+    height: float
+    rotation_deg: float
+    align: str = "left"
 
 def _normalize_layer_name(value: object) -> str:
     text = str(value or "").strip()
@@ -197,19 +232,47 @@ def _lwpolyline_entities(
     return lines, arcs
 
 
-def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list[ArcEntity], list[CircleEntity]]:
+def _plain_mtext(entity) -> str:
+    raw = ""
+    try:
+        raw = entity.plain_text()
+    except Exception:
+        raw = str(getattr(entity.dxf, "text", "") or getattr(entity, "text", "") or "")
+    return " ".join(str(raw).replace("\n", " ").split()).strip()
+
+
+def _text_align_from_dxf(entity) -> str:
+    """Map DXF halign to a simple CSS/SVG text-anchor."""
+    try:
+        halign = int(getattr(entity.dxf, "halign", 0) or 0)
+    except (TypeError, ValueError):
+        halign = 0
+    if halign in (1, 4):  # center / middle
+        return "middle"
+    if halign in (2, 3, 5):  # right / aligned-ish / fit
+        return "end"
+    return "start"
+
+
+def _load_dxf_entities(
+    document, dxf_path: Path
+) -> tuple[list[LineEntity], list[ArcEntity], list[CircleEntity], list[TextEntity]]:
     modelspace = document.modelspace()
     lines: list[LineEntity] = []
     arcs: list[ArcEntity] = []
     circles: list[CircleEntity] = []
+    texts: list[TextEntity] = []
+    skipped: set[str] = set()
 
     for entity in modelspace:
         entity_type = entity.dxftype()
+        if entity_type in SKIPPED_ENTITY_TYPES:
+            skipped.add(entity_type)
+            continue
         if entity_type not in SUPPORTED_ENTITY_TYPES:
-            raise ValueError(
-                f"Unsupported DXF entity {entity_type} in {dxf_path.as_posix()}; "
-                f"supported types: {', '.join(sorted(SUPPORTED_ENTITY_TYPES))}"
-            )
+            # Soft-skip unknown types so annotation-heavy DXFs still preview.
+            skipped.add(entity_type)
+            continue
 
         layer_name = _normalize_layer_name(entity.dxf.layer)
         if entity_type == "LINE":
@@ -248,27 +311,71 @@ def _load_dxf_entities(document, dxf_path: Path) -> tuple[list[LineEntity], list
             )
             continue
 
-        radius = float(entity.dxf.radius)
-        if radius <= 0.0:
-            raise ValueError(f"Invalid DXF circle radius in {dxf_path.as_posix()}: {radius}")
-        circles.append(
-            CircleEntity(
-                layer=layer_name,
-                center=(float(entity.dxf.center.x), float(entity.dxf.center.y)),
-                radius=radius,
+        if entity_type == "CIRCLE":
+            radius = float(entity.dxf.radius)
+            if radius <= 0.0:
+                raise ValueError(f"Invalid DXF circle radius in {dxf_path.as_posix()}: {radius}")
+            circles.append(
+                CircleEntity(
+                    layer=layer_name,
+                    center=(float(entity.dxf.center.x), float(entity.dxf.center.y)),
+                    radius=radius,
+                )
             )
-        )
+            continue
 
-    if not lines and not arcs and not circles:
-        raise ValueError(f"No supported DXF entities found in {dxf_path.as_posix()}")
+        if entity_type == "TEXT":
+            content = str(getattr(entity.dxf, "text", "") or "").strip()
+            if not content:
+                continue
+            insert = entity.dxf.insert
+            height = float(getattr(entity.dxf, "height", 2.5) or 2.5)
+            rotation = float(getattr(entity.dxf, "rotation", 0.0) or 0.0)
+            texts.append(
+                TextEntity(
+                    layer=layer_name,
+                    text=content,
+                    position=(float(insert.x), float(insert.y)),
+                    height=max(height, 0.1),
+                    rotation_deg=rotation,
+                    align=_text_align_from_dxf(entity),
+                )
+            )
+            continue
 
-    return lines, arcs, circles
+        if entity_type == "MTEXT":
+            content = _plain_mtext(entity)
+            if not content:
+                continue
+            insert = entity.dxf.insert
+            try:
+                height = float(getattr(entity.dxf, "char_height", None) or getattr(entity.dxf, "height", 2.5) or 2.5)
+            except (TypeError, ValueError):
+                height = 2.5
+            rotation = float(getattr(entity.dxf, "rotation", 0.0) or 0.0)
+            texts.append(
+                TextEntity(
+                    layer=layer_name,
+                    text=content[:500],
+                    position=(float(insert.x), float(insert.y)),
+                    height=max(height, 0.1),
+                    rotation_deg=rotation,
+                    align="start",
+                )
+            )
+            continue
+
+    if not lines and not arcs and not circles and not texts:
+        skipped_note = f" (skipped: {', '.join(sorted(skipped))})" if skipped else ""
+        raise ValueError(f"No supported DXF entities found in {dxf_path.as_posix()}{skipped_note}")
+
+    return lines, arcs, circles, texts
 
 
 def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, object]:
     source_path = dxf_path.resolve()
     document = ezdxf.readfile(source_path)
-    lines, arcs, circles = _load_dxf_entities(document, source_path)
+    lines, arcs, circles, texts = _load_dxf_entities(document, source_path)
 
     raw_bounds: tuple[float, float, float, float] | None = None
     for line in lines:
@@ -277,6 +384,14 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
         raw_bounds = _expand_bounds(raw_bounds, _arc_bounds(arc))
     for circle in circles:
         raw_bounds = _expand_bounds(raw_bounds, _circle_bounds(circle))
+    for text in texts:
+        # Approximate text footprint so labels aren't clipped from the view.
+        approx_w = max(len(text.text) * text.height * 0.6, text.height)
+        x, y = text.position
+        raw_bounds = _expand_bounds(
+            raw_bounds,
+            (x - text.height, y - text.height, x + approx_w, y + text.height * 1.2),
+        )
 
     if raw_bounds is None:
         raise ValueError(f"Failed to compute DXF bounds for {source_path.as_posix()}")
@@ -287,6 +402,7 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
 
     path_records: list[dict[str, object]] = []
     circle_records: list[dict[str, object]] = []
+    text_records: list[dict[str, object]] = []
     layer_summary: dict[str, dict[str, object]] = {}
 
     def touch_layer(layer_name: str) -> dict[str, object]:
@@ -298,6 +414,7 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
             "kind": _semantic_kind_for_layer(layer_name),
             "pathCount": 0,
             "circleCount": 0,
+            "textCount": 0,
         }
         layer_summary[layer_name] = summary
         return summary
@@ -356,6 +473,24 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
         )
         touch_layer(circle.layer)["circleCount"] += 1
 
+    for text in texts:
+        pos = _screen_point(text.position, min_x=min_x, max_y=max_y)
+        # Screen Y is flipped; negate DXF rotation so labels stay upright in SVG space.
+        rotation = -float(text.rotation_deg or 0.0)
+        text_records.append(
+            {
+                "layer": text.layer,
+                "kind": _semantic_kind_for_layer(text.layer),
+                "x": _format_number(pos[0]),
+                "y": _format_number(pos[1]),
+                "height": _format_number(text.height),
+                "rotation": _format_number(rotation),
+                "align": text.align,
+                "text": text.text,
+            }
+        )
+        touch_layer(text.layer)["textCount"] += 1
+
     return {
         "schemaVersion": DXF_RENDER_SCHEMA_VERSION,
         "fileRef": file_ref,
@@ -372,7 +507,8 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
         "counts": {
             "paths": len(path_records),
             "circles": len(circle_records),
-            "entities": len(path_records) + len(circle_records),
+            "texts": len(text_records),
+            "entities": len(path_records) + len(circle_records) + len(text_records),
         },
         "layers": [layer_summary[name] for name in sorted(layer_summary)],
         "geometry": {
@@ -405,7 +541,20 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
                 }
                 for circle in circles
             ],
+            "texts": [
+                {
+                    "layer": text.layer,
+                    "kind": _semantic_kind_for_layer(text.layer),
+                    "text": text.text,
+                    "position": [_format_number(text.position[0]), _format_number(text.position[1])],
+                    "height": _format_number(text.height),
+                    "rotationDeg": _format_number(text.rotation_deg),
+                    "align": text.align,
+                }
+                for text in texts
+            ],
         },
         "paths": path_records,
         "circles": circle_records,
+        "texts": text_records,
     }
