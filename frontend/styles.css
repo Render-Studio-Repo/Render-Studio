@@ -6388,6 +6388,75 @@ body.mobile-sheet-open {
   pointer-events: auto;
 }
 
+.viewport-measure-readout {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 13;
+  min-width: 148px;
+  max-width: min(280px, calc(100% - 28px));
+  padding: 10px 12px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.9);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+  color: var(--text);
+}
+
+.viewport-measure-readout.hidden {
+  display: none;
+}
+
+.viewport-measure-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: #79c0ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewport-measure-meta {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.viewport-measure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.viewport-measure-mode-btn,
+.viewport-measure-action-btn {
+  appearance: none;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  background: rgba(22, 27, 34, 0.9);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 3px 7px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.viewport-measure-mode-btn:hover,
+.viewport-measure-action-btn:hover {
+  border-color: rgba(88, 166, 255, 0.55);
+  color: #79c0ff;
+}
+
+.viewport-measure-mode-btn.active {
+  border-color: rgba(88, 166, 255, 0.75);
+  background: rgba(31, 111, 235, 0.28);
+  color: #79c0ff;
+}
+
 .viewport-units-label {
   color: var(--muted);
   font-size: 0.68rem;

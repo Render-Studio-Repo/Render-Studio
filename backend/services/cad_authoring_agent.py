@@ -102,6 +102,25 @@ def classify_cli_failure(stderr_or_note: str) -> dict[str, str]:
                 "Edit the existing source; do not restart from an unrelated model."
             ),
         }
+    if (
+        "typeerror" in lower
+        and any(tok in lower for tok in ("locations", "not iterable", "after * must be an iterable", "float"))
+    ) or (
+        "float" in lower and "not iterable" in lower
+    ) or (
+        "locations" in lower and "iterable" in lower
+    ):
+        return {
+            "class": "locations_or_positions_type",
+            "guidance": (
+                "Locations/positions type failure. Any name used with Locations(*name) or "
+                "`for x, y in name` MUST be a list/tuple of coordinates, never a float. "
+                "Example: rod_hole_positions = [(-30.0, -10.0), (-10.0, -10.0), (10.0, -10.0), (30.0, -10.0), "
+                "(-30.0, 10.0), (-10.0, 10.0), (10.0, 10.0), (30.0, 10.0)]. "
+                "Prefer GridLocations(nx, ny, pitch_x, pitch_y) for regular hole grids. "
+                "Delete any `*_positions = 10.0` style assignments and replace with a real list."
+            ),
+        }
     if any(tok in lower for tok in ("fillet", "chamfer")):
         return {
             "class": "fillet_or_chamfer",

@@ -6246,11 +6246,12 @@ function formatDimensionsMessage(data) {
 
 let measureModalEl = null;
 let measureModeActive = false;
-let measurePickMode = "face";
+let measurePickMode = "edge";
 const measureReferences = [];
 const MEASURE_PICK_MODES = new Set(["face", "edge", "corner"]);
 /** @type {{ id: string, refs: any[], label?: string }[]} */
 let savedMeasurements = [];
+let measureReadoutBound = false;
 
 function savedMeasuresStorageKey() {
   return projectId ? `render3d:savedMeasures:${projectId}` : null;
@@ -6280,13 +6281,14 @@ function persistSavedMeasurements() {
 }
 
 function geometryMeasureRefs(refs = []) {
-  return (refs || []).filter((r) => MEASURE_PICK_MODES.has(r?.type) && Array.isArray(r?.position));
+  return (refs || []).filter((r) => ["corner", "edge", "face"].includes(r?.type));
 }
 
 function refreshSelectionMeasureOverlay() {
   if (!currentMesh) {
     clearMeasureAnnotations();
     clearSavedMeasureAnnotations();
+    updateMeasureReadout();
     return;
   }
   const mmPer = currentMmPerModelUnit();
@@ -6299,33 +6301,113 @@ function refreshSelectionMeasureOverlay() {
     clearMeasureAnnotations();
   }
   setSavedMeasureAnnotations(savedMeasurements, mmPer, currentMesh, formatLength, formatArea);
+  updateMeasureReadout();
+}
+
+function primaryMeasureSummary(refs = []) {
+  const measured = (refs || []).filter((r) => ["corner", "edge", "face"].includes(r?.type) && refPoint(r));
+  const mmPer = currentMmPerModelUnit();
+  if (!measured.length) {
+    return { value: "—", meta: `Click a ${measurePickMode} to measure` };
+  }
+  if (measured.length === 1) {
+    const r = measured[0];
+    if (r.type === "edge" && Number.isFinite(r.edge_length)) {
+      return { value: formatLength(r.edge_length * mmPer), meta: "Edge length" };
+    }
+    if (r.type === "face" && Number.isFinite(r.face_area)) {
+      return { value: formatArea(r.face_area * mmPer * mmPer), meta: "Face area" };
+    }
+    if (r.type === "corner" || r.type === "vertex") {
+      const p = refPoint(r);
+      return {
+        value: formatLength(p.length() * mmPer),
+        meta: `Corner · X ${formatLength(p.x * mmPer)} · Y ${formatLength(p.y * mmPer)} · Z ${formatLength(p.z * mmPer)}`,
+      };
+    }
+    return { value: "—", meta: `${r.type} selected` };
+  }
+
+  const a = measured[measured.length - 2];
+  const b = measured[measured.length - 1];
+  const pa = refPoint(a);
+  const pb = refPoint(b);
+  const dist = pa.distanceTo(pb) * mmPer;
+  let meta = `${a.type} → ${b.type} distance`;
+  if (a.type === "edge" && b.type === "edge") {
+    const d0 = Array.isArray(a.edge_start) && Array.isArray(a.edge_end)
+      ? new THREE.Vector3(...a.edge_end).sub(new THREE.Vector3(...a.edge_start)).normalize()
+      : null;
+    const d1 = Array.isArray(b.edge_start) && Array.isArray(b.edge_end)
+      ? new THREE.Vector3(...b.edge_end).sub(new THREE.Vector3(...b.edge_start)).normalize()
+      : null;
+    if (d0 && d1) {
+      const ang = (Math.acos(Math.max(-1, Math.min(1, Math.abs(d0.dot(d1))))) * 180) / Math.PI;
+      meta = `Edge distance · ${ang.toFixed(1)}°`;
+    } else {
+      meta = "Edge distance";
+    }
+  } else if (a.type === "face" && b.type === "face") {
+    meta = "Face distance";
+  }
+  return { value: formatLength(dist), meta };
+}
+
+function updateMeasureReadout() {
+  const el = document.getElementById("viewport-measure-readout");
+  if (!el) return;
+  el.classList.toggle("hidden", !measureModeActive);
+  if (!measureModeActive) return;
+  const refs = measureReferences.length
+    ? measureReferences
+    : geometryMeasureRefs(composer.getReferences?.() || []);
+  const summary = primaryMeasureSummary(refs);
+  const valueEl = el.querySelector("[data-measure-value]");
+  const metaEl = el.querySelector("[data-measure-meta]");
+  if (valueEl) valueEl.textContent = summary.value;
+  if (metaEl) {
+    const count = refs.filter((r) => ["corner", "edge", "face"].includes(r?.type)).length;
+    metaEl.textContent = count
+      ? `${summary.meta}${count > 2 ? ` · ${count} picks` : ""}`
+      : summary.meta;
+  }
+  el.querySelectorAll("[data-measure-pick]").forEach((btn) => {
+    const on = btn.dataset.measurePick === measurePickMode;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+
+function bindMeasureReadoutControls() {
+  if (measureReadoutBound) return;
+  const el = document.getElementById("viewport-measure-readout");
+  if (!el) return;
+  measureReadoutBound = true;
+  el.querySelectorAll("[data-measure-pick]").forEach((btn) => {
+    btn.addEventListener("click", () => beginMeasureMode(btn.dataset.measurePick || "edge"));
+  });
+  el.querySelector("[data-measure-clear]")?.addEventListener("click", () => {
+    clearMeasureReferences();
+    refreshSelectionMeasureOverlay();
+    setEditStatus("ok", "Cleared measure picks.");
+  });
+  el.querySelector("[data-measure-done]")?.addEventListener("click", () => endMeasureMode());
 }
 
 function saveCurrentMeasurement() {
   const refs = (measureModeActive ? measureReferences : geometryMeasureRefs(composer.getReferences?.() || []))
-    .map((r) => ({
-      id: r.id,
-      type: r.type,
-      position: r.position,
-      normal: r.normal,
-      face_area: r.face_area ?? null,
-      edge_length: r.edge_length ?? null,
-      edge_start: r.edge_start ?? null,
-      edge_end: r.edge_end ?? null,
-    }));
+    .filter((r) => ["corner", "edge", "face"].includes(r?.type));
   if (!refs.length) {
     setEditStatus("error", "Pick a face, edge, or two points before saving a measurement.");
     return;
   }
   savedMeasurements.push({
-    id: `meas-${Date.now()}`,
-    refs,
+    refs: refs.map((r) => ({ ...r })),
     savedAt: Date.now(),
   });
   persistSavedMeasurements();
   refreshSelectionMeasureOverlay();
   setEditStatus("ok", `Saved measurement (${refs.length} pick${refs.length === 1 ? "" : "s"}).`);
-  void showMeasureAnalytics({ refs: measureModeActive ? measureReferences : refs, promptMode: true });
 }
 
 function clearSavedMeasurements() {
@@ -6336,65 +6418,21 @@ function clearSavedMeasurements() {
 }
 
 function ensureMeasureModal() {
+  // Legacy shell retained for old callers; measure UI is the viewport readout.
   if (measureModalEl) return measureModalEl;
   measureModalEl = document.createElement("div");
   measureModalEl.className = "auth-modal hidden measure-modal";
-  measureModalEl.setAttribute("role", "dialog");
-  measureModalEl.setAttribute("aria-modal", "true");
-  measureModalEl.innerHTML = `
-    <div class="auth-backdrop" data-measure-close></div>
-    <div class="auth-card app-dialog-card measure-card">
-      <button type="button" class="auth-close" data-measure-close aria-label="Close">&times;</button>
-      <div class="measure-header">
-        <span class="measure-title-icon">📏</span>
-        <h2 class="app-dialog-title measure-title">Measure</h2>
-      </div>
-      <div class="measure-pick-toolbar" role="toolbar" aria-label="Measure pick mode">
-        <button type="button" class="measure-mode-btn" data-measure-pick="face" title="Pick a planar face">▣ Face</button>
-        <button type="button" class="measure-mode-btn" data-measure-pick="edge" title="Pick an edge">━ Edge</button>
-        <button type="button" class="measure-mode-btn" data-measure-pick="corner" title="Pick a vertex or corner">◆ Corner</button>
-        <button type="button" class="measure-clear-btn" data-measure-clear title="Remove all picks">✕ Clear</button>
-        <button type="button" class="measure-save-btn" data-measure-save title="Keep this dimension overlay on the model">Save</button>
-        <button type="button" class="measure-clear-btn" data-measure-clear-saved title="Remove saved dimension overlays">Clear saved</button>
-      </div>
-      <p class="measure-hint-text">Pick a face for area, an edge for length, or two edges/points for distance — values use the Units control (bottom-right). Click Save to keep the overlay.</p>
-      <div class="measure-content"></div>
-    </div>`;
+  measureModalEl.hidden = true;
+  measureModalEl.innerHTML = `<div class="measure-content" hidden></div>`;
   document.body.appendChild(measureModalEl);
-  measureModalEl.querySelectorAll("[data-measure-close]").forEach((el) => {
-    el.addEventListener("click", () => {
-      endMeasureMode();
-      measureModalEl.classList.add("hidden");
-    });
-  });
-  measureModalEl.querySelectorAll("[data-measure-pick]").forEach((el) => {
-    el.addEventListener("click", () => beginMeasureMode(el.dataset.measurePick || "face"));
-  });
-  measureModalEl.querySelector("[data-measure-clear]")?.addEventListener("click", () => {
-    clearMeasureReferences();
-    refreshSelectionMeasureOverlay();
-    void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
-  });
-  measureModalEl.querySelector("[data-measure-save]")?.addEventListener("click", () => saveCurrentMeasurement());
-  measureModalEl.querySelector("[data-measure-clear-saved]")?.addEventListener("click", () => {
-    clearSavedMeasurements();
-    void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
-  });
   return measureModalEl;
 }
 
 function syncMeasureButtons() {
-  if (!measureModalEl) return;
-  measureModalEl.querySelectorAll("[data-measure-pick]").forEach((el) => {
-    const on = measureModeActive && el.dataset.measurePick === measurePickMode;
-    el.classList.toggle("active", on);
-    el.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-  const toolbar = measureModalEl.querySelector(".measure-pick-toolbar");
-  if (toolbar) toolbar.classList.toggle("measure-active", measureModeActive);
   document.getElementById("btn-measure")?.classList.toggle("active", measureModeActive);
   document.getElementById("btn-measure-tool")?.classList.toggle("active", measureModeActive);
   document.getElementById("btn-measure-viewport")?.classList.toggle("active", measureModeActive);
+  updateMeasureReadout();
 }
 
 function clearMeasureReferences() {
@@ -6431,7 +6469,7 @@ function clearPickedFaceReferences() {
     }
   }
   if (cleared && measureModeActive) {
-    void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
+    updateMeasureReadout();
   }
   return cleared;
 }
@@ -6444,7 +6482,6 @@ function handleReferenceRemove(event) {
     if (idx >= 0) measureReferences.splice(idx, 1);
     removeReferenceMarker(removeRefId);
     refreshSelectionMeasureOverlay();
-    void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
   } else {
     composer.removeReference(removeRefId);
     editTools.updateExtrudeTarget?.();
@@ -6457,22 +6494,23 @@ function handleReferenceRemove(event) {
 }
 
 function beginMeasureMode(mode = measurePickMode) {
-  if (!MEASURE_PICK_MODES.has(mode)) mode = "face";
+  if (!MEASURE_PICK_MODES.has(mode)) mode = "edge";
   measureModeActive = true;
   measurePickMode = mode;
-  ensureMeasureModal().classList.remove("hidden");
+  bindMeasureReadoutControls();
+  ensureMeasureModal()?.classList.add("hidden");
   activatePickMode(mode);
   syncMeasureButtons();
   refreshSelectionMeasureOverlay();
-  void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
   setEditStatus(
     "ok",
-    `Measure ${mode}: click to pick. Face → area, edge → length, two picks → distance. Save keeps the overlay.`
+    `Measure ${mode}: click to pick. One edge → length, two edges → distance.`,
   );
 }
 
 function endMeasureMode() {
   measureModeActive = false;
+  ensureMeasureModal()?.classList.add("hidden");
   syncMeasureButtons();
   clearMeasureLivePreview();
   if (MEASURE_PICK_MODES.has(getPickMode())) {
@@ -6609,115 +6647,41 @@ function refsMeasureHtml(refs = []) {
 }
 
 async function showMeasureAnalytics({ promptMode = false, refs = null } = {}) {
-  const modal = ensureMeasureModal();
-  const content = modal.querySelector(".measure-content");
-  const selection = objectTools.getSelection?.();
-  const catalogName = selection?.catalogName || (selection?.mesh ? catalogNameForMesh(selection.mesh) : null);
-  const filename = catalogName || selectedFile;
-  const analytics = meshAnalytics(selectedMeasureObject());
-  const pickedRefs = refs || (measureReferences.length ? measureReferences : composer.getReferences?.() || []);
-
-  const objectHtml = analytics
-    ? `<div class="measure-section">
-        <div class="measure-section-title">Selected Object</div>
-        <div class="measure-summary">
-          <div class="measure-stat"><span>Width</span><strong>${formatLength(analytics.sizeMm[0])}</strong></div>
-          <div class="measure-stat"><span>Depth</span><strong>${formatLength(analytics.sizeMm[1])}</strong></div>
-          <div class="measure-stat"><span>Height</span><strong>${formatLength(analytics.sizeMm[2])}</strong></div>
-          <div class="measure-stat"><span>Diagonal</span><strong>${formatLength(analytics.diagonalMm)}</strong></div>
-          <div class="measure-stat"><span>Surface area</span><strong>${formatArea(analytics.areaMm2)}</strong></div>
-          <div class="measure-stat"><span>Triangles</span><strong>${Math.round(analytics.triangles).toLocaleString()}</strong></div>
-        </div>
-        <div class="measure-center-row"><span>Center</span><strong>${analytics.centerMm.map((v) => formatLength(v)).join(" · ")}</strong></div>
-      </div>`
-    : `<p class="muted small">No selected or visible object to measure.</p>`;
-
-  content.innerHTML = `${objectHtml}${refsMeasureHtml(pickedRefs)}<p class="muted small measure-loading">Checking server dimensions…</p>`;
-  modal.classList.remove("hidden");
-  if (promptMode) {
-    content.querySelector(".measure-loading")?.remove();
+  // Measure UI is the bottom-right viewport readout — never open the old popup.
+  if (promptMode || measureModeActive) {
+    if (!measureModeActive) beginMeasureMode(measurePickMode || "edge");
+    else updateMeasureReadout();
     return null;
   }
-
-  if (projectId) {
-    try {
-      const query = filename ? `?filename=${encodeURIComponent(filename)}` : "";
-      const data = await api(`/api/projects/${projectId}/dimensions${query}`);
-      const server = formatDimensionsMessage(data);
-      content.querySelector(".measure-loading")?.remove();
-      content.insertAdjacentHTML("beforeend", `<h3>Server Measurement</h3><div class="measure-row"><span>${escMeasure(data.filename || filename || "Model")}</span><strong>${escMeasure(server)}</strong><small>from backend mesh bounds</small></div>`);
-      setEditStatus("ok", server);
-      return { ...data, message: server };
-    } catch (err) {
-      content.querySelector(".measure-loading")?.remove();
-      content.insertAdjacentHTML("beforeend", `<p class="status error">${escMeasure(err.message || "Could not measure dimensions.")}</p>`);
-    }
-  }
+  beginMeasureMode("edge");
   return null;
 }
 
 async function showDimensions({ promptMode = false } = {}) {
   return showMeasureAnalytics({ promptMode });
-  /*
-  if (!projectId) {
-    setEditStatus("error", "Select or create a project first.");
-    return null;
-  }
-  const selection = objectTools.getSelection?.();
-  const catalogName = selection?.catalogName || (selection?.mesh ? catalogNameForMesh(selection.mesh) : null);
-  const filename = catalogName || selectedFile;
-  try {
-    const query = filename ? `?filename=${encodeURIComponent(filename)}` : "";
-    const data = await api(`/api/projects/${projectId}/dimensions${query}`);
-    const message = formatDimensionsMessage(data);
-    setEditStatus("ok", message);
-    viewerOverlay.clearError();
-    if (!promptMode) {
-      window.alert(`Dimensions\n\n${message}`);
-    }
-    return { ...data, message };
-  } catch (err) {
-    const msg = err.message || "Could not measure dimensions.";
-    setEditStatus("error", msg);
-    viewerOverlay.showError(msg);
-    return null;
-  }
-  */
 }
 
 document.getElementById("btn-show-dimensions")?.addEventListener("click", () => {
-  beginMeasureMode("face");
+  beginMeasureMode("edge");
 });
 document.getElementById("btn-measure-viewport")?.addEventListener("click", () => {
-  beginMeasureMode(measurePickMode || "face");
+  if (measureModeActive) endMeasureMode();
+  else beginMeasureMode(measurePickMode || "edge");
 });
 document.getElementById("btn-measure-tool")?.addEventListener("click", () => {
-  if (measureModeActive) {
-    endMeasureMode();
-    ensureMeasureModal().classList.add("hidden");
-  } else {
-    beginMeasureMode(measurePickMode || "face");
-  }
+  if (measureModeActive) endMeasureMode();
+  else beginMeasureMode(measurePickMode || "edge");
 });
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("#btn-measure");
   if (!btn) return;
-  if (measureModeActive) {
-    endMeasureMode();
-    ensureMeasureModal().classList.add("hidden");
-  } else {
-    beginMeasureMode(measurePickMode || "face");
-  }
+  if (measureModeActive) endMeasureMode();
+  else beginMeasureMode(measurePickMode || "edge");
 });
 
 onUnitsChanged(() => {
   refreshSelectionMeasureOverlay();
-  if (measureModeActive || measureModalEl) {
-    void showMeasureAnalytics({
-      refs: measureModeActive ? measureReferences : geometryMeasureRefs(composer.getReferences?.() || []),
-      promptMode: true,
-    });
-  }
+  if (measureModeActive) updateMeasureReadout();
 });
 
 async function answerDimensionPrompt(prompt) {
@@ -15126,10 +15090,14 @@ renderer.domElement.addEventListener("click", (e) => {
       if (idx >= 0) measureReferences.splice(idx, 1);
     } else {
       measureReferences.push(result.ref);
+      if (measureReferences.length > 2) {
+        const dropped = measureReferences.splice(0, measureReferences.length - 2);
+        for (const ref of dropped) removeReferenceMarker(ref.id);
+      }
     }
     setMeasureAnnotations(measureReferences, currentMmPerModelUnit(), currentMesh, formatLength, formatArea);
     clearMeasureLivePreview();
-    void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
+    updateMeasureReadout();
     viewerOverlay.clearError();
     clearHover();
     e.preventDefault();
@@ -16175,12 +16143,8 @@ window.addEventListener("keydown", (e) => {
   if (key === "s") openTransformMode("scale");
   if (key === "i") {
     e.preventDefault();
-    if (measureModeActive) {
-      endMeasureMode();
-      ensureMeasureModal()?.classList.add("hidden");
-    } else {
-      beginMeasureMode(measurePickMode || "face");
-    }
+    if (measureModeActive) endMeasureMode();
+    else beginMeasureMode(measurePickMode || "edge");
     return;
   }
   if (isObjectDeleteShortcut(e)) {

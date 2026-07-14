@@ -308,6 +308,39 @@ def _function_assigned_names(func: ast.FunctionDef) -> set[str]:
     return names
 
 
+def _is_sequence_constant_name(name: str) -> bool:
+    """Names that must be lists/tuples — never scalar floats (Locations / for-loops)."""
+    if not name or not name[0].islower():
+        return False
+    lower = name.lower()
+    return any(
+        lower.endswith(suffix)
+        for suffix in (
+            "_positions",
+            "_position",
+            "_coords",
+            "_coordinates",
+            "_locations",
+            "_points",
+            "_pattern",
+            "_offsets",
+            "_centers",
+            "_holes",
+            "_angles",
+            "_angles_deg",
+            "_labels",
+        )
+    ) or lower in {
+        "positions",
+        "coords",
+        "locations",
+        "points",
+        "hole_positions",
+        "mount_positions",
+        "standoff_positions",
+    }
+
+
 def _config_like_name(name: str) -> bool:
     if (
         name in _DXF_CONFIG_NAMES
@@ -323,6 +356,8 @@ def _config_like_name(name: str) -> bool:
     # User helpers are verbs; config constants are nouns/dimensions.
     if name.startswith(("make_", "build_", "create_", "add_", "get_", "set_", "compute_", "calc_")):
         return False
+    if _is_sequence_constant_name(name):
+        return True
     suffixes = (
         "_x", "_y", "_z", "_mm", "_deg", "_r",
         "_fillet", "_chamfer", "_radius", "_diameter", "_base", "_size",
@@ -377,6 +412,159 @@ def _prompt_named_mm_value(prompt: str, labels: tuple[str, ...]) -> float | None
         except ValueError:
             continue
     return None
+
+
+def _prompt_count_for_holder_holes(prompt: str) -> int | None:
+    """Best-effort count of rods/holes from natural-language prompts."""
+    text = prompt or ""
+    patterns = [
+        r"\bhold(?:er)?\s+(?:able to hold\s+)?(\d+)\s+(?:stainless\s+)?(?:steel\s+)?rods?\b",
+        r"\b(?:able to hold|hold)\s+(\d+)\b",
+        r"\b(\d+)\s+(?:stainless\s+)?(?:steel\s+)?rods?\b",
+        r"\b(\d+)\s+(?:clearance\s+)?holes?\b",
+        r"\bholes?\s*[:=]?\s*(\d+)\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            n = int(m.group(1))
+            if 1 <= n <= 64:
+                return n
+    return None
+
+
+def _prompt_hole_diameter_mm(prompt: str) -> float | None:
+    text = prompt or ""
+    patterns = [
+        r"\b(\d+(?:\.\d+)?)\s*mm\s+(?:for\s+)?(?:each\s+)?hole\b",
+        r"\bholes?\b[^.\n]{0,40}?\b(\d+(?:\.\d+)?)\s*mm\b",
+        r"\bø\s*(\d+(?:\.\d+)?)\s*mm\b",
+        r"\b(\d+(?:\.\d+)?)\s*mm\s+(?:diameter|dia|ø)\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            val = float(m.group(1))
+            if 0.5 <= val <= 200:
+                return val
+    return None
+
+
+def _xy_grid_positions_literal(count: int, *, pitch: float | None = None) -> str:
+    """Build a centered XY grid literal for Locations / for-loops."""
+    n = max(1, int(count))
+    if pitch is None or pitch <= 0:
+        pitch = 20.0
+    if n % 2 == 0 and n >= 4:
+        rows = 2
+        cols = n // 2
+    else:
+        cols = max(1, int(math.ceil(math.sqrt(n))))
+        rows = int(math.ceil(n / cols))
+    xs = [((c - (cols - 1) / 2.0) * pitch) for c in range(cols)]
+    ys = [((r - (rows - 1) / 2.0) * pitch) for r in range(rows)]
+    pts: list[str] = []
+    for y in ys:
+        for x in xs:
+            if len(pts) >= n:
+                break
+            pts.append(f"({x:.3f}, {y:.3f})")
+        if len(pts) >= n:
+            break
+    return "[" + ", ".join(pts) + "]"
+
+
+def _default_sequence_constant_value(name: str, *, prompt: str) -> str | None:
+    """Defaults for list-like constants. Never returns a bare float."""
+    if name in {"planet_angles_deg"}:
+        return "[0.0, 120.0, 240.0]"
+    if name in {"planet_labels"}:
+        return '["planet_1", "planet_2", "planet_3"]'
+    if name in {"pin_labels"}:
+        return '["pin_1", "pin_2", "pin_3"]'
+    if name.endswith(("_labels", "_names")):
+        return "[]"
+    if name.endswith(("_angles", "_angles_deg")):
+        return "[0.0, 90.0, 180.0, 270.0]"
+
+    count = _prompt_count_for_holder_holes(prompt) or 4
+    hole_d = _prompt_hole_diameter_mm(prompt)
+    pitch = max(16.0, (hole_d or 8.5) * 2.2)
+    # Anchor / mounting holes: smaller 4-corner pattern.
+    if "anchor" in name or "mount" in name or "fastener" in name or "bolt" in name:
+        span = max(30.0, pitch * 2.5)
+        return (
+            f"[(-{span:.3f}, -{span:.3f}), ({span:.3f}, -{span:.3f}), "
+            f"(-{span:.3f}, {span:.3f}), ({span:.3f}, {span:.3f})]"
+        )
+    if any(tok in name for tok in ("hole", "rod", "peg", "pin", "socket", "pocket", "standoff")):
+        return _xy_grid_positions_literal(count, pitch=pitch)
+    if _is_sequence_constant_name(name):
+        return _xy_grid_positions_literal(count, pitch=pitch)
+    return None
+
+
+def _module_scalar_assigns(source: str) -> dict[str, float]:
+    """Map module-level `name = <number>` assignments."""
+    out: dict[str, float] = {}
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return out
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            val = node.value
+            if isinstance(val, ast.Constant) and isinstance(val.value, (int, float)) and not isinstance(val.value, bool):
+                out[node.targets[0].id] = float(val.value)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, (int, float))
+            and not isinstance(node.value.value, bool)
+        ):
+            out[node.target.id] = float(node.value.value)
+    return out
+
+
+def _sanitize_poisoned_sequence_constants(source: str, *, prompt: str) -> str:
+    """Rewrite `*_positions = 10.0` (etc.) to real list literals before scripts/step."""
+    scalars = _module_scalar_assigns(source)
+    if not scalars:
+        return source
+    replacements: list[tuple[str, str]] = []
+    for name, _val in scalars.items():
+        if not _is_sequence_constant_name(name):
+            continue
+        lit = _default_sequence_constant_value(name, prompt=prompt)
+        if not lit:
+            continue
+        replacements.append((name, lit))
+    if not replacements:
+        return source
+    out = source
+    for name, lit in replacements:
+        # Replace only simple module-level scalar assigns.
+        pattern = re.compile(
+            rf"(?m)^({re.escape(name)}\s*(?::[^=\n]+)?=\s*)[-+]?(?:\d+\.?\d*|\.\d+)([ \t]*(?:#.*)?)$"
+        )
+        out, n = pattern.subn(rf"\g<1>{lit}\2", out, count=1)
+        if n == 0:
+            # Fallback: inject after imports if the assign was oddly formatted.
+            out = _insert_after_imports(out, f"{name} = {lit}")
+    return out
+
+
+def _source_poisoned_sequence_issues(source: str) -> list[str]:
+    """Detect sequence names still assigned to scalars (preflight)."""
+    issues: list[str] = []
+    for name, val in _module_scalar_assigns(source).items():
+        if _is_sequence_constant_name(name):
+            issues.append(
+                f"{name} = {val} is a number but must be a list of (x, y) positions "
+                f"(e.g. for Locations(*{name}) or `for x, y in {name}`)."
+            )
+    return issues
 
 
 def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
@@ -447,6 +635,19 @@ def _default_constant_value(name: str, *, base: str, prompt: str) -> str | None:
         return '["pin_1", "pin_2", "pin_3"]'
     if name.endswith("_layer"):
         return f'"{name[:-6].upper()}"'
+
+    # Sequence/list constants must NEVER become bare floats.
+    if _is_sequence_constant_name(name):
+        return _default_sequence_constant_value(name, prompt=prompt)
+
+    # Prefer prompt hole diameter for common radius names.
+    if name in {"rod_hole_radius", "hole_radius", "pin_hole_radius"} or (
+        name.endswith("_hole_radius") or name.endswith("_bore_radius")
+    ):
+        hole_d = _prompt_hole_diameter_mm(prompt)
+        if hole_d is not None:
+            return str(round(hole_d / 2.0, 4))
+
     # Generic dimension/fillet/radius fallbacks so incomplete LLM sources can still run.
     if name.endswith(("_fillet", "_chamfer", "_radius", "_clearance")) or (
         name.endswith("_r") and ("corner" in name or "fillet" in name or "bore" in name or "hole" in name)
@@ -485,6 +686,9 @@ def _inject_missing_name_constant(source: str, name: str, *, base: str, prompt: 
         return None
     rendered = _default_constant_value(name, base=base, prompt=prompt)
     if rendered is None:
+        # Never invent a float for list-like names — leave for LLM repair / NameError.
+        if _is_sequence_constant_name(name):
+            return None
         # Still inject a numeric default for unknown snake_case dims.
         if name[0].islower() and "_" in name and not _looks_like_user_helper(name):
             rendered = "10.0"
@@ -495,17 +699,18 @@ def _inject_missing_name_constant(source: str, name: str, *, base: str, prompt: 
 
 def _backfill_all_undefined_constants(source: str, *, base: str, prompt: str) -> str:
     """Inject every missing config-like constant referenced by gen_step()."""
-    remaining = _gen_step_local_undefined_names(source)
+    out = _sanitize_poisoned_sequence_constants(source, prompt=prompt)
+    remaining = _gen_step_local_undefined_names(out)
     if not remaining:
-        return source
-    out = source
+        return out
     for name in remaining:
         if _looks_like_user_helper(name):
             continue
         patched = _inject_missing_name_constant(out, name, base=base, prompt=prompt)
         if patched:
             out = patched
-    return out
+    # Second pass: if any inject still left a scalar on a sequence name, rewrite it.
+    return _sanitize_poisoned_sequence_constants(out, prompt=prompt)
 
 
 def _missing_config_constants(source: str) -> list[str]:
@@ -1534,6 +1739,14 @@ def _finalize_text_to_cad_source_before_step(
     # Always inject missing dimension/config constants before scripts/step.
     # Helpers (make_*/build_*) are still left for the LLM repair loop.
     finalized = _backfill_all_undefined_constants(finalized, base=source_path.stem, prompt=prompt)
+    poisoned = _source_poisoned_sequence_issues(finalized)
+    if poisoned:
+        raise ValueError(
+            "Generated source has invalid position/list constants before scripts/step:\n- "
+            + "\n- ".join(poisoned[:8])
+            + "\nFix: define them as lists of (x, y) tuples, e.g. "
+            "rod_hole_positions = [(-30, -10), (-10, -10), ...]. Never assign a bare float."
+        )
     if not jake_identical:
         finalized = _harden_common_fillet_failures(finalized)
         remaining = _gen_step_local_undefined_names(finalized)

@@ -72,6 +72,10 @@ with Locations(*hole_positions):
     Hole(radius=hole_diameter / 2)
 ```
 
+Never assign a bare number to a `*_positions` / `*_coords` name. Wrong: `hole_positions = 10.0`.
+That breaks `Locations(*hole_positions)` and `for x, y in hole_positions` with `TypeError: float is not iterable`.
+For regular grids, prefer `GridLocations(nx, ny, pitch_x, pitch_y)`.
+
 Avoid untraceable placement constants inside geometry calls. Put all meaningful offsets into parameters.
 
 ## AssemblyHelper pattern
