@@ -22,7 +22,7 @@ import {
   displayValue,
   unitSuffix,
   onUnitsChanged,
-} from "./units.js?v=20260610-direct";
+} from "./units.js?v=20260714-units-ft-m";
 import { createFloatingPanelBehavior } from "./floating-panel.js?v=20260611-hud-drag";
 
 const HOVER_COLOR = 0x58a6ff;
@@ -231,6 +231,8 @@ export function createDirectModeling({
   viewport,
   getMesh,
   getModelInfo, // () => ({ projectId, filename })
+  getFilenameForMesh,
+  onSelectFilename,
   api,
   onApplied, // async (data) => {}
   onStatus, // (kind, text) => {}
@@ -447,30 +449,31 @@ export function createDirectModeling({
 
   function buildHandle(data) {
     const extent = meshWorldExtent();
-    const len = extent * 0.22;
-    const shaftR = extent * 0.006;
+    const len = Math.max(extent * 0.28, 0.02);
+    const shaftR = Math.max(extent * 0.012, 0.0015);
     const handle = new THREE.Group();
     const shaft = new THREE.Mesh(
       new THREE.CylinderGeometry(shaftR, shaftR, len * 0.75, 16),
-      new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false })
+      new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false, transparent: true, opacity: 0.95 })
     );
     shaft.position.y = len * 0.375;
     const head = new THREE.Mesh(
-      new THREE.ConeGeometry(shaftR * 3.2, len * 0.25, 20),
-      new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false })
+      new THREE.ConeGeometry(shaftR * 3.4, len * 0.28, 20),
+      new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false, transparent: true, opacity: 0.95 })
     );
     head.position.y = len * 0.875;
-    shaft.renderOrder = 9;
-    head.renderOrder = 9;
+    shaft.renderOrder = 20;
+    head.renderOrder = 20;
     handle.add(shaft, head);
     handle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), data.normal);
     handle.position.copy(data.centroid);
 
+    // Generous invisible hit volume so the arrow is easy to grab (Fusion-like).
     const hitMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(shaftR * 6, shaftR * 6, len * 1.15, 8),
+      new THREE.CylinderGeometry(shaftR * 12, shaftR * 12, len * 1.35, 10),
       new THREE.MeshBasicMaterial({ visible: false })
     );
-    hitMesh.position.y = len * 0.5;
+    hitMesh.position.y = len * 0.55;
     const hitWrap = new THREE.Group();
     hitWrap.add(hitMesh);
     hitWrap.quaternion.copy(handle.quaternion);
@@ -497,8 +500,9 @@ export function createDirectModeling({
     hudFloat?.dockRight?.(Math.min(viewport.clientHeight * 0.35, 220));
   }
 
-  function ppHudHtml() {
+  function ppHudHtml({ defaultOp = "auto" } = {}) {
     const u = unitSuffix();
+    const op = ["auto", "join", "cut", "intersect", "new_body"].includes(defaultOp) ? defaultOp : "auto";
     return `
       <div class="dm-hud-title">Press-Pull <span class="dm-hud-hint">drag arrow or type a value</span></div>
       <div class="dm-hud-row">
@@ -509,11 +513,11 @@ export function createDirectModeling({
       <div class="dm-hud-row">
         <label>Operation</label>
         <select data-dm-op>
-          <option value="auto" selected>Auto (pull = join, push = cut)</option>
-          <option value="join">Join</option>
-          <option value="cut">Cut</option>
-          <option value="intersect">Intersect</option>
-          <option value="new_body">New body</option>
+          <option value="auto"${op === "auto" ? " selected" : ""}>Auto (pull = join, push = cut)</option>
+          <option value="join"${op === "join" ? " selected" : ""}>Join / Extrude</option>
+          <option value="cut"${op === "cut" ? " selected" : ""}>Cut</option>
+          <option value="intersect"${op === "intersect" ? " selected" : ""}>Intersect</option>
+          <option value="new_body"${op === "new_body" ? " selected" : ""}>New body</option>
         </select>
       </div>
       <div class="dm-hud-row">
@@ -545,8 +549,20 @@ export function createDirectModeling({
       </div>`;
   }
 
+  let preferredOp = "auto";
+
   function lockPressPullFromData(data, meta = {}) {
-    clearPressPull();
+    clearHover();
+    if (pp) {
+      for (const k of ["handle", "hitMesh", "ghost", "dimLine"]) {
+        if (pp[k]) {
+          group.remove(pp[k]);
+          disposeObj(pp[k]);
+        }
+      }
+      pp = null;
+    }
+    destroyHud();
     const { handle, hitWrap } = buildHandle(data);
     group.add(handle, hitWrap);
     pp = {
@@ -564,10 +580,10 @@ export function createDirectModeling({
       ghost: null,
       dimLine: null,
     };
-    const el = createHud(ppHudHtml());
+    const el = createHud(ppHudHtml({ defaultOp: meta.defaultOp || preferredOp }));
     if (meta.sketchMode) {
       const title = el.querySelector(".dm-hud-title");
-      if (title) title.innerHTML = `Extrude <span class="dm-hud-hint">drag arrow or type a height</span>`;
+      if (title) title.innerHTML = `Extrude <span class="dm-hud-hint">click a face or drag the arrow</span>`;
     }
     positionHud(data.centroid);
     el.querySelector("[data-dm-apply]").addEventListener("click", applyPressPull);
@@ -629,8 +645,31 @@ export function createDirectModeling({
       return first;
     })();
     if (!mesh?.geometry) return false;
-    setTool("presspull");
+    ensureTool("presspull");
     lockPressPull({ object: mesh, faceIndex: Number(ref.face_index) });
+    return true;
+  }
+
+  function beginAxisDrag(event) {
+    if (!pp) return;
+    dragging = true;
+    dragKind = "pp-handle";
+    dragStartParam = axisParamAtPointer(event, pp.data.centroid, pp.data.normal);
+    dragStartDistance = pp.distanceServer * pp.data.scale;
+    controls.enabled = false;
+    try {
+      dom.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function tryPickFaceForPressPull(event) {
+    const hit = castModel(event);
+    if (!hit) return false;
+    const fname = getFilenameForMesh?.(hit.object);
+    if (fname) onSelectFilename?.(fname);
+    lockPressPull(hit);
     return true;
   }
 
@@ -686,12 +725,13 @@ export function createDirectModeling({
       const mat = new THREE.MeshBasicMaterial({
         color: isCut ? CUT_COLOR : JOIN_COLOR,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.48,
         side: THREE.DoubleSide,
         depthWrite: false,
+        depthTest: false,
       });
       pp.ghost = new THREE.Mesh(geom, mat);
-      pp.ghost.renderOrder = 4;
+      pp.ghost.renderOrder = 18;
       group.add(pp.ghost);
 
       // Dimension line along pull axis
@@ -719,7 +759,7 @@ export function createDirectModeling({
     const title = hud?.querySelector(".dm-hud-title");
     if (title && mag > 1e-9) {
       const mmVal = Math.abs(dServer * mmPerServerUnit(pp.data.scale));
-      const sign = dServer < 0 ? "cut" : "join";
+      const sign = isCut ? "cut" : "join";
       title.innerHTML = `Press-Pull <span class="dm-hud-hint">${formatLength(mmVal)} · ${sign}</span>`;
     }
 
@@ -769,12 +809,20 @@ export function createDirectModeling({
     try {
       const inv = new THREE.Matrix4().copy(pp.mesh.matrixWorld).invert();
       const localNormal = pp.data.normal.clone().transformDirection(inv);
-      const data = await api(`/api/projects/${projectId}/files/${filename}/face-pull`, {
+      let distance = pp.distanceServer || 0;
+      if (opts.op === "cut") {
+        distance = -Math.abs(distance || 1e-6);
+      } else if (opts.op === "join" || opts.op === "new_body" || opts.op === "intersect") {
+        distance = Math.abs(distance || 1e-6);
+      } else if (Math.abs(distance) < 1e-12) {
+        distance = -1e-6;
+      }
+      const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/face-pull`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           face_index: pp.faceIndex,
-          distance: pp.distanceServer || -1e-6,
+          distance,
           normal: [localNormal.x, localNormal.y, localNormal.z],
           op: opts.op,
           direction: opts.direction === "two" ? "two" : opts.direction,
@@ -1230,16 +1278,29 @@ export function createDirectModeling({
     // active — otherwise it starts an orbit gesture even with controls.enabled=false.
     controls.enabled = false;
     event.stopPropagation();
-    if (tool === "presspull" && pp) {
-      raycaster.setFromCamera(ndc(event), camera);
-      const hits = raycaster.intersectObject(pp.hitMesh, true);
-      if (hits.length) {
-        dragging = true;
-        dragKind = "pp-handle";
-        dragStartParam = axisParamAtPointer(event, pp.data.centroid, pp.data.normal);
-        dragStartDistance = pp.distanceServer * pp.data.scale;
-        dom.setPointerCapture?.(event.pointerId);
-        event.preventDefault();
+    if (tool === "presspull") {
+      if (pp) {
+        raycaster.setFromCamera(ndc(event), camera);
+        const hits = raycaster.intersectObject(pp.hitMesh, true);
+        if (hits.length) {
+          beginAxisDrag(event);
+          event.preventDefault();
+          return;
+        }
+        // Fusion-style: click another face to retarget, then drag immediately.
+        if (tryPickFaceForPressPull(event)) {
+          beginAxisDrag(event);
+          event.preventDefault();
+          return;
+        }
+      } else {
+        // Fusion-style: click face (or sketch) and drag in one gesture.
+        if (tryStartSketchExtrudeFromPick(event) || tryPickFaceForPressPull(event)) {
+          clearHover();
+          beginAxisDrag(event);
+          event.preventDefault();
+          return;
+        }
       }
     } else if (tool === "mirror" && mi?.active) {
       raycaster.setFromCamera(ndc(event), camera);
@@ -1296,14 +1357,20 @@ export function createDirectModeling({
     if (dragging) {
       dragging = false;
       dragKind = null;
-      controls.enabled = tool ? false : true;
-      dom.releasePointerCapture?.(event.pointerId);
+      controls.enabled = false;
+      try {
+        dom.releasePointerCapture?.(event.pointerId);
+      } catch {
+        /* ignore */
+      }
+      // Tiny click without meaningful drag still leaves the face selected with arrow.
       return;
     }
     if (!downPos) return;
     const moved = Math.hypot(event.clientX - downPos.x, event.clientY - downPos.y);
     downPos = null;
     if (moved > 8) return;
+    // Fallback click-to-select if pointerdown didn't lock a face (e.g. missed mesh).
     if (tool === "presspull" && !pp) {
       if (tryStartSketchExtrudeFromPick(event)) {
         clearHover();
@@ -1311,10 +1378,8 @@ export function createDirectModeling({
         event.stopPropagation();
         return;
       }
-      const hit = castModel(event);
-      if (hit) {
+      if (tryPickFaceForPressPull(event)) {
         clearHover();
-        lockPressPull(hit);
         event.preventDefault();
         event.stopPropagation();
       }
@@ -1365,9 +1430,24 @@ export function createDirectModeling({
 
   // ── public API ─────────────────────────────────────────────────────────────
 
-  function setTool(nextRaw) {
+  function ensureTool(nextRaw) {
+    const next = normalizeTool(nextRaw);
+    if (!next) return;
+    if (tool === next) {
+      controls.enabled = false;
+      onToolChange?.(tool);
+      return;
+    }
+    setTool(next, { force: true });
+  }
+
+  function setTool(nextRaw, { force = false } = {}) {
     let next = normalizeTool(nextRaw);
-    if (next === tool) next = null;
+    if (!force && next === tool) next = null;
+    if (force && next === tool) {
+      controls.enabled = next === "presspull" || next === "mirror" ? false : controls.enabled;
+      return;
+    }
     clearPressPull();
     clearMirror();
     dragging = false;
@@ -1378,12 +1458,13 @@ export function createDirectModeling({
     } else if (tool === "presspull") {
       controls.enabled = false;
       showPressPullPrompt();
-      onStatus?.("ok", "Click a sketch profile or model face, then drag the arrow or type a distance.");
+      onStatus?.("ok", "Click a face to Extrude/Cut — then drag (or type a distance). Esc to exit.");
     } else if (tool === "fillet" || tool === "chamfer") {
       controls.enabled = true;
       startFilletChamfer(tool);
     } else {
       controls.enabled = true;
+      preferredOp = "auto";
     }
     onToolChange?.(tool);
     if (tool === "mirror" && !mi) {
@@ -1395,8 +1476,13 @@ export function createDirectModeling({
 
   return {
     setTool,
+    ensureTool,
+    setPreferredOp: (op) => {
+      preferredOp = op || "auto";
+    },
     getTool: () => tool,
     isToolActive: () => !!tool,
+    isBusy: () => !!tool || busy || dragging,
     startPressPullFromRef,
     startSketchExtrude,
     tryStartSketchExtrudeFromPick,

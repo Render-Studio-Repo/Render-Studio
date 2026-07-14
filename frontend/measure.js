@@ -1,8 +1,6 @@
 import * as THREE from "three";
 import { pickMeasureEntity, updateMeasureHover } from "./picking.js";
-
-const LS_UNITS = "render3d:measureUnits:v1";
-const MM_PER_IN = 25.4;
+import { formatLength, formatArea, getUnits, onUnitsChanged, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 
 export function detectModelUnitScale(meshRoot) {
   if (!meshRoot) return { toMm: 1 };
@@ -16,19 +14,8 @@ function nativeToMm(value, unitScale) {
   return value * (unitScale?.toMm ?? 1);
 }
 
-export function formatMeasureLength(mm, units) {
-  if (units === "in") {
-    return `${(mm / MM_PER_IN).toFixed(4)} in`;
-  }
-  return `${mm.toFixed(3)} mm`;
-}
-
-function formatArea(mm2, units) {
-  if (units === "in") {
-    const sqIn = mm2 / (MM_PER_IN * MM_PER_IN);
-    return `${sqIn.toFixed(4)} in²`;
-  }
-  return `${mm2.toFixed(2)} mm²`;
+export function formatMeasureLength(mm) {
+  return formatLength(mm);
 }
 
 function formatAngle(deg) {

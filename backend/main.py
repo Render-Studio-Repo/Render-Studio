@@ -4740,6 +4740,20 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, user: dict[str, Any] =
     return result
 
 
+@app.get("/api/teams/invite-candidates")
+def team_invite_candidates(
+    team_id: str | None = None,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """People you've worked with in other workspaces (for invite dropdowns)."""
+    try:
+        return {
+            "candidates": teams_service.list_workspace_invite_candidates(user["id"], team_id or None),
+        }
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+
+
 @app.get("/api/teams/invites/pending")
 def pending_team_invites(user: dict[str, Any] = Depends(get_current_user)):
     return {"invites": teams_service.list_pending_invites(user["email"])}

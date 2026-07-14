@@ -147,6 +147,100 @@ def list_render_agent_invite_candidates(user_id: str, team_id: str | None = None
     )
 
 
+def list_workspace_invite_candidates(user_id: str, team_id: str | None = None) -> list[dict[str, Any]]:
+    """People you've worked with before — for workspace invite dropdowns.
+
+    Includes teammates from other workspaces and emails you've invited previously.
+    When team_id is set, excludes people already in that workspace (and pending invites).
+    """
+    if team_id:
+        _require_team_member(team_id, user_id)
+
+    by_email: dict[str, dict[str, Any]] = {}
+    with get_conn() as conn:
+        member_rows = conn.execute(
+            """
+            SELECT u.id, u.email, u.display_name,
+                   GROUP_CONCAT(DISTINCT source_team.name) AS source_teams
+            FROM team_members requester_tm
+            JOIN teams source_team ON source_team.id = requester_tm.team_id
+            JOIN team_members source_member ON source_member.team_id = requester_tm.team_id
+            JOIN users u ON u.id = source_member.user_id
+            WHERE requester_tm.user_id = ?
+              AND source_member.user_id != ?
+              AND (
+                ? IS NULL
+                OR source_member.user_id NOT IN (
+                    SELECT user_id FROM team_members WHERE team_id = ?
+                )
+              )
+            GROUP BY u.id, u.email, u.display_name
+            ORDER BY lower(u.display_name), lower(u.email)
+            """,
+            (user_id, user_id, team_id, team_id),
+        ).fetchall()
+        for row in member_rows:
+            email = str(row["email"] or "").strip().lower()
+            if not email:
+                continue
+            by_email[email] = {
+                "id": row["id"],
+                "email": email,
+                "display_name": row["display_name"] or email,
+                "source_teams": row["source_teams"] or "",
+                "source": "shared_workspace",
+            }
+
+        past_invites = conn.execute(
+            """
+            SELECT i.email,
+                   u.id AS user_id,
+                   u.display_name,
+                   GROUP_CONCAT(DISTINCT t.name) AS source_teams
+            FROM team_invites i
+            LEFT JOIN users u ON lower(u.email) = lower(i.email)
+            LEFT JOIN teams t ON t.id = i.team_id
+            WHERE i.invited_by = ?
+              AND lower(i.email) != (
+                  SELECT lower(email) FROM users WHERE id = ? LIMIT 1
+              )
+              AND (
+                ? IS NULL
+                OR (
+                  lower(i.email) NOT IN (
+                      SELECT lower(u2.email) FROM team_members tm
+                      JOIN users u2 ON u2.id = tm.user_id
+                      WHERE tm.team_id = ?
+                  )
+                  AND lower(i.email) NOT IN (
+                      SELECT lower(email) FROM team_invites
+                      WHERE team_id = ? AND status = 'pending'
+                  )
+                )
+              )
+            GROUP BY i.email, u.id, u.display_name
+            ORDER BY lower(i.email)
+            """,
+            (user_id, user_id, team_id, team_id, team_id),
+        ).fetchall()
+        for row in past_invites:
+            email = str(row["email"] or "").strip().lower()
+            if not email or email in by_email:
+                continue
+            by_email[email] = {
+                "id": row["user_id"],
+                "email": email,
+                "display_name": row["display_name"] or email,
+                "source_teams": row["source_teams"] or "Previously invited",
+                "source": "previous_invite",
+            }
+
+    return sorted(
+        by_email.values(),
+        key=lambda item: str(item.get("display_name") or item.get("email") or "").lower(),
+    )
+
+
 def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
     """Owner-facing team roster: current members plus pending invites."""
     with get_conn() as conn:
@@ -181,28 +275,10 @@ def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
             """,
             (team_id,),
         ).fetchall()
-        candidates = conn.execute(
-            """
-            SELECT DISTINCT u.id, u.email, u.display_name,
-                   GROUP_CONCAT(DISTINCT source_team.name) AS source_teams
-            FROM team_members requester_tm
-            JOIN teams source_team ON source_team.id = requester_tm.team_id
-            JOIN team_members source_member ON source_member.team_id = requester_tm.team_id
-            JOIN users u ON u.id = source_member.user_id
-            WHERE requester_tm.user_id = ?
-              AND source_member.user_id != ?
-              AND source_member.user_id NOT IN (
-                  SELECT user_id FROM team_members WHERE team_id = ?
-              )
-            GROUP BY u.id, u.email, u.display_name
-            ORDER BY u.display_name
-            """,
-            (user_id, user_id, team_id),
-        ).fetchall()
     return {
         "members": [dict(r) for r in members],
         "invites": [dict(r) for r in invites],
-        "candidates": [dict(r) for r in candidates],
+        "candidates": list_workspace_invite_candidates(user_id, team_id),
         "can_remove_members": requester["role"] == "owner",
     }
 

@@ -8,7 +8,7 @@
  * Legacy popup-only number fields are removed; all values use units.js (mm/in).
  */
 
-import { parseLength, formatLength, unitSuffix, onUnitsChanged } from "./units.js?v=20260610-direct";
+import { parseLength, formatLength, unitSuffix, onUnitsChanged } from "./units.js?v=20260714-units-ft-m";
 
 export function createEditTools({
   api,
@@ -108,7 +108,7 @@ export function createEditTools({
       } else if (ref && directModeling?.startPressPullFromRef?.(ref)) {
         /* linked to picked face */
       } else {
-        directModeling?.setTool?.("presspull");
+        directModeling?.ensureTool?.("presspull") || directModeling?.setTool?.("presspull");
       }
       updateExtrudeTarget();
     }

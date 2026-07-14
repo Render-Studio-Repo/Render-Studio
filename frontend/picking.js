@@ -1340,11 +1340,13 @@ export function pickGeometry(event, { camera, domElement, meshRoot, meshCenterOf
     position = edge.position;
     normal = new THREE.Vector3(...edge.normal);
     localPoint = edge.localPoint;
+    hit._edgePick = edge;
   } else {
     return null;
   }
 
   const id = `${type}-${refCounter}`;
+  const edgePick = hit._edgePick;
   const ref = {
     id,
     type,
@@ -1356,6 +1358,13 @@ export function pickGeometry(event, { camera, domElement, meshRoot, meshCenterOf
     planar_key: pickMode === "face" ? planarKey : null,
     mesh_uuid: pickMode === "face" ? hit.object.uuid : null,
     face_area: pickMode === "face" ? (hit._groupArea ?? null) : null,
+    edge_length: pickMode === "edge" && edgePick ? edgePick.edge_length : null,
+    edge_start: pickMode === "edge" && edgePick?.edge_start
+      ? [edgePick.edge_start.x, edgePick.edge_start.y, edgePick.edge_start.z]
+      : null,
+    edge_end: pickMode === "edge" && edgePick?.edge_end
+      ? [edgePick.edge_end.x, edgePick.edge_end.y, edgePick.edge_end.z]
+      : null,
     label: formatRefLabel(type, [position.x, position.y, position.z]),
     token: `@${id}`,
     localPoint,
@@ -1530,9 +1539,12 @@ const measureAnnotGroup = new THREE.Group();
 measureAnnotGroup.name = "measureAnnotations";
 const measureHoverGroup = new THREE.Group();
 measureHoverGroup.name = "measureHoverLine";
+const savedMeasureGroup = new THREE.Group();
+savedMeasureGroup.name = "savedMeasureAnnotations";
 
 export function getMeasureAnnotGroup() { return measureAnnotGroup; }
 export function getMeasureHoverGroup() { return measureHoverGroup; }
+export function getSavedMeasureGroup() { return savedMeasureGroup; }
 
 export { scaleForMesh };
 
@@ -1596,26 +1608,130 @@ function _makeEndcap(pos, scale) {
   return m;
 }
 
+function _addDimSegment(group, a, b, label, scale, color = 0xffd700) {
+  const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+  const mat = new THREE.LineDashedMaterial({
+    color,
+    dashSize: scale * 4,
+    gapSize: scale * 2,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const line = new THREE.Line(geo, mat);
+  line.computeLineDistances();
+  line.renderOrder = 999;
+  group.add(line);
+  group.add(_makeEndcap(a, scale));
+  group.add(_makeEndcap(b, scale));
+  const mid = a.clone().lerp(b, 0.5);
+  const up = new THREE.Vector3(0, 1, 0);
+  const perp = new THREE.Vector3().crossVectors(b.clone().sub(a), up).normalize();
+  if (perp.lengthSq() < 0.001) perp.set(1, 0, 0);
+  const sprite = _makeDimLabelSprite(label, scale);
+  sprite.position.copy(mid).addScaledVector(perp, scale * 3);
+  group.add(sprite);
+}
+
+function _edgeEndpoints(ref) {
+  if (Array.isArray(ref?.edge_start) && Array.isArray(ref?.edge_end) && ref.edge_start.length >= 3 && ref.edge_end.length >= 3) {
+    return {
+      start: new THREE.Vector3(...ref.edge_start),
+      end: new THREE.Vector3(...ref.edge_end),
+    };
+  }
+  return null;
+}
+
 /**
- * Rebuild all 3D dimension lines between picked measurement references.
- * @param {Array} refs  - array of ref objects from pickGeometry
- * @param {number} mmPerUnit - conversion factor
- * @param {Object} meshRoot - THREE.Object3D; used for scale inference
- * @param {Function} formatFn - (mm: number) => string
+ * Rebuild Fusion-style dimension overlays for picked geometry.
+ * - 1 face → area label
+ * - 1 edge → edge length
+ * - 2+ picks → distance (and angle for 2 edges)
  */
-export function setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn) {
-  _clearGroup(measureAnnotGroup);
-  if (!meshRoot || refs.length < 2) return;
+export function setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn, formatAreaFn, opts = {}) {
+  const target = opts.target || measureAnnotGroup;
+  if (opts.clear !== false) _clearGroup(target);
+  if (!meshRoot || !refs?.length) return;
   const scale = scaleForMesh(meshRoot);
   const fmt = formatFn || ((mm) => `${mm.toFixed(2)} mm`);
+  const fmtArea = formatAreaFn || ((mm2) => `${mm2.toFixed(2)} mm²`);
+  const color = opts.color ?? 0xffd700;
 
-  // Draw a line + label for each consecutive pair and for every pair if only 2 refs.
+  if (refs.length === 1) {
+    const r = refs[0];
+    if (r.type === "edge") {
+      const ends = _edgeEndpoints(r);
+      const a = ends?.start || _refVec(r);
+      const b = ends?.end;
+      const lenModel = Number.isFinite(r.edge_length)
+        ? r.edge_length
+        : ends
+          ? ends.start.distanceTo(ends.end)
+          : null;
+      if (a && b && Number.isFinite(lenModel)) {
+        _addDimSegment(target, a, b, fmt(lenModel * mmPerUnit), scale, color);
+      } else if (a && Number.isFinite(lenModel)) {
+        const sprite = _makeDimLabelSprite(fmt(lenModel * mmPerUnit), scale);
+        sprite.position.copy(a);
+        target.add(sprite);
+      }
+      return;
+    }
+    if (r.type === "face" && Number.isFinite(r.face_area)) {
+      const p = _refVec(r);
+      if (!p) return;
+      const areaMm2 = r.face_area * mmPerUnit * mmPerUnit;
+      const sprite = _makeDimLabelSprite(fmtArea(areaMm2), scale);
+      const n = Array.isArray(r.normal) ? new THREE.Vector3(...r.normal).normalize() : new THREE.Vector3(0, 0, 1);
+      sprite.position.copy(p).addScaledVector(n, scale * 4);
+      target.add(sprite);
+      target.add(_makeEndcap(p, scale));
+      return;
+    }
+    if (r.type === "corner" || r.type === "vertex") {
+      const p = _refVec(r);
+      if (!p) return;
+      const label = `X ${fmt(p.x * mmPerUnit)}  Y ${fmt(p.y * mmPerUnit)}  Z ${fmt(p.z * mmPerUnit)}`;
+      const sprite = _makeDimLabelSprite(label, scale * 1.15);
+      sprite.position.copy(p).add(new THREE.Vector3(0, 0, scale * 4));
+      target.add(sprite);
+      target.add(_makeEndcap(p, scale));
+    }
+    return;
+  }
+
+  if (refs.length === 2 && refs[0].type === "edge" && refs[1].type === "edge") {
+    for (const r of refs) {
+      const ends = _edgeEndpoints(r);
+      if (!ends) continue;
+      const lenModel = Number.isFinite(r.edge_length) ? r.edge_length : ends.start.distanceTo(ends.end);
+      _addDimSegment(target, ends.start, ends.end, fmt(lenModel * mmPerUnit), scale, 0xd29922);
+    }
+    const a = _refVec(refs[0]);
+    const b = _refVec(refs[1]);
+    if (a && b) {
+      _addDimSegment(target, a, b, fmt(a.distanceTo(b) * mmPerUnit), scale, color);
+      const d0 = _edgeEndpoints(refs[0]);
+      const d1 = _edgeEndpoints(refs[1]);
+      if (d0 && d1) {
+        const dir0 = d0.end.clone().sub(d0.start).normalize();
+        const dir1 = d1.end.clone().sub(d1.start).normalize();
+        const ang = (Math.acos(Math.max(-1, Math.min(1, Math.abs(dir0.dot(dir1))))) * 180) / Math.PI;
+        const mid = a.clone().lerp(b, 0.5);
+        const sprite = _makeDimLabelSprite(`${ang.toFixed(1)}°`, scale);
+        sprite.position.copy(mid).add(new THREE.Vector3(0, 0, scale * 5));
+        target.add(sprite);
+      }
+    }
+    return;
+  }
+
   const pairs = [];
   if (refs.length === 2) {
     pairs.push([0, 1]);
   } else {
     for (let i = 0; i < refs.length - 1; i++) pairs.push([i, i + 1]);
-    // Also draw total span if ≥ 3
     if (refs.length >= 3) pairs.push([0, refs.length - 1]);
   }
 
@@ -1623,42 +1739,34 @@ export function setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn) {
     const a = _refVec(refs[i]);
     const b = _refVec(refs[j]);
     if (!a || !b) continue;
-    const dist = a.distanceTo(b) * mmPerUnit;
-    const label = fmt(dist);
-
-    // Dashed dimension line
-    const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
-    const mat = new THREE.LineDashedMaterial({
-      color: 0xffd700,
-      dashSize: scale * 4,
-      gapSize: scale * 2,
-      depthTest: false,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const line = new THREE.Line(geo, mat);
-    line.computeLineDistances();
-    line.renderOrder = 999;
-    measureAnnotGroup.add(line);
-
-    // Endcap dots
-    measureAnnotGroup.add(_makeEndcap(a, scale));
-    measureAnnotGroup.add(_makeEndcap(b, scale));
-
-    // Label sprite at midpoint, shifted slightly perpendicular so it doesn't sit
-    // exactly on the line and occlude it.
-    const mid = a.clone().lerp(b, 0.5);
-    const up = new THREE.Vector3(0, 1, 0);
-    const perp = new THREE.Vector3().crossVectors(b.clone().sub(a), up).normalize();
-    if (perp.lengthSq() < 0.001) perp.set(1, 0, 0);
-    const sprite = _makeDimLabelSprite(label, scale);
-    sprite.position.copy(mid).addScaledVector(perp, scale * 3);
-    measureAnnotGroup.add(sprite);
+    _addDimSegment(target, a, b, fmt(a.distanceTo(b) * mmPerUnit), scale, color);
   }
 }
 
 export function clearMeasureAnnotations() {
   _clearGroup(measureAnnotGroup);
+}
+
+/**
+ * Draw persisted (saved) measurements into their own overlay group.
+ * Each item is `{ refs: [...] }` using the same ref shape as live picks.
+ */
+export function setSavedMeasureAnnotations(items, mmPerUnit, meshRoot, formatFn, formatAreaFn) {
+  _clearGroup(savedMeasureGroup);
+  if (!meshRoot || !items?.length) return;
+  for (const item of items) {
+    const refs = item?.refs || [];
+    if (!refs.length) continue;
+    setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn, formatAreaFn, {
+      clear: false,
+      target: savedMeasureGroup,
+      color: item.color ?? 0x3fb950,
+    });
+  }
+}
+
+export function clearSavedMeasureAnnotations() {
+  _clearGroup(savedMeasureGroup);
 }
 
 /**

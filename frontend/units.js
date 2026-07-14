@@ -1,25 +1,54 @@
 /**
- * Global document units (mm / in) with Fusion-style value parsing.
+ * Global document units (mm / cm / m / in / ft) with Fusion-style value parsing.
  *
  * Every length input in the app accepts strings like "25", "25mm", "1in",
- * "0.5 in", '1.5"', "1/2in", "12.7 mm", "2cm" — converted internally to mm.
- * Bare numbers are interpreted in the current document unit.
+ * "0.5 in", '1.5"', "1/2in", "12.7 mm", "2cm", "3ft", "1.2m" — converted
+ * internally to mm. Bare numbers use the current document unit.
  */
 
 const LS_KEY = "render3d:units";
+
 export const MM_PER_IN = 25.4;
+export const MM_PER_FT = 304.8;
+
+/** @typedef {"mm"|"cm"|"m"|"in"|"ft"} UnitId */
+
+export const UNIT_OPTIONS = [
+  { id: "mm", label: "mm", toMm: 1, precision: 3 },
+  { id: "cm", label: "cm", toMm: 10, precision: 3 },
+  { id: "m", label: "m", toMm: 1000, precision: 4 },
+  { id: "in", label: "in", toMm: MM_PER_IN, precision: 4 },
+  { id: "ft", label: "ft", toMm: MM_PER_FT, precision: 4 },
+];
+
+const UNIT_MAP = Object.fromEntries(UNIT_OPTIONS.map((u) => [u.id, u]));
+
+function normalizeUnit(u) {
+  const id = String(u || "").toLowerCase();
+  if (UNIT_MAP[id]) return id;
+  if (id === "inch" || id === "inches" || id === '"') return "in";
+  if (id === "feet" || id === "foot" || id === "'") return "ft";
+  if (id === "meter" || id === "meters" || id === "metre" || id === "metres") return "m";
+  if (id === "centimeter" || id === "centimeters" || id === "centimetre" || id === "centimetres") return "cm";
+  if (id === "millimeter" || id === "millimeters" || id === "millimetre" || id === "millimetres") return "mm";
+  return "mm";
+}
 
 let current = "mm";
 try {
-  current = localStorage.getItem(LS_KEY) === "in" ? "in" : "mm";
-} catch (_) {}
+  current = normalizeUnit(localStorage.getItem(LS_KEY) || "mm");
+} catch (_) {
+  current = "mm";
+}
 
 export function getUnits() {
   return current;
 }
 
 export function setUnits(u) {
-  current = u === "in" ? "in" : "mm";
+  const next = normalizeUnit(u);
+  if (next === current) return;
+  current = next;
   try {
     localStorage.setItem(LS_KEY, current);
   } catch (_) {}
@@ -36,12 +65,13 @@ export function onUnitsChanged(fn) {
  */
 export function parseLength(text, { defaultUnit = current } = {}) {
   if (typeof text === "number") {
-    return defaultUnit === "in" ? text * MM_PER_IN : text;
+    const def = UNIT_MAP[normalizeUnit(defaultUnit)] || UNIT_MAP.mm;
+    return text * def.toMm;
   }
-  const s = String(text ?? "").trim().toLowerCase().replace(/”|″/g, '"');
+  const s = String(text ?? "").trim().toLowerCase().replace(/”|″/g, '"').replace(/’|′/g, "'");
   if (!s) return NaN;
   const m = s.match(
-    /^(-?(?:\d+\s+)?\d*\.?\d+(?:\s*\/\s*\d*\.?\d+)?)\s*(mm|millimetres?|millimeters?|cm|m|in|inch|inches|")?$/
+    /^(-?(?:\d+\s+)?\d*\.?\d+(?:\s*\/\s*\d*\.?\d+)?)\s*(mm|millimetres?|millimeters?|cm|centimetres?|centimeters?|m|metres?|meters?|in|inch|inches|"|ft|feet|foot|')?$/
   );
   if (!m) return NaN;
 
@@ -59,39 +89,39 @@ export function parseLength(text, { defaultUnit = current } = {}) {
   }
   if (!Number.isFinite(value)) return NaN;
 
-  const unit = m[2] || defaultUnit;
-  switch (unit) {
-    case "in":
-    case "inch":
-    case "inches":
-    case '"':
-      return value * MM_PER_IN;
-    case "cm":
-      return value * 10;
-    case "m":
-      return value * 1000;
-    default:
-      return value;
-  }
+  const unit = normalizeUnit(m[2] || defaultUnit);
+  return value * (UNIT_MAP[unit]?.toMm ?? 1);
 }
 
 /** mm → numeric value in the current display unit. */
 export function displayValue(mm, precision) {
   if (!Number.isFinite(mm)) return NaN;
-  const v = current === "in" ? mm / MM_PER_IN : mm;
-  const p = precision ?? (current === "in" ? 4 : 3);
+  const def = UNIT_MAP[current] || UNIT_MAP.mm;
+  const v = mm / def.toMm;
+  const p = precision ?? def.precision;
   return parseFloat(v.toFixed(p));
 }
 
 /** mm → "12.7 mm" / "0.5 in" in the current unit. */
 export function formatLength(mm, precision) {
   if (!Number.isFinite(mm)) return "—";
-  return `${displayValue(mm, precision)} ${current}`;
+  const def = UNIT_MAP[current] || UNIT_MAP.mm;
+  return `${displayValue(mm, precision)} ${def.label}`;
+}
+
+/** mm² → area string in the current unit. */
+export function formatArea(mm2, precision) {
+  if (!Number.isFinite(mm2)) return "—";
+  const def = UNIT_MAP[current] || UNIT_MAP.mm;
+  const scale = def.toMm * def.toMm;
+  const v = mm2 / scale;
+  const p = precision ?? (current === "m" || current === "ft" ? 4 : 2);
+  return `${parseFloat(v.toFixed(p))} ${def.label}²`;
 }
 
 /** Suffix for labels, e.g. `Distance (${unitSuffix()})`. */
 export function unitSuffix() {
-  return current;
+  return (UNIT_MAP[current] || UNIT_MAP.mm).label;
 }
 
 /**
@@ -102,12 +132,40 @@ export function mmPerModelUnit(maxExtent) {
   return Number.isFinite(maxExtent) && maxExtent >= 1.0 ? 1 : 1000;
 }
 
-/** Mount the global mm/in switcher (header select). */
-export function initUnitSwitcher(selectEl) {
+/** Fill a <select> with unit options and keep it synced. */
+export function fillUnitSelect(selectEl) {
   if (!selectEl) return;
-  selectEl.value = current;
-  selectEl.addEventListener("change", () => setUnits(selectEl.value));
+  const prev = selectEl.value;
+  selectEl.innerHTML = UNIT_OPTIONS.map(
+    (u) => `<option value="${u.id}">${u.label}</option>`
+  ).join("");
+  selectEl.value = UNIT_MAP[prev] ? prev : current;
+}
+
+/**
+ * Mount global unit switcher(s). Accepts one element or a NodeList/array.
+ * All `.unit-select` elements stay in sync.
+ */
+export function initUnitSwitcher(selectElOrList) {
+  const list = selectElOrList
+    ? Array.from(selectElOrList.length != null && !selectElOrList.tagName ? selectElOrList : [selectElOrList])
+    : Array.from(document.querySelectorAll(".unit-select, [data-unit-select]"));
+  if (!list.length) return;
+
+  for (const el of list) {
+    fillUnitSelect(el);
+    el.value = current;
+    el.addEventListener("change", () => setUnits(el.value));
+  }
   onUnitsChanged((u) => {
-    if (selectEl.value !== u) selectEl.value = u;
+    for (const el of list) {
+      if (el.value !== u) el.value = u;
+    }
+    document.querySelectorAll(".unit-select, [data-unit-select]").forEach((el) => {
+      if (el.value !== u) {
+        fillUnitSelect(el);
+        el.value = u;
+      }
+    });
   });
 }

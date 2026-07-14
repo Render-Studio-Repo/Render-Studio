@@ -1782,23 +1782,33 @@ def extrude_face(
     axis: list[float] | None = None,
     inward: bool = False,
 ) -> trimesh.Trimesh:
-    """Extrude a mesh face along its normal (or custom axis) and union with the body."""
+    """Extrude a mesh face along its normal (or custom axis).
+
+    Outward extrudes union with the body; inward extrudes cut (boolean difference)
+    across the connected planar face region (same as Press-Pull cut).
+    """
+    dist = float(distance)
+    if dist <= 0:
+        raise ValueError("extrude distance must be > 0")
+    if inward:
+        return face_pull(
+            mesh,
+            int(face_index),
+            distance=-dist,
+            op="cut",
+            normal=list(axis) if axis is not None else None,
+        )
+
     m = repair_mesh(mesh_copy(mesh))
     fi = int(face_index)
     if fi < 0 or fi >= len(m.faces):
         raise ValueError(f"face_index out of range: {fi}")
-
-    dist = float(distance)
-    if dist <= 0:
-        raise ValueError("extrude distance must be > 0")
 
     normal = np.asarray(axis if axis is not None else m.face_normals[fi], dtype=float)
     nlen = float(np.linalg.norm(normal))
     if nlen < 1e-9:
         raise ValueError("extrude direction is zero")
     normal = normal / nlen
-    if inward:
-        normal = -normal
 
     ring = m.vertices[m.faces[fi]]
     n = len(ring)
@@ -1818,7 +1828,9 @@ def extrude_face(
         faces.append([i, j, j + n])
         faces.append([i, j + n, i + n])
 
-    solid = repair_mesh(trimesh.Trimesh(vertices=vertices, faces=faces, process=True))
+    solid = _ensure_positive_volume(
+        repair_mesh(trimesh.Trimesh(vertices=vertices, faces=faces, process=True))
+    )
     return _boolean(m, solid, "union")
 
 
@@ -1834,31 +1846,66 @@ def _boolean_engines() -> list[str | None]:
     return engines
 
 
-def _delete_faces_inside_bounds(
-    mesh: trimesh.Trimesh,
-    bounds: np.ndarray,
-    *,
-    padding: float = 0.5,
-) -> trimesh.Trimesh:
-    """Remove triangles whose centroids fall inside an axis-aligned box (local cut fallback)."""
-    lo = np.asarray(bounds[0], dtype=float) - padding
-    hi = np.asarray(bounds[1], dtype=float) + padding
-    keep: list[int] = []
-    verts = mesh.vertices
-    for i, face in enumerate(mesh.faces):
-        centroid = verts[face].mean(axis=0)
-        if not (np.all(centroid >= lo) and np.all(centroid <= hi)):
-            keep.append(i)
-    min_keep = max(10, int(len(mesh.faces) * 0.05))
-    if len(keep) < min_keep or len(keep) >= len(mesh.faces):
-        return mesh
-    return repair_mesh(mesh.submesh([keep], append=True))
+def _empty_mesh() -> trimesh.Trimesh:
+    return trimesh.Trimesh(
+        vertices=np.zeros((0, 3), dtype=float),
+        faces=np.zeros((0, 3), dtype=int),
+        process=False,
+    )
+
+
+def _ensure_positive_volume(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Flip winding when a solid reports negative volume (common for cutters)."""
+    m = repair_mesh(mesh_copy(mesh))
+    try:
+        if float(m.volume) < 0:
+            m.invert()
+    except Exception:
+        pass
+    return m
+
+
+def _difference_result_quality(base: trimesh.Trimesh, result: trimesh.Trimesh) -> float:
+    """Higher is better. Negative means reject (no material removed / volume grew)."""
+    if result is None or len(getattr(result, "vertices", [])) == 0:
+        return 0.0  # empty = fully cut away (valid)
+    try:
+        base_vol = float(base.volume)
+        out_vol = float(result.volume)
+    except Exception:
+        return 0.5
+    if not np.isfinite(base_vol) or not np.isfinite(out_vol):
+        return -1.0
+    if base_vol > 0 and out_vol > base_vol * 1.001:
+        return -1.0  # difference must not grow the solid
+    removed = base_vol - out_vol if base_vol > 0 else 0.0
+    if base_vol > 0 and removed <= max(base_vol * 1e-10, 1e-12):
+        return -1.0
+    score = removed
+    try:
+        if base.is_watertight and not bool(result.is_watertight):
+            score *= 0.25  # prefer watertight results when the input was solid
+    except Exception:
+        pass
+    return float(score)
+
+
+def _bounds_contain(outer: np.ndarray, inner: np.ndarray, *, margin: float = 1e-6) -> bool:
+    """True when ``inner`` AABB is inside ``outer`` AABB (with margin)."""
+    try:
+        o0 = np.asarray(outer[0], dtype=float) - margin
+        o1 = np.asarray(outer[1], dtype=float) + margin
+        i0 = np.asarray(inner[0], dtype=float)
+        i1 = np.asarray(inner[1], dtype=float)
+        return bool(np.all(i0 >= o0) and np.all(i1 <= o1))
+    except Exception:
+        return False
 
 
 def _boolean(mesh_a: trimesh.Trimesh, mesh_b: trimesh.Trimesh, op: str) -> trimesh.Trimesh:
-    """Boolean CSG with repair, no volume pre-check, and safe fallbacks."""
+    """Boolean CSG with repair. Difference never falls back to deleting triangles."""
     a = repair_mesh(mesh_a)
-    b = repair_mesh(mesh_b)
+    b = _ensure_positive_volume(mesh_b)
     fn = {
         "union": trimesh.boolean.union,
         "difference": trimesh.boolean.difference,
@@ -1868,28 +1915,61 @@ def _boolean(mesh_a: trimesh.Trimesh, mesh_b: trimesh.Trimesh, op: str) -> trime
         raise ValueError(f"Unknown boolean op: {op}")
 
     last_err: Exception | None = None
-    for engine in _boolean_engines():
+    saw_empty = False
+    best: trimesh.Trimesh | None = None
+    best_score = -1.0
+
+    cutters = [b]
+    if op == "difference":
+        flipped = mesh_copy(b)
         try:
-            result = fn([a, b], engine=engine, check_volume=False)
-            if result is not None and len(getattr(result, "vertices", [])) > 0:
-                return repair_mesh(result)
-        except Exception as exc:
-            last_err = exc
-            logger.info("Boolean %s engine=%s failed: %s", op, engine, exc)
+            flipped.invert()
+            cutters.append(repair_mesh(flipped))
+        except Exception:
+            pass
+
+    for cutter in cutters:
+        for engine in _boolean_engines():
+            try:
+                result = fn([a, cutter], engine=engine, check_volume=False)
+            except Exception as exc:
+                last_err = exc
+                logger.info("Boolean %s engine=%s failed: %s", op, engine, exc)
+                continue
+            if result is None:
+                continue
+            if len(getattr(result, "vertices", [])) == 0:
+                # Only treat empty as "fully cut away" when the cutter truly
+                # swallows a solid body. Open/non-watertight meshes often yield
+                # empty results from manifold on failure — that is NOT success.
+                try:
+                    solid_ok = bool(getattr(a, "is_watertight", False))
+                except Exception:
+                    solid_ok = False
+                if solid_ok and _bounds_contain(cutter.bounds, a.bounds):
+                    saw_empty = True
+                continue
+            repaired = repair_mesh(result)
+            if op != "difference":
+                return repaired
+            score = _difference_result_quality(a, repaired)
+            if score > best_score:
+                best_score = score
+                best = repaired
+
+    if op == "difference":
+        if best is not None and best_score >= 0:
+            return best
+        if saw_empty:
+            return _empty_mesh()
+        raise ValueError(
+            f"Boolean cut failed{f': {last_err}' if last_err else ''}. "
+            "Try a shallower depth, re-pick the face, or repair the mesh."
+        )
 
     if op == "union":
         logger.warning("Boolean union fallback to concatenate")
         return repair_mesh(trimesh.util.concatenate([a, b]))
-    if op == "difference":
-        try:
-            carved = _delete_faces_inside_bounds(a, b.bounds)
-            if len(carved.vertices) < len(a.vertices):
-                logger.warning("Boolean difference fallback — deleted faces inside cutter bounds")
-                return carved
-        except Exception as exc:
-            logger.warning("Face-delete difference fallback failed: %s", exc)
-        logger.warning("Boolean difference fallback — keeping outer mesh (%s)", last_err)
-        return a
     if op == "intersection":
         logger.warning("Boolean intersection fallback — keeping mesh A")
         return a
@@ -2261,7 +2341,7 @@ def _region_prism(
 
     verts = np.vstack([bottom, top])
     prism = trimesh.Trimesh(vertices=verts, faces=np.asarray(tris, dtype=int), process=True)
-    return repair_mesh(prism)
+    return _ensure_positive_volume(prism)
 
 
 def _mesh_bodies(mesh: trimesh.Trimesh) -> list[trimesh.Trimesh]:
@@ -2287,9 +2367,12 @@ def _body_for_face(bodies: list[trimesh.Trimesh], face_index: int) -> tuple[int,
 
 
 def _reassemble_bodies(bodies: list[trimesh.Trimesh]) -> trimesh.Trimesh:
-    if len(bodies) == 1:
-        return bodies[0]
-    return repair_mesh(trimesh.util.concatenate(bodies))
+    kept = [b for b in bodies if b is not None and len(getattr(b, "vertices", [])) > 0]
+    if not kept:
+        raise ValueError("Cut removed the entire model — use a shallower depth or a smaller face region")
+    if len(kept) == 1:
+        return kept[0]
+    return repair_mesh(trimesh.util.concatenate(kept))
 
 
 def _face_pull_cut(
@@ -2306,11 +2389,19 @@ def _face_pull_cut(
     best_out: trimesh.Trimesh | None = None
     best_removed = -1.0
     n = np.asarray(normal, dtype=float)
+    last_err: Exception | None = None
     for candidate in (n, -n):
         prism = _region_prism(body, region, candidate, t0, t1, taper_deg)
         if not _cutter_intersects_mesh(body, prism):
             continue
-        out = _boolean(body, prism, "difference")
+        try:
+            out = _boolean(body, prism, "difference")
+        except ValueError as exc:
+            last_err = exc
+            continue
+        if len(getattr(out, "vertices", [])) == 0:
+            # Entire body consumed by the cutter.
+            return out
         if base_vol <= 0:
             if len(getattr(out, "vertices", [])) > 0:
                 return out
@@ -2323,7 +2414,10 @@ def _face_pull_cut(
             return out
     if best_out is not None and best_removed > min_removed:
         return best_out
-    raise ValueError("Cut removed no material — re-pick the face or increase depth")
+    hint = f" ({last_err})" if last_err else ""
+    raise ValueError(
+        f"Cut removed no material — re-pick the face or increase depth{hint}"
+    )
 
 
 def face_pull(
@@ -2363,7 +2457,20 @@ def face_pull(
     mag = abs(d)
 
     if mode == "cut":
-        depth = float(np.linalg.norm(target.extents)) + 2.0 * eps if through else mag
+        # Cap blind depth so a deep push does not silently consume a thin shell
+        # when Through-all is off. Through-all still spans the body extent.
+        body_span = float(np.linalg.norm(target.extents)) + 2.0 * eps
+        if through:
+            depth = body_span
+        else:
+            depth = mag
+            # Keep a tiny remnant if the cut would wipe a thin body entirely.
+            try:
+                thickness = abs(float(np.dot(target.extents, np.abs(n))))
+            except Exception:
+                thickness = body_span
+            if thickness > 4.0 * eps and depth >= thickness - eps:
+                depth = max(eps * 2.0, thickness - 2.0 * eps)
         if depth <= 0:
             raise ValueError("Cut depth must be > 0")
         if direction == "symmetric":

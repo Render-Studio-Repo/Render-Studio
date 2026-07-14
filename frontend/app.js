@@ -31,11 +31,14 @@ import {
   restoreReferenceMarkers,
   getMeasureAnnotGroup,
   getMeasureHoverGroup,
+  getSavedMeasureGroup,
   setMeasureAnnotations,
   clearMeasureAnnotations,
+  setSavedMeasureAnnotations,
+  clearSavedMeasureAnnotations,
   updateMeasureLivePreview,
   clearMeasureLivePreview,
-} from "./picking.js?v=20260706-pick-face";
+} from "./picking.js?v=20260714-measure-units";
 import {
   FUSION,
   setupSceneLighting,
@@ -69,11 +72,11 @@ import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-vi
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260707-download-retry";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260709-unlink-clear";
-import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
+import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
-import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
+import { createDirectModeling } from "./direct-modeling.js?v=20260714-extrude-face-drag";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
@@ -1198,6 +1201,7 @@ scene.add(getMarkersGroup());
 scene.add(getHoverGroup());
 scene.add(getMeasureAnnotGroup());
 scene.add(getMeasureHoverGroup());
+scene.add(getSavedMeasureGroup());
 
 const controls = new TrackballControls(camera, renderer.domElement);
 controls._up0?.copy(VIEW_CUBE_WORLD_UP);
@@ -1923,6 +1927,7 @@ const composer = createPromptComposer({
     if (!restoringModelPromptState) saveActiveModelPromptState();
     sendCollabPresence();
     meshCleanup?.refresh?.();
+    if (!measureModeActive) refreshSelectionMeasureOverlay();
   },
 });
 
@@ -3246,6 +3251,7 @@ async function afterModelEdit(data) {
 
   selectedFile = data.filename;
   await refreshFiles();
+  const isFacePull = data?.action === "face_pull" || data?.kind === "face_pull" || /pulled|face.?pull/i.test(String(data?.label || ""));
   await loadModel(data.url, data.filename, {
     projectId,
     preservePlacement: isBakedTransform ? !!placementBaseline : true,
@@ -3257,7 +3263,8 @@ async function afterModelEdit(data) {
     append: inAssembly,
     replaceCatalog: prevCatalog || null,
     fitView: false,
-    autoGizmo: true,
+    // Avoid popping the transform gizmo after Extrude/Cut — it feels like a hard reload.
+    autoGizmo: isBakedTransform ? true : !isFacePull && !inAssembly,
   });
   gizmoPanel.resetDragBaseline?.();
   if (isBakedTransform || projectAssembly.count() > 0) {
@@ -3461,7 +3468,7 @@ function setEditStatus(kind, text) {
 }
 
 // ── Fusion-style direct modeling (press-pull, mirror, gizmo panel, units) ────
-initUnitSwitcher(document.getElementById("unit-select"));
+initUnitSwitcher(document.querySelectorAll(".unit-select, [data-unit-select]"));
 
 function currentMmPerModelUnit() {
   if (!currentMesh) return 1;
@@ -5917,6 +5924,12 @@ const directModeling = createDirectModeling({
   getMeshCenterOffsetForMesh: (mesh) => componentRootForMesh(mesh)?.userData?.meshCenterOffset || meshCenterOffset,
   getRootForMesh: (mesh) => componentRootForMesh(mesh) || projectAssembly.getRoot() || currentMesh,
   getFilenameForMesh: (mesh) => catalogNameForMesh(mesh) || selectedFile,
+  onSelectFilename: (fname) => {
+    if (!fname || fname === selectedFile) return;
+    selectedFile = fname;
+    projectTree.setSelected?.(fname);
+    featureEditor.setModel?.(projectId, fname);
+  },
   getModelInfo: () => ({ projectId, filename: selectedFile }),
   api,
   onApplied: afterModelEdit,
@@ -5959,7 +5972,7 @@ const directModeling = createDirectModeling({
       if (pickHintText) {
         pickHintText.textContent =
           tool === "presspull"
-            ? "Click a sketch profile or model face, drag/type a distance, or use To Face to pick the target face. Esc to exit."
+            ? "Click a model face (or sketch profile), then drag to Extrude/Cut. Pull joins, push cuts — or set Operation in the HUD. Esc to exit."
             : tool === "hole"
             ? "Click a face point, drag the blue center handle to move it, set depth/through-all, then Apply. Orbit/zoom still work."
             : tool === "fillet" || tool === "chamfer"
@@ -6235,6 +6248,91 @@ let measureModeActive = false;
 let measurePickMode = "face";
 const measureReferences = [];
 const MEASURE_PICK_MODES = new Set(["face", "edge", "corner"]);
+/** @type {{ id: string, refs: any[], label?: string }[]} */
+let savedMeasurements = [];
+
+function savedMeasuresStorageKey() {
+  return projectId ? `render3d:savedMeasures:${projectId}` : null;
+}
+
+function loadSavedMeasurements() {
+  savedMeasurements = [];
+  const key = savedMeasuresStorageKey();
+  if (!key) return;
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    savedMeasurements = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    savedMeasurements = [];
+  }
+}
+
+function persistSavedMeasurements() {
+  const key = savedMeasuresStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(savedMeasurements.slice(-40)));
+  } catch {
+    /* ignore */
+  }
+}
+
+function geometryMeasureRefs(refs = []) {
+  return (refs || []).filter((r) => MEASURE_PICK_MODES.has(r?.type) && Array.isArray(r?.position));
+}
+
+function refreshSelectionMeasureOverlay() {
+  if (!currentMesh) {
+    clearMeasureAnnotations();
+    clearSavedMeasureAnnotations();
+    return;
+  }
+  const mmPer = currentMmPerModelUnit();
+  const liveRefs = measureModeActive
+    ? measureReferences.slice()
+    : geometryMeasureRefs(composer.getReferences?.() || []);
+  if (liveRefs.length) {
+    setMeasureAnnotations(liveRefs, mmPer, currentMesh, formatLength, formatArea);
+  } else {
+    clearMeasureAnnotations();
+  }
+  setSavedMeasureAnnotations(savedMeasurements, mmPer, currentMesh, formatLength, formatArea);
+}
+
+function saveCurrentMeasurement() {
+  const refs = (measureModeActive ? measureReferences : geometryMeasureRefs(composer.getReferences?.() || []))
+    .map((r) => ({
+      id: r.id,
+      type: r.type,
+      position: r.position,
+      normal: r.normal,
+      face_area: r.face_area ?? null,
+      edge_length: r.edge_length ?? null,
+      edge_start: r.edge_start ?? null,
+      edge_end: r.edge_end ?? null,
+    }));
+  if (!refs.length) {
+    setEditStatus("error", "Pick a face, edge, or two points before saving a measurement.");
+    return;
+  }
+  savedMeasurements.push({
+    id: `meas-${Date.now()}`,
+    refs,
+    savedAt: Date.now(),
+  });
+  persistSavedMeasurements();
+  refreshSelectionMeasureOverlay();
+  setEditStatus("ok", `Saved measurement (${refs.length} pick${refs.length === 1 ? "" : "s"}).`);
+  void showMeasureAnalytics({ refs: measureModeActive ? measureReferences : refs, promptMode: true });
+}
+
+function clearSavedMeasurements() {
+  savedMeasurements = [];
+  persistSavedMeasurements();
+  clearSavedMeasureAnnotations();
+  setEditStatus("ok", "Cleared saved measurements.");
+}
 
 function ensureMeasureModal() {
   if (measureModalEl) return measureModalEl;
@@ -6255,8 +6353,10 @@ function ensureMeasureModal() {
         <button type="button" class="measure-mode-btn" data-measure-pick="edge" title="Pick an edge">━ Edge</button>
         <button type="button" class="measure-mode-btn" data-measure-pick="corner" title="Pick a vertex or corner">◆ Corner</button>
         <button type="button" class="measure-clear-btn" data-measure-clear title="Remove all picks">✕ Clear</button>
+        <button type="button" class="measure-save-btn" data-measure-save title="Keep this dimension overlay on the model">Save</button>
+        <button type="button" class="measure-clear-btn" data-measure-clear-saved title="Remove saved dimension overlays">Clear saved</button>
       </div>
-      <p class="measure-hint-text">Click a mode above, then click geometry in the viewport. Lines appear between picks.</p>
+      <p class="measure-hint-text">Pick a face for area, an edge for length, or two edges/points for distance — values use the Units control (bottom-right). Click Save to keep the overlay.</p>
       <div class="measure-content"></div>
     </div>`;
   document.body.appendChild(measureModalEl);
@@ -6271,6 +6371,12 @@ function ensureMeasureModal() {
   });
   measureModalEl.querySelector("[data-measure-clear]")?.addEventListener("click", () => {
     clearMeasureReferences();
+    refreshSelectionMeasureOverlay();
+    void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
+  });
+  measureModalEl.querySelector("[data-measure-save]")?.addEventListener("click", () => saveCurrentMeasurement());
+  measureModalEl.querySelector("[data-measure-clear-saved]")?.addEventListener("click", () => {
+    clearSavedMeasurements();
     void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
   });
   return measureModalEl;
@@ -6285,6 +6391,9 @@ function syncMeasureButtons() {
   });
   const toolbar = measureModalEl.querySelector(".measure-pick-toolbar");
   if (toolbar) toolbar.classList.toggle("measure-active", measureModeActive);
+  document.getElementById("btn-measure")?.classList.toggle("active", measureModeActive);
+  document.getElementById("btn-measure-tool")?.classList.toggle("active", measureModeActive);
+  document.getElementById("btn-measure-viewport")?.classList.toggle("active", measureModeActive);
 }
 
 function clearMeasureReferences() {
@@ -6333,10 +6442,12 @@ function handleReferenceRemove(event) {
     const idx = measureReferences.findIndex((ref) => ref.id === removeRefId);
     if (idx >= 0) measureReferences.splice(idx, 1);
     removeReferenceMarker(removeRefId);
+    refreshSelectionMeasureOverlay();
     void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
   } else {
     composer.removeReference(removeRefId);
     editTools.updateExtrudeTarget?.();
+    refreshSelectionMeasureOverlay();
   }
   viewerOverlay.clearError();
   event.preventDefault();
@@ -6351,8 +6462,12 @@ function beginMeasureMode(mode = measurePickMode) {
   ensureMeasureModal().classList.remove("hidden");
   activatePickMode(mode);
   syncMeasureButtons();
+  refreshSelectionMeasureOverlay();
   void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
-  setEditStatus("ok", `Measure ${mode}: click ${mode}s in the viewport. Pick another mode in the Measure popup.`);
+  setEditStatus(
+    "ok",
+    `Measure ${mode}: click to pick. Face → area, edge → length, two picks → distance. Save keeps the overlay.`
+  );
 }
 
 function endMeasureMode() {
@@ -6362,6 +6477,7 @@ function endMeasureMode() {
   if (MEASURE_PICK_MODES.has(getPickMode())) {
     activatePickMode("off");
   }
+  refreshSelectionMeasureOverlay();
 }
 
 function escMeasure(s) {
@@ -6434,7 +6550,10 @@ function refsMeasureHtml(refs = []) {
     let extra = "";
     if (r.type === "face" && r.face_area != null) {
       const areaMm2 = r.face_area * mmPer * mmPer;
-      extra = `<span class="measure-extra">Area: ${areaMm2 < 1 ? areaMm2.toFixed(4) : areaMm2.toFixed(2)} mm²</span>`;
+      extra = `<span class="measure-extra">Area: ${formatArea(areaMm2)}</span>`;
+    }
+    if (r.type === "edge" && Number.isFinite(r.edge_length)) {
+      extra += `<span class="measure-extra">Length: ${formatLength(r.edge_length * mmPer)}</span>`;
     }
     if (r.type === "face" && Array.isArray(r.normal)) {
       const n = new THREE.Vector3(...r.normal);
@@ -6569,7 +6688,35 @@ document.getElementById("btn-show-dimensions")?.addEventListener("click", () => 
   beginMeasureMode("face");
 });
 document.getElementById("btn-measure-viewport")?.addEventListener("click", () => {
-  beginMeasureMode("face");
+  beginMeasureMode(measurePickMode || "face");
+});
+document.getElementById("btn-measure-tool")?.addEventListener("click", () => {
+  if (measureModeActive) {
+    endMeasureMode();
+    ensureMeasureModal().classList.add("hidden");
+  } else {
+    beginMeasureMode(measurePickMode || "face");
+  }
+});
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("#btn-measure");
+  if (!btn) return;
+  if (measureModeActive) {
+    endMeasureMode();
+    ensureMeasureModal().classList.add("hidden");
+  } else {
+    beginMeasureMode(measurePickMode || "face");
+  }
+});
+
+onUnitsChanged(() => {
+  refreshSelectionMeasureOverlay();
+  if (measureModeActive || measureModalEl) {
+    void showMeasureAnalytics({
+      refs: measureModeActive ? measureReferences : geometryMeasureRefs(composer.getReferences?.() || []),
+      promptMode: true,
+    });
+  }
 });
 
 async function answerDimensionPrompt(prompt) {
@@ -8145,20 +8292,21 @@ function launchViewportTool(toolId) {
     transformControls.detach();
     document.getElementById("btn-gizmo")?.classList.remove("active");
     controls.enabled = true;
+    directModeling.setPreferredOp?.(toolId === "presspull-cut" ? "cut" : "auto");
     const faceRef = (composer.getReferences?.() || []).find((r) => r.type === "face" || r.face_index != null);
     const sketch = getSketchForExtrude();
     const sketchCount = sketchEditor.countVisibleSketches?.() ?? 0;
     if (sketch?.profile?.length && sketchCount === 1) {
       startExtrudeFromSketchData(sketch);
     } else if (faceRef && directModeling.startPressPullFromRef?.(faceRef)) {
-      setEditStatus("ok", "Press-Pull linked to the selected face. Drag/type a distance or click To Face.");
+      setEditStatus("ok", "Face selected — drag the arrow (or type a distance) to Extrude/Cut.");
     } else {
-      directModeling.setTool("presspull");
+      directModeling.ensureTool?.("presspull") || directModeling.setTool("presspull");
       setEditStatus(
         "ok",
         sketchCount > 0
-          ? "Click a sketch profile to extrude, or click a model face for Press-Pull."
-          : "Press-Pull: click a sketch profile or model face, then drag/type a distance or use To Face."
+          ? "Click a sketch profile to extrude, or click a model face and drag to Extrude/Cut."
+          : "Click a face, then drag to Extrude (pull) or Cut (push). Esc to exit."
       );
     }
     editTools.updateExtrudeTarget?.();
@@ -12957,6 +13105,7 @@ async function loadProject(id) {
     const prevProjectId = projectId;
     prefetchWiringForProject(id);
     projectId = id;
+    loadSavedMeasurements();
     if (wiringMode) wiringLoadPromise = wiringSim.load();
     renderPromptAiKeySelect(aiStatus, { preserveSelection: prevProjectId === id });
     wiringDebug.setProjectId?.(id);
@@ -14977,7 +15126,7 @@ renderer.domElement.addEventListener("click", (e) => {
     } else {
       measureReferences.push(result.ref);
     }
-    setMeasureAnnotations(measureReferences, currentMmPerModelUnit(), currentMesh, formatLength);
+    setMeasureAnnotations(measureReferences, currentMmPerModelUnit(), currentMesh, formatLength, formatArea);
     clearMeasureLivePreview();
     void showMeasureAnalytics({ refs: measureReferences, promptMode: true });
     viewerOverlay.clearError();
@@ -14991,6 +15140,7 @@ renderer.domElement.addEventListener("click", (e) => {
     composer.addReference(annotatePickedReference(result.ref));
     viewerOverlay.clearError();
   }
+  refreshSelectionMeasureOverlay();
   editTools.updateExtrudeTarget?.();
   clearHover();
 });
@@ -16022,6 +16172,16 @@ window.addEventListener("keydown", (e) => {
   if (key === "g" || key === "t") openTransformMode("translate");
   if (key === "r") openTransformMode("rotate");
   if (key === "s") openTransformMode("scale");
+  if (key === "i") {
+    e.preventDefault();
+    if (measureModeActive) {
+      endMeasureMode();
+      ensureMeasureModal()?.classList.add("hidden");
+    } else {
+      beginMeasureMode(measurePickMode || "face");
+    }
+    return;
+  }
   if (isObjectDeleteShortcut(e)) {
     if (hasDeletableObjectSelection()) {
       e.preventDefault();
@@ -16311,6 +16471,7 @@ window.addEventListener("keydown", (e) => {
     writeSavedWorkspaceId(rawId);
     updateWorkspaceRenameButton();
     await refreshTeamMembers();
+    await refreshInviteCandidates();
     try {
       await fetchAllProjects();
     } catch {
@@ -17402,6 +17563,16 @@ window.addEventListener("keydown", (e) => {
           loadError = memberErr.message || err.message || "Could not load members.";
         }
       }
+      if (!data.candidates?.length) {
+        try {
+          const cand = await api(
+            `/api/teams/invite-candidates?team_id=${encodeURIComponent(team.id)}`,
+          );
+          data.candidates = cand.candidates || [];
+        } catch {
+          data.candidates = data.candidates || [];
+        }
+      }
       const isOwner = team.role === "owner";
       const visible = !hidden.has(team.id);
       const memberRows = data.members || [];
@@ -17426,7 +17597,15 @@ window.addEventListener("keydown", (e) => {
             `}
           </div>
           <div class="profile-workspace-invite">
-            <input type="email" placeholder="Invite email" data-workspace-invite="${appEscapeHtml(team.id)}" />
+            ${(data.candidates || []).length ? `
+              <select class="team-invite-pick" data-workspace-invite-pick="${appEscapeHtml(team.id)}" aria-label="People you've worked with">
+                <option value="">People you've worked with…</option>
+                ${(data.candidates || []).map((c) => `
+                  <option value="${appEscapeHtml(c.email || "")}">${appEscapeHtml(c.display_name || c.email)}${c.source_teams ? ` · ${appEscapeHtml(String(c.source_teams).split(",")[0] || "")}` : ""}</option>
+                `).join("")}
+              </select>
+            ` : ""}
+            <input type="email" placeholder="Invite email" data-workspace-invite="${appEscapeHtml(team.id)}" autocomplete="off" />
             <button type="button" class="btn btn-compact secondary" data-action="workspace-invite" data-team-id="${appEscapeHtml(team.id)}">Invite</button>
           </div>
           <div class="profile-workspace-members">
@@ -17469,6 +17648,14 @@ window.addEventListener("keydown", (e) => {
   });
 
   document.getElementById("profile-workspace-panel")?.addEventListener("change", async (e) => {
+    const pick = e.target.closest("[data-workspace-invite-pick]");
+    if (pick) {
+      const teamId = pick.dataset.workspaceInvitePick;
+      const email = pick.value?.trim();
+      const input = document.querySelector(`[data-workspace-invite="${CSS.escape(teamId)}"]`);
+      if (input && email) input.value = email;
+      return;
+    }
     const visibleToggle = e.target.closest("[data-action='workspace-visible']");
     if (!visibleToggle) return;
     setWorkspaceVisible(visibleToggle.dataset.teamId, visibleToggle.checked);
@@ -17509,7 +17696,10 @@ window.addEventListener("keydown", (e) => {
           body: JSON.stringify({ email }),
         });
         input.value = "";
+        const pick = document.querySelector(`[data-workspace-invite-pick="${CSS.escape(teamId)}"]`);
+        if (pick) pick.value = "";
         await refreshWorkspaceMenuPanel();
+        await refreshInviteCandidates();
         return;
       }
       if (action === "workspace-leave") {
@@ -17582,6 +17772,38 @@ window.addEventListener("keydown", (e) => {
     }
   }
 
+  async function refreshInviteCandidates() {
+    const pick = document.getElementById("team-invite-pick");
+    if (!pick) return;
+    const teamId = document.getElementById("team-select")?.value || "";
+    if (!teamId) {
+      pick.hidden = true;
+      pick.innerHTML = `<option value="">People you've worked with…</option>`;
+      return;
+    }
+    try {
+      const data = await api(
+        `/api/teams/invite-candidates?team_id=${encodeURIComponent(teamId)}`,
+      );
+      const candidates = data.candidates || [];
+      pick.innerHTML = [
+        `<option value="">People you've worked with…</option>`,
+        ...candidates.map((c) => {
+          const label = c.display_name || c.email || "";
+          const hint = c.source_teams
+            ? ` · ${String(c.source_teams).split(",")[0]}`
+            : "";
+          return `<option value="${appEscapeHtml(c.email || "")}">${appEscapeHtml(label)}${appEscapeHtml(hint)}</option>`;
+        }),
+      ].join("");
+      pick.hidden = candidates.length === 0;
+      if (!candidates.length) pick.value = "";
+    } catch {
+      pick.hidden = true;
+      pick.innerHTML = `<option value="">People you've worked with…</option>`;
+    }
+  }
+
   async function refreshTeamMembers() {
     const teamId = document.getElementById("team-select")?.value;
     const ul = document.getElementById("team-members");
@@ -17616,6 +17838,13 @@ window.addEventListener("keydown", (e) => {
   refreshTeamInvitesRealtime = () => void refreshTeamInvites();
   refreshTeamMembersRealtime = () => void refreshTeamMembers();
   refreshWorkspacePanelRealtime = () => void refreshWorkspaceMenuPanel();
+
+  document.getElementById("team-invite-pick")?.addEventListener("change", () => {
+    const pick = document.getElementById("team-invite-pick");
+    const emailInput = document.getElementById("team-invite-email");
+    if (!pick || !emailInput) return;
+    if (pick.value) emailInput.value = pick.value;
+  });
 
   document.getElementById("btn-create-workspace")?.addEventListener("click", async () => {
     const name = document.getElementById("workspace-name")?.value?.trim();
@@ -17680,7 +17909,10 @@ window.addEventListener("keydown", (e) => {
           ? `Invite sent to ${email}`
           : `${email} is already in this workspace`;
       document.getElementById("team-invite-email").value = "";
+      const pick = document.getElementById("team-invite-pick");
+      if (pick) pick.value = "";
       await refreshTeamMembers();
+      await refreshInviteCandidates();
     } catch (err) {
       status.textContent = err.message;
     }
@@ -17693,8 +17925,16 @@ window.addEventListener("keydown", (e) => {
       selectedFile: selectedFile || null,
       workspaceId: document.getElementById("team-select")?.value || readSavedWorkspaceId() || null,
     }),
+    isBusy: () =>
+      !!directModeling?.isBusy?.()
+      || !!sketchEditor?.isActive?.()
+      || !!transformGizmoDragging
+      || document.body.classList.contains("viewport-select-dragging"),
     onUpdating: () => {
-      setEditStatus("ok", "New version available — reloading and restoring your project…");
+      setEditStatus("ok", "Reloading new version and restoring your project…");
+    },
+    onUpdateAvailable: () => {
+      setEditStatus("ok", "New version available — click Reload in the banner when ready.");
     },
   });
   window.addEventListener("beforeunload", () => {

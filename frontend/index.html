@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260714-architect-scroll" />
+  <link rel="stylesheet" href="/styles.css?v=20260714-measure-units" />
   <script type="importmap">
   {
     "imports": {
@@ -60,7 +60,10 @@
         </label>
         <select id="unit-select" class="unit-select" title="Document units" aria-label="Document units">
           <option value="mm">mm</option>
+          <option value="cm">cm</option>
+          <option value="m">m</option>
           <option value="in">in</option>
+          <option value="ft">ft</option>
         </select>
       </div>
       <div class="auth-widget">
@@ -210,9 +213,14 @@
             <input type="checkbox" id="workspace-connect-fusion" />
             Connect this workspace to Fusion
           </label>
-          <div class="team-invite-row">
-            <input type="email" id="team-invite-email" placeholder="Invite to workspace" />
-            <button type="button" id="btn-team-invite" class="btn secondary btn-compact">Invite</button>
+          <div class="team-invite-block">
+            <select id="team-invite-pick" class="team-invite-pick" aria-label="People you've worked with" hidden>
+              <option value="">People you've worked with…</option>
+            </select>
+            <div class="team-invite-row">
+              <input type="email" id="team-invite-email" placeholder="Invite email" autocomplete="off" />
+              <button type="button" id="btn-team-invite" class="btn secondary btn-compact">Invite</button>
+            </div>
           </div>
           <p id="team-invite-status" class="muted small"></p>
           <ul id="team-members" class="team-members"></ul>
@@ -434,9 +442,27 @@
         <div class="viewport-view-bar" aria-label="Viewport display">
           <button type="button" id="btn-grid-viewport" class="viewport-view-btn active" data-toggle-grid title="Toggle grid (Shift+G)" aria-pressed="true">Grid</button>
           <button type="button" id="btn-sketches-viewport" class="viewport-view-btn active" title="Toggle sketches in viewport" aria-pressed="true">Sketches</button>
-          <button type="button" id="btn-sketches-viewport" class="viewport-view-btn active" title="Toggle sketches in viewport" aria-pressed="true">Sketches</button>
-          <button type="button" id="btn-measure-viewport" class="viewport-view-btn" title="Measure selected/current object dimensions">Measure</button>
+          <button type="button" id="btn-measure-viewport" class="viewport-view-btn" title="Measure: pick faces/edges and draw dimensions">Measure</button>
           <button type="button" id="btn-color-viewport" class="viewport-view-btn" title="Color selected object or picked faces">Color</button>
+        </div>
+        <div class="viewport-corner-tools" aria-label="Viewport tools">
+          <button type="button" id="btn-measure-tool" class="viewport-corner-btn" title="Measure (I) — pick face/edge/corner, drag dimensions, save overlays">
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M3 17L17 3"/>
+              <path d="M5 17h4M11 11h4M3 15v2M17 3v2"/>
+            </svg>
+            <span>Measure</span>
+          </button>
+        </div>
+        <div class="viewport-units-bar" aria-label="Document units">
+          <label for="viewport-unit-select" class="viewport-units-label">Units</label>
+          <select id="viewport-unit-select" class="unit-select viewport-unit-select" data-unit-select title="Document units" aria-label="Document units">
+            <option value="mm">mm</option>
+            <option value="cm">cm</option>
+            <option value="m">m</option>
+            <option value="in">in</option>
+            <option value="ft">ft</option>
+          </select>
         </div>
         <div class="mobile-showcase-bar" aria-label="Mobile model viewer controls">
           <button type="button" id="btn-mobile-models" class="mobile-showcase-btn">Models</button>
@@ -1687,7 +1713,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260714-shift-mmb-tilt"></script>
+  <script type="module" src="/app.js?v=20260714-no-auto-reload"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

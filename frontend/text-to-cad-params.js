@@ -4,7 +4,7 @@
  * Length sliders preview live via mesh scale; discrete params rebuild on release.
  */
 
-import { displayValue, parseLength, unitSuffix } from "./units.js?v=20260610-direct";
+import { displayValue, parseLength, unitSuffix } from "./units.js?v=20260714-units-ft-m";
 
 const LENGTH_HINTS = new Set([
   "length", "width", "height", "depth", "radius", "diameter", "thickness", "size",
