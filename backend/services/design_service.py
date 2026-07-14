@@ -1772,6 +1772,9 @@ def _finalize_text_to_cad_source_before_step(
         jake_identical=jake_identical,
     )
     if jake_identical:
+        # Jake does not invent missing dimensions. It does rewrite scalar
+        # ``*_positions* = 10.0`` mistakes — those are type bugs, not missing params.
+        finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
         poisoned = _source_poisoned_sequence_issues(finalized)
         if poisoned:
             raise ValueError(
@@ -3574,71 +3577,65 @@ def _run_text_to_cad_v2(
                                     f"Full error:\n{detail}"
                                 )
                     elif locations_float_err:
-                        # Jake-identical: never invent position lists — LLM must repair source.
+                        # Always rewrite scalar *_positions* lists (type bug), then retry step.
+                        # Still do NOT invent unrelated missing dimensions on Jake path.
                         from backend.services.cad_authoring_agent import format_agent_repair_note
 
-                        if jake_identical:
-                            repair_note = format_agent_repair_note(
-                                stage="scripts/step",
-                                detail=detail,
-                                attempt=attempt,
-                                max_attempts=total_attempts,
-                            )
-                        else:
-                            # Render3D compatibility: rewrite scalar *_positions and retry.
-                            try:
-                                healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
-                                patched = _sanitize_poisoned_sequence_constants(healed_src, prompt=prompt)
+                        try:
+                            healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
+                            patched = _sanitize_poisoned_sequence_constants(healed_src, prompt=prompt)
+                            if not jake_identical:
                                 patched = _backfill_all_undefined_constants(
                                     patched, base=base, prompt=prompt
                                 )
-                                if patched != healed_src:
-                                    source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
-                                    current_source = patched
-                                    trace_add(
-                                        "info",
-                                        "[authoring-agent] rewrote scalar *_positions to coordinate lists and retrying scripts/step",
-                                        trace_id=trace_id,
-                                    )
-                                    if progress_callback:
-                                        progress_callback({
-                                            "stage": "step",
-                                            "pct": 40,
-                                            "label": "Retrying scripts/step after fixing hole positions...",
-                                        })
-                                    step_out = skill_runner.run_skill_tool(
-                                        "cad",
-                                        "step",
-                                        step_args,
-                                        cwd=project_path,
-                                        timeout_sec=240.0,
-                                        cancel_check=cancel_check,
-                                    )
-                                    if step_out.get("ok"):
-                                        detail = ""
-                                    else:
-                                        detail = _error_tail(
-                                            step_out, "scripts/step failed after positions fix"
-                                        )
-                                        last_error = detail
-                                        repair_note = (
-                                            "Locations(*positions) failed even after rewriting position lists. "
-                                            "Use a list of (x, y) tuples or GridLocations(nx, ny, pitch_x, pitch_y).\n"
-                                            f"Full error:\n{detail}"
-                                        )
+                            if patched != healed_src:
+                                source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
+                                current_source = patched
+                                trace_add(
+                                    "info",
+                                    "[authoring-agent] rewrote scalar *_positions to coordinate lists and retrying scripts/step",
+                                    trace_id=trace_id,
+                                )
+                                if progress_callback:
+                                    progress_callback({
+                                        "stage": "step",
+                                        "pct": 40,
+                                        "label": "Retrying scripts/step after fixing hole positions...",
+                                    })
+                                step_out = skill_runner.run_skill_tool(
+                                    "cad",
+                                    "step",
+                                    step_args,
+                                    cwd=project_path,
+                                    timeout_sec=240.0,
+                                    cancel_check=cancel_check,
+                                )
+                                if step_out.get("ok"):
+                                    detail = ""
                                 else:
+                                    detail = _error_tail(
+                                        step_out, "scripts/step failed after positions fix"
+                                    )
+                                    last_error = detail
                                     repair_note = format_agent_repair_note(
                                         stage="scripts/step",
                                         detail=detail,
                                         attempt=attempt,
                                         max_attempts=total_attempts,
                                     )
-                            except Exception as fix_exc:
-                                repair_note = (
-                                    "Locations/positions TypeError could not be auto-fixed "
-                                    f"({fix_exc}). Define position lists as [(x, y), ...] not floats.\n"
-                                    f"Full error:\n{detail}"
+                            else:
+                                repair_note = format_agent_repair_note(
+                                    stage="scripts/step",
+                                    detail=detail,
+                                    attempt=attempt,
+                                    max_attempts=total_attempts,
                                 )
+                        except Exception as fix_exc:
+                            repair_note = (
+                                "Locations/positions TypeError could not be auto-fixed "
+                                f"({fix_exc}). Define position lists as [(x, y), ...] not floats.\n"
+                                f"Full error:\n{detail}"
+                            )
                     else:
                         from backend.services.cad_authoring_agent import format_agent_repair_note
 
