@@ -3,9 +3,9 @@
  * Host calls enter/exit/frame; Design mode never constructs this until Architect opens.
  */
 
-import { createArchitectBuilding } from "./architect-building.js?v=20260714-erase-grid";
-import { createArchitectMeshLayer } from "./architect-mesh.js?v=20260714-erase-grid";
-import { createArchitectDrawTool } from "./architect-draw.js?v=20260714-erase-grid";
+import { createArchitectBuilding } from "./architect-building.js?v=20260714-wall-hover";
+import { createArchitectMeshLayer } from "./architect-mesh.js?v=20260714-wall-hover";
+import { createArchitectDrawTool } from "./architect-draw.js?v=20260714-wall-hover";
 import {
   applyArchitectDefaultView,
   clampArchitectHorizon,
@@ -55,8 +55,9 @@ export function createArchitectSession(opts) {
 
   draw.setOnPendingDeleteChange?.((ids) => {
     meshLayer.setPendingDeleteIds?.(ids);
-    meshLayer.setSelected(draw.getSelectedId());
-    meshLayer.rebuild(building.getBuilding());
+  });
+  draw.setOnHoverChange?.((id) => {
+    meshLayer.setHover?.(id);
   });
 
   building.onChange((b) => {
@@ -80,7 +81,7 @@ export function createArchitectSession(opts) {
     const hintEl = document.getElementById("architect-domino-hint");
     if (hintEl) {
       if (mode === "draw") {
-        hintEl.textContent = "Drag walls · Shift+drag room · Right-click deletes one · Shift+right-drag erases area · Middle pans · Shift+middle orbits/pans up-down";
+        hintEl.textContent = "Drag walls · Shift+drag room · Right-click deletes one · Shift+right-drag erases area · Middle pans · Shift+middle orbits / tilts";
       } else if (mode === "window") {
         hintEl.textContent = "Drag window tiles · Right-click deletes · Shift+right-drag erases area · Middle pans";
       } else if (mode === "door") {
@@ -193,7 +194,7 @@ export function createArchitectSession(opts) {
 
   function handlePointerMove(e) {
     if (!active) return false;
-    const handled = draw.handlePointerMove(e);
+    const handled = draw.handlePointerMove(e, meshLayer);
     if (handled && draw.isStrokeActive?.()) syncAfterDraw();
     else if (handled) syncToolbar();
     return handled;

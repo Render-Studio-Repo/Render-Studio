@@ -12,7 +12,7 @@ import {
   modelToNearestBay,
   modelToNearestVertex,
   vertexToModel,
-} from "./architect-lattice.js?v=20260714-erase-grid";
+} from "./architect-lattice.js?v=20260714-wall-hover";
 
 /**
  * @param {{
@@ -65,6 +65,7 @@ export function createArchitectDrawTool(opts) {
     if (!enabled) {
       endStroke();
       clearGhost();
+      publishHover(null);
       mode = "draw";
     }
   }
@@ -176,14 +177,21 @@ export function createArchitectDrawTool(opts) {
     });
   }
 
-  /** Optional callback so the host can live-highlight pending deletes. */
   let onPendingDeleteChange = null;
+  let onHoverChange = null;
   function setOnPendingDeleteChange(fn) {
     onPendingDeleteChange = fn;
+  }
+  function setOnHoverChange(fn) {
+    onHoverChange = fn;
   }
 
   function publishPendingDelete(ids) {
     onPendingDeleteChange?.(ids);
+  }
+
+  function publishHover(id) {
+    onHoverChange?.(id || null);
   }
 
   function addGhostBay(parent, a, b) {
@@ -328,6 +336,7 @@ export function createArchitectDrawTool(opts) {
   function endStroke() {
     stroke = null;
     publishPendingDelete([]);
+    publishHover(null);
   }
 
   /**
@@ -433,10 +442,11 @@ export function createArchitectDrawTool(opts) {
     return true;
   }
 
-  function handlePointerMove(e) {
+  function handlePointerMove(e, meshLayer) {
     if (!enabled) return false;
 
     if (stroke && stroke.pointerId === e.pointerId) {
+      publishHover(null);
       const vertex = eventToNearestVertex(e);
       if (!vertex) return true;
 
@@ -478,13 +488,20 @@ export function createArchitectDrawTool(opts) {
       return true;
     }
 
-    // Hover preview when not stroking
+    // Subtle wall hover when not painting
+    const hoverId = meshLayer?.pickSegmentId?.(eventRaycaster(e)) || null;
+    publishHover(hoverId);
+
+    // Empty-edge ghost preview when not stroking
     if (mode === "select") {
       clearGhost();
       return false;
     }
     if (e.shiftKey) {
-      // wait for drag to start
+      clearGhost();
+      return false;
+    }
+    if (hoverId) {
       clearGhost();
       return false;
     }
@@ -554,8 +571,8 @@ export function createArchitectDrawTool(opts) {
     return false;
   }
 
-  function handleMove(e) {
-    return handlePointerMove(e);
+  function handleMove(e, meshLayer) {
+    return handlePointerMove(e, meshLayer);
   }
 
   function handleKey(e) {
@@ -603,6 +620,7 @@ export function createArchitectDrawTool(opts) {
     handleKey,
     isStrokeActive,
     setOnPendingDeleteChange,
+    setOnHoverChange,
     dispose,
   };
 }

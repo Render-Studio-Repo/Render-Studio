@@ -25,6 +25,7 @@ export function createArchitectMeshLayer(opts) {
   const { scene, getMmPerModelUnit } = opts;
   let group = null;
   let selectedId = null;
+  let hoverId = null;
   /** @type {Set<string>} */
   let pendingDeleteIds = new Set();
 
@@ -43,24 +44,43 @@ export function createArchitectMeshLayer(opts) {
     group = null;
   }
 
-  function applyHighlight(root, { selected = false, pendingDelete = false } = {}) {
+  function applyHighlight(root, { selected = false, pendingDelete = false, hovered = false } = {}) {
     if (!root) return;
     root.traverse((child) => {
       if (!child.isMesh || !child.material) return;
       const mat = child.material;
       if (!mat.emissive) return;
+      if (mat.userData?.baseColor && mat.color) {
+        mat.color.copy(mat.userData.baseColor);
+      }
       if (pendingDelete) {
-        mat.emissive = new THREE.Color(0xb42318);
+        mat.emissive.setHex(0xb42318);
         mat.emissiveIntensity = 0.55;
-        mat.color = new THREE.Color(0xf97066);
+        mat.color.setHex(0xf97066);
       } else if (selected) {
-        mat.emissive = new THREE.Color(0x1a4a8a);
+        mat.emissive.setHex(0x1a4a8a);
         mat.emissiveIntensity = 0.35;
+      } else if (hovered) {
+        mat.emissive.setHex(0x4d7ab8);
+        mat.emissiveIntensity = 0.2;
       } else {
-        mat.emissive = new THREE.Color(0x000000);
+        mat.emissive.setHex(0x000000);
         mat.emissiveIntensity = 0;
       }
     });
+  }
+
+  function refreshHighlights() {
+    if (!group) return;
+    for (const root of group.children) {
+      const id = root.userData?.architectSegmentId;
+      if (!id) continue;
+      applyHighlight(root, {
+        selected: id === selectedId,
+        pendingDelete: pendingDeleteIds.has(id),
+        hovered: id === hoverId,
+      });
+    }
   }
 
   function rebuild(building) {
@@ -82,6 +102,7 @@ export function createArchitectMeshLayer(opts) {
       applyHighlight(mesh, {
         selected: seg.id === selectedId,
         pendingDelete: pendingDeleteIds.has(seg.id),
+        hovered: seg.id === hoverId,
       });
       next.add(mesh);
     }
@@ -91,14 +112,28 @@ export function createArchitectMeshLayer(opts) {
 
   function setSelected(id) {
     selectedId = id || null;
+    refreshHighlights();
+  }
+
+  function setHover(id) {
+    const next = id || null;
+    if (hoverId === next) return false;
+    hoverId = next;
+    refreshHighlights();
+    return true;
   }
 
   function setPendingDeleteIds(ids) {
     pendingDeleteIds = new Set(ids || []);
+    refreshHighlights();
   }
 
   function getSelected() {
     return selectedId;
+  }
+
+  function getHover() {
+    return hoverId;
   }
 
   function pickSegmentId(raycaster) {
@@ -116,8 +151,10 @@ export function createArchitectMeshLayer(opts) {
     rebuild,
     clear,
     setSelected,
+    setHover,
     setPendingDeleteIds,
     getSelected,
+    getHover,
     pickSegmentId,
     dispose: clear,
   };
@@ -182,6 +219,7 @@ function addBox(parent, sx, sy, sz, x, y, z, color, opacity = 1) {
   mesh.position.set(x, y, z);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  mat.userData.baseColor = mat.color.clone();
   parent.add(mesh);
   return mesh;
 }

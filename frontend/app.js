@@ -72,7 +72,7 @@ import { initFusionPanel } from "./fusion-panel.js?v=20260709-unlink-clear";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
-import { createArchitectSession } from "./architect-session.js?v=20260714-erase-grid";
+import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
@@ -14657,23 +14657,39 @@ renderer.domElement.addEventListener("pointermove", (e) => {
     architectZOrbit.lastX = e.clientX;
     architectZOrbit.lastY = e.clientY;
     const t = controls.target;
-    // Horizontal drag → yaw around world Z
+    const offset = new THREE.Vector3().subVectors(camera.position, t);
+    const radius = Math.max(offset.length(), 0.5);
+
+    // Left/right → yaw around world Z
     if (dx) {
-      const angle = -dx * 0.0075;
-      const ox = camera.position.x - t.x;
-      const oy = camera.position.y - t.y;
-      const c = Math.cos(angle);
-      const s = Math.sin(angle);
-      camera.position.x = t.x + ox * c - oy * s;
-      camera.position.y = t.y + ox * s + oy * c;
+      const yaw = -dx * 0.0075;
+      const c = Math.cos(yaw);
+      const s = Math.sin(yaw);
+      const x = offset.x;
+      const y = offset.y;
+      offset.x = x * c - y * s;
+      offset.y = x * s + y * c;
     }
-    // Vertical drag → pan up/down along world Z (camera + target together)
+
+    // Up/down → tilt between head-on and top-down (orbit pitch around target)
     if (dy) {
-      const dist = camera.position.distanceTo(t);
-      const zPan = dy * Math.max(dist * 0.0025, 0.02);
-      camera.position.z += zPan;
-      t.z += zPan;
+      const horiz = Math.hypot(offset.x, offset.y);
+      let polar = Math.atan2(horiz, offset.z); // 0 = top-down, π/2 = horizontal
+      polar += dy * 0.0075;
+      // Keep above the floor: nearly top-down → nearly head-on, never under
+      const minPolar = 0.12; // ~7° from straight down
+      const maxPolar = Math.PI / 2 - 0.08; // slightly above horizon
+      polar = Math.min(maxPolar, Math.max(minPolar, polar));
+      const az = Math.atan2(offset.y, offset.x);
+      offset.x = radius * Math.sin(polar) * Math.cos(az);
+      offset.y = radius * Math.sin(polar) * Math.sin(az);
+      offset.z = radius * Math.cos(polar);
+    } else if (dx) {
+      // After yaw-only, preserve radius
+      offset.setLength(radius);
     }
+
+    camera.position.copy(t).add(offset);
     camera.up.set(0, 0, 1);
     camera.lookAt(t);
     controls._eye?.subVectors(camera.position, controls.target);
