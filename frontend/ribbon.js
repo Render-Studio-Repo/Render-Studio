@@ -757,28 +757,15 @@ const RIGGING_CATALOG = {
 /** Architect environment ribbon: modular house kit tools. */
 const ARCHITECT_CATALOG = {
   Build: [
-    { id: "arch_room", label: "Room", icon: "▣", desc: "Generate a modular room bay", architectTool: "room" },
-    { id: "arch_floor", label: "Floor", icon: "▤", desc: "Generate a grid floor slab with snap rails", architectTool: "floor" },
-    { id: "arch_wall", label: "Wall", icon: "▥", desc: "Generate a modular wall panel", architectTool: "wall" },
-    { id: "arch_window", label: "Window", icon: "▦", desc: "Generate a replaceable window insert", architectTool: "window" },
-    { id: "arch_door", label: "Door", icon: "▯", desc: "Generate a modular door insert", architectTool: "door" },
-    { id: "arch_roof", label: "Roof", icon: "⌂", desc: "Generate roof or ceiling modules", architectTool: "roof" },
+    { id: "arch_wall", label: "Wall", icon: "▥", desc: "Blank 3 ft wall bay (wireframe)", architectTool: "wall" },
+    { id: "arch_door", label: "Door", icon: "▯", desc: "Same-size wall bay with a door", architectTool: "door" },
+    { id: "arch_window", label: "Window", icon: "▦", desc: "Same-size wall bay with a window", architectTool: "window" },
   ],
-  Customize: [
-    { id: "arch_edit_window", label: "Add Window", icon: "▦", desc: "Edit selected wall/room to add or resize a window", architectEdit: "window" },
-    { id: "arch_edit_door", label: "Add Door", icon: "▯", desc: "Edit selected wall/room to add a modular door", architectEdit: "door" },
-    { id: "arch_materials", label: "Materials", icon: "◐", desc: "Color/style selected module like house materials", architectEdit: "materials" },
-    { id: "arch_customize", label: "Customize", icon: "✦", desc: "Generative edit selected module", architectEdit: "customize" },
-  ],
-  Layout: [
-    { id: "arch_snap_grid", label: "Snap Grid", icon: "⌗", desc: "Snap selected module to Architect grid", architectAction: "snap_grid" },
-    { id: "arch_pattern", label: "Pattern", icon: "▦", desc: "Generate repeated wall/floor modules in a grid pattern", architectTool: "pattern" },
-    { id: "arch_service", label: "Service Core", icon: "◫", desc: "Generate utility/service-core module", architectTool: "service" },
-    { id: "arch_robot", label: "Robot Build", icon: "⚑", desc: "Generate robot assembly-friendly kit", architectTool: "robot" },
-  ],
-  References: [
-    { id: "arch_image", label: "Image Ref", icon: "▧", desc: "Prompt from a house/reference image", architectTool: "image" },
-    { id: "arch_blueprint", label: "Blueprint", icon: "⌑", desc: "Prompt from a floor plan or blueprint", architectTool: "blueprint" },
+  Later: [
+    { id: "arch_design", label: "Design", icon: "✦", desc: "Styled kits & materials — in development", architectTool: "image" },
+    { id: "arch_structure", label: "Structure", icon: "⌂", desc: "Floors, roofs, levels — in development", architectTool: "roof" },
+    { id: "arch_comfort", label: "Comfort", icon: "◐", desc: "Daylight & comfort — in development", architectTool: "service" },
+    { id: "arch_review", label: "Review", icon: "☑", desc: "Plan check & export prep — in development", architectTool: "robot" },
   ],
 };
 

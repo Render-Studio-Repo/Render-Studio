@@ -142,6 +142,7 @@ export function createWorkspaceBrowser({
   onDeleteProject,
   onExportProject,
   onMakePublicProject,
+  onCreateProjectInFolder,
   onOpenHierarchyItem,
   canDeleteProject,
   onEditHierarchyItem,
@@ -186,6 +187,9 @@ export function createWorkspaceBrowser({
 
   const ICON_SHARE = `<svg class="icon-share" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11 9.5a2.5 2.5 0 1 0-.9-1.9L8.5 5.6V5a2.5 2.5 0 1 0-1 0v.6L5.9 7.6a2.5 2.5 0 1 0 .9 1.9l2.6-1.6V11a2.5 2.5 0 1 0 1 0V7.9l2.6 1.6zM5 4.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0zm6 7a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0zM3 11a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z"/></svg>`;
   const ICON_PENCIL = `<svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>`;
+  const ICON_PLUS = `<svg class="icon-plus" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M7.25 2.75a.75.75 0 0 1 1.5 0V7.25h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5V2.75z"/></svg>`;
+  const ICON_EDIT_FOLDER = `<svg class="icon-edit-folder" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M2 3.75A1.75 1.75 0 0 1 3.75 2h3.1L8.2 3.5h4.05A1.75 1.75 0 0 1 14 5.25v6A1.75 1.75 0 0 1 12.25 13h-8.5A1.75 1.75 0 0 1 2 11.25v-7.5zm8.22 2.03a.75.75 0 0 0-1.06 1.06l.72.72-1.9 1.9-.22.9.9-.22 1.9-1.9.72.72a.75.75 0 1 0 1.06-1.06l-.72-.72.72-.72z"/></svg>`;
+  let editFolderModalEl = null;
 
   function closeContextMenu() {
     contextMenu?.remove();
@@ -204,6 +208,24 @@ export function createWorkspaceBrowser({
 
   function folderListKey(folderId) {
     return folderId || "__root__";
+  }
+
+  function isCommunityFolder(folder) {
+    if (!folder) return false;
+    const id = folder.id;
+    return (
+      folder.public === true
+      || id === "__public__"
+      || id === "__other_user_renders__"
+    );
+  }
+
+  function appendFolderGroupLabel(parent, label, { breakBefore = false } = {}) {
+    const el = document.createElement("div");
+    el.className = breakBefore ? "folder-group-label folder-group-label--break" : "folder-group-label";
+    el.setAttribute("role", "presentation");
+    el.textContent = label;
+    parent.appendChild(el);
   }
 
   function hierarchyListKey(projectId, sectionId) {
@@ -578,6 +600,235 @@ export function createWorkspaceBrowser({
     ensureRenameModal().openFor(folder);
   }
 
+  async function renameProjectInline(project, nextName) {
+    const trimmed = String(nextName || "").trim();
+    if (!project?.id || !trimmed || trimmed === (project.name || project.id)) return false;
+    try {
+      const data = await api(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const projects = getProjects();
+      const local = projects.find((p) => p.id === project.id);
+      if (local) local.name = data?.name || trimmed;
+      project.name = data?.name || trimmed;
+      document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
+      return true;
+    } catch (err) {
+      alert(err.message || "Could not rename project");
+      return false;
+    }
+  }
+
+  function ensureEditFolderModal() {
+    if (editFolderModalEl) return editFolderModalEl;
+    editFolderModalEl = document.createElement("div");
+    editFolderModalEl.className = "auth-modal hidden";
+    editFolderModalEl.id = "folder-edit-modal";
+    editFolderModalEl.setAttribute("role", "dialog");
+    editFolderModalEl.setAttribute("aria-modal", "true");
+    editFolderModalEl.innerHTML = `
+      <div class="auth-backdrop" data-edit-folder-close></div>
+      <div class="auth-card app-dialog-card folder-edit-card">
+        <button type="button" class="auth-close" data-edit-folder-close aria-label="Close">&times;</button>
+        <h2 class="app-dialog-title" id="folder-edit-title">Edit folder</h2>
+        <p class="muted small folder-edit-hint">Rename this folder and manage the projects inside it.</p>
+        <label class="app-dialog-label">Folder name
+          <input type="text" id="folder-edit-name" maxlength="120" />
+        </label>
+        <div class="folder-edit-projects-head">
+          <strong>Projects in this folder</strong>
+          <span class="muted small" id="folder-edit-count"></span>
+        </div>
+        <ul class="folder-edit-project-list" id="folder-edit-project-list"></ul>
+        <p id="folder-edit-status" class="muted small"></p>
+        <p id="folder-edit-error" class="auth-error hidden"></p>
+        <div class="app-dialog-actions">
+          <button type="button" class="btn secondary" data-edit-folder-close>Cancel</button>
+          <button type="button" class="btn accent" id="folder-edit-save">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(editFolderModalEl);
+    let editTarget = null;
+
+    const close = () => {
+      editFolderModalEl.classList.add("hidden");
+      editTarget = null;
+    };
+
+    editFolderModalEl.querySelectorAll("[data-edit-folder-close]").forEach((el) => {
+      el.addEventListener("click", close);
+    });
+
+    editFolderModalEl.querySelector("#folder-edit-save")?.addEventListener("click", async () => {
+      const folder = editTarget;
+      const teamId = getWorkspaceId();
+      const input = editFolderModalEl.querySelector("#folder-edit-name");
+      const errEl = editFolderModalEl.querySelector("#folder-edit-error");
+      const statusEl = editFolderModalEl.querySelector("#folder-edit-status");
+      const listEl = editFolderModalEl.querySelector("#folder-edit-project-list");
+      const next = input?.value?.trim();
+      if (!folder || !teamId) {
+        close();
+        return;
+      }
+      errEl?.classList.add("hidden");
+      if (!next) {
+        if (errEl) {
+          errEl.textContent = "Folder name is required";
+          errEl.classList.remove("hidden");
+        }
+        return;
+      }
+
+      const folderNameChanged = next !== folder.name;
+      const projectRenames = [];
+      const rows = [...(listEl?.querySelectorAll(".folder-edit-project-row") || [])];
+      for (const row of rows) {
+        const projectId = row.getAttribute("data-project-id");
+        const project = projectsInFolder(folder.id).find((p) => p.id === projectId)
+          || getProjects().find((p) => p.id === projectId);
+        if (!project) continue;
+        const nameInput = row.querySelector(".folder-edit-project-name");
+        const trimmed = String(nameInput?.value || "").trim();
+        if (!trimmed) {
+          if (errEl) {
+            errEl.textContent = "Project name is required";
+            errEl.classList.remove("hidden");
+          }
+          nameInput?.focus();
+          return;
+        }
+        if (trimmed !== (project.name || project.id)) {
+          projectRenames.push({ project, nextName: trimmed });
+        }
+      }
+
+      if (!folderNameChanged && !projectRenames.length) {
+        close();
+        render();
+        return;
+      }
+
+      try {
+        if (statusEl) statusEl.textContent = "Saving…";
+        if (folderNameChanged) {
+          await api(`/api/teams/${teamId}/folders/${folder.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: next }),
+          });
+          folder.name = next;
+        }
+        for (const { project, nextName } of projectRenames) {
+          const ok = await renameProjectInline(project, nextName);
+          if (!ok) {
+            if (statusEl) statusEl.textContent = "";
+            return;
+          }
+        }
+        close();
+        await refreshFolders();
+        render();
+        document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
+      } catch (err) {
+        if (statusEl) statusEl.textContent = "";
+        if (errEl) {
+          errEl.textContent = err.message || "Could not save changes";
+          errEl.classList.remove("hidden");
+        }
+      }
+    });
+
+    function renderProjectRows(folder) {
+      const listEl = editFolderModalEl.querySelector("#folder-edit-project-list");
+      const countEl = editFolderModalEl.querySelector("#folder-edit-count");
+      const projects = projectsInFolder(folder.id);
+      if (countEl) countEl.textContent = `${projects.length}`;
+      if (!listEl) return;
+      if (!projects.length) {
+        listEl.innerHTML = `<li class="folder-edit-empty muted small">No projects in this folder yet.</li>`;
+        return;
+      }
+      listEl.innerHTML = projects
+        .map(
+          (p) => `
+        <li class="folder-edit-project-row" data-project-id="${escapeHtml(p.id)}">
+          <input type="text" class="folder-edit-project-name" value="${escapeHtml(p.name || p.id)}" maxlength="120" aria-label="Project name" />
+          <div class="folder-edit-project-actions">
+            <button type="button" class="btn secondary btn-compact" data-edit-remove title="Remove from folder">Remove</button>
+          </div>
+        </li>`
+        )
+        .join("");
+
+      listEl.querySelectorAll(".folder-edit-project-row").forEach((row) => {
+        const projectId = row.getAttribute("data-project-id");
+        const project = projects.find((p) => p.id === projectId);
+        if (!project) return;
+        const nameInput = row.querySelector(".folder-edit-project-name");
+        nameInput?.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          editFolderModalEl.querySelector("#folder-edit-save")?.click();
+        });
+        row.querySelector("[data-edit-remove]")?.addEventListener("click", async () => {
+          if (!window.confirm(`Remove “${project.name || project.id}” from this folder?\n\nIt will move to Unfiled.`)) return;
+          await moveProjectToFolder(project.id, null);
+          renderProjectRows(folder);
+        });
+      });
+    }
+
+    editFolderModalEl.openFor = (folder) => {
+      editTarget = folder;
+      editFolderModalEl.querySelector("#folder-edit-title").textContent = `Edit “${folder.name}”`;
+      editFolderModalEl.querySelector("#folder-edit-name").value = folder.name;
+      editFolderModalEl.querySelector("#folder-edit-error")?.classList.add("hidden");
+      const statusEl = editFolderModalEl.querySelector("#folder-edit-status");
+      if (statusEl) statusEl.textContent = "";
+      renderProjectRows(folder);
+      editFolderModalEl.classList.remove("hidden");
+      editFolderModalEl.querySelector("#folder-edit-name")?.focus();
+      editFolderModalEl.querySelector("#folder-edit-name")?.select();
+    };
+    return editFolderModalEl;
+  }
+
+  function openEditFolderDialog(folder) {
+    ensureEditFolderModal().openFor(folder);
+  }
+
+  async function createProjectInFolder(folder) {
+    if (!folder?.id) return;
+    try {
+      if (typeof onCreateProjectInFolder === "function") {
+        await onCreateProjectInFolder(folder.id);
+      } else {
+        const teamId = resolveTeamId();
+        if (!teamId) throw new Error("Could not find a workspace for the new project.");
+        const { project_id } = await api(`/api/projects?team_id=${encodeURIComponent(teamId)}`, {
+          method: "POST",
+        });
+        await api(`/api/projects/${project_id}/folder`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder_id: folder.id }),
+        });
+        document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
+      }
+      // Keep folder open so the new project is visible
+      collapsedFolders.delete(folderStorageId(folder.id));
+      saveIdSet(FOLDER_COLLAPSE_KEY, collapsedFolders);
+      await refreshFolders();
+      render();
+    } catch (err) {
+      alert(err.message || "Could not create project in folder");
+    }
+  }
+
   function projectsInFolder(folderId) {
     const projects = getProjects();
     const folderIds = new Set(folders.map((f) => f.id));
@@ -636,8 +887,8 @@ export function createWorkspaceBrowser({
     if (canManage) {
       html += `
       <button type="button" data-action="share">Share folder…</button>
-      <button type="button" data-action="rename">Rename</button>
-      <button type="button" data-action="delete">Delete</button>
+      <button type="button" data-action="rename">Rename folder…</button>
+      <button type="button" data-action="delete">Delete folder</button>
     `;
     }
     if (!html) return;
@@ -1529,6 +1780,18 @@ export function createWorkspaceBrowser({
 
     let visibleProjectCount = 0;
 
+    const privateFolders = folders.filter((f) => !isCommunityFolder(f));
+    const communityFolders = folders.filter((f) => isCommunityFolder(f));
+    const showPrivateGroup = !!(rootProjects.length || !searching || privateFolders.some((f) => folderProjects(f.id, f.name).length));
+    const showCommunityGroup = communityFolders.some((f) => {
+      if (!searching) return true;
+      return folderProjects(f.id, f.name).length > 0;
+    });
+
+    if (showPrivateGroup && (showCommunityGroup || privateFolders.length || rootProjects.length || !searching)) {
+      appendFolderGroupLabel(container, "Private");
+    }
+
     if (rootProjects.length || !searching) {
       const rootCollapsed = searching ? false : collapsedFolders.has(folderStorageId(null));
       const rootZone = document.createElement("section");
@@ -1581,9 +1844,9 @@ export function createWorkspaceBrowser({
       container.appendChild(rootZone);
     }
 
-    for (const folder of folders) {
+    const appendFolderZone = (folder) => {
       const inFolder = folderProjects(folder.id, folder.name);
-      if (searching && !inFolder.length) continue;
+      if (searching && !inFolder.length) return;
       const folderCollapsed = searching ? false : collapsedFolders.has(folderStorageId(folder.id));
       const zone = document.createElement("section");
       zone.className = "folder-zone";
@@ -1612,14 +1875,14 @@ export function createWorkspaceBrowser({
         ${shareBadge}
         <span class="folder-count muted small">${inFolder.length}</span>
         ${canManage ? `<span class="folder-header-actions">
-          <button type="button" class="btn-icon btn-folder-share" title="Share folder">${ICON_SHARE}</button>
-          <button type="button" class="btn-icon btn-folder-rename" title="Rename folder">${ICON_PENCIL}</button>
-          <button type="button" class="btn-folder-menu" title="More">⋯</button>
+          <button type="button" class="btn-icon btn-folder-new-project" title="New project in this folder">${ICON_PLUS}</button>
+          <button type="button" class="btn-icon btn-folder-edit" title="Edit folder">${ICON_EDIT_FOLDER}</button>
+          <button type="button" class="btn-folder-menu" title="More" aria-label="Folder menu">⋯</button>
         </span>` : ""}
       `
       );
       attachFolderTitleToggle(header.querySelector(".folder-title"), folder.id);
-      header.title = canManage ? "Share, rename, or right-click for more" : "Right-click to collapse all projects";
+      header.title = canManage ? "New project, edit folder, or open the menu" : "Right-click to collapse all projects";
 
       const openMenu = (ev) => showFolderContextMenu(ev, folder);
       header.addEventListener("contextmenu", openMenu);
@@ -1628,13 +1891,13 @@ export function createWorkspaceBrowser({
         openMenu(ev);
       });
       if (canManage) {
-        header.querySelector(".btn-folder-share")?.addEventListener("click", (ev) => {
+        header.querySelector(".btn-folder-new-project")?.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          openShareDialog(folder);
+          void createProjectInFolder(folder);
         });
-        header.querySelector(".btn-folder-rename")?.addEventListener("click", (ev) => {
+        header.querySelector(".btn-folder-edit")?.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          openRenameDialog(folder);
+          openEditFolderDialog(folder);
         });
         header.querySelector(".btn-folder-menu")?.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -1676,6 +1939,17 @@ export function createWorkspaceBrowser({
       zone.append(header, list);
       if (!(folder.virtual || folder.read_only)) setupDropZone(zone, folder.id);
       container.appendChild(zone);
+    };
+
+    for (const folder of privateFolders) {
+      appendFolderZone(folder);
+    }
+
+    if (showCommunityGroup) {
+      appendFolderGroupLabel(container, "Public", { breakBefore: true });
+      for (const folder of communityFolders) {
+        appendFolderZone(folder);
+      }
     }
 
     if (searching && visibleProjectCount === 0) {

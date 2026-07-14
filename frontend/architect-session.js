@@ -64,6 +64,18 @@ export function createArchitectSession(opts) {
     document.querySelectorAll("[data-architect-step]").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-architect-step") === mode);
     });
+    const hintEl = document.getElementById("architect-domino-hint");
+    if (hintEl) {
+      if (mode === "draw") {
+        hintEl.textContent = "Wall — click lattice points to chain blank 3 ft bays. Esc clears anchor. Delete removes a selected bay.";
+      } else if (mode === "window") {
+        hintEl.textContent = "Window — click an existing wall bay to stamp a window into that same-size tile.";
+      } else if (mode === "door") {
+        hintEl.textContent = "Door — click an existing wall bay to stamp a door into that same-size tile.";
+      } else {
+        hintEl.textContent = "Select — click a bay to select it. Delete removes it. Switch tiles above to draw or stamp openings.";
+      }
+    }
     const levelEl = document.getElementById("architect-active-level");
     if (levelEl) {
       const level = building.activeLevel();
@@ -128,7 +140,7 @@ export function createArchitectSession(opts) {
     syncToolbar();
     onStatus?.(
       "ok",
-      "Architect — draw 3 ft wall bays on the lattice. Window/Door stamp features. Esc clears anchor.",
+      "Architect Build — wireframe with Wall, Door, or Window tiles (same 3 ft size). Style kits open in later phases.",
     );
   }
 

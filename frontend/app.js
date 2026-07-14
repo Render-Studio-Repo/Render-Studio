@@ -55,14 +55,14 @@ import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260709-left-panel-trim";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-folder-groups";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
-import { createRibbon } from "./ribbon.js?v=20260707-render-agent-restore";
+import { createRibbon } from "./ribbon.js?v=20260714-architect-phases";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loader";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
@@ -72,7 +72,7 @@ import { initFusionPanel } from "./fusion-panel.js?v=20260709-unlink-clear";
 import { formatLength, initUnitSwitcher, mmPerModelUnit } from "./units.js?v=20260610-direct";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260710-bay-lattice";
-import { createArchitectSession } from "./architect-session.js?v=20260710-usable";
+import { createArchitectSession } from "./architect-session.js?v=20260714-architect-phases";
 import { createDirectModeling } from "./direct-modeling.js?v=20260629-presspull-face-source";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
@@ -5282,12 +5282,28 @@ function nudgeArchitectSelection(dx = 0, dy = 0) {
 
 function handleArchitectRibbonAction(action, entry, data = {}) {
   if (action === "tool") {
-    openArchitectLibrary(data.tool || entry?.architectTool || "wall");
-    setEditStatus("ok", "Pick an Architect kit piece to place instantly. Existing viewport objects stay in place.");
+    const tool = String(data.tool || entry?.architectTool || "wall").toLowerCase();
+    if (tool === "wall" || tool === "window" || tool === "door") {
+      applyArchitectBuildTile(tool);
+      return;
+    }
+    const phase = ARCHITECT_RIBBON_TOOL_PHASE[tool] || "design";
+    setArchitectPhase(phase);
+    setEditStatus(
+      "ok",
+      ARCHITECT_PHASES[phase]?.ribbonHint
+        || "That tool belongs to a later Architect phase (in development). Use Build for wall / door / window tiles.",
+    );
     return;
   }
   if (action === "edit") {
-    setArchitectPromptForSelectedEdit(data.edit || entry?.architectEdit || "customize");
+    const edit = String(data.edit || entry?.architectEdit || "customize").toLowerCase();
+    if (edit === "window" || edit === "door") {
+      applyArchitectBuildTile(edit);
+      return;
+    }
+    setArchitectPhase("design");
+    setEditStatus("ok", ARCHITECT_PHASES.design.ribbonHint);
     return;
   }
   if (action === "snap_grid") {
@@ -5301,6 +5317,7 @@ function enterArchitectMode() {
   exitCanvasTab();
   catalogPanel?.close?.();
   setRightTab("architect");
+  setArchitectPhase("build");
   setSkillEnabled("cad", true);
   setSkillEnabled("architect", true);
   skillsPromptUI.render();
@@ -7495,6 +7512,78 @@ async function currentProjectModelFiles() {
 let architectLibraryFilter = "";
 let architectLibraryViewers = [];
 let architectLibraryView = "all";
+let architectPhase = "build";
+
+const ARCHITECT_PHASES = {
+  build: {
+    label: "Build",
+    badge: "Build",
+  },
+  design: {
+    label: "Design",
+    badge: "Design · Dev",
+    ribbonHint: "Styled kits and materials live in Design (in development). Stay in Build for wireframe tiles.",
+  },
+  structure: {
+    label: "Structure",
+    badge: "Structure · Dev",
+    ribbonHint: "Floors, roofs, and levels live in Structure (in development).",
+  },
+  comfort: {
+    label: "Comfort",
+    badge: "Comfort · Dev",
+    ribbonHint: "Daylight and comfort overlays live in Comfort (in development).",
+  },
+  review: {
+    label: "Review",
+    badge: "Review · Dev",
+    ribbonHint: "Plan review and export prep live in Review (in development).",
+  },
+};
+
+const ARCHITECT_RIBBON_TOOL_PHASE = {
+  wall: "build",
+  window: "build",
+  door: "build",
+  room: "structure",
+  floor: "structure",
+  roof: "structure",
+  pattern: "structure",
+  service: "comfort",
+  robot: "review",
+  image: "design",
+  blueprint: "design",
+};
+
+function setArchitectPhase(phase = "build") {
+  const next = ARCHITECT_PHASES[phase] ? phase : "build";
+  architectPhase = next;
+  document.querySelectorAll("[data-architect-phase]").forEach((btn) => {
+    const active = btn.getAttribute("data-architect-phase") === next;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll("[data-architect-phase-pane]").forEach((pane) => {
+    const active = pane.getAttribute("data-architect-phase-pane") === next;
+    pane.classList.toggle("active", active);
+    pane.hidden = !active;
+  });
+  const badge = document.getElementById("architect-phase-badge");
+  if (badge) badge.textContent = ARCHITECT_PHASES[next]?.badge || next;
+  const legacy = document.getElementById("architect-legacy-details");
+  // Legacy kit library stays out of Build wireframing; only peek under Design for now.
+  if (legacy) legacy.hidden = next !== "design";
+  if (next === "build") closeArchitectLibrary();
+  setRightTab("architect");
+}
+
+function applyArchitectBuildTile(tool = "wall") {
+  setArchitectPhase("build");
+  const step = tool === "window" ? "window" : tool === "door" ? "door" : tool === "select" ? "select" : "draw";
+  getArchitectSession().setStep(step);
+  const labels = { draw: "Wall", window: "Window", door: "Door", select: "Select" };
+  setEditStatus("ok", `Build tile: ${labels[step] || "Wall"}. Same 3 ft size — window/door are openings in a wall bay.`);
+}
 
 function disposeArchitectLibraryViewers() {
   architectLibraryViewers.forEach((viewer) => viewer?.dispose?.());
@@ -7760,7 +7849,23 @@ async function renderArchitectLibrary() {
   });
 }
 
-function openArchitectLibrary(filter = "") {
+function openArchitectLibrary(filter = "", options = {}) {
+  const force = !!options.force;
+  // Kit library is not part of Build wireframing. Later phases are docs-only for now.
+  if (!force && document.body.classList.contains("architect-design-tab")) {
+    const tool = String(filter || "wall").toLowerCase();
+    if (architectPhase === "build" || tool === "wall" || tool === "window" || tool === "door") {
+      applyArchitectBuildTile(tool === "window" || tool === "door" ? tool : "wall");
+      return;
+    }
+    const phase = ARCHITECT_RIBBON_TOOL_PHASE[tool] || architectPhase || "design";
+    setArchitectPhase(phase);
+    setEditStatus(
+      "ok",
+      "Module library is reserved for Design (still in development). Build phase only uses Wall, Door, and Window tiles.",
+    );
+    return;
+  }
   architectLibraryFilter = architectLibraryQueryForTool(filter);
   document.getElementById("architect-library-modal")?.classList.remove("hidden");
   const search = document.getElementById("architect-library-search");
@@ -7775,7 +7880,9 @@ function closeArchitectLibrary() {
   architectLibraryFilter = "";
 }
 
-document.getElementById("btn-architect-advanced")?.addEventListener("click", openArchitectLibrary);
+document.getElementById("btn-architect-advanced")?.addEventListener("click", () => {
+  openArchitectLibrary("", { force: true });
+});
 document.querySelectorAll("[data-architect-library-close]").forEach((el) => {
   el.addEventListener("click", closeArchitectLibrary);
 });
@@ -7836,6 +7943,10 @@ document.querySelectorAll("[data-architect-module]").forEach((btn) => {
 document.querySelectorAll("[data-architect-tool]").forEach((btn) => {
   btn.addEventListener("click", () => {
     const tool = btn.dataset.architectTool || "wall";
+    if (tool === "wall" || tool === "window" || tool === "door") {
+      applyArchitectBuildTile(tool);
+      return;
+    }
     const kind = tool === "window" ? "window-wall" : tool === "door" ? "door-wall" : tool;
     void buildArchitectModule(kind).catch((err) => {
       setEditStatus("error", err.message || "Could not build Architect module.");
@@ -7849,7 +7960,8 @@ document.querySelectorAll("[data-architect-edit-tool]").forEach((btn) => {
       showObjectGizmo(mesh);
       setEditStatus("ok", "Use the viewport gizmo to drag, scale, or stretch the selected Architect module by hand.");
     } else {
-      openArchitectLibrary();
+      setArchitectPhase("design");
+      setEditStatus("ok", ARCHITECT_PHASES.design.ribbonHint);
     }
   });
 });
@@ -7863,8 +7975,23 @@ document.querySelectorAll("[data-architect-nudge]").forEach((btn) => {
     else if (dir === "y-") nudgeArchitectSelection(0, -1);
   });
 });
+document.querySelectorAll("[data-architect-phase]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const phase = btn.getAttribute("data-architect-phase") || "build";
+    setArchitectPhase(phase);
+    if (phase === "build") {
+      applyArchitectBuildTile("wall");
+    } else {
+      setEditStatus(
+        "ok",
+        `${ARCHITECT_PHASES[phase]?.label || phase} is in development — read the plan in the side panel. Build is the live phase today.`,
+      );
+    }
+  });
+});
 document.querySelectorAll("[data-architect-step]").forEach((btn) => {
   btn.addEventListener("click", () => {
+    setArchitectPhase("build");
     const step = btn.getAttribute("data-architect-step") || "draw";
     getArchitectSession().setStep(step);
   });
@@ -10853,6 +10980,7 @@ const workspaceBrowser = createWorkspaceBrowser({
   canDeleteProject: (p) => !!p?.public && isA1ProjectsAdminUser(),
   onExportProject: (p) => exportProject(p),
   onMakePublicProject: (p) => makeProjectPublic(p),
+  onCreateProjectInFolder: (folderId) => createNewProjectInFolder(folderId),
   onOpenHierarchyItem: (project, entry, sectionId) => openHierarchyItem(project, entry, sectionId),
   onOpenProfile: (project, entry) => componentProfileUI.open(entry, project?.id),
   onRenameHierarchyItem: (project, entry) => renameHierarchyComponent(project, entry),
@@ -12966,6 +13094,40 @@ async function createNewProject() {
   ribbon.reset();
   await fetchAllProjects();
   await loadProject(project_id);
+}
+
+async function createNewProjectInFolder(folderId) {
+  saveActiveModelPromptState();
+  const teamId = getFolderTeamId();
+  if (!teamId) {
+    throw new Error("Could not find a workspace for the new project.");
+  }
+  writeSavedWorkspaceId(teamId);
+  const teamSelect = document.getElementById("team-select");
+  if (teamSelect && [...teamSelect.options].some((opt) => opt.value === teamId)) {
+    teamSelect.value = teamId;
+  }
+  const qs = `?team_id=${encodeURIComponent(teamId)}`;
+  const { project_id, meta } = await api(`/api/projects${qs}`, { method: "POST" });
+  if (folderId) {
+    await api(`/api/projects/${project_id}/folder`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder_id: folderId }),
+    });
+  }
+  upsertProjectInList({
+    id: project_id,
+    name: meta?.name || `Project ${project_id}`,
+    created_at: meta?.created_at,
+    updated_at: meta?.updated_at,
+    file_count: 0,
+    folder_id: folderId || null,
+  });
+  ribbon.reset();
+  await fetchAllProjects();
+  await loadProject(project_id);
+  renderProjectList();
 }
 
 async function ensureProject() {

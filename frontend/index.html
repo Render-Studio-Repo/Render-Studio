@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260710-urdf-modal" />
+  <link rel="stylesheet" href="/styles.css?v=20260714-folder-groups" />
   <script type="importmap">
   {
     "imports": {
@@ -751,27 +751,167 @@
       <section class="architect-prompt-panel right-tab-panel" data-right-panel="architect" id="architect-prompt-panel">
         <div class="panel-section-head architect-panel-head">
           <h2>Architect Mode</h2>
-          <button type="button" id="btn-architect-advanced" class="btn secondary small">Library</button>
-        </div>
-        <p class="muted small">Build with <strong>3 ft wall bays</strong>. Draw walls first, then stamp window/door features on a bay. Connectors are not part of design.</p>
-
-        <div class="architect-domino-card" id="architect-domino-card">
-          <div class="architect-domino-meta">
-            <span id="architect-active-level">Ground Floor</span>
-            <span class="muted"><span id="architect-segment-count">0</span> bays</span>
-          </div>
-          <div class="architect-domino-steps" role="toolbar" aria-label="Architect steps">
-            <button type="button" class="btn secondary btn-compact active" data-architect-step="draw">Walls</button>
-            <button type="button" class="btn secondary btn-compact" data-architect-step="window">Window</button>
-            <button type="button" class="btn secondary btn-compact" data-architect-step="door">Door</button>
-            <button type="button" class="btn secondary btn-compact" data-architect-step="select">Select</button>
-          </div>
-          <p class="muted small architect-domino-hint">Click lattice points to chain 3 ft bays. Esc clears anchor. Delete removes selected bay.</p>
-          <button type="button" id="btn-architect-clear-plan" class="btn secondary full">Clear level bays</button>
+          <span class="architect-phase-badge" id="architect-phase-badge">Build</span>
         </div>
 
-        <details class="architect-legacy-details">
-          <summary>Legacy kit tools (optional)</summary>
+        <nav class="architect-phase-nav" role="tablist" aria-label="Architect phases">
+          <button type="button" class="architect-phase-tab active" data-architect-phase="build" role="tab" aria-selected="true">Build</button>
+          <button type="button" class="architect-phase-tab" data-architect-phase="design" role="tab" aria-selected="false">Design</button>
+          <button type="button" class="architect-phase-tab" data-architect-phase="structure" role="tab" aria-selected="false">Structure</button>
+          <button type="button" class="architect-phase-tab" data-architect-phase="comfort" role="tab" aria-selected="false">Comfort</button>
+          <button type="button" class="architect-phase-tab" data-architect-phase="review" role="tab" aria-selected="false">Review</button>
+        </nav>
+
+        <div class="architect-phase-body" id="architect-phase-body">
+          <!-- BUILD: wireframe with three tile types only -->
+          <div class="architect-phase-pane active" data-architect-phase-pane="build" role="tabpanel">
+            <p class="muted small architect-phase-lead">Wireframe the floor plan. One style only — blank wall, window bay, or door bay. All tiles are the same 3&nbsp;ft size.</p>
+
+            <div class="architect-domino-card" id="architect-domino-card">
+              <div class="architect-domino-meta">
+                <span id="architect-active-level">Ground Floor</span>
+                <span class="muted"><span id="architect-segment-count">0</span> bays</span>
+              </div>
+
+              <div class="architect-tile-picker" role="toolbar" aria-label="Build tiles">
+                <button type="button" class="architect-tile-btn active" data-architect-step="draw" title="Blank wall bay">
+                  <span class="architect-tile-preview architect-tile-preview--wall" aria-hidden="true"></span>
+                  <span class="architect-tile-label">Wall</span>
+                  <span class="architect-tile-desc">Blank 3 ft bay</span>
+                </button>
+                <button type="button" class="architect-tile-btn" data-architect-step="door" title="Door bay">
+                  <span class="architect-tile-preview architect-tile-preview--door" aria-hidden="true"></span>
+                  <span class="architect-tile-label">Door</span>
+                  <span class="architect-tile-desc">Wall with door</span>
+                </button>
+                <button type="button" class="architect-tile-btn" data-architect-step="window" title="Window bay">
+                  <span class="architect-tile-preview architect-tile-preview--window" aria-hidden="true"></span>
+                  <span class="architect-tile-label">Window</span>
+                  <span class="architect-tile-desc">Wall with window</span>
+                </button>
+              </div>
+
+              <p class="muted small architect-domino-hint" id="architect-domino-hint">Wall — click lattice points to chain blank 3 ft bays. Esc clears anchor. Delete removes a selected bay.</p>
+              <div class="architect-build-actions">
+                <button type="button" class="btn secondary btn-compact" data-architect-step="select">Select</button>
+                <button type="button" id="btn-architect-clear-plan" class="btn secondary btn-compact">Clear level</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- DESIGN: in development -->
+          <div class="architect-phase-pane" data-architect-phase-pane="design" role="tabpanel" hidden>
+            <article class="architect-phase-doc">
+              <header class="architect-phase-doc-head">
+                <span class="architect-dev-pill">In development</span>
+                <h3>Design phase</h3>
+                <p class="muted small">Style and finish your wireframe — not available yet.</p>
+              </header>
+              <div class="architect-phase-doc-body">
+                <p>After Build locks the bay layout, Design will let you pick visual styles without changing the floor-plan structure.</p>
+                <h4>Planned tools</h4>
+                <ul>
+                  <li><strong>Module library</strong> — corner walls, double windows, shelves, and other styled kits (the old Architect Library lives here).</li>
+                  <li><strong>Opening styles</strong> — swap generic door/window bays for specific insert designs.</li>
+                  <li><strong>Materials &amp; colors</strong> — surface finishes on selected modules.</li>
+                  <li><strong>Customize</strong> — generative edits on a selected piece.</li>
+                </ul>
+                <h4>What stays out of this phase</h4>
+                <ul>
+                  <li>Drawing or deleting 3 ft bays (that stays in Build).</li>
+                  <li>Floors, roofs, and multi-story stacking (Structure).</li>
+                </ul>
+                <p class="architect-phase-doc-note">Return to <strong>Build</strong> to keep wireframing. This tab is a roadmap preview until Design ships.</p>
+              </div>
+            </article>
+          </div>
+
+          <!-- STRUCTURE: in development -->
+          <div class="architect-phase-pane" data-architect-phase-pane="structure" role="tabpanel" hidden>
+            <article class="architect-phase-doc">
+              <header class="architect-phase-doc-head">
+                <span class="architect-dev-pill">In development</span>
+                <h3>Structure phase</h3>
+                <p class="muted small">Levels, floors, roofs, and load-bearing layout — not available yet.</p>
+              </header>
+              <div class="architect-phase-doc-body">
+                <p>Structure adds everything that turns a single-level wireframe into a full building shell.</p>
+                <h4>Planned tools</h4>
+                <ul>
+                  <li><strong>Levels</strong> — stack stories and switch the active floor.</li>
+                  <li><strong>Floor slabs</strong> — place floor modules on the bay grid.</li>
+                  <li><strong>Roof / ceiling</strong> — gable, flat, and corner roof kits.</li>
+                  <li><strong>Stairs &amp; vertical circulation</strong> — connect levels once multi-story exists.</li>
+                  <li><strong>Service cores</strong> — utility shafts and structural cores.</li>
+                </ul>
+                <h4>What stays out of this phase</h4>
+                <ul>
+                  <li>Wall/door/window wireframing (Build).</li>
+                  <li>Finishes, daylight, and comfort overlays (Comfort).</li>
+                </ul>
+                <p class="architect-phase-doc-note">This phase is planned, not interactive yet. Use <strong>Build</strong> for the current floor plan.</p>
+              </div>
+            </article>
+          </div>
+
+          <!-- COMFORT: in development -->
+          <div class="architect-phase-pane" data-architect-phase-pane="comfort" role="tabpanel" hidden>
+            <article class="architect-phase-doc">
+              <header class="architect-phase-doc-head">
+                <span class="architect-dev-pill">In development</span>
+                <h3>Comfort phase</h3>
+                <p class="muted small">Daylight, insulation, and living comfort — not available yet.</p>
+              </header>
+              <div class="architect-phase-doc-body">
+                <p>Comfort is an inspector layer on top of the built structure — how the house feels to live in, not how the walls are drawn.</p>
+                <h4>Planned tools</h4>
+                <ul>
+                  <li><strong>Daylight</strong> — preview light from window bays.</li>
+                  <li><strong>Insulation / thermal</strong> — wall and roof comfort ratings.</li>
+                  <li><strong>Room labels</strong> — detected spaces with comfort targets.</li>
+                  <li><strong>Furniture &amp; appliances</strong> — optional living layout overlays.</li>
+                </ul>
+                <h4>What stays out of this phase</h4>
+                <ul>
+                  <li>Placing structural bays or roofs.</li>
+                  <li>Styled module kits (Design).</li>
+                </ul>
+                <p class="architect-phase-doc-note">Placeholder only — no comfort tools are live. Continue in <strong>Build</strong>.</p>
+              </div>
+            </article>
+          </div>
+
+          <!-- REVIEW: in development -->
+          <div class="architect-phase-pane" data-architect-phase-pane="review" role="tabpanel" hidden>
+            <article class="architect-phase-doc">
+              <header class="architect-phase-doc-head">
+                <span class="architect-dev-pill">In development</span>
+                <h3>Review phase</h3>
+                <p class="muted small">Check the plan and prepare export — not available yet.</p>
+              </header>
+              <div class="architect-phase-doc-body">
+                <p>Review is the last stop before leaving Architect: confirm the bay plan, catch gaps, then hand off to export or robot kit.</p>
+                <h4>Planned tools</h4>
+                <ul>
+                  <li><strong>Plan checklist</strong> — open loops, missing doors, empty levels.</li>
+                  <li><strong>Dimensions summary</strong> — bay counts and footprint.</li>
+                  <li><strong>Export prep</strong> — printable / robot-kit connectors applied at export time only.</li>
+                  <li><strong>Snapshot</strong> — save a review image of the current level.</li>
+                </ul>
+                <h4>What stays out of this phase</h4>
+                <ul>
+                  <li>Editing walls or styles — jump back to Build or Design for that.</li>
+                </ul>
+                <p class="architect-phase-doc-note">Coming later. Your live tools are under the <strong>Build</strong> tab.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- Legacy kit tools: Design phase only (Build never shows the style library) -->
+        <details class="architect-legacy-details" id="architect-legacy-details" hidden>
+          <summary>Legacy kit tools (Design preview)</summary>
+          <p class="muted small">Temporary access while Design is still in development. Prefer Build tiles for wireframing.</p>
           <div class="architect-kit-card">
             <strong>Architect skill auto-enabled</strong>
             <span>AI stays out of the default Architect workflow. Open the AI panel manually if you want generative architect prompts.</span>
@@ -813,6 +953,7 @@
               <button type="button" class="btn secondary btn-compact" data-architect-nudge="y-">↓</button>
             </div>
           </div>
+          <button type="button" id="btn-architect-advanced" class="btn secondary full">Open module library</button>
         </details>
       </section>
 
@@ -1546,7 +1687,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260710-stop-kill"></script>
+  <script type="module" src="/app.js?v=20260714-architect-phases"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
