@@ -1180,9 +1180,15 @@ def _ai_from_request_body(
     *,
     project_id: str | None = None,
 ) -> AIService:
+    speed = getattr(body, "speed", None) or "fast"
+    mode = (getattr(body, "mode", None) or "standard").lower()
+    # Jake authoring (CAD 2.0 / Fusion / Architect) needs the quality model.
+    # UI "fast" only affects repair-budget heuristics, not the CAD skill contract.
+    if mode in {"v2", "fusion", "architect"} and speed == "fast":
+        speed = "quality"
     return _get_ai_for_user(
         user,
-        getattr(body, "speed", None) or "fast",
+        speed,
         key_id=getattr(body, "ai_key_id", None),
         key_source=getattr(body, "ai_key_source", None),
         project_id=project_id,
@@ -8906,9 +8912,13 @@ def _background_prompt_kernel(
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
             return
         body = PromptRequest.model_validate(body_data)
+        speed = body.speed or "fast"
+        mode = (body.mode or "standard").lower()
+        if mode in {"v2", "fusion", "architect"} and speed == "fast":
+            speed = "quality"
         ai = _get_ai_for_user(
             user,
-            body.speed,
+            speed,
             key_id=body.ai_key_id,
             key_source=body.ai_key_source,
             project_id=project_id,
@@ -9239,9 +9249,13 @@ def prompt_cad(
             "trace_id": trace_id,
             "prompt_id": hist_entry.get("id") if hist_entry else None,
         }
+    speed = body.speed or "fast"
+    mode = (body.mode or "standard").lower()
+    if mode in {"v2", "fusion", "architect"} and speed == "fast":
+        speed = "quality"
     ai = _get_ai_for_user(
         user,
-        body.speed,
+        speed,
         key_id=body.ai_key_id,
         key_source=body.ai_key_source,
         project_id=project_id,

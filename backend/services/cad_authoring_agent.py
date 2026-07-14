@@ -68,7 +68,8 @@ def build_snapshot_job(
             {"path": f"{base}_snapshot_top.png", "camera": "top"},
             {"path": f"{base}_snapshot_front.png", "camera": "front"},
         ]
-        size_profile = "assembly"
+        # Jake snapshot-review.md small packet uses diagnostic, not assembly.
+        size_profile = "diagnostic"
     else:
         outputs = [{"path": f"{base}_snapshot.png", "camera": "iso"}]
         size_profile = "diagnostic"

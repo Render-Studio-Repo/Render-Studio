@@ -1624,8 +1624,14 @@ def _augment_text_to_cad_source(
     context: dict[str, Any] | None,
     project_path: Path,
     prompt: str,
+    jake_identical: bool = True,
 ) -> str:
-    """Inject missing module-level DXF constants/helpers the model often omits."""
+    """Wire DXF filenames into generated source.
+
+    Jake-identical: only inject ``dxf_filename`` when the script already
+    references a DXF import — never invent thicknesses/helpers.
+    Render3D compatibility path may also backfill common DXF defaults.
+    """
     dxf_names = _collect_dxf_filenames(context, project_path, prompt)
     if not dxf_names and _source_mentions_dxf_import(source):
         dxf_names = _project_dxf_filenames(project_path)
@@ -1641,30 +1647,31 @@ def _augment_text_to_cad_source(
     if uses_dxf_file and "dxf_filename" not in defined:
         injections.append(f'dxf_filename = "{primary}"')
 
-    defaults = {
-        "mold_thickness": "25.0",
-        "plate_thickness": "25.0",
-        "extrusion_thickness": "25.0",
-        "model_thickness": "25.0",
-        "w_extrude_depth": "25.0",
-        "solid_label": '"dxf_model"',
-        "part_label": '"dxf_model"',
-        "origin_center_on_dxf_bbox": "True",
-    }
-    for name, value in defaults.items():
-        if name in source and name not in defined:
-            injections.append(f"{name} = {value}")
+    if not jake_identical:
+        defaults = {
+            "mold_thickness": "25.0",
+            "plate_thickness": "25.0",
+            "extrusion_thickness": "25.0",
+            "model_thickness": "25.0",
+            "w_extrude_depth": "25.0",
+            "solid_label": '"dxf_model"',
+            "part_label": '"dxf_model"',
+            "origin_center_on_dxf_bbox": "True",
+        }
+        for name, value in defaults.items():
+            if name in source and name not in defined:
+                injections.append(f"{name} = {value}")
 
-    helper_block = (
-        "def _bbox_center_xy(shape):\n"
-        "    bb = shape.bounding_box()\n"
-        "    center = bb.center()\n"
-        "    return (center.X, center.Y)\n\n"
-        "def _bbox_min_z(shape):\n"
-        "    return shape.bounding_box().min.Z"
-    )
-    if "_bbox_center_xy" in source and "_bbox_center_xy" not in defined:
-        injections.append(helper_block)
+        helper_block = (
+            "def _bbox_center_xy(shape):\n"
+            "    bb = shape.bounding_box()\n"
+            "    center = bb.center()\n"
+            "    return (center.X, center.Y)\n\n"
+            "def _bbox_min_z(shape):\n"
+            "    return shape.bounding_box().min.Z"
+        )
+        if "_bbox_center_xy" in source and "_bbox_center_xy" not in defined:
+            injections.append(helper_block)
 
     if injections:
         source = _insert_after_imports(source, "\n\n".join(injections))
@@ -1753,9 +1760,8 @@ def _finalize_text_to_cad_source_before_step(
     """Last-chance prep immediately before scripts/step executes the file.
 
     Jake-identical path mirrors earthtojake/text-to-cad authoring:
-    DXF filename wiring only — no missing-constant float injection.
-    Scalar ``*_positions`` rewrites are still applied when the LLM itself
-    wrote a bare float (that is a script bug, not a missing-name heal).
+    DXF filename wiring only. Never invent dimensions, rewrite hole radii,
+    or auto-heal scalar ``*_positions`` — those failures feed the LLM repair loop.
     """
     source = source_path.read_text(encoding="utf-8", errors="ignore")
     finalized = _augment_text_to_cad_source(
@@ -1763,11 +1769,18 @@ def _finalize_text_to_cad_source_before_step(
         context=context,
         project_path=project_path,
         prompt=prompt,
+        jake_identical=jake_identical,
     )
     if jake_identical:
-        # Same CAD kernel + same authoring contract as Jake: do not invent
-        # dimension constants. Let NameError / TypeError feed the LLM repair loop.
-        finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
+        poisoned = _source_poisoned_sequence_issues(finalized)
+        if poisoned:
+            raise ValueError(
+                "Generated source has invalid position/list constants (Jake authoring — "
+                "fix in source, do not invent lists):\n- "
+                + "\n- ".join(poisoned[:8])
+                + "\nFix: define them as lists of coordinates, e.g. "
+                "rod_hole_positions = [(-30, -10), (-10, -10), ...]. Never assign a bare float."
+            )
         if finalized != source:
             source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
         return finalized
@@ -2834,7 +2847,19 @@ def _inspect_summary(inspect_out: dict[str, Any]) -> dict[str, Any] | None:
     return summary if isinstance(summary, dict) else None
 
 
-def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any]) -> str | None:
+def _v2_quality_repair_note(
+    prompt: str,
+    source: str,
+    inspect_out: dict[str, Any],
+    *,
+    cad_brief: str = "",
+    jake_identical: bool = True,
+) -> str | None:
+    """Spec-driven size checks from inspect facts (Jake inspection-and-validation).
+
+    On Jake-identical path: only fail when inspect bbox clearly contradicts
+    user/brief overall axis dimensions — never use Render3D faceCount heuristics.
+    """
     summary = _inspect_summary(inspect_out) or {}
     source_lower = (source or "").lower()
     dxf_workflow = ".dxf" in source_lower or "ezdxf" in source_lower or "readfile(" in source_lower
@@ -2845,6 +2870,8 @@ def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any
         except Exception:
             size = []
         axis_requested = _requested_overall_axis_dimensions(prompt)
+        if not axis_requested and cad_brief:
+            axis_requested = _requested_overall_axis_dimensions(cad_brief)
         if axis_requested and size:
             axis_names = ("X/front width", "Y/depth", "Z/height")
             for spec in axis_requested:
@@ -2853,26 +2880,28 @@ def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any
                 actual_value = float(size[axis])
                 if requested_value >= 25 and abs(actual_value - requested_value) > max(6.0, requested_value * 0.12):
                     return (
-                        "The geometry passed export but failed the CAD brief quality gate: "
-                        f"the prompt specifies {spec['label']} of {requested_value:g} mm, "
+                        "Inspect facts contradict the CAD brief (Jake measure/envelope check): "
+                        f"the prompt/brief specifies {spec['label']} of {requested_value:g} mm, "
                         f"but inspect reports {axis_names[axis]} = {actual_value:.1f} mm "
                         f"(bbox={', '.join(f'{v:.1f}' for v in size)} mm). "
-                        "Revise the named parameters so the exported model's overall axis dimension matches the requested dimension."
+                        "Revise named parameters in source so the exported overall axis matches, "
+                        "then regenerate with scripts/step and re-inspect."
                     )
-        requested = _requested_mm_dimensions(prompt)
-        # Generic mm-token scale checks are too noisy for DXF-derived models:
-        # drawings often include local feature dimensions that are not global envelope targets.
-        if requested and size and not axis_requested and not dxf_workflow:
-            largest_requested = max(requested)
-            largest_actual = max(size)
-            if largest_requested >= 25 and abs(largest_actual - largest_requested) > max(6.0, largest_requested * 0.12):
-                return (
-                    "The geometry passed export but failed the CAD brief quality gate: "
-                    f"the prompt specifies an overall controlling dimension of {largest_requested:g} mm, "
-                    f"but inspect reports a largest bounding-box dimension of {largest_actual:.1f} mm "
-                    f"(bbox={', '.join(f'{v:.1f}' for v in size)} mm). "
-                    "Revise the named parameters so the exported model's overall size matches the requested dimension."
-                )
+        if not jake_identical:
+            requested = _requested_mm_dimensions(prompt)
+            if requested and size and not axis_requested and not dxf_workflow:
+                largest_requested = max(requested)
+                largest_actual = max(size)
+                if largest_requested >= 25 and abs(largest_actual - largest_requested) > max(6.0, largest_requested * 0.12):
+                    return (
+                        "The geometry passed export but failed the CAD brief quality gate: "
+                        f"the prompt specifies an overall controlling dimension of {largest_requested:g} mm, "
+                        f"but inspect reports a largest bounding-box dimension of {largest_actual:.1f} mm "
+                        f"(bbox={', '.join(f'{v:.1f}' for v in size)} mm). "
+                        "Revise the named parameters so the exported model's overall size matches the requested dimension."
+                    )
+    if jake_identical:
+        return None
     p = (prompt or "").lower()
     functional = any(w in p for w in ("robot", "tool", "attach", "lock", "slide", "mount", "stir", "fixture", "bracket"))
     try:
@@ -2888,6 +2917,33 @@ def _v2_quality_repair_note(prompt: str, source: str, inspect_out: dict[str, Any
             "and realistic proportions. Keep the model parametric and STEP-valid."
         )
     return None
+
+
+def _run_v2_spec_dimension_hints(
+    *,
+    prompt: str,
+    cad_brief: str,
+    inspect_out: dict[str, Any],
+) -> str | None:
+    """Attach Jake-style dimension hints after inspect for the next repair turn."""
+    from backend.services.cad_authoring_agent import extract_dimension_hints
+
+    hints = extract_dimension_hints(prompt, cad_brief)
+    if not hints:
+        return None
+    summary = _inspect_summary(inspect_out) or {}
+    bounds = summary.get("bounds") if isinstance(summary, dict) else None
+    size_txt = ""
+    if isinstance(bounds, dict) and isinstance(bounds.get("min"), list) and isinstance(bounds.get("max"), list):
+        try:
+            size = [abs(float(b) - float(a)) for a, b in zip(bounds["min"][:3], bounds["max"][:3])]
+            size_txt = f" Current inspect bbox mm = [{', '.join(f'{v:.1f}' for v in size)}]."
+        except Exception:
+            size_txt = ""
+    return (
+        "Jake inspection follow-up: verify these user/brief dimensions with named parameters "
+        f"and scripts/inspect measure/align as needed: {', '.join(hints[:8])}.{size_txt}"
+    )
 
 
 def _run_v2_snapshot(
@@ -2921,9 +2977,30 @@ def _run_v2_snapshot(
         timeout_sec=240.0,
     )
     if not out.get("ok"):
-        # Fall back to single-view shortcut flags if --job fails on older runtimes.
+        # Jake: simplify the packet, still try multi-view before single iso.
         detail = (out.get("stderr") or out.get("stdout") or "snapshot failed")[:400]
-        trace_add("warning", f"[2.0/text-to-cad] snapshot --job failed, retrying single iso: {detail}", trace_id=trace_id)
+        trace_add(
+            "warning",
+            f"[2.0/text-to-cad] snapshot multi-view job failed, retrying simplified diagnostic packet: {detail}",
+            trace_id=trace_id,
+        )
+        simple_job = build_snapshot_job(step_name=step_name, base=base, multi_view=True)
+        # Drop opposite view if the full packet failed — keep iso/top/front.
+        simple_job["outputs"] = [
+            o for o in (simple_job.get("outputs") or [])
+            if str(o.get("path") or "").endswith(("_iso.png", "_top.png", "_front.png"))
+        ] or simple_job.get("outputs")
+        simple_path = write_snapshot_job_file(project_path, simple_job, f"{base}_simple")
+        out = skill_runner.run_skill_tool(
+            "cad",
+            "snapshot",
+            ["--job", simple_path.name],
+            cwd=project_path,
+            timeout_sec=240.0,
+        )
+    if not out.get("ok"):
+        detail = (out.get("stderr") or out.get("stdout") or "snapshot failed")[:400]
+        trace_add("warning", f"[2.0/text-to-cad] snapshot packet failed, last-resort single iso: {detail}", trace_id=trace_id)
         out = skill_runner.run_skill_tool(
             "cad",
             "snapshot",
@@ -3007,7 +3084,20 @@ def _v2_snapshot_review_repair_note(
 ) -> tuple[str | None, dict[str, Any] | None]:
     images = _snapshot_image_payload(project_path, snapshot_info)
     if not images:
-        return None, None
+        # Jake: visual review is mandatory when snapshot artifacts exist.
+        names = list((snapshot_info or {}).get("files") or [])
+        if (snapshot_info or {}).get("file"):
+            names.append(str(snapshot_info["file"]))
+        if names:
+            return (
+                "Snapshot PNG files were produced but could not be loaded for visual review "
+                f"({', '.join(dict.fromkeys(names)[:4])}). "
+                "Rerun scripts/snapshot and ensure readable PNGs exist before accepting the model."
+            ), None
+        return (
+            "Mandatory Jake snapshot review failed: no loadable PNG snapshots were available. "
+            "Rerun scripts/snapshot after regenerating STEP."
+        ), None
     system = """You are reviewing a text-to-cad snapshot like the upstream CAD skill.
 Return ONLY JSON: {"pass": boolean, "repair_note": string, "issues": [string]}.
 Pass only if the visible model appears to satisfy the user's prompt and CAD brief.
@@ -3239,7 +3329,8 @@ def _run_text_to_cad_v2(
                     previous_source=current_source,
                     images=images,
                     cad_brief=cad_brief,
-                    fusion_mode=fusion_mode,
+                    # Jake-identical authoring: never bias the system prompt with Fusion extras.
+                    fusion_mode=False if jake_identical else fusion_mode,
                 )
                 ai_traces.append(ai_trace)
             # Preserve the exact source that failed validation so the next
@@ -3253,6 +3344,7 @@ def _run_text_to_cad_v2(
                 context=context,
                 project_path=project_path,
                 prompt=prompt,
+                jake_identical=jake_identical,
             )
             if not jake_identical:
                 # Render3D compatibility: backfill missing numeric/string config constants.
@@ -3482,64 +3574,71 @@ def _run_text_to_cad_v2(
                                     f"Full error:\n{detail}"
                                 )
                     elif locations_float_err:
-                        # LLM assigned *_positions = 10.0 then did Locations(*name) / for x in name.
-                        # Safe to rewrite lists without inventing unrelated dimensions.
-                        try:
-                            healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
-                            patched = _sanitize_poisoned_sequence_constants(healed_src, prompt=prompt)
-                            if not jake_identical:
+                        # Jake-identical: never invent position lists — LLM must repair source.
+                        from backend.services.cad_authoring_agent import format_agent_repair_note
+
+                        if jake_identical:
+                            repair_note = format_agent_repair_note(
+                                stage="scripts/step",
+                                detail=detail,
+                                attempt=attempt,
+                                max_attempts=total_attempts,
+                            )
+                        else:
+                            # Render3D compatibility: rewrite scalar *_positions and retry.
+                            try:
+                                healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
+                                patched = _sanitize_poisoned_sequence_constants(healed_src, prompt=prompt)
                                 patched = _backfill_all_undefined_constants(
                                     patched, base=base, prompt=prompt
                                 )
-                            if patched != healed_src:
-                                source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
-                                current_source = patched
-                                trace_add(
-                                    "info",
-                                    "[authoring-agent] rewrote scalar *_positions to coordinate lists and retrying scripts/step",
-                                    trace_id=trace_id,
-                                )
-                                if progress_callback:
-                                    progress_callback({
-                                        "stage": "step",
-                                        "pct": 40,
-                                        "label": "Retrying scripts/step after fixing hole positions...",
-                                    })
-                                step_out = skill_runner.run_skill_tool(
-                                    "cad",
-                                    "step",
-                                    step_args,
-                                    cwd=project_path,
-                                    timeout_sec=240.0,
-                                    cancel_check=cancel_check,
-                                )
-                                if step_out.get("ok"):
-                                    detail = ""
+                                if patched != healed_src:
+                                    source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
+                                    current_source = patched
+                                    trace_add(
+                                        "info",
+                                        "[authoring-agent] rewrote scalar *_positions to coordinate lists and retrying scripts/step",
+                                        trace_id=trace_id,
+                                    )
+                                    if progress_callback:
+                                        progress_callback({
+                                            "stage": "step",
+                                            "pct": 40,
+                                            "label": "Retrying scripts/step after fixing hole positions...",
+                                        })
+                                    step_out = skill_runner.run_skill_tool(
+                                        "cad",
+                                        "step",
+                                        step_args,
+                                        cwd=project_path,
+                                        timeout_sec=240.0,
+                                        cancel_check=cancel_check,
+                                    )
+                                    if step_out.get("ok"):
+                                        detail = ""
+                                    else:
+                                        detail = _error_tail(
+                                            step_out, "scripts/step failed after positions fix"
+                                        )
+                                        last_error = detail
+                                        repair_note = (
+                                            "Locations(*positions) failed even after rewriting position lists. "
+                                            "Use a list of (x, y) tuples or GridLocations(nx, ny, pitch_x, pitch_y).\n"
+                                            f"Full error:\n{detail}"
+                                        )
                                 else:
-                                    detail = _error_tail(
-                                        step_out, "scripts/step failed after positions fix"
+                                    repair_note = format_agent_repair_note(
+                                        stage="scripts/step",
+                                        detail=detail,
+                                        attempt=attempt,
+                                        max_attempts=total_attempts,
                                     )
-                                    last_error = detail
-                                    repair_note = (
-                                        "Locations(*positions) failed even after rewriting position lists. "
-                                        "Use a list of (x, y) tuples or GridLocations(nx, ny, pitch_x, pitch_y).\n"
-                                        f"Full error:\n{detail}"
-                                    )
-                            else:
-                                from backend.services.cad_authoring_agent import format_agent_repair_note
-
-                                repair_note = format_agent_repair_note(
-                                    stage="scripts/step",
-                                    detail=detail,
-                                    attempt=attempt,
-                                    max_attempts=total_attempts,
+                            except Exception as fix_exc:
+                                repair_note = (
+                                    "Locations/positions TypeError could not be auto-fixed "
+                                    f"({fix_exc}). Define position lists as [(x, y), ...] not floats.\n"
+                                    f"Full error:\n{detail}"
                                 )
-                        except Exception as fix_exc:
-                            repair_note = (
-                                "Locations/positions TypeError could not be auto-fixed "
-                                f"({fix_exc}). Define position lists as [(x, y), ...] not floats.\n"
-                                f"Full error:\n{detail}"
-                            )
                     else:
                         from backend.services.cad_authoring_agent import format_agent_repair_note
 
@@ -3597,9 +3696,15 @@ def _run_text_to_cad_v2(
 
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
-        # Deterministic quality heuristics are blocking — Jake also refuses to
-        # ship when inspect facts clearly contradict the brief (too primitive).
-        quality_note = _v2_quality_repair_note(prompt, source, inspect_out)
+        # Jake: inspect facts/planes/positioning baseline, then fail on clear
+        # envelope contradictions. No Render3D faceCount heuristics on Jake path.
+        quality_note = _v2_quality_repair_note(
+            prompt,
+            source,
+            inspect_out,
+            cad_brief=cad_brief,
+            jake_identical=jake_identical,
+        )
         if quality_note:
             last_error = quality_note
             from backend.services.cad_authoring_agent import format_agent_repair_note
@@ -3612,6 +3717,14 @@ def _run_text_to_cad_v2(
             )
             trace_add("warning", f"[authoring-agent] quality gate failed: {quality_note[:500]}", trace_id=trace_id)
             continue
+        if jake_identical:
+            dim_hint = _run_v2_spec_dimension_hints(
+                prompt=prompt,
+                cad_brief=cad_brief,
+                inspect_out=inspect_out,
+            )
+            if dim_hint:
+                trace_add("info", f"[authoring-agent] {dim_hint}", trace_id=trace_id)
 
         missing = [name for name in (step_name, glb_name) if not (project_path / name).is_file()]
         if missing:
@@ -3663,7 +3776,8 @@ def _run_text_to_cad_v2(
                 snapshot_info=snapshot_info,
                 project_path=project_path,
                 trace_id=trace_id,
-                fusion_mode=fusion_mode,
+                # Jake visual review — no Fusion-biased system prompt extras.
+                fusion_mode=False if jake_identical else fusion_mode,
             )
             if snapshot_trace:
                 ai_traces.append(snapshot_trace)
@@ -4271,11 +4385,11 @@ def _looks_like_cooking_appliance(prompt: str, images: list[dict[str, Any]] | No
 
 def _max_repairs_for_speed(speed: str | None) -> int:
     """Return extra repair attempts beyond the first try (Jake agent turns − 1)."""
-    # Jake Codex agents iterate until visual+CLI gates pass; give quality mode
-    # enough turns for step/inspect/snapshot repair cycles.
+    # Jake Codex agents iterate until visual+CLI gates pass; give enough turns
+    # for step/inspect/snapshot repair cycles (unbounded in Jake; capped here).
     if (speed or "").strip().lower() in {"quality", "pro", "slow"}:
-        return 5
-    return 4
+        return 8
+    return 6
 
 
 def _maybe_run_cad_inspect(result: dict[str, Any], project_path: Path, skills: list[str] | None, trace_id: str | None) -> None:
@@ -4362,7 +4476,7 @@ def run_design(
         max_repairs = _max_repairs_for_speed(speed)
         if is_v2:
             # Jake authoring agent needs enough turns for step/inspect/snapshot repair.
-            max_repairs = max(max_repairs, 5)
+            max_repairs = max(max_repairs, 8)
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.
@@ -4386,7 +4500,7 @@ def run_design(
     if progress_callback:
         progress_callback({"stage": "analyze", "pct": 8, "label": "Analyzing prompt and references…"})
 
-    if not previous_source and _looks_like_pet_bottle(prompt, images):
+    if not previous_source and _looks_like_pet_bottle(prompt, images) and not is_v2:
         from backend.engineering.bottles import pet_soda_bottle_program
 
         program = pet_soda_bottle_program(**_pet_bottle_style_options(prompt))
