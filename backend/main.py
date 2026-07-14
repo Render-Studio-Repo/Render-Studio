@@ -262,8 +262,12 @@ class PromptRequest(BaseModel):
     images: list[PromptImage] = Field(default_factory=list, max_length=4)
     speed: str = Field(default="fast", description="fast (~30s) or quality (slower, gpt-5.5-pro)")
     skills: list[str] = Field(default_factory=list, max_length=20)
-    skills: list[str] = Field(default_factory=list, max_length=20)
     mode: str = Field(default="standard", description="standard (Render), v2, fusion, or architect")
+    fusion_target: str | None = Field(default=None, description="in_app or fusion360")
+    convert_images_to_drawing: bool = Field(
+        default=False,
+        description="When true and images are attached, run vision→DXF drawing + enriched prompt before CAD.",
+    )
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = Field(default=None, description="personal or team")
 
@@ -1726,13 +1730,19 @@ def _resolve_prompt_reference_body(
 
 
 def _with_image_generated_dxf_reference(body: PromptRequest, ai: AIService, trace_id: str | None) -> PromptRequest:
-    """Convert attached image references into a hidden DXF reference for CAD prompts."""
+    """Optionally convert attached images into a DXF drawing + enriched CAD prompt.
+
+    Only runs when the client sets ``convert_images_to_drawing=True`` (user opted in
+    after the frontend confirm). Skips if a DXF reference is already attached.
+    """
     if not body.images:
+        return body
+    if not bool(getattr(body, "convert_images_to_drawing", False)):
         return body
     if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
         return body
     try:
-        dxf_text, call_trace = ai.generate_dxf_from_images(
+        dxf_text, drawing_prompt, call_trace = ai.generate_drawing_package_from_images(
             body.prompt,
             images=[img.model_dump() for img in body.images[:4]],
             trace_id=trace_id,
@@ -1740,46 +1750,60 @@ def _with_image_generated_dxf_reference(body: PromptRequest, ai: AIService, trac
     except Exception as exc:
         trace_add(
             "warning",
-            f"Image-to-DXF conversion failed; continuing with image references only: {exc}",
+            f"Image-to-drawing conversion failed; continuing with image references only: {exc}",
             trace_id=trace_id,
         )
         return body
-    if not dxf_text.strip():
+    if not (dxf_text or "").strip() and not (drawing_prompt or "").strip():
         return body
     image_names = ", ".join(img.name for img in body.images[:4])
-    ref = GeoReference(
-        id="vision-reference",
-        type="dxf",
-        label=f"Vision DXF from image{'s' if len(body.images) != 1 else ''}",
-        filename="vision-reference.dxf",
-        stem="vision-reference",
-        format="dxf",
-        text_content=dxf_text[:90000],
-        text_truncated=len(dxf_text) > 90000,
-    )
-    instruction = (
-        "\n\nUse the attached generated DXF reference `@vision-reference` as the primary 2D drawing extracted "
-        f"from the uploaded image{'s' if len(body.images) != 1 else ''} ({image_names}). Follow the DXF geometry, "
-        "layers, proportions, notes, and inferred dimensions when creating the 3D model. Use the original image(s) "
-        "only to resolve ambiguity, color/material/style, and 3D depth."
-    )
+    refs = list(body.references)
+    if (dxf_text or "").strip():
+        refs.append(
+            GeoReference(
+                id="vision-reference",
+                type="dxf",
+                label=f"Vision DXF from image{'s' if len(body.images) != 1 else ''}",
+                filename="vision-reference.dxf",
+                stem="vision-reference",
+                format="dxf",
+                text_content=dxf_text[:90000],
+                text_truncated=len(dxf_text) > 90000,
+            )
+        )
+    enriched_parts = [body.prompt.strip()]
+    if (drawing_prompt or "").strip():
+        enriched_parts.append(
+            "Vision drawing brief (derived from the uploaded image"
+            f"{'s' if len(body.images) != 1 else ''} — use this together with the user prompt):\n"
+            f"{drawing_prompt.strip()}"
+        )
+    if (dxf_text or "").strip():
+        enriched_parts.append(
+            "Use the attached generated DXF reference `@vision-reference` as the primary 2D drawing extracted "
+            f"from the uploaded image{'s' if len(body.images) != 1 else ''} ({image_names}). Follow the DXF geometry, "
+            "layers, proportions, notes, and inferred dimensions when creating the 3D model. Use the original image(s) "
+            "only to resolve ambiguity, color/material/style, and 3D depth."
+        )
+    enriched = "\n\n".join(p for p in enriched_parts if p)[:8000]
     trace_add(
         "info",
-        "Generated hidden DXF reference from prompt image(s)",
+        "Generated drawing package from prompt image(s)",
         trace_id=trace_id,
         data={
             "image_count": len(body.images),
-            "dxf_chars": len(dxf_text),
+            "dxf_chars": len(dxf_text or ""),
+            "drawing_prompt_chars": len(drawing_prompt or ""),
             "model": call_trace.get("model"),
             "provider": call_trace.get("provider"),
         },
     )
     skills = body.skills
-    if "dxf" not in {str(s).lower() for s in skills}:
+    if (dxf_text or "").strip() and "dxf" not in {str(s).lower() for s in skills}:
         skills = [*skills, "dxf"]
     return body.model_copy(update={
-        "prompt": f"{body.prompt}{instruction}"[:8000],
-        "references": [*body.references, ref],
+        "prompt": enriched,
+        "references": refs,
         "skills": skills,
     })
 
@@ -9362,10 +9386,13 @@ def prompt_cad(
         if normalized_mode == "v2":
             # Keep user-provided refs (especially DXF attachments/context) in 2.0 mode.
             # Only force pipeline knobs that are specific to v2 routing.
+            v2_skills = ["cad"]
+            if "dxf" in {str(s).lower() for s in resolved_skills}:
+                v2_skills.append("dxf")
             updates.update({
                 "base_filename": None,
                 "fusion_target": "in_app",
-                "skills": ["cad"],
+                "skills": v2_skills,
             })
         design_body = body.model_copy(update=updates)
         try:

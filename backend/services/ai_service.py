@@ -1669,21 +1669,42 @@ class AIService:
 
         Returns (dxf_text, call_trace).
         """
+        dxf_text, _drawing_prompt, trace = self.generate_drawing_package_from_images(
+            prompt,
+            images=images,
+            trace_id=trace_id,
+        )
+        return dxf_text, trace
+
+    def generate_drawing_package_from_images(
+        self,
+        prompt: str,
+        images: list[dict[str, Any]] | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[str, str, dict[str, Any]]:
+        """Vision: convert images to a DXF drawing plus an enriched CAD prompt.
+
+        Returns (dxf_text, drawing_prompt, call_trace).
+        """
         system = (
-            "You are an expert CAD drafter. The user has uploaded one or more reference images of an object they want to model in 3D. "
-            "Your task is to analyse the images and produce a DXF (Drawing eXchange Format) representation of the key 2D geometry — "
-            "outlines, holes, slots, key dimensions, layer names, and any annotated text — that a downstream CAD AI can use to reconstruct the 3D model.\n\n"
-            "Output ONLY valid DXF text. Do not include markdown, explanation, or any text outside the DXF content. "
-            "Start with the HEADER section (0\\nSECTION\\n2\\nHEADER) and end with EOF. "
-            "Estimate dimensions in millimetres based on visual proportions and any visible scale references. "
-            "Use sensible layer names (OUTLINE, HOLES, DIMENSIONS, ANNOTATIONS). "
-            "If the image is a mechanical part, include all visible hole patterns, fillets, and chamfers as CIRCLE / ARC entities. "
-            "If the image is architectural, include walls, openings, and room labels."
+            "You are an expert CAD drafter and mechanical designer. The user uploaded reference image(s) "
+            "of an object to model in 3D. Convert the image(s) into:\n"
+            "1) A clear CAD drawing brief (natural language) that a downstream text-to-CAD agent can follow, and\n"
+            "2) A DXF (Drawing eXchange Format) of the key 2D geometry.\n\n"
+            "Output EXACTLY in this format (no markdown fences):\n"
+            "===DRAWING_PROMPT===\n"
+            "<multi-sentence brief: overall shape, materials if visible, estimated mm dimensions, "
+            "hole/pattern counts, features to model, origin/orientation assumptions, and how to interpret the photo>\n"
+            "===DXF===\n"
+            "<valid DXF text starting with HEADER section (0\\nSECTION\\n2\\nHEADER) and ending with EOF>\n\n"
+            "Estimate millimetre dimensions from visual proportions and any scale cues. "
+            "Use layers OUTLINE, HOLES, DIMENSIONS, ANNOTATIONS. "
+            "Include visible holes as CIRCLE entities and outlines as LINE/LWPOLYLINE/ARC. "
+            "The drawing prompt must incorporate and extend the user's request — do not ignore their prompt."
         )
         user = (
             f"User prompt: {prompt}\n\n"
-            "Please extract the 2D geometry from the attached image(s) and output DXF text that captures the overall shape, "
-            "key features, and approximate dimensions of the object shown."
+            "Analyze the attached image(s). Write the drawing prompt and DXF as specified."
         )
         raw, trace = self._call_model(
             system_prompt=system,
@@ -1692,7 +1713,25 @@ class AIService:
             images=images,
             max_tokens=8192,
         )
-        dxf_text = self._strip_code_fence(raw)
+        text = self._strip_code_fence(raw)
+        drawing_prompt = ""
+        dxf_text = ""
+        if "===DRAWING_PROMPT===" in text and "===DXF===" in text:
+            after_brief = text.split("===DRAWING_PROMPT===", 1)[1]
+            drawing_prompt, dxf_part = after_brief.split("===DXF===", 1)
+            drawing_prompt = drawing_prompt.strip()
+            dxf_text = dxf_part.strip()
+        elif "===DXF===" in text:
+            before, dxf_part = text.split("===DXF===", 1)
+            drawing_prompt = before.replace("===DRAWING_PROMPT===", "").strip()
+            dxf_text = dxf_part.strip()
+        else:
+            # Fallback: treat whole response as DXF if it looks like one; else as brief.
+            if "0\nSECTION" in text or "0\r\nSECTION" in text:
+                dxf_text = text
+            else:
+                drawing_prompt = text.strip()
         image_names = ", ".join(img.get("name", f"image_{i}") for i, img in enumerate(images or []))
-        dxf_text = self._wrap_dxf_notes(dxf_text, image_names)
-        return dxf_text, trace
+        if dxf_text:
+            dxf_text = self._wrap_dxf_notes(dxf_text, image_names)
+        return dxf_text, drawing_prompt, trace

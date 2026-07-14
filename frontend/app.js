@@ -2014,6 +2014,41 @@ const promptImageList = document.getElementById("prompt-image-list");
 const promptPaneCompose = document.getElementById("prompt-pane-compose");
 const promptPanel = document.querySelector(".prompt-panel");
 
+function askConvertImageToDrawing() {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("image-drawing-confirm-modal");
+    if (!modal) {
+      resolve("no");
+      return;
+    }
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", onKey);
+      yesBtn?.removeEventListener("click", onYes);
+      noBtn?.removeEventListener("click", onNo);
+      closeEls.forEach((el) => el.removeEventListener("click", onCancel));
+      modal.classList.add("hidden");
+      resolve(value);
+    };
+    const onYes = () => finish("yes");
+    const onNo = () => finish("no");
+    const onCancel = () => finish("cancel");
+    const onKey = (e) => {
+      if (e.key === "Escape") finish("cancel");
+    };
+    const yesBtn = modal.querySelector("#image-drawing-confirm-yes");
+    const noBtn = modal.querySelector("#image-drawing-confirm-no");
+    const closeEls = [...modal.querySelectorAll("[data-image-drawing-close]")];
+    yesBtn?.addEventListener("click", onYes);
+    noBtn?.addEventListener("click", onNo);
+    closeEls.forEach((el) => el.addEventListener("click", onCancel));
+    document.addEventListener("keydown", onKey);
+    modal.classList.remove("hidden");
+  });
+}
+
 function renderPromptImages() {
   if (!promptImageList) return;
   promptImageList.innerHTML = promptImages
@@ -15793,6 +15828,19 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     aiKeyUi?.openRequired();
     return;
   }
+
+  let convertImagesToDrawing = false;
+  const hasPromptImages = Array.isArray(promptImages) && promptImages.length > 0;
+  const alreadyHasDxfRef = (typeof promptReferencesForSubmit === "function"
+    ? promptReferencesForSubmit()
+    : []
+  ).some((ref) => String(ref?.type || "").toLowerCase() === "dxf");
+  if (hasPromptImages && !alreadyHasDxfRef) {
+    const choice = await askConvertImageToDrawing();
+    if (choice === "cancel") return;
+    convertImagesToDrawing = choice === "yes";
+  }
+
   await ensureProject();
   syncPromptTargetUI();
   pendingPromptSelectionContext = capturePromptSelectionContext();
@@ -15803,7 +15851,9 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   const reply = document.getElementById("prompt-reply");
   const genMode = promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : promptMode === "v2" ? "v2" : "standard";
   status.className = "status loading";
-  status.textContent = promptMode === "fusion"
+  status.textContent = convertImagesToDrawing
+    ? "Converting image to drawing, then generating…"
+    : promptMode === "fusion"
     ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${fusionTargetLabel()}... (builds, renders, reviews, repairs)`
     : promptMode === "architect"
     ? `${targetMode === "edit" ? "Editing selected module" : "Adding modular house part"} with Architect mode... (runs in background - safe to refresh)`
@@ -15823,6 +15873,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       base_filename: targetBaseFilename,
       references: promptReferences,
       images: promptImages,
+      convert_images_to_drawing: convertImagesToDrawing,
       speed: getPromptGenerationSpeed(),
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
       ...getPromptAiKeyBodyFields(),

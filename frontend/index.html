@@ -1644,6 +1644,23 @@
       <p class="fusion-capability-note">You can reopen this by clicking the Fusion tab again. The selected target is remembered on this device.</p>
     </div>
   </div>
+
+  <div id="image-drawing-confirm-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="image-drawing-confirm-title">
+    <div class="auth-backdrop" data-image-drawing-close></div>
+    <div class="auth-card app-dialog-card">
+      <button type="button" class="auth-close" data-image-drawing-close aria-label="Close">&times;</button>
+      <h2 id="image-drawing-confirm-title" class="app-dialog-title">Convert image to a drawing?</h2>
+      <p class="muted">
+        Vision can turn your photo into a CAD drawing and add a detailed modeling brief.
+        This usually increases the accuracy of the generated part.
+      </p>
+      <div class="app-dialog-actions" style="flex-wrap: wrap; gap: 0.5rem;">
+        <button type="button" class="btn accent" id="image-drawing-confirm-yes">Convert &amp; generate</button>
+        <button type="button" class="btn secondary" id="image-drawing-confirm-no">Generate without converting</button>
+        <button type="button" class="btn secondary" data-image-drawing-close>Cancel</button>
+      </div>
+    </div>
+  </div>
   <section id="render-agent-panel" class="render-agent-panel hidden" aria-label="Render Agent assistant">
     <header class="render-agent-head">
       <button type="button" id="render-agent-thread-menu" class="render-agent-menu-btn" aria-label="Open Render Agent threads" aria-expanded="false">
