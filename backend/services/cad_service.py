@@ -113,23 +113,119 @@ def _export_format(filename: str) -> str:
     return Path(filename).suffix.lower().lstrip(".")
 
 
+def faceted_step_name(stem: str) -> str:
+    """Sibling name for mesh-derived STEP that must never clobber native B-rep."""
+    clean = Path(str(stem or "model")).name
+    if clean.lower().endswith("__faceted"):
+        return f"{clean}.step"
+    return f"{clean}__faceted.step"
+
+
+def classify_step_file_kind(path: Path | str, *, max_bytes: int = 8_000_000) -> str:
+    """Classify a STEP file for Fusion/Onshape push.
+
+    Returns:
+      - editable_brep: has closed solid B-rep (Fusion solid cuts/booleans work)
+      - faceted_mesh: mesh-derived open shells / surface models only
+      - unknown: empty/unreadable
+    """
+    p = Path(path)
+    if not p.is_file() or p.stat().st_size < 32:
+        return "unknown"
+    try:
+        # Read enough of the ISO-10303 text to count solid vs shell entities.
+        raw = p.read_bytes()[:max_bytes]
+        text = raw.decode("utf-8", errors="ignore").upper()
+    except OSError:
+        return "unknown"
+    if "__FACETED" in p.stem.upper():
+        return "faceted_mesh"
+    manifold = text.count("MANIFOLD_SOLID_BREP")
+    advanced = text.count("ADVANCED_BREP_SHAPE_REPRESENTATION")
+    closed = text.count("CLOSED_SHELL")
+    shell_based = text.count("SHELL_BASED_SURFACE_MODEL")
+    open_shell = text.count("OPEN_SHELL")
+    # Native Jake/build123d solids always have MANIFOLD_SOLID_BREP (+ usually CLOSED_SHELL).
+    if manifold > 0 or (advanced > 0 and closed > 0 and shell_based == 0):
+        # Mixed files with a few shells but real solids still count as editable.
+        if manifold == 0 and shell_based > 0 and closed == 0:
+            return "faceted_mesh"
+        return "editable_brep"
+    if shell_based > 0 or (open_shell > 0 and closed == 0 and manifold == 0):
+        return "faceted_mesh"
+    # Heuristic: STL→STEP writers often leave "Open CASCADE Shape Model" with only faces.
+    if "FACETED_BREP" in text or "TRIANGULATED_FACE" in text:
+        return "faceted_mesh"
+    return "unknown"
+
+
+def is_editable_brep_step(path: Path | str) -> bool:
+    return classify_step_file_kind(path) == "editable_brep"
+
+
+def _has_native_step_provenance(project_path: Path, stem: str) -> bool:
+    """True when a generative source likely owns `{stem}.step` as real B-rep."""
+    project_path = Path(project_path)
+    if (project_path / f"{stem}.py").is_file():
+        return True
+    if (project_path / f"{stem}.program.json").is_file():
+        return True
+    if (project_path / f".{stem}.step.js").is_file():
+        return True
+    # Edited/pulled meshes still point back to the generative base.
+    base = re.sub(r"(_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
+    if base and base != stem:
+        if (project_path / f"{base}.py").is_file():
+            return True
+        if (project_path / f"{base}.step").is_file() and is_editable_brep_step(project_path / f"{base}.step"):
+            return True
+    return False
+
+
+def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
+    """Prefer a Fusion-editable B-rep STEP for this model (or its generative parent)."""
+    project_path = Path(project_path)
+    safe = Path(filename).name
+    stem = Path(safe).stem
+    candidates: list[Path] = []
+    if Path(safe).suffix.lower() in STEP_SUFFIXES:
+        candidates.append(project_path / safe)
+    for suffix in (".step", ".stp"):
+        candidates.append(project_path / f"{stem}{suffix}")
+    base = re.sub(r"(_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
+    if base and base != stem:
+        for suffix in (".step", ".stp"):
+            candidates.append(project_path / f"{base}{suffix}")
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else path.name
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.is_file() and is_editable_brep_step(path):
+            return path
+    return None
+
+
 def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, Any]]:
     """List downloadable artifacts that share a model basename."""
     stem = Path(filename).stem
     exports: list[dict[str, Any]] = []
+    faceted_name = faceted_step_name(stem)
     for f in sorted(project_path.iterdir()):
         if not f.is_file() or f.name.startswith("_active_"):
             continue
         name = f.name
-        if name != filename and not name.startswith(f"{stem}."):
+        if name != filename and not name.startswith(f"{stem}.") and name != faceted_name:
             continue
-        exports.append(
-            {
-                "name": name,
-                "format": _export_format(name),
-                "size": f.stat().st_size,
-            }
-        )
+        item: dict[str, Any] = {
+            "name": name,
+            "format": _export_format(name),
+            "size": f.stat().st_size,
+        }
+        if item["format"] == "step":
+            item["step_kind"] = classify_step_file_kind(f)
+        exports.append(item)
     return exports
 
 
@@ -235,25 +331,30 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
         raise ValueError("Visible components did not contain exportable geometry.")
 
     combined = repair_mesh(trimesh.util.concatenate(meshes)) if len(meshes) > 1 else repair_mesh(meshes[0])
+    # Mesh-derived STEP must use __faceted so it never pretends to be Jake/native B-rep.
     outputs = [
         project_path / f"{stem}.glb",
         project_path / f"{stem}.stl",
-        project_path / f"{stem}.step",
+        project_path / faceted_step_name(stem),
         project_path / f"{stem}.3mf",
     ]
     export_scene(scene, outputs[0])
     export_mesh(combined, outputs[1])
     export_mesh_step(combined, outputs[2])
     export_scene(scene, outputs[3])
-    return [
-        {
+    result: list[dict[str, Any]] = []
+    for out in outputs:
+        if not out.is_file():
+            continue
+        item: dict[str, Any] = {
             "name": out.name,
             "format": _export_format(out.name),
             "size": out.stat().st_size,
         }
-        for out in outputs
-        if out.is_file()
-    ]
+        if item["format"] == "step":
+            item["step_kind"] = classify_step_file_kind(out)
+        result.append(item)
+    return result
 
 
 def rename_model_file(project_path: Path, old_filename: str, new_filename: str) -> list[str]:
@@ -1445,7 +1546,17 @@ def export_mesh(mesh: trimesh.Trimesh, path: Path) -> Path:
 
 
 def export_mesh_step(mesh: trimesh.Trimesh, path: Path) -> Path:
-    """Write a faceted STEP file from a triangle mesh (for mesh-only edits like press-pull)."""
+    """Write a faceted (mesh-derived) STEP — Fusion solid cuts will NOT work reliably.
+
+    Callers must use a `__faceted.step` filename so this never overwrites native
+    B-rep STEP from text-to-cad / build123d (`scripts/step`).
+    """
+    path = Path(path)
+    if path.suffix.lower() in STEP_SUFFIXES and "__faceted" not in path.stem.lower():
+        # Safety: redirect accidental clobber of native model.step → model__faceted.step
+        path = path.with_name(faceted_step_name(path.stem))
+        logger.warning("Redirecting mesh STEP export to %s to protect native B-rep", path.name)
+
     import tempfile
 
     from OCP.IFSelect import IFSelect_ReturnStatus
@@ -1504,18 +1615,18 @@ def _legacy_3mf_needs_regeneration(path: Path) -> bool:
             if "ns0:" in rels or "xmlns:ns0" in rels:
                 return True
             root = ET.fromstring(zf.read("3D/3dmodel.model"))
-        items = root.findall(f".//{{{THREEMF_CORE_NS}}}item")
+        items = root.findall(f".//{THREEMF_CORE_NS}}}item")
         if not items:
             return True
         if not any(item.get("transform") for item in items):
             return True
-        tris = root.findall(f".//{{{THREEMF_CORE_NS}}}triangle")
+        tris = root.findall(f".//{THREEMF_CORE_NS}}}triangle")
         if not tris:
             return True
         first = tris[0]
         if first.get("p2") is not None or first.get("p3") is not None:
             return True
-        objs = root.findall(f".//{{{THREEMF_CORE_NS}}}object[@type='model']")
+        objs = root.findall(f".//{THREEMF_CORE_NS}}}object[@type='model']")
         if objs and objs[0].get("type") != "model":
             return True
     except Exception:
@@ -1532,7 +1643,11 @@ def _export_is_stale(src_mtime: float, dest: Path, fmt: str) -> bool:
 
 
 def ensure_mesh_exports(project_path: Path, filename: str, *, missing_only: bool = False) -> None:
-    """Generate STL / 3MF / STEP siblings for a mesh model when missing or stale."""
+    """Generate STL / 3MF / faceted-STEP siblings for a mesh model when missing or stale.
+
+    Native B-rep `{stem}.step` from text-to-cad is never overwritten. Mesh→STEP
+    always lands in `{stem}__faceted.step` so Fusion push can keep using solid STEP.
+    """
     safe = Path(filename).name
     src = project_path / safe
     if not src.is_file():
@@ -1548,7 +1663,26 @@ def ensure_mesh_exports(project_path: Path, filename: str, *, missing_only: bool
     for fmt in MESH_DERIVED_EXPORTS:
         if fmt == "step" and src_is_step:
             continue
-        dest = project_path / f"{stem}.{fmt}"
+        if fmt == "step":
+            dest = project_path / faceted_step_name(stem)
+            native = project_path / f"{stem}.step"
+            # Never regenerate mesh STEP on top of a real B-rep solid.
+            if native.is_file() and (
+                _has_native_step_provenance(project_path, stem) or is_editable_brep_step(native)
+            ):
+                # Optionally still refresh the explicit faceted sibling below.
+                pass
+            elif native.is_file() and classify_step_file_kind(native) == "faceted_mesh":
+                # Legacy clobber: move faceted content out of the way once.
+                try:
+                    if not dest.is_file() or dest.stat().st_mtime < native.stat().st_mtime:
+                        native.replace(dest)
+                        logger.info("Moved mesh-derived %s → %s to protect Fusion B-rep path", native.name, dest.name)
+                except OSError as exc:
+                    logger.warning("Could not relocate faceted STEP %s: %s", native.name, exc)
+        else:
+            dest = project_path / f"{stem}.{fmt}"
+
         if missing_only and dest.is_file() and not _export_is_stale(src_mtime, dest, fmt):
             continue
         if not missing_only and dest.is_file() and not _export_is_stale(src_mtime, dest, fmt):

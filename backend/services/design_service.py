@@ -527,21 +527,42 @@ def _module_scalar_assigns(source: str) -> dict[str, float]:
     return out
 
 
+def _sanitize_prompt_hole_radii(source: str, *, prompt: str) -> str:
+    """If the prompt specifies hole diameter, correct obvious default radii (e.g. 2.0)."""
+    hole_d = _prompt_hole_diameter_mm(prompt)
+    if hole_d is None:
+        return source
+    want = round(hole_d / 2.0, 4)
+    scalars = _module_scalar_assigns(source)
+    out = source
+    for name, val in scalars.items():
+        if name not in {"rod_hole_radius", "hole_radius", "pin_hole_radius"} and not (
+            name.endswith("_hole_radius") or name.endswith("_bore_radius")
+        ):
+            continue
+        # Only rewrite clear placeholder defaults, not intentional custom radii.
+        if val in {1.0, 2.0, 2.5, 3.0, 5.0, 10.0} and abs(val - want) > 0.05:
+            pattern = re.compile(
+                rf"(?m)^({re.escape(name)}\s*(?::[^=\n]+)?=\s*)[-+]?(?:\d+\.?\d*|\.\d+)([ \t]*(?:#.*)?)$"
+            )
+            out, n = pattern.subn(rf"\g<1>{want}\2", out, count=1)
+            if n == 0:
+                out = _insert_after_imports(out, f"{name} = {want}")
+    return out
+
+
 def _sanitize_poisoned_sequence_constants(source: str, *, prompt: str) -> str:
     """Rewrite `*_positions = 10.0` (etc.) to real list literals before scripts/step."""
     scalars = _module_scalar_assigns(source)
-    if not scalars:
-        return source
     replacements: list[tuple[str, str]] = []
-    for name, _val in scalars.items():
-        if not _is_sequence_constant_name(name):
-            continue
-        lit = _default_sequence_constant_value(name, prompt=prompt)
-        if not lit:
-            continue
-        replacements.append((name, lit))
-    if not replacements:
-        return source
+    if scalars:
+        for name, _val in scalars.items():
+            if not _is_sequence_constant_name(name):
+                continue
+            lit = _default_sequence_constant_value(name, prompt=prompt)
+            if not lit:
+                continue
+            replacements.append((name, lit))
     out = source
     for name, lit in replacements:
         # Replace only simple module-level scalar assigns.
@@ -552,7 +573,7 @@ def _sanitize_poisoned_sequence_constants(source: str, *, prompt: str) -> str:
         if n == 0:
             # Fallback: inject after imports if the assign was oddly formatted.
             out = _insert_after_imports(out, f"{name} = {lit}")
-    return out
+    return _sanitize_prompt_hole_radii(out, prompt=prompt)
 
 
 def _source_poisoned_sequence_issues(source: str) -> list[str]:
@@ -1739,14 +1760,35 @@ def _finalize_text_to_cad_source_before_step(
     # Always inject missing dimension/config constants before scripts/step.
     # Helpers (make_*/build_*) are still left for the LLM repair loop.
     finalized = _backfill_all_undefined_constants(finalized, base=source_path.stem, prompt=prompt)
+    # Never leave scalar *_positions for scripts/step — rewrite in place.
+    finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
     poisoned = _source_poisoned_sequence_issues(finalized)
     if poisoned:
-        raise ValueError(
-            "Generated source has invalid position/list constants before scripts/step:\n- "
-            + "\n- ".join(poisoned[:8])
-            + "\nFix: define them as lists of (x, y) tuples, e.g. "
-            "rod_hole_positions = [(-30, -10), (-10, -10), ...]. Never assign a bare float."
-        )
+        # Last resort: force-inject list literals even if regex missed the assign.
+        for issue in poisoned:
+            m = re.match(r"^(\w+)\s*=", issue)
+            if not m:
+                continue
+            name = m.group(1)
+            lit = _default_sequence_constant_value(name, prompt=prompt)
+            if not lit:
+                continue
+            # Drop any remaining scalar assign lines, then inject.
+            finalized = re.sub(
+                rf"(?m)^{re.escape(name)}\s*(?::[^=\n]+)?=\s*[-+]?(?:\d+\.?\d*|\.\d+)[ \t]*(?:#.*)?\n?",
+                "",
+                finalized,
+            )
+            finalized = _insert_after_imports(finalized, f"{name} = {lit}")
+        finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
+        poisoned = _source_poisoned_sequence_issues(finalized)
+        if poisoned:
+            raise ValueError(
+                "Generated source has invalid position/list constants before scripts/step:\n- "
+                + "\n- ".join(poisoned[:8])
+                + "\nFix: define them as lists of (x, y) tuples, e.g. "
+                "rod_hole_positions = [(-30, -10), (-10, -10), ...]. Never assign a bare float."
+            )
     if not jake_identical:
         finalized = _harden_common_fillet_failures(finalized)
         remaining = _gen_step_local_undefined_names(finalized)
@@ -3346,6 +3388,18 @@ def _run_text_to_cad_v2(
                 else:
                     # Check for NameError — undefined symbol referenced by gen_step()
                     name_err_match = re.search(r"NameError: name '(\w+)' is not defined", detail)
+                    locations_float_err = bool(
+                        re.search(
+                            r"TypeError:.*(?:argument after \* must be an iterable, not float|"
+                            r"Locations\(\).*float|float is not iterable)",
+                            detail,
+                            flags=re.IGNORECASE | re.DOTALL,
+                        )
+                    ) or (
+                        "Locations" in detail
+                        and "float" in detail
+                        and "TypeError" in detail
+                    )
                     if name_err_match:
                         missing_name = name_err_match.group(1)
                         # Deterministic heal: inject the missing constant and retry step
@@ -3405,6 +3459,63 @@ def _run_text_to_cad_v2(
                             repair_note = (
                                 f"NameError: '{missing_name}' is referenced in gen_step() but was never defined. "
                                 f"Auto-inject failed ({inject_exc}). Define it at module scope before gen_step().\n"
+                                f"Full error:\n{detail}"
+                            )
+                    elif locations_float_err:
+                        # LLM assigned *_positions = 10.0 then did Locations(*name). Fix deterministically.
+                        try:
+                            healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
+                            patched = _sanitize_poisoned_sequence_constants(healed_src, prompt=prompt)
+                            patched = _backfill_all_undefined_constants(
+                                patched, base=base, prompt=prompt
+                            )
+                            if patched != healed_src:
+                                source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
+                                current_source = patched
+                                trace_add(
+                                    "info",
+                                    "[authoring-agent] rewrote scalar *_positions to coordinate lists and retrying scripts/step",
+                                    trace_id=trace_id,
+                                )
+                                if progress_callback:
+                                    progress_callback({
+                                        "stage": "step",
+                                        "pct": 40,
+                                        "label": "Retrying scripts/step after fixing hole positions...",
+                                    })
+                                step_out = skill_runner.run_skill_tool(
+                                    "cad",
+                                    "step",
+                                    step_args,
+                                    cwd=project_path,
+                                    timeout_sec=240.0,
+                                    cancel_check=cancel_check,
+                                )
+                                if step_out.get("ok"):
+                                    detail = ""
+                                else:
+                                    detail = _error_tail(
+                                        step_out, "scripts/step failed after positions fix"
+                                    )
+                                    last_error = detail
+                                    repair_note = (
+                                        "Locations(*positions) failed even after rewriting position lists. "
+                                        "Use a list of (x, y) tuples or GridLocations(nx, ny, pitch_x, pitch_y).\n"
+                                        f"Full error:\n{detail}"
+                                    )
+                            else:
+                                from backend.services.cad_authoring_agent import format_agent_repair_note
+
+                                repair_note = format_agent_repair_note(
+                                    stage="scripts/step",
+                                    detail=detail,
+                                    attempt=attempt,
+                                    max_attempts=total_attempts,
+                                )
+                        except Exception as fix_exc:
+                            repair_note = (
+                                "Locations/positions TypeError could not be auto-fixed "
+                                f"({fix_exc}). Define position lists as [(x, y), ...] not floats.\n"
                                 f"Full error:\n{detail}"
                             )
                     else:
