@@ -9448,12 +9448,15 @@ section h2 {
 
 .file-export-menu {
   z-index: 1200;
-  width: 280px;
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #30363d;
   background: #161b22;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  overflow-x: hidden;
 }
 
 .file-export-title {
@@ -9610,6 +9613,10 @@ section h2 {
   border: 1px solid rgba(241, 138, 43, 0.24);
   border-radius: 8px;
   background: rgba(13, 17, 23, 0.72);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .file-export-fusion-title {
@@ -9625,10 +9632,14 @@ section h2 {
   margin: 7px 0;
   font-size: 0.68rem;
   color: var(--muted);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .file-export-cloud-field select {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -9642,17 +9653,27 @@ section h2 {
   border-radius: 7px;
   padding: 7px;
   background: rgba(255, 255, 255, 0.03);
-}
-
-.file-export-fusion-folder-head,
-.file-export-fusion-folder-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .file-export-fusion-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   margin-bottom: 6px;
+}
+
+.file-export-fusion-folder-head > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-export-fusion-folder-list {
@@ -9660,21 +9681,31 @@ section h2 {
   gap: 5px;
   max-height: 180px;
   overflow: auto;
+  min-width: 0;
 }
 
 .file-export-fusion-folder-row {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   padding: 5px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .file-export-fusion-folder-row span {
   min-width: 0;
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
+}
+
+.file-export-fusion-folder-row .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .file-export-fusion-use-current {
@@ -9685,6 +9716,14 @@ section h2 {
 .file-export-fusion-submit {
   width: 100%;
   margin-top: 4px;
+}
+
+.file-export-fusion-submit.file-export-fusion-submit--success,
+.file-export-fusion-submit--success {
+  background: #238636 !important;
+  border-color: #2ea043 !important;
+  color: #fff !important;
+  cursor: default;
 }
 
 .file-export-fusion-status {

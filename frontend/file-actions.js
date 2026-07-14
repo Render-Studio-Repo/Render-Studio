@@ -261,8 +261,9 @@ export async function openFileExportMenu({
   const rect = anchorEl.getBoundingClientRect();
   menu.style.position = "fixed";
   menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 260)}px`;
-  menu.style.left = `${Math.min(rect.left, window.innerWidth - 280)}px`;
+  menu.style.left = `${Math.min(rect.left, Math.max(8, window.innerWidth - 316))}px`;
   document.body.appendChild(menu);
+  keepMenuInViewport(menu);
   openMenu = menu;
 
   const onDoc = (ev) => {
@@ -695,30 +696,10 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
         throw new Error(data.detail || `Fusion export failed (${res.status})`);
       }
       const data = await res.json();
-      let verified = false;
-      let verifiedItem = null;
-      try {
-        const folderData = await autodeskJson(`/api/autodesk/projects/${encodeURIComponent(projectSelect.value)}/folders/${encodeURIComponent(selectedFolderId)}/contents`);
-        verifiedItem = (folderData.items || []).find((item) => item.id === data.item_id)
-          || (folderData.items || []).find((item) => item.name === (data.name || filename))
-          || null;
-        verified = !!verifiedItem;
-      } catch {
-        // Upload succeeded; folder refresh is best-effort feedback only.
-      }
-      submit.textContent = "Uploaded to Fusion ✓";
-      const name = escText(data.name || filename);
-      const folder = escText(selectedFolderName || "selected folder");
-      const actionText = data.updated_existing ? "Updated the same Fusion file with a new version" : "Created and linked the Fusion mirror file";
-      const verifyText = verified
-        ? `${actionText} in ${folder}.`
-        : `${actionText} in ${folder}; refresh Fusion 360's Data Panel if it is not visible yet.`;
-      const webUrl = data.web_url || verifiedItem?.web_url || "";
-      const link = webUrl
-        ? ` <a href="${escAttr(webUrl)}" target="_blank" rel="noopener">Open in Fusion web</a>`
-        : "";
-      const sourceNote = data.source_upload?.name ? ` Also uploaded ${escText(data.source_upload.name)}.` : "";
-      setStatusHtml(`Uploaded ${name}.${sourceNote} Saved this as your personal Fusion mirror for the Render3D project. ${escText(verifyText)} Fredie can link his own Fusion folder to the same Render3D project and sync through Render3D.${link}`);
+      submit.classList.add("file-export-fusion-submit--success");
+      submit.textContent = "Uploaded ✓";
+      setStatus(`Uploaded ${data.name || filename} — closing…`);
+      setTimeout(() => closeExportMenu(), 1200);
     } catch (err) {
       submit.disabled = false;
       setStatus(err.message || "Fusion export failed.", true);
@@ -743,9 +724,15 @@ function keepMenuInViewport(menu) {
   if (!menu) return;
   requestAnimationFrame(() => {
     const rect = menu.getBoundingClientRect();
-    if (rect.bottom > window.innerHeight - 8) {
-      const nextTop = Math.max(8, window.innerHeight - rect.height - 8);
-      menu.style.top = `${nextTop}px`;
+    const pad = 8;
+    if (rect.bottom > window.innerHeight - pad) {
+      menu.style.top = `${Math.max(pad, window.innerHeight - rect.height - pad)}px`;
+    }
+    if (rect.right > window.innerWidth - pad) {
+      menu.style.left = `${Math.max(pad, window.innerWidth - rect.width - pad)}px`;
+    }
+    if (rect.left < pad) {
+      menu.style.left = `${pad}px`;
     }
   });
 }
