@@ -1088,6 +1088,8 @@ class AIService:
             "Follow the CAD brief exactly.\n"
             "Return ONLY Python source — no markdown fences, no explanation before or after the code.\n"
             "If editing an existing model, preserve working geometry and change only what the prompt or repair note requires.\n"
+            "JAKE REVISE/EDIT RULE: when Existing generated source is provided, return a surgical edit of that file — "
+            "smallest responsible change, same gen_step() contract, same units (mm). Do not invent a new unrelated part.\n"
             "To avoid repeated NameError failures, prefer writing complete geometry inline in gen_step() with local code blocks "
             "instead of calling custom helper functions. If you do use a helper, it MUST be fully defined above gen_step().\n"
             "Never return source where gen_step() calls make_*/add_*/build_*/create_* names that are not defined in-file.\n"
@@ -1146,8 +1148,10 @@ class AIService:
             parts.append(f"\nProject context: {json.dumps(project_context, separators=(',', ':'))}")
         if previous_source:
             parts.append(
-                "\n\nExisting generated source to edit (preserve what still works):\n"
-                f"{previous_source[:12000]}"
+                "\n\nExisting generated source to edit (Jake revise mode — preserve what still works):\n"
+                f"{previous_source[:14000]}\n"
+                "Apply the SMALLEST responsible source change. Do not rewrite from scratch. "
+                "Keep labels, mates, orientation, and filename lineage unless the prompt requires otherwise."
             )
         if repair_note:
             parts.append(
@@ -1155,6 +1159,8 @@ class AIService:
                 "scripts/step → inspect → snapshot → visual review). "
                 "Classify the failure, edit the existing source with the smallest responsible change, "
                 "and return corrected Python only. Do not restart from an unrelated model.\n"
+                "If the failure is Locations/positions TypeError, replace any `*_positions = <float>` "
+                "with a real list of (x, y) tuples or use GridLocations.\n"
                 f"Error/feedback:\n{repair_note}"
             )
 

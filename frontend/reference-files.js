@@ -23,6 +23,7 @@ function labelFromName(filename = "") {
 export function createReferenceFilesViewer(options = {}) {
   const {
     tabBarEl,
+    docTabs = null,
     viewerEl,
     api,
     rawFetch,
@@ -43,11 +44,24 @@ export function createReferenceFilesViewer(options = {}) {
   let zoom = 1;
   let panDrag = null;
 
+  function syncDocTab(tab, { activate = false } = {}) {
+    if (!docTabs || !tab) return;
+    docTabs.upsert({
+      id: tab.filename,
+      label: tab.label || tab.filename,
+      kind: tab.kind || kindFromName(tab.filename),
+      dirty: !!tab.dirty,
+    });
+    if (activate) docTabs.setActive(tab.filename);
+  }
+
   function setVisible(on) {
-    tabBarEl?.classList.toggle("hidden", !on);
+    if (!docTabs) tabBarEl?.classList.toggle("hidden", !on);
     viewerEl?.classList.toggle("hidden", !on);
     viewerEl?.setAttribute("aria-hidden", on ? "false" : "true");
-    document.getElementById("viewport")?.classList.toggle("ref-viewer-active", !!on);
+    if (!docTabs) {
+      document.getElementById("viewport")?.classList.toggle("ref-viewer-active", !!on);
+    }
   }
 
   function revokeBlob(tab) {
@@ -71,6 +85,19 @@ export function createReferenceFilesViewer(options = {}) {
   }
 
   function renderTabs() {
+    if (docTabs) {
+      for (const tab of tabs.values()) {
+        docTabs.upsert({
+          id: tab.filename,
+          label: tab.label || tab.filename,
+          kind: tab.kind || kindFromName(tab.filename),
+          dirty: !!tab.dirty,
+        });
+      }
+      if (activeFilename) docTabs.setActive(activeFilename);
+      else docTabs.render?.();
+      return;
+    }
     if (!tabBarEl) return;
     if (!tabs.size) {
       tabBarEl.innerHTML = "";
@@ -163,6 +190,7 @@ export function createReferenceFilesViewer(options = {}) {
           ${kind === "image" ? `<button type="button" class="dxf-viewer-btn" data-ref-action="clear-strokes" title="Clear markup strokes">Clear marks</button>` : ""}
           ${kind === "image" ? `<button type="button" class="dxf-viewer-btn" data-ref-action="fit" title="Fit view">Fit</button>` : ""}
           <button type="button" class="dxf-viewer-btn primary" data-ref-action="save" title="Save text and markup">Save</button>
+          <button type="button" class="dxf-viewer-btn" data-ref-action="close" title="Close tab">Close</button>
         </div>
       </header>
       <div class="ref-viewer-body">
@@ -181,7 +209,8 @@ export function createReferenceFilesViewer(options = {}) {
   function markDirty(tab) {
     if (!tab) return;
     tab.dirty = true;
-    renderTabs();
+    if (docTabs) docTabs.setDirty(tab.filename, true);
+    else renderTabs();
   }
 
   function bindImageMarkup(tab) {
@@ -306,14 +335,15 @@ export function createReferenceFilesViewer(options = {}) {
         },
       );
       tab.dirty = false;
-      renderTabs();
+      if (docTabs) docTabs.setDirty(tab.filename, false);
+      else renderTabs();
       onStatus?.("ok", `Saved ${tab.label || tab.filename}`);
     } catch (err) {
       onStatus?.("error", err.message || "Save failed");
     }
   }
 
-  function activate(filename) {
+  function activate(filename, { syncShared = true } = {}) {
     if (!tabs.has(filename)) return;
     // Persist unsaved notes from previous tab into memory
     const prev = activeFilename ? tabs.get(activeFilename) : null;
@@ -324,11 +354,13 @@ export function createReferenceFilesViewer(options = {}) {
       if (textEl && textEl.value !== prev.textContent) {
         prev.textContent = textEl.value;
         prev.dirty = true;
+        if (docTabs) docTabs.setDirty(prev.filename, true);
       }
     }
     activeFilename = filename;
     if ((tabs.get(filename)?.kind) === "image") resetView();
-    renderTabs();
+    if (syncShared) syncDocTab(tabs.get(filename), { activate: true });
+    else renderTabs();
     renderViewer();
   }
 
@@ -337,12 +369,28 @@ export function createReferenceFilesViewer(options = {}) {
     if (!tab) return;
     revokeBlob(tab);
     tabs.delete(filename);
+    if (activeFilename === filename) activeFilename = null;
+    if (docTabs) {
+      docTabs.remove(filename);
+      if (!activeFilename) {
+        setVisible(false);
+        if (viewerEl) viewerEl.innerHTML = "";
+        onActiveChange?.(null);
+      }
+      return;
+    }
     if (activeFilename === filename) {
       activeFilename = tabs.keys().next().value || null;
       if (activeFilename && tabs.get(activeFilename)?.kind === "image") resetView();
     }
     renderTabs();
     renderViewer();
+  }
+
+  function hideViewerOnly() {
+    activeFilename = null;
+    setVisible(false);
+    if (viewerEl) viewerEl.innerHTML = "";
   }
 
   async function openTab(filename, { projectId, label, kind } = {}) {
@@ -369,6 +417,7 @@ export function createReferenceFilesViewer(options = {}) {
         dirty: false,
       };
       tabs.set(key, tab);
+      syncDocTab(tab);
       await loadTab(tab);
     } else {
       tab.projectId = pid;
@@ -382,17 +431,19 @@ export function createReferenceFilesViewer(options = {}) {
     return tab;
   }
 
-  tabBarEl?.addEventListener("click", (e) => {
-    const closeBtn = e.target.closest("[data-ref-close]");
-    if (closeBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      closeTab(closeBtn.dataset.refClose);
-      return;
-    }
-    const tabBtn = e.target.closest("[data-ref-tab]");
-    if (tabBtn) activate(tabBtn.dataset.refTab);
-  });
+  if (!docTabs) {
+    tabBarEl?.addEventListener("click", (e) => {
+      const closeBtn = e.target.closest("[data-ref-close]");
+      if (closeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeTab(closeBtn.dataset.refClose);
+        return;
+      }
+      const tabBtn = e.target.closest("[data-ref-tab]");
+      if (tabBtn) activate(tabBtn.dataset.refTab);
+    });
+  }
 
   viewerEl?.addEventListener("click", (e) => {
     const action = e.target.closest("[data-ref-action]")?.dataset.refAction;
@@ -400,6 +451,10 @@ export function createReferenceFilesViewer(options = {}) {
     const tab = activeFilename ? tabs.get(activeFilename) : null;
     if (action === "save") {
       void saveActive();
+      return;
+    }
+    if (action === "close" && activeFilename) {
+      closeTab(activeFilename);
       return;
     }
     if (action === "pen") {
@@ -456,8 +511,22 @@ export function createReferenceFilesViewer(options = {}) {
   return {
     openTab,
     closeTab,
+    activateFromShared(filename) {
+      if (!tabs.has(filename)) return false;
+      activate(filename, { syncShared: false });
+      return true;
+    },
+    hideViewerOnly,
     closeAll() {
-      for (const name of [...tabs.keys()]) closeTab(name);
+      for (const name of [...tabs.keys()]) {
+        const tab = tabs.get(name);
+        revokeBlob(tab);
+        docTabs?.remove?.(name);
+      }
+      tabs.clear();
+      activeFilename = null;
+      if (!docTabs) renderTabs();
+      renderViewer();
     },
     isActive: () => !!activeFilename && tabs.has(activeFilename),
     hasTabs: () => tabs.size > 0,

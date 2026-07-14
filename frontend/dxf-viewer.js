@@ -55,6 +55,7 @@ function renderPayloadSvg(payload) {
 export function createDxfViewer(options = {}) {
   const {
     tabBarEl,
+    docTabs = null,
     viewerEl,
     api,
     getProjectId,
@@ -70,11 +71,23 @@ export function createDxfViewer(options = {}) {
   let zoom = 1;
   let dragState = null;
 
+  function syncDocTab(tab, { activate = false } = {}) {
+    if (!docTabs || !tab) return;
+    docTabs.upsert({
+      id: tab.filename,
+      label: tab.label || tab.filename,
+      kind: "dxf",
+    });
+    if (activate) docTabs.setActive(tab.filename);
+  }
+
   function setVisible(on) {
-    tabBarEl?.classList.toggle("hidden", !on);
+    if (!docTabs) tabBarEl?.classList.toggle("hidden", !on);
     viewerEl?.classList.toggle("hidden", !on);
     viewerEl?.setAttribute("aria-hidden", on ? "false" : "true");
-    document.getElementById("viewport")?.classList.toggle("dxf-viewer-active", !!on);
+    if (!docTabs) {
+      document.getElementById("viewport")?.classList.toggle("dxf-viewer-active", !!on);
+    }
   }
 
   function resetView() {
@@ -91,6 +104,14 @@ export function createDxfViewer(options = {}) {
   }
 
   function renderTabs() {
+    if (docTabs) {
+      for (const tab of tabs.values()) {
+        docTabs.upsert({ id: tab.filename, label: tab.label || tab.filename, kind: "dxf" });
+      }
+      if (activeFilename) docTabs.setActive(activeFilename);
+      else docTabs.render?.();
+      return;
+    }
     if (!tabBarEl) return;
     if (!tabs.size) {
       tabBarEl.innerHTML = "";
@@ -138,6 +159,7 @@ export function createDxfViewer(options = {}) {
           <button type="button" class="dxf-viewer-btn" data-dxf-action="fit" title="Fit view">Fit</button>
           <button type="button" class="dxf-viewer-btn" data-dxf-action="zoom-out" title="Zoom out">−</button>
           <button type="button" class="dxf-viewer-btn" data-dxf-action="zoom-in" title="Zoom in">+</button>
+          <button type="button" class="dxf-viewer-btn" data-dxf-action="close" title="Close tab">Close</button>
         </div>
       </header>
       <div class="dxf-viewer-canvas-wrap">
@@ -167,24 +189,32 @@ export function createDxfViewer(options = {}) {
     }
   }
 
-  function activate(filename) {
+  function activate(filename, { syncShared = true } = {}) {
     if (!tabs.has(filename)) return;
     activeFilename = filename;
     resetView();
-    renderTabs();
+    if (syncShared) syncDocTab(tabs.get(filename), { activate: true });
+    else renderTabs();
     renderViewer();
   }
 
   function closeTab(filename) {
     if (!tabs.has(filename)) return;
     tabs.delete(filename);
+    docTabs?.remove?.(filename);
     if (activeFilename === filename) {
       const next = tabs.keys().next().value || null;
       activeFilename = next;
       resetView();
     }
-    renderTabs();
+    if (!docTabs) renderTabs();
     renderViewer();
+  }
+
+  function hideViewerOnly() {
+    activeFilename = null;
+    setVisible(false);
+    viewerEl && (viewerEl.innerHTML = "");
   }
 
   async function openTab(filename, { projectId, label } = {}) {
@@ -198,13 +228,14 @@ export function createDxfViewer(options = {}) {
     if (!tab) {
       tab = {
         filename: key,
-        label: label || key,
+        label: label || key.replace(/\.dxf$/i, ""),
         projectId: pid,
         payload: null,
         loading: false,
         error: "",
       };
       tabs.set(key, tab);
+      syncDocTab(tab);
       await loadPreview(tab);
     } else {
       tab.projectId = pid;
@@ -216,24 +247,27 @@ export function createDxfViewer(options = {}) {
     return tab;
   }
 
-  tabBarEl?.addEventListener("click", (e) => {
-    const closeBtn = e.target.closest("[data-dxf-close]");
-    if (closeBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      closeTab(closeBtn.dataset.dxfClose);
-      return;
-    }
-    const tabBtn = e.target.closest("[data-dxf-tab]");
-    if (tabBtn) {
-      activate(tabBtn.dataset.dxfTab);
-    }
-  });
+  if (!docTabs) {
+    tabBarEl?.addEventListener("click", (e) => {
+      const closeBtn = e.target.closest("[data-dxf-close]");
+      if (closeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeTab(closeBtn.dataset.dxfClose);
+        return;
+      }
+      const tabBtn = e.target.closest("[data-dxf-tab]");
+      if (tabBtn) {
+        activate(tabBtn.dataset.dxfTab);
+      }
+    });
+  }
 
   viewerEl?.addEventListener("click", (e) => {
     const action = e.target.closest("[data-dxf-action]")?.dataset.dxfAction;
     if (!action) return;
     if (action === "fit") resetView();
+    else if (action === "close" && activeFilename) closeTab(activeFilename);
     else if (action === "zoom-in") {
       zoom = Math.min(zoom * 1.2, 12);
       applyTransform();
@@ -288,10 +322,19 @@ export function createDxfViewer(options = {}) {
   return {
     openTab,
     closeTab,
+    activateFromShared(filename) {
+      if (!tabs.has(filename)) return false;
+      activate(filename, { syncShared: false });
+      return true;
+    },
+    hideViewerOnly,
     closeAll() {
+      for (const name of [...tabs.keys()]) {
+        docTabs?.remove?.(name);
+      }
       tabs.clear();
       activeFilename = null;
-      renderTabs();
+      if (!docTabs) renderTabs();
       renderViewer();
     },
     closeIfOpen(filename) {

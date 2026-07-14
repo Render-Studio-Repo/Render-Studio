@@ -184,6 +184,31 @@ def format_agent_repair_note(*, stage: str, detail: str, attempt: int, max_attem
     )
 
 
+def format_surgical_edit_note(*, user_prompt: str, source_name: str) -> str:
+    """Jake-style revise/edit contract: smallest source change, not a rewrite."""
+    return (
+        "\n\nJAKE EDIT / REVISE MODE (source modification, not new part):\n"
+        f"- You are modifying the existing generator `{source_name}`.\n"
+        "- Keep the same filename lineage, part role, orientation, and units (mm).\n"
+        "- Make the SMALLEST responsible source change that satisfies this request:\n"
+        f"  {user_prompt.strip()}\n"
+        "- Prefer editing named parameters, feature blocks, or one helper — do not rewrite the whole model.\n"
+        "- Preserve working geometry, labels, and mates unless the prompt asks to change them.\n"
+        "- After editing, the next scripts/step → inspect → snapshot packet must visibly reflect the change.\n"
+        "- Never invent bare floats for list constants (wrong: rod_hole_positions = 10.0).\n"
+        "- Return one complete runnable Python file with gen_step().\n"
+    )
+
+
+def jake_required_workflow_summary() -> str:
+    """Short mirror of upstream text-to-cad Required workflow for traces/prompts."""
+    return (
+        "Jake workflow: classify → CAD brief → edit gen_step source → scripts/step "
+        "→ scripts/inspect (facts/planes/positioning) → scripts/snapshot (mandatory) "
+        "→ visual review (fail-closed) → repair-loop smallest edit → rerun."
+    )
+
+
 def collect_snapshot_pngs(project_path: Path, base: str) -> list[str]:
     """Return newest packet PNGs for this base (multi-view preferred)."""
     preferred = [

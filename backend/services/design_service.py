@@ -532,6 +532,30 @@ def _module_scalar_assigns(source: str) -> dict[str, float]:
     return out
 
 
+def _module_name_alias_assigns(source: str) -> dict[str, str]:
+    """Map module-level `name = other_name` aliases (e.g. positions = height)."""
+    out: dict[str, str] = {}
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return out
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Name)
+        ):
+            out[node.targets[0].id] = node.value.id
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and isinstance(node.value, ast.Name)
+        ):
+            out[node.target.id] = node.value.id
+    return out
+
+
 def _sanitize_prompt_hole_radii(source: str, *, prompt: str) -> str:
     """If the prompt specifies hole diameter, correct obvious default radii (e.g. 2.0)."""
     hole_d = _prompt_hole_diameter_mm(prompt)
@@ -556,9 +580,62 @@ def _sanitize_prompt_hole_radii(source: str, *, prompt: str) -> str:
     return out
 
 
-def _sanitize_poisoned_sequence_constants(source: str, *, prompt: str) -> str:
-    """Rewrite `*_positions = 10.0` (etc.) to real list literals before scripts/step."""
+def _sanitize_holder_placeholder_dimensions(source: str, *, prompt: str) -> str:
+    """Replace obvious 10.0 placeholder base sizes for rod/hole holder prompts."""
+    count = _prompt_count_for_holder_holes(prompt)
+    hole_d = _prompt_hole_diameter_mm(prompt)
+    if not count and hole_d is None:
+        return source
+    if not any(tok in (prompt or "").lower() for tok in ("holder", "rod", "fixture", "rack", "tray")):
+        # Still apply if source already has rod_hole_* names.
+        if "rod_hole" not in source and "hole_positions" not in source:
+            return source
+
+    n = count or 4
+    d = hole_d or 8.5
+    pitch = max(16.0, d * 2.2)
+    if n % 2 == 0 and n >= 4:
+        cols = n // 2
+        rows = 2
+    else:
+        cols = max(1, int(math.ceil(math.sqrt(n))))
+        rows = int(math.ceil(n / cols))
+    span_x = (cols - 1) * pitch
+    span_y = (rows - 1) * pitch
+    margin = max(20.0, d * 3.0)
+    base_length = round(span_x + 2 * margin, 1)
+    base_width = round(span_y + 2 * margin, 1)
+    total_height = round(max(25.0, d * 4.0), 1)
+    pocket_depth = round(max(12.0, total_height * 0.7), 1)
+
     scalars = _module_scalar_assigns(source)
+    replacements = {
+        "base_length": base_length,
+        "base_width": base_width,
+        "total_height": total_height,
+        "base_height": total_height,
+        "holder_height": total_height,
+        "rod_pocket_depth": pocket_depth,
+        "pocket_depth": pocket_depth,
+    }
+    out = source
+    for name, want in replacements.items():
+        if name not in scalars:
+            continue
+        # Only rewrite classic LLM placeholders.
+        if scalars[name] not in {1.0, 5.0, 10.0}:
+            continue
+        pattern = re.compile(
+            rf"(?m)^({re.escape(name)}\s*(?::[^=\n]+)?=\s*)[-+]?(?:\d+\.?\d*|\.\d+)([ \t]*(?:#.*)?)$"
+        )
+        out, _n = pattern.subn(rf"\g<1>{want}\2", out, count=1)
+    return out
+
+
+def _sanitize_poisoned_sequence_constants(source: str, *, prompt: str) -> str:
+    """Rewrite `*_positions = 10.0` (and aliases to floats) to real list literals."""
+    scalars = _module_scalar_assigns(source)
+    aliases = _module_name_alias_assigns(source)
     replacements: list[tuple[str, str]] = []
     if scalars:
         for name, _val in scalars.items():
@@ -568,27 +645,66 @@ def _sanitize_poisoned_sequence_constants(source: str, *, prompt: str) -> str:
             if not lit:
                 continue
             replacements.append((name, lit))
+    # Alias to a scalar float name: rod_hole_positions = total_height
+    for name, target in aliases.items():
+        if not _is_sequence_constant_name(name):
+            continue
+        if target not in scalars:
+            continue
+        lit = _default_sequence_constant_value(name, prompt=prompt)
+        if not lit:
+            continue
+        replacements.append((name, lit))
+
     out = source
+    seen: set[str] = set()
     for name, lit in replacements:
-        # Replace only simple module-level scalar assigns.
+        if name in seen:
+            continue
+        seen.add(name)
+        # Replace numeric literal assigns.
         pattern = re.compile(
             rf"(?m)^({re.escape(name)}\s*(?::[^=\n]+)?=\s*)[-+]?(?:\d+\.?\d*|\.\d+)([ \t]*(?:#.*)?)$"
         )
         out, n = pattern.subn(rf"\g<1>{lit}\2", out, count=1)
         if n == 0:
-            # Fallback: inject after imports if the assign was oddly formatted.
+            # Replace name-alias assigns: foo = bar
+            alias_pat = re.compile(
+                rf"(?m)^({re.escape(name)}\s*(?::[^=\n]+)?=\s*)[A-Za-z_][A-Za-z0-9_]*([ \t]*(?:#.*)?)$"
+            )
+            out, n = alias_pat.subn(rf"\g<1>{lit}\2", out, count=1)
+        if n == 0:
             out = _insert_after_imports(out, f"{name} = {lit}")
-    return _sanitize_prompt_hole_radii(out, prompt=prompt)
+    out = _sanitize_prompt_hole_radii(out, prompt=prompt)
+    return _sanitize_holder_placeholder_dimensions(out, prompt=prompt)
+
+
+def _apply_jake_deterministic_repairs(source: str, *, prompt: str) -> str:
+    """Jake-parity pre-step repairs that do not invent unrelated geometry.
+
+    These mirror what Jake's agent would fix immediately without a full redesign:
+    poisoned position lists, hole radii from the prompt, and obvious 10.0 placeholders.
+    """
+    out = _sanitize_poisoned_sequence_constants(source, prompt=prompt)
+    return out
 
 
 def _source_poisoned_sequence_issues(source: str) -> list[str]:
     """Detect sequence names still assigned to scalars (preflight)."""
     issues: list[str] = []
-    for name, val in _module_scalar_assigns(source).items():
+    scalars = _module_scalar_assigns(source)
+    for name, val in scalars.items():
         if _is_sequence_constant_name(name):
             issues.append(
                 f"{name} = {val} is a number but must be a list of (x, y) positions "
                 f"(e.g. for Locations(*{name}) or `for x, y in {name}`)."
+            )
+    aliases = _module_name_alias_assigns(source)
+    for name, target in aliases.items():
+        if _is_sequence_constant_name(name) and target in scalars:
+            issues.append(
+                f"{name} = {target} aliases a float ({scalars[target]}) but must be a "
+                f"list of (x, y) positions."
             )
     return issues
 
@@ -1774,7 +1890,8 @@ def _finalize_text_to_cad_source_before_step(
     if jake_identical:
         # Jake does not invent missing dimensions. It does rewrite scalar
         # ``*_positions* = 10.0`` mistakes — those are type bugs, not missing params.
-        finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
+        # Also fix obvious holder placeholder dims / hole radii from the prompt.
+        finalized = _apply_jake_deterministic_repairs(finalized, prompt=prompt)
         poisoned = _source_poisoned_sequence_issues(finalized)
         if poisoned:
             raise ValueError(
@@ -1790,7 +1907,7 @@ def _finalize_text_to_cad_source_before_step(
 
     # Render3D compatibility path: backfill missing dims and harden fillets.
     finalized = _backfill_all_undefined_constants(finalized, base=source_path.stem, prompt=prompt)
-    finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
+    finalized = _apply_jake_deterministic_repairs(finalized, prompt=prompt)
     poisoned = _source_poisoned_sequence_issues(finalized)
     if poisoned:
         for issue in poisoned:
@@ -1807,7 +1924,7 @@ def _finalize_text_to_cad_source_before_step(
                 finalized,
             )
             finalized = _insert_after_imports(finalized, f"{name} = {lit}")
-        finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
+        finalized = _apply_jake_deterministic_repairs(finalized, prompt=prompt)
         poisoned = _source_poisoned_sequence_issues(finalized)
         if poisoned:
             raise ValueError(
@@ -3203,18 +3320,17 @@ def _run_text_to_cad_v2(
     last_error: str | None = None
     current_source: str | None = previous_source
     canonical_source: str | None = None
+    is_edit = bool(previous_source)
     if previous_source:
         previous_missing = _gen_step_local_undefined_names(previous_source)
         if previous_missing:
+            # Jake revise path: keep the source and repair it — do not discard edit lineage.
             trace_add(
                 "warning",
-                "[2.0/text-to-cad] Ignoring invalid previous source (undefined symbols) for edit context.",
+                "[2.0/text-to-cad] Previous source has undefined symbols; keeping it for Jake edit/repair loop.",
                 trace_id=trace_id,
                 data={"undefined": previous_missing[:12]},
             )
-            current_source = None
-            previous_source = None
-            previous_source_name = None
 
     # Jake-identical authoring agent: LLM writes gen_step → scripts/step →
     # inspect → mandatory multi-view snapshot review → repair from CLI/visual errors.
@@ -3278,19 +3394,19 @@ def _run_text_to_cad_v2(
                 "This prompt is not a room/house/building request. Follow the user request directly and do not force house-specific modules.\n"
             )
     if progress_callback:
-        progress_callback({"stage": "brief", "pct": 10, "label": f"Writing {label_prefix} CAD brief with text-to-cad skill..."})
+        brief_label = (
+            f"Writing {label_prefix} revise brief (Jake edit workflow)..."
+            if is_edit
+            else f"Writing {label_prefix} CAD brief with text-to-cad skill..."
+        )
+        progress_callback({"stage": "brief", "pct": 10, "label": brief_label})
     edit_note = ""
     if previous_source:
-        edit_note = (
-            "\n\nEDIT MODE: The user is editing the current model. Preserve the existing generated source "
-            f"({previous_source_name or source_name}) and change only what the prompt asks for. "
-            "Do not create an unrelated replacement model. This must be a visible iteration of the existing object: "
-            "keep the same role, scale, orientation, and filename lineage, but modify the source enough that the next "
-            "snapshot clearly differs from the previous version. For vague aesthetic requests such as 'make it cooler', "
-            "add explicit visible design features (beveled/chamfered styling, accent cutouts, ribs, vents, raised pads, "
-            "decorative but printable grooves, stronger silhouette changes, or material/color-separated details) while "
-            "preserving all functional support/contact geometry. If Project context contains a component/object ref, "
-            "that is the object being iterated."
+        from backend.services.cad_authoring_agent import format_surgical_edit_note
+
+        edit_note = format_surgical_edit_note(
+            user_prompt=prompt,
+            source_name=previous_source_name or source_name,
         )
     # Mirror upstream text-to-cad modeling behavior by default: keep the
     # generation prompt focused on the user request + edit lineage, while
@@ -3298,10 +3414,12 @@ def _run_text_to_cad_v2(
     mirror_upstream_modeling = bool((context or {}).get("mirror_upstream_modeling", True))
     if jake_identical or strict_upstream:
         mirror_upstream_modeling = True
+        from backend.services.cad_authoring_agent import jake_required_workflow_summary
+
         trace_add(
             "info",
-            "[2.0/text-to-cad] Jake authoring agent: write gen_step → scripts/step → inspect → "
-            "multi-view snapshot (mandatory) → visual review (fail-closed) → repair-loop edit.",
+            f"[2.0/text-to-cad] {jake_required_workflow_summary()}"
+            + (" (revise/edit)" if is_edit else " (new part)"),
             trace_id=trace_id,
         )
     generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
@@ -3324,10 +3442,11 @@ def _run_text_to_cad_v2(
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
         if progress_callback:
+            action = "Editing" if (is_edit or current_source) else "Writing"
             progress_callback({
                 "stage": "ai_source",
                 "pct": 10 if attempt == 0 else 14,
-                "label": f"Writing build123d source with {label_prefix} CAD skill (attempt {attempt + 1})...",
+                "label": f"{action} build123d source with {label_prefix} CAD skill (attempt {attempt + 1}/{total_attempts})...",
             })
         try:
             if canonical_source:
@@ -3359,6 +3478,17 @@ def _run_text_to_cad_v2(
                 prompt=prompt,
                 jake_identical=jake_identical,
             )
+            # Jake parity: fix type-poisoned positions / prompt radii before scripts/step
+            # so we do not burn an LLM repair turn on float-not-iterable mistakes.
+            repaired = _apply_jake_deterministic_repairs(source, prompt=prompt)
+            if repaired != source:
+                source = repaired
+                trace_add(
+                    "info",
+                    "[authoring-agent] applied deterministic Jake pre-step repairs "
+                    "(positions/radii/placeholder dims)",
+                    trace_id=trace_id,
+                )
             if not jake_identical:
                 # Render3D compatibility: backfill missing numeric/string config constants.
                 source = _augment_common_constants(source, base=base, prompt=prompt)
@@ -3593,7 +3723,7 @@ def _run_text_to_cad_v2(
 
                         try:
                             healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
-                            patched = _sanitize_poisoned_sequence_constants(healed_src, prompt=prompt)
+                            patched = _apply_jake_deterministic_repairs(healed_src, prompt=prompt)
                             if not jake_identical:
                                 patched = _backfill_all_undefined_constants(
                                     patched, base=base, prompt=prompt
@@ -4396,10 +4526,12 @@ def _looks_like_cooking_appliance(prompt: str, images: list[dict[str, Any]] | No
     return False
 
 
-def _max_repairs_for_speed(speed: str | None) -> int:
+def _max_repairs_for_speed(speed: str | None, *, jake_identical: bool = False) -> int:
     """Return extra repair attempts beyond the first try (Jake agent turns − 1)."""
-    # Jake Codex agents iterate until visual+CLI gates pass; give enough turns
-    # for step/inspect/snapshot repair cycles (unbounded in Jake; capped here).
+    # Jake Codex agents iterate until visual+CLI gates pass; mirror that with a
+    # generous capped budget so step/inspect/snapshot/revise repairs can finish.
+    if jake_identical:
+        return 12
     if (speed or "").strip().lower() in {"quality", "pro", "slow"}:
         return 8
     return 6
@@ -4486,10 +4618,10 @@ def run_design(
     last_error: str | None = None
     ai_traces: list[dict[str, Any]] = []
     if max_repairs is None:
-        max_repairs = _max_repairs_for_speed(speed)
+        max_repairs = _max_repairs_for_speed(speed, jake_identical=is_v2)
         if is_v2:
-            # Jake authoring agent needs enough turns for step/inspect/snapshot repair.
-            max_repairs = max(max_repairs, 8)
+            # Jake authoring agent needs enough turns for step/inspect/snapshot/revise.
+            max_repairs = max(max_repairs, 12)
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.
