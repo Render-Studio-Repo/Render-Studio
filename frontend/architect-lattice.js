@@ -113,6 +113,38 @@ export function neighborVertices(vertex) {
 }
 
 /**
+ * Snap a plan-plane model point to the nearest axis-aligned bay edge.
+ * Returns null when the click is too far from any edge (outside snap radius).
+ * @param {{ x: number, y: number }} point
+ * @param {number} mmPerModelUnit
+ * @param {{ maxDistFrac?: number }} [opts] — max distance as fraction of bay length (default 0.42)
+ * @returns {{ a: LatticeVertex, b: LatticeVertex, dist: number } | null}
+ */
+export function modelToNearestBay(point, mmPerModelUnit = 1, opts = {}) {
+  const step = segmentLengthModel(mmPerModelUnit);
+  if (!(step > 0)) return null;
+  const x = Number(point?.x) || 0;
+  const y = Number(point?.y) || 0;
+  const iFloor = Math.floor(x / step);
+  const jFloor = Math.floor(y / step);
+  const fx = x / step - iFloor;
+  const fy = y / step - jFloor;
+  const candidates = [
+    { a: [iFloor, jFloor], b: [iFloor + 1, jFloor], dist: Math.abs(fy) * step },
+    { a: [iFloor, jFloor + 1], b: [iFloor + 1, jFloor + 1], dist: Math.abs(1 - fy) * step },
+    { a: [iFloor, jFloor], b: [iFloor, jFloor + 1], dist: Math.abs(fx) * step },
+    { a: [iFloor + 1, jFloor], b: [iFloor + 1, jFloor + 1], dist: Math.abs(1 - fx) * step },
+  ];
+  let best = candidates[0];
+  for (let i = 1; i < candidates.length; i += 1) {
+    if (candidates[i].dist < best.dist) best = candidates[i];
+  }
+  const maxFrac = Number.isFinite(opts.maxDistFrac) ? opts.maxDistFrac : 0.42;
+  if (best.dist > step * maxFrac) return null;
+  return best;
+}
+
+/**
  * All axis-aligned bay edges whose vertices lie in [iMin,iMax] × [jMin,jMax].
  * Useful for drawing the lattice overlay.
  * @param {{ iMin?: number, iMax?: number, jMin?: number, jMax?: number }} bounds

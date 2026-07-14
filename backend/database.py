@@ -100,6 +100,7 @@ def init_db() -> None:
                 project_id TEXT PRIMARY KEY,
                 team_id TEXT NOT NULL,
                 folder_id TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
                 created_by TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
@@ -186,6 +187,10 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE project_access ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE project_access ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
         try:

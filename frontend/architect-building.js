@@ -75,6 +75,12 @@ export function createArchitectBuilding(initial) {
     return building.segments.some((s) => s.levelId === levelId && s.key === key);
   }
 
+  function findBay(a, b, levelId = building.activeLevelId) {
+    const key = bayKey(a, b);
+    if (!key) return null;
+    return building.segments.find((s) => s.levelId === levelId && s.key === key) || null;
+  }
+
   /**
    * Place one 3 ft bay. Returns the segment or null if invalid/duplicate.
    */
@@ -129,6 +135,7 @@ export function createArchitectBuilding(initial) {
     setActiveLevel,
     segmentsOnActiveLevel,
     hasBay,
+    findBay,
     placeSegment,
     removeSegment,
     getSegment,

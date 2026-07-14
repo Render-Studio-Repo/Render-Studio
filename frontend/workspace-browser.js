@@ -158,6 +158,8 @@ export function createWorkspaceBrowser({
 }) {
   let folders = [];
   let dragProjectId = null;
+  let dropBeforeProjectId = null;
+  let dropAtEnd = false;
   let contextMenu = null;
   let shareModalEl = null;
   let renameModalEl = null;
@@ -257,21 +259,72 @@ export function createWorkspaceBrowser({
     return li;
   }
 
-  async function moveProjectToFolder(projectId, folderId) {
+  function clearDropIndicators() {
+    dropBeforeProjectId = null;
+    dropAtEnd = false;
+    container?.querySelectorAll(".drop-target-active, .drop-before, .drop-after").forEach((el) => {
+      el.classList.remove("drop-target-active", "drop-before", "drop-after");
+    });
+  }
+
+  function sortProjectsForDisplay(list) {
+    return [...list].sort((a, b) => {
+      const ao = Number(a?.sort_order ?? 0);
+      const bo = Number(b?.sort_order ?? 0);
+      if (ao !== bo) return ao - bo;
+      return String(b?.updated_at || b?.created_at || "").localeCompare(String(a?.updated_at || a?.created_at || ""));
+    });
+  }
+
+  function applyLocalFolderOrder(projectId, folderId, { beforeProjectId = null, atEnd = false } = {}) {
+    const projects = getProjects();
+    const moved = projects.find((p) => p.id === projectId);
+    if (!moved) return;
+    moved.folder_id = folderId || null;
+    const siblings = sortProjectsForDisplay(
+      projects.filter((p) => p.id !== projectId && effectiveProjectFolderId(p) === (folderId || null))
+    );
+    let nextOrder;
+    if (beforeProjectId) {
+      const idx = siblings.findIndex((p) => p.id === beforeProjectId);
+      nextOrder = idx >= 0 ? siblings.slice(0, idx).concat(moved, siblings.slice(idx)) : siblings.concat(moved);
+    } else if (atEnd) {
+      nextOrder = siblings.concat(moved);
+    } else {
+      nextOrder = [moved, ...siblings];
+    }
+    nextOrder.forEach((p, index) => {
+      p.sort_order = index;
+      p.folder_id = folderId || null;
+    });
+  }
+
+  async function moveProjectToFolder(projectId, folderId, { beforeProjectId = null, atEnd = false } = {}) {
     const projects = getProjects();
     const proj = projects.find((x) => x.id === projectId);
     if (proj?.read_only_project) return;
     const targetFolder = folderId || null;
-    if (proj && effectiveProjectFolderId(proj) === targetFolder) return;
+    const sameFolder = proj && effectiveProjectFolderId(proj) === targetFolder;
+    const isReorder = !!(beforeProjectId || atEnd);
+    if (sameFolder && !isReorder) return;
     try {
-      await api(`/api/projects/${projectId}/folder`, {
+      const data = await api(`/api/projects/${projectId}/folder`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder_id: targetFolder }),
+        body: JSON.stringify({
+          folder_id: targetFolder,
+          before_project_id: beforeProjectId || null,
+          at_end: !!atEnd,
+        }),
       });
-      if (proj) proj.folder_id = targetFolder;
+      applyLocalFolderOrder(projectId, targetFolder, { beforeProjectId, atEnd });
+      if (proj && data?.sort_order != null) proj.sort_order = data.sort_order;
       render();
-      document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
+      // Same-folder reorder: keep local order. A full project refetch can race and
+      // briefly restore the previous sort before the DB read sees the new values.
+      if (!sameFolder || !isReorder) {
+        document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
+      }
     } catch (err) {
       alert(err.message || "Could not move project");
     }
@@ -832,10 +885,10 @@ export function createWorkspaceBrowser({
   function projectsInFolder(folderId) {
     const projects = getProjects();
     const folderIds = new Set(folders.map((f) => f.id));
-    if (folderId == null) {
-      return projects.filter((p) => !p.folder_id || !folderIds.has(p.folder_id));
-    }
-    return projects.filter((p) => p.folder_id === folderId);
+    const list = folderId == null
+      ? projects.filter((p) => !p.folder_id || !folderIds.has(p.folder_id))
+      : projects.filter((p) => p.folder_id === folderId);
+    return sortProjectsForDisplay(list);
   }
 
   function folderHasExpandedProjects(folderId) {
@@ -1542,7 +1595,7 @@ export function createWorkspaceBrowser({
 
     const handle = document.createElement("span");
     handle.className = "proj-drag-handle";
-    handle.title = readOnly ? "Read-only render" : "Drag to move";
+    handle.title = readOnly ? "Read-only render" : "Drag to reorder or move to another folder";
     handle.setAttribute("aria-hidden", "true");
     handle.draggable = !readOnly;
     handle.textContent = readOnly ? "👁" : "⠿";
@@ -1631,6 +1684,7 @@ export function createWorkspaceBrowser({
       }
       e.stopPropagation();
       dragProjectId = p.id;
+      clearDropIndicators();
       li.classList.add("dragging");
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", p.id);
@@ -1638,10 +1692,56 @@ export function createWorkspaceBrowser({
     handle.addEventListener("dragend", () => {
       dragProjectId = null;
       li.classList.remove("dragging");
-      container.querySelectorAll(".drop-target-active").forEach((el) => {
-        el.classList.remove("drop-target-active");
-      });
+      clearDropIndicators();
     });
+
+    if (!readOnly) {
+      li.addEventListener("dragover", (e) => {
+        if (!dragProjectId || dragProjectId === p.id) return;
+        const projects = getProjects();
+        if (projects.find((x) => x.id === dragProjectId)?.read_only_project) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        const rect = li.getBoundingClientRect();
+        const before = e.clientY < rect.top + rect.height / 2;
+        container?.querySelectorAll(".drop-before, .drop-after").forEach((el) => {
+          el.classList.remove("drop-before", "drop-after");
+        });
+        li.classList.add(before ? "drop-before" : "drop-after");
+        dropAtEnd = false;
+        if (before) {
+          dropBeforeProjectId = p.id;
+        } else {
+          const siblings = [...(li.parentElement?.querySelectorAll(":scope > .proj-item") || [])];
+          const idx = siblings.indexOf(li);
+          const next = siblings.slice(idx + 1).find((el) => el.dataset.projectId !== dragProjectId);
+          dropBeforeProjectId = next?.dataset?.projectId || null;
+          dropAtEnd = !dropBeforeProjectId;
+        }
+      });
+      li.addEventListener("dragleave", (e) => {
+        if (!li.contains(e.relatedTarget)) {
+          li.classList.remove("drop-before", "drop-after");
+        }
+      });
+      li.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const pid = dragProjectId || e.dataTransfer.getData("text/plain");
+        const beforeId = dropBeforeProjectId;
+        const atEnd = dropAtEnd;
+        clearDropIndicators();
+        if (!pid || pid === p.id) return;
+        const projects = getProjects();
+        if (projects.find((x) => x.id === pid)?.read_only_project) return;
+        const targetFolder = effectiveProjectFolderId(p);
+        await moveProjectToFolder(pid, targetFolder, {
+          beforeProjectId: beforeId,
+          atEnd,
+        });
+      });
+    }
 
     return li;
   }
@@ -1651,17 +1751,25 @@ export function createWorkspaceBrowser({
       if (!dragProjectId) return;
       const projects = getProjects();
       if (projects.find((p) => p.id === dragProjectId)?.read_only_project) return;
+      // Project-row handlers own precise before/after placement.
+      if (e.target.closest?.(".proj-item")) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       zoneEl.classList.add("drop-target-active");
+      dropBeforeProjectId = null;
+      dropAtEnd = false;
     });
-    zoneEl.addEventListener("dragleave", () => {
-      zoneEl.classList.remove("drop-target-active");
+    zoneEl.addEventListener("dragleave", (e) => {
+      if (!zoneEl.contains(e.relatedTarget)) {
+        zoneEl.classList.remove("drop-target-active");
+      }
     });
     zoneEl.addEventListener("drop", async (e) => {
+      if (e.target.closest?.(".proj-item")) return;
       e.preventDefault();
       zoneEl.classList.remove("drop-target-active");
       const pid = dragProjectId || e.dataTransfer.getData("text/plain");
+      clearDropIndicators();
       if (!pid) return;
       const projects = getProjects();
       if (projects.find((p) => p.id === pid)?.read_only_project) return;
@@ -1674,14 +1782,19 @@ export function createWorkspaceBrowser({
     hierarchyEntryCache.clear();
     const projects = getProjects();
     const folderIds = new Set(folders.map((f) => f.id));
-    const allRootProjects = projects.filter((p) => !p.folder_id || !folderIds.has(p.folder_id));
+    const allRootProjects = sortProjectsForDisplay(
+      projects.filter((p) => !p.folder_id || !folderIds.has(p.folder_id))
+    );
     const query = normalizeProjectSearch(projectSearchQuery);
     const searching = query.length > 0;
     const filterProjects = (list, folderName = "") =>
       searching ? list.filter((p) => matchesProjectSearch(p, query, folderName)) : list;
     const rootProjects = filterProjects(allRootProjects, "Unfiled");
     const folderProjects = (fid, folderName = "") =>
-      filterProjects(projects.filter((p) => p.folder_id === fid), folderName);
+      filterProjects(
+        sortProjectsForDisplay(projects.filter((p) => p.folder_id === fid)),
+        folderName
+      );
 
     container.innerHTML = "";
 

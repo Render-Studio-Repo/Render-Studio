@@ -522,22 +522,22 @@ def user_project_access(user_id: str, team_id: str | None = None) -> list[dict[s
         if team_id:
             rows = conn.execute(
                 """
-                SELECT pa.project_id, pa.team_id, pa.folder_id
+                SELECT pa.project_id, pa.team_id, pa.folder_id, pa.sort_order
                 FROM project_access pa
                 JOIN team_members tm ON tm.team_id = pa.team_id
                 WHERE tm.user_id = ? AND pa.team_id = ?
-                ORDER BY pa.created_at DESC
+                ORDER BY pa.sort_order ASC, pa.created_at DESC
                 """,
                 (user_id, team_id),
             ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT pa.project_id, pa.team_id, pa.folder_id
+                SELECT pa.project_id, pa.team_id, pa.folder_id, pa.sort_order
                 FROM project_access pa
                 JOIN team_members tm ON tm.team_id = pa.team_id
                 WHERE tm.user_id = ?
-                ORDER BY pa.created_at DESC
+                ORDER BY pa.sort_order ASC, pa.created_at DESC
                 """,
                 (user_id,),
             ).fetchall()

@@ -516,6 +516,8 @@ class FolderRenameRequest(BaseModel):
 
 class ProjectFolderRequest(BaseModel):
     folder_id: str | None = None
+    before_project_id: str | None = None
+    at_end: bool = False
 
 
 class WiringSaveRequest(BaseModel):
@@ -535,10 +537,6 @@ class FolderCreateRequest(BaseModel):
 
 class FolderRenameRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-
-
-class ProjectFolderRequest(BaseModel):
-    folder_id: str | None = None
 
 
 class WiringSaveRequest(BaseModel):
@@ -5156,14 +5154,30 @@ def move_project_to_folder(
     body: ProjectFolderRequest,
     user: dict[str, Any] = Depends(get_current_user),
 ):
+    prev_folder_id = None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT folder_id FROM project_access WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        if row:
+            prev_folder_id = row["folder_id"]
     try:
-        result = folders_service.set_project_folder(project_id, body.folder_id, user["id"])
+        result = folders_service.set_project_folder(
+            project_id,
+            body.folder_id,
+            user["id"],
+            before_project_id=body.before_project_id,
+            at_end=bool(body.at_end),
+        )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     path = PROJECTS / project_id
-    if path.is_dir():
+    folder_changed = (prev_folder_id or None) != (result.get("folder_id") or None)
+    # Skip noisy history for pure same-folder reorders.
+    if path.is_dir() and folder_changed:
         log_entry = project_log_service.append_event(
             path,
             kind="project_moved",
@@ -5177,14 +5191,15 @@ def move_project_to_folder(
             restorable=False,
         )
         _notify_project_history(project_id, log_entry, user)
-    _log_workspace(
-        result["team_id"],
-        kind="project_moved",
-        label=f"Moved project to {result['folder_name']}",
-        user=user,
-        project_id=project_id,
-        meta={"folder_id": result.get("folder_id"), "folder_name": result.get("folder_name")},
-    )
+    if folder_changed:
+        _log_workspace(
+            result["team_id"],
+            kind="project_moved",
+            label=f"Moved project to {result['folder_name']}",
+            user=user,
+            project_id=project_id,
+            meta={"folder_id": result.get("folder_id"), "folder_name": result.get("folder_name")},
+        )
     return result
 
 
@@ -5208,9 +5223,17 @@ def list_projects(
         if fid and not folders_service.user_can_access_folder(fid, user["id"]):
             continue
         p = project_store.project_list_summary(project_path)
-        p = {**p, "team_id": row["team_id"], "folder_id": fid, "folder_name": folders_service.folder_name(fid)}
+        p = {
+            **p,
+            "team_id": row["team_id"],
+            "folder_id": fid,
+            "folder_name": folders_service.folder_name(fid),
+            "sort_order": int(row.get("sort_order") or 0),
+        }
         projects.append(p)
+    # Stable sort: newest first within the same sort_order, then ascending sort_order.
     projects.sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
+    projects.sort(key=lambda p: int(p.get("sort_order") or 0))
     projects.extend(_other_user_render_summaries(user, team_id))
     # Public is a virtual folder. Always attach public projects with folder_id=__public__,
     # and remove any earlier copies so they don't also appear under root / other folders.

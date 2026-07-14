@@ -172,10 +172,62 @@ def folder_name(folder_id: str | None) -> str:
         return "Unfiled"
 
 
+def _folder_project_ids(conn: sqlite3.Connection, team_id: str, folder_id: str | None) -> list[str]:
+    if folder_id:
+        rows = conn.execute(
+            """
+            SELECT project_id FROM project_access
+            WHERE team_id = ? AND folder_id = ?
+            ORDER BY sort_order ASC, created_at DESC, project_id ASC
+            """,
+            (team_id, folder_id),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT project_id FROM project_access
+            WHERE team_id = ? AND folder_id IS NULL
+            ORDER BY sort_order ASC, created_at DESC, project_id ASC
+            """,
+            (team_id,),
+        ).fetchall()
+    return [str(r["project_id"]) for r in rows]
+
+
+def _renumber_folder_projects(
+    conn: sqlite3.Connection,
+    team_id: str,
+    folder_id: str | None,
+    ordered_ids: list[str],
+) -> None:
+    for index, pid in enumerate(ordered_ids):
+        if folder_id:
+            conn.execute(
+                """
+                UPDATE project_access
+                SET folder_id = ?, sort_order = ?
+                WHERE project_id = ? AND team_id = ?
+                """,
+                (folder_id, index, pid, team_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE project_access
+                SET folder_id = NULL, sort_order = ?
+                WHERE project_id = ? AND team_id = ?
+                """,
+                (index, pid, team_id),
+            )
+
+
 def set_project_folder(
     project_id: str,
     folder_id: str | None,
     user_id: str,
+    before_project_id: str | None = None,
+    *,
+    at_end: bool = False,
 ) -> dict[str, Any]:
     from backend.services.teams_service import can_access_project, project_team_id
 
@@ -194,16 +246,41 @@ def set_project_folder(
             raise PermissionError("You do not have access to this folder")
 
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE project_access SET folder_id = ? WHERE project_id = ?",
-            (folder_id, project_id),
-        )
+        current = conn.execute(
+            "SELECT folder_id, sort_order FROM project_access WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        if not current:
+            raise ValueError("Project not found in workspace")
+
+        same_folder = (current["folder_id"] or None) == (folder_id or None)
+        ordered = [pid for pid in _folder_project_ids(conn, team_id, folder_id) if pid != project_id]
+        if before_project_id:
+            if before_project_id == project_id:
+                raise ValueError("Cannot place a project before itself")
+            if before_project_id not in ordered:
+                raise ValueError("Anchor project is not in the target folder")
+            ordered.insert(ordered.index(before_project_id), project_id)
+        elif at_end:
+            ordered.append(project_id)
+        elif same_folder:
+            # Preserve existing order when only folder_id is patched with no position.
+            ordered = _folder_project_ids(conn, team_id, folder_id)
+            if project_id not in ordered:
+                ordered.insert(0, project_id)
+        else:
+            # Cross-folder moves land at the top of the destination.
+            ordered.insert(0, project_id)
+
+        _renumber_folder_projects(conn, team_id, folder_id, ordered)
         conn.commit()
+
     return {
         "project_id": project_id,
         "folder_id": folder_id,
         "team_id": team_id,
         "folder_name": folder_name(folder_id),
+        "sort_order": ordered.index(project_id) if project_id in ordered else 0,
     }
 
 

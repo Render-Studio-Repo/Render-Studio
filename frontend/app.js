@@ -55,7 +55,7 @@ import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-folder-groups";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-project-reorder";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
