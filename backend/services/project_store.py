@@ -68,12 +68,12 @@ def title_from_prompt(prompt: str, *, max_len: int = 64) -> str:
         r"(?:please\s+)?"
         r"(?:make|create|generate|design|build|model|draw)\s+"
         r"(?:me\s+)?"
-        r"(?:a|an|the)?\s*",
+        r"(?:an|a|the)?\s*",
         "",
         text,
         flags=re.I,
     ).strip()
-    text = re.sub(r"^(?:a|an|the)\s+", "", text, flags=re.I)
+    text = re.sub(r"^(?:an|a|the)\s+", "", text, flags=re.I)
     text = re.sub(r"\s+", " ", text).strip(" -_")
     if not text:
         return "New Model"
