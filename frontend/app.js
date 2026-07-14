@@ -65,14 +65,14 @@ import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
-import { createRibbon } from "./ribbon.js?v=20260714-architect-phases";
+import { createRibbon } from "./ribbon.js?v=20260714-measure-btn";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260629-fusion-loader";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260707-download-retry";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260709-unlink-clear";
-import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged } from "./units.js?v=20260714-units-ft-m";
+import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
@@ -1992,6 +1992,7 @@ function restoreActiveModelPromptState() {
   });
   restoringModelPromptState = false;
   sendCollabPresence();
+  refreshSelectionMeasureOverlay();
 }
 
 function safeRestoreActiveModelPromptState() {
@@ -6624,7 +6625,7 @@ async function showMeasureAnalytics({ promptMode = false, refs = null } = {}) {
           <div class="measure-stat"><span>Depth</span><strong>${formatLength(analytics.sizeMm[1])}</strong></div>
           <div class="measure-stat"><span>Height</span><strong>${formatLength(analytics.sizeMm[2])}</strong></div>
           <div class="measure-stat"><span>Diagonal</span><strong>${formatLength(analytics.diagonalMm)}</strong></div>
-          <div class="measure-stat"><span>Surface area</span><strong>${analytics.areaMm2.toLocaleString(undefined, { maximumFractionDigits: 1 })} mm²</strong></div>
+          <div class="measure-stat"><span>Surface area</span><strong>${formatArea(analytics.areaMm2)}</strong></div>
           <div class="measure-stat"><span>Triangles</span><strong>${Math.round(analytics.triangles).toLocaleString()}</strong></div>
         </div>
         <div class="measure-center-row"><span>Center</span><strong>${analytics.centerMm.map((v) => formatLength(v)).join(" · ")}</strong></div>
@@ -16221,15 +16222,22 @@ window.addEventListener("keydown", (e) => {
     document.getElementById("btn-feature-collapse")?.click();
   }
   if (key === "u") {
-    const unitSelect = document.getElementById("unit-select");
-    if (unitSelect) {
-      unitSelect.value = unitSelect.value === "in" ? "mm" : "in";
-      unitSelect.dispatchEvent(new Event("change"));
-    }
+    const ids = UNIT_OPTIONS.map((u) => u.id);
+    const idx = Math.max(0, ids.indexOf(getUnits()));
+    setUnits(ids[(idx + 1) % ids.length]);
   }
   if (e.key === "Escape") {
     e.preventDefault();
     closeMarkingMenu();
+
+    if (measureModeActive) {
+      endMeasureMode();
+      ensureMeasureModal()?.classList.add("hidden");
+      clearMeasureReferences();
+      refreshSelectionMeasureOverlay();
+      setEditStatus("", "");
+      return;
+    }
 
     if (pendingSnapTarget) {
       clearSnapTarget();

@@ -179,12 +179,12 @@ function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
-function renderRows(rows, units) {
+function renderRows(rows) {
   return rows
     .map((row) => {
       let text = row.value;
-      if (row.kind === "length") text = formatMeasureLength(row.value, units);
-      else if (row.kind === "area") text = formatArea(row.value, units);
+      if (row.kind === "length") text = formatMeasureLength(row.value);
+      else if (row.kind === "area") text = formatArea(row.value);
       else if (row.kind === "angle") text = formatAngle(row.value);
       return `<div class="measure-row"><span class="measure-k">${row.label}</span><span class="measure-v">${text}</span></div>`;
     })
@@ -204,7 +204,6 @@ export function createMeasureTool({
   scene.add(overlayGroup);
 
   let active = false;
-  let units = localStorage.getItem(LS_UNITS) || "mm";
   let selections = [];
   let panelEl = null;
   let resultsEl = null;
@@ -218,9 +217,8 @@ export function createMeasureTool({
     panelEl.innerHTML = `
       <div class="measure-panel-head">
         <h2>Measure</h2>
-        <select id="measure-units" class="measure-units" aria-label="Display units">
-          <option value="mm">mm</option>
-          <option value="in">in</option>
+        <select id="measure-units" class="measure-units unit-select" data-unit-select aria-label="Display units">
+          ${UNIT_OPTIONS.map((u) => `<option value="${u.id}">${u.label}</option>`).join("")}
         </select>
       </div>
       <p class="muted small measure-hint">Click vertices, edges, or faces. Two picks show distance, angle, or face separation — like Fusion 360.</p>
@@ -235,10 +233,14 @@ export function createMeasureTool({
 
     resultsEl = panelEl.querySelector("#measure-results");
     unitsEl = panelEl.querySelector("#measure-units");
-    unitsEl.value = units;
+    unitsEl.value = getUnits();
     unitsEl.addEventListener("change", () => {
-      units = unitsEl.value;
-      localStorage.setItem(LS_UNITS, units);
+      // Document units are owned by units.js; initUnitSwitcher also syncs these selects.
+      refreshPanel();
+      redrawOverlay();
+    });
+    onUnitsChanged(() => {
+      if (unitsEl) unitsEl.value = getUnits();
       refreshPanel();
       redrawOverlay();
     });
@@ -257,11 +259,11 @@ export function createMeasureTool({
     const blocks = [];
     selections.forEach((sel, idx) => {
       const m = computeMeasurement(sel, null, unitScale);
-      blocks.push(`<div class="measure-block"><h3>Selection ${idx + 1} · ${m.title}</h3>${renderRows(m.rows, units)}</div>`);
+      blocks.push(`<div class="measure-block"><h3>Selection ${idx + 1} · ${m.title}</h3>${renderRows(m.rows)}</div>`);
     });
     if (selections.length >= 2) {
       const pair = computeMeasurement(selections[0], selections[1], unitScale);
-      blocks.push(`<div class="measure-block measure-block-primary"><h3>${pair.title}</h3>${renderRows(pair.rows, units)}</div>`);
+      blocks.push(`<div class="measure-block measure-block-primary"><h3>${pair.title}</h3>${renderRows(pair.rows)}</div>`);
     }
     resultsEl.innerHTML = blocks.join("");
   }
@@ -313,14 +315,14 @@ export function createMeasureTool({
 
       const mid = w1.clone().add(w2).multiplyScalar(0.5);
       const mm = nativeToMm(a.distanceTo(b), unitScale);
-      const sprite = makeTextSprite(formatMeasureLength(mm, units));
+      const sprite = makeTextSprite(formatMeasureLength(mm));
       sprite.scale.set(scale * 14, scale * 3.5, 1);
       sprite.position.copy(mid);
       overlayGroup.add(sprite);
     } else if (selections.length === 1 && selections[0].type === "edge" && selections[0].edge) {
       const len = nativeToMm(selections[0].edge.length, unitScale);
       const mid = modelToWorld(meshRoot, selections[0].edge.start.clone().add(selections[0].edge.end).multiplyScalar(0.5));
-      const sprite = makeTextSprite(formatMeasureLength(len, units));
+      const sprite = makeTextSprite(formatMeasureLength(len));
       sprite.scale.set(scale * 14, scale * 3.5, 1);
       sprite.position.copy(mid);
       overlayGroup.add(sprite);
@@ -375,11 +377,8 @@ export function createMeasureTool({
     clear,
     onPointerMove,
     onClick,
-    getUnits: () => units,
-    setUnits: (u) => {
-      units = u;
-      if (unitsEl) unitsEl.value = u;
-      localStorage.setItem(LS_UNITS, u);
+    getUnits,
+    setUnits: () => {
       refreshPanel();
       redrawOverlay();
     },
