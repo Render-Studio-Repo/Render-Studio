@@ -439,8 +439,13 @@ class FileRenameRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
-class FileRenameRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=200)
+class ReferenceMarkupRequest(BaseModel):
+    notes: str = ""
+    strokes: list[Any] = Field(default_factory=list)
+
+
+class ReferenceTextRequest(BaseModel):
+    content: str = ""
 
 
 class RegisterRequest(BaseModel):
@@ -5006,6 +5011,7 @@ def get_workspace_realtime_editor(team_id: str, user: dict[str, Any] = Depends(g
                     "sketches": (summary.get("browser") or {}).get("sketches") or [],
                     "wiring": (summary.get("browser") or {}).get("wiring") or [],
                     "drawings": (summary.get("browser") or {}).get("drawings") or [],
+                    "references": (summary.get("browser") or {}).get("references") or [],
                 },
                 "fusion_source": meta.get("autodesk_source"),
                 "fusion_mirrors": [
@@ -6382,8 +6388,40 @@ async def upload_file(
 ):
     path = _require_project(user, project_id)
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in cad_service.SUPPORTED_IMPORT:
-        raise HTTPException(400, f"Unsupported format. Use: {sorted(cad_service.SUPPORTED_IMPORT)}")
+    is_reference = cad_service.is_reference_suffix(suffix)
+    if suffix not in cad_service.SUPPORTED_IMPORT and not is_reference:
+        raise HTTPException(
+            400,
+            f"Unsupported format. Use: {sorted(cad_service.SUPPORTED_IMPORT | cad_service.SUPPORTED_REFERENCE)}",
+        )
+
+    if is_reference:
+        dest = cad_service.unique_reference_path(path, file.filename or f"reference{suffix}")
+        with dest.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+        project_store.touch_project(path)
+        _notify_project(
+            project_id,
+            {
+                "type": "reference.added",
+                "filename": dest.name,
+                "kind": cad_service.reference_kind(dest.name),
+                "url": f"/api/projects/{project_id}/files/{dest.name}",
+                "uploaded_filename": dest.name,
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "action": "upload_reference",
+            },
+        )
+        return {
+            "filename": dest.name,
+            "viewer_filename": dest.name,
+            "url": f"/api/projects/{project_id}/files/{dest.name}",
+            "timeline_index": None,
+            "reference": True,
+            "kind": cad_service.reference_kind(dest.name),
+        }
+
     dest = path / (file.filename or f"upload{suffix}")
     # Avoid silent overwrites when dropping the same name repeatedly.
     if dest.exists():
@@ -6447,8 +6485,8 @@ async def upload_file(
         {
             "type": "model.reload",
             "filename": viewer_filename,
-            "url": f"/api/projects/{project_id}/files/{viewer_filename}",
             "uploaded_filename": dest.name,
+            "url": f"/api/projects/{project_id}/files/{viewer_filename}",
             "by": user["display_name"],
             "by_user_id": user["id"],
             "action": "upload",
@@ -6459,7 +6497,8 @@ async def upload_file(
         "filename": dest.name,
         "viewer_filename": viewer_filename,
         "url": f"/api/projects/{project_id}/files/{viewer_filename}",
-        "timeline_index": entry["index"],
+        "timeline_index": entry.get("index"),
+        "drawing": False,
     }
 
 
@@ -6493,6 +6532,67 @@ def get_dxf_preview(
         raise HTTPException(422, f"Could not render DXF: {exc}") from exc
 
 
+@app.get("/api/projects/{project_id}/files/{filename}/markup")
+def get_reference_markup(
+    project_id: str,
+    filename: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    project_path = _require_project_read(user, project_id)
+    safe = Path(filename).name
+    file_path = cad_service.resolve_project_file(project_path, safe)
+    if file_path is None or not cad_service.is_reference_suffix(file_path.suffix):
+        raise HTTPException(404, "Reference file not found")
+    markup = cad_service.load_reference_markup(file_path)
+    return {
+        "filename": safe,
+        "kind": cad_service.reference_kind(safe),
+        **markup,
+    }
+
+
+@app.put("/api/projects/{project_id}/files/{filename}/markup")
+def put_reference_markup(
+    project_id: str,
+    filename: str,
+    body: ReferenceMarkupRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    project_path = _require_project(user, project_id)
+    safe = Path(filename).name
+    file_path = cad_service.resolve_project_file(project_path, safe)
+    if file_path is None or file_path.parent.name != cad_service.REFERENCE_DIRNAME:
+        raise HTTPException(404, "Reference file not found")
+    saved = cad_service.save_reference_markup(
+        file_path,
+        {"notes": body.notes or "", "strokes": body.strokes or []},
+    )
+    project_store.touch_project(project_path)
+    return {"filename": safe, "kind": cad_service.reference_kind(safe), **saved}
+
+
+@app.put("/api/projects/{project_id}/files/{filename}/text")
+async def put_reference_text(
+    project_id: str,
+    filename: str,
+    body: ReferenceTextRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    project_path = _require_project(user, project_id)
+    safe = Path(filename).name
+    file_path = cad_service.resolve_project_file(project_path, safe)
+    if file_path is None or file_path.parent.name != cad_service.REFERENCE_DIRNAME:
+        raise HTTPException(404, "Reference file not found")
+    if file_path.suffix.lower() not in cad_service.REFERENCE_TEXT_SUFFIXES:
+        raise HTTPException(400, "Only text reference files can be edited as text")
+    content = body.content if body.content is not None else ""
+    if len(content) > 2_000_000:
+        raise HTTPException(400, "Text content too large")
+    file_path.write_text(content, encoding="utf-8")
+    project_store.touch_project(project_path)
+    return {"filename": safe, "bytes": file_path.stat().st_size}
+
+
 @app.get("/api/public/projects/{project_id}/files/{filename}")
 def get_public_file(project_id: str, filename: str, step_mode: str | None = Query(None)):
     if not _is_public_project(project_id):
@@ -6504,6 +6604,10 @@ def get_public_file(project_id: str, filename: str, step_mode: str | None = Quer
 def _file_response(project_path: Path, project_id: str, filename: str, *, step_mode: str | None = None):
     safe = Path(filename).name
     file_path = project_path / safe
+    if not file_path.is_file():
+        resolved = cad_service.resolve_project_file(project_path, safe)
+        if resolved is not None:
+            file_path = resolved
     if not file_path.is_file() and file_path.suffix.lower() in {".step", ".stp", ".stl", ".3mf", ".obj"}:
         stem = file_path.stem
         for suffix in (".glb", ".gltf", ".step", ".stp", ".stl", ".obj", ".ply", ".off", ".3mf"):
@@ -7133,11 +7237,15 @@ def rename_file_endpoint(
 ):
     path = _require_project(user, project_id)
     safe = Path(filename).name
+    new_primary = Path(body.name).name
+    resolved = cad_service.resolve_project_file(path, safe)
     try:
-        renamed = cad_service.rename_model_file(path, safe, Path(body.name).name)
+        if resolved is not None and resolved.parent.name == cad_service.REFERENCE_DIRNAME:
+            renamed = cad_service.rename_reference_file(path, safe, new_primary)
+        else:
+            renamed = cad_service.rename_model_file(path, safe, new_primary)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    new_primary = Path(body.name).name
     _notify_project(
         project_id,
         {
@@ -7154,9 +7262,32 @@ def rename_file_endpoint(
 def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(get_current_user)):
     project_path = _require_project(user, project_id)
     safe = Path(filename).name
-    file_path = project_path / safe
-    if not file_path.is_file():
+    resolved = cad_service.resolve_project_file(project_path, safe)
+    if resolved is None:
         raise HTTPException(404, "File not found")
+
+    if resolved.parent.name == cad_service.REFERENCE_DIRNAME:
+        try:
+            deleted_files = cad_service.delete_reference_file(project_path, safe)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        project_store.touch_project(project_path)
+        _notify_project(
+            project_id,
+            {
+                "type": "file.deleted",
+                "filename": safe,
+                "deleted_files": deleted_files,
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "reference": True,
+            },
+        )
+        return {
+            "deleted": safe,
+            "deleted_files": deleted_files,
+            "reference": True,
+        }
 
     entry = _record_history(
         project_path,
@@ -7184,7 +7315,6 @@ def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(g
     entry["meta"] = entry_meta
 
     project_store.touch_project(project_path)
-    background_tasks.add_task(_background_push_render_edit_to_fusion, project_id, project_path, out.name)
     _notify_project(
         project_id,
         {

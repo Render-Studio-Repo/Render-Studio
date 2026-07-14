@@ -5247,8 +5247,152 @@ body.canvas-design-tab .main-column {
   inset: 0;
 }
 
-#viewport.dxf-viewer-active {
+#viewport.dxf-viewer-active,
+#viewport.ref-viewer-active {
   visibility: hidden;
+}
+
+.ref-viewer-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ref-viewer-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #0d1117;
+}
+
+.ref-notes-panel {
+  width: min(280px, 34vw);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-left: 1px solid var(--border);
+  background: rgba(13, 17, 23, 0.98);
+}
+
+.ref-notes-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ref-notes-editor {
+  flex: 1;
+  min-height: 120px;
+  resize: none;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(22, 27, 34, 0.95);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.ref-notes-hint {
+  margin: 0;
+}
+
+.ref-text-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: none;
+  resize: none;
+  padding: 16px 18px;
+  background: #0d1117;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ref-viewer-empty {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  color: var(--text-muted);
+  padding: 24px;
+}
+
+.ref-viewer-stage-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(88, 166, 255, 0.06), transparent 40%),
+    #0d1117;
+}
+
+.ref-viewer-stage {
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.ref-image-stack {
+  position: relative;
+  display: inline-block;
+  max-width: min(92vw, 1100px);
+  user-select: none;
+  touch-action: none;
+}
+
+.ref-image {
+  display: block;
+  max-width: min(92vw, 1100px);
+  max-height: calc(100vh - 180px);
+  height: auto;
+  pointer-events: none;
+}
+
+.ref-markup-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ref-pdf-frame {
+  flex: 1;
+  min-height: 0;
+}
+
+.ref-pdf-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #161b22;
+}
+
+.dxf-viewer-btn.active {
+  color: var(--text);
+  border-color: rgba(88, 166, 255, 0.55);
+  background: rgba(88, 166, 255, 0.16);
+}
+
+.dxf-viewer-btn.primary {
+  color: #fff;
+  background: rgba(63, 128, 255, 0.9);
+  border-color: transparent;
+}
+
+.dxf-tab-bar.hidden + .dxf-tab-bar.hidden + #viewport + .dxf-viewer,
+.dxf-tab-bar.hidden + .dxf-tab-bar.hidden ~ .dxf-viewer {
+  inset: 0;
 }
 
 .dxf-viewer-toolbar {

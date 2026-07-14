@@ -81,7 +81,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260707-dxf-drawings-section";
+import { createProjectTree } from "./project-tree.js?v=20260714-reference-files";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -89,6 +89,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260710-fix-reload-loop";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260714-reference-files";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260707-pin-labels";
@@ -1399,6 +1400,7 @@ function normalizeBrowser(data) {
     sketches: browser.sketches || [],
     wiring: browser.wiring || [],
     drawings: [...browserDrawings, ...fileDrawings],
+    references: browser.references || [],
   };
 }
 
@@ -1423,6 +1425,7 @@ async function openDxfDrawingByName(filename, opts = {}) {
     setEditStatus("error", "Select a project before opening a DXF drawing.");
     return false;
   }
+  referenceFilesViewer?.closeAll?.();
   selectedFile = filename;
   projectTree.setSelected(filename);
   await dxfViewer.openTab(filename, {
@@ -8446,9 +8449,10 @@ resize();
 
 const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp)$/i;
 const DXF_ACCEPT = /\.dxf$/i;
+const REFERENCE_ACCEPT = /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|png|jpe?g|webp|gif)$/i;
 
 function isViewportImportFile(name = "") {
-  return IMPORT_ACCEPT.test(name) || DXF_ACCEPT.test(name);
+  return IMPORT_ACCEPT.test(name) || DXF_ACCEPT.test(name) || REFERENCE_ACCEPT.test(name);
 }
 
 const viewportDropOverlay = document.getElementById("viewport-drop-overlay");
@@ -8465,7 +8469,7 @@ function isCadFileDrag(e) {
     const file = item.getAsFile?.();
     if (file?.name) return isViewportImportFile(file.name);
     if (!item.type || item.type === "application/octet-stream") return true;
-    return /model|mesh|octet|zip|step|stl|gltf|glb|3mf|dxf|sla|wavefront|ply/i.test(item.type);
+    return /model|mesh|octet|zip|step|stl|gltf|glb|3mf|dxf|sla|wavefront|ply|pdf|text|image|png|jpe?g|webp|gif/i.test(item.type);
   });
 }
 
@@ -8520,7 +8524,7 @@ function showViewportDropOverlay() {
 async function importDroppedCadFiles(files) {
   const cadFiles = [...(files || [])].filter((f) => isViewportImportFile(f.name));
   if (!cadFiles.length) {
-    setEditStatus("error", "Drop STL, STEP, GLB, 3MF, OBJ, PLY, OFF, or DXF files.");
+    setEditStatus("error", "Drop STL, STEP, GLB, 3MF, OBJ, PLY, OFF, DXF, PDF, TXT, or image files.");
     return;
   }
   // Fast path: drop straight into the open workspace project.
@@ -8733,7 +8737,7 @@ function showEmptyProjectViewport({ keepBrowser = false } = {}) {
   const list = document.getElementById("file-list");
   if (list) list.innerHTML = "";
   if (!keepBrowser) {
-    projectTree.render({ components: [], sketches: [], wiring: [] });
+    projectTree.render({ components: [], sketches: [], wiring: [], drawings: [], references: [] });
   }
   timeline.setTimeline({ entries: [], current_index: -1 });
   objectHistory.render([]);
@@ -11355,7 +11359,13 @@ async function openBrowserComponent(entry) {
     showAiComposePanel();
     return;
   }
+  if (isReferenceFilename(entry.name) || entry.kind === "text" || entry.kind === "image" || entry.kind === "pdf") {
+    await openReferenceFile(entry);
+    return;
+  }
   saveActiveModelPromptState();
+  referenceFilesViewer?.closeAll?.();
+  dxfViewer?.closeAll?.();
   prepareViewportForModels();
   try {
     const catalogName = (entry.virtual_body || entry.virtual_component)
@@ -11471,12 +11481,51 @@ const dxfViewer = createDxfViewer({
   },
 });
 
+const referenceFilesViewer = createReferenceFilesViewer({
+  tabBarEl: document.getElementById("ref-tab-bar"),
+  viewerEl: document.getElementById("ref-viewer"),
+  api,
+  rawFetch,
+  getProjectId: () => projectId,
+  onBeforeOpen: () => {
+    dxfViewer?.closeAll?.();
+  },
+  onStatus: (kind, text) => {
+    if (text) setEditStatus(kind || "ok", text);
+  },
+  onActiveChange: (filename) => {
+    if (filename) {
+      selectedFile = filename;
+      projectTree?.setSelected?.(filename);
+      return;
+    }
+    if (isReferenceFilename(selectedFile)) {
+      selectedFile = projectAssembly.list?.()[0]?.[0] || null;
+      projectTree?.setSelected?.(selectedFile);
+    }
+  },
+});
+
 async function openDxfDrawing(entry) {
   if (!entry?.name) return;
+  referenceFilesViewer?.closeAll?.();
   await openDxfDrawingByName(entry.name, {
     projectId,
     label: entry.stem || entry.name.replace(/\.dxf$/i, ""),
   });
+}
+
+async function openReferenceFile(entry) {
+  if (!entry?.name) return;
+  selectedFile = entry.name;
+  projectTree.setSelected(entry.name);
+  await referenceFilesViewer.openTab(entry.name, {
+    projectId,
+    label: entry.stem || entry.name.replace(/\.[^.]+$/, ""),
+    kind: entry.kind,
+  });
+  viewerOverlay.clearError();
+  setEditStatus("ok", `Opened ${entry.name} in Reference Files.`);
 }
 
 const projectTree = createProjectTree({
@@ -11484,6 +11533,7 @@ const projectTree = createProjectTree({
   getProjectId: () => projectId,
   onOpenComponent: (entry) => openBrowserComponent(entry),
   onOpenDrawing: (entry) => openDxfDrawing(entry),
+  onOpenReference: (entry) => openReferenceFile(entry),
   onOpenProfile: (entry) => componentProfileUI.open(entry),
   getPartProfile,
   onOpenSketch: (entry) => openSketchInViewport(entry),
@@ -13072,6 +13122,14 @@ function handleRealtimeEvent(msg = {}) {
     return;
   }
 
+  if (msg.type === "reference.added") {
+    if ((msg.project_id || projectId) === projectId) {
+      void refreshFiles();
+      setEditStatus("ok", `Added reference file ${msg.filename}. Open it from Reference Files when needed.`);
+    }
+    return;
+  }
+
   if (msg.type === "project.created" || msg.type === "project.deleted") {
     if (msg.type === "project.deleted" && msg.project_id === projectId) {
       showEmptyProjectViewport({ message: "This project was deleted by a teammate." });
@@ -14078,14 +14136,16 @@ async function renameProjectFile(filename) {
   if (!projectId) return;
   const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
   const stem = filename.slice(0, filename.length - ext.length);
+  const isRef = isReferenceFilename(filename);
+  const isDxf = isDxfDrawingFilename(filename);
   const trimmed = await openRenameDialog({
-    eyebrow: "Model file",
-    title: "Rename Model",
-    description: ext ? `Keep the ${ext} extension or enter a new full filename.` : "Rename this model in the project browser.",
-    label: "Model name",
+    eyebrow: isRef ? "Reference file" : isDxf ? "Drawing" : "Model file",
+    title: isRef ? "Rename Reference" : isDxf ? "Rename Drawing" : "Rename Model",
+    description: ext ? `Keep the ${ext} extension or enter a new full filename.` : "Rename this file in the project browser.",
+    label: isRef ? "File name" : isDxf ? "Drawing name" : "Model name",
     value: stem,
-    placeholder: "model-name",
-    confirmText: "Rename model",
+    placeholder: "file-name",
+    confirmText: isRef ? "Rename file" : isDxf ? "Rename drawing" : "Rename model",
   });
   if (trimmed === null) return;
   const newName = trimmed.includes(".") ? trimmed : `${trimmed}${ext}`;
@@ -14097,11 +14157,25 @@ async function renameProjectFile(filename) {
       body: JSON.stringify({ name: newName }),
     });
     if (selectedFile === filename) selectedFile = data.filename;
+    if (isRef) {
+      referenceFilesViewer?.closeTab?.(filename);
+    } else if (isDxf) {
+      dxfViewer?.closeIfOpen?.(filename);
+    }
     await refreshFiles();
     if (selectedFile === data.filename) {
-      await loadModel(`/api/projects/${projectId}/files/${data.filename}`, data.filename, {
-        center: !hasBakedPlacement(data.filename),
-      });
+      if (isRef) {
+        await referenceFilesViewer.openTab(data.filename, {
+          projectId,
+          label: data.filename.replace(/\.[^.]+$/, ""),
+        });
+      } else if (isDxf) {
+        await openDxfDrawingByName(data.filename, { projectId });
+      } else {
+        await loadModel(`/api/projects/${projectId}/files/${data.filename}`, data.filename, {
+          center: !hasBakedPlacement(data.filename),
+        });
+      }
     }
   } catch (err) {
     alert(err.message || "Failed to rename file");
@@ -14114,6 +14188,7 @@ async function deleteProjectFile(filename) {
   try {
     const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" });
     dxfViewer?.closeIfOpen?.(filename);
+    referenceFilesViewer?.closeTab?.(filename);
     await syncAfterObjectDelete({ deletedFile: filename, ...data });
   } catch (err) {
     alert(err.message || "Failed to delete file");
@@ -15302,11 +15377,57 @@ async function uploadDxfProjectFile(file, choice = {}) {
   await refreshFiles();
   projectTree.setSelected(data.filename);
   await refreshTimeline();
+  referenceFilesViewer?.closeAll?.();
   await dxfViewer.openTab(data.filename, {
     projectId: targetProjectId,
     label: file.name.replace(/\.dxf$/i, ""),
   });
   setEditStatus("ok", `Added ${data.filename} to Drawings.`);
+  return data;
+}
+
+async function uploadReferenceProjectFile(file, choice = {}) {
+  const destination = choice.destination || "current";
+  let targetProjectId;
+
+  if (destination === "new") {
+    saveActiveModelPromptState();
+    await createNewProject();
+    targetProjectId = projectId;
+  } else {
+    targetProjectId = choice.projectId || projectId;
+    if (!targetProjectId && choice.projectId === undefined) {
+      await ensureProjectForUpload();
+      targetProjectId = projectId;
+    }
+    if (!targetProjectId) {
+      throw new Error("Select a project in the sidebar first, or choose New project.");
+    }
+    if (targetProjectId !== projectId) {
+      await loadProject(targetProjectId);
+    } else {
+      ribbon.setProjectId(targetProjectId);
+    }
+  }
+
+  const form = new FormData();
+  form.append("file", file);
+  const res = await rawFetch(`/api/projects/${targetProjectId}/upload`, { method: "POST", body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = data.detail;
+    throw new Error(typeof detail === "string" ? detail : "Upload failed");
+  }
+  saveActiveModelPromptState();
+  selectedFile = data.filename;
+  await refreshFiles();
+  projectTree.setSelected(data.filename);
+  await referenceFilesViewer.openTab(data.filename, {
+    projectId: targetProjectId,
+    label: file.name.replace(/\.[^.]+$/, ""),
+    kind: data.kind,
+  });
+  setEditStatus("ok", `Added ${data.filename} to Reference Files.`);
   return data;
 }
 
@@ -15419,7 +15540,8 @@ async function importSourcedStepToProject(source, { profile = null, entry = null
 async function uploadProjectFiles(files, choice = {}) {
   const meshFiles = [...(files || [])].filter((file) => IMPORT_ACCEPT.test(file.name));
   const dxfFiles = [...(files || [])].filter((file) => DXF_ACCEPT.test(file.name));
-  if (!meshFiles.length && !dxfFiles.length) return [];
+  const referenceFiles = [...(files || [])].filter((file) => REFERENCE_ACCEPT.test(file.name));
+  if (!meshFiles.length && !dxfFiles.length && !referenceFiles.length) return [];
 
   let uploadChoice = { ...choice };
   if ((uploadChoice.destination || "current") === "new") {
@@ -15442,13 +15564,17 @@ async function uploadProjectFiles(files, choice = {}) {
     setEditStatus("ok", `Uploading ${file.name}...`);
     results.push(await uploadDxfProjectFile(file, uploadChoice));
   }
+  for (const file of referenceFiles) {
+    setEditStatus("ok", `Uploading ${file.name}...`);
+    results.push(await uploadReferenceProjectFile(file, uploadChoice));
+  }
 
-  const total = meshFiles.length + dxfFiles.length;
+  const total = meshFiles.length + dxfFiles.length + referenceFiles.length;
+  const firstName =
+    results[0]?.filename || meshFiles[0]?.name || dxfFiles[0]?.name || referenceFiles[0]?.name;
   setEditStatus(
     "ok",
-    total === 1
-      ? `Added ${results[0]?.filename || meshFiles[0]?.name || dxfFiles[0]?.name} to this project.`
-      : `Added ${total} files to this project.`,
+    total === 1 ? `Added ${firstName} to this project.` : `Added ${total} files to this project.`,
   );
   return results;
 }

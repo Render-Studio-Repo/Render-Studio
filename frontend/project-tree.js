@@ -1,4 +1,4 @@
-/** Fusion 360-style project browser tree (components, sketches, wiring, drawings). */
+/** Fusion 360-style project browser tree (components, sketches, wiring, drawings, references). */
 
 import { recognizePart } from "./part-catalog.js?v=20260617-part-drag";
 import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
@@ -6,6 +6,7 @@ import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 const SECTIONS = [
   { id: "components", label: "Components", icon: "cube" },
   { id: "drawings", label: "DXF Drawings", icon: "drawing" },
+  { id: "references", label: "Reference Files", icon: "file" },
   { id: "sketches", label: "Sketches", icon: "sketch" },
   { id: "wiring", label: "Wiring", icon: "wire" },
 ];
@@ -16,6 +17,9 @@ function iconSvg(type) {
   }
   if (type === "drawing") {
     return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M3 2.5h10v11H3z"/><path fill="none" stroke="currentColor" stroke-width="1.2" d="M5 6h6M5 9h4"/></svg>';
+  }
+  if (type === "file") {
+    return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M4 2.5h5.5L12 5v8.5H4z"/><path fill="none" stroke="currentColor" stroke-width="1.2" d="M9.5 2.5V5H12M5.5 8h5M5.5 10.5h3.5"/></svg>';
   }
   if (type === "sketch") {
     return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M2 12 6 4l4 3 4-5"/></svg>';
@@ -54,6 +58,7 @@ export function createProjectTree(options = {}) {
     container,
     onOpenComponent,
     onOpenDrawing,
+    onOpenReference,
     onOpenSketch,
     onEditSketch,
     onOpenWiring,
@@ -69,13 +74,13 @@ export function createProjectTree(options = {}) {
 
   let partProfiles = new Map();
   const hidden = new Set();
-  let browser = { components: [], drawings: [], sketches: [], wiring: [] };
+  let browser = { components: [], drawings: [], references: [], sketches: [], wiring: [] };
   let selectedName = null;
   const selectedBrowserKeys = new Set();
   /** @type {Map<string, { entry: object, sectionId: string }>} */
   const browserEntryCache = new Map();
   let loading = false;
-  let expanded = { components: true, drawings: true, sketches: true, wiring: true };
+  let expanded = { components: true, drawings: true, references: true, sketches: true, wiring: true };
   const childGroupsExpanded = new Set();
   const childGroupsInitialized = new Set();
   let suppressBrowserClick = false;
@@ -146,6 +151,8 @@ export function createProjectTree(options = {}) {
               ? "Drop STEP or mesh files in the viewport"
               : section.id === "drawings"
                 ? "Drop DXF files in the viewport"
+                : section.id === "references"
+                  ? "Drop PDF, TXT, or images in the viewport"
                 : section.id === "sketches"
                   ? "No sketches — Finish Sketch to save one"
                   : "Open Wiring Simulator to design a circuit";
@@ -364,6 +371,7 @@ export function createProjectTree(options = {}) {
       }
       if (sectionId === "components") onOpenComponent?.(entry);
       else if (sectionId === "drawings") onOpenDrawing?.(entry);
+      else if (sectionId === "references") onOpenReference?.(entry);
       else if (sectionId === "sketches") onOpenSketch?.(entry);
       else onOpenWiring?.(entry);
       render();
@@ -423,7 +431,7 @@ export function createProjectTree(options = {}) {
         });
         actions.append(prof, exp, ren, del);
       }
-    } else if (sectionId === "drawings") {
+    } else if (sectionId === "drawings" || sectionId === "references") {
       const ren = document.createElement("button");
       ren.type = "button";
       ren.className = "browser-action-btn";
@@ -443,7 +451,7 @@ export function createProjectTree(options = {}) {
       actions.append(ren, del);
     }
 
-    if (sectionId === "drawings") {
+    if (sectionId === "drawings" || sectionId === "references") {
       li.append(body, actions);
     } else {
       li.append(vis, body, actions);
@@ -457,6 +465,7 @@ export function createProjectTree(options = {}) {
       browser = {
         components: data.components || [],
         drawings: data.drawings || [],
+        references: data.references || [],
         sketches: data.sketches || [],
         wiring: data.wiring || [],
       };

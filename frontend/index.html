@@ -56,7 +56,7 @@
         <button id="btn-new-project" class="btn secondary">New project</button>
         <label class="btn primary">
           Upload CAD
-          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.dxf" multiple hidden />
+          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.dxf,.pdf,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif" multiple hidden />
         </label>
         <select id="unit-select" class="unit-select" title="Document units" aria-label="Document units">
           <option value="mm">mm</option>
@@ -297,11 +297,12 @@
 
     <div class="main-column">
       <div id="dxf-tab-bar" class="dxf-tab-bar hidden" role="tablist" aria-label="Open drawings"></div>
+      <div id="ref-tab-bar" class="dxf-tab-bar hidden" role="tablist" aria-label="Open reference files"></div>
       <main id="viewport">
         <div id="viewport-drop-overlay" class="viewport-drop-overlay hidden" aria-hidden="true">
           <div class="viewport-drop-card">
             <strong>Drop to view in workspace</strong>
-            <span>STL · STEP · GLB · 3MF · OBJ · DXF…</span>
+            <span>STL · STEP · GLB · DXF · PDF · TXT · images…</span>
           </div>
         </div>
         <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
@@ -490,6 +491,7 @@
         </div>
       </main>
       <div id="dxf-viewer" class="dxf-viewer hidden" aria-hidden="true"></div>
+      <div id="ref-viewer" class="dxf-viewer ref-viewer hidden" aria-hidden="true"></div>
       <div id="wiring-workspace" class="wiring-workspace hidden">
         <aside id="wiring-palette" class="wiring-palette">
           <div id="wiring-palette-list"></div>
@@ -1337,7 +1339,7 @@
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-new-project">New project</button>
           <label class="btn primary mobile-tool-btn mobile-upload-label">
             Upload
-            <input type="file" class="mobile-upload-input" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.dxf" hidden />
+            <input type="file" class="mobile-upload-input" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.dxf,.pdf,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif" hidden />
           </label>
         </div>
       </section>
@@ -1720,7 +1722,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260714-fusion-upload-close"></script>
+  <script type="module" src="/app.js?v=20260714-reference-files"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

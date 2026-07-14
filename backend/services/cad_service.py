@@ -44,6 +44,26 @@ STEP_SUFFIXES = {".step", ".stp"}
 MESH_VIEW_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf"}
 SUPPORTED_EXPORT = {".stl", ".glb", ".obj", ".3mf", ".step"}
 MESH_DERIVED_EXPORTS = ("stl", "3mf", "step")
+# Specs, notes, and images dropped into the workspace (not CAD geometry).
+SUPPORTED_REFERENCE = {
+    ".pdf",
+    ".txt",
+    ".md",
+    ".csv",
+    ".tsv",
+    ".log",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+}
+REFERENCE_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml"}
+REFERENCE_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+REFERENCE_DIRNAME = "references"
 
 DEFAULT_APPEARANCE_PALETTE = np.array(
     [
@@ -64,6 +84,184 @@ def project_dir(base: Path, project_id: str) -> Path:
     path = base / project_id
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def references_dir(project_path: Path) -> Path:
+    path = Path(project_path) / REFERENCE_DIRNAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def is_reference_suffix(suffix: str) -> bool:
+    return str(suffix or "").lower() in SUPPORTED_REFERENCE
+
+
+def reference_kind(filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix in REFERENCE_IMAGE_SUFFIXES:
+        return "image"
+    if suffix == ".pdf":
+        return "pdf"
+    if suffix in REFERENCE_TEXT_SUFFIXES:
+        return "text"
+    return "file"
+
+
+def resolve_project_file(project_path: Path, filename: str) -> Path | None:
+    """Resolve a basename in the project root or references/ folder."""
+    safe = Path(filename).name
+    if not safe or safe in {".", ".."}:
+        return None
+    root = Path(project_path) / safe
+    if root.is_file():
+        return root
+    ref = Path(project_path) / REFERENCE_DIRNAME / safe
+    if ref.is_file():
+        return ref
+    return None
+
+
+def markup_sidecar_path(file_path: Path) -> Path:
+    return file_path.with_name(f"{file_path.name}.markup.json")
+
+
+def load_reference_markup(file_path: Path) -> dict[str, Any]:
+    side = markup_sidecar_path(file_path)
+    if not side.is_file():
+        return {"notes": "", "strokes": [], "updated_at": None}
+    try:
+        data = json.loads(side.read_text(encoding="utf-8"))
+    except Exception:
+        return {"notes": "", "strokes": [], "updated_at": None}
+    if not isinstance(data, dict):
+        return {"notes": "", "strokes": [], "updated_at": None}
+    strokes = data.get("strokes") if isinstance(data.get("strokes"), list) else []
+    return {
+        "notes": str(data.get("notes") or ""),
+        "strokes": strokes,
+        "updated_at": data.get("updated_at"),
+    }
+
+
+def save_reference_markup(file_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    notes = str((payload or {}).get("notes") or "")
+    strokes = (payload or {}).get("strokes")
+    if not isinstance(strokes, list):
+        strokes = []
+    cleaned: list[dict[str, Any]] = []
+    for stroke in strokes[:500]:
+        if not isinstance(stroke, dict):
+            continue
+        points = stroke.get("points")
+        if not isinstance(points, list) or len(points) < 2:
+            continue
+        pts: list[list[float]] = []
+        for pt in points[:2000]:
+            if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                continue
+            try:
+                pts.append([float(pt[0]), float(pt[1])])
+            except (TypeError, ValueError):
+                continue
+        if len(pts) < 2:
+            continue
+        color = str(stroke.get("color") or "#f0883e")[:32]
+        try:
+            width = max(1.0, min(24.0, float(stroke.get("width") or 2)))
+        except (TypeError, ValueError):
+            width = 2.0
+        cleaned.append({"points": pts, "color": color, "width": width})
+    out = {
+        "notes": notes[:100_000],
+        "strokes": cleaned,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    side = markup_sidecar_path(file_path)
+    side.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    return out
+
+
+def list_reference_files(project_path: Path) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    ref_root = Path(project_path) / REFERENCE_DIRNAME
+    if not ref_root.is_dir():
+        return refs
+    for f in sorted(ref_root.iterdir(), key=lambda p: p.name.lower()):
+        if not f.is_file():
+            continue
+        if f.name.endswith(".markup.json"):
+            continue
+        if f.suffix.lower() not in SUPPORTED_REFERENCE:
+            continue
+        refs.append(
+            {
+                "id": f.stem,
+                "name": f.name,
+                "stem": f.stem,
+                "format": f.suffix.lower().lstrip("."),
+                "kind": reference_kind(f.name),
+                "size": f.stat().st_size,
+                "url": f"references/{f.name}",
+            }
+        )
+    return refs
+
+
+def unique_reference_path(project_path: Path, filename: str) -> Path:
+    dest_dir = references_dir(project_path)
+    safe = Path(filename).name or "reference.bin"
+    dest = dest_dir / safe
+    if not dest.exists():
+        return dest
+    stem = dest.stem
+    suffix = dest.suffix
+    n = 2
+    while True:
+        candidate = dest_dir / f"{stem}_{n}{suffix}"
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def rename_reference_file(project_path: Path, old_filename: str, new_filename: str) -> list[str]:
+    old = Path(old_filename).name
+    new = Path(new_filename).name
+    if not old or not new or "/" in new or "\\" in new or ".." in new:
+        raise ValueError("Invalid filename")
+    if Path(new).suffix.lower() not in SUPPORTED_REFERENCE:
+        raise ValueError(f"Unsupported reference type. Use: {sorted(SUPPORTED_REFERENCE)}")
+    src = resolve_project_file(project_path, old)
+    if src is None or REFERENCE_DIRNAME not in src.parts:
+        raise ValueError("Reference file not found")
+    dest = src.with_name(new)
+    if dest.exists() and dest.resolve() != src.resolve():
+        raise ValueError(f"{new} already exists")
+    src.rename(dest)
+    renamed = [new]
+    old_markup = markup_sidecar_path(src)
+    if old_markup.is_file():
+        new_markup = markup_sidecar_path(dest)
+        if new_markup.exists() and new_markup.resolve() != old_markup.resolve():
+            old_markup.unlink()
+        else:
+            old_markup.rename(new_markup)
+            renamed.append(new_markup.name)
+    return renamed
+
+
+def delete_reference_file(project_path: Path, filename: str) -> list[str]:
+    src = resolve_project_file(project_path, filename)
+    if src is None or src.parent.name != REFERENCE_DIRNAME:
+        raise FileNotFoundError(f"Cannot delete missing reference: {filename}")
+    deleted = [src.name]
+    markup = markup_sidecar_path(src)
+    src.unlink()
+    if markup.is_file():
+        markup.unlink()
+        deleted.append(markup.name)
+    return deleted
 
 
 def _is_internal_dxf_sidecar(name: str) -> bool:
@@ -1082,6 +1280,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         "sketches": sketches,
         "wiring": wiring_items,
         "drawings": drawings,
+        "references": list_reference_files(project_path),
         "rigging": rigging_items,
     }
 
