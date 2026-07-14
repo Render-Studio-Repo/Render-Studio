@@ -313,11 +313,11 @@ def _is_sequence_constant_name(name: str) -> bool:
     if not name or not name[0].islower():
         return False
     lower = name.lower()
+    if re.search(r"(?:^|_)positions?(?:_[xyz]{1,3})?$", lower):
+        return True
     return any(
         lower.endswith(suffix)
         for suffix in (
-            "_positions",
-            "_position",
             "_coords",
             "_coordinates",
             "_locations",
@@ -490,6 +490,11 @@ def _default_sequence_constant_value(name: str, *, prompt: str) -> str | None:
     count = _prompt_count_for_holder_holes(prompt) or 4
     hole_d = _prompt_hole_diameter_mm(prompt)
     pitch = max(16.0, (hole_d or 8.5) * 2.2)
+    # 1D axis lists: for rx in rib_positions_x
+    if re.search(r"positions?_[xyz]$", name.lower()) or name.lower().endswith(("_xs", "_ys", "_zs")):
+        n = max(1, min(count, 8))
+        vals = [((i - (n - 1) / 2.0) * pitch) for i in range(n)]
+        return "[" + ", ".join(f"{v:.3f}" for v in vals) + "]"
     # Anchor / mounting holes: smaller 4-corner pattern.
     if "anchor" in name or "mount" in name or "fastener" in name or "bolt" in name:
         span = max(30.0, pitch * 2.5)
@@ -1747,8 +1752,10 @@ def _finalize_text_to_cad_source_before_step(
 ) -> str:
     """Last-chance prep immediately before scripts/step executes the file.
 
-    On Jake-identical path: only wire project DXF filenames — never inject
-    geometry helpers, fillet rewrites, or symbol backfills (those hide generative failures).
+    Jake-identical path mirrors earthtojake/text-to-cad authoring:
+    DXF filename wiring only — no missing-constant float injection.
+    Scalar ``*_positions`` rewrites are still applied when the LLM itself
+    wrote a bare float (that is a script bug, not a missing-name heal).
     """
     source = source_path.read_text(encoding="utf-8", errors="ignore")
     finalized = _augment_text_to_cad_source(
@@ -1757,14 +1764,19 @@ def _finalize_text_to_cad_source_before_step(
         project_path=project_path,
         prompt=prompt,
     )
-    # Always inject missing dimension/config constants before scripts/step.
-    # Helpers (make_*/build_*) are still left for the LLM repair loop.
+    if jake_identical:
+        # Same CAD kernel + same authoring contract as Jake: do not invent
+        # dimension constants. Let NameError / TypeError feed the LLM repair loop.
+        finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
+        if finalized != source:
+            source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
+        return finalized
+
+    # Render3D compatibility path: backfill missing dims and harden fillets.
     finalized = _backfill_all_undefined_constants(finalized, base=source_path.stem, prompt=prompt)
-    # Never leave scalar *_positions for scripts/step — rewrite in place.
     finalized = _sanitize_poisoned_sequence_constants(finalized, prompt=prompt)
     poisoned = _source_poisoned_sequence_issues(finalized)
     if poisoned:
-        # Last resort: force-inject list literals even if regex missed the assign.
         for issue in poisoned:
             m = re.match(r"^(\w+)\s*=", issue)
             if not m:
@@ -1773,7 +1785,6 @@ def _finalize_text_to_cad_source_before_step(
             lit = _default_sequence_constant_value(name, prompt=prompt)
             if not lit:
                 continue
-            # Drop any remaining scalar assign lines, then inject.
             finalized = re.sub(
                 rf"(?m)^{re.escape(name)}\s*(?::[^=\n]+)?=\s*[-+]?(?:\d+\.?\d*|\.\d+)[ \t]*(?:#.*)?\n?",
                 "",
@@ -1789,20 +1800,19 @@ def _finalize_text_to_cad_source_before_step(
                 + "\nFix: define them as lists of (x, y) tuples, e.g. "
                 "rod_hole_positions = [(-30, -10), (-10, -10), ...]. Never assign a bare float."
             )
-    if not jake_identical:
-        finalized = _harden_common_fillet_failures(finalized)
-        remaining = _gen_step_local_undefined_names(finalized)
-        if remaining:
-            healed = _backfill_known_missing_symbols(finalized, prompt, remaining)
-            if healed != finalized:
-                finalized = healed
-                remaining = _gen_step_local_undefined_names(finalized)
-        if remaining:
-            raise ValueError(
-                "Generated source is incomplete before scripts/step; undefined names: "
-                + ", ".join(remaining[:12])
-                + ("..." if len(remaining) > 12 else "")
-            )
+    finalized = _harden_common_fillet_failures(finalized)
+    remaining = _gen_step_local_undefined_names(finalized)
+    if remaining:
+        healed = _backfill_known_missing_symbols(finalized, prompt, remaining)
+        if healed != finalized:
+            finalized = healed
+            remaining = _gen_step_local_undefined_names(finalized)
+    if remaining:
+        raise ValueError(
+            "Generated source is incomplete before scripts/step; undefined names: "
+            + ", ".join(remaining[:12])
+            + ("..." if len(remaining) > 12 else "")
+        )
     if finalized != source:
         source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
     return finalized
@@ -3244,9 +3254,9 @@ def _run_text_to_cad_v2(
                 project_path=project_path,
                 prompt=prompt,
             )
-            # Always backfill missing numeric/string config constants (not helpers).
-            # Jake path still forbids helper injection; constants prevent NameError loops.
-            source = _augment_common_constants(source, base=base, prompt=prompt)
+            if not jake_identical:
+                # Render3D compatibility: backfill missing numeric/string config constants.
+                source = _augment_common_constants(source, base=base, prompt=prompt)
             dxf_issue = _dxf_semantic_source_issue(source, prompt, context)
             if dxf_issue:
                 raise ValueError(dxf_issue)
@@ -3266,7 +3276,7 @@ def _run_text_to_cad_v2(
                 # Jake agent: write source and let scripts/step surface NameError for repair.
                 trace_add(
                     "warning",
-                    "[authoring-agent] Undefined symbols left for scripts/step (no helper injection).",
+                    "[authoring-agent] Undefined symbols left for scripts/step (no constant/helper injection).",
                     trace_id=trace_id,
                     data={"undefined": remaining[:12], "turn": attempt + 1},
                 )
@@ -3404,73 +3414,83 @@ def _run_text_to_cad_v2(
                     )
                     if name_err_match:
                         missing_name = name_err_match.group(1)
-                        # Deterministic heal: inject the missing constant and retry step
-                        # in this same turn (Jake-style edit/run without burning an LLM rewrite).
-                        try:
-                            healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
-                            patched = _inject_missing_name_constant(
-                                healed_src, missing_name, base=base, prompt=prompt
-                            )
-                            # Also sweep any other undefined config constants while we're here.
-                            if patched:
-                                patched = _backfill_all_undefined_constants(
-                                    patched, base=base, prompt=prompt
-                                )
-                            if patched and patched != healed_src:
-                                source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
-                                current_source = patched
-                                trace_add(
-                                    "info",
-                                    f"[authoring-agent] auto-injected missing constant '{missing_name}' and retrying scripts/step",
-                                    trace_id=trace_id,
-                                )
-                                if progress_callback:
-                                    progress_callback({
-                                        "stage": "step",
-                                        "pct": 40,
-                                        "label": f"Retrying scripts/step after injecting {missing_name}...",
-                                    })
-                                step_out = skill_runner.run_skill_tool(
-                                    "cad",
-                                    "step",
-                                    step_args,
-                                    cwd=project_path,
-                                    timeout_sec=240.0,
-                                    cancel_check=cancel_check,
-                                )
-                                if step_out.get("ok"):
-                                    detail = ""
-                                else:
-                                    detail = _error_tail(step_out, "scripts/step failed after constant injection")
-                                    last_error = detail
-                                    repair_note = (
-                                        f"NameError: '{missing_name}' was auto-injected but scripts/step still failed. "
-                                        "Define every module-scope constant used by gen_step() with real dimensions, "
-                                        "and ensure nested helpers are complete.\n"
-                                        f"Full error:\n{detail}"
-                                    )
-                            else:
-                                repair_note = (
-                                    f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
-                                    "Fix: define it at module scope BEFORE gen_step() as a constant/import/helper as appropriate, "
-                                    "or inline the logic inside gen_step(). "
-                                    "Rule: every symbol referenced by gen_step() must be defined in this same file.\n"
-                                    f"Full error:\n{detail}"
-                                )
-                        except Exception as inject_exc:
+                        if jake_identical:
+                            # Jake kernel/authoring: never invent float constants — LLM must repair.
                             repair_note = (
-                                f"NameError: '{missing_name}' is referenced in gen_step() but was never defined. "
-                                f"Auto-inject failed ({inject_exc}). Define it at module scope before gen_step().\n"
+                                f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
+                                "Fix: define it at module scope BEFORE gen_step() with the real dimension/list from the CAD brief, "
+                                "or inline the logic inside gen_step(). "
+                                "Never leave symbols undefined and never assign a bare float to a *_positions / list constant.\n"
                                 f"Full error:\n{detail}"
                             )
+                        else:
+                            # Deterministic heal (Render3D compatibility path only).
+                            try:
+                                healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
+                                patched = _inject_missing_name_constant(
+                                    healed_src, missing_name, base=base, prompt=prompt
+                                )
+                                if patched:
+                                    patched = _backfill_all_undefined_constants(
+                                        patched, base=base, prompt=prompt
+                                    )
+                                if patched and patched != healed_src:
+                                    source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
+                                    current_source = patched
+                                    trace_add(
+                                        "info",
+                                        f"[authoring-agent] auto-injected missing constant '{missing_name}' and retrying scripts/step",
+                                        trace_id=trace_id,
+                                    )
+                                    if progress_callback:
+                                        progress_callback({
+                                            "stage": "step",
+                                            "pct": 40,
+                                            "label": f"Retrying scripts/step after injecting {missing_name}...",
+                                        })
+                                    step_out = skill_runner.run_skill_tool(
+                                        "cad",
+                                        "step",
+                                        step_args,
+                                        cwd=project_path,
+                                        timeout_sec=240.0,
+                                        cancel_check=cancel_check,
+                                    )
+                                    if step_out.get("ok"):
+                                        detail = ""
+                                    else:
+                                        detail = _error_tail(step_out, "scripts/step failed after constant injection")
+                                        last_error = detail
+                                        repair_note = (
+                                            f"NameError: '{missing_name}' was auto-injected but scripts/step still failed. "
+                                            "Define every module-scope constant used by gen_step() with real dimensions, "
+                                            "and ensure nested helpers are complete.\n"
+                                            f"Full error:\n{detail}"
+                                        )
+                                else:
+                                    repair_note = (
+                                        f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
+                                        "Fix: define it at module scope BEFORE gen_step() as a constant/import/helper as appropriate, "
+                                        "or inline the logic inside gen_step(). "
+                                        "Rule: every symbol referenced by gen_step() must be defined in this same file.\n"
+                                        f"Full error:\n{detail}"
+                                    )
+                            except Exception as inject_exc:
+                                repair_note = (
+                                    f"NameError: '{missing_name}' is referenced in gen_step() but was never defined. "
+                                    f"Auto-inject failed ({inject_exc}). Define it at module scope before gen_step().\n"
+                                    f"Full error:\n{detail}"
+                                )
                     elif locations_float_err:
-                        # LLM assigned *_positions = 10.0 then did Locations(*name). Fix deterministically.
+                        # LLM assigned *_positions = 10.0 then did Locations(*name) / for x in name.
+                        # Safe to rewrite lists without inventing unrelated dimensions.
                         try:
                             healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
                             patched = _sanitize_poisoned_sequence_constants(healed_src, prompt=prompt)
-                            patched = _backfill_all_undefined_constants(
-                                patched, base=base, prompt=prompt
-                            )
+                            if not jake_identical:
+                                patched = _backfill_all_undefined_constants(
+                                    patched, base=base, prompt=prompt
+                                )
                             if patched != healed_src:
                                 source_path.write_text(patched.rstrip() + "\n", encoding="utf-8")
                                 current_source = patched
