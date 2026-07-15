@@ -1370,6 +1370,8 @@ class AIService:
         images: list[dict[str, Any]] | None = None,
         trace_id: str | None = None,
         max_tokens: int = 16384,
+        allow_truncated: bool = False,
+        reasoning_effort: str | None = None,
         **kwargs: Any,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Call the model and parse a JSON object response."""
@@ -1379,6 +1381,8 @@ class AIService:
             trace_id=trace_id,
             images=images,
             max_tokens=max_tokens,
+            allow_truncated=allow_truncated,
+            reasoning_effort=reasoning_effort,
             **{k: v for k, v in kwargs.items() if k in {"json_response"}},
         )
         try:
@@ -1393,6 +1397,13 @@ class AIService:
     @staticmethod
     def _json_payload(raw: str) -> str:
         text = (raw or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            while lines and lines[-1].strip().startswith("```"):
+                lines.pop()
+            text = "\n".join(lines).strip()
         if text.startswith("{") and text.endswith("}"):
             return text
         start = text.find("{")
@@ -1400,6 +1411,40 @@ class AIService:
         if 0 <= start < end:
             return text[start : end + 1]
         return text
+
+    @staticmethod
+    def extract_improved_prompt(raw: str) -> str:
+        """Best-effort extract of improved_prompt from JSON or truncated model text."""
+        text = (raw or "").strip()
+        if not text:
+            return ""
+        try:
+            parsed = json.loads(AIService._json_payload(text))
+            if isinstance(parsed, dict):
+                value = parsed.get("improved_prompt") or parsed.get("prompt") or ""
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        # Truncated JSON: {"improved_prompt":"....   (no closing quote/brace)
+        import re
+        match = re.search(r'"improved_prompt"\s*:\s*"((?:\\.|[^"\\])*)', text)
+        if match:
+            frag = match.group(1)
+            try:
+                return json.loads(f'"{frag}"').strip()
+            except json.JSONDecodeError:
+                return (
+                    frag.replace("\\n", "\n")
+                    .replace("\\t", "\t")
+                    .replace('\\"', '"')
+                    .replace("\\\\", "\\")
+                    .strip()
+                )
+        # Plain-text fallback when the model ignored JSON instructions.
+        if not text.lstrip().startswith("{") and "improved_prompt" not in text[:80]:
+            return text.strip()
+        return ""
 
     @staticmethod
     def _python_payload(raw: str) -> str:
@@ -1424,12 +1469,29 @@ class AIService:
                 break
         return "\n".join(keep + [text[idx:]]).strip()
 
-    def _reasoning_param(self) -> dict[str, Any] | None:
+    def _reasoning_param(self, override: str | None = None) -> dict[str, Any] | None:
         if self.provider != "openai":
             return None
         model = self.model
+        pro_like = (
+            model in PRO_MODELS
+            or model.startswith("gpt-5.5-pro")
+            or model.startswith("gpt-5.6")
+            or model.endswith("-sol")
+            or model.endswith("-pro")
+        )
+        # Explicit override from callers (e.g. prompt-improve wants none/medium).
+        if override:
+            effort = override.strip().lower()
+            if pro_like and effort in {"none", "low"}:
+                # Pro rejects none/low — use the lightest supported tier.
+                effort = "medium"
+            if effort == "none" and not pro_like:
+                return {"reasoning": {"effort": "none"}}
+            if effort in {"low", "medium", "high", "xhigh"}:
+                return {"reasoning": {"effort": effort}}
         # Pro / Sol frontier models: leave reasoning to the API default unless configured.
-        if model in PRO_MODELS or model.startswith("gpt-5.5-pro") or model.endswith("-sol"):
+        if pro_like:
             effort = settings.openai_reasoning_effort
             if effort and effort not in {"none", "low"}:
                 return {"reasoning": {"effort": effort}}
@@ -1502,6 +1564,8 @@ class AIService:
         max_tokens: int = 16384,
         *,
         json_response: bool = True,
+        allow_truncated: bool = False,
+        reasoning_effort: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         clean_images = self._clean_images(images)
         if self.provider == "anthropic":
@@ -1512,6 +1576,7 @@ class AIService:
                 images=clean_images,
                 max_tokens=max_tokens,
                 json_response=json_response,
+                allow_truncated=allow_truncated,
             )
 
         messages = [
@@ -1530,11 +1595,11 @@ class AIService:
             "provider": "openai",
             "api": "responses",
             "prompt_preview": user_content[:200],
-            "reasoning": settings.openai_reasoning_effort,
+            "reasoning": reasoning_effort or settings.openai_reasoning_effort,
             "image_count": len(clean_images),
             "image_names": [img["name"] for img in clean_images],
         }
-        extra = self._reasoning_param() or {}
+        extra = self._reasoning_param(reasoning_effort) or {}
 
         import concurrent.futures as _cf
 
@@ -1575,6 +1640,9 @@ class AIService:
                 trace["cost_usd"] = estimate_cost_usd(model, usage, provider="openai")
             trace_add("info", f"OpenAI OK ({trace['duration_ms']:.0f}ms) finish={finish_reason}", trace_id=trace_id, data=trace)
             if finish_reason in ("max_output_tokens", "length"):
+                if text.strip() and allow_truncated:
+                    trace["truncated"] = True
+                    return text, trace
                 kind = "JSON" if json_response else "response"
                 raise ValueError(
                     f"AI returned invalid {kind}: response truncated at token limit "
@@ -1621,6 +1689,9 @@ class AIService:
                     trace["usage"] = usage
                     trace["cost_usd"] = estimate_cost_usd(model, usage, provider="openai")
                 if chat_finish == "length":
+                    if text.strip() and allow_truncated:
+                        trace["truncated"] = True
+                        return text, trace
                     kind = "JSON" if json_response else "response"
                     raise ValueError(
                         f"AI returned invalid {kind}: response truncated at token limit "
@@ -1638,6 +1709,7 @@ class AIService:
         images: list[dict[str, Any]] | None = None,
         max_tokens: int = 16384,
         json_response: bool = True,
+        allow_truncated: bool = False,
     ) -> tuple[str, dict[str, Any]]:
         t0 = time.perf_counter()
         clean_images = images or []
@@ -1701,6 +1773,9 @@ class AIService:
             if not text:
                 raise RuntimeError("Empty response from Anthropic")
             if stop_reason == "max_tokens":
+                if text.strip() and allow_truncated:
+                    trace["truncated"] = True
+                    return text.strip(), trace
                 raise ValueError(f"AI returned invalid JSON: response truncated at token limit (max_tokens={max_tokens}). Partial: {text[:400]}")
             return text.strip(), trace
         except Exception as exc:

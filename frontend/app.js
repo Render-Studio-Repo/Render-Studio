@@ -82,7 +82,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260715-robots-browser";
+import { createProjectTree } from "./project-tree.js?v=20260715-elec-none";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -94,12 +94,12 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-component-bodies";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260707-pin-labels";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-elec-none";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
 import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-sketch-fix";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
-import { createComponentProfileUI } from "./component-profile.js?v=20260618-hide-tags";
+import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";

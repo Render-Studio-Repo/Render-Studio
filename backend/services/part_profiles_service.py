@@ -159,16 +159,16 @@ def seed_profile(stem: str, filename: str | None = None) -> dict[str, Any]:
 
 
 def _should_clear_auto_wiring(profile: dict[str, Any], stem: str) -> bool:
-    """Drop auto-guessed pin types (esp. enclosures) that were never user-confirmed."""
+    """Drop auto-guessed pin types on mechanical cases/enclosures."""
     wiring = profile.get("wiring_type")
     if not wiring:
         return False
     if profile.get("confidence") == "user" or profile.get("source"):
         return False
-    if _ENCLOSURE_RE.search(_normalize(stem)) or _ENCLOSURE_RE.search(_normalize(profile.get("label") or "")):
-        return True
-    # Legacy auto-seeds used confidence "high" from filename recognition.
-    return profile.get("confidence") == "high"
+    return bool(
+        _ENCLOSURE_RE.search(_normalize(stem))
+        or _ENCLOSURE_RE.search(_normalize(profile.get("label") or ""))
+    )
 
 
 def get_or_seed(project_path: Path, stem: str, filename: str | None = None) -> dict[str, Any]:

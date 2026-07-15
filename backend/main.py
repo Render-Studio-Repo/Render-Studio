@@ -11110,10 +11110,10 @@ Rules for improved_prompt:
 - Keep the user's intent, product, and constraints. Do not invent a totally different part.
 - Make it concrete for CAD: units (mm preferred), overall size envelope, key dimensions, wall thickness, fillets/chamfers when relevant.
 - State manufacturing intent when useful (FDM print, CNC, sheet metal, snap-fit, assembly of named bodies).
-- Prefer one clear primary solid/job; list secondary features as bullet-like clauses in one paragraph or short lines.
+- Prefer one clear primary solid/job; list secondary features as short clauses in one paragraph.
 - Name mating/fit relationships if the part must fit something else.
 - For edits, phrase as a revision of the existing selected object (what to change, what to keep).
-- Do not include markdown fences, JSON, or explanations outside the improved prompt string.
+- Put the entire rewrite inside the improved_prompt string. Escape newlines as \\n inside the JSON string.
 - Do not mention that you are an AI or that you rewrote the prompt.
 - Keep under 1200 characters when possible; hard max 4000.
 """
@@ -11152,17 +11152,38 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
         f"User prompt to improve:\n{original}"
     )
+    # Prefer fast, non-reasoning improve when the model allows it. Pro only supports medium+.
+    improve_effort = "none" if (body.speed or "fast") == "fast" else "medium"
+    call_trace: dict[str, Any] = {}
+    improved = ""
     try:
-        parsed, call_trace = ai.chat_json(
+        raw, call_trace = ai._call_model(
             IMPROVE_CAD_PROMPT_SYSTEM,
             user_content,
             trace_id=trace_id,
-            max_tokens=1200,
+            max_tokens=4096,
             json_response=True,
+            allow_truncated=True,
+            reasoning_effort=improve_effort,
         )
+        improved = AIService.extract_improved_prompt(raw)
+        if not improved:
+            # One plain-text retry without JSON constraints.
+            raw2, call_trace2 = ai._call_model(
+                "Rewrite this into a stronger text-to-CAD prompt. Return only the improved prompt text.",
+                user_content,
+                trace_id=trace_id,
+                max_tokens=2048,
+                json_response=False,
+                allow_truncated=True,
+                reasoning_effort=improve_effort,
+            )
+            call_trace = {**call_trace, "plain_retry": call_trace2}
+            improved = AIService.extract_improved_prompt(raw2) or str(raw2 or "").strip()
     except Exception as exc:
+        logger.warning("prompt improve failed: %s", exc, exc_info=True)
+        trace_add("error", f"Could not improve prompt: {exc}", trace_id=trace_id)
         raise HTTPException(502, f"Could not improve prompt: {exc}") from exc
-    improved = str(parsed.get("improved_prompt") or parsed.get("prompt") or "").strip()
     if not improved:
         raise HTTPException(502, "AI returned an empty improved prompt")
     if len(improved) > 8000:
@@ -11175,6 +11196,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
             "provider": call_trace.get("provider"),
             "usage": call_trace.get("usage"),
             "cost_usd": call_trace.get("cost_usd"),
+            "truncated": bool(call_trace.get("truncated")),
         },
     }
 
