@@ -300,6 +300,28 @@
       cursor: pointer;
       font-size: 0.78rem;
     }
+    .sv-tree-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: -2px;
+      margin-bottom: 6px;
+    }
+    .sv-mini-btn {
+      border: 1px solid rgba(48, 54, 61, 0.86);
+      background: rgba(13, 17, 23, 0.9);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-weight: 700;
+      font-size: 0.66rem;
+      cursor: pointer;
+    }
+    .sv-mini-btn.active {
+      border-color: var(--accent);
+      color: #79c0ff;
+      background: var(--accent-soft);
+    }
     .sv-tree-btn small {
       color: var(--muted);
       font-size: 0.68rem;
@@ -420,6 +442,8 @@
       <button type="button" class="share-tool" id="btn-share-section" aria-pressed="false">Section</button>
       <button type="button" class="share-tool" id="btn-share-inspector" aria-pressed="false">Components</button>
       <button type="button" class="share-tool" id="btn-share-history" aria-pressed="false">History</button>
+      <button type="button" class="share-tool" id="btn-share-wireframe" aria-pressed="false">Wireframe</button>
+      <button type="button" class="share-tool" id="btn-share-transparent" aria-pressed="false">Transparent</button>
       <button type="button" class="share-tool" id="btn-share-fit">Fit</button>
       <button type="button" class="share-tool share-tool--primary" id="btn-share-open">Remix model</button>
       <button type="button" class="share-tool" id="btn-share-download">Download</button>
@@ -460,6 +484,7 @@
       <p class="sv-section-title">Prompt history</p>
       <div id="share-prompt-history" class="sv-list"></div>
       <p class="sv-section-title">Components</p>
+      <p class="sv-hint">View parts individually, isolate one component, or make selected parts transparent.</p>
       <div id="share-component-list" class="sv-list"></div>
       <div id="share-motion-card" class="sv-motion-card hidden">
         <div class="sv-top">
