@@ -91,7 +91,7 @@ import {
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260714-doc-tabs";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
-import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
+import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-component-bodies";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260707-pin-labels";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
@@ -12255,13 +12255,17 @@ function bodyChildrenFromInfo(entry, info) {
 async function hydrateBrowserBodyChildren(browser) {
   const run = ++browserBodyHydrationRun;
   if (!projectId || !browser?.components?.length) return;
-  // Dense text-to-cad Compounds (stairs, gearsets) tessellate into dozens of
-  // disconnected solids. Expanding them under Components → Parts recreates the
-  // "59 components" explosion even when only one assembly file exists.
-  const MAX_BROWSER_BODY_CHILDREN = 24;
+  // Keep large multi-body assemblies nested under one component as Bodies.
+  // (Top-level *_partNN* sidecars are filtered server-side when the parent exists.)
+  const MAX_BROWSER_BODY_CHILDREN = 256;
   let changed = false;
   await Promise.all((browser.components || []).map(async (entry) => {
-    if (!entry?.name || entry.children?.length || entry.format === "body") return;
+    if (!entry?.name || entry.format === "body") return;
+    // Prefer server-provided nested Bodies when present.
+    if (Array.isArray(entry.children) && entry.children.length) {
+      entry.children_label = entry.children_label || "Bodies";
+      return;
+    }
     try {
       // Prefer the viewport mesh (.glb) — STEP often reports 100+ solids for the
       // same assembly the viewer already shows as one model.
@@ -12278,7 +12282,7 @@ async function hydrateBrowserBodyChildren(browser) {
       }
       const children = bodyChildrenFromInfo(entry, info);
       if (!children.length || run !== browserBodyHydrationRun) return;
-      entry.children_label = entry.children_label || "Parts";
+      entry.children_label = "Bodies";
       entry.children = children;
       changed = true;
     } catch {

@@ -148,6 +148,17 @@ export function filesToBrowserComponents(files = []) {
     const lower = String(name || "").toLowerCase();
     return lower.startsWith("_active_") || lower.startsWith("_export_") || (lower.startsWith(".") && lower.endsWith(".step.glb"));
   };
+  const parentExists = (stem) => {
+    const lower = String(stem || "").toLowerCase();
+    return [...byStem.keys()].some((key) => String(key).toLowerCase() === lower);
+  };
+  const promotedPartParent = (stem = "") => {
+    const detailed = String(stem).match(/^(.+)__part_\d+_/i);
+    if (detailed && parentExists(detailed[1])) return detailed[1];
+    const compact = String(stem).match(/^(.+)_part\d+(?:_\d+)?$/i);
+    if (compact && parentExists(compact[1])) return compact[1];
+    return null;
+  };
   for (const f of files) {
     if (!f?.name) continue;
     if (isInternalModelArtifact(f.name)) continue;
@@ -156,7 +167,14 @@ export function filesToBrowserComponents(files = []) {
     byStem.get(stem).push(f);
   }
   const components = [];
+  const partBuckets = new Map();
   for (const [stem, group] of byStem) {
+    const parentStem = promotedPartParent(stem);
+    if (parentStem) {
+      if (!partBuckets.has(parentStem)) partBuckets.set(parentStem, []);
+      partBuckets.get(parentStem).push({ stem, group });
+      continue;
+    }
     let canonical = group[0];
     const edited = group
       .filter((g) => /_edited(?:_\d+)?\.glb$/i.test(String(g.name || "")))
@@ -185,5 +203,59 @@ export function filesToBrowserComponents(files = []) {
       size: canonical.size,
     });
   }
+
+  const byComponentStem = new Map(components.map((entry) => [entry.stem, entry]));
+  for (const [parentStem, parts] of partBuckets) {
+    const parent = byComponentStem.get(parentStem);
+    if (!parent) continue;
+    const ranked = parts
+      .map(({ stem }) => {
+        const compact = stem.match(/_part(\d+)(?:_(\d+))?$/i);
+        if (compact) {
+          return {
+            num: Number(compact[1]),
+            rev: Number(compact[2] || 0),
+            label: `Body ${Number(compact[1])}`,
+            stem,
+          };
+        }
+        const detailed = stem.match(/__part_(\d+)_(.+)$/i);
+        if (detailed) {
+          return {
+            num: Number(detailed[1]),
+            rev: 0,
+            label: String(detailed[2] || "").replace(/_+/g, " ").trim() || `Body ${Number(detailed[1])}`,
+            stem,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => (a.num - b.num) || (a.rev - b.rev));
+    const best = new Map();
+    for (const row of ranked) {
+      const prev = best.get(row.num);
+      if (!prev || row.rev >= prev.rev) best.set(row.num, row);
+    }
+    const children = [...best.values()].map((row, idx) => ({
+      id: `${parent.stem}#body:${idx + 1}`,
+      name: `${parent.name}#body:${idx + 1}`,
+      filename: parent.name,
+      stem: `${parent.stem}_body_${String(idx + 1).padStart(2, "0")}`,
+      label: row.label,
+      format: "body",
+      viewer_filename: parent.viewer_filename,
+      source_filename: parent.name,
+      parent_filename: parent.name,
+      body_index: idx,
+      body_name: row.label,
+      virtual_body: true,
+    }));
+    if (children.length > 1) {
+      parent.children_label = "Bodies";
+      parent.children = children;
+    }
+  }
+
   return components.sort((a, b) => a.name.localeCompare(b.name));
 }

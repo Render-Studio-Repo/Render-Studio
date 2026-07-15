@@ -1040,20 +1040,80 @@ def _is_architect_promoted_part_stem(stem: str, architect_bases: set[str]) -> bo
     return False
 
 
-def _is_promoted_detail_part_stem(stem: str, project_path: Path) -> bool:
-    """Hide ``<base>__part_01_baluster`` when the parent assembly ``<base>.glb`` exists.
-
-    Dense text-to-cad Compounds (stairs, gearsets) used to explode into dozens of
-    browser components that render as floating debris beside the intact assembly.
-    """
-    match = re.match(r"^(.+)__part_\d+_", stem, re.I)
-    if not match:
-        return False
-    base = match.group(1)
+def _parent_assembly_exists(project_path: Path, base: str) -> bool:
     return any(
         (project_path / f"{base}{ext}").is_file()
         for ext in (".glb", ".gltf", ".step", ".stp", ".stl", ".3mf")
     )
+
+
+def _is_promoted_detail_part_stem(stem: str, project_path: Path) -> bool:
+    """Hide exploded body sidecars when the parent assembly file still exists.
+
+    Covers both naming schemes:
+    - ``<base>__part_01_baluster`` (Fusion / scene split)
+    - ``<base>_part01`` / ``<base>_part01_2`` (disconnected-body promote)
+    """
+    match = re.match(r"^(.+)__part_\d+_", stem, re.I)
+    if match and _parent_assembly_exists(project_path, match.group(1)):
+        return True
+    match = re.match(r"^(.+)_part\d+(?:_\d+)?$", stem, re.I)
+    if match and _parent_assembly_exists(project_path, match.group(1)):
+        return True
+    return False
+
+
+def _body_children_from_part_sidecars(
+    project_path: Path,
+    *,
+    parent_stem: str,
+    parent_name: str,
+    parent_viewer: str,
+) -> list[dict[str, Any]]:
+    """Nest ``_partNN`` / ``__part_NN_`` sidecars as Bodies under the parent component."""
+    compact = re.compile(rf"^{re.escape(parent_stem)}_part(\d+)(?:_(\d+))?$", re.I)
+    detailed = re.compile(rf"^{re.escape(parent_stem)}__part_(\d+)_(.+)$", re.I)
+    best: dict[int, tuple[int, Path, str]] = {}
+    for path in project_path.glob("*.glb"):
+        stem = path.stem
+        match = compact.match(stem)
+        if match:
+            num = int(match.group(1))
+            rev = int(match.group(2) or 0)
+            label = f"Body {num}"
+            prev = best.get(num)
+            if prev is None or rev >= prev[0]:
+                best[num] = (rev, path, label)
+            continue
+        match = detailed.match(stem)
+        if match:
+            num = int(match.group(1))
+            label = re.sub(r"_+", " ", match.group(2)).strip() or f"Body {num}"
+            prev = best.get(num)
+            if prev is None or 0 >= prev[0]:
+                best[num] = (0, path, label[:96])
+    if len(best) <= 1:
+        return []
+    children: list[dict[str, Any]] = []
+    for idx, num in enumerate(sorted(best)):
+        _rev, _path, label = best[num]
+        children.append(
+            {
+                "id": f"{parent_stem}#body:{idx + 1}",
+                "name": f"{parent_name}#body:{idx + 1}",
+                "filename": parent_name,
+                "stem": f"{parent_stem}_body_{idx + 1:02d}",
+                "label": label,
+                "format": "body",
+                "viewer_filename": parent_viewer,
+                "source_filename": parent_name,
+                "parent_filename": parent_name,
+                "body_index": idx,
+                "body_name": label,
+                "virtual_body": True,
+            }
+        )
+    return children
 
 
 def _is_jake_topology_sidecar_stem(stem: str) -> bool:
@@ -1272,6 +1332,18 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
                 "auto_load": is_primary,
             }
         )
+
+    # Nest exploded body sidecars under their parent component as Bodies.
+    for comp in components:
+        children = _body_children_from_part_sidecars(
+            project_path,
+            parent_stem=str(comp.get("stem") or ""),
+            parent_name=str(comp.get("name") or ""),
+            parent_viewer=str(comp.get("viewer_filename") or comp.get("name") or ""),
+        )
+        if children:
+            comp["children_label"] = "Bodies"
+            comp["children"] = children
 
     for f in sorted(project_path.glob("*.program.json")):
         if not f.is_file() or f.name.startswith("_active_"):
