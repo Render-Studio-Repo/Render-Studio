@@ -281,8 +281,82 @@ label.new-project-workspace-remember {
   }
 }
 
-.studio-boot-logo-gear::before,
-.studio-boot-logo-gear::after {
+/* Hide legacy SVG gear — replaced by metal PNG (works even if index.html reverts) */
+.studio-boot-logo-gear-svg {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* CSS fallback when markup still has the old SVG (no .studio-boot-logo-gear-img) */
+.studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  inset: -2px;
+  z-index: 0;
+  border-radius: 0;
+  background: url("/assets/futuristic-gear-metal.png?v=20260715-metal-gear") center / contain no-repeat;
+  mix-blend-mode: screen;
+  transform-origin: 50% 50%;
+  animation: studio-gear-spin 1.6s linear infinite;
+  filter:
+    contrast(1.08)
+    brightness(1.05)
+    drop-shadow(0 0 8px rgba(34, 211, 238, 0.4));
+}
+
+/* Electricity arcs/nodes riding with the spin */
+.studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  inset: 12%;
+  z-index: 1;
+  border-radius: 50%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transform-origin: 50% 50%;
+  background:
+    radial-gradient(circle at 28% 30%, #ecfeff 0 1.6px, transparent 2.4px),
+    radial-gradient(circle at 70% 28%, #67e8f9 0 1.3px, transparent 2.1px),
+    radial-gradient(circle at 72% 68%, #a5f3fc 0 1.5px, transparent 2.3px),
+    radial-gradient(circle at 30% 70%, #67e8f9 0 1.3px, transparent 2.1px),
+    radial-gradient(circle at 50% 48%, rgba(34, 211, 238, 0.4) 0 10%, transparent 40%),
+    conic-gradient(
+      from 20deg,
+      transparent 0 8%,
+      rgba(103, 232, 249, 0.75) 10%,
+      transparent 16%,
+      transparent 38%,
+      rgba(165, 243, 252, 0.65) 42%,
+      transparent 50%,
+      transparent 68%,
+      rgba(103, 232, 249, 0.7) 72%,
+      transparent 80%
+    );
+  animation:
+    studio-gear-spin 1.6s linear infinite,
+    studio-elec-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes studio-elec-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    filter: drop-shadow(0 0 2px rgba(103, 232, 249, 0.35));
+  }
+  45% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(165, 243, 252, 0.95));
+  }
+  70% {
+    opacity: 0.55;
+  }
+}
+
+/* When enriched HTML is present, skip the CSS fallback layers */
+.studio-boot-logo-gear:has(.studio-boot-logo-gear-img)::before,
+.studio-boot-logo-gear:has(.studio-boot-logo-gear-img)::after {
   content: none !important;
   display: none !important;
 }
@@ -320,12 +394,24 @@ label.new-project-workspace-remember {
   display: none !important;
 }
 
+@keyframes studio-gear-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes studio-logo-charge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .studio-boot-logo-gear-spin,
   .studio-boot-logo > .studio-boot-brand-mark,
+  .studio-boot-logo > img:first-of-type,
   .studio-boot-logo-word,
   .studio-boot-elec-path,
-  .studio-boot-elec-node {
+  .studio-boot-elec-node,
+  .studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::before,
+  .studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::after {
     animation: none !important;
   }
 

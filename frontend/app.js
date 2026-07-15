@@ -65,7 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-social-fusion-connect";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-hide-shot-on-viewport";
-import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-show-me-actions";
+import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-inbox-collab";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
@@ -395,6 +395,20 @@ function generationStatusElementId(gen = {}) {
   if (String(gen?.kind || "").toLowerCase() === "wiring") return "wiring-prompt-status";
   if (isRiggingGeneration(gen)) return "rigging-prompt-status";
   return "prompt-status";
+}
+
+function showModelReadyBanner(message, statusElementId = "prompt-status") {
+  const text = String(message || "").trim();
+  if (!text) return;
+  const statusEl = document.getElementById(statusElementId);
+  if (statusEl) {
+    statusEl.className = "status ok";
+    statusEl.textContent = text;
+  }
+  const overlay = statusElementId === "wiring-prompt-status"
+    ? (wiringOverlay || window.Render3DViewerOverlay)
+    : window.Render3DViewerOverlay;
+  overlay?.showReadyBanner?.(text);
 }
 
 function syncViewportGenerationUserBadge(gen) {
@@ -22715,6 +22729,43 @@ window.addEventListener("keydown", (e) => {
     } catch (_) {}
   }
 
+  function renderSharedWorkspaceMenu() {
+    const btn = document.getElementById("btn-shared-workspaces-menu");
+    const menu = document.getElementById("shared-workspaces-menu");
+    if (!btn || !menu) return;
+    const sharedTeams = allTeams
+      .filter((team) => isSharedWorkspace(team))
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    const hidden = hiddenWorkspaceIds();
+    const visibleCount = sharedTeams.filter((team) => !hidden.has(team.id)).length;
+    btn.hidden = !sharedTeams.length;
+    btn.title = sharedTeams.length
+      ? `${visibleCount}/${sharedTeams.length} shared workspace${sharedTeams.length === 1 ? "" : "s"} visible`
+      : "No shared workspaces yet";
+    btn.classList.toggle("has-hidden-workspaces", sharedTeams.length > 0 && visibleCount < sharedTeams.length);
+    menu.innerHTML = sharedTeams.length
+      ? `
+        <div class="shared-workspaces-menu-title">
+          <strong>Shared workspaces</strong>
+          <small>${visibleCount}/${sharedTeams.length} visible</small>
+        </div>
+        ${sharedTeams.map((team) => {
+          const checked = !hidden.has(team.id);
+          const members = workspaceMemberCount(team);
+          return `
+            <label class="shared-workspace-menu-row">
+              <span>
+                <strong>${appEscapeHtml(team.name || "Shared workspace")}</strong>
+                <small>👥 ${members} member${members === 1 ? "" : "s"}</small>
+              </span>
+              <input type="checkbox" data-shared-workspace-visible="${appEscapeHtml(team.id)}" ${checked ? "checked" : ""} />
+            </label>
+          `;
+        }).join("")}
+      `
+      : `<p class="muted small">Shared workspaces will appear here.</p>`;
+  }
+
   function visibleTeamsForExplorer() {
     const hidden = hiddenWorkspaceIds();
     const visible = allTeams.filter((t) => !hidden.has(t.id));
@@ -22747,21 +22798,30 @@ window.addEventListener("keydown", (e) => {
     if (!sel) return;
     sel.innerHTML = "";
     const explorerTeams = visibleTeamsForExplorer();
+    const personalTeams = explorerTeams.filter((team) => isPersonalWorkspace(team));
+    const sharedTeams = explorerTeams.filter((team) => !isPersonalWorkspace(team));
+    const appendTeamOption = (parent, team) => {
+      const opt = document.createElement("option");
+      opt.value = team.id;
+      const members = workspaceMemberCount(team);
+      opt.textContent = isPersonalWorkspace(team)
+        ? personalWorkspaceLabel()
+        : `${team.name}${members > 1 ? ` · 👥 ${members}` : " · shared"}`;
+      parent.appendChild(opt);
+    };
     if (explorerTeams.length > 1) {
       const allOpt = document.createElement("option");
       allOpt.value = "__all__";
       allOpt.textContent = "All workspaces";
       sel.appendChild(allOpt);
     }
-    explorerTeams.forEach((t) => {
-      const opt = document.createElement("option");
-      opt.value = t.id;
-      const members = workspaceMemberCount(t);
-      opt.textContent = isPersonalWorkspace(t)
-        ? personalWorkspaceLabel()
-        : `${t.name}${members > 1 ? ` · 👥 ${members}` : " · shared"}`;
-      sel.appendChild(opt);
-    });
+    personalTeams.forEach((team) => appendTeamOption(sel, team));
+    if (sharedTeams.length) {
+      const sharedGroup = document.createElement("optgroup");
+      sharedGroup.label = "Shared workspaces";
+      sharedTeams.forEach((team) => appendTeamOption(sharedGroup, team));
+      sel.appendChild(sharedGroup);
+    }
     const saved = readSavedWorkspaceId();
     if (saved === "__all__" && explorerTeams.length > 1) {
       sel.value = "__all__";
@@ -22780,6 +22840,7 @@ window.addEventListener("keydown", (e) => {
     };
     updateWorkspaceRenameButton();
     sel.classList.toggle("team-select--shared", isSharedWorkspace(getActiveTeam()));
+    renderSharedWorkspaceMenu();
     refreshTeamMembers();
     refreshTeamInvites();
     workspaceManagement?.syncMenuVisibility?.();
