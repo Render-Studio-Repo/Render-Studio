@@ -152,8 +152,21 @@ export const GETTING_STARTED_GUIDES = [
 ];
 
 export function matchGettingStartedGuides(question, { limit = 2 } = {}) {
-  const text = String(question || "").toLowerCase();
-  if (!text.trim()) return [];
+  const text = String(question || "").toLowerCase().trim();
+  if (!text) return [];
+
+  for (const guide of GETTING_STARTED_GUIDES) {
+    const ask = String(guide.ask || "").toLowerCase().trim();
+    if (!ask) continue;
+    if (text === ask) return [guide];
+    if (text.length > 28 && ask.length > 28 && (text.includes(ask.slice(0, 56)) || ask.includes(text.slice(0, 56)))) {
+      return [guide];
+    }
+  }
+
+  const tourHints = ["tour", "getting started", "new user", "how do i start", "onboarding", "for a new user"];
+  const isTour = tourHints.some((hint) => text.includes(hint));
+
   const scored = GETTING_STARTED_GUIDES.map((guide) => {
     let score = 0;
     const title = String(guide.title || "").toLowerCase();
@@ -169,6 +182,9 @@ export function matchGettingStartedGuides(question, { limit = 2 } = {}) {
       for (const w of words.slice(0, 6)) {
         if (text.includes(w)) score += 0.35;
       }
+    }
+    if (isTour && ["ai-generate", "workspaces", "share-folders", "render-agent"].includes(guide.id)) {
+      score += 3;
     }
     return { guide, score };
   })

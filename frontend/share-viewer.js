@@ -4,6 +4,8 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-solid-body-color";
+import { authHeaders, getToken } from "./auth.js?v=20260715-share-open-project";
+import { createUrdfRobotRuntime } from "./urdf-robot-runtime.js?v=20260715-share-public-urdf";
 
 const FORMAT_LABELS = {
   glb: "GLB",
@@ -118,6 +120,16 @@ function createSectionController({ renderer, scene, getBounds }) {
   };
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
 async function main() {
   const token = tokenFromPath();
   const titleEl = $("share-title");
@@ -129,8 +141,15 @@ async function main() {
   const btnSection = $("btn-share-section");
   const btnRotate = $("btn-share-rotate");
   const btnFit = $("btn-share-fit");
+  const btnInspector = $("btn-share-inspector");
+  const btnOpen = $("btn-share-open");
   const btnDownloadMenu = $("btn-share-download");
   const downloadSheet = $("share-download-sheet");
+  const inspectorPanel = $("share-inspector-panel");
+  const componentListEl = $("share-component-list");
+  const motionCard = $("share-motion-card");
+  const motionStatus = $("share-motion-status");
+  const btnMotionPlay = $("btn-share-motion-play");
 
   if (!token) {
     statusEl.textContent = "Invalid share link.";
@@ -238,6 +257,8 @@ async function main() {
   scene.add(root);
   let modelBox = new THREE.Box3();
   let orbitRadius = 2;
+  let loadedScene = null;
+  const objectsByName = new Map();
 
   const section = createSectionController({
     renderer,
@@ -253,6 +274,30 @@ async function main() {
     camera.updateProjectionMatrix();
   }
 
+  function frameBox(box, { pad = 1.32 } = {}) {
+    if (!box || box.isEmpty()) return;
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(sphere.radius, 1e-3);
+    const fov = THREE.MathUtils.degToRad(camera.fov || 45);
+    const aspect = Math.max(camera.aspect || 1, 0.1);
+    const fitHeightDistance = radius / Math.sin(fov / 2);
+    const fitWidthDistance = radius / Math.sin(Math.atan(Math.tan(fov / 2) * aspect));
+    orbitRadius = Math.max(fitHeightDistance, fitWidthDistance) * pad;
+    const yaw = Math.PI * 0.22;
+    camera.up.set(0, 0, 1);
+    camera.position.set(
+      orbitRadius * Math.cos(yaw),
+      -orbitRadius * Math.sin(yaw),
+      orbitRadius * 0.32,
+    );
+    controls.target.copy(sphere.center);
+    controls.minDistance = Math.max(radius * 0.25, 0.01);
+    controls.maxDistance = Math.max(orbitRadius * 24, radius * 80, 50);
+    syncCameraClip();
+    controls.update();
+    section.refresh();
+  }
+
   function fitCamera() {
     root.position.set(0, 0, 0);
     modelBox.setFromObject(root);
@@ -261,24 +306,14 @@ async function main() {
     // Center on origin so orbiting under the model stays stable.
     root.position.set(-center.x, -center.y, -center.z);
     modelBox.setFromObject(root);
-    const fitted = modelBox.getSize(new THREE.Vector3());
-    const span = Math.max(fitted.x, fitted.y, fitted.z, fitted.length() * 0.5, 1e-3);
-    const sphere = modelBox.getBoundingSphere(new THREE.Sphere());
-    const radius = Math.max(sphere.radius, span * 0.5, 1e-3);
-    orbitRadius = Math.max(radius * 1.75, 0.5);
-    const yaw = Math.PI * 0.22;
-    camera.up.set(0, 0, 1);
-    camera.position.set(
-      orbitRadius * Math.cos(yaw),
-      -orbitRadius * Math.sin(yaw),
-      orbitRadius * 0.32,
-    );
-    controls.target.set(0, 0, 0);
-    controls.minDistance = Math.max(radius * 1.05, 0.1);
-    controls.maxDistance = Math.max(orbitRadius * 12, 8);
-    syncCameraClip();
-    controls.update();
-    section.refresh();
+    frameBox(modelBox, { pad: 1.38 });
+  }
+
+  function frameObject(obj) {
+    if (!obj) return;
+    const box = new THREE.Box3().setFromObject(obj);
+    if (box.isEmpty()) return;
+    frameBox(box, { pad: 1.6 });
   }
 
   function resize() {
@@ -299,11 +334,79 @@ async function main() {
     statusEl.textContent = msg;
   }
 
+  resize();
+
   const viewerUrl = meta.viewer_url
     || (meta.viewer_filename
       ? `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(meta.viewer_filename)}`
       : "");
   const canPreview = /\.glb$/i.test(meta.viewer_filename || viewerUrl || "");
+
+  function renderComponentTree() {
+    if (!componentListEl) return;
+    const browserComponents = Array.isArray(meta.browser?.components) ? meta.browser.components : [];
+    const rows = [];
+    for (const item of browserComponents) {
+      const name = item.name || item.filename || item.stem || item.label;
+      if (name) rows.push({ label: name, kind: item.kind || item.format || "component", target: name });
+    }
+    if (loadedScene) {
+      loadedScene.traverse((obj) => {
+        if (!obj.isMesh && obj.type !== "Group") return;
+        const label = String(obj.name || "").trim();
+        if (!label || objectsByName.has(label)) return;
+        objectsByName.set(label, obj);
+        rows.push({ label, kind: obj.isMesh ? "mesh" : "group", target: label });
+      });
+    }
+    const unique = [];
+    const seenRows = new Set();
+    for (const row of rows) {
+      const key = `${row.label}|${row.kind}`;
+      if (seenRows.has(key)) continue;
+      seenRows.add(key);
+      unique.push(row);
+      if (unique.length >= 80) break;
+    }
+    if (!unique.length) {
+      componentListEl.innerHTML = `<p class="sv-hint">No component tree metadata was provided for this share.</p>`;
+      return;
+    }
+    componentListEl.innerHTML = unique.map((row) => `
+      <button type="button" class="sv-tree-btn" data-target="${escapeHtml(row.target)}">
+        <span>${escapeHtml(row.label)}</span>
+        <small>${escapeHtml(row.kind)}</small>
+      </button>
+    `).join("");
+  }
+
+  async function loadSharedRobot() {
+    const artifacts = Array.isArray(meta.robot?.artifacts) ? meta.robot.artifacts : [];
+    const urdf = artifacts.find((item) => /\.urdf$/i.test(item.name || ""));
+    const srdf = artifacts.find((item) => /\.srdf$/i.test(item.name || ""));
+    if (!urdf || !motionCard) return;
+    motionCard.classList.remove("hidden");
+    motionStatus.textContent = "Loading URDF motion…";
+    try {
+      const robotRuntime = createUrdfRobotRuntime({ scene });
+      await robotRuntime.loadFromUrls({
+        urdfUrl: urdf.url,
+        urdfFile: urdf.name,
+        srdfUrl: srdf?.url || null,
+        srdfFile: srdf?.name || null,
+        resolveFileUrl: (name) => `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(name)}`,
+      });
+      const state = robotRuntime.getState();
+      const movable = (state.urdf?.joints || []).filter((joint) => !/fixed/i.test(joint.type || "")).length;
+      motionStatus.textContent = `${state.urdf?.name || "Robot"} ready · ${movable} movable joints`;
+      btnMotionPlay?.addEventListener("click", () => {
+        const playing = robotRuntime.togglePlay({ durationSec: 4.2 });
+        btnMotionPlay.textContent = playing ? "Stop" : "Play";
+      });
+    } catch (err) {
+      motionStatus.textContent = err?.message || "Could not load URDF motion.";
+    }
+  }
 
   if (!canPreview) {
     setStatus("3D preview needs a GLB. Use Download for available formats.");
@@ -314,9 +417,12 @@ async function main() {
         viewerUrl,
         (gltf) => {
           root.clear();
-          root.add(gltf.scene);
+          loadedScene = gltf.scene;
+          root.add(loadedScene);
           applyCadStyle(root);
           fitCamera();
+          renderComponentTree();
+          loadSharedRobot();
           setStatus("");
           resolve();
         },
@@ -327,6 +433,10 @@ async function main() {
         },
       );
     });
+  }
+  if (!loadedScene) {
+    renderComponentTree();
+    loadSharedRobot();
   }
 
   function setAutoRotate(on) {
@@ -342,6 +452,47 @@ async function main() {
 
   btnFit?.addEventListener("click", () => {
     fitCamera();
+  });
+
+  btnOpen?.addEventListener("click", async () => {
+    if (!getToken()) {
+      location.href = `/?open_share=${encodeURIComponent(token)}`;
+      return;
+    }
+    const originalText = btnOpen.textContent;
+    btnOpen.disabled = true;
+    btnOpen.textContent = "Opening…";
+    try {
+      const res = await fetch(`/api/share/${encodeURIComponent(token)}/open-in-project`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Could not open project");
+      location.href = data.url || `/?project=${encodeURIComponent(data.project_id)}`;
+    } catch (err) {
+      setStatus(err?.message || "Could not open this share in a project.");
+      btnOpen.disabled = false;
+      btnOpen.textContent = originalText;
+    }
+  });
+
+  function syncInspectorUi(on) {
+    btnInspector?.classList.toggle("active", on);
+    btnInspector?.setAttribute("aria-pressed", String(on));
+    inspectorPanel?.classList.toggle("hidden", !on);
+    if (on) renderComponentTree();
+  }
+
+  btnInspector?.addEventListener("click", () => {
+    syncInspectorUi(inspectorPanel?.classList.contains("hidden"));
+  });
+  inspectorPanel?.querySelector("#btn-share-inspector-close")?.addEventListener("click", () => syncInspectorUi(false));
+  componentListEl?.addEventListener("click", (event) => {
+    const btn = event.target.closest(".sv-tree-btn");
+    if (!btn) return;
+    const obj = objectsByName.get(btn.dataset.target);
+    if (obj) frameObject(obj);
   });
 
   function syncSectionUi(on) {

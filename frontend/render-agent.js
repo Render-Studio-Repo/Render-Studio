@@ -5,7 +5,7 @@ import {
   getCurrentTip,
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-agent-tips-refresh";
-import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-gs-guides";
+import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-real-gifs";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
@@ -154,6 +154,10 @@ export function createRenderAgent({
       return;
     }
     panel.classList.remove("hidden");
+    panel.classList.add("render-agent-panel--sticky");
+    if (panel.classList.contains("render-agent-panel--docs")) {
+      panel.classList.add("render-agent-panel--popup");
+    }
     document.getElementById("render-agent-fab")?.classList.add("hidden");
     ensureStickyNoteControls();
     restoreStickyLayout();
@@ -216,21 +220,34 @@ export function createRenderAgent({
   function restoreStickyLayout() {
     if (!stickyNote) return;
     panel.classList.add("render-agent-panel--sticky");
+    if (panel.classList.contains("render-agent-panel--docs")) {
+      panel.classList.add("render-agent-panel--popup");
+    }
     const saved = readStickyLayout();
+    const defaultW = Math.min(400, Math.max(300, window.innerWidth - 32));
+    const defaultH = Math.min(640, Math.max(360, window.innerHeight - 96));
     if (!saved) {
-      panel.style.left = "";
-      panel.style.top = "64px";
+      panel.style.left = "auto";
       panel.style.right = "16px";
-      panel.style.width = "";
-      panel.style.height = "";
+      panel.style.top = "72px";
+      panel.style.width = `${defaultW}px`;
+      panel.style.height = `${defaultH}px`;
+      panel.style.maxHeight = "none";
       return;
     }
     if (saved.width) panel.style.width = `${Math.max(300, saved.width)}px`;
+    else panel.style.width = `${defaultW}px`;
     if (saved.height) panel.style.height = `${Math.max(320, saved.height)}px`;
+    else panel.style.height = `${defaultH}px`;
+    panel.style.maxHeight = "none";
     if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
       panel.style.right = "auto";
-      panel.style.left = `${saved.left}px`;
-      panel.style.top = `${saved.top}px`;
+      panel.style.left = `${Math.max(8, Math.min(window.innerWidth - 80, saved.left))}px`;
+      panel.style.top = `${Math.max(8, Math.min(window.innerHeight - 80, saved.top))}px`;
+    } else {
+      panel.style.left = "auto";
+      panel.style.right = "16px";
+      panel.style.top = "72px";
     }
   }
 
@@ -581,10 +598,9 @@ export function createRenderAgent({
   function renderMessageMedia(msg, previousUserText = "") {
     let media = Array.isArray(msg?.media) ? [...msg.media] : [];
     if (!media.length && msg?.role === "assistant" && previousUserText) {
-      media = matchGettingStartedGuides(previousUserText, { limit: 1 })
+      media = matchGettingStartedGuides(previousUserText, { limit: 2 })
         .map(guideMediaPayload)
         .filter(Boolean)
-        // Only show if the gif is already referenced in docs paths we know.
         .filter((item) => item?.url);
     }
     if (!media.length) return "";
@@ -593,7 +609,10 @@ export function createRenderAgent({
         ${media.map((item) => `
           <figure class="render-agent-media">
             <img src="${esc(item.url)}" alt="${esc(item.title || "Demo")}" loading="lazy" />
-            <figcaption>${esc(item.title || "Getting Started demo")}</figcaption>
+            <figcaption>
+              <strong>${esc(item.title || "Getting Started demo")}</strong>
+              ${item.summary ? `<span>${esc(item.summary)}</span>` : ""}
+            </figcaption>
           </figure>
         `).join("")}
       </div>
@@ -786,8 +805,17 @@ export function createRenderAgent({
         }),
       }, 240000);
       activeThread = data.thread;
+      // Preserve media/guides if the API returned them on the latest assistant message
+      if (data.message?.media?.length && activeThread?.messages?.length) {
+        const last = activeThread.messages[activeThread.messages.length - 1];
+        if (last?.role === "assistant" && !last.media?.length) {
+          last.media = data.message.media;
+          last.guides = data.message.guides || [];
+        }
+      }
       attachments = [];
       renderAttachments();
+      renderMessages();
       await refreshThreads();
       setStatus("");
     } catch (err) {

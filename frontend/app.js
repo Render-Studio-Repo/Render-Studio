@@ -63,7 +63,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realti
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-gs-sticky";
+import { createRenderAgent } from "./render-agent.js?v=20260715-agent-gifs";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -19379,9 +19379,30 @@ window.addEventListener("keydown", (e) => {
 
   const askAgentParam = new URLSearchParams(window.location.search).get("askAgent")
     || new URLSearchParams(window.location.search).get("agentQ");
+  const openShareParam = new URLSearchParams(window.location.search).get("open_share");
   if (askAgentParam) {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl || "/");
+  }
+
+  async function openSharedPreviewIntoProject(token) {
+    const cleanToken = String(token || "").trim();
+    if (!cleanToken) return;
+    setEditStatus("loading", "Opening shared preview in your project...");
+    try {
+      const data = await api(`/api/share/${encodeURIComponent(cleanToken)}/open-in-project`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      await fetchAllProjects();
+      renderProjectList();
+      await loadProject(data.project_id);
+      const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+      window.history.replaceState({}, "", cleanUrl || "/");
+      setEditStatus("ok", `Opened shared preview as ${data.filename || "a Render3D project"}.`);
+    } catch (err) {
+      setEditStatus("error", err?.message || "Could not open shared preview.");
+    }
   }
 
   const auth = createAuthUI({
@@ -19400,12 +19421,18 @@ window.addEventListener("keydown", (e) => {
       if (askAgentParam) {
         setTimeout(() => renderAgentUi?.openWithQuestion?.(askAgentParam), 250);
       }
+      if (openShareParam) {
+        await openSharedPreviewIntoProject(openShareParam);
+      }
     },
   });
   authUi = auth;
 
   if (askAgentParam && !getToken?.()) {
     // Prompt sign-in; question opens after onReady.
+    setTimeout(() => authUi?.openModal?.(), 300);
+  }
+  if (openShareParam && !getToken?.()) {
     setTimeout(() => authUi?.openModal?.(), 300);
   }
 

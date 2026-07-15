@@ -217,6 +217,8 @@ def append_messages(user_id: str, thread_id: str, messages: list[dict[str, Any]]
                 "role": message.get("role") or "assistant",
                 "content": str(message.get("content") or ""),
                 "attachments": list(message.get("attachments") or []),
+                "media": list(message.get("media") or []),
+                "guides": list(message.get("guides") or []),
                 "sender": sender if isinstance(sender, dict) else None,
                 "created_at": message.get("created_at") or now,
             }

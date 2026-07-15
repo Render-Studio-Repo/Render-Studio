@@ -22318,6 +22318,22 @@ body.theme-light .render-agent-tip {
   border-color: rgba(210, 168, 255, 0.28);
 }
 
+.render-agent-panel--docs.render-agent-panel--popup,
+.render-agent-panel--docs.render-agent-panel--sticky {
+  position: fixed;
+  z-index: 12050;
+  right: 16px;
+  top: 72px;
+  left: auto;
+  width: min(400px, calc(100vw - 24px));
+  height: min(640px, calc(100vh - 96px));
+  max-height: none;
+  border-radius: 16px;
+  box-shadow:
+    0 22px 56px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(210, 168, 255, 0.18);
+}
+
 .render-agent-panel--sticky .render-agent-head {
   cursor: grab;
   user-select: none;
@@ -22409,4 +22425,16 @@ body.theme-light .render-agent-tip {
   font-size: 0.72rem;
   color: #8b949e;
   border-top: 1px solid rgba(139, 148, 158, 0.2);
+  display: grid;
+  gap: 2px;
+}
+
+.render-agent-media figcaption strong {
+  color: #e6edf3;
+  font-weight: 650;
+}
+
+.render-agent-media figcaption span {
+  display: block;
+  line-height: 1.35;
 }

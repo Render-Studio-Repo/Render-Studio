@@ -196,6 +196,21 @@ function _useGeneratedPalette(meshInfos) {
     || (meshInfos.length > 1 && vertexCount === meshInfos.length && maxDist < 0.28);
 }
 
+function _hasPreservableFragmentColors(meshInfos) {
+  if (!meshInfos.length) return false;
+  const colorful = meshInfos.filter(({ info }) => (
+    info.hasColor
+    && !info.washed
+    && _luminance(info.color) >= 0.18
+    && _chroma(info.color) >= 0.08
+  ));
+  if (!colorful.length) return false;
+  // If a STEP/GLB arrives as many tiny face meshes but those faces carry real
+  // authored colors, keep them. Only fall back to generated CAD plastic when
+  // the source colors are neutral, missing, or washed out.
+  return colorful.length >= Math.max(1, Math.ceil(meshInfos.length * 0.12));
+}
+
 // ─── lighting ─────────────────────────────────────────────────────────────────
 
 let shadowFloor = null;
@@ -383,13 +398,14 @@ export function applyCadStyle(object3d) {
 
   const meshInfos = meshes.map((mesh) => ({ mesh, info: _meshColorInfo(mesh) }));
   const faceFragmented = _isFaceFragmentedModel(meshes);
+  const preserveFragmentColors = faceFragmented && _hasPreservableFragmentColors(meshInfos);
   const highFragmentModel = faceFragmented || meshes.length > HIGH_FRAGMENT_MESH_COUNT;
   // Per-mesh palette only for real multi-body assemblies, not triangle dumps.
   const usePalette = !faceFragmented && _useGeneratedPalette(meshInfos);
 
   // One shared material for face dumps — identical colour + less z-fighting churn.
   let sharedFaceMaterial = null;
-  if (faceFragmented) {
+  if (faceFragmented && !preserveFragmentColors) {
     const bodyColor = CAD_PART_PALETTE[0].clone();
     const emissive = bodyColor.clone().multiplyScalar(0.18);
     emissive.r = Math.min(emissive.r, 0.16);

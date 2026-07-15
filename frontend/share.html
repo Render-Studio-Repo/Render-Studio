@@ -123,6 +123,11 @@
       background: var(--accent-soft);
       color: #79c0ff;
     }
+    .share-tool--primary {
+      border-color: rgba(46, 160, 67, 0.7);
+      background: linear-gradient(135deg, #238636, #2ea043);
+      color: #fff;
+    }
     #share-viewer {
       position: relative;
       min-height: 0;
@@ -205,6 +210,22 @@
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
     }
     #share-section-panel.hidden { display: none; }
+    #share-inspector-panel {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      z-index: 4;
+      width: min(330px, calc(100vw - 24px));
+      max-height: min(520px, calc(100% - 24px));
+      overflow: auto;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.94);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+    #share-inspector-panel.hidden { display: none; }
     .sv-top {
       display: flex;
       align-items: center;
@@ -259,6 +280,35 @@
       font-variant-numeric: tabular-nums;
     }
     .sv-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sv-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .sv-tree-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      border: 1px solid rgba(48, 54, 61, 0.78);
+      background: rgba(22, 27, 34, 0.88);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 10px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+    .sv-tree-btn small {
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+    .sv-motion-card {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(48, 54, 61, 0.7);
+    }
     .sv-hint {
       margin: 8px 0 0;
       color: var(--muted);
@@ -305,6 +355,12 @@
       #share-section-panel {
         bottom: calc(12px + var(--safe-bottom));
       }
+      #share-inspector-panel {
+        top: auto;
+        right: 12px;
+        bottom: calc(12px + var(--safe-bottom));
+        max-height: 48vh;
+      }
     }
     @media (min-width: 721px) {
       #btn-share-download { display: none; }
@@ -325,7 +381,9 @@
     <div class="share-top-actions">
       <button type="button" class="share-tool active" id="btn-share-rotate" aria-pressed="true">Rotate</button>
       <button type="button" class="share-tool" id="btn-share-section" aria-pressed="false">Section</button>
+      <button type="button" class="share-tool" id="btn-share-inspector" aria-pressed="false">Components</button>
       <button type="button" class="share-tool" id="btn-share-fit">Fit</button>
+      <button type="button" class="share-tool share-tool--primary" id="btn-share-open">Open project</button>
       <button type="button" class="share-tool" id="btn-share-download">Download</button>
     </div>
   </header>
@@ -355,6 +413,20 @@
       </div>
       <p class="sv-hint">Drag to rotate · pinch to zoom · slide to cut through the model</p>
     </div>
+    <div id="share-inspector-panel" class="hidden" aria-label="Component and motion inspector">
+      <div class="sv-top">
+        <strong>Components</strong>
+        <button type="button" id="btn-share-inspector-close" aria-label="Close components">Close</button>
+      </div>
+      <div id="share-component-list" class="sv-list"></div>
+      <div id="share-motion-card" class="sv-motion-card hidden">
+        <div class="sv-top">
+          <strong>Robot motion</strong>
+          <button type="button" id="btn-share-motion-play">Play</button>
+        </div>
+        <p id="share-motion-status" class="sv-hint">URDF/SRDF motion available for this shared model.</p>
+      </div>
+    </div>
   </main>
 
   <footer class="share-bottom">
@@ -372,6 +444,6 @@
     </div>
   </div>
 
-  <script type="module" src="/share-viewer.js?v=20260715-share-og"></script>
+  <script type="module" src="/share-viewer.js?v=20260715-share-project-fit"></script>
 </body>
 </html>
