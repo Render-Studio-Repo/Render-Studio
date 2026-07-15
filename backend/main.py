@@ -669,6 +669,10 @@ def _require_project(user: dict[str, Any], project_id: str) -> Path:
     return path
 
 
+_FUSION_SYNC_LOCKS: dict[str, threading.Lock] = {}
+_FUSION_SYNC_LOCKS_GUARD = threading.Lock()
+
+
 def _require_project_delete(user: dict[str, Any], project_id: str) -> Path:
     path = PROJECTS / project_id
     if not path.is_dir():
