@@ -1144,12 +1144,14 @@ class AIService:
         if cad_files:
             system += (
                 "\n\nAttached 3D CAD reference files:\n"
-                "- Project context.cad_files lists STEP/STL/3MF/GLB/OBJ/etc the user attached as AI references.\n"
-                "- Use them as dimensional / mating / geometry references. Prefer build123d import_step() for .step/.stp "
-                "files that exist in the project cwd (reference by bare filename).\n"
-                "- Mesh-only formats (.stl/.obj/.glb/.3mf) may not import as BREP; use their measured size_mm / bbox from "
-                "component_specs or cad_files as design constraints instead of inventing unrelated sizes.\n"
-                "- Do not ignore attached CAD refs when the prompt says to match, fit, mate, or recreate from them.\n"
+                "- Project context.cad_files lists STEP/STL/3MF/GLB/OBJ/IGES/etc the user attached as AI references.\n"
+                "- Attached reference view images (iso/top/front/side) show the real shape — use them when wrapping, "
+                "clipping, mating, or placing a button/click feature on the reference.\n"
+                "- Prefer size_mm + silhouette_top_mm / silhouette_front_mm / silhouette_side_mm as the geometric "
+                "envelope for clips, cradles, and snap-fit parts (example: clip around a controller that presses a button).\n"
+                "- For .step/.stp files in the project cwd, import_step(\"filename.step\") is allowed when BREP reuse helps.\n"
+                "- Mesh-only formats may not import as BREP; still honor their measured envelope and silhouettes.\n"
+                "- Add explicit clearances (about 0.3–0.6 mm for snaps) instead of inventing unrelated overall sizes.\n"
             )
 
         parts: list[str] = []

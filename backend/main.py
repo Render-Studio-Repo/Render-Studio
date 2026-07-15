@@ -265,7 +265,7 @@ class PromptRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
     base_filename: str | None = None
     references: list[GeoReference] = Field(default_factory=list)
-    images: list[PromptImage] = Field(default_factory=list, max_length=4)
+    images: list[PromptImage] = Field(default_factory=list, max_length=8)
     speed: str = Field(default="fast", description="fast (~30s) or quality (slower, gpt-5.5-pro)")
     skills: list[str] = Field(default_factory=list, max_length=20)
     mode: str = Field(default="standard", description="standard (Render), v2, fusion, or architect")
@@ -2084,7 +2084,22 @@ def _reference_edit_guidance(prompt: str, refs: list[dict[str, Any]]) -> str | N
     )
 
 
-_CAD_REF_EXTS = {".step", ".stp", ".stl", ".3mf", ".glb", ".gltf", ".obj", ".ply", ".off"}
+_CAD_REF_EXTS = {
+    ".step",
+    ".stp",
+    ".stl",
+    ".3mf",
+    ".glb",
+    ".gltf",
+    ".obj",
+    ".ply",
+    ".off",
+    ".iges",
+    ".igs",
+    ".brep",
+    ".brp",
+    ".f3z",
+}
 
 
 def _build_cad_reference_entries(
@@ -2129,7 +2144,8 @@ def _build_cad_reference_entries(
             continue
         ext = Path(name).suffix.lower()
         if ext not in _CAD_REF_EXTS and (fmt or "").lower() not in {
-            "step", "stp", "stl", "3mf", "glb", "gltf", "obj", "ply", "off"
+            "step", "stp", "stl", "3mf", "glb", "gltf", "obj", "ply", "off",
+            "iges", "igs", "brep", "brp", "f3z",
         }:
             # Still allow if a matching CAD file exists on disk for this stem.
             if not any((project_path / f"{Path(name).stem}{e}").is_file() for e in _CAD_REF_EXTS):
@@ -2147,14 +2163,45 @@ def _build_cad_reference_entries(
         if viewer_filename:
             entry["viewer_filename"] = Path(viewer_filename).name
         path = project_path / name
+        analysis_path = path if path.is_file() else None
+        if analysis_path is None and viewer_filename:
+            alt = project_path / Path(viewer_filename).name
+            if alt.is_file():
+                analysis_path = alt
         if path.is_file():
             entry["exists"] = True
             entry["size_bytes"] = path.stat().st_size
         spec = specs_by_stem.get(str(entry["stem"]).lower())
         if spec:
-            for key_name in ("size_mm", "bbox_mm", "volume_mm3", "kind"):
+            for key_name in ("size_mm", "bbox_mm", "bbox_min_mm", "bbox_max_mm", "volume_mm3", "kind"):
                 if spec.get(key_name) is not None:
                     entry[key_name] = spec.get(key_name)
+        # Enrich with silhouettes / guidance when possible (no view images here — those go via PromptImage).
+        if analysis_path is not None:
+            try:
+                from backend.services.cad_reference_geometry import analyze_reference_geometry
+
+                facts = analyze_reference_geometry(analysis_path, include_views=False)
+                for key_name in (
+                    "size_mm",
+                    "width_mm",
+                    "depth_mm",
+                    "height_mm",
+                    "bbox_min_mm",
+                    "bbox_max_mm",
+                    "center_mm",
+                    "silhouette_top_mm",
+                    "silhouette_front_mm",
+                    "silhouette_side_mm",
+                    "vertex_count",
+                    "face_count",
+                    "message",
+                    "design_guidance",
+                ):
+                    if facts.get(key_name) is not None:
+                        entry[key_name] = facts.get(key_name)
+            except Exception:
+                pass
         out.append(entry)
     return out[:20]
 
@@ -7417,9 +7464,38 @@ async def upload_file(
             "drawing": True,
         }
 
+    # Fusion .f3z / zip: extract embedded STEP/mesh when present.
+    extracted_note = None
+    if suffix in cad_service.ARCHIVE_CAD_SUFFIXES:
+        from backend.services.cad_reference_geometry import extract_cad_from_archive
+
+        extracted = extract_cad_from_archive(dest, path)
+        if extracted is not None:
+            dest = extracted
+            suffix = dest.suffix.lower()
+            extracted_note = f"Extracted {dest.name} from archive for geometry preview."
+        else:
+            raise HTTPException(
+                422,
+                f"Uploaded {dest.name}, but no STEP/STL/GLB was found inside. "
+                "From Fusion/SolidWorks export STEP or STL and upload that so the AI can read geometry.",
+            )
+
+    if suffix in cad_service.PROPRIETARY_CAD_SUFFIXES:
+        raise HTTPException(
+            422,
+            f"{suffix} is a proprietary CAD format this server cannot tessellate directly. "
+            "Export STEP (.step/.stp) or a mesh (.stl/.glb/.3mf) from Fusion/SolidWorks and upload that.",
+        )
+
     # Browser can load STL/OBJ/GLB/GLTF natively. Everything else needs a GLB sidecar.
     viewer_filename = dest.name
-    needs_viewer_glb = suffix in {".3mf", ".ply", ".off"} | cad_service.STEP_SUFFIXES
+    needs_viewer_glb = (
+        suffix in {".3mf", ".ply", ".off"}
+        | cad_service.STEP_SUFFIXES
+        | cad_service.IGES_SUFFIXES
+        | cad_service.BREP_SUFFIXES
+    )
     if needs_viewer_glb:
         glb_dest = dest.with_suffix(".glb")
         try:
@@ -7453,13 +7529,46 @@ async def upload_file(
             "timeline_entry": entry,
         },
     )
-    return {
+    payload = {
         "filename": dest.name,
         "viewer_filename": viewer_filename,
         "url": f"/api/projects/{project_id}/files/{viewer_filename}",
-        "timeline_index": entry.get("index"),
+        "timeline_index": entry.get("index") if isinstance(entry, dict) else None,
         "drawing": False,
     }
+    if extracted_note:
+        payload["note"] = extracted_note
+    return payload
+
+
+@app.post("/api/projects/{project_id}/files/{filename}/geometry-brief")
+def cad_file_geometry_brief(
+    project_id: str,
+    filename: str,
+    include_views: bool = Query(True),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Measure a CAD/mesh reference and return silhouette + preview images for the AI prompt."""
+    project_path = _require_project(user, project_id)
+    safe = Path(filename).name
+    file_path = project_path / safe
+    if not file_path.is_file():
+        # Prefer viewer sidecar when the catalog file is STEP and GLB exists.
+        glb = file_path.with_suffix(".glb")
+        if glb.is_file():
+            file_path = glb
+        else:
+            raise HTTPException(404, "File not found")
+    try:
+        from backend.services.cad_reference_geometry import analyze_reference_geometry
+
+        facts = analyze_reference_geometry(file_path, include_views=include_views)
+        return {"ok": True, "filename": safe, "geometry": facts, "views": facts.get("views") or []}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("geometry-brief failed for %s: %s", safe, exc)
+        raise HTTPException(422, f"Could not analyze geometry for {safe}: {exc}") from exc
 
 
 @app.get("/api/projects/{project_id}/files/{filename}")

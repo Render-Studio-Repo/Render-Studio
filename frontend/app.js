@@ -2127,7 +2127,7 @@ async function addPromptImages(files) {
   const allowed = ["image/png", "image/jpeg", "image/webp"];
   let added = 0;
   for (const file of [...files]) {
-    if (promptImages.length >= 4) break;
+    if (promptImages.length >= 8) break;
     if (!allowed.includes(file.type)) continue;
     if (file.size > 6 * 1024 * 1024) {
       viewerOverlay.showError(`${file.name} is too large. Use images under 6 MB.`);
@@ -2194,7 +2194,7 @@ function droppedDxfFiles(e) {
   );
 }
 
-const PROMPT_CAD_EXT_RE = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp)$/i;
+const PROMPT_CAD_EXT_RE = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp|iges|igs|brep|brp|f3z|zip)$/i;
 
 function isPromptCadFile(file) {
   const name = String(file?.name || "");
@@ -2319,6 +2319,41 @@ async function addPromptCadFiles(files) {
           type: "component",
         });
         if (attached) added += 1;
+        setPromptAttachBusy(true, `Reading geometry${progress}: ${filename}…`);
+        try {
+          const brief = await api(
+            `/api/projects/${projectId}/files/${encodeURIComponent(filename)}/geometry-brief?include_views=true`,
+            { method: "POST" }
+          );
+          const views = brief?.views || brief?.geometry?.views || [];
+          let viewAdded = 0;
+          for (const view of views) {
+            if (promptImages.length >= 8) break;
+            if (!view?.data_url) continue;
+            // Prefer iso/top/front for the AI; skip side if we're near the image cap.
+            if (viewAdded >= 3) break;
+            promptImages.push({
+              id: view.id || `cadref-${Date.now()}-${view.view || viewAdded}`,
+              name: view.name || `${stem}_${view.view || "view"}.png`,
+              media_type: view.media_type || "image/png",
+              data_url: view.data_url,
+            });
+            viewAdded += 1;
+          }
+          if (viewAdded > 0) renderPromptImages();
+          const size = brief?.geometry?.size_mm;
+          if (Array.isArray(size) && size.length >= 3) {
+            setEditStatus(
+              "ok",
+              `Attached ${filename} (${size[0]}×${size[1]}×${size[2]} mm) with ${viewAdded} shape views for the AI.`
+            );
+          } else {
+            setEditStatus("ok", `Attached CAD reference ${filename}.`);
+          }
+        } catch (err) {
+          console.warn("CAD geometry brief failed", err);
+          setEditStatus("ok", `Attached CAD reference ${filename} (geometry preview unavailable).`);
+        }
         setPromptAttachBusy(true, `Loading CAD${progress}: ${filename}…`);
         await refreshFiles();
         try {
@@ -2334,7 +2369,6 @@ async function addPromptCadFiles(files) {
         } catch (err) {
           console.warn("Could not load CAD into viewport after prompt attach", err);
         }
-        setEditStatus("ok", `Attached CAD reference ${filename}.`);
       } catch (err) {
         console.warn("CAD prompt upload failed", err);
         viewerOverlay?.showError?.(err?.message || `Could not attach ${file.name}.`);
@@ -2349,8 +2383,8 @@ async function addPromptCadFiles(files) {
         status.className = "status ok";
         status.textContent =
           added === 1
-            ? "Attached CAD file as an AI reference (@chip)."
-            : `Attached ${added} CAD files as AI references.`;
+            ? "Attached CAD reference — AI can see dimensions + shape views."
+            : `Attached ${added} CAD references — AI can see dimensions + shape views.`;
       }
     }
   } finally {
@@ -8928,7 +8962,7 @@ function refreshViewportAfterLayoutChange({ fit = false } = {}) {
 window.addEventListener("resize", resize);
 resize();
 
-const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp)$/i;
+const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp|iges|igs|brep|brp|f3z|zip)$/i;
 const DXF_ACCEPT = /\.dxf$/i;
 const REFERENCE_ACCEPT = /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|png|jpe?g|webp|gif)$/i;
 

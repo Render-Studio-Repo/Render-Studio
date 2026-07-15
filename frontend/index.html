@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-prompt-cad-refs" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-cad-geometry-refs" />
   <script type="importmap">
   {
     "imports": {
@@ -56,7 +56,7 @@
         <button id="btn-new-project" class="btn secondary">New project</button>
         <label class="btn primary">
           Upload CAD
-          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.dxf,.pdf,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif" multiple hidden />
+          <input type="file" id="file-upload" accept=".stl,.obj,.glb,.gltf,.ply,.off,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.f3z,.dxf,.pdf,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif" multiple hidden />
         </label>
         <select id="unit-select" class="unit-select" title="Document units" aria-label="Document units">
           <option value="mm">mm</option>
@@ -1045,10 +1045,10 @@
           <div id="prompt-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Prompt references"></div>
           <textarea id="prompt-input" rows="6" placeholder="Describe what to make or edit. Drag parts/faces here to add @ reference chips…"></textarea>
           <div id="prompt-image-drop" class="prompt-image-drop" role="button" tabindex="0">
-            <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp,.dxf,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,.ply,.off,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log" multiple hidden />
+            <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp,.dxf,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,.ply,.off,.iges,.igs,.brep,.brp,.f3z,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log" multiple hidden />
             <div>
               <strong>Add image, CAD, DXF, or document references</strong>
-              <span>Drop images, 3D CAD (.step/.stl/.3mf/.glb/.obj…), .dxf, or text docs; paste screenshots; or drag components from the browser. Up to 4 images. CAD files upload into the project and attach as @refs for the AI.</span>
+              <span>Drop a 3D model (STEP/STL/GLB/3MF/OBJ/IGES, or Fusion .f3z archive), images, DXF, or docs. CAD refs are measured + snapshotted so the AI can design around the real shape (clips, mounts, button presses).</span>
             </div>
           </div>
           <div id="prompt-image-list" class="prompt-image-list"></div>
@@ -1743,7 +1743,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260715-prompt-cad-refs"></script>
+  <script type="module" src="/app.js?v=20260715-cad-geometry-refs"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

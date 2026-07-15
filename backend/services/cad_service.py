@@ -39,9 +39,38 @@ _3MF_RELS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 </Relationships>
 """
 
-SUPPORTED_IMPORT = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf", ".step", ".stp", ".dxf"}
+SUPPORTED_IMPORT = {
+    ".stl",
+    ".obj",
+    ".glb",
+    ".gltf",
+    ".ply",
+    ".off",
+    ".3mf",
+    ".step",
+    ".stp",
+    ".dxf",
+    ".iges",
+    ".igs",
+    ".brep",
+    ".brp",
+    ".f3z",  # Fusion archive — extract embedded STEP/mesh when possible
+    ".zip",
+    # Accepted for upload; proprietary natives need STEP/STL export for geometry read
+    ".f3d",
+    ".sldprt",
+    ".sldasm",
+    ".x_t",
+    ".x_b",
+    ".sat",
+    ".sab",
+}
 STEP_SUFFIXES = {".step", ".stp"}
+IGES_SUFFIXES = {".iges", ".igs"}
+BREP_SUFFIXES = {".brep", ".brp"}
 MESH_VIEW_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf"}
+PROPRIETARY_CAD_SUFFIXES = {".f3d", ".sldprt", ".sldasm", ".x_t", ".x_b", ".sat", ".sab"}
+ARCHIVE_CAD_SUFFIXES = {".f3z", ".zip"}
 SUPPORTED_EXPORT = {".stl", ".glb", ".obj", ".3mf", ".step"}
 MESH_DERIVED_EXPORTS = ("stl", "3mf", "step")
 # Specs, notes, and images dropped into the workspace (not CAD geometry).
@@ -615,6 +644,61 @@ def delete_model_artifacts(project_path: Path, filename: str) -> list[str]:
     if safe not in deleted:
         raise FileNotFoundError(f"Delete failed for: {filename}")
     return deleted
+
+
+def import_iges_mesh(path: Path, linear_deflection: float = 0.5) -> trimesh.Trimesh:
+    """Tessellate an IGES file to a triangle mesh."""
+    from OCP.IFSelect import IFSelect_ReturnStatus
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.IGESControl import IGESControl_Reader
+    from OCP.StlAPI import StlAPI_Writer
+    import tempfile
+
+    reader = IGESControl_Reader()
+    status = reader.ReadFile(str(path))
+    if status != IFSelect_ReturnStatus.IFSelect_RetDone:
+        raise ValueError(f"Could not read IGES file: {path.name}")
+    reader.TransferRoots()
+    shape = reader.OneShape()
+    if shape.IsNull():
+        raise ValueError(f"IGES file has no geometry: {path.name}")
+    BRepMesh_IncrementalMesh(shape, linear_deflection, False, linear_deflection, True)
+    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        writer = StlAPI_Writer()
+        if not writer.Write(shape, str(tmp_path)):
+            raise ValueError(f"Could not tessellate IGES file: {path.name}")
+        return load_mesh(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def import_brep_mesh(path: Path, linear_deflection: float = 0.5) -> trimesh.Trimesh:
+    """Tessellate an OpenCascade BREP file to a triangle mesh."""
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.BRepTools import BRepTools
+    from OCP.TopoDS import TopoDS_Shape
+    from OCP.StlAPI import StlAPI_Writer
+    import tempfile
+
+    shape = TopoDS_Shape()
+    builder = BRep_Builder()
+    if not BRepTools.Read_s(shape, str(path), builder):
+        raise ValueError(f"Could not read BREP file: {path.name}")
+    if shape.IsNull():
+        raise ValueError(f"BREP file has no geometry: {path.name}")
+    BRepMesh_IncrementalMesh(shape, linear_deflection, False, linear_deflection, True)
+    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        writer = StlAPI_Writer()
+        if not writer.Write(shape, str(tmp_path)):
+            raise ValueError(f"Could not tessellate BREP file: {path.name}")
+        return load_mesh(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def import_step_mesh(path: Path, linear_deflection: float = 0.5) -> trimesh.Trimesh:
@@ -1286,8 +1370,13 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
 
 
 def load_mesh(path: Path) -> trimesh.Trimesh:
-    if path.suffix.lower() in STEP_SUFFIXES:
+    suffix = path.suffix.lower()
+    if suffix in STEP_SUFFIXES:
         return repair_mesh(import_step_mesh(path))
+    if suffix in IGES_SUFFIXES:
+        return repair_mesh(import_iges_mesh(path))
+    if suffix in BREP_SUFFIXES:
+        return repair_mesh(import_brep_mesh(path))
     loaded = trimesh.load(path, force="mesh")
     if isinstance(loaded, trimesh.Scene):
         loaded = loaded.dump(concatenate=True)
