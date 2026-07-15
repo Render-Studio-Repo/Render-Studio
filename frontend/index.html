@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-auth-connect-social" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-share-arrival-actions" />
   <script type="importmap">
   {
     "imports": {
@@ -1626,18 +1626,26 @@
         <button type="submit" class="btn accent auth-submit">Create account</button>
       </form>
       <div class="auth-connect-opts" aria-label="Optional CAD connections">
-        <p class="auth-connect-heading">Optionally connect after you sign in</p>
+        <p class="auth-connect-heading">Optional CAD connections</p>
         <label class="auth-connect-check">
           <input type="checkbox" id="auth-connect-onshape" />
+          <span class="auth-connect-box" aria-hidden="true"></span>
           <img class="auth-onshape-logo" src="/onshape-logo.png?v=20260617-small" width="16" height="16" alt="" />
-          <span>Connect Onshape to your account</span>
+          <span class="auth-connect-copy">
+            <strong>Onshape</strong>
+            <small>Connect after sign-in</small>
+          </span>
         </label>
         <label class="auth-connect-check">
           <input type="checkbox" id="auth-connect-fusion" />
+          <span class="auth-connect-box" aria-hidden="true"></span>
           <img class="auth-autodesk-logo" src="/fusion-360-logo.png?v=20260629" width="16" height="16" alt="" />
-          <span>Connect Fusion to your account</span>
+          <span class="auth-connect-copy">
+            <strong>Fusion 360</strong>
+            <small>Connect after sign-in</small>
+          </span>
         </label>
-        <p class="auth-connect-hint muted small">Checked options open an authorization window after login.</p>
+        <p class="auth-connect-hint muted small">Selected apps open their authorization flow after login.</p>
       </div>
       <div class="auth-divider"><span>or continue with</span></div>
       <div class="auth-social-btns">
@@ -2043,7 +2051,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
-  <script type="module" src="/app.js?v=20260715-auth-connect-social"></script>
+  <script type="module" src="/app.js?v=20260715-share-arrival-actions"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

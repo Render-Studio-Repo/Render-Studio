@@ -10292,7 +10292,7 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
     return allowed
 
 
-def _share_prompt_history(project_path: Path, filename: str, *, limit: int = 8) -> list[dict[str, Any]]:
+def _share_prompt_history(project_path: Path, filename: str, *, limit: int = 40) -> list[dict[str, Any]]:
     return _public_prompt_history(project_path, limit=limit, base_filename=filename, kind="cad")
 
 

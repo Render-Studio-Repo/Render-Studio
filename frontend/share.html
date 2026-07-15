@@ -250,40 +250,149 @@
       background: var(--panel);
       padding: 10px 14px calc(12px + var(--safe-bottom));
       z-index: 5;
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      min-height: 64px;
     }
+    .share-timeline {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .share-timeline-label,
     .share-downloads-label {
-      margin: 0 0 8px;
+      margin: 0;
       color: var(--muted);
       font-size: 0.68rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       font-weight: 700;
     }
-    #share-downloads,
-    #share-download-list {
+    #share-timeline-track {
       display: flex;
-      flex-wrap: wrap;
       gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
     }
-    .share-dl-btn {
-      display: inline-flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 84px;
-      padding: 10px 12px;
-      border-radius: 12px;
+    .share-timeline-chip {
+      flex: 0 0 auto;
+      max-width: 220px;
+      padding: 8px 10px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       background: #161b22;
       color: var(--text);
-      text-decoration: none;
-      font-size: 0.72rem;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
     }
-    .share-dl-btn strong {
-      font-size: 0.85rem;
+    .share-timeline-chip:hover,
+    .share-timeline-chip.is-active {
+      border-color: var(--accent);
+    }
+    .share-timeline-chip strong {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .share-timeline-chip span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+    .share-timeline-empty {
+      color: var(--muted);
+      font-size: 0.78rem;
+      padding: 6px 0;
+    }
+    .share-download-wrap {
+      position: relative;
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .share-download-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 132px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(88, 166, 255, 0.45);
+      background: linear-gradient(180deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.08));
+      color: var(--text);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .share-download-trigger:hover {
+      border-color: var(--accent);
+    }
+    .share-download-menu {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      width: min(280px, calc(100vw - 28px));
+      padding: 8px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.98);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 20;
+    }
+    .share-download-menu.hidden { display: none; }
+    .share-dl-menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+    .share-dl-menu-item:hover {
+      border-color: var(--border);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .share-dl-menu-item strong {
+      font-size: 0.88rem;
       color: #79c0ff;
     }
-    .share-dl-btn span { color: var(--muted); }
-    .share-dl-btn:hover { border-color: var(--accent); }
+    .share-dl-menu-item span { color: var(--muted); font-size: 0.72rem; }
+    .share-dl-menu-item--bambu strong { color: #00ae42; }
+    .share-dl-menu-sep {
+      height: 1px;
+      margin: 4px 2px;
+      background: var(--border);
+    }
+    #share-downloads,
+    #share-download-list {
+      display: none;
+    }
+    .share-dl-btn {
+      display: none;
+    }
     #share-section-panel {
       position: absolute;
       left: 12px;
@@ -314,6 +423,155 @@
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
     }
     #share-inspector-panel.hidden { display: none; }
+    .sv-panel-section.hidden { display: none; }
+    .sv-tree-node {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 2px 0;
+      padding-left: calc(var(--depth, 0) * 12px);
+    }
+    .sv-tree-btn {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .sv-tree-btn:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: var(--border);
+    }
+    .sv-tree-glyph {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(88, 166, 255, 0.12);
+      color: #79c0ff;
+      font-size: 0.68rem;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+    .sv-tree-main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .sv-tree-main strong {
+      font-size: 0.84rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sv-tree-actions {
+      display: inline-flex;
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+    .sv-mini-btn {
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font: inherit;
+      font-size: 0.68rem;
+      cursor: pointer;
+    }
+    .sv-mini-btn:hover,
+    .sv-mini-btn.active {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+    .sv-history-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #161b22;
+      margin-bottom: 8px;
+    }
+    .sv-history-card strong {
+      font-size: 0.86rem;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
+    .sv-history-meta {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+    .sv-history-built {
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 6px;
+    }
+    .sv-history-built summary {
+      cursor: pointer;
+      color: #79c0ff;
+      font-size: 0.78rem;
+      font-weight: 600;
+      list-style: none;
+    }
+    .sv-history-built summary::-webkit-details-marker { display: none; }
+    .sv-history-built a {
+      display: inline-block;
+      margin-top: 6px;
+      color: var(--text);
+      font-size: 0.78rem;
+      word-break: break-all;
+    }
+    .sv-rigging-card {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .sv-joint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow: auto;
+      margin-top: 8px;
+    }
+    .sv-joint-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 8px;
+      align-items: center;
+    }
+    .sv-joint-row label {
+      font-size: 0.74rem;
+      color: var(--text);
+      grid-column: 1 / -1;
+    }
+    .sv-joint-row input[type="range"] {
+      width: 100%;
+      grid-column: 1;
+    }
+    .sv-joint-row em {
+      font-style: normal;
+      color: var(--muted);
+      font-size: 0.68rem;
+      min-width: 42px;
+      text-align: right;
+    }
+    .sv-rigging-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
     .sv-top {
       display: flex;
       align-items: center;
@@ -722,7 +980,24 @@
         flex: 1 1 calc(50% - 6px);
         text-align: center;
       }
-      .share-bottom { display: none; }
+      .share-bottom {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .share-download-wrap {
+        width: 100%;
+      }
+      .share-download-trigger {
+        width: 100%;
+      }
+      .share-download-menu {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: calc(12px + var(--safe-bottom));
+        width: auto;
+      }
       #share-section-panel {
         bottom: calc(12px + var(--safe-bottom));
       }
@@ -795,28 +1070,42 @@
     <div id="share-inspector-panel" class="hidden" aria-label="Component and motion inspector">
       <div class="sv-top">
         <strong id="share-inspector-title">Part Tree</strong>
-        <button type="button" id="btn-share-inspector-close" aria-label="Close part tree">Close</button>
+        <button type="button" id="btn-share-inspector-close" aria-label="Close panel">Close</button>
       </div>
-      <div id="share-source-details" class="sv-list"></div>
-      <p class="sv-section-title">Prompt history</p>
-      <p class="sv-hint" style="margin-top:0;margin-bottom:8px">Who generated each prompt for this public model.</p>
-      <div id="share-prompt-history" class="sv-list"></div>
-      <p class="sv-section-title">Part Tree</p>
-      <p class="sv-hint">Explore assemblies, parent/child relationships, isolate one part, or make selected parts transparent.</p>
-      <div id="share-component-list" class="sv-list"></div>
-      <div id="share-motion-card" class="sv-motion-card hidden">
-        <div class="sv-top">
-          <strong>Robot motion</strong>
-          <button type="button" id="btn-share-motion-play">Play</button>
+      <div id="share-panel-parts" class="sv-panel-section">
+        <div id="share-component-list" class="sv-list"></div>
+        <div id="share-motion-card" class="sv-rigging-card hidden">
+          <div class="sv-top" style="margin-bottom:6px">
+            <strong>Rigging</strong>
+            <button type="button" id="btn-share-motion-play" class="sv-mini-btn">Play</button>
+          </div>
+          <p id="share-motion-status" class="sv-hint">URDF motion available for this shared model.</p>
+          <div id="share-joint-list" class="sv-joint-list"></div>
+          <div class="sv-rigging-actions">
+            <button type="button" id="btn-share-motion-reset" class="sv-mini-btn">Reset pose</button>
+          </div>
         </div>
-        <p id="share-motion-status" class="sv-hint">URDF/SRDF motion available for this shared model.</p>
+      </div>
+      <div id="share-panel-history" class="sv-panel-section hidden">
+        <div id="share-prompt-history" class="sv-list"></div>
       </div>
     </div>
   </main>
 
   <footer class="share-bottom">
-    <p class="share-downloads-label">Download</p>
-    <div id="share-downloads"></div>
+    <div class="share-timeline" aria-label="Edit timeline">
+      <p class="share-timeline-label">Timeline</p>
+      <div id="share-timeline-track"></div>
+    </div>
+    <div class="share-download-wrap">
+      <p class="share-downloads-label">Download</p>
+      <button type="button" class="share-download-trigger" id="btn-share-download-menu" aria-haspopup="menu" aria-expanded="false">
+        Download
+        <span aria-hidden="true">▾</span>
+      </button>
+      <div id="share-download-menu" class="share-download-menu hidden" role="menu"></div>
+      <div id="share-downloads" hidden></div>
+    </div>
   </footer>
 
   <div id="share-download-sheet" class="hidden" role="dialog" aria-modal="true" aria-label="Download formats">

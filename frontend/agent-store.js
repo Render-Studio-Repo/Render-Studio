@@ -17,7 +17,12 @@ let searchQuery = "";
 let activeCreatorId = new URLSearchParams(window.location.search).get("creator") || "";
 let activeAgentSlug = new URLSearchParams(window.location.search).get("agent") || "";
 
-const DEFAULT_CATEGORIES = ["All", "Featured", "Mold Making", "CAD", "Robotics", "Sourcing", "Automation", "Connectors", "Premium"];
+const DEFAULT_CATEGORIES = ["All", "Featured", "Boosted", "Mold Making", "CAD", "Robotics", "Sourcing", "Automation", "Connectors", "Premium", "Free", "Paid", "View only"];
+
+const filterAccess = document.getElementById("agent-filter-access");
+const filterLicense = document.getElementById("agent-filter-license");
+const filterDownload = document.getElementById("agent-filter-download");
+const filterBoosted = document.getElementById("agent-filter-boosted");
 
 function escapeHtml(text) {
   return String(text ?? "")
@@ -52,15 +57,21 @@ function ownerAvatar(app) {
 }
 
 function priceLabel(app) {
+  if (app.access_mode === "view_only") return "View only";
   if (app.premium && !app.price_cents) return "Premium";
+  if (app.access_mode === "paid" || app.price_cents > 0) {
+    return `${(app.price_cents / 100).toLocaleString(undefined, { style: "currency", currency: app.currency || "USD" })}`;
+  }
   if (!app.price_cents) return "Free";
   return `${(app.price_cents / 100).toLocaleString(undefined, { style: "currency", currency: app.currency || "USD" })}`;
 }
 
 function appBadges(app) {
-  const badges = [app.app_type, app.category].filter(Boolean);
+  const badges = [app.app_type, app.category, app.license, app.access_mode].filter(Boolean);
   if (app.featured) badges.unshift("Featured");
-  if (app.premium || app.price_cents > 0) badges.push("Paid");
+  if (app.boost_status === "approved") badges.unshift("Boosted");
+  if (app.premium || app.price_cents > 0 || app.access_mode === "paid") badges.push("Paid");
+  if (app.download_enabled === false) badges.push("No download");
   if (app.status !== "approved") badges.push(app.status);
   return badges.map((b) => `<span class="agent-app-badge">${escapeHtml(b)}</span>`).join("");
 }
@@ -124,6 +135,10 @@ async function uploadedManifestAssets(form) {
 }
 
 function appIcon(app) {
+  const images = app.manifest?.example_images;
+  if (Array.isArray(images) && images[0]?.data_url) {
+    return `<span class="marketplace-thumb marketplace-thumb--inline" style="background-image:url('${escapeAttr(images[0].data_url)}')"></span>`;
+  }
   const category = String(app.category || "").toLowerCase();
   if (category.includes("mold")) return "MO";
   if (category.includes("robot")) return "RB";
@@ -149,7 +164,11 @@ function matchesCategory(app) {
   if (activeCreatorId && app.owner?.id !== activeCreatorId) return false;
   if (activeCategory === "All") return true;
   if (activeCategory === "Featured") return app.featured;
-  if (activeCategory === "Premium") return app.premium || app.price_cents > 0;
+  if (activeCategory === "Boosted") return app.boost_status === "approved";
+  if (activeCategory === "Premium") return app.premium || app.price_cents > 0 || app.access_mode === "paid";
+  if (activeCategory === "Free") return (app.access_mode || "free") === "free" && !app.price_cents;
+  if (activeCategory === "Paid") return app.access_mode === "paid" || app.price_cents > 0 || app.premium;
+  if (activeCategory === "View only") return app.access_mode === "view_only";
   return categoryFor(app).toLowerCase() === activeCategory.toLowerCase();
 }
 
@@ -162,21 +181,42 @@ function matchesSearch(app) {
     app.slug,
     app.tagline,
     app.description,
+    app.body_md,
     app.category,
     app.app_type,
+    app.license,
+    app.access_mode,
     manifest.skill_id,
     ...(Array.isArray(manifest.permissions) ? manifest.permissions : []),
   ].filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(q);
 }
 
+function matchesExtraFilters(app) {
+  const access = filterAccess?.value || "all";
+  if (access !== "all" && (app.access_mode || "free") !== access) return false;
+  const license = filterLicense?.value || "all";
+  if (license !== "all" && (app.license || "proprietary") !== license) return false;
+  const download = filterDownload?.value || "all";
+  if (download === "on" && app.download_enabled === false) return false;
+  if (download === "off" && app.download_enabled !== false) return false;
+  if (filterBoosted?.checked && app.boost_status !== "approved") return false;
+  return true;
+}
+
 function visibleApps() {
-  return apps.filter((app) => matchesCategory(app) && matchesSearch(app));
+  return apps.filter((app) => matchesCategory(app) && matchesSearch(app) && matchesExtraFilters(app));
 }
 
 function productCard(app, { compact = false } = {}) {
-  const installText = app.installed ? "Installed" : app.price_cents > 0 || app.premium ? "Purchase required" : "Install";
-  const disabled = app.installed || app.price_cents > 0 || app.premium ? "disabled" : "";
+  const installText = app.installed
+    ? "Installed"
+    : app.access_mode === "view_only"
+      ? "View only"
+      : app.price_cents > 0 || app.premium || app.access_mode === "paid"
+        ? "Purchase required"
+        : "Install";
+  const disabled = app.installed || app.access_mode === "view_only" || app.price_cents > 0 || app.premium || app.access_mode === "paid" ? "disabled" : "";
   const adminControls = isAdmin
     ? `<div class="agent-admin-controls">
         <button type="button" class="btn secondary btn-compact" data-review="${app.slug}" data-status="approved">Approve</button>
@@ -184,9 +224,15 @@ function productCard(app, { compact = false } = {}) {
         <button type="button" class="btn secondary btn-compact" data-feature="${app.slug}">${app.featured ? "Unfeature" : "Feature"}</button>
       </div>`
     : "";
+  const boostBtn = getToken() && app.created_by
+    ? `<button type="button" class="btn secondary btn-compact" data-boost="${escapeAttr(app.slug)}">Apply boost</button>`
+    : "";
+  const iconHtml = String(appIcon(app)).includes("marketplace-thumb")
+    ? appIcon(app)
+    : `<div class="agent-product-icon">${escapeHtml(appIcon(app))}</div>`;
   return `<article class="agent-product-card${app.installed ? " skill-card-active" : ""}${compact ? " agent-product-card-compact" : ""}">
     <div class="agent-product-top">
-      <div class="agent-product-icon">${escapeHtml(appIcon(app))}</div>
+      ${iconHtml}
       <div class="agent-app-price">${escapeHtml(priceLabel(app))}</div>
     </div>
     <h4>${escapeHtml(app.name)}</h4>
@@ -202,6 +248,7 @@ function productCard(app, { compact = false } = {}) {
     <div class="agent-app-actions">
       <button type="button" class="btn primary btn-compact" data-install="${app.slug}" ${disabled}>${installText}</button>
       ${app.installed ? `<button type="button" class="btn secondary btn-compact" data-uninstall="${app.slug}">Uninstall</button>` : ""}
+      ${boostBtn}
     </div>
     ${adminControls}
   </article>`;
@@ -233,6 +280,9 @@ function bindCardActions(root = document) {
       render();
       document.querySelector(".agent-store-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  });
+  root.querySelectorAll("[data-boost]").forEach((btn) => {
+    btn.addEventListener("click", () => applyBoost(btn.dataset.boost));
   });
 }
 
@@ -385,6 +435,26 @@ async function reviewApp(slug, body) {
   await loadApps();
 }
 
+async function applyBoost(slug) {
+  if (!getToken()) {
+    alert("Log in to apply for a boost.");
+    return;
+  }
+  const message = window.prompt("Why should this agent app be boosted?", "Useful workflow with clear docs.") || "";
+  const res = await fetch(`/api/agent-apps/${encodeURIComponent(slug)}/boost`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ message }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.detail || "Boost application failed.");
+    return;
+  }
+  alert("Boost application submitted for review.");
+  await loadApps();
+}
+
 formEl?.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!getToken()) {
@@ -413,15 +483,26 @@ formEl?.addEventListener("submit", async (event) => {
     alert(err.message || "Could not read uploaded files.");
     return;
   }
+  const members = String(form.get("member_emails") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .map((email) => ({ email, role: "member" }));
   const body = {
     name: form.get("name"),
     tagline: form.get("tagline"),
     description: form.get("description"),
+    body_md: form.get("body_md") || "",
     category: form.get("category") || "agent",
     app_type: form.get("app_type") || "skill",
     source_url: form.get("source_url") || null,
     price_cents: Number(form.get("price_cents") || 0),
     premium: form.get("premium") === "on",
+    access_mode: form.get("access_mode") || "free",
+    license: form.get("license") || "proprietary",
+    download_enabled: form.get("download_enabled") === "on",
+    members,
     manifest,
   };
   const res = await fetch("/api/agent-apps", {
@@ -439,10 +520,30 @@ formEl?.addEventListener("submit", async (event) => {
   await loadApps();
 });
 
+const agentBody = document.getElementById("agent-body-md");
+document.querySelectorAll("[data-agent-editor-toolbar] [data-fmt]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!agentBody) return;
+    const start = agentBody.selectionStart || 0;
+    const end = agentBody.selectionEnd || 0;
+    const selected = agentBody.value.slice(start, end) || "text";
+    const fmt = btn.dataset.fmt;
+    let insert = selected;
+    if (fmt === "bold") insert = `**${selected}**`;
+    if (fmt === "italic") insert = `*${selected}*`;
+    if (fmt === "h2") insert = `## ${selected}`;
+    if (fmt === "ul") insert = selected.split("\n").map((line) => `- ${line}`).join("\n");
+    if (fmt === "code") insert = `\`${selected}\``;
+    agentBody.value = agentBody.value.slice(0, start) + insert + agentBody.value.slice(end);
+    agentBody.focus();
+  });
+});
+
 searchEl?.addEventListener("input", () => {
   searchQuery = searchEl.value || "";
   render();
 });
+[filterAccess, filterLicense, filterDownload, filterBoosted].forEach((el) => el?.addEventListener("change", render));
 
 loadApps().catch((err) => {
   if (statusEl) statusEl.textContent = err.message || "Could not load agent apps.";

@@ -74,7 +74,7 @@ import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-share-preload";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-share-arrival-actions";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -20883,35 +20883,147 @@ window.addEventListener("keydown", (e) => {
   async function openSharedPreviewIntoProject(token) {
     const cleanToken = String(token || "").trim();
     if (!cleanToken) return;
-    setEditStatus("loading", "Remixing shared preview into your project...");
+    setEditStatus("loading", "Opening shared preview options...");
     try {
       const meta = await rawFetch(`/api/share/${encodeURIComponent(cleanToken)}`)
-        .then((res) => res.ok ? res.json() : null)
-        .catch(() => null);
-      const sharer = meta?.shared_by;
-      const shareBack = !!(
-        sharer?.id
-        && window.confirm(`Remix this model into your editable Render3D project?\n\nAlso create a collaboration workspace with ${sharer.display_name || sharer.email || "the original sharer"} for this remix?`)
-      );
-      if (!shareBack && sharer?.id) {
-        const proceed = window.confirm("Remix this model without inviting the original sharer?");
-        if (!proceed) return;
-      }
-      const data = await api(`/api/share/${encodeURIComponent(cleanToken)}/open-in-project`, {
+        .then((res) => res.ok ? res.json() : Promise.reject(new Error("Could not load shared preview")));
+      showSharedPreviewArrivalModal(cleanToken, meta);
+    } catch (err) {
+      setEditStatus("error", err?.message || "Could not remix shared preview.");
+    }
+  }
+
+  function shareDownloadUrl(token, meta) {
+    const filename = meta?.filename || meta?.source_model?.filename || "";
+    return filename ? `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(filename)}` : `/share/${encodeURIComponent(token)}`;
+  }
+
+  function showSharedPreviewArrivalModal(token, meta) {
+    document.querySelector(".share-arrival-modal")?.remove();
+    const projects = (allProjects || []).filter((project) => project?.id && !isAnonymousPublicProject(project.id));
+    const currentProject = projectId && projects.find((project) => project.id === projectId);
+    const options = projects.map((project) => `
+      <option value="${appEscapeHtml(project.id)}"${project.id === projectId ? " selected" : ""}>
+        ${appEscapeHtml(project.name || project.id)}
+      </option>
+    `).join("");
+    const sharer = meta?.shared_by;
+    const modal = document.createElement("div");
+    modal.className = "auth-modal share-arrival-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.innerHTML = `
+      <div class="auth-backdrop" data-share-arrival-close></div>
+      <div class="auth-card share-arrival-card">
+        <button type="button" class="auth-close" data-share-arrival-close aria-label="Close remix options">&times;</button>
+        <div class="share-arrival-head">
+          <div class="share-arrival-icon" aria-hidden="true">R</div>
+          <div>
+            <p class="share-arrival-eyebrow">Shared Render3D model</p>
+            <h2>What do you want to do?</h2>
+            <p>${appEscapeHtml(meta?.project_name || meta?.filename || "Shared model")}</p>
+          </div>
+        </div>
+        <div class="share-arrival-targets">
+          <label class="share-arrival-target">
+            <input type="radio" name="share-arrival-target" value="new" checked />
+            <span><strong>Import to a new project</strong><small>Create a clean editable copy.</small></span>
+          </label>
+          <label class="share-arrival-target">
+            <input type="radio" name="share-arrival-target" value="existing" ${projects.length ? "" : "disabled"} />
+            <span><strong>Select a current project</strong><small>Add the shared files to one of your projects.</small></span>
+          </label>
+          <select class="share-arrival-project-select" disabled>
+            ${projects.length ? options : '<option value="">No editable projects found</option>'}
+          </select>
+          ${sharer?.id ? `
+            <label class="share-arrival-collab">
+              <input type="checkbox" class="share-arrival-share-back" />
+              <span>Create a collaboration workspace with ${appEscapeHtml(sharer.display_name || sharer.email || "the original sharer")}.</span>
+            </label>
+          ` : ""}
+        </div>
+        <div class="share-arrival-actions">
+          <button type="button" class="share-arrival-action share-arrival-action--primary" data-share-action="open">Import and open</button>
+          <button type="button" class="share-arrival-action" data-share-action="bambu">Send to Bambu Studio</button>
+          <button type="button" class="share-arrival-action" data-share-action="fusion">Export to Fusion 360</button>
+          <button type="button" class="share-arrival-action" data-share-action="onshape">Export to Onshape</button>
+          <button type="button" class="share-arrival-action" data-share-action="download">Download</button>
+        </div>
+        <p class="share-arrival-status muted small"></p>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const status = modal.querySelector(".share-arrival-status");
+    const select = modal.querySelector(".share-arrival-project-select");
+    const close = () => {
+      modal.remove();
+      const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+      window.history.replaceState({}, "", cleanUrl || "/");
+      setEditStatus("ok", "Shared preview options closed.");
+    };
+    modal.querySelectorAll("[data-share-arrival-close]").forEach((btn) => btn.addEventListener("click", close));
+    modal.querySelectorAll('input[name="share-arrival-target"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        const existing = modal.querySelector('input[name="share-arrival-target"]:checked')?.value === "existing";
+        select.disabled = !existing || !projects.length;
+        modal.querySelector(".share-arrival-collab")?.classList.toggle("hidden", existing);
+      });
+    });
+
+    const importShare = async () => {
+      const targetMode = modal.querySelector('input[name="share-arrival-target"]:checked')?.value || "new";
+      const targetProjectId = targetMode === "existing" ? (select.value || "") : "";
+      if (targetMode === "existing" && !targetProjectId) throw new Error("Choose a project first.");
+      status.textContent = targetMode === "existing" ? "Importing into selected project..." : "Creating editable remix project...";
+      const data = await api(`/api/share/${encodeURIComponent(token)}/open-in-project`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ share_with_sharer: shareBack }),
+        body: JSON.stringify({
+          target_project_id: targetProjectId || undefined,
+          share_with_sharer: targetMode === "new" && !!modal.querySelector(".share-arrival-share-back")?.checked,
+        }),
       });
       await fetchAllProjects();
       renderProjectList();
       await loadProject(data.project_id);
-      const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
-      window.history.replaceState({}, "", cleanUrl || "/");
-      const collaboration = data.shared_with_sharer ? " Shared with the original sharer for collaboration." : "";
-      setEditStatus("ok", `Remixed shared preview as ${data.filename || "a Render3D project"}.${collaboration}`);
-    } catch (err) {
-      setEditStatus("error", err?.message || "Could not remix shared preview.");
-    }
+      return data;
+    };
+
+    modal.querySelector(".share-arrival-actions")?.addEventListener("click", async (event) => {
+      const btn = event.target.closest("[data-share-action]");
+      if (!btn) return;
+      const action = btn.dataset.shareAction;
+      modal.querySelectorAll(".share-arrival-action").forEach((el) => (el.disabled = true));
+      status.textContent = action === "download" ? "Preparing download..." : "Preparing shared model...";
+      try {
+        if (action === "download") {
+          window.open(shareDownloadUrl(token, meta), "_blank", "noopener");
+          close();
+          return;
+        }
+        const data = await importShare();
+        const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+        window.history.replaceState({}, "", cleanUrl || "/");
+        modal.remove();
+        const collaboration = data.shared_with_sharer ? " Shared with the original sharer for collaboration." : "";
+        setEditStatus("ok", `Imported shared preview as ${data.filename || "a Render3D project"}.${collaboration}`);
+        if (action === "open") return;
+        const anchor = document.getElementById("btn-export-model") || document.body;
+        await openFileExportMenu({
+          api,
+          projectId: data.project_id,
+          filename: data.filename || meta?.filename,
+          anchorEl: anchor,
+          autoAction: action,
+        });
+      } catch (err) {
+        status.textContent = err?.message || "Could not complete this action.";
+        modal.querySelectorAll(".share-arrival-action").forEach((el) => (el.disabled = false));
+      }
+    });
+
+    requestAnimationFrame(() => modal.querySelector(".share-arrival-action--primary")?.focus());
   }
 
   const auth = createAuthUI({

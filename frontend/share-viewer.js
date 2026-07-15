@@ -169,6 +169,9 @@ async function main() {
   const subEl = $("share-subtitle");
   const statusEl = $("share-status");
   const downloadsEl = $("share-downloads");
+  const downloadMenuEl = $("share-download-menu");
+  const btnDownloadPopup = $("btn-share-download-menu");
+  const timelineTrackEl = $("share-timeline-track");
   const viewerEl = $("share-viewer");
   const sectionPanel = $("share-section-panel");
   const btnSection = $("btn-share-section");
@@ -190,7 +193,8 @@ async function main() {
   const btnRemixConfirm = $("btn-share-remix-confirm");
   const inspectorPanel = $("share-inspector-panel");
   const inspectorTitle = $("share-inspector-title");
-  const sourceDetailsEl = $("share-source-details");
+  const panelPartsEl = $("share-panel-parts");
+  const panelHistoryEl = $("share-panel-history");
   const promptHistoryEl = $("share-prompt-history");
   const componentListEl = $("share-component-list");
   const transparentTip = $("share-transparent-tip");
@@ -198,6 +202,9 @@ async function main() {
   const motionCard = $("share-motion-card");
   const motionStatus = $("share-motion-status");
   const btnMotionPlay = $("btn-share-motion-play");
+  const btnMotionReset = $("btn-share-motion-reset");
+  const jointListEl = $("share-joint-list");
+  let robotRuntime = null;
 
   if (!token) {
     statusEl.textContent = "Invalid share link.";
@@ -231,27 +238,119 @@ async function main() {
     });
   }
 
-  function renderDownloads(into) {
+  function absoluteFileUrl(pathOrUrl) {
+    if (!pathOrUrl) return "";
+    if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+    return `${window.location.origin}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+  }
+
+  function detectClientOs() {
+    const ua = navigator.userAgent || "";
+    const platform = navigator.platform || "";
+    if (/Mac|iPhone|iPad|iPod/i.test(ua) || /Mac/i.test(platform)) return "macos";
+    if (/Win/i.test(ua) || /Win/i.test(platform)) return "windows";
+    if (/Linux|X11|CrOS/i.test(ua)) return "linux";
+    return "windows";
+  }
+
+  function bambuStudioOpenUrls(fileUrl) {
+    const encoded = encodeURIComponent(fileUrl);
+    return {
+      windows: `bambustudio://open?file=${encoded}`,
+      linux: `bambustudio://open?file=${encoded}`,
+      macos: `bambustudioopen://${fileUrl}`,
+    };
+  }
+
+  function findThreeMfExport() {
+    return exportItems.find((item) => String(item.format || "").toLowerCase() === "3mf")
+      || exportItems.find((item) => /\.3mf$/i.test(item.name || ""));
+  }
+
+  function openInBambuStudio() {
+    const threeMf = findThreeMfExport();
+    if (!threeMf?.url) {
+      setStatus("No 3MF export is available for Bambu Studio yet.");
+      return;
+    }
+    const fileUrl = absoluteFileUrl(threeMf.url);
+    const urls = bambuStudioOpenUrls(fileUrl);
+    const os = detectClientOs();
+    window.location.href = urls[os] || urls.windows;
+  }
+
+  function renderDownloadMenu(into) {
+    if (!into) return;
     into.innerHTML = "";
     if (!exportItems.length) {
-      into.innerHTML = `<p class="muted">No downloadable formats yet.</p>`;
+      into.innerHTML = `<p class="muted" style="padding:8px 10px">No downloadable formats yet.</p>`;
       return;
     }
     for (const item of exportItems) {
       const a = document.createElement("a");
-      a.className = "share-dl-btn";
+      a.className = "share-dl-menu-item";
       a.href = item.url;
       a.download = item.name;
       a.rel = "noopener";
+      a.setAttribute("role", "menuitem");
       const label = FORMAT_LABELS[String(item.format || "").toLowerCase()]
         || String(item.format || "File").toUpperCase();
       a.innerHTML = `<strong>${label}</strong><span>${item.size != null ? formatBytes(item.size) : item.name}</span>`;
       into.appendChild(a);
     }
+    const threeMf = findThreeMfExport();
+    if (threeMf) {
+      const sep = document.createElement("div");
+      sep.className = "share-dl-menu-sep";
+      into.appendChild(sep);
+      const bambu = document.createElement("button");
+      bambu.type = "button";
+      bambu.className = "share-dl-menu-item share-dl-menu-item--bambu";
+      bambu.setAttribute("role", "menuitem");
+      bambu.innerHTML = `<strong>Import to Bambu</strong><span>Open 3MF in Bambu Studio</span>`;
+      bambu.addEventListener("click", () => {
+        setDownloadMenuOpen(false);
+        openInBambuStudio();
+      });
+      into.appendChild(bambu);
+    }
   }
 
-  renderDownloads(downloadsEl);
-  renderDownloads($("share-download-list"));
+  function setDownloadMenuOpen(open) {
+    downloadMenuEl?.classList.toggle("hidden", !open);
+    btnDownloadPopup?.setAttribute("aria-expanded", String(!!open));
+    btnDownloadPopup?.classList.toggle("active", !!open);
+  }
+
+  function renderDownloads(into) {
+    renderDownloadMenu(into);
+  }
+
+  renderDownloadMenu(downloadMenuEl);
+  renderDownloadMenu($("share-download-list"));
+  if (downloadsEl) downloadsEl.innerHTML = "";
+
+  function renderTimeline() {
+    if (!timelineTrackEl) return;
+    const rows = Array.isArray(meta.prompt_history) ? [...meta.prompt_history] : [];
+    rows.reverse();
+    if (!rows.length) {
+      timelineTrackEl.innerHTML = `<p class="share-timeline-empty">No timeline edits for this share yet.</p>`;
+      return;
+    }
+    timelineTrackEl.innerHTML = rows.map((entry, index) => {
+      const prompt = entry.original_prompt || entry.prompt || "Edit";
+      const short = prompt.length > 42 ? `${prompt.slice(0, 42)}…` : prompt;
+      const when = formatDateLabel(entry.created_at);
+      const status = entry.success === false ? "Failed" : "Built";
+      return `
+        <button type="button" class="share-timeline-chip" data-prompt-id="${escapeHtml(entry.id || "")}" data-timeline-index="${index}">
+          <strong>${escapeHtml(short)}</strong>
+          <span>${escapeHtml(status)}${when ? ` · ${escapeHtml(when)}` : ""}</span>
+        </button>
+      `;
+    }).join("");
+  }
 
   const scene = new THREE.Scene();
   const heroEmbedActive = isHeroEmbedMode();
@@ -529,26 +628,6 @@ async function main() {
   }
 
   function renderShareDetails() {
-    if (sourceDetailsEl) {
-      const source = meta.source_model || {};
-      const sharer = meta.shared_by;
-      const generated = meta.generated_by || source.generated_by || null;
-      const generatedName = generated?.display_name || generated?.user_name || "";
-      const generatedAvatar = generated?.avatar_url
-        ? `<span class="sv-avatar" style="background-image:url('${escapeHtml(generated.avatar_url)}')"></span>`
-        : generatedName
-          ? `<span class="sv-avatar sv-avatar--initial">${escapeHtml(generatedName.trim().charAt(0).toUpperCase() || "?")}</span>`
-          : "";
-      sourceDetailsEl.innerHTML = `
-        <div class="sv-detail-card">
-          <strong>${escapeHtml(source.filename || meta.filename || "Shared model")}</strong>
-          ${generatedName ? `<span class="sv-generated-by">${generatedAvatar}<span>Generated by <strong>${escapeHtml(generatedName)}</strong></span></span>` : ""}
-          <span>Preview: ${escapeHtml(source.viewer_filename || meta.viewer_filename || "not available")}</span>
-          <span>AI: ${escapeHtml(modelLabel(source))}${source.speed ? ` · ${escapeHtml(source.speed)}` : ""}</span>
-          ${sharer ? `<span>Shared by ${escapeHtml(sharer.display_name || sharer.email || "teammate")}</span>` : ""}
-        </div>
-      `;
-    }
     if (!promptHistoryEl) return;
     const rows = Array.isArray(meta.prompt_history) ? meta.prompt_history : [];
     if (!rows.length) {
@@ -565,13 +644,21 @@ async function main() {
         : who
           ? `<span class="sv-avatar sv-avatar--initial">${escapeHtml(who.trim().charAt(0).toUpperCase() || "?")}</span>`
           : "";
-      const status = entry.success ? "Built" : "Failed";
+      const status = entry.success === false ? "Failed" : "Built";
+      const fileUrl = file
+        ? `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(file)}`
+        : "";
       return `
-        <article class="sv-history-card">
+        <article class="sv-history-card" data-prompt-id="${escapeHtml(entry.id || "")}">
           ${who ? `<div class="sv-history-who">${avatar}<span>Generated by <strong>${escapeHtml(who)}</strong></span></div>` : ""}
           <strong>${escapeHtml(prompt)}</strong>
-          <span>${escapeHtml(modelLabel(entry))}${entry.speed ? ` · ${escapeHtml(entry.speed)}` : ""}</span>
-          <span>${escapeHtml(status)}${file ? ` · ${escapeHtml(file)}` : ""}${when ? ` · ${escapeHtml(when)}` : ""}</span>
+          <div class="sv-history-meta">${escapeHtml(modelLabel(entry))}${entry.speed ? ` · ${escapeHtml(entry.speed)}` : ""} · ${escapeHtml(status)}${when ? ` · ${escapeHtml(when)}` : ""}</div>
+          ${fileUrl ? `
+            <details class="sv-history-built">
+              <summary>Built component</summary>
+              <a href="${escapeHtml(fileUrl)}" download="${escapeHtml(file)}">${escapeHtml(file)}</a>
+            </details>
+          ` : ""}
         </article>
       `;
     }).join("");
@@ -594,7 +681,7 @@ async function main() {
     objectEntries = [];
     if (loadedScene) {
       loadedScene.traverse((obj) => {
-        if (!obj.isMesh && obj.type !== "Group") return;
+        if (!obj.isMesh) return;
         const label = String(obj.name || "").trim();
         if (label && !objectsByName.has(label)) objectsByName.set(label, obj);
       });
@@ -614,60 +701,52 @@ async function main() {
       if (!name) continue;
       const obj = objectsByName.get(name) || objectsByName.get(item.viewer_filename) || null;
       addRow({
-        label: name,
-        kind: item.kind || item.format || "part",
+        label: PathBasename(name),
+        kind: "part",
         obj,
         depth: obj ? objectDepth(obj) : 0,
-        parent: obj ? parentLabel(obj) : (meta.filename || "Shared model"),
       });
     }
-    if (loadedScene) {
+    if (!rows.length && loadedScene) {
       objectsByName.forEach((obj, label) => {
         addRow({
-          label,
-          kind: obj.isMesh ? "mesh" : "assembly",
+          label: PathBasename(label),
+          kind: "part",
           obj,
           depth: objectDepth(obj),
-          parent: parentLabel(obj),
         });
       });
     }
     const unique = [];
     const seenRows = new Set();
     for (const row of rows) {
-      const key = `${row.label}|${row.kind}`;
+      const key = row.label.toLowerCase();
       if (seenRows.has(key)) continue;
       seenRows.add(key);
       unique.push(row);
       if (unique.length >= 80) break;
     }
     if (!unique.length) {
-      componentListEl.innerHTML = `<p class="sv-hint">No part tree metadata was provided for this share.</p>`;
+      componentListEl.innerHTML = `<p class="sv-hint">No parts found in this share.</p>`;
       return;
     }
     componentListEl.innerHTML = unique.map((row) => {
       const canAct = !!row.obj;
       const isTransparent = canAct && transparentObjects.has(row.obj);
-      const meshCount = canAct ? objectMeshes(row.obj).length : 0;
       const depth = Math.max(0, Math.min(5, Number(row.depth) || 0));
-      const relation = row.parent ? `${row.parent} -> ${row.label}` : row.label;
       return `
         <div class="sv-tree-node${isTransparent ? " is-transparent" : ""}" style="--depth:${depth}">
           <button type="button" class="sv-tree-btn" data-action="frame" data-target="${escapeHtml(row.id)}">
-            <span class="sv-tree-glyph" aria-hidden="true">${row.kind === "assembly" ? "A" : row.kind === "mesh" ? "M" : "P"}</span>
+            <span class="sv-tree-glyph" aria-hidden="true">P</span>
             <span class="sv-tree-main">
               <strong>${escapeHtml(row.label)}</strong>
-              <em>${escapeHtml(relation)}</em>
             </span>
-            <small>${escapeHtml(row.kind)}${meshCount ? ` · ${meshCount} mesh${meshCount === 1 ? "" : "es"}` : ""}</small>
           </button>
           ${canAct ? `
             <div class="sv-tree-actions">
-              <button type="button" class="sv-mini-btn" data-action="frame" data-target="${escapeHtml(row.id)}">View</button>
-              <button type="button" class="sv-mini-btn" data-action="only" data-target="${escapeHtml(row.id)}">Only</button>
-              <button type="button" class="sv-mini-btn" data-action="all">Show all</button>
-              <button type="button" class="sv-mini-btn${isTransparent ? " active" : ""}" data-action="transparent" data-target="${escapeHtml(row.id)}">
-                ${isTransparent ? "Opaque" : "Transparent"}
+              <button type="button" class="sv-mini-btn" data-action="only" data-target="${escapeHtml(row.id)}" title="Show only this part">Only</button>
+              <button type="button" class="sv-mini-btn${isTransparent ? " active" : ""}" data-action="transparent" data-target="${escapeHtml(row.id)}" title="Toggle transparency">
+                ${isTransparent ? "Solid" : "Fade"}
               </button>
             </div>
           ` : ""}
@@ -676,7 +755,42 @@ async function main() {
     }).join("");
   }
 
+  function PathBasename(name) {
+    const raw = String(name || "");
+    const parts = raw.split(/[\\/]/);
+    return parts[parts.length - 1] || raw;
+  }
+
+  function renderJointSliders(runtime) {
+    if (!jointListEl) return;
+    const state = runtime?.getState?.();
+    const joints = (state?.urdf?.joints || []).filter((joint) => {
+      const type = String(joint.type || "").toLowerCase();
+      return type === "revolute" || type === "continuous" || type === "prismatic";
+    });
+    if (!joints.length) {
+      jointListEl.innerHTML = `<p class="sv-hint">No movable joints in this URDF.</p>`;
+      return;
+    }
+    const values = state.jointValuesRad || {};
+    jointListEl.innerHTML = joints.map((joint) => {
+      const lower = Number.isFinite(Number(joint.lower)) ? Number(joint.lower) : -Math.PI;
+      const upper = Number.isFinite(Number(joint.upper)) ? Number(joint.upper) : Math.PI;
+      const value = Number.isFinite(Number(values[joint.name])) ? Number(values[joint.name]) : 0;
+      const isPrism = String(joint.type || "").toLowerCase() === "prismatic";
+      const display = isPrism ? value.toFixed(3) : `${((value * 180) / Math.PI).toFixed(0)}°`;
+      return `
+        <div class="sv-joint-row" data-joint="${escapeHtml(joint.name)}">
+          <label>${escapeHtml(joint.name)} <small style="color:var(--muted)">${escapeHtml(joint.type || "")}</small></label>
+          <input type="range" min="${lower}" max="${upper}" step="${isPrism ? 0.001 : 0.01}" value="${value}" data-joint-slider="${escapeHtml(joint.name)}" />
+          <em data-joint-value>${display}</em>
+        </div>
+      `;
+    }).join("");
+  }
+
   renderShareDetails();
+  renderTimeline();
 
   async function loadSharedRobot() {
     const artifacts = Array.isArray(meta.robot?.artifacts) ? meta.robot.artifacts : [];
@@ -684,9 +798,9 @@ async function main() {
     const srdf = artifacts.find((item) => /\.srdf$/i.test(item.name || ""));
     if (!urdf || !motionCard) return;
     motionCard.classList.remove("hidden");
-    motionStatus.textContent = "Loading URDF motion…";
+    if (motionStatus) motionStatus.textContent = "Loading URDF motion…";
     try {
-      const robotRuntime = createUrdfRobotRuntime({ scene });
+      robotRuntime = createUrdfRobotRuntime({ scene });
       await robotRuntime.loadFromUrls({
         urdfUrl: urdf.url,
         urdfFile: urdf.name,
@@ -696,13 +810,31 @@ async function main() {
       });
       const state = robotRuntime.getState();
       const movable = (state.urdf?.joints || []).filter((joint) => !/fixed/i.test(joint.type || "")).length;
-      motionStatus.textContent = `${state.urdf?.name || "Robot"} ready · ${movable} movable joints`;
+      if (motionStatus) motionStatus.textContent = `${state.urdf?.name || "Robot"} · ${movable} joints`;
+      renderJointSliders(robotRuntime);
       btnMotionPlay?.addEventListener("click", () => {
         const playing = robotRuntime.togglePlay({ durationSec: 4.2 });
         btnMotionPlay.textContent = playing ? "Stop" : "Play";
       });
+      btnMotionReset?.addEventListener("click", () => {
+        robotRuntime.resetPose?.();
+        renderJointSliders(robotRuntime);
+        if (btnMotionPlay) btnMotionPlay.textContent = "Play";
+      });
+      jointListEl?.addEventListener("input", (event) => {
+        const input = event.target.closest("[data-joint-slider]");
+        if (!input || !robotRuntime) return;
+        const name = input.getAttribute("data-joint-slider");
+        const value = Number(input.value);
+        robotRuntime.setJointValue(name, value);
+        const row = input.closest(".sv-joint-row");
+        const joint = (robotRuntime.getState()?.urdf?.joints || []).find((j) => j.name === name);
+        const isPrism = String(joint?.type || "").toLowerCase() === "prismatic";
+        const label = row?.querySelector("[data-joint-value]");
+        if (label) label.textContent = isPrism ? value.toFixed(3) : `${((value * 180) / Math.PI).toFixed(0)}°`;
+      });
     } catch (err) {
-      motionStatus.textContent = err?.message || "Could not load URDF motion.";
+      if (motionStatus) motionStatus.textContent = err?.message || "Could not load URDF motion.";
     }
   }
 

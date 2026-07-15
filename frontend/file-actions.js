@@ -309,6 +309,7 @@ export async function openFileExportMenu({
   allowOnshape = true,
   allowFusion = true,
   cloudFilename = null,
+  autoAction = null,
 }) {
   closeExportMenu();
 
@@ -655,6 +656,15 @@ export async function openFileExportMenu({
 
   const rect2 = anchorEl.getBoundingClientRect();
   menu.style.top = `${Math.min(rect2.bottom + 6, window.innerHeight - Math.max(220, menu.offsetHeight + 12))}px`;
+
+  if (autoAction) {
+    requestAnimationFrame(() => {
+      if (autoAction === "bambu") bambuBtn?.click();
+      else if (autoAction === "fusion") fusionActionBtn?.click();
+      else if (autoAction === "onshape") (onshapeBtn || pushBtn)?.click();
+      else if (autoAction === "download") list?.querySelector(".file-export-dl")?.click();
+    });
+  }
 }
 
 function detectClientOs() {
