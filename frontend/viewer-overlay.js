@@ -50,6 +50,32 @@ const STAGE_ALIASES = {
   finalize: "finalize",
 };
 
+function isRawToolLog(text) {
+  const t = String(text || "");
+  if (!t.trim()) return false;
+  return (
+    /\/bin\/bash|sed -n|command_execution|shell_call|tool_call|\$\s*\/|python3? -|node |npm |codex\/plugins|skills\/cad\/references/i.test(t)
+    || (/\/home\/|\/tmp\/|\.codex\//i.test(t) && t.length > 80)
+    || (t.length > 180 && /&&|scripts\//i.test(t))
+  );
+}
+
+function humanizeProgressText(text, fallback = "Working…") {
+  const t = String(text || "").trim();
+  if (!t) return fallback;
+  if (!isRawToolLog(t)) return t.length > 96 ? `${t.slice(0, 93)}…` : t;
+  if (/snapshot_review|visual review/i.test(t)) return "Reviewing multi-view snapshot…";
+  if (/snapshot/i.test(t)) return "Rendering multi-view snapshot…";
+  if (/inspect/i.test(t)) return "Inspecting geometry…";
+  if (/modeling\.md|references\/|repair-loop/i.test(t)) return "Reading CAD references…";
+  if (/scripts\/step|\.step\b|tessellat/i.test(t)) return "Building STEP / GLB…";
+  if (/brief/i.test(t)) return "Writing CAD brief…";
+  if (/build123d|\.py\b|ai_source|source/i.test(t)) return "Editing CAD source…";
+  if (/finalize|export/i.test(t)) return "Finalizing artifacts…";
+  if (/analyze|prompt/i.test(t)) return "Analyzing prompt…";
+  return "Running CAD tools…";
+}
+
 function checklistFromStage(stage, currentLabel = "") {
   const normalized = STAGE_ALIASES[String(stage || "").trim().toLowerCase()] || "";
   const ids = DEFAULT_CHECKLIST.map((item) => item.id);
@@ -61,9 +87,30 @@ function checklistFromStage(stage, currentLabel = "") {
       else if (i === activeIdx) status = "active";
     }
     const entry = { id: item.id, label: item.label, status };
-    if (status === "active" && currentLabel) entry.detail = String(currentLabel).slice(0, 240);
+    if (status === "active" && currentLabel) {
+      entry.detail = humanizeProgressText(currentLabel, item.label);
+    }
     return entry;
   });
+}
+
+function stepStats(items) {
+  const list = items?.length ? items : DEFAULT_CHECKLIST;
+  const total = list.length || 8;
+  let activeIdx = list.findIndex((item) => item.status === "active");
+  if (activeIdx < 0) {
+    const doneCount = list.filter((item) => item.status === "done").length;
+    activeIdx = Math.min(Math.max(doneCount - 1, 0), total - 1);
+    if (doneCount === 0) activeIdx = 0;
+    if (doneCount >= total) activeIdx = total - 1;
+  }
+  const active = list[activeIdx] || list[0] || {};
+  return {
+    current: activeIdx + 1,
+    total,
+    label: humanizeProgressText(active.label || "Working…"),
+    detail: humanizeProgressText(active.detail || "", ""),
+  };
 }
 
 function esc(value) {
@@ -114,27 +161,28 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     <div class="viewport-spinner-body">
       <div class="viewport-spinner-head">
         <p class="viewport-spinner-label">Generating…</p>
-        <button type="button" class="viewport-spinner-expand" aria-expanded="false" title="Show what the AI is doing" aria-label="Show generation details">Details</button>
+        <button type="button" class="viewport-spinner-expand" aria-expanded="false" title="Show generation steps" aria-label="Show generation steps">Details</button>
       </div>
       <div class="viewport-progress" aria-hidden="true">
         <div class="viewport-progress-track">
           <div class="viewport-progress-fill"></div>
         </div>
         <div class="viewport-progress-meta">
+          <span class="viewport-progress-step">1/8</span>
           <span class="viewport-progress-pct">0%</span>
         </div>
       </div>
       <div class="viewport-spinner-details hidden" hidden>
         <div class="viewport-agent-thinking">
-          <div class="viewport-agent-thinking-label">Now</div>
+          <div class="viewport-agent-thinking-label">Current step</div>
           <p class="viewport-agent-thinking-text">Waiting for AI…</p>
         </div>
         <div class="viewport-agent-checklist-wrap">
-          <div class="viewport-agent-section-title">Checklist</div>
+          <div class="viewport-agent-section-title">Pipeline</div>
           <ul class="viewport-agent-checklist"></ul>
         </div>
         <div class="viewport-agent-activity-wrap">
-          <div class="viewport-agent-section-title">Activity</div>
+          <div class="viewport-agent-section-title">Updates</div>
           <ul class="viewport-agent-activity"></ul>
         </div>
       </div>
@@ -145,6 +193,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const stopBtn = spinner.querySelector(".viewport-stop-btn");
   const progressFill = spinner.querySelector(".viewport-progress-fill");
   const progressPct = spinner.querySelector(".viewport-progress-pct");
+  const progressStep = spinner.querySelector(".viewport-progress-step");
   const expandBtn = spinner.querySelector(".viewport-spinner-expand");
   const detailsEl = spinner.querySelector(".viewport-spinner-details");
   const thinkingText = spinner.querySelector(".viewport-agent-thinking-text");
@@ -207,22 +256,25 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     if (expandBtn) {
       expandBtn.setAttribute("aria-expanded", detailsOpen ? "true" : "false");
       expandBtn.textContent = detailsOpen ? "Hide" : "Details";
-      expandBtn.title = detailsOpen ? "Hide generation details" : "Show what the AI is doing";
+      expandBtn.title = detailsOpen ? "Hide generation steps" : "Show generation steps";
     }
   }
 
   function renderChecklist() {
     if (!checklistEl) return;
     const items = checklist.length ? checklist : DEFAULT_CHECKLIST;
-    checklistEl.innerHTML = items.map((item) => {
+    checklistEl.innerHTML = items.map((item, index) => {
       const status = item.status || "pending";
       const mark = status === "done" ? "✓" : status === "active" ? "●" : "○";
-      const detail = item.detail ? `<span class="viewport-agent-check-detail">${esc(item.detail)}</span>` : "";
+      const detailRaw = item.detail ? humanizeProgressText(item.detail, "") : "";
+      const detail = detailRaw && detailRaw !== item.label
+        ? `<span class="viewport-agent-check-detail">${esc(detailRaw)}</span>`
+        : "";
       return `
         <li class="viewport-agent-check viewport-agent-check--${esc(status)}" data-status="${esc(status)}">
           <span class="viewport-agent-check-mark" aria-hidden="true">${mark}</span>
           <span class="viewport-agent-check-body">
-            <span class="viewport-agent-check-label">${esc(item.label || item.id || "Step")}</span>
+            <span class="viewport-agent-check-label">${esc(`${index + 1}. ${item.label || item.id || "Step"}`)}</span>
             ${detail}
           </span>
         </li>
@@ -232,29 +284,60 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function renderActivity() {
     if (!activityEl) return;
-    const rows = [...activity].slice(-12).reverse();
+    const rows = [...activity]
+      .map((row) => {
+        const text = typeof row === "string" ? row : (row?.text || "");
+        const cleaned = humanizeProgressText(text, "");
+        if (!cleaned || isRawToolLog(text) && cleaned === "Running CAD tools…") {
+          // Keep only meaningful stage updates, drop raw tool spam.
+          if (isRawToolLog(text) && !/snapshot|inspect|brief|source|STEP|GLB|review|finalize|analyz/i.test(cleaned)) {
+            return null;
+          }
+        }
+        if (!cleaned) return null;
+        return {
+          text: cleaned,
+          stage: typeof row === "object" ? row?.stage : "",
+        };
+      })
+      .filter(Boolean)
+      .filter((row, index, all) => index === 0 || row.text !== all[index - 1].text)
+      .slice(-8)
+      .reverse();
     if (!rows.length) {
-      activityEl.innerHTML = `<li class="viewport-agent-activity-item muted">No activity yet…</li>`;
+      const stats = stepStats(checklist);
+      activityEl.innerHTML = `<li class="viewport-agent-activity-item muted">Step ${stats.current}/${stats.total}: ${esc(stats.label)}</li>`;
       return;
     }
     activityEl.innerHTML = rows.map((row) => {
-      const text = typeof row === "string" ? row : (row?.text || "");
-      const stage = typeof row === "object" && row?.stage ? `<span class="viewport-agent-activity-stage">${esc(row.stage)}</span>` : "";
-      return `<li class="viewport-agent-activity-item">${stage}<span>${esc(text)}</span></li>`;
+      const stage = row.stage ? `<span class="viewport-agent-activity-stage">${esc(row.stage)}</span>` : "";
+      return `<li class="viewport-agent-activity-item">${stage}<span>${esc(row.text)}</span></li>`;
     }).join("");
   }
 
   function renderDetails() {
-    if (thinkingText) thinkingText.textContent = thinkingLabel || progressLabel || "Working…";
+    const stats = stepStats(checklist);
+    const nowText = humanizeProgressText(
+      thinkingLabel || progressLabel || stats.detail || stats.label,
+      stats.label,
+    );
+    if (thinkingText) {
+      thinkingText.textContent = `${stats.current}/${stats.total} · ${nowText}`;
+    }
     renderChecklist();
     renderActivity();
   }
 
   function renderProgress() {
     const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
+    const stats = stepStats(checklist);
     if (progressFill) progressFill.style.width = `${pct}%`;
     if (progressPct) progressPct.textContent = `${pct}%`;
-    if (spinnerLabel) spinnerLabel.textContent = progressLabel;
+    if (progressStep) progressStep.textContent = `${stats.current}/${stats.total}`;
+    if (spinnerLabel) {
+      const clean = humanizeProgressText(progressLabel || thinkingLabel || stats.label, stats.label);
+      spinnerLabel.textContent = `${stats.current}/${stats.total} · ${clean}`;
+    }
     renderDetails();
   }
 
@@ -268,28 +351,39 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       }
     }
     if (progress.label) {
-      progressLabel = String(progress.label);
-      thinkingLabel = String(progress.thinking || progress.label);
+      progressLabel = humanizeProgressText(progress.label, "Generating…");
+      thinkingLabel = humanizeProgressText(progress.thinking || progress.label, progressLabel);
     } else if (progress.thinking) {
-      thinkingLabel = String(progress.thinking);
+      thinkingLabel = humanizeProgressText(progress.thinking, thinkingLabel);
     }
     if (Array.isArray(progress.checklist) && progress.checklist.length) {
       checklist = progress.checklist.map((item) => ({
         id: item.id || item.label,
         label: item.label || item.id || "Step",
         status: item.status || "pending",
-        detail: item.detail || "",
+        detail: humanizeProgressText(item.detail || "", ""),
       }));
     } else if (progress.stage) {
       checklist = checklistFromStage(progress.stage, progress.label || thinkingLabel);
     }
     if (Array.isArray(progress.activity)) {
-      activity = progress.activity;
+      activity = progress.activity
+        .map((row) => {
+          if (typeof row === "string") {
+            return { ts: new Date().toISOString(), text: humanizeProgressText(row, ""), stage: progress.stage };
+          }
+          return {
+            ...row,
+            text: humanizeProgressText(row?.text || "", ""),
+          };
+        })
+        .filter((row) => row.text);
     } else if (progress.label) {
+      const cleaned = humanizeProgressText(progress.label, "");
       const last = activity.length ? activity[activity.length - 1] : null;
       const lastText = typeof last === "string" ? last : last?.text;
-      if (lastText !== progress.label) {
-        activity = [...activity, { ts: new Date().toISOString(), text: progress.label, stage: progress.stage }].slice(-40);
+      if (cleaned && lastText !== cleaned) {
+        activity = [...activity, { ts: new Date().toISOString(), text: cleaned, stage: progress.stage }].slice(-40);
       }
     }
   }
