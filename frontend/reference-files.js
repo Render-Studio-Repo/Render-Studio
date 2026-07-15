@@ -513,20 +513,27 @@ export function createReferenceFilesViewer(options = {}) {
     closeTab,
     activateFromShared(filename) {
       if (!tabs.has(filename)) return false;
-      activate(filename, { syncShared: false });
+      activeFilename = filename;
+      if ((tabs.get(filename)?.kind) === "image") resetView();
+      renderViewer();
+      onActiveChange?.(filename);
       return true;
     },
     hideViewerOnly,
-    closeAll() {
+    closeAll({ localOnly = false } = {}) {
       for (const name of [...tabs.keys()]) {
         const tab = tabs.get(name);
         revokeBlob(tab);
-        docTabs?.remove?.(name);
+        if (!localOnly) docTabs?.remove?.(name);
       }
       tabs.clear();
       activeFilename = null;
-      if (!docTabs) renderTabs();
-      renderViewer();
+      if (!docTabs || localOnly) {
+        if (!docTabs) renderTabs();
+      }
+      setVisible(false);
+      if (viewerEl) viewerEl.innerHTML = "";
+      onActiveChange?.(null);
     },
     isActive: () => !!activeFilename && tabs.has(activeFilename),
     hasTabs: () => tabs.size > 0,

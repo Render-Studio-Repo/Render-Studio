@@ -5233,7 +5233,7 @@ body.canvas-design-tab .main-column {
 
 .dxf-viewer {
   position: absolute;
-  inset: 34px 0 0;
+  inset: 0;
   z-index: 12;
   display: flex;
   flex-direction: column;
@@ -5242,14 +5242,28 @@ body.canvas-design-tab .main-column {
   border-top: 1px solid var(--border);
 }
 
-.dxf-tab-bar.hidden + #viewport + .dxf-viewer,
-.dxf-tab-bar.hidden ~ .dxf-viewer {
-  inset: 0;
+.main-column.doc-tabs-open .dxf-viewer {
+  top: 34px;
 }
 
+#viewport.doc-viewer-active,
 #viewport.dxf-viewer-active,
 #viewport.ref-viewer-active {
   visibility: hidden;
+}
+
+.doc-tab-kind {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.dxf-tab-bar.hidden + #viewport + .dxf-viewer,
+.dxf-tab-bar.hidden ~ .dxf-viewer {
+  /* kept for legacy; doc-tabs-open controls inset now */
 }
 
 .ref-viewer-body {
@@ -5388,11 +5402,6 @@ body.canvas-design-tab .main-column {
   color: #fff;
   background: rgba(63, 128, 255, 0.9);
   border-color: transparent;
-}
-
-.dxf-tab-bar.hidden + .dxf-tab-bar.hidden + #viewport + .dxf-viewer,
-.dxf-tab-bar.hidden + .dxf-tab-bar.hidden ~ .dxf-viewer {
-  inset: 0;
 }
 
 .dxf-viewer-toolbar {

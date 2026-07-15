@@ -111,12 +111,13 @@ export function createDocumentTabBar(options = {}) {
       tab.dirty = !!dirty;
       render();
     },
-    setActive(id) {
+    setActive(id, { notify = true } = {}) {
       const key = String(id || "");
       if (!tabs.has(key)) return;
+      const changed = activeId !== key;
       activeId = key;
       render();
-      activateHandler?.(tabs.get(key));
+      if (notify && changed) activateHandler?.(tabs.get(key));
     },
     remove(id) {
       const key = String(id || "");

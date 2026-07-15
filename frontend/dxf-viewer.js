@@ -201,13 +201,22 @@ export function createDxfViewer(options = {}) {
   function closeTab(filename) {
     if (!tabs.has(filename)) return;
     tabs.delete(filename);
-    docTabs?.remove?.(filename);
+    if (activeFilename === filename) activeFilename = null;
+    if (docTabs) {
+      docTabs.remove(filename);
+      if (!activeFilename) {
+        setVisible(false);
+        if (viewerEl) viewerEl.innerHTML = "";
+        onActiveChange?.(null);
+      }
+      return;
+    }
     if (activeFilename === filename) {
       const next = tabs.keys().next().value || null;
       activeFilename = next;
       resetView();
     }
-    if (!docTabs) renderTabs();
+    renderTabs();
     renderViewer();
   }
 
@@ -324,18 +333,26 @@ export function createDxfViewer(options = {}) {
     closeTab,
     activateFromShared(filename) {
       if (!tabs.has(filename)) return false;
-      activate(filename, { syncShared: false });
+      activeFilename = filename;
+      resetView();
+      renderViewer();
+      onActiveChange?.(filename);
       return true;
     },
     hideViewerOnly,
-    closeAll() {
+    closeAll({ localOnly = false } = {}) {
       for (const name of [...tabs.keys()]) {
-        docTabs?.remove?.(name);
+        if (!localOnly) docTabs?.remove?.(name);
       }
+      // If we removed one-by-one, shared bar may have activated leftovers; force-clear our state.
       tabs.clear();
       activeFilename = null;
-      if (!docTabs) renderTabs();
-      renderViewer();
+      if (!docTabs || localOnly) {
+        if (!docTabs) renderTabs();
+      }
+      setVisible(false);
+      if (viewerEl) viewerEl.innerHTML = "";
+      onActiveChange?.(null);
     },
     closeIfOpen(filename) {
       closeTab(filename);

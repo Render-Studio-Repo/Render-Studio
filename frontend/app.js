@@ -88,8 +88,9 @@ import {
   readPendingRestore,
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260710-fix-reload-loop";
-import { createDxfViewer } from "./dxf-viewer.js?v=20260706-dxf-viewport-drop";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260714-reference-files";
+import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260714-doc-tabs";
+import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260629-fusion-body-folder";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260707-pin-labels";
@@ -1425,9 +1426,9 @@ async function openDxfDrawingByName(filename, opts = {}) {
     setEditStatus("error", "Select a project before opening a DXF drawing.");
     return false;
   }
-  referenceFilesViewer?.closeAll?.();
   selectedFile = filename;
   projectTree.setSelected(filename);
+  referenceFilesViewer?.hideViewerOnly?.();
   await dxfViewer.openTab(filename, {
     projectId: pid,
     label: opts.label || filename.replace(/\.dxf$/i, ""),
@@ -11364,8 +11365,9 @@ async function openBrowserComponent(entry) {
     return;
   }
   saveActiveModelPromptState();
-  referenceFilesViewer?.closeAll?.();
-  dxfViewer?.closeAll?.();
+  referenceFilesViewer?.closeAll?.({ localOnly: true });
+  dxfViewer?.closeAll?.({ localOnly: true });
+  docTabs?.clear?.();
   prepareViewportForModels();
   try {
     const catalogName = (entry.virtual_body || entry.virtual_component)
@@ -11460,8 +11462,14 @@ const catalogPanel = createCatalogPanel({
   },
 });
 
+const docTabs = createDocumentTabBar({
+  tabBarEl: document.getElementById("doc-tab-bar"),
+  mainColumnEl: document.querySelector(".main-column"),
+});
+
 const dxfViewer = createDxfViewer({
-  tabBarEl: document.getElementById("dxf-tab-bar"),
+  docTabs,
+  tabBarEl: document.getElementById("doc-tab-bar"),
   viewerEl: document.getElementById("dxf-viewer"),
   api,
   getProjectId: () => projectId,
@@ -11474,7 +11482,7 @@ const dxfViewer = createDxfViewer({
       projectTree?.setSelected?.(filename);
       return;
     }
-    if (isDxfDrawingFilename(selectedFile)) {
+    if (isDxfDrawingFilename(selectedFile) && !docTabs.getActive()) {
       selectedFile = projectAssembly.list?.()[0]?.[0] || null;
       projectTree?.setSelected?.(selectedFile);
     }
@@ -11482,14 +11490,12 @@ const dxfViewer = createDxfViewer({
 });
 
 const referenceFilesViewer = createReferenceFilesViewer({
-  tabBarEl: document.getElementById("ref-tab-bar"),
+  docTabs,
+  tabBarEl: document.getElementById("doc-tab-bar"),
   viewerEl: document.getElementById("ref-viewer"),
   api,
   rawFetch,
   getProjectId: () => projectId,
-  onBeforeOpen: () => {
-    dxfViewer?.closeAll?.();
-  },
   onStatus: (kind, text) => {
     if (text) setEditStatus(kind || "ok", text);
   },
@@ -11499,16 +11505,32 @@ const referenceFilesViewer = createReferenceFilesViewer({
       projectTree?.setSelected?.(filename);
       return;
     }
-    if (isReferenceFilename(selectedFile)) {
+    if (isReferenceFilename(selectedFile) && !docTabs.getActive()) {
       selectedFile = projectAssembly.list?.()[0]?.[0] || null;
       projectTree?.setSelected?.(selectedFile);
     }
   },
 });
 
+docTabs.onActivate((tab) => {
+  if (!tab) return;
+  if (tab.kind === "dxf") {
+    referenceFilesViewer.hideViewerOnly?.();
+    dxfViewer.activateFromShared?.(tab.id);
+  } else {
+    dxfViewer.hideViewerOnly?.();
+    referenceFilesViewer.activateFromShared?.(tab.id);
+  }
+});
+
+docTabs.onClose((tab) => {
+  if (!tab) return;
+  if (tab.kind === "dxf") dxfViewer.closeTab?.(tab.id);
+  else referenceFilesViewer.closeTab?.(tab.id);
+});
+
 async function openDxfDrawing(entry) {
   if (!entry?.name) return;
-  referenceFilesViewer?.closeAll?.();
   await openDxfDrawingByName(entry.name, {
     projectId,
     label: entry.stem || entry.name.replace(/\.dxf$/i, ""),
@@ -11519,13 +11541,14 @@ async function openReferenceFile(entry) {
   if (!entry?.name) return;
   selectedFile = entry.name;
   projectTree.setSelected(entry.name);
+  dxfViewer?.hideViewerOnly?.();
   await referenceFilesViewer.openTab(entry.name, {
     projectId,
     label: entry.stem || entry.name.replace(/\.[^.]+$/, ""),
     kind: entry.kind,
   });
   viewerOverlay.clearError();
-  setEditStatus("ok", `Opened ${entry.name} in Reference Files.`);
+  setEditStatus("ok", `Opened ${entry.name}.`);
 }
 
 const projectTree = createProjectTree({
@@ -13197,7 +13220,9 @@ async function loadProject(id) {
     }
     if (prevProjectId !== id) {
       viewportUndoStack.length = 0;
-      dxfViewer?.closeAll?.();
+      referenceFilesViewer?.closeAll?.({ localOnly: true });
+      dxfViewer?.closeAll?.({ localOnly: true });
+      docTabs?.clear?.();
       showEmptyProjectViewport({ keepBrowser: true });
       window.dispatchEvent(new CustomEvent("render3d:project-changed", { detail: { projectId: id } }));
       // If Architect is open, reload that project's building.json (additive; Design path unchanged).
@@ -15377,12 +15402,12 @@ async function uploadDxfProjectFile(file, choice = {}) {
   await refreshFiles();
   projectTree.setSelected(data.filename);
   await refreshTimeline();
-  referenceFilesViewer?.closeAll?.();
+  referenceFilesViewer?.hideViewerOnly?.();
   await dxfViewer.openTab(data.filename, {
     projectId: targetProjectId,
     label: file.name.replace(/\.dxf$/i, ""),
   });
-  setEditStatus("ok", `Added ${data.filename} to Drawings.`);
+  setEditStatus("ok", `Opened ${data.filename} in a tab.`);
   return data;
 }
 
@@ -15422,12 +15447,13 @@ async function uploadReferenceProjectFile(file, choice = {}) {
   selectedFile = data.filename;
   await refreshFiles();
   projectTree.setSelected(data.filename);
+  dxfViewer?.hideViewerOnly?.();
   await referenceFilesViewer.openTab(data.filename, {
     projectId: targetProjectId,
     label: file.name.replace(/\.[^.]+$/, ""),
     kind: data.kind,
   });
-  setEditStatus("ok", `Added ${data.filename} to Reference Files.`);
+  setEditStatus("ok", `Opened ${data.filename} in a tab.`);
   return data;
 }
 
