@@ -711,6 +711,8 @@ body.theme-light .gizmo-panel .muted {
 html, body {
   height: 100%;
   overflow: hidden;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -727,6 +729,7 @@ html, body {
     "left        left-split  main-col    right-split right";
   overflow: hidden;
   height: 100%;
+  overscroll-behavior: none;
 }
 
 #workspace-mode-bar {
@@ -6114,6 +6117,7 @@ label.btn { display: inline-flex; align-items: center; }
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .left-scroll {
@@ -6123,6 +6127,7 @@ label.btn { display: inline-flex; align-items: center; }
   overflow-y: auto;
   overflow-x: hidden;
   overflow-anchor: none;
+  overscroll-behavior: contain;
   padding: 14px;
 }
 
@@ -6145,12 +6150,14 @@ label.btn { display: inline-flex; align-items: center; }
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overscroll-behavior: contain;
 }
 
 #viewport {
   flex: 1;
   position: relative;
   min-height: 0;
+  overscroll-behavior: contain;
 }
 
 #viewport canvas {
@@ -13481,15 +13488,72 @@ label input { margin-top: 4px; }
   border-radius: var(--radius);
 }
 
+.roadmap-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
 .roadmap-item strong {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .roadmap-item p {
   font-size: 0.88rem;
   color: var(--muted);
-  margin: 0;
+  margin: 0 0 8px;
+}
+
+.roadmap-date {
+  flex: 0 0 auto;
+  color: #7ee787;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.roadmap-use {
+  color: #c9d1d9 !important;
+  font-size: 0.82rem !important;
+}
+
+.roadmap-show-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 2px;
+  padding: 6px 10px;
+  border: 1px solid rgba(88, 166, 255, 0.36);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.2), transparent 42%),
+    rgba(13, 17, 23, 0.86);
+  color: #dbeafe;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.roadmap-show-btn::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #58a6ff;
+  box-shadow: 0 0 12px rgba(88, 166, 255, 0.8);
+}
+
+.roadmap-show-btn:hover,
+.roadmap-show-btn:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(126, 200, 255, 0.8);
+  background: rgba(56, 139, 253, 0.16);
+  outline: none;
 }
 
 .roadmap-status {
@@ -13520,6 +13584,14 @@ label input { margin-top: 4px; }
   color: var(--warn);
   border-color: rgba(210, 153, 34, 0.35);
   background: rgba(210, 153, 34, 0.08);
+}
+
+@media (max-width: 640px) {
+  .roadmap-item-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
 }
 
 .info-footer {
@@ -23318,8 +23390,7 @@ body.gs-agent-open .gs-page {
   position: relative;
   display: block;
   min-height: 0;
-  margin: 18px 0 22px;
-  padding: 0;
+  padding: 14px min(42vw, 480px) 8px 0;
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.45s ease, transform 0.45s ease;
@@ -23330,29 +23401,10 @@ body.gs-agent-open .gs-page {
   transform: none;
 }
 
-.gs-hero-banner {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.85fr);
-  align-items: center;
-  gap: clamp(16px, 3vw, 36px);
-  width: 100%;
-  min-height: 220px;
-  padding: clamp(22px, 3.2vw, 34px) clamp(22px, 3.5vw, 40px);
-  overflow: hidden;
-  border: 1px solid rgba(88, 166, 255, 0.22);
-  border-radius: 18px;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(88, 166, 255, 0.18), transparent 42%),
-    radial-gradient(circle at 92% 18%, rgba(249, 115, 22, 0.22), transparent 38%),
-    linear-gradient(145deg, rgba(13, 17, 23, 0.96), rgba(7, 12, 20, 0.98));
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-}
-
 .gs-hero-copy {
   position: relative;
   z-index: 2;
-  max-width: none;
+  max-width: min(520px, calc(100% - min(42vw, 460px)));
 }
 
 .gs-kicker {
@@ -23366,20 +23418,20 @@ body.gs-agent-open .gs-page {
 }
 
 .gs-hero-title {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-family: var(--gs-display);
-  font-size: clamp(2.4rem, 5.4vw, 3.6rem);
+  font-size: clamp(2.1rem, 4.2vw, 3rem);
   font-weight: 800;
-  letter-spacing: -0.05em;
-  line-height: 0.94;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
   color: #f0f3f6;
 }
 
 .gs-hero-lead {
-  margin: 0 0 18px;
-  max-width: 46ch;
-  font-size: 1.05rem;
-  line-height: 1.55;
+  margin: 0 0 16px;
+  max-width: 34ch;
+  font-size: 1rem;
+  line-height: 1.5;
   color: #9da7b3;
 }
 
@@ -23389,48 +23441,54 @@ body.gs-agent-open .gs-page {
   gap: 10px;
 }
 
-.gs-hero-tabs {
-  margin: 14px 0 0;
-}
-
 .gs-hero-visual {
-  position: relative;
-  left: auto;
-  right: auto;
-  top: auto;
-  width: 100%;
-  min-height: 180px;
-  height: 180px;
-  border: 0;
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
-  isolation: isolate;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.gs-hero-robot-wrap {
   position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 300px;
-  height: 180px;
-  transform: translateX(-42%);
+  left: auto;
+  right: clamp(-12px, -1vw, 0px);
+  top: 8px;
+  width: clamp(220px, 34vw, 420px);
+  min-height: 160px;
+  height: clamp(160px, 22vw, 280px);
+  border: 0;
+  overflow: hidden;
+  border-radius: 0;
+  background: #0d1117;
+  isolation: isolate;
+  z-index: 0;
   pointer-events: none;
 }
 
-.gs-hero-robot.welcome-robot {
-  left: 0;
-  bottom: 8px;
-  width: 300px;
-  height: 180px;
+.gs-hero-frame {
+  position: absolute;
+  inset: -8% -6% -12% -4%;
+  width: auto;
+  height: auto;
+  border: 0;
+  display: block;
+  background: #0d1117;
+  color-scheme: dark;
+  pointer-events: none;
+  transform: translate(8%, 4%) scale(1.08);
+  transform-origin: right center;
 }
 
-.gs-hero-frame,
-.gs-hero-gif,
+.gs-hero-gif {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  max-height: 620px;
+  object-fit: cover;
+  object-position: left center;
+  opacity: 0.92;
+}
+
 .gs-hero-visual-fade {
-  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: transparent;
+  z-index: 1;
 }
 
 .gs-shell {
@@ -23857,37 +23915,32 @@ body.gs-agent-open .gs-page {
   .gs-hero {
     display: block;
     min-height: 0;
-    margin: 12px 0 18px;
-    padding: 0;
-  }
-
-  .gs-hero-banner {
-    grid-template-columns: 1fr;
-    min-height: 0;
-    padding: 20px 18px 12px;
+    padding: 14px 0 0;
   }
 
   .gs-hero-visual {
     position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
     width: 100%;
-    min-height: 150px;
-    height: 150px;
-    margin: 0;
-    background: transparent;
+    min-height: 280px;
+    height: min(52vw, 360px);
+    margin: 0 0 8px;
+    background: #0d1117;
+    mask-image: none;
   }
 
-  .gs-hero-robot-wrap {
-    left: 50%;
-    width: 260px;
-    height: 156px;
-    transform: translateX(-48%) scale(0.88);
+  .gs-hero-frame {
+    inset: -4% -2% 0;
+    transform: scale(1.04);
+    transform-origin: center center;
+    background: #0d1117;
   }
 
-  .gs-hero-robot.welcome-robot {
-    left: 0;
-    bottom: 0;
-    width: 280px;
-    height: 170px;
+  .gs-hero-gif {
+    min-height: 280px;
+    max-height: 360px;
   }
 
   .gs-feature,

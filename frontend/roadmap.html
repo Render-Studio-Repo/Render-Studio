@@ -8,7 +8,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-toolbar-nav-menu" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-roadmap-shipped-showme" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -50,74 +50,148 @@
         <section class="info-section">
           <h3 class="roadmap-phase shipped">Shipped</h3>
           <ul class="roadmap-list">
-            <li class="roadmap-item done">
+            <li class="roadmap-item done" data-roadmap-show="ai-generate">
               <span class="roadmap-status">Done</span>
               <div>
-                <strong>3D viewport</strong>
-                <p>Orbit, pan, zoom, grid, fit-to-view, and Fusion-style scene lighting.</p>
+                <div class="roadmap-item-head">
+                  <strong>AI CAD prompting</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Natural-language geometry generation and modification via GPT-5.5 Pro, STEP/GLB outputs, and stronger prompt guidance.</p>
+                <p class="roadmap-use">Use it: open Studio, write size + units + intent in the AI prompt, choose a mode, then Generate.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="ai-generate">Show me</button>
               </div>
             </li>
-            <li class="roadmap-item done">
+            <li class="roadmap-item done" data-roadmap-show="picks">
               <span class="roadmap-status">Done</span>
               <div>
-                <strong>Mesh import &amp; export</strong>
-                <p>STL, OBJ, GLB/GLTF, PLY, and OFF upload with timeline history.</p>
+                <div class="roadmap-item-head">
+                  <strong>Geometric references</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Pick corners, faces, edges, lasso regions, and Line paths; reference them in prompts with <code>@corner-1</code>, <code>@face-1</code>, or <code>@path-1</code> chips.</p>
+                <p class="roadmap-use">Use it: choose Face, Edge, Corner, Lasso, or Line, click geometry, then write an edit around the inserted chip.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="picks">Show me</button>
               </div>
             </li>
-            <li class="roadmap-item done">
+            <li class="roadmap-item done" data-roadmap-show="link-to-prompt">
               <span class="roadmap-status">Done</span>
               <div>
-                <strong>AI CAD prompting</strong>
-                <p>Natural-language geometry generation and modification via GPT-5.5 Pro + Trimesh.</p>
+                <div class="roadmap-item-head">
+                  <strong>Project references in prompts</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Shift-select files or pick model items, then drag them into AI prompts as context for more accurate generations.</p>
+                <p class="roadmap-use">Use it: select project files in the explorer, drag them into the prompt, and describe how the model should use them.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="link-to-prompt">Show me</button>
               </div>
             </li>
-            <li class="roadmap-item done">
+            <li class="roadmap-item done" data-roadmap-show="wiring">
               <span class="roadmap-status">Done</span>
               <div>
-                <strong>Geometric references</strong>
-                <p>Pick corners, faces, edges, lasso regions, and Line paths; reference them in prompts with <code>@corner-1</code> or <code>@path-1</code> chips.</p>
-              </div>
-            </li>
-            <li class="roadmap-item done">
-              <span class="roadmap-status">Done</span>
-              <div>
-                <strong>Transform gizmo</strong>
-                <p>Move, rotate, and scale parts with server-side persistence.</p>
-              </div>
-            </li>
-            <li class="roadmap-item done">
-              <span class="roadmap-status">Done</span>
-              <div>
-                <strong>Keyboard shortcuts</strong>
-                <p>Hotkeys for navigation, picking, wireframe, and the transform gizmo — see table below.</p>
-              </div>
-            </li>
-            <li class="roadmap-item done">
-              <span class="roadmap-status">Done</span>
-              <div>
-                <strong>Draw mode local geometry</strong>
-                <p>Selected-face holes, circular blind-hole patterns, and Line-tool ducts or wire loops.</p>
-              </div>
-            </li>
-            <li class="roadmap-item done">
-              <span class="roadmap-status">Done</span>
-              <div>
-                <strong>Electronics and component workflow</strong>
+                <div class="roadmap-item-head">
+                  <strong>Electronics and component workflow</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
                 <p>Component profiles, drag-to-prompt, drag-to-wiring, driver-aware motor validation, generated code, and actuator simulation.</p>
+                <p class="roadmap-use">Use it: switch to Wiring, drag a CAD component into the wiring prompt or board, then generate and validate the circuit.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="wiring">Show me</button>
               </div>
             </li>
-            <li class="roadmap-item done">
+            <li class="roadmap-item done" data-roadmap-show="reference-markup">
               <span class="roadmap-status">Done</span>
               <div>
-                <strong>Component-aware fixtures</strong>
-                <p>Referenced parts feed measured dimensions and known mounting patterns into deterministic case/fixture generation.</p>
+                <div class="roadmap-item-head">
+                  <strong>Reference markup</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Open PDFs/images, draw callouts, add notes, and send marked-up references into the AI prompt.</p>
+                <p class="roadmap-use">Use it: upload an image/PDF, mark it up with Pen and notes, then click Send to AI.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="reference-markup">Show me</button>
               </div>
             </li>
-            <li class="roadmap-item done">
+            <li class="roadmap-item done" data-roadmap-show="canvas">
               <span class="roadmap-status">Done</span>
               <div>
-                <strong>Workspace quality of life</strong>
-                <p>Stop generation, project prompt drafts, color tool, context-menu hide/show, and expanded AI cost analytics.</p>
+                <div class="roadmap-item-head">
+                  <strong>Canvas sketch mode</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Sketch concepts in the Canvas design tab and attach them to the AI prompt as visual intent.</p>
+                <p class="roadmap-use">Use it: switch to Canvas, sketch the layout, then attach the sketch before generating CAD.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="canvas">Show me</button>
+              </div>
+            </li>
+            <li class="roadmap-item done" data-roadmap-show="share-folders">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Shared folders and collaboration</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Private folder sharing, live workspace context, share links, remix/import flows, and management notifications.</p>
+                <p class="roadmap-use">Use it: right-click a folder or share a model link, then choose who can access or remix it.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="share-folders">Show me</button>
+              </div>
+            </li>
+            <li class="roadmap-item done" data-roadmap-show="render-agent">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Render Agent help and tips</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Movable Render Agent panel, Getting Started questions, auto-send tip prompts, GIF replies, and clearer rich-message formatting.</p>
+                <p class="roadmap-use">Use it: click Agent or “Ask about this tip” to get contextual workflow help.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="render-agent">Show me</button>
+              </div>
+            </li>
+            <li class="roadmap-item done" data-roadmap-doc="/docs.html#agent-store-docs">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Agent Store public documentation</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Approved submitted agents now appear in searchable public documentation by most recent listing and category.</p>
+                <p class="roadmap-use">Use it: open Docs → Agent Store docs to search public agents, then view or install them in the store.</p>
+                <button type="button" class="roadmap-show-btn" data-doc-link="/docs.html#agent-store-docs">Show me</button>
+              </div>
+            </li>
+            <li class="roadmap-item done" data-roadmap-doc="/getting-started.html">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Getting Started and first-run onboarding</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>GitBook-style Getting Started navigation, Tips &amp; Tricks tab, branded link previews, first-visit welcome popup, and Show Me walkthroughs.</p>
+                <p class="roadmap-use">Use it: open Getting Started, choose a section, then click Show me or Ask Render Agent.</p>
+                <button type="button" class="roadmap-show-btn" data-doc-link="/getting-started.html">Show me</button>
+              </div>
+            </li>
+            <li class="roadmap-item done" data-roadmap-show="cloud-sync">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Import, export, and cloud CAD</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>STL, OBJ, GLB/GLTF, PLY, OFF, STEP-sidecar workflows, Fusion/Onshape library panels, and share preview exports.</p>
+                <p class="roadmap-use">Use it: upload CAD, connect Fusion/Onshape, or open a share link and import/remix into a project.</p>
+                <button type="button" class="roadmap-show-btn" data-show-me="cloud-sync">Show me</button>
+              </div>
+            </li>
+            <li class="roadmap-item done" data-roadmap-doc="/docs.html#doc-preferences">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Workspace quality of life</strong>
+                  <span class="roadmap-date">Shipped Jul 15, 2026</span>
+                </div>
+                <p>Stop generation, project prompt drafts, color/transparent tools, context-menu hide/show, feedback requests, and expanded AI cost analytics.</p>
+                <p class="roadmap-use">Use it: open Studio controls, account preferences, or management inbox depending on the workflow.</p>
+                <button type="button" class="roadmap-show-btn" data-doc-link="/docs.html#complete-docs">Show me</button>
               </div>
             </li>
           </ul>
@@ -216,5 +290,6 @@
     </main>
   </div>
 <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+<script type="module" src="/roadmap.js?v=20260715-roadmap-shipped-showme"></script>
 </body>
 </html>

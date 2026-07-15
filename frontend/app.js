@@ -1806,8 +1806,9 @@ function isInternalCadSidecar(name = "") {
     || lower.startsWith("_export_")
     || lower.endsWith(".ezdxf.dxf")
     || (lower.startsWith(".") && lower.endsWith(".step.glb"))
-    // Face-dumped OCC previews — prefer the solid/body GLB for viewing.
+    // Face-dumped OCC / mesh-derived STEP exports — never browser components.
     || lower.includes("__faceted.")
+    || /__faceted$/i.test(lower.replace(/\.[^.]+$/, ""))
   );
 }
 
@@ -4814,8 +4815,14 @@ async function ensureMissingBrowserComponentsLoaded({ keepGizmoOn = null, fitVie
   const visibleComps = (browser.components || []).filter((c) => !isBrowserComponentHidden(c));
   let loadedAny = false;
   for (const entry of visibleComps) {
-    if (projectAssembly.has(entry.name)) {
-      projectAssembly.setVisible(entry.name, true);
+    // Same part can be catalogued as .step while the viewport holds the painted/edited .glb
+    // (or vice versa). Never load a second copy when any same-stem entry is already present.
+    const existing =
+      (projectAssembly.has(entry.name) && entry.name)
+      || assemblyCatalogMatchingStem(entry.name)
+      || assemblyCatalogMatchingStem(entry.viewer_filename);
+    if (existing) {
+      projectAssembly.setVisible(existing, true);
       continue;
     }
     const viewer = entry.viewer_filename || entry.name;
@@ -4840,13 +4847,25 @@ async function ensureMissingBrowserComponentsLoaded({ keepGizmoOn = null, fitVie
 
 async function afterModelEdit(data) {
   const prevCatalog = data?.replaceCatalog || data?.replace_catalog || catalogNameForMesh(transformControls.object) || selectedFile;
+  // Keep the browser/assembly identity stable across paint/edit exports that change
+  // extension (.step → .glb). Otherwise ensureMissing reloads the .step as a twin.
+  const stableCatalog = prevCatalog || data.filename;
   // Count components that are NOT the one about to be replaced so we know whether
   // other components are in the assembly. If yes, use append+replaceCatalog to swap
   // the reloaded mesh in-place without ever blanking the scene.
-  const siblingsInAssembly = [...projectAssembly.list()].filter(
-    ([name]) => name !== prevCatalog && fileStem(name) !== fileStem(prevCatalog)
-  ).length;
+  const prevStem = fileStem(prevCatalog || "").replace(/_edited(?:_\d+)?$/i, "");
+  const siblingsInAssembly = [...projectAssembly.list()].filter(([name]) => {
+    if (name === prevCatalog || name === stableCatalog) return false;
+    const other = fileStem(name).replace(/_edited(?:_\d+)?$/i, "");
+    return !prevStem || other !== prevStem;
+  }).length;
   const inAssembly = siblingsInAssembly > 0;
+  const alreadyPresent = Boolean(
+    (prevCatalog && projectAssembly.has(prevCatalog))
+    || (stableCatalog && projectAssembly.has(stableCatalog))
+    || assemblyCatalogMatchingStem(prevCatalog)
+    || assemblyCatalogMatchingStem(data.filename),
+  );
   const isBakedTransform = data?.action === "transform" || data?.action === "body_transform";
   const placementBaseline = isBakedTransform ? transformBaselineFromPayload(data?.placementBaseline) : null;
 
@@ -4864,7 +4883,16 @@ async function afterModelEdit(data) {
     };
   }
 
-  selectedFile = data.filename;
+  // Drop same-stem twins before reload so paint/color cannot leave a ghost mesh.
+  if (prevStem) {
+    for (const [name] of [...projectAssembly.list()]) {
+      if (name === stableCatalog) continue;
+      const other = fileStem(name).replace(/_edited(?:_\d+)?$/i, "");
+      if (other === prevStem) projectAssembly.remove(name);
+    }
+  }
+
+  selectedFile = stableCatalog;
   bumpModelCacheEpoch();
   await refreshFiles();
   const isFacePull = data?.action === "face_pull" || data?.kind === "face_pull" || /pulled|face.?pull/i.test(String(data?.label || ""));
@@ -4876,9 +4904,9 @@ async function afterModelEdit(data) {
     normalizePivot: !isBakedTransform && !hasBakedPlacement(data.filename),
     resetTransform: isBakedTransform && !placementBaseline,
     savedTransform: isBakedTransform ? placementBaseline : savedTransform,
-    catalogFilename: data.filename,
-    append: inAssembly,
-    replaceCatalog: prevCatalog || null,
+    catalogFilename: stableCatalog,
+    append: inAssembly || alreadyPresent,
+    replaceCatalog: null,
     fitView: false,
     // Avoid popping the transform gizmo after Extrude/Cut — it feels like a hard reload.
     autoGizmo: isBakedTransform ? true : !isFacePull && !inAssembly,
@@ -4886,7 +4914,7 @@ async function afterModelEdit(data) {
   gizmoPanel.resetDragBaseline?.();
   if (isBakedTransform || projectAssembly.count() > 0) {
     await ensureMissingBrowserComponentsLoaded({
-      keepGizmoOn: isBakedTransform ? data.filename : null,
+      keepGizmoOn: isBakedTransform ? stableCatalog : null,
       fitView: false,
     });
   }
@@ -7904,7 +7932,7 @@ async function paintCurrentModel(scope) {
         references: scope === "faces" ? faceRefs : [],
       }),
     });
-    await afterModelEdit({ ...data, replaceCatalog: filename });
+    await afterModelEdit({ ...data, replaceCatalog: data.replace_catalog || data.replaceCatalog || filename });
     setEditStatus("ok", scope === "faces" ? "Colored picked faces." : `Colored ${filename}.`);
     viewerOverlay.clearError();
   } catch (err) {
