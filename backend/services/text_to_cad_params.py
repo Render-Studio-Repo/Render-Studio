@@ -437,5 +437,10 @@ def _convert_regenerated_glb_to_z_up(glb_path: Path) -> None:
     import trimesh
 
     scene = trimesh.load(glb_path, force="scene")
+    bounds = getattr(scene, "bounds", None)
+    if bounds is not None:
+        size = bounds[1] - bounds[0]
+        if float(size[2]) >= float(size[1]) * 1.05 and float(size[2]) >= max(float(size[0]), float(size[1])) * 0.9:
+            return
     scene.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2.0, [1, 0, 0]))
     scene.export(glb_path, file_type="glb")

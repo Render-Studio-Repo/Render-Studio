@@ -3270,6 +3270,12 @@ def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
         import trimesh
 
         scene = trimesh.load(glb_path, force="scene")
+        bounds = getattr(scene, "bounds", None)
+        if bounds is not None:
+            size = bounds[1] - bounds[0]
+            # Skip if already clearly Z-up (height along Z dominates).
+            if float(size[2]) >= float(size[1]) * 1.05 and float(size[2]) >= max(float(size[0]), float(size[1])) * 0.9:
+                return
         scene.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2.0, [1, 0, 0]))
         scene.export(glb_path, file_type="glb")
     except Exception as exc:

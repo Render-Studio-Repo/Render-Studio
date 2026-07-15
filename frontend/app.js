@@ -69,7 +69,7 @@ import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-multi-gen";
-import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
+import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
@@ -11307,7 +11307,52 @@ function annotatePickedReference(ref) {
   };
 }
 
-function materializeObject(object3d, { center = true, normalizePivot = center } = {}) {
+function ensureModelZUp(object3d, filename = "") {
+  /** Rotate Y-up meshes (glTF / text-to-cad) into Render3D's Z-up viewport. */
+  if (!object3d) return false;
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  if (box.isEmpty()) return false;
+  const size = box.getSize(new THREE.Vector3());
+  const sx = Math.abs(size.x);
+  const sy = Math.abs(size.y);
+  const sz = Math.abs(size.z);
+  const max = Math.max(sx, sy, sz);
+  if (!(max > 0)) return false;
+
+  // Already standing in Z-up (height along Z).
+  if (sz >= max * 0.99) return false;
+  // Tallest axis is Y → classic Y-up standing model.
+  if (sy >= max * 0.99) {
+    object3d.rotateX(Math.PI / 2);
+    object3d.updateMatrixWorld(true);
+    object3d.userData.render3dZUp = true;
+    object3d.userData.render3dZUpSource = filename || true;
+    return true;
+  }
+  // Flat Z-up plate/gear on the XY floor (thin Z vs both plan extents).
+  if (sz < Math.min(sx, sy) * 0.5) return false;
+  // Meter-scale Y-up previews (robots, assemblies) where Y ≈ height and X is reach.
+  if (max <= 25 && sy >= sz * 0.98) {
+    object3d.rotateX(Math.PI / 2);
+    object3d.updateMatrixWorld(true);
+    object3d.userData.render3dZUp = true;
+    object3d.userData.render3dZUpSource = filename || true;
+    return true;
+  }
+  // Y clearly taller than Z and comparable to X.
+  if (sy > sz * 1.12 && sy >= sx * 0.9) {
+    object3d.rotateX(Math.PI / 2);
+    object3d.updateMatrixWorld(true);
+    object3d.userData.render3dZUp = true;
+    object3d.userData.render3dZUpSource = filename || true;
+    return true;
+  }
+  return false;
+}
+
+function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true } = {}) {
+  if (orient) ensureModelZUp(object3d, filename);
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
   meshCenterOffset = box.getCenter(new THREE.Vector3());
@@ -11369,8 +11414,8 @@ function frameCameraToBox(box) {
   const halfFovRad = (camera.fov * Math.PI) / 360;
   const dist = Math.max((radius / Math.tan(halfFovRad)) * 1.55, 0.15);
   camera.up.copy(VIEW_CUBE_WORLD_UP);
-  // Fusion-style home: front-right, slightly above, Z stays vertical.
-  const viewDir = new THREE.Vector3(1, -1, 0.72).normalize();
+  // Fusion-style home: front-right (+Y front, +X right), slightly above; Z stays vertical.
+  const viewDir = new THREE.Vector3(1, 1, 0.72).normalize();
   camera.position.copy(center).addScaledVector(viewDir, dist);
   camera.lookAt(center);
   controls._up0?.copy(camera.up);
@@ -11573,18 +11618,23 @@ async function loadModel(url, filename, opts = {}) {
     if (saved) {
       // Restore the previous mesh's exact world transform so the model
       // doesn't jump after a press-pull, fillet, chamfer, etc.
-      materializeObject(object, { center: false, normalizePivot: shouldNormalizePivot });
+      materializeObject(object, {
+        center: false,
+        normalizePivot: shouldNormalizePivot,
+        filename: viewFilename,
+        orient: false,
+      });
       object.position.copy(saved.position);
       object.quaternion.copy(saved.quaternion);
       object.scale.copy(saved.scale);
     } else {
       // Fallback: re-center (floor-align + X/Y center) so the model
       // sits in the same visual area rather than jumping to raw origin.
-      materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot });
+      materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename });
     }
     object.updateMatrixWorld(true);
   } else {
-    materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot });
+    materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename });
   }
   if (opts.resetTransform) {
     object.position.set(0, 0, 0);

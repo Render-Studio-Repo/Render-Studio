@@ -146,20 +146,27 @@ export function createViewCube({ container, camera, controls, getSceneRadius }) 
       `rotateX(${-THREE.MathUtils.radToDeg(pitch)}deg)`;
   }
 
+  let dragView = null;
+
   function finishPointer(e) {
     if (e.pointerId !== pointerId) return;
     e.preventDefault();
     e.stopPropagation();
     root.releasePointerCapture?.(pointerId);
     const wasDragging = dragging;
+    const face =
+      dragView
+      || e.target?.closest?.("[data-view]")?.dataset?.view
+      || null;
     pointerId = null;
     dragging = false;
+    dragView = null;
     startSpherical = null;
     root.classList.remove("view-cube--dragging");
     controls.enabled = controlsEnabledBeforeDrag;
     suppressClick = true;
     if (wasDragging) snapTo(nearestViewName(camera, controls));
-    else snapTo("top");
+    else snapTo(face && VIEWS[face] ? face : "top");
   }
 
   root.addEventListener("pointerdown", (e) => {
@@ -171,6 +178,7 @@ export function createViewCube({ container, camera, controls, getSceneRadius }) 
     startY = e.clientY;
     suppressClick = false;
     dragging = false;
+    dragView = e.target?.closest?.("[data-view]")?.dataset?.view || null;
     controlsEnabledBeforeDrag = controls.enabled;
     startSpherical = new THREE.Spherical().setFromVector3(
       camera.position.clone().sub(controls.target)
