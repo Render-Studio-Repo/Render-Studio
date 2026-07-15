@@ -1013,26 +1013,30 @@ async function main() {
   });
 
   function syncInspectorUi(on, focus = "components") {
-    btnInspector?.classList.toggle("active", on);
-    btnInspector?.setAttribute("aria-pressed", String(on));
+    btnInspector?.classList.toggle("active", on && focus === "components");
+    btnInspector?.setAttribute("aria-pressed", String(on && focus === "components"));
     btnHistory?.classList.toggle("active", on && focus === "history");
     btnHistory?.setAttribute("aria-pressed", String(on && focus === "history"));
     inspectorPanel?.classList.toggle("hidden", !on);
-    if (inspectorTitle) inspectorTitle.textContent = focus === "history" ? "Prompt history" : "Part Tree";
+    panelPartsEl?.classList.toggle("hidden", focus !== "components");
+    panelHistoryEl?.classList.toggle("hidden", focus !== "history");
+    if (inspectorTitle) inspectorTitle.textContent = focus === "history" ? "History" : "Part Tree";
     if (on) {
-      renderShareDetails();
-      renderComponentTree();
       if (focus === "history") {
-        promptHistoryEl?.scrollIntoView({ block: "nearest" });
+        renderShareDetails();
+      } else {
+        renderComponentTree();
       }
     }
   }
 
   btnInspector?.addEventListener("click", () => {
-    syncInspectorUi(inspectorPanel?.classList.contains("hidden"), "components");
+    const opening = inspectorPanel?.classList.contains("hidden") || !btnInspector.classList.contains("active");
+    syncInspectorUi(opening, "components");
   });
   btnHistory?.addEventListener("click", () => {
-    syncInspectorUi(inspectorPanel?.classList.contains("hidden") || !btnHistory.classList.contains("active"), "history");
+    const opening = inspectorPanel?.classList.contains("hidden") || !btnHistory.classList.contains("active");
+    syncInspectorUi(opening, "history");
   });
   inspectorPanel?.querySelector("#btn-share-inspector-close")?.addEventListener("click", () => syncInspectorUi(false));
   componentListEl?.addEventListener("click", (event) => {
@@ -1052,9 +1056,38 @@ async function main() {
     }
     if (action === "transparent") {
       setObjectTransparent(obj, !transparentObjects.has(obj));
+      renderComponentTree();
       return;
     }
     frameObject(obj);
+  });
+
+  timelineTrackEl?.addEventListener("click", (event) => {
+    const chip = event.target.closest(".share-timeline-chip");
+    if (!chip) return;
+    timelineTrackEl.querySelectorAll(".share-timeline-chip").forEach((el) => {
+      el.classList.toggle("is-active", el === chip);
+    });
+    syncInspectorUi(true, "history");
+    const promptId = chip.dataset.promptId || "";
+    const card = promptId
+      ? promptHistoryEl?.querySelector(`[data-prompt-id="${CSS.escape(promptId)}"]`)
+      : null;
+    card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+
+  btnDownloadPopup?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = downloadMenuEl?.classList.contains("hidden");
+    setDownloadMenuOpen(!!open);
+  });
+  document.addEventListener("click", (event) => {
+    if (!downloadMenuEl || downloadMenuEl.classList.contains("hidden")) return;
+    if (downloadMenuEl.contains(event.target) || btnDownloadPopup?.contains(event.target)) return;
+    setDownloadMenuOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setDownloadMenuOpen(false);
   });
 
   const raycaster = new THREE.Raycaster();
@@ -1141,6 +1174,7 @@ async function main() {
   });
 
   btnDownloadMenu?.addEventListener("click", () => {
+    renderDownloadMenu($("share-download-list"));
     downloadSheet?.classList.toggle("hidden");
     btnDownloadMenu.classList.toggle("active", !downloadSheet?.classList.contains("hidden"));
   });
