@@ -147,6 +147,23 @@ function showExportSuccess(menu, message) {
   keepMenuInViewport(menu);
 }
 
+async function createShareUrl(projectId, filename) {
+  const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/share`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Could not create share link (${res.status})`);
+  }
+  const data = await res.json();
+  const shareUrl = data.share_url;
+  if (!shareUrl || !/\/share\/[^/]+/i.test(String(shareUrl))) {
+    throw new Error("Could not create a public preview share link.");
+  }
+  return shareUrl.startsWith("http") ? shareUrl : `${window.location.origin}${shareUrl}`;
+}
+
 async function downloadFile(url, filename, { retries = 3 } = {}) {
   let lastErr = null;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -403,7 +420,31 @@ export async function openFileExportMenu({
     statusEl.remove();
   }
 
-  shareBtn.disabled = false;
+  let preparedShareUrl = "";
+  let preparingShare = false;
+  const prepareShareLink = async () => {
+    if (!shareBtn || preparingShare || preparedShareUrl) return;
+    preparingShare = true;
+    shareBtn.disabled = true;
+    shareBtn.classList.add("is-loading");
+    shareBtn.textContent = "Creating share link...";
+    try {
+      preparedShareUrl = await createShareUrl(projectId, shareFilename);
+      shareBtn.textContent = "Copy share link";
+      shareBtn.disabled = false;
+    } catch (err) {
+      shareBtn.textContent = "Retry share link";
+      showExportError(menu, err, {
+        title: "Could not create share link",
+        onRetry: () => prepareShareLink(),
+      });
+    } finally {
+      preparingShare = false;
+      shareBtn.classList.remove("is-loading");
+      if (!preparedShareUrl) shareBtn.disabled = false;
+    }
+  };
+  void prepareShareLink();
 
   const targetStem = fileStem(filename);
   const sorted = [...exports].sort(
@@ -474,24 +515,12 @@ export async function openFileExportMenu({
 
   shareBtn?.addEventListener("click", async () => {
     try {
+      if (!preparedShareUrl) {
+        await prepareShareLink();
+        if (!preparedShareUrl) return;
+      }
       shareBtn.disabled = true;
-      shareBtn.classList.add("is-loading");
-      shareBtn.textContent = "Creating share link...";
-      const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(shareFilename)}/share`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || `Could not create share link (${res.status})`);
-      }
-      const data = await res.json();
-      const shareUrl = data.share_url;
-      if (!shareUrl || !/\/share\/[^/]+/i.test(String(shareUrl))) {
-        throw new Error("Could not create a public preview share link.");
-      }
-      const abs = shareUrl.startsWith("http") ? shareUrl : `${window.location.origin}${shareUrl}`;
-      await copyText(abs);
+      await copyText(preparedShareUrl);
       shareBtn.textContent = "Link copied!";
     } catch (err) {
       shareBtn.textContent = "Copy share link";
@@ -500,7 +529,6 @@ export async function openFileExportMenu({
         onRetry: () => shareBtn.click(),
       });
     } finally {
-      shareBtn.classList.remove("is-loading");
       shareBtn.disabled = false;
     }
   });

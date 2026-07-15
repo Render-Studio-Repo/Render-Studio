@@ -210,7 +210,7 @@ def get_thread(
         thread = _ensure_general_thread(data, user)
     if not thread:
         return None
-    thread.setdefault("visibility", "shared" if thread.get("slug") == "general" else "private")
+    thread.setdefault("visibility", "shared")
     thread.setdefault("members", [])
     if not user_can_access_thread(thread, user, workspace_role=workspace_role):
         return None

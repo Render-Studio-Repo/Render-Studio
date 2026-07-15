@@ -204,6 +204,13 @@ export function createWorkspaceBrowser({
 
   let moveSubmenuEl = null;
 
+  function projectFromContextTarget(target) {
+    const row = target?.closest?.(".proj-item[data-project-id]");
+    const projectId = row?.dataset?.projectId || "";
+    if (!projectId) return null;
+    return (getProjects?.() || []).find((project) => project.id === projectId) || null;
+  }
+
   function effectiveProjectFolderId(project) {
     const folderIds = new Set(folders.map((f) => f.id));
     const fid = project?.folder_id || null;
@@ -1747,7 +1754,6 @@ export function createWorkspaceBrowser({
     main.className = "proj-item-main";
     main.append(handle, expandBtn, body, actions);
     main.addEventListener("contextmenu", (e) => {
-      if (e.target.closest(".proj-row-actions, .proj-drag-handle, .proj-expand-btn")) return;
       showProjectContextMenu(e, p);
     });
     li.append(main);

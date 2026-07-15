@@ -226,8 +226,70 @@ def init_db() -> None:
                 UNIQUE(kb_id, share_type, target_id),
                 FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS model_listings (
+                id TEXT PRIMARY KEY,
+                slug TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                tagline TEXT NOT NULL,
+                description TEXT NOT NULL,
+                body_md TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT 'models',
+                thumbnail_json TEXT NOT NULL DEFAULT '',
+                gallery_json TEXT NOT NULL DEFAULT '[]',
+                files_json TEXT NOT NULL DEFAULT '[]',
+                members_json TEXT NOT NULL DEFAULT '[]',
+                license TEXT NOT NULL DEFAULT 'proprietary',
+                access_mode TEXT NOT NULL DEFAULT 'free',
+                download_enabled INTEGER NOT NULL DEFAULT 1,
+                price_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                status TEXT NOT NULL DEFAULT 'pending',
+                featured INTEGER NOT NULL DEFAULT 0,
+                boost_status TEXT NOT NULL DEFAULT 'none',
+                boosted_until TEXT,
+                created_by TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                published_at TEXT,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS marketplace_boost_apps (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                listing_id TEXT NOT NULL,
+                listing_slug TEXT,
+                user_id TEXT NOT NULL,
+                message TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                reviewed_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
             """
         )
+        for col_sql in (
+            "ALTER TABLE agent_app_listings ADD COLUMN body_md TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE agent_app_listings ADD COLUMN license TEXT NOT NULL DEFAULT 'proprietary'",
+            "ALTER TABLE agent_app_listings ADD COLUMN access_mode TEXT NOT NULL DEFAULT 'free'",
+            "ALTER TABLE agent_app_listings ADD COLUMN download_enabled INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE agent_app_listings ADD COLUMN members_json TEXT NOT NULL DEFAULT '[]'",
+            "ALTER TABLE agent_app_listings ADD COLUMN boost_status TEXT NOT NULL DEFAULT 'none'",
+            "ALTER TABLE agent_app_listings ADD COLUMN boosted_until TEXT",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError:
+                pass
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_listings_status ON model_listings(status, featured)")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_marketplace_boost_status ON marketplace_boost_apps(status, kind)")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("ALTER TABLE user_team_key_opts ADD COLUMN model TEXT")
         except sqlite3.OperationalError:

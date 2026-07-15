@@ -4422,6 +4422,18 @@ def onshape_oauth_start(
     return RedirectResponse(url, status_code=302)
 
 
+@app.post("/api/onshape/oauth-url")
+def onshape_oauth_url(user: dict[str, Any] = Depends(get_current_user)):
+    """Create an Onshape OAuth URL for the currently signed-in user (connect flow)."""
+    try:
+        from backend.services.onshape_oauth import build_authorization_url
+
+        return {"url": build_authorization_url(user_id=user["id"])}
+    except Exception as exc:
+        logger.warning("onshape oauth-url failed user_id=%s error=%s", user.get("id"), exc)
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.get("/oauth/callback")
 def onshape_oauth_callback(code: str | None = None, state: str | None = None, error: str | None = None):
     """Onshape redirects here after the user authorizes.
@@ -4444,7 +4456,7 @@ def onshape_oauth_callback(code: str | None = None, state: str | None = None, er
 
     try:
         token_data = exchange_code_for_tokens(code)
-        result     = upsert_user_tokens(token_data)
+        result     = upsert_user_tokens(token_data, link_user_id=stored_user_id)
         jwt        = create_access_token(result["user_id"])
     except Exception as exc:
         return RedirectResponse(f"/?onshape_error={str(exc)[:80]}", status_code=302)

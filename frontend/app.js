@@ -60,11 +60,11 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-rigging-status";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-export-context-menu";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
+import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-modern";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-roles";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
@@ -74,7 +74,7 @@ import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-export-errors";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-share-preload";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -112,7 +112,7 @@ import { createRiggingEditor } from "./rigging-editor.js?v=20260715-rigging-view
 import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-hierarchy-play";
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
-import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
+import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
 
 const API = "";
@@ -18185,6 +18185,7 @@ function renderFileList(files = []) {
     exp.textContent = "Export";
     exp.disabled = isComponentHidden(f.name);
     exp.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
       if (isComponentHidden(f.name)) {
         alert("Show this component before exporting it.");
@@ -18293,13 +18294,18 @@ async function exportProject(p) {
     return;
   }
   const pid = p.id;
-  if (isAnonymousPublicProject(pid)) {
-    window.open(projectFileUrl(pid, file), "_blank", "noopener");
-    return;
-  }
-  const anchor = document.querySelector(`.proj-item[data-project-id="${pid}"] .btn-proj-export`);
+  const anchor = document.querySelector(`.proj-item[data-project-id="${pid}"] .proj-row-body`)
+    || document.querySelector(`.proj-item[data-project-id="${pid}"]`)
+    || document.body;
   try {
-    await openFileExportMenu({ api, projectId: pid, filename: file, anchorEl: anchor || document.body });
+    await openFileExportMenu({
+      api,
+      projectId: pid,
+      filename: file,
+      anchorEl: anchor,
+      allowOnshape: !isAnonymousPublicProject(pid),
+      allowFusion: !isAnonymousPublicProject(pid),
+    });
   } catch (err) {
     alert(err.message || "Could not export project");
   }
@@ -19367,6 +19373,8 @@ document.addEventListener("click", (e) => {
 
 document.getElementById("btn-new-project")?.addEventListener("click", () => createNewProject());
 document.getElementById("btn-export-model")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
   exportCurrentModel(e.currentTarget).catch((err) => alert(err.message || "Could not export"));
 });
 document.getElementById("btn-rename-project")?.addEventListener("click", () => {

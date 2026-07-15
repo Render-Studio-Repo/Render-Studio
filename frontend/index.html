@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-chat-roles" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-share-preload" />
   <script type="importmap">
   {
     "imports": {
@@ -1625,16 +1625,35 @@
         <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
         <button type="submit" class="btn accent auth-submit">Create account</button>
       </form>
-      <div class="auth-divider"><span>or</span></div>
-      <button type="button" class="btn auth-onshape-btn" data-onshape-login>
-        <img class="auth-onshape-logo" src="/onshape-logo.png?v=20260617-small" width="18" height="18" alt="" />
-        Sign in with Onshape
-      </button>
-      <div class="auth-divider"><span>or</span></div>
-      <button type="button" class="btn auth-onshape-btn auth-autodesk-btn" data-autodesk-login>
-        <img class="auth-autodesk-logo" src="/fusion-360-logo.png?v=20260629" width="18" height="18" alt="" />
-        Sign in with Fusion 360
-      </button>
+      <div class="auth-connect-opts" aria-label="Optional CAD connections">
+        <p class="auth-connect-heading">Optionally connect after you sign in</p>
+        <label class="auth-connect-check">
+          <input type="checkbox" id="auth-connect-onshape" />
+          <img class="auth-onshape-logo" src="/onshape-logo.png?v=20260617-small" width="16" height="16" alt="" />
+          <span>Connect Onshape to your account</span>
+        </label>
+        <label class="auth-connect-check">
+          <input type="checkbox" id="auth-connect-fusion" />
+          <img class="auth-autodesk-logo" src="/fusion-360-logo.png?v=20260629" width="16" height="16" alt="" />
+          <span>Connect Fusion to your account</span>
+        </label>
+        <p class="auth-connect-hint muted small">Checked options open an authorization window after login.</p>
+      </div>
+      <div class="auth-divider"><span>or continue with</span></div>
+      <div class="auth-social-btns">
+        <button type="button" class="btn auth-social-btn" data-social-login="google" data-social-label="Google">
+          <span class="auth-social-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="#EA4335" d="M9 7.2v3.6h5.1c-.2 1.2-.9 2.2-1.9 2.9l3.1 2.4c1.8-1.7 2.8-4.1 2.8-7 0-.7-.1-1.3-.2-1.9H9z"/><path fill="#34A853" d="M4.1 10.7l-.7.5-2.3 1.8C2.6 15.7 5.5 18 9 18c2.4 0 4.4-.8 5.9-2.1l-3.1-2.4c-.8.6-1.9.9-2.8.9-2.2 0-4-1.5-4.7-3.5z"/><path fill="#4A90E2" d="M1.1 5.5C.4 6.9 0 8.4 0 9s.4 2.1 1.1 3.5l3-2.3c-.2-.5-.3-1.1-.3-1.2s.1-.7.3-1.2L1.1 5.5z"/><path fill="#FBBC05" d="M9 3.6c1.3 0 2.5.5 3.4 1.3L15.1 2C13.4.7 11.4 0 9 0 5.5 0 2.6 2.3 1.1 5.5l3 2.3C5 5.1 6.8 3.6 9 3.6z"/></svg>
+          </span>
+          Sign in with Google
+        </button>
+        <button type="button" class="btn auth-social-btn auth-social-btn--apple" data-social-login="apple" data-social-label="Apple">
+          <span class="auth-social-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M12.7 9.3c0-1.8 1.5-2.7 1.5-2.7s-1.2-1.8-3.2-1.8c-1.9 0-2.8 1.1-3.5 1.1-.7 0-1.8-1.1-3.1-1.1-2.4 0-4.7 2.1-4.7 5.9 0 2.4.9 4.9 2.1 6.5.9 1.2 1.8 2.4 3.1 2.4 1.2 0 1.7-.8 3.3-.8 1.6 0 1.9.8 3.3.8 1.3 0 2.2-1.1 3-2.3.5-.8.8-1.5 1-2.2-2.3-1-2.8-3.9-2.8-5.8zM10.6 3.6c.7-.9 1.3-2.1 1.1-3.3-1.1.1-2.4.8-3.1 1.7-.7.8-1.3 2.1-1.1 3.3 1.2 0 2.4-.7 3.1-1.7z"/></svg>
+          </span>
+          Sign in with Apple
+        </button>
+      </div>
     </div>
   </div>
 
@@ -2024,7 +2043,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
-  <script type="module" src="/app.js?v=20260715-chat-roles"></script>
+  <script type="module" src="/app.js?v=20260715-share-preload"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

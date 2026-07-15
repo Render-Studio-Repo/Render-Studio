@@ -133,13 +133,24 @@ def configured_providers() -> list[dict[str, Any]]:
     out = []
     for key in ("google", "apple", "microsoft"):
         cfg = _provider(key)
-        out.append({"provider": key, "label": cfg.label, "configured": bool(cfg.client_id and cfg.client_secret)})
+        if key == "apple":
+            configured = bool(
+                cfg.client_id
+                and (
+                    cfg.client_secret
+                    or (settings.apple_team_id and settings.apple_key_id and settings.apple_private_key)
+                )
+            )
+        else:
+            configured = bool(cfg.client_id and cfg.client_secret)
+        out.append({"provider": key, "label": cfg.label, "configured": configured})
     return out
 
 
 def build_authorization_url(provider: str) -> str:
     cfg = _provider(provider)
-    if not cfg.client_id or not cfg.client_secret:
+    providers = {item["provider"]: item for item in configured_providers()}
+    if not providers.get(cfg.key, {}).get("configured"):
         raise RuntimeError(f"{cfg.label} sign-in is not configured.")
     state = create_oauth_state()
     params = {

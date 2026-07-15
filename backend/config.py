@@ -56,5 +56,19 @@ class Settings(BaseSettings):
     autodesk_redirect_uri: str = "https://render3d.app/oauth/autodesk/callback"
     autodesk_scopes: str = "data:read data:write data:create viewables:read"
 
+    # Social sign-in (Google / Apple / Microsoft)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "https://render3d.app/oauth/google/callback"
+    microsoft_client_id: str = ""
+    microsoft_client_secret: str = ""
+    microsoft_redirect_uri: str = "https://render3d.app/oauth/microsoft/callback"
+    apple_client_id: str = ""
+    apple_client_secret: str = ""
+    apple_redirect_uri: str = "https://render3d.app/oauth/apple/callback"
+    apple_team_id: str = ""
+    apple_key_id: str = ""
+    apple_private_key: str = ""
+
 
 settings = Settings()
