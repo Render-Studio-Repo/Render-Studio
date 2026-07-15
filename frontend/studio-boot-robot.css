@@ -2,21 +2,41 @@
 
 .studio-boot-robot,
 .studio-boot-drop-zone,
-.studio-boot-transfer-part {
+.studio-boot-transfer-part,
+.studio-boot-part {
   display: none !important;
+  animation: none !important;
 }
 
-/* Hide printer “part” decoys that looked like a broken robot */
-.studio-boot-printer--simple .studio-boot-part {
-  display: none !important;
+/* Small printed brick on the bed — not robot-shaped */
+.studio-boot-print-part {
+  position: absolute;
+  left: 58px;
+  bottom: 18px;
+  width: 36px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 45%),
+    linear-gradient(135deg, #7dd3fc, #0284c7);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+  animation: studio-boot-print-grow 6.5s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes studio-boot-print-grow {
+  0%, 8% { transform: scaleY(0.15); opacity: 0.35; }
+  28%, 55% { transform: scaleY(1); opacity: 1; }
+  72%, 100% { transform: scaleY(0.2); opacity: 0.2; }
 }
 
 .studio-boot-arm {
   position: absolute;
-  right: 4px;
-  bottom: 10px;
-  width: 260px;
-  height: 176px;
+  right: 2px;
+  bottom: 6px;
+  width: 268px;
+  height: 180px;
   z-index: 5;
   pointer-events: none;
 }
@@ -31,8 +51,16 @@
 
 @media (max-width: 640px) {
   .studio-boot-arm {
-    right: -8px;
+    right: -10px;
     width: 220px;
     height: 150px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-boot-print-part {
+    animation: none !important;
+    transform: none;
+    opacity: 1;
   }
 }
