@@ -2761,6 +2761,11 @@ def health():
             FRONTEND / "index.html",
             FRONTEND / "app.js",
             FRONTEND / "styles.css",
+            FRONTEND / "client-reload.js",
+            FRONTEND / "ai-key-ui.js",
+            FRONTEND / "knowledge-base.js",
+            FRONTEND / "render-agent.js",
+            FRONTEND / "ribbon.js",
         ]
         mtimes = [path.stat().st_mtime for path in asset_paths if path.is_file()]
         if mtimes:
