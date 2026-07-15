@@ -321,6 +321,26 @@ def list_folder_shares(folder_id: str, user_id: str) -> list[dict[str, Any]]:
 
 def _email_suggest_hint(conn, email: str, team_id: str | None = None) -> str:
     """Suggest a close email match when lookup fails (common typos)."""
+
+    def _edit_distance(a: str, b: str) -> int:
+        if a == b:
+            return 0
+        if not a:
+            return len(b)
+        if not b:
+            return len(a)
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a, start=1):
+            cur = [i]
+            for j, cb in enumerate(b, start=1):
+                cur.append(min(
+                    prev[j] + 1,
+                    cur[j - 1] + 1,
+                    prev[j - 1] + (0 if ca == cb else 1),
+                ))
+            prev = cur
+        return prev[-1]
+
     rows = []
     if team_id:
         rows = conn.execute(
@@ -338,24 +358,19 @@ def _email_suggest_hint(conn, email: str, team_id: str | None = None) -> str:
         return ""
     local, _, domain = email.partition("@")
     best = None
-    best_score = 0
+    best_dist = 99
     for cand in candidates:
+        if cand == email:
+            continue
         c_local, _, c_domain = cand.partition("@")
-        score = 0
-        if domain and c_domain == domain:
-            score += 2
-        # Same length locals with 1-char edit distance often look like typos
-        if local and c_local and abs(len(local) - len(c_local)) <= 2:
-            mismatches = sum(1 for a, b in zip(local, c_local) if a != b)
-            mismatches += abs(len(local) - len(c_local))
-            if mismatches <= 2:
-                score += 3 - mismatches
-        if local and c_local and (local in c_local or c_local in local):
-            score += 1
-        if score > best_score:
-            best_score = score
+        # Prefer same domain; allow 1–2 character typos in the local part
+        if domain and c_domain and c_domain != domain:
+            continue
+        dist = _edit_distance(local, c_local)
+        if dist < best_dist:
+            best_dist = dist
             best = cand
-    if best and best_score >= 3 and best != email:
+    if best and best_dist <= 2:
         return f" Did you mean {best}?"
     return ""
 
