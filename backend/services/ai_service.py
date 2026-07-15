@@ -1520,11 +1520,10 @@ class AIService:
         ]
 
         model = self.model
-        use_responses = model in RESPONSES_ONLY_MODELS or model.startswith("gpt-5.5-pro") or model.startswith("gpt-5.5")
         # Hard wall-clock timeout: httpx read-timeout resets on every received byte,
-        # so gpt-5.5-pro (which streams keepalives) can hang indefinitely despite
+        # so frontier models (which stream keepalives) can hang indefinitely despite
         # timeout=300 on the client.  Enforce a true total elapsed limit here.
-        hard_timeout = 480.0 if (model in PRO_MODELS or model.startswith("gpt-5.5")) else 300.0
+        hard_timeout = 480.0 if is_openai_frontier_model(model) else 300.0
         t0 = time.perf_counter()
         trace: dict[str, Any] = {
             "model": model,
@@ -1588,7 +1587,13 @@ class AIService:
             trace["duration_ms"] = (time.perf_counter() - t0) * 1000
             trace["error"] = str(exc)
             trace_add("error", f"OpenAI failed: {exc}", trace_id=trace_id, data=trace)
-            if model in RESPONSES_ONLY_MODELS or model.startswith("gpt-5.5-pro"):
+            # Do not silently degrade Sol / Pro to chat.completions — that under-drives CAD.
+            if (
+                model in RESPONSES_ONLY_MODELS
+                or model.startswith("gpt-5.5-pro")
+                or model.startswith("gpt-5.6")
+                or model.endswith("-sol")
+            ):
                 raise RuntimeError(f"OpenAI error ({model}): {exc}") from exc
             try:
                 chat_kwargs: dict[str, Any] = {
