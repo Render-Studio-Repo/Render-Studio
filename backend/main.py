@@ -8336,7 +8336,11 @@ def get_prompt_history_entry(
 @app.get("/api/projects/{project_id}/timeline")
 def get_timeline(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
     path = _require_project_read(user, project_id)
-    return history_service.timeline_summary(path)
+    summary = history_service.timeline_summary(path)
+    for entry in summary.get("entries") or []:
+        if entry.get("user_id") and not entry.get("user_avatar_url"):
+            entry["user_avatar_url"] = _avatar_url_for_user_id(entry.get("user_id"))
+    return summary
 
 
 @app.get("/api/projects/{project_id}/object-history")
@@ -8975,6 +8979,20 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
         name = item.get("name")
         if name:
             allowed.add(Path(name).name)
+    # Share previews should be self-contained enough to inspect assemblies and
+    # robot motion without exposing arbitrary non-model notes.
+    try:
+        browser = cad_service.list_browser_tree(project_path)
+        for entry in browser.get("components") or []:
+            for key in ("name", "viewer_filename", "source_filename", "filename"):
+                name = Path(str(entry.get(key) or "")).name
+                if name and (project_path / name).is_file():
+                    allowed.add(name)
+    except Exception:
+        pass
+    for path in project_path.iterdir():
+        if path.is_file() and path.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf", ".stl", ".glb", ".gltf"}:
+            allowed.add(path.name)
     preview = _share_snapshot_filename(project_path, safe)
     if preview:
         allowed.add(preview)
@@ -9009,6 +9027,20 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
     origin = _request_origin(request) if request is not None else ""
     absolute_preview = f"{origin}{preview_url}" if origin and preview_url else preview_url
     absolute_icon = f"{origin}/favicon-180.png?v=20260715-new-logo" if origin else "/favicon-180.png?v=20260715-new-logo"
+    try:
+        browser = cad_service.list_browser_tree(project_path)
+    except Exception:
+        browser = {"components": [], "sketches": [], "wiring": [], "drawings": [], "references": []}
+    robot = _robot_artifact_summary(project_path)
+    robot_artifacts = [
+        {
+            "name": name,
+            "format": Path(name).suffix.lower().lstrip("."),
+            "url": f"/api/share/{token}/files/{urllib.parse.quote(name)}",
+        }
+        for name in robot.get("artifacts") or []
+        if Path(name).name in allowed
+    ]
     return {
         "token": token,
         "project_id": project_id,
@@ -9020,6 +9052,8 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         "preview_file": preview_file,
         "preview_url": preview_url,
         "preview_image_url": absolute_preview or absolute_icon,
+        "browser": browser,
+        "robot": {**robot, "artifacts": robot_artifacts},
         "share_title": f"{project_name} · with Render3D",
         "share_description": f"3D model preview of {filename} — shared with Render3D",
     }

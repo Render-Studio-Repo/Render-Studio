@@ -76,6 +76,7 @@ CURSOR_JS = r"""
       document.documentElement.appendChild(style);
     }
     document.documentElement.classList.add('pw-hide-agent');
+    if (window.__pwAllowAgent) document.documentElement.classList.remove('pw-hide-agent');
     document.documentElement.style.cursor = 'none';
     if (document.body) document.body.style.cursor = 'none';
     let el = document.getElementById('pw-demo-cursor');
@@ -295,9 +296,21 @@ async def type_text(page: Page, text: str, delay: int = 40):
     await page.keyboard.type(text, delay=delay)
 
 
+async def allow_agent(page: Page):
+    await page.evaluate(
+        """() => {
+          window.__pwAllowAgent = true;
+          document.documentElement.classList.remove('pw-hide-agent');
+          const p = document.getElementById('render-agent-panel');
+          if (p) { p.style.display = ''; p.style.visibility = ''; }
+        }"""
+    )
+
+
 async def force_close_agent(page: Page):
     await page.evaluate(
         """() => {
+          window.__pwAllowAgent = false;
           document.documentElement.classList.add('pw-hide-agent');
           for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i);
@@ -309,16 +322,6 @@ async def force_close_agent(page: Page):
         }"""
     )
     await page.wait_for_timeout(120)
-
-
-async def allow_agent(page: Page):
-    await page.evaluate(
-        """() => {
-          document.documentElement.classList.remove('pw-hide-agent');
-          const p = document.getElementById('render-agent-panel');
-          if (p) { p.style.display = ''; p.style.visibility = ''; }
-        }"""
-    )
 
 
 async def clear_prompt(page: Page):
@@ -660,22 +663,11 @@ async def demo_wiring(page: Page):
     if await mode_btn.count() and await mode_btn.is_visible():
         await click_sel(page, "#workspace-mode-btn")
         await page.wait_for_timeout(400)
-        wiring_item = page.locator(
-            "#workspace-mode-menu [data-mode='wiring'], "
-            "#workspace-mode-menu button:has-text('Wiring'), "
-            ".workspace-mode-menu button:has-text('Wiring')"
-        ).first
+        wiring_item = page.get_by_text("Wiring Simulator", exact=False).first
         if await wiring_item.count() and await wiring_item.is_visible():
             box = await wiring_item.bounding_box()
             await click_xy(page, box["x"] + 20, box["y"] + box["height"] / 2)
             await page.wait_for_timeout(1100)
-        else:
-            # Click by visible text
-            loc = page.get_by_text("Wiring Simulator", exact=False).first
-            if await loc.count() and await loc.is_visible():
-                box = await loc.bounding_box()
-                await click_xy(page, box["x"] + 16, box["y"] + box["height"] / 2)
-                await page.wait_for_timeout(1100)
     # Fallback: right-panel Wiring tab
     tab = page.locator("button.right-panel-tab[data-right-tab='wiring']").first
     if await tab.count() and await tab.is_visible():

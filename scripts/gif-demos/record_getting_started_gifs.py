@@ -76,6 +76,7 @@ CURSOR_JS = r"""
       document.documentElement.appendChild(style);
     }
     document.documentElement.classList.add('pw-hide-agent');
+    if (window.__pwAllowAgent) document.documentElement.classList.remove('pw-hide-agent');
     document.documentElement.style.cursor = 'none';
     if (document.body) document.body.style.cursor = 'none';
     let el = document.getElementById('pw-demo-cursor');
@@ -295,9 +296,21 @@ async def type_text(page: Page, text: str, delay: int = 40):
     await page.keyboard.type(text, delay=delay)
 
 
+async def allow_agent(page: Page):
+    await page.evaluate(
+        """() => {
+          window.__pwAllowAgent = true;
+          document.documentElement.classList.remove('pw-hide-agent');
+          const p = document.getElementById('render-agent-panel');
+          if (p) { p.style.display = ''; p.style.visibility = ''; }
+        }"""
+    )
+
+
 async def force_close_agent(page: Page):
     await page.evaluate(
         """() => {
+          window.__pwAllowAgent = false;
           document.documentElement.classList.add('pw-hide-agent');
           for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i);
@@ -309,16 +322,6 @@ async def force_close_agent(page: Page):
         }"""
     )
     await page.wait_for_timeout(120)
-
-
-async def allow_agent(page: Page):
-    await page.evaluate(
-        """() => {
-          document.documentElement.classList.remove('pw-hide-agent');
-          const p = document.getElementById('render-agent-panel');
-          if (p) { p.style.display = ''; p.style.visibility = ''; }
-        }"""
-    )
 
 
 async def clear_prompt(page: Page):
@@ -503,27 +506,23 @@ async def demo_workspaces(page: Page):
 
 async def demo_share_folders(page: Page):
     await force_close_agent(page)
-    # Ensure projects/folders panel is scrolled so Demo Shared Folder is visible
-    await page.evaluate(
-        """() => {
-          const el = [...document.querySelectorAll('*')].find(n => (n.textContent||'').includes('Demo Shared Folder') && n.children.length < 6);
-          el?.scrollIntoView({ block: 'center' });
-        }"""
-    )
-    await page.wait_for_timeout(400)
-    folder = page.get_by_text("Demo Shared Folder", exact=False).first
+    # Prefer folder chrome — not the activity-log "Created folder ..." label
+    folder = page.locator(
+        ".folder-zone:has-text('Demo Shared Folder'), "
+        ".folder-header:has-text('Demo Shared Folder'), "
+        "[data-folder-name='Demo Shared Folder']"
+    ).first
     try:
         await folder.wait_for(state="visible", timeout=8000)
     except Exception:
-        # Expand Unfiled / folders section
-        for label in ["Unfiled", "Folders", "Demo Shared"]:
-            loc = page.get_by_text(label, exact=False).first
-            if await loc.count():
-                try:
-                    await loc.click(timeout=1500)
-                    await page.wait_for_timeout(300)
-                except Exception:
-                    pass
+        await page.evaluate(
+            """() => {
+              const nodes = [...document.querySelectorAll('.folder-zone, .folder-header, .folder-name')];
+              const el = nodes.find((n) => (n.textContent || '').includes('Demo Shared Folder'));
+              el?.scrollIntoView({ block: 'center' });
+            }"""
+        )
+        await page.wait_for_timeout(400)
         await folder.wait_for(state="visible", timeout=8000)
     box = await folder.bounding_box()
     if box:
@@ -537,15 +536,14 @@ async def demo_share_folders(page: Page):
     if await menu.count() and await menu.is_visible():
         await click_sel(page, menu_sel)
     elif box:
-        # Hover to reveal menu button, then try again
-        await page.mouse.move(box["x"] + box["width"] - 20, box["y"] + box["height"] / 2)
-        await page.wait_for_timeout(300)
+        await page.mouse.move(box["x"] + max(8, box["width"] - 18), box["y"] + box["height"] / 2)
+        await page.wait_for_timeout(350)
         if await menu.count() and await menu.is_visible():
             await click_sel(page, menu_sel)
         else:
             await page.mouse.click(box["x"] + 28, box["y"] + box["height"] / 2, button="right")
     await page.wait_for_timeout(450)
-    share = page.locator('[data-action="share"], button:has-text("Share folder"), button:has-text("Share")').first
+    share = page.locator('[data-action="share"], button:has-text("Share folder")').first
     await share.wait_for(state="visible", timeout=6000)
     sbox = await share.bounding_box()
     await click_xy(page, sbox["x"] + 24, sbox["y"] + sbox["height"] / 2)
@@ -555,15 +553,11 @@ async def demo_share_folders(page: Page):
         await click_sel(page, "#folder-share-email")
         await type_text(page, "teammate@company.com")
         await page.wait_for_timeout(350)
-        if await page.locator("#folder-share-member").count() and await page.locator("#folder-share-member").is_visible():
-            await click_sel(page, "#folder-share-member")
-            await page.wait_for_timeout(350)
         submit = page.locator("#folder-share-submit").first
         if await submit.count() and await submit.is_visible():
             box = await submit.bounding_box()
             if box:
                 await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=28)
-                await page.wait_for_timeout(350)
                 await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
                 await page.wait_for_timeout(800)
 
@@ -664,37 +658,22 @@ async def demo_picks(page: Page):
 
 async def demo_wiring(page: Page):
     await force_close_agent(page)
-    # Prefer workspace tab / design mode that exposes Wiring
-    for sel in [
-        "button.right-panel-tab[data-right-tab='wiring']",
-        "[data-right-tab='wiring']",
-        "button:has-text('Wiring')",
-    ]:
-        loc = page.locator(sel).first
-        if await loc.count():
-            await page.evaluate(
-                """(sel) => {
-                  const t = document.querySelector(sel);
-                  if (t) { t.scrollIntoView({block:'center'}); t.click(); }
-                }""",
-                sel.split(",")[0].strip() if False else sel,
-            )
-            await page.wait_for_timeout(400)
-            if await loc.is_visible():
-                await click_sel(page, sel)
-                break
-    await page.wait_for_timeout(1000)
-    # If still no wiring UI, click Architect/Catalog then wiring
-    if not (await page.locator("#wiring-prompt-input, #btn-wiring-toolbelt-demo-blink").count()):
-        for text in ["WIRING", "Wiring"]:
-            loc = page.get_by_text(text, exact=True).first
-            if await loc.count() and await loc.is_visible():
-                box = await loc.bounding_box()
-                if box:
-                    await click_xy(page, box["x"] + 10, box["y"] + 8)
-                    await page.wait_for_timeout(900)
-                    break
-    for sel in ["#btn-wiring-toolbelt-demo-blink", "button:has-text('Demo: Blink')", "button:has-text('Blink')"]:
+    # Switch workspace mode → Wiring Simulator
+    mode_btn = page.locator("#workspace-mode-btn").first
+    if await mode_btn.count() and await mode_btn.is_visible():
+        await click_sel(page, "#workspace-mode-btn")
+        await page.wait_for_timeout(400)
+        wiring_item = page.get_by_text("Wiring Simulator", exact=False).first
+        if await wiring_item.count() and await wiring_item.is_visible():
+            box = await wiring_item.bounding_box()
+            await click_xy(page, box["x"] + 20, box["y"] + box["height"] / 2)
+            await page.wait_for_timeout(1100)
+    # Fallback: right-panel Wiring tab
+    tab = page.locator("button.right-panel-tab[data-right-tab='wiring']").first
+    if await tab.count() and await tab.is_visible():
+        await click_sel(page, "button.right-panel-tab[data-right-tab='wiring']")
+        await page.wait_for_timeout(800)
+    for sel in ["#btn-wiring-toolbelt-demo-blink", "button:has-text('Demo: Blink')"]:
         loc = page.locator(sel).first
         if await loc.count() and await loc.is_visible():
             await click_sel(page, sel)
@@ -714,10 +693,9 @@ async def demo_wiring(page: Page):
                 await page.wait_for_timeout(800)
                 break
     else:
-        # Still show movement over the right panel / tabs area
-        await page.mouse.move(1100, 200, steps=24)
-        await page.wait_for_timeout(500)
-        await page.mouse.move(1100, 400, steps=20)
+        await page.mouse.move(640, 360, steps=24)
+        await page.wait_for_timeout(400)
+        await page.mouse.move(900, 420, steps=20)
         await page.wait_for_timeout(700)
 
 

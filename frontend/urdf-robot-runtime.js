@@ -267,15 +267,15 @@ function primitiveMesh(visual) {
   return mesh;
 }
 
-async function loadVisualMesh(visual, projectId, authHeaders) {
+async function loadVisualMesh(visual, projectId, authHeaders, resolveFileUrl = null) {
   // Primitives (box / cylinder / sphere) render directly — do not collapse them to spheres.
   if (visual.kind !== "mesh") {
     return primitiveMesh(visual);
   }
-  if (!visual.filename || !projectId) {
+  if (!visual.filename || (!projectId && !resolveFileUrl)) {
     return primitiveMesh({ ...visual, kind: "sphere", radius: 0.02 });
   }
-  const url = `/api/projects/${projectId}/files/${encodeURIComponent(visual.filename)}`;
+  const url = resolveFileUrl?.(visual.filename) || `/api/projects/${projectId}/files/${encodeURIComponent(visual.filename)}`;
   try {
     const res = await fetch(url, { headers: authHeaders?.() || {} });
     if (!res.ok) return primitiveMesh({ ...visual, kind: "sphere", radius: 0.025 });
@@ -484,6 +484,79 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     return getState();
   }
 
+  async function loadFromUrls({ urdfUrl, urdfFile, srdfUrl = null, srdfFile = null, resolveFileUrl = null } = {}) {
+    clear();
+    projectId = null;
+    if (!urdfUrl) return null;
+    const urdfRes = await fetch(urdfUrl);
+    if (!urdfRes.ok) throw new Error(`Could not load ${urdfFile || "URDF"}`);
+    urdf = parseUrdfXml(await urdfRes.text());
+    activeUrdfFile = urdfFile || urdfUrl.split("/").pop() || "robot.urdf";
+
+    if (srdfUrl) {
+      try {
+        const srdfRes = await fetch(srdfUrl);
+        if (srdfRes.ok) {
+          srdf = parseSrdfXml(await srdfRes.text());
+          activeSrdfFile = srdfFile || srdfUrl.split("/").pop() || "robot.srdf";
+        }
+      } catch {
+        srdf = null;
+      }
+    }
+
+    root = new THREE.Group();
+    root.name = `urdf:${urdf.name}`;
+    root.userData.isUrdfRobot = true;
+    root.scale.setScalar(1000);
+    linkGroups = new Map();
+    linkParents = new Map();
+
+    for (const link of urdf.links) {
+      const group = new THREE.Group();
+      group.name = link.name;
+      group.userData.urdfLink = link.name;
+      group.matrixAutoUpdate = false;
+      for (const visual of link.visuals) {
+        const mesh = await loadVisualMesh(visual, null, null, resolveFileUrl);
+        group.add(mesh);
+      }
+      if (!link.visuals.length) {
+        group.add(primitiveMesh({ kind: "sphere", radius: 0.015, color: [0.55, 0.6, 0.7, 1], localTransform: IDENTITY }));
+      }
+      linkGroups.set(link.name, group);
+    }
+
+    const childLinks = new Set((urdf.joints || []).map((j) => j.childLink).filter(Boolean));
+    for (const link of urdf.links) {
+      const group = linkGroups.get(link.name);
+      if (!group) continue;
+      if (!childLinks.has(link.name)) root.add(group);
+    }
+    for (const joint of urdf.joints || []) {
+      const parent = linkGroups.get(joint.parentLink);
+      const child = linkGroups.get(joint.childLink);
+      if (!parent || !child) continue;
+      parent.add(child);
+      linkParents.set(joint.childLink, parent);
+      jointValuesRad[joint.name] = 0;
+    }
+    for (const joint of urdf.joints || []) {
+      if (!(joint.name in jointValuesRad)) jointValuesRad[joint.name] = 0;
+    }
+
+    const home = (srdf?.groupStates || []).find((s) => String(s.name).toLowerCase() === "home");
+    if (home?.jointValuesByName) {
+      Object.entries(home.jointValuesByName).forEach(([name, value]) => {
+        if (name in jointValuesRad) jointValuesRad[name] = asNum(value, 0);
+      });
+    }
+
+    scene?.add(root);
+    applyPose();
+    return getState();
+  }
+
   function setJointValue(name, valueRad, { apply = true } = {}) {
     const joint = urdf?.joints?.find((j) => j.name === name);
     if (!joint || joint.type === "fixed") return false;
@@ -673,6 +746,7 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
       clear();
     },
     loadFromProject,
+    loadFromUrls,
     setJointValue,
     setJointValues,
     resetPose,
