@@ -17535,14 +17535,14 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     ? promptReferencesForSubmit()
     : []
   ).some((ref) => String(ref?.type || "").toLowerCase() === "dxf");
-  if (hasPromptImages && !alreadyHasDxfRef) {
-    const choice = await askConvertImageToDrawing();
-    if (choice === "cancel") return;
-    convertImagesToDrawing = choice === "yes";
-  }
-
   promptSubmitInFlight = true;
   try {
+    if (hasPromptImages && !alreadyHasDxfRef) {
+      const choice = await askConvertImageToDrawing();
+      if (choice === "cancel") return;
+      convertImagesToDrawing = choice === "yes";
+    }
+
     await ensureProject();
     syncPromptTargetUI();
     pendingPromptSelectionContext = capturePromptSelectionContext();
