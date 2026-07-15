@@ -18328,6 +18328,11 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   max-width: 10ch;
 }
 
+.workspace-fusion-file-entry--live .workspace-fusion-browser-row {
+  outline: 1px solid color-mix(in srgb, var(--accent, #3d8bfd) 55%, transparent);
+  background: color-mix(in srgb, var(--accent, #3d8bfd) 10%, transparent);
+}
+
 .fusion-workspace-file-modal .fusion-workspace-file-card {
   width: min(520px, calc(100vw - 24px));
   max-height: min(84vh, 720px);

@@ -224,6 +224,26 @@ def fail(project_path: Path, error: str, *, trace_id: str | None = None, extra: 
     return out
 
 
+def interrupt_for_restart(
+    project_path: Path,
+    message: str,
+    *,
+    trace_id: str | None = None,
+) -> dict[str, Any]:
+    """Quietly clear an in-flight job after server restart (no failure popup)."""
+    data = load(project_path) or {}
+    if trace_id:
+        data["trace_id"] = trace_id
+    data["status"] = "canceled"
+    data["error"] = message
+    data["benign_interrupt"] = True
+    data["finished_at"] = _now_iso()
+    out = save(project_path, data)
+    _RUNNING_TRACES.pop(project_path.name, None)
+    _emit(project_path, out)
+    return out
+
+
 PIPELINE_CHECKLIST = (
     {"id": "analyze", "label": "Analyze prompt & references"},
     {"id": "brief", "label": "Write CAD brief"},
@@ -418,6 +438,7 @@ def public_summary(project_path: Path) -> dict[str, Any]:
         "status", "kind", "trace_id", "started_at", "updated_at", "finished_at",
         "prompt", "label", "message", "filename", "url", "error",
         "timeline_index", "prompt_id", "by_user_id", "by_user_name", "by_avatar_url", "mode",
+        "benign_interrupt",
     )}
     if data.get("progress"):
         out["progress"] = data.get("progress")

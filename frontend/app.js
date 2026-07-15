@@ -71,7 +71,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260714-agent-detail
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-collapse";
+import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-live";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
@@ -216,6 +216,8 @@ let refreshTeamInvitesRealtime = () => {};
 let refreshTeamMembersRealtime = () => {};
 let refreshWorkspacePanelRealtime = () => {};
 let pendingPromptSelectionContext = null;
+let workspaceFusionLiveRefreshTimer = null;
+let workspaceFusionLiveRefreshInFlight = false;
 
 function syncViewportGenerationOverlay(completeOpts = {}) {
   const overlayPid = generationWatchPid || viewportOverlayPid;
@@ -945,27 +947,48 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           promptText: gen.prompt || lastPromptCopyContext?.promptText,
         };
         const statusEl = document.getElementById(gen.kind === "wiring" ? "wiring-prompt-status" : "prompt-status");
-        if (statusEl) {
-          statusEl.className = "status error";
-          statusEl.textContent = msg;
-        }
-        // Only popup once per failed trace — avoids re-showing old timeout banners on refresh/Generate.
-        const alreadyShown = generationWatchOverlay?.shownFailureTrace === gen.trace_id;
-        if (pid === projectId && !alreadyShown) {
-          if (generationWatchOverlay) generationWatchOverlay.shownFailureTrace = gen.trace_id;
-          if (gen.kind === "wiring") {
-            wiringOverlay?.showError(msg, copyContext);
-            await refreshWiringPromptHistory();
-          } else {
-            viewerOverlay.showError(msg, copyContext);
-            await refreshPromptHistory();
+        // Server-restart interrupts are expected after deploys — never popup the viewport error.
+        if (gen.benign_interrupt || isBenignGenerationInterrupt(rawError)) {
+          if (statusEl && pid === projectId) {
+            statusEl.className = "status";
+            statusEl.textContent = "Ready — previous run stopped during a server update. Retry if needed.";
           }
-        } else if (pid === projectId) {
-          if (gen.kind === "wiring") await refreshWiringPromptHistory();
-          else await refreshPromptHistory();
+          if (pid === projectId) {
+            viewerOverlay.clearError();
+            wiringOverlay?.clearError();
+          }
+          stopGenerationWatch();
+          userCancelRequested = false;
+          if (pid === projectId) {
+            if (gen.kind === "wiring") await refreshWiringPromptHistory();
+            else await refreshPromptHistory();
+          }
+        } else {
+          if (statusEl) {
+            statusEl.className = "status error";
+            statusEl.textContent = msg;
+          }
+          // Only popup once per failed trace — avoids re-showing old timeout banners on refresh/Generate.
+          const alreadyShown = generationWatchOverlay?.shownFailureTrace === gen.trace_id;
+          if (pid === projectId && !alreadyShown) {
+            if (generationWatchOverlay) generationWatchOverlay.shownFailureTrace = gen.trace_id;
+            if (gen.kind === "wiring") {
+              wiringOverlay?.showError(msg, copyContext);
+              await refreshWiringPromptHistory();
+            } else {
+              viewerOverlay.showError(msg, copyContext);
+              await refreshPromptHistory();
+            }
+          } else if (pid === projectId) {
+            if (gen.kind === "wiring") await refreshWiringPromptHistory();
+            else await refreshPromptHistory();
+          }
         }
       } else if (gen.status === "canceled") {
-        const msg = gen.error || "Generation canceled.";
+        const rawCancel = gen.error || "Generation canceled.";
+        const msg = isBenignGenerationInterrupt(rawCancel)
+          ? "Ready — previous run stopped during a server update. Retry if needed."
+          : rawCancel;
         const statusEl = document.getElementById(gen.kind === "wiring" ? "wiring-prompt-status" : "prompt-status");
         if (statusEl && pid === projectId) {
           statusEl.className = "status";
@@ -2570,8 +2593,18 @@ function handleWorkspaceRealtimeEvent(msg = {}) {
     return;
   }
   handleRealtimeEvent(msg);
-  if (msg.type === "workspace.render_folder.updated" || msg.type === "workspace.updated" || msg.type === "project.created" || msg.type === "project.deleted") {
-    void refreshWorkspaceRealtimeEditor();
+  if (
+    msg.type === "workspace.render_folder.updated"
+    || msg.type === "workspace.updated"
+    || msg.type === "project.created"
+    || msg.type === "project.deleted"
+    || msg.type === "fusion.mirror.updated"
+  ) {
+    if (msg.type === "fusion.mirror.updated") {
+      scheduleLiveFusionMirrorRefresh(msg);
+    } else {
+      void refreshWorkspaceRealtimeEditor();
+    }
   }
 }
 
@@ -10151,6 +10184,12 @@ function formatApiDetail(detail, statusText = "", status = 0) {
   return (statusText || "").trim() || "Request failed";
 }
 
+function isBenignGenerationInterrupt(message) {
+  return /interrupted by server restart|stopped during a server update|interrupted \(page refresh|Generation interrupted by server/i.test(
+    String(message || ""),
+  );
+}
+
 function formatUserError(err, fallback = "Something went wrong — check Prompt History or the Activity Log.") {
   if (!err) return fallback;
   if (typeof err === "string" && err.trim()) return err.trim();
@@ -13253,6 +13292,12 @@ function handleRealtimeEvent(msg = {}) {
   if (msg.type === "model.reload") {
     void applyLiveModelReload(msg, msg.project_id || projectId);
     if (msg.timeline_entry) void refreshTimeline();
+    // Keep workspace Fusion Components / mirror lists in sync without a page refresh.
+    scheduleLiveFusionMirrorRefresh({
+      project_id: msg.project_id || projectId,
+      filename: msg.filename,
+      files: msg.filename ? [msg.filename] : [],
+    });
     return;
   }
 
@@ -13312,7 +13357,80 @@ function handleRealtimeEvent(msg = {}) {
       const idx = allTeams.findIndex((team) => team.id === msg.team.id);
       if (idx >= 0) allTeams[idx] = { ...allTeams[idx], ...msg.team };
     }
-    void refreshWorkspaceRealtimeEditor();
+    if (msg.type === "fusion.mirror.updated") {
+      scheduleLiveFusionMirrorRefresh(msg);
+    } else {
+      void refreshWorkspaceRealtimeEditor();
+    }
+  }
+}
+
+function scheduleLiveFusionMirrorRefresh(msg = {}) {
+  // Optimistic: show the new filename in open mirror lists immediately.
+  applyOptimisticFusionMirrorFiles(msg);
+  window.dispatchEvent(new CustomEvent("render3d:fusion-mirror-changed", { detail: msg }));
+  if (workspaceFusionLiveRefreshTimer) clearTimeout(workspaceFusionLiveRefreshTimer);
+  // Autodesk folder listings can lag a second behind uploads — refresh twice.
+  workspaceFusionLiveRefreshTimer = setTimeout(() => {
+    workspaceFusionLiveRefreshTimer = null;
+    void refreshFusionMirrorUiLive();
+  }, 700);
+  setTimeout(() => {
+    void refreshFusionMirrorUiLive();
+  }, 2800);
+}
+
+async function refreshFusionMirrorUiLive() {
+  if (workspaceFusionLiveRefreshInFlight) return;
+  workspaceFusionLiveRefreshInFlight = true;
+  try {
+    await refreshWorkspaceRealtimeEditor();
+  } finally {
+    workspaceFusionLiveRefreshInFlight = false;
+  }
+}
+
+function applyOptimisticFusionMirrorFiles(msg = {}) {
+  const projectIdHint = String(msg.project_id || "");
+  const files = [
+    ...(Array.isArray(msg.files) ? msg.files : []),
+    msg.filename,
+  ].filter(Boolean).map((name) => String(name));
+  if (!files.length) return;
+  const root = document.getElementById("workspace-fusion-projects");
+  if (!root) return;
+  const cards = [...root.querySelectorAll(".workspace-fusion-mirror-card")];
+  for (const card of cards) {
+    if (projectIdHint && card.dataset.renderProjectId && card.dataset.renderProjectId !== projectIdHint) {
+      continue;
+    }
+    const lists = card.querySelectorAll(".workspace-fusion-browser-list");
+    lists.forEach((list) => {
+      for (const filename of files) {
+        const label = filename;
+        const already = [...list.querySelectorAll(".workspace-fusion-browser-name")]
+          .some((el) => {
+            const text = (el.textContent || "").trim().toLowerCase();
+            return text === label.toLowerCase() || text === label.replace(/\.step$/i, "").toLowerCase();
+          });
+        if (already) continue;
+        const row = document.createElement("div");
+        row.className = "workspace-fusion-file-entry workspace-fusion-file-entry--live";
+        row.innerHTML = `
+          <button type="button" class="workspace-fusion-browser-row workspace-fusion-file-row" disabled>
+            <span class="workspace-fusion-browser-icon">□</span>
+            <span class="workspace-fusion-browser-name">${appEscapeHtml(label)}</span>
+            <small>Updating…</small>
+          </button>
+        `;
+        list.prepend(row);
+        const section = list.closest("details.workspace-fusion-browser-section");
+        const countEl = section?.querySelector(".workspace-fusion-browser-summary small");
+        if (countEl && /^\d+$/.test((countEl.textContent || "").trim())) {
+          countEl.textContent = String(Number(countEl.textContent) + 1);
+        }
+      }
+    });
   }
 }
 
@@ -16858,6 +16976,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     : `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
   reply.textContent = "";
   if (canvasAttached) markCanvasGenerationPending(projectId);
+  viewerOverlay.clearError();
   beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
   const genId = ++activePromptGenerationId;
   userCancelRequested = false;

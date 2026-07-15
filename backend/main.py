@@ -118,13 +118,18 @@ def _recover_stuck_generations() -> None:
             original_data = job["data"] or {}
             original_mode = str(original_data.get("mode") or (original_data.get("request_body") or {}).get("mode") or "").lower()
             message = (
-                "Generation was interrupted by server restart. Please retry the prompt."
+                "Generation stopped during a server update. You can retry the prompt."
                 if original_mode in {"v2", "fusion", "architect"}
-                else "Generation interrupted by server restart. Please retry."
+                else "Generation stopped during a server update. You can retry."
             )
-            generation_service.fail(project_path_, message, trace_id=original_trace)
+            # Quiet cancel — do not surface a failure overlay in the viewport.
+            generation_service.interrupt_for_restart(
+                project_path_,
+                message,
+                trace_id=original_trace,
+            )
             logger.info(
-                "Marked interrupted %s job failed project=%s trace=%s",
+                "Marked interrupted %s job canceled (quiet) project=%s trace=%s",
                 original_mode or "prompt",
                 job["project_id"],
                 original_trace,
@@ -951,6 +956,55 @@ def _append_mesh_edit(project_path: Path, source_filename: str, edit: dict[str, 
 
 def _notify_project(project_id: str, message: dict[str, Any]) -> None:
     hub.notify(project_id, {**message, "project_id": message.get("project_id") or project_id})
+
+
+def _notify_fusion_mirrors_updated(
+    project_id: str,
+    *,
+    filename: str | None = None,
+    files: list[str] | None = None,
+    pushed_mirrors: list[dict[str, Any]] | None = None,
+) -> None:
+    """Tell open clients to refresh Fusion mirror file lists without a full page reload."""
+    names = [Path(str(n)).name for n in (files or []) if n]
+    if filename:
+        names.insert(0, Path(str(filename)).name)
+    # Preserve order, drop dupes.
+    seen: set[str] = set()
+    unique_files: list[str] = []
+    for name in names:
+        key = name.lower()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        unique_files.append(name)
+    if pushed_mirrors:
+        for entry in pushed_mirrors:
+            name = Path(str(entry.get("filename") or "")).name
+            key = name.lower()
+            if name and key not in seen:
+                seen.add(key)
+                unique_files.append(name)
+    if not unique_files and not pushed_mirrors:
+        return
+    payload = {
+        "type": "fusion.mirror.updated",
+        "project_id": project_id,
+        "filename": unique_files[0] if unique_files else None,
+        "files": unique_files,
+        "pushed_count": len(pushed_mirrors or []),
+        "pushed_user_ids": sorted(
+            {str(m.get("user_id") or "") for m in (pushed_mirrors or []) if m.get("user_id")}
+        ),
+    }
+    try:
+        _notify_project(project_id, payload)
+    except Exception:
+        logger.debug("Could not notify project fusion.mirror.updated", exc_info=True)
+    try:
+        _notify_project_workspace(project_id, payload)
+    except Exception:
+        logger.debug("Could not notify workspace fusion.mirror.updated", exc_info=True)
 
 
 def _broadcast_generation_update(project_path: Path) -> None:
@@ -3970,6 +4024,13 @@ def _push_file_to_fusion_mirrors(
         except Exception as exc:
             push_errors.append(f"Push to {user_id} failed: {exc}")
             logger.warning("Fusion mirror push failed project=%s file=%s user=%s: %s", project_id, upload_name, user_id, exc)
+    if pushed_mirrors:
+        _notify_fusion_mirrors_updated(
+            project_id,
+            filename=pushed_mirrors[0].get("filename") or safe,
+            files=[m.get("filename") or safe for m in pushed_mirrors],
+            pushed_mirrors=pushed_mirrors,
+        )
     return {"pushed_mirrors": pushed_mirrors, "push_errors": push_errors, "skipped": None}
 
 
@@ -4136,6 +4197,12 @@ def _fan_out_project_files_to_mirrors(
                     exc,
                 )
 
+    if pushed_mirrors:
+        _notify_fusion_mirrors_updated(
+            project_id,
+            files=[m.get("filename") for m in pushed_mirrors],
+            pushed_mirrors=pushed_mirrors,
+        )
     return {
         "pushed_mirrors": pushed_mirrors,
         "push_errors": push_errors,
@@ -4210,18 +4277,7 @@ def _background_push_render_edit_to_fusion(
             safe,
             len(result.get("pushed_mirrors") or []),
         )
-        try:
-            _notify_project_workspace(
-                project_id,
-                {
-                    "type": "fusion.mirror.updated",
-                    "project_id": project_id,
-                    "filename": safe,
-                    "pushed_count": len(result.get("pushed_mirrors") or []),
-                },
-            )
-        except Exception:
-            logger.debug("Could not notify fusion.mirror.updated", exc_info=True)
+        # Live notify is already emitted by _push_file_to_fusion_mirrors.
     elif result.get("skipped"):
         logger.info(
             "Background Fusion push skipped project=%s file=%s reason=%s",
