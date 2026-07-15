@@ -1,5 +1,5 @@
 import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260709-admin-matt";
-import { createMiniViewer } from "./mini-viewer.js?v=20260715-admin-preview";
+import { createMiniViewer } from "./mini-viewer.js?v=20260715-admin-zup";
 import { mountActivityCharts, mountNetworkBrain } from "./admin-charts.js?v=20260715-admin-charts";
 
 function escapeHtml(value) {
@@ -197,13 +197,15 @@ function ensureModalShell() {
         </div>
         <button type="button" class="btn secondary btn-compact" id="admin-modal-close">Close</button>
       </header>
+      <div class="admin-modal-stats" id="admin-modal-stats"></div>
       <div class="admin-modal-body">
         <div class="admin-modal-viewer-wrap">
           <div id="admin-modal-viewer" class="admin-modal-viewer"></div>
+          <p class="muted small" id="admin-modal-viewer-status"></p>
           <div class="admin-modal-snaps" id="admin-modal-snaps"></div>
         </div>
         <aside class="admin-modal-side">
-          <h3>Latest prompts</h3>
+          <h3>Prompt history</h3>
           <div id="admin-modal-prompts" class="admin-list admin-list--prompts"></div>
           <h3 class="admin-subhead">Files</h3>
           <div id="admin-modal-files" class="admin-pill-list"></div>
@@ -224,16 +226,22 @@ async function openProjectModal(projectId) {
   const el = ensureModalShell();
   const title = el.querySelector("#admin-modal-title");
   const sub = el.querySelector("#admin-modal-sub");
+  const statsEl = el.querySelector("#admin-modal-stats");
   const promptsEl = el.querySelector("#admin-modal-prompts");
   const filesEl = el.querySelector("#admin-modal-files");
   const snapsEl = el.querySelector("#admin-modal-snaps");
   const viewerEl = el.querySelector("#admin-modal-viewer");
+  const viewerStatus = el.querySelector("#admin-modal-viewer-status");
   title.textContent = "Loading project…";
-  promptsEl.innerHTML = '<p class="muted">Loading prompts…</p>';
+  promptsEl.innerHTML = '<p class="muted">Loading prompt history…</p>';
+  statsEl.innerHTML = "";
+  if (viewerStatus) viewerStatus.textContent = "";
 
   try {
     const data = await api(`/api/admin/projects/${encodeURIComponent(projectId)}`);
     const project = data.project || {};
+    const prompts = data.prompts || [];
+    const totalCost = data.total_cost_usd ?? project.total_cost_usd ?? 0;
     title.textContent = project.name || project.id || "Project";
     sub.textContent = [
       project.owner_name || project.owner_email || "Unknown owner",
@@ -242,7 +250,15 @@ async function openProjectModal(projectId) {
       project.training_ready ? "training-ready" : null,
     ].filter(Boolean).join(" · ");
 
-    promptsEl.innerHTML = renderPromptRows(data.prompts || [], { openProject: false });
+    statsEl.innerHTML = `
+      <div class="admin-stats-grid admin-stats-grid--compact admin-modal-stats-grid">
+        ${statCard("Total project cost", formatMoney(totalCost), `${formatNumber(project.prompt_count || prompts.length)} prompts`)}
+        ${statCard("Tokens", formatNumber(project.total_tokens || 0), project.usage_summary?.model ? String(project.usage_summary.model) : "")}
+        ${statCard("Files", formatNumber(project.file_count || (data.files || []).length), project.public ? "Public" : "Private")}
+      </div>
+    `;
+
+    promptsEl.innerHTML = renderPromptRows(prompts, { openProject: false });
     filesEl.innerHTML = (data.files || []).slice(0, 24).map((file) => `
       <span class="admin-pill"><strong>${escapeHtml(file.name || "")}</strong></span>
     `).join("") || '<span class="muted small">No CAD files</span>';
@@ -261,13 +277,37 @@ async function openProjectModal(projectId) {
       }
     }
 
-    modalState.viewer = createMiniViewer(viewerEl, { autoRotate: true, background: 0x0d1117 });
+    viewerEl.innerHTML = "";
+    modalState.viewer = createMiniViewer(viewerEl, { autoRotate: true, background: 0x0d1117, worldUp: "z" });
     if (project.model_url) {
-      const glbBlob = await authBlobUrl(project.model_url);
-      modalState.blobUrls.push(glbBlob);
-      await modalState.viewer.load(glbBlob);
+      if (viewerStatus) viewerStatus.textContent = "Loading 3D model…";
+      try {
+        const glbBlob = await authBlobUrl(project.model_url);
+        modalState.blobUrls.push(glbBlob);
+        await modalState.viewer.load(glbBlob);
+        modalState.viewer.resize?.();
+        if (viewerStatus) viewerStatus.textContent = project.model_file || "GLB preview";
+      } catch (loadErr) {
+        modalState.viewer?.dispose?.();
+        modalState.viewer = null;
+        if (viewerStatus) {
+          viewerStatus.textContent = `Could not load 3D model (${loadErr.message || "error"}).`;
+        }
+        if (!snapsEl.children.length && project.preview_url) {
+          try {
+            const blobUrl = await authBlobUrl(project.preview_url);
+            modalState.blobUrls.push(blobUrl);
+            viewerEl.innerHTML = `<img class="admin-viewer-fallback-img" src="${blobUrl}" alt="Snapshot preview" />`;
+          } catch {
+            viewerEl.innerHTML = '<p class="muted admin-viewer-empty">No GLB preview available for this project.</p>';
+          }
+        } else {
+          viewerEl.innerHTML = '<p class="muted admin-viewer-empty">3D preview failed to load.</p>';
+        }
+      }
     } else {
       viewerEl.innerHTML = '<p class="muted admin-viewer-empty">No GLB preview available for this project.</p>';
+      if (viewerStatus) viewerStatus.textContent = "No GLB on disk — showing snapshots if any.";
     }
   } catch (err) {
     title.textContent = "Could not open project";

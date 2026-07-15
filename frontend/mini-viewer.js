@@ -33,16 +33,27 @@ function colorizePlainPreviewMeshes(root) {
   });
 }
 
-export function createMiniViewer(container, { autoRotate = true, background = 0x0d1117 } = {}) {
-  if (!container) return { load: async () => {}, dispose() {}, setAutoRotate() {} };
+export function createMiniViewer(container, { autoRotate = true, background = 0x0d1117, worldUp = "z" } = {}) {
+  if (!container) return { load: async () => {}, dispose() {}, setAutoRotate() {}, resize() {} };
+
+  // Match the main studio: CAD / Render3D meshes are authored Z-up.
+  const up = worldUp === "y" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(background);
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 5000);
-  camera.position.set(2.2, 1.6, 2.2);
+  camera.up.copy(up);
+  camera.position.set(2.2, -2.2, 1.6);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // Ensure the host has a real pixel size before the first WebGL buffer alloc —
+  // percentage heights on an empty flex child often read as 0 and leave a blank canvas.
+  if (!container.style.minHeight) container.style.minHeight = "320px";
+  if (container.clientHeight < 160) {
+    container.style.height = "360px";
+  }
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   setupRenderer(renderer);
   container.appendChild(renderer.domElement);
@@ -52,10 +63,10 @@ export function createMiniViewer(container, { autoRotate = true, background = 0x
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x202830, 1.1));
   const key = new THREE.DirectionalLight(0xffffff, 1.6);
-  key.position.set(3, 5, 4);
+  key.position.set(3, -4, 5);
   scene.add(key);
   const fill = new THREE.DirectionalLight(0x88aaff, 0.5);
-  fill.position.set(-4, 1, -3);
+  fill.position.set(-4, 3, 1);
   scene.add(fill);
 
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -82,13 +93,14 @@ export function createMiniViewer(container, { autoRotate = true, background = 0x
     const center = box.getCenter(new THREE.Vector3());
     object.position.sub(center);
     const radius = Math.max(size.x, size.y, size.z, 0.001) * 0.5;
-    const dist = radius / Math.sin((camera.fov * Math.PI) / 180 / 2);
-    camera.position.set(dist * 0.9, dist * 0.7, dist * 1.1);
-    camera.near = radius / 100;
-    camera.far = dist * 10;
+    const dist = Math.max(radius / Math.sin((camera.fov * Math.PI) / 180 / 2), radius * 2.5, 0.5);
+    // Three-quarter view above the XY plane (Z-up).
+    camera.position.set(dist * 0.85, -dist * 0.95, dist * 0.7);
+    camera.near = Math.max(radius / 200, 0.001);
+    camera.far = Math.max(dist * 20, 100);
     camera.updateProjectionMatrix();
     controls.target.set(0, 0, 0);
-    controls.maxDistance = dist * 4;
+    controls.maxDistance = dist * 6;
     controls.update();
   }
 
@@ -115,6 +127,7 @@ export function createMiniViewer(container, { autoRotate = true, background = 0x
   async function load(url) {
     clearModel();
     if (!url) return;
+    resize();
     const loader = new GLTFLoader();
     const gltf = await loader.loadAsync(url);
     if (disposed) return;
@@ -122,8 +135,14 @@ export function createMiniViewer(container, { autoRotate = true, background = 0x
     applyCadStyle(current);
     colorizePlainPreviewMeshes(current);
     scene.add(current);
+    // Layout may still be settling when the modal opens — frame twice.
     resize();
     frameObject(current);
+    requestAnimationFrame(() => {
+      if (disposed || !current) return;
+      resize();
+      frameObject(current);
+    });
   }
 
   resize();
@@ -137,6 +156,7 @@ export function createMiniViewer(container, { autoRotate = true, background = 0x
 
   return {
     load,
+    resize,
     setAutoRotate(v) {
       controls.autoRotate = !!v;
     },

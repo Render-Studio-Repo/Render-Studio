@@ -888,9 +888,17 @@ def _admin_preview_assets(project_path: Path, project_id: str, latest_file: str 
 
     return {
         "preview_file": preview_file,
-        "preview_url": f"/api/projects/{project_id}/files/{preview_file}" if preview_file else None,
+        "preview_url": (
+            f"/api/projects/{project_id}/files/{urllib.parse.quote(preview_file)}"
+            if preview_file
+            else None
+        ),
         "model_file": model_file,
-        "model_url": f"/api/projects/{project_id}/files/{model_file}" if model_file else None,
+        "model_url": (
+            f"/api/projects/{project_id}/files/{urllib.parse.quote(model_file)}"
+            if model_file
+            else None
+        ),
     }
 
 
@@ -6641,6 +6649,13 @@ def admin_project_detail(project_id: str, user: dict[str, Any] = Depends(get_cur
             }
         )
     prompts.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    try:
+        usage = prompt_history_service.project_usage_summary(project_path)
+    except Exception:
+        usage = {}
+    total_cost = usage.get("cost_usd")
+    if total_cost is None:
+        total_cost = sum(float(p["cost_usd"]) for p in prompts if p.get("cost_usd") is not None)
     snapshot_files = sorted(
         [p.name for p in project_path.glob("*_snapshot_*.png") if p.is_file()],
         key=lambda name: (project_path / name).stat().st_mtime,
@@ -6660,18 +6675,26 @@ def admin_project_detail(project_id: str, user: dict[str, Any] = Depends(get_cur
             "owner_email": owner.get("owner_email"),
             "team_id": owner.get("team_id"),
             "training_ready": bool(preview.get("model_file") and prompts),
+            "total_cost_usd": round(float(total_cost or 0), 6),
+            "prompt_count": int(usage.get("prompt_count") or len(prompts)),
+            "total_tokens": int((usage.get("usage") or {}).get("total_tokens") or 0),
+            "usage_summary": usage,
             **preview,
-            "snapshot_urls": [f"/api/projects/{project_id}/files/{name}" for name in snapshot_files],
+            "snapshot_urls": [
+                f"/api/projects/{project_id}/files/{urllib.parse.quote(name)}"
+                for name in snapshot_files
+            ],
         },
         "files": [
             {
                 "name": f.get("name"),
                 "format": f.get("format"),
-                "url": f"/api/projects/{project_id}/files/{f.get('name')}",
+                "url": f"/api/projects/{project_id}/files/{urllib.parse.quote(str(f.get('name') or ''))}",
             }
             for f in files[:80]
         ],
         "prompts": prompts,
+        "total_cost_usd": round(float(total_cost or 0), 6),
     }
 
 

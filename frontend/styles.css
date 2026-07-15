@@ -20434,11 +20434,34 @@ body.kb-modal-open {
 
 .admin-modal-viewer {
   flex: 1 1 auto;
-  min-height: 320px;
+  min-height: 360px;
+  height: 420px;
   border-radius: 12px;
   border: 1px solid rgba(139, 148, 158, 0.28);
   background: #010409;
   overflow: hidden;
+  position: relative;
+}
+
+.admin-modal-stats {
+  padding: 0 18px;
+}
+
+.admin-modal-stats-grid {
+  margin: 12px 0 0;
+}
+
+.admin-viewer-fallback-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #010409;
+}
+
+.admin-modal-side .admin-list--prompts {
+  max-height: 420px;
+  overflow: auto;
 }
 
 .admin-viewer-empty {
