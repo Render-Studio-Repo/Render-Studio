@@ -40,21 +40,25 @@ function ownerLabel(app) {
 }
 
 function featureCard(feature) {
+  const steps = feature.steps || [];
+  const shown = steps.slice(0, 4);
+  const more = steps.length - shown.length;
   const gif = feature.gif
     ? `<div class="docs-feature-gif-wrap">
          <img class="docs-feature-gif" src="${esc(feature.gif)}" alt="" loading="lazy" />
        </div>`
-    : "";
+    : `<div class="docs-feature-gif-wrap docs-feature-gif-wrap--empty" aria-hidden="true"></div>`;
   return `
     <article class="docs-feature-card" id="doc-${esc(feature.id)}">
       ${gif}
       <div class="docs-feature-body">
         <h4>${esc(feature.title)}</h4>
         <p class="docs-feature-summary">${esc(feature.summary)}</p>
-        <p class="docs-feature-where"><span>Where</span> ${esc(feature.where || "")}</p>
+        ${feature.where ? `<p class="docs-feature-where"><span>Where</span> ${esc(feature.where)}</p>` : ""}
         <ol class="docs-feature-steps">
-          ${(feature.steps || []).map((step) => `<li>${esc(step)}</li>`).join("")}
+          ${shown.map((step) => `<li>${esc(step)}</li>`).join("")}
         </ol>
+        ${more > 0 ? `<p class="docs-feature-more muted small">+${more} more step${more === 1 ? "" : "s"}</p>` : ""}
         ${feature.ask ? `<p class="docs-feature-ask muted small">Ask Agent: ${esc(feature.ask)}</p>` : ""}
       </div>
     </article>
@@ -79,8 +83,7 @@ function mountNav() {
   const host = document.getElementById("docs-catalog-nav");
   if (!host) return;
   host.innerHTML = `
-    <p class="docs-catalog-nav-title">Categories</p>
-    <a href="#agent-store-docs">Agent Store <em>public</em></a>
+    <p class="docs-catalog-nav-title">On this page</p>
     ${DOC_CATEGORIES.map((cat) => {
       const count = DOC_FEATURES.filter((f) => f.category === cat.id).length;
       if (!count) return "";
@@ -96,24 +99,23 @@ function mountCatalog() {
   const rows = featuresByCategory();
   host.innerHTML = `
     <div class="docs-catalog-intro">
-      <p class="info-eyebrow">Complete documentation</p>
-      <h3>All features, categorized</h3>
-      <p class="muted">
-        ${DOC_FEATURES.length} how-tos with demo GIFs where available.
-        Prefer a guided tour? Open
-        <a href="/getting-started.html">Getting Started</a>
-        and ask Render Agent.
-      </p>
       <label class="docs-catalog-filter">
         <span class="visually-hidden">Filter features</span>
         <input type="search" id="docs-feature-filter" placeholder="Filter features (e.g. URDF, wiring, share)…" />
       </label>
+      <p class="docs-catalog-count muted small">${DOC_FEATURES.length} features across ${rows.length} categories</p>
     </div>
     ${rows.map((row) => categorySection(row)).join("")}
   `;
 
   host.querySelectorAll(".docs-feature-gif").forEach((img) => {
-    img.addEventListener("error", () => img.closest(".docs-feature-gif-wrap")?.remove());
+    img.addEventListener("error", () => {
+      const wrap = img.closest(".docs-feature-gif-wrap");
+      if (wrap) {
+        wrap.classList.add("docs-feature-gif-wrap--empty");
+        wrap.innerHTML = "";
+      }
+    });
   });
 
   const input = host.querySelector("#docs-feature-filter");

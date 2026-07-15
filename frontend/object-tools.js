@@ -387,7 +387,8 @@ export function createObjectTools({
     const selectedBodyIndices = [...new Set(selections.map((s) => s.bodyIndex).filter((n) => Number.isInteger(n)))]
       .sort((a, b) => b - a);
 
-    if (multiBody && selectedBodyIndices.length > 0 && selectedBodyIndices.length < (bodyInfo?.count || 1)) {
+    const removeBodySelection = selections.some((s) => s.partLevel) || selected.partLevel;
+    if (removeBodySelection && multiBody && selectedBodyIndices.length > 0 && selectedBodyIndices.length < (bodyInfo?.count || 1)) {
       setStatus("loading", `Removing ${label}…`);
       try {
         let data = null;

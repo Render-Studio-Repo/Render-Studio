@@ -11,7 +11,7 @@ import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle3";
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
-const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v5";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v6";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -220,6 +220,7 @@ export function createRenderAgent({
   let busy = false;
   let invitePicker = null;
   let agentSourceRow = null;
+  let pendingQuestionContext = "";
 
   function setStatus(message = "", isError = false) {
     if (statusEl) {
@@ -336,8 +337,15 @@ export function createRenderAgent({
       showWelcomeTip();
       markOnboardingSeen();
     }
-    if (question && input) {
-      input.value = String(question);
+    const normalizedQuestion = String(question || "").trim();
+    if (normalizedQuestion && input) {
+      pendingQuestionContext = normalizedQuestion;
+      const currentText = input.value.trim();
+      if (!currentText) {
+        input.value = normalizedQuestion;
+      } else if (currentText !== normalizedQuestion && !currentText.includes(normalizedQuestion)) {
+        input.value = `${normalizedQuestion}\n\n${currentText}`;
+      }
     }
     if (currentUserId()) {
       void refreshThreads().then(() => {
@@ -355,7 +363,7 @@ export function createRenderAgent({
     }
     setTimeout(() => {
       input?.focus();
-      if (question && input) {
+      if (normalizedQuestion && input) {
         const len = input.value.length;
         input.setSelectionRange?.(len, len);
       }
@@ -371,6 +379,13 @@ export function createRenderAgent({
     }
     if (input) input.value = q;
     await sendMessage();
+  }
+
+  function messageWithPendingContext(message) {
+    const context = pendingQuestionContext.trim();
+    const body = String(message || "").trim();
+    if (!context || !body || body === context || body.includes(context)) return body;
+    return `${context}\n\nAdditional question:\n${body}`;
   }
 
   function close() {
@@ -417,14 +432,15 @@ export function createRenderAgent({
     }
     const saved = readStickyLayout();
     const defaultW = Math.min(isDocs ? 440 : 400, Math.max(260, window.innerWidth - 32));
-    const defaultH = Math.min(isDocs ? 640 : 640, Math.max(280, window.innerHeight - 96));
+    const defaultH = Math.min(isDocs ? 560 : 640, Math.max(280, window.innerHeight - 112));
+    const defaultTop = isDocs ? Math.max(72, window.innerHeight - defaultH - 78) : 72;
     if (!saved) {
       panel.style.left = "auto";
       panel.style.right = "16px";
       panel.style.width = `${defaultW}px`;
       panel.style.height = `${defaultH}px`;
       panel.style.maxHeight = "none";
-      panel.style.top = "72px";
+      panel.style.top = `${defaultTop}px`;
       return;
     }
     if (saved.width) panel.style.width = `${Math.max(isDocs ? 320 : 260, saved.width)}px`;
@@ -439,7 +455,7 @@ export function createRenderAgent({
     } else {
       panel.style.left = "auto";
       panel.style.right = "16px";
-      panel.style.top = "72px";
+      panel.style.top = `${defaultTop}px`;
     }
   }
 
@@ -1047,7 +1063,8 @@ export function createRenderAgent({
   }
 
   async function sendMessage() {
-    const message = input?.value.trim() || "";
+    const typedMessage = input?.value.trim() || "";
+    const message = messageWithPendingContext(typedMessage);
     if (!message || busy) return;
     if (!currentUserId()) {
       onRequireLogin?.();
@@ -1055,6 +1072,7 @@ export function createRenderAgent({
     }
     busy = true;
     input.value = "";
+    pendingQuestionContext = "";
     setStatus("Render Agent is thinking...");
     const optimistic = {
       ...(activeThread || { messages: [] }),

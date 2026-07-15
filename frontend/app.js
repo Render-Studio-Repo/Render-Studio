@@ -65,7 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
-import { createRenderAgent } from "./render-agent.js?v=20260715-docs-agent-toggle";
+import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -81,7 +81,7 @@ import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-er
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
 import { createDirectModeling } from "./direct-modeling.js?v=20260714-extrude-face-drag";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
-import { createObjectTools } from "./object-tools.js?v=20260715-part-select-highlight";
+import { createObjectTools } from "./object-tools.js?v=20260715-delete-object-shortcuts";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
 import { createProjectTree } from "./project-tree.js?v=20260715-renders-section";
@@ -95,6 +95,7 @@ import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-download";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
+import { preferViewportFilename, rememberProjectFiles } from "./viewport-viewer.js?v=20260715-login-colors";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-elec-none";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
@@ -4926,16 +4927,6 @@ async function afterModelEdit(data) {
     timelineData = data.timeline;
     timeline.setTimeline(data.timeline, { scroll: true, scrollAlign: "end" });
   }
-  if (isBakedTransform) {
-    const newIndex =
-      data.timeline_index ??
-      data.timeline_entry?.index ??
-      timelineData?.current_index ??
-      null;
-    if (Number.isInteger(newIndex) && newIndex > 0) {
-      rememberTransformUndoCheckpoint(newIndex - 1);
-    }
-  }
   await refreshTimeline();
   await refreshPromptHistory();
 }
@@ -4958,31 +4949,9 @@ function pushViewportUndoAction(action, { clearRedo = true } = {}) {
   if (clearRedo) viewportRedoStack.length = 0;
 }
 
-function rememberTransformUndoCheckpoint(beforeIndex = null) {
-  const idx = beforeIndex != null ? beforeIndex : timelineCurrentIndex();
-  if (idx == null || idx < 0) return;
-  pushViewportUndoAction({
-    type: "timeline-transform",
-    beforeIndex: idx,
-    label: "transform",
-  });
-}
-
 function undoViewportAction() {
   const action = viewportUndoStack.pop();
   if (!action) return false;
-  if (action.type === "timeline-transform") {
-    const target = Number(action.beforeIndex);
-    if (!Number.isInteger(target) || target < 0) return false;
-    viewportRedoStack.push({
-      type: "timeline-transform-redo",
-      afterIndex: timelineCurrentIndex(),
-    });
-    void restoreTimeline(target).then(() => {
-      setEditStatus("ok", "Undo move: object restored.");
-    });
-    return true;
-  }
   if (action.type === "fusion-component-drop") {
     const beforeNames = new Set((action.before || []).map((item) => item.name));
     for (const [name] of [...projectAssembly.list()]) {
@@ -5011,19 +4980,6 @@ function undoViewportAction() {
 function redoViewportAction() {
   const action = viewportRedoStack.pop();
   if (!action) return false;
-  if (action.type === "timeline-transform-redo") {
-    const target = Number(action.afterIndex);
-    if (!Number.isInteger(target) || target < 0) return false;
-    pushViewportUndoAction({
-      type: "timeline-transform",
-      beforeIndex: timelineCurrentIndex(),
-      label: "transform",
-    }, { clearRedo: false });
-    void restoreTimeline(target).then(() => {
-      setEditStatus("ok", "Redo move: object moved again.");
-    });
-    return true;
-  }
   return false;
 }
 
@@ -8586,17 +8542,23 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
   syncSketchVisibilityFromTree(browser);
   let comps = browser.components || [];
   const projectFiles = data.files || [];
+  rememberProjectFiles(projectFiles);
   const ensureLoadFile = (filename, { primary = false } = {}) => {
     if (!filename) return;
     const file = projectFiles.find((f) => f.name === filename);
     if (!file && !/\.(glb|gltf|stl|obj|ply|off)$/i.test(filename)) return;
     const existing = comps.find((c) => c.name === filename || c.viewer_filename === filename);
+    // Keep Jake / mesh viewer from browser — do not clobber with STEP → washed shell GLB.
+    const viewer = preferViewportFilename(filename, {
+      components: [...(browser.components || []), ...comps],
+      files: projectFiles,
+    });
     const patch = {
       auto_load: true,
       // Only keep world placement for edited/copied parts — brand-new objects should center.
       baked_placement: hasBakedPlacement(filename) || existing?.baked_placement === true,
       primary: primary || existing?.primary === true,
-      viewer_filename: filename,
+      viewer_filename: viewer,
     };
     if (existing) {
       Object.assign(existing, patch);
@@ -8628,7 +8590,10 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
         name: modelLatestFile,
         stem: fileStem(modelLatestFile),
         format: modelLatestFile.slice(modelLatestFile.lastIndexOf(".") + 1).toLowerCase(),
-        viewer_filename: modelLatestFile,
+        viewer_filename: preferViewportFilename(modelLatestFile, {
+          components: browser.components || [],
+          files: projectFiles,
+        }),
         size: projectFiles.find((f) => f.name === modelLatestFile)?.size,
         primary: true,
         auto_load: true,
@@ -8654,7 +8619,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
 
   if (canAppendNewSibling) {
     const entry = comps.find((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile);
-    const viewer = entry?.viewer_filename || modelLatestFile;
+    const viewer = preferViewportFilename(entry?.viewer_filename || modelLatestFile, { components: comps });
     selectedFile = entry?.name || modelLatestFile;
     try {
       const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
@@ -8683,7 +8648,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
     // Edit / overwrite: swap the changed component in place and keep siblings.
     const prevCatalog = replaceCatalog || modelLatestFile;
     const entry = comps.find((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile);
-    const viewer = entry?.viewer_filename || modelLatestFile;
+    const viewer = preferViewportFilename(entry?.viewer_filename || modelLatestFile, { components: comps });
     selectedFile = entry?.name || modelLatestFile;
     try {
       const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
@@ -10236,7 +10201,7 @@ function openMarkingMenu(event) {
   menu.className = "marking-menu";
   const actions = [
     ["⇕", "Press-Pull", () => launchViewportTool("presspull")],
-    ["⌾", "Hole", () => launchViewportTool("hole")],
+    ["⌫", "Delete object", () => { void deleteActiveAssemblyObject(); }],
     ["✥", "Move", () => openTransformMode("translate")],
     ["⟳", "Rotate", () => openTransformMode("rotate")],
     ["⤢", "Scale", () => openTransformMode("scale")],
@@ -12071,6 +12036,12 @@ function resolveViewerPaths(filename, url) {
     const solid = viewFilename.replace(/__faceted(?=\.(glb|gltf)$)/i, "");
     viewFilename = solid;
     viewUrl = (viewUrl || "").replace(/__faceted(?=\.(glb|gltf)(?:\?|#|$))/i, "");
+  }
+  // Prefer browser/Jake viewer when STEP→shell would wash multi-part colors after login.
+  const preferred = preferViewportFilename(viewFilename);
+  if (preferred && preferred !== viewFilename) {
+    viewFilename = preferred;
+    viewUrl = (url || viewUrl || "").replace(/\/files\/[^/?#]+/, `/files/${encodeURIComponent(viewFilename)}`);
   }
   return { viewFilename, viewUrl };
 }
@@ -17415,6 +17386,7 @@ async function refreshWorkspaceRealtimeEditor() {
 }
 
 function renderFileList(files = []) {
+  rememberProjectFiles(files);
   const list = document.getElementById("file-list");
   if (!list) return;
   list.innerHTML = "";
@@ -18193,6 +18165,7 @@ function selectFromViewportMarquee(drag, e) {
 }
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
+  renderer.domElement.focus({ preventScroll: true });
   pointerDownPos = { x: e.clientX, y: e.clientY };
   if (handleReferenceRemove(e)) return;
 
@@ -20310,7 +20283,9 @@ window.addEventListener("keydown", (e) => {
         if (isDxfDrawingFilename(file)) {
           await openDxfDrawingByName(file, { projectId });
         } else if (!isComponentHidden(file)) {
-          await loadModel(projectFileUrl(projectId, file), file, {
+          const comps = projectTree.getComponents?.() || [];
+          const viewer = preferViewportFilename(file, { components: comps });
+          await loadModel(projectFileUrl(projectId, viewer), viewer, {
             projectId,
             catalogFilename: file,
             fitView: false,

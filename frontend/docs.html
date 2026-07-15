@@ -8,10 +8,10 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-docs-agent-docs" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-docs-complete-layout" />
   <link rel="stylesheet" href="/docs-agent.css?v=20260715-docs-agent-toggle" />
 </head>
-<body class="info-page">
+<body class="info-page docs-body">
   <div id="app" class="app-info">
     <header class="toolbar">
       <div class="brand">
@@ -36,9 +36,9 @@
       </nav>
     </header>
 
-    <main class="info-main">
-      <article class="info-content">
-        <header class="info-hero">
+    <main class="info-main docs-main">
+      <article class="info-content docs-content">
+        <header class="info-hero docs-hero">
           <p class="info-eyebrow">Documentation</p>
           <h2>Render3D CAD Visualizer</h2>
           <p class="info-lead">
@@ -46,23 +46,21 @@
             wiring, cloud sync, collaboration, and more — with how-tos and demo GIFs.
             New here? Start with <a href="/getting-started.html">Getting Started</a>.
           </p>
-          <p style="margin-top:14px">
+          <div class="docs-hero-actions">
             <a class="btn accent" href="#complete-docs">Complete documentation</a>
-            <a class="btn secondary" href="/getting-started.html">Getting Started — GIF demos</a>
-            <a class="btn secondary" href="#agent-store-docs">Agent Store docs</a>
-            <a class="btn secondary" href="/getting-started.html#tips-library">Tips &amp; tricks</a>
+            <a class="btn secondary" href="/getting-started.html">Getting Started</a>
             <a class="btn secondary" href="/updates.html">Recent Updates</a>
-          </p>
+          </div>
           <nav class="docs-category-tabs" aria-label="Docs categories">
             <a class="docs-category-tab" href="/getting-started.html">Getting Started</a>
             <a class="docs-category-tab" href="#agent-store-docs">Agent Store</a>
             <a class="docs-category-tab" href="/getting-started.html#tips-library">Tips &amp; tricks</a>
             <a class="docs-category-tab" href="/updates.html">Updates</a>
-            <a class="docs-category-tab active" href="/docs.html">Reference</a>
+            <a class="docs-category-tab active" href="#complete-docs">Complete docs</a>
           </nav>
         </header>
 
-        <section class="info-section" id="getting-started-callout">
+        <section class="info-section docs-callout" id="getting-started-callout">
           <h3>New here?</h3>
           <p>
             The <a href="/getting-started.html">Getting Started</a> page lists major features with
@@ -88,43 +86,55 @@
           </div>
         </section>
 
-
-        <section class="info-section" id="complete-docs">
+        <section class="info-section docs-complete-section" id="complete-docs">
+          <header class="docs-complete-header">
+            <p class="info-eyebrow">Feature catalog</p>
+            <h3>Complete documentation</h3>
+            <p class="muted docs-complete-lead">
+              Browse every Studio feature by category — how-tos, where to click, and demo GIFs.
+            </p>
+          </header>
           <div class="docs-catalog-layout">
             <nav class="docs-catalog-nav" id="docs-catalog-nav" aria-label="Documentation categories"></nav>
             <div id="docs-catalog" class="docs-catalog"></div>
           </div>
         </section>
 
-        <section class="info-section">
-          <h3>What changed today</h3>
-          <p>
-            Render3D now has a more complete electronics-to-CAD workflow: source parts, wire them,
-            generate real mounting fixtures, draw routes between objects, and inspect AI cost usage
-            by project, person, prompt, tokens, or calls.
-          </p>
-          <div class="info-feature-grid">
-            <article class="info-feature-card">
-              <strong>Component-aware CAD</strong>
-              <span>Imported STEP/GLB parts can be profiled, measured, referenced, mounted, and automatically placed into generated fixtures.</span>
-            </article>
-            <article class="info-feature-card">
-              <strong>Draw mode upgrades</strong>
-              <span>Selected-face hole patterns, blind depths, and line-tool ducts/wire loops now run as local geometry edits.</span>
-            </article>
-            <article class="info-feature-card">
-              <strong>Wiring simulator intelligence</strong>
-              <span>Components can be dragged into the simulator, drivers are validated for motors, and code/simulation flows are documented.</span>
-            </article>
-            <article class="info-feature-card">
-              <strong>Workspace quality of life</strong>
-              <span>Stop generation, hide objects from the context menu, keep prompt drafts per project, and use expanded AI cost analytics.</span>
-            </article>
-          </div>
-        </section>
+        <div class="docs-reference-band">
+          <header class="docs-reference-header">
+            <p class="info-eyebrow">Reference</p>
+            <h3>Workflows, prompts, API &amp; setup</h3>
+          </header>
 
-        <section class="info-section">
-          <h3>Visual workflows</h3>
+          <section class="info-section">
+            <h3>What changed today</h3>
+            <p>
+              Render3D now has a more complete electronics-to-CAD workflow: source parts, wire them,
+              generate real mounting fixtures, draw routes between objects, and inspect AI cost usage
+              by project, person, prompt, tokens, or calls.
+            </p>
+            <div class="info-feature-grid">
+              <article class="info-feature-card">
+                <strong>Component-aware CAD</strong>
+                <span>Imported STEP/GLB parts can be profiled, measured, referenced, mounted, and automatically placed into generated fixtures.</span>
+              </article>
+              <article class="info-feature-card">
+                <strong>Draw mode upgrades</strong>
+                <span>Selected-face hole patterns, blind depths, and line-tool ducts/wire loops now run as local geometry edits.</span>
+              </article>
+              <article class="info-feature-card">
+                <strong>Wiring simulator intelligence</strong>
+                <span>Components can be dragged into the simulator, drivers are validated for motors, and code/simulation flows are documented.</span>
+              </article>
+              <article class="info-feature-card">
+                <strong>Workspace quality of life</strong>
+                <span>Stop generation, hide objects from the context menu, keep prompt drafts per project, and use expanded AI cost analytics.</span>
+              </article>
+            </div>
+          </section>
+
+          <section class="info-section">
+            <h3>Visual workflows</h3>
           <div class="info-visual-grid">
             <div class="info-visual-card">
               <h4>Line tool to route geometry</h4>
@@ -425,11 +435,12 @@ python run.py</code></pre>
           <h3>Security</h3>
           <p>Never commit <code>.env</code> or API keys. If a key was shared in chat or logs, rotate it in the OpenAI dashboard.</p>
         </section>
+        </div>
       </article>
     </main>
   </div>
 <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/docs-catalog.js?v=20260715-agent-store-docs"></script>
+  <script type="module" src="/docs-catalog.js?v=20260715-docs-layout"></script>
   <script type="module" src="/docs-agent.js?v=20260715-docs-agent-toggle"></script>
 </body>
 </html>

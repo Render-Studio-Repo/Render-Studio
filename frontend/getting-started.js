@@ -3,7 +3,7 @@
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-link-prompt";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-docs-agent-toggle";
+import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
 import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle4";
 
 const FEATURES = GETTING_STARTED_GUIDES;
