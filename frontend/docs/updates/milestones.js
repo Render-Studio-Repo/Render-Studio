@@ -9,6 +9,16 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "viewport-transparent-tool",
+    date: "2026-07-15",
+    kind: "tool",
+    title: "Transparent viewport tool",
+    summary:
+      "Click Transparent next to Grid/Color, then click any object to see through it. Crease edges stay crisp in Studio and share preview so internals remain readable.",
+    visual: "/docs/media/picks.gif?v=20260715-real",
+    href: "/",
+  },
+  {
     id: "getting-started-demos-agent",
     date: "2026-07-15",
     kind: "feature",

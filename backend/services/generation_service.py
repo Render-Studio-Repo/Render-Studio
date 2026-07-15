@@ -555,6 +555,7 @@ def complete(project_path: Path, result: dict[str, Any], *, trace_id: str | None
         job["status"] = "complete"
         job["finished_at"] = _now_iso()
         job["updated_at"] = _now_iso()
+        job.pop("error", None)
         job.pop("request_body", None)
 
     return _update_job(project_path, trace_id=tid or None, mutator=mutate)

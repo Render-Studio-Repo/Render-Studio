@@ -10258,6 +10258,8 @@ animate();
 function clearModelContents() {
   cancelLasso();
   directModeling.reset();
+  transparentObjects.clear();
+  if (transparentPickEnabled) setTransparentPickEnabled(false);
   projectAssembly.clear();
   sketchEditor.clearViewportSketches?.();
     currentMesh = null;
@@ -13736,6 +13738,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Toggle grid", hint: "Show or hide viewport grid", run: () => document.getElementById("btn-grid-viewport")?.click() },
         { label: "Measure", hint: "Open model measurement tool", run: () => document.getElementById("btn-measure")?.click() },
         { label: "Color", hint: "Color selected object or faces", run: () => document.getElementById("btn-color-viewport")?.click() },
+        { label: "Transparent", hint: "Click objects to make them see-through", run: () => document.getElementById("btn-transparent-viewport")?.click() },
       ]);
       return;
     }
@@ -18632,6 +18635,7 @@ document.addEventListener("click", async (e) => {
   if (wireBtn) {
     const wire = viewMode !== "wireframe";
     setViewMode(wire ? "wireframe" : "solid", currentMesh);
+    for (const obj of transparentObjects) syncViewportTransparent(obj);
     wireBtn.classList.toggle("active", wire);
     return;
   }
