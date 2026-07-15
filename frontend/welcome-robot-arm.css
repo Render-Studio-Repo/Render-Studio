@@ -1,338 +1,140 @@
-/* Realistic welcome / hero robot arm — fixed base, shoulder swing, place on ground */
+/* Shared realistic SVG robot arm — fixed base, one shoulder swing, place on ground */
 
-.welcome-robot {
-  --wr-orange: #f97316;
-  --wr-orange-hi: #fdba74;
-  --wr-orange-lo: #9a3412;
-  --wr-ink: #1c1917;
+.welcome-robot,
+.gs-hero-robot.welcome-robot {
   position: absolute;
-  left: 56px;
-  bottom: 10px;
-  width: 340px;
-  height: 168px;
-  pointer-events: none;
-  z-index: 2;
-  /* no whole-body float — that was disconnecting the links */
-  animation: none;
-  transform: none;
-}
-
-.welcome-robot-base-unit {
-  position: absolute;
-  left: 8px;
-  bottom: 0;
-  width: 108px;
-  height: 58px;
-  z-index: 1;
-}
-
-.welcome-robot-plate {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 14px;
-  border-radius: 7px;
-  border: 1px solid rgba(253, 186, 116, 0.55);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 50%),
-    linear-gradient(90deg, #7c2d12, #ea580c 50%, #7c2d12);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 8px 16px rgba(0, 0, 0, 0.4);
-}
-
-.welcome-robot-pedestal {
-  position: absolute;
-  left: 22px;
-  right: 22px;
-  bottom: 12px;
-  height: 20px;
-  border-radius: 6px 6px 3px 3px;
-  border: 1px solid rgba(255, 237, 213, 0.4);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 42%),
-    linear-gradient(180deg, #fb923c, #9a3412);
-  box-shadow: inset 0 -5px 8px rgba(67, 20, 7, 0.5);
-}
-
-.welcome-robot-column {
-  position: absolute;
-  left: 50%;
-  bottom: 28px;
-  width: 26px;
-  height: 62px;
-  margin-left: -13px;
-  border-radius: 8px 8px 4px 4px;
-  border: 1px solid rgba(255, 237, 213, 0.45);
-  background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.25), transparent 34% 66%, rgba(255, 255, 255, 0.14)),
-    linear-gradient(180deg, #fdba74, #c2410c);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 0 18px rgba(249, 115, 22, 0.22);
-}
-
-.welcome-robot-column::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: -7px;
-  width: 34px;
-  height: 16px;
-  margin-left: -17px;
-  border-radius: 8px;
-  border: 1px solid rgba(226, 232, 240, 0.4);
-  background: linear-gradient(180deg, #e2e8f0, #64748b);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
-}
-
-/* Only this joint rotates */
-.welcome-robot-shoulder {
-  position: absolute;
-  left: 62px;
-  bottom: 92px;
-  width: 0;
-  height: 0;
-  z-index: 3;
-  transform-origin: center center;
-  animation: welcome-shoulder-swing 5.4s cubic-bezier(0.45, 0.05, 0.25, 1) infinite;
-}
-
-.welcome-robot-pivot,
-.welcome-robot-elbow,
-.welcome-robot-wrist {
-  position: absolute;
-  border-radius: 50%;
-  border: 2px solid rgba(253, 186, 116, 0.85);
-  background:
-    radial-gradient(circle at 36% 30%, #f8fafc 0 14%, #44403c 26% 46%, #1c1917 54% 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
-    0 0 14px rgba(249, 115, 22, 0.35);
-}
-
-.welcome-robot-pivot {
-  left: -16px;
-  top: -16px;
-  width: 32px;
-  height: 32px;
-  z-index: 5;
-}
-
-.welcome-robot-boom {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 210px;
-  height: 30px;
-  /* Arm extends right from shoulder; slight downward rest angle */
-  transform: translate(14px, -15px) rotate(6deg);
-  transform-origin: 0 50%;
-}
-
-.welcome-robot-link {
-  position: absolute;
-  top: 50%;
-  border-radius: 5px;
-  border: 1px solid rgba(255, 237, 213, 0.5);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 48%),
-    linear-gradient(90deg, #b45309, #f97316 52%, #fdba74);
-  box-shadow:
-    inset 0 -6px 10px rgba(124, 45, 18, 0.48),
-    0 4px 12px rgba(0, 0, 0, 0.28);
-  z-index: 2;
-}
-
-.welcome-robot-link--a {
-  left: 0;
-  width: 102px;
-  height: 18px;
-  margin-top: -9px;
-}
-
-.welcome-robot-elbow {
-  left: 88px;
-  top: 50%;
-  width: 24px;
-  height: 24px;
-  margin-top: -12px;
-  z-index: 4;
-}
-
-.welcome-robot-link--b {
-  left: 100px;
-  width: 78px;
-  height: 15px;
-  margin-top: -7.5px;
-}
-
-.welcome-robot-hand {
-  position: absolute;
-  left: 168px;
-  top: 50%;
-  width: 48px;
-  height: 36px;
-  margin-top: -18px;
-  z-index: 3;
-}
-
-.welcome-robot-wrist {
-  left: 0;
-  top: 50%;
-  width: 16px;
-  height: 16px;
-  margin-top: -8px;
-  z-index: 4;
-}
-
-.welcome-robot-grip {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  width: 30px;
-  height: 28px;
-  margin-top: -14px;
-}
-
-.welcome-robot-jaw {
-  position: absolute;
-  width: 8px;
-  height: 22px;
-  border-radius: 3px;
-  border: 1px solid rgba(226, 232, 240, 0.55);
-  background: linear-gradient(180deg, #f1f5f9, #64748b);
-  box-shadow: 0 0 8px rgba(125, 211, 252, 0.18);
-  transform-origin: top center;
-  animation: welcome-jaw-l 5.4s ease-in-out infinite;
-}
-
-.welcome-robot-jaw--a {
-  left: 5px;
-  top: 3px;
-}
-
-.welcome-robot-jaw--b {
-  right: 5px;
-  top: 3px;
-  animation-name: welcome-jaw-r;
-}
-
-.welcome-robot-held {
-  position: absolute;
-  left: 10px;
-  top: 18px;
-  width: 24px;
-  height: 14px;
-  border-radius: 3px;
-  border: 1px solid rgba(125, 211, 252, 0.55);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(14, 116, 144, 0.88));
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
-  opacity: 0;
-  animation: welcome-held 5.4s ease-in-out infinite;
-}
-
-.welcome-robot-placed {
-  position: absolute;
-  left: 168px;
+  left: 48px;
   bottom: 8px;
-  width: 28px;
-  height: 16px;
-  border-radius: 3px;
-  border: 1px solid rgba(125, 211, 252, 0.55);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(14, 116, 144, 0.88));
-  box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
-  opacity: 0;
+  width: 320px;
+  height: 176px;
   z-index: 2;
-  animation: welcome-placed 5.4s ease-in-out infinite;
+  pointer-events: none;
+  animation: none !important;
+  transform: none !important;
 }
 
-/* Kill legacy absolute arm pieces if a page still emits old markup */
+.gs-hero-robot.welcome-robot {
+  left: 10px;
+  right: auto;
+  bottom: 12px;
+  width: 300px;
+  height: 168px;
+}
+
+.welcome-robot-svg,
+.studio-boot-arm-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.35));
+}
+
+/* Hide any leftover CSS-piece markup */
 .welcome-robot > .welcome-robot-base,
+.welcome-robot > .welcome-robot-base-unit,
 .welcome-robot > .welcome-robot-joint,
 .welcome-robot > .welcome-robot-arm,
-.welcome-robot > .welcome-robot-claw {
+.welcome-robot > .welcome-robot-claw,
+.welcome-robot > .welcome-robot-shoulder,
+.welcome-robot > .welcome-robot-placed,
+.welcome-robot > .welcome-robot-plate,
+.welcome-robot > .welcome-robot-pedestal,
+.welcome-robot > .welcome-robot-column {
   display: none !important;
 }
 
-@keyframes welcome-shoulder-swing {
-  0%, 14% { transform: rotate(-6deg); }
-  30%, 40% { transform: rotate(38deg); }   /* reach / pick */
-  48% { transform: rotate(12deg); }        /* lift */
-  62%, 74% { transform: rotate(-48deg); }  /* swing + place */
-  86% { transform: rotate(-22deg); }
-  96%, 100% { transform: rotate(-6deg); }
+/* Only the swinging arm rotates — pivot = shoulder center (204, 72) */
+.r3d-arm-swing {
+  transform-box: view-box;
+  transform-origin: 204px 72px;
+  animation: r3d-arm-swing 6.4s cubic-bezier(0.45, 0.05, 0.25, 1) infinite;
 }
 
-@keyframes welcome-jaw-l {
-  0%, 26% { transform: rotate(-16deg); }
-  34%, 48% { transform: rotate(-3deg); }
-  58%, 70% { transform: rotate(-3deg); }
-  76%, 86% { transform: rotate(-18deg); }
-  94%, 100% { transform: rotate(-16deg); }
+.r3d-arm-jaw-l {
+  transform-box: view-box;
+  transform-origin: 46px 66px;
+  animation: r3d-arm-jaw-l 6.4s ease-in-out infinite;
 }
 
-@keyframes welcome-jaw-r {
-  0%, 26% { transform: rotate(16deg); }
-  34%, 48% { transform: rotate(3deg); }
-  58%, 70% { transform: rotate(3deg); }
-  76%, 86% { transform: rotate(18deg); }
-  94%, 100% { transform: rotate(16deg); }
+.r3d-arm-jaw-r {
+  transform-box: view-box;
+  transform-origin: 46px 78px;
+  animation: r3d-arm-jaw-r 6.4s ease-in-out infinite;
 }
 
-@keyframes welcome-held {
-  0%, 32% { opacity: 0; transform: translateY(3px) scale(0.7); }
-  38%, 72% { opacity: 1; transform: translateY(0) scale(1); }
-  78%, 100% { opacity: 0; transform: translateY(5px) scale(0.85); }
+.r3d-arm-payload {
+  opacity: 0;
+  animation: r3d-arm-payload 6.4s ease-in-out infinite;
 }
 
-@keyframes welcome-placed {
-  0%, 70% { opacity: 0; transform: translateY(-6px) scale(0.65); }
-  78%, 90% { opacity: 1; transform: translateY(0) scale(1); }
-  96%, 100% { opacity: 0.4; transform: translateY(0) scale(1); }
+.r3d-arm-ground {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 112px 152px;
+  animation: r3d-arm-ground 6.4s ease-in-out infinite;
 }
 
-/* Getting Started hero uses same robot */
-.gs-hero-robot.welcome-robot {
-  position: absolute;
-  right: 18px;
-  left: auto;
-  bottom: 18px;
-  width: 300px;
-  height: 150px;
+@keyframes r3d-arm-swing {
+  0%, 12% { transform: rotate(6deg); }
+  26%, 36% { transform: rotate(40deg); }
+  44% { transform: rotate(16deg); }
+  58%, 70% { transform: rotate(-36deg); }
+  82% { transform: rotate(-10deg); }
+  92%, 100% { transform: rotate(6deg); }
+}
+
+@keyframes r3d-arm-jaw-l {
+  0%, 24% { transform: rotate(-18deg); }
+  32%, 48% { transform: rotate(-2deg); }
+  56%, 68% { transform: rotate(-2deg); }
+  76%, 86% { transform: rotate(-20deg); }
+  94%, 100% { transform: rotate(-18deg); }
+}
+
+@keyframes r3d-arm-jaw-r {
+  0%, 24% { transform: rotate(18deg); }
+  32%, 48% { transform: rotate(2deg); }
+  56%, 68% { transform: rotate(2deg); }
+  76%, 86% { transform: rotate(20deg); }
+  94%, 100% { transform: rotate(18deg); }
+}
+
+@keyframes r3d-arm-payload {
+  0%, 30% { opacity: 0; }
+  36%, 68% { opacity: 1; }
+  76%, 100% { opacity: 0; }
+}
+
+@keyframes r3d-arm-ground {
+  0%, 66% { opacity: 0; transform: translateY(-8px) scale(0.65); }
+  74%, 90% { opacity: 1; transform: translateY(0) scale(1); }
+  96%, 100% { opacity: 0.5; transform: translateY(0) scale(1); }
 }
 
 @media (max-width: 900px) {
   .welcome-robot {
-    left: 24px;
-    width: 280px;
-    transform: scale(0.88);
-    transform-origin: left bottom;
-  }
-
-  .gs-hero-robot.welcome-robot {
-    right: 8px;
-    transform: scale(0.82);
-    transform-origin: right bottom;
+    left: 16px;
+    width: 260px;
+    height: 148px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .welcome-robot-shoulder,
-  .welcome-robot-jaw,
-  .welcome-robot-jaw--b,
-  .welcome-robot-held,
-  .welcome-robot-placed {
+  .r3d-arm-swing,
+  .r3d-arm-jaw-l,
+  .r3d-arm-jaw-r,
+  .r3d-arm-payload,
+  .r3d-arm-ground {
     animation: none !important;
   }
 
-  .welcome-robot-shoulder {
-    transform: rotate(12deg);
+  .r3d-arm-swing {
+    transform: rotate(10deg);
   }
 
-  .welcome-robot-held,
-  .welcome-robot-placed {
+  .r3d-arm-payload,
+  .r3d-arm-ground {
     opacity: 1;
   }
 }

@@ -17042,7 +17042,7 @@ function ensureNewProjectWorkspaceModal() {
         You can change the default later in Preferences.
       </p>
       <div class="new-project-workspace-options" id="new-project-workspace-options"></div>
-      <label class="new-project-workspace-remember">
+      <label class="new-project-workspace-remember app-remember-choice">
         <input type="checkbox" id="new-project-workspace-remember" />
         <span>Remember this choice as my new project default</span>
       </label>

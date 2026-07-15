@@ -277,6 +277,7 @@ def init_db() -> None:
                 details_submitted INTEGER NOT NULL DEFAULT 0,
                 paypal_email TEXT NOT NULL DEFAULT '',
                 payout_method TEXT NOT NULL DEFAULT 'stripe',
+                payout_details_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
@@ -334,6 +335,10 @@ def init_db() -> None:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_purchases_session ON marketplace_purchases(stripe_session_id)"
             )
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE marketplace_seller_accounts ADD COLUMN payout_details_json TEXT NOT NULL DEFAULT '{}'")
         except sqlite3.OperationalError:
             pass
         try:

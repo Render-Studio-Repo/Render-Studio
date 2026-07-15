@@ -3838,6 +3838,11 @@ class MarketplacePaypalRequest(BaseModel):
     email: str = Field(default="", max_length=200)
 
 
+class MarketplacePayoutPreferenceRequest(BaseModel):
+    method: str = Field(..., max_length=40)
+    details: dict[str, str] = Field(default_factory=dict)
+
+
 @app.get("/api/marketplace/payments/config")
 def marketplace_payments_config():
     from backend.services import marketplace_payments_service as payments
@@ -3877,6 +3882,19 @@ def marketplace_seller_paypal(
 
     try:
         return {"seller": payments.set_paypal_email(user, body.email)}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/marketplace/seller/payout-method")
+def marketplace_seller_payout_method(
+    body: MarketplacePayoutPreferenceRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import marketplace_payments_service as payments
+
+    try:
+        return {"seller": payments.set_payout_preference(user, body.method, body.details)}
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

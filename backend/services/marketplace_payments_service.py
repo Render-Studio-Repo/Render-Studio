@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ PLATFORM_FEE_PERCENT = 10
 MIN_PRICE_CENTS = 100  # $1.00
 
 VALID_KINDS = {"agent", "model", "knowledge"}
+VALID_PAYOUT_METHODS = {"stripe", "paypal", "phantom", "cash_app", "venmo", "apple_pay"}
 
 
 def _now() -> str:
@@ -52,6 +54,10 @@ def public_config() -> dict[str, Any]:
         "supports_link": True,
         "supports_bank_payouts": True,
         "supports_paypal": True,
+        "supports_crypto_wallet": True,
+        "supports_cash_app": True,
+        "supports_venmo": True,
+        "supports_apple_pay": True,
     }
 
 
@@ -84,8 +90,8 @@ def upsert_seller_account(user_id: str, **fields: Any) -> dict[str, Any]:
                 """
                 INSERT INTO marketplace_seller_accounts (
                   user_id, stripe_account_id, charges_enabled, payouts_enabled,
-                  details_submitted, paypal_email, payout_method, created_at, updated_at
-                ) VALUES (?, ?, 0, 0, 0, '', 'stripe', ?, ?)
+                  details_submitted, paypal_email, payout_method, payout_details_json, created_at, updated_at
+                ) VALUES (?, ?, 0, 0, 0, '', 'stripe', '{}', ?, ?)
                 """,
                 (user_id, fields.get("stripe_account_id") or None, now, now),
             )
@@ -100,6 +106,7 @@ def upsert_seller_account(user_id: str, **fields: Any) -> dict[str, Any]:
         "details_submitted",
         "paypal_email",
         "payout_method",
+        "payout_details_json",
     ):
         if key in fields and fields[key] is not None:
             sets.append(f"{key} = ?")
@@ -120,6 +127,10 @@ def seller_status(user: dict[str, Any]) -> dict[str, Any]:
     account = get_seller_account(user["id"]) or {}
     stripe_ready = bool(account.get("charges_enabled") and account.get("payouts_enabled"))
     paypal = str(account.get("paypal_email") or "").strip()
+    try:
+        payout_details = json.loads(account.get("payout_details_json") or "{}")
+    except Exception:
+        payout_details = {}
     return {
         **public_config(),
         "user_id": user["id"],
@@ -128,8 +139,9 @@ def seller_status(user: dict[str, Any]) -> dict[str, Any]:
         "payouts_enabled": bool(account.get("payouts_enabled")),
         "details_submitted": bool(account.get("details_submitted")),
         "paypal_email": paypal,
+        "payout_details": payout_details if isinstance(payout_details, dict) else {},
         "payout_method": account.get("payout_method") or ("paypal" if paypal and not stripe_ready else "stripe"),
-        "can_sell_paid": bool(stripe_ready or paypal),
+        "can_sell_paid": bool(stripe_ready or paypal or payout_details),
         "stripe_ready": stripe_ready,
     }
 
@@ -214,6 +226,37 @@ def set_paypal_email(user: dict[str, Any], email: str) -> dict[str, Any]:
         user["id"],
         paypal_email=email,
         payout_method="paypal" if email else (get_seller_account(user["id"]) or {}).get("payout_method") or "stripe",
+    )
+    return seller_status(user)
+
+
+def set_payout_preference(user: dict[str, Any], method: str, details: dict[str, Any]) -> dict[str, Any]:
+    method = str(method or "").strip().lower().replace("-", "_")
+    if method not in VALID_PAYOUT_METHODS:
+        raise ValueError("Unsupported payout method.")
+    clean: dict[str, Any] = {}
+    if isinstance(details, dict):
+        for key, value in details.items():
+            safe_key = str(key or "").strip().lower().replace("-", "_")[:40]
+            if not safe_key:
+                continue
+            clean[safe_key] = str(value or "").strip()[:240]
+    account = get_seller_account(user["id"]) or {}
+    try:
+        existing = json.loads(account.get("payout_details_json") or "{}")
+    except Exception:
+        existing = {}
+    if not isinstance(existing, dict):
+        existing = {}
+    if method == "paypal":
+        email = clean.get("email") or ""
+        if email:
+            return set_paypal_email(user, email)
+    existing[method] = clean
+    upsert_seller_account(
+        user["id"],
+        payout_method=method,
+        payout_details_json=json.dumps(existing, separators=(",", ":")),
     )
     return seller_status(user)
 

@@ -1,0 +1,266 @@
+/* Modern remember-choice controls + boot logo gear percent */
+
+/* ── Remember this setting (all popup dialogs) ───────────────────────────── */
+
+.welcome-dismiss,
+.new-project-workspace-remember,
+.app-remember-choice,
+label.welcome-dismiss,
+label.new-project-workspace-remember {
+  --remember-accent: #58a6ff;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px 0 0;
+  padding: 11px 14px 11px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(140, 190, 255, 0.22);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 46%),
+    linear-gradient(180deg, rgba(28, 36, 52, 0.92), rgba(12, 16, 26, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 10px 24px rgba(0, 0, 0, 0.28);
+  color: #d7e3f0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    background 0.18s ease;
+}
+
+.welcome-modal .welcome-dismiss {
+  margin: 4px 28px 22px;
+}
+
+.welcome-dismiss:hover,
+.new-project-workspace-remember:hover,
+.app-remember-choice:hover {
+  border-color: rgba(150, 205, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 14px 28px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(88, 166, 255, 0.12);
+}
+
+.welcome-dismiss input[type="checkbox"],
+.new-project-workspace-remember input[type="checkbox"],
+.app-remember-choice input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.welcome-dismiss > span,
+.new-project-workspace-remember > span,
+.app-remember-choice > span {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.welcome-dismiss > span::before,
+.new-project-workspace-remember > span::before,
+.app-remember-choice > span::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(160, 200, 255, 0.35);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14), transparent 55%),
+    linear-gradient(180deg, #1a2436, #0d1420);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.welcome-dismiss:has(input:checked),
+.new-project-workspace-remember:has(input:checked),
+.app-remember-choice:has(input:checked) {
+  border-color: rgba(126, 200, 255, 0.48);
+  background:
+    linear-gradient(165deg, rgba(120, 190, 255, 0.14), transparent 48%),
+    linear-gradient(180deg, rgba(34, 56, 84, 0.95), rgba(14, 24, 40, 0.98));
+}
+
+.welcome-dismiss:has(input:checked) > span::before,
+.new-project-workspace-remember:has(input:checked) > span::before,
+.app-remember-choice:has(input:checked) > span::before {
+  border-color: rgba(180, 220, 255, 0.7);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.28), transparent 50%),
+    linear-gradient(180deg, #5aa8f0, #2f6fbe);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 10px rgba(88, 166, 255, 0.28);
+}
+
+.welcome-dismiss:has(input:checked) > span::after,
+.new-project-workspace-remember:has(input:checked) > span::after,
+.app-remember-choice:has(input:checked) > span::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 5px;
+  height: 9px;
+  margin-top: -6px;
+  border: solid #071018;
+  border-width: 0 2px 2px 0;
+  transform: rotate(40deg);
+}
+
+/* ── Boot logo: gear with percent inside, top-right by Render3D ───────────── */
+
+.studio-boot-logo {
+  position: fixed;
+  right: 22px;
+  top: 20px;
+  z-index: 5100;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e6edf3;
+}
+
+.studio-boot-logo img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 50%;
+  filter:
+    drop-shadow(0 0 10px rgba(88, 166, 255, 0.65))
+    drop-shadow(0 0 8px rgba(249, 115, 22, 0.45));
+  animation: studio-logo-charge 1.6s ease-in-out infinite;
+}
+
+.studio-boot-logo-word {
+  font-size: clamp(1.2rem, 2vw, 1.7rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #f3f6fa;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* Gear = loading circle; percent sits in the hub */
+.studio-boot-logo-gear {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  margin-left: 2px;
+  border-radius: 50%;
+  color: #7dd3fc;
+  background:
+    radial-gradient(circle, rgba(5, 9, 18, 0.98) 0 34%, transparent 35%),
+    repeating-conic-gradient(
+      from 0deg,
+      #7dd3fc 0deg 10deg,
+      transparent 10deg 22deg,
+      #fb923c 22deg 32deg,
+      transparent 32deg 44deg
+    ),
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.2), transparent 42%),
+    rgba(10, 14, 24, 0.92);
+  box-shadow:
+    inset 0 0 0 2px rgba(1, 4, 9, 0.92),
+    inset 0 0 0 9px rgba(8, 12, 22, 0.96),
+    0 0 22px rgba(88, 166, 255, 0.4),
+    0 0 16px rgba(249, 115, 22, 0.22);
+  animation: studio-gear-spin 1.35s linear infinite;
+}
+
+.studio-boot-logo-gear::before {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 32%, #152033, #050914 70%);
+  box-shadow:
+    inset 0 0 0 1px rgba(125, 211, 252, 0.35),
+    0 0 12px rgba(125, 211, 252, 0.2);
+  z-index: 1;
+}
+
+.studio-boot-logo-gear::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-right-color: rgba(251, 146, 60, 0.75);
+  border-bottom-color: rgba(251, 146, 60, 0.35);
+  animation: studio-gear-orbit 1.9s linear infinite reverse;
+  pointer-events: none;
+}
+
+.studio-boot-logo-percent {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #e8f4ff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(88, 166, 255, 0.55);
+  animation: studio-gear-counter-spin 1.35s linear infinite;
+}
+
+/* Keep percent upright while the gear spins */
+@keyframes studio-gear-counter-spin {
+  to { transform: rotate(-360deg); }
+}
+
+/* Hide legacy separate gear/spinner next to logo if present */
+.studio-boot-logo > .studio-boot-gear-loader,
+.studio-boot-logo > .studio-boot-spinner {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-boot-logo-gear,
+  .studio-boot-logo-gear::after,
+  .studio-boot-logo-percent,
+  .studio-boot-logo img {
+    animation: none !important;
+  }
+
+  .welcome-dismiss:hover,
+  .new-project-workspace-remember:hover,
+  .app-remember-choice:hover {
+    transform: none;
+  }
+}

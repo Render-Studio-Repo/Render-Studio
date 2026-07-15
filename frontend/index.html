@@ -11,8 +11,9 @@
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
   <link rel="stylesheet" href="/styles.css?v=20260715-navbar-visible-actions" />
-  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-v3" />
-  <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
+  <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-remember-gear" />
+  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v3" />
+  <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-arm-svg-v3" />
   <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-3d-spice" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <script type="importmap">
@@ -38,29 +39,75 @@
           <span class="studio-boot-part studio-boot-part--arm"></span>
           <span class="studio-boot-part studio-boot-part--cap"></span>
         </div>
-        <div class="studio-boot-arm" id="studio-boot-arm">
-          <div class="studio-boot-arm-base">
-            <span class="studio-boot-arm-base-plate"></span>
-            <span class="studio-boot-arm-pedestal"></span>
-            <span class="studio-boot-arm-column"></span>
-          </div>
-          <div class="studio-boot-arm-shoulder">
-            <span class="studio-boot-arm-joint studio-boot-arm-joint--shoulder"></span>
-            <div class="studio-boot-arm-boom">
-              <span class="studio-boot-arm-link studio-boot-arm-link--upper"></span>
-              <span class="studio-boot-arm-joint studio-boot-arm-joint--elbow"></span>
-              <span class="studio-boot-arm-link studio-boot-arm-link--fore"></span>
-              <div class="studio-boot-arm-wrist">
-                <span class="studio-boot-arm-joint studio-boot-arm-joint--wrist"></span>
-                <span class="studio-boot-arm-gripper">
-                  <span class="studio-boot-arm-jaw studio-boot-arm-jaw--l"></span>
-                  <span class="studio-boot-arm-jaw studio-boot-arm-jaw--r"></span>
-                </span>
-                <span class="studio-boot-arm-payload"></span>
-              </div>
-            </div>
-          </div>
-          <span class="studio-boot-arm-ground-part"></span>
+        <div class="studio-boot-arm" id="studio-boot-arm" aria-hidden="true">
+          <svg class="studio-boot-arm-svg" viewBox="0 0 260 176" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+              <linearGradient id="bootArm-metal" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#fdba74"/>
+                <stop offset="40%" stop-color="#f97316"/>
+                <stop offset="100%" stop-color="#7c2d12"/>
+              </linearGradient>
+              <linearGradient id="bootArm-steel" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#f1f5f9"/>
+                <stop offset="100%" stop-color="#64748b"/>
+              </linearGradient>
+              <linearGradient id="bootArm-part" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7dd3fc"/>
+                <stop offset="100%" stop-color="#0369a1"/>
+              </linearGradient>
+              <linearGradient id="bootArm-shade" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#fb923c"/>
+                <stop offset="100%" stop-color="#c2410c"/>
+              </linearGradient>
+            </defs>
+
+            <!-- Placed part on ground -->
+            <g class="r3d-arm-ground">
+              <rect x="98" y="146" width="28" height="16" rx="3" fill="url(#bootArm-part)" stroke="#bae6fd" stroke-width="1.2"/>
+              <rect x="102" y="149" width="20" height="3" rx="1" fill="#e0f2fe" opacity="0.55"/>
+            </g>
+
+            <!-- FIXED BASE (never in swing group) -->
+            <g class="r3d-arm-base">
+              <ellipse cx="204" cy="166" rx="42" ry="7" fill="#0f172a" opacity="0.45"/>
+              <rect x="168" y="152" width="72" height="14" rx="4" fill="url(#bootArm-metal)" stroke="#fdba74" stroke-width="1.3"/>
+              <rect x="176" y="138" width="56" height="18" rx="5" fill="url(#bootArm-shade)" stroke="#fed7aa" stroke-width="1.1"/>
+              <rect x="190" y="78" width="28" height="64" rx="6" fill="url(#bootArm-metal)" stroke="#fed7aa" stroke-width="1.2"/>
+              <rect x="194" y="86" width="8" height="48" rx="2" fill="#9a3412" opacity="0.35"/>
+              <rect x="210" y="86" width="4" height="48" rx="1" fill="#fdba74" opacity="0.35"/>
+              <rect x="182" y="66" width="44" height="18" rx="5" fill="url(#bootArm-steel)" stroke="#cbd5e1" stroke-width="1.1"/>
+              <circle cx="204" cy="75" r="3" fill="#334155"/>
+            </g>
+
+            <!-- SWINGING ARM — only rotates at shoulder (204,72) -->
+            <g class="r3d-arm-swing">
+              <!-- upper link: overlaps shoulder through elbow -->
+              <rect x="100" y="62" width="108" height="20" rx="6" fill="url(#bootArm-metal)" stroke="#fed7aa" stroke-width="1.4"/>
+              <rect x="108" y="67" width="88" height="5" rx="2" fill="#fdba74" opacity="0.35"/>
+              <!-- elbow hub -->
+              <circle cx="108" cy="72" r="13" fill="#1c1917" stroke="#fb923c" stroke-width="3.5"/>
+              <circle cx="108" cy="72" r="5" fill="url(#bootArm-steel)"/>
+              <!-- forearm: overlaps elbow through wrist -->
+              <rect x="42" y="64" width="72" height="16" rx="5" fill="url(#bootArm-shade)" stroke="#fed7aa" stroke-width="1.3"/>
+              <rect x="50" y="68" width="52" height="4" rx="1.5" fill="#fdba74" opacity="0.3"/>
+              <!-- wrist hub -->
+              <circle cx="48" cy="72" r="9" fill="#1c1917" stroke="#fb923c" stroke-width="2.8"/>
+              <circle cx="48" cy="72" r="3.2" fill="url(#bootArm-steel)"/>
+              <!-- gripper body -->
+              <rect x="30" y="66" width="16" height="12" rx="2.5" fill="url(#bootArm-steel)" stroke="#94a3b8" stroke-width="1"/>
+              <!-- jaws -->
+              <rect class="r3d-arm-jaw-l" x="16" y="62" width="18" height="7" rx="2" fill="url(#bootArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
+              <rect class="r3d-arm-jaw-r" x="16" y="75" width="18" height="7" rx="2" fill="url(#bootArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
+              <!-- held payload -->
+              <g class="r3d-arm-payload">
+                <rect x="12" y="66" width="16" height="12" rx="2" fill="url(#bootArm-part)" stroke="#bae6fd" stroke-width="1"/>
+              </g>
+              <!-- shoulder pivot drawn last so it sits on the joint -->
+              <circle cx="204" cy="72" r="15" fill="#1c1917" stroke="#fb923c" stroke-width="4"/>
+              <circle cx="204" cy="72" r="5.5" fill="url(#bootArm-steel)"/>
+              <circle cx="204" cy="72" r="2" fill="#0f172a"/>
+            </g>
+          </svg>
         </div>
         <div class="studio-boot-energy">
           <span class="studio-boot-energy-fill"></span>
@@ -96,10 +143,11 @@
       </div>
       <p class="studio-boot-progress-copy"><span id="studio-boot-percent">8%</span> assembled</p>
       <div class="studio-boot-logo" aria-hidden="true">
-        <span class="studio-boot-gear-loader" aria-hidden="true"></span>
         <img src="/render3d-logo.png?v=20260715-new-logo" alt="" width="34" height="34" />
         <span class="studio-boot-logo-word">Render3D</span>
-        <span id="studio-boot-logo-percent" class="studio-boot-logo-percent">8%</span>
+        <span class="studio-boot-logo-gear">
+          <span id="studio-boot-logo-percent" class="studio-boot-logo-percent">8%</span>
+        </span>
       </div>
     </div>
   </div>
@@ -1333,11 +1381,12 @@
                     <strong class="prompt-spice-tip-title">Improve prompt with AI</strong>
                   </div>
                   <p class="prompt-spice-tip-body">
-                    Rewrites your text into a clearer CAD brief — sizes, features, and intent — so generation lands closer to what you meant.
+                    In <b>Render</b>, rewrites for a clearer rendered look — shape, proportions, materials, and upright orientation.
+                    In <b>2.0 / Fusion</b>, rewrites for parametric CAD dimensions and named features.
                   </p>
                   <ul class="prompt-spice-tip-list">
-                    <li>On by default — rewrites rough ideas into clearer CAD specs</li>
-                    <li>Turn on to rewrite into a clearer CAD brief</li>
+                    <li>On by default — polish the prompt for the active mode</li>
+                    <li>Render ≠ 2.0 — visual presentation vs feature-tree specs</li>
                     <li>Eye icon compares original vs improved</li>
                   </ul>
                 </div>
@@ -1841,7 +1890,7 @@
         <button type="button" id="sim-motion-urdf" class="btn secondary">URDF only</button>
         <button type="button" id="sim-motion-srdf" class="btn secondary">SRDF only</button>
       </div>
-      <label class="welcome-dismiss">
+      <label class="welcome-dismiss app-remember-choice">
         <input id="sim-motion-remember" type="checkbox" checked />
         <span>Remember this choice for future robot models</span>
       </label>
@@ -1931,30 +1980,75 @@
           </button>
         </div>
         <div class="welcome-robot" aria-hidden="true">
-          <div class="welcome-robot-base-unit">
-            <span class="welcome-robot-plate"></span>
-            <span class="welcome-robot-pedestal"></span>
-            <span class="welcome-robot-column"></span>
-          </div>
-          <div class="welcome-robot-shoulder">
-            <span class="welcome-robot-pivot"></span>
-            <div class="welcome-robot-boom">
-              <span class="welcome-robot-link welcome-robot-link--a"></span>
-              <span class="welcome-robot-elbow"></span>
-              <span class="welcome-robot-link welcome-robot-link--b"></span>
-              <div class="welcome-robot-hand">
-                <span class="welcome-robot-wrist"></span>
-                <span class="welcome-robot-grip">
-                  <span class="welcome-robot-jaw welcome-robot-jaw--a"></span>
-                  <span class="welcome-robot-jaw welcome-robot-jaw--b"></span>
-                </span>
-                <span class="welcome-robot-held"></span>
-              </div>
-            </div>
-          </div>
-          <span class="welcome-robot-placed"></span>
+          <svg class="welcome-robot-svg" viewBox="0 0 260 176" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+              <linearGradient id="welcomeArm-metal" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#fdba74"/>
+                <stop offset="40%" stop-color="#f97316"/>
+                <stop offset="100%" stop-color="#7c2d12"/>
+              </linearGradient>
+              <linearGradient id="welcomeArm-steel" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#f1f5f9"/>
+                <stop offset="100%" stop-color="#64748b"/>
+              </linearGradient>
+              <linearGradient id="welcomeArm-part" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7dd3fc"/>
+                <stop offset="100%" stop-color="#0369a1"/>
+              </linearGradient>
+              <linearGradient id="welcomeArm-shade" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#fb923c"/>
+                <stop offset="100%" stop-color="#c2410c"/>
+              </linearGradient>
+            </defs>
+
+            <!-- Placed part on ground -->
+            <g class="r3d-arm-ground">
+              <rect x="98" y="146" width="28" height="16" rx="3" fill="url(#welcomeArm-part)" stroke="#bae6fd" stroke-width="1.2"/>
+              <rect x="102" y="149" width="20" height="3" rx="1" fill="#e0f2fe" opacity="0.55"/>
+            </g>
+
+            <!-- FIXED BASE (never in swing group) -->
+            <g class="r3d-arm-base">
+              <ellipse cx="204" cy="166" rx="42" ry="7" fill="#0f172a" opacity="0.45"/>
+              <rect x="168" y="152" width="72" height="14" rx="4" fill="url(#welcomeArm-metal)" stroke="#fdba74" stroke-width="1.3"/>
+              <rect x="176" y="138" width="56" height="18" rx="5" fill="url(#welcomeArm-shade)" stroke="#fed7aa" stroke-width="1.1"/>
+              <rect x="190" y="78" width="28" height="64" rx="6" fill="url(#welcomeArm-metal)" stroke="#fed7aa" stroke-width="1.2"/>
+              <rect x="194" y="86" width="8" height="48" rx="2" fill="#9a3412" opacity="0.35"/>
+              <rect x="210" y="86" width="4" height="48" rx="1" fill="#fdba74" opacity="0.35"/>
+              <rect x="182" y="66" width="44" height="18" rx="5" fill="url(#welcomeArm-steel)" stroke="#cbd5e1" stroke-width="1.1"/>
+              <circle cx="204" cy="75" r="3" fill="#334155"/>
+            </g>
+
+            <!-- SWINGING ARM — only rotates at shoulder (204,72) -->
+            <g class="r3d-arm-swing">
+              <!-- upper link: overlaps shoulder through elbow -->
+              <rect x="100" y="62" width="108" height="20" rx="6" fill="url(#welcomeArm-metal)" stroke="#fed7aa" stroke-width="1.4"/>
+              <rect x="108" y="67" width="88" height="5" rx="2" fill="#fdba74" opacity="0.35"/>
+              <!-- elbow hub -->
+              <circle cx="108" cy="72" r="13" fill="#1c1917" stroke="#fb923c" stroke-width="3.5"/>
+              <circle cx="108" cy="72" r="5" fill="url(#welcomeArm-steel)"/>
+              <!-- forearm: overlaps elbow through wrist -->
+              <rect x="42" y="64" width="72" height="16" rx="5" fill="url(#welcomeArm-shade)" stroke="#fed7aa" stroke-width="1.3"/>
+              <rect x="50" y="68" width="52" height="4" rx="1.5" fill="#fdba74" opacity="0.3"/>
+              <!-- wrist hub -->
+              <circle cx="48" cy="72" r="9" fill="#1c1917" stroke="#fb923c" stroke-width="2.8"/>
+              <circle cx="48" cy="72" r="3.2" fill="url(#welcomeArm-steel)"/>
+              <!-- gripper body -->
+              <rect x="30" y="66" width="16" height="12" rx="2.5" fill="url(#welcomeArm-steel)" stroke="#94a3b8" stroke-width="1"/>
+              <!-- jaws -->
+              <rect class="r3d-arm-jaw-l" x="16" y="62" width="18" height="7" rx="2" fill="url(#welcomeArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
+              <rect class="r3d-arm-jaw-r" x="16" y="75" width="18" height="7" rx="2" fill="url(#welcomeArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
+              <!-- held payload -->
+              <g class="r3d-arm-payload">
+                <rect x="12" y="66" width="16" height="12" rx="2" fill="url(#welcomeArm-part)" stroke="#bae6fd" stroke-width="1"/>
+              </g>
+              <!-- shoulder pivot drawn last so it sits on the joint -->
+              <circle cx="204" cy="72" r="15" fill="#1c1917" stroke="#fb923c" stroke-width="4"/>
+              <circle cx="204" cy="72" r="5.5" fill="url(#welcomeArm-steel)"/>
+              <circle cx="204" cy="72" r="2" fill="#0f172a"/>
+            </g>
+          </svg>
         </div>
-      </div>
       <div class="welcome-copy">
         <p class="info-eyebrow">Welcome to Render3D</p>
         <h2 id="welcome-title">AI CAD software for turning ideas into 3D models</h2>
@@ -1987,7 +2081,7 @@
           <span><strong>Marketplace</strong><small>Agents &amp; 3D model products</small></span>
         </a>
       </div>
-      <label class="welcome-dismiss">
+      <label class="welcome-dismiss app-remember-choice">
         <input id="welcome-dont-show" type="checkbox" />
         <span>Don’t show this again</span>
       </label>
