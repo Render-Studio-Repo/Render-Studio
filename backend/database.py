@@ -8,12 +8,13 @@ from pathlib import Path
 
 from backend.config import settings
 
-DB_PATH = Path(settings.data_dir) / "render3d.db"
+# Absolute path — never depend on process cwd (generation may chdir on a worker thread).
+DB_PATH = (Path(settings.data_dir) / "render3d.db").resolve()
 
 
 def get_conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

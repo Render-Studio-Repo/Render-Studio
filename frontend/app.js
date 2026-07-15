@@ -471,6 +471,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
     selectedFile = gen.filename;
     const hiddenAfterReveal = setStoredComponentHidden(pid, gen.filename, false);
     projectTree.setHidden?.([...hiddenAfterReveal]);
+    bumpModelCacheEpoch();
     await refreshFiles();
     const placedFiles = (gen.placed_parts || []).map((part) => part.filename).filter(Boolean);
     await reloadViewportFromProject({
@@ -3989,9 +3990,11 @@ async function afterModelEdit(data) {
   }
 
   selectedFile = data.filename;
+  bumpModelCacheEpoch();
   await refreshFiles();
   const isFacePull = data?.action === "face_pull" || data?.kind === "face_pull" || /pulled|face.?pull/i.test(String(data?.label || ""));
   await loadModel(data.url, data.filename, {
+    cacheBust: true,
     projectId,
     preservePlacement: isBakedTransform ? !!placementBaseline : true,
     center: isBakedTransform ? false : !hasBakedPlacement(data.filename),
@@ -10756,10 +10759,22 @@ function formatUserError(err, fallback = "Something went wrong — check Prompt 
   return msg || fallback;
 }
 
-function _cacheBustModelPath(path) {
+// Stable within a session so reopening projects can use browser HTTP cache.
+// Bumped after model edits / generation so the next fetch gets fresh bytes.
+let modelCacheEpoch = Date.now();
+
+function bumpModelCacheEpoch() {
+  modelCacheEpoch = Date.now();
+}
+
+function _cacheBustModelPath(path, { force = false } = {}) {
   if (!path?.startsWith("/api/projects/") || !path.includes("/files/")) return path;
   const sep = path.includes("?") ? "&" : "?";
-  return `${path}${sep}_=${Date.now()}`;
+  const token = force ? Date.now() : modelCacheEpoch;
+  if (/[?&]_=/.test(path)) {
+    return path.replace(/([?&]_=)[^&]*/, `$1${token}`);
+  }
+  return `${path}${sep}_=${token}`;
 }
 
 function sleep(ms) {
@@ -10769,7 +10784,7 @@ function sleep(ms) {
 async function fetchModelBlob(path, { retries = 2 } = {}) {
   let lastError = null;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
-    const fetchPath = attempt ? _cacheBustModelPath(path.split("?")[0]) : path;
+    const fetchPath = attempt ? _cacheBustModelPath(path.split("?")[0], { force: true }) : path;
     const res = await rawFetch(fetchPath);
     if (res.ok) return res.blob();
     const data = await res.json().catch(() => ({}));
@@ -10797,7 +10812,7 @@ async function loadModel(url, filename, opts = {}) {
   const gen = ++loadModelGeneration;
   const { viewFilename, viewUrl } = resolveViewerPaths(filename, url);
   const viewExt = viewFilename.split(".").pop().toLowerCase();
-  const path = _cacheBustModelPath(_apiPath(viewUrl));
+  const path = _cacheBustModelPath(_apiPath(viewUrl), { force: !!opts.cacheBust });
   const blob = await fetchModelBlob(path);
   const blobUrl = URL.createObjectURL(blob);
 
@@ -12369,25 +12384,39 @@ function bodyChildrenFromInfo(entry, info) {
   });
 }
 
-async function hydrateBrowserBodyChildren(browser) {
+async function hydrateBrowserBodyChildren(browser, { priorityNames = [], onlyNames = null } = {}) {
   const run = ++browserBodyHydrationRun;
   if (!projectId || !browser?.components?.length) return;
   // Keep large multi-body assemblies nested under one component as Bodies.
   // (Top-level *_partNN* sidecars are filtered server-side when the parent exists.)
   const MAX_BROWSER_BODY_CHILDREN = 256;
+  const HYDRATE_CONCURRENCY = 3;
   let changed = false;
-  await Promise.all((browser.components || []).map(async (entry) => {
-    if (!entry?.name || entry.format === "body") return;
-    // Prefer server-provided nested Bodies when present.
+  const wanted = onlyNames ? new Set(onlyNames.map(String)) : null;
+  const priority = new Set((priorityNames || []).map(String).filter(Boolean));
+  const entries = (browser.components || []).filter((entry) => {
+    if (!entry?.name || entry.format === "body") return false;
+    if (wanted && !wanted.has(entry.name) && !wanted.has(entry.viewer_filename)) return false;
     if (Array.isArray(entry.children) && entry.children.length) {
       entry.children_label = entry.children_label || "Bodies";
-      return;
+      return false;
     }
+    return true;
+  });
+  entries.sort((a, b) => {
+    const ap = priority.has(a.name) || priority.has(a.viewer_filename) ? 0 : 1;
+    const bp = priority.has(b.name) || priority.has(b.viewer_filename) ? 0 : 1;
+    return ap - bp;
+  });
+
+  async function hydrateOne(entry) {
+    if (run !== browserBodyHydrationRun) return;
     try {
       // Prefer the viewport mesh (.glb) — STEP often reports 100+ solids for the
       // same assembly the viewer already shows as one model.
       const bodySource = entry.viewer_filename || entry.name;
       const info = await api(`/api/projects/${projectId}/files/${encodeURIComponent(bodySource)}/bodies`);
+      if (run !== browserBodyHydrationRun) return;
       const count = Number(info?.count || 0);
       if (count > MAX_BROWSER_BODY_CHILDREN) {
         if (entry.children) {
@@ -12405,7 +12434,19 @@ async function hydrateBrowserBodyChildren(browser) {
     } catch {
       /* body hydration is best-effort; backend browser metadata may already include it */
     }
-  }));
+  }
+
+  for (let i = 0; i < entries.length; i += HYDRATE_CONCURRENCY) {
+    if (run !== browserBodyHydrationRun) return;
+    const batch = entries.slice(i, i + HYDRATE_CONCURRENCY);
+    await Promise.all(batch.map(hydrateOne));
+    // Paint Bodies under the primary as soon as the first batch finishes.
+    if (changed && run === browserBodyHydrationRun) {
+      projectTree.render(browser);
+      projectTree.setHidden?.(loadHiddenComponentState());
+      changed = false;
+    }
+  }
   if (changed && run === browserBodyHydrationRun) {
     projectTree.render(browser);
     projectTree.setHidden?.(loadHiddenComponentState());
@@ -14062,14 +14103,8 @@ async function loadProject(id) {
     renderProjectList();
     captureSessionSnapshot();
     renderProjectBrowser(browser);
-    if (wiringMode) {
-      void hydrateBrowserBodyChildren(browser);
-    } else {
-      await hydrateBrowserBodyChildren(browser);
-    }
-    if (currentUser && !wiringMode) {
-      await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
-    }
+    // Do NOT await body hydration / sketches before the primary GLB — that was making
+    // project open wait on N× /bodies trimesh splits for every component.
     syncSketchVisibilityFromTree(browser);
     const comps = browser.components || [];
     if (!wiringMode) prepareViewportForModels();
@@ -14104,6 +14139,14 @@ async function loadProject(id) {
       if (currentUser) await refreshPromptHistory();
     } else if (currentUser) {
       await refreshPromptHistory();
+    }
+    // Background: hydrate Bodies tree + sketches after the viewport is already showing.
+    if (loadGen === loadProjectGeneration) {
+      const primaryName = selectedFile || modelLatestFile || comps[0]?.name || null;
+      void hydrateBrowserBodyChildren(browser, { priorityNames: primaryName ? [primaryName] : [] });
+      if (currentUser && !wiringMode) {
+        void sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
+      }
     }
     if (loadGen !== loadProjectGeneration) return;
     safeRestoreActiveModelPromptState();

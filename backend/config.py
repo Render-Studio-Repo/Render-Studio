@@ -1,9 +1,23 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT_DIR / ".env"
+
+
+def _absolute_under_root(value: str) -> str:
+    """Resolve relative data/project dirs against the repo root.
+
+    Generation can ``os.chdir`` into a project folder on a worker thread. Relative
+    paths like ``data/render3d.db`` then briefly point at the wrong place and break
+    login (``no such table: users``). Always keep these absolute.
+    """
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = ROOT_DIR / path
+    return str(path.resolve())
 
 
 class Settings(BaseSettings):
@@ -25,6 +39,11 @@ class Settings(BaseSettings):
     data_dir: str = "data"
     jwt_secret: str = "change-me-in-production-render3d"
     jwt_expire_hours: int = 168
+
+    @field_validator("projects_dir", "data_dir", mode="after")
+    @classmethod
+    def _abs_dirs(cls, value: str) -> str:
+        return _absolute_under_root(value)
 
     # Onshape OAuth
     onshape_client_id: str = ""
