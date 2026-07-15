@@ -1336,6 +1336,20 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
             }
         )
 
+    # Uploads / demo meshes without a program+sim kernel export still need a primary
+    # so the viewport and browser load something instead of looking empty.
+    if components and not any(c.get("primary") for c in components):
+        def _mtime(entry: dict[str, Any]) -> float:
+            path = project_path / str(entry.get("name") or "")
+            try:
+                return path.stat().st_mtime if path.is_file() else 0.0
+            except OSError:
+                return 0.0
+
+        newest = max(components, key=_mtime)
+        newest["primary"] = True
+        newest["auto_load"] = True
+
     # Nest exploded body sidecars under their parent component as Bodies.
     for comp in components:
         children = _body_children_from_part_sidecars(
