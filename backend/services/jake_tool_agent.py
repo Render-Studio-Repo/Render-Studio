@@ -13,7 +13,6 @@ OpenAI/Anthropic key — same skill contract as Jake, without embedding Codex CL
 
 from __future__ import annotations
 
-import base64
 import json
 import re
 import time
@@ -28,7 +27,7 @@ from backend.services.cad_authoring_agent import (
     needs_multi_view_packet,
     write_snapshot_job_file,
 )
-from backend.services.trace_service import add as trace_add
+from backend.services.trace_log import add as trace_add
 
 ProgressCb = Callable[[dict[str, Any]], None] | None
 CancelCb = Callable[[], bool] | None

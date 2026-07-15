@@ -3436,6 +3436,205 @@ def _run_text_to_cad_v2(
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
 
+    # Jake tool-using authoring agent (edit tools + run step/inspect/snapshot in-loop).
+    # Falls back to the legacy full-file rewrite loop if the tool agent cannot finish.
+    use_tool_agent = bool(jake_identical) and bool((context or {}).get("jake_tool_agent", True))
+    if use_tool_agent and not canonical_source:
+        try:
+            from backend.services.jake_tool_agent import run_jake_tool_agent
+
+            # Prefer a filesystem-safe stem (spaces break CLIs).
+            safe_base = re.sub(r"[^a-zA-Z0-9_-]+", "_", base).strip("_") or "model"
+            if safe_base != base:
+                source_name = f"{safe_base}.py"
+                step_name = f"{safe_base}.step"
+                glb_name = f"{safe_base}.glb"
+                stl_name = f"{safe_base}.stl"
+                three_mf_name = f"{safe_base}.3mf"
+                source_path = project_path / source_name
+                if previous_source and previous_source_name and Path(previous_source_name).name != source_name:
+                    # Keep edit lineage on the original filename when revising.
+                    source_name = Path(previous_source_name).name
+                    stem = Path(source_name).stem
+                    step_name, glb_name = f"{stem}.step", f"{stem}.glb"
+                    stl_name, three_mf_name = f"{stem}.stl", f"{stem}.3mf"
+                    source_path = project_path / source_name
+                    safe_base = stem
+                base = safe_base
+
+            agent_result = run_jake_tool_agent(
+                ai=ai,
+                project_path=project_path,
+                prompt=generation_prompt,
+                cad_brief=cad_brief,
+                source_name=source_name,
+                step_name=step_name,
+                glb_name=glb_name,
+                stl_name=stl_name,
+                three_mf_name=three_mf_name,
+                previous_source=previous_source,
+                is_edit=is_edit,
+                max_turns=max(28, (max_repairs + 1) * 3),
+                cancel_check=cancel_check,
+                progress_callback=progress_callback,
+                trace_id=trace_id,
+            )
+            ai_traces.extend(agent_result.get("ai_traces") or [])
+            source_name = agent_result["source"]
+            step_name = agent_result["step"]
+            glb_name = agent_result["glb"]
+            source_path = project_path / source_name
+            base = Path(source_name).stem
+            stl_name = f"{base}.stl"
+            three_mf_name = f"{base}.3mf"
+            source = source_path.read_text(encoding="utf-8", errors="ignore") if source_path.is_file() else ""
+
+            _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
+            cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
+            wired_names = _wire_jake_artifacts_to_product_shell(
+                project_path,
+                base=base,
+                source_name=source_name,
+                step_name=step_name,
+                glb_name=glb_name,
+            )
+            if (project_path / glb_name).is_file():
+                _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
+                cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
+
+            # Best-effort inspect/snapshot metadata for the result payload.
+            inspect_out = skill_runner.run_skill_tool(
+                "cad",
+                "inspect",
+                ["refs", step_name, "--facts", "--planes", "--positioning"],
+                cwd=project_path,
+                timeout_sec=60.0,
+                cancel_check=cancel_check,
+            )
+            snapshot_info = _run_v2_snapshot(
+                skill_runner,
+                project_path,
+                step_name,
+                base,
+                trace_id,
+                prompt=prompt,
+                source=source,
+                inspect_summary=_inspect_summary(inspect_out),
+            )
+            files = {
+                **wired_names,
+                "source": source_name,
+                "step": step_name,
+                "glb": glb_name,
+            }
+            promoted_parts = [] if architect_mode else _promote_disconnected_bodies(project_path, glb_name, base=base)
+            source_parts = _promote_build123d_children_from_source(
+                project_path,
+                source_name,
+                base=base,
+                max_parts=18 if architect_mode else 12,
+                major_only=architect_mode,
+                skip_if_more_than=24 if not architect_mode else None,
+            )
+            if source_parts:
+                promoted_parts.extend(name for name in source_parts if name not in promoted_parts)
+            if promoted_parts:
+                files["parts"] = promoted_parts
+            if (project_path / stl_name).is_file():
+                files["stl"] = stl_name
+            if (project_path / three_mf_name).is_file():
+                files["3mf"] = three_mf_name
+            if snapshot_info and snapshot_info.get("file"):
+                files["snapshot"] = snapshot_info["file"]
+            from backend.services.project_store import apply_prompt_project_name, title_from_prompt
+
+            display_name = title_from_prompt(prompt)
+            apply_prompt_project_name(project_path, prompt, fallback=display_name)
+            trace_add(
+                "info",
+                "[2.0/text-to-cad] Jake tool agent completed step/inspect/snapshot gates.",
+                trace_id=trace_id,
+            )
+            return {
+                "intent": "generative",
+                "message": (
+                    f"Built {display_name} with the Jake tool-using authoring agent "
+                    f"({'Architect' if architect_mode else 'Fusion' if fusion_mode else '2.0'})."
+                ),
+                "design_plan": {
+                    "requirements_analysis": f"CAD {label_prefix} routed to Jake tool agent.",
+                    "cad_feature_plan": (
+                        "Tool-using agent edited gen_step() source, ran scripts/step, "
+                        "inspect, and mandatory snapshot in one continuous session."
+                    ),
+                    "step_ready_brep_output": f"Validated STEP artifact: {step_name}",
+                    "text_to_cad_source": source_name,
+                },
+                "specs_used": [{"source": "text-to-cad", "script": source_name}],
+                "part_placements": [],
+                "result": {
+                    "program": {
+                        "name": display_name,
+                        "source": "text-to-cad",
+                        "source_file": source_name,
+                        "entrypoint": "gen_step",
+                    },
+                    "primary": glb_name,
+                    "basename": base,
+                    "files": files,
+                    "parts": [{"name": Path(name).stem, "filename": name} for name in promoted_parts],
+                    "sim": None,
+                    "dfm": None,
+                    "warnings": [],
+                    "text_to_cad": {
+                        "runtime": "jake_tool_agent",
+                        "authoring_agent": True,
+                        "visual_gate": "fail_closed_multi_view",
+                        "naming": {
+                            "source": source_name,
+                            "step": step_name,
+                            "shell_glb": glb_name,
+                            "jake_glb": jake_hidden_glb_name(step_name),
+                            "cad_ref": str(Path(step_name).with_suffix("").as_posix()),
+                            "display_name": display_name,
+                        },
+                        "agent_summary": agent_result.get("summary") or "",
+                        "inspect": {
+                            "stdout": (inspect_out.get("stdout") or "")[-4000:],
+                            "stderr": (inspect_out.get("stderr") or "")[-4000:],
+                        },
+                        "snapshot": snapshot_info,
+                    },
+                },
+                "attempts": 1,
+                "ai_trace": ai_traces,
+                "dfm_warnings": [],
+                "v2_text_to_cad": True,
+                "jake_identical_runtime": True,
+                "jake_tool_agent": True,
+                "fusion_text_to_cad": fusion_mode,
+                "architect_text_to_cad": architect_mode,
+            }
+        except DesignCanceled:
+            raise
+        except Exception as agent_exc:
+            last_error = str(agent_exc)
+            repair_note = (
+                "Jake tool-using authoring agent did not finish. "
+                "Falling back to file-rewrite repair loop.\n"
+                f"{last_error}"
+            )
+            trace_add(
+                "warning",
+                f"[2.0/text-to-cad] tool agent failed; fallback loop: {last_error[:500]}",
+                trace_id=trace_id,
+            )
+            current_source = (
+                source_path.read_text(encoding="utf-8", errors="ignore")
+                if source_path.is_file()
+                else previous_source
+            )
+
     # Canonical templates are one-shot; free-form AI source uses Jake's repair loop.
     total_attempts = 1 if canonical_source else (max_repairs + 1)
     for attempt in range(total_attempts):
