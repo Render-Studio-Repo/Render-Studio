@@ -3,6 +3,7 @@
 import { authHeaders } from "./auth.js";
 
 const IMPORTABLE_EXTS = /\.(step|stp|stl|3mf|obj|glb|gltf)$/i;
+const LS_FUSION_FOLDER_OPEN = "render3d:fusionLibraryFolderOpen:v1";
 
 export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLabel, getSelectedFile, getWorkspaceId, onImported, onView, onOpenProject, onStatus, onMirrorLinked } = {}) {
   const section = document.getElementById("fusion-library-section");
@@ -35,6 +36,39 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   let mirrorStaleMessage = "";
   const importedMap = new Map();
   let contextMenu = null;
+
+  function loadFusionFolderOpenState() {
+    try {
+      const raw = localStorage.getItem(LS_FUSION_FOLDER_OPEN);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function fusionFolderStorageKey(folderId) {
+    return `${activeHubId || ""}:${activeProjectId || ""}:${folderId || ""}`;
+  }
+
+  function isFusionFolderOpen(folderId) {
+    if (!folderId) return false;
+    const state = loadFusionFolderOpenState();
+    return !!state[fusionFolderStorageKey(folderId)];
+  }
+
+  function setFusionFolderOpen(folderId, open) {
+    if (!folderId) return;
+    const state = loadFusionFolderOpenState();
+    const key = fusionFolderStorageKey(folderId);
+    if (open) state[key] = true;
+    else delete state[key];
+    try {
+      localStorage.setItem(LS_FUSION_FOLDER_OPEN, JSON.stringify(state));
+    } catch {
+      /* local storage is best-effort */
+    }
+  }
 
   function updateMirrorStaleState() {
     if (!preferredMirrorTarget) {
@@ -641,13 +675,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       const folder = item._fusionFolder;
       const isMatch = folder?.id === folderId;
       item.classList.toggle("active", isMatch);
-      if (isMatch && panel && toggle) {
-        panel.classList.remove("hidden");
-        toggle.setAttribute("aria-expanded", "true");
-        toggle.style.transform = "rotate(0deg)";
-        if (!panel.dataset.loaded) {
-          loadFolder(folder, panel);
-        }
+      if (isMatch && panel && toggle && folder) {
+        setFolderExpanded(folder, panel, toggle, true);
       }
     });
   }
@@ -725,11 +754,26 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       return;
     }
     for (const folder of folders) {
-      container.appendChild(folderRow(folder, folder.id === preferredFolderId));
+      // Preferred/linked folders stay highlighted but start collapsed unless the
+      // user previously expanded them (persisted in localStorage).
+      container.appendChild(folderRow(folder, {
+        preferred: folder.id === preferredFolderId,
+        open: isFusionFolderOpen(folder.id),
+      }));
     }
   }
 
-  function folderRow(folder, autoOpen = false) {
+  function setFolderExpanded(folder, panel, toggle, open, { persist = true, load = true } = {}) {
+    panel.classList.toggle("hidden", !open);
+    toggle.setAttribute("aria-expanded", String(!!open));
+    toggle.style.transform = open ? "rotate(0deg)" : "rotate(-90deg)";
+    if (persist) setFusionFolderOpen(folder.id, !!open);
+    if (open && load && !panel.dataset.loaded) loadFolder(folder, panel);
+  }
+
+  function folderRow(folder, options = {}) {
+    const preferred = typeof options === "boolean" ? options : !!options.preferred;
+    const startOpen = typeof options === "boolean" ? false : !!options.open;
     const item = document.createElement("div");
     item.className = "onshape-doc-item fusion-folder-item";
     item._fusionFolder = folder;
@@ -737,10 +781,10 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       <div class="onshape-doc-header">
         <span class="onshape-doc-name">${esc(folder.name || "Untitled")}</span>
         <div class="fusion-row-actions">
-          <button type="button" class="btn btn-compact btn-fusion-link-mirror${autoOpen ? " success" : ""}">${autoOpen ? "Linked mirror" : "Link mirror"}</button>
+          <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}">${preferred ? "Linked mirror" : "Link mirror"}</button>
           <button type="button" class="btn btn-compact btn-fusion-import-folder">Import all</button>
           <button type="button" class="btn btn-compact btn-fusion-push">Push current model</button>
-          <button type="button" class="btn-icon onshape-doc-toggle" title="Show folder contents" aria-expanded="false">
+          <button type="button" class="btn-icon onshape-doc-toggle" title="Show folder contents" aria-expanded="false" style="transform: rotate(-90deg)">
             <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor"><path d="M2 3l3 4 3-4H2z"/></svg>
           </button>
         </div>
@@ -750,10 +794,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     const panel = item.querySelector(".onshape-doc-elements");
     const toggle = item.querySelector(".onshape-doc-toggle");
     toggle.addEventListener("click", () => {
-      const open = panel.classList.toggle("hidden") === false;
-      toggle.setAttribute("aria-expanded", String(open));
-      toggle.style.transform = open ? "rotate(0deg)" : "rotate(-90deg)";
-      if (open && !panel.dataset.loaded) loadFolder(folder, panel);
+      const open = panel.classList.contains("hidden");
+      setFolderExpanded(folder, panel, toggle, open);
     });
     item.querySelector(".btn-fusion-push")?.addEventListener("click", (event) => {
       pushToFolder(folder, event.currentTarget);
@@ -764,12 +806,9 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     item.querySelector(".btn-fusion-import-folder")?.addEventListener("click", (event) => {
       importFolderItems(folder, event.currentTarget);
     });
-    if (autoOpen) {
-      item.classList.add("active");
-      panel.classList.remove("hidden");
-      toggle.setAttribute("aria-expanded", "true");
-      toggle.style.transform = "rotate(0deg)";
-      setTimeout(() => loadFolder(folder, panel), 0);
+    if (preferred) item.classList.add("active");
+    if (startOpen) {
+      setFolderExpanded(folder, panel, toggle, true, { persist: false });
     }
     return item;
   }
@@ -1170,7 +1209,12 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     try {
       const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`);
       panel.innerHTML = "";
-      for (const child of data.folders || []) panel.appendChild(folderRow(child, child.id === linkedMirrorFolderId()));
+      for (const child of data.folders || []) {
+        panel.appendChild(folderRow(child, {
+          preferred: child.id === linkedMirrorFolderId(),
+          open: isFusionFolderOpen(child.id),
+        }));
+      }
       for (const file of data.items || []) panel.appendChild(itemRow(file, folder));
       if (!panel.children.length) panel.innerHTML = `<p class="muted small">Folder is empty.</p>`;
     } catch (err) {

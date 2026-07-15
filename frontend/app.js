@@ -71,7 +71,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260714-agent-detail
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260714-gen-timeout-fix";
+import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-collapse";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
@@ -119,6 +119,7 @@ const LS_PROMPT_AI_KEY = "render3d:promptAiKey:v1";
 const LS_PROJECT_PROMPT_AI_KEY = "render3d:projectPromptAiKey:v1";
 const LS_HIDDEN_WORKSPACES = "render3d:hiddenWorkspaces:v1";
 const LS_WORKSPACE_REALTIME_COLLAPSED = "render3d:workspaceRealtimeCollapsed:v1";
+const LS_WORKSPACE_FUSION_SECTION_OPEN = "render3d:workspaceFusionSectionOpen:v1";
 
 let projectId = null;
 const wiringLoadCache = { projectId: null, promise: null, data: null };
@@ -14033,6 +14034,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
       if (payload) openFusionWorkspaceFolderBrowser(payload);
     });
   });
+  bindFusionBrowserSectionPersistence(projectsEl);
 }
 
 function renderWorkspaceFusionComponents(project) {
@@ -14081,9 +14083,9 @@ function renderWorkspaceFusionComponents(project) {
   })).join("");
   return `
     <div class="workspace-fusion-browser">
-      ${renderFusionBrowserSection("Components", componentEntries.length, componentRows || renderFusionEmptyRow("No visible Fusion components yet."), true)}
-      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), false)}
-      ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render3D project yet."), false)}
+      ${renderFusionBrowserSection("Components", componentEntries.length, componentRows || renderFusionEmptyRow("No visible Fusion components yet."), { key: `components:${project.id}`, defaultOpen: false })}
+      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), { key: `bodies:${project.id}`, defaultOpen: false })}
+      ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render3D project yet."), { key: `sketches:${project.id}`, defaultOpen: false })}
     </div>
   `;
 }
@@ -14140,7 +14142,15 @@ function renderWorkspaceFusionMirrors(project) {
             </p>
             <p class="muted small workspace-fusion-mirror-hint">Click a file to open &amp; edit. Use Save to keep a local Render3D copy.</p>
             <div class="workspace-fusion-browser">
-              ${renderFusionBrowserSection(mirror.folder_label || "Fusion folder", folders.length + activeItems.length, contentRows, !contents.needs_relink)}
+              ${renderFusionBrowserSection(
+                mirror.folder_label || "Fusion folder",
+                folders.length + activeItems.length,
+                contentRows,
+                {
+                  key: `folder:${project.id}:${mirror.user_id || ""}:${mirror.folder_id || ""}`,
+                  defaultOpen: false,
+                },
+              )}
             </div>
             ${mirror.user_id === getStoredUser()?.id
               ? `<button type="button" class="btn btn-compact" data-workspace-sync-fusion="${appEscapeHtml(project.id)}">Sync with Fusion</button>`
@@ -14152,17 +14162,62 @@ function renderWorkspaceFusionMirrors(project) {
   `;
 }
 
-function renderFusionBrowserSection(title, count, rows, open = true) {
+function renderFusionBrowserSection(title, count, rows, options = {}) {
+  const opts = typeof options === "boolean" ? { defaultOpen: options } : (options || {});
+  const sectionKey = String(opts.key || title || "section")
+    .toLowerCase()
+    .replace(/[^a-z0-9:_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "section";
+  const open = isFusionBrowserSectionOpen(sectionKey, opts.defaultOpen === true);
   return `
-    <details class="workspace-fusion-browser-section"${open ? " open" : ""}>
+    <details class="workspace-fusion-browser-section" data-fusion-section-key="${appEscapeHtml(sectionKey)}"${open ? " open" : ""}>
       <summary class="workspace-fusion-browser-summary">
-        <span class="browser-chevron">▾</span>
+        <span class="browser-chevron">${open ? "▾" : "▸"}</span>
         <span>${appEscapeHtml(title)}</span>
         <small>${Number(count) || 0}</small>
       </summary>
       <div class="workspace-fusion-browser-list">${rows}</div>
     </details>
   `;
+}
+
+function loadFusionBrowserSectionState() {
+  try {
+    const raw = localStorage.getItem(LS_WORKSPACE_FUSION_SECTION_OPEN);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isFusionBrowserSectionOpen(sectionKey, defaultOpen = false) {
+  const state = loadFusionBrowserSectionState();
+  if (Object.prototype.hasOwnProperty.call(state, sectionKey)) return !!state[sectionKey];
+  return !!defaultOpen;
+}
+
+function setFusionBrowserSectionOpen(sectionKey, open) {
+  if (!sectionKey) return;
+  const state = loadFusionBrowserSectionState();
+  state[sectionKey] = !!open;
+  try {
+    localStorage.setItem(LS_WORKSPACE_FUSION_SECTION_OPEN, JSON.stringify(state));
+  } catch {
+    /* local storage is best-effort */
+  }
+}
+
+function bindFusionBrowserSectionPersistence(root) {
+  root?.querySelectorAll("details[data-fusion-section-key]").forEach((el) => {
+    el.addEventListener("toggle", () => {
+      const key = el.dataset.fusionSectionKey;
+      if (!key) return;
+      setFusionBrowserSectionOpen(key, el.open);
+      const chevron = el.querySelector(".browser-chevron");
+      if (chevron) chevron.textContent = el.open ? "▾" : "▸";
+    });
+  });
 }
 
 function renderFusionLatestVersionLink(mirror, items = []) {
