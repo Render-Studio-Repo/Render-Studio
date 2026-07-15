@@ -388,6 +388,10 @@ class PromptRequest(BaseModel):
         default=False,
         description="True when Improve with AI rewrote the prompt before generation.",
     )
+    target_mode: str = Field(
+        default="new",
+        description="new = create a new object; edit = edit the selected/base object.",
+    )
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = Field(default=None, description="personal or team")
     jake_codex_agent: bool = Field(
@@ -10923,6 +10927,10 @@ def _save_prompt_history(
             prompt_mode=(getattr(body, "mode", None) or "standard").lower(),
             original_prompt=getattr(body, "original_prompt", None),
             prompt_improved=bool(getattr(body, "prompt_improved", False)),
+            target_mode=(getattr(body, "target_mode", None) or ("edit" if body.base_filename else "new")),
+            codex_agent=bool(
+                getattr(body, "codex_agent", False) or getattr(body, "jake_codex_agent", False)
+            ),
             **usage_meta,
             **key_meta,
         )

@@ -1,14 +1,13 @@
-/** Detect server/client updates and reload without losing the open project.
+/** Detect server/client updates and offer a click-to-refresh banner.
 
-Auto-reloads when the tab is idle (not mid-drag / sketch / generate).
-If busy, shows a banner so the user can reload when ready.
+Never auto-reloads — mid-workflow work stays intact until the user chooses
+to refresh.
 */
 
 const LS_CLIENT_VERSION = "render3d:client-version";
 const LS_SESSION_SNAPSHOT = "render3d:session-snapshot";
 const LS_PENDING_RESTORE = "render3d:pending-restore";
 const POLL_MS = 20000;
-const IDLE_RELOAD_DELAY_MS = 1200;
 
 function readJson(key) {
   try {
@@ -65,9 +64,10 @@ function ensureUpdateBanner(onReloadNow, onDismiss) {
   banner = document.createElement("div");
   banner.id = "client-update-banner";
   banner.className = "client-update-banner hidden";
+  banner.setAttribute("role", "status");
   banner.innerHTML = `
-    <span>A new Render3D version is available.</span>
-    <button type="button" class="btn btn-compact" data-client-reload-now>Reload &amp; restore project</button>
+    <span>Render3D just received an update. Click to refresh when you’re ready.</span>
+    <button type="button" class="btn btn-compact accent" data-client-reload-now>Refresh</button>
     <button type="button" class="btn-icon" data-client-reload-dismiss title="Dismiss">×</button>
   `;
   document.body.appendChild(banner);
@@ -81,22 +81,17 @@ function ensureUpdateBanner(onReloadNow, onDismiss) {
 
 /**
  * Watch for client asset updates.
- * Idle tabs auto-reload (with project restore). Busy tabs get a banner instead.
+ * Always shows a click-to-refresh banner — never auto-reloads the page.
  */
 export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUpdateAvailable } = {}) {
   let currentVersion = null;
   let pendingVersion = null;
   let reloading = false;
   let dismissedVersion = null;
-  let idleReloadTimer = null;
 
   function performReload(nextVersion) {
     if (reloading) return;
     reloading = true;
-    if (idleReloadTimer) {
-      clearTimeout(idleReloadTimer);
-      idleReloadTimer = null;
-    }
     try {
       // Persist BEFORE reload so the next boot does not loop on a stale value.
       sessionStorage.setItem(LS_CLIENT_VERSION, String(nextVersion));
@@ -110,8 +105,9 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
     if (banner) {
       banner.classList.remove("hidden");
       const label = banner.querySelector("span");
-      if (label) label.textContent = "Reloading new version and restoring your project…";
+      if (label) label.textContent = "Refreshing Render3D and restoring your project…";
       banner.querySelector("[data-client-reload-now]")?.classList.add("hidden");
+      banner.querySelector("[data-client-reload-dismiss]")?.classList.add("hidden");
     }
     window.setTimeout(() => window.location.reload(), 250);
   }
@@ -125,28 +121,15 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
       () => {
         dismissedVersion = nextVersion;
         pendingVersion = null;
-        if (idleReloadTimer) {
-          clearTimeout(idleReloadTimer);
-          idleReloadTimer = null;
-        }
       },
     );
+    const label = banner.querySelector("span");
+    if (label) {
+      label.textContent = "Render3D just received an update. Click to refresh when you’re ready.";
+    }
+    banner.querySelector("[data-client-reload-now]")?.classList.remove("hidden");
+    banner.querySelector("[data-client-reload-dismiss]")?.classList.remove("hidden");
     banner.classList.remove("hidden");
-  }
-
-  function scheduleIdleReload(nextVersion) {
-    if (dismissedVersion && dismissedVersion === nextVersion) return;
-    pendingVersion = nextVersion;
-    if (idleReloadTimer) clearTimeout(idleReloadTimer);
-    idleReloadTimer = setTimeout(() => {
-      idleReloadTimer = null;
-      if (reloading) return;
-      if (isBusy?.()) {
-        showUpdateAvailable(nextVersion);
-        return;
-      }
-      performReload(nextVersion);
-    }, IDLE_RELOAD_DELAY_MS);
   }
 
   async function pollVersion() {
@@ -172,12 +155,7 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
         } catch {
           /* ignore */
         }
-        if (isBusy?.()) {
-          showUpdateAvailable(nextVersion);
-        } else {
-          onUpdateAvailable?.(nextVersion);
-          scheduleIdleReload(nextVersion);
-        }
+        showUpdateAvailable(nextVersion);
       }
     } catch {
       /* server may be restarting — try again on next poll */
@@ -195,14 +173,9 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
     void pollVersion();
   }, POLL_MS);
 
-  // If an update arrived while busy, reload/banner once the tab is idle again.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden || reloading) return;
-    if (pendingVersion && !isBusy?.()) {
-      scheduleIdleReload(pendingVersion);
-    } else if (pendingVersion) {
-      showUpdateAvailable(pendingVersion);
-    }
+    if (pendingVersion) showUpdateAvailable(pendingVersion);
     void pollVersion();
   });
 }

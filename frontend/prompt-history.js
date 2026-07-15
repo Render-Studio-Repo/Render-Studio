@@ -1,6 +1,6 @@
 /** Prompt compose / history tabs (CAD AI + Wiring AI panels). */
 
-import { copyPromptRef, copyText, formatPromptRef, formatPromptModeLabel, formatModelLabel, formatSpeedLabel } from "./prompt-ref.js";
+import { copyPromptRef, copyText, formatPromptRef, formatPromptModeLabel, formatModelLabel, formatSpeedLabel, formatTargetModeLabel } from "./prompt-ref.js?v=20260715-history-codex-target";
 
 export function createPromptHistoryUI({
   listEl,
@@ -273,6 +273,10 @@ export function createPromptHistoryUI({
         const modeLabel = formatPromptModeLabel(e.prompt_mode);
         const speedLabel = formatSpeedLabel(e.speed);
         const modelLabel = formatModelLabel(e.model, e.provider);
+        const targetLabel = (e.kind || "cad") === "cad"
+          ? formatTargetModeLabel(e.target_mode, e.base_filename)
+          : null;
+        const usedCodex = Boolean(e.codex_agent || e.jake_codex_agent);
         const costLabel = entryCostLabel(e);
         const improved = entryHasImprovedPrompt(e);
         const fullPrompt = String(e.prompt || "");
@@ -284,6 +288,14 @@ export function createPromptHistoryUI({
           kindLabel,
           modeLabel ? `<span class="ph-mode">${escapeHtml(modeLabel)}</span>` : null,
           speedLabel ? `<span class="ph-speed">${escapeHtml(speedLabel)}</span>` : null,
+          targetLabel
+            ? `<span class="ph-target ph-target--${targetLabel === "Edit selected" ? "edit" : "new"}" title="${
+                targetLabel === "Edit selected"
+                  ? `Edited selected object${e.base_filename ? `: ${escapeHtml(e.base_filename)}` : ""}`
+                  : "Created a new object"
+              }">${escapeHtml(targetLabel)}</span>`
+            : null,
+          usedCodex ? `<span class="ph-codex" title="Generated with Codex agent">Codex</span>` : null,
           modelLabel
             ? `<span class="ph-model" title="AI model used for this prompt"><span class="ph-model-label">Model</span> ${escapeHtml(modelLabel)}</span>`
             : `<span class="ph-model ph-model--unknown" title="Model was not recorded for this run">Model unknown</span>`,

@@ -121,6 +121,8 @@ def append_entry(
     prompt_mode: str | None = None,
     original_prompt: str | None = None,
     prompt_improved: bool | None = None,
+    target_mode: str | None = None,
+    codex_agent: bool | None = None,
 ) -> dict[str, Any]:
     data = load(project_path)
     entries: list[dict[str, Any]] = data.get("entries", [])
@@ -185,6 +187,12 @@ def append_entry(
         entry["prompt_improved"] = True
         if original:
             entry["original_prompt"] = original
+    normalized_target = str(target_mode or "").strip().lower()
+    if normalized_target not in {"new", "edit"}:
+        normalized_target = "edit" if base_filename else "new"
+    entry["target_mode"] = normalized_target
+    if codex_agent:
+        entry["codex_agent"] = True
     entries.append(entry)
     data["entries"] = entries[-MAX_ENTRIES:]
     save(project_path, data)
@@ -466,6 +474,12 @@ def _backfill_from_generation(project_path: Path) -> None:
         row["prompt_improved"] = True
         if original:
             row["original_prompt"] = original
+    target = str(request_body.get("target_mode") or "").strip().lower()
+    if target not in {"new", "edit"}:
+        target = "edit" if row.get("base_filename") else "new"
+    row["target_mode"] = target
+    if request_body.get("codex_agent") or request_body.get("jake_codex_agent") or gen.get("codex_agent"):
+        row["codex_agent"] = True
     entries.append(row)
     data["entries"] = entries[-MAX_ENTRIES:]
     save(project_path, data)
@@ -489,6 +503,12 @@ def _enrich_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
             )
             if inferred is not None and should_refresh and row.get("cost_usd") != round(inferred, 6):
                 row["cost_usd"] = round(inferred, 6)
+                changed = True
+        target = str(row.get("target_mode") or "").strip().lower()
+        if target not in {"new", "edit"}:
+            inferred_target = "edit" if row.get("base_filename") else "new"
+            if (row.get("kind") or "cad") == "cad":
+                row["target_mode"] = inferred_target
                 changed = True
         enriched.append(row)
     deduped = dedupe_prompt_entries(enriched)
@@ -539,6 +559,19 @@ def _fill_prompt_mode_from_generation(project_path: Path, entries: list[dict[str
             changed = True
         if not row.get("provider") and gen.get("provider"):
             row["provider"] = gen.get("provider")
+            changed = True
+        target = str(request_body.get("target_mode") or "").strip().lower()
+        if target not in {"new", "edit"}:
+            target = "edit" if (row.get("base_filename") or request_body.get("base_filename")) else "new"
+        if (row.get("kind") or "cad") == "cad" and row.get("target_mode") != target:
+            row["target_mode"] = target
+            changed = True
+        if (
+            request_body.get("codex_agent")
+            or request_body.get("jake_codex_agent")
+            or gen.get("codex_agent")
+        ) and not row.get("codex_agent"):
+            row["codex_agent"] = True
             changed = True
     return changed
 

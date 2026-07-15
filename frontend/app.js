@@ -53,8 +53,8 @@ import {
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-model";
-import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-meta";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-codex-target";
+import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
@@ -88,7 +88,7 @@ import {
   clearPendingRestore,
   readPendingRestore,
   initClientVersionWatcher,
-} from "./client-reload.js?v=20260715-auto-reload-idle";
+} from "./client-reload.js?v=20260715-click-to-refresh";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-ref-markup-ai";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
@@ -18454,6 +18454,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         convert_images_to_drawing: convertImagesToDrawing,
         speed: getPromptGenerationSpeed(),
         skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
+        target_mode: targetMode === "edit" ? "edit" : "new",
         ...getPromptAiKeyBodyFields(),
         ...(promptMode === "fusion" ? { mode: "fusion", fusion_target: fusionTarget } : {}),
         ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),

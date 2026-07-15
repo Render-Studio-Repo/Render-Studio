@@ -33,6 +33,14 @@ export function formatSpeedLabel(speed) {
   return null;
 }
 
+export function formatTargetModeLabel(targetMode, baseFilename) {
+  const t = String(targetMode || "").trim().toLowerCase();
+  if (t === "edit") return "Edit selected";
+  if (t === "new") return "New object";
+  if (baseFilename) return "Edit selected";
+  return "New object";
+}
+
 export function formatModelLabel(model, provider) {
   const prov = String(provider || "").trim().toLowerCase();
   if (prov === "deterministic") return null;
