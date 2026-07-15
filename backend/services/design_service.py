@@ -152,15 +152,28 @@ def _project_dxf_filenames(project_path: Path) -> list[str]:
 
 
 def _prompt_mentions_dxf_import(prompt: str) -> bool:
+    """True only when the user clearly wants geometry imported from a DXF/DWG/blueprint.
+
+    Avoid loose phrases like "from the ... profile" in normal generative prompts
+    (e.g. RC airplane airfoil profile), which previously false-triggered DXF mode.
+    """
     text = prompt or ""
-    if re.search(r"\b(dxf|vxf|dwg|drawing|blueprint)\b", text, re.I):
+    if re.search(r"\b(dxf|vxf|dwg)\b", text, re.I):
+        return True
+    if re.search(r"\b(blueprint|engineering\s+drawing|2d\s+drawing)\b", text, re.I):
         return True
     if re.search(r"\b2d\s+(profile|outline|drawing|file)\b", text, re.I):
         return True
-    if re.search(r"\bfrom\s+this\s+\w+\s+file\b", text, re.I):
+    if re.search(r"\bfrom\s+this\s+(dxf|vxf|dwg|drawing|blueprint|file)\b", text, re.I):
         return True
-    if re.search(r"\b(from|off|using)\s+(this|the)\b", text, re.I) and re.search(
-        r"\b(model|mold|part|file|drawing|profile|outline|vxf|dxf)\b",
+    if re.search(
+        r"\b(import|extrude|trace|convert)\b.{0,40}\b(dxf|vxf|dwg|blueprint|2d\s+drawing)\b",
+        text,
+        re.I | re.S,
+    ):
+        return True
+    if re.search(
+        r"\b(from|using|off)\s+(this|the)\s+(attached\s+)?(dxf|vxf|dwg|drawing|blueprint)\b",
         text,
         re.I,
     ):
@@ -3423,9 +3436,26 @@ def _run_text_to_cad_v2(
     canonical_source = None
 
     if _prompt_mentions_dxf_import(prompt) and not _collect_dxf_filenames(context, project_path, prompt):
-        message = _missing_dxf_file_message()
-        trace_add("error", f"[2.0/text-to-cad] {message}", trace_id=trace_id)
-        raise DesignBuildError(message, ai_traces=ai_traces)
+        # Soft-skip: no attached DXF → ignore DXF intent and continue as a normal
+        # generative CAD job instead of failing the whole design.
+        trace_add(
+            "warning",
+            "[2.0/text-to-cad] Prompt mentions DXF/drawing import but no DXF is attached; "
+            "skipping DXF skill and continuing without it.",
+            trace_id=trace_id,
+        )
+        if isinstance(context, dict):
+            cleaned_skills = [
+                s
+                for s in (context.get("skills") or [])
+                if str(s).strip().lower() != "dxf"
+            ]
+            context = {
+                **context,
+                "dxf_skipped": True,
+                "dxf_files": [],
+                "skills": cleaned_skills,
+            }
 
     label_prefix = "Architect" if architect_mode else "Fusion" if fusion_mode else "2.0"
     workflow_note = ""
