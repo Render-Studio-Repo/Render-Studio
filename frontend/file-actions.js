@@ -279,7 +279,6 @@ export async function openFileExportMenu({
   const onshapeBtn = menu.querySelector(".file-export-onshape");
   const pushBtn   = menu.querySelector(".file-export-onshape-push");
   const fusionActionBtn = menu.querySelector(".file-export-fusion-action");
-  let shareUrl = null;
 
   let data = null;
   let fetchError = null;
@@ -295,7 +294,6 @@ export async function openFileExportMenu({
 
   let exports = data?.exports || [];
   const shareFilename = data?.filename || filename;
-  if (data?.share_url) shareUrl = data.share_url;
 
   if (!exports.length && !exportsRequest) {
     exports = fallbackExports(filename);
@@ -400,8 +398,11 @@ export async function openFileExportMenu({
         throw new Error(data.detail || `Could not create share link (${res.status})`);
       }
       const data = await res.json();
-      shareUrl = data.share_url || shareUrl;
-      const abs = shareUrl?.startsWith("http") ? shareUrl : `${window.location.origin}${shareUrl}`;
+      const shareUrl = data.share_url;
+      if (!shareUrl || !/\/share\/[^/]+/i.test(String(shareUrl))) {
+        throw new Error("Could not create a public preview share link.");
+      }
+      const abs = shareUrl.startsWith("http") ? shareUrl : `${window.location.origin}${shareUrl}`;
       await copyText(abs);
       shareBtn.textContent = "Link copied!";
     } catch (err) {

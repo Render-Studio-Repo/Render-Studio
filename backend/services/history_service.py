@@ -576,7 +576,9 @@ def _entry_public(e: dict[str, Any]) -> dict[str, Any]:
         "created_at": e.get("created_at"),
         "user_id": e.get("user_id"),
         "user_name": e.get("user_name"),
+        "user_avatar_url": e.get("user_avatar_url"),
         "summary": _entry_summary(e),
+        "meta": e.get("meta") or {},
     }
 
 

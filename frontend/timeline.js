@@ -47,16 +47,28 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     if (k === "remove_body") return "−";
     if (k === "restore") return "↺";
     if (k.includes("sketch")) return "✎";
+    if (k === "fusion_sync" || k === "autodesk_import") return "↻";
     return "▣";
   }
 
   function userAvatar(entry) {
-    const name = entry.user_name || "User";
-    const initial = escapeHtml(name.trim().charAt(0).toUpperCase() || "?");
+    const name = entry.user_name || (entry.user_id ? "Teammate" : "User");
+    const initial = escapeHtml(String(name).trim().charAt(0).toUpperCase() || "?");
     if (entry.user_avatar_url) {
       return `<span class="timeline-user-avatar timeline-user-avatar--image" style="background-image:url('${escapeHtml(entry.user_avatar_url)}')" title="${escapeHtml(name)}"></span>`;
     }
     return `<span class="timeline-user-avatar" title="${escapeHtml(name)}">${initial}</span>`;
+  }
+
+  function entryLabel(entry) {
+    const kind = String(entry?.kind || "").toLowerCase();
+    const meta = entry?.meta || {};
+    if (kind === "transform") {
+      if (meta.scale != null && meta.translation == null && meta.rotation_deg == null) {
+        return entry.label && entry.label !== "Transform" ? entry.label : "Resize";
+      }
+    }
+    return entry?.label || kind || "Change";
   }
 
   function closeContextMenu() {
@@ -82,7 +94,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     const entry = entries[idx];
     if (entry) {
       const who = entry.user_name ? ` · ${entry.user_name}` : "";
-      labelEl.textContent = `${entry.label}${who} (preview — release to restore)`;
+      labelEl.textContent = `${entryLabel(entry)}${who} (preview — release to restore)`;
       highlightStep(stepsEl, idx);
       onScrub?.(idx, entry);
     }
@@ -119,7 +131,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     slider.value = String(index);
     const entry = entries[index];
     const who = entry.user_name ? ` · ${entry.user_name}` : "";
-    labelEl.textContent = `${entry.label}${who}`;
+    labelEl.textContent = `${entryLabel(entry)}${who}`;
     highlightStep(stepsEl, index);
     if (scroll) {
       const alignEnd = scrollAlign === "end" || index >= entries.length - 1;
@@ -184,20 +196,24 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         btn.type = "button";
         btn.className = "timeline-step";
         if (e.kind === "restore") btn.classList.add("timeline-step--restore");
-        btn.title = e.label;
+        if (e.user_id) btn.classList.add("timeline-step--collab");
+        const label = entryLabel(e);
+        const who = e.user_name || "";
+        btn.title = who ? `${label} · ${who}` : label;
+        const showAvatar = !!(e.user_name || e.user_id || e.user_avatar_url);
         btn.innerHTML = `
           <span class="step-topline">
             <span class="timeline-step-icon" aria-hidden="true">${escapeHtml(iconForKind(e.kind))}</span>
-            <span class="step-kind">${escapeHtml(e.kind)}</span>
-            ${e.user_name ? userAvatar(e) : ""}
+            <span class="step-kind">${escapeHtml(e.kind || "change")}</span>
+            ${showAvatar ? userAvatar(e) : ""}
           </span>
-          <span class="step-label">${escapeHtml(e.label)}</span>
-          ${e.user_name ? `<span class="step-user">${escapeHtml(e.user_name)}</span>` : ""}
+          <span class="step-label">${escapeHtml(label)}</span>
+          ${who ? `<span class="step-user">${escapeHtml(who)}</span>` : ""}
         `;
         btn.addEventListener("click", () => {
           slider.value = String(i);
-          const who = e.user_name ? ` · ${e.user_name}` : "";
-          labelEl.textContent = `${e.label}${who}`;
+          const whoLabel = who ? ` · ${who}` : "";
+          labelEl.textContent = `${label}${whoLabel}`;
           highlightStep(stepsEl, i);
           onSelect?.(i, e);
         });
@@ -207,8 +223,9 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
 
       if (entries.length) {
         const cur = entries[current] || entries[entries.length - 1];
+        const label = entryLabel(cur);
         const who = cur.user_name ? ` · ${cur.user_name}` : "";
-        labelEl.textContent = `${cur.label}${who}`;
+        labelEl.textContent = `${label}${who}`;
         highlightStep(stepsEl, current);
         if (scroll) {
           const alignEnd = scrollAlign === "end" || current >= max;

@@ -9168,7 +9168,7 @@ def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Dep
     return {
         "filename": safe,
         "exports": exports,
-        "share_url": f"/api/projects/{project_id}/files/{safe}",
+        "file_url": f"/api/projects/{project_id}/files/{safe}",
     }
 
 
@@ -9268,7 +9268,7 @@ def build_visible_assembly_exports(
     return {
         "filename": primary,
         "exports": exports,
-        "share_url": f"/api/projects/{project_id}/files/{primary}" if primary else None,
+        "file_url": f"/api/projects/{project_id}/files/{primary}" if primary else None,
         "component_count": len({Path(name).name for name in body.filenames if name}),
     }
 
@@ -9483,7 +9483,7 @@ def regenerate_file_exports(project_id: str, filename: str, user: dict[str, Any]
     return {
         "filename": safe,
         "exports": exports,
-        "share_url": f"/api/projects/{project_id}/files/{safe}",
+        "file_url": f"/api/projects/{project_id}/files/{safe}",
     }
 
 
@@ -12192,7 +12192,14 @@ def transform_file(
         stem = src.stem.replace("_edited", "") + "_edited"
     out = project_path / f"{stem}.glb"
     cad_service.export_mesh(mesh, out)
-    entry = _record_history(project_path, "transform", "Transform", out.name, meta=transform, user=user)
+    entry = _record_history(
+        project_path,
+        "transform",
+        "Resize" if (transform.get("scale") is not None and transform.get("translation") is None and transform.get("rotation_deg") is None) else "Transform",
+        out.name,
+        meta=transform,
+        user=user,
+    )
     _append_mesh_edit(project_path, filename, {"op": "transform", "parent": filename, "child": out.name, **transform, "copy": body.copy})
     _append_mesh_edit(project_path, safe, {"op": "transform", "parent": safe, "child": out.name, **transform, "copy": body.copy})
     project_store.touch_project(project_path)
@@ -12242,7 +12249,12 @@ def transform_body_file(
         raise HTTPException(422, str(exc)) from exc
     cad_service.export_mesh(mesh, src)
     meta = {**transform, "body_index": body.body_index, "parent": safe}
-    entry = _record_history(project_path, "transform", f"Transform body {body.body_index + 1}", safe, meta=meta, user=user)
+    body_label = (
+        f"Resize body {body.body_index + 1}"
+        if (transform.get("scale") is not None and transform.get("translation") is None and transform.get("rotation_deg") is None)
+        else f"Transform body {body.body_index + 1}"
+    )
+    entry = _record_history(project_path, "transform", body_label, safe, meta=meta, user=user)
     _append_mesh_edit(project_path, safe, {"op": "transform_body", "parent": safe, "child": safe, **meta})
     project_store.touch_project(project_path)
     background_tasks.add_task(_background_push_render_edit_to_fusion, project_id, project_path, safe)

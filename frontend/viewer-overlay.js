@@ -270,6 +270,38 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     return s.length > max ? `${s.slice(0, max - 1)}…` : s;
   }
 
+  function rowsFromActivity(items = [], progress = {}) {
+    const source = Array.isArray(items) && items.length
+      ? items
+      : progress?.label
+        ? [{ text: progress.label, stage: progress.stage }]
+        : [];
+    return source
+      .map((row) => {
+        const text = typeof row === "string" ? row : (row?.text || row?.label || "");
+        const cleaned = humanizeProgressText(text, "");
+        if (!cleaned || cleaned === "Running CAD tools…") return null;
+        return {
+          text: cleaned,
+          stage: typeof row === "object" ? (row?.stage || progress?.stage || "") : (progress?.stage || ""),
+        };
+      })
+      .filter(Boolean)
+      .filter((row, index, all) => index === 0 || row.text !== all[index - 1].text)
+      .slice(-4)
+      .reverse();
+  }
+
+  function jobMiniLogs(job) {
+    const progress = job?.progress || {};
+    const rows = rowsFromActivity(progress.activity, progress);
+    if (!rows.length) return `<li class="viewport-gen-job-log muted">Waiting for updates…</li>`;
+    return rows.map((row) => {
+      const stage = row.stage ? `<span class="viewport-gen-job-log-stage">${esc(row.stage)}</span>` : "";
+      return `<li class="viewport-gen-job-log">${stage}<span>${esc(row.text)}</span></li>`;
+    }).join("");
+  }
+
   function focusJob(jobId, { openDetails = false } = {}) {
     focusedJobId = jobId || null;
     const job = activeJobs.find((j) => jobKey(j) === focusedJobId) || activeJobs[0] || null;
@@ -302,16 +334,21 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     if (!focusedJobId || !activeJobs.some((j) => jobKey(j) === focusedJobId)) {
       focusedJobId = jobKey(activeJobs[0]);
     }
-    jobsEl.innerHTML = activeJobs.map((job) => {
+    jobsEl.classList.toggle("viewport-gen-jobs--expanded", detailsOpen);
+    jobsEl.innerHTML = activeJobs.map((job, index) => {
       const id = jobKey(job);
       const pct = Math.round(Math.max(0, Math.min(100, Number(job.progress?.pct) || 0)));
       const label = humanizeProgressText(job.progress?.label || job.label || "", "Working…");
       const prompt = truncatePrompt(job.prompt || job.label || "New part");
       const selected = id === focusedJobId;
+      const pending = id === "pending";
       return `
-        <button type="button" class="viewport-gen-job${selected ? " is-selected" : ""}" data-job-id="${esc(id)}" title="${esc(prompt)}">
+        <article class="viewport-gen-job${selected ? " is-selected" : ""}" data-job-id="${esc(id)}" title="${esc(prompt)}">
           <span class="viewport-gen-job-top">
-            <span class="viewport-gen-job-prompt">${esc(prompt)}</span>
+            <button type="button" class="viewport-gen-job-focus" data-job-focus="${esc(id)}">
+              <span class="viewport-gen-job-index">Model ${index + 1}</span>
+              <span class="viewport-gen-job-prompt">${esc(prompt)}</span>
+            </button>
             <span class="viewport-gen-job-pct">${pct}%</span>
           </span>
           <span class="viewport-gen-job-track"><span class="viewport-gen-job-fill" style="width:${pct}%"></span></span>
@@ -319,11 +356,22 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
             <span class="viewport-gen-job-label">${esc(label)}</span>
             <span class="viewport-gen-job-more">${selected && detailsOpen ? "Hide" : "View more"}</span>
           </span>
-        </button>
+          <div class="viewport-gen-job-expanded">
+            <div class="viewport-gen-job-log-title">Logs</div>
+            <ul class="viewport-gen-job-logs">${jobMiniLogs(job)}</ul>
+            <button type="button" class="btn danger viewport-gen-job-stop" data-job-stop="${esc(id)}"${pending ? " disabled" : ""}>
+              ${pending ? "Starting…" : "Stop this"}
+            </button>
+          </div>
+        </article>
       `;
     }).join("");
     if (spinnerLabel) {
-      spinnerLabel.textContent = `${activeJobs.length} generating…`;
+      spinnerLabel.textContent = `${activeJobs.length} models generating…`;
+    }
+    if (expandBtn && multi) {
+      expandBtn.textContent = detailsOpen ? "Hide" : `Details (${activeJobs.length})`;
+      expandBtn.title = detailsOpen ? "Hide generation steps" : `Show ${activeJobs.length} running generations`;
     }
   }
 
@@ -352,7 +400,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     if (detailsEl) detailsEl.hidden = !detailsOpen;
     if (expandBtn) {
       expandBtn.setAttribute("aria-expanded", detailsOpen ? "true" : "false");
-      expandBtn.textContent = detailsOpen ? "Hide" : "Details";
+      expandBtn.textContent = detailsOpen ? "Hide" : activeJobs.length > 1 ? `Details (${activeJobs.length})` : "Details";
       expandBtn.title = detailsOpen ? "Hide generation steps" : "Show generation steps";
     }
   }
@@ -431,7 +479,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       stats.label,
     );
     if (thinkingText) {
-      thinkingText.textContent = `${stats.current}/${stats.total} · ${nowText}`;
+      const focused = activeJobs.length > 1 ? `Focused model · ` : "";
+      thinkingText.textContent = `${activeJobs.length > 1 ? `${activeJobs.length} models generating · ` : ""}${focused}${stats.current}/${stats.total} · ${nowText}`;
     }
     renderImprovedPrompt();
     renderChecklist();
@@ -568,7 +617,10 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function setStopVisible(active) {
     if (!stopBtn) return;
-    stopBtn.classList.toggle("hidden", !active);
+    const count = typeof active === "number" ? active : (active ? activeJobs.length || 1 : 0);
+    stopBtn.classList.toggle("hidden", count <= 0);
+    stopBtn.textContent = count > 1 ? `Stop ${count} generations` : "Stop generating";
+    stopBtn.setAttribute("aria-label", count > 1 ? `Stop ${count} running generations` : "Stop generating");
   }
 
   function isV2Overlay(opts = {}) {
@@ -777,10 +829,19 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   });
 
   jobsEl?.addEventListener("click", (e) => {
-    const btn = e.target.closest?.(".viewport-gen-job");
+    const stop = e.target.closest?.("[data-job-stop]");
+    if (stop) {
+      e.stopPropagation();
+      const id = stop.getAttribute("data-job-stop") || "";
+      if (!id || id === "pending") return;
+      onStopGeneration?.({ traceId: id, focusedJobId: id, jobs: activeJobs });
+      return;
+    }
+    const btn = e.target.closest?.("[data-job-focus], .viewport-gen-job");
     if (!btn) return;
     e.stopPropagation();
-    const id = btn.getAttribute("data-job-id") || "";
+    const card = btn.closest?.(".viewport-gen-job") || btn;
+    const id = btn.getAttribute("data-job-focus") || card.getAttribute("data-job-id") || "";
     const same = id === focusedJobId;
     focusJob(id, { openDetails: same ? !detailsOpen : true });
   });

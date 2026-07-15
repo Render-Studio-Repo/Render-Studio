@@ -51,7 +51,7 @@ import {
   viewMode,
 } from "./scene-style.js?v=20260715-cad-shading";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
-import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
+import { createTimelineUI } from "./timeline.js?v=20260715-collab-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-codex-target";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
@@ -68,9 +68,9 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-multi-gen";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-multi-gen-rows";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-public-share-link";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -105,7 +105,7 @@ import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260710-step-module";
-import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-primitives-play";
+import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-hierarchy-play";
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
@@ -294,7 +294,22 @@ function generationRunningJobs(gen, watchOverlay = null) {
     : Array.isArray(gen?.jobs)
       ? gen.jobs.filter((j) => j?.status === "running")
       : [];
-  if (fromGen.length) return fromGen;
+  if (fromGen.length) {
+    if (watchOverlay?.pendingStart && !fromGen.some((j) => String(j?.trace_id || j?.id || "") === "pending")) {
+      return [
+        ...fromGen,
+        {
+          id: "pending",
+          trace_id: "pending",
+          status: "running",
+          kind: watchOverlay.kind || "prompt",
+          prompt: watchOverlay.prompt || "Starting another generation…",
+          progress: watchOverlay.progress || { pct: 2, label: "Starting another generation…" },
+        },
+      ];
+    }
+    return fromGen;
+  }
   if (gen?.status === "running") {
     return [{
       id: gen.trace_id,
@@ -321,6 +336,28 @@ function generationRunningJobs(gen, watchOverlay = null) {
     }];
   }
   return [];
+}
+
+function activeCadGenerationCount(pid = projectId) {
+  if (!pid) return 0;
+  const gen = allProjects.find((p) => p.id === pid)?.generation;
+  const jobs = generationRunningJobs(gen, generationWatchPid === pid ? generationWatchOverlay : null);
+  const cachedCount = Math.max(Number(gen?.running_count || 0), jobs.length);
+  if (cachedCount > 0) return cachedCount;
+  if (generationWatchPid === pid && generationWatchOverlay?.kind !== "wiring") return 1;
+  if (viewportOverlayPid === pid && viewportOverlayState?.kind !== "wiring") return 1;
+  return isProjectGenerating(pid) ? 1 : 0;
+}
+
+function promptGenerateButtonLabel(mode = promptMode, runningCount = activeCadGenerationCount()) {
+  const busy = runningCount > 0;
+  if (busy) return runningCount > 1 ? `Generate another (${runningCount} running)` : "Generate another";
+  if (mode === "render") return "Render scene";
+  if (mode === "draw") return "Apply Draw command";
+  if (mode === "architect") return "Generate modular house part";
+  if (mode === "fusion") return `Generate with ${fusionTargetLabel()}`;
+  if (mode === "v2") return "Generate with 2.0";
+  return "Generate / modify with AI";
 }
 
 function generationUserAvatar(gen = {}) {
@@ -668,17 +705,19 @@ function syncStopButtonVisibility() {
   if (btn) {
     btn.classList.toggle("hidden", !cadGenerating);
     if (!cadGenerating) btn.disabled = false;
-    const runningCount = generationRunningJobs(allProjects.find((p) => p.id === projectId)?.generation).length;
-    btn.textContent = runningCount > 1 ? `Stop generating (${runningCount})` : "Stop generating";
+    const runningCount = activeCadGenerationCount(projectId);
+    btn.textContent = runningCount > 1 ? `Stop ${runningCount} generations` : "Stop generating";
+    btn.setAttribute("aria-label", runningCount > 1 ? `Stop ${runningCount} running generations` : "Stop generating");
   }
   // Keep Generate available while CAD jobs run so users can queue another part.
   if (promptBtn) {
     promptBtn.classList.remove("hidden");
+    promptBtn.textContent = promptGenerateButtonLabel(promptMode, activeCadGenerationCount(projectId));
     if (!cadGenerating || !promptSubmitInFlight) promptBtn.removeAttribute("disabled");
   }
   if (wiringBtn) wiringBtn.classList.toggle("hidden", !wiringGenerating);
   if (wiringToolbeltBtn) wiringToolbeltBtn.classList.toggle("hidden", !wiringGenerating);
-  viewerOverlay.setStopVisible?.(cadGenerating);
+  viewerOverlay.setStopVisible?.(cadGenerating ? activeCadGenerationCount(projectId) : 0);
   wiringOverlay?.setStopVisible?.(wiringGenerating);
   syncCanvasGenerationUi();
 }
@@ -969,12 +1008,7 @@ function applyPromptModeUI(mode = promptMode) {
   });
   const promptBtn = document.getElementById("btn-prompt");
   if (promptBtn) {
-    if (promptMode === "render") promptBtn.textContent = "Render scene";
-    else if (promptMode === "draw") promptBtn.textContent = "Apply Draw command";
-    else if (promptMode === "architect") promptBtn.textContent = "Generate modular house part";
-    else if (promptMode === "fusion") promptBtn.textContent = `Generate with ${fusionTargetLabel()}`;
-    else if (promptMode === "v2") promptBtn.textContent = "Generate with 2.0";
-    else promptBtn.textContent = "Generate / modify with AI";
+    promptBtn.textContent = promptGenerateButtonLabel(promptMode);
   }
   const input = document.getElementById("prompt-input");
   if (input) {
@@ -5057,6 +5091,22 @@ function enterRiggingMode() {
     await riggingEditor.show();
     const bound = riggingEditor.refreshMeshBindings?.() ?? 0;
     const root = getRiggingPartRoot() || projectAssembly.getRoot() || currentMesh;
+    // Prefer URDF robots (Jake arms) when artifacts exist.
+    try {
+      await refreshRobotArtifacts({ quiet: true });
+      const { urdfFile } = pickPreferredRobotFiles(robotArtifactData || {});
+      if (urdfFile) {
+        await ensureUrdfRobotScene({ quiet: false, force: true });
+        if (urdfRobotRuntime.isLoaded?.()) {
+          setEditStatus("ok", `URDF robot ready (${urdfFile}). Press Play to animate joints.`);
+          syncRiggingToolbelt();
+          syncRiggingViewportPlaybackUi();
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("URDF auto-load failed", err);
+    }
     // Jake contract: motion comes from .step.js (or URDF), not mesh-name heuristics.
     const stepBound = await stepModuleRuntime.bind(root);
     if (stepBound > 0 && stepModuleRuntime.hasModule()) {
@@ -5072,7 +5122,7 @@ function enterRiggingMode() {
     } else if (selectedFile) {
       setEditStatus(
         "error",
-        "No .step.js motion module for this model. Mechanisms need a Jake-style parameter sidecar."
+        "No URDF or .step.js motion module for this model. Generate robot artifacts or a Jake-style parameter sidecar."
       );
     }
     syncRiggingToolbelt();
@@ -6914,6 +6964,7 @@ function handleRiggingAction(action, entry, data = {}) {
   if (action === "stop") {
     stepModuleRuntime?.stop?.({ reset: true });
     planetaryGearRuntime?.stop?.({ reset: true });
+    urdfRobotRuntime?.stopTrajectory?.();
     riggingEditor.setPlaying(false);
     syncRiggingViewportPlaybackUi();
     return;
@@ -7086,24 +7137,33 @@ async function toggleRiggingPlayback() {
   try {
     if (!urdfRobotRuntime.isLoaded()) {
       await refreshRobotArtifacts({ quiet: true });
-      await ensureUrdfRobotScene({ quiet: true, force: false });
+      await ensureUrdfRobotScene({ quiet: false, force: true });
     }
     if (urdfRobotRuntime.isLoaded?.()) {
-      if (stepModuleRuntime.isPlaying()) stepModuleRuntime.stop({ reset: false });
-      if (planetaryGearRuntime.isPlaying()) planetaryGearRuntime.stop({ reset: false });
-      riggingEditor?.setPlaying?.(false);
-      const playing = urdfRobotRuntime.togglePlay?.() ?? false;
-      setEditStatus(
-        "ok",
-        playing
-          ? "Playing URDF joint motion (SRDF home → reach)."
-          : "URDF playback paused."
+      const movable = (urdfRobotRuntime.getState?.()?.urdf?.joints || []).filter(
+        (j) => ["revolute", "continuous", "prismatic"].includes(String(j.type || "").toLowerCase()),
       );
-      syncRiggingViewportPlaybackUi();
-      return;
+      if (!movable.length) {
+        setEditStatus("error", "URDF loaded but has no movable joints to animate.");
+        // Fall through to STEP / planetary / bone play.
+      } else {
+        if (stepModuleRuntime.isPlaying()) stepModuleRuntime.stop({ reset: false });
+        if (planetaryGearRuntime.isPlaying()) planetaryGearRuntime.stop({ reset: false });
+        riggingEditor?.setPlaying?.(false);
+        const playing = urdfRobotRuntime.togglePlay?.({ durationSec: 3.6 }) ?? false;
+        setEditStatus(
+          "ok",
+          playing
+            ? "Playing URDF joint motion (SRDF home → reach)."
+            : "URDF playback paused.",
+        );
+        syncRiggingViewportPlaybackUi();
+        return;
+      }
     }
   } catch (err) {
     console.warn("URDF playback failed", err);
+    setEditStatus("error", err?.message || "URDF playback failed.");
   }
   // 1) Jake contract: .step.js module (works for gears, hinges, linkages, …)
   try {
@@ -7111,6 +7171,7 @@ async function toggleRiggingPlayback() {
     if (stepModuleRuntime.hasModule()) {
       if (!stepModuleRuntime.isBound()) await stepModuleRuntime.bind(root);
       if (planetaryGearRuntime.isPlaying()) planetaryGearRuntime.stop({ reset: false });
+      if (urdfRobotRuntime.isPlaying?.()) urdfRobotRuntime.stopTrajectory?.();
       riggingEditor?.setPlaying?.(false);
       const playing = stepModuleRuntime.togglePlay();
       setEditStatus(
@@ -8983,24 +9044,19 @@ function bindUrdfPanel() {
     if (event.key === "Escape" && isUrdfMotionModalOpen()) closeUrdfMotionModal();
   });
   document.getElementById("btn-urdf-refresh")?.addEventListener("click", () => refreshRobotArtifacts());
-  document.getElementById("btn-urdf-play")?.addEventListener("click", () => {
+  document.getElementById("btn-urdf-play")?.addEventListener("click", async () => {
+    if (!urdfRobotRuntime.isLoaded()) {
+      await refreshRobotArtifacts({ quiet: true });
+      await ensureUrdfRobotScene({ quiet: false, force: true });
+    }
     if (urdfRobotRuntime.isLoaded()) {
-      const joints = (robotArtifactData?.joints || []).filter((j) => String(j.type || "").toLowerCase() !== "fixed");
-      if (joints.length) {
-        const points = [];
-        for (let i = 0; i <= 20; i += 1) {
-          const t = i / 20;
-          const values = {};
-          joints.forEach((joint, idx) => {
-            const amp = isAngularRobotJoint(joint) ? (Math.PI / 4) : 0.05;
-            values[joint.name] = Math.sin((t * Math.PI * 2) + idx) * amp;
-          });
-          points.push({ jointValuesByName: values });
-        }
-        urdfRobotRuntime.playTrajectory({ points }, { durationSec: 2.4, onFrame: () => syncUrdfSlidersFromRuntime() });
-        setEditStatus("ok", "Playing URDF joint sweep.");
-        return;
-      }
+      const playing = urdfRobotRuntime.togglePlay?.({ durationSec: 3.6 }) ?? false;
+      setEditStatus(
+        "ok",
+        playing ? "Playing URDF joint sweep." : "URDF playback paused.",
+      );
+      syncRiggingViewportPlaybackUi();
+      return;
     }
     toggleRiggingPlayback();
   });
@@ -10333,7 +10389,7 @@ function objectSizeControlsHtml(filename) {
         <strong>Generative Size Controls</strong>
         <span>${appEscapeHtml(target.label)} · ${target.bodyCount > 1 && target.bodyIndex != null ? "selected body" : "selected object"}</span>
       </div>
-      <button type="button" class="btn secondary btn-compact" data-size-reset>Reset</button>
+      <button type="button" class="btn secondary btn-compact" data-size-reset title="Restore the original model size from when this panel opened">Reset</button>
     </div>
     ${rows}
     <label class="object-size-row object-size-row--uniform">
@@ -10363,6 +10419,9 @@ function bindObjectSizeControls(pop, filename) {
     depth: Number(panel.querySelector('[data-size-range="depth"]')?.dataset.base),
     height: Number(panel.querySelector('[data-size-range="height"]')?.dataset.base),
   };
+  // Frozen at panel open — Reset restores this original model size, not the last bake.
+  const sessionOriginalBases = { ...originalBases };
+  const sessionOriginalUniform = 100;
 
   const syncNumber = (axis, value) => {
     const num = panel.querySelector(`[data-size-number="${axis}"]`);
@@ -10531,16 +10590,28 @@ function bindObjectSizeControls(pop, filename) {
   });
   panel.querySelector("[data-size-uniform-number]")?.addEventListener("change", () => scheduleApply(80));
   panel.querySelector("[data-size-reset]")?.addEventListener("click", () => {
-    panel.querySelectorAll("[data-size-range]").forEach((range) => {
-      const base = Number(range.dataset.base || range.value || 1);
-      range.value = String(base);
-      syncNumber(range.dataset.sizeRange, base);
+    // Keep originalBases as the *current baked* size so applySizeChange scales
+    // back toward the frozen session-original dimensions.
+    ["width", "depth", "height"].forEach((axis) => {
+      const target = Math.max(0.1, Number(sessionOriginalBases[axis]) || 0.1);
+      const range = panel.querySelector(`[data-size-range="${axis}"]`);
+      if (range) {
+        const min = Math.max(0.1, target * 0.2);
+        const max = Math.max(target * 2.5, min + 1);
+        range.min = String(min);
+        range.max = String(max);
+        range.value = String(target);
+      }
+      syncNumber(axis, target);
     });
     const uniform = panel.querySelector("[data-size-uniform]");
     const uniformNumber = panel.querySelector("[data-size-uniform-number]");
-    if (uniform) uniform.value = "100";
-    if (uniformNumber) uniformNumber.value = "100";
+    if (uniform) uniform.value = String(sessionOriginalUniform);
+    if (uniformNumber) uniformNumber.value = String(sessionOriginalUniform);
     resetLivePreview();
+    lastAppliedKey = "";
+    setEditStatus("ok", "Restoring original model size…");
+    void applySizeChange("Restoring original model size…");
   });
   panel.querySelector("[data-size-apply]")?.addEventListener("click", async () => {
     if (applyTimer) {
@@ -19087,6 +19158,20 @@ window.addEventListener("keydown", (e) => {
     e.target?.blur?.();
     focusViewportForShortcuts();
   } else if (inField) {
+    // Still allow undo/redo while typing in size/transform fields.
+    if (mod && key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      e.target?.blur?.();
+      if (undoViewportAction()) return;
+      undoTimeline();
+      return;
+    }
+    if ((mod && key === "y") || (mod && key === "z" && e.shiftKey) || (e.shiftKey && !mod && key === "z")) {
+      e.preventDefault();
+      e.target?.blur?.();
+      redoTimeline();
+      return;
+    }
     return;
   }
   if (mod && key === "c") {
@@ -19127,7 +19212,7 @@ window.addEventListener("keydown", (e) => {
     undoTimeline();
     return;
   }
-  if ((mod && key === "y") || (mod && key === "z" && e.shiftKey)) {
+  if ((mod && key === "y") || (mod && key === "z" && e.shiftKey) || (e.shiftKey && !mod && key === "z")) {
     e.preventDefault();
     redoTimeline();
     return;

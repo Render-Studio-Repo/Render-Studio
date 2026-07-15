@@ -343,11 +343,13 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
   let urdf = null;
   let srdf = null;
   let linkGroups = new Map();
+  let linkParents = new Map(); // childLink -> parent THREE.Object3D
   let jointValuesRad = {};
   let projectId = null;
   let activeUrdfFile = null;
   let activeSrdfFile = null;
   let trajectoryTimer = null;
+  let trajectoryRaf = 0;
 
   function clear() {
     stopTrajectory();
@@ -365,6 +367,7 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     urdf = null;
     srdf = null;
     linkGroups = new Map();
+    linkParents = new Map();
     jointValuesRad = {};
     activeUrdfFile = null;
     activeSrdfFile = null;
@@ -372,6 +375,26 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
 
   function applyPose() {
     if (!urdf || !root) return;
+    // Prefer hierarchical local joint poses (Jake-style). Fall back to flat world mats.
+    if (linkParents.size) {
+      for (const joint of urdf.joints || []) {
+        const child = linkGroups.get(joint.childLink);
+        if (!child) continue;
+        const value = asNum(jointValuesRad[joint.name], 0);
+        const local = posedJointLocal(joint, value);
+        child.matrixAutoUpdate = false;
+        child.matrix.copy(matrixFromRowMajor(local));
+        child.matrixWorldNeedsUpdate = true;
+      }
+      const rootLinkGroup = linkGroups.get(urdf.rootLink);
+      if (rootLinkGroup) {
+        rootLinkGroup.matrixAutoUpdate = false;
+        rootLinkGroup.matrix.identity();
+        rootLinkGroup.matrixWorldNeedsUpdate = true;
+      }
+      root.updateMatrixWorld(true);
+      return;
+    }
     const worlds = solveLinkWorldTransforms(urdf, jointValuesRad);
     for (const [linkName, group] of linkGroups.entries()) {
       const world = worlds.get(linkName) || IDENTITY;
@@ -410,6 +433,7 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     // Render3D CAD viewport is millimeter-based; URDF is meters.
     root.scale.setScalar(1000);
     linkGroups = new Map();
+    linkParents = new Map();
 
     for (const link of urdf.links) {
       const group = new THREE.Group();
@@ -424,12 +448,27 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
         group.add(primitiveMesh({ kind: "sphere", radius: 0.015, color: [0.55, 0.6, 0.7, 1], localTransform: IDENTITY }));
       }
       linkGroups.set(link.name, group);
-      root.add(group);
     }
 
-    for (const joint of urdf.joints) {
-      if (String(joint.type) === "fixed") jointValuesRad[joint.name] = 0;
-      else jointValuesRad[joint.name] = 0;
+    // Build parent→child hierarchy so joint motion is local and reliable.
+    const childLinks = new Set((urdf.joints || []).map((j) => j.childLink).filter(Boolean));
+    for (const link of urdf.links) {
+      const group = linkGroups.get(link.name);
+      if (!group) continue;
+      if (!childLinks.has(link.name)) {
+        root.add(group);
+      }
+    }
+    for (const joint of urdf.joints || []) {
+      const parent = linkGroups.get(joint.parentLink);
+      const child = linkGroups.get(joint.childLink);
+      if (!parent || !child) continue;
+      parent.add(child);
+      linkParents.set(joint.childLink, parent);
+      jointValuesRad[joint.name] = 0;
+    }
+    for (const joint of urdf.joints || []) {
+      if (!(joint.name in jointValuesRad)) jointValuesRad[joint.name] = 0;
     }
 
     // Prefer SRDF "home" so the arm opens in a readable pose, not collapsed at zeros.
@@ -482,6 +521,10 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
       clearInterval(trajectoryTimer);
       trajectoryTimer = null;
     }
+    if (trajectoryRaf) {
+      cancelAnimationFrame(trajectoryRaf);
+      trajectoryRaf = 0;
+    }
   }
 
   function normalizeTrajectoryPoint(point) {
@@ -511,18 +554,24 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
   function playTrajectory(trajectory, { durationSec = 1.2, onFrame } = {}) {
     stopTrajectory();
     const points = Array.isArray(trajectory?.points) ? trajectory.points : (Array.isArray(trajectory) ? trajectory : []);
-    if (!points.length) return;
+    if (!points.length) return false;
     const start = performance.now();
     const total = Math.max(0.2, Number(durationSec) || 1.2) * 1000;
-    trajectoryTimer = setInterval(() => {
-      const t = Math.min(1, (performance.now() - start) / total);
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / total);
       const idx = Math.min(points.length - 1, Math.floor(t * (points.length - 1)));
       const point = points[idx] || {};
       const values = normalizeTrajectoryPoint(point);
       if (values) setJointValues(values);
       onFrame?.({ t, point, values });
-      if (t >= 1) stopTrajectory();
-    }, 33);
+      if (t >= 1) {
+        trajectoryRaf = 0;
+        return;
+      }
+      trajectoryRaf = requestAnimationFrame(tick);
+    };
+    trajectoryRaf = requestAnimationFrame(tick);
+    return true;
   }
 
   function getState() {
@@ -554,7 +603,7 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     }
   }
 
-  function togglePlay({ durationSec = 3.2 } = {}) {
+  function togglePlay({ durationSec = 3.6 } = {}) {
     if (demoPlaying) {
       stopDemoPlay();
       stopTrajectory();
@@ -563,33 +612,42 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     if (!urdf) return false;
     const home = (srdf?.groupStates || []).find((s) => String(s.name).toLowerCase() === "home");
     const reach = (srdf?.groupStates || []).find((s) => /reach|wave|open/i.test(String(s.name || "")));
-    const movable = (urdf.joints || []).filter((j) => j.type === "revolute" || j.type === "continuous" || j.type === "prismatic");
+    const movable = (urdf.joints || []).filter((j) => {
+      const type = String(j.type || "").toLowerCase();
+      return type === "revolute" || type === "continuous" || type === "prismatic";
+    });
     if (!movable.length) return false;
-    const base = { ...(home?.jointValuesByName || jointValuesRad) };
+    const base = { ...jointValuesRad, ...(home?.jointValuesByName || {}) };
+    setJointValues(base);
     const points = [];
-    const steps = 60;
+    const steps = 90;
     for (let i = 0; i <= steps; i += 1) {
       const t = i / steps;
       const values = { ...base };
       movable.forEach((joint, index) => {
         const mid = asNum(base[joint.name], 0);
-        const span = Math.abs(asNum(joint.upper, 1) - asNum(joint.lower, -1));
+        const lower = asNum(joint.lower, -Math.PI);
+        const upper = asNum(joint.upper, Math.PI);
+        const span = Math.abs(upper - lower);
         const amp = joint.type === "prismatic"
-          ? Math.min(0.04, span * 0.35 || 0.02)
-          : Math.min(0.85, (span || Math.PI) * 0.22);
-        const phase = index * 0.7;
+          ? Math.min(0.05, span * 0.4 || 0.025)
+          : Math.min(1.1, Math.max(0.45, (span || Math.PI) * 0.28));
+        const phase = index * 0.85;
         let next = mid + amp * Math.sin(t * Math.PI * 2 + phase);
         if (reach?.jointValuesByName?.[joint.name] != null) {
           const target = asNum(reach.jointValuesByName[joint.name], mid);
           const blend = 0.5 - 0.5 * Math.cos(t * Math.PI * 2);
-          next = mid * (1 - blend) + target * blend + amp * 0.2 * Math.sin(t * Math.PI * 2 + phase);
+          next = mid * (1 - blend) + target * blend + amp * 0.25 * Math.sin(t * Math.PI * 2 + phase);
+        }
+        if (joint.type !== "continuous") {
+          next = Math.max(lower, Math.min(upper, next));
         }
         values[joint.name] = next;
       });
       points.push(values);
     }
     demoPlaying = true;
-    playTrajectory({ points }, {
+    const started = playTrajectory({ points }, {
       durationSec,
       onFrame: ({ t }) => {
         if (t >= 1) {
@@ -598,11 +656,15 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
         }
       },
     });
+    if (!started) {
+      demoPlaying = false;
+      return false;
+    }
     return true;
   }
 
   function isPlaying() {
-    return demoPlaying || !!trajectoryTimer;
+    return demoPlaying || !!trajectoryTimer || !!trajectoryRaf;
   }
 
   return {
