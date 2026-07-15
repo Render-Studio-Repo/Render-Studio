@@ -374,6 +374,17 @@ function generationUserAvatar(gen = {}) {
   return `<span class="vgu-avatar">${initial}</span>`;
 }
 
+function isRiggingGeneration(gen = {}) {
+  return String(gen?.kind || "").toLowerCase() === "rigging"
+    || generationPromptMode(gen) === "rigging";
+}
+
+function generationStatusElementId(gen = {}) {
+  if (String(gen?.kind || "").toLowerCase() === "wiring") return "wiring-prompt-status";
+  if (isRiggingGeneration(gen)) return "rigging-prompt-status";
+  return "prompt-status";
+}
+
 function syncViewportGenerationUserBadge(gen) {
   const btn = document.getElementById("viewport-generation-user");
   if (!btn) return;
@@ -384,14 +395,17 @@ function syncViewportGenerationUserBadge(gen) {
   }
   const name = gen.by_user_name || "Someone";
   const prompt = gen.prompt || gen.label || "Generating model";
+  const rigging = isRiggingGeneration(gen);
   btn.classList.remove("hidden");
+  btn.classList.toggle("viewport-generation-user--rigging", rigging);
   btn.dataset.prompt = prompt;
   btn.dataset.user = name;
   btn.dataset.userId = gen.by_user_id || "";
   btn.innerHTML = `
     ${generationUserAvatar(gen)}
-    <span class="vgu-copy"><strong>${appEscapeHtml(name)}</strong><small>… generating with AI</small></span>
-    <span class="vgu-ai">AI</span>
+    ${rigging ? '<span class="vgu-kind-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 12.5h8M5 12.5V9l3-3 3 3v3.5M8 6V2.5M6.5 4h3M8 2.5l2 1.5M8 2.5 6 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : ""}
+    <span class="vgu-copy"><strong>${appEscapeHtml(name)}</strong><small>${rigging ? "… generating rigging" : "… generating with AI"}</small></span>
+    <span class="vgu-ai">${rigging ? "RIG" : "AI"}</span>
   `;
 }
 
@@ -688,6 +702,40 @@ async function applyWiringGenerationComplete(gen, pid = projectId) {
   markGenerationApplied(pid, gen.trace_id);
 }
 
+async function applyRiggingGenerationComplete(gen, pid = projectId) {
+  if (!pid) return;
+  const statusEl = document.getElementById("rigging-prompt-status");
+  if (statusEl && pid === projectId) {
+    statusEl.className = "status ok";
+    const ref = gen.prompt_id
+      ? formatPromptRef({
+          promptId: gen.prompt_id,
+          projectId: pid,
+          traceId: gen.trace_id,
+          promptMode: "rigging",
+          model: gen.model,
+          provider: gen.provider,
+        })
+      : (gen.trace_id ? `trace #${gen.trace_id}` : "");
+    statusEl.textContent = ref ? `Rigging ready · ${ref}` : (gen.message || "Rigging ready.");
+  }
+  if (pid === projectId) {
+    try {
+      const rig = await api(`/api/projects/${pid}/rigging`);
+      riggingEditor.applyRigData(rig);
+    } catch {
+      /* Some rigging runs may only update history; refresh the surrounding UI anyway. */
+    }
+    await refreshFiles();
+    await refreshRobotArtifacts({ quiet: true });
+    await refreshRiggingPromptHistory();
+    if (document.body.classList.contains("rigging-design-tab")) {
+      setRightTab("rigging");
+    }
+  }
+  markGenerationApplied(pid, gen.trace_id);
+}
+
 function isCadGenerationActive(pid = projectId) {
   if (!pid || !isGenerationUiActive(pid)) return false;
   if (generationWatchPid === pid) {
@@ -957,6 +1005,13 @@ function openGenerationCancelPicker(jobs, { focusedJobId = null } = {}) {
 
 function promptGenerationOverlayOpts(mode = "standard") {
   const normalized = (mode || "standard").toLowerCase();
+  if (normalized === "rigging") {
+    return {
+      message: "Generating rigging for this robot… (safe to refresh)",
+      mode: "rigging",
+      estimateMs: 180000,
+    };
+  }
   if (normalized === "fusion") {
     return {
       message: "Fusion is revolving geometry... building, rendering, reviewing, and repairing.",
@@ -979,6 +1034,7 @@ function promptGenerationOverlayOpts(mode = "standard") {
 }
 
 function generationPromptMode(generation = {}, fallback = "standard") {
+  if (String(generation?.kind || "").toLowerCase() === "rigging") return "rigging";
   const explicitRaw =
     generation?.mode ||
     generation?.prompt_mode ||
@@ -990,6 +1046,7 @@ function generationPromptMode(generation = {}, fallback = "standard") {
   if (text === "architect" || text === "architecture") return "architect";
   if (text === "v2" || text === "2.0" || text === "2") return "v2";
   if (text === "draw") return "draw";
+  if (text === "rigging" || text === "rig") return "rigging";
   const searchable = String([
     generation?.message,
     generation?.label,
@@ -1003,6 +1060,7 @@ function generationPromptMode(generation = {}, fallback = "standard") {
   if (fallbackText === "fusion" || fallbackText === "fusion360" || fallbackText === "fusion-360") return "fusion";
   if (fallbackText === "architect" || fallbackText === "architecture") return "architect";
   if (fallbackText === "v2" || fallbackText === "2.0" || fallbackText === "2") return "v2";
+  if (fallbackText === "rigging" || fallbackText === "rig") return "rigging";
   return fallbackText === "draw" ? "draw" : "standard";
 }
 
@@ -1073,6 +1131,14 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       mode: "build",
       estimateMs: 90000,
     };
+  } else if (kind === "rigging") {
+    generationWatchOverlay = {
+      kind,
+      promptMode: "rigging",
+      startedAt: Date.now(),
+      pendingStart: !!pendingStart,
+      ...promptGenerationOverlayOpts("rigging"),
+    };
   } else {
     generationWatchOverlay = {
       kind,
@@ -1085,6 +1151,11 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
   setProjectLoading(pid, true);
   if (kind === "wiring") {
     showAiComposePanel();
+  } else if (kind === "rigging") {
+    workspaceModes?.setDesignTab?.("RIGGING");
+    ribbon?.setDesignTab?.("RIGGING");
+    enterRiggingMode();
+    setRightTab("rigging");
   } else if (kind !== "build") {
     showAiComposePanel();
   }
@@ -1096,6 +1167,12 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     if (wiringStatus && pid === projectId) {
       wiringStatus.className = "status loading";
       wiringStatus.textContent = "Generating schematic… safe to refresh.";
+    }
+  } else if (kind === "rigging") {
+    const riggingStatus = document.getElementById("rigging-prompt-status");
+    if (riggingStatus && pid === projectId) {
+      riggingStatus.className = "status loading";
+      riggingStatus.textContent = "Generating rigging… safe to refresh or switch projects.";
     }
   } else {
     // Keep Generate enabled so another part can be queued while this runs.
@@ -1123,7 +1200,9 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       const runningJobs = generationRunningJobs(gen, generationWatchOverlay);
       if (gen.status === "running" || runningJobs.length > 0) {
         if (generationWatchOverlay) {
-          const liveMode = generationPromptMode(gen, generationWatchOverlay.promptMode || mode);
+          const liveMode = generationWatchOverlay.kind === "rigging"
+            ? "rigging"
+            : generationPromptMode(gen, generationWatchOverlay.promptMode || mode);
           Object.assign(generationWatchOverlay, {
             promptMode: liveMode,
             pendingStart: false,
@@ -1142,7 +1221,13 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         }
         // Apply any sibling jobs that finished while others still run.
         for (const job of gen.jobs || []) {
-          if (job.status === "complete" && job.kind !== "wiring" && !wasGenerationApplied(pid, job.trace_id)) {
+          if (job.status === "complete" && job.kind === "rigging" && !wasGenerationApplied(pid, job.trace_id)) {
+            try {
+              await applyRiggingGenerationComplete(job, pid);
+            } catch (err) {
+              console.warn("apply completed rigging generation failed", err);
+            }
+          } else if (job.status === "complete" && job.kind !== "wiring" && !wasGenerationApplied(pid, job.trace_id)) {
             try {
               await applyGenerationComplete(job, pid);
             } catch (err) {
@@ -1188,9 +1273,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           Date.now() - Number(generationWatchOverlay.benignInterruptAt || Date.now()),
         );
         if (interruptWaitMs < 90_000) {
-          const statusEl = document.getElementById(
-            generationWatchOverlay.kind === "wiring" ? "wiring-prompt-status" : "prompt-status",
-          );
+          const statusEl = document.getElementById(generationStatusElementId(generationWatchOverlay));
           if (statusEl && pid === projectId) {
             statusEl.className = "status";
             statusEl.textContent = "Server updating — resuming your generation…";
@@ -1220,6 +1303,10 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             if (!wasGenerationApplied(pid, job.trace_id)) {
               await applyWiringGenerationComplete(job, pid);
             }
+          } else if (job.kind === "rigging") {
+            if (!wasGenerationApplied(pid, job.trace_id)) {
+              await applyRiggingGenerationComplete(job, pid);
+            }
           } else if (!wasGenerationApplied(pid, job.trace_id)) {
             await applyGenerationComplete(job, pid);
           }
@@ -1235,6 +1322,14 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             invalidateWiringPrefetch();
             await refreshFiles();
             await refreshWiringPromptHistory();
+          }
+        } else if (gen.kind === "rigging") {
+          if (!wasGenerationApplied(pid, gen.trace_id)) {
+            await applyRiggingGenerationComplete(gen, pid);
+          } else if (pid === projectId) {
+            await refreshFiles();
+            await refreshRobotArtifacts({ quiet: true });
+            await refreshRiggingPromptHistory();
           }
         } else if (!wasGenerationApplied(pid, gen.trace_id)) {
           await applyGenerationComplete(gen, pid);

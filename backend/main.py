@@ -11316,7 +11316,10 @@ def rigging_prompt(
             trace_id=trace_id,
             user=user,
             prompt=body.prompt,
-            label="Rigging animation",
+            label="Rigging robot motion",
+            mode="rigging",
+            request_body=body.model_dump(),
+            allow_parallel=True,
         )
     except generation_service.GenerationInProgress as exc:
         return JSONResponse(
@@ -11364,7 +11367,12 @@ def rigging_prompt(
             user=user,
             error=str(exc),
         )
+        generation_service.fail(path, str(exc), trace_id=trace_id)
         raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:
+        trace_add("error", f"Rigging prompt crashed: {exc}", trace_id=trace_id)
+        generation_service.fail(path, str(exc), trace_id=trace_id)
+        raise
 
     sim_files = sorted(path.glob("*.sim.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if sim_files:
@@ -11401,6 +11409,17 @@ def rigging_prompt(
     trace_add(
         "info",
         f"Rigging prompt done → {len(rig.get('bones') or [])} bones",
+        trace_id=trace_id,
+    )
+    generation_service.complete(
+        path,
+        {
+            "kind": "rigging",
+            "mode": "rigging",
+            "message": message,
+            "trace_id": trace_id,
+            "prompt_id": hist_entry.get("id") if isinstance(hist_entry, dict) else None,
+        },
         trace_id=trace_id,
     )
     return {

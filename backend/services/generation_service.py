@@ -19,7 +19,13 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 GENERATION_FILE = "generation.json"
-MAX_RUNNING_SECONDS = 20 * 60
+# Wall-clock budget for *abandoned* (dead-worker) jobs. Live workers are never
+# killed by this — Sol / quality CAD 2.0 routinely needs far longer than 20 min.
+MAX_RUNNING_SECONDS = 3 * 60 * 60
+MAX_RUNNING_SECONDS_SOL = 6 * 60 * 60
+MAX_RESTART_COUNT = 8
+# Grace before declaring a dead-PID job abandoned when it cannot be recovered.
+STALE_IDLE_SECONDS = 5 * 60
 MAX_PARALLEL_PROMPT_JOBS = 5
 
 _RUNNING_TRACES: dict[str, set[str]] = {}
@@ -116,6 +122,48 @@ def _process_is_alive(pid: Any) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _is_long_running_model(job: dict[str, Any] | None) -> bool:
+    """GPT-5.6 Sol (and similar) need hours, not minutes — never short-circuit them."""
+    if not job:
+        return False
+    model = str(job.get("model") or "").strip().lower()
+    speed = str(job.get("speed") or "").strip().lower()
+    mode = str(job.get("mode") or "").strip().lower()
+    if model.endswith("-sol") or "-sol" in model:
+        return True
+    if speed == "quality" and mode in {"v2", "fusion", "architect"}:
+        return True
+    return False
+
+
+def _job_max_running_seconds(job: dict[str, Any] | None) -> int:
+    if _is_long_running_model(job):
+        return MAX_RUNNING_SECONDS_SOL
+    return MAX_RUNNING_SECONDS
+
+
+def _job_age_seconds(job: dict[str, Any], *, now: datetime | None = None) -> float | None:
+    started = job.get("started_at")
+    if not started:
+        return None
+    try:
+        t0 = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return ((now or datetime.now(timezone.utc)) - t0).total_seconds()
+
+
+def _job_idle_seconds(job: dict[str, Any], *, now: datetime | None = None) -> float | None:
+    heartbeat = job.get("updated_at") or job.get("started_at")
+    if not heartbeat:
+        return None
+    try:
+        t0 = datetime.fromisoformat(str(heartbeat).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return ((now or datetime.now(timezone.utc)) - t0).total_seconds()
 
 
 def _running_set(project_id: str) -> set[str]:
