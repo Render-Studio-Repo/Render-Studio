@@ -3952,7 +3952,7 @@ def _push_file_to_fusion_mirrors(
 
 
 def _iter_project_fusion_push_filenames(project_path: Path) -> list[str]:
-    """Local CAD files that can be mirrored to Fusion as STEP (deduped by stem)."""
+    """Local STEP files that can be mirrored to Fusion (deduped by stem)."""
     by_stem: dict[str, str] = {}
     for path in sorted(project_path.iterdir()):
         if not path.is_file() or path.name.startswith("."):
@@ -3960,19 +3960,12 @@ def _iter_project_fusion_push_filenames(project_path: Path) -> list[str]:
         if cad_service.is_internal_model_artifact(path):
             continue
         suffix = path.suffix.lower()
-        if suffix not in cad_service.STEP_SUFFIXES and suffix not in {".stl", ".3mf", ".obj", ".glb", ".gltf"}:
+        if suffix not in cad_service.STEP_SUFFIXES:
             continue
         if "__faceted" in path.stem.lower() or "__part_" in path.stem.lower():
             continue
         stem = path.stem.lower()
-        # Prefer native STEP over mesh/GLB for the same stem.
-        existing = by_stem.get(stem)
-        if existing is None:
-            by_stem[stem] = path.name
-            continue
-        existing_is_step = Path(existing).suffix.lower() in cad_service.STEP_SUFFIXES
-        if suffix in cad_service.STEP_SUFFIXES and not existing_is_step:
-            by_stem[stem] = path.name
+        by_stem.setdefault(stem, path.name)
     return list(by_stem.values())
 
 

@@ -18180,6 +18180,13 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   line-height: 1.35;
 }
 
+.workspace-fusion-mirror-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
 .workspace-fusion-file-entry,
 .fusion-workspace-browse-entry {
   display: grid;
