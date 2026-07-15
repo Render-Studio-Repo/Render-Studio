@@ -170,6 +170,13 @@ def _build_prompt(
             f"\nExisting generator `{source_name}` is already in this workspace "
             "(or will be written before you start). Make the smallest surgical change.\n"
         )
+    elif not is_edit:
+        prev = (
+            f"\nThis is a NEW part. A prior `{source_name}` draft in the workspace is NOT an "
+            "approved deliverable — only reuse it if it clearly matches the CAD brief and user "
+            "request. Otherwise rewrite it from the brief + reference meshes. Measure the "
+            "reference geometry; do not keep a generic placeholder clip.\n"
+        )
     return f"""Use the $cad skill (earthtojake/text-to-cad). You are the CAD authoring agent for this project.
 
 Task mode: {mode}.
@@ -191,7 +198,7 @@ Required workflow (do not skip):
 
 Rules:
 - Millimeters. `gen_step()` returns the STEP-ready shape; do not write files inside gen_step().
-- Prefer surgical edits over full-file rewrites.
+- Prefer surgical edits over full-file rewrites when revising; for NEW parts, a full rewrite is fine.
 - Never assign bare floats to list-like `*_positions` constants (wrong: `rod_hole_positions = 10.0`).
 - Target basenames: source={source_name}, step={step_name}, glb={glb_name}.
 - Skip `$cad-viewer` handoff — Render3D owns the product viewer. Report final file names when done.
@@ -488,6 +495,9 @@ def run_codex_agent(
 
     deadline = time.monotonic() + timeout
     artifacts_ready_since: float | None = None
+    artifact_mtime_token: tuple[float, float] | None = None
+    last_activity_at = time.monotonic()
+    quiet_sec = 60.0
     try:
         while True:
             if cancel_check and cancel_check():
@@ -511,7 +521,8 @@ def run_codex_agent(
                     pass
                 raise CodexFailed(f"Codex CAD agent timed out after {int(timeout)}s.")
 
-            # If a FRESH STEP+GLB pair appears during this run, don't let snapshot tooling hang forever.
+            # Early-accept only when fresh STEP+GLB have been stable AND Codex has been
+            # quiet (no tool/agent activity). Prevents killing mid-repair after the first export.
             try:
                 early = _pick_artifacts(
                     project_path,
@@ -525,43 +536,65 @@ def run_codex_agent(
                 step_ok = step_path.is_file() and step_path.stat().st_mtime >= (started_at - 2.0)
                 if glb_ok and step_ok:
                     now = time.monotonic()
-                    if artifacts_ready_since is None:
+                    token = (glb_path.stat().st_mtime, step_path.stat().st_mtime)
+                    if artifact_mtime_token != token:
+                        artifact_mtime_token = token
                         artifacts_ready_since = now
-                        _emit("finalize", f"Model ready ({early['glb']}); waiting briefly for Codex to finish…", 82)
-                    elif now - artifacts_ready_since >= 45.0:
+                        _emit(
+                            "finalize",
+                            f"Model ready ({early['glb']}); waiting for Codex to go quiet…",
+                            82,
+                        )
+                    elif (
+                        artifacts_ready_since is not None
+                        and now - artifacts_ready_since >= quiet_sec
+                        and now - last_activity_at >= quiet_sec
+                    ):
                         _emit("finalize", f"Accepting {early['source']} / {early['step']} (snapshot optional)", 86)
                         _kill_proc(proc)
-                        events.append({"type": "render3d.early_accept", "reason": "artifacts_ready"})
+                        events.append({"type": "render3d.early_accept", "reason": "artifacts_ready_quiet"})
                         break
                 else:
                     artifacts_ready_since = None
+                    artifact_mtime_token = None
             except Exception:
                 # No fresh artifacts yet — keep waiting on Codex.
                 artifacts_ready_since = None
+                artifact_mtime_token = None
 
             activity_holder = {"n": activity_n}
             if proc.poll() is not None:
                 # Drain remaining stdout.
                 rest = proc.stdout.read() or ""
                 for line in rest.splitlines():
+                    prev_n = activity_holder["n"]
                     _handle_json_line(
                         line,
                         events=events,
                         emit=_emit,
                         activity_n_holder=activity_holder,
                     )
+                    if activity_holder["n"] > prev_n:
+                        last_activity_at = time.monotonic()
+                        artifacts_ready_since = None
                 activity_n = activity_holder["n"]
                 break
             line = proc.stdout.readline()
             if not line:
                 time.sleep(0.05)
                 continue
+            prev_n = activity_holder["n"]
             activity_n = _handle_json_line(
                 line,
                 events=events,
                 emit=_emit,
                 activity_n_holder=activity_holder,
             )
+            if activity_n > prev_n:
+                last_activity_at = time.monotonic()
+                # Keep waiting — Codex is still iterating (inspect/repair/rewrite).
+                artifacts_ready_since = None
+
     finally:
         stop_reader.set()
         try:
