@@ -65,6 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
+import { createProjectChatUI } from "./project-chat.js?v=20260715-project-chat";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
@@ -4819,6 +4820,16 @@ createFeedbackUI({
     setEditStatus("ok", request?.kind === "bug" ? "Bug report sent to management." : "Suggestion sent to management.");
     window.dispatchEvent(new CustomEvent("render3d:feedback-submitted", { detail: request }));
   },
+});
+
+const projectChat = createProjectChatUI({
+  buttonEl: document.getElementById("btn-project-chat"),
+  getProjectId: () => projectId,
+  getProjectName: () => allProjects.find((p) => p.id === projectId)?.name || projectId || "",
+  onOpenRenderAgent: () => {
+    document.getElementById("btn-render-agent")?.click();
+  },
+  onStatus: (kind, message) => setEditStatus(kind, message),
 });
 initManagementNotifications();
 
@@ -15659,6 +15670,14 @@ function handleRealtimeEvent(msg = {}) {
   if (!msg?.type) return;
   if (msg.entry) workspaceActivity.prependEntry(msg.entry);
 
+  if (
+    msg.type === "project.chat.message"
+    || msg.type === "project.chat.mention"
+    || msg.type === "project.chat.reaction"
+  ) {
+    projectChat?.handleRealtime?.(msg);
+  }
+
   if (msg.type === "generation.updated") {
     const pid = msg.project_id;
     if (pid) {
@@ -16053,7 +16072,10 @@ async function loadProject(id) {
     if (wiringMode && wiringLoadPromise) {
       await wiringLoadPromise;
     }
-    if (currentUser) await resumeGenerationIfNeeded(id, data.generation);
+    if (currentUser) {
+      void projectChat?.refreshUnread?.();
+      await resumeGenerationIfNeeded(id, data.generation);
+    }
     if (loadGen !== loadProjectGeneration) return;
     // If resumeGenerationIfNeeded applied a completion for this project,
     // clear any badge that was set — the user is already viewing the model.

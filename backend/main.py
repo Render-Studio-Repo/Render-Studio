@@ -9268,7 +9268,7 @@ async def post_project_chat_message(
     background_tasks: BackgroundTasks,
     body: str = Form(""),
     parent_id: str | None = Form(None),
-    images: list[UploadFile] = File(default=[]),
+    images: list[UploadFile] | None = File(None),
     user: dict[str, Any] = Depends(get_current_user),
 ):
     from backend.services import project_chat_service
