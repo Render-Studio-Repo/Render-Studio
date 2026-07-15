@@ -1065,10 +1065,26 @@ def _notify_fusion_mirrors_updated(
         logger.debug("Could not notify workspace fusion.mirror.updated", exc_info=True)
 
 
-def _broadcast_generation_update(project_path: Path) -> None:
+def _broadcast_generation_update(project_path: Path, data: dict[str, Any] | None = None) -> None:
+    """Push generation status to project + workspace clients.
+
+    generation_service._emit() always calls listeners as (project_path, data).
+    """
     if not project_path.is_dir():
         return
     summary = generation_service.public_summary(project_path)
+    if data and isinstance(data, dict):
+        # Prefer the just-written payload when public_summary is briefly stale.
+        for key in (
+            "status", "kind", "trace_id", "started_at", "updated_at", "finished_at",
+            "prompt", "label", "message", "filename", "url", "error",
+            "timeline_index", "prompt_id", "by_user_id", "by_user_name", "by_avatar_url",
+            "mode", "progress", "benign_interrupt",
+        ):
+            if key in data and data.get(key) is not None:
+                summary[key] = data.get(key)
+        if not summary.get("status"):
+            summary["status"] = data.get("status") or "idle"
     project_id = project_path.name
     payload = {
         "type": "generation.updated",
@@ -1088,6 +1104,9 @@ def _broadcast_generation_update(project_path: Path) -> None:
         team_id = None
     if team_id:
         _notify_workspace(team_id, payload)
+    by_user_id = summary.get("by_user_id")
+    if by_user_id:
+        _notify_user(by_user_id, payload)
 
 
 generation_service.register_listener(_broadcast_generation_update)
