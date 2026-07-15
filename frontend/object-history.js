@@ -7,6 +7,7 @@ const KIND_LABELS = {
   restore: "Restore",
   transform: "Transform",
   extrude: "Extrude",
+  mirror: "Mirror",
   project_moved: "Moved",
   project_renamed: "Renamed",
 };
@@ -51,6 +52,10 @@ export function createObjectHistoryUI({ listEl, onRestore, onHighlight }) {
         const who = e.user_name ? escapeHtml(e.user_name) : '<span class="muted">Unknown</span>';
         const when = formatWhen(e.created_at);
         const meta = [when, e.filename ? escapeHtml(e.filename) : null].filter(Boolean).join(" · ");
+        const modelName = e.meta?.model || e.model;
+        const modelLine = modelName
+          ? `<span class="oh-model">Model · ${escapeHtml(modelName)}</span>`
+          : "";
         const summary = e.summary
           ? `<p class="oh-summary">${escapeHtml(e.summary)}</p>`
           : "";
@@ -67,6 +72,7 @@ export function createObjectHistoryUI({ listEl, onRestore, onHighlight }) {
           </span>
           <span class="oh-label">${escapeHtml(e.label || kind)}</span>
           <span class="oh-meta">${meta}</span>
+          ${modelLine}
           ${summary}
           <span class="oh-foot">${tag}</span>
         </${el}>`;

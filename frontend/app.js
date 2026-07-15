@@ -58,7 +58,7 @@ import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-sk
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
-import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
+import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-renders-section";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
@@ -95,7 +95,6 @@ import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-download";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
-import { preferViewportFilename, rememberProjectFiles } from "./viewport-viewer.js?v=20260715-login-colors";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-elec-none";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
@@ -4600,9 +4599,13 @@ async function refreshPromptHistory() {
     const data = await api(`/api/projects/${projectId}/prompt-history?kind=cad`);
     const entries = data.entries || [];
     latestPromptHistoryEntries = entries;
-    promptHistory.render(entries, data.usage_summary);
-    promptHistory.setCountBadge(entries.length);
-    renderProjectCostThumb(entries, data.usage_summary);
+    try {
+      promptHistory.render(entries, data.usage_summary);
+      promptHistory.setCountBadge(entries.length);
+      renderProjectCostThumb(entries, data.usage_summary);
+    } catch (renderErr) {
+      console.error("prompt history render failed:", renderErr);
+    }
     if (data.usage_summary) {
       const proj = allProjects.find((p) => p.id === projectId);
       if (proj) {
@@ -8542,23 +8545,19 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
   syncSketchVisibilityFromTree(browser);
   let comps = browser.components || [];
   const projectFiles = data.files || [];
-  rememberProjectFiles(projectFiles);
   const ensureLoadFile = (filename, { primary = false } = {}) => {
     if (!filename) return;
     const file = projectFiles.find((f) => f.name === filename);
     if (!file && !/\.(glb|gltf|stl|obj|ply|off)$/i.test(filename)) return;
     const existing = comps.find((c) => c.name === filename || c.viewer_filename === filename);
-    // Keep Jake / mesh viewer from browser — do not clobber with STEP → washed shell GLB.
-    const viewer = preferViewportFilename(filename, {
-      components: [...(browser.components || []), ...comps],
-      files: projectFiles,
-    });
     const patch = {
       auto_load: true,
       // Only keep world placement for edited/copied parts — brand-new objects should center.
       baked_placement: hasBakedPlacement(filename) || existing?.baked_placement === true,
       primary: primary || existing?.primary === true,
-      viewer_filename: viewer,
+      // Keep richer viewport sidecars (for example .part.step.glb with colors/materials)
+      // instead of briefly loading the raw catalog file on refresh.
+      viewer_filename: existing?.viewer_filename || filename,
     };
     if (existing) {
       Object.assign(existing, patch);
@@ -8590,10 +8589,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
         name: modelLatestFile,
         stem: fileStem(modelLatestFile),
         format: modelLatestFile.slice(modelLatestFile.lastIndexOf(".") + 1).toLowerCase(),
-        viewer_filename: preferViewportFilename(modelLatestFile, {
-          components: browser.components || [],
-          files: projectFiles,
-        }),
+        viewer_filename: modelLatestFile,
         size: projectFiles.find((f) => f.name === modelLatestFile)?.size,
         primary: true,
         auto_load: true,
@@ -8619,7 +8615,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
 
   if (canAppendNewSibling) {
     const entry = comps.find((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile);
-    const viewer = preferViewportFilename(entry?.viewer_filename || modelLatestFile, { components: comps });
+    const viewer = entry?.viewer_filename || modelLatestFile;
     selectedFile = entry?.name || modelLatestFile;
     try {
       const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
@@ -8648,7 +8644,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
     // Edit / overwrite: swap the changed component in place and keep siblings.
     const prevCatalog = replaceCatalog || modelLatestFile;
     const entry = comps.find((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile);
-    const viewer = preferViewportFilename(entry?.viewer_filename || modelLatestFile, { components: comps });
+    const viewer = entry?.viewer_filename || modelLatestFile;
     selectedFile = entry?.name || modelLatestFile;
     try {
       const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
@@ -11819,6 +11815,13 @@ function annotatePickedReference(ref) {
   };
 }
 
+function allowAutoUpsideDownFlip(filename = "") {
+  const ext = String(filename || "").split(".").pop()?.toLowerCase() || "";
+  // GLB/GLTF files can carry explicit authoring transforms/material scene roots.
+  // A footprint guess is too aggressive for robot arms and often flips them.
+  return ext !== "glb" && ext !== "gltf";
+}
+
 function ensureModelZUp(object3d, filename = "") {
   /** Rotate Y-up meshes (glTF / text-to-cad) into Render3D's Z-up viewport. */
   if (!object3d) return false;
@@ -11854,7 +11857,7 @@ function ensureModelZUp(object3d, filename = "") {
   if (rotated) {
     object3d.updateMatrixWorld(true);
     // If the wider footprint ended up on +Z, flip 180° so the base sits down.
-    if (footprintPrefersFlip180(object3d)) {
+    if (allowAutoUpsideDownFlip(filename) && footprintPrefersFlip180(object3d)) {
       object3d.rotateX(Math.PI);
       object3d.updateMatrixWorld(true);
     }
@@ -11864,7 +11867,7 @@ function ensureModelZUp(object3d, filename = "") {
   }
 
   // Already Z-up-ish but possibly inverted (base on +Z).
-  if (sz >= sy * 0.9 && footprintPrefersFlip180(object3d)) {
+  if (allowAutoUpsideDownFlip(filename) && sz >= sy * 0.9 && footprintPrefersFlip180(object3d)) {
     object3d.rotateX(Math.PI);
     object3d.updateMatrixWorld(true);
     object3d.userData.render3dZUp = true;
@@ -12036,12 +12039,6 @@ function resolveViewerPaths(filename, url) {
     const solid = viewFilename.replace(/__faceted(?=\.(glb|gltf)$)/i, "");
     viewFilename = solid;
     viewUrl = (viewUrl || "").replace(/__faceted(?=\.(glb|gltf)(?:\?|#|$))/i, "");
-  }
-  // Prefer browser/Jake viewer when STEP→shell would wash multi-part colors after login.
-  const preferred = preferViewportFilename(viewFilename);
-  if (preferred && preferred !== viewFilename) {
-    viewFilename = preferred;
-    viewUrl = (url || viewUrl || "").replace(/\/files\/[^/?#]+/, `/files/${encodeURIComponent(viewFilename)}`);
   }
   return { viewFilename, viewUrl };
 }
@@ -14963,12 +14960,12 @@ document.getElementById("btn-rigging-author-jake")?.addEventListener("click", ()
   void authorJakeRobotDescription();
 });
 
-async function authorJakeRobotDescription() {
+async function authorJakeRobotDescription({ source: requestedSource = "", kind = "both", openMotion = false } = {}) {
   if (!projectId) {
     setEditStatus("error", "Select a project first.");
     return;
   }
-  const source = document.getElementById("rigging-artifact-source")?.value;
+  const source = requestedSource || document.getElementById("rigging-artifact-source")?.value;
   const status = document.getElementById("rigging-prompt-status");
   if (!source) {
     setEditStatus("error", "No Python source selected.");
@@ -14976,19 +14973,23 @@ async function authorJakeRobotDescription() {
   }
   if (status) {
     status.className = "status loading";
-    status.textContent = "Authoring gen_urdf()/gen_srdf() (Jake)…";
+    status.textContent = `Authoring ${kind.toUpperCase()} robot motion artifacts (Jake)…`;
   }
-  setEditStatus("loading", "Authoring URDF/SRDF with AI…");
+  setEditStatus("loading", "Authoring URDF/SRDF robot motion with AI…");
   try {
     const data = await api(`/api/projects/${projectId}/rigging/author-robot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, kind: "both" }),
+      body: JSON.stringify({ source, kind }),
     }, 300000);
     robotArtifactData = data;
     await refreshFiles();
-    renderRobotArtifacts();
+    await refreshRobotArtifacts({ quiet: true });
     setRiggingWorkspaceMode("urdf");
+    if (openMotion) {
+      await ensureUrdfRobotScene({ quiet: true, force: true });
+      openUrdfMotionModal();
+    }
     const msg = data.message || "URDF/SRDF authored.";
     setEditStatus("ok", msg);
     if (status) {
@@ -17185,10 +17186,14 @@ async function openFusionWorkspaceFileModal(payload, { mode = "save" } = {}) {
   modal.querySelector("[data-fusion-file-view]")?.addEventListener("click", async () => {
     try {
       setModalStatus("Opening in Render3D…");
-      await viewFusionWorkspaceFile(payload);
+      const opened = await viewFusionWorkspaceFile(payload);
       closeFusionWorkspaceFileModal();
       document.removeEventListener("keydown", onKey);
-      await refreshWorkspaceRealtimeEditor();
+      finishRealtimeObjectLoad({
+        label: payload.itemName,
+        filename: opened?.filename || payload.localFilename || payload.itemName,
+        projectId: opened?.project_id || payload.renderProjectId || projectId,
+      });
     } catch (err) {
       setModalStatus(err.message || "Could not open file.", true);
     }
@@ -17386,7 +17391,6 @@ async function refreshWorkspaceRealtimeEditor() {
 }
 
 function renderFileList(files = []) {
-  rememberProjectFiles(files);
   const list = document.getElementById("file-list");
   if (!list) return;
   list.innerHTML = "";
@@ -20283,9 +20287,7 @@ window.addEventListener("keydown", (e) => {
         if (isDxfDrawingFilename(file)) {
           await openDxfDrawingByName(file, { projectId });
         } else if (!isComponentHidden(file)) {
-          const comps = projectTree.getComponents?.() || [];
-          const viewer = preferViewportFilename(file, { components: comps });
-          await loadModel(projectFileUrl(projectId, viewer), viewer, {
+          await loadModel(projectFileUrl(projectId, file), file, {
             projectId,
             catalogFilename: file,
             fitView: false,

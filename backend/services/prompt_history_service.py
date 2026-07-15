@@ -260,9 +260,17 @@ def _entry_matches_base_filename(entry: dict[str, Any], base_filename: str) -> b
         return True
     if not entry.get("base_filename") and not entry.get("filename"):
         return True
-    stem = Path(base_filename).stem
-    entry_stem = Path(entry.get("filename") or entry.get("base_filename") or "").stem
-    if stem and entry_stem and (stem.startswith(entry_stem) or entry_stem.startswith(stem)):
+
+    def _norm_stem(name: str) -> str:
+        stem = Path(name or "").stem
+        # Viewer sidecars like ".Foo.step.glb" / "Foo.step.glb" → "Foo"
+        while stem.lower().endswith(".step") or stem.lower().endswith(".stp"):
+            stem = Path(stem).stem
+        return stem.lstrip(".")
+
+    stem = _norm_stem(base_filename)
+    entry_stem = _norm_stem(entry.get("filename") or entry.get("base_filename") or "")
+    if stem and entry_stem and (stem == entry_stem or stem.startswith(entry_stem) or entry_stem.startswith(stem)):
         return True
     return False
 

@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-agent-lower-transparent" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-rig-robot-workflow" />
   <script type="importmap">
   {
     "imports": {
@@ -236,18 +236,15 @@
           </div>
           <p id="team-invite-status" class="muted small"></p>
           <ul id="team-members" class="team-members"></ul>
-          <div id="workspace-realtime-editor" class="workspace-realtime-editor">
-            <div class="workspace-realtime-head">
+          <div id="workspace-realtime-editor" class="workspace-realtime-editor is-compact">
+            <button type="button" id="workspace-realtime-open" class="workspace-realtime-head workspace-realtime-open" aria-haspopup="dialog" aria-expanded="false" title="Open realtime editor">
               <strong>Realtime editor</strong>
               <div class="workspace-realtime-head-actions">
                 <span id="workspace-realtime-presence" class="muted small">Offline</span>
-                <button type="button" id="workspace-realtime-toggle" class="workspace-realtime-toggle" aria-expanded="true" aria-label="Retract realtime editor" title="Retract realtime editor">▾</button>
+                <span class="workspace-realtime-open-hint" aria-hidden="true">Browse</span>
               </div>
-            </div>
-            <div class="workspace-realtime-body">
-              <div id="workspace-render-folder-card" class="workspace-render-folder-card muted small">Render3D cloud source</div>
-              <div id="workspace-fusion-projects" class="workspace-fusion-projects muted small"></div>
-            </div>
+            </button>
+            <div id="workspace-realtime-active" class="workspace-realtime-active hidden" aria-live="polite"></div>
           </div>
         </section>
         <section class="workspace-browser-section">
@@ -304,7 +301,6 @@
       <button id="btn-rename-project" type="button" class="btn secondary btn-compact" disabled>Rename</button>
       <div id="design-browser" class="design-browser-root"></div>
       <ul id="file-list" class="file-list hidden" aria-hidden="true"></ul>
-      <div id="object-history-list" class="object-history-list"></div>
     </div>
 
     <div class="main-column">
@@ -711,11 +707,19 @@
 
       <section class="feature-history-panel right-tab-panel" data-right-panel="history">
         <div class="panel-section-head">
-          <h2>Feature history</h2>
+          <h2>History</h2>
           <button type="button" id="btn-feature-collapse" class="btn-collapse" aria-pressed="false">Collapse</button>
         </div>
-        <p class="muted small">Parametric timeline — edit values, suppress, reorder, then rebuild</p>
-        <div id="feature-editor" class="feature-editor"></div>
+        <div class="project-history-section">
+          <h3 class="history-section-title">Project history</h3>
+          <p class="muted small">AI prompts, uploads, and edits for models in this project — click a restorable step to restore.</p>
+          <div id="object-history-list" class="object-history-list"></div>
+        </div>
+        <div class="feature-history-section">
+          <h3 class="history-section-title">Feature history</h3>
+          <p class="muted small">Parametric timeline — edit values, suppress, reorder, then rebuild</p>
+          <div id="feature-editor" class="feature-editor"></div>
+        </div>
       </section>
 
       <div class="hidden" aria-hidden="true">
@@ -1999,7 +2003,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
-  <script type="module" src="/app.js?v=20260715-transform-undo-redo"></script>
+  <script type="module" src="/app.js?v=20260715-rig-robot-workflow"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

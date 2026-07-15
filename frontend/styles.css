@@ -6392,6 +6392,21 @@ label.btn { display: inline-flex; align-items: center; }
   background: rgba(31, 111, 235, 0.12);
 }
 
+.viewport-view-btn--rig {
+  border-color: rgba(249, 115, 22, 0.5);
+  color: #fbbf24;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(249, 115, 22, 0.2), transparent 48%),
+    rgba(13, 17, 23, 0.86);
+}
+
+.viewport-view-btn--rig:hover,
+.viewport-view-btn--rig.active {
+  border-color: rgba(251, 146, 60, 0.85);
+  color: #fed7aa;
+  background: rgba(154, 52, 18, 0.32);
+}
+
 .viewport-lighting-tab {
   position: absolute;
   left: 14px;
@@ -9193,13 +9208,35 @@ body.panel-resizing-row * {
   border-top: 1px solid var(--border);
 }
 
+.project-history-section,
+.feature-history-section {
+  min-width: 0;
+}
+
+.project-history-section {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-section-title {
+  margin: 0 0 4px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
 .object-history-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 220px;
+  max-height: min(42vh, 360px);
   overflow-y: auto;
   margin-top: 8px;
+}
+
+.feature-history-panel .object-history-list {
+  max-height: min(48vh, 420px);
 }
 
 .object-history-item {
@@ -9262,6 +9299,14 @@ body.panel-resizing-row * {
   line-height: 1.3;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.oh-model {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.66rem;
+  color: #79c0ff;
+  font-weight: 600;
 }
 
 .object-history-empty {
@@ -15670,14 +15715,14 @@ body.theme-light .cloud-connection-icon--fusion {
   }
 
   .welcome-logo-badge {
-    right: 16px;
-    width: 150px;
-    height: 68px;
+    right: 14px;
+    width: 180px;
+    height: 80px;
   }
 
   .welcome-logo-badge img {
-    width: 140px;
-    height: 58px;
+    width: 168px;
+    height: 68px;
   }
 
   .welcome-feature-grid {
@@ -17453,7 +17498,8 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 }
 
 .feature-history-collapsed #feature-editor,
-.feature-history-collapsed > p {
+.feature-history-collapsed .feature-history-section > p,
+.feature-history-collapsed .project-history-section {
   display: none;
 }
 
