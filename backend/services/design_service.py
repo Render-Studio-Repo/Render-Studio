@@ -3346,7 +3346,21 @@ def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
             mesh = trimesh.util.concatenate(tuple(scene.geometry.values()))
 
         size = mesh.extents
-        already_z_up = float(size[2]) >= float(size[1]) * 1.05
+        sx = float(size[0])
+        sy = float(size[1])
+        sz = float(size[2])
+        # Flat parts on the XY floor (RC planes, plates, gears): thin Z is already Z-up.
+        # The previous "sz >= sy" check treated these as Y-up and tipped them sideways.
+        if sz < min(sx, sy) * 0.55:
+            already_z_up = True
+        elif sz >= max(sx, sy) * 0.95:
+            # Standing height already along Z.
+            already_z_up = True
+        elif sy >= max(sx, sz) * 0.99:
+            # Classic Y-up standing model (tallest axis is Y).
+            already_z_up = False
+        else:
+            already_z_up = sz >= sy * 1.05
 
         if not already_z_up:
             # Try both Y-up → Z-up directions; keep the one with base footprint at min Z.
@@ -4226,9 +4240,9 @@ def _run_text_to_cad_v2(
             step_name=step_name,
             glb_name=glb_name,
         )
-        # Re-apply Z-up/appearance if shell GLB was refreshed from Jake sidecar.
+        # Jake/cadjs sidecar is already STEP Z-up. Re-running the Y→Z tip here
+        # was flipping flat models (planes, plates) onto their side.
         if (project_path / glb_name).is_file():
-            _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
             cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
 
         if cancel_check and cancel_check():

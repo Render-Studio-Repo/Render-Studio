@@ -78,7 +78,7 @@ import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=202
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
-import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
+import { createGizmoPanel } from "./gizmo-panel.js?v=20260715-transform-undo";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
 import { createDirectModeling } from "./direct-modeling.js?v=20260714-extrude-face-drag";
@@ -5366,6 +5366,49 @@ function pushViewportUndoAction(action, { clearRedo = true } = {}) {
 function undoViewportAction() {
   const action = viewportUndoStack.pop();
   if (!action) return false;
+  if (action.type === "transform") {
+    // After Apply bakes + reloads, prefer timeline undo so file + view stay in sync.
+    const entries = timelineData?.entries || [];
+    const cur = timelineCurrentIndex();
+    const tip = cur >= 0 ? entries[cur] : null;
+    const tipKind = String(tip?.kind || tip?.action || tip?.type || "").toLowerCase();
+    if (action.committed && tip && (tipKind === "transform" || tipKind.includes("transform"))) {
+      viewportRedoStack.push(action);
+      undoTimeline();
+      return true;
+    }
+    const wantName = action.filename || null;
+    let mesh =
+      (wantName && projectAssembly.get(wantName)) ||
+      transformControls.object ||
+      currentMesh;
+    if (!mesh && wantName) {
+      for (const [name, obj] of projectAssembly.list() || []) {
+        if (name === wantName) {
+          mesh = obj;
+          break;
+        }
+      }
+    }
+    if (mesh && action.before) {
+      mesh.position.fromArray(action.before.position);
+      mesh.quaternion.fromArray(action.before.quaternion);
+      mesh.scale.fromArray(action.before.scale);
+      mesh.updateMatrixWorld(true);
+      gizmoPanel.resetDragBaseline?.();
+      gizmoPanel.refresh?.();
+      setEditStatus("ok", "Undid move/rotate.");
+      viewportRedoStack.push(action);
+      return true;
+    }
+    // If live mesh is gone (reload mid-apply), try timeline.
+    if (cur > 0) {
+      undoTimeline();
+      return true;
+    }
+    setEditStatus("error", "Nothing to undo.");
+    return true;
+  }
   if (action.type === "fusion-component-drop") {
     const beforeNames = new Set((action.before || []).map((item) => item.name));
     for (const [name] of [...projectAssembly.list()]) {
@@ -5687,9 +5730,30 @@ const gizmoPanel = createGizmoPanel({
   },
   getMmPerModelUnit: currentMmPerModelUnit,
   api,
-  onApplied: afterModelEdit,
+  onApplied: async (data) => {
+    // Mark the latest transform stroke as committed so Cmd+Z uses timeline undo
+    // after the bake/reload (live pose undo would target a disposed mesh).
+    for (let i = viewportUndoStack.length - 1; i >= 0; i -= 1) {
+      const entry = viewportUndoStack[i];
+      if (entry?.type === "transform" && !entry.committed) {
+        entry.committed = true;
+        break;
+      }
+    }
+    return afterModelEdit(data);
+  },
   onStatus: setEditStatus,
   onSnapRequest: beginSnapTarget,
+  onTransformStrokeEnd: (stroke) => {
+    if (!stroke?.before) return;
+    pushViewportUndoAction({
+      type: "transform",
+      filename: stroke.filename || selectedFile || null,
+      before: stroke.before,
+      after: stroke.after || null,
+      committed: false,
+    });
+  },
 });
 
 let ribbon = null;

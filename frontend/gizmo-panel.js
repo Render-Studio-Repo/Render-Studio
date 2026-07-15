@@ -25,6 +25,7 @@ export function createGizmoPanel({
   onApplied,
   onStatus,
   onSnapRequest,
+  onTransformStrokeEnd,
 }) {
   let panel = null;
   let panelFloat = null;
@@ -388,10 +389,31 @@ export function createGizmoPanel({
         (d.translation.length() > 1e-12 ||
           d.rotation.some((v) => Math.abs(v) > 1e-9) ||
           Math.abs(d.scale - 1) > 1e-9);
+      const beforePose = start
+        ? {
+            position: start.position.toArray(),
+            quaternion: start.quaternion.toArray(),
+            scale: start.scale.toArray(),
+          }
+        : null;
       dragActive = false;
-      if (visible && hasMoved) {
-        void apply(false);
-      }
+      if (!(visible && hasMoved && beforePose)) return;
+      const mesh = targetObject();
+      const info = getModelInfo?.() || {};
+      // Push undo immediately so Cmd+Z works before / without waiting on Apply.
+      onTransformStrokeEnd?.({
+        type: "transform",
+        filename: info.filename || null,
+        before: beforePose,
+        after: mesh
+          ? {
+              position: mesh.position.toArray(),
+              quaternion: mesh.quaternion.toArray(),
+              scale: mesh.scale.toArray(),
+            }
+          : null,
+      });
+      void apply(false);
     });
     onUnitsChanged(() => {
       refreshSnapSelect();

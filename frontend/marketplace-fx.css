@@ -405,6 +405,19 @@
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
+.marketplace-futuristic .agent-product-card > .marketplace-body,
+.marketplace-futuristic .model-product-card > .marketplace-body,
+.marketplace-futuristic .knowledge-product-card > .marketplace-body,
+.marketplace-futuristic .agent-product-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0 14px 10px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .marketplace-futuristic .agent-product-card:hover,
 .marketplace-futuristic .marketplace-product-card:hover,
 .marketplace-futuristic .model-product-card:hover {
@@ -698,16 +711,6 @@
   flex-wrap: wrap;
   gap: 8px;
   margin: 0 0 18px;
-}
-
-.marketplace-futuristic .agent-product-card .agent-product-top {
-  order: 2;
-}
-
-.marketplace-futuristic .agent-product-card > .marketplace-thumb,
-.marketplace-futuristic .agent-product-card > .marketplace-thumb--inline,
-.marketplace-futuristic .agent-product-card > .agent-cover {
-  order: 0;
 }
 
 .marketplace-futuristic .agent-cover {

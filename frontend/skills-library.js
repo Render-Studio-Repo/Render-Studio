@@ -568,7 +568,7 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
                 <input type="file" data-skill-media-upload="${escapeHtml(merged.id)}" accept="image/gif,image/webp,image/png,video/mp4,video/webm" hidden />
               </label>
               <button type="button" class="btn secondary btn-compact" data-skill-media-generate="${escapeHtml(merged.id)}">Generate 3D loop</button>
-              ${media?.dataUrl ? `<button type="button" class="btn ghost btn-compact" data-skill-media-clear="${escapeHtml(merged.id)}">Clear media</button>` : ""}
+              ${media ? `<button type="button" class="btn ghost btn-compact" data-skill-media-clear="${escapeHtml(merged.id)}">Clear media</button>` : ""}
               <small class="muted">Use a small repeating GIF/WebM/MP4, or generate a Render3D loop from the skill summary.</small>
             </div>
           </div>
@@ -598,7 +598,8 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
         const file = input.files?.[0];
         if (!file) return;
         if (file.size > 2_500_000) {
-          detailEl.querySelector(".skill-media-tools small").textContent = "Clip is too large. Use a GIF/WebM/MP4 under 2.5 MB.";
+          const note = detailEl.querySelector(".skill-media-tools small");
+          if (note) note.textContent = "Clip is too large. Use a GIF/WebM/MP4 under 2.5 MB.";
           input.value = "";
           return;
         }
@@ -615,7 +616,8 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
             renderCatalog();
             void showSkillDetail(input.dataset.skillMediaUpload);
           } catch (err) {
-            detailEl.querySelector(".skill-media-tools small").textContent = err.message || "Could not save this clip.";
+            const note = detailEl.querySelector(".skill-media-tools small");
+            if (note) note.textContent = err.message || "Could not save this clip.";
           }
         };
         reader.readAsDataURL(file);

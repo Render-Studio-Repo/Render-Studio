@@ -1,6 +1,15 @@
 {
   "items": [
     {
+      "id": "skills-square-media-cards",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Skills media cards",
+      "summary": "Skills Library cards are now a tighter square grid with animated previews, richer More Info explanations, and local GIF or short clip previews per skill.",
+      "visual": "/docs/media/render-agent.gif?v=20260715-real",
+      "href": "/skills.html"
+    },
+    {
       "id": "rigging-animation-banner",
       "date": "2026-07-15",
       "kind": "feature",
