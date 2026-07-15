@@ -4,8 +4,8 @@ import {
   bumpTipOnRefresh,
   getCurrentTip,
   tipTopicClass,
-} from "./getting-started-tips.js?v=20260715-agent-tips-refresh";
-import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-real-gifs";
+} from "./getting-started-tips.js?v=20260715-tips-tricks";
+import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-tips-tricks";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";

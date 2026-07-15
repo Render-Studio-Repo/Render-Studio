@@ -342,6 +342,115 @@ async function main() {
     frameBox(box, { pad: 1.6 });
   }
 
+  function meshMaterials(mesh) {
+    if (!mesh?.material) return [];
+    if (!mesh.userData?._shareUniqueMaterial) {
+      if (!mesh.userData) mesh.userData = {};
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((mat) => mat?.clone?.() || mat)
+        : mesh.material?.clone?.() || mesh.material;
+      mesh.userData._shareUniqueMaterial = true;
+    }
+    return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  }
+
+  function ensureMaterialBase(mat) {
+    if (!mat || materialBaseState.has(mat)) return;
+    materialBaseState.set(mat, {
+      opacity: mat.opacity ?? 1,
+      transparent: !!mat.transparent,
+      depthWrite: mat.depthWrite !== false,
+      wireframe: !!mat.wireframe,
+    });
+  }
+
+  function applyMaterialState(mat, transparentOn) {
+    if (!mat) return;
+    ensureMaterialBase(mat);
+    const base = materialBaseState.get(mat) || {};
+    mat.wireframe = wireframeEnabled || !!base.wireframe;
+    if (transparentOn) {
+      mat.transparent = true;
+      mat.opacity = 0.22;
+      mat.depthWrite = false;
+    } else {
+      mat.transparent = !!base.transparent;
+      mat.opacity = base.opacity ?? 1;
+      mat.depthWrite = base.depthWrite !== false;
+    }
+    mat.needsUpdate = true;
+  }
+
+  function objectMeshes(obj) {
+    const meshes = [];
+    obj?.traverse?.((child) => {
+      if (!child.isMesh || child.userData?.isEdge || child.userData?.isSilhouette) return;
+      meshes.push(child);
+    });
+    return meshes;
+  }
+
+  function syncObjectMaterialState(obj) {
+    const transparentOn = transparentObjects.has(obj);
+    objectMeshes(obj).forEach((mesh) => {
+      meshMaterials(mesh).forEach((mat) => applyMaterialState(mat, transparentOn));
+    });
+  }
+
+  function setObjectTransparent(obj, on) {
+    if (!obj) return;
+    if (on) transparentObjects.add(obj);
+    else transparentObjects.delete(obj);
+    syncObjectMaterialState(obj);
+    renderComponentTree();
+  }
+
+  function clearTransparentObjects() {
+    const targets = [...transparentObjects];
+    transparentObjects.clear();
+    targets.forEach(syncObjectMaterialState);
+    renderComponentTree();
+  }
+
+  function syncWireframe() {
+    root.traverse((obj) => {
+      if (!obj.isMesh || obj.userData?.isEdge || obj.userData?.isSilhouette) return;
+      const transparentParent = [...transparentObjects].some((target) => target === obj || target.children?.includes?.(obj) || target.getObjectById?.(obj.id));
+      meshMaterials(obj).forEach((mat) => applyMaterialState(mat, transparentParent));
+    });
+    btnWireframe?.classList.toggle("active", wireframeEnabled);
+    btnWireframe?.setAttribute("aria-pressed", String(wireframeEnabled));
+  }
+
+  function isDescendantOf(obj, target) {
+    let cur = obj;
+    while (cur) {
+      if (cur === target) return true;
+      cur = cur.parent;
+    }
+    return false;
+  }
+
+  function isolateObject(target) {
+    objectMeshes(root).forEach((mesh) => {
+      mesh.visible = !target || isDescendantOf(mesh, target);
+    });
+    if (target) frameObject(target);
+  }
+
+  function allPickableMeshes() {
+    return objectMeshes(root).filter((mesh) => mesh.visible !== false);
+  }
+
+  function closestNamedObject(mesh) {
+    let cur = mesh;
+    while (cur && cur !== root) {
+      if (objectEntries.some((entry) => entry.obj === cur)) return cur;
+      cur = cur.parent;
+    }
+    return mesh;
+  }
+
   function resize() {
     const w = viewerEl.clientWidth || window.innerWidth;
     const h = viewerEl.clientHeight || Math.max(320, window.innerHeight - 120);
@@ -422,17 +531,35 @@ async function main() {
     if (!componentListEl) return;
     const browserComponents = Array.isArray(meta.browser?.components) ? meta.browser.components : [];
     const rows = [];
-    for (const item of browserComponents) {
-      const name = item.name || item.filename || item.stem || item.label;
-      if (name) rows.push({ label: name, kind: item.kind || item.format || "component", target: name });
-    }
+    objectsByName.clear();
+    objectsById.clear();
+    objectEntries = [];
     if (loadedScene) {
       loadedScene.traverse((obj) => {
         if (!obj.isMesh && obj.type !== "Group") return;
         const label = String(obj.name || "").trim();
-        if (!label || objectsByName.has(label)) return;
-        objectsByName.set(label, obj);
-        rows.push({ label, kind: obj.isMesh ? "mesh" : "group", target: label });
+        if (label && !objectsByName.has(label)) objectsByName.set(label, obj);
+      });
+    }
+    let serial = 0;
+    const addRow = (row) => {
+      const id = row.obj ? `obj-${++serial}` : `meta-${++serial}`;
+      const item = { ...row, id };
+      rows.push(item);
+      if (row.obj) {
+        objectEntries.push(item);
+        objectsById.set(id, row.obj);
+      }
+    };
+    for (const item of browserComponents) {
+      const name = item.name || item.filename || item.stem || item.label;
+      if (!name) continue;
+      const obj = objectsByName.get(name) || objectsByName.get(item.viewer_filename) || null;
+      addRow({ label: name, kind: item.kind || item.format || "component", obj });
+    }
+    if (loadedScene) {
+      objectsByName.forEach((obj, label) => {
+        addRow({ label, kind: obj.isMesh ? "mesh" : "group", obj });
       });
     }
     const unique = [];
@@ -448,12 +575,28 @@ async function main() {
       componentListEl.innerHTML = `<p class="sv-hint">No component tree metadata was provided for this share.</p>`;
       return;
     }
-    componentListEl.innerHTML = unique.map((row) => `
-      <button type="button" class="sv-tree-btn" data-target="${escapeHtml(row.target)}">
-        <span>${escapeHtml(row.label)}</span>
-        <small>${escapeHtml(row.kind)}</small>
-      </button>
-    `).join("");
+    componentListEl.innerHTML = unique.map((row) => {
+      const canAct = !!row.obj;
+      const isTransparent = canAct && transparentObjects.has(row.obj);
+      return `
+        <div>
+          <button type="button" class="sv-tree-btn" data-action="frame" data-target="${escapeHtml(row.id)}">
+            <span>${escapeHtml(row.label)}</span>
+            <small>${escapeHtml(row.kind)}</small>
+          </button>
+          ${canAct ? `
+            <div class="sv-tree-actions">
+              <button type="button" class="sv-mini-btn" data-action="frame" data-target="${escapeHtml(row.id)}">View</button>
+              <button type="button" class="sv-mini-btn" data-action="only" data-target="${escapeHtml(row.id)}">Only</button>
+              <button type="button" class="sv-mini-btn" data-action="all">Show all</button>
+              <button type="button" class="sv-mini-btn${isTransparent ? " active" : ""}" data-action="transparent" data-target="${escapeHtml(row.id)}">
+                ${isTransparent ? "Opaque" : "Transparent"}
+              </button>
+            </div>
+          ` : ""}
+        </div>
+      `;
+    }).join("");
   }
 
   renderShareDetails();
@@ -532,6 +675,18 @@ async function main() {
     fitCamera();
   });
 
+  btnWireframe?.addEventListener("click", () => {
+    wireframeEnabled = !wireframeEnabled;
+    syncWireframe();
+  });
+
+  btnTransparent?.addEventListener("click", () => {
+    transparentPickEnabled = !transparentPickEnabled;
+    btnTransparent.classList.toggle("active", transparentPickEnabled);
+    btnTransparent.setAttribute("aria-pressed", String(transparentPickEnabled));
+    setStatus(transparentPickEnabled ? "Transparent tool on: click a part to toggle transparency." : "");
+  });
+
   btnOpen?.addEventListener("click", async () => {
     if (!getToken()) {
       location.href = `/?open_share=${encodeURIComponent(token)}`;
@@ -589,10 +744,50 @@ async function main() {
   });
   inspectorPanel?.querySelector("#btn-share-inspector-close")?.addEventListener("click", () => syncInspectorUi(false));
   componentListEl?.addEventListener("click", (event) => {
-    const btn = event.target.closest(".sv-tree-btn");
+    const btn = event.target.closest("[data-action]");
     if (!btn) return;
-    const obj = objectsByName.get(btn.dataset.target);
-    if (obj) frameObject(obj);
+    const action = btn.dataset.action || "frame";
+    const obj = objectsById.get(btn.dataset.target);
+    if (action === "all") {
+      isolateObject(null);
+      fitCamera();
+      return;
+    }
+    if (!obj) return;
+    if (action === "only") {
+      isolateObject(obj);
+      return;
+    }
+    if (action === "transparent") {
+      setObjectTransparent(obj, !transparentObjects.has(obj));
+      return;
+    }
+    frameObject(obj);
+  });
+
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  let transparentPointer = null;
+
+  renderer.domElement.addEventListener("pointerdown", (event) => {
+    if (!transparentPickEnabled || event.button !== 0) return;
+    transparentPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  });
+
+  renderer.domElement.addEventListener("pointerup", (event) => {
+    if (!transparentPickEnabled || !transparentPointer || transparentPointer.id !== event.pointerId) return;
+    const moved = Math.hypot(event.clientX - transparentPointer.x, event.clientY - transparentPointer.y);
+    transparentPointer = null;
+    if (moved > 6) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointerNdc.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+    pointerNdc.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
+    raycaster.setFromCamera(pointerNdc, camera);
+    const hit = raycaster.intersectObjects(allPickableMeshes(), true)[0];
+    if (!hit?.object) return;
+    const target = closestNamedObject(hit.object);
+    setObjectTransparent(target, !transparentObjects.has(target));
+    frameObject(target);
   });
 
   function syncSectionUi(on) {
