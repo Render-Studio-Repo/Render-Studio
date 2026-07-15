@@ -2812,7 +2812,11 @@ class KnowledgeFolderCreateRequest(BaseModel):
 def list_knowledge_bases(user: dict[str, Any] = Depends(get_current_user)):
     from backend.services import knowledge_service
 
-    return {"knowledge_bases": knowledge_service.list_knowledge_bases(user["id"])}
+    bases = knowledge_service.list_knowledge_bases(user["id"])
+    return {
+        "knowledge_bases": bases,
+        "stats": knowledge_service.user_knowledge_stats(user["id"]),
+    }
 
 
 @app.post("/api/knowledge-bases")

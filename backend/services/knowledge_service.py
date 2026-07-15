@@ -101,6 +101,127 @@ def init_knowledge_tables() -> None:
         )
 
 
+def _file_category(name: str) -> str:
+    suffix = Path(str(name or "")).suffix.lower()
+    if suffix in TEXT_SUFFIXES:
+        return "text"
+    if suffix in CAD_SUFFIXES or suffix == ".f3z":
+        return "cad"
+    if suffix in IMAGE_SUFFIXES:
+        return "image"
+    if suffix in DOC_SUFFIXES:
+        return "pdf"
+    return "other"
+
+
+def _compute_items_stats(rows: list[Any]) -> dict[str, Any]:
+    by_ext: dict[str, dict[str, int]] = {}
+    by_category = {"text": 0, "cad": 0, "image": 0, "pdf": 0, "other": 0}
+    total_bytes = 0
+    text_ready = 0
+    excerpt_chars = 0
+    largest = None
+    for row in rows:
+        name = row["name"] if not isinstance(row, dict) else row.get("name")
+        size = int((row["size_bytes"] if not isinstance(row, dict) else row.get("size_bytes")) or 0)
+        excerpt = (row["text_excerpt"] if not isinstance(row, dict) else row.get("text_excerpt")) or ""
+        total_bytes += size
+        if str(excerpt).strip():
+            text_ready += 1
+            excerpt_chars += len(str(excerpt))
+        ext = Path(str(name or "")).suffix.lower() or "(none)"
+        bucket = by_ext.setdefault(ext, {"count": 0, "bytes": 0})
+        bucket["count"] += 1
+        bucket["bytes"] += size
+        cat = _file_category(str(name or ""))
+        by_category[cat] = int(by_category.get(cat) or 0) + 1
+        if largest is None or size > int(largest.get("size_bytes") or 0):
+            largest = {"name": name, "size_bytes": size, "category": cat}
+    formats = [
+        {"ext": ext, "count": data["count"], "bytes": data["bytes"]}
+        for ext, data in sorted(by_ext.items(), key=lambda kv: (-kv[1]["count"], kv[0]))
+    ]
+    return {
+        "item_count": len(rows),
+        "total_bytes": total_bytes,
+        "avg_bytes": int(total_bytes / len(rows)) if rows else 0,
+        "text_ready_count": text_ready,
+        "text_ready_rate": round(text_ready / len(rows), 4) if rows else None,
+        "excerpt_chars": excerpt_chars,
+        "by_category": by_category,
+        "by_format": formats[:16],
+        "largest_file": largest,
+    }
+
+
+def knowledge_base_stats(user_id: str, kb_id: str) -> dict[str, Any]:
+    with get_conn() as conn:
+        owned = conn.execute(
+            "SELECT id FROM knowledge_bases WHERE id = ? AND user_id = ?",
+            (kb_id, user_id),
+        ).fetchone()
+        if not owned:
+            raise LookupError("Knowledge base not found")
+        folder_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM knowledge_folders WHERE kb_id = ?",
+            (kb_id,),
+        ).fetchone()["n"]
+        rows = conn.execute(
+            """
+            SELECT name, size_bytes, text_excerpt, media_type, created_at
+              FROM knowledge_items
+             WHERE kb_id = ?
+            """,
+            (kb_id,),
+        ).fetchall()
+        skills = conn.execute(
+            "SELECT skill_id FROM knowledge_skill_links WHERE kb_id = ? ORDER BY skill_id",
+            (kb_id,),
+        ).fetchall()
+    stats = _compute_items_stats(rows)
+    stats["folder_count"] = int(folder_count or 0)
+    stats["skill_ids"] = [r["skill_id"] for r in skills]
+    stats["skill_count"] = len(stats["skill_ids"])
+    return stats
+
+
+def user_knowledge_stats(user_id: str) -> dict[str, Any]:
+    bases = list_knowledge_bases(user_id)
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT i.name, i.size_bytes, i.text_excerpt, i.media_type, i.kb_id
+              FROM knowledge_items i
+              JOIN knowledge_bases k ON k.id = i.kb_id
+             WHERE k.user_id = ?
+            """,
+            (user_id,),
+        ).fetchall()
+        folder_count = conn.execute(
+            """
+            SELECT COUNT(*) AS n
+              FROM knowledge_folders f
+              JOIN knowledge_bases k ON k.id = f.kb_id
+             WHERE k.user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()["n"]
+        skill_links = conn.execute(
+            """
+            SELECT COUNT(*) AS n
+              FROM knowledge_skill_links l
+              JOIN knowledge_bases k ON k.id = l.kb_id
+             WHERE k.user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()["n"]
+    stats = _compute_items_stats(rows)
+    stats["knowledge_base_count"] = len(bases)
+    stats["folder_count"] = int(folder_count or 0)
+    stats["skill_link_count"] = int(skill_links or 0)
+    return stats
+
+
 def _row_kb(row: Any, *, include_counts: bool = True) -> dict[str, Any]:
     item: dict[str, Any] = {
         "id": row["id"],
@@ -111,22 +232,14 @@ def _row_kb(row: Any, *, include_counts: bool = True) -> dict[str, Any]:
         "updated_at": row["updated_at"],
     }
     if include_counts:
-        with get_conn() as conn:
-            counts = conn.execute(
-                """
-                SELECT
-                  (SELECT COUNT(*) FROM knowledge_folders WHERE kb_id = ?) AS folder_count,
-                  (SELECT COUNT(*) FROM knowledge_items WHERE kb_id = ?) AS item_count
-                """,
-                (row["id"], row["id"]),
-            ).fetchone()
-            skills = conn.execute(
-                "SELECT skill_id FROM knowledge_skill_links WHERE kb_id = ? ORDER BY skill_id",
-                (row["id"],),
-            ).fetchall()
-        item["folder_count"] = int(counts["folder_count"] or 0) if counts else 0
-        item["item_count"] = int(counts["item_count"] or 0) if counts else 0
-        item["skill_ids"] = [r["skill_id"] for r in skills]
+        stats = knowledge_base_stats(row["user_id"], row["id"])
+        item["folder_count"] = stats["folder_count"]
+        item["item_count"] = stats["item_count"]
+        item["total_bytes"] = stats["total_bytes"]
+        item["text_ready_count"] = stats["text_ready_count"]
+        item["by_category"] = stats["by_category"]
+        item["skill_ids"] = stats["skill_ids"]
+        item["stats"] = stats
     return item
 
 
@@ -459,7 +572,12 @@ def get_kb_tree(user_id: str, kb_id: str) -> dict[str, Any]:
     kb = get_knowledge_base(user_id, kb_id)
     folders = list_folders(user_id, kb_id)
     items = list_items(user_id, kb_id)
-    return {"knowledge_base": kb, "folders": folders, "items": items}
+    return {
+        "knowledge_base": kb,
+        "folders": folders,
+        "items": items,
+        "stats": kb.get("stats") or knowledge_base_stats(user_id, kb_id),
+    }
 
 
 def resolve_kb_ids_for_prompt(
