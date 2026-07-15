@@ -10,12 +10,14 @@ import math
 import re
 import secrets
 import shutil
+import threading
 import time
 import urllib.parse
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -272,7 +274,11 @@ class PromptRequest(BaseModel):
     ai_key_source: str | None = Field(default=None, description="personal or team")
     jake_codex_agent: bool = Field(
         default=False,
-        description="Opt-in: run CAD 2.0 with host Codex + Jake cad@text-to-cad plugin (uses server ChatGPT login).",
+        description="Deprecated alias for codex_agent.",
+    )
+    codex_agent: bool = Field(
+        default=False,
+        description="Opt-in: run CAD 2.0 with host Codex + cad@text-to-cad plugin (uses server ChatGPT login).",
     )
 
 
@@ -862,6 +868,9 @@ def _record_history(
     meta: dict | None = None,
     user: dict[str, Any] | None = None,
 ):
+    # Fusion sync / Autodesk bulk pulls must not snapshot every project file —
+    # that blocked the single API worker and made viewport model loads hang.
+    snapshot_mode = "primary" if kind in {"fusion_sync", "autodesk_import"} else "all"
     entry = history_service.append_entry(
         project_path,
         kind=kind,
@@ -871,6 +880,7 @@ def _record_history(
         user_id=user["id"] if user else None,
         user_name=user["display_name"] if user else None,
         user_avatar_url=_avatar_url_for_user_id(user["id"]) if user else None,
+        snapshot_mode=snapshot_mode,
     )
     # Mark Fusion-linked projects dirty so accessing Fusion pushes local edits back.
     if kind not in {"autodesk_import", "fusion_sync", "fusion_push"} and filename:
@@ -2187,14 +2197,15 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
     dxf_files = _build_dxf_context_entries(project_path, body.prompt, refs)
     if dxf_files:
         context["dxf_files"] = dxf_files
-    # Jake-identical CAD 2.0: per-user OpenAI/Claude keys by default.
-    # Codex is opt-in via PromptRequest.jake_codex_agent (host ChatGPT login).
+    # CAD 2.0: per-user OpenAI/Claude keys by default.
+    # Codex is opt-in via PromptRequest.codex_agent (host ChatGPT login).
     if (body.mode or "standard").lower() in {"v2", "fusion", "architect"}:
         context["jake_identical_runtime"] = True
         context["strict_upstream_text_to_cad"] = True
         context["mirror_upstream_modeling"] = True
-        use_codex = bool(getattr(body, "jake_codex_agent", False))
-        context["jake_codex_agent"] = use_codex
+        use_codex = bool(getattr(body, "codex_agent", False) or getattr(body, "jake_codex_agent", False))
+        context["codex_agent"] = use_codex
+        context["jake_codex_agent"] = use_codex  # back-compat for older clients
         # Keep BYOK tool-agent as primary (or soft fallback when Codex is on).
         context["jake_tool_agent"] = True
     if (body.mode or "standard").lower() == "fusion":
@@ -3546,11 +3557,18 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
                     assembled_viewer_path.write_bytes(viewer_path.read_bytes())
                 viewer_path = assembled_viewer_path
                 if body.get("import_bodies", False) is True:
-                    cad_service.split_scene_components_to_glbs(
-                        viewer_path,
-                        proj_path,
-                        base_stem=viewer_path.stem,
-                    )
+                    try:
+                        cad_service.split_scene_components_to_glbs(
+                            viewer_path,
+                            proj_path,
+                            base_stem=viewer_path.stem,
+                        )
+                    except Exception as split_exc:
+                        logger.warning(
+                            "Autodesk import body split failed for %s: %s",
+                            viewer_path.name,
+                            split_exc,
+                        )
     except Exception as exc:
         raise HTTPException(422, f"Could not convert Autodesk file for preview: {exc}") from exc
 
@@ -4359,7 +4377,31 @@ def sync_project_fusion_mirror_from_fusion(
 ):
     """Push pending local edits to Fusion, pull newer Fusion items, then fan out to teammate mirrors."""
     path = _require_project(user, project_id)
-    import_bodies = bool((body or {}).get("import_bodies", True))
+    with _FUSION_SYNC_LOCKS_GUARD:
+        sync_lock = _FUSION_SYNC_LOCKS.setdefault(project_id, threading.Lock())
+    if not sync_lock.acquire(blocking=False):
+        return {
+            "changed": False,
+            "busy": True,
+            "message": "Fusion sync already in progress for this project.",
+            "local_push": {"pushed": False},
+            "imported": [],
+            "pushed_mirrors": [],
+            "push_errors": [],
+        }
+    try:
+        return _sync_project_fusion_mirror_from_fusion_locked(project_id, path, body or {}, user)
+    finally:
+        sync_lock.release()
+
+
+def _sync_project_fusion_mirror_from_fusion_locked(
+    project_id: str,
+    path: Path,
+    body: dict,
+    user: dict[str, Any],
+):
+    import_bodies = bool(body.get("import_bodies", True))
     from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
 
     with get_conn() as conn:
@@ -4384,8 +4426,8 @@ def sync_project_fusion_mirror_from_fusion(
         project_id,
         path,
         user,
-        filename=(body or {}).get("filename"),
-        force=bool((body or {}).get("force_push", False)),
+        filename=body.get("filename"),
+        force=bool(body.get("force_push", False)),
     )
 
     hub_id = str(mirror.get("hub_id") or "")
@@ -4466,6 +4508,29 @@ def sync_project_fusion_mirror_from_fusion(
             label = item.get("name") or item_id
             import_errors.append(f"{label}: {exc}")
             logger.warning("Fusion mirror import failed project=%s item=%s: %s", project_id, item_id, exc)
+            # Seed tracking when the file already landed (or history raced) so auto-sync
+            # does not re-download / re-tessellate the same STEP forever.
+            glb_path = path / f"{safe_stem}.glb"
+            step_path = next(
+                (
+                    path / f"{safe_stem}{suf}"
+                    for suf in (".step", ".stp", ".STEP", ".STP")
+                    if (path / f"{safe_stem}{suf}").is_file()
+                ),
+                None,
+            )
+            landed = existing_local or (glb_path if glb_path.is_file() else None) or step_path
+            if landed is not None and version_id:
+                tracked[item_id] = {
+                    "item_id": item_id,
+                    "version_id": version_id,
+                    "filename": landed.name,
+                    "viewer_filename": glb_path.name if glb_path.is_file() else landed.name,
+                    "item_name": item_name,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "seeded_after_error": True,
+                    "last_error": str(exc)[:240],
+                }
 
     # Keep tracking in sync for unchanged items still present in the folder.
     present_ids = {str(i.get("id") or "") for i in items if i.get("id")}

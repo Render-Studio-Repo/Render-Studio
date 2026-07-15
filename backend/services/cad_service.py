@@ -1744,6 +1744,50 @@ def export_mesh(mesh: trimesh.Trimesh, path: Path) -> Path:
     return path
 
 
+def split_scene_components_to_glbs(
+    viewer_path: Path,
+    project_path: Path,
+    *,
+    base_stem: str | None = None,
+    max_parts: int = 64,
+) -> list[str]:
+    """Export each named GLB scene component as ``{base}__part_NN_slug.glb``.
+
+    Used by Fusion / Autodesk import when ``import_bodies`` is requested. Returns
+    an empty list when the viewer has only one body (nothing useful to split).
+    """
+    viewer_path = Path(viewer_path)
+    project_path = Path(project_path)
+    raw_base = str(base_stem or viewer_path.stem or "component")
+    base = re.sub(r"[^\w\-]+", "_", raw_base).strip("_") or "component"
+    base = base[:80]
+    if not viewer_path.is_file():
+        raise FileNotFoundError(f"Viewer GLB missing: {viewer_path.name}")
+
+    scene = load_scene(viewer_path)
+    parts = _meshes_from_scene(scene)
+    if len(parts) <= 1:
+        return []
+
+    for old in project_path.glob(f"{base}__part_*.glb"):
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    outputs: list[str] = []
+    used: set[str] = set()
+    for idx, (label, mesh) in enumerate(parts[: max(1, int(max_parts))], start=1):
+        slug = re.sub(r"[^\w\-]+", "_", str(label or "").lower()).strip("_")[:48] or f"part_{idx:02d}"
+        if slug in used:
+            slug = f"{slug}_{idx:02d}"
+        used.add(slug)
+        out_name = f"{base}__part_{idx:02d}_{slug}.glb"
+        export_mesh(mesh, project_path / out_name)
+        outputs.append(out_name)
+    return outputs
+
+
 def export_mesh_step(mesh: trimesh.Trimesh, path: Path) -> Path:
     """Write a faceted (mesh-derived) STEP — Fusion solid cuts will NOT work reliably.
 

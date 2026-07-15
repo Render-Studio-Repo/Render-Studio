@@ -1,4 +1,4 @@
-"""Run Jake's real Codex CAD agent (earthtojake/text-to-cad) for Render3D.
+"""Run the Codex CAD agent (earthtojake/text-to-cad skill plugin) for Render3D.
 
 Upstream text-to-cad is a Codex / Claude Code skill plugin — not an in-process
 chat rewrite loop. This module shells out to the Codex CLI with the installed
@@ -31,11 +31,11 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_TIMEOUT_SEC = 20 * 60
 
 
-class JakeCodexUnavailable(RuntimeError):
+class CodexUnavailable(RuntimeError):
     """Codex CLI or CAD plugin is not available on this host."""
 
 
-class JakeCodexFailed(RuntimeError):
+class CodexFailed(RuntimeError):
     """Codex ran but did not produce a valid STEP/GLB for the project."""
 
 
@@ -84,7 +84,7 @@ def _cad_skill_dir() -> Path:
             candidate = ver / "skills" / "cad"
             if (candidate / "scripts").is_dir():
                 return candidate.resolve()
-    raise JakeCodexUnavailable("CAD skill scripts not found (backend/skills/cad or cad@text-to-cad plugin).")
+    raise CodexUnavailable("CAD skill scripts not found (backend/skills/cad or cad@text-to-cad plugin).")
 
 
 def _pythonpath_for_skill(skill_dir: Path) -> str:
@@ -104,7 +104,7 @@ def _venv_bin() -> Path | None:
 
 
 def _ensure_project_scripts(project_path: Path, skill_dir: Path) -> Path:
-    """Jake workflow expects ``python scripts/step`` from the artifact cwd."""
+    """CAD skill workflow expects ``python scripts/step`` from the artifact cwd."""
     scripts_link = project_path / "scripts"
     target = (skill_dir / "scripts").resolve()
     if scripts_link.is_symlink():
@@ -293,7 +293,7 @@ def _pick_artifacts(project_path: Path, preferred_base: str) -> dict[str, str]:
                 "glb": glb.name if glb.is_file() else step.name,
                 "base": preferred_base,
             }
-        raise JakeCodexFailed("Codex finished without a gen_step() Python + STEP pair.")
+        raise CodexFailed("Codex finished without a gen_step() Python + STEP pair.")
 
     candidates.sort(key=lambda row: row[0], reverse=True)
     _, stem, py, step, glb = candidates[0]
@@ -308,7 +308,7 @@ def _pick_artifacts(project_path: Path, preferred_base: str) -> dict[str, str]:
     }
 
 
-def run_jake_codex_agent(
+def run_codex_agent(
     *,
     project_path: Path,
     prompt: str,
@@ -326,10 +326,10 @@ def run_jake_codex_agent(
     timeout_sec: float | None = None,
     model: str | None = None,
 ) -> dict[str, Any]:
-    """Run Codex non-interactively with Jake's CAD plugin in ``project_path``."""
+    """Run Codex non-interactively with the CAD skill plugin in ``project_path``."""
     codex = resolve_codex_bin()
     if not codex:
-        raise JakeCodexUnavailable(
+        raise CodexUnavailable(
             "Codex CLI not found. Install Codex or set CODEX_BIN to the binary path."
         )
 
@@ -367,7 +367,7 @@ def run_jake_codex_agent(
     if venv_bin:
         env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
         env["VIRTUAL_ENV"] = str(venv_bin.parent)
-    # Help skill scripts resolve project-relative paths the Jake way.
+    # Help skill scripts resolve project-relative paths.
     env["INIT_CWD"] = str(project_path)
     env["PWD"] = str(project_path)
 
@@ -387,7 +387,7 @@ def run_jake_codex_agent(
         cmd.extend(["-m", str(model)])
     cmd.append("-")  # read prompt from stdin
 
-    timeout = float(timeout_sec or os.environ.get("JAKE_CODEX_TIMEOUT_SEC") or DEFAULT_TIMEOUT_SEC)
+    timeout = float(timeout_sec or os.environ.get("CODEX_TIMEOUT_SEC") or os.environ.get("JAKE_CODEX_TIMEOUT_SEC") or DEFAULT_TIMEOUT_SEC)
 
     def _emit(stage: str, label: str, pct: int | None = None) -> None:
         if not progress_callback:
@@ -401,10 +401,10 @@ def run_jake_codex_agent(
             payload["pct"] = pct
         progress_callback(payload)
 
-    _emit("authoring", "Starting Jake Codex CAD agent…", 18)
+    _emit("authoring", "Starting Codex CAD agent…", 18)
     trace_add(
         "info",
-        f"[2.0/text-to-cad] Jake Codex agent: {codex} in {project_path}",
+        f"[2.0/text-to-cad] Codex agent: {codex} in {project_path}",
         trace_id=trace_id,
     )
 
@@ -473,7 +473,7 @@ def run_jake_codex_agent(
                         break
                 except Exception:
                     pass
-                raise JakeCodexFailed(f"Codex CAD agent timed out after {int(timeout)}s.")
+                raise CodexFailed(f"Codex CAD agent timed out after {int(timeout)}s.")
 
             # If STEP+GLB already exist, don't let snapshot tooling hang the viewer.
             try:
@@ -542,12 +542,12 @@ def run_jake_codex_agent(
     if artifacts is None:
         detail = artifact_error or "no STEP artifacts"
         stderr_tail = "".join(stderr_chunks)[-2000:]
-        raise JakeCodexFailed(
+        raise CodexFailed(
             f"Codex CAD agent exit={exit_code}: {detail}. "
             f"last_message={last_message[:500]!r} stderr={stderr_tail[:800]!r}"
         )
 
-    # Ensure shell GLB basename exists when Jake only wrote the hidden sidecar.
+    # Ensure shell GLB basename exists when only the hidden sidecar was written.
     glb_path = project_path / artifacts["glb"]
     jake_hidden = project_path / f".{artifacts['base']}.step.glb"
     if not glb_path.is_file() and jake_hidden.is_file():
@@ -557,13 +557,13 @@ def run_jake_codex_agent(
     _emit("finalize", f"Codex finished: {artifacts['source']} → {artifacts['step']}", 88)
     trace_add(
         "info",
-        f"[2.0/text-to-cad] Jake Codex produced {artifacts['source']} / {artifacts['step']}",
+        f"[2.0/text-to-cad] Codex produced {artifacts['source']} / {artifacts['step']}",
         trace_id=trace_id,
     )
 
     return {
         "ok": True,
-        "runtime": "jake_codex",
+        "runtime": "codex",
         "source": artifacts["source"],
         "step": artifacts["step"],
         "glb": artifacts["glb"],
@@ -622,6 +622,6 @@ def _kill_proc(proc: subprocess.Popen) -> None:
         pass
 
 
-def run_jake_codex_agent_safe(**kwargs: Any) -> dict[str, Any]:
-    """Same as ``run_jake_codex_agent`` — kept for symmetry with tool agent."""
-    return run_jake_codex_agent(**kwargs)
+def run_codex_agent_safe(**kwargs: Any) -> dict[str, Any]:
+    """Same as ``run_codex_agent`` — kept for symmetry with tool agent."""
+    return run_codex_agent(**kwargs)

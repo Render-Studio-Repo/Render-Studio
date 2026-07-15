@@ -3438,7 +3438,9 @@ def _run_text_to_cad_v2(
 
     # Default: per-user OpenAI/Claude tool agent (BYOK). Codex is opt-in only.
     ctx = context or {}
-    use_codex_agent = bool(jake_identical) and bool(ctx.get("jake_codex_agent", False))
+    use_codex_agent = bool(jake_identical) and bool(
+        ctx.get("codex_agent", False) or ctx.get("jake_codex_agent", False)
+    )
     use_tool_agent = bool(jake_identical) and bool(ctx.get("jake_tool_agent", True))
     if (use_codex_agent or use_tool_agent) and not canonical_source:
         # Prefer a filesystem-safe stem (spaces break CLIs).
@@ -3466,9 +3468,9 @@ def _run_text_to_cad_v2(
 
         if use_codex_agent:
             try:
-                from backend.services.jake_codex_agent import (
-                    JakeCodexUnavailable,
-                    run_jake_codex_agent,
+                from backend.services.codex_agent import (
+                    CodexUnavailable,
+                    run_codex_agent,
                 )
 
                 if progress_callback:
@@ -3476,10 +3478,10 @@ def _run_text_to_cad_v2(
                         {
                             "stage": "authoring",
                             "pct": 16,
-                            "label": "Starting Jake Codex CAD agent…",
+                            "label": "Starting Codex CAD agent…",
                         }
                     )
-                agent_result = run_jake_codex_agent(
+                agent_result = run_codex_agent(
                     project_path=project_path,
                     prompt=generation_prompt,
                     cad_brief=cad_brief,
@@ -3494,10 +3496,10 @@ def _run_text_to_cad_v2(
                     progress_callback=progress_callback,
                     trace_id=trace_id,
                 )
-                agent_runtime = "jake_codex"
+                agent_runtime = "codex"
             except DesignCanceled:
                 raise
-            except JakeCodexUnavailable as unavailable:
+            except CodexUnavailable as unavailable:
                 agent_exc_message = str(unavailable)
                 trace_add(
                     "warning",
@@ -3629,7 +3631,7 @@ def _run_text_to_cad_v2(
 
             display_name = title_from_prompt(prompt)
             apply_prompt_project_name(project_path, prompt, fallback=display_name)
-            runtime_label = "Jake Codex CAD agent" if agent_runtime == "jake_codex" else "Jake tool-using authoring agent"
+            runtime_label = "Codex CAD agent" if agent_runtime == "codex" else "CAD tool-using authoring agent"
             trace_add(
                 "info",
                 f"[2.0/text-to-cad] {runtime_label} completed step/inspect/snapshot gates.",
@@ -3644,9 +3646,9 @@ def _run_text_to_cad_v2(
                 "design_plan": {
                     "requirements_analysis": f"CAD {label_prefix} routed to {runtime_label}.",
                     "cad_feature_plan": (
-                        "Jake Codex / CAD skill edited gen_step() source, ran scripts/step, "
+                        "Codex / CAD skill edited gen_step() source, ran scripts/step, "
                         "inspect, and mandatory snapshot in one continuous agent session."
-                        if agent_runtime == "jake_codex"
+                        if agent_runtime == "codex"
                         else (
                             "Tool-using agent edited gen_step() source, ran scripts/step, "
                             "inspect, and mandatory snapshot in one continuous session."
@@ -3672,7 +3674,7 @@ def _run_text_to_cad_v2(
                     "dfm": None,
                     "warnings": [],
                     "text_to_cad": {
-                        "runtime": agent_runtime or "jake_codex",
+                        "runtime": agent_runtime or "codex",
                         "authoring_agent": True,
                         "visual_gate": "fail_closed_multi_view",
                         "naming": {
@@ -3696,7 +3698,8 @@ def _run_text_to_cad_v2(
                 "dfm_warnings": [],
                 "v2_text_to_cad": True,
                 "jake_identical_runtime": True,
-                "jake_codex_agent": agent_runtime == "jake_codex",
+                "codex_agent": agent_runtime == "codex",
+                "jake_codex_agent": agent_runtime == "codex",
                 "jake_tool_agent": agent_runtime == "jake_tool_agent",
                 "fusion_text_to_cad": fusion_mode,
                 "architect_text_to_cad": architect_mode,
@@ -3704,7 +3707,7 @@ def _run_text_to_cad_v2(
 
         last_error = agent_exc_message or "Jake agent did not finish"
         repair_note = (
-            "Jake Codex / tool authoring agent did not finish. "
+            "Codex / tool authoring agent did not finish. "
             "Falling back to file-rewrite repair loop.\n"
             f"{last_error}"
         )
@@ -4813,7 +4816,7 @@ def _looks_like_cooking_appliance(prompt: str, images: list[dict[str, Any]] | No
 
 def _max_repairs_for_speed(speed: str | None, *, jake_identical: bool = False) -> int:
     """Return extra repair attempts beyond the first try (Jake agent turns − 1)."""
-    # Jake Codex agents iterate until visual+CLI gates pass; mirror that with a
+    # Codex agents iterate until visual+CLI gates pass; mirror that with a
     # generous capped budget so step/inspect/snapshot/revise repairs can finish.
     if jake_identical:
         return 12

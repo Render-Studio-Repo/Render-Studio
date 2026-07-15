@@ -781,7 +781,7 @@ function applyPromptModeUI(mode = promptMode) {
     skillsPromptUI?.render?.();
     skillsPromptUI?.updatePlan?.();
   }
-  syncJakeCodexToggleVisibility(promptMode);
+  syncCodexToggleVisibility(promptMode);
 }
 
 function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standard", pendingStart = false } = {}) {
@@ -2649,25 +2649,27 @@ const promptHistory = createPromptHistoryUI({
 let promptMode = "v2";
 const PROMPT_SPEED_KEY = "render3d:prompt-speed:v1";
 const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
-const JAKE_CODEX_KEY = "render3d:jake-codex:v1";
+const CODEX_KEY = "render3d:codex:v1";
+const CODEX_KEY_LEGACY = "render3d:jake-codex:v1";
 
-function isJakeCodexEnabled() {
-  return Boolean(document.getElementById("prompt-jake-codex")?.checked);
+function isCodexEnabled() {
+  return Boolean(document.getElementById("prompt-codex")?.checked);
 }
 
-function setJakeCodexEnabled(enabled) {
-  const input = document.getElementById("prompt-jake-codex");
+function setCodexEnabled(enabled) {
+  const input = document.getElementById("prompt-codex");
   if (input) input.checked = Boolean(enabled);
   try {
-    localStorage.setItem(JAKE_CODEX_KEY, enabled ? "1" : "0");
+    localStorage.setItem(CODEX_KEY, enabled ? "1" : "0");
+    localStorage.removeItem(CODEX_KEY_LEGACY);
   } catch {
     /* ignore */
   }
-  syncJakeCodexToggleVisibility();
+  syncCodexToggleVisibility();
 }
 
-function syncJakeCodexToggleVisibility(mode = promptMode) {
-  const wrap = document.getElementById("prompt-jake-codex-toggle");
+function syncCodexToggleVisibility(mode = promptMode) {
+  const wrap = document.getElementById("prompt-codex-toggle");
   if (!wrap) return;
   const show = ["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase());
   wrap.classList.toggle("hidden", !show);
@@ -2676,16 +2678,17 @@ function syncJakeCodexToggleVisibility(mode = promptMode) {
 (() => {
   let enabled = false;
   try {
-    enabled = localStorage.getItem(JAKE_CODEX_KEY) === "1";
+    enabled = localStorage.getItem(CODEX_KEY) === "1"
+      || localStorage.getItem(CODEX_KEY_LEGACY) === "1";
   } catch {
     enabled = false;
   }
-  const input = document.getElementById("prompt-jake-codex");
+  const input = document.getElementById("prompt-codex");
   if (input) {
     input.checked = enabled;
-    input.addEventListener("change", () => setJakeCodexEnabled(input.checked));
+    input.addEventListener("change", () => setCodexEnabled(input.checked));
   }
-  syncJakeCodexToggleVisibility();
+  syncCodexToggleVisibility();
 })();
 
 function getPromptGenerationSpeed() {
@@ -13628,7 +13631,7 @@ async function refreshWorkspaceHistory() {
   }
 }
 
-const WORKSPACE_FUSION_AUTO_SYNC_MS = 30000;
+const WORKSPACE_FUSION_AUTO_SYNC_MS = 5 * 60 * 1000;
 let workspaceFusionAutoSyncTimer = null;
 let workspaceFusionAutoSyncTargets = [];
 let workspaceFusionAutoSyncInFlight = false;
@@ -13718,6 +13721,8 @@ function updateWorkspaceFusionAutoSync(data = null) {
 
 async function runWorkspaceFusionAutoSync({ force = false } = {}) {
   if (workspaceFusionAutoSyncInFlight || document.hidden || !workspaceFusionAutoSyncTargets.length) return;
+  // Never compete with viewport model loads — sync was saturating the API worker.
+  if (loadingProjectIds.size > 0) return;
   const now = Date.now();
   const dueTargets = workspaceFusionAutoSyncTargets.filter((target) => {
     const last = workspaceFusionAutoSyncLastRun.get(target.projectId) || 0;
@@ -13728,13 +13733,15 @@ async function runWorkspaceFusionAutoSync({ force = false } = {}) {
   let shouldRefresh = false;
   try {
     for (const target of dueTargets) {
+      if (loadingProjectIds.size > 0) break;
       workspaceFusionAutoSyncLastRun.set(target.projectId, Date.now());
       try {
         const result = await api(`/api/projects/${encodeURIComponent(target.projectId)}/fusion-mirror/sync-from-fusion`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ import_bodies: true }),
+          body: JSON.stringify({ import_bodies: false }),
         });
+        if (result.busy) continue;
         if (result.changed || result.pushed_mirrors?.length || result.push_errors?.length) {
           shouldRefresh = true;
         }
@@ -13745,14 +13752,15 @@ async function runWorkspaceFusionAutoSync({ force = false } = {}) {
   } finally {
     workspaceFusionAutoSyncInFlight = false;
   }
-  if (shouldRefresh) {
+  if (shouldRefresh && loadingProjectIds.size === 0) {
     await refreshWorkspaceRealtimeEditor();
   }
 }
 
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
-    void runWorkspaceFusionAutoSync({ force: true });
+    // Soft wake-up only — do not force a full pull on every tab focus.
+    void runWorkspaceFusionAutoSync({ force: false });
   }
 });
 
@@ -16784,8 +16792,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       ...(promptMode === "fusion" ? { mode: "fusion", fusion_target: fusionTarget } : {}),
       ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
       ...(promptMode === "v2" ? { mode: "v2" } : {}),
-      ...(["v2", "fusion", "architect"].includes(promptMode) && isJakeCodexEnabled()
-        ? { jake_codex_agent: true }
+      ...(["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()
+        ? { codex_agent: true }
         : {}),
     };
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });

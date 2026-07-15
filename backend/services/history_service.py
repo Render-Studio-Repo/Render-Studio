@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import shutil
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, Literal
 
 from backend.services import cad_service
 
 _SNAPSHOT_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf", ".step", ".stp"}
 _MAX_SNAPSHOT_ENTRIES = 8
+SnapshotMode = Literal["all", "primary", "none"]
 
 
 def _timeline_path(project_path: Path) -> Path:
@@ -25,6 +28,19 @@ def _history_dir(project_path: Path) -> Path:
     return d
 
 
+@contextmanager
+def _timeline_lock(project_path: Path) -> Iterator[None]:
+    """Serialize timeline/history writes so concurrent Fusion syncs cannot collide."""
+    lock_path = project_path / ".timeline.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def load_timeline(project_path: Path) -> dict[str, Any]:
     path = _timeline_path(project_path)
     if not path.is_file():
@@ -34,6 +50,22 @@ def load_timeline(project_path: Path) -> dict[str, Any]:
 
 def save_timeline(project_path: Path, data: dict[str, Any]) -> None:
     _timeline_path(project_path).write_text(json.dumps(data, indent=2))
+
+
+def _next_history_slot(project_path: Path) -> int:
+    """Next unused ``NNNN__…`` prefix in the history directory (avoids prune collisions)."""
+    hist = _history_dir(project_path)
+    max_slot = -1
+    for path in hist.iterdir():
+        if not path.is_file():
+            continue
+        name = path.name
+        if len(name) < 5 or name[4] not in {"_", "-"}:
+            continue
+        prefix = name[:4]
+        if prefix.isdigit():
+            max_slot = max(max_slot, int(prefix))
+    return max_slot + 1
 
 
 def _snapshotable_model_files(project_path: Path) -> list[Path]:
@@ -95,6 +127,8 @@ def prune_snapshot_history(project_path: Path, *, keep: int = _MAX_SNAPSHOT_ENTR
     for old in old_entries:
         _delete_entry_snapshots(project_path, old)
     kept_entries = entries[-keep:]
+    # Keep entry.index aligned with list position for timeline scrub APIs.
+    # Snapshot filenames stay on their original slot numbers (see _next_history_slot).
     for idx, entry in enumerate(kept_entries):
         entry["index"] = idx
     data["entries"] = kept_entries
@@ -155,50 +189,74 @@ def append_entry(
     user_id: str | None = None,
     user_name: str | None = None,
     user_avatar_url: str | None = None,
+    snapshot_mode: SnapshotMode = "all",
 ) -> dict[str, Any]:
-    """Record a timeline step and snapshot all model files in the project."""
+    """Record a timeline step and optionally snapshot model files.
+
+    ``snapshot_mode``:
+    - ``all``: copy every model file (viewport edits)
+    - ``primary``: copy only ``filename`` (Fusion sync / bulk imports)
+    - ``none``: metadata-only entry (no history file copies)
+
+    ``entry["index"]`` / ``current_index`` are list positions for the scrub API.
+    Snapshot filenames use a separate monotonic history slot so prune cannot
+    cause the next write to overwrite a kept entry's files.
+    """
     src = project_path / filename
-    if not src.is_file():
+    if snapshot_mode != "none" and not src.is_file():
         raise FileNotFoundError(f"Cannot snapshot missing file: {filename}")
 
-    data = load_timeline(project_path)
-    entries: list[dict[str, Any]] = data.get("entries", [])
-    current = data.get("current_index", -1)
+    with _timeline_lock(project_path):
+        data = load_timeline(project_path)
+        entries: list[dict[str, Any]] = data.get("entries", [])
+        current = data.get("current_index", -1)
 
-    # Truncate redo branch when editing from an earlier step
-    if current >= 0 and current < len(entries) - 1:
-        for old in entries[current + 1 :]:
-            _delete_entry_snapshots(project_path, old)
-        entries = entries[: current + 1]
+        # Truncate redo branch when editing from an earlier list position
+        if current >= 0 and current < len(entries) - 1:
+            for old in entries[current + 1 :]:
+                _delete_entry_snapshots(project_path, old)
+            entries = entries[: current + 1]
 
-    index = len(entries)
-    snapshot_files = _snapshot_all_files(project_path, index)
-    primary_snap = next((item["snapshot"] for item in snapshot_files if item["filename"] == filename), None)
-    if not primary_snap:
-        primary_snap = f"{index:04d}_{src.stem}.glb"
-        shutil.copy2(src, _history_dir(project_path) / primary_snap)
-        snapshot_files.append({"filename": filename, "snapshot": primary_snap})
+        list_index = len(entries)
+        history_slot = _next_history_slot(project_path)
+        snapshot_files: list[dict[str, str]] = []
+        primary_snap: str | None = None
+        if snapshot_mode == "all":
+            snapshot_files = _snapshot_all_files(project_path, history_slot)
+            primary_snap = next((item["snapshot"] for item in snapshot_files if item["filename"] == filename), None)
+        elif snapshot_mode == "primary":
+            primary_snap = _snapshot_file_name(history_slot, filename)
+            shutil.copy2(src, _history_dir(project_path) / primary_snap)
+            snapshot_files = [{"filename": filename, "snapshot": primary_snap}]
 
-    entry = {
-        "index": index,
-        "id": str(uuid.uuid4())[:8],
-        "kind": kind,
-        "label": label,
-        "filename": filename,
-        "snapshot": primary_snap,
-        "snapshot_files": snapshot_files,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "meta": meta or {},
-        "user_id": user_id,
-        "user_name": user_name,
-        "user_avatar_url": user_avatar_url,
-    }
-    entries.append(entry)
-    data["entries"] = entries
-    data["current_index"] = index
-    save_timeline(project_path, data)
-    prune_snapshot_history(project_path)
-    return entry
+        if snapshot_mode != "none" and not primary_snap:
+            primary_snap = f"{history_slot:04d}_{src.stem}{src.suffix.lower() or '.glb'}"
+            shutil.copy2(src, _history_dir(project_path) / primary_snap)
+            snapshot_files.append({"filename": filename, "snapshot": primary_snap})
+
+        entry = {
+            "index": list_index,
+            "id": str(uuid.uuid4())[:8],
+            "kind": kind,
+            "label": label,
+            "filename": filename,
+            "snapshot": primary_snap,
+            "snapshot_files": snapshot_files,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "meta": meta or {},
+            "user_id": user_id,
+            "user_name": user_name,
+            "user_avatar_url": user_avatar_url,
+        }
+        entries.append(entry)
+        data["entries"] = entries
+        data["current_index"] = list_index
+        save_timeline(project_path, data)
+        prune_snapshot_history(project_path)
+        # After prune, return the (possibly reindexed) public entry from disk.
+        refreshed = load_timeline(project_path)
+        refreshed_entries = refreshed.get("entries") or []
+        return refreshed_entries[-1] if refreshed_entries else entry
 
 
 def _files_known_up_to_index(entries: list[dict[str, Any]], index: int) -> set[str]:
