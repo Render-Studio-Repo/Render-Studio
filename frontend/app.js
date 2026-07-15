@@ -491,7 +491,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
       fitView: true,
       latestFile: gen.filename,
       placedFiles,
-      loadAll: completionMode === "architect",
+      loadAll: completionMode === "architect" || placedFiles.length > 0,
     });
     restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: gen.filename });
     viewerOverlay.clearError();
@@ -546,13 +546,14 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   selectedFile = msg.filename;
   const hiddenAfterReveal = setStoredComponentHidden(pid, msg.filename, false);
   projectTree.setHidden?.([...hiddenAfterReveal]);
+  bumpModelCacheEpoch();
   await refreshFiles();
   const placedFiles = (msg.placed_parts || []).map((part) => part.filename).filter(Boolean);
   await reloadViewportFromProject({
     fitView: true,
     latestFile: msg.filename,
     placedFiles,
-    loadAll: reloadMode === "architect",
+    loadAll: reloadMode === "architect" || placedFiles.length > 0,
   });
   restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: msg.filename });
   viewerOverlay.clearError();
@@ -7576,11 +7577,12 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
   const ensureLoadFile = (filename, { primary = false } = {}) => {
     if (!filename) return;
     const file = projectFiles.find((f) => f.name === filename);
-    if (!file) return;
+    if (!file && !/\.(glb|gltf|stl|obj|ply|off)$/i.test(filename)) return;
     const existing = comps.find((c) => c.name === filename || c.viewer_filename === filename);
     const patch = {
       auto_load: true,
-      baked_placement: true,
+      // Only keep world placement for edited/copied parts — brand-new objects should center.
+      baked_placement: hasBakedPlacement(filename) || existing?.baked_placement === true,
       primary: primary || existing?.primary === true,
       viewer_filename: filename,
     };
@@ -7594,18 +7596,19 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
         name: filename,
         stem: fileStem(filename),
         format: filename.slice(filename.lastIndexOf(".") + 1).toLowerCase(),
-        size: file.size,
+        size: file?.size,
         ...patch,
       },
       ...comps,
     ];
   };
+  // Preserve whatever is already on screen so "Add new object" does not wipe siblings.
+  for (const [name] of projectAssembly.list()) ensureLoadFile(name);
   ensureLoadFile(modelLatestFile, { primary: true });
   for (const filename of placedFiles || []) ensureLoadFile(filename);
   if (
     modelLatestFile &&
-    !comps.some((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile) &&
-    projectFiles.some((f) => f.name === modelLatestFile)
+    !comps.some((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile)
   ) {
     comps = [
       {
@@ -7617,18 +7620,92 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
         size: projectFiles.find((f) => f.name === modelLatestFile)?.size,
         primary: true,
         auto_load: true,
-        baked_placement: true,
+        baked_placement: hasBakedPlacement(modelLatestFile),
       },
       ...comps,
     ];
   }
   prepareViewportForModels();
+
+  const placed = (placedFiles || []).filter(Boolean);
+  const assemblyCount = projectAssembly.count();
+  const replaceCatalog = modelLatestFile ? assemblyCatalogMatchingStem(modelLatestFile) : null;
+  const latestAlreadyLoaded = Boolean(modelLatestFile && projectAssembly.has(modelLatestFile));
+  const canAppendNewSibling = Boolean(
+    modelLatestFile &&
+    assemblyCount > 0 &&
+    !latestAlreadyLoaded &&
+    !replaceCatalog &&
+    !placed.length &&
+    !loadAll
+  );
+
+  if (canAppendNewSibling) {
+    const entry = comps.find((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile);
+    const viewer = entry?.viewer_filename || modelLatestFile;
+    selectedFile = entry?.name || modelLatestFile;
+    try {
+      const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
+        projectId,
+        append: true,
+        catalogFilename: selectedFile,
+        center: !(entry ? hasBakedPlacement(entry) : hasBakedPlacement(modelLatestFile)),
+        fitView: fitView !== false,
+        autoGizmo: false,
+        cacheBust: true,
+      });
+      if (ok || projectAssembly.has(selectedFile)) {
+        projectTree.setSelected(selectedFile);
+        featureEditor.setModel(projectId, selectedFile);
+        safeRestoreActiveModelPromptState();
+        if (fitView !== false) fitCameraToComponent(selectedFile);
+        setEditStatus("ok", "Loaded model in viewport.");
+        viewerOverlay.clearError();
+        await refreshObjectHistory();
+        return;
+      }
+    } catch (err) {
+      console.warn("Append load of new object failed; falling back to full reload", err);
+    }
+  } else if (modelLatestFile && assemblyCount > 0 && (latestAlreadyLoaded || replaceCatalog) && !placed.length) {
+    // Edit / overwrite: swap the changed component in place and keep siblings.
+    const prevCatalog = replaceCatalog || modelLatestFile;
+    const entry = comps.find((c) => c.name === modelLatestFile || c.viewer_filename === modelLatestFile);
+    const viewer = entry?.viewer_filename || modelLatestFile;
+    selectedFile = entry?.name || modelLatestFile;
+    try {
+      const ok = await loadModel(projectFileUrl(projectId, viewer), viewer, {
+        projectId,
+        append: true,
+        replaceCatalog: prevCatalog !== selectedFile ? prevCatalog : null,
+        catalogFilename: selectedFile,
+        center: !(entry ? hasBakedPlacement(entry) : hasBakedPlacement(modelLatestFile)),
+        fitView: fitView !== false,
+        autoGizmo: false,
+        cacheBust: true,
+      });
+      if (ok || projectAssembly.has(selectedFile)) {
+        await ensureMissingBrowserComponentsLoaded({ keepGizmoOn: selectedFile, fitView: false });
+        projectTree.setSelected(selectedFile);
+        featureEditor.setModel(projectId, selectedFile);
+        safeRestoreActiveModelPromptState();
+        if (fitView !== false) fitCameraToComponent(selectedFile);
+        setEditStatus("ok", "Loaded model in viewport.");
+        viewerOverlay.clearError();
+        await refreshObjectHistory();
+        return;
+      }
+    } catch (err) {
+      console.warn("In-place generation reload failed; falling back to full reload", err);
+    }
+  }
+
   if (comps.length) {
     await loadProjectComponents(comps, {
       projectId,
       latestFile: modelLatestFile || serverLatestFile,
       fitView,
-      loadAll,
+      loadAll: loadAll || assemblyCount > 0 || placed.length > 0,
     });
   } else {
     selectedFile = null;
@@ -11823,9 +11900,14 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
     ordered.push(entry);
   };
   pushUnique(primary);
+  // Always pull in auto_load siblings so "Add new object" keeps the prior model.
+  const autoLoadComps = visibleComps.filter((c) => c.auto_load === true);
+  for (const comp of autoLoadComps) pushUnique(comp);
   if (loadAll) {
-    const autoLoadComps = visibleComps.filter((c) => c.auto_load === true);
-    for (const comp of (autoLoadComps.length ? autoLoadComps : visibleComps)) pushUnique(comp);
+    for (const comp of visibleComps) pushUnique(comp);
+  } else if (latestFile) {
+    const latestComp = visibleComps.find((c) => c.name === latestFile || c.viewer_filename === latestFile);
+    pushUnique(latestComp);
   }
   selectedFile = primary.name;
   let lastError = null;
@@ -17829,11 +17911,12 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       selectedFile = data.filename;
       await refreshFiles();
       const placedFiles = (data.placed_parts || []).map((part) => part.filename).filter(Boolean);
+      bumpModelCacheEpoch();
       await reloadViewportFromProject({
         fitView: true,
         latestFile: data.filename,
         placedFiles,
-        loadAll: promptMode === "architect",
+        loadAll: promptMode === "architect" || placedFiles.length > 0,
       });
       restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: data.filename });
       pendingPromptSelectionContext = null;
