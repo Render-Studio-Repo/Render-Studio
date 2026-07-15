@@ -127,7 +127,9 @@ function escapeHtml(text) {
   return String(text ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function toolsLine(skill) {
@@ -137,6 +139,48 @@ function toolsLine(skill) {
   if (tools.length) bits.push(`${tools.length} Python tool${tools.length === 1 ? "" : "s"}: ${tools.join(", ")}`);
   if (refs.length) bits.push(`${refs.length} reference doc${refs.length === 1 ? "" : "s"}`);
   return bits.length ? `<p class="skill-card-meta muted small">${bits.join(" · ")}</p>` : "";
+}
+
+function skillCategory(skill = {}) {
+  const text = `${skill.id || ""} ${skill.name || ""} ${skill.description || ""}`.toLowerCase();
+  if (/urdf|srdf|sdf|robot|moveit/.test(text)) return "Robotics";
+  if (/blueprint|vision|image|photo|dxf/.test(text)) return "Vision";
+  if (/gcode|bambu|sendcutsend|manufactur|mold|silicone/.test(text)) return "Manufacturing";
+  if (/cad|step|build123d|implicit|viewer|parts/.test(text)) return "CAD";
+  return "Agent";
+}
+
+function skillStoreUrl(skill = {}) {
+  const slug = skill.install_slug || skill.marketplace_slug || skill.slug || skill.id || "";
+  return skill.store_url
+    || skill.user_store_url
+    || skill.marketplace_url
+    || skill.source_url
+    || (slug ? `/agent-store.html?skill=${encodeURIComponent(slug)}` : "/agent-store.html");
+}
+
+function skillVisualHtml(skill = {}) {
+  const category = skillCategory(skill).toLowerCase();
+  const initials = String(skill.name || skill.id || "SK").split(/[\s-_]+/).filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase();
+  return `
+    <div class="skill-card-visual skill-card-visual--${escapeHtml(category)}" aria-hidden="true">
+      <span class="skill-card-orbit"></span>
+      <span class="skill-card-gear"></span>
+      <strong>${escapeHtml(initials || "SK")}</strong>
+    </div>
+  `;
+}
+
+function skillSearchText(skill = {}) {
+  return [
+    skill.id,
+    skill.name,
+    skill.description,
+    skill.preview,
+    skillCategory(skill),
+    ...(skill.tools || []),
+    ...(skill.references || []),
+  ].join(" ").toLowerCase();
 }
 
 export function createSkillsPromptUI({
@@ -303,7 +347,179 @@ export function createSkillsPromptUI({
   return { render, getEnabled: getEnabledSkills, setExpanded, updatePlan: updatePlanNow };
 }
 
-export function initSkillsLibraryPage({ listEl, detailEl, statusEl, apiFn = fetch }) {
+export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = null, sortEl = null, viewButtons = [], apiFn = fetch }) {
+  let query = "";
+  let sortMode = "name";
+  let viewMode = "grid";
+
+  function sortedFilteredCatalog() {
+    const needle = query.trim().toLowerCase();
+    const rows = needle ? catalog.filter((skill) => skillSearchText(skill).includes(needle)) : [...catalog];
+    rows.sort((a, b) => {
+      if (sortMode === "active") {
+        return Number(isSkillEnabled(b.id)) - Number(isSkillEnabled(a.id)) || String(a.name || a.id).localeCompare(String(b.name || b.id));
+      }
+      if (sortMode === "tools") {
+        return (b.tools || []).length - (a.tools || []).length || String(a.name || a.id).localeCompare(String(b.name || b.id));
+      }
+      if (sortMode === "references") {
+        return (b.references || []).length - (a.references || []).length || String(a.name || a.id).localeCompare(String(b.name || b.id));
+      }
+      return String(a.name || a.id).localeCompare(String(b.name || b.id));
+    });
+    return rows;
+  }
+
+  function renderCatalog() {
+    if (!listEl) return;
+    const rows = sortedFilteredCatalog();
+    listEl.className = `skills-list skills-list--${viewMode}`;
+    if (!rows.length) {
+      listEl.innerHTML = `<p class="muted skills-empty">No skills match your filters.</p>`;
+      return;
+    }
+    listEl.innerHTML = rows
+      .map((skill) => {
+        const on = isSkillEnabled(skill.id);
+        const tools = skill.tools || [];
+        const refs = skill.references || [];
+        const category = skillCategory(skill);
+        const storeUrl = skillStoreUrl(skill);
+        return `<article class="skill-card${on ? " skill-card-active" : ""}" data-skill="${escapeHtml(skill.id)}" tabindex="0">
+          ${skillVisualHtml(skill)}
+          <div class="skill-card-body">
+            <div class="skill-card-head">
+              <div>
+                <span class="skill-card-category">${escapeHtml(category)}</span>
+                <h3 class="skill-card-title">${escapeHtml(skill.name || skill.id)}</h3>
+                <p class="skill-card-id mono muted small">@skill:${escapeHtml(skill.id)}</p>
+              </div>
+              <label class="skill-toggle" title="${on ? "Disable" : "Enable"} for CAD prompts">
+                <input type="checkbox" data-skill-toggle="${escapeHtml(skill.id)}" ${on ? "checked" : ""} />
+                <span class="skill-toggle-ui"></span>
+              </label>
+            </div>
+            <p class="skill-card-desc">${escapeHtml(skill.description || skill.preview || "")}</p>
+            <div class="skill-stats">
+              <span>${tools.length} tool${tools.length === 1 ? "" : "s"}</span>
+              <span>${refs.length} ref${refs.length === 1 ? "" : "s"}</span>
+              <span>${skill.install_required && !skill.installed ? "Download" : "Ready"}</span>
+            </div>
+            ${toolsLine(skill)}
+            <div class="skill-card-actions">
+              <button type="button" class="btn secondary btn-compact skill-view-btn" data-skill-view="${escapeHtml(skill.id)}">More info</button>
+              <a class="btn secondary btn-compact" href="${escapeHtml(storeUrl)}" target="${storeUrl.startsWith("http") ? "_blank" : "_self"}" rel="noopener">User store</a>
+            </div>
+          </div>
+        </article>`;
+      })
+      .join("");
+
+    listEl.querySelectorAll("[data-skill-toggle]").forEach((input) => {
+      input.addEventListener("change", (event) => {
+        event.stopPropagation();
+        setSkillEnabled(input.dataset.skillToggle, input.checked);
+        renderCatalog();
+        renderStatus();
+      });
+    });
+
+    listEl.querySelectorAll("[data-skill-view]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void showSkillDetail(btn.dataset.skillView);
+      });
+    });
+
+    listEl.querySelectorAll(".skill-card").forEach((card) => {
+      card.addEventListener("click", (event) => {
+        if (event.target.closest("a, button, input, label")) return;
+        void showSkillDetail(card.dataset.skill);
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        void showSkillDetail(card.dataset.skill);
+      });
+    });
+  }
+
+  function renderStatus() {
+    if (!statusEl) return;
+    const n = enabled.length;
+    const rows = sortedFilteredCatalog();
+    const src = provenance.source
+      ? ` · synced from <a href="${provenance.source}" target="_blank" rel="noopener">text-to-cad</a>`
+      : "";
+    const rev = provenance.revision ? ` @ ${provenance.revision.slice(0, 7)}` : "";
+    statusEl.innerHTML = n
+      ? `${n} skill${n === 1 ? "" : "s"} active · showing ${rows.length}/${catalog.length} installed${rev}${src}`
+      : `No skills enabled · showing ${rows.length}/${catalog.length} available${rev}${src}`;
+  }
+
+  async function showSkillDetail(id) {
+    if (!detailEl || !id) return;
+    detailEl.classList.remove("hidden");
+    detailEl.innerHTML = '<p class="muted">Loading skill details…</p>';
+    try {
+      const res = await apiFn(`/api/skills/${encodeURIComponent(id)}?full=true`);
+      if (!res.ok) throw new Error("Skill not found");
+      const skill = await res.json();
+      const catalogSkill = catalog.find((item) => item.id === id) || {};
+      const merged = { ...catalogSkill, ...skill };
+      const tools = merged.tools || [];
+      const refs = merged.references || [];
+      const storeUrl = skillStoreUrl(merged);
+      const referenceBodies = merged.reference_bodies || {};
+      detailEl.innerHTML = `<div class="skill-detail-head">
+          <div>
+            <span class="skill-card-category">${escapeHtml(skillCategory(merged))}</span>
+            <h3>${escapeHtml(merged.name || merged.id)}</h3>
+            <p class="muted small">@skill:${escapeHtml(merged.id)}</p>
+          </div>
+          <button type="button" class="btn secondary btn-compact" data-skill-close>Close</button>
+        </div>
+        <div class="skill-detail-grid">
+          ${skillVisualHtml(merged)}
+          <div>
+            <p>${escapeHtml(merged.description || merged.preview || "No description provided.")}</p>
+            <div class="skill-stats skill-stats--detail">
+              <span>${tools.length} Python tool${tools.length === 1 ? "" : "s"}</span>
+              <span>${refs.length} reference doc${refs.length === 1 ? "" : "s"}</span>
+              <span>${merged.installed === false ? "Needs download" : "Available"}</span>
+            </div>
+            <div class="skill-card-actions">
+              <a class="btn accent btn-compact" href="${escapeHtml(storeUrl)}" target="${storeUrl.startsWith("http") ? "_blank" : "_self"}" rel="noopener">Open user store</a>
+              <button type="button" class="btn secondary btn-compact" data-skill-enable="${escapeHtml(merged.id)}">${isSkillEnabled(merged.id) ? "Disable skill" : "Enable skill"}</button>
+            </div>
+          </div>
+        </div>
+        <p class="muted small skill-detail-meta">Tools: ${escapeHtml(tools.join(", ") || "none listed")}</p>
+        <p class="muted small skill-detail-meta">References: ${escapeHtml(refs.slice(0, 16).join(", ") || "none listed")}${refs.length > 16 ? "…" : ""}</p>
+        ${Object.keys(referenceBodies).length ? `<details class="skill-reference-preview" open>
+          <summary>Reference previews</summary>
+          ${Object.entries(referenceBodies).slice(0, 4).map(([name, body]) => `<section><strong>${escapeHtml(name)}</strong><pre>${escapeHtml(String(body || ""))}</pre></section>`).join("")}
+        </details>` : ""}
+        <details class="skill-markdown-preview" open>
+          <summary>SKILL.md preview</summary>
+          <pre class="skill-detail-body">${escapeHtml(merged.content || "")}</pre>
+        </details>`;
+      detailEl.querySelector("[data-skill-close]")?.addEventListener("click", () => {
+        detailEl.classList.add("hidden");
+      });
+      detailEl.querySelector("[data-skill-enable]")?.addEventListener("click", (event) => {
+        const skillId = event.currentTarget.getAttribute("data-skill-enable");
+        setSkillEnabled(skillId, !isSkillEnabled(skillId));
+        renderCatalog();
+        renderStatus();
+        void showSkillDetail(skillId);
+      });
+      detailEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      detailEl.innerHTML = `<p class="status error">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
   async function load() {
     if (statusEl) statusEl.textContent = "Loading skills…";
     await fetchSkillsCatalog(apiFn);
@@ -314,74 +530,30 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, apiFn = fetc
       if (statusEl) statusEl.textContent = "";
       return;
     }
-    listEl.innerHTML = catalog
-      .map((skill) => {
-        const on = isSkillEnabled(skill.id);
-        return `<article class="skill-card${on ? " skill-card-active" : ""}" data-skill="${skill.id}">
-          <div class="skill-card-head">
-            <div>
-              <h3 class="skill-card-title">${escapeHtml(skill.name)}</h3>
-              <p class="skill-card-id mono muted small">@skill:${escapeHtml(skill.id)}</p>
-            </div>
-            <label class="skill-toggle" title="${on ? "Disable" : "Enable"} for CAD prompts">
-              <input type="checkbox" data-skill-toggle="${skill.id}" ${on ? "checked" : ""} />
-              <span class="skill-toggle-ui"></span>
-            </label>
-          </div>
-          <p class="skill-card-desc">${escapeHtml(skill.description || skill.preview || "")}</p>
-          ${toolsLine(skill)}
-          <button type="button" class="btn secondary btn-compact skill-view-btn" data-skill-view="${skill.id}">View SKILL.md</button>
-        </article>`;
-      })
-      .join("");
-
-    listEl.querySelectorAll("[data-skill-toggle]").forEach((input) => {
-      input.addEventListener("change", () => {
-        setSkillEnabled(input.dataset.skillToggle, input.checked);
-        load();
-      });
-    });
-
-    listEl.querySelectorAll("[data-skill-view]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.skillView;
-        if (!detailEl) return;
-        detailEl.classList.remove("hidden");
-        detailEl.innerHTML = '<p class="muted">Loading…</p>';
-        try {
-          const res = await apiFn(`/api/skills/${id}`);
-          if (!res.ok) throw new Error("Skill not found");
-          const skill = await res.json();
-          const tools = (skill.tools || []).join(", ") || "—";
-          const refs = (skill.references || []).slice(0, 12).join(", ");
-          detailEl.innerHTML = `<div class="skill-detail-head">
-              <h3>${escapeHtml(skill.name)}</h3>
-              <button type="button" class="btn secondary btn-compact" data-skill-close>Close</button>
-            </div>
-            <p class="muted small skill-detail-meta">Python tools: ${escapeHtml(tools)}</p>
-            <p class="muted small skill-detail-meta">References: ${escapeHtml(refs)}${(skill.references || []).length > 12 ? "…" : ""}</p>
-            <pre class="skill-detail-body">${escapeHtml(skill.content || "")}</pre>`;
-          detailEl.querySelector("[data-skill-close]")?.addEventListener("click", () => {
-            detailEl.classList.add("hidden");
-          });
-        } catch (err) {
-          detailEl.innerHTML = `<p class="status error">${escapeHtml(err.message)}</p>`;
-        }
-      });
-    });
-
-    if (statusEl) {
-      const n = enabled.length;
-      const src = provenance.source
-        ? ` · synced from <a href="${provenance.source}" target="_blank" rel="noopener">text-to-cad</a>`
-        : "";
-      const rev = provenance.revision ? ` @ ${provenance.revision.slice(0, 7)}` : "";
-      statusEl.innerHTML = n
-        ? `${n} skill${n === 1 ? "" : "s"} active for prompts · ${catalog.length} installed${rev}${src}`
-        : `No skills enabled — ${catalog.length} available${rev}${src}`;
-    }
+    renderCatalog();
+    renderStatus();
   }
 
-  window.addEventListener("render3d:skills-changed", load);
+  searchEl?.addEventListener("input", () => {
+    query = searchEl.value || "";
+    renderCatalog();
+    renderStatus();
+  });
+  sortEl?.addEventListener("change", () => {
+    sortMode = sortEl.value || "name";
+    renderCatalog();
+    renderStatus();
+  });
+  viewButtons?.forEach?.((btn) => {
+    btn.addEventListener("click", () => {
+      viewMode = btn.getAttribute("data-skills-view") || "grid";
+      viewButtons.forEach((item) => item.classList.toggle("active", item === btn));
+      renderCatalog();
+    });
+  });
+  window.addEventListener("render3d:skills-changed", () => {
+    renderCatalog();
+    renderStatus();
+  });
   load();
 }

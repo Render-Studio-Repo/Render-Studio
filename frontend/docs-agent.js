@@ -1,7 +1,7 @@
 /** Shared Render Agent FAB + panel mount for documentation pages. */
 
 import { authHeaders, createAuthUI, getStoredUser } from "./auth.js?v=20260715-auth-connect-social";
-import { createRenderAgent } from "./render-agent.js?v=20260715-gs-agent-lower";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-agent-br";
 
 const LOGO = "/render3d-logo.png?v=20260715-new-logo";
 

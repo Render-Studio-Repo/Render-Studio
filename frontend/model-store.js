@@ -19,6 +19,7 @@ const filterAccess = document.getElementById("filter-access");
 const filterLicense = document.getElementById("filter-license");
 const filterDownload = document.getElementById("filter-download");
 const filterBoosted = document.getElementById("filter-boosted");
+const freeCountEl = document.getElementById("model-store-free-count");
 const dropZone = document.querySelector("[data-model-drop]");
 const modelFilesInput = formEl?.querySelector("input[name='model_files']");
 
@@ -109,6 +110,15 @@ function thumbUrl(item) {
   return item.thumbnail?.data_url || item.gallery?.[0]?.data_url || "";
 }
 
+function fileExt(name = "") {
+  const ext = String(name).split(".").pop() || "";
+  return ext.length <= 5 ? ext.toUpperCase() : "FILE";
+}
+
+function ownerLabel(item) {
+  return item.owner?.name || item.members?.[0]?.display_name || "Render3D creator";
+}
+
 function isKnowledgeListing(item) {
   return (item.files || []).some((file) => file?.product_type === "knowledge_base")
     || String(item.category || "").toLowerCase().includes("knowledge");
@@ -126,8 +136,8 @@ function badges(item) {
 function productCard(item, { compact = false } = {}) {
   const thumb = thumbUrl(item);
   const media = thumb
-    ? `<div class="marketplace-thumb" style="background-image:url('${escapeAttr(thumb)}')"></div>`
-    : `<div class="marketplace-thumb marketplace-thumb--empty">3D</div>`;
+    ? `<div class="marketplace-thumb model-marketplace-thumb" style="background-image:url('${escapeAttr(thumb)}')"></div>`
+    : `<div class="marketplace-thumb model-marketplace-thumb model-marketplace-thumb--generated"><span>${escapeHtml((item.category || "3D").slice(0, 2).toUpperCase())}</span></div>`;
   const adminControls = isAdmin
     ? `<div class="agent-admin-controls">
         <button type="button" class="btn secondary btn-compact" data-review="${escapeAttr(item.slug)}" data-status="approved">Approve</button>
@@ -140,19 +150,22 @@ function productCard(item, { compact = false } = {}) {
     ? `<button type="button" class="btn primary btn-compact" data-buy="${escapeAttr(item.id || item.slug)}">Buy ${escapeHtml(priceLabel(item))}</button>`
     : "";
   const mine = getToken() && item.created_by;
-  return `<article class="agent-product-card marketplace-product-card${compact ? " agent-product-card-compact" : ""}">
+  const fileTags = (item.files || []).slice(0, compact ? 3 : 5).map((file) => `<span>${escapeHtml(fileExt(file.name))}</span>`).join("");
+  return `<article class="agent-product-card marketplace-product-card model-product-card${compact ? " agent-product-card-compact model-product-card--compact" : ""}">
     ${media}
     <div class="agent-product-top">
       <div class="agent-app-price">${escapeHtml(priceLabel(item))}</div>
+      <span class="model-product-owner">${escapeHtml(ownerLabel(item))}</span>
     </div>
     <h4>${escapeHtml(item.name)}</h4>
     <p class="agent-product-slug mono muted small">@model:${escapeHtml(item.slug)}</p>
     <div class="agent-app-badges">${badges(item)}</div>
     <p class="agent-product-tagline">${escapeHtml(item.tagline)}</p>
     ${compact ? "" : `<div class="marketplace-body muted small">${simpleMarkdown((item.body_md || item.description || "").slice(0, 480))}</div>`}
+    ${fileTags ? `<div class="model-file-tags">${fileTags}</div>` : ""}
     <div class="agent-app-actions">
       ${buyBtn}
-      ${item.can_download && item.files?.length && !paid ? `<span class="muted small">${item.files.length} file${item.files.length === 1 ? "" : "s"}</span>` : !paid ? `<span class="muted small">Preview</span>` : ""}
+      ${item.can_download && item.files?.length && !paid ? `<button type="button" class="btn secondary btn-compact" data-preview-model="${escapeAttr(item.slug)}">Preview files</button><span class="muted small">${item.files.length} file${item.files.length === 1 ? "" : "s"}</span>` : !paid ? `<span class="muted small">Preview</span>` : ""}
       ${mine ? `<button type="button" class="btn secondary btn-compact" data-boost="${escapeAttr(item.slug)}">Apply boost</button>` : ""}
     </div>
     ${adminControls}
@@ -251,11 +264,22 @@ function bindActions(root = document) {
       }
     });
   });
+  root.querySelectorAll("[data-preview-model]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const item = listings.find((row) => row.slug === btn.dataset.previewModel);
+      const files = (item?.files || []).map((file) => `- ${file.name}`).join("\n") || "No files listed yet.";
+      alert(`${item?.name || "Model files"}\n\n${files}`);
+    });
+  });
 }
 
 function render() {
   const visible = visibleListings();
   const featured = listings.filter((item) => !isKnowledgeListing(item) && (item.featured || item.boost_status === "approved"));
+  const freeCount = listings.filter((item) => !isKnowledgeListing(item) && item.access_mode === "free").length;
+  if (freeCountEl) {
+    freeCountEl.textContent = `${freeCount} free`;
+  }
   if (resultsCountEl) resultsCountEl.textContent = `${visible.length} product${visible.length === 1 ? "" : "s"}`;
   if (resultsTitleEl) resultsTitleEl.textContent = activeCategory === "All" ? "All products" : activeCategory;
   renderCategories();

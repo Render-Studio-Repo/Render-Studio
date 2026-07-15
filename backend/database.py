@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import base64
 from pathlib import Path
 
 from backend.config import settings
@@ -542,6 +543,170 @@ def init_db() -> None:
             """,
             (creator_id, now),
         )
+
+        def _model_thumb(title: str, accent: str, sub: str = "FREE") -> str:
+            svg = f"""
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760">
+              <defs>
+                <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+                  <stop offset="0" stop-color="#050914"/>
+                  <stop offset="0.55" stop-color="#0d1727"/>
+                  <stop offset="1" stop-color="#111827"/>
+                </linearGradient>
+                <linearGradient id="part" x1="0" x2="1">
+                  <stop offset="0" stop-color="{accent}"/>
+                  <stop offset="1" stop-color="#58a6ff"/>
+                </linearGradient>
+                <filter id="glow"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+              <rect width="1200" height="760" fill="url(#bg)"/>
+              <g opacity=".34" stroke="#58a6ff" stroke-width="1">
+                <path d="M0 520h1200M0 580h1200M0 640h1200M120 0v760M240 0v760M360 0v760M480 0v760M600 0v760M720 0v760M840 0v760M960 0v760M1080 0v760"/>
+              </g>
+              <circle cx="920" cy="118" r="210" fill="{accent}" opacity=".16"/>
+              <circle cx="280" cy="620" r="260" fill="#58a6ff" opacity=".12"/>
+              <g filter="url(#glow)" transform="translate(245 190)">
+                <rect x="40" y="280" width="560" height="82" rx="28" fill="#111827" stroke="{accent}" stroke-width="8"/>
+                <circle cx="150" cy="258" r="82" fill="#151923" stroke="{accent}" stroke-width="18"/>
+                <rect x="190" y="115" width="310" height="70" rx="34" fill="url(#part)" transform="rotate(-22 190 115)"/>
+                <circle cx="445" cy="116" r="58" fill="#151923" stroke="#ffedd5" stroke-width="12"/>
+                <circle cx="445" cy="116" r="28" fill="{accent}"/>
+                <rect x="432" y="108" width="235" height="22" rx="11" fill="#ffedd5" transform="rotate(-24 432 108)"/>
+                <path d="M650 8l82 82M730 88l-86 62" stroke="#ffedd5" stroke-width="15" stroke-linecap="round"/>
+                <circle cx="150" cy="258" r="42" fill="{accent}"/>
+              </g>
+              <text x="64" y="96" fill="#e6edf3" font-family="Inter, Arial, sans-serif" font-size="54" font-weight="800">{title}</text>
+              <text x="66" y="146" fill="{accent}" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800" letter-spacing="4">{sub}</text>
+            </svg>
+            """
+            encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+            return f"data:image/svg+xml;base64,{encoded}"
+
+        builtin_models = [
+            {
+                "id": "builtin-sam-robot-arm",
+                "slug": "sam-robot-arm-assembly",
+                "name": "Sam's Robot Arm Assembly",
+                "tagline": "Public robot arm project with editable mechanical pieces and robotics-ready structure.",
+                "description": "A free Render3D robotics project listing for exploring arm joints, end-effectors, mounting plates, and component organization.",
+                "body": "## Includes\n- Robot arm assembly concept\n- Component-friendly structure\n- Great starter for URDF, motion, and gripper experiments\n\nUse this as the public example robot arm project in the model marketplace.",
+                "category": "Robotics",
+                "license": "cc-by",
+                "thumb": _model_thumb("Robot Arm Assembly", "#f97316", "PUBLIC FREE"),
+                "files": ["robot_arm.glb", "robot_arm.step", "robot_arm.urdf"],
+                "featured": 1,
+            },
+            {
+                "id": "builtin-modular-room-kit",
+                "slug": "modular-room-kit-free",
+                "name": "Modular Room Kit",
+                "tagline": "Snap-grid walls, window panels, door insert, and floor modules for Architect mode.",
+                "description": "A free modular architecture starter kit with printable room parts and clear component naming.",
+                "body": "## Includes\n- Wall panels and floor slab\n- Window and door inserts\n- Snap-style connector ideas\n\nDesigned for quick remixing in Architect mode.",
+                "category": "Architecture",
+                "license": "cc-by",
+                "thumb": _model_thumb("Modular Room Kit", "#38bdf8", "FREE"),
+                "files": ["modular_room.glb", "modular_room.step"],
+                "featured": 1,
+            },
+            {
+                "id": "builtin-gripper-toolheads",
+                "slug": "robot-gripper-toolheads",
+                "name": "Robot Gripper Toolheads",
+                "tagline": "A free set of swappable gripper and cooking-tool concepts for robot arm testing.",
+                "description": "End-effector examples for experimenting with robot arms, adapters, and tool changing.",
+                "body": "## Includes\n- Parallel jaw gripper concept\n- Spatula/cooking-tool replacement ideas\n- Mounting adapter geometry notes",
+                "category": "Robotics",
+                "license": "cc0",
+                "thumb": _model_thumb("Gripper Toolheads", "#22c55e", "FREE"),
+                "files": ["gripper_toolheads.glb", "gripper_toolheads.step"],
+                "featured": 0,
+            },
+            {
+                "id": "builtin-fixture-clamp-set",
+                "slug": "fixture-clamp-set-free",
+                "name": "Fixture Clamp Set",
+                "tagline": "Printable clamps, brackets, and jig blocks for holding parts during builds.",
+                "description": "A practical free manufacturing starter set for fixtures, small assembly jigs, and bench testing.",
+                "body": "## Includes\n- Clamp bodies\n- Bracket blocks\n- Simple fixture plates\n\nUseful for robotics and small CAD assembly workflows.",
+                "category": "Manufacturing",
+                "license": "cc-by-sa",
+                "thumb": _model_thumb("Fixture Clamp Set", "#a855f7", "FREE"),
+                "files": ["fixture_clamps.step", "fixture_clamps.3mf"],
+                "featured": 0,
+            },
+            {
+                "id": "builtin-drone-frame-mini",
+                "slug": "mini-drone-frame-free",
+                "name": "Mini Drone Frame",
+                "tagline": "Lightweight free frame concept with motor pads and electronics bay.",
+                "description": "A public mini drone frame concept for testing CAD workflows, exports, and marketplace downloads.",
+                "body": "## Includes\n- Frame plate concept\n- Motor mount pads\n- Electronics bay placeholder\n\nFree public model for early Render3D marketplace browsing.",
+                "category": "Aerospace",
+                "license": "cc-by-nc",
+                "thumb": _model_thumb("Mini Drone Frame", "#f59e0b", "FREE"),
+                "files": ["mini_drone_frame.glb", "mini_drone_frame.step"],
+                "featured": 0,
+            },
+        ]
+        for item in builtin_models:
+            files_json = json.dumps(
+                [
+                    {"name": name, "size": 0, "media_type": "application/octet-stream", "builtin": True}
+                    for name in item["files"]
+                ],
+                sort_keys=True,
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO model_listings
+                  (id, slug, name, tagline, description, body_md, category, thumbnail_json,
+                   gallery_json, files_json, members_json, license, access_mode, download_enabled,
+                   price_cents, currency, status, featured, boost_status, created_by, created_at,
+                   updated_at, published_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    item["id"],
+                    item["slug"],
+                    item["name"],
+                    item["tagline"],
+                    item["description"],
+                    item["body"],
+                    item["category"],
+                    json.dumps({"data_url": item["thumb"], "builtin": True}, sort_keys=True),
+                    "[]",
+                    files_json,
+                    json.dumps([{"id": creator_id, "role": "owner", "display_name": "Sam W"}], sort_keys=True),
+                    item["license"],
+                    "free",
+                    1,
+                    0,
+                    "USD",
+                    "approved",
+                    item["featured"],
+                    "none",
+                    creator_id,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE model_listings
+                   SET status='approved', access_mode='free', price_cents=0, download_enabled=1,
+                       featured=?, thumbnail_json=?, files_json=?, updated_at=?
+                 WHERE id=?
+                """,
+                (
+                    item["featured"],
+                    json.dumps({"data_url": item["thumb"], "builtin": True}, sort_keys=True),
+                    files_json,
+                    now,
+                    item["id"],
+                ),
+            )
 
         # Team-shared AI keys — owner adds encrypted key, members see name/model only
         conn.executescript(

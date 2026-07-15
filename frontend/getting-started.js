@@ -3,7 +3,7 @@
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-robot-arm";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-robot-arm";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
-import { createRenderAgent } from "./render-agent.js?v=20260715-gs-agent-lower";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-agent-br";
 import { startShowMe } from "./show-me-tour.js?v=20260715-wiring-stepper-remix";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 

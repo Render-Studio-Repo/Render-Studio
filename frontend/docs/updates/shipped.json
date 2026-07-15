@@ -1,6 +1,15 @@
 {
   "items": [
     {
+      "id": "visual-skills-library",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Visual Skills Library",
+      "summary": "Skills Library now has a visual browser with grid, list, and compact views, sortable cards, searchable previews, expanded skill details, and store links.",
+      "visual": "/docs/media/render-agent.gif?v=20260715-real",
+      "href": "/skills.html"
+    },
+    {
       "id": "render-agent-do-it-for-me",
       "date": "2026-07-15",
       "kind": "feature",

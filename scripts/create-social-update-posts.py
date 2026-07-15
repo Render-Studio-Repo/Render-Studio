@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""Build Discord + LinkedIn update posts (within platform limits) and optionally post to Discord.
+
+Discord content limit: 2000
+LinkedIn practical post limit: ~3000 (we target <= 2800)
+
+Writes drafts to frontend/docs/updates/social/
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from backend.services import discord_updates_service as discord  # noqa: E402
+
+SOCIAL_DIR = ROOT / "frontend" / "docs" / "updates" / "social"
+GIF_DIR = ROOT / "frontend" / "docs" / "media" / "social"
+PUBLIC = "https://render3d.app"
+
+# Keep Discord messages short; LinkedIn can be a bit richer.
+UPDATES = [
+    {
+        "id": "render-agent-do-it-for-me",
+        "title": "Render Agent: Do it for me",
+        "discord": (
+            "**New in Render3D — Render Agent: Do it for me**\n"
+            "Tell the agent what you want. It gathers the task, project, and object, "
+            "then walks each setup step with sticky notes before it runs.\n\n"
+            f"👉 [Click here to try it]({PUBLIC}/getting-started.html#render-agent)\n"
+            f"Updates: {PUBLIC}/updates.html"
+        ),
+        "linkedin": (
+            "New in Render3D for CAD developers and makers:\n\n"
+            "Render Agent → Do it for me\n"
+            "Describe the outcome. The agent collects task + project + object context, "
+            "explains each setup step with sticky notes, then sends the request for you.\n\n"
+            "Built for faster onboarding inside a real AI CAD studio — not a slide deck.\n\n"
+            f"Click here to try it: {PUBLIC}/getting-started.html#render-agent\n"
+            f"Changelog: {PUBLIC}/updates.html\n\n"
+            "#CAD #AI #3DPrinting #Robotics #Render3D #Developers"
+        ),
+        "gif": "render-agent.social.gif",
+        "href": f"{PUBLIC}/getting-started.html#render-agent",
+    },
+    {
+        "id": "mode-2-selected-face-edit",
+        "title": "Mode 2.0 selected-face edits",
+        "discord": (
+            "**New in Render3D — Mode 2.0 face-accurate edits**\n"
+            "Pick a face or part, then ask AI to lengthen/extend. Edits stay locked to the "
+            "selected object instead of regenerating from an old baseline.\n\n"
+            f"👉 [Click here to try it]({PUBLIC}/getting-started.html#picks)\n"
+            f"Updates: {PUBLIC}/updates.html"
+        ),
+        "linkedin": (
+            "Shipping a precision upgrade in Render3D Mode 2.0:\n\n"
+            "Selected-face length edits\n"
+            "Face/component refs now keep generative edit mode on the live viewport object, "
+            "so “make this 20mm longer” revises the part you picked — not a stale baseline.\n\n"
+            f"Click here to try it: {PUBLIC}/getting-started.html#picks\n"
+            f"More updates: {PUBLIC}/updates.html\n\n"
+            "#GenerativeDesign #CAD #AI #Manufacturing #Render3D"
+        ),
+        "gif": "picks.social.gif",
+        "href": f"{PUBLIC}/getting-started.html#picks",
+    },
+    {
+        "id": "mobile-app-chrome",
+        "title": "App-like mobile studio",
+        "discord": (
+            "**New in Render3D — App-like mobile studio**\n"
+            "Hamburger grid menu, profile top-right, tools FAB, and a locked viewport "
+            "(no accidental zoom while tapping menus). Pick a model in Explorer and it opens "
+            "instantly — no extra × tap.\n\n"
+            f"👉 [Click here to try it]({PUBLIC}/)\n"
+            f"Updates: {PUBLIC}/updates.html"
+        ),
+        "linkedin": (
+            "Render3D mobile just got a true app shell:\n\n"
+            "• Central ☰ menu grid for studio actions\n"
+            "• Profile control top-right (same as desktop)\n"
+            "• Bottom tools FAB for Grid / Transparent / Orbit / AI\n"
+            "• Viewport zoom locked so menus feel native\n"
+            "• Explorer model select auto-opens the part\n\n"
+            f"Click here to try it: {PUBLIC}/\n"
+            f"Changelog: {PUBLIC}/updates.html\n\n"
+            "#MobileCAD #AI #3D #ProductDesign #Render3D"
+        ),
+        "gif": "select-object.social.gif",
+        "href": f"{PUBLIC}/",
+    },
+    {
+        "id": "gen-loader-ready-banner",
+        "title": "Metallic gen loader + ready banner",
+        "discord": (
+            "**New in Render3D — Generation HUD**\n"
+            "Bottom-right metallic loader with a mini printer + robot: the part prints with "
+            "the progress bar, then the robot picks & places at 100%. When the model is ready, "
+            "a status banner fades in above it.\n\n"
+            f"👉 [Click here to try it]({PUBLIC}/)\n"
+            f"Updates: {PUBLIC}/updates.html"
+        ),
+        "linkedin": (
+            "A small UX detail that changes how AI CAD feels in Render3D:\n\n"
+            "Generation HUD (bottom-right)\n"
+            "• Metallic loader card\n"
+            "• Printer builds the part with the progress bar\n"
+            "• Robot picks and places at 100%\n"
+            "• “Model ready” banner with prompt/project/file/trace context, then auto-fade\n\n"
+            "Also fixed the Generate double-click race so the loader appears on the first click.\n\n"
+            f"Click here to try it: {PUBLIC}/\n"
+            f"Updates: {PUBLIC}/updates.html\n\n"
+            "#UX #AI #CAD #Render3D #DeveloperExperience"
+        ),
+        "gif": "ai-generate.social.gif",
+        "href": f"{PUBLIC}/",
+    },
+    {
+        "id": "realtime-editor-popup",
+        "title": "Realtime editor viewport popup",
+        "discord": (
+            "**New in Render3D — Realtime editor popup**\n"
+            "Open a large realtime viewport from the workspace strip. After import/open it "
+            "collapses to a compact left chip for the active object.\n\n"
+            f"👉 [Click here to try it]({PUBLIC}/)\n"
+            f"Updates: {PUBLIC}/updates.html"
+        ),
+        "linkedin": (
+            "Render3D realtime collaboration got a cleaner viewport flow:\n\n"
+            "Realtime editor popup\n"
+            "Launch a large shared viewport from the workspace strip, then collapse it to a "
+            "compact chip once the active object is open — better for reviews without losing context.\n\n"
+            f"Click here to try it: {PUBLIC}/\n"
+            f"Updates: {PUBLIC}/updates.html\n\n"
+            "#Collaboration #CAD #Realtime #Render3D"
+        ),
+        "gif": "workspaces.social.gif",
+        "href": f"{PUBLIC}/",
+    },
+]
+
+
+def _validate_limits(posts: list[dict]) -> None:
+    for p in posts:
+        d = p["discord"]
+        l = p["linkedin"]
+        if len(d) > 2000:
+            raise SystemExit(f"Discord over limit for {p['id']}: {len(d)}")
+        if len(l) > 2800:
+            raise SystemExit(f"LinkedIn over target for {p['id']}: {len(l)}")
+
+
+def write_drafts(posts: list[dict]) -> Path:
+    SOCIAL_DIR.mkdir(parents=True, exist_ok=True)
+    discord_md = SOCIAL_DIR / "discord-posts.md"
+    linkedin_md = SOCIAL_DIR / "linkedin-posts.md"
+    json_path = SOCIAL_DIR / "posts.json"
+
+    d_lines = ["# Discord update posts\n", "_Each message ≤ 2000 chars. Attach the matching branded GIF._\n"]
+    l_lines = ["# LinkedIn developer posts\n", "_Each post ≤ 2800 chars. Upload the matching branded GIF as media._\n"]
+    for i, p in enumerate(posts, 1):
+        gif = p.get("gif") or ""
+        d_lines += [
+            f"\n## {i}. {p['title']}\n",
+            f"GIF: `docs/media/social/{gif}`\n\n",
+            "```\n",
+            p["discord"],
+            "\n```\n",
+            f"Chars: {len(p['discord'])}\n",
+        ]
+        l_lines += [
+            f"\n## {i}. {p['title']}\n",
+            f"Media: `docs/media/social/{gif}`\n\n",
+            "```\n",
+            p["linkedin"],
+            "\n```\n",
+            f"Chars: {len(p['linkedin'])}\n",
+        ]
+
+    discord_md.write_text("".join(d_lines), encoding="utf-8")
+    linkedin_md.write_text("".join(l_lines), encoding="utf-8")
+    json_path.write_text(json.dumps(posts, indent=2) + "\n", encoding="utf-8")
+    return SOCIAL_DIR
+
+
+def post_to_discord(posts: list[dict], *, limit: int = 0) -> dict:
+    st = discord.connection_status()
+    if st.get("error") or not st.get("channel_ok"):
+        return {"ok": False, "status": st, "posted": []}
+
+    # Extend service inline via multipart upload helper in this script.
+    import json as _json
+    import mimetypes
+    import uuid
+    import urllib.request
+
+    token = discord._token()
+    channel = discord._channel_id()
+    posted = []
+    selected = posts[: limit or None]
+    for p in selected:
+        gif_path = GIF_DIR / p["gif"]
+        payload = {
+            "content": p["discord"][:2000],
+            "allowed_mentions": {"parse": []},
+        }
+        if gif_path.is_file():
+            boundary = f"----Render3D{uuid.uuid4().hex}"
+            body = bytearray()
+            body.extend(f"--{boundary}\r\n".encode())
+            body.extend(b'Content-Disposition: form-data; name="payload_json"\r\n')
+            body.extend(b"Content-Type: application/json\r\n\r\n")
+            body.extend(_json.dumps(payload).encode())
+            body.extend(b"\r\n")
+            mime = mimetypes.guess_type(str(gif_path))[0] or "image/gif"
+            body.extend(f"--{boundary}\r\n".encode())
+            body.extend(
+                f'Content-Disposition: form-data; name="files[0]"; filename="{gif_path.name}"\r\n'.encode()
+            )
+            body.extend(f"Content-Type: {mime}\r\n\r\n".encode())
+            body.extend(gif_path.read_bytes())
+            body.extend(b"\r\n")
+            body.extend(f"--{boundary}--\r\n".encode())
+            req = urllib.request.Request(
+                f"https://discord.com/api/v10/channels/{channel}/messages",
+                data=bytes(body),
+                method="POST",
+                headers={
+                    "Authorization": f"Bot {token}",
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    "User-Agent": "Render3DUpdatesBot (https://render3d.app, 1.0)",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                msg = _json.loads(resp.read().decode())
+        else:
+            msg = discord.announce_text(p["discord"])
+            msg = {"id": msg.get("message_id")}
+        # Mark id as posted for dedupe (do not send a second embed).
+        try:
+            posted_ids = discord._load_posted()
+            if p.get("id"):
+                posted_ids.add(p["id"])
+                discord._save_posted(posted_ids)
+        except Exception:
+            pass
+        posted.append({"id": p["id"], "message_id": msg.get("id"), "gif": p.get("gif")})
+    return {"ok": True, "posted": posted, "status": st}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--post-discord", action="store_true")
+    ap.add_argument("--limit", type=int, default=0)
+    args = ap.parse_args()
+
+    posts = UPDATES
+    _validate_limits(posts)
+    out = write_drafts(posts)
+    print(f"Wrote drafts to {out.relative_to(ROOT)}")
+    for p in posts:
+        print(f"  - {p['id']}: discord={len(p['discord'])} linkedin={len(p['linkedin'])} gif={p['gif']}")
+
+    if args.post_discord:
+        result = post_to_discord(posts, limit=args.limit)
+        print(json.dumps({k: v for k, v in result.items() if k != "status"}, indent=2))
+        if not result.get("ok"):
+            st = result.get("status") or {}
+            print("Discord not ready:", st.get("error") or st)
+            if st.get("invite_url"):
+                print("Invite:", st["invite_url"])
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

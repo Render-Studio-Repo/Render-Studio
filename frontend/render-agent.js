@@ -11,7 +11,7 @@ import { startShowMe } from "./show-me-tour.js?v=20260715-wiring-stepper-remix";
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
-const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v7";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v8";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -454,13 +454,13 @@ export function createRenderAgent({
     }
     const saved = readStickyLayout();
     const defaultW = Math.min(isDocs ? 420 : 400, Math.max(260, window.innerWidth - 32));
-    // Docs panel: shorter so it sits in the lower half of the viewport.
+    // Docs panel: bottom-right, shorter so docs can fill the column beside it.
     const defaultH = Math.min(
       isDocs ? 460 : 640,
-      Math.max(280, window.innerHeight - (isDocs ? 140 : 112)),
+      Math.max(280, window.innerHeight - (isDocs ? 120 : 112)),
     );
     const defaultTop = isDocs
-      ? Math.max(96, window.innerHeight - defaultH - 28)
+      ? Math.max(72, window.innerHeight - defaultH - 24)
       : 72;
     if (!saved) {
       panel.style.left = "auto";
@@ -468,8 +468,13 @@ export function createRenderAgent({
       panel.style.width = `${defaultW}px`;
       panel.style.height = `${defaultH}px`;
       panel.style.maxHeight = "none";
-      panel.style.bottom = "auto";
-      panel.style.top = `${defaultTop}px`;
+      if (isDocs) {
+        panel.style.top = "auto";
+        panel.style.bottom = "24px";
+      } else {
+        panel.style.bottom = "auto";
+        panel.style.top = `${defaultTop}px`;
+      }
       return;
     }
     if (saved.width) panel.style.width = `${Math.max(isDocs ? 320 : 260, saved.width)}px`;
@@ -477,14 +482,20 @@ export function createRenderAgent({
     if (saved.height) panel.style.height = `${Math.max(isDocs ? 360 : 260, saved.height)}px`;
     else panel.style.height = `${defaultH}px`;
     panel.style.maxHeight = "none";
-    panel.style.bottom = "auto";
     if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
       panel.style.right = "auto";
       panel.style.left = `${Math.max(8, Math.min(window.innerWidth - 80, saved.left))}px`;
+      panel.style.bottom = "auto";
       panel.style.top = `${Math.max(8, Math.min(window.innerHeight - 80, saved.top))}px`;
+    } else if (isDocs) {
+      panel.style.left = "auto";
+      panel.style.right = "16px";
+      panel.style.top = "auto";
+      panel.style.bottom = "24px";
     } else {
       panel.style.left = "auto";
       panel.style.right = "16px";
+      panel.style.bottom = "auto";
       panel.style.top = `${defaultTop}px`;
     }
   }

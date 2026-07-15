@@ -8,7 +8,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-modern-model-store" />
   <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-mkt-payments" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
 </head>
@@ -39,13 +39,36 @@
 
     <main class="info-main">
       <article class="info-content skills-page agent-store-page model-store-page">
-        <header class="info-hero">
-          <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · 3D Models</p>
-          <h2>3D Model Products</h2>
-          <p class="info-lead">
-            Publish CAD products with blog-style posts, thumbnails, licensing, download controls,
-            free / paid / view-only access, team members, and boost applications.
-          </p>
+        <header class="info-hero model-store-hero">
+          <div class="model-store-hero-copy">
+            <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · 3D Models</p>
+            <h2>Find CAD you can actually open, remix, and build</h2>
+            <p class="info-lead">
+              Browse free public robot arms, architecture kits, fixtures, toolheads, and creator products with
+              clear rights, files, thumbnails, licensing, and download controls.
+            </p>
+            <div class="gs-hero-actions">
+              <a class="btn accent" href="#model-store-list">Browse free models</a>
+              <a class="btn secondary" href="#model-listing-form">Publish a model</a>
+            </div>
+          </div>
+          <div class="model-store-hero-panel" aria-hidden="true">
+            <div class="model-store-hero-visual">
+              <span class="model-store-arm-base"></span>
+              <span class="model-store-arm-joint model-store-arm-joint--base"></span>
+              <span class="model-store-arm-link model-store-arm-link--one"></span>
+              <span class="model-store-arm-joint model-store-arm-joint--mid"></span>
+              <span class="model-store-arm-link model-store-arm-link--two"></span>
+              <span class="model-store-arm-joint model-store-arm-joint--end"></span>
+              <span class="model-store-arm-tool"></span>
+              <span class="model-store-build-grid"></span>
+            </div>
+            <div class="model-store-hero-stats">
+              <span><strong id="model-store-free-count">Free</strong><small>public files</small></span>
+              <span><strong>90%</strong><small>seller payout</small></span>
+              <span><strong>GLB STEP 3MF</strong><small>ready formats</small></span>
+            </div>
+          </div>
         </header>
 
         <section class="agent-store-hero marketplace-modern-hero">
@@ -164,7 +187,7 @@
       </article>
     </main>
   </div>
-  <script type="module" src="/model-store.js?v=20260715-mkt-payments"></script>
+  <script type="module" src="/model-store.js?v=20260715-modern-model-store"></script>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>
