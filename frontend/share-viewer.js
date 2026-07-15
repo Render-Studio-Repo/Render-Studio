@@ -933,7 +933,7 @@ async function main() {
     const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
     const elapsed = performance.now() - start.t;
     // Treat a short, steady tap/click as selection; let drags continue to OrbitControls.
-    if (moved > 7 || elapsed > 900) return;
+    if (moved > 10 || elapsed > 1200) return;
     const rect = renderer.domElement.getBoundingClientRect();
     pointerNdc.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
     pointerNdc.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
