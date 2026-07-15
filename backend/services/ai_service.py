@@ -1067,8 +1067,10 @@ class AIService:
             "".join(parts),
             trace_id=trace_id,
             images=images,
-            max_tokens=8192,
+            max_tokens=cad_authoring_max_tokens(self.model),
             json_response=False,
+            # Long assemblies (RC planes, robots) can still clip; keep a usable partial brief.
+            allow_truncated=True,
         )
         brief = raw.strip()
         if not brief.lower().startswith("cad brief"):
@@ -1242,7 +1244,7 @@ class AIService:
             "".join(parts),
             trace_id=trace_id,
             images=images,
-            max_tokens=16384,
+            max_tokens=max(16384, cad_authoring_max_tokens(self.model)),
             json_response=False,
         )
         source = self._python_payload(raw)
