@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from collections import Counter
+from collections import Counter, deque
 import html
 import json
 import logging
@@ -17,7 +17,6 @@ import time
 import urllib.parse
 import uuid
 import zlib
-from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -171,6 +170,17 @@ def _recover_stuck_generations() -> None:
             model = original_data.get("model") or body_data.get("model")
             provider = original_data.get("provider") or body_data.get("provider")
             speed = original_data.get("speed") or body_data.get("speed")
+            body_data = dict(body_data)
+            prompt_id = str(
+                original_data.get("prompt_id")
+                or body_data.get("prompt_id")
+                or ""
+            ).strip()
+            if not prompt_id:
+                import uuid as _uuid
+
+                prompt_id = str(_uuid.uuid4())[:10]
+            body_data["prompt_id"] = prompt_id
 
             try:
                 generation_service.start(
@@ -414,6 +424,11 @@ class PromptRequest(BaseModel):
         default_factory=list,
         max_length=12,
         description="Knowledge base IDs to include when use_knowledge_base is true.",
+    )
+    prompt_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Stable prompt-history id; preserved across server-restart resumes.",
     )
 
 
@@ -11326,6 +11341,7 @@ def _save_prompt_history(
             codex_agent=bool(
                 getattr(body, "codex_agent", False) or getattr(body, "jake_codex_agent", False)
             ),
+            entry_id=str(getattr(body, "prompt_id", None) or "").strip() or None,
             **usage_meta,
             **key_meta,
         )
@@ -12058,10 +12074,22 @@ def prompt_cad(
             raise HTTPException(499, exc.message) from exc
         except generation_service.GenerationInProgress as exc:
             raise HTTPException(409, "Generation already in progress for this project") from exc
+        started_doc = generation_service.load(project_path) or {}
+        started = None
+        for job in started_doc.get("jobs") or []:
+            if str(job.get("trace_id") or job.get("id") or "") == str(trace_id):
+                started = job
+                break
+        if started is None and str(started_doc.get("trace_id") or "") == str(trace_id):
+            started = started_doc
+        prompt_id = (started or {}).get("prompt_id") or ((started or {}).get("request_body") or {}).get("prompt_id")
+        bg_body = design_body.model_dump(mode="json")
+        if prompt_id:
+            bg_body["prompt_id"] = prompt_id
         background_tasks.add_task(
             _background_prompt_kernel,
             project_id,
-            design_body.model_dump(mode="json"),
+            bg_body,
             trace_id,
             dict(user),
         )

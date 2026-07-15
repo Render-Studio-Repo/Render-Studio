@@ -49,7 +49,7 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260715-cad-shading";
+} from "./scene-style.js?v=20260715-preserve-glb-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-collab-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
@@ -1122,6 +1122,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           Object.assign(generationWatchOverlay, {
             promptMode: liveMode,
             pendingStart: false,
+            benignInterruptAt: null,
             progress: {
               ...(generationWatchOverlay.progress || {}),
               ...(gen.progress || {}),
@@ -1164,6 +1165,45 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         syncStopButtonVisibility();
         syncCanvasGenerationUi();
         return;
+      }
+      // After a deploy, the server marks the job canceled then auto-resumes.
+      // Keep the overlay/watch alive briefly so the user does not lose their place.
+      const finishedJobsPreview = Array.isArray(gen.jobs) && gen.jobs.length ? gen.jobs : [gen];
+      const benignInterruptJob = finishedJobsPreview.find(
+        (job) =>
+          (job?.status === "canceled" || job?.status === "failed")
+          && (job?.benign_interrupt || isBenignGenerationInterrupt(job?.error)),
+      );
+      if (benignInterruptJob && generationWatchOverlay) {
+        if (!generationWatchOverlay.benignInterruptAt) {
+          generationWatchOverlay.benignInterruptAt = Date.now();
+        }
+        const interruptWaitMs = Math.max(
+          0,
+          Date.now() - Number(generationWatchOverlay.benignInterruptAt || Date.now()),
+        );
+        if (interruptWaitMs < 90_000) {
+          const statusEl = document.getElementById(
+            generationWatchOverlay.kind === "wiring" ? "wiring-prompt-status" : "prompt-status",
+          );
+          if (statusEl && pid === projectId) {
+            statusEl.className = "status";
+            statusEl.textContent = "Server updating — resuming your generation…";
+          }
+          if (generationWatchOverlay) {
+            generationWatchOverlay.message = "Server updating — resuming your generation…";
+            generationWatchOverlay.progress = {
+              ...(generationWatchOverlay.progress || {}),
+              label: "Resuming after server restart…",
+              thinking: "Picking up your generation where the server left off…",
+            };
+          }
+          syncViewportGenerationOverlay();
+          syncExplorerLoadingUI();
+          syncStopButtonVisibility();
+          syncCanvasGenerationUi();
+          return;
+        }
       }
       stopGenerationWatch();
       userCancelRequested = false;

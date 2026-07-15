@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-solid-body-color";
+import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-preserve-glb-colors";
 
 const PREVIEW_PALETTE = [0x4f9cf0, 0x62c45a, 0xff9f43, 0xffd166, 0xb388ff, 0x2ec4b6];
 

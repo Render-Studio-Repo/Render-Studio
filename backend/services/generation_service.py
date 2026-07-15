@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -464,12 +465,21 @@ def start(
             job["model"] = model
         if provider:
             job["provider"] = provider
+        # Stable prompt history id across server-restart resumes.
+        prompt_id = None
+        if isinstance(request_body, dict):
+            prompt_id = str(request_body.get("prompt_id") or "").strip() or None
+        if not prompt_id:
+            prompt_id = str(uuid.uuid4())[:10]
+        job["prompt_id"] = prompt_id
         if request_body:
-            job["request_body"] = request_body
-            target = str(request_body.get("target_mode") or "").strip().lower()
+            body = dict(request_body)
+            body["prompt_id"] = prompt_id
+            job["request_body"] = body
+            target = str(body.get("target_mode") or "").strip().lower()
             if target in {"new", "edit"}:
                 job["target_mode"] = target
-            if request_body.get("codex_agent") or request_body.get("jake_codex_agent"):
+            if body.get("codex_agent") or body.get("jake_codex_agent"):
                 job["codex_agent"] = True
 
         _CANCELED_TRACES.discard(str(trace_id))

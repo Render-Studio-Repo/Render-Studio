@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-solid-body-color";
+import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-preserve-glb-colors";
 import { authHeaders, getToken } from "./auth.js?v=20260715-share-open-project";
 import { createUrdfRobotRuntime } from "./urdf-robot-runtime.js?v=20260715-share-public-urdf";
 
@@ -42,6 +42,7 @@ function createSectionController({ renderer, scene, getBounds }) {
   let flipped = false;
   const plane = new THREE.Plane();
   const meshSides = new Map();
+  const meshVisibility = new Map();
 
   function planeNormal() {
     const n = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] }[axis] || [0, 1, 0];
@@ -69,6 +70,16 @@ function createSectionController({ renderer, scene, getBounds }) {
   function setMeshSides(on) {
     scene.traverse((obj) => {
       if (!obj.isMesh || !obj.material) return;
+      if (obj.userData?.isSilhouette) {
+        if (on) {
+          if (!meshVisibility.has(obj)) meshVisibility.set(obj, obj.visible);
+          obj.visible = false;
+        } else if (meshVisibility.has(obj)) {
+          obj.visible = meshVisibility.get(obj);
+        }
+        return;
+      }
+      if (obj.userData?.isEdge) return;
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
       if (on) {
         if (!meshSides.has(obj)) meshSides.set(obj, mats.map((m) => m?.side));
@@ -86,7 +97,10 @@ function createSectionController({ renderer, scene, getBounds }) {
         });
       }
     });
-    if (!on) meshSides.clear();
+    if (!on) {
+      meshSides.clear();
+      meshVisibility.clear();
+    }
   }
 
   return {

@@ -6,6 +6,18 @@ import { createRenderAgent } from "./render-agent.js?v=20260715-agent-gifs";
 
 const FEATURES = GETTING_STARTED_GUIDES;
 
+const TOC_LABELS = {
+  "ai-generate": "AI Generate",
+  workspaces: "Workspaces",
+  "share-folders": "Share folders",
+  "reference-markup": "Reference markup",
+  canvas: "Canvas",
+  picks: "Geometry picks",
+  wiring: "Wiring",
+  "cloud-sync": "Fusion / Onshape",
+  "render-agent": "Render Agent",
+};
+
 function esc(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -24,36 +36,31 @@ function demoHtml(feature) {
           <span></span><span></span><span></span>
           <em>${esc(feature.title)}</em>
         </div>
-        <div class="gs-demo-body">
-          <div class="gs-demo-cursor"></div>
-          <div class="gs-demo-panel"></div>
-          <div class="gs-demo-viewport"></div>
-          <div class="gs-demo-caption"></div>
-        </div>
+        <div class="gs-demo-body"></div>
       </div>
     </div>
   `;
 }
 
-function featureCard(feature) {
+function featureCard(feature, index) {
+  const n = String(index + 1).padStart(2, "0");
+  const flip = index % 2 === 1 ? " gs-feature--flip" : "";
   return `
-    <section class="gs-feature info-section" id="${esc(feature.id)}">
-      <div class="gs-feature-grid">
-        <div class="gs-feature-media">
-          ${demoHtml(feature)}
-          <p class="muted small gs-demo-label">Quick demo (loops)</p>
-        </div>
-        <div class="gs-feature-copy">
-          <h3>${esc(feature.title)}</h3>
-          <p class="gs-summary">${esc(feature.summary)}</p>
-          <h4 class="gs-detail-title">Step by step</h4>
-          <ol class="gs-steps">
-            ${(feature.steps || []).map((step) => `<li>${esc(step)}</li>`).join("")}
-          </ol>
-          <button type="button" class="btn accent gs-ask-btn" data-gs-ask="${esc(feature.ask)}">
-            Ask Render Agent about this
-          </button>
-        </div>
+    <section class="gs-feature${flip}" id="${esc(feature.id)}">
+      <div class="gs-feature-media">
+        ${demoHtml(feature)}
+        <p class="gs-demo-label">Live demo</p>
+      </div>
+      <div class="gs-feature-copy">
+        <p class="gs-feature-index">${n}</p>
+        <h3>${esc(feature.title)}</h3>
+        <p class="gs-summary">${esc(feature.summary)}</p>
+        <ol class="gs-steps">
+          ${(feature.steps || []).map((step) => `<li>${esc(step)}</li>`).join("")}
+        </ol>
+        <button type="button" class="btn accent gs-ask-btn" data-gs-ask="${esc(feature.ask)}">
+          Ask Render Agent about this
+        </button>
       </div>
     </section>
   `;
@@ -89,10 +96,21 @@ async function api(path, options = {}, timeoutMs = 60000) {
   }
 }
 
+function mountToc() {
+  const host = document.getElementById("gs-toc");
+  if (!host) return;
+  host.innerHTML = `
+    <p class="gs-toc-title">On this page</p>
+    ${FEATURES.map((f) => `
+      <a href="#${esc(f.id)}" data-gs-toc="${esc(f.id)}">${esc(TOC_LABELS[f.id] || f.title)}</a>
+    `).join("")}
+  `;
+}
+
 function mountFeatures() {
   const host = document.getElementById("gs-features");
   if (!host) return;
-  host.innerHTML = FEATURES.map(featureCard).join("");
+  host.innerHTML = FEATURES.map((f, i) => featureCard(f, i)).join("");
   host.querySelectorAll(".gs-demo-gif").forEach((img) => {
     img.addEventListener("error", () => {
       img.remove();
@@ -100,7 +118,61 @@ function mountFeatures() {
     img.addEventListener("load", () => {
       img.closest(".gs-demo")?.classList.add("has-gif");
     });
+    if (img.complete && img.naturalWidth) {
+      img.closest(".gs-demo")?.classList.add("has-gif");
+    }
   });
+}
+
+function mountReveal() {
+  const nodes = document.querySelectorAll(".gs-feature, .gs-closing, .gs-hero");
+  if (!("IntersectionObserver" in window)) {
+    nodes.forEach((el) => el.classList.add("is-visible"));
+    return;
+  }
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          io.unobserve(entry.target);
+        }
+      }
+    },
+    { threshold: 0.12, rootMargin: "0px 0px -8% 0px" }
+  );
+  nodes.forEach((el) => io.observe(el));
+}
+
+function mountTocSpy() {
+  const links = [...document.querySelectorAll("[data-gs-toc]")];
+  if (!links.length || !("IntersectionObserver" in window)) return;
+  const byId = new Map(links.map((a) => [a.getAttribute("data-gs-toc"), a]));
+  const io = new IntersectionObserver(
+    (entries) => {
+      const visible = entries
+        .filter((e) => e.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      const id = visible.target.id;
+      links.forEach((a) => a.classList.toggle("is-active", a.getAttribute("data-gs-toc") === id));
+    },
+    { rootMargin: "-20% 0px -55% 0px", threshold: [0.2, 0.5, 0.8] }
+  );
+  FEATURES.forEach((f) => {
+    const el = document.getElementById(f.id);
+    if (el) io.observe(el);
+  });
+  byId.get(FEATURES[0]?.id)?.classList.add("is-active");
+}
+
+function askTour(agent, authUi, question) {
+  if (!getToken()) {
+    sessionStorage.setItem("render3d:gsPendingAsk", question);
+    authUi?.openModal?.();
+    return;
+  }
+  void agent?.openWithQuestion?.(question, { autoSend: true });
 }
 
 function mountAgent() {
@@ -143,31 +215,28 @@ function mountAgent() {
     }
   });
 
+  const tourQ = "Give me a tour of Render3D for a new user";
+
   document.getElementById("gs-features")?.addEventListener("click", (e) => {
     const btn = e.target.closest?.("[data-gs-ask]");
     if (!btn) return;
-    const question = btn.getAttribute("data-gs-ask") || "";
-    if (!getToken()) {
-      sessionStorage.setItem("render3d:gsPendingAsk", question);
-      authUi?.openModal?.();
-      return;
-    }
-    void agent?.openWithQuestion?.(question, { autoSend: true });
+    askTour(agent, authUi, btn.getAttribute("data-gs-ask") || "");
   });
 
   document.getElementById("gs-ask-tour")?.addEventListener("click", (e) => {
     e.preventDefault();
-    const question = "Give me a tour of Render3D for a new user";
-    if (!getToken()) {
-      sessionStorage.setItem("render3d:gsPendingAsk", question);
-      authUi?.openModal?.();
-      return;
-    }
-    void agent?.openWithQuestion?.(question, { autoSend: true });
+    askTour(agent, authUi, tourQ);
+  });
+
+  document.getElementById("gs-ask-again")?.addEventListener("click", () => {
+    askTour(agent, authUi, tourQ);
   });
 
   return { agent, authUi };
 }
 
+mountToc();
 mountFeatures();
+mountReveal();
+mountTocSpy();
 mountAgent();

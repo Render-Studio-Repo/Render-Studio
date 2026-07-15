@@ -8,9 +8,12 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-agent-gifs" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-gs-layout" />
 </head>
-<body class="info-page">
+<body class="info-page gs-body">
   <div id="app" class="app-info">
     <header class="toolbar">
       <div class="brand">
@@ -39,46 +42,41 @@
       </button>
     </header>
 
-    <main class="info-main">
-      <article class="info-content gs-page">
-        <header class="info-hero">
-          <p class="info-eyebrow">Docs · Getting Started</p>
-          <h2>Learn Render3D in minutes</h2>
-          <p class="info-lead">
-            Browse each feature below: watch a quick looping demo, read the steps, then
-            <strong>Ask Render Agent</strong> — opens a movable help panel on the right (drag the header to reposition).
-          </p>
-          <p class="gs-doc-links muted small">
-            <a href="/docs.html">Full documentation</a>
-            ·
-            <a href="/">Open Studio</a>
-          </p>
+    <main class="info-main gs-main">
+      <article class="gs-page">
+        <header class="gs-hero">
+          <div class="gs-hero-copy">
+            <p class="gs-kicker">Render3D Docs</p>
+            <h2 class="gs-hero-title">Getting Started</h2>
+            <p class="gs-hero-lead">
+              Watch a short demo, follow the steps, then ask Render Agent — a movable help panel opens on the right.
+            </p>
+            <div class="gs-hero-actions">
+              <a class="btn accent" id="gs-ask-tour" href="#">Ask Render Agent for a tour</a>
+              <a class="btn secondary" href="/docs.html">Full documentation</a>
+            </div>
+          </div>
+          <div class="gs-hero-visual" aria-hidden="true">
+            <img src="/docs/media/ai-generate.gif?v=20260715-real" alt="" class="gs-hero-gif" />
+            <div class="gs-hero-visual-fade"></div>
+          </div>
         </header>
 
-        <nav class="gs-toc" aria-label="Feature index">
-          <a href="#ai-generate">AI Generate</a>
-          <a href="#workspaces">Workspaces</a>
-          <a href="#share-folders">Share folders</a>
-          <a href="#reference-markup">Reference markup</a>
-          <a href="#canvas">Canvas</a>
-          <a href="#picks">Geometry picks</a>
-          <a href="#wiring">Wiring</a>
-          <a href="#cloud-sync">Fusion / Onshape</a>
-          <a href="#render-agent">Render Agent</a>
-        </nav>
+        <div class="gs-shell">
+          <nav class="gs-toc" aria-label="Feature index" id="gs-toc"></nav>
+          <div class="gs-stream">
+            <div id="gs-features" class="gs-features"></div>
 
-        <div id="gs-features" class="gs-features"></div>
-
-        <section class="info-section">
-          <h3>Need something else?</h3>
-          <p>
-            Open the movable Render Agent panel anytime, or jump into Studio:
-          </p>
-          <p>
-            <a class="btn accent" id="gs-ask-tour" href="#">Ask Render Agent for a tour</a>
-            <a class="btn secondary" href="/docs.html">Browse full docs</a>
-          </p>
-        </section>
+            <section class="gs-closing">
+              <h3>Still stuck?</h3>
+              <p>Open the agent panel anytime, or keep reading the full docs.</p>
+              <div class="gs-hero-actions">
+                <button type="button" class="btn accent" id="gs-ask-again">Ask Render Agent</button>
+                <a class="btn secondary" href="/">Open Studio</a>
+              </div>
+            </section>
+          </div>
+        </div>
       </article>
     </main>
   </div>
@@ -95,7 +93,7 @@
       </button>
       <div class="render-agent-title">
         <strong>Render Agent</strong>
-        <span id="render-agent-active-thread-label">Sticky help note — drag or resize freely</span>
+        <span id="render-agent-active-thread-label">Drag the header to move · resize from the corner</span>
       </div>
       <img class="render-agent-head-logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
       <button type="button" id="render-agent-close" class="render-agent-close" aria-label="Close Render Agent">&times;</button>
@@ -159,6 +157,6 @@
   </div>
 
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/getting-started.js?v=20260715-agent-gifs"></script>
+  <script type="module" src="/getting-started.js?v=20260715-gs-layout"></script>
 </body>
 </html>

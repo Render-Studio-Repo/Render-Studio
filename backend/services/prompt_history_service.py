@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -123,11 +124,25 @@ def append_entry(
     prompt_improved: bool | None = None,
     target_mode: str | None = None,
     codex_agent: bool | None = None,
+    entry_id: str | None = None,
 ) -> dict[str, Any]:
     data = load(project_path)
     entries: list[dict[str, Any]] = data.get("entries", [])
+    upsert_at = _find_upsert_index(
+        entries,
+        entry_id=entry_id,
+        trace_id=trace_id,
+        prompt=prompt,
+        original_prompt=original_prompt,
+    )
+    keep_id = entry_id or (entries[upsert_at].get("id") if upsert_at is not None else None) or str(uuid.uuid4())[:10]
+    keep_created = (
+        entries[upsert_at].get("created_at")
+        if upsert_at is not None
+        else datetime.now(timezone.utc).isoformat()
+    )
     entry = {
-        "id": str(uuid.uuid4())[:10],
+        "id": str(keep_id),
         "prompt": prompt,
         "success": success,
         "message": message,
@@ -150,7 +165,7 @@ def append_entry(
         "user_name": user_name,
         "user_avatar_url": user_avatar_url,
         "kind": kind,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": keep_created,
     }
     safe_refs = _safe_history_references(references)
     if safe_refs:
@@ -193,7 +208,13 @@ def append_entry(
     entry["target_mode"] = normalized_target
     if codex_agent:
         entry["codex_agent"] = True
-    entries.append(entry)
+    if upsert_at is not None:
+        # Resume / retry completed — replace the interrupt stub in place.
+        entry.pop("recovered", None)
+        entry.pop("interrupted", None)
+        entries[upsert_at] = entry
+    else:
+        entries.append(entry)
     data["entries"] = entries[-MAX_ENTRIES:]
     save(project_path, data)
     return entry
@@ -237,10 +258,65 @@ def _prompt_key(prompt: str) -> str:
     return (prompt or "")[:320]
 
 
+def _is_server_update_error(message: str | None) -> bool:
+    return bool(
+        re.search(
+            r"stopped during a server update|interrupted by server restart|Generation interrupted by server",
+            str(message or ""),
+            re.IGNORECASE,
+        )
+    )
+
+
+def _entry_prompt_keys(entry: dict[str, Any]) -> set[str]:
+    keys = {
+        _prompt_key(entry.get("prompt") or ""),
+        _prompt_key(entry.get("original_prompt") or ""),
+    }
+    return {k for k in keys if k}
+
+
+def _is_interrupt_stub(entry: dict[str, Any]) -> bool:
+    if entry.get("success") is not False:
+        return False
+    if entry.get("recovered") or entry.get("interrupted"):
+        return True
+    return _is_server_update_error(entry.get("error"))
+
+
+def _find_upsert_index(
+    entries: list[dict[str, Any]],
+    *,
+    entry_id: str | None = None,
+    trace_id: str | None = None,
+    prompt: str | None = None,
+    original_prompt: str | None = None,
+) -> int | None:
+    """Prefer updating an existing row (same id/trace, or interrupt stub) in place."""
+    if entry_id:
+        for i, entry in enumerate(entries):
+            if entry.get("id") == entry_id:
+                return i
+    if trace_id:
+        for i, entry in enumerate(entries):
+            if str(entry.get("trace_id") or "") == str(trace_id):
+                return i
+    keys = {_prompt_key(prompt or ""), _prompt_key(original_prompt or "")} - {""}
+    if not keys:
+        return None
+    for i in range(len(entries) - 1, -1, -1):
+        entry = entries[i]
+        if not _is_interrupt_stub(entry):
+            continue
+        if keys & _entry_prompt_keys(entry):
+            return i
+    return None
+
+
 def _has_billed_sibling(entries: list[dict[str, Any]], prompt: str) -> bool:
     key = _prompt_key(prompt)
     for entry in entries:
-        if _prompt_key(entry.get("prompt") or "") != key:
+        if key not in _entry_prompt_keys(entry):
             continue
         if entry_effective_cost(entry) is not None or entry.get("usage"):
             return True
@@ -407,29 +483,38 @@ def _backfill_from_generation(project_path: Path) -> None:
     trace_id = gen.get("trace_id")
     if trace_id and any(str(e.get("trace_id")) == str(trace_id) for e in entries):
         return
-    if _has_billed_sibling(entries, gen.get("prompt") or ""):
-        return
-
-    filename = gen.get("filename")
-    if filename and not (project_path / str(filename)).is_file():
-        filename = None
-    recovered_filename = filename or _best_generated_filename(project_path, gen.get("started_at"))
-    status = gen.get("status")
-    if status == "running":
-        return
-    success = status == "complete" or bool(recovered_filename and status is None)
-
     request_body = gen.get("request_body") if isinstance(gen.get("request_body"), dict) else {}
     recovered_prompt = str(
         request_body.get("prompt")
         or gen.get("prompt")
         or ""
     )
+    original = str(request_body.get("original_prompt") or "").strip()
+    if _has_billed_sibling(entries, recovered_prompt) or (
+        original and _has_billed_sibling(entries, original)
+    ):
+        return
+
+    status = gen.get("status")
+    if status == "running":
+        return
+    # Deploy interrupts are resumed in-place — do not leave a permanent failed history row.
+    if gen.get("benign_interrupt") or (
+        status in {"canceled", "failed"} and _is_server_update_error(gen.get("error"))
+    ):
+        return
+
+    filename = gen.get("filename")
+    if filename and not (project_path / str(filename)).is_file():
+        filename = None
+    recovered_filename = filename or _best_generated_filename(project_path, gen.get("started_at"))
+    success = status == "complete" or bool(recovered_filename and status is None)
+
     recovered_speed = str(gen.get("speed") or request_body.get("speed") or "fast").lower()
     if recovered_speed not in {"fast", "quality"}:
         recovered_speed = "fast"
     row: dict[str, Any] = {
-        "id": str(gen.get("prompt_id") or str(uuid.uuid4())[:10]),
+        "id": str(gen.get("prompt_id") or request_body.get("prompt_id") or str(uuid.uuid4())[:10]),
         "prompt": recovered_prompt,
         "success": bool(success),
         "message": gen.get("message"),
@@ -485,6 +570,49 @@ def _backfill_from_generation(project_path: Path) -> None:
     save(project_path, data)
 
 
+def _reconcile_interrupt_stubs(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+    """Fold later successes into interrupt stubs so the original @prompt id stays valid."""
+    if not entries:
+        return entries, False
+
+    interrupt_idxs = [i for i, e in enumerate(entries) if _is_interrupt_stub(e)]
+    if not interrupt_idxs:
+        return entries, False
+
+    drop: set[int] = set()
+    changed = False
+    for i in interrupt_idxs:
+        stub = entries[i]
+        stub_keys = _entry_prompt_keys(stub)
+        if not stub_keys:
+            continue
+        match_j: int | None = None
+        for j, entry in enumerate(entries):
+            if j == i or j in drop:
+                continue
+            if entry.get("success") is False:
+                continue
+            if not (stub_keys & _entry_prompt_keys(entry)):
+                continue
+            match_j = j
+            break
+        if match_j is None:
+            continue
+        winner = dict(entries[match_j])
+        winner["id"] = stub.get("id") or winner.get("id")
+        winner["created_at"] = stub.get("created_at") or winner.get("created_at")
+        winner.pop("recovered", None)
+        winner.pop("interrupted", None)
+        entries[i] = winner
+        drop.add(match_j)
+        changed = True
+
+    if not drop:
+        return entries, changed
+    kept = [e for i, e in enumerate(entries) if i not in drop]
+    return kept, True
+
+
 def _enrich_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
     """Fill missing cost_usd from token usage and drop duplicate recovery rows."""
     changed = False
@@ -511,6 +639,9 @@ def _enrich_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
                 row["target_mode"] = inferred_target
                 changed = True
         enriched.append(row)
+    enriched, reconciled = _reconcile_interrupt_stubs(enriched)
+    if reconciled:
+        changed = True
     deduped = dedupe_prompt_entries(enriched)
     if len(deduped) != len(enriched):
         changed = True

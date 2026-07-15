@@ -1,7 +1,7 @@
 /** Multi-component project assembly — Fusion-style browser + viewport. */
 
 import * as THREE from "three";
-import { disposeStyledModel } from "./scene-style.js?v=20260715-solid-body-color";
+import { disposeStyledModel } from "./scene-style.js?v=20260715-preserve-glb-colors";
 
 export function createProjectAssembly(scene) {
   const root = new THREE.Group();
