@@ -65,7 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
-import { createRenderAgent } from "./render-agent.js?v=20260715-agent-gifs";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-hero-agent-size";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -14852,59 +14852,38 @@ document.getElementById("btn-rigging-author-jake")?.addEventListener("click", ()
   void authorJakeRobotDescription();
 });
 
-async function authorJakeRobotDescription(opts = {}) {
+async function authorJakeRobotDescription() {
   if (!projectId) {
     setEditStatus("error", "Select a project first.");
-    return null;
+    return;
   }
-  const kind = ["urdf", "srdf", "both"].includes(opts.kind) ? opts.kind : "both";
-  const sourceSelect = document.getElementById("rigging-artifact-source");
-  if (opts.source && sourceSelect) {
-    if (![...sourceSelect.options].some((opt) => opt.value === opts.source)) {
-      sourceSelect.insertAdjacentHTML(
-        "beforeend",
-        `<option value="${escapeHtml(opts.source)}">${escapeHtml(opts.source)}</option>`
-      );
-    }
-    sourceSelect.value = opts.source;
-  }
-  const source = opts.source || sourceSelect?.value;
+  const source = document.getElementById("rigging-artifact-source")?.value;
   const status = document.getElementById("rigging-prompt-status");
   if (!source) {
     setEditStatus("error", "No Python source selected.");
-    return null;
+    return;
   }
   if (status) {
     status.className = "status loading";
-    status.textContent = `Authoring ${kind === "both" ? "gen_urdf()/gen_srdf()" : `gen_${kind}()`} (Jake)…`;
+    status.textContent = "Authoring gen_urdf()/gen_srdf() (Jake)…";
   }
-  setEditStatus("loading", `Authoring ${kind.toUpperCase()} with AI…`);
+  setEditStatus("loading", "Authoring URDF/SRDF with AI…");
   try {
     const data = await api(`/api/projects/${projectId}/rigging/author-robot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, kind }),
+      body: JSON.stringify({ source, kind: "both" }),
     }, 300000);
     robotArtifactData = data;
     await refreshFiles();
     renderRobotArtifacts();
     setRiggingWorkspaceMode("urdf");
-    let msg = data.message || `${kind.toUpperCase()} authored.`;
-    if (opts.announcePrefHint) {
-      msg += " Change auto-ask anytime in Preferences → Simulated motion.";
-    }
+    const msg = data.message || "URDF/SRDF authored.";
     setEditStatus("ok", msg);
     if (status) {
       status.className = "status ok";
       status.textContent = msg;
     }
-    if (opts.openMotion) {
-      if (workspaceModes.getDesignTab() !== "RIGGING") {
-        workspaceModes.setDesignTab("RIGGING");
-      }
-      openUrdfMotionModal();
-    }
-    return data;
   } catch (err) {
     const msg = err?.message || "Could not author URDF/SRDF.";
     setEditStatus("error", msg);
@@ -14912,7 +14891,6 @@ async function authorJakeRobotDescription(opts = {}) {
       status.className = "status error";
       status.textContent = msg;
     }
-    return null;
   }
 }
 
@@ -19901,9 +19879,27 @@ window.addEventListener("keydown", (e) => {
   const askAgentParam = new URLSearchParams(window.location.search).get("askAgent")
     || new URLSearchParams(window.location.search).get("agentQ");
   const openShareParam = new URLSearchParams(window.location.search).get("open_share");
+  const designTabParam = new URLSearchParams(window.location.search).get("designTab");
+  const showMeParam = new URLSearchParams(window.location.search).get("showMe");
   if (askAgentParam) {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl || "/");
+  }
+  if (designTabParam) {
+    const tab = String(designTabParam).toUpperCase();
+    if (["SOLID", "SKETCH", "WIRING", "CANVAS", "RIGGING", "ARCHITECT", "CATALOG"].includes(tab)) {
+      try {
+        workspaceModes.setDesignTab(tab);
+        ribbon?.setDesignTab?.(tab);
+      } catch {
+        /* ignore until modes ready */
+      }
+    }
+  }
+  if (showMeParam) {
+    void import("./show-me-tour.js?v=20260715-show-me-fix").then((mod) => {
+      mod.maybeAutoStartShowMeFromQuery?.();
+    });
   }
 
   async function openSharedPreviewIntoProject(token) {
@@ -21101,22 +21097,8 @@ window.addEventListener("keydown", (e) => {
                 ${themeOptions}
               </select>
             </label>
-            <label class="profile-preference-field">
-              <span>
-                <b>Simulated motion</b>
-                <small>After generating an articulated model (robot / joints), ask to author URDF / SRDF for Rigging → Motion.</small>
-              </span>
-              <select id="pref-sim-motion-after-gen">
-                <option value="ask">Ask each time</option>
-                <option value="both">Always URDF + SRDF</option>
-                <option value="urdf">Always URDF only</option>
-                <option value="srdf">Always SRDF only</option>
-                <option value="never">Never ask</option>
-              </select>
-            </label>
             <p class="muted small profile-preferences-note">
               Viewport lighting can be adjusted from the ribbon Light button and is remembered on this device.
-              Simulated-motion choice is stored on this device only.
             </p>
           </section>
         </div>
@@ -21125,8 +21107,6 @@ window.addEventListener("keydown", (e) => {
     syncMousePreferenceUI();
     const themeSelect = panel.querySelector("#pref-app-theme");
     if (themeSelect) themeSelect.value = appTheme;
-    const simSelect = panel.querySelector("#pref-sim-motion-after-gen");
-    if (simSelect) simSelect.value = getSimMotionAfterGenPref();
   }
 
   function closePreferencesModal() {
@@ -21159,11 +21139,6 @@ window.addEventListener("keydown", (e) => {
     const themeSelect = e.target.closest("#pref-app-theme");
     if (themeSelect) {
       setAppTheme(themeSelect.value, { persist: true, announce: true });
-      return;
-    }
-    const simSelect = e.target.closest("#pref-sim-motion-after-gen");
-    if (simSelect) {
-      setSimMotionAfterGenPref(simSelect.value, { announce: true });
       return;
     }
     const avatarInput = e.target.closest("#profile-avatar-input");

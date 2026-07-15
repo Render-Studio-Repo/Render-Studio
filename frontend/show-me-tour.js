@@ -5,6 +5,7 @@ const SHOW_ME_TOURS = {
     title: "Generate CAD with AI",
     example: "80 x 40 x 12 mm phone stand with a 65° rear tilt and rounded edges",
     studioPath: "/?promptMode=v2&showMe=ai-generate",
+    gif: "/docs/media/ai-generate.gif?v=20260715-real",
     steps: [
       { selector: "#prompt-pane-compose, .prompt-compose-toolbar, #prompt-input, .prompt-editor", label: "AI CAD Prompt" },
       { selector: '[data-prompt-mode="v2"], .prompt-mode-btn--v2', label: "2.0 mode" },
@@ -15,6 +16,7 @@ const SHOW_ME_TOURS = {
     title: "Workspaces",
     example: "",
     studioPath: "/?showMe=workspaces",
+    gif: "/docs/media/workspaces.gif?v=20260715-real",
     steps: [
       { selector: "#btn-auth, .btn-auth, #workspace-picker, .workspace-mode-btn", label: "Account / workspace" },
     ],
@@ -23,6 +25,7 @@ const SHOW_ME_TOURS = {
     title: "Share folders",
     example: "",
     studioPath: "/?showMe=share-folders",
+    gif: "/docs/media/share-folder.gif?v=20260715-real",
     steps: [
       { selector: "#project-browser, .browser-section, .file-browser", label: "Project browser" },
     ],
@@ -31,6 +34,7 @@ const SHOW_ME_TOURS = {
     title: "Reference markup",
     example: "",
     studioPath: "/?showMe=reference-markup",
+    gif: "/docs/media/reference-markup.gif?v=20260715-real",
     steps: [
       { selector: "#project-browser, .browser-section", label: "Project files" },
     ],
@@ -39,6 +43,7 @@ const SHOW_ME_TOURS = {
     title: "Canvas",
     example: "",
     studioPath: "/?showMe=canvas",
+    gif: "/docs/media/canvas.gif?v=20260715-real",
     steps: [
       { selector: '[data-design-tab="canvas"], #design-tab-canvas, button[data-tab="canvas"]', label: "Canvas tab" },
     ],
@@ -47,6 +52,7 @@ const SHOW_ME_TOURS = {
     title: "Geometry picks",
     example: "fillet @face-1 2 mm",
     studioPath: "/?showMe=picks",
+    gif: "/docs/media/picks.gif?v=20260715-real",
     steps: [
       { selector: ".ribbon-pick, #pick-face-btn, [data-tool='pick-face']", label: "Pick tools" },
       { selector: "#prompt-input, .prompt-editor", label: "Prompt" },
@@ -54,16 +60,21 @@ const SHOW_ME_TOURS = {
   },
   wiring: {
     title: "Wiring Simulator",
-    example: "",
-    studioPath: "/?showMe=wiring",
+    example: "Wire this enclosure for an ESP32, motor driver, and limit switches",
+    studioPath: "/?designTab=WIRING&showMe=wiring",
+    gif: "/docs/media/wiring.gif?v=20260715-real",
     steps: [
-      { selector: "#workspace-mode-btn, .workspace-mode-btn", label: "Workspace mode" },
+      { selector: '[data-design-tab="WIRING"], #design-tab-wiring, button[data-tab="WIRING"], .workspace-modes [data-mode="wiring"]', label: "Wiring tab" },
+      { selector: "#project-browser, .browser-section, .file-browser, .browser-item", label: "Project browser — drag your 3D component" },
+      { selector: "#wiring-prompt-input, #wiring-prompt-panel, .wiring-prompt-panel", label: "Wiring prompt — drop the component here" },
+      { selector: "#wiring-workspace, #wiring-canvas, .wiring-canvas, .wiring-stage", label: "Or drop onto the wiring board for pins" },
     ],
   },
   "cloud-sync": {
     title: "Fusion / Onshape",
     example: "",
     studioPath: "/?showMe=cloud-sync",
+    gif: "/docs/media/cloud-sync.gif?v=20260715-real",
     steps: [
       { selector: "#fusion-library, #onshape-library, .fusion-panel", label: "Cloud libraries" },
     ],
@@ -72,6 +83,7 @@ const SHOW_ME_TOURS = {
     title: "Render Agent",
     example: "How do I generate my first CAD model?",
     studioPath: "/?showMe=render-agent",
+    gif: "/docs/media/render-agent.gif?v=20260715-real",
     steps: [
       { selector: "#btn-render-agent, #render-agent-fab", label: "Agent" },
     ],
@@ -80,41 +92,50 @@ const SHOW_ME_TOURS = {
     title: "Tips & tricks",
     example: "",
     studioPath: "/?showMe=tips-tricks",
+    gif: null,
     steps: [
       { selector: "#project-browser, .file-browser", label: "Project browser" },
     ],
   },
 };
 
+let activeTour = null;
+let activeGuideId = null;
+let stepIndex = 0;
+/** @type {"studio" | "docs"} */
+let overlayMode = "studio";
+let overlayBound = false;
+
 function ensureOverlay() {
   let el = document.getElementById("show-me-overlay");
-  if (el) return el;
-  el = document.createElement("div");
-  el.id = "show-me-overlay";
-  el.className = "show-me-overlay hidden";
-  el.innerHTML = `
-    <div class="show-me-card">
-      <div class="show-me-card-top">
-        <strong id="show-me-title">Show me</strong>
-        <button type="button" class="show-me-close" aria-label="Close">&times;</button>
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "show-me-overlay";
+    el.className = "show-me-overlay hidden";
+    el.innerHTML = `
+      <div class="show-me-card">
+        <div class="show-me-card-top">
+          <strong id="show-me-title">Show me</strong>
+          <button type="button" class="show-me-close" aria-label="Close">&times;</button>
+        </div>
+        <p id="show-me-step" class="show-me-step"></p>
+        <div class="show-me-actions">
+          <button type="button" class="btn secondary btn-compact" id="show-me-skip">Skip</button>
+          <button type="button" class="btn accent btn-compact" id="show-me-next">Next</button>
+        </div>
       </div>
-      <p id="show-me-step" class="show-me-step"></p>
-      <div class="show-me-actions">
-        <button type="button" class="btn secondary btn-compact" id="show-me-skip">Skip</button>
-        <button type="button" class="btn accent btn-compact" id="show-me-next">Next</button>
-      </div>
-    </div>
-    <div class="show-me-spotlight" id="show-me-spotlight"></div>
-  `;
-  document.body.appendChild(el);
-  el.querySelector(".show-me-close")?.addEventListener("click", stopShowMe);
-  el.querySelector("#show-me-skip")?.addEventListener("click", () => advanceShowMe(true));
-  el.querySelector("#show-me-next")?.addEventListener("click", () => advanceShowMe(false));
+      <div class="show-me-spotlight" id="show-me-spotlight" aria-hidden="true"></div>
+    `;
+    document.body.appendChild(el);
+  }
+  if (!overlayBound) {
+    overlayBound = true;
+    el.querySelector(".show-me-close")?.addEventListener("click", stopShowMe);
+    el.querySelector("#show-me-skip")?.addEventListener("click", onSkipClick);
+    el.querySelector("#show-me-next")?.addEventListener("click", onNextClick);
+  }
   return el;
 }
-
-let activeTour = null;
-let stepIndex = 0;
 
 function clearHighlight() {
   document.querySelectorAll(".show-me-target").forEach((n) => n.classList.remove("show-me-target"));
@@ -125,11 +146,17 @@ function clearHighlight() {
 function stopShowMe() {
   clearHighlight();
   activeTour = null;
+  activeGuideId = null;
   stepIndex = 0;
+  overlayMode = "studio";
   document.getElementById("show-me-overlay")?.classList.add("hidden");
 }
 
 function findFirst(selector) {
+  for (const part of String(selector || "").split(",")) {
+    const el = document.querySelector(part.trim());
+    if (el && el.offsetParent !== null) return el;
+  }
   for (const part of String(selector || "").split(",")) {
     const el = document.querySelector(part.trim());
     if (el) return el;
@@ -147,8 +174,8 @@ function highlight(el, label) {
   if (spot) {
     spot.style.left = `${Math.max(8, rect.left - 8)}px`;
     spot.style.top = `${Math.max(8, rect.top - 8)}px`;
-    spot.style.width = `${rect.width + 16}px`;
-    spot.style.height = `${rect.height + 16}px`;
+    spot.style.width = `${Math.max(24, rect.width + 16)}px`;
+    spot.style.height = `${Math.max(24, rect.height + 16)}px`;
   }
   const stepEl = document.getElementById("show-me-step");
   if (stepEl) stepEl.textContent = label || "Look here";
@@ -156,7 +183,7 @@ function highlight(el, label) {
 
 function fillExample(example) {
   if (!example) return;
-  const editor = document.querySelector(".prompt-editor, #prompt-input, textarea#prompt-input");
+  const editor = document.querySelector(".prompt-editor, #prompt-input, textarea#prompt-input, #wiring-prompt-input");
   if (editor) {
     if ("value" in editor) editor.value = example;
     else editor.textContent = example;
@@ -180,6 +207,37 @@ function clickIfSafe(el) {
       /* ignore */
     }
   }
+}
+
+function openDemoGif() {
+  const tour = activeTour || getShowMeTour(activeGuideId);
+  const card = activeGuideId ? document.getElementById(activeGuideId) : null;
+  const fromCard = card?.querySelector("img[src*='.gif'], video source, img.gs-demo-gif");
+  const url = fromCard?.getAttribute?.("src") || tour?.gif;
+  if (url) {
+    window.open(url, "_blank", "noopener");
+  }
+}
+
+function onNextClick() {
+  if (overlayMode === "docs") {
+    const path = activeTour?.studioPath || `/?showMe=${encodeURIComponent(activeGuideId || "")}`;
+    window.location.href = path;
+    return;
+  }
+  advanceShowMe(false);
+}
+
+function onSkipClick() {
+  if (overlayMode === "docs") {
+    if (activeTour?.gif || document.getElementById(activeGuideId)?.querySelector("img[src*='.gif']")) {
+      openDemoGif();
+      return;
+    }
+    stopShowMe();
+    return;
+  }
+  advanceShowMe(true);
 }
 
 function advanceShowMe(skipClick) {
@@ -213,34 +271,34 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
   const tour = getShowMeTour(guideId);
   if (!tour) return false;
 
+  ensureOverlay();
+  const overlay = document.getElementById("show-me-overlay");
+  const nextBtn = document.getElementById("show-me-next");
+  const skipBtn = document.getElementById("show-me-skip");
+  activeTour = tour;
+  activeGuideId = guideId;
+  stepIndex = 0;
+  overlay?.classList.remove("hidden");
+  document.getElementById("show-me-title").textContent = tour.title;
+
   if (onDocsPage) {
-    // On Getting Started: highlight the feature card, then offer Studio deep-link.
+    overlayMode = "docs";
     const card = document.getElementById(guideId);
-    ensureOverlay();
-    const overlay = document.getElementById("show-me-overlay");
-    overlay?.classList.remove("hidden");
-    document.getElementById("show-me-title").textContent = tour.title;
     if (card) {
-      highlight(card, `${tour.title} — feature guide on this page`);
-      document.getElementById("show-me-step").textContent =
-        "This is the guide on Getting Started. Click Next to open Studio and walk through the UI.";
-      document.getElementById("show-me-next").textContent = "Open Studio walkthrough";
-      document.getElementById("show-me-next").onclick = () => {
-        window.location.href = tour.studioPath || `/?showMe=${encodeURIComponent(guideId)}`;
-      };
-      document.getElementById("show-me-skip").onclick = stopShowMe;
-      return true;
+      highlight(card, `${tour.title} — guide on this page`);
+    } else {
+      clearHighlight();
     }
+    document.getElementById("show-me-step").textContent =
+      "Use Open Studio for a live UI walkthrough, or Watch demo GIF for the looping preview.";
+    if (nextBtn) nextBtn.textContent = "Open Studio walkthrough";
+    if (skipBtn) skipBtn.textContent = tour.gif ? "Watch demo GIF" : "Close";
+    return true;
   }
 
-  ensureOverlay();
-  document.getElementById("show-me-overlay")?.classList.remove("hidden");
-  document.getElementById("show-me-title").textContent = tour.title;
-  document.getElementById("show-me-next").textContent = "Next";
-  document.getElementById("show-me-next").onclick = () => advanceShowMe(false);
-  document.getElementById("show-me-skip").onclick = () => advanceShowMe(true);
-  activeTour = tour;
-  stepIndex = 0;
+  overlayMode = "studio";
+  if (nextBtn) nextBtn.textContent = "Next";
+  if (skipBtn) skipBtn.textContent = "Skip";
   advanceShowMe(false);
   return true;
 }
@@ -250,5 +308,5 @@ export function maybeAutoStartShowMeFromQuery() {
   if (!id) return;
   const clean = `${window.location.pathname}${window.location.hash || ""}`;
   window.history.replaceState({}, "", clean || "/");
-  setTimeout(() => startShowMe(id, { onDocsPage: false }), 600);
+  setTimeout(() => startShowMe(id, { onDocsPage: false }), 700);
 }

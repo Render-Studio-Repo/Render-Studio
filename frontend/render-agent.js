@@ -5,13 +5,13 @@ import {
   getCurrentTip,
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
-import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-tips-tricks";
-import { startShowMe } from "./show-me-tour.js?v=20260715-gs-deck";
+import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-wiring-link";
+import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-fix";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
-const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v2";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v3";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -189,6 +189,11 @@ export function createRenderAgent({
     bindTipActions(messagesEl);
   }
 
+  function syncDocsPageLayout(openPanel) {
+    if (!panel.classList.contains("render-agent-panel--docs")) return;
+    document.body.classList.toggle("gs-agent-open", !!openPanel);
+  }
+
   function open({ onboarding: showOnboarding = false, question = "" } = {}) {
     const docsPanel = panel.classList.contains("render-agent-panel--docs");
     if (!currentUserId() && !docsPanel) {
@@ -203,6 +208,7 @@ export function createRenderAgent({
     document.getElementById("render-agent-fab")?.classList.add("hidden");
     ensureStickyNoteControls();
     restoreStickyLayout();
+    syncDocsPageLayout(true);
     if (showOnboarding && onboarding) {
       onboarding.classList.remove("hidden");
       showWelcomeTip();
@@ -248,6 +254,7 @@ export function createRenderAgent({
   function close() {
     panel.classList.add("hidden");
     document.getElementById("render-agent-fab")?.classList.remove("hidden");
+    syncDocsPageLayout(false);
   }
 
   function toggle() {
@@ -288,7 +295,7 @@ export function createRenderAgent({
     }
     const saved = readStickyLayout();
     const defaultW = Math.min(isDocs ? 300 : 400, Math.max(260, window.innerWidth - 32));
-    const defaultH = Math.min(isDocs ? 320 : 640, Math.max(280, window.innerHeight - (isDocs ? 160 : 96)));
+    const defaultH = Math.min(isDocs ? 450 : 640, Math.max(280, window.innerHeight - (isDocs ? 96 : 96)));
     if (!saved) {
       panel.style.left = "auto";
       panel.style.right = "16px";
@@ -302,9 +309,9 @@ export function createRenderAgent({
       }
       return;
     }
-    if (saved.width) panel.style.width = `${Math.max(260, saved.width)}px`;
+    if (saved.width) panel.style.width = `${Math.max(isDocs ? 292 : 260, saved.width)}px`;
     else panel.style.width = `${defaultW}px`;
-    if (saved.height) panel.style.height = `${Math.max(260, saved.height)}px`;
+    if (saved.height) panel.style.height = `${Math.max(isDocs ? 430 : 260, saved.height)}px`;
     else panel.style.height = `${defaultH}px`;
     panel.style.maxHeight = "none";
     if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
@@ -670,13 +677,11 @@ export function createRenderAgent({
 
   function bindTipActions(root) {
     root?.querySelectorAll("[data-tip-starter]").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
         const starter = btn.getAttribute("data-tip-starter") || "";
-        if (input && starter) {
-          input.value = starter;
-          input.focus();
-          input.setSelectionRange(starter.length, starter.length);
-        }
+        if (!starter) return;
+        void openWithQuestion(starter, { autoSend: true });
       });
     });
     root?.querySelectorAll("[data-show-me]").forEach((btn) => {

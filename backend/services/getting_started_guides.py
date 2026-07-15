@@ -112,15 +112,20 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "id": "wiring",
         "title": "Wiring Simulator",
         "gif": f"/docs/media/wiring.gif?{GIF_CACHE}",
-        "summary": "Switch to Wiring mode to breadboard circuits, drag parts, and validate drivers.",
-        "ask": "How do I use the Wiring Simulator, including AI generate and validation?",
+        "summary": "Switch to Wiring to breadboard circuits, link CAD parts into the wiring prompt, and validate drivers.",
+        "ask": "How do I use the Wiring Simulator, including linking a 3D model to the wiring prompt, AI generate, and validation?",
         "steps": [
-            "Change workspace mode to Wiring Simulator.",
-            "Drag components onto the board or use Wiring AI to generate a circuit.",
-            "Wire pin-to-pin; run validation for motors/drivers.",
-            "Optional: attach a breadboard photo for matching.",
+            "Open your project and switch to the WIRING design tab.",
+            "To link a 3D model to the Wiring AI prompt: drag the component from the left project browser into the Wiring prompt box — a reference chip appears.",
+            "Or drop the component onto the wiring board to place it as a part with pins.",
+            "Describe the circuit in the wiring prompt and Generate.",
+            "Wire pin-to-pin; run validation for motors/drivers. Optional: attach a breadboard photo.",
         ],
-        "keywords": ["wiring", "circuit", "breadboard", "wiring simulator", "gpio", "schematic", "arduino"],
+        "keywords": [
+            "wiring", "wire", "wirign", "wireing", "circuit", "breadboard", "wiring simulator",
+            "gpio", "schematic", "arduino", "esp32", "wiring prompt", "link model", "3d model",
+            "drag component", "component reference", "wiring canvas",
+        ],
     },
     {
         "id": "cloud-sync",
@@ -173,6 +178,14 @@ def match_guides(question: str, *, limit: int = 2) -> list[dict[str, Any]]:
     text = str(question or "").lower().strip()
     if not text:
         return []
+    # Soft typo / synonym normalization so “wirign” still hits Wiring guides.
+    for src, dst in (
+        ("wirign", "wiring"),
+        ("wireing", "wiring"),
+        ("schemtic", "schematic"),
+        ("bredboard", "breadboard"),
+    ):
+        text = text.replace(src, dst)
 
     # Exact / near-exact Getting Started "Ask about this" prompts
     for guide in GETTING_STARTED_GUIDES:
@@ -244,8 +257,8 @@ def guide_context_block(guides: list[dict[str, Any]]) -> str:
             f"Demo GIF URL (already shown to the user when available): {gif or 'none'}"
         )
     return (
-        "Matched Getting Started documentation. Use these official steps. "
-        "If a demo GIF URL is present, briefly tell the user the looping demo is attached "
-        "and walk them through the same steps — do not invent alternate UI paths.\n\n"
+        "Matched Getting Started documentation. Use these official steps only — do not invent UI labels. "
+        "If a demo GIF URL is present, tell the user the looping demo is attached. "
+        "End by offering: click Show me for a live Studio walkthrough, or watch the GIF in this reply.\n\n"
         + "\n\n".join(chunks)
     )

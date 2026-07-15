@@ -1,10 +1,10 @@
 /** Getting Started feature guides for Docs. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-tips-tricks";
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-wiring-link";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-gs-hero-free";
-import { startShowMe } from "./show-me-tour.js?v=20260715-gs-deck";
+import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-fix";
+import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-fix";
 
 const FEATURES = GETTING_STARTED_GUIDES;
 

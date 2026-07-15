@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-sim-motion-ask" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-show-me-fix" />
   <script type="importmap">
   {
     "imports": {
@@ -340,6 +340,68 @@
             <button type="button" class="sketch-quick-btn" data-sketch-tool="perpendicular" title="Perpendicular">⊥</button>
             <button type="button" class="sketch-quick-btn" data-sketch-tool="dimension" title="Dimension">⌀</button>
             <button type="button" class="sketch-quick-btn" data-sketch-tool="angle" title="Angle">∠</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="angle" title="Angle">∠</button>
+          </aside>
+          <footer class="sketch-status-bar">
+            <span id="sketch-status-tool" class="sketch-status-tool">Line</span>
+            <span class="sketch-status-sep" aria-hidden="true">|</span>
+            <span id="sketch-status-hint" class="sketch-status-hint">Click to place first point</span>
+            <span id="sketch-status-stats" class="sketch-status-stats"></span>
+          </footer>
+        </div>
+        <div id="rigging-chrome" class="rigging-chrome hidden" aria-live="polite">
+          <header class="rigging-toolbelt" role="toolbar" aria-label="Rigging tools">
+            <div class="rigging-tool-group">
+              <span class="rigging-tool-label">Rig</span>
+              <button type="button" class="rigging-tool-btn active" data-rig-tool="select" title="Select bone">↖ Select</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="move" title="Move bone">✥ Move</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="rotate" title="Rotate joint">↻ Rotate</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="add" title="Add bone">● Add Bone</button>
+              <button type="button" class="rigging-tool-btn" data-rig-tool="connect" title="Connect hierarchy">⛓ Connect</button>
+              <button type="button" class="rigging-tool-btn" data-rig-action="keyframe" title="Keyframe (K)">◆ Key</button>
+            </div>
+            <span class="rigging-tool-sep" aria-hidden="true"></span>
+            <div class="rigging-tool-group">
+              <span class="rigging-tool-label">Pick</span>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="object" title="Select object">Object</button>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="face" title="Select face">Face</button>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="edge" title="Select edge">Edge</button>
+              <button type="button" class="rigging-tool-btn" data-rig-pick="off" title="Orbit view">Orbit</button>
+            </div>
+            <span class="rigging-tool-sep" aria-hidden="true"></span>
+            <div class="rigging-tool-group rigging-tool-group--actions">
+              <button type="button" id="btn-rigging-toolbelt-generate" class="rigging-tool-btn rigging-tool-accent" title="Generate rig with Rigging AI">⚡ Generate</button>
+              <button type="button" class="rigging-tool-btn btn-rigging-toolbelt-motion" title="Open URDF / SRDF motion workbench">🤖 Motion</button>
+              <button type="button" id="btn-rigging-toolbelt-save" class="rigging-tool-btn" title="Save rig">💾 Save</button>
+              <button type="button" id="btn-rigging-toolbelt-export" class="rigging-tool-btn" title="Export robot.urdf">📄 URDF</button>
+              <button type="button" id="btn-rigging-toolbelt-auto" class="rigging-tool-btn" title="Auto chain rig">🦴 Auto Rig</button>
+            </div>
+          </header>
+          <footer id="rigging-anim-panel" class="rigging-anim-panel"></footer>
+        </div>
+        <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
+          <header class="sketch-top-bar">
+            <div class="sketch-top-bar-left">
+              <span class="sketch-pencil-icon" aria-hidden="true"></span>
+              <div class="sketch-top-bar-titles">
+                <strong id="sketch-name">Sketch1</strong>
+                <span id="sketch-plane-label">XY Plane · Edit Sketch</span>
+              </div>
+            </div>
+            <div class="sketch-top-bar-right">
+              <button type="button" id="btn-sketch-cancel" class="sketch-btn sketch-btn--ghost">Cancel</button>
+              <button type="button" id="btn-sketch-finish" class="sketch-btn sketch-btn--finish">
+                <span class="sketch-finish-check" aria-hidden="true">✓</span> Finish Sketch
+              </button>
+            </div>
+          </header>
+          <aside id="sketch-quick-tools" class="sketch-quick-tools" aria-label="Quick constraints">
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="horizontal" title="Horizontal">H</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="vertical" title="Vertical">V</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="coincident" title="Coincident">●</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="parallel" title="Parallel">∥</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="perpendicular" title="Perpendicular">⊥</button>
+            <button type="button" class="sketch-quick-btn" data-sketch-tool="dimension" title="Dimension">⌀</button>
           </aside>
           <footer class="sketch-status-bar">
             <span id="sketch-status-tool" class="sketch-status-tool">Line</span>
@@ -1727,29 +1789,6 @@
     </div>
   </div>
 
-
-  <div id="sim-motion-confirm-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="sim-motion-confirm-title">
-    <div class="auth-backdrop" data-sim-motion-close></div>
-    <div class="auth-card app-dialog-card">
-      <button type="button" class="auth-close" data-sim-motion-close aria-label="Close">&times;</button>
-      <h2 id="sim-motion-confirm-title" class="app-dialog-title">Generate simulated motion?</h2>
-      <p class="muted" id="sim-motion-confirm-copy">
-        This model looks articulated (robot / joints). GLB shows the shape; <strong>URDF</strong> and <strong>SRDF</strong> drive simulation in Rigging → Motion.
-      </p>
-      <p class="muted small" id="sim-motion-confirm-reason"></p>
-      <label class="sim-motion-remember">
-        <input type="checkbox" id="sim-motion-remember" checked />
-        <span>Remember my choice on this device. You can change it anytime in <strong>Preferences</strong>.</span>
-      </label>
-      <div class="app-dialog-actions" style="flex-wrap: wrap; gap: 0.5rem;">
-        <button type="button" class="btn accent" id="sim-motion-both" title="Author gen_urdf + gen_srdf, then generate both">URDF + SRDF</button>
-        <button type="button" class="btn secondary" id="sim-motion-urdf" title="Kinematic robot description">URDF only</button>
-        <button type="button" class="btn secondary" id="sim-motion-srdf" title="Planning groups / named poses">SRDF only</button>
-        <button type="button" class="btn secondary" id="sim-motion-skip" data-sim-motion-close>Not now</button>
-      </div>
-    </div>
-  </div>
-
   <div id="image-drawing-confirm-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="image-drawing-confirm-title">
     <div class="auth-backdrop" data-image-drawing-close></div>
     <div class="auth-card app-dialog-card">
@@ -1900,7 +1939,7 @@
     </div>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/app.js?v=20260715-sim-motion-ask"></script>
+  <script type="module" src="/app.js?v=20260715-show-me-fix"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

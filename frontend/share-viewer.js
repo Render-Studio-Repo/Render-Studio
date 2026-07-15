@@ -157,8 +157,14 @@ async function main() {
   const token = tokenFromPath();
   const embed = isEmbedMode();
   const heroEmbed = isHeroEmbedMode();
-  if (embed) document.body.classList.add("share-embed");
-  if (heroEmbed) document.body.classList.add("share-hero");
+  if (embed) {
+    document.documentElement.classList.add("share-embed");
+    document.body.classList.add("share-embed");
+  }
+  if (heroEmbed) {
+    document.documentElement.classList.add("share-hero");
+    document.body.classList.add("share-hero");
+  }
   const titleEl = $("share-title");
   const subEl = $("share-subtitle");
   const statusEl = $("share-status");

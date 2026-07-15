@@ -109,15 +109,20 @@ export const GETTING_STARTED_GUIDES = [
     title: "Wiring Simulator",
     demo: "wiring",
     gif: "/docs/media/wiring.gif?v=20260715-real",
-    summary: "Switch to Wiring mode to breadboard circuits, drag parts, and validate drivers.",
+    summary: "Switch to Wiring to breadboard circuits, link CAD parts into the wiring prompt, and validate drivers.",
     steps: [
-      "Change workspace mode to Wiring Simulator.",
-      "Drag components onto the board or use Wiring AI to generate a circuit.",
-      "Wire pin-to-pin; run validation for motors/drivers.",
-      "Optional: attach a breadboard photo for matching.",
+      "Open your project and switch to the WIRING design tab.",
+      "To link a 3D model to the Wiring AI prompt: drag the component from the left project browser into the Wiring prompt box — a reference chip appears.",
+      "Or drop the component onto the wiring board to place it as a part with pins.",
+      "Describe the circuit in the wiring prompt and Generate.",
+      "Wire pin-to-pin; run validation for motors/drivers. Optional: attach a breadboard photo.",
     ],
-    ask: "How do I use the Wiring Simulator, including AI generate and validation?",
-    keywords: ["wiring", "circuit", "breadboard", "wiring simulator", "gpio", "schematic"],
+    ask: "How do I use the Wiring Simulator, including linking a 3D model to the wiring prompt, AI generate, and validation?",
+    keywords: [
+      "wiring", "wire", "wirign", "wireing", "circuit", "breadboard", "wiring simulator",
+      "gpio", "schematic", "arduino", "esp32", "wiring prompt", "link model", "3d model",
+      "drag component", "component reference", "wiring canvas",
+    ],
   },
   {
     id: "cloud-sync",
@@ -173,8 +178,16 @@ export const GETTING_STARTED_GUIDES = [
 ];
 
 export function matchGettingStartedGuides(question, { limit = 2 } = {}) {
-  const text = String(question || "").toLowerCase().trim();
+  let text = String(question || "").toLowerCase().trim();
   if (!text) return [];
+  for (const [src, dst] of [
+    ["wirign", "wiring"],
+    ["wireing", "wiring"],
+    ["schemtic", "schematic"],
+    ["bredboard", "breadboard"],
+  ]) {
+    text = text.replaceAll(src, dst);
+  }
 
   for (const guide of GETTING_STARTED_GUIDES) {
     const ask = String(guide.ask || "").toLowerCase().trim();
