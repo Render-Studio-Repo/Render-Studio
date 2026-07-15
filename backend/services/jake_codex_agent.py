@@ -132,7 +132,7 @@ def _ensure_project_agents_md(project_path: Path) -> None:
         "```bash\n"
         "python scripts/step <generator.py> --glb <name>.glb --stl <name>.stl --3mf <name>.3mf\n"
         "python scripts/inspect refs <name>.step --facts --planes --positioning\n"
-        "python scripts/snapshot <name>.step\n"
+        "python scripts/snapshot --input <name>.step --output <name>_snapshot.png --camera iso --view-labels --size-profile diagnostic\n"
         "```\n\n"
         "STEP is primary. Prefer surgical edits over rewrites. Skip `$cad-viewer` "
         "handoff — Render3D owns the viewer.\n",
@@ -184,8 +184,10 @@ Required workflow (do not skip):
 2. Run from this workspace: `python scripts/step {source_name} --glb {glb_name} --stl {stl_name} --3mf {three_mf_name}`
 3. On failure: classify, fix the smallest responsible source section, rerun step.
 4. Validate: `python scripts/inspect refs {step_name} --facts --planes --positioning`
-5. Mandatory snapshot: `python scripts/snapshot {step_name}` (or equivalent multi-view packet) and review the PNGs.
-6. Repair until step + inspect + snapshot are acceptable.
+5. Mandatory snapshot with the installed CLI shape (NOT a bare STEP arg):
+   `python scripts/snapshot --input {step_name} --output {Path(step_name).stem}_snapshot.png --camera iso --view-labels --size-profile diagnostic`
+   If snapshot deps fail after a valid STEP/GLB exists, finish anyway and report the files — Render3D owns visual review.
+6. Repair until scripts/step succeeds and inspect is acceptable. Do not loop forever on snapshot tooling.
 
 Rules:
 - Millimeters. `gen_step()` returns the STEP-ready shape; do not write files inside gen_step().
@@ -455,6 +457,7 @@ def run_jake_codex_agent(
     err_thread.start()
 
     deadline = time.monotonic() + timeout
+    artifacts_ready_since: float | None = None
     try:
         while True:
             if cancel_check and cancel_check():
@@ -462,7 +465,34 @@ def run_jake_codex_agent(
                 raise RuntimeError("Generation canceled.")
             if time.monotonic() > deadline:
                 _kill_proc(proc)
+                # Prefer returning a renderable model over hard-failing after timeout.
+                try:
+                    early = _pick_artifacts(project_path, base)
+                    if (project_path / early["glb"]).is_file() and (project_path / early["step"]).is_file():
+                        events.append({"type": "render3d.early_accept", "reason": "timeout_with_artifacts"})
+                        break
+                except Exception:
+                    pass
                 raise JakeCodexFailed(f"Codex CAD agent timed out after {int(timeout)}s.")
+
+            # If STEP+GLB already exist, don't let snapshot tooling hang the viewer.
+            try:
+                early = _pick_artifacts(project_path, base)
+                glb_ok = (project_path / early["glb"]).is_file()
+                step_ok = (project_path / early["step"]).is_file()
+                if glb_ok and step_ok:
+                    now = time.monotonic()
+                    if artifacts_ready_since is None:
+                        artifacts_ready_since = now
+                        _emit("finalize", f"Model ready ({early['glb']}); waiting briefly for Codex to finish…", 82)
+                    elif now - artifacts_ready_since >= 45.0:
+                        _emit("finalize", f"Accepting {early['source']} / {early['step']} (snapshot optional)", 86)
+                        _kill_proc(proc)
+                        events.append({"type": "render3d.early_accept", "reason": "artifacts_ready"})
+                        break
+            except Exception:
+                pass
+
             activity_holder = {"n": activity_n}
             if proc.poll() is not None:
                 # Drain remaining stdout.

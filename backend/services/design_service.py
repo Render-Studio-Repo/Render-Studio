@@ -3436,11 +3436,10 @@ def _run_text_to_cad_v2(
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
 
-    # Prefer Jake's real Codex CAD agent (cad@text-to-cad plugin). Optional
-    # in-process tool-agent imitation is fallback-only unless explicitly forced.
+    # Default: per-user OpenAI/Claude tool agent (BYOK). Codex is opt-in only.
     ctx = context or {}
-    use_codex_agent = bool(jake_identical) and bool(ctx.get("jake_codex_agent", True))
-    use_tool_agent = bool(jake_identical) and bool(ctx.get("jake_tool_agent", False))
+    use_codex_agent = bool(jake_identical) and bool(ctx.get("jake_codex_agent", False))
+    use_tool_agent = bool(jake_identical) and bool(ctx.get("jake_tool_agent", True))
     if (use_codex_agent or use_tool_agent) and not canonical_source:
         # Prefer a filesystem-safe stem (spaces break CLIs).
         safe_base = re.sub(r"[^a-zA-Z0-9_-]+", "_", base).strip("_") or "model"
