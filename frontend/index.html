@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-export-loading" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-logo-signup" />
   <script type="importmap">
   {
     "imports": {
@@ -1669,11 +1669,14 @@
     <div class="auth-backdrop" data-welcome-close></div>
     <div class="auth-card welcome-card">
       <button type="button" class="auth-close" data-welcome-close aria-label="Close">&times;</button>
-      <div class="welcome-visual" aria-hidden="true">
+      <div class="welcome-visual">
         <div class="welcome-logo-badge">
-          <img src="/render3d-logo.png?v=20260715-new-logo" alt="" />
+          <img src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
+          <button type="button" class="welcome-logo-signup" id="welcome-logo-signup">
+            Sign up now
+          </button>
         </div>
-        <div class="welcome-robot">
+        <div class="welcome-robot" aria-hidden="true">
           <span class="welcome-robot-base"></span>
           <span class="welcome-robot-joint welcome-robot-joint--base"></span>
           <span class="welcome-robot-arm welcome-robot-arm--lower"></span>
@@ -2050,7 +2053,7 @@
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
-  <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
+  <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
   <script type="module" src="/app.js?v=20260715-robot-arm-demo"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>

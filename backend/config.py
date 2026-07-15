@@ -70,5 +70,13 @@ class Settings(BaseSettings):
     apple_key_id: str = ""
     apple_private_key: str = ""
 
+    # Capacity collapse alerts (Gmail SMTP → ops inbox)
+    capacity_alert_smtp_host: str = "smtp.gmail.com"
+    capacity_alert_smtp_port: int = 587
+    capacity_alert_smtp_user: str = ""  # e.g. info@render3d.app
+    capacity_alert_smtp_password: str = ""  # Gmail App Password
+    capacity_alert_from: str = "info@render3d.app"
+    capacity_alert_to: str = "sam@render3d.app"
+
 
 settings = Settings()

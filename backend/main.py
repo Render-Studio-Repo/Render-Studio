@@ -43,6 +43,8 @@ from backend.services import (
     project_store,
     prompt_history_service,
     feedback_service,
+    new_user_alert_service,
+    onboarding_email_service,
     workspace_log_service,
 )
 from backend.services import kernel_bridge
@@ -853,6 +855,11 @@ class AdminGuideReviewRequest(BaseModel):
 
 class AdminFeedbackReviewRequest(BaseModel):
     status: str = Field(..., description="open | checked | approved | denied")
+    note: str | None = Field(None, max_length=1000)
+
+
+class AdminNewUserReviewRequest(BaseModel):
+    status: str = Field(..., description="new | checked | contacted | dismissed")
     note: str | None = Field(None, max_length=1000)
 
 

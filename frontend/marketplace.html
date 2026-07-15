@@ -8,9 +8,48 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-product-marketplace" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-marketplace-fx" />
 </head>
-<body class="info-page marketplace-hub-page">
+<body class="info-page marketplace-hub-page marketplace-futuristic">
+  <div class="marketplace-fx" aria-hidden="true">
+    <div class="marketplace-grid-bg"></div>
+    <div class="marketplace-scan"></div>
+    <div class="marketplace-orb marketplace-orb--a"></div>
+    <div class="marketplace-orb marketplace-orb--b"></div>
+    <div class="marketplace-robot-arm">
+      <svg viewBox="0 0 280 280" width="280" height="280" fill="none">
+        <g class="mkt-arm-base">
+          <rect x="108" y="232" width="64" height="18" rx="4" fill="currentColor" opacity="0.35"/>
+          <rect x="124" y="210" width="32" height="28" rx="4" fill="currentColor" opacity="0.55"/>
+        </g>
+        <g class="mkt-arm-shoulder" transform="translate(140 210)">
+          <circle r="14" fill="currentColor" opacity="0.7"/>
+          <g class="mkt-arm-upper">
+            <rect x="-7" y="-78" width="14" height="78" rx="5" fill="currentColor" opacity="0.78"/>
+            <g class="mkt-arm-elbow" transform="translate(0 -78)">
+              <circle r="11" fill="currentColor" opacity="0.85"/>
+              <g class="mkt-arm-fore">
+                <rect x="-5.5" y="-70" width="11" height="70" rx="4" fill="currentColor" opacity="0.9"/>
+                <g class="mkt-arm-wrist" transform="translate(0 -70)">
+                  <circle r="8" fill="currentColor"/>
+                  <g class="mkt-arm-grip">
+                    <path d="M-10 -4 L-18 -22" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M10 -4 L18 -22" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M-4 -8 L-4 -26" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>
+                    <path d="M4 -8 L4 -26" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>
+                  </g>
+                </g>
+              </g>
+            </g>
+          </g>
+        </g>
+      </svg>
+    </div>
+  </div>
+
   <div id="app" class="app-info">
     <header class="toolbar">
       <div class="brand">
@@ -38,9 +77,9 @@
     <main class="info-main">
       <article class="info-content marketplace-hub">
         <header class="info-hero marketplace-hub-hero">
-          <p class="info-eyebrow">Render3D Product Marketplace</p>
-          <h2>Product Marketplace</h2>
-          <p class="info-lead">Browse and publish 3D models, knowledge bases, and agent apps with shared licensing, access, download, review, and boost options.</p>
+          <p class="info-eyebrow marketplace-eyebrow">Render3D · Live Catalog</p>
+          <h2 class="marketplace-title">Product Marketplace</h2>
+          <p class="info-lead marketplace-lead">Browse and publish 3D models, knowledge bases, and agent apps with shared licensing, access, download, review, and boost options.</p>
         </header>
 
         <div class="marketplace-choice-grid">
@@ -48,19 +87,19 @@
             <span class="marketplace-choice-kicker">3D Models</span>
             <strong>3D Model Products</strong>
             <p>Upload models, write product posts, add members, toggle downloads, choose licenses, price them, filter the catalog, and request boosts.</p>
-            <span class="marketplace-choice-cta">Open model products →</span>
+            <span class="marketplace-choice-cta">Open model products</span>
           </a>
           <a class="marketplace-choice marketplace-choice--knowledge" href="/knowledge-store.html">
             <span class="marketplace-choice-kicker">Knowledge Bases</span>
             <strong>Knowledge Base Center</strong>
             <p>Package docs, PDFs, CAD references, prompts, setup guides, and project context as marketable knowledge products.</p>
-            <span class="marketplace-choice-cta">Open knowledge bases →</span>
+            <span class="marketplace-choice-cta">Open knowledge bases</span>
           </a>
           <a class="marketplace-choice marketplace-choice--agents" href="/agent-store.html">
             <span class="marketplace-choice-kicker">Agents</span>
             <strong>Agent Store</strong>
             <p>Install skills, workflows, connectors, and tools. Submit apps, set licensing, free/paid/view-only access, and apply for a boost.</p>
-            <span class="marketplace-choice-cta">Open agent apps →</span>
+            <span class="marketplace-choice-cta">Open agent apps</span>
           </a>
         </div>
       </article>

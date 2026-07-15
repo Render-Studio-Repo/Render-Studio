@@ -103,6 +103,11 @@ function thumbUrl(item) {
   return item.thumbnail?.data_url || item.gallery?.[0]?.data_url || "";
 }
 
+function isKnowledgeListing(item) {
+  return (item.files || []).some((file) => file?.product_type === "knowledge_base")
+    || String(item.category || "").toLowerCase().includes("knowledge");
+}
+
 function badges(item) {
   const list = [item.category, item.license, item.access_mode].filter(Boolean);
   if (item.featured) list.unshift("Featured");
@@ -144,6 +149,7 @@ function productCard(item, { compact = false } = {}) {
 }
 
 function matchesFilters(item) {
+  if (isKnowledgeListing(item)) return false;
   if (activeCategory === "Featured" && !item.featured) return false;
   if (activeCategory === "Boosted" && item.boost_status !== "approved") return false;
   if (activeCategory === "Free" && item.access_mode !== "free") return false;
@@ -176,7 +182,7 @@ function visibleListings() {
 function renderCategories() {
   if (!categoriesEl) return;
   const set = new Set(DEFAULT_CATEGORIES);
-  listings.forEach((item) => item.category && set.add(item.category));
+  listings.filter((item) => !isKnowledgeListing(item)).forEach((item) => item.category && set.add(item.category));
   categoriesEl.innerHTML = [...set]
     .map((category) => {
       const count =
@@ -219,7 +225,7 @@ function bindActions(root = document) {
 
 function render() {
   const visible = visibleListings();
-  const featured = listings.filter((item) => item.featured || item.boost_status === "approved");
+  const featured = listings.filter((item) => !isKnowledgeListing(item) && (item.featured || item.boost_status === "approved"));
   if (resultsCountEl) resultsCountEl.textContent = `${visible.length} product${visible.length === 1 ? "" : "s"}`;
   if (resultsTitleEl) resultsTitleEl.textContent = activeCategory === "All" ? "All products" : activeCategory;
   renderCategories();
@@ -245,7 +251,8 @@ async function loadListings() {
   const data = await res.json();
   listings = data.listings || [];
   isAdmin = !!data.admin;
-  if (statusEl) statusEl.textContent = `${listings.length} listing${listings.length === 1 ? "" : "s"}`;
+  const productCount = listings.filter((item) => !isKnowledgeListing(item)).length;
+  if (statusEl) statusEl.textContent = `${productCount} listing${productCount === 1 ? "" : "s"}`;
   render();
 }
 

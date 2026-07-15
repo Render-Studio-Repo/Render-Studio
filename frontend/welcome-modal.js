@@ -51,6 +51,7 @@ function initWelcomeModal() {
     link.addEventListener("click", () => close({ remember: true }));
   });
   document.getElementById("welcome-create-account")?.addEventListener("click", openCreateAccount);
+  document.getElementById("welcome-logo-signup")?.addEventListener("click", openCreateAccount);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !modal.classList.contains("hidden")) close({ remember: true });
   });
