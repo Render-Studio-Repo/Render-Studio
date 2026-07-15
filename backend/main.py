@@ -304,6 +304,17 @@ class SceneRenderRequest(BaseModel):
     ai_key_source: str | None = Field(default=None, description="personal or team")
 
 
+
+class ImprovePromptRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=8000)
+    mode: str = Field(default="standard", description="standard, v2, fusion, architect, draw")
+    target_mode: str = Field(default="new", description="new or edit")
+    speed: str = Field(default="fast")
+    project_id: str | None = Field(default=None, max_length=64)
+    ai_key_id: str | None = Field(default=None, max_length=64)
+    ai_key_source: str | None = Field(default=None, description="personal or team")
+
+
 class SkillPlanRequest(BaseModel):
     prompt: str = Field(default="", max_length=8000)
     skills: list[str] = Field(default_factory=list, max_length=20)
@@ -11192,6 +11203,85 @@ def _with_image_generated_dxf_reference(body: PromptRequest, ai: "AIService", tr
         "references": [*body.references, ref],
         "skills": skills,
     })
+
+
+
+IMPROVE_CAD_PROMPT_SYSTEM = """You rewrite user prompts into stronger text-to-CAD generation prompts for Render3D.
+
+Return JSON only:
+{"improved_prompt":"..."}
+
+Rules for improved_prompt:
+- Keep the user's intent, product, and constraints. Do not invent a totally different part.
+- Make it concrete for CAD: units (mm preferred), overall size envelope, key dimensions, wall thickness, fillets/chamfers when relevant.
+- State manufacturing intent when useful (FDM print, CNC, sheet metal, snap-fit, assembly of named bodies).
+- Prefer one clear primary solid/job; list secondary features as bullet-like clauses in one paragraph or short lines.
+- Name mating/fit relationships if the part must fit something else.
+- For edits, phrase as a revision of the existing selected object (what to change, what to keep).
+- Do not include markdown fences, JSON, or explanations outside the improved prompt string.
+- Do not mention that you are an AI or that you rewrote the prompt.
+- Keep under 1200 characters when possible; hard max 4000.
+"""
+
+
+@app.post("/api/prompt/improve")
+def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    """Rewrite a freeform prompt into a stronger text-to-CAD prompt using the user's AI key."""
+    trace_id = getattr(request.state, "trace_id", new_trace_id())
+    original = (body.prompt or "").strip()
+    if not original:
+        raise HTTPException(400, "Prompt is required")
+    ai = _get_ai_for_user(
+        user,
+        body.speed or "fast",
+        key_id=body.ai_key_id,
+        key_source=body.ai_key_source,
+        project_id=body.project_id,
+    )
+    mode = (body.mode or "standard").strip().lower()
+    target = (body.target_mode or "new").strip().lower()
+    mode_hint = {
+        "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
+        "fusion": "Fusion 360 parametric CAD. Prefer feature-friendly dimensions and clear solids.",
+        "architect": "Modular architecture / room kit parts with separate named bodies and snap interfaces.",
+        "draw": "Direct modeling edit of selected faces/edges. Be specific about which features change.",
+        "render": "Mesh/render scene style CAD. Still include sizes and clear geometry.",
+        "standard": "General CAD generation. Include sizes, features, and manufacturing intent.",
+    }.get(mode, "General CAD generation. Include sizes, features, and manufacturing intent.")
+    target_hint = (
+        "This is an EDIT of an existing selected object — preserve overall identity and only change what the user asked."
+        if target == "edit"
+        else "This is a NEW object generation."
+    )
+    user_content = (
+        f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
+        f"User prompt to improve:\n{original}"
+    )
+    try:
+        parsed, call_trace = ai.chat_json(
+            IMPROVE_CAD_PROMPT_SYSTEM,
+            user_content,
+            trace_id=trace_id,
+            max_tokens=1200,
+            json_response=True,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Could not improve prompt: {exc}") from exc
+    improved = str(parsed.get("improved_prompt") or parsed.get("prompt") or "").strip()
+    if not improved:
+        raise HTTPException(502, "AI returned an empty improved prompt")
+    if len(improved) > 8000:
+        improved = improved[:8000]
+    return {
+        "prompt": original,
+        "improved_prompt": improved,
+        "trace": {
+            "model": call_trace.get("model"),
+            "provider": call_trace.get("provider"),
+            "usage": call_trace.get("usage"),
+            "cost_usd": call_trace.get("cost_usd"),
+        },
+    }
 
 
 @app.post("/api/projects/{project_id}/prompt")

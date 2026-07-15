@@ -17250,6 +17250,33 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   background: rgba(245, 158, 11, 0.12);
 }
 
+.prompt-spice-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(13, 17, 23, 0.72);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.prompt-spice-toggle input {
+  margin: 0;
+  accent-color: #58a6ff;
+  cursor: pointer;
+}
+
+.prompt-spice-toggle:has(input:checked) {
+  border-color: rgba(88, 166, 255, 0.75);
+  color: #79c0ff;
+  background: rgba(56, 139, 253, 0.14);
+}
+
 .prompt-skills-trail {
   margin-left: auto;
   display: inline-flex;

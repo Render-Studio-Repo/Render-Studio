@@ -2921,6 +2921,57 @@ const CODEX_KEY = "render3d:codex:v1";
 const CODEX_KEY_LEGACY = "render3d:jake-codex:v1";
 const CODEX_OPENAI_KEY = "render3d:codexOpenAiKey:v1";
 
+const PROMPT_SPICE_KEY = "render3d:prompt-spice:v1";
+
+function isPromptSpiceEnabled() {
+  return Boolean(document.getElementById("prompt-spice")?.checked);
+}
+
+function setPromptSpiceEnabled(on) {
+  const el = document.getElementById("prompt-spice");
+  if (el) el.checked = !!on;
+  try {
+    localStorage.setItem(PROMPT_SPICE_KEY, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+  document.getElementById("prompt-spice-toggle")?.classList.toggle("is-on", !!on);
+}
+
+function initPromptSpiceToggle() {
+  const el = document.getElementById("prompt-spice");
+  if (!el) return;
+  let saved = false;
+  try {
+    saved = localStorage.getItem(PROMPT_SPICE_KEY) === "1";
+  } catch {
+    saved = false;
+  }
+  el.checked = saved;
+  document.getElementById("prompt-spice-toggle")?.classList.toggle("is-on", saved);
+  el.addEventListener("change", () => setPromptSpiceEnabled(el.checked));
+}
+
+async function spiceUpPromptForCad(prompt, { mode = promptMode, targetMode = "new" } = {}) {
+  const data = await api("/api/prompt/improve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      mode: mode === "render" ? "standard" : mode,
+      target_mode: targetMode,
+      speed: getPromptGenerationSpeed?.() || "fast",
+      project_id: projectId || null,
+      ...getPromptAiKeyBodyFields(),
+    }),
+  }, 90000);
+  const improved = String(data?.improved_prompt || "").trim();
+  if (!improved) throw new Error("AI returned an empty improved prompt");
+  return improved;
+}
+
+
+
 function isCodexEnabled() {
   return Boolean(document.getElementById("prompt-codex")?.checked);
 }
@@ -17306,6 +17357,47 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   if (!prompt) return;
   if (!suppressAiComposePanelSwitch) showAiComposePanel();
   suppressAiComposePanelSwitch = false;
+
+  // Optional: rewrite prompt for stronger text-to-CAD before generate/edit.
+  if (isPromptSpiceEnabled() && promptMode !== "draw" && !isDimensionQuestion(prompt)) {
+    if (!aiStatus?.ai_ready && promptMode !== "render") {
+      const statusEl = document.getElementById("prompt-status");
+      if (statusEl) {
+        statusEl.className = "status error";
+        statusEl.textContent = "Add your AI API key before using Spice up.";
+      }
+      viewerOverlay.showError("Add your AI API key before using Spice up.");
+      aiKeyUi?.openRequired();
+      return;
+    }
+    const statusEl = document.getElementById("prompt-status");
+    if (statusEl) {
+      statusEl.className = "status loading";
+      statusEl.textContent = "Spicing up your prompt for text-to-CAD…";
+    }
+    try {
+      const improved = await spiceUpPromptForCad(prompt, {
+        mode: promptMode,
+        targetMode: getPromptTargetMode?.() || "new",
+      });
+      if (improved && improved !== prompt) {
+        prompt = improved;
+        composer.setPromptText(improved);
+        if (statusEl) {
+          statusEl.className = "status ok";
+          statusEl.textContent = "Prompt spiced up — generating with the improved text…";
+        }
+        setEditStatus("ok", "Prompt spiced up for CAD.");
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.className = "status error";
+        statusEl.textContent = formatUserError(err) || "Could not spice up prompt.";
+      }
+      viewerOverlay.showError(formatUserError(err) || "Could not spice up prompt.");
+      return;
+    }
+  }
   // Always clear a stale timeout/error banner when the user explicitly clicks Generate.
   viewerOverlay.clearError();
   const promptStatusEl = document.getElementById("prompt-status");

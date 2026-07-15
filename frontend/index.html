@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-auto-reload-idle" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-spice-prompt" />
   <script type="importmap">
   {
     "imports": {
@@ -1014,6 +1014,14 @@
                 <input type="checkbox" id="prompt-codex" />
                 <span>Codex</span>
               </label>
+              <label
+                id="prompt-spice-toggle"
+                class="prompt-spice-toggle"
+                title="When on, your prompt is rewritten for stronger text-to-CAD before generate runs."
+              >
+                <input type="checkbox" id="prompt-spice" />
+                <span>Spice up</span>
+              </label>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
             </div>
             <label class="prompt-target-row">
@@ -1717,12 +1725,8 @@
         </div>
         <button type="button" id="kb-modal-done" class="btn accent btn-compact">Done</button>
       </div>
-      <div class="kb-overview-bar">
-        <div id="prompt-kb-overview" class="prompt-kb-overview kb-modal-overview"></div>
-        <button type="button" id="kb-view-stats" class="btn secondary btn-compact kb-view-stats-btn" aria-haspopup="dialog" aria-expanded="false">
-          View more
-        </button>
-      </div>
+      <div id="prompt-kb-overview" class="prompt-kb-overview kb-modal-overview"></div>
+      <div id="kb-overview-stats" class="kb-overview-stats"></div>
       <div id="prompt-kb-drop" class="prompt-kb-drop" tabindex="0" role="button" aria-label="Drop or select files for knowledge base">
         <input id="prompt-kb-drop-input" type="file" multiple hidden accept=".pdf,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log,.dxf,.svg,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,.ply,.png,.jpg,.jpeg,.webp,.iges,.igs" />
         <strong>Drop files here</strong>
@@ -1761,19 +1765,6 @@
           </div>
           <div id="kb-tree" class="kb-tree"></div>
         </section>
-      </div>
-      <div id="kb-stats-overlay" class="kb-stats-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="kb-stats-overlay-title">
-        <div class="kb-stats-overlay-backdrop" id="kb-stats-overlay-backdrop"></div>
-        <div class="kb-stats-overlay-card">
-          <header class="kb-stats-overlay-head">
-            <div>
-              <h3 id="kb-stats-overlay-title">Knowledge library overview</h3>
-              <p class="muted small">Full stats for your bases, files, formats, and AI-ready coverage.</p>
-            </div>
-            <button type="button" class="auth-close" id="kb-stats-overlay-close" aria-label="Close overview">&times;</button>
-          </header>
-          <div id="kb-overview-stats" class="kb-overview-stats kb-stats-overlay-body"></div>
-        </div>
       </div>
     </div>
   </div>
@@ -1837,7 +1828,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260715-auto-reload-idle"></script>
+  <script type="module" src="/app.js?v=20260715-spice-prompt"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
