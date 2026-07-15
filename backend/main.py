@@ -6196,10 +6196,15 @@ def admin_dashboard(
             entries = []
         latest_prompt_text = None
         latest_prompt_at = None
+        project_cost = 0.0
         if entries:
             newest_prompt = max(entries, key=lambda item: str(item.get("created_at") or ""))
             latest_prompt_text = _admin_prompt_preview(newest_prompt.get("prompt"), 180)
             latest_prompt_at = newest_prompt.get("created_at")
+            for entry in entries:
+                cost = entry_effective_cost(entry)
+                if cost is not None:
+                    project_cost += float(cost)
         project_item = {
             "id": pid,
             "name": meta.get("name") or pid,
@@ -6215,6 +6220,8 @@ def admin_dashboard(
             "public": bool(access["is_public"]),
             "latest_prompt": latest_prompt_text,
             "latest_prompt_at": latest_prompt_at,
+            "total_cost_usd": round(project_cost, 6),
+            "prompt_count": len(entries),
             "training_ready": bool(preview.get("model_file") and latest_prompt_text),
             **preview,
         }

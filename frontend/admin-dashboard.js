@@ -115,6 +115,8 @@ function renderProjectRows(projects = []) {
         </div>
         <div class="admin-row-stats">
           <span>${formatNumber(project.file_count)} files</span>
+          ${project.prompt_count != null ? `<span>${formatNumber(project.prompt_count)} prompts</span>` : ""}
+          ${project.total_cost_usd != null ? `<span>${formatMoney(project.total_cost_usd)}</span>` : ""}
           ${project.public ? "<span>Public</span>" : ""}
           ${project.model_file ? `<span>${escapeHtml(project.model_file)}</span>` : ""}
         </div>
