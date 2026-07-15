@@ -3093,8 +3093,6 @@ def render_agent_message(body: RenderAgentMessageRequest, request: Request, user
             trace_id=trace_id,
             images=images,
             max_tokens=2500,
-            retry_on_truncation=False,
-            pro_floor=None,
             json_response=False,
         )
     except Exception as exc:

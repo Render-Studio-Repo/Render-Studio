@@ -1,4 +1,11 @@
 /** Floating Render Agent assistant for tooling questions and onboarding. */
+import {
+  bumpTipForNewThread,
+  bumpTipOnRefresh,
+  getCurrentTip,
+  tipTopicClass,
+} from "./getting-started-tips.js?v=20260715-agent-tips2";
+
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const RENDER3D_LOGO_URL = "/favicon.svg";
@@ -338,15 +345,49 @@ export function createRenderAgent({
     });
   }
 
+  bumpTipOnRefresh();
+
+  function renderAgentTipCard({ compact = false } = {}) {
+    const tip = getCurrentTip();
+    if (!tip) return "";
+    return `
+      <div class="render-agent-tip${compact ? " render-agent-tip--compact" : ""}">
+        <div class="render-agent-tip-head">
+          <span class="render-agent-tip-badge ${tipTopicClass(tip.topic)}">${esc(tip.topic)}</span>
+          <span class="render-agent-tip-label">Tip to get started</span>
+        </div>
+        <strong class="render-agent-tip-title">${esc(tip.title)}</strong>
+        <p class="render-agent-tip-body">${esc(tip.body)}</p>
+        <button type="button" class="btn secondary btn-compact render-agent-tip-try" data-tip-starter="${esc(tip.starter)}">
+          Ask this
+        </button>
+      </div>
+    `;
+  }
+
+  function bindTipActions(root) {
+    root?.querySelectorAll("[data-tip-starter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const starter = btn.getAttribute("data-tip-starter") || "";
+        if (input && starter) {
+          input.value = starter;
+          input.focus();
+          input.setSelectionRange(starter.length, starter.length);
+        }
+      });
+    });
+  }
+
   function renderMessages() {
     const messages = activeThread?.messages || [];
     if (!messages.length) {
       messagesEl.innerHTML = `
         <div class="render-agent-empty">
           <strong>Ask me anything about Render3D.</strong>
-          <span>Try: "How do I export to Fusion?" or "What file should I upload for STEP editing?"</span>
+          ${renderAgentTipCard()}
         </div>
       `;
+      bindTipActions(messagesEl);
       return;
     }
     messagesEl.innerHTML = messages
@@ -424,7 +465,14 @@ export function createRenderAgent({
     renderInviteOptions();
   }
 
+  function closeThreadMenu() {
+    threadPopover?.classList.add("hidden");
+    threadMenuBtn?.setAttribute("aria-expanded", "false");
+  }
+
   async function createThread() {
+    bumpTipForNewThread();
+    closeThreadMenu();
     const data = await api("/api/render-agent/threads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -436,6 +484,7 @@ export function createRenderAgent({
     renderMessages();
     renderMembers();
     renderInviteOptions();
+    setTimeout(() => input?.focus(), 40);
   }
 
   async function moveThreadToFolder(threadId, folder) {

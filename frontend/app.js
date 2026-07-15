@@ -52,7 +52,7 @@ import {
 } from "./scene-style.js?v=20260710-jake-part-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
-import { createPromptComposer } from "./prompt-composer.js?v=20260707-doc-references";
+import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-mentions";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -62,7 +62,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-projec
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
+import { createRenderAgent } from "./render-agent.js?v=20260715-agent-tips2";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
 import { createRibbon } from "./ribbon.js?v=20260714-measure-btn";
@@ -774,9 +774,11 @@ function applyPromptModeUI(mode = promptMode) {
   }
   const input = document.getElementById("prompt-input");
   if (input) {
-    input.placeholder = promptMode === "render"
+    const placeholder = promptMode === "render"
       ? "Describe the real-life environment to render. Example: put this model on a kitchen counter in morning light..."
-      : "Describe what to make or edit. Drag parts/faces here to add @ reference chips...";
+      : "Describe what to make or edit. Type @ to link uploaded files…";
+    input.placeholder = placeholder;
+    if (composer?.editor) composer.editor.dataset.placeholder = placeholder;
   }
   if (promptMode === "architect") {
     setSkillEnabled("cad", true);
@@ -1959,6 +1961,14 @@ const composer = createPromptComposer({
   chipsEl: document.getElementById("ref-chips"),
   inlineChipsEl: document.getElementById("prompt-inline-ref-chips"),
   refsListEl: document.getElementById("ref-list"),
+  getMentionables: getPromptMentionables,
+  onUnlinkMentionable: (ref) => {
+    if (ref?.type === "image" && ref.id) {
+      const before = promptImages.length;
+      promptImages = promptImages.filter((img) => `image:${img.id}` !== ref.id && img.id !== ref.id);
+      if (promptImages.length !== before) renderPromptImages();
+    }
+  },
   onReferencesChange: (refs) => {
     if (!restoringModelPromptState) saveActiveModelPromptState();
     sendCollabPresence();
@@ -1966,6 +1976,68 @@ const composer = createPromptComposer({
     if (!measureModeActive) refreshSelectionMeasureOverlay();
   },
 });
+
+function getPromptMentionables() {
+  const items = [];
+  const seen = new Set();
+  const pushItem = (item) => {
+    if (!item?.token || !item?.id || seen.has(item.id) || seen.has(item.token)) return;
+    seen.add(item.id);
+    seen.add(item.token);
+    items.push(item);
+  };
+
+  for (const ref of composer.getReferences?.() || []) {
+    if (!["component", "sketch", "wiring", "dxf", "document", "image"].includes(ref.type)) continue;
+    pushItem({
+      id: ref.id,
+      token: ref.token || compactComponentToken(ref.stem || ref.label || ref.filename || "file"),
+      label: ref.label || ref.stem || ref.filename || ref.token,
+      detail: ref.filename || ref.type,
+      type: ref.type,
+      filename: ref.filename,
+      stem: ref.stem,
+      format: ref.format,
+      viewer_filename: ref.viewer_filename,
+      projectId: ref.projectId,
+      text_content: ref.text_content,
+      text_truncated: ref.text_truncated,
+      ref,
+    });
+  }
+
+  for (const img of promptImages || []) {
+    const stem = String(img.name || "image").replace(/\.[^.]+$/, "");
+    const token = compactComponentToken(stem);
+    pushItem({
+      id: `image:${img.id}`,
+      token,
+      label: stem,
+      detail: img.name || "image",
+      type: "image",
+      filename: img.name,
+      stem,
+      ref: {
+        id: `image:${img.id}`,
+        type: "image",
+        token,
+        label: stem,
+        filename: img.name,
+        stem,
+      },
+    });
+  }
+
+  return items;
+}
+
+function focusPromptComposer() {
+  if (composer?.editor) {
+    composer.editor.focus();
+    return;
+  }
+  focusPromptComposer();
+}
 
 function isExplorerPromptRef(ref) {
   return (
@@ -2683,12 +2755,16 @@ document.getElementById("prompt-input")?.addEventListener("dragover", handleProm
 document.getElementById("prompt-input")?.addEventListener("drop", handlePromptComposeDrop);
 document.getElementById("prompt-inline-ref-chips")?.addEventListener("dragover", handlePromptComposeDragover);
 document.getElementById("prompt-inline-ref-chips")?.addEventListener("drop", handlePromptComposeDrop);
-document.getElementById("prompt-input")?.addEventListener("paste", async (e) => {
+composer?.editor?.addEventListener("dragover", handlePromptComposeDragover);
+composer?.editor?.addEventListener("drop", handlePromptComposeDrop);
+async function handlePromptImagePaste(e) {
   const files = [...(e.clipboardData?.files || [])].filter((file) => file.type?.startsWith("image/"));
   if (!files.length) return;
   e.preventDefault();
   await addPromptImages(files);
-});
+}
+document.getElementById("prompt-input")?.addEventListener("paste", handlePromptImagePaste);
+composer?.editor?.addEventListener("paste", handlePromptImagePaste);
 
 collab = createCollab({
   getToken,
@@ -2839,7 +2915,7 @@ const promptHistory = createPromptHistoryUI({
     promptImages = [];
     renderPromptImages();
     saveActiveModelPromptState();
-    document.getElementById("prompt-input")?.focus();
+    focusPromptComposer();
     const refCount = refs.length;
     setEditStatus("ok", refCount ? `Reused prompt with ${refCount} reference${refCount === 1 ? "" : "s"}.` : "Reused prompt.");
   },
@@ -8182,7 +8258,7 @@ function activateArchitectPrompt(kind = "room") {
   promptHistory.setTab("compose");
   saveActiveModelPromptState();
   setEditStatus("ok", "Architect prompt loaded — review it, then Generate modular house part.");
-  document.getElementById("prompt-input")?.focus();
+  focusPromptComposer();
 }
 
 document.querySelectorAll("[data-right-tab]").forEach((btn) => {
