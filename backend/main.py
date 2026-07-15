@@ -94,12 +94,14 @@ app = FastAPI(title="Render3D", description="CAD project visualizer with AI prom
 
 
 def _recover_stuck_generations() -> None:
-    """Mark in-flight jobs as failed after a server stop — do not auto re-run them.
+    """Re-queue in-flight CAD/wiring jobs after a server restart.
 
-    Re-queuing prompt jobs burns API credits on duplicate AI calls. Users can
-    retry manually once the server is back up.
+    Generations run in-process, so a deploy kills the worker. We keep
+    ``request_body`` on disk and restart the background job (up to
+    ``restart_count`` limit) so users do not lose their place.
     """
     import fcntl
+    import threading
 
     lock_path = PROJECTS / ".generation-recovery.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -107,7 +109,7 @@ def _recover_stuck_generations() -> None:
     try:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        logger.info("Another worker is clearing stuck generations; skipping")
+        logger.info("Another worker is recovering stuck generations; skipping")
         lock_file.close()
         return
 
@@ -115,28 +117,127 @@ def _recover_stuck_generations() -> None:
         stuck = generation_service.find_stuck_jobs(PROJECTS)
         if not stuck:
             return
-        logger.info("Found %d stuck generation(s) to mark failed on startup", len(stuck))
+        logger.info("Found %d stuck generation(s) to resume on startup", len(stuck))
         for job in stuck:
             project_path_ = job["project_path"]
-            original_trace = job.get("trace_id") or ""
+            project_id = job["project_id"]
             original_data = job["data"] or {}
-            original_mode = str(original_data.get("mode") or (original_data.get("request_body") or {}).get("mode") or "").lower()
-            message = (
-                "Generation stopped during a server update. You can retry the prompt."
-                if original_mode in {"v2", "fusion", "architect"}
-                else "Generation stopped during a server update. You can retry."
-            )
-            # Quiet cancel — do not surface a failure overlay in the viewport.
-            generation_service.interrupt_for_restart(
-                project_path_,
-                message,
-                trace_id=original_trace,
-            )
+            original_trace = str(job.get("trace_id") or original_data.get("trace_id") or "")
+            kind = str(original_data.get("kind") or "prompt").lower()
+            body_data = original_data.get("request_body")
+            if not isinstance(body_data, dict) or not body_data:
+                generation_service.interrupt_for_restart(
+                    project_path_,
+                    "Generation stopped during a server update. You can retry the prompt.",
+                    trace_id=original_trace,
+                )
+                continue
+
+            user_id = original_data.get("by_user_id")
+            user = get_user_by_id(str(user_id)) if user_id else None
+            if not user:
+                generation_service.interrupt_for_restart(
+                    project_path_,
+                    "Generation stopped during a server update. You can retry the prompt.",
+                    trace_id=original_trace,
+                )
+                logger.warning(
+                    "Could not resume generation project=%s trace=%s (missing user)",
+                    project_id,
+                    original_trace,
+                )
+                continue
+
+            restart_count = int(original_data.get("restart_count") or 0) + 1
+            if restart_count > 2:
+                generation_service.interrupt_for_restart(
+                    project_path_,
+                    "Generation stopped during a server update. You can retry the prompt.",
+                    trace_id=original_trace,
+                )
+                continue
+
+            mode = str(
+                original_data.get("mode")
+                or body_data.get("mode")
+                or "standard"
+            ).lower()
+            prompt = str(body_data.get("prompt") or original_data.get("prompt") or "")
+            label = original_data.get("label")
+            model = original_data.get("model") or body_data.get("model")
+            provider = original_data.get("provider") or body_data.get("provider")
+            speed = original_data.get("speed") or body_data.get("speed")
+
+            try:
+                generation_service.start(
+                    project_path_,
+                    kind=kind,
+                    trace_id=original_trace or new_trace_id(),
+                    user=user,
+                    prompt=prompt or None,
+                    label=label,
+                    mode=mode,
+                    request_body=body_data,
+                    restart_count=restart_count,
+                    replace_running=True,
+                    model=model,
+                    provider=provider,
+                    speed=speed,
+                )
+                generation_service.update_progress(
+                    project_path_,
+                    {
+                        "stage": "analyze",
+                        "pct": 4,
+                        "label": "Resuming after server restart…",
+                        "thinking": "Picking up your generation where the server left off…",
+                    },
+                    trace_id=original_trace or None,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to re-queue generation project=%s trace=%s: %s",
+                    project_id,
+                    original_trace,
+                    exc,
+                )
+                generation_service.interrupt_for_restart(
+                    project_path_,
+                    "Generation stopped during a server update. You can retry the prompt.",
+                    trace_id=original_trace,
+                )
+                continue
+
+            resume_trace = original_trace or (generation_service.load(project_path_) or {}).get("trace_id") or ""
+
+            def _spawn(kind_: str, pid: str, body: dict[str, Any], trace: str, user_: dict[str, Any]) -> None:
+                try:
+                    if kind_ == "wiring":
+                        _background_wiring_prompt(pid, body, trace, user_)
+                    elif kind_ == "build":
+                        _background_kernel_build(pid, body, trace, user_)
+                    else:
+                        _background_prompt_kernel(pid, body, trace, user_)
+                except Exception:
+                    logger.exception(
+                        "Resumed generation crashed project=%s kind=%s trace=%s",
+                        pid,
+                        kind_,
+                        trace,
+                    )
+
+            threading.Thread(
+                target=_spawn,
+                args=(kind, project_id, dict(body_data), str(resume_trace), dict(user)),
+                daemon=True,
+                name=f"resume-gen-{project_id}-{str(resume_trace)[:8]}",
+            ).start()
             logger.info(
-                "Marked interrupted %s job canceled (quiet) project=%s trace=%s",
-                original_mode or "prompt",
-                job["project_id"],
-                original_trace,
+                "Resumed %s job after restart project=%s trace=%s restart_count=%s",
+                kind,
+                project_id,
+                resume_trace,
+                restart_count,
             )
     finally:
         try:

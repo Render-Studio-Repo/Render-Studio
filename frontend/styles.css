@@ -22031,3 +22031,14 @@ body.theme-light .render-agent-tip {
     text-align: left;
   }
 }
+
+.admin-agent-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.admin-agent-head h3 {
+  margin-bottom: 4px;
+}

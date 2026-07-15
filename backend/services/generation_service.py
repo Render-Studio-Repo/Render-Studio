@@ -465,7 +465,7 @@ def find_stuck_jobs(projects_root: Path) -> list[dict[str, Any]]:
     Returns list of dicts with: project_path, project_id, trace_id, data.
     Only returns jobs that have a saved request_body (so they can be re-queued)
     and have been running for less than MAX_RUNNING_SECONDS (not timed-out yet).
-    Capped at 1 restart attempt to avoid infinite loops.
+    Skips jobs whose worker_pid is still alive, and caps at restart_count < 2.
     """
     now = datetime.now(timezone.utc)
     results = []
