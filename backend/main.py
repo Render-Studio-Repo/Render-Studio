@@ -455,6 +455,16 @@ class SceneRenderRequest(BaseModel):
     ai_key_source: str | None = Field(default=None, description="personal or team")
 
 
+class RenderRegionEditRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=4000)
+    source_image: str = Field(..., max_length=12_000_000)
+    source_filename: str | None = Field(None, max_length=240)
+    region: dict[str, Any] | None = None
+    save_mode: str = Field(default="new", description="new or replace")
+    ai_key_id: str | None = Field(default=None, max_length=64)
+    ai_key_source: str | None = Field(default=None, description="personal or team")
+    speed: str = "fast"
+
 
 class ImprovePromptRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
@@ -10330,7 +10340,9 @@ def put_reference_markup(
     project_path = _require_project(user, project_id)
     safe = Path(filename).name
     file_path = cad_service.resolve_project_file(project_path, safe)
-    if file_path is None or file_path.parent.name != cad_service.REFERENCE_DIRNAME:
+    if file_path is None or file_path.parent.name not in cad_service.MARKUP_FOLDER_NAMES:
+        raise HTTPException(404, "Reference file not found")
+    if not cad_service.is_reference_suffix(file_path.suffix):
         raise HTTPException(404, "Reference file not found")
     saved = cad_service.save_reference_markup(
         file_path,

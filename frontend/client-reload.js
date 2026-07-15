@@ -11,6 +11,23 @@ const LS_REFRESHED_AT = "render3d:client-refreshed-at";
 const POLL_MS = 20000;
 const POST_REFRESH_SUPPRESS_MS = 30000;
 
+function isIPhoneOrMobileShell() {
+  const ua = navigator.userAgent || "";
+  if (/iPhone|iPod/i.test(ua)) return true;
+  try {
+    return !!window.matchMedia?.(
+      "(max-width: 820px), (pointer: coarse) and (max-width: 1024px)",
+    )?.matches;
+  } catch {
+    return false;
+  }
+}
+
+/** Update banner is desktop-only — hide on iPhone / mobile shell. */
+function shouldSuppressUpdateBannerOnMobile() {
+  return isIPhoneOrMobileShell();
+}
+
 function readJson(key) {
   try {
     const raw = sessionStorage.getItem(key);
@@ -135,6 +152,7 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
   }
 
   function showUpdateAvailable(nextVersion) {
+    if (shouldSuppressUpdateBannerOnMobile()) return;
     if (dismissedUntilRefresh) return;
     if (dismissedVersion && dismissedVersion === nextVersion) return;
     pendingVersion = nextVersion;

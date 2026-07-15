@@ -210,6 +210,41 @@ def save_reference_markup(file_path: Path, payload: dict[str, Any]) -> dict[str,
     for stroke in strokes[:500]:
         if not isinstance(stroke, dict):
             continue
+        stroke_type = str(stroke.get("type") or "pen").lower()[:24]
+        color = str(stroke.get("color") or "#f0883e")[:32]
+        try:
+            width = max(1.0, min(24.0, float(stroke.get("width") or 2)))
+        except (TypeError, ValueError):
+            width = 2.0
+        try:
+            page = int(stroke.get("page") or 0)
+        except (TypeError, ValueError):
+            page = 0
+        if stroke_type == "text":
+            text = str(stroke.get("text") or "")[:240].strip()
+            if not text:
+                continue
+            try:
+                x = float(stroke.get("x") if stroke.get("x") is not None else (stroke.get("points") or [[0, 0]])[0][0])
+                y = float(stroke.get("y") if stroke.get("y") is not None else (stroke.get("points") or [[0, 0]])[0][1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            try:
+                font_size = max(8.0, min(128.0, float(stroke.get("fontSize") or width * 6)))
+            except (TypeError, ValueError):
+                font_size = max(14.0, width * 6)
+            cleaned.append({
+                "type": "text",
+                "text": text,
+                "x": x,
+                "y": y,
+                "points": [[x, y], [x, y]],
+                "color": color,
+                "width": width,
+                "fontSize": font_size,
+                "page": page,
+            })
+            continue
         points = stroke.get("points")
         if not isinstance(points, list) or len(points) < 2:
             continue
@@ -223,12 +258,13 @@ def save_reference_markup(file_path: Path, payload: dict[str, Any]) -> dict[str,
                 continue
         if len(pts) < 2:
             continue
-        color = str(stroke.get("color") or "#f0883e")[:32]
-        try:
-            width = max(1.0, min(24.0, float(stroke.get("width") or 2)))
-        except (TypeError, ValueError):
-            width = 2.0
-        cleaned.append({"points": pts, "color": color, "width": width})
+        cleaned.append({
+            "type": stroke_type if stroke_type in {"pen", "highlight", "rect", "arrow"} else "pen",
+            "points": pts,
+            "color": color,
+            "width": width,
+            "page": page,
+        })
     out = {
         "notes": notes[:100_000],
         "strokes": cleaned,

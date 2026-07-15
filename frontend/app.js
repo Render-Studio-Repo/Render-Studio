@@ -50,7 +50,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260715-transparent-solid";
+} from "./scene-style.js?v=20260715-cad-color-restore";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-prompt-purple";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-scene-refs";
@@ -64,7 +64,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-auth-connect-social";
-import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-new-user-alerts";
+import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-drop-card";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-roles";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
@@ -72,7 +72,7 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-ready-banner";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-gen-loader";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-fusion-picker";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
@@ -92,9 +92,9 @@ import {
   clearPendingRestore,
   readPendingRestore,
   initClientVersionWatcher,
-} from "./client-reload.js?v=20260715-dismiss-until-refresh";
+} from "./client-reload.js?v=20260715-no-iphone-banner";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-download";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-markup-tools";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -616,7 +616,8 @@ async function applyGenerationComplete(gen, pid = projectId) {
     await refreshPromptHistory();
     showAiComposePanel();
     clearPromptComposeResult();
-    {
+    const statusEl = document.getElementById("prompt-status");
+    if (statusEl) {
       const ref = gen.prompt_id
         ? formatPromptRef({
             promptId: gen.prompt_id,
@@ -628,7 +629,8 @@ async function applyGenerationComplete(gen, pid = projectId) {
             provider: gen.provider,
           })
         : "";
-      showModelReadyBanner(ref ? `Model ready · ${ref}` : "Model ready.");
+      statusEl.className = "status ok";
+      statusEl.textContent = ref ? `Model ready · ${ref}` : "Model ready.";
     }
     if (document.body.classList.contains("canvas-design-tab")) {
       workspaceModes?.setDesignTab?.("SOLID");
@@ -681,9 +683,7 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
 
 async function applyWiringGenerationComplete(gen, pid = projectId) {
   if (!pid) return;
-  const statusEl = document.getElementById("wiring-prompt-status");
-  if (statusEl && pid === projectId) {
-    statusEl.className = "status ok";
+  if (pid === projectId) {
     const ref = gen.prompt_id
       ? formatPromptRef({
           promptId: gen.prompt_id,
@@ -694,7 +694,7 @@ async function applyWiringGenerationComplete(gen, pid = projectId) {
           provider: gen.provider,
         })
       : (gen.trace_id ? `trace #${gen.trace_id}` : "");
-    statusEl.textContent = ref ? `Schematic ready · ${ref}` : "Schematic ready.";
+    showModelReadyBanner(ref ? `Schematic ready · ${ref}` : "Schematic ready.", "wiring-prompt-status");
   }
   if (pid === projectId) {
     const schematic = await api(`/api/projects/${pid}/wiring`);
@@ -710,9 +710,7 @@ async function applyWiringGenerationComplete(gen, pid = projectId) {
 
 async function applyRiggingGenerationComplete(gen, pid = projectId) {
   if (!pid) return;
-  const statusEl = document.getElementById("rigging-prompt-status");
-  if (statusEl && pid === projectId) {
-    statusEl.className = "status ok";
+  if (pid === projectId) {
     const ref = gen.prompt_id
       ? formatPromptRef({
           promptId: gen.prompt_id,
@@ -723,7 +721,7 @@ async function applyRiggingGenerationComplete(gen, pid = projectId) {
           provider: gen.provider,
         })
       : (gen.trace_id ? `trace #${gen.trace_id}` : "");
-    statusEl.textContent = ref ? `Rigging ready · ${ref}` : (gen.message || "Rigging ready.");
+    showModelReadyBanner(ref ? `Rigging ready · ${ref}` : (gen.message || "Rigging ready."), "rigging-prompt-status");
   }
   if (pid === projectId) {
     try {
@@ -795,7 +793,7 @@ function stopGenerationWatch() {
   const pid = generationWatchPid;
   generationWatchPid = null;
   generationWatchOverlay = null;
-  promptSubmitInFlight = false;
+  // Do not clear promptSubmitInFlight here — poll teardown mid-submit hid the banner.
   if (pid) setProjectLoading(pid, false);
   clearCanvasGenerationPending(pid);
   syncViewportGenerationOverlay({ complete: true });
@@ -895,6 +893,7 @@ async function cancelActiveGeneration(opts = {}) {
     } else {
       stopGenerationWatch();
       hideViewportOverlay(pid);
+      promptSubmitInFlight = false;
       document.getElementById("btn-prompt")?.removeAttribute("disabled");
       document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
       document.getElementById("btn-wiring-toolbelt-generate")?.removeAttribute("disabled");
@@ -1212,6 +1211,10 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       const proj = allProjects.find((p) => p.id === pid);
       if (proj) proj.generation = gen;
       const runningJobs = generationRunningJobs(gen, generationWatchOverlay);
+      const hasServerRunning =
+        gen.status === "running"
+        || (Array.isArray(gen.running_jobs) && gen.running_jobs.some((j) => String(j?.trace_id || j?.id || "") !== "pending"))
+        || (Array.isArray(gen.jobs) && gen.jobs.some((j) => j?.status === "running" && String(j?.trace_id || j?.id || "") !== "pending"));
       if (gen.status === "running" || runningJobs.length > 0) {
         if (generationWatchOverlay) {
           const liveMode = generationWatchOverlay.kind === "rigging"
@@ -1219,7 +1222,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             : generationPromptMode(gen, generationWatchOverlay.promptMode || mode);
           Object.assign(generationWatchOverlay, {
             promptMode: liveMode,
-            pendingStart: false,
+            pendingStart: hasServerRunning ? false : Boolean(generationWatchOverlay.pendingStart),
             benignInterruptAt: null,
             progress: {
               ...(generationWatchOverlay.progress || {}),
@@ -1262,9 +1265,15 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         return;
       }
       const watchAgeMs = Math.max(0, Date.now() - Number(generationWatchOverlay?.startedAt || Date.now()));
+      if (generationWatchOverlay?.pendingStart) {
+        syncViewportGenerationOverlay();
+        syncStopButtonVisibility();
+        syncCanvasGenerationUi();
+        return;
+      }
       if (
-        (!gen.status || gen.status === "idle") &&
-        (generationWatchOverlay?.pendingStart || watchAgeMs < 20_000)
+        (!gen.status || gen.status === "idle")
+        && watchAgeMs < 20_000
       ) {
         syncStopButtonVisibility();
         syncCanvasGenerationUi();
@@ -1351,7 +1360,8 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           await refreshFiles();
           await refreshTimeline();
           await refreshPromptHistory();
-          if (gen.filename) {
+          const statusEl = document.getElementById("prompt-status");
+          if (statusEl && gen.filename) {
             const ref = gen.prompt_id
               ? formatPromptRef({
                   promptId: gen.prompt_id,
@@ -1363,7 +1373,8 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
                   provider: gen.provider,
                 })
               : "";
-            showModelReadyBanner(ref ? `Model ready · ${ref}` : "Model ready.");
+            statusEl.className = "status ok";
+            statusEl.textContent = ref ? `Model ready · ${ref}` : "Model ready.";
           }
         }
       } else if (gen.status === "failed") {
@@ -5365,17 +5376,6 @@ function setEditStatus(kind, text) {
     el.className = `status ${kind}`;
     el.textContent = text;
   }
-}
-
-function showModelReadyBanner(message, statusElId = "prompt-status") {
-  const text = String(message || "").trim();
-  if (!text) return;
-  const statusEl = document.getElementById(statusElId);
-  if (statusEl) {
-    statusEl.className = "status ok";
-    statusEl.textContent = text;
-  }
-  viewerOverlay?.showReadyBanner?.(text);
 }
 
 // ── Fusion-style direct modeling (press-pull, mirror, gizmo panel, units) ────
@@ -14078,10 +14078,20 @@ const referenceFilesViewer = createReferenceFilesViewer({
   api,
   rawFetch,
   getProjectId: () => projectId,
+  getAiKeyBodyFields: () => getPromptAiKeyBodyFields(),
   onStatus: (kind, text) => {
     if (text) setEditStatus(kind || "ok", text);
   },
   onSendToPrompt: (payload) => sendReferenceMarkupToPrompt(payload),
+  onRenderEdited: async ({ projectId: pid }) => {
+    if (pid === projectId) {
+      try {
+        await refreshFiles();
+      } catch {
+        /* optional */
+      }
+    }
+  },
   onActiveChange: (filename) => {
     if (filename) {
       selectedFile = filename;
@@ -22487,6 +22497,17 @@ window.addEventListener("keydown", (e) => {
                 ${themeOptions}
               </select>
             </label>
+            <label class="profile-preference-field">
+              <span>
+                <b>Render region edits</b>
+                <small>After an AI crop/edit on a render: ask each time, replace the image, or always save a new file.</small>
+              </span>
+              <select id="pref-render-edit-mode">
+                <option value="ask">Ask each time</option>
+                <option value="replace">Always replace current</option>
+                <option value="new">Always save as new</option>
+              </select>
+            </label>
             <p class="muted small profile-preferences-note">
               Viewport lighting can be adjusted from the ribbon Light button and is remembered on this device.
             </p>
@@ -22497,6 +22518,15 @@ window.addEventListener("keydown", (e) => {
     syncMousePreferenceUI();
     const themeSelect = panel.querySelector("#pref-app-theme");
     if (themeSelect) themeSelect.value = appTheme;
+    const renderEditSelect = panel.querySelector("#pref-render-edit-mode");
+    if (renderEditSelect) {
+      try {
+        const mode = localStorage.getItem("render3d:renderEditSaveMode:v1") || "ask";
+        renderEditSelect.value = ["ask", "replace", "new"].includes(mode) ? mode : "ask";
+      } catch {
+        renderEditSelect.value = "ask";
+      }
+    }
   }
 
   function closePreferencesModal() {
@@ -22529,6 +22559,21 @@ window.addEventListener("keydown", (e) => {
     const themeSelect = e.target.closest("#pref-app-theme");
     if (themeSelect) {
       setAppTheme(themeSelect.value, { persist: true, announce: true });
+      return;
+    }
+    const renderEditSelect = e.target.closest("#pref-render-edit-mode");
+    if (renderEditSelect) {
+      const mode = ["ask", "replace", "new"].includes(renderEditSelect.value) ? renderEditSelect.value : "ask";
+      try {
+        localStorage.setItem("render3d:renderEditSaveMode:v1", mode);
+      } catch {
+        /* ignore */
+      }
+      setEditStatus("ok", mode === "ask"
+        ? "Render edits will ask replace vs new each time."
+        : mode === "replace"
+          ? "Render edits will always replace the current image."
+          : "Render edits will always save as a new image.");
       return;
     }
     const avatarInput = e.target.closest("#profile-avatar-input");

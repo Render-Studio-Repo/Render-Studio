@@ -415,7 +415,7 @@ export function createFeedbackUI({
 
   function isForeignDropTarget(target) {
     return !!target?.closest?.(
-      "#project-chat-overlay, .pc-composer, .prompt-composer, .prompt-dropzone, [data-no-feedback-drop], input, textarea, .CodeMirror, .monaco-editor"
+      "#viewport, #prompt-panel, #prompt-pane-compose, #prompt-image-drop, #wiring-prompt-image-drop, #rigging-prompt-image-drop, #project-chat-overlay, .pc-composer, .prompt-composer, .prompt-dropzone, [data-no-feedback-drop], input, textarea, .CodeMirror, .monaco-editor"
     );
   }
 

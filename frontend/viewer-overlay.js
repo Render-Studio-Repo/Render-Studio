@@ -121,7 +121,24 @@ function esc(value) {
     .replace(/"/g, "&quot;");
 }
 
+const READY_BANNER_CSS = "/viewport-ready-banner.css?v=20260715-ready-banner";
+const GEN_LOADER_CSS = "/viewport-gen-loader.css?v=20260715-gen-loader";
+function ensureOverlayStylesheet(href, dataAttr) {
+  if (typeof document === "undefined") return;
+  if (document.querySelector(`link[${dataAttr}="1"]`)) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = href;
+  link.setAttribute(dataAttr, "1");
+  document.head.appendChild(link);
+}
+function ensureReadyBannerStyles() {
+  ensureOverlayStylesheet(READY_BANNER_CSS, "data-viewport-ready-banner");
+  ensureOverlayStylesheet(GEN_LOADER_CSS, "data-viewport-gen-loader");
+}
+
 export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, getCopyContext } = {}) {
+  ensureReadyBannerStyles();
   if (!viewportEl) {
     return {
       setGenerating() {},
@@ -159,6 +176,22 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
         <span class="fusion-loader-drop fusion-loader-drop--a"></span>
         <span class="fusion-loader-drop fusion-loader-drop--b"></span>
         <span class="fusion-loader-drop fusion-loader-drop--c"></span>
+      </div>
+      <div class="viewport-gen-stage">
+        <div class="viewport-gen-printer">
+          <div class="vgp-gantry"></div>
+          <div class="vgp-rail vgp-rail--l"></div>
+          <div class="vgp-rail vgp-rail--r"></div>
+          <div class="vgp-nozzle"></div>
+          <div class="vgp-part"></div>
+          <div class="vgp-bed"></div>
+        </div>
+        <div class="viewport-gen-robot vgr-idle">
+          <div class="vgr-arm"></div>
+          <div class="vgr-head"></div>
+          <div class="vgr-body"></div>
+          <div class="vgr-base"></div>
+        </div>
       </div>
     </div>
     <div class="viewport-spinner-body">
@@ -249,6 +282,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   viewportEl.appendChild(root);
 
   let generating = false;
+  let pendingHoldUntil = 0;
   let detailsOpen = false;
   let progressValue = 0;
   let traceProgress = 0;
@@ -509,18 +543,29 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function renderProgress() {
     if (activeJobs.length > 1) {
+      const focused = activeJobs.find((j) => jobKey(j) === focusedJobId) || activeJobs[0];
+      const jobPct = Number(focused?.progress?.pct);
+      const pct = Number.isFinite(jobPct)
+        ? Math.round(Math.max(0, Math.min(100, jobPct)))
+        : Math.round(Math.max(0, Math.min(100, progressValue)));
+      spinner.style.setProperty("--gen-pct", String(pct));
+      if (pct >= 100 && generating) spinner.classList.add("viewport-spinner--place");
       renderJobsList();
       renderDetails();
       return;
     }
     const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
     const stats = stepStats(checklist);
+    spinner.style.setProperty("--gen-pct", String(pct));
     if (progressFill) progressFill.style.width = `${pct}%`;
     if (progressPct) progressPct.textContent = `${pct}%`;
     if (progressStep) progressStep.textContent = `${stats.current}/${stats.total}`;
     if (spinnerLabel) {
       const clean = humanizeProgressText(progressLabel || thinkingLabel || stats.label, stats.label);
       spinnerLabel.textContent = `${stats.current}/${stats.total} · ${clean}`;
+    }
+    if (pct >= 100 && generating) {
+      spinner.classList.add("viewport-spinner--place");
     }
     renderDetails();
   }
@@ -532,6 +577,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       if (Number.isFinite(pct)) {
         if (pct > traceProgress) traceProgress = pct;
         if (pct > progressValue) progressValue = pct;
+        if (pct >= 5) pendingHoldUntil = 0;
       }
     }
     const nextImproved = progress.improved_prompt ?? progress.prompt_preview ?? progress.improvedPrompt;
@@ -694,6 +740,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   function startProgress(message, opts = {}) {
     clearProgressTimers();
     generating = true;
+    spinner.classList.remove("viewport-spinner--place");
+    spinner.style.setProperty("--gen-pct", "0");
     progressValue = 0;
     traceProgress = 0;
     progressLabel = humanizeProgressText(message, "Generating…");
@@ -743,6 +791,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     spinner.classList.remove("viewport-spinner--v2");
     spinner.classList.remove("viewport-spinner--fusion");
     spinner.classList.remove("viewport-spinner--multi");
+    spinner.classList.remove("viewport-spinner--place");
+    spinner.style.setProperty("--gen-pct", "0");
     if (stopBtn) stopBtn.classList.add("hidden");
     progressValue = 0;
     traceProgress = 0;
@@ -768,9 +818,12 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   function finishProgress() {
     bumpProgress(100, "Done");
     checklist = checklist.map((item) => ({ ...item, status: "done" }));
+    spinner.classList.add("viewport-spinner--place");
+    spinner.style.setProperty("--gen-pct", "100");
     renderProgress();
     clearProgressTimers();
-    finishTimer = setTimeout(hideSpinner, 420);
+    // Hold long enough for the robot pick-and-place animation.
+    finishTimer = setTimeout(hideSpinner, 1550);
   }
 
   async function copyToClipboard(text) {
@@ -801,8 +854,17 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function setGenerating(active, message = "Generating…", opts = {}) {
     if (active) {
+      if (opts.pendingStart) {
+        pendingHoldUntil = Math.max(pendingHoldUntil, Date.now() + 90000);
+      } else if (opts.pendingStart === false || (opts.progress && Number(opts.progress?.pct) >= 5)) {
+        pendingHoldUntil = 0;
+      }
       if (Array.isArray(opts.jobs)) setActiveJobs(opts.jobs);
       else if (opts.job) setActiveJobs([opts.job]);
+      // Real server jobs (non-pending) end the submit hold.
+      if (Array.isArray(opts.jobs) && opts.jobs.some((j) => String(j?.trace_id || j?.id || "") !== "pending" && j?.status === "running")) {
+        pendingHoldUntil = 0;
+      }
       if (generating) {
         if (message && activeJobs.length <= 1) progressLabel = message;
         if (opts.estimateMs) estimateMs = opts.estimateMs;
@@ -816,6 +878,17 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       renderProgress();
       return;
     }
+    // Ignore premature complete teardown while Generate submit/spice is still in flight.
+    // That race was making the first click look like a no-op until a second click.
+    if (
+      generating
+      && opts.complete
+      && !opts.force
+      && Date.now() < pendingHoldUntil
+    ) {
+      return;
+    }
+    pendingHoldUntil = 0;
     if (opts.complete && generating) finishProgress();
     else hideSpinner();
   }
@@ -837,6 +910,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   }
 
   function showError(message, context = {}) {
+    pendingHoldUntil = 0;
     displayText =
       String(message || "").trim() ||
       "Something went wrong — open Prompt History or the Activity Log for details.";
@@ -980,5 +1054,10 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     clearReadyBanner();
   });
 
-  return { setGenerating, isGenerating, updateProgress, setStopVisible, setActiveJobs, showError, clearError, showReadyBanner, clearReadyBanner, dismiss };
+  const api = { setGenerating, isGenerating, updateProgress, setStopVisible, setActiveJobs, showError, clearError, showReadyBanner, clearReadyBanner, dismiss };
+  // Main studio viewport only — wiring has its own overlay instance.
+  if (viewportEl?.id === "viewport") {
+    window.Render3DViewerOverlay = api;
+  }
+  return api;
 }

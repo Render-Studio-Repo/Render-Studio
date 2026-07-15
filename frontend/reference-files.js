@@ -43,11 +43,49 @@ function strokeSvg(strokes = [], pageIndex = null) {
       return p === pageIndex;
     })
     .map((stroke) => {
+      const type = String(stroke.type || "pen").toLowerCase();
+      const color = escapeHtml(stroke.color || "#f0883e");
+      const width = Number(stroke.width) || 3;
+      if (type === "text") {
+        const x = Number(stroke.x ?? stroke.points?.[0]?.[0] ?? 0);
+        const y = Number(stroke.y ?? stroke.points?.[0]?.[1] ?? 0);
+        const size = Number(stroke.fontSize) || Math.max(14, width * 5);
+        const text = escapeHtml(stroke.text || "");
+        if (!text) return "";
+        return `<text x="${x}" y="${y}" fill="${color}" font-size="${size}" font-family="Inter, system-ui, sans-serif" font-weight="700">${text}</text>`;
+      }
       const pts = (stroke.points || [])
         .map((p) => `${Number(p[0])},${Number(p[1])}`)
         .join(" ");
       if (!pts) return "";
-      return `<polyline points="${pts}" fill="none" stroke="${escapeHtml(stroke.color || "#f0883e")}" stroke-width="${Number(stroke.width) || 2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`;
+      if (type === "rect" && (stroke.points || []).length >= 2) {
+        const [[x0, y0], [x1, y1]] = stroke.points;
+        const x = Math.min(x0, x1);
+        const y = Math.min(y0, y1);
+        const w = Math.abs(x1 - x0);
+        const h = Math.abs(y1 - y0);
+        return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${color}" stroke-width="${width}" vector-effect="non-scaling-stroke" />`;
+      }
+      if (type === "arrow" && (stroke.points || []).length >= 2) {
+        const ptsArr = stroke.points;
+        const [x0, y0] = ptsArr[0];
+        const [x1, y1] = ptsArr[ptsArr.length - 1];
+        const ang = Math.atan2(y1 - y0, x1 - x0);
+        const head = Math.max(10, width * 4);
+        const ax = x1 - Math.cos(ang) * head;
+        const ay = y1 - Math.sin(ang) * head;
+        const lx = ax + Math.cos(ang + Math.PI / 2) * head * 0.45;
+        const ly = ay + Math.sin(ang + Math.PI / 2) * head * 0.45;
+        const rx = ax + Math.cos(ang - Math.PI / 2) * head * 0.45;
+        const ry = ay + Math.sin(ang - Math.PI / 2) * head * 0.45;
+        return `<g>
+          <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${color}" stroke-width="${width}" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+          <polygon points="${x1},${y1} ${lx},${ly} ${rx},${ry}" fill="${color}" />
+        </g>`;
+      }
+      const opacity = type === "highlight" ? 0.35 : 1;
+      const sw = type === "highlight" ? Math.max(width * 3, 12) : width;
+      return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`;
     })
     .join("");
 }
@@ -56,11 +94,59 @@ function drawStrokesOnCtx(ctx, strokes = [], pageIndex = null) {
   for (const stroke of strokes || []) {
     const p = stroke.page == null ? 0 : Number(stroke.page);
     if (pageIndex != null && p !== pageIndex) continue;
+    const type = String(stroke.type || "pen").toLowerCase();
+    const color = stroke.color || "#f0883e";
+    const width = Number(stroke.width) || 3;
+    if (type === "text") {
+      const x = Number(stroke.x ?? stroke.points?.[0]?.[0] ?? 0);
+      const y = Number(stroke.y ?? stroke.points?.[0]?.[1] ?? 0);
+      const size = Number(stroke.fontSize) || Math.max(14, width * 5);
+      if (!stroke.text) continue;
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.font = `700 ${size}px Inter, system-ui, sans-serif`;
+      ctx.fillText(String(stroke.text), x, y);
+      ctx.restore();
+      continue;
+    }
     const pts = stroke.points || [];
     if (pts.length < 2) continue;
+    if (type === "rect") {
+      const [[x0, y0], [x1, y1]] = pts;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+      ctx.restore();
+      continue;
+    }
+    if (type === "arrow") {
+      const [x0, y0] = pts[0];
+      const [x1, y1] = pts[pts.length - 1];
+      const ang = Math.atan2(y1 - y0, x1 - x0);
+      const head = Math.max(10, width * 4);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 - Math.cos(ang) * head + Math.cos(ang + Math.PI / 2) * head * 0.45, y1 - Math.sin(ang) * head + Math.sin(ang + Math.PI / 2) * head * 0.45);
+      ctx.lineTo(x1 - Math.cos(ang) * head + Math.cos(ang - Math.PI / 2) * head * 0.45, y1 - Math.sin(ang) * head + Math.sin(ang - Math.PI / 2) * head * 0.45);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      continue;
+    }
     ctx.beginPath();
-    ctx.strokeStyle = stroke.color || "#f0883e";
-    ctx.lineWidth = Number(stroke.width) || 3;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = type === "highlight" ? 0.35 : 1;
+    ctx.lineWidth = type === "highlight" ? Math.max(width * 3, 12) : width;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.moveTo(Number(pts[0][0]), Number(pts[0][1]));
@@ -68,6 +154,7 @@ function drawStrokesOnCtx(ctx, strokes = [], pageIndex = null) {
       ctx.lineTo(Number(pts[i][0]), Number(pts[i][1]));
     }
     ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -83,6 +170,8 @@ export function createReferenceFilesViewer(options = {}) {
     onActiveChange,
     onBeforeOpen,
     onSendToPrompt,
+    getAiKeyBodyFields,
+    onRenderEdited,
   } = options;
 
   /** @type {Map<string, object>} */
@@ -95,6 +184,142 @@ export function createReferenceFilesViewer(options = {}) {
   let panY = 0;
   let zoom = 1;
   let panDrag = null;
+  let markupTool = "pen"; // pen | highlight | eraser | rect | arrow | text | region
+  let markupColor = "#f0883e";
+  let markupWidth = 3;
+  /** @type {string[]} */
+  let undoStack = [];
+  /** @type {string[]} */
+  let redoStack = [];
+  let regionSelect = null; // { start, end, page }
+  let regionDrag = null;
+
+  const MARKUP_COLORS = ["#f0883e", "#58a6ff", "#3fb950", "#f85149", "#d2a8ff", "#ffffff", "#0d1117"];
+  const RENDER_EDIT_PREF_KEY = "render3d:renderEditSaveMode:v1";
+
+  function readRenderEditPref() {
+    try {
+      const v = localStorage.getItem(RENDER_EDIT_PREF_KEY);
+      if (v === "new" || v === "replace" || v === "ask") return v;
+    } catch {
+      /* ignore */
+    }
+    return "ask";
+  }
+
+  function writeRenderEditPref(mode) {
+    try {
+      localStorage.setItem(RENDER_EDIT_PREF_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = String(el.tagName || "").toLowerCase();
+    return tag === "textarea" || tag === "input" || el.isContentEditable;
+  }
+
+  function pushStrokeHistory(tab) {
+    if (!tab) return;
+    undoStack.push(JSON.stringify(tab.strokes || []));
+    if (undoStack.length > 60) undoStack.shift();
+    redoStack = [];
+  }
+
+  function redrawActiveMarkup() {
+    const tab = activeFilename ? tabs.get(activeFilename) : null;
+    if (!tab) return;
+    viewerEl?.querySelectorAll("[data-ref-image-stack], [data-ref-pdf-page]").forEach((stack) => {
+      const pageIndex = Number(stack.dataset.page || 0);
+      const svg = stack.querySelector(".ref-markup-svg");
+      if (svg) svg.innerHTML = strokeSvg(tab.strokes, pageIndex);
+    });
+    updateRegionOverlay();
+  }
+
+  function undoMarkup() {
+    const tab = activeFilename ? tabs.get(activeFilename) : null;
+    if (!tab || !undoStack.length) return;
+    redoStack.push(JSON.stringify(tab.strokes || []));
+    tab.strokes = JSON.parse(undoStack.pop() || "[]");
+    markDirty(tab);
+    redrawActiveMarkup();
+    onStatus?.("ok", "Markup undone");
+  }
+
+  function redoMarkup() {
+    const tab = activeFilename ? tabs.get(activeFilename) : null;
+    if (!tab || !redoStack.length) return;
+    undoStack.push(JSON.stringify(tab.strokes || []));
+    tab.strokes = JSON.parse(redoStack.pop() || "[]");
+    markDirty(tab);
+    redrawActiveMarkup();
+    onStatus?.("ok", "Markup redone");
+  }
+
+  function setMarkupTool(tool) {
+    markupTool = tool;
+    drawMode = tool !== "pan";
+    viewerEl?.classList.toggle("ref-draw-mode", drawMode);
+    viewerEl?.querySelectorAll("[data-ref-tool]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.refTool === tool);
+    });
+    if (tool !== "region") {
+      regionSelect = null;
+      regionDrag = null;
+      updateRegionOverlay();
+    }
+  }
+
+  function eraseNearPoint(tab, point, pageIndex, radius = 18) {
+    const [x, y] = point;
+    const next = (tab.strokes || []).filter((stroke) => {
+      const p = stroke.page == null ? 0 : Number(stroke.page);
+      if (p !== pageIndex) return true;
+      if (String(stroke.type || "") === "text") {
+        const tx = Number(stroke.x ?? stroke.points?.[0]?.[0] ?? 0);
+        const ty = Number(stroke.y ?? stroke.points?.[0]?.[1] ?? 0);
+        return Math.hypot(tx - x, ty - y) > radius * 1.5;
+      }
+      return !(stroke.points || []).some(([px, py]) => Math.hypot(px - x, py - y) <= radius);
+    });
+    if (next.length !== (tab.strokes || []).length) {
+      pushStrokeHistory(tab);
+      tab.strokes = next;
+      markDirty(tab);
+      redrawActiveMarkup();
+    }
+  }
+
+  function updateRegionOverlay() {
+    const overlay = viewerEl?.querySelector("[data-ref-region-overlay]");
+    if (!overlay) return;
+    const sel = regionSelect || (regionDrag ? { start: regionDrag.start, end: regionDrag.current } : null);
+    if (!sel?.start || !sel?.end) {
+      overlay.innerHTML = "";
+      overlay.classList.add("hidden");
+      return;
+    }
+    const media = viewerEl.querySelector("[data-ref-image-stack] img, [data-ref-image-stack] canvas");
+    if (!media) return;
+    const rect = media.getBoundingClientRect();
+    const stage = media.closest(".ref-viewer-stage-wrap") || media.parentElement;
+    const stageRect = stage.getBoundingClientRect();
+    const w = media.naturalWidth || media.width || 1;
+    const h = media.naturalHeight || media.height || 1;
+    const x0 = Math.min(sel.start[0], sel.end[0]);
+    const y0 = Math.min(sel.start[1], sel.end[1]);
+    const x1 = Math.max(sel.start[0], sel.end[0]);
+    const y1 = Math.max(sel.start[1], sel.end[1]);
+    const left = ((x0 / w) * rect.width) + (rect.left - stageRect.left);
+    const top = ((y0 / h) * rect.height) + (rect.top - stageRect.top);
+    const width = ((x1 - x0) / w) * rect.width;
+    const height = ((y1 - y0) / h) * rect.height;
+    overlay.classList.remove("hidden");
+    overlay.innerHTML = `<div class="ref-region-box" style="left:${left}px;top:${top}px;width:${width}px;height:${height}px"></div>`;
+  }
 
   function syncDocTab(tab, { activate = false } = {}) {
     if (!docTabs || !tab) return;
@@ -237,16 +462,45 @@ export function createReferenceFilesViewer(options = {}) {
 
     const strokeCount = (tab.strokes || []).length;
     const kindIsImage = kind === "image";
+    const toolBtn = (id, label, title) =>
+      `<button type="button" class="dxf-viewer-btn ${markupTool === id ? "active" : ""}" data-ref-tool="${id}" title="${title}">${label}</button>`;
     viewerEl.innerHTML = `
       <header class="dxf-viewer-toolbar ref-viewer-toolbar">
         <div class="dxf-viewer-title">
           <strong>${escapeHtml(tab.label || tab.filename)}</strong>
           <span class="muted small">${escapeHtml(statusText)}</span>
         </div>
-        <div class="dxf-viewer-actions">
-          ${markupable ? `<button type="button" class="dxf-viewer-btn ${drawMode ? "active" : ""}" data-ref-action="pen" title="Draw markup on this file">Pen</button>` : ""}
-          ${markupable ? `<button type="button" class="dxf-viewer-btn" data-ref-action="clear-strokes" title="Clear markup strokes">Clear marks</button>` : ""}
-          ${markupable ? `<button type="button" class="dxf-viewer-btn" data-ref-action="fit" title="Fit view">Fit</button>` : ""}
+        <div class="dxf-viewer-actions ref-markup-toolbar">
+          ${markupable ? `
+            <div class="ref-tool-group" role="group" aria-label="Markup tools">
+              ${toolBtn("pen", "Pen", "Freehand pen")}
+              ${toolBtn("highlight", "Highlight", "Highlighter")}
+              ${toolBtn("rect", "Rect", "Rectangle")}
+              ${toolBtn("arrow", "Arrow", "Arrow")}
+              ${toolBtn("text", "Text", "Add text label")}
+              ${toolBtn("eraser", "Eraser", "Erase marks")}
+              ${kindIsImage ? toolBtn("region", "AI Edit", "Drag-select a region and prompt an image edit") : ""}
+            </div>
+            <div class="ref-tool-group ref-tool-group--style">
+              <label class="ref-color-picker" title="Stroke color">
+                <span>Color</span>
+                <input type="color" data-ref-color value="${escapeHtml(markupColor)}" />
+              </label>
+              <label class="ref-width-picker" title="Stroke width">
+                <span>Size</span>
+                <input type="range" data-ref-width min="1" max="16" value="${markupWidth}" />
+              </label>
+              <div class="ref-swatch-row">
+                ${MARKUP_COLORS.map((c) => `<button type="button" class="ref-swatch${c === markupColor ? " is-active" : ""}" data-ref-swatch="${c}" style="--swatch:${c}" title="${c}"></button>`).join("")}
+              </div>
+            </div>
+            <div class="ref-tool-group">
+              <button type="button" class="dxf-viewer-btn" data-ref-action="undo" title="Undo (⌘Z)">Undo</button>
+              <button type="button" class="dxf-viewer-btn" data-ref-action="redo" title="Redo (⌘⇧Z)">Redo</button>
+              <button type="button" class="dxf-viewer-btn" data-ref-action="clear-strokes" title="Clear markup strokes">Clear</button>
+              <button type="button" class="dxf-viewer-btn" data-ref-action="fit" title="Fit view">Fit</button>
+            </div>
+          ` : ""}
           <button type="button" class="dxf-viewer-btn accent" data-ref-action="send-ai" title="Attach marked-up file and notes to the AI prompt">
             Send to AI${strokeCount ? ` (${strokeCount})` : ""}
           </button>
@@ -269,15 +523,21 @@ export function createReferenceFilesViewer(options = {}) {
         </div>
       </header>
       <div class="ref-viewer-body">
-        <div class="ref-viewer-main">${bodyHtml}</div>
+        <div class="ref-viewer-main">
+          ${bodyHtml}
+          ${kindIsImage ? `<div class="ref-region-overlay hidden" data-ref-region-overlay></div>` : ""}
+        </div>
         <aside class="ref-notes-panel" aria-label="Notes and markup">
           <label class="ref-notes-label" for="ref-notes-input">Notes / markup</label>
           <textarea id="ref-notes-input" class="ref-notes-editor" data-ref-notes placeholder="Write notes, callouts, or markup for this file…">${escapeHtml(tab.notes || "")}</textarea>
-          <p class="muted small ref-notes-hint">Saved with the file. Included when you Send to AI.</p>
+          <p class="muted small ref-notes-hint">Saved with the file. Included when you Send to AI. Use ⌘Z / ⌘⇧Z while marking up.</p>
         </aside>
       </div>
     `;
-    if (markupable) applyTransform();
+    if (markupable) {
+      drawMode = markupTool !== "pan";
+      applyTransform();
+    }
     viewerEl.classList.toggle("ref-draw-mode", !!drawMode && markupable);
     if (kind === "image") bindMarkupSurface(tab);
     if (kind === "pdf" && !tab.loading && !tab.error) {
@@ -361,30 +621,93 @@ export function createReferenceFilesViewer(options = {}) {
         const svg = stack.querySelector(".ref-markup-svg");
         if (svg) svg.innerHTML = strokeSvg(tab.strokes, pageIndex);
         syncSvgSize();
+        updateRegionOverlay();
       };
 
       stack.addEventListener("pointerdown", (e) => {
         if (!drawMode) return;
         e.preventDefault();
         e.stopPropagation();
+        const point = toLocal(e);
+        if (markupTool === "eraser") {
+          eraseNearPoint(tab, point, pageIndex);
+          return;
+        }
+        if (markupTool === "text") {
+          const text = window.prompt("Text label", "");
+          if (!text?.trim()) return;
+          pushStrokeHistory(tab);
+          tab.strokes = [
+            ...(tab.strokes || []),
+            {
+              type: "text",
+              text: text.trim().slice(0, 240),
+              x: point[0],
+              y: point[1],
+              points: [point, point],
+              color: markupColor,
+              width: markupWidth,
+              fontSize: Math.max(16, markupWidth * 6),
+              page: pageIndex,
+            },
+          ];
+          markDirty(tab);
+          redraw();
+          return;
+        }
+        if (markupTool === "region") {
+          regionDrag = { start: point, current: point, page: pageIndex };
+          regionSelect = null;
+          updateRegionOverlay();
+          stack.setPointerCapture?.(e.pointerId);
+          return;
+        }
         drawing = true;
         currentStroke = {
-          points: [toLocal(e)],
-          color: "#f0883e",
-          width: 3,
+          type: markupTool === "highlight" ? "highlight" : markupTool === "rect" ? "rect" : markupTool === "arrow" ? "arrow" : "pen",
+          points: [point, point],
+          color: markupColor,
+          width: markupWidth,
           page: pageIndex,
         };
+        pushStrokeHistory(tab);
         tab.strokes = [...(tab.strokes || []), currentStroke];
         stack.setPointerCapture?.(e.pointerId);
         redraw();
         markDirty(tab);
       });
       stack.addEventListener("pointermove", (e) => {
+        if (regionDrag && regionDrag.page === pageIndex) {
+          regionDrag.current = toLocal(e);
+          updateRegionOverlay();
+          return;
+        }
         if (!drawing || !currentStroke || currentStroke.page !== pageIndex) return;
-        currentStroke.points.push(toLocal(e));
+        const point = toLocal(e);
+        if (currentStroke.type === "rect" || currentStroke.type === "arrow") {
+          currentStroke.points = [currentStroke.points[0], point];
+        } else {
+          currentStroke.points.push(point);
+        }
         redraw();
       });
-      const endStroke = () => {
+      const endStroke = (e) => {
+        if (regionDrag && regionDrag.page === pageIndex) {
+          const end = e ? toLocal(e) : regionDrag.current;
+          const start = regionDrag.start;
+          regionDrag = null;
+          const w = Math.abs(end[0] - start[0]);
+          const h = Math.abs(end[1] - start[1]);
+          if (w < 8 || h < 8) {
+            regionSelect = null;
+            updateRegionOverlay();
+            return;
+          }
+          regionSelect = { start, end, page: pageIndex };
+          updateRegionOverlay();
+          void openRegionEditModal(tab, regionSelect);
+          return;
+        }
         drawing = false;
         currentStroke = null;
       };
@@ -741,10 +1064,15 @@ export function createReferenceFilesViewer(options = {}) {
       }
     }
     activeFilename = filename;
+    undoStack = [];
+    redoStack = [];
+    regionSelect = null;
+    regionDrag = null;
     if (canMarkup(tabs.get(filename)?.kind)) resetView();
     if (syncShared) syncDocTab(tabs.get(filename), { activate: true });
     else renderTabs();
     renderViewer();
+    onActiveChange?.(filename);
   }
 
   function closeTab(filename) {
@@ -776,7 +1104,7 @@ export function createReferenceFilesViewer(options = {}) {
     if (viewerEl) viewerEl.innerHTML = "";
   }
 
-  async function openTab(filename, { projectId, label, kind } = {}) {
+  async function openTab(filename, { projectId, label, kind, forceReload = false } = {}) {
     const pid = projectId || getProjectId?.();
     if (!pid || !filename) {
       onStatus?.("error", "Select a project before opening a reference file.");
@@ -785,6 +1113,12 @@ export function createReferenceFilesViewer(options = {}) {
     onBeforeOpen?.();
     const key = String(filename);
     let tab = tabs.get(key);
+    if (tab && forceReload) {
+      revokeBlob(tab);
+      tabs.delete(key);
+      docTabs?.remove?.(key);
+      tab = null;
+    }
     if (!tab) {
       tab = {
         filename: key,
@@ -853,7 +1187,174 @@ export function createReferenceFilesViewer(options = {}) {
     });
   }
 
+  async function openRegionEditModal(tab, region) {
+    if (!tab?.blobUrl || !region) return;
+    const x0 = Math.min(region.start[0], region.end[0]);
+    const y0 = Math.min(region.start[1], region.end[1]);
+    const x1 = Math.max(region.start[0], region.end[0]);
+    const y1 = Math.max(region.start[1], region.end[1]);
+    const w = Math.max(1, Math.round(x1 - x0));
+    const h = Math.max(1, Math.round(y1 - y0));
+    let cropUrl = "";
+    try {
+      const img = await loadImageElement(tab.blobUrl);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, x0, y0, w, h, 0, 0, w, h);
+      cropUrl = canvas.toDataURL("image/png");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not crop selection");
+      return;
+    }
+
+    document.getElementById("ref-region-edit-modal")?.remove();
+    const modal = document.createElement("div");
+    modal.id = "ref-region-edit-modal";
+    modal.className = "ref-region-edit-modal";
+    modal.innerHTML = `
+      <div class="ref-region-edit-card" role="dialog" aria-modal="true" aria-labelledby="ref-region-edit-title">
+        <button type="button" class="ref-region-edit-close" data-region-close aria-label="Close">×</button>
+        <h3 id="ref-region-edit-title">Edit selected region</h3>
+        <p class="muted small">Describe the change for this crop. AI will update that area of the render.</p>
+        <div class="ref-region-edit-preview"><img src="${cropUrl}" alt="Selected region" /></div>
+        <textarea data-region-prompt rows="3" placeholder="e.g. Make the table marble, add warmer kitchen lighting…"></textarea>
+        <div class="ref-region-edit-actions">
+          <button type="button" class="btn secondary" data-region-close>Cancel</button>
+          <button type="button" class="btn primary" data-region-generate>Generate edit</button>
+        </div>
+        <p class="muted small ref-region-edit-status" data-region-status></p>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const promptEl = modal.querySelector("[data-region-prompt]");
+    const statusEl = modal.querySelector("[data-region-status]");
+    promptEl?.focus();
+
+    const close = () => modal.remove();
+    modal.addEventListener("click", (ev) => {
+      if (ev.target === modal || ev.target.closest("[data-region-close]")) close();
+    });
+    modal.querySelector("[data-region-generate]")?.addEventListener("click", async () => {
+      const prompt = String(promptEl?.value || "").trim();
+      if (!prompt) {
+        statusEl.textContent = "Write a prompt describing the edit.";
+        return;
+      }
+      const genBtn = modal.querySelector("[data-region-generate]");
+      if (genBtn) genBtn.disabled = true;
+      statusEl.textContent = "Generating region edit…";
+      try {
+        const fullDataUrl = await compositeMarkedImage(tab);
+        let sourceImage = fullDataUrl;
+        if (!sourceImage) {
+          const img = await loadImageElement(tab.blobUrl);
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth || img.width;
+          c.height = img.naturalHeight || img.height;
+          c.getContext("2d").drawImage(img, 0, 0);
+          sourceImage = c.toDataURL("image/png");
+        }
+        const saveMode = await askReplaceOrNew("When the edit finishes, how should we save it?");
+        const body = {
+          prompt,
+          source_image: sourceImage,
+          source_filename: tab.filename,
+          region: { x: Math.round(x0), y: Math.round(y0), w, h },
+          save_mode: saveMode === "replace" ? "replace" : "new",
+          ...(getAiKeyBodyFields?.() || {}),
+        };
+        const data = await api(`/api/projects/${encodeURIComponent(tab.projectId)}/render-region-edit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }, 240000);
+        close();
+        await applyRenderEditResult(tab, data, saveMode);
+      } catch (err) {
+        statusEl.textContent = err.message || "Region edit failed.";
+        if (genBtn) genBtn.disabled = false;
+      }
+    });
+  }
+
+  async function askReplaceOrNew(defaultHint = "") {
+    const pref = readRenderEditPref();
+    if (pref === "replace" || pref === "new") return pref;
+
+    return new Promise((resolve) => {
+      document.getElementById("ref-render-save-modal")?.remove();
+      const modal = document.createElement("div");
+      modal.id = "ref-render-save-modal";
+      modal.className = "ref-region-edit-modal";
+      modal.innerHTML = `
+        <div class="ref-region-edit-card" role="dialog" aria-modal="true">
+          <h3>Save edited render</h3>
+          <p class="muted small">${escapeHtml(defaultHint || "Replace the current image, or save a new one?")}</p>
+          <label class="ref-dont-ask">
+            <input type="checkbox" data-dont-ask />
+            <span>Don’t ask again — you can change this later in Preferences</span>
+          </label>
+          <div class="ref-region-edit-actions">
+            <button type="button" class="btn secondary" data-choice="new">Save as new image</button>
+            <button type="button" class="btn primary" data-choice="replace">Replace current</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      modal.addEventListener("click", (ev) => {
+        const choice = ev.target.closest("[data-choice]")?.dataset.choice;
+        if (!choice) return;
+        const dontAsk = !!modal.querySelector("[data-dont-ask]")?.checked;
+        if (dontAsk) writeRenderEditPref(choice);
+        modal.remove();
+        resolve(choice);
+      });
+    });
+  }
+
+  async function applyRenderEditResult(tab, data, choice) {
+    const pid = tab.projectId;
+    const filename = data?.filename;
+    onRenderEdited?.({
+      projectId: pid,
+      filename,
+      replace: choice === "replace",
+      previousFilename: tab.filename,
+    });
+    if (filename) {
+      revokeBlob(tab);
+      await openTab(filename, {
+        projectId: pid,
+        label: String(filename).replace(/\.[^.]+$/, "") || "Render",
+        kind: "image",
+        forceReload: true,
+      });
+    }
+    onStatus?.(
+      "ok",
+      choice === "replace"
+        ? "Replaced current render. Change this later in Preferences → Render edits."
+        : "Saved as a new render. Change this later in Preferences → Render edits.",
+    );
+  }
+
   viewerEl?.addEventListener("click", (e) => {
+    const tool = e.target.closest("[data-ref-tool]")?.dataset.refTool;
+    if (tool) {
+      setMarkupTool(tool);
+      return;
+    }
+    const swatch = e.target.closest("[data-ref-swatch]")?.dataset.refSwatch;
+    if (swatch) {
+      markupColor = swatch;
+      const colorInput = viewerEl.querySelector("[data-ref-color]");
+      if (colorInput) colorInput.value = swatch;
+      viewerEl.querySelectorAll("[data-ref-swatch]").forEach((btn) => {
+        btn.classList.toggle("is-active", btn.dataset.refSwatch === swatch);
+      });
+      return;
+    }
     const downloadFmt = e.target.closest("[data-ref-download]")?.dataset.refDownload;
     if (downloadFmt) {
       e.preventDefault();
@@ -878,17 +1379,19 @@ export function createReferenceFilesViewer(options = {}) {
       closeTab(activeFilename);
       return;
     }
-    if (action === "pen") {
-      drawMode = !drawMode;
-      viewerEl.classList.toggle("ref-draw-mode", drawMode);
-      const penBtn = viewerEl.querySelector('[data-ref-action="pen"]');
-      penBtn?.classList.toggle("active", drawMode);
+    if (action === "undo") {
+      undoMarkup();
+      return;
+    }
+    if (action === "redo") {
+      redoMarkup();
       return;
     }
     if (action === "clear-strokes" && tab) {
+      pushStrokeHistory(tab);
       tab.strokes = [];
       markDirty(tab);
-      renderViewer();
+      redrawActiveMarkup();
       return;
     }
     if (action === "fit") resetView();
@@ -898,21 +1401,54 @@ export function createReferenceFilesViewer(options = {}) {
   });
 
   viewerEl?.addEventListener("input", (e) => {
+    if (e.target.matches?.("[data-ref-color]")) {
+      markupColor = e.target.value || markupColor;
+      return;
+    }
+    if (e.target.matches?.("[data-ref-width]")) {
+      markupWidth = Math.max(1, Math.min(16, Number(e.target.value) || 3));
+      return;
+    }
     const tab = activeFilename ? tabs.get(activeFilename) : null;
     if (!tab) return;
     if (e.target.matches?.("[data-ref-notes], [data-ref-text]")) markDirty(tab);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!activeFilename || !viewerEl || viewerEl.classList.contains("hidden")) return;
+    if (isTypingTarget(e.target)) return;
+    const tab = tabs.get(activeFilename);
+    if (!tab || !canMarkup(tab.kind)) return;
+    const meta = e.metaKey || e.ctrlKey;
+    if (!meta) return;
+    const key = String(e.key || "").toLowerCase();
+    if (key === "z" && e.shiftKey) {
+      e.preventDefault();
+      redoMarkup();
+      return;
+    }
+    if (key === "z") {
+      e.preventDefault();
+      undoMarkup();
+      return;
+    }
+    if (key === "y") {
+      e.preventDefault();
+      redoMarkup();
+    }
   });
 
   viewerEl?.addEventListener(
     "wheel",
     (e) => {
       const tab = activeFilename ? tabs.get(activeFilename) : null;
-      if (!tab || !canMarkup(tab.kind) || drawMode) return;
+      if (!tab || !canMarkup(tab.kind)) return;
       if (!e.target.closest?.(".ref-viewer-stage-wrap")) return;
       e.preventDefault();
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       zoom = Math.min(8, Math.max(0.2, zoom * factor));
       applyTransform();
+      updateRegionOverlay();
     },
     { passive: false },
   );
@@ -930,6 +1466,7 @@ export function createReferenceFilesViewer(options = {}) {
     panX = e.clientX - panDrag.x;
     panY = e.clientY - panDrag.y;
     applyTransform();
+    updateRegionOverlay();
   });
   viewerEl?.addEventListener("pointerup", () => {
     panDrag = null;
@@ -942,10 +1479,7 @@ export function createReferenceFilesViewer(options = {}) {
     sendActiveToPrompt,
     activateFromShared(filename) {
       if (!tabs.has(filename)) return false;
-      activeFilename = filename;
-      if (canMarkup(tabs.get(filename)?.kind)) resetView();
-      renderViewer();
-      onActiveChange?.(filename);
+      activate(filename, { syncShared: true });
       return true;
     },
     hideViewerOnly,

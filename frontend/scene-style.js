@@ -96,6 +96,26 @@ function _bodyColorOf(mesh) {
   return mat.color ? mat.color.clone() : new THREE.Color(FUSION.body);
 }
 
+function _rememberCadColor(mesh, mat, color) {
+  if (!mesh || !mat || !color) return;
+  const hex = `#${color.getHexString()}`;
+  mesh.userData = mesh.userData || {};
+  mat.userData = mat.userData || {};
+  mesh.userData.render3dCadColorHex = hex;
+  mat.userData.render3dCadColorHex = hex;
+}
+
+function _restoreCadColorIfNeutral(mesh, mat) {
+  if (!mat?.color) return;
+  const hex = mat.userData?.render3dCadColorHex || mesh?.userData?.render3dCadColorHex;
+  if (!hex) return;
+  const intended = new THREE.Color(hex);
+  if (_isNeutralOrWashed(mat.color) || _colorDistance(mat.color, intended) > 0.42) {
+    mat.color.copy(intended);
+    mat.needsUpdate = true;
+  }
+}
+
 function _luminance(color) {
   return color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
 }
@@ -539,6 +559,7 @@ export function applyCadStyle(object3d) {
       envMapIntensity: 0.28,
       depthWrite: true,
     });
+    sharedFaceMaterial.userData.render3dCadColorHex = `#${bodyColor.getHexString()}`;
   }
 
   meshInfos.forEach(({ mesh: child, info }, index) => {
@@ -564,6 +585,7 @@ export function applyCadStyle(object3d) {
 
     if (faceFragmented && sharedFaceMaterial) {
       child.material = sharedFaceMaterial;
+      _rememberCadColor(child, child.material, bodyColor);
       // No per-face edges/silhouettes — they cause severe clipping on OCC dumps.
       return;
     }
@@ -622,6 +644,7 @@ export function applyCadStyle(object3d) {
       polygonOffsetUnits,
       envMapIntensity: 0.28,
     });
+    _rememberCadColor(child, child.material, bodyColor);
 
     if (!highFragmentModel) {
       addVisibleEdges(child);
@@ -633,11 +656,20 @@ export function applyCadStyle(object3d) {
 
 export function disposeStyledModel(object3d) {
   if (!object3d) return;
+  const geometries = new Set();
+  const materials = new Set();
   object3d.traverse((c) => {
-    if (c.geometry) c.geometry.dispose();
+    if (c.geometry && !geometries.has(c.geometry)) {
+      geometries.add(c.geometry);
+      c.geometry.dispose();
+    }
     if (c.material) {
-      if (Array.isArray(c.material)) c.material.forEach((m) => m.dispose());
-      else c.material.dispose();
+      const mats = Array.isArray(c.material) ? c.material : [c.material];
+      mats.forEach((m) => {
+        if (!m || materials.has(m)) return;
+        materials.add(m);
+        m.dispose();
+      });
     }
   });
 }
@@ -664,18 +696,21 @@ export function setViewMode(mode, object3d) {
       return;
     }
     if (!child.isMesh || !child.material) return;
-    const mat = child.material;
-    if (viewMode === "wireframe") {
-      mat.wireframe = true;
-      mat.transparent = true;
-      mat.opacity = 0.92;
-      mat.depthWrite = true;
-    } else {
-      mat.wireframe = false;
-      mat.transparent = false;
-      mat.opacity = 1;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const mat of mats) {
+      _restoreCadColorIfNeutral(child, mat);
+      if (viewMode === "wireframe") {
+        mat.wireframe = true;
+        mat.transparent = true;
+        mat.opacity = 0.92;
+        mat.depthWrite = true;
+      } else {
+        mat.wireframe = false;
+        mat.transparent = false;
+        mat.opacity = 1;
+      }
+      mat.needsUpdate = true;
     }
-    mat.needsUpdate = true;
   });
 }
 
@@ -796,6 +831,7 @@ export function setObjectTransparent(object3d, transparentOn, { wireframe = fals
   object3d.userData.render3dTransparent = !!transparentOn;
   for (const mesh of objectSurfaceMeshes(object3d)) {
     for (const mat of meshMaterials(mesh)) {
+      _restoreCadColorIfNeutral(mesh, mat);
       applyTransparentSurface(mat, transparentOn, { wireframe });
     }
     applyTransparentEdges(mesh, transparentOn);
