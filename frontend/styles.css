@@ -9984,13 +9984,13 @@ section h2 {
 .folder-header-actions {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .folder-title {
-  flex: 1;
+  flex: 1 1 auto;
   font-weight: 600;
   min-width: 0;
   overflow: hidden;
@@ -10000,6 +10000,7 @@ section h2 {
 
 .folder-count {
   font-size: 0.7rem;
+  flex-shrink: 0;
 }
 
 .btn-folder-menu {

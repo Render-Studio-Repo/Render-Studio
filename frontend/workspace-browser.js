@@ -418,14 +418,14 @@ export function createWorkspaceBrowser({
       <div class="auth-card app-dialog-card">
         <button type="button" class="auth-close" data-share-close aria-label="Close">&times;</button>
         <h2 class="app-dialog-title" id="folder-share-title">Share folder</h2>
-        <p class="muted small folder-share-hint">Invite a coworker by email. They must have an account (or will get a workspace invite).</p>
+        <p class="muted small folder-share-hint">Pick a team member or type an email. They must have an account (or will get a workspace invite).</p>
         <ul class="folder-share-list" id="folder-share-list"></ul>
         <label class="app-dialog-label">Team member
           <select id="folder-share-member" class="folder-share-member-select">
             <option value="">Loading workspace members…</option>
           </select>
         </label>
-        <label class="app-dialog-label">Email
+        <label class="app-dialog-label">Email <span class="muted small">(optional if you picked a member)</span>
           <input type="email" id="folder-share-email" placeholder="coworker@company.com" autocomplete="email" />
         </label>
         <label class="folder-share-restrict">
@@ -447,9 +447,15 @@ export function createWorkspaceBrowser({
       submitShareModal();
     });
     shareModalEl.querySelector("#folder-share-member")?.addEventListener("change", (e) => {
-      const email = e.target.value || "";
+      const email = String(e.target.value || "").trim();
       const emailInput = shareModalEl?.querySelector("#folder-share-email");
+      const status = shareModalEl?.querySelector("#folder-share-status");
       if (emailInput) emailInput.value = email;
+      if (status) status.textContent = email ? `Ready to share with ${email}` : "";
+    });
+    shareModalEl.querySelector("#folder-share-email")?.addEventListener("input", () => {
+      const status = shareModalEl?.querySelector("#folder-share-status");
+      if (status && status.textContent === "Enter an email address.") status.textContent = "";
     });
     shareModalEl.querySelector("#folder-share-email")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -556,11 +562,14 @@ export function createWorkspaceBrowser({
     const teamId = getWorkspaceId();
     const status = shareModalEl?.querySelector("#folder-share-status");
     const emailInput = shareModalEl?.querySelector("#folder-share-email");
+    const memberSelect = shareModalEl?.querySelector("#folder-share-member");
     const restrict = shareModalEl?.querySelector("#folder-share-restrict");
     if (!folder || !teamId) return;
-    const email = emailInput?.value?.trim();
+    // Typed email wins if present; otherwise use the selected team member.
+    const email = String(emailInput?.value || memberSelect?.value || "").trim();
     if (!email) {
-      if (status) status.textContent = "Enter an email address.";
+      if (status) status.textContent = "Pick a team member or enter an email address.";
+      memberSelect?.focus();
       return;
     }
     if (status) status.textContent = "Sharing…";
@@ -575,7 +584,9 @@ export function createWorkspaceBrowser({
       });
       if (status) status.textContent = res.message || "Folder shared.";
       if (emailInput) emailInput.value = "";
-      await loadShareList(folder);
+      if (memberSelect) memberSelect.value = "";
+      const shares = await loadShareList(folder);
+      await loadMemberOptions(shares);
       await refreshFolders();
       render();
       document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
@@ -958,6 +969,9 @@ export function createWorkspaceBrowser({
     }
     if (canManage) {
       html += `
+      <button type="button" data-action="new-project">New project in this folder</button>
+      <button type="button" data-action="edit">Edit folder…</button>
+      <hr />
       <button type="button" data-action="share">Share folder…</button>
       <button type="button" data-action="rename">Rename folder…</button>
       <button type="button" data-action="delete">Delete folder</button>
@@ -981,6 +995,14 @@ export function createWorkspaceBrowser({
     menu.querySelector('[data-action="collapse-all"]')?.addEventListener("click", () => {
       closeContextMenu();
       collapseAllProjectsInFolder(folderId);
+    });
+    menu.querySelector('[data-action="new-project"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      void createProjectInFolder(folder);
+    });
+    menu.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      openEditFolderDialog(folder);
     });
     menu.querySelector('[data-action="share"]')?.addEventListener("click", () => {
       closeContextMenu();
@@ -2009,14 +2031,12 @@ export function createWorkspaceBrowser({
         ${shareBadge}
         <span class="folder-count muted small">${inFolder.length}</span>
         ${canManage ? `<span class="folder-header-actions">
-          <button type="button" class="btn-icon btn-folder-new-project" title="New project in this folder">${ICON_PLUS}</button>
-          <button type="button" class="btn-icon btn-folder-edit" title="Edit folder">${ICON_EDIT_FOLDER}</button>
-          <button type="button" class="btn-folder-menu" title="More" aria-label="Folder menu">⋯</button>
+          <button type="button" class="btn-folder-menu" title="Folder menu" aria-label="Folder menu">⋯</button>
         </span>` : ""}
       `
       );
       attachFolderTitleToggle(header.querySelector(".folder-title"), folder.id);
-      header.title = canManage ? "New project, edit folder, or open the menu" : "Right-click to collapse all projects";
+      header.title = canManage ? "Open the folder menu for new project, edit, share, and more" : "Right-click to collapse all projects";
 
       const openMenu = (ev) => showFolderContextMenu(ev, folder);
       header.addEventListener("contextmenu", openMenu);
@@ -2025,14 +2045,6 @@ export function createWorkspaceBrowser({
         openMenu(ev);
       });
       if (canManage) {
-        header.querySelector(".btn-folder-new-project")?.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          void createProjectInFolder(folder);
-        });
-        header.querySelector(".btn-folder-edit")?.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          openEditFolderDialog(folder);
-        });
         header.querySelector(".btn-folder-menu")?.addEventListener("click", (ev) => {
           ev.stopPropagation();
           const r = header.getBoundingClientRect();

@@ -319,6 +319,47 @@ def list_folder_shares(folder_id: str, user_id: str) -> list[dict[str, Any]]:
     return {"folder": folder, "shares": members}
 
 
+def _email_suggest_hint(conn, email: str, team_id: str | None = None) -> str:
+    """Suggest a close email match when lookup fails (common typos)."""
+    rows = []
+    if team_id:
+        rows = conn.execute(
+            """
+            SELECT u.email FROM users u
+            JOIN team_members tm ON tm.user_id = u.id
+            WHERE tm.team_id = ?
+            """,
+            (team_id,),
+        ).fetchall()
+    if not rows:
+        rows = conn.execute("SELECT email FROM users").fetchall()
+    candidates = [str(r["email"] or "").strip().lower() for r in rows if r["email"]]
+    if not candidates:
+        return ""
+    local, _, domain = email.partition("@")
+    best = None
+    best_score = 0
+    for cand in candidates:
+        c_local, _, c_domain = cand.partition("@")
+        score = 0
+        if domain and c_domain == domain:
+            score += 2
+        # Same length locals with 1-char edit distance often look like typos
+        if local and c_local and abs(len(local) - len(c_local)) <= 2:
+            mismatches = sum(1 for a, b in zip(local, c_local) if a != b)
+            mismatches += abs(len(local) - len(c_local))
+            if mismatches <= 2:
+                score += 3 - mismatches
+        if local and c_local and (local in c_local or c_local in local):
+            score += 1
+        if score > best_score:
+            best_score = score
+            best = cand
+    if best and best_score >= 3 and best != email:
+        return f" Did you mean {best}?"
+    return ""
+
+
 def share_folder(
     folder_id: str,
     email: str,
@@ -333,8 +374,12 @@ def share_folder(
 
     with get_conn() as conn:
         target = conn.execute(
-            "SELECT id, email, display_name FROM users WHERE email = ?", (email,)
+            "SELECT id, email, display_name FROM users WHERE lower(email) = ?",
+            (email,),
         ).fetchone()
+        hint = ""
+        if not target:
+            hint = _email_suggest_hint(conn, email, folder.get("team_id"))
 
     if restrict_access:
         with get_conn() as conn:
@@ -345,7 +390,7 @@ def share_folder(
             conn.commit()
 
     if not target:
-        raise ValueError(f"No account found for {email}")
+        raise ValueError(f"No account found for {email}.{hint}")
 
     target_id = target["id"]
     if target_id == sharer_id:
