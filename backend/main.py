@@ -9074,6 +9074,11 @@ def _share_page_html(token: str, request: Request) -> str:
     # Prefill visible title for non-JS crawlers / first paint
     raw = raw.replace(">Loading shared model…<", f">{project_name}<", 1)
     if filename:
+        raw = raw.replace(
+            'id="share-subtitle">with Render3D</p>',
+            f'id="share-subtitle">with Render3D · {filename}</p>',
+            1,
+        )
         raw = raw.replace(">Rotate · section · download<", f">with Render3D · {filename}<", 1)
     else:
         raw = raw.replace(">Rotate · section · download<", ">with Render3D<", 1)
