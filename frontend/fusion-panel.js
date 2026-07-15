@@ -325,8 +325,34 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     }
   }
 
-  async function loadHubs() {
+  async function pushLocalChangesOnAccess() {
+    const currentProjectId = getCurrentProjectId?.();
+    if (!currentProjectId) return null;
+    try {
+      const result = await api(`/api/projects/${encodeURIComponent(currentProjectId)}/fusion-mirror/push-local`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: getSelectedFile?.() || null,
+          force: false,
+        }),
+      });
+      if (result?.pushed) {
+        setStatus(result.message || "Synced local changes to Fusion.");
+        onStatus?.("ok", result.message || "Synced local changes to Fusion.");
+      }
+      return result;
+    } catch (err) {
+      const msg = String(err?.message || err || "");
+      if (/no fusion mirror|not linked|422/i.test(msg)) return null;
+      console.warn("Fusion push-on-access failed", err);
+      return null;
+    }
+  }
+
+  async function loadHubs({ skipPush = false } = {}) {
     if (!controlsEl || !listEl) return;
+    if (!skipPush) await pushLocalChangesOnAccess();
     controlsEl.innerHTML = "";
     listEl.innerHTML = "";
     setStatus("Loading Fusion account...");
@@ -516,7 +542,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         ${preferredMirrorTarget && !mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
         ${mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Remove the stale Fusion mirror saved on this Render3D project.">Clear stale mirror</button>' : ""}
         <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
-        <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Pull the newest version from your linked Fusion mirror, update Render3D, then push to teammates' mirrors.">Sync latest from Fusion</button>
+        <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Push your local Render3D edits to Fusion, pull any newer Fusion versions, then update teammate mirrors.">Sync with Fusion</button>
       </div>
     `;
     controlsEl.querySelector(".btn-fusion-import-visible")?.addEventListener("click", (event) => {
@@ -1470,11 +1496,13 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   });
   wireTabButtons();
   setActiveTab("browse");
-  window.addEventListener("render3d:autodesk-linked", () => {
-    if (activeTab === "mirrors") void loadAllMirrors();
-    else void loadHubs();
-  });
   window.addEventListener("render3d:open-fusion-library", () => {
+    void pushLocalChangesOnAccess().finally(() => {
+      if (activeTab === "mirrors") void loadAllMirrors();
+      else void loadHubs({ skipPush: true });
+    });
+  });
+  window.addEventListener("render3d:autodesk-linked", () => {
     if (activeTab === "mirrors") void loadAllMirrors();
     else void loadHubs();
   });

@@ -18132,10 +18132,42 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .workspace-fusion-version-link {
   color: #79c0ff;
   text-decoration: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .workspace-fusion-version-link:hover {
   text-decoration: underline;
+}
+
+.workspace-fusion-mirror-hint {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.workspace-fusion-file-entry,
+.fusion-workspace-browse-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.workspace-fusion-file-entry .workspace-fusion-browser-row,
+.fusion-workspace-browse-entry .fusion-workspace-browse-row {
+  min-width: 0;
+}
+
+.workspace-fusion-file-save-btn,
+.fusion-workspace-browse-entry .btn-compact {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  margin-right: 4px;
 }
 
 .workspace-fusion-browser {
@@ -18252,6 +18284,139 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .workspace-fusion-browser-empty {
   padding: 6px 8px;
   margin: 0;
+}
+
+.workspace-fusion-file-row small {
+  max-width: 10ch;
+}
+
+.fusion-workspace-file-modal .fusion-workspace-file-card {
+  width: min(520px, calc(100vw - 24px));
+  max-height: min(84vh, 720px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fusion-workspace-file-section {
+  display: grid;
+  gap: 8px;
+}
+
+.fusion-workspace-file-section h3 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.fusion-workspace-dest {
+  display: grid;
+  gap: 6px;
+}
+
+.fusion-workspace-dest-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  background: rgba(13, 17, 23, 0.45);
+}
+
+.fusion-workspace-dest-option:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fusion-workspace-dest-option:has(input:checked) {
+  border-color: rgba(0, 120, 212, 0.55);
+  background: rgba(0, 120, 212, 0.1);
+}
+
+.fusion-workspace-dest-option input {
+  margin-top: 3px;
+}
+
+.fusion-workspace-dest-option span {
+  display: grid;
+  gap: 2px;
+}
+
+.fusion-workspace-dest-option strong {
+  font-size: 0.8rem;
+}
+
+.fusion-workspace-dest-option small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.fusion-workspace-folder-field select {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.fusion-workspace-file-actions {
+  flex-wrap: wrap;
+}
+
+.fusion-workspace-file-status {
+  margin: 0;
+  min-height: 1.2em;
+}
+
+.fusion-workspace-file-status.error {
+  color: var(--danger, #f85149);
+}
+
+.fusion-workspace-folder-list {
+  display: grid;
+  gap: 4px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  background: rgba(13, 17, 23, 0.35);
+}
+
+.fusion-workspace-browse-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.fusion-workspace-browse-row:hover {
+  background: rgba(0, 120, 212, 0.1);
+  border-color: rgba(0, 120, 212, 0.35);
+}
+
+.fusion-workspace-browse-row span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fusion-workspace-browse-row small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
 }
 
 .browser-chevron {

@@ -868,6 +868,17 @@ def _record_history(
         user_name=user["display_name"] if user else None,
         user_avatar_url=_avatar_url_for_user_id(user["id"]) if user else None,
     )
+    # Mark Fusion-linked projects dirty so accessing Fusion pushes local edits back.
+    if kind not in {"autodesk_import", "fusion_sync", "fusion_push"} and filename:
+        suffix = Path(str(filename)).suffix.lower()
+        if suffix in {".step", ".stp", ".stl", ".3mf", ".obj", ".glb", ".gltf", ".py"} or not suffix:
+            try:
+                project_meta = project_store.load_meta(project_path)
+                if not project_meta.get("fusion_pending_push"):
+                    project_meta["fusion_pending_push"] = True
+                    project_store.save_meta(project_path, project_meta)
+            except Exception:
+                logger.debug("Could not mark fusion_pending_push for %s", project_path.name, exc_info=True)
     log_entry = project_log_service.log_timeline_entry(project_path, entry)
     if user:
         _notify_project_history(project_path.name, log_entry, user)
@@ -3418,7 +3429,7 @@ def _safe_model_stem(name: str, fallback: str) -> str:
 
 @app.post("/api/autodesk/import")
 def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(get_current_user)):
-    """Download a supported Autodesk file, convert a preview if needed, and create a local project."""
+    """Download a supported Autodesk file, convert a preview if needed, and create/update a local project."""
     import uuid
     from backend.services.autodesk_oauth import download_item_file, export_fusion_item_as_step, get_folder_item, get_valid_access_token
     from backend.services import cad_service
@@ -3470,14 +3481,39 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
     if requested_team_id and requested_team_id not in team_ids:
         raise HTTPException(403, "Not a member of that workspace.")
     tid = requested_team_id or teams[0]["id"]
-    project_id = str(uuid.uuid4())[:8]
-    proj_path = cad_service.project_dir(PROJECTS, project_id)
-    project_store.touch_project(proj_path, name=name, name_source="user")
-    teams_service.register_project_access(project_id, tid, user["id"])
+
+    target_project_id = str(body.get("target_project_id") or body.get("project_id") or "").strip()
+    workspace_folder_id = str(body.get("workspace_folder_id") or body.get("render_folder_id") or "").strip() or None
+    into_existing = False
+    if target_project_id:
+        proj_path = _require_project(user, target_project_id)
+        project_id = target_project_id
+        into_existing = True
+    else:
+        project_id = str(uuid.uuid4())[:8]
+        proj_path = cad_service.project_dir(PROJECTS, project_id)
+        project_store.touch_project(proj_path, name=name, name_source="user")
+        teams_service.register_project_access(project_id, tid, user["id"])
+        if workspace_folder_id:
+            try:
+                folders_service.set_project_folder(project_id, workspace_folder_id, user["id"])
+            except Exception as exc:
+                logger.warning("Could not place Autodesk import in folder %s: %s", workspace_folder_id, exc)
 
     safe_stem = _safe_model_stem(name, "autodesk_import")
     safe_name = f"{'.autodesk_source_' if converted_from_native else ''}{safe_stem}{suffix}"
     src_path = proj_path / safe_name
+    if into_existing and src_path.exists():
+        n = 2
+        while True:
+            candidate = proj_path / f"{Path(safe_name).stem}_{n}{suffix if not converted_from_native else Path(safe_name).suffix}"
+            if converted_from_native:
+                candidate = proj_path / f".autodesk_source_{safe_stem}_{n}{suffix}"
+            if not candidate.exists():
+                src_path = candidate
+                safe_name = candidate.name
+                break
+            n += 1
     src_path.write_bytes(data)
 
     viewer_path = src_path
@@ -3490,6 +3526,13 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
             viewer_path = cad_service.tessellate_step_to_glb(src_path)
             if converted_from_native:
                 assembled_viewer_path = proj_path / f"{safe_stem}.glb"
+                if into_existing and assembled_viewer_path.exists():
+                    assembled_viewer_path = proj_path / f"{safe_stem}_{src_path.stem.split('_')[-1] if '_' in src_path.stem else '2'}.glb"
+                    # Prefer a unique assembled name next to the source when colliding.
+                    n = 2
+                    while assembled_viewer_path.exists():
+                        assembled_viewer_path = proj_path / f"{safe_stem}_{n}.glb"
+                        n += 1
                 if viewer_path.name != assembled_viewer_path.name:
                     assembled_viewer_path.write_bytes(viewer_path.read_bytes())
                 viewer_path = assembled_viewer_path
@@ -3497,7 +3540,7 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
                     cad_service.split_scene_components_to_glbs(
                         viewer_path,
                         proj_path,
-                        base_stem=safe_stem,
+                        base_stem=viewer_path.stem,
                     )
     except Exception as exc:
         raise HTTPException(422, f"Could not convert Autodesk file for preview: {exc}") from exc
@@ -3512,16 +3555,27 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
         "web_url": item.get("web_url") or "",
         "converted_from_native": converted_from_native,
     }
-    project_store.save_meta(proj_path, meta)
+    if not into_existing:
+        project_store.save_meta(proj_path, meta)
+    else:
+        # Keep prior project name; still record latest Autodesk provenance.
+        project_store.save_meta(proj_path, meta)
+        project_store.touch_project(proj_path)
     entry = _record_history(
         proj_path,
         "autodesk_import",
         f"Import {name} from Autodesk",
         viewer_path.name,
-        meta={"source_file": src_path.name, "autodesk_item_id": item_id},
+        meta={"source_file": src_path.name, "autodesk_item_id": item_id, "into_existing": into_existing},
         user=user,
     )
-    _log_workspace(tid, kind="autodesk_import", label=f"Imported {name} from Autodesk", user=user, project_id=project_id)
+    _log_workspace(
+        tid,
+        kind="autodesk_import",
+        label=f"Imported {name} from Autodesk{' into existing project' if into_existing else ''}",
+        user=user,
+        project_id=project_id,
+    )
 
     return {
         "project_id": project_id,
@@ -3530,6 +3584,8 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
         "name": name,
         "autodesk_source": meta["autodesk_source"],
         "timeline_entry": entry,
+        "into_existing": into_existing,
+        "workspace_folder_id": workspace_folder_id,
     }
 
 
@@ -3867,7 +3923,207 @@ def _push_file_to_fusion_mirrors(
 
 def _background_push_new_file_to_fusion(project_id: str, project_path: Path, filename: str) -> None:
     """Best-effort Fusion mirror upload for newly generated/uploaded files."""
-    _push_file_to_fusion_mirrors(project_id, project_path, filename)
+    result = _push_file_to_fusion_mirrors(project_id, project_path, filename)
+    if result.get("pushed_mirrors"):
+        try:
+            meta = project_store.load_meta(project_path)
+            meta["fusion_pending_push"] = False
+            project_store.save_meta(project_path, meta)
+        except Exception:
+            logger.debug("Could not clear fusion_pending_push after background push", exc_info=True)
+
+
+def _project_needs_fusion_push(project_path: Path, mirror: dict[str, Any]) -> bool:
+    """True when local Render3D edits should be uploaded to Fusion on next access/sync."""
+    meta = project_store.load_meta(project_path)
+    if meta.get("fusion_pending_push"):
+        return True
+    filename = project_store.latest_model_file(project_path)
+    if not filename:
+        return False
+    last_pushed = str(mirror.get("last_pushed_at") or "").strip()
+    if not last_pushed:
+        return True
+    updated = str(meta.get("updated_at") or "").strip()
+    return bool(updated and updated > last_pushed)
+
+
+def _seed_fusion_sync_tracking(
+    project_path: Path,
+    *,
+    item_id: str | None,
+    version_id: str | None,
+    filename: str,
+    item_name: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    """Keep Fusion pull tracking aligned after a local push so we don't re-import our own upload."""
+    if not item_id:
+        return
+    meta = project_store.load_meta(project_path)
+    sync_state = meta.get("fusion_mirror_sync") if isinstance(meta.get("fusion_mirror_sync"), dict) else {}
+    tracked = sync_state.get("items") if isinstance(sync_state.get("items"), dict) else {}
+    tracked[str(item_id)] = {
+        **(tracked.get(str(item_id)) if isinstance(tracked.get(str(item_id)), dict) else {}),
+        "item_id": str(item_id),
+        "version_id": str(version_id or ""),
+        "filename": filename,
+        "viewer_filename": filename,
+        "item_name": item_name or Path(filename).stem,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "seeded_from_local_push": True,
+    }
+    meta["fusion_mirror_sync"] = {
+        "items": tracked,
+        "last_sync_at": datetime.now(timezone.utc).isoformat(),
+        "last_sync_user_id": user_id,
+    }
+    meta["fusion_pending_push"] = False
+    project_store.save_meta(project_path, meta)
+
+
+def _push_local_changes_to_fusion(
+    project_id: str,
+    project_path: Path,
+    user: dict[str, Any],
+    *,
+    filename: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Upload pending local edits to the caller's Fusion mirror, then fan out to teammates."""
+    from backend.services.autodesk_oauth import get_valid_access_token, upload_step_to_folder
+
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM project_fusion_mirrors WHERE project_id = ? AND user_id = ?",
+            (project_id, user["id"]),
+        ).fetchone()
+    if not row:
+        return {
+            "pushed": False,
+            "skipped": "no_mirror",
+            "message": "No Fusion mirror linked for this project.",
+            "pushed_mirrors": [],
+            "push_errors": [],
+        }
+    mirror = dict(row)
+    if not force and not _project_needs_fusion_push(project_path, mirror):
+        return {
+            "pushed": False,
+            "skipped": "up_to_date",
+            "message": "Local Render3D changes are already synced to Fusion.",
+            "pushed_mirrors": [],
+            "push_errors": [],
+        }
+
+    aps_project_id = str(mirror.get("aps_project_id") or "")
+    folder_id = str(mirror.get("folder_id") or "")
+    if not aps_project_id or not folder_id:
+        return {
+            "pushed": False,
+            "skipped": "incomplete_mirror",
+            "message": "Fusion mirror is missing project/folder ids.",
+            "pushed_mirrors": [],
+            "push_errors": [],
+        }
+
+    safe = Path(str(filename or project_store.latest_model_file(project_path) or "")).name
+    if not safe:
+        return {
+            "pushed": False,
+            "skipped": "no_model",
+            "message": "No local model file to push.",
+            "pushed_mirrors": [],
+            "push_errors": [],
+        }
+
+    token = get_valid_access_token(user["id"])
+    if not token:
+        raise HTTPException(401, "Autodesk account not linked.")
+
+    try:
+        step_path = _step_for_cloud_cad(project_path, safe, allow_faceted=False)
+    except HTTPException as exc:
+        return {
+            "pushed": False,
+            "skipped": "no_step",
+            "message": str(exc.detail),
+            "pushed_mirrors": [],
+            "push_errors": [],
+        }
+
+    upload_name = f"{step_path.stem}.step"
+    try:
+        own_result = upload_step_to_folder(
+            token,
+            project_id=aps_project_id,
+            folder_id=folder_id,
+            filename=upload_name,
+            data=step_path.read_bytes(),
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Could not sync local changes to Fusion: {exc}") from exc
+
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE project_fusion_mirrors
+               SET last_item_id = COALESCE(?, last_item_id),
+                   last_version_id = COALESCE(?, last_version_id),
+                   last_pushed_at = ?,
+                   updated_at = ?
+             WHERE project_id = ? AND user_id = ?
+            """,
+            (
+                own_result.get("item_id"),
+                own_result.get("version_id"),
+                now,
+                now,
+                project_id,
+                user["id"],
+            ),
+        )
+
+    _seed_fusion_sync_tracking(
+        project_path,
+        item_id=own_result.get("item_id"),
+        version_id=own_result.get("version_id"),
+        filename=safe,
+        item_name=upload_name,
+        user_id=user["id"],
+    )
+
+    teammate = _push_file_to_fusion_mirrors(
+        project_id,
+        project_path,
+        safe,
+        skip_user_ids={str(user["id"])},
+    )
+    pushed_mirrors = [
+        {
+            "user_id": user["id"],
+            "aps_project_id": aps_project_id,
+            "folder_id": folder_id,
+            "item_id": own_result.get("item_id"),
+            "version_id": own_result.get("version_id"),
+            "filename": upload_name,
+            "own_mirror": True,
+        },
+        *(teammate.get("pushed_mirrors") or []),
+    ]
+    push_errors = list(teammate.get("push_errors") or [])
+    return {
+        "pushed": True,
+        "skipped": None,
+        "message": f"Synced {upload_name} to Fusion.",
+        "name": upload_name,
+        "filename": safe,
+        "item_id": own_result.get("item_id"),
+        "version_id": own_result.get("version_id"),
+        "pushed_mirrors": pushed_mirrors,
+        "push_errors": push_errors,
+    }
 
 
 def _collect_fusion_mirror_items(
@@ -4069,13 +4325,30 @@ def delete_project_fusion_mirror(project_id: str, user: dict[str, Any] = Depends
     return {"ok": True, "project_id": project_id}
 
 
+@app.post("/api/projects/{project_id}/fusion-mirror/push-local")
+def push_local_changes_to_fusion_mirror(
+    project_id: str,
+    body: dict = Body(default={}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Push pending local Render3D edits to the linked Fusion mirror (used on Fusion access)."""
+    path = _require_project(user, project_id)
+    return _push_local_changes_to_fusion(
+        project_id,
+        path,
+        user,
+        filename=(body or {}).get("filename"),
+        force=bool((body or {}).get("force", False)),
+    )
+
+
 @app.post("/api/projects/{project_id}/fusion-mirror/sync-from-fusion")
 def sync_project_fusion_mirror_from_fusion(
     project_id: str,
     body: dict = Body(default={}),
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Pull newer Fusion mirror items into Render3D, then push updates to all linked mirrors."""
+    """Push pending local edits to Fusion, pull newer Fusion items, then fan out to teammate mirrors."""
     path = _require_project(user, project_id)
     import_bodies = bool((body or {}).get("import_bodies", True))
     from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
@@ -4097,6 +4370,14 @@ def sync_project_fusion_mirror_from_fusion(
     access_issue = fusion_mirror_access_issue(token, mirror)
     if access_issue:
         raise HTTPException(409, access_issue)
+
+    local_push = _push_local_changes_to_fusion(
+        project_id,
+        path,
+        user,
+        filename=(body or {}).get("filename"),
+        force=bool((body or {}).get("force_push", False)),
+    )
 
     hub_id = str(mirror.get("hub_id") or "")
     aps_project_id = str(mirror.get("aps_project_id") or "")
@@ -4200,10 +4481,11 @@ def sync_project_fusion_mirror_from_fusion(
     }
     project_store.save_meta(path, meta)
 
-    pushed_mirrors: list[dict[str, Any]] = []
+    pushed_mirrors: list[dict[str, Any]] = list(local_push.get("pushed_mirrors") or [])
     push_errors: list[str] = list(import_errors)
-    # Fan-out to teammate mirrors only — skip the syncing user's folder to avoid
-    # creating a new Fusion version that would re-trigger the next pull.
+    push_errors.extend(local_push.get("push_errors") or [])
+    # Fan-out imported Fusion updates to teammate mirrors only — skip the syncing user's
+    # folder to avoid creating a new Fusion version that would re-trigger the next pull.
     for result in imported:
         filename = result.get("filename") or result.get("viewer_filename")
         if not filename:
@@ -4217,8 +4499,8 @@ def sync_project_fusion_mirror_from_fusion(
         pushed_mirrors.extend(push.get("pushed_mirrors") or [])
         push_errors.extend(push.get("push_errors") or [])
 
-    changed = bool(imported)
-    if changed:
+    changed = bool(imported) or bool(local_push.get("pushed"))
+    if imported:
         latest = imported[-1]
         viewer = latest.get("viewer_filename") or latest.get("filename")
         _notify_project(
@@ -4252,19 +4534,26 @@ def sync_project_fusion_mirror_from_fusion(
                 ),
             )
 
-    if changed:
-        message = (
-            f"Imported {len(imported)} update{'s' if len(imported) != 1 else ''} from Fusion "
-            f"and pushed to {len(pushed_mirrors)} mirror{'s' if len(pushed_mirrors) != 1 else ''}."
+    parts = []
+    if local_push.get("pushed"):
+        parts.append(local_push.get("message") or "Synced local changes to Fusion")
+    if imported:
+        parts.append(
+            f"Imported {len(imported)} update{'s' if len(imported) != 1 else ''} from Fusion"
         )
+    if pushed_mirrors and (imported or local_push.get("pushed")):
+        parts.append(f"updated {len(pushed_mirrors)} mirror{'s' if len(pushed_mirrors) != 1 else ''}")
+    if parts:
+        message = ", and ".join(parts) + "."
     else:
-        message = "Fusion mirror folder is reachable. No newer Fusion version was imported in this sync pass."
-    if import_errors and not changed:
+        message = "Fusion mirror folder is reachable. Local and Fusion copies are already in sync."
+    if import_errors and not imported and not local_push.get("pushed"):
         message = f"Could not import Fusion updates: {import_errors[0]}"
 
     return {
         "changed": changed,
         "message": message,
+        "local_push": local_push,
         "imported": [
             {
                 "item_id": r.get("item_id"),
@@ -4353,6 +4642,68 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 result["source_upload_error"] = str(exc)
     except Exception as exc:
         raise HTTPException(502, f"Fusion push failed: {exc}") from exc
+
+    now = datetime.now(timezone.utc).isoformat()
+    if mirror:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE project_fusion_mirrors
+                   SET last_item_id = COALESCE(?, last_item_id),
+                       last_version_id = COALESCE(?, last_version_id),
+                       last_pushed_at = ?,
+                       updated_at = ?
+                 WHERE project_id = ? AND user_id = ?
+                """,
+                (
+                    result.get("item_id"),
+                    result.get("version_id"),
+                    now,
+                    now,
+                    project_id,
+                    user["id"],
+                ),
+            )
+        _seed_fusion_sync_tracking(
+            path,
+            item_id=result.get("item_id"),
+            version_id=result.get("version_id"),
+            filename=safe,
+            item_name=upload_name,
+            user_id=user["id"],
+        )
+    else:
+        try:
+            meta = project_store.load_meta(path)
+            meta["fusion_pending_push"] = False
+            project_store.save_meta(path, meta)
+        except Exception:
+            pass
+
+    teammate = _push_file_to_fusion_mirrors(
+        project_id,
+        path,
+        safe,
+        skip_user_ids={str(user["id"])} if mirror else set(),
+    )
+    result = {
+        **result,
+        "name": upload_name,
+        "filename": safe,
+        "pushed_mirrors": [
+            *([{
+                "user_id": user["id"],
+                "aps_project_id": aps_project_id,
+                "folder_id": folder_id,
+                "item_id": result.get("item_id"),
+                "version_id": result.get("version_id"),
+                "filename": upload_name,
+                "own_mirror": True,
+            }] if mirror else []),
+            *(teammate.get("pushed_mirrors") or []),
+        ],
+        "push_errors": list(teammate.get("push_errors") or []),
+    }
     return result
 
 

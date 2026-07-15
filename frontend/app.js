@@ -71,7 +71,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260714-agent-detail
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260714-mirror-link-modal";
+import { initFusionPanel } from "./fusion-panel.js?v=20260714-fusion-open-save-local";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
@@ -13768,7 +13768,6 @@ function renderWorkspaceRealtimeEditor(data = null) {
   `;
   folderEl.querySelector("[data-workspace-fusion-open]")?.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("render3d:open-fusion-library"));
-    setEditStatus("ok", "Fusion is already connected to this workspace. Use Fusion Library to link a project mirror or sync the latest version.");
   });
   folderEl.querySelector("[data-workspace-fusion-link]")?.addEventListener("click", () => {
     void linkActiveWorkspaceToFusion();
@@ -13786,7 +13785,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
   }
   projectsEl.innerHTML = `
     <strong>Fusion linked folders</strong>
-    <p class="muted small">Auto-sync checks your linked Fusion folder every 30 seconds, pulls newer versions into Render3D, then pushes them to teammate mirrors.</p>
+    <p class="muted small">Local edits sync back to Fusion when you open linked files or sync. Click any Fusion file to save it into Render3D (pick a workspace folder), open it for view/edit, or push your current model back.</p>
     ${staleMirrorCount ? `
       <div class="workspace-fusion-stale-banner">
         <p class="muted small error">${staleMirrorCount} stale Fusion mirror${staleMirrorCount === 1 ? "" : "s"} on old Render3D projects still point at hubs you no longer have access to. They do not affect your current link.</p>
@@ -13905,6 +13904,81 @@ function renderWorkspaceRealtimeEditor(data = null) {
       }
     });
   });
+  projectsEl.querySelectorAll("[data-fusion-file-open]").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const payload = fusionMirrorFilePayloadFromButton(btn);
+      if (!payload) return;
+      btn.disabled = true;
+      const badge = btn.querySelector("small");
+      const originalBadge = badge?.textContent || "";
+      if (badge) badge.textContent = "Opening…";
+      try {
+        setEditStatus("ok", `Opening ${payload.itemName} for edit…`);
+        await viewFusionWorkspaceFile(payload);
+        setEditStatus("ok", `Opened ${payload.itemName}. Edit here, then Save to keep a local copy or Sync with Fusion.`);
+        await refreshWorkspaceRealtimeEditor();
+      } catch (err) {
+        setEditStatus("error", err.message || "Could not open Fusion file.");
+      } finally {
+        btn.disabled = false;
+        if (badge) badge.textContent = originalBadge;
+      }
+    });
+  });
+  projectsEl.querySelectorAll("[data-fusion-file-save-local]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const payload = fusionMirrorFilePayloadFromButton(btn);
+      if (payload) openFusionWorkspaceFileModal(payload, { mode: "save" });
+    });
+  });
+  projectsEl.querySelectorAll("[data-fusion-latest-open]").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = btn.closest("[data-mirror-card]");
+      if (!card) return;
+      const payload = {
+        renderProjectId: card.dataset.renderProjectId || "",
+        mirrorUserId: card.dataset.mirrorUserId || "",
+        hubId: card.dataset.hubId || "",
+        hubLabel: card.dataset.hubLabel || "",
+        apsProjectId: card.dataset.apsProjectId || "",
+        apsProjectLabel: card.dataset.apsProjectLabel || "",
+        folderId: card.dataset.folderId || "",
+        folderLabel: card.dataset.folderLabel || "",
+        itemId: btn.dataset.itemId || "",
+        itemName: btn.dataset.itemName || "Untitled",
+        versionId: btn.dataset.versionId || "",
+        webUrl: btn.dataset.webUrl || "",
+        localFilename: "",
+      };
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Opening…";
+      try {
+        await viewFusionWorkspaceFile(payload);
+        setEditStatus("ok", `Opened ${payload.itemName} for edit.`);
+        await refreshWorkspaceRealtimeEditor();
+      } catch (err) {
+        setEditStatus("error", err.message || "Could not open latest Fusion file.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  });
+  projectsEl.querySelectorAll("[data-fusion-folder-open]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const payload = fusionMirrorFolderPayloadFromButton(btn);
+      if (payload) openFusionWorkspaceFolderBrowser(payload);
+    });
+  });
 }
 
 function renderWorkspaceFusionComponents(project) {
@@ -13988,10 +14062,20 @@ function renderWorkspaceFusionMirrors(project) {
         const contentRows = contents.error
           ? `<p class="muted small error">${appEscapeHtml(contents.error)}</p>${contents.needs_relink && mirror.user_id === getStoredUser()?.id ? `<button type="button" class="btn btn-compact" data-workspace-relink-fusion="${appEscapeHtml(project.id)}">Remove stale link</button>` : ""}`
           : [
-              ...activeItems.map((item) => renderFusionFolderRow("File", item.name || "Untitled", "□")),
+              ...(folders || []).map((folder) => renderFusionMirrorFolderRow(project, mirror, folder)),
+              ...activeItems.map((item) => renderFusionMirrorFileRow(project, mirror, item)),
             ].join("") || renderFusionEmptyRow("No files in linked mirror yet.");
         return `
-          <div class="workspace-fusion-mirror-card${contents.needs_relink ? " workspace-fusion-mirror-card--stale" : ""}">
+          <div class="workspace-fusion-mirror-card${contents.needs_relink ? " workspace-fusion-mirror-card--stale" : ""}"
+            data-mirror-card
+            data-render-project-id="${appEscapeHtml(project.id)}"
+            data-mirror-user-id="${appEscapeHtml(mirror.user_id || "")}"
+            data-hub-id="${appEscapeHtml(mirror.hub_id || "")}"
+            data-hub-label="${appEscapeHtml(mirror.hub_label || "")}"
+            data-aps-project-id="${appEscapeHtml(mirror.aps_project_id || "")}"
+            data-aps-project-label="${appEscapeHtml(mirror.aps_project_label || "")}"
+            data-folder-id="${appEscapeHtml(mirror.folder_id || "")}"
+            data-folder-label="${appEscapeHtml(mirror.folder_label || "")}">
             <div class="workspace-fusion-mirror-head">
               <span>${appEscapeHtml(mirror.display_name || mirror.email || "Teammate")}</span>
               <small>${mirror.user_id === getStoredUser()?.id ? "Your mirror" : "Teammate mirror"}${contents.needs_relink ? " · stale" : ""}</small>
@@ -14000,11 +14084,12 @@ function renderWorkspaceFusionMirrors(project) {
               <span>${appEscapeHtml(fusionMirrorPathLabel(mirror))}</span>
               ${latestLink}
             </p>
+            <p class="muted small workspace-fusion-mirror-hint">Click a file to open &amp; edit. Use Save to keep a local Render3D copy.</p>
             <div class="workspace-fusion-browser">
               ${renderFusionBrowserSection(mirror.folder_label || "Fusion folder", folders.length + activeItems.length, contentRows, !contents.needs_relink)}
             </div>
             ${mirror.user_id === getStoredUser()?.id
-              ? `<button type="button" class="btn btn-compact" data-workspace-sync-fusion="${appEscapeHtml(project.id)}">Sync latest from Fusion</button>`
+              ? `<button type="button" class="btn btn-compact" data-workspace-sync-fusion="${appEscapeHtml(project.id)}">Sync with Fusion</button>`
               : ""}
           </div>
         `;
@@ -14032,14 +14117,18 @@ function renderFusionLatestVersionLink(mirror, items = []) {
   const item = items.find((candidate) =>
     candidate.id === mirror.last_item_id || candidate.version_id === mirror.last_version_id
   ) || items[0] || {};
-  const href = item.web_url || item.download_url || "";
   const label = version.match(/[?&]version=([^&]+)/)?.[1]
     ? `Latest v${version.match(/[?&]version=([^&]+)/)[1]}`
     : "Latest version";
-  if (!href) {
+  if (!item.id) {
     return `<span title="${appEscapeHtml(version)}">${appEscapeHtml(label)}</span>`;
   }
-  return `<a class="workspace-fusion-version-link" href="${appEscapeHtml(href)}" target="_blank" rel="noopener" title="${appEscapeHtml(version)}">${appEscapeHtml(label)}</a>`;
+  return `<button type="button" class="workspace-fusion-version-link" data-fusion-latest-open
+    data-item-id="${appEscapeHtml(item.id || "")}"
+    data-item-name="${appEscapeHtml(item.name || "Untitled")}"
+    data-version-id="${appEscapeHtml(item.version_id || version)}"
+    data-web-url="${appEscapeHtml(item.web_url || "")}"
+    title="Open ${appEscapeHtml(item.name || label)} in Render3D">${appEscapeHtml(label)}</button>`;
 }
 
 function renderFusionBrowserItem({ projectId, filename, name, badge, icon = "□", child = false, disabled = false }) {
@@ -14089,6 +14178,543 @@ function renderFusionFolderRow(kind, name, icon = "□") {
       <small>${appEscapeHtml(kind)}</small>
     </div>
   `;
+}
+
+function renderFusionMirrorFolderRow(project, mirror, folder) {
+  return `
+    <button type="button" class="workspace-fusion-browser-row workspace-fusion-folder-row" data-fusion-folder-open
+      data-render-project-id="${appEscapeHtml(project.id)}"
+      data-mirror-user-id="${appEscapeHtml(mirror.user_id || "")}"
+      data-hub-id="${appEscapeHtml(mirror.hub_id || "")}"
+      data-hub-label="${appEscapeHtml(mirror.hub_label || "")}"
+      data-aps-project-id="${appEscapeHtml(mirror.aps_project_id || "")}"
+      data-aps-project-label="${appEscapeHtml(mirror.aps_project_label || "")}"
+      data-parent-folder-id="${appEscapeHtml(mirror.folder_id || "")}"
+      data-parent-folder-label="${appEscapeHtml(mirror.folder_label || "")}"
+      data-folder-id="${appEscapeHtml(folder.id || "")}"
+      data-folder-label="${appEscapeHtml(folder.name || "Folder")}"
+      title="Browse this Fusion folder">
+      <span class="workspace-fusion-browser-icon">▣</span>
+      <span class="workspace-fusion-browser-name">${appEscapeHtml(folder.name || "Folder")}</span>
+      <small>Folder</small>
+    </button>
+  `;
+}
+
+function renderFusionMirrorFileRow(project, mirror, item) {
+  const name = item.name || "Untitled";
+  const localMatch = findLocalFusionMatch(project, item);
+  const commonAttrs = `
+      data-render-project-id="${appEscapeHtml(project.id)}"
+      data-mirror-user-id="${appEscapeHtml(mirror.user_id || "")}"
+      data-hub-id="${appEscapeHtml(mirror.hub_id || "")}"
+      data-hub-label="${appEscapeHtml(mirror.hub_label || "")}"
+      data-aps-project-id="${appEscapeHtml(mirror.aps_project_id || "")}"
+      data-aps-project-label="${appEscapeHtml(mirror.aps_project_label || "")}"
+      data-folder-id="${appEscapeHtml(mirror.folder_id || "")}"
+      data-folder-label="${appEscapeHtml(mirror.folder_label || "")}"
+      data-item-id="${appEscapeHtml(item.id || "")}"
+      data-item-name="${appEscapeHtml(name)}"
+      data-version-id="${appEscapeHtml(item.version_id || "")}"
+      data-web-url="${appEscapeHtml(item.web_url || "")}"
+      data-local-filename="${appEscapeHtml(localMatch?.filename || "")}"`;
+  return `
+    <div class="workspace-fusion-file-entry">
+      <button type="button" class="workspace-fusion-browser-row workspace-fusion-file-row" data-fusion-file-open ${commonAttrs}
+        title="Open in Render3D to view and edit">
+        <span class="workspace-fusion-browser-icon">□</span>
+        <span class="workspace-fusion-browser-name">${appEscapeHtml(name)}</span>
+        <small>${localMatch ? "Local" : "Open"}</small>
+      </button>
+      <button type="button" class="btn btn-compact workspace-fusion-file-save-btn" data-fusion-file-save-local ${commonAttrs}
+        title="Save a local Render3D copy (choose workspace folder)">Save</button>
+    </div>
+  `;
+}
+
+function findLocalFusionMatch(project, item = {}) {
+  const itemStem = fusionItemStem(item.name || "");
+  const sourceId = String(item.id || "");
+  const components = [
+    ...(project.browser?.components || []),
+    ...((project.browser?.components || []).flatMap((entry) => entry.children || [])),
+  ];
+  const bySource = components.find((entry) =>
+    String(entry.autodesk_item_id || entry.fusion_item_id || "") === sourceId
+  );
+  if (bySource) {
+    return {
+      filename: bySource.name || bySource.viewer_filename || bySource.filename || "",
+      name: bySource.label || bySource.name,
+    };
+  }
+  const byStem = components.find((entry) => {
+    const filename = entry.name || entry.viewer_filename || entry.filename || "";
+    return fusionItemStem(filename) === itemStem || fusionItemStem(entry.label || entry.stem || "") === itemStem;
+  });
+  if (!byStem) return null;
+  return {
+    filename: byStem.name || byStem.viewer_filename || byStem.filename || "",
+    name: byStem.label || byStem.name,
+  };
+}
+
+function fusionMirrorFilePayloadFromButton(btn) {
+  if (!btn) return null;
+  return {
+    renderProjectId: btn.dataset.renderProjectId || "",
+    mirrorUserId: btn.dataset.mirrorUserId || "",
+    hubId: btn.dataset.hubId || "",
+    hubLabel: btn.dataset.hubLabel || "",
+    apsProjectId: btn.dataset.apsProjectId || "",
+    apsProjectLabel: btn.dataset.apsProjectLabel || "",
+    folderId: btn.dataset.folderId || "",
+    folderLabel: btn.dataset.folderLabel || "",
+    itemId: btn.dataset.itemId || "",
+    itemName: btn.dataset.itemName || "Untitled",
+    versionId: btn.dataset.versionId || "",
+    webUrl: btn.dataset.webUrl || "",
+    localFilename: btn.dataset.localFilename || "",
+  };
+}
+
+function fusionMirrorFolderPayloadFromButton(btn) {
+  if (!btn) return null;
+  return {
+    renderProjectId: btn.dataset.renderProjectId || "",
+    mirrorUserId: btn.dataset.mirrorUserId || "",
+    hubId: btn.dataset.hubId || "",
+    hubLabel: btn.dataset.hubLabel || "",
+    apsProjectId: btn.dataset.apsProjectId || "",
+    apsProjectLabel: btn.dataset.apsProjectLabel || "",
+    parentFolderId: btn.dataset.parentFolderId || "",
+    parentFolderLabel: btn.dataset.parentFolderLabel || "",
+    folderId: btn.dataset.folderId || "",
+    folderLabel: btn.dataset.folderLabel || "Folder",
+  };
+}
+
+function closeFusionWorkspaceFolderBrowser() {
+  document.getElementById("fusion-workspace-folder-modal")?.remove();
+}
+
+async function openFusionWorkspaceFolderBrowser(payload, { stack = [] } = {}) {
+  closeFusionWorkspaceFolderBrowser();
+  if (payload.renderProjectId || projectId) {
+    void syncLocalChangesToFusionOnAccess(payload.renderProjectId || projectId, { quiet: true });
+  }
+  const modal = document.createElement("div");
+  modal.id = "fusion-workspace-folder-modal";
+  modal.className = "auth-modal fusion-workspace-folder-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.innerHTML = `
+    <div class="auth-card app-dialog-card fusion-workspace-file-card">
+      <p class="app-dialog-eyebrow">Fusion folder</p>
+      <h2 class="app-dialog-title">${appEscapeHtml(payload.folderLabel)}</h2>
+      <p class="muted small">${appEscapeHtml(payload.apsProjectLabel || payload.apsProjectId || "")}</p>
+      <div class="fusion-workspace-folder-list" data-fusion-folder-list>
+        <p class="muted small">Loading…</p>
+      </div>
+      <div class="app-dialog-actions fusion-workspace-file-actions">
+        ${stack.length
+          ? `<button type="button" class="btn secondary" data-fusion-folder-back>Back</button>`
+          : ""}
+        <button type="button" class="btn secondary" data-fusion-folder-cancel>Close</button>
+      </div>
+      <p class="muted small fusion-workspace-file-status" data-fusion-folder-status></p>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  const listEl = modal.querySelector("[data-fusion-folder-list]");
+  const statusEl = modal.querySelector("[data-fusion-folder-status]");
+  const setStatus = (text, isError = false) => {
+    if (!statusEl) return;
+    statusEl.textContent = text || "";
+    statusEl.classList.toggle("error", !!isError);
+  };
+  modal.querySelector("[data-fusion-folder-cancel]")?.addEventListener("click", closeFusionWorkspaceFolderBrowser);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeFusionWorkspaceFolderBrowser();
+  });
+  modal.querySelector("[data-fusion-folder-back]")?.addEventListener("click", () => {
+    const prev = stack[stack.length - 1];
+    if (!prev) return;
+    closeFusionWorkspaceFolderBrowser();
+    openFusionWorkspaceFolderBrowser(prev, { stack: stack.slice(0, -1) });
+  });
+
+  try {
+    const contents = await api(
+      `/api/autodesk/projects/${encodeURIComponent(payload.apsProjectId)}/folders/${encodeURIComponent(payload.folderId)}/contents`,
+    );
+    const folders = contents.folders || [];
+    const items = contents.items || [];
+    if (!folders.length && !items.length) {
+      listEl.innerHTML = `<p class="muted small">This folder is empty.</p>`;
+    } else {
+      listEl.innerHTML = [
+        ...folders.map((folder) => `
+          <button type="button" class="fusion-workspace-browse-row" data-fusion-browse-folder
+            data-folder-id="${appEscapeHtml(folder.id || "")}"
+            data-folder-label="${appEscapeHtml(folder.name || "Folder")}">
+            <span>▣</span>
+            <span>${appEscapeHtml(folder.name || "Folder")}</span>
+            <small>Folder</small>
+          </button>
+        `),
+        ...items.map((item) => `
+          <div class="fusion-workspace-browse-entry">
+            <button type="button" class="fusion-workspace-browse-row" data-fusion-browse-file
+              data-item-id="${appEscapeHtml(item.id || "")}"
+              data-item-name="${appEscapeHtml(item.name || "Untitled")}"
+              data-version-id="${appEscapeHtml(item.version_id || "")}"
+              data-web-url="${appEscapeHtml(item.web_url || "")}">
+              <span>□</span>
+              <span>${appEscapeHtml(item.name || "Untitled")}</span>
+              <small>Open</small>
+            </button>
+            <button type="button" class="btn btn-compact" data-fusion-browse-save
+              data-item-id="${appEscapeHtml(item.id || "")}"
+              data-item-name="${appEscapeHtml(item.name || "Untitled")}"
+              data-version-id="${appEscapeHtml(item.version_id || "")}"
+              data-web-url="${appEscapeHtml(item.web_url || "")}">Save</button>
+          </div>
+        `),
+      ].join("");
+    }
+    listEl.querySelectorAll("[data-fusion-browse-folder]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        closeFusionWorkspaceFolderBrowser();
+        openFusionWorkspaceFolderBrowser({
+          ...payload,
+          parentFolderId: payload.folderId,
+          parentFolderLabel: payload.folderLabel,
+          folderId: btn.dataset.folderId || "",
+          folderLabel: btn.dataset.folderLabel || "Folder",
+        }, { stack: [...stack, payload] });
+      });
+    });
+    const filePayloadFromBtn = (btn) => ({
+      renderProjectId: payload.renderProjectId,
+      mirrorUserId: payload.mirrorUserId,
+      hubId: payload.hubId,
+      hubLabel: payload.hubLabel,
+      apsProjectId: payload.apsProjectId,
+      apsProjectLabel: payload.apsProjectLabel,
+      folderId: payload.folderId,
+      folderLabel: payload.folderLabel,
+      itemId: btn.dataset.itemId || "",
+      itemName: btn.dataset.itemName || "Untitled",
+      versionId: btn.dataset.versionId || "",
+      webUrl: btn.dataset.webUrl || "",
+      localFilename: "",
+    });
+    listEl.querySelectorAll("[data-fusion-browse-file]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const filePayload = filePayloadFromBtn(btn);
+        btn.disabled = true;
+        try {
+          closeFusionWorkspaceFolderBrowser();
+          await viewFusionWorkspaceFile(filePayload);
+          setEditStatus("ok", `Opened ${filePayload.itemName} for edit.`);
+          await refreshWorkspaceRealtimeEditor();
+        } catch (err) {
+          setEditStatus("error", err.message || "Could not open Fusion file.");
+        }
+      });
+    });
+    listEl.querySelectorAll("[data-fusion-browse-save]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        closeFusionWorkspaceFolderBrowser();
+        openFusionWorkspaceFileModal(filePayloadFromBtn(btn), { mode: "save" });
+      });
+    });
+  } catch (err) {
+    listEl.innerHTML = "";
+    setStatus(err.message || "Could not load Fusion folder.", true);
+  }
+}
+
+async function loadWorkspaceFolderOptions() {
+  const teamId = getSelectedWorkspaceId();
+  if (!teamId) return [];
+  try {
+    const data = await api(`/api/teams/${encodeURIComponent(teamId)}/folders`);
+    return (data.folders || []).filter((folder) => folder?.id && !folder.virtual && !folder.read_only);
+  } catch {
+    return [];
+  }
+}
+
+async function syncLocalChangesToFusionOnAccess(targetProjectId = projectId, { filename = null, force = false, quiet = true } = {}) {
+  const pid = targetProjectId || projectId;
+  if (!pid) return null;
+  try {
+    const result = await api(`/api/projects/${encodeURIComponent(pid)}/fusion-mirror/push-local`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: filename || selectedFile || null,
+        force: !!force,
+      }),
+    });
+    if (result?.pushed && !quiet) {
+      setEditStatus("ok", result.message || "Synced local changes to Fusion.");
+    }
+    return result;
+  } catch (err) {
+    const msg = String(err?.message || err || "");
+    // No mirror / nothing to push is expected for many projects.
+    if (/no fusion mirror|not linked|422/i.test(msg)) return null;
+    if (!quiet) setEditStatus("error", msg || "Could not sync local changes to Fusion.");
+    console.warn("Fusion push-on-access failed", pid, err);
+    return null;
+  }
+}
+
+function closeFusionWorkspaceFileModal() {
+  document.getElementById("fusion-workspace-file-modal")?.remove();
+}
+
+async function openFusionWorkspaceFileModal(payload, { mode = "save" } = {}) {
+  closeFusionWorkspaceFileModal();
+  // Push pending local edits back to Fusion before browsing/importing this file.
+  if (payload.renderProjectId || projectId) {
+    void syncLocalChangesToFusionOnAccess(payload.renderProjectId || projectId, { quiet: true });
+  }
+  const folders = await loadWorkspaceFolderOptions();
+  const linkedLabel = payload.renderProjectId
+    ? (payload.renderProjectId === projectId ? (currentProjectLabel?.() || projectId) : payload.renderProjectId)
+    : "";
+  const currentLabel = projectId ? (currentProjectLabel?.() || projectId) : "";
+  const preferLinked = !!payload.renderProjectId;
+  const modal = document.createElement("div");
+  modal.id = "fusion-workspace-file-modal";
+  modal.className = "auth-modal fusion-workspace-file-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.innerHTML = `
+    <div class="auth-card app-dialog-card fusion-workspace-file-card">
+      <p class="app-dialog-eyebrow">Save locally</p>
+      <h2 class="app-dialog-title">${appEscapeHtml(payload.itemName)}</h2>
+      <p class="muted small">Keep a Render3D copy you can edit offline, then sync back to Fusion when you open the library.</p>
+      <p class="muted small">${appEscapeHtml(payload.folderLabel || "Fusion folder")} · ${appEscapeHtml(payload.apsProjectLabel || payload.apsProjectId || "")}</p>
+      <section class="fusion-workspace-file-section">
+        <h3>Where to save</h3>
+        <div class="fusion-workspace-dest" role="radiogroup" aria-label="Save destination">
+          ${preferLinked ? `
+          <label class="fusion-workspace-dest-option">
+            <input type="radio" name="fusion-save-dest" value="linked" checked />
+            <span><strong>This linked project</strong><small>${appEscapeHtml(linkedLabel || "Mirror project")}</small></span>
+          </label>` : ""}
+          <label class="fusion-workspace-dest-option">
+            <input type="radio" name="fusion-save-dest" value="current" ${preferLinked ? "" : (projectId ? "checked" : "disabled")} ${projectId ? "" : "disabled"} />
+            <span><strong>Open project</strong><small>${projectId ? appEscapeHtml(currentLabel) : "Open a Render3D project first"}</small></span>
+          </label>
+          <label class="fusion-workspace-dest-option">
+            <input type="radio" name="fusion-save-dest" value="new" ${preferLinked || projectId ? "" : "checked"} />
+            <span><strong>New project</strong><small>Create a Render3D project and pick a workspace folder</small></span>
+          </label>
+        </div>
+        <label class="app-dialog-label fusion-workspace-folder-field">Workspace folder
+          <select data-fusion-folder-select>
+            <option value="">No folder (workspace root)</option>
+            ${folders.map((folder) => `<option value="${appEscapeHtml(folder.id)}">${appEscapeHtml(folder.name || folder.id)}</option>`).join("")}
+          </select>
+        </label>
+      </section>
+      <div class="app-dialog-actions fusion-workspace-file-actions">
+        <button type="button" class="btn secondary" data-fusion-file-cancel>Cancel</button>
+        <button type="button" class="btn secondary" data-fusion-file-view>Open &amp; edit</button>
+        <button type="button" class="btn accent" data-fusion-file-save>Save locally</button>
+      </div>
+      <p class="muted small fusion-workspace-file-status" data-fusion-file-status></p>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const statusEl = modal.querySelector("[data-fusion-file-status]");
+  const setModalStatus = (text, isError = false) => {
+    if (!statusEl) return;
+    statusEl.textContent = text || "";
+    statusEl.classList.toggle("error", !!isError);
+  };
+  const destInputs = [...modal.querySelectorAll('input[name="fusion-save-dest"]')];
+  const folderSelect = modal.querySelector("[data-fusion-folder-select]");
+  const syncFolderField = () => {
+    const dest = destInputs.find((input) => input.checked)?.value || "new";
+    folderSelect.closest(".fusion-workspace-folder-field")?.classList.toggle("hidden", dest !== "new");
+  };
+  destInputs.forEach((input) => input.addEventListener("change", syncFolderField));
+  syncFolderField();
+
+  modal.querySelector("[data-fusion-file-cancel]")?.addEventListener("click", closeFusionWorkspaceFileModal);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeFusionWorkspaceFileModal();
+  });
+  const onKey = (event) => {
+    if (event.key === "Escape") {
+      closeFusionWorkspaceFileModal();
+      document.removeEventListener("keydown", onKey);
+    }
+  };
+  document.addEventListener("keydown", onKey);
+
+  modal.querySelector("[data-fusion-file-view]")?.addEventListener("click", async () => {
+    try {
+      setModalStatus("Opening in Render3D…");
+      await viewFusionWorkspaceFile(payload);
+      closeFusionWorkspaceFileModal();
+      document.removeEventListener("keydown", onKey);
+      await refreshWorkspaceRealtimeEditor();
+    } catch (err) {
+      setModalStatus(err.message || "Could not open file.", true);
+    }
+  });
+
+  modal.querySelector("[data-fusion-file-save]")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    const dest = destInputs.find((input) => input.checked)?.value || "new";
+    if ((dest === "current" || dest === "linked") && !(dest === "linked" ? payload.renderProjectId : projectId)) {
+      setModalStatus("Open a Render3D project first, or choose New project.", true);
+      return;
+    }
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Saving…";
+    try {
+      setModalStatus(dest === "new" ? "Creating local Render3D project…" : "Saving into Render3D project…");
+      const result = await saveFusionWorkspaceFile(payload, {
+        destination: dest === "linked" ? "linked" : dest,
+        folderId: folderSelect?.value || "",
+        linkedProjectId: payload.renderProjectId || "",
+      });
+      setModalStatus(`Saved ${result.name || payload.itemName}.`);
+      closeFusionWorkspaceFileModal();
+      document.removeEventListener("keydown", onKey);
+      await refreshWorkspaceRealtimeEditor();
+      setEditStatus("ok", `Saved ${result.name || payload.itemName} locally in Render3D.`);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = original;
+      setModalStatus(err.message || "Save failed.", true);
+    }
+  });
+}
+
+async function saveFusionWorkspaceFile(payload, { destination = "new", folderId = "", linkedProjectId = "" } = {}) {
+  const teamId = getSelectedWorkspaceId();
+  const body = {
+    aps_project_id: payload.apsProjectId,
+    hub_id: payload.hubId,
+    folder_id: payload.folderId,
+    item_id: payload.itemId,
+    version_id: payload.versionId || null,
+    name: payload.itemName,
+    team_id: teamId || null,
+    import_bodies: true,
+  };
+  if (destination === "linked") {
+    const target = linkedProjectId || payload.renderProjectId;
+    if (!target) throw new Error("No linked Render3D project for this Fusion mirror.");
+    body.target_project_id = target;
+  } else if (destination === "current") {
+    if (!projectId) throw new Error("Open a Render3D project before importing into it.");
+    body.target_project_id = projectId;
+  } else if (folderId) {
+    body.workspace_folder_id = folderId;
+  }
+  const result = await api("/api/autodesk/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await openProjectById(result.project_id);
+  if (result.filename) {
+    try {
+      const data = await api(`/api/projects/${encodeURIComponent(result.project_id)}`);
+      const browserComponents = normalizeBrowser(data).components || [];
+      const comp = [...browserComponents, ...browserComponents.flatMap((entry) => entry.children || [])]
+        .find((entry) => entry.name === result.filename || entry.viewer_filename === result.filename);
+      if (comp) await openBrowserComponent(comp);
+      else {
+        await loadModel(
+          `/api/projects/${encodeURIComponent(result.project_id)}/files/${encodeURIComponent(result.filename)}`,
+          result.filename,
+          { projectId: result.project_id, fitView: true },
+        );
+      }
+    } catch {
+      /* open project is enough */
+    }
+  }
+  return result;
+}
+
+async function viewFusionWorkspaceFile(payload) {
+  const targetProjectId = payload.renderProjectId || projectId;
+  if (!targetProjectId) {
+    // No linked/open project — save as a new local project, then open.
+    const result = await saveFusionWorkspaceFile(payload, { destination: "new", folderId: "" });
+    setEditStatus("ok", `Saved and opened ${result.name || payload.itemName}.`);
+    return result;
+  }
+  if (targetProjectId !== projectId) await openProjectById(targetProjectId);
+  let filename = payload.localFilename;
+  if (!filename) {
+    const data = await api(`/api/projects/${encodeURIComponent(targetProjectId)}`);
+    const match = findLocalFusionMatch(
+      { browser: normalizeBrowser(data), id: targetProjectId },
+      { id: payload.itemId, name: payload.itemName },
+    );
+    filename = match?.filename || "";
+  }
+  if (!filename) {
+    const result = await saveFusionWorkspaceFile(payload, {
+      destination: "linked",
+      linkedProjectId: targetProjectId,
+    });
+    filename = result.filename;
+  }
+  const data = await api(`/api/projects/${encodeURIComponent(projectId || targetProjectId)}`);
+  const browserComponents = normalizeBrowser(data).components || [];
+  const comp = [...browserComponents, ...browserComponents.flatMap((entry) => entry.children || [])]
+    .find((entry) => entry.name === filename || entry.viewer_filename === filename);
+  if (comp) {
+    await openBrowserComponent(comp);
+    return { filename, project_id: projectId || targetProjectId };
+  }
+  await loadModel(
+    `/api/projects/${encodeURIComponent(projectId || targetProjectId)}/files/${encodeURIComponent(filename)}`,
+    filename,
+    { projectId: projectId || targetProjectId, fitView: true },
+  );
+  return { filename, project_id: projectId || targetProjectId };
+}
+
+async function pushFusionWorkspaceFile(payload) {
+  if (!projectId) throw new Error("Open a Render3D project before pushing back to Fusion.");
+  const filename = selectedFile || payload.localFilename || null;
+  const result = await api(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      hub_id: payload.hubId,
+      hub_label: payload.hubLabel,
+      aps_project_id: payload.apsProjectId,
+      aps_project_label: payload.apsProjectLabel,
+      folder_id: payload.folderId,
+      folder_label: payload.folderLabel,
+      item_id: payload.itemId || null,
+      filename,
+      name: payload.itemName || undefined,
+      team_id: getSelectedWorkspaceId() || null,
+    }),
+  });
+  setEditStatus("ok", `Pushed ${result.name || filename || "model"} to Fusion.`);
+  await refreshWorkspaceRealtimeEditor();
+  return result;
 }
 
 function renderFusionEmptyRow(message) {
