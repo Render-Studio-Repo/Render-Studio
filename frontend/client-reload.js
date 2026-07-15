@@ -107,6 +107,8 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
   let pendingVersion = null;
   let reloading = false;
   let dismissedVersion = null;
+  /** Once the user closes the banner, stay quiet until a full page refresh. */
+  let dismissedUntilRefresh = false;
 
   function performReload(nextVersion) {
     if (reloading) return;
@@ -133,12 +135,14 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
   }
 
   function showUpdateAvailable(nextVersion) {
+    if (dismissedUntilRefresh) return;
     if (dismissedVersion && dismissedVersion === nextVersion) return;
     pendingVersion = nextVersion;
     onUpdateAvailable?.(nextVersion);
     const banner = ensureUpdateBanner(
       () => performReload(nextVersion),
       () => {
+        dismissedUntilRefresh = true;
         dismissedVersion = nextVersion;
         pendingVersion = null;
       },
@@ -175,7 +179,9 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
         }
         currentVersion = nextVersion;
         writeClientVersion(nextVersion);
-        showUpdateAvailable(nextVersion);
+        if (!dismissedUntilRefresh) {
+          showUpdateAvailable(nextVersion);
+        }
       }
     } catch {
       /* server may be restarting — try again on next poll */
@@ -194,7 +200,7 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
   }, POLL_MS);
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden || reloading) return;
+    if (document.hidden || reloading || dismissedUntilRefresh) return;
     if (pendingVersion) showUpdateAvailable(pendingVersion);
     void pollVersion();
   });

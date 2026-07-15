@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-ready-banner" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <script type="importmap">
   {
@@ -53,6 +53,13 @@
       </div>
       <p class="studio-boot-title">Loading studio</p>
       <p id="studio-boot-sub" class="studio-boot-sub">Preparing projects and editor...</p>
+      <div class="studio-boot-tip" aria-live="polite">
+        <span class="studio-boot-tip-kicker">Studio tip</span>
+        <p id="studio-boot-tip-text">Type <strong>@</strong> in the AI prompt to link imported files, objects, or selected faces.</p>
+      </div>
+      <button type="button" id="studio-boot-learn-more" class="studio-boot-learn-more">
+        Learn more after loading
+      </button>
       <div class="studio-boot-progress" aria-hidden="true">
         <span class="studio-boot-progress-fill"></span>
       </div>
@@ -65,16 +72,48 @@
   </div>
   <script>
   (function () {
+    var WALKTHROUGH_KEY = "render3d:bootWalkthroughQueued:v1";
     var boot = document.getElementById("studio-boot-screen");
     var pctEl = document.getElementById("studio-boot-percent");
     var subEl = document.getElementById("studio-boot-sub");
+    var tipEl = document.getElementById("studio-boot-tip-text");
+    var learnBtn = document.getElementById("studio-boot-learn-more");
     var current = 8;
     var target = 88;
     var timer = null;
+    var tipIndex = 0;
+    var tips = [
+      "Type <strong>@</strong> in the AI prompt to link imported files, objects, or selected faces.",
+      "Use <strong>Face</strong> pick to create @face references before asking AI to edit a surface.",
+      "Drop CAD, images, PDFs, or docs into the prompt to give Render3D design context.",
+      "The <strong>Rig Robot</strong> tool can generate URDF/SRDF motion files when a model has no animation yet.",
+      "Use <strong>Canvas</strong> or Sketch when a quick drawing explains the shape better than words."
+    ];
     function clamp(n) {
       n = Number(n);
       if (!isFinite(n)) return current;
       return Math.max(0, Math.min(100, n));
+    }
+    function setQueued(on) {
+      try {
+        if (on) sessionStorage.setItem(WALKTHROUGH_KEY, "1");
+        else sessionStorage.removeItem(WALKTHROUGH_KEY);
+      } catch (e) {}
+      if (learnBtn) {
+        learnBtn.classList.toggle("is-queued", !!on);
+        learnBtn.textContent = on ? "Walkthrough queued" : "Learn more after loading";
+      }
+    }
+    function isQueued() {
+      try { return sessionStorage.getItem(WALKTHROUGH_KEY) === "1"; } catch (e) { return false; }
+    }
+    function rotateTip() {
+      if (!tipEl || !tips.length) return;
+      tipIndex = (tipIndex + 1) % tips.length;
+      tipEl.classList.remove("is-changing");
+      void tipEl.offsetWidth;
+      tipEl.classList.add("is-changing");
+      tipEl.innerHTML = tips[tipIndex];
     }
     function render() {
       if (!boot) return;
@@ -103,6 +142,32 @@
       if (target < 92) target += 0.35;
       render();
     }, 120);
+    setInterval(function () {
+      if (!boot || boot.classList.contains("is-done")) return;
+      rotateTip();
+    }, 4200);
+    learnBtn?.addEventListener("click", function () {
+      setQueued(true);
+      if (subEl) subEl.textContent = "Walkthrough will start when Studio is ready.";
+    });
+    window.__maybeStartStudioBootWalkthrough = function () {
+      if (!isQueued()) return;
+      setQueued(false);
+      try { localStorage.setItem("render3d:welcomeSeen:v1", "1"); } catch (e) {}
+      document.getElementById("welcome-modal")?.classList.add("hidden");
+      window.setTimeout(function () {
+        import("./show-me-tour.js?v=20260715-boot-walkthrough")
+          .then(function (mod) {
+            if (!mod.startShowMe?.("ai-generate", { onDocsPage: false })) {
+              window.location.href = "/?showMe=ai-generate";
+            }
+          })
+          .catch(function () {
+            window.location.href = "/?showMe=ai-generate";
+          });
+      }, 220);
+    };
+    if (isQueued()) setQueued(true);
     render();
   })();
   </script>
@@ -130,7 +195,19 @@
           <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
           <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
           <a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
-</div>
+          <div class="mobile-app-menu-grid" aria-label="Studio actions">
+            <button type="button" data-mobile-app="explorer">Explorer<small>Projects &amp; models</small></button>
+            <button type="button" data-mobile-app="ai">AI<small>Prompt &amp; history</small></button>
+            <button type="button" data-mobile-app="edit-tools">Edit tools<small>Direct modeling</small></button>
+            <button type="button" data-mobile-app="models">Models<small>Open component</small></button>
+            <button type="button" data-mobile-app="new-project">New project<small>Fresh workspace</small></button>
+            <button type="button" data-mobile-app="upload">Upload<small>Import CAD</small></button>
+            <button type="button" data-mobile-app="catalog">Catalog<small>Parts library</small></button>
+            <button type="button" data-mobile-app="sketch">Sketch<small>2D constraints</small></button>
+            <button type="button" data-mobile-app="wiring">Wiring<small>Simulator</small></button>
+            <button type="button" data-mobile-app="export">Export<small>Download model</small></button>
+          </div>
+        </div>
       </nav>
       <div class="toolbar-pick">
         <span class="toolbar-pick-label">Pick</span>
@@ -546,13 +623,33 @@
             <button type="button" class="viewport-measure-action-btn" data-measure-done title="Exit measure">Done</button>
           </div>
         </div>
-        <div class="mobile-showcase-bar" aria-label="Mobile model viewer controls">
+        <div class="mobile-showcase-bar" aria-label="Mobile model viewer controls" hidden>
           <button type="button" id="btn-mobile-models" class="mobile-showcase-btn">Models</button>
           <button type="button" id="btn-mobile-fit" class="mobile-showcase-btn">Home</button>
           <button type="button" id="btn-mobile-top" class="mobile-showcase-btn">Top</button>
           <button type="button" id="btn-mobile-grid" class="mobile-showcase-btn">Grid</button>
         </div>
-        <div class="mobile-corner-launchers" aria-label="Mobile windows">
+        <button type="button" id="mobile-tools-fab" class="mobile-tools-fab" aria-expanded="false" aria-controls="mobile-tools-popup" aria-label="Viewport tools" title="Tools">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14.7 6.3a4.2 4.2 0 0 0-5.9 5.9L3 18l3 3 5.8-5.8a4.2 4.2 0 0 0 5.9-5.9l-2.5 2.5-2.5-2.5 2.5-2.5Z"/>
+            <path d="M16 5l3 3"/>
+          </svg>
+        </button>
+        <div id="mobile-tools-popup" class="mobile-tools-popup hidden" role="dialog" aria-label="Viewport tools">
+          <button type="button" data-mobile-tool="grid">Grid</button>
+          <button type="button" data-mobile-tool="transparent">Transparent</button>
+          <button type="button" data-mobile-tool="color">Color</button>
+          <button type="button" data-mobile-tool="fit">Home</button>
+          <button type="button" data-mobile-tool="top">Top</button>
+          <button type="button" data-mobile-tool="models">Models</button>
+          <button type="button" data-mobile-tool="orbit">Orbit</button>
+          <button type="button" data-mobile-tool="select">Select</button>
+          <button type="button" data-mobile-tool="face">Face</button>
+          <button type="button" data-mobile-tool="measure">Measure</button>
+          <button type="button" data-mobile-tool="rig">Rig Robot</button>
+          <button type="button" data-mobile-tool="ai">AI</button>
+        </div>
+        <div class="mobile-corner-launchers" aria-label="Mobile windows" hidden>
           <button type="button" class="mobile-corner-btn mobile-corner-btn--tl" data-mobile-corner="workspace" aria-label="Open Explorer or Tools">☰</button>
           <button type="button" class="mobile-corner-btn mobile-corner-btn--tr" data-mobile-corner="account" aria-label="Open Account and View controls">◉</button>
           <button type="button" class="mobile-corner-btn mobile-corner-btn--br" data-mobile-corner="ai" aria-label="Open AI prompt">AI</button>
@@ -1223,7 +1320,7 @@
           </div>
           <div id="prompt-skills-plan" class="prompt-skills-plan" aria-live="polite"></div>
           <div id="prompt-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Prompt references"></div>
-          <textarea id="prompt-input" rows="6" placeholder="Describe what to make or edit. Drag parts/faces here to add @ reference chips…"></textarea>
+          <textarea id="prompt-input" rows="6" placeholder="Describe what to make or edit. Type @ to link imported files, objects, or the selected face; Tab completes."></textarea>
           <div id="prompt-image-drop" class="prompt-image-drop" role="button" tabindex="0">
             <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp,.dxf,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,.ply,.off,.iges,.igs,.brep,.brp,.f3z,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log" multiple hidden />
             <div>
@@ -1886,7 +1983,10 @@
       if (window.__setStudioBootProgress) window.__setStudioBootProgress(100, "Studio ready.");
       el.classList.add("is-done");
       el.setAttribute("aria-busy", "false");
-      setTimeout(function () { el.remove(); }, 520);
+      setTimeout(function () {
+        el.remove();
+        window.__maybeStartStudioBootWalkthrough?.();
+      }, 520);
     }
     window.__dismissStudioBoot = window.__dismissStudioBoot || dismissBoot;
     function show(html) {
@@ -1936,7 +2036,7 @@
       });
   })();
   </script>
-  <script type="module" src="/early-boot.js?v=20260715-robot-boot"></script>
+  <script type="module" src="/early-boot.js?v=20260715-boot-tips-tour"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="prompt-target-popup" class="prompt-target-popup hidden" role="dialog" aria-modal="false" aria-label="Select object to edit"></div>
   <div id="fusion-capability-modal" class="fusion-capability-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title">
@@ -2134,10 +2234,11 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script type="module" src="/toolbar-nav.js?v=20260715-mobile-app"></script>
+  <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-wiring-stepper-remix"></script>
+  <script type="module" src="/app.js?v=20260715-ready-banner"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

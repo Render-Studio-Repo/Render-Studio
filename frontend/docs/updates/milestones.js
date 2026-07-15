@@ -9,6 +9,16 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "loading-tips-walkthrough",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Loading tips and walkthrough",
+    summary:
+      "Studio loading now shares practical tips and can queue an animated walkthrough that starts automatically once the editor is ready.",
+    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    href: "/getting-started.html",
+  },
+  {
     id: "select-object",
     date: "2026-07-15",
     kind: "feature",

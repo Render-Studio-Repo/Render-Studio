@@ -903,16 +903,24 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
   picker.className = "file-export-fusion-picker";
   picker.innerHTML = `
     <div class="file-export-fusion-title">Export to Fusion 360</div>
-    <p class="muted small">Choose the Fusion hub, project, and folder. Exports STEP plus build123d parametric source when available.</p>
+    <p class="muted small">Pick a hub and project, then a folder. The most recently updated folder is selected automatically.</p>
     ${allowFacetedStep ? '<p class="status error small">Only faceted mesh STEP is available for this model. Export will work, but Fusion boolean Cut may be limited.</p>' : ""}
     <label class="file-export-cloud-field">
       <span>Hub</span>
       <select data-fusion-hub disabled><option>Loading hubs...</option></select>
     </label>
-    <label class="file-export-cloud-field">
+    <div class="file-export-cloud-field">
       <span>Project</span>
-      <select data-fusion-project disabled><option>Select a hub first</option></select>
-    </label>
+      <div class="file-export-fusion-project-tools">
+        <input type="search" data-fusion-project-search placeholder="Search Fusion projects…" autocomplete="off" disabled />
+        <select data-fusion-project class="file-export-fusion-project-select" disabled aria-label="Fusion project">
+          <option value="">Select a hub first</option>
+        </select>
+      </div>
+      <div class="file-export-fusion-project-grid" data-fusion-project-grid>
+        <p class="muted small">Select a hub to load projects.</p>
+      </div>
+    </div>
     <div class="file-export-cloud-field">
       <span>Folder</span>
       <div class="file-export-fusion-folder-browser" data-fusion-folder-browser>
@@ -928,6 +936,8 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
 
   const hubSelect = picker.querySelector("[data-fusion-hub]");
   const projectSelect = picker.querySelector("[data-fusion-project]");
+  const projectSearch = picker.querySelector("[data-fusion-project-search]");
+  const projectGrid = picker.querySelector("[data-fusion-project-grid]");
   const folderBrowser = picker.querySelector("[data-fusion-folder-browser]");
   const submit = picker.querySelector(".file-export-fusion-submit");
   const status = picker.querySelector(".file-export-fusion-status");
@@ -935,6 +945,37 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
   let folderStack = [];
   let selectedFolderId = "";
   let selectedFolderName = "";
+  let allProjects = [];
+  let lastFolderList = [];
+  let autoSelectFolders = true;
+
+  const LAST_KEY = "render3d:lastFusionExportTarget";
+  const readLastTarget = () => {
+    try {
+      return JSON.parse(localStorage.getItem(LAST_KEY) || "null") || null;
+    } catch {
+      return null;
+    }
+  };
+  const writeLastTarget = (payload) => {
+    try {
+      localStorage.setItem(LAST_KEY, JSON.stringify(payload));
+    } catch {
+      /* ignore */
+    }
+  };
+  const lastTarget = readLastTarget();
+
+  const formatWhen = (raw) => {
+    if (!raw) return "";
+    try {
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      return "";
+    }
+  };
 
   const setStatus = (text, isError = false) => {
     if (isError && text) {
@@ -952,35 +993,61 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
     status.className = `file-export-fusion-status small ${isError ? "error" : "muted"}`;
     keepMenuInViewport(menu);
   };
-  const setStatusHtml = (html, isError = false) => {
-    if (isError && html) {
-      const info = friendlyExportError(new Error(html.replace(/<[^>]*>/g, " ")), "Fusion export failed");
-      status.innerHTML = `
-        <div class="file-export-inline-error file-export-inline-error--${info.kind}">
-          <strong>${escText(info.title)}</strong>
-          <span>${html}</span>
-        </div>
-      `;
-    } else {
-      status.innerHTML = html || "";
-    }
-    status.className = `file-export-fusion-status small ${isError ? "error" : "muted"}`;
-    keepMenuInViewport(menu);
-  };
+
   const setOptions = (select, items, placeholder) => {
     select.innerHTML = items.length
       ? items.map((item) => `<option value="${escAttr(item.id)}">${escText(item.name || item.id)}</option>`).join("")
       : `<option value="">${escText(placeholder)}</option>`;
     select.disabled = !items.length;
   };
-  const setSelectedFolder = (folder) => {
+
+  const setSelectedFolder = (folder, { quiet = false } = {}) => {
     selectedFolderId = folder?.id || "";
     selectedFolderName = folder?.name || selectedFolderId;
     submit.disabled = !selectedFolderId;
-    setStatus(selectedFolderId ? `Selected folder: ${selectedFolderName}` : "");
-    renderFolderBrowser([], { loading: true });
+    if (!quiet) {
+      setStatus(selectedFolderId ? `Selected: ${selectedFolderName}` : "");
+    }
   };
+
+  const renderProjectGrid = () => {
+    const q = String(projectSearch?.value || "").trim().toLowerCase();
+    const filtered = !q
+      ? allProjects
+      : allProjects.filter((p) => {
+          const hay = `${p.name || ""} ${p.id || ""}`.toLowerCase();
+          return hay.includes(q);
+        });
+    if (!filtered.length) {
+      projectGrid.innerHTML = `<p class="muted small">${allProjects.length ? "No projects match that search." : "No projects found."}</p>`;
+      return;
+    }
+    projectGrid.innerHTML = filtered.map((project, index) => {
+      const active = projectSelect.value === project.id;
+      const when = formatWhen(project.last_modified || project.created);
+      const badge = index === 0 && !q ? `<span class="file-export-fusion-pill">Recent</span>` : "";
+      return `
+        <button type="button" class="file-export-fusion-project-card${active ? " is-active" : ""}" data-fusion-pick-project="${escAttr(project.id)}" title="${escAttr(project.name || project.id)}">
+          <strong>${escText(project.name || "Untitled project")}</strong>
+          <span>${when ? `Updated ${escText(when)}` : "Fusion project"}</span>
+          ${badge}
+        </button>
+      `;
+    }).join("");
+    projectGrid.querySelectorAll("[data-fusion-pick-project]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.fusionPickProject;
+        if (!id || projectSelect.value === id) return;
+        projectSelect.value = id;
+        projectSelect.dispatchEvent(new Event("change"));
+        renderProjectGrid();
+      });
+    });
+    keepMenuInViewport(menu);
+  };
+
   const renderFolderBrowser = (folders, { loading = false, emptyText = "No folders found." } = {}) => {
+    lastFolderList = folders || [];
     if (loading) {
       folderBrowser.innerHTML = `<p class="muted small">Loading folders...</p>`;
       return;
@@ -992,31 +1059,44 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
         <span class="muted small">${escText(crumbs.join(" / "))}</span>
       </div>
       ${currentFolder ? `<button type="button" class="btn btn-compact file-export-fusion-use-current" data-folder-select-current>Use this folder</button>` : ""}
-      ${selectedFolderId ? `<p class="muted small">Selected: ${escText(selectedFolderName)}</p>` : ""}
-      <div class="file-export-fusion-folder-list">
-        ${folders.length ? folders.map((folder) => `
-          <div class="file-export-fusion-folder-row">
-            <span title="${escAttr(folder.name || folder.id)}">${escText(folder.name || "Folder")}</span>
-            <button type="button" class="btn secondary btn-compact" data-folder-open="${escAttr(folder.id)}">Open</button>
-            <button type="button" class="btn btn-compact" data-folder-select="${escAttr(folder.id)}">Select</button>
-          </div>
-        `).join("") : `<p class="muted small">${escText(emptyText)}</p>`}
+      ${selectedFolderId ? `<p class="muted small">Selected: <strong>${escText(selectedFolderName)}</strong></p>` : ""}
+      <div class="file-export-fusion-folder-grid">
+        ${folders.length ? folders.map((folder, index) => {
+          const when = formatWhen(folder.last_modified || folder.created);
+          const active = selectedFolderId === folder.id;
+          const recent = index === 0 && !currentFolder && !folderStack.length;
+          return `
+            <div class="file-export-fusion-folder-card${active ? " is-active" : ""}">
+              <div class="file-export-fusion-folder-card-body">
+                <strong title="${escAttr(folder.name || folder.id)}">${escText(folder.name || "Folder")}</strong>
+                <span>${when ? `Updated ${escText(when)}` : "Folder"}${recent ? " · most recent" : ""}</span>
+              </div>
+              <div class="file-export-fusion-folder-card-actions">
+                <button type="button" class="btn secondary btn-compact" data-folder-open="${escAttr(folder.id)}">Open</button>
+                <button type="button" class="btn btn-compact" data-folder-select="${escAttr(folder.id)}">${active ? "Selected" : "Select"}</button>
+              </div>
+            </div>
+          `;
+        }).join("") : `<p class="muted small">${escText(emptyText)}</p>`}
       </div>
     `;
     folderBrowser.querySelector("[data-folder-back]")?.addEventListener("click", () => {
+      autoSelectFolders = false;
       if (currentFolder) {
         currentFolder = folderStack.pop() || null;
       }
       loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
     });
     folderBrowser.querySelector("[data-folder-select-current]")?.addEventListener("click", () => {
+      autoSelectFolders = false;
       setSelectedFolder(currentFolder);
-      loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
+      renderFolderBrowser(lastFolderList);
     });
     folderBrowser.querySelectorAll("[data-folder-open]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const folder = folders.find((item) => item.id === btn.dataset.folderOpen);
         if (!folder) return;
+        autoSelectFolders = true;
         if (currentFolder) folderStack.push(currentFolder);
         currentFolder = folder;
         loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
@@ -1026,12 +1106,14 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       btn.addEventListener("click", () => {
         const folder = folders.find((item) => item.id === btn.dataset.folderSelect);
         if (!folder) return;
+        autoSelectFolders = false;
         setSelectedFolder(folder);
-        loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
+        renderFolderBrowser(lastFolderList);
       });
     });
     keepMenuInViewport(menu);
   };
+
   const loadFolders = async () => {
     submit.disabled = true;
     const hubId = hubSelect.value;
@@ -1041,22 +1123,49 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
     const data = currentFolder
       ? await autodeskJson(`/api/autodesk/projects/${encodeURIComponent(apsProjectId)}/folders/${encodeURIComponent(currentFolder.id)}/contents`)
       : await autodeskJson(`/api/autodesk/hubs/${encodeURIComponent(hubId)}/projects/${encodeURIComponent(apsProjectId)}/top-folders`);
-    renderFolderBrowser(data.folders || [], { emptyText: currentFolder ? "This folder has no subfolders." : "No top folders found." });
+    const folders = data.folders || [];
+    if (autoSelectFolders && folders.length) {
+      // Prefer remembered folder when still present; otherwise most recent (API already sorted).
+      const remembered = lastTarget?.folder_id
+        ? folders.find((f) => f.id === lastTarget.folder_id)
+        : null;
+      const pick = remembered || folders[0];
+      setSelectedFolder(pick, { quiet: true });
+      setStatus(`Auto-selected ${remembered ? "your last" : "most recent"} folder: ${pick.name || pick.id}`);
+    }
+    renderFolderBrowser(folders, { emptyText: currentFolder ? "This folder has no subfolders." : "No top folders found." });
     submit.disabled = !selectedFolderId;
   };
+
   const loadProjects = async () => {
     submit.disabled = true;
     currentFolder = null;
     folderStack = [];
     selectedFolderId = "";
     selectedFolderName = "";
+    autoSelectFolders = true;
+    allProjects = [];
     setOptions(projectSelect, [], "Loading projects...");
+    projectSearch.disabled = true;
+    projectSearch.value = "";
+    projectGrid.innerHTML = `<p class="muted small">Loading projects…</p>`;
     renderFolderBrowser([], { emptyText: "Select a project first." });
     const hubId = hubSelect.value;
     if (!hubId) return;
     const data = await autodeskJson(`/api/autodesk/hubs/${encodeURIComponent(hubId)}/projects`);
-    setOptions(projectSelect, data.projects || [], "No projects found");
-    await loadFolders();
+    allProjects = data.projects || [];
+    setOptions(projectSelect, allProjects, "No projects found");
+    projectSearch.disabled = !allProjects.length;
+    if (lastTarget?.hub_id === hubId && lastTarget?.aps_project_id
+      && allProjects.some((p) => p.id === lastTarget.aps_project_id)) {
+      projectSelect.value = lastTarget.aps_project_id;
+    }
+    renderProjectGrid();
+    if (projectSelect.value) {
+      await loadFolders();
+    } else {
+      renderFolderBrowser([], { emptyText: "Select a project first." });
+    }
   };
 
   hubSelect.addEventListener("change", () => {
@@ -1067,8 +1176,12 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
     folderStack = [];
     selectedFolderId = "";
     selectedFolderName = "";
+    autoSelectFolders = true;
+    renderProjectGrid();
     loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
   });
+  projectSearch?.addEventListener("input", () => renderProjectGrid());
+
   submit.addEventListener("click", async () => {
     if (!selectedFolderId) {
       setStatus("Choose a Fusion folder first.", true);
@@ -1096,6 +1209,12 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
         throw new Error(data.detail || `Fusion export failed (${res.status})`);
       }
       const data = await res.json();
+      writeLastTarget({
+        hub_id: hubSelect.value,
+        aps_project_id: projectSelect.value,
+        folder_id: selectedFolderId,
+        folder_label: selectedFolderName,
+      });
       submit.classList.add("file-export-fusion-submit--success");
       submit.textContent = "Uploaded ✓";
       setStatus(`Uploaded ${data.name || filename} — closing…`);
@@ -1113,8 +1232,10 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       setStatus("No Fusion hubs found for this Autodesk account.", true);
       return;
     }
+    if (lastTarget?.hub_id && [...hubSelect.options].some((o) => o.value === lastTarget.hub_id)) {
+      hubSelect.value = lastTarget.hub_id;
+    }
     await loadProjects();
-    setStatus("");
   } catch (err) {
     setStatus(err.message || "Could not load Fusion library.", true);
   }

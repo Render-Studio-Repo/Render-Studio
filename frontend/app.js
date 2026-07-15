@@ -52,15 +52,15 @@ import {
   setObjectTransparent,
 } from "./scene-style.js?v=20260715-transparent-solid";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
-import { createTimelineUI } from "./timeline.js?v=20260715-collab-avatars";
-import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
+import { createTimelineUI } from "./timeline.js?v=20260715-prompt-purple";
+import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-scene-refs";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-skills";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-export-context-menu";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt-purple";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-auth-connect-social";
@@ -72,9 +72,9 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-ready-banner";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-bambu-plate";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-fusion-picker";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -92,7 +92,7 @@ import {
   clearPendingRestore,
   readPendingRestore,
   initClientVersionWatcher,
-} from "./client-reload.js?v=20260715-click-to-refresh";
+} from "./client-reload.js?v=20260715-dismiss-until-refresh";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-download";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
@@ -395,15 +395,17 @@ function syncViewportGenerationUserBadge(gen) {
   if (!btn) return;
   if (!gen || gen.status !== "running" || gen.kind === "wiring") {
     btn.classList.add("hidden");
-    btn.classList.remove("viewport-generation-user--rigging");
+    btn.classList.remove("viewport-generation-user--rigging", "viewport-generation-user--prompt");
     btn.innerHTML = "";
     return;
   }
   const name = gen.by_user_name || "Someone";
   const prompt = gen.prompt || gen.label || "Generating model";
   const rigging = isRiggingGeneration(gen);
+  const promptish = !rigging && String(gen.kind || generationWatchOverlay?.kind || "prompt").toLowerCase() !== "wiring";
   btn.classList.remove("hidden");
   btn.classList.toggle("viewport-generation-user--rigging", rigging);
+  btn.classList.toggle("viewport-generation-user--prompt", promptish);
   btn.dataset.prompt = prompt;
   btn.dataset.user = name;
   btn.dataset.userId = gen.by_user_id || "";
@@ -614,8 +616,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
     await refreshPromptHistory();
     showAiComposePanel();
     clearPromptComposeResult();
-    const statusEl = document.getElementById("prompt-status");
-    if (statusEl) {
+    {
       const ref = gen.prompt_id
         ? formatPromptRef({
             promptId: gen.prompt_id,
@@ -627,8 +628,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
             provider: gen.provider,
           })
         : "";
-      statusEl.className = "status ok";
-      statusEl.textContent = ref ? `Model ready · ${ref}` : "Model ready.";
+      showModelReadyBanner(ref ? `Model ready · ${ref}` : "Model ready.");
     }
     if (document.body.classList.contains("canvas-design-tab")) {
       workspaceModes?.setDesignTab?.("SOLID");
@@ -803,6 +803,7 @@ function stopGenerationWatch() {
   document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
   document.getElementById("btn-wiring-toolbelt-generate")?.removeAttribute("disabled");
   syncStopButtonVisibility();
+  if (pid === projectId) clearPendingPromptTimelineStep();
 }
 
 async function cancelActiveGeneration(opts = {}) {
@@ -1201,6 +1202,9 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     }
   }
   syncStopButtonVisibility();
+  if ((kind === "prompt" || kind === "build") && pid === projectId) {
+    showPendingPromptTimelineStep({ kind, mode });
+  }
 
   const poll = async () => {
     try {
@@ -1347,8 +1351,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           await refreshFiles();
           await refreshTimeline();
           await refreshPromptHistory();
-          const statusEl = document.getElementById("prompt-status");
-          if (statusEl && gen.filename) {
+          if (gen.filename) {
             const ref = gen.prompt_id
               ? formatPromptRef({
                   promptId: gen.prompt_id,
@@ -1360,8 +1363,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
                   provider: gen.provider,
                 })
               : "";
-            statusEl.className = "status ok";
-            statusEl.textContent = ref ? `Model ready · ${ref}` : "Model ready.";
+            showModelReadyBanner(ref ? `Model ready · ${ref}` : "Model ready.");
           }
         }
       } else if (gen.status === "failed") {
@@ -2497,24 +2499,114 @@ function getPromptMentionables() {
     seen.add(item.token);
     items.push(item);
   };
-
-  for (const ref of composer.getReferences?.() || []) {
-    if (!["component", "sketch", "wiring", "dxf", "document", "image"].includes(ref.type)) continue;
+  const pushRef = (ref, detail = "") => {
+    if (!ref?.id || !ref?.token) return;
     pushItem({
       id: ref.id,
-      token: ref.token || compactComponentToken(ref.stem || ref.label || ref.filename || "file"),
+      token: ref.token,
       label: ref.label || ref.stem || ref.filename || ref.token,
-      detail: ref.filename || ref.type,
+      detail: detail || ref.filename || ref.type,
       type: ref.type,
       filename: ref.filename,
       stem: ref.stem,
       format: ref.format,
       viewer_filename: ref.viewer_filename,
       projectId: ref.projectId,
-      text_content: ref.text_content,
-      text_truncated: ref.text_truncated,
       ref,
     });
+  };
+
+  const selected = objectTools?.getSelection?.();
+  if (selected?.catalogName || selected?.root || selected?.mesh) {
+    const catalogName = selected.catalogName || selected.root?.userData?.catalogFilename || selectedFile || "";
+    const baseStem = String(catalogName || selected.label || "selection").replace(/\.[^.]+$/, "");
+    const bodyLabel = selected.label || (Number.isInteger(selected.bodyIndex) ? `Body ${selected.bodyIndex + 1}` : "Selected object");
+    const bodyToken = compactComponentToken(bodyLabel || baseStem || "selected");
+    pushRef({
+      id: `selection:${projectId || "project"}:${catalogName || "model"}:${selected.bodyIndex ?? 0}`,
+      type: "component",
+      token: bodyToken,
+      label: bodyLabel,
+      filename: catalogName || selectedFile || undefined,
+      stem: baseStem || bodyLabel,
+      projectId,
+      body_index: selected.bodyIndex,
+    }, "selected object/body");
+    pushRef({
+      id: `selection-current:${projectId || "project"}`,
+      type: "component",
+      token: "@selected",
+      label: bodyLabel,
+      filename: catalogName || selectedFile || undefined,
+      stem: baseStem || bodyLabel,
+      projectId,
+      body_index: selected.bodyIndex,
+    }, "current selection");
+    if (selected.faceIndex != null) {
+      const faceLabel = `Face ${Number(selected.faceIndex) + 1}${baseStem ? ` on ${baseStem}` : ""}`;
+      pushRef({
+        id: `face:${projectId || "project"}:${catalogName || selected.mesh?.uuid || "model"}:${selected.faceIndex}`,
+        type: "face",
+        token: "@face",
+        label: faceLabel,
+        filename: catalogName || selectedFile || undefined,
+        stem: baseStem,
+        projectId,
+        face_index: selected.faceIndex,
+        mesh_uuid: selected.mesh?.uuid,
+      }, "selected face");
+    }
+  }
+
+  for (const [name, obj] of projectAssembly?.list?.() || []) {
+    const ref = componentPromptReference({
+      filename: name,
+      stem: fileStem(name),
+      label: obj?.name || fileStem(name),
+      viewer_filename: obj?.userData?.viewerFilename || name,
+      projectId,
+    });
+    pushRef(ref, obj?.visible === false ? "imported object (hidden)" : "imported object");
+
+    const meshes = listObjectMeshes(obj).slice(0, 24);
+    meshes.forEach((mesh, index) => {
+      const rawLabel = mesh.name?.trim() || mesh.userData?.name || `Body ${index + 1}`;
+      if (!rawLabel || rawLabel === obj?.name || rawLabel === name) return;
+      const stem = `${fileStem(name)}-${String(rawLabel).replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
+      pushRef({
+        id: `component-body:${projectId || "project"}:${name}:${index}`,
+        type: "component",
+        token: compactComponentToken(stem),
+        label: rawLabel,
+        filename: name,
+        stem,
+        viewer_filename: name,
+        projectId,
+        body_index: index,
+      }, `body in ${name}`);
+    });
+  }
+
+  for (const file of lastProjectFiles || []) {
+    const name = String(file?.name || "");
+    if (!name || isInternalCadSidecar(name) || isRobotArtifactFilename(name)) continue;
+    if (!isViewportImportFile(name) && !isReferenceFilename(name) && !isDxfDrawingFilename(name)) continue;
+    const ref = componentPromptReference({
+      filename: name,
+      stem: fileStem(name),
+      format: name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : undefined,
+      viewer_filename: file.viewer_filename || name,
+      projectId,
+    });
+    pushRef(ref, "project file");
+  }
+
+  for (const ref of composer.getReferences?.() || []) {
+    if (!["component", "sketch", "wiring", "dxf", "document", "image", "face", "edge", "corner", "lasso", "path"].includes(ref.type)) continue;
+    pushRef({
+      ...ref,
+      token: ref.token || compactComponentToken(ref.stem || ref.label || ref.filename || "file"),
+    }, ref.filename || ref.type);
   }
 
   for (const img of promptImages || []) {
@@ -2757,7 +2849,9 @@ function pickSimMotionPythonSource(gen = {}, artifacts = null) {
 function projectAlreadyHasSimMotion(gen = {}, artifacts = null) {
   const data = artifacts || robotArtifactData || {};
   const stem = fileStem(gen.filename || selectedFile || "").toLowerCase();
-  const artifactsList = (data.artifacts || []).map(String);
+  const artifactsList = (data.artifacts || [])
+    .map(String)
+    .filter((name) => !/^robot\.urdf$/i.test(name.trim()));
   if (!artifactsList.length) return false;
   if (stem) {
     return artifactsList.some((name) => {
@@ -3401,6 +3495,7 @@ function componentPromptReference(payload) {
     format: payload.format,
     viewer_filename: payload.viewer_filename,
     projectId: pid,
+    body_index: payload.body_index,
   };
 }
 
@@ -5270,6 +5365,17 @@ function setEditStatus(kind, text) {
     el.className = `status ${kind}`;
     el.textContent = text;
   }
+}
+
+function showModelReadyBanner(message, statusElId = "prompt-status") {
+  const text = String(message || "").trim();
+  if (!text) return;
+  const statusEl = document.getElementById(statusElId);
+  if (statusEl) {
+    statusEl.className = "status ok";
+    statusEl.textContent = text;
+  }
+  viewerOverlay?.showReadyBanner?.(text);
 }
 
 // ── Fusion-style direct modeling (press-pull, mirror, gizmo panel, units) ────
@@ -7318,8 +7424,14 @@ function bindRiggingViewportOverlayUi() {
   document.getElementById("btn-rigging-vp-load")?.addEventListener("click", async () => {
     try {
       await refreshRobotArtifacts({ quiet: true });
-      await ensureUrdfRobotScene({ force: true });
-      syncRiggingViewportOverlay({ status: urdfRobotRuntime.isLoaded?.() ? "Robot scene loaded." : "Could not load robot scene." });
+      const state = await ensureUrdfRobotScene({ force: true });
+      if (!urdfRuntimeHasUsableMotion(state)) {
+        syncRiggingViewportOverlay({ status: "Showing CAD model — no usable robot motion yet." });
+        await syncRiggingAdjustSliders({ autoExpand: false });
+        void setupRobotMotionWorkflow({ askWhenMissing: true });
+        return;
+      }
+      syncRiggingViewportOverlay({ status: "Robot scene loaded." });
       await syncRiggingAdjustSliders({ autoExpand: true });
     } catch (err) {
       setEditStatus("error", err?.message || "Could not load robot.");
@@ -9153,7 +9265,6 @@ async function refreshRobotArtifacts({ quiet = false } = {}) {
     robotArtifactData = await api(`/api/projects/${projectId}/rigging/artifacts`);
     renderRobotArtifacts();
     await refreshMoveIt2ProjectContext({ quiet: true });
-    await ensureUrdfRobotScene({ quiet });
     return robotArtifactData;
   } catch (err) {
     if (!quiet) setEditStatus("error", err?.message || "Could not load robot artifacts.");
@@ -9181,8 +9292,9 @@ async function openRobotArtifact(entry) {
 function pickPreferredRobotFiles(data = {}) {
   const artifacts = (data.artifacts || []).map(String);
   const urdfs = artifacts.filter((name) => /\.urdf$/i.test(name));
+  const authoredUrdfs = urdfs.filter((name) => !/^robot\.urdf$/i.test(name.trim()));
   // Prefer the richest description; skip empty export stubs like robot.urdf.
-  const ranked = [...urdfs].sort((a, b) => {
+  const ranked = [...(authoredUrdfs.length ? authoredUrdfs : urdfs)].sort((a, b) => {
     const score = (name) => {
       const lower = name.toLowerCase();
       let s = 0;
@@ -9202,6 +9314,24 @@ function pickPreferredRobotFiles(data = {}) {
   return { urdfFile, srdfFile };
 }
 
+function urdfRuntimeMovableJoints(state = null) {
+  return (state?.urdf?.joints || []).filter((joint) => (
+    ["revolute", "continuous", "prismatic"].includes(String(joint.type || "").toLowerCase())
+  ));
+}
+
+function urdfRuntimeHasDisplayableModel(state = null) {
+  const visuals = (state?.urdf?.links || []).flatMap((link) => link.visuals || []);
+  if (!visuals.length) return false;
+  if (visuals.some((visual) => visual.kind === "mesh")) return true;
+  // Box/cylinder primitives are authored geometry; sphere-only exports are usually bone placeholders.
+  return visuals.some((visual) => visual.kind === "box" || visual.kind === "cylinder");
+}
+
+function urdfRuntimeHasUsableMotion(state = null) {
+  return !!state?.loaded && urdfRuntimeMovableJoints(state).length > 0;
+}
+
 async function ensureUrdfRobotScene({ quiet = false, force = false } = {}) {
   if (!projectId || urdfRobotBusy) return null;
   const { urdfFile, srdfFile } = pickPreferredRobotFiles(robotArtifactData || {});
@@ -9218,6 +9348,25 @@ async function ensureUrdfRobotScene({ quiet = false, force = false } = {}) {
   urdfRobotBusy = true;
   try {
     const state = await urdfRobotRuntime.loadFromProject(projectId, { urdfFile, srdfFile });
+    const hasDisplayableModel = urdfRuntimeHasDisplayableModel(state);
+    const hasMotion = urdfRuntimeHasUsableMotion(state);
+    if (!hasDisplayableModel || !hasMotion) {
+      urdfRobotRuntime.clear();
+      setCadAssemblyHiddenForUrdf(false);
+      updateMoveIt2StatusUi({
+        connected: false,
+        detail: hasMotion ? "URDF has no displayable model geometry" : "URDF has no movable joints",
+      });
+      if (!quiet) {
+        setEditStatus(
+          "ok",
+          hasMotion
+            ? "Keeping the CAD model visible. The available URDF only contains placeholder geometry."
+            : "Keeping the CAD model visible. No movable robot motion is available yet."
+        );
+      }
+      return null;
+    }
     setCadAssemblyHiddenForUrdf(true);
     const box = urdfRobotRuntime.fitBox();
     if (box && !box.isEmpty()) {
@@ -15240,7 +15389,7 @@ async function generateRobotArtifacts(kind = "both") {
   }
 }
 
-async function setupRobotMotionWorkflow({ autoGenerate = true } = {}) {
+async function setupRobotMotionWorkflow({ autoGenerate = true, askWhenMissing = true } = {}) {
   if (!projectId) {
     setEditStatus("error", "Select a project first.");
     return;
@@ -15261,15 +15410,20 @@ async function setupRobotMotionWorkflow({ autoGenerate = true } = {}) {
 
   const artifacts = await refreshRobotArtifacts({ quiet: true }) || robotArtifactData || {};
   if (projectAlreadyHasSimMotion({ filename: selectedFile }, artifacts)) {
-    await ensureUrdfRobotScene({ quiet: false, force: true });
-    syncRiggingViewportOverlay({ status: "Robot motion ready." });
-    await syncRiggingAdjustSliders({ autoExpand: true });
-    setEditStatus("ok", "Robot motion ready. Use Adjustments + timeline to pose and play.");
-    if (status) {
-      status.className = "status ok";
-      status.textContent = "URDF/SRDF already exists. Use Adjustments in the viewport.";
+    const state = await ensureUrdfRobotScene({ quiet: false, force: true });
+    if (!urdfRuntimeHasUsableMotion(state)) {
+      setCadAssemblyHiddenForUrdf(false);
+      setEditStatus("ok", "Showing the CAD model. Existing robot files are placeholders, so motion needs to be generated.");
+    } else {
+      syncRiggingViewportOverlay({ status: "Robot motion ready." });
+      await syncRiggingAdjustSliders({ autoExpand: true });
+      setEditStatus("ok", "Robot motion ready. Use Adjustments + timeline to pose and play.");
+      if (status) {
+        status.className = "status ok";
+        status.textContent = "URDF/SRDF already exists. Use Adjustments in the viewport.";
+      }
+      return;
     }
-    return;
   }
 
   const source = pickSimMotionPythonSource({ filename: selectedFile }, artifacts);
@@ -15293,7 +15447,25 @@ async function setupRobotMotionWorkflow({ autoGenerate = true } = {}) {
     setEditStatus("ok", "Rig Robot setup opened. Click Author URDF/SRDF with AI when ready.");
     return;
   }
-  await authorJakeRobotDescription({ source, kind: "both", openMotion: true });
+
+  let kind = "both";
+  if (askWhenMissing) {
+    const choice = await askGenerateSimulatedMotion({
+      reason: "No usable robot motion is available for this model yet. Generate URDF/SRDF so the real model can be posed, played, and controlled from the Rigging panel.",
+    });
+    if (choice.action === "skip") {
+      setEditStatus("ok", "Showing the CAD model in Rigging. Generate motion files when you are ready.");
+      if (status) {
+        status.className = "status ok";
+        status.textContent = "Model visible. Motion generation skipped.";
+      }
+      return;
+    }
+    kind = choice.action;
+    if (choice.remember) setSimMotionAfterGenPref(kind, { announce: true });
+  }
+
+  await authorJakeRobotDescription({ source, kind, openMotion: true });
 }
 
 document.getElementById("btn-rigging-artifacts-refresh")?.addEventListener("click", () => refreshRobotArtifacts());
@@ -16613,7 +16785,66 @@ async function refreshTimeline() {
     scroll: true,
     scrollAlign: cur >= max ? "end" : "auto",
   });
+  maybeReapplyPendingPromptTimelineStep();
   await refreshObjectHistory();
+}
+
+function isPromptLikeGenerationKind(kind) {
+  const k = String(kind || "").toLowerCase();
+  return k === "prompt" || k === "build" || !k;
+}
+
+function pendingPromptTimelineEntry({ kind = "prompt", mode = "standard" } = {}) {
+  const label =
+    String(mode || "").toLowerCase() === "fusion"
+      ? "Rendering Fusion prompt…"
+      : String(mode || "").toLowerCase() === "v2"
+        ? "Rendering 2.0 prompt…"
+        : "Rendering prompt…";
+  return {
+    id: "__pending_prompt__",
+    kind: kind === "build" ? "build" : "prompt",
+    label,
+    pending: true,
+    user_id: currentUser?.id || null,
+    user_name: currentUser?.display_name || null,
+    user_avatar_url: currentUser?.avatar_url || null,
+  };
+}
+
+function showPendingPromptTimelineStep({ kind = "prompt", mode = "standard" } = {}) {
+  if (!projectId || !timeline) return;
+  const base = timelineData || { entries: [], current_index: -1 };
+  const entries = (base.entries || []).filter((e) => e?.id !== "__pending_prompt__" && !e?.pending);
+  const next = {
+    ...base,
+    entries: [...entries, pendingPromptTimelineEntry({ kind, mode })],
+    current_index: entries.length,
+  };
+  timelineData = next;
+  timeline.setTimeline(next, { scroll: true, scrollAlign: "end" });
+}
+
+function clearPendingPromptTimelineStep() {
+  if (!timelineData?.entries?.some((e) => e?.id === "__pending_prompt__" || e?.pending)) return;
+  const entries = (timelineData.entries || []).filter((e) => e?.id !== "__pending_prompt__" && !e?.pending);
+  const max = Math.max(0, entries.length - 1);
+  timelineData = {
+    ...timelineData,
+    entries,
+    current_index: Math.min(timelineData.current_index ?? max, max),
+  };
+  timeline.setTimeline(timelineData, { scroll: true, scrollAlign: "end" });
+}
+
+function maybeReapplyPendingPromptTimelineStep() {
+  if (!projectId || generationWatchPid !== projectId) return;
+  const kind = generationWatchOverlay?.kind || "prompt";
+  if (!isPromptLikeGenerationKind(kind)) return;
+  showPendingPromptTimelineStep({
+    kind,
+    mode: generationWatchOverlay?.promptMode || "standard",
+  });
 }
 
 async function refreshObjectHistory() {

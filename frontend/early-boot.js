@@ -28,7 +28,10 @@ function dismissStudioBoot() {
   window.__setStudioBootProgress?.(100, "Studio ready.");
   el.classList.add("is-done");
   el.setAttribute("aria-busy", "false");
-  window.setTimeout(() => el.remove(), 520);
+  window.setTimeout(() => {
+    el.remove();
+    window.__maybeStartStudioBootWalkthrough?.();
+  }, 520);
 }
 
 window.__dismissStudioBoot = dismissStudioBoot;

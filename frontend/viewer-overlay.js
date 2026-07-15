@@ -1,4 +1,4 @@
-/** Bottom-right HUD spinner, progress bar, expandable agent checklist, and error banner. */
+/** Bottom-right HUD spinner, ready toast, progress bar, expandable agent checklist, and error banner. */
 
 const LOG_STAGES = [
   { match: /CAD prompt started/i, pct: 5, label: "Starting AI prompt…" },
@@ -132,6 +132,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       setStopVisible() {},
       showError() {},
       clearError() {},
+      showReadyBanner() {},
+      clearReadyBanner() {},
       dismiss() {},
     };
   }
@@ -209,6 +211,24 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const checklistEl = spinner.querySelector(".viewport-agent-checklist");
   const activityEl = spinner.querySelector(".viewport-agent-activity");
 
+  const readyBanner = document.createElement("div");
+  readyBanner.className = "viewport-ready-banner hidden";
+  readyBanner.setAttribute("role", "status");
+  readyBanner.setAttribute("aria-live", "polite");
+  readyBanner.innerHTML = `
+    <span class="viewport-ready-dot" aria-hidden="true"></span>
+    <span class="viewport-ready-text"></span>
+    <button type="button" class="viewport-ready-close" aria-label="Dismiss">×</button>
+  `;
+  const readyText = readyBanner.querySelector(".viewport-ready-text");
+  const readyClose = readyBanner.querySelector(".viewport-ready-close");
+  let readyHideTimer = null;
+  let readyFadeTimer = null;
+
+  const hudStack = document.createElement("div");
+  hudStack.className = "viewport-hud-stack";
+  hudStack.append(readyBanner, spinner);
+
   const banner = document.createElement("div");
   banner.className = "viewport-error-banner hidden";
   banner.setAttribute("role", "button");
@@ -225,7 +245,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   let copyText = "";
   let displayText = "";
 
-  root.append(spinner, banner);
+  root.append(hudStack, banner);
   viewportEl.appendChild(root);
 
   let generating = false;
@@ -836,6 +856,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   function dismiss() {
     setGenerating(false);
     clearError();
+    clearReadyBanner();
   }
 
   expandBtn?.addEventListener("click", (e) => {
@@ -911,5 +932,53 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }
   });
 
-  return { setGenerating, isGenerating, updateProgress, setStopVisible, setActiveJobs, showError, clearError, dismiss };
+  function clearReadyTimers() {
+    if (readyHideTimer) {
+      clearTimeout(readyHideTimer);
+      readyHideTimer = null;
+    }
+    if (readyFadeTimer) {
+      clearTimeout(readyFadeTimer);
+      readyFadeTimer = null;
+    }
+  }
+
+  function clearReadyBanner() {
+    clearReadyTimers();
+    readyBanner.classList.add("is-leaving");
+    readyBanner.classList.remove("is-visible");
+    window.setTimeout(() => {
+      readyBanner.classList.add("hidden");
+      readyBanner.classList.remove("is-leaving", "is-visible");
+      if (readyText) readyText.textContent = "";
+    }, 280);
+  }
+
+  function showReadyBanner(message, { durationMs = 5200 } = {}) {
+    const text = String(message || "").trim();
+    if (!text) return;
+    clearReadyTimers();
+    if (readyText) readyText.textContent = text;
+    readyBanner.classList.remove("hidden", "is-leaving");
+    // Restart enter animation
+    readyBanner.classList.remove("is-visible");
+    void readyBanner.offsetWidth;
+    readyBanner.classList.add("is-visible");
+    readyHideTimer = window.setTimeout(() => {
+      readyBanner.classList.add("is-leaving");
+      readyBanner.classList.remove("is-visible");
+      readyFadeTimer = window.setTimeout(() => {
+        readyBanner.classList.add("hidden");
+        readyBanner.classList.remove("is-leaving");
+      }, 420);
+    }, Math.max(1800, Number(durationMs) || 5200));
+  }
+
+  readyClose?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearReadyBanner();
+  });
+
+  return { setGenerating, isGenerating, updateProgress, setStopVisible, setActiveJobs, showError, clearError, showReadyBanner, clearReadyBanner, dismiss };
 }

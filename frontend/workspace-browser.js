@@ -1652,14 +1652,21 @@ export function createWorkspaceBrowser({
     const name = gen.by_user_name || "Someone";
     const initial = escapeHtml(String(name).trim().charAt(0).toUpperCase() || "A");
     const avatar = gen.by_avatar_url || "";
-    const rigging = String(gen.kind || "").toLowerCase() === "rigging";
+    const kind = String(gen.kind || "").toLowerCase();
+    const rigging = kind === "rigging";
+    const promptish = !rigging && kind !== "wiring";
+    const toneClass = rigging
+      ? " proj-gen-user--rigging"
+      : promptish
+        ? " proj-gen-user--prompt"
+        : "";
     const avatarEl = avatar
       ? `<span class="proj-gen-avatar proj-gen-avatar--image" style="background-image:url('${escapeHtml(avatar)}')" title="${escapeHtml(name)} generating"></span>`
       : `<span class="proj-gen-avatar" title="${escapeHtml(name)} generating">${initial}</span>`;
     const rigIcon = rigging
       ? `<span class="proj-gen-rig-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 12.5h8M5 12.5V9l3-3 3 3v3.5M8 6V2.5M6.5 4h3M8 2.5l2 1.5M8 2.5 6 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
       : "";
-    return `<span class="proj-gen-user${rigging ? " proj-gen-user--rigging" : ""}" aria-label="${escapeHtml(name)} ${rigging ? "generating rigging" : "generating with AI"}">${avatarEl}${rigIcon}<span class="proj-gen-ai">${rigging ? "RIG" : "AI"}</span></span>`;
+    return `<span class="proj-gen-user${toneClass}" aria-label="${escapeHtml(name)} ${rigging ? "generating rigging" : "generating with AI"}">${avatarEl}${rigIcon}<span class="proj-gen-ai">${rigging ? "RIG" : "AI"}</span></span>`;
   }
 
   function buildProjectRow(p) {
@@ -1716,11 +1723,13 @@ export function createWorkspaceBrowser({
     const genBadge = generating && activeGen?.status === "running"
       ? generationExplorerBadge(activeGen)
       : "";
+    const promptGenerating = generating && activeKind !== "rigging" && activeKind !== "wiring";
+    if (promptGenerating) li.classList.add("proj-item--prompt-gen");
     const spinner = showSpinner && !genBadge
-      ? '<span class="proj-loading-spinner" aria-hidden="true"></span>'
+      ? `<span class="proj-loading-spinner${promptGenerating ? " proj-loading-spinner--prompt" : ""}" aria-hidden="true"></span>`
       : "";
     const loadingLabel = generating
-      ? `<span class="proj-loading-label${activeKind === "rigging" ? " proj-loading-label--rigging" : ""}">${activeKind === "rigging" ? "Rigging…" : "Generating…"}</span>`
+      ? `<span class="proj-loading-label${activeKind === "rigging" ? " proj-loading-label--rigging" : promptGenerating ? " proj-loading-label--prompt" : ""}">${activeKind === "rigging" ? "Rigging…" : "Generating…"}</span>`
       : loading
         ? '<span class="proj-loading-label">Loading…</span>'
         : "";

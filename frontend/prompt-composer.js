@@ -31,7 +31,7 @@ export function createPromptComposer({
   const mentionMenu = document.createElement("div");
   mentionMenu.className = "prompt-mention-menu hidden";
   mentionMenu.setAttribute("role", "listbox");
-  mentionMenu.setAttribute("aria-label", "Link uploaded file");
+  mentionMenu.setAttribute("aria-label", "Link prompt reference");
 
   if (textarea?.parentNode) {
     textarea.classList.add("prompt-input--mirror");
@@ -63,6 +63,7 @@ export function createPromptComposer({
   }
 
   function formatRefDetail(ref) {
+    if (ref.type === "face" || ref.type === "edge" || ref.type === "corner" || ref.type === "lasso") return ref.label || formatCoords(ref.position);
     if (ref.type === "component") return ref.label || ref.stem || ref.filename || "component";
     if (ref.type === "sketch") return ref.label || ref.stem || "sketch";
     if (ref.type === "wiring") return ref.label || ref.stem || "wiring";
@@ -157,7 +158,7 @@ export function createPromptComposer({
     if (!refsListEl) return;
     refsListEl.innerHTML = "";
     if (!references.length) {
-      refsListEl.innerHTML = '<span class="muted small">Click the model to pick; click again to deselect. Drag components from the explorer into the prompt. Type <code>@</code> to link uploaded files.</span>';
+      refsListEl.innerHTML = '<span class="muted small">Click the model to pick; click again to deselect. Drag components from the explorer into the prompt. Type <code>@</code> to link files, objects, or the selected face.</span>';
       return;
     }
     if (summary) {
@@ -459,7 +460,7 @@ export function createPromptComposer({
 
   function renderMentionMenu() {
     if (!mentionItems.length) {
-      mentionMenu.innerHTML = `<div class="prompt-mention-empty">No uploaded files yet. Drop CAD / images / docs below, then type <code>@</code>.</div>`;
+      mentionMenu.innerHTML = `<div class="prompt-mention-empty">No references match. Import or select a model item, then type <code>@</code>.</div>`;
       mentionMenu.classList.remove("hidden");
       return;
     }
@@ -657,6 +658,7 @@ export function createPromptComposer({
         text_content,
         text_truncated,
         projectId,
+        body_index,
         local_point,
         local_loop_points,
         localPoint,
@@ -685,6 +687,7 @@ export function createPromptComposer({
         text_content,
         text_truncated,
         projectId,
+        body_index,
         local_point:
           local_point ||
           (localPoint ? [localPoint.x, localPoint.y, localPoint.z] : undefined),

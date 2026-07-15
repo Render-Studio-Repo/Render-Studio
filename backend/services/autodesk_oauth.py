@@ -290,9 +290,15 @@ def list_projects(access_token: str, hub_id: str) -> list[dict[str, Any]]:
         attrs = project.get("attributes") or {}
         projects.append({
             "id": project.get("id"),
-            "name": attrs.get("name") or project.get("id"),
+            "name": attrs.get("name") || project.get("id"),
             "type": project.get("type"),
+            "last_modified": attrs.get("lastModifiedTime") or attrs.get("updatedTime") or attrs.get("createTime"),
+            "created": attrs.get("createTime") or attrs.get("createdTime"),
         })
+    projects.sort(
+        key=lambda item: str(item.get("last_modified") or item.get("created") or ""),
+        reverse=True,
+    )
     return projects
 
 
@@ -303,7 +309,12 @@ def list_top_folders(access_token: str, hub_id: str, project_id: str) -> list[di
         timeout=20,
     )
     _raise_aps(resp)
-    return [_normalize_folder(folder, project_id) for folder in resp.json().get("data", []) or []]
+    folders = [_normalize_folder(folder, project_id) for folder in resp.json().get("data", []) or []]
+    folders.sort(
+        key=lambda item: str(item.get("last_modified") or item.get("created") or item.get("name") or ""),
+        reverse=True,
+    )
+    return folders
 
 
 def list_folder_contents(access_token: str, project_id: str, folder_id: str) -> dict[str, Any]:
@@ -322,6 +333,10 @@ def list_folder_contents(access_token: str, project_id: str, folder_id: str) -> 
             folders.append(_normalize_folder(entry, project_id))
         elif entry.get("type") == "items":
             items.append(_normalize_item(entry, included_by_id))
+    folders.sort(
+        key=lambda item: str(item.get("last_modified") or item.get("created") or item.get("name") or ""),
+        reverse=True,
+    )
     return {"folders": folders, "items": items}
 
 
@@ -726,6 +741,9 @@ def _normalize_folder(folder: dict[str, Any], project_id: str) -> dict[str, Any]
         "project_id": project_id,
         "name": attrs.get("displayName") or attrs.get("name") or folder.get("id"),
         "type": "folder",
+        "last_modified": attrs.get("lastModifiedTime") or attrs.get("createTime"),
+        "created": attrs.get("createTime"),
+        "object_count": attrs.get("objectCount"),
     }
 
 

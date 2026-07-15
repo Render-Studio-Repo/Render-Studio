@@ -195,29 +195,36 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "timeline-step";
-        if (e.kind === "restore") btn.classList.add("timeline-step--restore");
+        const kind = String(e.kind || "").toLowerCase();
+        if (kind === "restore") btn.classList.add("timeline-step--restore");
+        if (kind === "prompt" || kind === "build") btn.classList.add("timeline-step--prompt");
+        if (e.pending || e.id === "__pending_prompt__") btn.classList.add("timeline-step--pending");
         if (e.user_id) btn.classList.add("timeline-step--collab");
         const label = entryLabel(e);
         const who = e.user_name || "";
         btn.title = who ? `${label} · ${who}` : label;
         const showAvatar = !!(e.user_name || e.user_id || e.user_avatar_url);
+        const pending = !!(e.pending || e.id === "__pending_prompt__");
+        btn.disabled = pending;
         btn.innerHTML = `
           <span class="step-topline">
             <span class="timeline-step-icon" aria-hidden="true">${escapeHtml(iconForKind(e.kind))}</span>
-            <span class="step-kind">${escapeHtml(e.kind || "change")}</span>
+            <span class="step-kind">${escapeHtml(pending ? "rendering" : (e.kind || "change"))}</span>
             ${showAvatar ? userAvatar(e) : ""}
           </span>
           <span class="step-label">${escapeHtml(label)}</span>
           ${who ? `<span class="step-user">${escapeHtml(who)}</span>` : ""}
         `;
-        btn.addEventListener("click", () => {
-          slider.value = String(i);
-          const whoLabel = who ? ` · ${who}` : "";
-          labelEl.textContent = `${label}${whoLabel}`;
-          highlightStep(stepsEl, i);
-          onSelect?.(i, e);
-        });
-        btn.addEventListener("contextmenu", (event) => showStepContextMenu(event, i, e));
+        if (!pending) {
+          btn.addEventListener("click", () => {
+            slider.value = String(i);
+            const whoLabel = who ? ` · ${who}` : "";
+            labelEl.textContent = `${label}${whoLabel}`;
+            highlightStep(stepsEl, i);
+            onSelect?.(i, e);
+          });
+          btn.addEventListener("contextmenu", (event) => showStepContextMenu(event, i, e));
+        }
         stepsEl.appendChild(btn);
       });
 
