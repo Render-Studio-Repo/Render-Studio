@@ -3492,7 +3492,8 @@ function setCodexEnabled(enabled, { persist = true } = {}) {
 }
 
 function syncCodexToggleVisibility(mode = promptMode) {
-  const wrap = document.getElementById("prompt-codex-toggle");
+  const wrap = document.getElementById("prompt-codex-wrap")
+    || document.getElementById("prompt-codex-toggle");
   if (!wrap) return;
   const show = ["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase());
   wrap.classList.toggle("hidden", !show);
@@ -3685,7 +3686,8 @@ function initPromptSpiceToggle() {
     openSpiceCompareModal();
   });
 
-  initPromptSpiceHoverTip();
+  initPromptHoverTip("prompt-spice-wrap", "prompt-spice-tip", { tipWidth: 280 });
+  initPromptHoverTip("prompt-codex-wrap", "prompt-codex-tip", { tipWidth: 300 });
 
   const modal = document.getElementById("prompt-spice-compare-modal");
   modal?.querySelectorAll("[data-spice-compare-close]").forEach((el) => {
@@ -3698,9 +3700,9 @@ function initPromptSpiceToggle() {
   });
 }
 
-function initPromptSpiceHoverTip() {
-  const wrap = document.getElementById("prompt-spice-wrap");
-  const tip = document.getElementById("prompt-spice-tip");
+function initPromptHoverTip(wrapId, tipId, { tipWidth = 280 } = {}) {
+  const wrap = document.getElementById(wrapId);
+  const tip = document.getElementById(tipId);
   if (!wrap || !tip) return;
 
   // Portal to body so parent overflow/stacking can't clip the card.
@@ -3714,11 +3716,11 @@ function initPromptSpiceHoverTip() {
 
   const placeTip = () => {
     const rect = wrap.getBoundingClientRect();
-    const tipWidth = Math.min(280, Math.max(220, window.innerWidth * 0.72));
-    tip.style.width = `${tipWidth}px`;
+    const width = Math.min(tipWidth, Math.max(220, window.innerWidth * 0.72));
+    tip.style.width = `${width}px`;
     const gap = 10;
     let left = rect.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - tipWidth - 8));
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
     tip.style.left = `${Math.round(left)}px`;
     tip.style.bottom = "auto";
     // Measure while hidden using a temporary show class without animation.
@@ -3774,6 +3776,10 @@ function initPromptSpiceHoverTip() {
   window.addEventListener("resize", () => {
     if (open) placeTip();
   });
+}
+
+function initPromptSpiceHoverTip() {
+  initPromptHoverTip("prompt-spice-wrap", "prompt-spice-tip", { tipWidth: 280 });
 }
 
 function pushSpiceOverlayProgress(progress = {}) {
