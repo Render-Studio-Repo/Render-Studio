@@ -845,6 +845,13 @@ def _is_other_user_render_project(project_id: str, user: dict[str, Any]) -> bool
     project_path = PROJECTS / project_id
     if not project_path.is_dir():
         return False
+    # Include live generations even before the first mesh file exists.
+    try:
+        gen = generation_service.public_summary(project_path) or {}
+        if str(gen.get("status") or "") in {"running", "queued", "starting", "pending"}:
+            return True
+    except Exception:
+        pass
     return bool(cad_service.list_project_files(project_path))
 
 
@@ -9225,7 +9232,7 @@ async def save_architect_building(
 
 @app.get("/api/projects/{project_id}/wiring")
 def get_wiring(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
-    path = _require_project(user, project_id)
+    path = _require_project_read(user, project_id)
     wiring_path = path / "wiring.json"
     if not wiring_path.is_file():
         return {"components": [], "wires": []}
@@ -10907,13 +10914,15 @@ def _prompt_via_kernel(
 
 @app.get("/api/projects/{project_id}/generation")
 def get_generation_status(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
-    path = _require_project(user, project_id)
+    # Admins viewing other users' renders need status too (stop + live overlay).
+    path = _require_project_read(user, project_id)
     return generation_service.public_summary(path)
 
 
 @app.post("/api/projects/{project_id}/generation/cancel")
 def cancel_generation(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
-    path = _require_project(user, project_id)
+    # Allow workspace members and a1projects admins to stop a runaway generation.
+    path = _require_project_read(user, project_id)
     if not generation_service.is_running(path):
         return generation_service.public_summary(path)
     return generation_service.request_cancel(path)
@@ -13172,7 +13181,17 @@ async def project_ws(websocket: WebSocket, project_id: str, token: str = Query(.
         await websocket.close(code=4401)
         return
     user = get_user_by_id(user_id)
-    if not user or not teams_service.can_access_project(user_id, project_id):
+    if not user:
+        await websocket.close(code=4403)
+        return
+    # Members, public projects, and a1projects admins (other-user renders) can subscribe.
+    can_join = (
+        teams_service.can_access_project(user_id, project_id)
+        or _is_public_project(project_id)
+        or _is_a1projects_admin(user)
+        or _is_other_user_render_project(project_id, user)
+    )
+    if not can_join:
         await websocket.close(code=4403)
         return
     user = {**user, "avatar_url": _avatar_url_for_user_id(user["id"])}

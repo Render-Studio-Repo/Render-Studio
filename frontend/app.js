@@ -3356,6 +3356,8 @@ function initPromptSpiceToggle() {
     openSpiceCompareModal();
   });
 
+  initPromptSpiceHoverTip();
+
   const modal = document.getElementById("prompt-spice-compare-modal");
   modal?.querySelectorAll("[data-spice-compare-close]").forEach((el) => {
     el.addEventListener("click", () => closeSpiceCompareModal());
@@ -3364,6 +3366,84 @@ function initPromptSpiceToggle() {
     if (event.key !== "Escape") return;
     if (!modal || modal.classList.contains("hidden")) return;
     closeSpiceCompareModal();
+  });
+}
+
+function initPromptSpiceHoverTip() {
+  const wrap = document.getElementById("prompt-spice-wrap");
+  const tip = document.getElementById("prompt-spice-tip");
+  if (!wrap || !tip) return;
+
+  // Portal to body so parent overflow/stacking can't clip the card.
+  if (tip.parentElement !== document.body) {
+    document.body.appendChild(tip);
+  }
+
+  let showTimer = 0;
+  let hideTimer = 0;
+  let open = false;
+
+  const placeTip = () => {
+    const rect = wrap.getBoundingClientRect();
+    const tipWidth = Math.min(280, Math.max(220, window.innerWidth * 0.72));
+    tip.style.width = `${tipWidth}px`;
+    const gap = 10;
+    let left = rect.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - tipWidth - 8));
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.bottom = "auto";
+    // Measure while hidden using a temporary show class without animation.
+    const wasVisible = tip.classList.contains("is-visible");
+    if (!wasVisible) tip.classList.add("prompt-spice-tip--measure");
+    const estimatedHeight = tip.offsetHeight || 150;
+    if (!wasVisible) tip.classList.remove("prompt-spice-tip--measure");
+    if (rect.top >= estimatedHeight + gap + 8) {
+      tip.classList.remove("prompt-spice-tip--below");
+      tip.style.top = `${Math.round(rect.top - gap)}px`;
+    } else {
+      tip.classList.add("prompt-spice-tip--below");
+      tip.style.top = `${Math.round(rect.bottom + gap)}px`;
+    }
+  };
+
+  const show = () => {
+    clearTimeout(hideTimer);
+    hideTimer = 0;
+    if (open) {
+      placeTip();
+      return;
+    }
+    clearTimeout(showTimer);
+    showTimer = window.setTimeout(() => {
+      open = true;
+      tip.classList.add("is-visible");
+      placeTip();
+    }, 50); // much faster than native title tooltips (~1s)
+  };
+
+  const hide = () => {
+    clearTimeout(showTimer);
+    showTimer = 0;
+    clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => {
+      open = false;
+      tip.classList.remove("is-visible");
+    }, 60);
+  };
+
+  wrap.addEventListener("pointerenter", show);
+  wrap.addEventListener("pointerleave", hide);
+  wrap.addEventListener("focusin", show);
+  wrap.addEventListener("focusout", (event) => {
+    if (!wrap.contains(event.relatedTarget)) hide();
+  });
+  tip.addEventListener("pointerenter", show);
+  tip.addEventListener("pointerleave", hide);
+  window.addEventListener("scroll", () => {
+    if (open) placeTip();
+  }, true);
+  window.addEventListener("resize", () => {
+    if (open) placeTip();
   });
 }
 

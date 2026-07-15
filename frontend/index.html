@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-spice-compare" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-spice-tip" />
   <script type="importmap">
   {
     "imports": {
@@ -1020,30 +1020,46 @@
                 <input type="checkbox" id="prompt-codex" />
                 <span>Codex</span>
               </label>
-              <div class="prompt-spice-group" id="prompt-spice-group">
-                <label
-                  id="prompt-spice-toggle"
-                  class="prompt-spice-toggle"
-                  title="Before generating, AI rewrites your prompt into a clearer, more detailed CAD brief so the model builds closer to what you meant. On by default — turn off to send your exact wording."
-                >
-                  <input type="checkbox" id="prompt-spice" checked />
-                  <span>Improve prompt with AI</span>
-                </label>
-                <button
-                  type="button"
-                  id="prompt-spice-view-btn"
-                  class="prompt-spice-view-btn"
-                  disabled
-                  aria-haspopup="dialog"
-                  aria-controls="prompt-spice-compare-modal"
-                  title="View original vs improved prompt"
-                  aria-label="View original vs improved prompt"
-                >
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/>
-                    <circle cx="8" cy="8" r="2" />
-                  </svg>
-                </button>
+              <div class="prompt-spice-wrap" id="prompt-spice-wrap">
+                <div class="prompt-spice-group" id="prompt-spice-group">
+                  <label
+                    id="prompt-spice-toggle"
+                    class="prompt-spice-toggle"
+                    aria-describedby="prompt-spice-tip"
+                  >
+                    <input type="checkbox" id="prompt-spice" checked />
+                    <span>Improve prompt with AI</span>
+                  </label>
+                  <button
+                    type="button"
+                    id="prompt-spice-view-btn"
+                    class="prompt-spice-view-btn"
+                    disabled
+                    aria-haspopup="dialog"
+                    aria-controls="prompt-spice-compare-modal"
+                    title="View original vs improved prompt"
+                    aria-label="View original vs improved prompt"
+                  >
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/>
+                      <circle cx="8" cy="8" r="2" />
+                    </svg>
+                  </button>
+                </div>
+                <div id="prompt-spice-tip" class="prompt-spice-tip" role="tooltip">
+                  <div class="prompt-spice-tip-top">
+                    <span class="prompt-spice-tip-badge">Before generate</span>
+                    <strong class="prompt-spice-tip-title">Improve prompt with AI</strong>
+                  </div>
+                  <p class="prompt-spice-tip-body">
+                    Rewrites your text into a clearer CAD brief — sizes, features, and intent — so generation lands closer to what you meant.
+                  </p>
+                  <ul class="prompt-spice-tip-list">
+                    <li>On by default</li>
+                    <li>Turn off to send your exact wording</li>
+                    <li>Eye icon compares original vs improved</li>
+                  </ul>
+                </div>
               </div>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
             </div>
@@ -1874,7 +1890,7 @@
     </div>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/app.js?v=20260715-elec-none"></script>
+  <script type="module" src="/app.js?v=20260715-spice-tip"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
