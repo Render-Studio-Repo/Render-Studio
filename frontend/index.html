@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-kb-stats" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-kb-drop" />
   <script type="importmap">
   {
     "imports": {
@@ -1037,35 +1037,46 @@
             <button type="button" id="prompt-skills-toggle" class="prompt-skills-toggle" aria-expanded="false">Skills</button>
             <div id="prompt-skills-chips" class="prompt-skills-chips"></div>
             <span id="prompt-skills-link" class="prompt-skills-link"></span>
-            <div class="prompt-kb-icon-wrap">
-              <button
-                type="button"
-                id="prompt-kb-icon-btn"
-                class="prompt-kb-icon-btn"
-                aria-haspopup="dialog"
-                aria-expanded="false"
-                title="Select knowledge base"
-                aria-label="Select knowledge base"
-              >
-                <svg class="prompt-kb-icon" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 3.5h8.2c.9 0 1.6.7 1.6 1.6v11.3c0-.8-.7-1.4-1.5-1.4H4.5V3.5z"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15h9.8c.8 0 1.5.6 1.5 1.4v.1H6a1.5 1.5 0 01-1.5-1.5V15z"/>
-                  <path stroke-linecap="round" d="M7 6.5h5M7 9.5h5"/>
-                </svg>
-                <span id="prompt-kb-icon-badge" class="prompt-kb-icon-badge hidden" aria-hidden="true">0</span>
-              </button>
-              <div id="prompt-kb-popover" class="prompt-kb-popover hidden" role="dialog" aria-label="Knowledge bases">
-                <div class="prompt-kb-popover-head">
-                  <strong>Knowledge bases</strong>
-                  <button type="button" id="prompt-kb-manage" class="btn secondary btn-compact">Manage</button>
+            <div class="prompt-skills-trail">
+              <div class="prompt-kb-icon-wrap">
+                <button
+                  type="button"
+                  id="prompt-kb-icon-btn"
+                  class="prompt-kb-icon-btn"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  title="Select knowledge base"
+                  aria-label="Select knowledge base"
+                >
+                  <svg class="prompt-kb-icon" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 3.5h8.2c.9 0 1.6.7 1.6 1.6v11.3c0-.8-.7-1.4-1.5-1.4H4.5V3.5z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15h9.8c.8 0 1.5.6 1.5 1.4v.1H6a1.5 1.5 0 01-1.5-1.5V15z"/>
+                    <path stroke-linecap="round" d="M7 6.5h5M7 9.5h5"/>
+                  </svg>
+                  <span id="prompt-kb-icon-badge" class="prompt-kb-icon-badge hidden" aria-hidden="true">0</span>
+                </button>
+                <div id="prompt-kb-popover" class="prompt-kb-popover hidden" role="dialog" aria-label="Knowledge bases">
+                  <div class="prompt-kb-popover-head">
+                    <div>
+                      <strong>Knowledge bases</strong>
+                      <p class="prompt-kb-popover-sub muted">Select bases to include with this AI prompt</p>
+                    </div>
+                    <button type="button" id="prompt-kb-manage" class="btn secondary btn-compact">Manage</button>
+                  </div>
+                  <div id="prompt-kb-overview" class="prompt-kb-overview"></div>
+                  <div id="prompt-kb-drop" class="prompt-kb-drop" tabindex="0" role="button" aria-label="Drop or select files for knowledge base">
+                    <input id="prompt-kb-drop-input" type="file" multiple hidden accept=".pdf,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log,.dxf,.svg,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,.ply,.png,.jpg,.jpeg,.webp,.iges,.igs" />
+                    <strong>Drop files here</strong>
+                    <span>Select multiple files or drag &amp; drop into this popup</span>
+                  </div>
+                  <div id="prompt-kb-picker-list" class="prompt-kb-picker-list"></div>
+                  <p id="prompt-kb-status" class="prompt-kb-status muted small"></p>
                 </div>
-                <div id="prompt-kb-picker-list" class="prompt-kb-picker-list"></div>
-                <p id="prompt-kb-status" class="prompt-kb-status muted small"></p>
               </div>
+              <button type="button" class="prompt-mic-btn" data-mic-target="prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
+                <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
+              </button>
             </div>
-            <button type="button" class="prompt-mic-btn" data-mic-target="prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
-              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
-            </button>
           </div>
           <div id="prompt-skills-plan" class="prompt-skills-plan" aria-live="polite"></div>
           <div id="prompt-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Prompt references"></div>
@@ -1716,7 +1727,7 @@
     <div class="auth-card app-dialog-card kb-modal-card">
       <button type="button" class="auth-close" id="kb-modal-close" aria-label="Close">&times;</button>
       <h2 id="kb-modal-title" class="app-dialog-title">Knowledge bases</h2>
-      <p class="muted">Build folders of PDFs, text, drawings, and 3D models. Attach a base to skills and toggle Knowledge on the AI prompt to use it.</p>
+      <p class="muted">Build folders of PDFs, text, drawings, and 3D models. Attach a base to skills, then pick it from the book icon on the AI prompt.</p>
       <div id="kb-overview-stats" class="kb-overview-stats"></div>
       <div class="kb-modal-layout">
         <aside class="kb-modal-side">
@@ -1730,6 +1741,7 @@
         </aside>
         <section class="kb-modal-main">
           <div id="kb-detail-meta" class="kb-detail-meta"></div>
+          <div id="kb-share-panel" class="kb-share-panel"></div>
           <div id="kb-skills" class="kb-skills"></div>
           <div class="kb-upload-row">
             <label class="btn secondary btn-compact">
@@ -1741,6 +1753,10 @@
               <input id="kb-upload-folder" type="file" multiple hidden webkitdirectory directory />
             </label>
             <button type="button" class="btn secondary btn-compact" id="kb-new-folder">New folder</button>
+          </div>
+          <div id="kb-modal-drop" class="kb-modal-drop" tabindex="0" role="button" aria-label="Drop files into knowledge base">
+            <strong>Drop multiple files here</strong>
+            <span>Drag &amp; drop PDFs, CAD, drawings, or docs into this window</span>
           </div>
           <div id="kb-tree" class="kb-tree"></div>
         </section>
@@ -1807,7 +1823,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260715-knowledge"></script>
+  <script type="module" src="/app.js?v=20260715-kb-drop"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

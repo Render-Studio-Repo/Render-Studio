@@ -214,6 +214,17 @@ def init_db() -> None:
                 PRIMARY KEY (kb_id, skill_id),
                 FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS knowledge_shares (
+                id TEXT PRIMARY KEY,
+                kb_id TEXT NOT NULL,
+                share_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(kb_id, share_type, target_id),
+                FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+            );
             """
         )
         try:

@@ -1400,6 +1400,21 @@ function _buildRibbonDOM() {
   `;
   viewControls.appendChild(renderAgentBtn);
 
+  const knowledgeBtn = document.createElement("button");
+  knowledgeBtn.type = "button";
+  knowledgeBtn.id = "btn-knowledge-base";
+  knowledgeBtn.className = "ribbon-view-btn ribbon-view-btn--knowledge";
+  knowledgeBtn.title = "Knowledge bases — open library, upload files";
+  knowledgeBtn.innerHTML = `
+    <svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4.5 3.5h8.2c.9 0 1.6.7 1.6 1.6v11.3c0-.8-.7-1.4-1.5-1.4H4.5V3.5z"/>
+      <path d="M4.5 15h9.8c.8 0 1.5.6 1.5 1.4v.1H6A1.5 1.5 0 0 1 4.5 15z"/>
+      <path d="M7 6.5h5M7 9.5h5"/>
+    </svg>
+    <span class="ribbon-view-label">Knowledge</span>
+  `;
+  viewControls.appendChild(knowledgeBtn);
+
   // Chevron
   const chev = document.createElement("button");
   chev.type = "button";

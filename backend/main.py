@@ -2808,15 +2808,29 @@ class KnowledgeFolderCreateRequest(BaseModel):
     parent_id: str | None = None
 
 
+class KnowledgeShareRequest(BaseModel):
+    share_type: str = Field(..., pattern="^(user|project|team)$")
+    target_id: str = Field(..., min_length=1, max_length=64)
+
+
 @app.get("/api/knowledge-bases")
 def list_knowledge_bases(user: dict[str, Any] = Depends(get_current_user)):
     from backend.services import knowledge_service
 
     bases = knowledge_service.list_knowledge_bases(user["id"])
+    shared = knowledge_service.list_shared_knowledge_bases(user["id"])
     return {
         "knowledge_bases": bases,
+        "shared_with_me": shared,
         "stats": knowledge_service.user_knowledge_stats(user["id"]),
     }
+
+
+@app.get("/api/knowledge-bases/share-targets")
+def knowledge_share_targets(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    return knowledge_service.list_share_targets(user["id"])
 
 
 @app.post("/api/knowledge-bases")
@@ -2853,6 +2867,8 @@ def update_knowledge_base(
             description=body.description,
             skill_ids=body.skill_ids,
         )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"knowledge_base": kb}
@@ -2864,6 +2880,57 @@ def delete_knowledge_base(kb_id: str, user: dict[str, Any] = Depends(get_current
 
     try:
         knowledge_service.delete_knowledge_base(user["id"], kb_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.get("/api/knowledge-bases/{kb_id}/shares")
+def list_knowledge_base_shares(kb_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    try:
+        return {"shares": knowledge_service.list_knowledge_shares(user["id"], kb_id)}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/knowledge-bases/{kb_id}/shares")
+def share_knowledge_base(
+    kb_id: str,
+    body: KnowledgeShareRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import knowledge_service
+
+    try:
+        share = knowledge_service.share_knowledge_base(
+            user["id"],
+            kb_id,
+            share_type=body.share_type,
+            target_id=body.target_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"share": share}
+
+
+@app.delete("/api/knowledge-bases/{kb_id}/shares/{share_id}")
+def unshare_knowledge_base(kb_id: str, share_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    try:
+        knowledge_service.unshare_knowledge_base(user["id"], kb_id, share_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"ok": True}
@@ -2879,6 +2946,8 @@ def create_knowledge_folder(
 
     try:
         folder = knowledge_service.create_folder(user["id"], kb_id, body.name, parent_id=body.parent_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:

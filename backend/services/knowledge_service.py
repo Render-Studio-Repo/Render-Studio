@@ -93,10 +93,23 @@ def init_knowledge_tables() -> None:
                 FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS knowledge_shares (
+                id TEXT PRIMARY KEY,
+                kb_id TEXT NOT NULL,
+                share_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(kb_id, share_type, target_id),
+                FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_knowledge_bases_user ON knowledge_bases(user_id);
             CREATE INDEX IF NOT EXISTS idx_knowledge_folders_kb ON knowledge_folders(kb_id);
             CREATE INDEX IF NOT EXISTS idx_knowledge_items_kb ON knowledge_items(kb_id);
             CREATE INDEX IF NOT EXISTS idx_knowledge_skill_kb ON knowledge_skill_links(skill_id);
+            CREATE INDEX IF NOT EXISTS idx_knowledge_shares_kb ON knowledge_shares(kb_id);
+            CREATE INDEX IF NOT EXISTS idx_knowledge_shares_target ON knowledge_shares(share_type, target_id);
             """
         )
 
@@ -222,7 +235,7 @@ def user_knowledge_stats(user_id: str) -> dict[str, Any]:
     return stats
 
 
-def _row_kb(row: Any, *, include_counts: bool = True) -> dict[str, Any]:
+def _row_kb(row: Any, *, include_counts: bool = True, access: str = "owner") -> dict[str, Any]:
     item: dict[str, Any] = {
         "id": row["id"],
         "user_id": row["user_id"],
@@ -230,6 +243,8 @@ def _row_kb(row: Any, *, include_counts: bool = True) -> dict[str, Any]:
         "description": row["description"] or "",
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "access": access,
+        "shared_with_me": access == "shared",
     }
     if include_counts:
         stats = knowledge_base_stats(row["user_id"], row["id"])
@@ -243,6 +258,98 @@ def _row_kb(row: Any, *, include_counts: bool = True) -> dict[str, Any]:
     return item
 
 
+def list_shared_kb_ids(user_id: str) -> set[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT s.kb_id
+              FROM knowledge_shares s
+             WHERE (s.share_type = 'user' AND s.target_id = ?)
+                OR (
+                      s.share_type = 'team'
+                  AND EXISTS (
+                        SELECT 1 FROM team_members tm
+                         WHERE tm.team_id = s.target_id AND tm.user_id = ?
+                  )
+                )
+                OR (
+                      s.share_type = 'project'
+                  AND EXISTS (
+                        SELECT 1
+                          FROM project_access pa
+                          JOIN team_members tm ON tm.team_id = pa.team_id
+                         WHERE pa.project_id = s.target_id AND tm.user_id = ?
+                  )
+                )
+            """,
+            (user_id, user_id, user_id),
+        ).fetchall()
+    return {r["kb_id"] for r in rows}
+
+
+def user_can_access_kb(user_id: str, kb_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute("SELECT user_id FROM knowledge_bases WHERE id = ?", (kb_id,)).fetchone()
+    if not row:
+        return False
+    if row["user_id"] == user_id:
+        return True
+    return kb_id in list_shared_kb_ids(user_id)
+
+
+def _share_routes_for_user(conn: Any, kb_id: str, user_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT share_type, target_id, shared_by, created_at
+          FROM knowledge_shares
+         WHERE kb_id = ?
+        """,
+        (kb_id,),
+    ).fetchall()
+    routes: list[dict[str, Any]] = []
+    for row in rows:
+        stype = row["share_type"]
+        tid = row["target_id"]
+        keep = False
+        label = tid
+        if stype == "user" and tid == user_id:
+            keep = True
+            label = "Direct share"
+        elif stype == "team":
+            member = conn.execute(
+                "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
+                (tid, user_id),
+            ).fetchone()
+            if member:
+                keep = True
+                team = conn.execute("SELECT name FROM teams WHERE id = ?", (tid,)).fetchone()
+                label = (team["name"] if team else None) or "Workspace"
+        elif stype == "project":
+            access = conn.execute(
+                """
+                SELECT 1
+                  FROM project_access pa
+                  JOIN team_members tm ON tm.team_id = pa.team_id
+                 WHERE pa.project_id = ? AND tm.user_id = ?
+                """,
+                (tid, user_id),
+            ).fetchone()
+            if access:
+                keep = True
+                label = f"Project {tid}"
+        if keep:
+            routes.append(
+                {
+                    "share_type": stype,
+                    "target_id": tid,
+                    "label": label,
+                    "shared_by": row["shared_by"],
+                    "created_at": row["created_at"],
+                }
+            )
+    return routes
+
+
 def list_knowledge_bases(user_id: str) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -253,7 +360,33 @@ def list_knowledge_bases(user_id: str) -> list[dict[str, Any]]:
             """,
             (user_id,),
         ).fetchall()
-    return [_row_kb(row) for row in rows]
+    return [_row_kb(row, access="owner") for row in rows]
+
+
+def list_shared_knowledge_bases(user_id: str) -> list[dict[str, Any]]:
+    shared_ids = list_shared_kb_ids(user_id)
+    if not shared_ids:
+        return []
+    out: list[dict[str, Any]] = []
+    with get_conn() as conn:
+        for kb_id in shared_ids:
+            row = conn.execute("SELECT * FROM knowledge_bases WHERE id = ?", (kb_id,)).fetchone()
+            if not row or row["user_id"] == user_id:
+                continue
+            item = _row_kb(row, access="shared")
+            owner = conn.execute(
+                "SELECT id, display_name, email FROM users WHERE id = ?",
+                (row["user_id"],),
+            ).fetchone()
+            item["owner"] = {
+                "id": owner["id"] if owner else row["user_id"],
+                "display_name": (owner["display_name"] if owner else None) or "Owner",
+                "email": (owner["email"] if owner else "") or "",
+            }
+            item["shared_via"] = _share_routes_for_user(conn, kb_id, user_id)
+            out.append(item)
+    out.sort(key=lambda kb: (kb.get("name") or "").lower())
+    return out
 
 
 def create_knowledge_base(user_id: str, name: str, description: str = "") -> dict[str, Any]:
@@ -269,18 +402,33 @@ def create_knowledge_base(user_id: str, name: str, description: str = "") -> dic
             (kb_id, user_id, clean_name[:120], (description or "").strip()[:2000], now, now),
         )
     _kb_root(user_id, kb_id)
-    return get_knowledge_base(user_id, kb_id)
+    return get_knowledge_base(user_id, kb_id, require_owner=True)
 
 
-def get_knowledge_base(user_id: str, kb_id: str) -> dict[str, Any]:
+def get_knowledge_base(user_id: str, kb_id: str, *, require_owner: bool = False) -> dict[str, Any]:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM knowledge_bases WHERE id = ? AND user_id = ?",
-            (kb_id, user_id),
-        ).fetchone()
+        row = conn.execute("SELECT * FROM knowledge_bases WHERE id = ?", (kb_id,)).fetchone()
     if not row:
         raise LookupError("Knowledge base not found")
-    return _row_kb(row)
+    is_owner = row["user_id"] == user_id
+    if require_owner and not is_owner:
+        raise PermissionError("Only the owner can modify this knowledge base")
+    if not is_owner and not user_can_access_kb(user_id, kb_id):
+        raise LookupError("Knowledge base not found")
+    item = _row_kb(row, access="owner" if is_owner else "shared")
+    if not is_owner:
+        with get_conn() as conn:
+            owner = conn.execute(
+                "SELECT id, display_name, email FROM users WHERE id = ?",
+                (row["user_id"],),
+            ).fetchone()
+            item["owner"] = {
+                "id": owner["id"] if owner else row["user_id"],
+                "display_name": (owner["display_name"] if owner else None) or "Owner",
+                "email": (owner["email"] if owner else "") or "",
+            }
+            item["shared_via"] = _share_routes_for_user(conn, kb_id, user_id)
+    return item
 
 
 def update_knowledge_base(
@@ -291,7 +439,7 @@ def update_knowledge_base(
     description: str | None = None,
     skill_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    kb = get_knowledge_base(user_id, kb_id)
+    kb = get_knowledge_base(user_id, kb_id, require_owner=True)
     now = _now()
     with get_conn() as conn:
         if name is not None:
@@ -318,14 +466,15 @@ def update_knowledge_base(
                     (kb_id, skill_id[:64], now),
                 )
             conn.execute("UPDATE knowledge_bases SET updated_at = ? WHERE id = ?", (now, kb_id))
-    return get_knowledge_base(user_id, kb_id)
+    return get_knowledge_base(user_id, kb_id, require_owner=True)
 
 
 def delete_knowledge_base(user_id: str, kb_id: str) -> None:
-    get_knowledge_base(user_id, kb_id)
+    kb = get_knowledge_base(user_id, kb_id, require_owner=True)
+    owner_id = kb["user_id"]
     with get_conn() as conn:
-        conn.execute("DELETE FROM knowledge_bases WHERE id = ? AND user_id = ?", (kb_id, user_id))
-    root = Path(settings.data_dir) / "knowledge" / str(user_id) / str(kb_id)
+        conn.execute("DELETE FROM knowledge_bases WHERE id = ? AND user_id = ?", (kb_id, owner_id))
+    root = Path(settings.data_dir) / "knowledge" / str(owner_id) / str(kb_id)
     if root.is_dir():
         shutil.rmtree(root, ignore_errors=True)
 
@@ -355,7 +504,7 @@ def list_folders(user_id: str, kb_id: str) -> list[dict[str, Any]]:
 
 
 def create_folder(user_id: str, kb_id: str, name: str, parent_id: str | None = None) -> dict[str, Any]:
-    get_knowledge_base(user_id, kb_id)
+    get_knowledge_base(user_id, kb_id, require_owner=True)
     folder_id = str(uuid.uuid4())[:12]
     now = _now()
     clean = (name or "").strip()[:120] or "Folder"
@@ -490,7 +639,7 @@ def add_item_bytes(
     folder_id: str | None = None,
     relative_path: str | None = None,
 ) -> dict[str, Any]:
-    get_knowledge_base(user_id, kb_id)
+    kb = get_knowledge_base(user_id, kb_id, require_owner=True)
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"File too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)")
     safe = _safe_name(filename)
@@ -506,7 +655,7 @@ def add_item_bytes(
 
     item_id = str(uuid.uuid4())[:12]
     store_name = f"{item_id}__{safe}"
-    dest = _kb_root(user_id, kb_id) / store_name
+    dest = _kb_root(kb["user_id"], kb_id) / store_name
     dest.write_bytes(data)
     excerpt = _extract_text(dest, suffix)
     now = _now()
@@ -553,7 +702,7 @@ def get_item(user_id: str, kb_id: str, item_id: str) -> dict[str, Any]:
 
 
 def delete_item(user_id: str, kb_id: str, item_id: str) -> None:
-    get_knowledge_base(user_id, kb_id)
+    kb = get_knowledge_base(user_id, kb_id, require_owner=True)
     with get_conn() as conn:
         row = conn.execute(
             "SELECT storage_path FROM knowledge_items WHERE id = ? AND kb_id = ?",
@@ -563,7 +712,7 @@ def delete_item(user_id: str, kb_id: str, item_id: str) -> None:
             raise LookupError("Knowledge item not found")
         conn.execute("DELETE FROM knowledge_items WHERE id = ? AND kb_id = ?", (item_id, kb_id))
         conn.execute("UPDATE knowledge_bases SET updated_at = ? WHERE id = ?", (_now(), kb_id))
-    path = _kb_root(user_id, kb_id) / row["storage_path"]
+    path = _kb_root(kb["user_id"], kb_id) / row["storage_path"]
     if path.is_file():
         path.unlink(missing_ok=True)
 
@@ -576,7 +725,8 @@ def get_kb_tree(user_id: str, kb_id: str) -> dict[str, Any]:
         "knowledge_base": kb,
         "folders": folders,
         "items": items,
-        "stats": kb.get("stats") or knowledge_base_stats(user_id, kb_id),
+        "stats": kb.get("stats") or knowledge_base_stats(kb["user_id"], kb_id),
+        "can_edit": kb.get("access") == "owner",
     }
 
 
@@ -590,8 +740,10 @@ def resolve_kb_ids_for_prompt(
     out: list[str] = []
     seen: set[str] = set()
     owned = {kb["id"] for kb in list_knowledge_bases(user_id)}
+    shared = list_shared_kb_ids(user_id)
+    allowed = owned | shared
     for kb_id in selected:
-        if kb_id in owned and kb_id not in seen:
+        if kb_id in allowed and kb_id not in seen:
             out.append(kb_id)
             seen.add(kb_id)
     skill_set = {str(s).strip().lower() for s in (skill_ids or []) if str(s).strip()}
@@ -603,8 +755,28 @@ def resolve_kb_ids_for_prompt(
                   FROM knowledge_skill_links l
                   JOIN knowledge_bases k ON k.id = l.kb_id
                  WHERE k.user_id = ?
+                    OR l.kb_id IN (
+                        SELECT s.kb_id FROM knowledge_shares s
+                         WHERE (s.share_type = 'user' AND s.target_id = ?)
+                            OR (
+                                  s.share_type = 'team'
+                              AND EXISTS (
+                                    SELECT 1 FROM team_members tm
+                                     WHERE tm.team_id = s.target_id AND tm.user_id = ?
+                              )
+                            )
+                            OR (
+                                  s.share_type = 'project'
+                              AND EXISTS (
+                                    SELECT 1
+                                      FROM project_access pa
+                                      JOIN team_members tm ON tm.team_id = pa.team_id
+                                     WHERE pa.project_id = s.target_id AND tm.user_id = ?
+                              )
+                            )
+                    )
                 """,
-                (user_id,),
+                (user_id, user_id, user_id, user_id),
             ).fetchall()
             for row in rows:
                 linked = conn.execute(
@@ -612,9 +784,166 @@ def resolve_kb_ids_for_prompt(
                     (row["kb_id"],),
                 ).fetchall()
                 if any(r["skill_id"] in skill_set for r in linked) and row["kb_id"] not in seen:
-                    out.append(row["kb_id"])
-                    seen.add(row["kb_id"])
+                    if row["kb_id"] in allowed or row["kb_id"] in owned:
+                        out.append(row["kb_id"])
+                        seen.add(row["kb_id"])
     return out
+
+
+def list_knowledge_shares(user_id: str, kb_id: str) -> list[dict[str, Any]]:
+    get_knowledge_base(user_id, kb_id, require_owner=True)
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, kb_id, share_type, target_id, shared_by, created_at
+              FROM knowledge_shares
+             WHERE kb_id = ?
+             ORDER BY created_at DESC
+            """,
+            (kb_id,),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            label = row["target_id"]
+            if row["share_type"] == "user":
+                user = conn.execute(
+                    "SELECT display_name, email FROM users WHERE id = ?",
+                    (row["target_id"],),
+                ).fetchone()
+                label = (user["display_name"] if user else None) or (user["email"] if user else row["target_id"])
+            elif row["share_type"] == "team":
+                team = conn.execute("SELECT name FROM teams WHERE id = ?", (row["target_id"],)).fetchone()
+                label = (team["name"] if team else None) or row["target_id"]
+            elif row["share_type"] == "project":
+                label = f"Project {row['target_id']}"
+            item["label"] = label
+            out.append(item)
+    return out
+
+
+def share_knowledge_base(
+    user_id: str,
+    kb_id: str,
+    *,
+    share_type: str,
+    target_id: str,
+) -> dict[str, Any]:
+    get_knowledge_base(user_id, kb_id, require_owner=True)
+    stype = str(share_type or "").strip().lower()
+    tid = str(target_id or "").strip()
+    if stype not in {"user", "project", "team"}:
+        raise ValueError("share_type must be user, project, or team")
+    if not tid:
+        raise ValueError("target_id is required")
+
+    from backend.services import teams_service
+
+    if stype == "user":
+        if tid == user_id:
+            raise ValueError("You already own this knowledge base")
+        with get_conn() as conn:
+            target = conn.execute("SELECT id FROM users WHERE id = ?", (tid,)).fetchone()
+        if not target:
+            raise ValueError("User not found")
+        # Prefer sharing with teammates
+        teammate = False
+        for team in teams_service.list_teams(user_id):
+            members = teams_service.list_team_members(team["id"], user_id)
+            if any(m["id"] == tid for m in members):
+                teammate = True
+                break
+        if not teammate:
+            raise ValueError("You can only share with workspace teammates")
+    elif stype == "team":
+        teams_service.list_team_members(tid, user_id)
+    elif stype == "project":
+        if not teams_service.can_access_project(user_id, tid):
+            raise ValueError("You do not have access to that project")
+
+    share_id = str(uuid.uuid4())[:12]
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO knowledge_shares (id, kb_id, share_type, target_id, shared_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(kb_id, share_type, target_id) DO NOTHING
+            """,
+            (share_id, kb_id, stype, tid, user_id, now),
+        )
+        row = conn.execute(
+            """
+            SELECT id, kb_id, share_type, target_id, shared_by, created_at
+              FROM knowledge_shares
+             WHERE kb_id = ? AND share_type = ? AND target_id = ?
+            """,
+            (kb_id, stype, tid),
+        ).fetchone()
+    return dict(row) if row else {"id": share_id, "kb_id": kb_id, "share_type": stype, "target_id": tid}
+
+
+def unshare_knowledge_base(user_id: str, kb_id: str, share_id: str) -> None:
+    get_knowledge_base(user_id, kb_id, require_owner=True)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM knowledge_shares WHERE id = ? AND kb_id = ?",
+            (share_id, kb_id),
+        ).fetchone()
+        if not row:
+            raise LookupError("Share not found")
+        conn.execute("DELETE FROM knowledge_shares WHERE id = ? AND kb_id = ?", (share_id, kb_id))
+
+
+def list_share_targets(user_id: str) -> dict[str, Any]:
+    from backend.services import teams_service
+
+    teams = teams_service.list_teams(user_id)
+    members_by_id: dict[str, dict[str, Any]] = {}
+    for team in teams:
+        try:
+            for member in teams_service.list_team_members(team["id"], user_id):
+                if member["id"] == user_id:
+                    continue
+                members_by_id[member["id"]] = {
+                    "id": member["id"],
+                    "display_name": member.get("display_name") or member.get("email") or member["id"],
+                    "email": member.get("email") or "",
+                    "team_id": team["id"],
+                    "team_name": team.get("name") or team["id"],
+                }
+        except Exception:
+            continue
+    projects = []
+    for row in teams_service.user_project_access(user_id, None):
+        pid = row.get("project_id") or row.get("id")
+        if not pid:
+            continue
+        name = pid
+        try:
+            from backend.config import settings
+            from backend.services.project_store import load_meta as _load_meta
+
+            root = Path(settings.projects_dir)
+            if not root.is_absolute():
+                root = Path.cwd() / root
+            meta = _load_meta(root / str(pid))
+            if isinstance(meta, dict) and meta.get("name"):
+                name = meta["name"]
+        except Exception:
+            pass
+        projects.append(
+            {
+                "id": pid,
+                "name": name,
+                "team_id": row.get("team_id"),
+            }
+        )
+    return {
+        "users": sorted(members_by_id.values(), key=lambda m: (m.get("display_name") or "").lower()),
+        "teams": [{"id": t["id"], "name": t.get("name") or t["id"]} for t in teams],
+        "projects": projects,
+    }
 
 
 def build_prompt_context(

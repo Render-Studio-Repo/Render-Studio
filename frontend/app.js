@@ -56,7 +56,7 @@ import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-mention
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
-import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-stats";
+import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-drop";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-project-reorder2";
@@ -66,7 +66,7 @@ import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-tips2";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
-import { createRibbon } from "./ribbon.js?v=20260714-measure-btn";
+import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-step-stats";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
@@ -3481,10 +3481,14 @@ fetchSkillsCatalog((path, options) => fetch(path, options)).then(() => {
 });
 
 const knowledgePromptUI = createKnowledgePromptUI({
-  toggleWrap: document.getElementById("prompt-kb-toggle"),
-  checkbox: document.getElementById("prompt-kb"),
+  iconBtn: document.getElementById("prompt-kb-icon-btn"),
+  badgeEl: document.getElementById("prompt-kb-icon-badge"),
+  popover: document.getElementById("prompt-kb-popover"),
+  pickerList: document.getElementById("prompt-kb-picker-list"),
+  overviewEl: document.getElementById("prompt-kb-overview"),
+  dropZone: document.getElementById("prompt-kb-drop"),
+  dropInput: document.getElementById("prompt-kb-drop-input"),
   manageBtn: document.getElementById("prompt-kb-manage"),
-  selectEl: document.getElementById("prompt-kb-select"),
   statusEl: document.getElementById("prompt-kb-status"),
   modal: document.getElementById("knowledge-base-modal"),
 });
