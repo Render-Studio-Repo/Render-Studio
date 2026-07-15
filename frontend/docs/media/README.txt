@@ -1,12 +1,17 @@
 Real Getting Started demo GIFs recorded from the Studio UI (dummy account demo.docs.gif@r3d-studios.com).
 
+Object-click demos (picks, select-object) always use the Robot Arm template
+seeded from project 505279e3 via POST /api/demo/robot-arm into a private
+user project.
+
 Files (served at /docs/media/*.gif):
   ai-generate.gif       — type a CAD prompt + hover Generate
   workspaces.gif        — team select / invite / workspace menu
   share-folder.gif      — folder menu → Share → email
   reference-markup.gif  — upload reference / markup / Send to AI
   canvas.gif            — CANVAS tab sketch + attach
-  picks.gif             — Face pick + @face prompt
+  picks.gif             — Face pick on Robot Arm + @face prompt
+  select-object.gif     — Select tool: click whole arm, double-click a body
   wiring.gif            — Wiring tab + circuit prompt
   cloud-sync.gif        — Fusion / Onshape connect & libraries
   render-agent.gif      — Agent button + ask a tooling question

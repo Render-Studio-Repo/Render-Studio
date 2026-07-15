@@ -19,7 +19,8 @@ from playwright.async_api import Browser, Page, async_playwright
 BASE = "http://127.0.0.1:8001"
 EMAIL = "demo.docs.gif@r3d-studios.com"
 PASSWORD = "DemoGif2026!"
-PROJECT_ID = "2a5e7651"
+PROJECT_ID = "2a5e7651"  # fallback; record_demo prefers seeded Robot Arm
+ROBOT_ARM_SOURCE = "505279e3"
 OUT = Path("/home/ubuntu/frontend/docs/media")
 RAW = Path("/home/ubuntu/scripts/gif-demos/raw-v2")
 BLUEPRINT = Path("/home/ubuntu/scripts/gif-demos/demo-blueprint.png")
@@ -128,14 +129,135 @@ CURSOR_JS = r"""
 """
 
 
-def auth_init(token: str) -> str:
+def auth_init(token: str, project_id: str | None = None) -> str:
+    pid = project_id or PROJECT_ID
     return f"""
 localStorage.setItem('render3d:token', {json.dumps(token)});
-localStorage.setItem('render3d:lastProjectId', {json.dumps(PROJECT_ID)});
+localStorage.setItem('render3d:lastProjectId', {json.dumps(pid)});
+localStorage.setItem('render3d:demoRobotArmProjectId', {json.dumps(pid)});
 localStorage.setItem('render3d:renderAgentSeen:anonymous', '1');
 localStorage.setItem('render3d:renderAgentSeen:{USER_ID}', '1');
 {CURSOR_JS}
 """
+
+
+async def ensure_robot_arm_project(page: Page, token: str) -> str:
+    """Spin up (or reuse) the private Robot Arm demo for the GIF account."""
+    resp = await page.request.post(
+        f"{BASE}/api/demo/robot-arm",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    if not resp.ok:
+        print(f"  robot-arm seed failed: {resp.status} {await resp.text()}", flush=True)
+        return PROJECT_ID
+    data = await resp.json()
+    pid = data.get("project_id") or PROJECT_ID
+    print(f"  robot-arm project: {pid} (created={data.get('created')})", flush=True)
+    return pid
+
+
+async def open_robot_arm(page: Page):
+    title = page.get_by_text("Robot Arm", exact=False).first
+    if await title.count():
+        try:
+            await title.click(timeout=4000)
+            await page.wait_for_timeout(1600)
+            return
+        except Exception:
+            pass
+    # Fallback: click any project row that looks like the demo
+    loc = page.locator(".proj-item, .project-item, [data-project-id]").first
+    if await loc.count():
+        try:
+            await loc.click(timeout=3000)
+            await page.wait_for_timeout(1200)
+        except Exception:
+            pass
+
+
+async def ready_studio(page: Page, *, open_project: bool = True):
+    page.set_default_timeout(8000)
+    await page.wait_for_function(
+        "() => !!document.querySelector('.prompt-editor') && !!document.getElementById('btn-render-agent')",
+        timeout=35000,
+    )
+    await page.evaluate(CURSOR_JS)
+    await force_close_agent(page)
+    if open_project:
+        await open_robot_arm(page)
+        # Also try legacy Getting Started Demo name
+        title = page.get_by_text("Getting Started Demo", exact=False).first
+        if await title.count() and not await page.get_by_text("Robot Arm", exact=False).count():
+            try:
+                await title.click(timeout=2000)
+                await page.wait_for_timeout(900)
+            except Exception:
+                pass
+    await page.evaluate(CURSOR_JS)
+    await force_close_agent(page)
+    await page.locator(".prompt-editor").wait_for(state="visible", timeout=12000)
+
+
+async def record_demo(browser: Browser, name: str, runner):
+    frames_dir = RAW / name / "frames"
+    if (RAW / name).exists():
+        shutil.rmtree(RAW / name)
+    frames_dir.mkdir(parents=True)
+
+    boot = await browser.new_page()
+    token = await login_token(boot)
+    robot_pid = await ensure_robot_arm_project(boot, token)
+    await boot.close()
+    init = auth_init(token, robot_pid)
+
+    # Warm without recording
+    warm = await browser.new_context(viewport={"width": 1280, "height": 900})
+    warm_page = await warm.new_page()
+    await warm_page.add_init_script(init)
+    await warm_page.goto(f"{BASE}/?project={robot_pid}", wait_until="domcontentloaded", timeout=45000)
+    await ready_studio(warm_page)
+    storage = await warm.storage_state()
+    await warm.close()
+
+    ctx = await browser.new_context(
+        viewport={"width": 1280, "height": 900},
+        storage_state=storage,
+    )
+    page = await ctx.new_page()
+    page.set_default_timeout(8000)
+    await page.add_init_script(init)
+    print(f"Recording {name}...", flush=True)
+    rec = FrameRecorder(page, frames_dir, fps=6.0)
+    try:
+        await page.goto(f"{BASE}/?project={robot_pid}", wait_until="domcontentloaded", timeout=45000)
+        await page.evaluate(CURSOR_JS)
+        await ready_studio(page, open_project=True)
+        await page.evaluate(CURSOR_JS)
+        await force_close_agent(page)
+        # Verify cursor is live before capturing
+        ok = await page.evaluate("() => !!document.getElementById('pw-demo-cursor')")
+        if not ok:
+            await page.evaluate(CURSOR_JS)
+        await rec.start()
+        await page.mouse.move(600, 380, steps=10)
+        await asyncio.wait_for(runner(page), timeout=55)
+        await page.wait_for_timeout(400)
+    except Exception as exc:
+        print(f"  WARN {name}: {exc}", flush=True)
+        traceback.print_exc()
+    n = await rec.stop()
+    await page.close()
+    await ctx.close()
+    print(f"  captured {n} frames", flush=True)
+    if n < 4:
+        print(f"  FAIL too few frames for {name}", flush=True)
+        return
+    try:
+        frames_to_gif(frames_dir, OUT / f"{name}.gif", fps=6, width=720)
+    except Exception as exc:
+        print(f"  FAIL gif convert {name}: {exc}", flush=True)
+    # Free disk mid-run
+    shutil.rmtree(RAW / name, ignore_errors=True)
 
 
 class FrameRecorder:
@@ -376,88 +498,6 @@ async def close_overlays(page: Page):
         pass
 
 
-async def ready_studio(page: Page, *, open_project: bool = True):
-    page.set_default_timeout(8000)
-    await page.wait_for_function(
-        "() => !!document.querySelector('.prompt-editor') && !!document.getElementById('btn-render-agent')",
-        timeout=35000,
-    )
-    await page.evaluate(CURSOR_JS)
-    await force_close_agent(page)
-    if open_project:
-        title = page.get_by_text("Getting Started Demo", exact=False).first
-        if await title.count():
-            try:
-                await title.click(timeout=3000)
-                await page.wait_for_timeout(900)
-            except Exception:
-                pass
-    await page.evaluate(CURSOR_JS)
-    await force_close_agent(page)
-    await page.locator(".prompt-editor").wait_for(state="visible", timeout=12000)
-
-
-async def record_demo(browser: Browser, name: str, runner):
-    frames_dir = RAW / name / "frames"
-    if (RAW / name).exists():
-        shutil.rmtree(RAW / name)
-    frames_dir.mkdir(parents=True)
-
-    boot = await browser.new_page()
-    token = await login_token(boot)
-    await boot.close()
-    init = auth_init(token)
-
-    # Warm without recording
-    warm = await browser.new_context(viewport={"width": 1280, "height": 900})
-    warm_page = await warm.new_page()
-    await warm_page.add_init_script(init)
-    await warm_page.goto(f"{BASE}/", wait_until="domcontentloaded", timeout=45000)
-    await ready_studio(warm_page)
-    storage = await warm.storage_state()
-    await warm.close()
-
-    ctx = await browser.new_context(
-        viewport={"width": 1280, "height": 900},
-        storage_state=storage,
-    )
-    page = await ctx.new_page()
-    page.set_default_timeout(8000)
-    await page.add_init_script(init)
-    print(f"Recording {name}...", flush=True)
-    rec = FrameRecorder(page, frames_dir, fps=6.0)
-    try:
-        await page.goto(f"{BASE}/", wait_until="domcontentloaded", timeout=45000)
-        await page.evaluate(CURSOR_JS)
-        await ready_studio(page, open_project=False)
-        await page.evaluate(CURSOR_JS)
-        await force_close_agent(page)
-        # Verify cursor is live before capturing
-        ok = await page.evaluate("() => !!document.getElementById('pw-demo-cursor')")
-        if not ok:
-            await page.evaluate(CURSOR_JS)
-        await rec.start()
-        await page.mouse.move(600, 380, steps=10)
-        await asyncio.wait_for(runner(page), timeout=45)
-        await page.wait_for_timeout(400)
-    except Exception as exc:
-        print(f"  WARN {name}: {exc}", flush=True)
-        traceback.print_exc()
-    n = await rec.stop()
-    await page.close()
-    await ctx.close()
-    print(f"  captured {n} frames", flush=True)
-    if n < 4:
-        print(f"  FAIL too few frames for {name}", flush=True)
-        return
-    try:
-        frames_to_gif(frames_dir, OUT / f"{name}.gif", fps=6, width=720)
-    except Exception as exc:
-        print(f"  FAIL gif convert {name}: {exc}", flush=True)
-    # Free disk mid-run
-    shutil.rmtree(RAW / name, ignore_errors=True)
-
-
 async def demo_ai_generate(page: Page):
     await force_close_agent(page)
     await focus_prompt(page)
@@ -637,6 +677,7 @@ async def demo_canvas(page: Page):
 
 async def demo_picks(page: Page):
     await force_close_agent(page)
+    await open_robot_arm(page)
     await click_sel(page, "#btn-pick-face")
     await page.wait_for_timeout(400)
     vp = page.locator("#viewport").first
@@ -654,6 +695,36 @@ async def demo_picks(page: Page):
     await move_to(page, x, y, steps=30)
     await click_xy(page, x, y)
     await page.wait_for_timeout(700)
+
+
+async def demo_select_object(page: Page):
+    """Click whole robot arm, then double-click a body/part."""
+    await force_close_agent(page)
+    await open_robot_arm(page)
+    await page.wait_for_timeout(800)
+    # Activate Select tool
+    for sel in ["#btn-pick-object", "button[data-mode='object']"]:
+        loc = page.locator(sel).first
+        if await loc.count() and await loc.is_visible():
+            await click_sel(page, sel)
+            break
+    await page.wait_for_timeout(400)
+    vp = page.locator("#viewport canvas, #viewport, canvas").first
+    box = await vp.bounding_box()
+    if not box:
+        return
+    # Single click — whole object
+    cx = box["x"] + box["width"] * 0.52
+    cy = box["y"] + box["height"] * 0.42
+    await click_xy(page, cx, cy, hold_ms=180)
+    await page.wait_for_timeout(700)
+    # Double-click — part/body
+    px = box["x"] + box["width"] * 0.58
+    py = box["y"] + box["height"] * 0.34
+    await move_to(page, px, py, steps=28)
+    await page.wait_for_timeout(250)
+    await page.mouse.dblclick(px, py)
+    await page.wait_for_timeout(900)
 
 
 async def demo_wiring(page: Page):
@@ -784,6 +855,7 @@ DEMOS = {
     "reference-markup": demo_reference_markup,
     "canvas": demo_canvas,
     "picks": demo_picks,
+    "select-object": demo_select_object,
     "wiring": demo_wiring,
     "cloud-sync": demo_cloud,
     "render-agent": demo_agent,

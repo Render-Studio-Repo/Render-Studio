@@ -1,5 +1,8 @@
 /** Guided "Show me" tours for Getting Started + Studio. */
 
+/** Tours that click the 3D viewport always seed the Robot Arm demo project. */
+const ROBOT_ARM_DEMO_TOURS = new Set(["picks", "select-object", "solid-tools", "link-to-prompt"]);
+
 const SHOW_ME_TOURS = {
   "ai-generate": {
     title: "Generate CAD with AI",
@@ -53,17 +56,51 @@ const SHOW_ME_TOURS = {
       },
     ],
   },
+  "select-object": {
+    title: "Select object & body",
+    example: "",
+    studioPath: "/?showMe=select-object",
+    gif: "/docs/media/select-object.gif?v=20260715-robot-arm",
+    needsRobotArm: true,
+    steps: [
+      {
+        selector: "#btn-pick-object, .mobile-tool-btn[data-pick='object'], button[data-mode='object']",
+        label: "Click Select (object pick)",
+        click: true,
+        reveal: "mobile-tools",
+      },
+      {
+        viewport: "click",
+        label: "Click the robot arm to select the whole model",
+        click: true,
+        fraction: [0.52, 0.42],
+      },
+      {
+        viewport: "dblclick",
+        label: "Double-click a link to select just that body/part",
+        click: true,
+        fraction: [0.58, 0.36],
+      },
+    ],
+  },
   picks: {
     title: "Geometry picks",
     example: "fillet @face-1 2 mm",
     studioPath: "/?showMe=picks",
-    gif: "/docs/media/picks.gif?v=20260715-real",
+    gif: "/docs/media/picks.gif?v=20260715-robot-arm",
+    needsRobotArm: true,
     steps: [
       {
         selector: "#btn-pick-face, .mobile-tool-btn[data-pick='face'], button[data-pick='face']",
         label: "Click Face pick",
         click: true,
         reveal: "mobile-tools",
+      },
+      {
+        viewport: "click",
+        label: "Click a face on the robot arm",
+        click: true,
+        fraction: [0.52, 0.40],
       },
       {
         selector: "#prompt-input, .prompt-editor, [data-mobile-corner='ai']",
@@ -123,7 +160,8 @@ const SHOW_ME_TOURS = {
     title: "Link project items to the prompt",
     example: "Use @component-1 as the mating part and keep clearances at 0.3 mm",
     studioPath: "/?showMe=link-to-prompt",
-    gif: "/docs/media/picks.gif?v=20260715-real",
+    gif: "/docs/media/picks.gif?v=20260715-robot-arm",
+    needsRobotArm: true,
     steps: [
       {
         selector: "#project-browser, .browser-section, .file-browser, [data-mobile-corner='workspace']",
@@ -141,6 +179,38 @@ const SHOW_ME_TOURS = {
         label: "Or click Face pick for @face chips",
         click: true,
         reveal: "mobile-tools",
+      },
+      {
+        viewport: "click",
+        label: "Click a face on the robot arm",
+        click: true,
+        fraction: [0.52, 0.42],
+      },
+    ],
+  },
+  "solid-tools": {
+    title: "Solid modeling tools",
+    example: "",
+    studioPath: "/?showMe=solid-tools",
+    gif: "/docs/media/select-object.gif?v=20260715-robot-arm",
+    needsRobotArm: true,
+    steps: [
+      {
+        selector: '[data-design-tab="SOLID"], .workspace-tab',
+        label: "Stay on SOLID",
+        click: true,
+        matchText: "SOLID",
+      },
+      {
+        selector: "#btn-pick-object, button[data-mode='object']",
+        label: "Select tool — click whole model, double-click a part",
+        click: true,
+      },
+      {
+        viewport: "click",
+        label: "Click the robot arm (whole object)",
+        click: true,
+        fraction: [0.52, 0.42],
       },
     ],
   },
@@ -442,9 +512,138 @@ function syncNextLabel() {
   else nextBtn.textContent = `Next (${stepIndex + 1}/${steps.length})`;
 }
 
+function getViewportEl() {
+  return (
+    document.querySelector("#viewport canvas")
+    || document.querySelector("#viewport")
+    || document.querySelector("canvas.viewport-canvas")
+    || document.querySelector("main canvas")
+    || document.querySelector("canvas")
+  );
+}
+
+function viewportPoint(step) {
+  const el = getViewportEl();
+  if (!el || !isOnScreen(el)) return null;
+  const rect = el.getBoundingClientRect();
+  const [fx, fy] = Array.isArray(step.fraction) ? step.fraction : [0.52, 0.42];
+  return {
+    el,
+    x: rect.left + rect.width * Math.min(0.9, Math.max(0.1, Number(fx) || 0.5)),
+    y: rect.top + rect.height * Math.min(0.9, Math.max(0.1, Number(fy) || 0.5)),
+  };
+}
+
+function placeCircleAt(x, y, diameter = 96) {
+  const circle = document.getElementById("show-me-circle");
+  const click = document.getElementById("show-me-click");
+  const dim = document.getElementById("show-me-dim");
+  if (!circle || !click) return;
+  const radius = diameter / 2;
+  circle.style.width = `${diameter}px`;
+  circle.style.height = `${diameter}px`;
+  circle.style.left = `${x - radius}px`;
+  circle.style.top = `${y - radius}px`;
+  circle.classList.add("is-on");
+  if (dim) {
+    dim.style.opacity = "1";
+    dim.style.background =
+      `radial-gradient(circle at ${x}px ${y}px,` +
+      ` rgba(126, 200, 255, 0.2) 0px,` +
+      ` rgba(126, 200, 255, 0.06) ${Math.max(16, radius - 10)}px,` +
+      ` transparent ${Math.max(20, radius - 2)}px,` +
+      ` rgba(1, 4, 9, 0.72) ${radius + 4}px)`;
+  }
+  click.style.left = `${x}px`;
+  click.style.top = `${y}px`;
+  click.classList.add("is-on");
+}
+
+function simulatePointerAt(x, y, { dbl = false } = {}) {
+  const el = document.elementFromPoint(x, y) || getViewportEl();
+  if (!el) return false;
+  const marker = document.getElementById("show-me-click");
+  marker?.classList.remove("is-press");
+  void marker?.offsetWidth;
+  marker?.classList.add("is-press");
+  const common = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0 };
+  try {
+    el.dispatchEvent(new PointerEvent("pointerdown", { ...common, pointerId: 1, pointerType: "mouse" }));
+    el.dispatchEvent(new MouseEvent("mousedown", common));
+    el.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerId: 1, pointerType: "mouse" }));
+    el.dispatchEvent(new MouseEvent("mouseup", common));
+    el.dispatchEvent(new MouseEvent("click", common));
+    if (dbl) {
+      el.dispatchEvent(new MouseEvent("mousedown", common));
+      el.dispatchEvent(new MouseEvent("mouseup", common));
+      el.dispatchEvent(new MouseEvent("click", common));
+      el.dispatchEvent(new MouseEvent("dblclick", common));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function authToken() {
+  try {
+    return localStorage.getItem("render3d:token") || "";
+  } catch {
+    return "";
+  }
+}
+
+async function seedRobotArmProject() {
+  const token = authToken();
+  if (!token) return null;
+  const res = await fetch("/api/demo/robot-arm", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || `Could not seed robot arm (${res.status})`);
+  }
+  return res.json();
+}
+
+async function ensureRobotArmForTour(guideId) {
+  const tour = getShowMeTour(guideId);
+  if (!tour?.needsRobotArm && !ROBOT_ARM_DEMO_TOURS.has(guideId)) return true;
+  const stepEl = document.getElementById("show-me-step");
+  if (stepEl) stepEl.textContent = "Opening your private Robot Arm project…";
+  try {
+    const seeded = await seedRobotArmProject();
+    const pid = seeded?.project_id;
+    if (!pid) return true;
+    try {
+      localStorage.setItem("render3d:lastProjectId", pid);
+      localStorage.setItem("render3d:demoRobotArmProjectId", pid);
+    } catch {
+      /* ignore */
+    }
+    if (typeof window.__openProject === "function") {
+      await window.__openProject(pid);
+      // Give the mesh a moment to appear before viewport clicks.
+      await new Promise((r) => setTimeout(r, 1200));
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      params.set("project", pid);
+      params.set("showMe", guideId);
+      window.location.href = `/?${params.toString()}`;
+      return false;
+    }
+  } catch (err) {
+    console.warn("Robot arm demo seed failed:", err);
+    if (stepEl) stepEl.textContent = "Could not open Robot Arm demo — continuing with current project.";
+  }
+  return true;
+}
+
 function resolveStepTarget(step) {
   if (step.ensureMenu) ensureWorkspaceMenuOpen();
   if (step.reveal) ensureReveal(step.reveal);
+  if (step.viewport) return getViewportEl();
   return findFirst(step.selector, step.matchText);
 }
 
@@ -461,12 +660,29 @@ function advanceShowMe(skipClick) {
   }
   const step = steps[stepIndex];
   const n = stepIndex + 1;
-  // Reveal panels first, then place the circle on a visible control.
   resolveStepTarget(step);
   setTimeout(() => {
     if (!activeTour) return;
     if (step.ensureMenu) ensureWorkspaceMenuOpen();
     if (step.reveal) ensureReveal(step.reveal);
+
+    if (step.viewport) {
+      const pt = viewportPoint(step);
+      const stepEl = document.getElementById("show-me-step");
+      if (stepEl) stepEl.textContent = `${n}/${steps.length}: ${step.label}`;
+      clearHighlight();
+      if (pt) {
+        placeCircleAt(pt.x, pt.y, 110);
+        if (!skipClick && step.click !== false) {
+          setTimeout(() => {
+            if (!activeTour) return;
+            simulatePointerAt(pt.x, pt.y, { dbl: step.viewport === "dblclick" });
+          }, 320);
+        }
+      }
+      return;
+    }
+
     const el = findFirst(step.selector, step.matchText);
     highlight(el, `${n}/${steps.length}: ${step.label}`);
     const shouldClick = !skipClick && step.click !== false && el && (isClickable(el) || step.click === true);
@@ -518,7 +734,9 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
     if (card) highlight(card, `${tour.title} — guide on this page`);
     else clearHighlight();
     document.getElementById("show-me-step").textContent =
-      "Open Studio for a live click-through, or watch the demo GIF.";
+      tour.needsRobotArm || ROBOT_ARM_DEMO_TOURS.has(guideId)
+        ? "Open Studio — we'll spin up a private Robot Arm project for the live click-through."
+        : "Open Studio for a live click-through, or watch the demo GIF.";
     if (nextBtn) nextBtn.textContent = "Open Studio walkthrough";
     if (skipBtn) skipBtn.textContent = tour.gif ? "Watch demo GIF" : "Close";
     return true;
@@ -527,7 +745,11 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
   overlayMode = "studio";
   if (skipBtn) skipBtn.textContent = "Skip step";
   syncNextLabel();
-  advanceShowMe(false);
+  void (async () => {
+    const ready = await ensureRobotArmForTour(guideId);
+    if (!ready || !activeTour) return;
+    advanceShowMe(false);
+  })();
   return true;
 }
 
@@ -539,5 +761,6 @@ export function maybeAutoStartShowMeFromQuery() {
   const qs = params.toString();
   const clean = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}`;
   window.history.replaceState({}, "", clean || "/");
-  setTimeout(() => startShowMe(id, { onDocsPage: false }), 900);
+  const delay = ROBOT_ARM_DEMO_TOURS.has(id) ? 1400 : 900;
+  setTimeout(() => startShowMe(id, { onDocsPage: false }), delay);
 }

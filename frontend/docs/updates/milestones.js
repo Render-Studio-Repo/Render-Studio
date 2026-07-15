@@ -9,6 +9,16 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "select-object",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Select object & body",
+    summary:
+      "Click once to select the whole robot arm; double-click a link to select only that body/part.",
+    visual: "/docs/media/select-object.gif?v=20260715-robot-arm",
+    href: "/getting-started.html#select-object",
+  },
+  {
     id: "realtime-editor-popup",
     date: "2026-07-15",
     kind: "feature",

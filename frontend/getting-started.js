@@ -4,7 +4,7 @@ import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-l
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
 import { createRenderAgent } from "./render-agent.js?v=20260715-docs-no-close-fab";
-import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle4";
+import { startShowMe } from "./show-me-tour.js?v=20260715-robot-arm";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 const FEATURES = GETTING_STARTED_GUIDES;
@@ -16,6 +16,7 @@ const TOC_LABELS = {
   "reference-markup": "Reference markup",
   canvas: "Canvas",
   picks: "Geometry picks",
+  "select-object": "Select object & body",
   wiring: "Wiring",
   "cloud-sync": "Fusion / Onshape",
   "render-agent": "Render Agent",
@@ -31,6 +32,10 @@ const TOC_SECTIONS = [
   {
     title: "Projects & Collaboration",
     ids: ["workspaces", "share-folders"],
+  },
+  {
+    title: "Modeling & Viewport",
+    ids: ["select-object", "solid-tools"],
   },
   {
     title: "Reference & Sketch",
@@ -50,7 +55,8 @@ const RELATED_TERMS = {
   files: ["project", "reference", "drag", "component"],
   prompt: ["ai", "generate", "agent", "reference"],
   drawing: ["dxf", "sketch", "canvas", "markup"],
-  pick: ["face", "edge", "geometry", "path"],
+  pick: ["face", "edge", "geometry", "path", "body", "select", "double"],
+  select: ["body", "object", "double", "click", "part", "robot"],
 };
 
 function esc(value) {

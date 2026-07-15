@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Knowledge Base Center — Render3D</title>
+  <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
+  <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-product-marketplace" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab active" role="menuitem">Product Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+          <a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content skills-page agent-store-page model-store-page knowledge-store-page">
+        <header class="info-hero">
+          <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · Knowledge Bases</p>
+          <h2>Knowledge Base Center</h2>
+          <p class="info-lead">
+            Publish document packs, CAD references, prompt libraries, setup manuals, and workflow context with the same marketplace permissions as models and agent apps.
+          </p>
+        </header>
+
+        <section class="agent-store-hero marketplace-modern-hero">
+          <div>
+            <p class="info-eyebrow">Market reusable context</p>
+            <h3>Knowledge products for CAD, sourcing, robotics, teams, and support</h3>
+            <p class="muted">Free, paid, and view-only listings share the same review, license, download, and boost controls as other stores.</p>
+          </div>
+          <div class="agent-store-search">
+            <input id="kb-store-search" type="search" placeholder="Search manuals, CAD context, prompts, workflows..." />
+          </div>
+        </section>
+
+        <div class="marketplace-filters" id="kb-store-filters" aria-label="Knowledge base filters">
+          <label>Access
+            <select id="kb-filter-access">
+              <option value="all">All</option>
+              <option value="free">Free</option>
+              <option value="paid">Paid</option>
+              <option value="view_only">View only</option>
+            </select>
+          </label>
+          <label>License
+            <select id="kb-filter-license">
+              <option value="all">All</option>
+              <option value="cc0">CC0</option>
+              <option value="cc-by">CC BY</option>
+              <option value="cc-by-sa">CC BY-SA</option>
+              <option value="cc-by-nc">CC BY-NC</option>
+              <option value="royalty-free">Royalty-free</option>
+              <option value="proprietary">Proprietary</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>Downloads
+            <select id="kb-filter-download">
+              <option value="all">All</option>
+              <option value="on">Downloadable</option>
+              <option value="off">No download</option>
+            </select>
+          </label>
+          <label class="agent-check marketplace-filter-check"><input id="kb-filter-boosted" type="checkbox" /> Boosted only</label>
+        </div>
+
+        <p id="kb-store-status" class="skills-status muted"></p>
+        <div id="kb-store-categories" class="agent-store-categories" aria-label="Knowledge base categories"></div>
+        <section id="kb-featured-section" class="agent-store-section hidden">
+          <div class="agent-store-section-head">
+            <h3>Featured knowledge bases</h3>
+            <span class="muted small">Boosted and curated packs</span>
+          </div>
+          <div id="kb-featured-list" class="agent-featured-row"></div>
+        </section>
+        <section class="agent-store-section">
+          <div class="agent-store-section-head">
+            <h3 id="kb-store-results-title">All knowledge bases</h3>
+            <span id="kb-store-results-count" class="muted small"></span>
+          </div>
+          <div id="kb-store-list" class="agent-product-grid"></div>
+        </section>
+
+        <section class="info-section agent-submit-section">
+          <h3>Publish a knowledge base</h3>
+          <p class="muted">Drag in docs, PDFs, markdown, CAD refs, images, prompts, and setup files. Listings go to review before appearing publicly.</p>
+          <form id="kb-listing-form" class="agent-app-form">
+            <div class="marketplace-drop-zone" data-kb-drop>
+              <strong>Drop knowledge base files here</strong>
+              <span>PDF, Markdown, TXT, CSV, JSON, STEP/STL/GLB, images, and ZIP-style reference packs.</span>
+            </div>
+            <div class="agent-form-grid">
+              <label>Name <input name="name" required maxlength="120" placeholder="Industrial robot arm setup pack" /></label>
+              <label>Category <input name="category" maxlength="80" placeholder="Robotics, CAD standards, support" /></label>
+              <label>Access mode
+                <select name="access_mode">
+                  <option value="free">Free</option>
+                  <option value="paid">Paid</option>
+                  <option value="view_only">View only</option>
+                </select>
+              </label>
+              <label>License
+                <select name="license">
+                  <option value="proprietary">Proprietary</option>
+                  <option value="cc0">CC0</option>
+                  <option value="cc-by">CC BY</option>
+                  <option value="cc-by-sa">CC BY-SA</option>
+                  <option value="cc-by-nc">CC BY-NC</option>
+                  <option value="royalty-free">Royalty-free</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>Price cents <input name="price_cents" type="number" min="0" max="1000000" value="0" /></label>
+              <label class="agent-check"><input name="download_enabled" type="checkbox" checked /> Allow downloads</label>
+              <label class="agent-form-wide">Tagline <input name="tagline" required maxlength="180" placeholder="Reusable CAD and robotics docs for Render3D prompts." /></label>
+              <label class="agent-form-wide">Short description <textarea name="description" required maxlength="4000" rows="3" placeholder="What users get and how it helps their prompts or workflows."></textarea></label>
+              <label class="agent-form-wide">Product post (markdown)
+                <div class="marketplace-editor-toolbar" data-kb-editor-toolbar>
+                  <button type="button" data-fmt="bold">B</button>
+                  <button type="button" data-fmt="italic"><em>I</em></button>
+                  <button type="button" data-fmt="h2">H</button>
+                  <button type="button" data-fmt="ul">• List</button>
+                  <button type="button" data-fmt="code">&lt;/&gt;</button>
+                </div>
+                <textarea name="body_md" id="kb-body-md" rows="8" maxlength="20000" placeholder="## Included files&#10;- Prompt guide&#10;- CAD standards&#10;- Setup notes"></textarea>
+              </label>
+              <label class="agent-form-wide">Cover image <input name="thumbnail" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+              <label class="agent-form-wide">Knowledge base files <input name="kb_files" type="file" multiple accept=".txt,.md,.csv,.json,.yaml,.yml,.pdf,.png,.jpg,.jpeg,.webp,.svg,.dxf,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,application/pdf,text/*,image/*,application/octet-stream" /></label>
+              <label class="agent-form-wide">Members (emails, comma-separated) <input name="member_emails" maxlength="800" placeholder="teammate@company.com" /></label>
+            </div>
+            <button type="submit" class="btn primary">Submit knowledge base for review</button>
+          </form>
+        </section>
+      </article>
+    </main>
+  </div>
+  <script type="module" src="/knowledge-store.js?v=20260715-product-marketplace"></script>
+  <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+</body>
+</html>

@@ -34,6 +34,44 @@ function fallbackExports(filename) {
   return PRIMARY_FORMATS.map((fmt) => ({ name: `${stem}.${fmt}`, format: fmt, size: null }));
 }
 
+function renderExportPlaceholders(listEl) {
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  for (const fmt of PRIMARY_FORMATS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "file-export-dl is-preparing";
+    btn.dataset.fmt = fmt;
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    btn.innerHTML = `<span class="file-export-spinner" aria-hidden="true"></span>${FORMAT_LABELS[fmt] || fmt.toUpperCase()}`;
+    listEl.appendChild(btn);
+  }
+}
+
+function setExportActionsPreparing(menu, preparing) {
+  if (!menu) return;
+  const selectors = [
+    ".file-export-bambu",
+    ".file-export-onshape",
+    ".file-export-onshape-push",
+    ".file-export-fusion-action",
+  ];
+  for (const sel of selectors) {
+    const btn = menu.querySelector(sel);
+    if (!btn) continue;
+    if (preparing) {
+      btn.dataset.wasDisabled = btn.disabled ? "1" : "0";
+      btn.disabled = true;
+      btn.classList.add("is-preparing");
+    } else {
+      btn.classList.remove("is-preparing");
+      if (btn.dataset.wasDisabled !== "1") btn.disabled = false;
+      delete btn.dataset.wasDisabled;
+    }
+  }
+}
+
 function exportPriority(item, targetStem) {
   if (item.current || fileStem(item.name) === targetStem) return 0;
   if (item.base) return 2;
@@ -385,6 +423,9 @@ export async function openFileExportMenu({
   const fusionActionBtn = menu.querySelector(".file-export-fusion-action");
   const bambuBtn = menu.querySelector(".file-export-bambu");
 
+  renderExportPlaceholders(list);
+  setExportActionsPreparing(menu, true);
+
   let data = null;
   let fetchError = null;
   try {
@@ -408,17 +449,23 @@ export async function openFileExportMenu({
   }
 
   if (fetchError && !(data?.exports?.length)) {
+    list.innerHTML = "";
+    setExportActionsPreparing(menu, false);
     statusEl.textContent = exportsRequest
       ? (fetchError.message || "Could not prepare assembly exports.")
       : `${formatApiError(fetchError)} Click a format to download.`;
     statusEl.className = "file-export-status status error";
     if (exportsRequest) return;
   } else if (!exports.length) {
+    list.innerHTML = "";
+    setExportActionsPreparing(menu, false);
     statusEl.textContent = "No export files found for this model.";
     statusEl.className = "file-export-status status error";
     return;
   } else {
     statusEl.remove();
+    list.innerHTML = "";
+    setExportActionsPreparing(menu, false);
   }
 
   let preparedShareUrl = "";

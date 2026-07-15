@@ -12120,6 +12120,37 @@ section h2 {
 }
 
 .file-export-dl:hover { background: #26324a; }
+.file-export-dl:disabled,
+.file-export-dl.is-preparing {
+  opacity: 0.55;
+  cursor: wait;
+  color: #8b949e;
+  border-color: #30363d;
+  background: #161b22;
+  filter: grayscale(0.35);
+  pointer-events: none;
+}
+.file-export-dl.is-preparing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-export-spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 2px solid rgba(139, 148, 158, 0.35);
+  border-top-color: #8b949e;
+  flex: 0 0 auto;
+  animation: file-export-spin 0.8s linear infinite;
+}
+.file-export-bambu.is-preparing,
+.file-export-onshape.is-preparing,
+.file-export-fusion-action.is-preparing {
+  opacity: 0.55;
+  cursor: wait;
+  filter: grayscale(0.4);
+}
 .file-export-dl[data-current="true"] {
   border-color: #58a6ff;
   color: #d8ebff;
@@ -23341,6 +23372,28 @@ body.kb-modal-open {
   margin-bottom: 16px;
 }
 
+.marketplace-modern-hero {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(251, 133, 0, 0.34);
+  background:
+    radial-gradient(circle at 12% 16%, rgba(251, 133, 0, 0.22), transparent 32%),
+    radial-gradient(circle at 82% 18%, rgba(56, 139, 253, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(13, 17, 23, 0.98), rgba(22, 27, 34, 0.98));
+  box-shadow: 0 18px 60px rgba(1, 4, 9, 0.28);
+}
+
+.marketplace-modern-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -80px -120px auto;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  background: rgba(251, 133, 0, 0.1);
+  pointer-events: none;
+}
+
 .agent-store-hero h3 {
   margin: 0 0 8px;
   font-size: clamp(1.4rem, 2.2vw, 2rem);
@@ -23376,6 +23429,7 @@ body.kb-modal-open {
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 .agent-category-tile:hover,
@@ -23383,6 +23437,7 @@ body.kb-modal-open {
   border-color: rgba(56, 139, 253, 0.7);
   background: #161b22;
   box-shadow: 0 0 0 1px rgba(31, 111, 235, 0.18) inset;
+  transform: translateY(-1px);
 }
 
 .agent-category-tile span {
@@ -23431,12 +23486,17 @@ body.kb-modal-open {
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: #0d1117;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 36%),
+    #0d1117;
+  box-shadow: 0 14px 34px rgba(1, 4, 9, 0.18);
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 .agent-product-card:hover {
   border-color: rgba(56, 139, 253, 0.45);
   transform: translateY(-1px);
+  box-shadow: 0 18px 46px rgba(1, 4, 9, 0.26);
 }
 
 .agent-product-card-compact {

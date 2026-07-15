@@ -309,16 +309,16 @@ def _draw_render3d_badge(image: Any) -> None:
     from PIL import Image, ImageDraw, ImageFont
 
     width, height = image.size
-    margin = max(24, int(min(width, height) * 0.04))
-    # Much larger than the old pill badge — readable in iMessage / Slack cards.
-    mark_h = max(96, min(180, int(height * 0.16)))
+    margin = max(28, int(min(width, height) * 0.045))
+    # Large brand mark — readable in iMessage / Slack unfurl cards.
+    mark_h = max(120, min(220, int(height * 0.22)))
     icon_size = mark_h
-    gap = max(14, int(mark_h * 0.14))
+    gap = max(16, int(mark_h * 0.16))
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(36, int(mark_h * 0.52)))
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(48, int(mark_h * 0.58)))
     except Exception:
         try:
-            font = ImageFont.truetype("DejaVuSans.ttf", max(36, int(mark_h * 0.52)))
+            font = ImageFont.truetype("DejaVuSans.ttf", max(48, int(mark_h * 0.58)))
         except Exception:
             font = ImageFont.load_default()
 

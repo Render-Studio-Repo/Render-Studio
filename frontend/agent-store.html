@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agent App Store — Render3D</title>
+  <title>Agent Store — Render3D</title>
   <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-marketplace" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-product-marketplace" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -26,7 +26,7 @@
         </button>
         <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
           <a href="/" class="nav-tab" role="menuitem">Studio</a>
-          <a href="/marketplace.html" class="nav-tab active" role="menuitem">Marketplace</a>
+          <a href="/marketplace.html" class="nav-tab active" role="menuitem">Product Marketplace</a>
           <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
           <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
           <a href="/getting-started.html#tips-library" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
@@ -38,19 +38,19 @@
     <main class="info-main">
       <article class="info-content skills-page agent-store-page">
         <header class="info-hero">
-          <p class="info-eyebrow"><a href="/marketplace.html">Marketplace</a> · Agents</p>
-          <h2>Agent App Store</h2>
+          <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · Agents</p>
+          <h2>Agent Store</h2>
           <p class="info-lead">
             Browse, install, and submit agent apps with licensing, free/paid/view-only access,
             download controls, members, product posts, and boost applications.
           </p>
         </header>
 
-        <section class="agent-store-hero">
+        <section class="agent-store-hero marketplace-modern-hero">
           <div>
             <p class="info-eyebrow">Shop by workflow</p>
             <h3>Agent apps for CAD, molds, robotics, sourcing, and automation</h3>
-            <p class="muted">Also browse the <a href="/model-store.html">3D model product marketplace</a>.</p>
+            <p class="muted">Part of the <a href="/marketplace.html">Product Marketplace</a> alongside models and knowledge bases.</p>
           </div>
           <div class="agent-store-search">
             <input id="agent-store-search" type="search" placeholder="Search agent apps, scripts, skills..." />
@@ -107,6 +107,10 @@
           <h3>Submit an Agent App</h3>
           <p class="muted">Submit for review. Keep secrets out of manifests.</p>
           <form id="agent-app-form" class="agent-app-form">
+            <div class="marketplace-drop-zone" data-agent-drop>
+              <strong>Drop agent assets here</strong>
+              <span>Example images, instruction docs, markdown, PDFs, and setup notes.</span>
+            </div>
             <div class="agent-form-grid">
               <label>Name <input name="name" required maxlength="120" placeholder="Mold Maker Pro" /></label>
               <label>Type
@@ -162,7 +166,7 @@
       </article>
     </main>
   </div>
-  <script type="module" src="/agent-store.js?v=20260715-marketplace"></script>
+  <script type="module" src="/agent-store.js?v=20260715-product-marketplace"></script>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>

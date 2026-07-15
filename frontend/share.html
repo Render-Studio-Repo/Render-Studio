@@ -375,6 +375,33 @@
       border-color: var(--border);
       background: rgba(255, 255, 255, 0.04);
     }
+    .share-dl-menu-item.is-preparing,
+    .share-dl-menu-item.is-preparing:hover {
+      opacity: 0.55;
+      cursor: wait;
+      filter: grayscale(0.35);
+      pointer-events: none;
+      border-color: transparent;
+      background: transparent;
+    }
+    .share-dl-menu-item.is-preparing strong {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #8b949e;
+    }
+    .share-dl-spinner {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 2px solid rgba(139, 148, 158, 0.35);
+      border-top-color: #8b949e;
+      flex: 0 0 auto;
+      animation: share-dl-spin 0.8s linear infinite;
+    }
+    @keyframes share-dl-spin {
+      to { transform: rotate(360deg); }
+    }
     .share-dl-menu-item strong {
       font-size: 0.88rem;
       color: #79c0ff;
@@ -1167,6 +1194,6 @@
       document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
     }
   </script>
-  <script type="module" src="/share-viewer.js?v=20260715-share-timeline-download"></script>
+  <script type="module" src="/share-viewer.js?v=20260715-export-loading"></script>
 </body>
 </html>

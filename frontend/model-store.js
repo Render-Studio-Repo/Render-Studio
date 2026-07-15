@@ -13,11 +13,14 @@ const filterAccess = document.getElementById("filter-access");
 const filterLicense = document.getElementById("filter-license");
 const filterDownload = document.getElementById("filter-download");
 const filterBoosted = document.getElementById("filter-boosted");
+const dropZone = document.querySelector("[data-model-drop]");
+const modelFilesInput = formEl?.querySelector("input[name='model_files']");
 
 let listings = [];
 let isAdmin = false;
 let activeCategory = "All";
 let searchQuery = "";
+let droppedModelFiles = [];
 
 const DEFAULT_CATEGORIES = ["All", "Featured", "Boosted", "Free", "Paid", "View only"];
 
@@ -61,6 +64,39 @@ function fileToDataUrl(file) {
     reader.onerror = () => reject(reader.error || new Error("Could not read file"));
     reader.readAsDataURL(file);
   });
+}
+
+function syncDropLabel() {
+  if (!dropZone) return;
+  dropZone.classList.toggle("has-files", droppedModelFiles.length > 0);
+  dropZone.innerHTML = droppedModelFiles.length
+    ? `<strong>${droppedModelFiles.length} file${droppedModelFiles.length === 1 ? "" : "s"} ready</strong><span>${escapeHtml(droppedModelFiles.slice(0, 4).map((file) => file.name).join(", "))}${droppedModelFiles.length > 4 ? "..." : ""}</span>`
+    : `<strong>Drop model product files here</strong><span>Thumbnails, gallery images, STEP, STL, GLB, 3MF, OBJ, and source files.</span>`;
+}
+
+function setDroppedModelFiles(files) {
+  droppedModelFiles = [...files].filter((file) => file?.name).slice(0, 12);
+  syncDropLabel();
+}
+
+function wireDropZone() {
+  if (!dropZone || !modelFilesInput) return;
+  dropZone.addEventListener("click", () => modelFilesInput.click());
+  modelFilesInput.addEventListener("change", () => setDroppedModelFiles(modelFilesInput.files || []));
+  ["dragenter", "dragover"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropZone.classList.add("is-dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      if (type === "drop") setDroppedModelFiles(event.dataTransfer?.files || []);
+      dropZone.classList.remove("is-dragging");
+    });
+  });
+  syncDropLabel();
 }
 
 function thumbUrl(item) {
@@ -281,7 +317,8 @@ formEl?.addEventListener("submit", async (ev) => {
       gallery.push({ name: file.name, media_type: file.type, data_url: await fileToDataUrl(file) });
     }
     const files = [];
-    for (const file of [...(form.getAll("model_files") || [])].filter((f) => f?.name).slice(0, 6)) {
+    const sourceModelFiles = droppedModelFiles.length ? droppedModelFiles : [...(form.getAll("model_files") || [])].filter((f) => f?.name);
+    for (const file of sourceModelFiles.slice(0, 6)) {
       if (file.size > 25 * 1024 * 1024) throw new Error(`${file.name} is too large (25 MB max).`);
       files.push({ name: file.name, media_type: file.type || "application/octet-stream", size: file.size, data_url: await fileToDataUrl(file) });
     }
@@ -314,6 +351,7 @@ formEl?.addEventListener("submit", async (ev) => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "Submit failed");
     formEl.reset();
+    setDroppedModelFiles([]);
     if (statusEl) statusEl.textContent = "Submitted for review.";
     await loadListings();
   } catch (err) {
@@ -331,6 +369,7 @@ searchEl?.addEventListener("input", () => {
 });
 
 wireEditorToolbar();
+wireDropZone();
 loadListings().catch((err) => {
   if (statusEl) statusEl.textContent = err.message || "Failed to load";
 });

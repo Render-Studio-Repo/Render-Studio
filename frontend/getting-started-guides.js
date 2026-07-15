@@ -91,7 +91,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "ai-cad",
     "title": "Pick faces, edges & paths",
     "demo": "picks",
-    "gif": "/docs/media/picks.gif?v=20260715-real",
+    "gif": "/docs/media/picks.gif?v=20260715-robot-arm",
     "summary": "Click geometry into the prompt as @face / @edge / @path chips.",
     "steps": [
       "Choose Face, Edge, Line/path, or related pick mode.",
@@ -113,7 +113,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "ai-cad",
     "title": "Link project items to the prompt",
     "demo": "picks",
-    "gif": "/docs/media/picks.gif?v=20260715-real",
+    "gif": "/docs/media/picks.gif?v=20260715-robot-arm",
     "summary": "Shift-select files in the Project browser and drag them into the AI prompt as @component references.",
     "steps": [
       "In the Project browser, click one file, then Shift-click another to select a range.",
@@ -198,7 +198,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "modeling",
     "title": "Solid modeling tools",
     "demo": "picks",
-    "gif": "/docs/media/picks.gif?v=20260715-real",
+    "gif": "/docs/media/select-object.gif?v=20260715-robot-arm",
     "summary": "Ribbon Create/Modify/Pattern plus direct tools: Press-Pull, fillet, transform, color, measure.",
     "steps": [
       "Switch to the SOLID design tab.",
@@ -215,6 +215,31 @@ export const GETTING_STARTED_GUIDES = [
       "gizmo"
     ],
     "where": "SOLID tab \u00b7 Ribbon \u00b7 Right Tools"
+  },
+  {
+    "id": "select-object",
+    "category": "modeling",
+    "title": "Select object & body",
+    "demo": "picks",
+    "gif": "/docs/media/select-object.gif?v=20260715-robot-arm",
+    "summary": "Click once to select the whole robot arm; double-click a link to select only that body/part.",
+    "steps": [
+      "Open Select in the Pick toolbar (or press V).",
+      "Single-click the model to select the whole component (blue highlight).",
+      "Double-click a specific link/part to drill into that body (amber highlight).",
+      "Drag to move the selection; Cmd/Ctrl+Z undoes."
+    ],
+    "ask": "How do I select a whole object vs one body/part with click and double-click?",
+    "keywords": [
+      "select object",
+      "select body",
+      "double click",
+      "part select",
+      "object pick",
+      "robot arm",
+      "body"
+    ],
+    "where": "Pick toolbar \u2192 Select \u00b7 Viewport"
   },
   {
     "id": "sketch",

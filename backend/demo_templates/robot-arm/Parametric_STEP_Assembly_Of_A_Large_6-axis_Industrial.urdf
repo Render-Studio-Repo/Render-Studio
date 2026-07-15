@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<!-- cadpy:sourcePath=Parametric_STEP_Assembly_Of_A_Large_6-axis_Industrial.py -->
+<!-- cadpy:sourceHash=054aeb16624de319f34726b7cbd596ec747ca53677c2b92a43a23e55e4b4dbf9 -->
+<robot name="kr210_class_industrial_robot">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="420" />
+      <inertia ixx="4.2" ixy="0" ixz="0" iyy="4.2" iyz="0" izz="4.2" />
+    </inertial>
+  </link>
+  <link name="shoulder_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="260" />
+      <inertia ixx="2.6" ixy="0" ixz="0" iyy="2.6" iyz="0" izz="2.6" />
+    </inertial>
+  </link>
+  <link name="upper_arm_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="210" />
+      <inertia ixx="2.1" ixy="0" ixz="0" iyy="2.1" iyz="0" izz="2.1" />
+    </inertial>
+  </link>
+  <link name="forearm_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="160" />
+      <inertia ixx="1.6" ixy="0" ixz="0" iyy="1.6" iyz="0" izz="1.6" />
+    </inertial>
+  </link>
+  <link name="wrist_1_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="72" />
+      <inertia ixx="0.72" ixy="0" ixz="0" iyy="0.72" iyz="0" izz="0.72" />
+    </inertial>
+  </link>
+  <link name="wrist_2_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="48" />
+      <inertia ixx="0.48" ixy="0" ixz="0" iyy="0.48" iyz="0" izz="0.48" />
+    </inertial>
+  </link>
+  <link name="tool0">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="24" />
+      <inertia ixx="0.24" ixy="0" ixz="0" iyy="0.24" iyz="0" izz="0.24" />
+    </inertial>
+  </link>
+  <joint name="joint_1_base_yaw" type="revolute">
+    <parent link="base_link" />
+    <child link="shoulder_link" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-3.14159" upper="3.14159" effort="1200" velocity="1.2" />
+    <dynamics damping="8.0" friction="1.0" />
+  </joint>
+  <joint name="joint_2_shoulder_pitch" type="revolute">
+    <parent link="shoulder_link" />
+    <child link="upper_arm_link" />
+    <origin xyz="0 0 0.65" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-2.35" upper="1.25" effort="1200" velocity="1.2" />
+    <dynamics damping="8.0" friction="1.0" />
+  </joint>
+  <joint name="joint_3_elbow_pitch" type="revolute">
+    <parent link="upper_arm_link" />
+    <child link="forearm_link" />
+    <origin xyz="0.5 0 1.03562" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-2.62" upper="2.62" effort="1200" velocity="1.2" />
+    <dynamics damping="8.0" friction="1.0" />
+  </joint>
+  <joint name="joint_4_wrist_roll" type="revolute">
+    <parent link="forearm_link" />
+    <child link="wrist_1_link" />
+    <origin xyz="0.9 0 0.540833" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-3.14159" upper="3.14159" effort="1200" velocity="1.8" />
+    <dynamics damping="8.0" friction="1.0" />
+  </joint>
+  <joint name="joint_5_wrist_pitch" type="revolute">
+    <parent link="wrist_1_link" />
+    <child link="wrist_2_link" />
+    <origin xyz="0.17 0 0" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-2.09" upper="2.09" effort="1200" velocity="1.8" />
+    <dynamics damping="8.0" friction="1.0" />
+  </joint>
+  <joint name="joint_6_tool_roll" type="revolute">
+    <parent link="wrist_2_link" />
+    <child link="tool0" />
+    <origin xyz="0.28 0 0" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-3.14159" upper="3.14159" effort="1200" velocity="2.2" />
+    <dynamics damping="8.0" friction="1.0" />
+  </joint>
+</robot>

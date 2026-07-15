@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 FRONTEND_MEDIA = Path(__file__).resolve().parents[2] / "frontend" / "docs" / "media"
-GIF_CACHE = "v=20260715-real"
+GIF_CACHE = "v=20260715-robot-arm"
 
 GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
     {
@@ -36,7 +36,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "summary": "Click geometry into the prompt as @face / @edge / @path chips.",
         "ask": "How do geometry picks and @face references work?",
         "steps": ["Choose Face, Edge, Line/path, or related pick mode.", "Click the model \u2014 a chip appears in the prompt.", "Write the edit, e.g. \u201cfillet @face-1 2 mm\u201d, then Generate."],
-        "keywords": ["@face", "@edge", "@path", "pick", "geometry"],
+        "keywords": ["@face", "@edge", "@path", "pick", "geometry", "robot arm"],
         "gif": f"/docs/media/picks.gif?{GIF_CACHE}",
     },
     {
@@ -87,7 +87,22 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "What solid modeling tools are available?",
         "steps": ["Switch to the SOLID design tab.", "Use Ribbon Create for primitives and features.", "Use Tools for Press-Pull, Transform (G), Color, Measure, Split."],
         "keywords": ["solid", "press-pull", "fillet", "extrude", "transform", "gizmo"],
-        "gif": f"/docs/media/picks.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/select-object.gif?{GIF_CACHE}",
+    },
+    {
+        "id": "select-object",
+        "category": "modeling",
+        "title": "Select object & body",
+        "summary": "Click once to select the whole robot arm; double-click a link to select only that body/part.",
+        "ask": "How do I select a whole object vs one body/part with click and double-click?",
+        "steps": [
+            "Open Select in the Pick toolbar (or press V).",
+            "Single-click the model to select the whole component (blue highlight).",
+            "Double-click a specific link/part to drill into that body (amber highlight).",
+            "Drag to move the selection; Cmd/Ctrl+Z undoes.",
+        ],
+        "keywords": ["select object", "select body", "double click", "part select", "object pick", "robot arm", "body"],
+        "gif": f"/docs/media/select-object.gif?{GIF_CACHE}",
     },
     {
         "id": "sketch",

@@ -74,7 +74,7 @@ import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-share-arrival-actions";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-export-loading";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -20857,9 +20857,17 @@ window.addEventListener("keydown", (e) => {
   const openShareParam = new URLSearchParams(window.location.search).get("open_share");
   const designTabParam = new URLSearchParams(window.location.search).get("designTab");
   const showMeParam = new URLSearchParams(window.location.search).get("showMe");
+  const projectParam = new URLSearchParams(window.location.search).get("project");
   if (askAgentParam) {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl || "/");
+  }
+  if (projectParam) {
+    try {
+      localStorage.setItem(LS_LAST_PROJECT, projectParam);
+    } catch {
+      /* ignore */
+    }
   }
   if (designTabParam) {
     const tab = String(designTabParam).toUpperCase();
@@ -20875,7 +20883,7 @@ window.addEventListener("keydown", (e) => {
     }
   }
   if (showMeParam) {
-    void import("./show-me-tour.js?v=20260715-show-me-circle4").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-robot-arm").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }
@@ -21174,9 +21182,25 @@ window.addEventListener("keydown", (e) => {
   }
       }
       await onWorkspaceChange({ deferProjectPick: true });
-      const restored = await restoreSessionSnapshot();
-      if (!restored) await ensureProject();
-      else captureSessionSnapshot();
+      const urlProject = new URLSearchParams(window.location.search).get("project");
+      if (urlProject) {
+        const params = new URLSearchParams(window.location.search);
+        params.delete("project");
+        const qs = params.toString();
+        window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
+        try {
+          await loadProject(urlProject);
+          captureSessionSnapshot();
+        } catch (err) {
+          console.warn("URL project open failed:", err);
+          const restored = await restoreSessionSnapshot();
+          if (!restored) await ensureProject();
+        }
+      } else {
+        const restored = await restoreSessionSnapshot();
+        if (!restored) await ensureProject();
+        else captureSessionSnapshot();
+      }
       await resumeGenerationFromProjects();
       showAiComposePanel();
   activityLog.refreshServerDebounced();

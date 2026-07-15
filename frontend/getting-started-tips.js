@@ -62,6 +62,18 @@ export const GETTING_STARTED_TIPS = [
     starter: "Best practices for revise/edit prompts after a nearly-good generate?",
   },
   {
+    topic: "Viewport",
+    title: "Click whole object, double-click a body",
+    body: "Select picks the whole robot arm; double-click a link to select just that part for move/edit.",
+    steps: [
+      "Press V or click Select in the Pick toolbar.",
+      "Single-click the model to select the whole component.",
+      "Double-click a specific link or body to drill into that part.",
+      "Drag to move; Cmd/Ctrl+Z undoes.",
+    ],
+    starter: "Show me how to select a whole object versus one body with click and double-click",
+  },
+  {
     topic: "Prompting",
     title: "Say manufacturing intent",
     body: "Printable / machined / sheet-metal / snap-fit changes walls, draft, fillets, and body splits.",

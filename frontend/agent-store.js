@@ -23,6 +23,8 @@ const filterAccess = document.getElementById("agent-filter-access");
 const filterLicense = document.getElementById("agent-filter-license");
 const filterDownload = document.getElementById("agent-filter-download");
 const filterBoosted = document.getElementById("agent-filter-boosted");
+const dropZone = document.querySelector("[data-agent-drop]");
+const docsInput = formEl?.querySelector("input[name='instruction_docs']");
 
 function escapeHtml(text) {
   return String(text ?? "")
@@ -110,8 +112,11 @@ function fileToText(file) {
 }
 
 async function uploadedManifestAssets(form) {
-  const imageFiles = [...(form.getAll("example_images") || [])].filter((file) => file?.name);
-  const docFiles = [...(form.getAll("instruction_docs") || [])].filter((file) => file?.name);
+  const droppedFiles = window.__agentStoreDroppedFiles || [];
+  const droppedImages = droppedFiles.filter((file) => /^image\//i.test(file.type || ""));
+  const droppedDocs = droppedFiles.filter((file) => !/^image\//i.test(file.type || ""));
+  const imageFiles = [...(form.getAll("example_images") || []), ...droppedImages].filter((file) => file?.name);
+  const docFiles = [...(form.getAll("instruction_docs") || []), ...droppedDocs].filter((file) => file?.name);
   const exampleImages = [];
   for (const file of imageFiles.slice(0, 6)) {
     if (file.size > 8 * 1024 * 1024) throw new Error(`${file.name} is too large. Use files under 8 MB.`);
@@ -132,6 +137,39 @@ async function uploadedManifestAssets(form) {
     });
   }
   return { example_images: exampleImages, instruction_docs: instructionDocs };
+}
+
+function syncDropLabel(files = []) {
+  if (!dropZone) return;
+  dropZone.classList.toggle("has-files", files.length > 0);
+  dropZone.innerHTML = files.length
+    ? `<strong>${files.length} asset${files.length === 1 ? "" : "s"} ready</strong><span>${escapeHtml(files.slice(0, 4).map((file) => file.name).join(", "))}${files.length > 4 ? "..." : ""}</span>`
+    : `<strong>Drop agent assets here</strong><span>Example images, instruction docs, markdown, PDFs, and setup notes.</span>`;
+}
+
+function setDroppedFiles(files) {
+  window.__agentStoreDroppedFiles = [...files].filter((file) => file?.name).slice(0, 14);
+  syncDropLabel(window.__agentStoreDroppedFiles);
+}
+
+function wireDropZone() {
+  if (!dropZone || !docsInput) return;
+  dropZone.addEventListener("click", () => docsInput.click());
+  docsInput.addEventListener("change", () => setDroppedFiles(docsInput.files || []));
+  ["dragenter", "dragover"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropZone.classList.add("is-dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      if (type === "drop") setDroppedFiles(event.dataTransfer?.files || []);
+      dropZone.classList.remove("is-dragging");
+    });
+  });
+  syncDropLabel();
 }
 
 function appIcon(app) {
@@ -516,6 +554,7 @@ formEl?.addEventListener("submit", async (event) => {
     return;
   }
   formEl.reset();
+  setDroppedFiles([]);
   alert("Submitted for review.");
   await loadApps();
 });
@@ -545,6 +584,7 @@ searchEl?.addEventListener("input", () => {
 });
 [filterAccess, filterLicense, filterDownload, filterBoosted].forEach((el) => el?.addEventListener("change", render));
 
+wireDropZone();
 loadApps().catch((err) => {
   if (statusEl) statusEl.textContent = err.message || "Could not load agent apps.";
 });

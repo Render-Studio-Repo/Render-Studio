@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- cadpy:sourcePath=Parametric_STEP_Assembly_Of_A_Large_6-axis_Industrial.py -->
+<!-- cadpy:sourceHash=054aeb16624de319f34726b7cbd596ec747ca53677c2b92a43a23e55e4b4dbf9 -->
+<robot xmlns:tcad="https://text-to-cad.dev/srdf" name="kr210_class_industrial_robot">
+  <tcad:urdf path="Parametric_STEP_Assembly_Of_A_Large_6-axis_Industrial.urdf" />
+  <virtual_joint name="fixed_base" type="fixed" parent_frame="world" child_link="base_link" />
+  <group name="manipulator">
+    <chain base_link="base_link" tip_link="tool0" />
+  </group>
+  <group_state name="home" group="manipulator">
+    <joint name="joint_1_base_yaw" value="0" />
+    <joint name="joint_2_shoulder_pitch" value="-0.55" />
+    <joint name="joint_3_elbow_pitch" value="1.05" />
+    <joint name="joint_4_wrist_roll" value="0" />
+    <joint name="joint_5_wrist_pitch" value="-0.5" />
+    <joint name="joint_6_tool_roll" value="0" />
+  </group_state>
+  <group_state name="ready" group="manipulator">
+    <joint name="joint_1_base_yaw" value="0" />
+    <joint name="joint_2_shoulder_pitch" value="-0.35" />
+    <joint name="joint_3_elbow_pitch" value="0.75" />
+    <joint name="joint_4_wrist_roll" value="0" />
+    <joint name="joint_5_wrist_pitch" value="-0.4" />
+    <joint name="joint_6_tool_roll" value="0" />
+  </group_state>
+  <disable_collisions link1="base_link" link2="shoulder_link" reason="Adjacent" />
+  <disable_collisions link1="shoulder_link" link2="upper_arm_link" reason="Adjacent" />
+  <disable_collisions link1="upper_arm_link" link2="forearm_link" reason="Adjacent" />
+  <disable_collisions link1="forearm_link" link2="wrist_1_link" reason="Adjacent" />
+  <disable_collisions link1="wrist_1_link" link2="wrist_2_link" reason="Adjacent" />
+  <disable_collisions link1="wrist_2_link" link2="tool0" reason="Adjacent" />
+</robot>

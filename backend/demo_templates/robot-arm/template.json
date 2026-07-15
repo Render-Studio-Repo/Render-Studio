@@ -1,0 +1,7 @@
+{
+  "id": "robot-arm",
+  "name": "Robot Arm",
+  "source_project_id": "505279e3",
+  "primary_filename": "Parametric_STEP_Assembly_Of_A_Large_6-axis_Industrial.glb",
+  "description": "6-axis industrial robot arm used for Getting Started object/body selection demos."
+}

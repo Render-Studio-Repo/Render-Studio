@@ -211,32 +211,9 @@ async function main() {
     return;
   }
 
-  let meta;
-  try {
-    const res = await fetch(`/api/share/${encodeURIComponent(token)}`);
-    if (!res.ok) throw new Error(res.status === 404 ? "Share link not found" : "Could not load share");
-    meta = await res.json();
-  } catch (err) {
-    statusEl.textContent = err.message || "Share link not found";
-    return;
-  }
-
-  document.title = meta.share_title || `${meta.project_name || "Render3D"} · with Render3D`;
-  titleEl.textContent = meta.project_name || meta.filename || "Shared model";
-  subEl.textContent = meta.filename
-    ? `with Render3D · ${meta.filename}`
-    : "with Render3D";
-
-  const exportItems = Array.isArray(meta.exports) ? [...meta.exports] : [];
-  const seen = new Set(exportItems.map((e) => e.name));
-  if (meta.filename && !seen.has(meta.filename)) {
-    exportItems.unshift({
-      name: meta.filename,
-      format: (meta.filename.split(".").pop() || "file").toLowerCase(),
-      url: `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(meta.filename)}`,
-      size: null,
-    });
-  }
+  const PRIMARY_SHARE_FORMATS = ["glb", "stl", "step", "3mf"];
+  let exportItems = [];
+  let exportsReady = false;
 
   function absoluteFileUrl(pathOrUrl) {
     if (!pathOrUrl) return "";
@@ -268,6 +245,10 @@ async function main() {
   }
 
   function openInBambuStudio() {
+    if (!exportsReady) {
+      setStatus("Exports are still preparing…");
+      return;
+    }
     const threeMf = findThreeMfExport();
     if (!threeMf?.url) {
       setStatus("No 3MF export is available for Bambu Studio yet.");
@@ -282,6 +263,26 @@ async function main() {
   function renderDownloadMenu(into) {
     if (!into) return;
     into.innerHTML = "";
+    if (!exportsReady) {
+      for (const fmt of PRIMARY_SHARE_FORMATS) {
+        const row = document.createElement("div");
+        row.className = "share-dl-menu-item is-preparing";
+        row.setAttribute("aria-busy", "true");
+        row.setAttribute("role", "menuitem");
+        row.innerHTML = `<strong><span class="share-dl-spinner" aria-hidden="true"></span>${FORMAT_LABELS[fmt]}</strong><span>Preparing…</span>`;
+        into.appendChild(row);
+      }
+      const sep = document.createElement("div");
+      sep.className = "share-dl-menu-sep";
+      into.appendChild(sep);
+      const bambu = document.createElement("div");
+      bambu.className = "share-dl-menu-item share-dl-menu-item--bambu is-preparing";
+      bambu.setAttribute("aria-busy", "true");
+      bambu.setAttribute("role", "menuitem");
+      bambu.innerHTML = `<strong><span class="share-dl-spinner" aria-hidden="true"></span>Import to Bambu</strong><span>Preparing…</span>`;
+      into.appendChild(bambu);
+      return;
+    }
     if (!exportItems.length) {
       into.innerHTML = `<p class="muted" style="padding:8px 10px">No downloadable formats yet.</p>`;
       return;
@@ -329,6 +330,54 @@ async function main() {
   renderDownloadMenu(downloadMenuEl);
   renderDownloadMenu($("share-download-list"));
   if (downloadsEl) downloadsEl.innerHTML = "";
+
+  btnDownloadPopup?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = downloadMenuEl?.classList.contains("hidden");
+    setDownloadMenuOpen(!!open);
+  });
+  document.addEventListener("click", (event) => {
+    if (!downloadMenuEl || downloadMenuEl.classList.contains("hidden")) return;
+    if (downloadMenuEl.contains(event.target) || btnDownloadPopup?.contains(event.target)) return;
+    setDownloadMenuOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setDownloadMenuOpen(false);
+  });
+
+  let meta;
+  try {
+    const res = await fetch(`/api/share/${encodeURIComponent(token)}`);
+    if (!res.ok) throw new Error(res.status === 404 ? "Share link not found" : "Could not load share");
+    meta = await res.json();
+  } catch (err) {
+    statusEl.textContent = err.message || "Share link not found";
+    exportsReady = true;
+    exportItems = [];
+    renderDownloadMenu(downloadMenuEl);
+    renderDownloadMenu($("share-download-list"));
+    return;
+  }
+
+  document.title = meta.share_title || `${meta.project_name || "Render3D"} · with Render3D`;
+  titleEl.textContent = meta.project_name || meta.filename || "Shared model";
+  subEl.textContent = meta.filename
+    ? `with Render3D · ${meta.filename}`
+    : "with Render3D";
+
+  exportItems = Array.isArray(meta.exports) ? [...meta.exports] : [];
+  const seen = new Set(exportItems.map((e) => e.name));
+  if (meta.filename && !seen.has(meta.filename)) {
+    exportItems.unshift({
+      name: meta.filename,
+      format: (meta.filename.split(".").pop() || "file").toLowerCase(),
+      url: `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(meta.filename)}`,
+      size: null,
+    });
+  }
+  exportsReady = true;
+  renderDownloadMenu(downloadMenuEl);
+  renderDownloadMenu($("share-download-list"));
 
   function renderTimeline() {
     if (!timelineTrackEl) return;
@@ -1078,20 +1127,6 @@ async function main() {
       ? promptHistoryEl?.querySelector(`[data-prompt-id="${CSS.escape(promptId)}"]`)
       : null;
     card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  });
-
-  btnDownloadPopup?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const open = downloadMenuEl?.classList.contains("hidden");
-    setDownloadMenuOpen(!!open);
-  });
-  document.addEventListener("click", (event) => {
-    if (!downloadMenuEl || downloadMenuEl.classList.contains("hidden")) return;
-    if (downloadMenuEl.contains(event.target) || btnDownloadPopup?.contains(event.target)) return;
-    setDownloadMenuOpen(false);
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") setDownloadMenuOpen(false);
   });
 
   const raycaster = new THREE.Raycaster();

@@ -8,7 +8,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-marketplace" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-product-marketplace" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -26,7 +26,7 @@
         </button>
         <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
           <a href="/" class="nav-tab" role="menuitem">Studio</a>
-          <a href="/marketplace.html" class="nav-tab active" role="menuitem">Marketplace</a>
+          <a href="/marketplace.html" class="nav-tab active" role="menuitem">Product Marketplace</a>
           <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
           <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
           <a href="/getting-started.html#tips-library" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
@@ -38,15 +38,15 @@
     <main class="info-main">
       <article class="info-content skills-page agent-store-page model-store-page">
         <header class="info-hero">
-          <p class="info-eyebrow"><a href="/marketplace.html">Marketplace</a> · 3D Models</p>
-          <h2>Product Marketplace</h2>
+          <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · 3D Models</p>
+          <h2>3D Model Products</h2>
           <p class="info-lead">
             Publish CAD products with blog-style posts, thumbnails, licensing, download controls,
             free / paid / view-only access, team members, and boost applications.
           </p>
         </header>
 
-        <section class="agent-store-hero">
+        <section class="agent-store-hero marketplace-modern-hero">
           <div>
             <p class="info-eyebrow">Shop by product</p>
             <h3>Models with clear rights and access</h3>
@@ -109,6 +109,10 @@
           <h3>Publish a product</h3>
           <p class="muted">Write a product post, attach a thumbnail and model files, set rights, and invite members. Listings go to review before going public.</p>
           <form id="model-listing-form" class="agent-app-form">
+            <div class="marketplace-drop-zone" data-model-drop>
+              <strong>Drop model product files here</strong>
+              <span>Thumbnails, gallery images, STEP, STL, GLB, 3MF, OBJ, and source files.</span>
+            </div>
             <div class="agent-form-grid">
               <label>Name <input name="name" required maxlength="120" placeholder="Parametric drone frame" /></label>
               <label>Category <input name="category" maxlength="80" placeholder="Aerospace, furniture, robotics" /></label>
@@ -156,7 +160,7 @@
       </article>
     </main>
   </div>
-  <script type="module" src="/model-store.js?v=20260715-marketplace"></script>
+  <script type="module" src="/model-store.js?v=20260715-product-marketplace"></script>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>

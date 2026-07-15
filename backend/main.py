@@ -8808,6 +8808,70 @@ def create_project(
     return {"project_id": project_id, "team_id": tid, "meta": meta}
 
 
+@app.post("/api/demo/robot-arm")
+def seed_robot_arm_demo_project(
+    user: dict[str, Any] = Depends(get_current_user),
+    team_id: str | None = Query(None),
+    force_new: bool = Query(False),
+):
+    """Spin up a private Robot Arm project (from template 505279e3) for demos / Show Me tours."""
+    from backend.services import demo_template_service
+
+    try:
+        result = demo_template_service.seed_robot_arm_project(
+            PROJECTS,
+            user,
+            team_id=team_id,
+            force_new=force_new,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    if result.get("created"):
+        meta = result.get("meta") or {}
+        tid = result.get("team_id")
+        project_id = result["project_id"]
+        _notify_workspace(
+            tid,
+            {
+                "type": "project.created",
+                "project_id": project_id,
+                "team_id": tid,
+                "name": meta.get("name"),
+                "meta": meta,
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "by_user_name": user["display_name"],
+                "owner_user_id": user["id"],
+                "owner_name": user["display_name"],
+                "owner_email": user.get("email"),
+                "folder_id": None,
+                "sort_order": 0,
+                "created_at": meta.get("created_at"),
+                "updated_at": meta.get("updated_at") or meta.get("created_at"),
+                "generation": {"status": "idle"},
+                "demo_template": "robot-arm",
+            },
+        )
+        _record_history(
+            cad_service.project_dir(PROJECTS, project_id),
+            "demo_seed",
+            "Seeded Robot Arm demo from template",
+            result.get("filename"),
+            meta={
+                "demo_template": "robot-arm",
+                "source_project_id": result.get("source_project_id") or "505279e3",
+                "copied_files": result.get("copied_files") or [],
+            },
+            user=user,
+        )
+    return result
+
+
 @app.get("/api/projects/{project_id}")
 def get_project(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
     path = _require_project_read(user, project_id)
