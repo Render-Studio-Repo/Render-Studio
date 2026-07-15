@@ -5,24 +5,13 @@ import {
   getCurrentTip,
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
-import { matchGettingStartedGuides } from "./getting-started-guides.js?v=20260715-guides-media";
-import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle4";
-
-function guideMediaPayload(guide) {
-  if (!guide?.gif) return null;
-  return {
-    id: guide.id,
-    title: guide.title,
-    url: guide.gif,
-    kind: "gif",
-    summary: guide.summary || "",
-  };
-}
+import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-link-prompt";
+import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle3";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
-const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v4";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v5";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -315,6 +304,18 @@ export function createRenderAgent({
     document.body.classList.toggle("gs-agent-open", !!openPanel);
   }
 
+  function syncFabState(isOpen) {
+    const fab = document.getElementById("render-agent-fab");
+    if (!fab) return;
+    fab.classList.remove("hidden");
+    fab.classList.toggle("is-open", !!isOpen);
+    fab.setAttribute("aria-pressed", isOpen ? "true" : "false");
+    fab.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    fab.title = isOpen ? "Close Render Agent" : "Ask Render Agent";
+    const label = fab.querySelector("span");
+    if (label) label.textContent = isOpen ? "Close Agent" : "Ask Agent";
+  }
+
   function open({ onboarding: showOnboarding = false, question = "" } = {}) {
     const docsPanel = panel.classList.contains("render-agent-panel--docs");
     if (!currentUserId() && !docsPanel) {
@@ -326,7 +327,7 @@ export function createRenderAgent({
     if (docsPanel) {
       panel.classList.add("render-agent-panel--popup");
     }
-    document.getElementById("render-agent-fab")?.classList.add("hidden");
+    syncFabState(true);
     ensureStickyNoteControls();
     restoreStickyLayout();
     syncDocsPageLayout(true);
@@ -374,7 +375,7 @@ export function createRenderAgent({
 
   function close() {
     panel.classList.add("hidden");
-    document.getElementById("render-agent-fab")?.classList.remove("hidden");
+    syncFabState(false);
     syncDocsPageLayout(false);
   }
 
@@ -415,24 +416,20 @@ export function createRenderAgent({
       panel.classList.remove("render-agent-panel--deck");
     }
     const saved = readStickyLayout();
-    const defaultW = Math.min(isDocs ? 280 : 400, Math.max(260, window.innerWidth - 32));
-    const defaultH = Math.min(isDocs ? 390 : 640, Math.max(280, window.innerHeight - 96));
+    const defaultW = Math.min(isDocs ? 440 : 400, Math.max(260, window.innerWidth - 32));
+    const defaultH = Math.min(isDocs ? 640 : 640, Math.max(280, window.innerHeight - 96));
     if (!saved) {
       panel.style.left = "auto";
       panel.style.right = "16px";
       panel.style.width = `${defaultW}px`;
       panel.style.height = `${defaultH}px`;
       panel.style.maxHeight = "none";
-      if (isDocs) {
-        panel.style.top = `${Math.max(64, window.innerHeight - defaultH - 20)}px`;
-      } else {
-        panel.style.top = "72px";
-      }
+      panel.style.top = "72px";
       return;
     }
-    if (saved.width) panel.style.width = `${Math.max(isDocs ? 270 : 260, saved.width)}px`;
+    if (saved.width) panel.style.width = `${Math.max(isDocs ? 320 : 260, saved.width)}px`;
     else panel.style.width = `${defaultW}px`;
-    if (saved.height) panel.style.height = `${Math.max(isDocs ? 360 : 260, saved.height)}px`;
+    if (saved.height) panel.style.height = `${Math.max(isDocs ? 420 : 260, saved.height)}px`;
     else panel.style.height = `${defaultH}px`;
     panel.style.maxHeight = "none";
     if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
@@ -442,9 +439,7 @@ export function createRenderAgent({
     } else {
       panel.style.left = "auto";
       panel.style.right = "16px";
-      panel.style.top = isDocs
-        ? `${Math.max(64, window.innerHeight - defaultH - 20)}px`
-        : "72px";
+      panel.style.top = "72px";
     }
   }
 
@@ -1110,7 +1105,8 @@ export function createRenderAgent({
 
   btn?.addEventListener("click", () => open());
   closeBtn?.addEventListener("click", close);
-  document.getElementById("render-agent-fab")?.addEventListener("click", () => open());
+  document.getElementById("render-agent-fab")?.addEventListener("click", () => toggle());
+  syncFabState(!panel.classList.contains("hidden"));
   threadMenuBtn?.addEventListener("click", () => {
     const openMenu = threadPopover?.classList.toggle("hidden") === false;
     threadMenuBtn.setAttribute("aria-expanded", openMenu ? "true" : "false");

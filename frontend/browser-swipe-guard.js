@@ -30,8 +30,9 @@ function shouldBlockHistorySwipe(event) {
 }
 
 function initBrowserSwipeGuard() {
+  if (document.body.classList.contains("info-page")) return;
   const app = document.getElementById("app");
-  if (!app) return;
+  if (!app || app.classList.contains("app-info")) return;
   app.addEventListener(
     "wheel",
     (event) => {

@@ -13118,12 +13118,21 @@ def paint_file(
     user: dict[str, Any] = Depends(get_current_user),
 ):
     project_path = _require_project(user, project_id)
-    src = project_path / filename
+    safe = Path(filename).name
+    src = project_path / safe
     if not src.is_file():
-        raise HTTPException(404, "File not found")
+        resolved = cad_service.resolve_project_file(project_path, safe)
+        if resolved is None or not resolved.is_file():
+            raise HTTPException(404, "File not found")
+        src = resolved
 
     scope = (body.scope or "object").lower()
-    mesh = cad_service.load_mesh(src)
+    # Color the mesh the viewport actually shows (Jake/product GLB), not a fresh
+    # STEP tessellation that would land as a second overlapping body.
+    viewer_name = cad_service.viewer_filename_for_model(src.name, project_path)
+    viewer_path = project_path / viewer_name
+    paint_src = viewer_path if viewer_path.is_file() else src
+    mesh = cad_service.load_mesh(paint_src)
     if scope == "faces":
         indices: list[int] = []
         if body.face_indices:
@@ -13148,15 +13157,25 @@ def paint_file(
     else:
         raise HTTPException(400, "scope must be 'object' or 'faces'")
 
-    # Replace / update the mesh preview for this stem so the browser component
-    # identity stays stable (paint must not invent a second sibling model).
-    if src.suffix.lower() in {".glb", ".gltf"}:
-        out = src
+    if paint_src.suffix.lower() in {".glb", ".gltf"}:
+        out = paint_src
     else:
         out = project_path / f"{src.stem}.glb"
     cad_service.export_mesh(mesh, out)
+    # Keep product stem.glb in sync when the painted viewer was a jake sidecar.
+    product_glb = project_path / f"{Path(src.stem).name}.glb"
+    # src.stem for "foo.step" is "foo"; for ".foo.step.glb" is ".foo.step"
+    solid_stem = src.stem
+    if solid_stem.startswith(".") and solid_stem.endswith(".step"):
+        solid_stem = solid_stem[1 : -len(".step")]
+    product_glb = project_path / f"{solid_stem}.glb"
+    if out.resolve() != product_glb.resolve() and solid_stem:
+        try:
+            cad_service.export_mesh(mesh, product_glb)
+        except Exception:
+            pass
     entry = _record_history(project_path, "transform", label, out.name, meta=meta, user=user)
-    _append_mesh_edit(project_path, filename, {"op": "paint", "parent": filename, "child": out.name, **meta})
+    _append_mesh_edit(project_path, safe, {"op": "paint", "parent": safe, "child": out.name, **meta})
     project_store.touch_project(project_path)
     _notify_project(
         project_id,
@@ -13167,7 +13186,7 @@ def paint_file(
             "by": user["display_name"],
             "by_user_id": user["id"],
             "action": "paint",
-            "replace_catalog": filename,
+            "replace_catalog": safe,
             "timeline_entry": entry,
         },
     )
@@ -13177,7 +13196,7 @@ def paint_file(
         "timeline_index": entry["index"],
         "action": "paint",
         "scope": scope,
-        "replace_catalog": filename,
+        "replace_catalog": safe,
     }
 
 

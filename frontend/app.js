@@ -65,7 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
-import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-circle4";
+import { createRenderAgent } from "./render-agent.js?v=20260715-docs-agent-toggle";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -94,7 +94,7 @@ import {
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-download";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
-import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-component-bodies";
+import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-elec-none";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";

@@ -60,6 +60,16 @@ export function createProjectAssembly(scene) {
   function add(catalogName, object3d) {
     const key = String(catalogName || "");
     if (!key || !object3d) return null;
+    const targetStem = componentStem(key);
+    // Never keep two catalogs for the same part (e.g. .step + _edited.glb, or jake + paint).
+    for (const [name] of [...components.entries()]) {
+      if (name === key) continue;
+      if (componentStem(name) === targetStem) {
+        root.remove(components.get(name));
+        disposeStyledModel(components.get(name));
+        components.delete(name);
+      }
+    }
     if (components.has(key)) {
       root.remove(components.get(key));
       disposeStyledModel(components.get(key));

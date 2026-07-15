@@ -111,4 +111,4 @@ async function api(path, options = {}, timeoutMs = 60000) {
 
 mountFilters();
 mountList("all");
-createAuthUI({ api });
+// Auth + Render Agent FAB are mounted by docs-agent.js on this page.
