@@ -24383,10 +24383,10 @@ body.gs-agent-open .gs-page {
   position: fixed;
   z-index: 12050;
   right: 16px;
-  top: 72px;
+  top: 42px;
   left: auto;
-  width: min(440px, calc(100vw - 24px));
-  height: min(640px, calc(100vh - 96px));
+  width: min(280px, calc(100vw - 24px));
+  height: min(390px, calc(100vh - 64px));
   max-height: none;
   border-radius: 16px;
   box-shadow:
@@ -24711,6 +24711,10 @@ body.gs-agent-open .gs-page {
   box-shadow:
     0 22px 56px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(210, 168, 255, 0.18);
+}
+
+.render-agent-fab {
+  z-index: 12060;
 }
 
 .render-agent-fab.is-open {
