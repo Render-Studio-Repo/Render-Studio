@@ -231,6 +231,10 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
     source_path = project_path / Path(source_name).name
     if not source_path.is_file():
         raise FileNotFoundError("CAD source not found")
+    source_text = source_path.read_text(encoding="utf-8", errors="ignore")
+    if "def gen_urdf" in source_text and "def gen_step" not in source_text:
+        return _regenerate_urdf_model(project_path, source_path)
+
     stem = source_path.stem
     step_name = f"{stem}.step"
     glb_name = f"{stem}.glb"
@@ -277,6 +281,153 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
         "stl": stl_name,
         "three_mf": three_mf_name,
     }
+
+
+def _regenerate_urdf_model(project_path: Path, source_path: Path) -> dict[str, Any]:
+    """Rebuild Jake-style URDF (+ SRDF) after Object Adjustments edit module constants."""
+    stem = source_path.stem
+    urdf_name = f"{stem}.urdf"
+    srdf_name = f"{stem}.srdf"
+    urdf_out = skill_runner.run_skill_tool(
+        "urdf",
+        "urdf",
+        [f"{source_path.name}={urdf_name}"],
+        cwd=project_path,
+        timeout_sec=90.0,
+    )
+    if not urdf_out.get("ok") or not (project_path / urdf_name).is_file():
+        detail = (urdf_out.get("stderr") or urdf_out.get("stdout") or "urdf generation failed").strip()
+        raise RuntimeError(detail[:2000] or "urdf generation failed")
+
+    artifacts: dict[str, Any] = {"source": source_path.name, "urdf": urdf_name}
+    source_text = source_path.read_text(encoding="utf-8", errors="ignore")
+    if "def gen_srdf" in source_text:
+        srdf_out = skill_runner.run_skill_tool(
+            "srdf",
+            "srdf",
+            [f"{source_path.name}={srdf_name}"],
+            cwd=project_path,
+            timeout_sec=90.0,
+        )
+        if srdf_out.get("ok") and (project_path / srdf_name).is_file():
+            artifacts["srdf"] = srdf_name
+
+    # Keep a Z-up mm preview GLB in sync for the Solid browser (best-effort).
+    try:
+        _rebuild_urdf_preview_glb(project_path, stem)
+        artifacts["glb"] = f"{stem}.glb"
+        artifacts["stl"] = f"{stem}.stl"
+    except Exception:
+        pass
+    return artifacts
+
+
+def _rebuild_urdf_preview_glb(project_path: Path, stem: str) -> None:
+    """Simple Z-up mm preview so Components / Solid still show the arm after rebuild."""
+    import json
+    import struct
+
+    import numpy as np
+    import trimesh
+
+    # Read mm constants from the python source via a tiny exec of assignments only.
+    source = (project_path / f"{stem}.py").read_text(encoding="utf-8")
+    ns: dict[str, Any] = {}
+    for line in source.splitlines():
+        if re.match(r"^[A-Z][A-Z0-9_]*\s*=", line):
+            try:
+                exec(line, {"__builtins__": {}}, ns)  # noqa: S102 — trusted project source
+            except Exception:
+                pass
+    base_x = float(ns.get("BASE_X", 120))
+    base_y = float(ns.get("BASE_Y", 120))
+    base_z = float(ns.get("BASE_Z", 40))
+    shoulder_z = float(ns.get("SHOULDER_Z", 50))
+    upper = float(ns.get("UPPER_LEN", 180))
+    forearm = float(ns.get("FOREARM_LEN", 160))
+    wrist = float(ns.get("WRIST_LEN", 40))
+    radius = float(ns.get("LINK_RADIUS", 22))
+
+    parts = []
+    def add(mesh, color, translate=None, rotate_axis=None, angle=None):
+        if rotate_axis is not None:
+            mesh.apply_transform(trimesh.transformations.rotation_matrix(angle, rotate_axis))
+        if translate is not None:
+            mesh.apply_translation(translate)
+        mesh.visual.face_colors = color
+        parts.append(mesh)
+
+    add(trimesh.creation.box(extents=[base_x, base_y, base_z]), [130, 136, 150, 255], translate=[0, 0, base_z / 2])
+    add(trimesh.creation.cylinder(radius=radius * 1.2, height=60), [90, 140, 220, 255], translate=[0, 0, base_z + 30])
+    z_arm = base_z + shoulder_z
+    add(
+        trimesh.creation.cylinder(radius=radius, height=upper),
+        [120, 190, 100, 255],
+        rotate_axis=[0, 1, 0],
+        angle=np.pi / 2,
+        translate=[upper / 2, 0, z_arm],
+    )
+    add(trimesh.creation.icosphere(radius=radius * 1.15, subdivisions=2), [240, 200, 80, 255], translate=[upper, 0, z_arm])
+    add(
+        trimesh.creation.cylinder(radius=radius * 0.9, height=forearm),
+        [230, 170, 70, 255],
+        rotate_axis=[0, 1, 0],
+        angle=np.pi / 2,
+        translate=[upper + forearm / 2, 0, z_arm],
+    )
+    add(
+        trimesh.creation.box(extents=[wrist, 40, 30]),
+        [220, 110, 110, 255],
+        translate=[upper + forearm + wrist / 2, 0, z_arm],
+    )
+    combined = trimesh.util.concatenate(parts)
+    combined.export(project_path / f"{stem}.stl")
+
+    vertices = combined.vertices.astype(np.float32)
+    faces = combined.faces.astype(np.uint32)
+    normals = combined.vertex_normals.astype(np.float32)
+
+    def pad4(b: bytes, pad: bytes) -> bytes:
+        return b + pad * ((4 - (len(b) % 4)) % 4)
+
+    vbytes = pad4(vertices.tobytes(), b"\x00")
+    nbytes = pad4(normals.tobytes(), b"\x00")
+    ibytes = pad4(faces.tobytes(), b"\x00")
+    bin_blob = vbytes + nbytes + ibytes
+    mins = vertices.min(axis=0).tolist()
+    maxs = vertices.max(axis=0).tolist()
+    gltf = {
+        "asset": {"version": "2.0", "generator": "render3d-urdf-preview"},
+        "scenes": [{"nodes": [0]}],
+        "scene": 0,
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1}, "indices": 2, "material": 0}]}],
+        "materials": [{
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [0.48, 0.62, 0.78, 1.0],
+                "metallicFactor": 0.05,
+                "roughnessFactor": 0.6,
+            }
+        }],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": int(len(vertices)), "type": "VEC3", "max": maxs, "min": mins},
+            {"bufferView": 1, "componentType": 5126, "count": int(len(normals)), "type": "VEC3"},
+            {"bufferView": 2, "componentType": 5125, "count": int(faces.size), "type": "SCALAR"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": len(vertices.tobytes()), "target": 34962},
+            {"buffer": 0, "byteOffset": len(vbytes), "byteLength": len(normals.tobytes()), "target": 34962},
+            {"buffer": 0, "byteOffset": len(vbytes) + len(nbytes), "byteLength": len(faces.tobytes()), "target": 34963},
+        ],
+        "buffers": [{"byteLength": len(bin_blob)}],
+    }
+    json_blob = pad4(json.dumps(gltf, separators=(",", ":")).encode("utf-8"), b" ")
+    total = 12 + 8 + len(json_blob) + 8 + len(bin_blob)
+    out = bytearray()
+    out += struct.pack("<4sII", b"glTF", 2, total)
+    out += struct.pack("<I4s", len(json_blob), b"JSON") + json_blob
+    out += struct.pack("<I4s", len(bin_blob), b"BIN\x00") + bin_blob
+    (project_path / f"{stem}.glb").write_bytes(out)
 
 
 def _convert_regenerated_glb_to_z_up(glb_path: Path) -> None:

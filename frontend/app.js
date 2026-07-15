@@ -4680,6 +4680,7 @@ function syncRiggingViewportPlaybackUi() {
   const ui = ensureRiggingViewportPlaybackUi();
   if (!ui.button) return;
   const playing = !!(
+    urdfRobotRuntime?.isPlaying?.() ||
     riggingEditor?.isPlaying?.() ||
     stepModuleRuntime?.isPlaying?.() ||
     planetaryGearRuntime?.isPlaying?.()
@@ -6630,6 +6631,29 @@ let urdfRobotBusy = false;
 
 async function toggleRiggingPlayback() {
   const root = getRiggingPartRoot() || projectAssembly.getRoot() || currentMesh;
+  // 0) URDF / SRDF robot scene — joint animation for Jake-style robots
+  try {
+    if (!urdfRobotRuntime.isLoaded()) {
+      await refreshRobotArtifacts({ quiet: true });
+      await ensureUrdfRobotScene({ quiet: true, force: false });
+    }
+    if (urdfRobotRuntime.isLoaded?.()) {
+      if (stepModuleRuntime.isPlaying()) stepModuleRuntime.stop({ reset: false });
+      if (planetaryGearRuntime.isPlaying()) planetaryGearRuntime.stop({ reset: false });
+      riggingEditor?.setPlaying?.(false);
+      const playing = urdfRobotRuntime.togglePlay?.() ?? false;
+      setEditStatus(
+        "ok",
+        playing
+          ? "Playing URDF joint motion (SRDF home → reach)."
+          : "URDF playback paused."
+      );
+      syncRiggingViewportPlaybackUi();
+      return;
+    }
+  } catch (err) {
+    console.warn("URDF playback failed", err);
+  }
   // 1) Jake contract: .step.js module (works for gears, hinges, linkages, …)
   try {
     if (!stepModuleRuntime.hasModule()) await stepModuleRuntime.ensureLoaded();
@@ -6665,6 +6689,7 @@ async function toggleRiggingPlayback() {
   }
   if (planetaryGearRuntime.isPlaying()) planetaryGearRuntime.stop({ reset: false });
   if (stepModuleRuntime.isPlaying()) stepModuleRuntime.stop({ reset: false });
+  if (urdfRobotRuntime.isPlaying?.()) urdfRobotRuntime.stopTrajectory?.();
   riggingEditor?.togglePlay?.();
   syncRiggingViewportPlaybackUi();
 }
@@ -7939,8 +7964,21 @@ async function openRobotArtifact(entry) {
 }
 
 function pickPreferredRobotFiles(data = {}) {
-  const artifacts = data.artifacts || [];
-  const urdfFile = artifacts.find((name) => /\.urdf$/i.test(name)) || null;
+  const artifacts = (data.artifacts || []).map(String);
+  const urdfs = artifacts.filter((name) => /\.urdf$/i.test(name));
+  // Prefer the richest description; skip empty export stubs like robot.urdf.
+  const ranked = [...urdfs].sort((a, b) => {
+    const score = (name) => {
+      const lower = name.toLowerCase();
+      let s = 0;
+      if (lower.includes("demo") || lower.includes("jake")) s += 50;
+      if (lower === "robot.urdf") s -= 100;
+      if (selectedFile && fileStem(selectedFile).toLowerCase() === fileStem(name).toLowerCase()) s += 80;
+      return s;
+    };
+    return score(b) - score(a);
+  });
+  const urdfFile = ranked[0] || null;
   const stem = urdfFile ? String(urdfFile).replace(/\.urdf$/i, "") : "";
   const srdfFile =
     (stem && artifacts.find((name) => name.toLowerCase() === `${stem.toLowerCase()}.srdf`))
@@ -10114,6 +10152,22 @@ async function openObjectIterationTree(anchor = document.getElementById("btn-his
     },
     onApplied: async (result) => {
       const reloadName = result?.artifacts?.glb || filename;
+      if (result?.artifacts?.urdf) {
+        bumpModelCacheEpoch();
+        await refreshFiles();
+        await refreshRobotArtifacts({ quiet: true });
+        await ensureUrdfRobotScene({ quiet: false, force: true });
+        if (reloadName && /\.(glb|stl)$/i.test(reloadName)) {
+          const url = projectFileUrl(projectId, reloadName);
+          await afterModelEdit({
+            filename: reloadName,
+            url,
+            replaceCatalog: filename,
+          });
+        }
+        setEditStatus("ok", `Rebuilt URDF robot from ${result.artifacts.source || "source"}.`);
+        return;
+      }
       const url = projectFileUrl(projectId, reloadName);
       // Always swap the selected catalog for the rebuilt generative GLB.
       await afterModelEdit({

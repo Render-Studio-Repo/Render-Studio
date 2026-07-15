@@ -19,7 +19,10 @@ function parseNumberList(value, count, fallback) {
 }
 
 function childElements(parent, tag) {
-  return Array.from(parent?.children || []).filter((node) => node.tagName === tag);
+  const want = String(tag || "").toLowerCase();
+  return Array.from(parent?.children || []).filter(
+    (node) => String(node.tagName || "").toLowerCase() === want,
+  );
 }
 
 function translation(x, y, z) {
@@ -232,9 +235,12 @@ export function parseSrdfXml(xmlText) {
 
 function materialFromRgba(rgba) {
   const [r, g, b, a] = rgba || [0.7, 0.7, 0.75, 1];
+  const color = new THREE.Color(r, g, b);
   return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(r, g, b),
-    metalness: 0.15,
+    color,
+    emissive: color.clone().multiplyScalar(0.18),
+    emissiveIntensity: 0.35,
+    metalness: 0.08,
     roughness: 0.55,
     transparent: a < 0.999,
     opacity: a,
@@ -262,7 +268,13 @@ function primitiveMesh(visual) {
 }
 
 async function loadVisualMesh(visual, projectId, authHeaders) {
-  if (visual.kind !== "mesh" || !visual.filename || !projectId) return primitiveMesh({ ...visual, kind: "sphere", radius: 0.02 });
+  // Primitives (box / cylinder / sphere) render directly — do not collapse them to spheres.
+  if (visual.kind !== "mesh") {
+    return primitiveMesh(visual);
+  }
+  if (!visual.filename || !projectId) {
+    return primitiveMesh({ ...visual, kind: "sphere", radius: 0.02 });
+  }
   const url = `/api/projects/${projectId}/files/${encodeURIComponent(visual.filename)}`;
   try {
     const res = await fetch(url, { headers: authHeaders?.() || {} });
@@ -290,6 +302,7 @@ async function loadVisualMesh(visual, projectId, authHeaders) {
     object.scale.set(sx, sy, sz);
     wrapper.add(object);
     wrapper.matrix.copy(matrixFromRowMajor(visual.localTransform));
+    wrapper.matrixWorldNeedsUpdate = true;
     return wrapper;
   } catch {
     return primitiveMesh({ ...visual, kind: "sphere", radius: 0.025 });
@@ -526,18 +539,89 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
 
   function fitBox() {
     if (!root) return null;
+    root.updateMatrixWorld(true);
     return new THREE.Box3().setFromObject(root);
   }
 
+  let demoPlaying = false;
+  let demoTimer = null;
+
+  function stopDemoPlay() {
+    demoPlaying = false;
+    if (demoTimer) {
+      clearInterval(demoTimer);
+      demoTimer = null;
+    }
+  }
+
+  function togglePlay({ durationSec = 3.2 } = {}) {
+    if (demoPlaying) {
+      stopDemoPlay();
+      stopTrajectory();
+      return false;
+    }
+    if (!urdf) return false;
+    const home = (srdf?.groupStates || []).find((s) => String(s.name).toLowerCase() === "home");
+    const reach = (srdf?.groupStates || []).find((s) => /reach|wave|open/i.test(String(s.name || "")));
+    const movable = (urdf.joints || []).filter((j) => j.type === "revolute" || j.type === "continuous" || j.type === "prismatic");
+    if (!movable.length) return false;
+    const base = { ...(home?.jointValuesByName || jointValuesRad) };
+    const points = [];
+    const steps = 60;
+    for (let i = 0; i <= steps; i += 1) {
+      const t = i / steps;
+      const values = { ...base };
+      movable.forEach((joint, index) => {
+        const mid = asNum(base[joint.name], 0);
+        const span = Math.abs(asNum(joint.upper, 1) - asNum(joint.lower, -1));
+        const amp = joint.type === "prismatic"
+          ? Math.min(0.04, span * 0.35 || 0.02)
+          : Math.min(0.85, (span || Math.PI) * 0.22);
+        const phase = index * 0.7;
+        let next = mid + amp * Math.sin(t * Math.PI * 2 + phase);
+        if (reach?.jointValuesByName?.[joint.name] != null) {
+          const target = asNum(reach.jointValuesByName[joint.name], mid);
+          const blend = 0.5 - 0.5 * Math.cos(t * Math.PI * 2);
+          next = mid * (1 - blend) + target * blend + amp * 0.2 * Math.sin(t * Math.PI * 2 + phase);
+        }
+        values[joint.name] = next;
+      });
+      points.push(values);
+    }
+    demoPlaying = true;
+    playTrajectory({ points }, {
+      durationSec,
+      onFrame: ({ t }) => {
+        if (t >= 1) {
+          demoPlaying = false;
+          if (home?.jointValuesByName) setJointValues(home.jointValuesByName);
+        }
+      },
+    });
+    return true;
+  }
+
+  function isPlaying() {
+    return demoPlaying || !!trajectoryTimer;
+  }
+
   return {
-    clear,
+    clear: () => {
+      stopDemoPlay();
+      clear();
+    },
     loadFromProject,
     setJointValue,
     setJointValues,
     resetPose,
     applyGroupState,
     playTrajectory,
-    stopTrajectory,
+    stopTrajectory: () => {
+      stopDemoPlay();
+      stopTrajectory();
+    },
+    togglePlay,
+    isPlaying,
     getState,
     fitBox,
     isLoaded: () => !!urdf,
