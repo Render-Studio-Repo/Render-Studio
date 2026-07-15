@@ -2987,6 +2987,8 @@ async def upload_knowledge_items(
                 relative_path=str(raw_name),
             )
             uploaded.append(item)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
         except LookupError as exc:
             raise HTTPException(404, str(exc)) from exc
         except ValueError as exc:

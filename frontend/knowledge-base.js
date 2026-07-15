@@ -544,6 +544,9 @@ export function createKnowledgePromptUI({
       `;
     }
     if (skillsBox) {
+      if (!canEditActive) {
+        skillsBox.innerHTML = `<p class="muted small">Skill links are managed by the owner.</p>`;
+      } else {
       const linked = new Set((kb.skill_ids || []).map(String));
       skillsBox.innerHTML = `
         <label class="kb-skills-label">Attach to skills</label>
@@ -558,6 +561,7 @@ export function createKnowledgePromptUI({
         <button type="button" class="btn secondary btn-compact" id="kb-save-skills">Save skill links</button>
       `;
       skillsBox.querySelector("#kb-save-skills")?.addEventListener("click", () => void saveSkills());
+      }
     }
 
     const folders = (tree.folders || []).filter((f) => (f.parent_id || null) === (currentFolderId || null));
