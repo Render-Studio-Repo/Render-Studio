@@ -157,6 +157,8 @@ async function main() {
   const btnFit = $("btn-share-fit");
   const btnInspector = $("btn-share-inspector");
   const btnHistory = $("btn-share-history");
+  const btnWireframe = $("btn-share-wireframe");
+  const btnTransparent = $("btn-share-transparent");
   const btnOpen = $("btn-share-open");
   const btnDownloadMenu = $("btn-share-download");
   const downloadSheet = $("share-download-sheet");
@@ -277,6 +279,12 @@ async function main() {
   let orbitRadius = 2;
   let loadedScene = null;
   const objectsByName = new Map();
+  const objectsById = new Map();
+  let objectEntries = [];
+  const transparentObjects = new Set();
+  const materialBaseState = new WeakMap();
+  let wireframeEnabled = false;
+  let transparentPickEnabled = false;
 
   const section = createSectionController({
     renderer,

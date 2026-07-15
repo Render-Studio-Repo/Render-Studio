@@ -8930,43 +8930,28 @@ def _resolve_share_token(token: str) -> tuple[str, Path, dict[str, Any]]:
 
 def _share_snapshot_filename(project_path: Path, filename: str) -> str | None:
     """Best matching CAD snapshot PNG for social / text-message previews."""
-    stem = Path(filename).stem.lstrip(".")
+    stem = Path(filename).stem
     roots = [stem]
-    # `.Model.step.glb` → also try `Model` / `Model.step` roots for snapshot names.
-    if stem.lower().endswith(".step"):
-        roots.append(stem[: -len(".step")])
-    if "." in stem:
-        roots.append(stem.split(".", 1)[0])
     for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body", "_section"):
         if stem.endswith(suffix):
             roots.append(stem[: -len(suffix)])
     try:
         viewer = cad_service.resolve_viewport_filename(project_path, Path(filename).name)
         if viewer:
-            viewer_stem = Path(viewer).stem.lstrip(".")
+            viewer_stem = Path(viewer).stem
             if viewer_stem not in roots:
                 roots.insert(0, viewer_stem)
-            if viewer_stem.lower().endswith(".step"):
-                bare = viewer_stem[: -len(".step")]
-                if bare and bare not in roots:
-                    roots.insert(0, bare)
     except Exception:
         pass
-
-    def _is_source_snapshot(path: Path) -> bool:
-        name = path.name.lower()
-        if "opposite" in name:
-            return False
-        # Never treat derived share assets as the source snapshot (avoids nested
-        # `_share_transparent_share_transparent…` growth and broken OG URLs).
-        if "_share_transparent" in name or "_share_og." in name or name.endswith("_share_og.jpg"):
-            return False
-        return path.is_file()
 
     def _collect(patterns: list[str], *, prefer_root: str | None = None) -> list[Path]:
         found: list[Path] = []
         for pattern in patterns:
-            found.extend(p for p in project_path.glob(pattern) if _is_source_snapshot(p))
+            found.extend(
+                p
+                for p in project_path.glob(pattern)
+                if p.is_file() and "opposite" not in p.name.lower()
+            )
         if prefer_root:
             preferred = [p for p in found if p.name.startswith(f"{prefer_root}_snapshot")]
             if preferred:
@@ -8975,8 +8960,6 @@ def _share_snapshot_filename(project_path: Path, filename: str) -> str | None:
 
     candidates: list[Path] = []
     for root in roots:
-        if not root:
-            continue
         candidates = _collect(
             [f"{root}_snapshot_iso_*.png", f"{root}_snapshot_iso*.png"],
             prefer_root=root,
@@ -9082,23 +9065,11 @@ def _decode_png_rgb_or_rgba(data: bytes) -> tuple[int, int, bytearray]:
     return width, height, rgba
 
 
-def _snapshot_base_stem(snapshot_name: str) -> str:
-    stem = Path(snapshot_name).stem
-    while stem.endswith("_share_transparent"):
-        stem = stem[: -len("_share_transparent")]
-    if stem.endswith("_share_og"):
-        stem = stem[: -len("_share_og")]
-    return stem
-
-
 def _make_share_preview_transparent(project_path: Path, snapshot_name: str) -> str | None:
     src = project_path / Path(snapshot_name).name
     if not src.is_file() or src.suffix.lower() != ".png":
         return None
-    if "_share_transparent" in src.name.lower() or "_share_og" in src.name.lower():
-        # Already a derived asset — do not nest another transparent pass.
-        return src.name if "_share_transparent" in src.name.lower() else None
-    out = src.with_name(f"{_snapshot_base_stem(src.name)}_share_transparent.png")
+    out = src.with_name(f"{src.stem}_share_transparent.png")
     try:
         if out.is_file() and out.stat().st_mtime_ns >= src.stat().st_mtime_ns:
             return out.name
@@ -9141,62 +9112,11 @@ def _make_share_preview_transparent(project_path: Path, snapshot_name: str) -> s
         return None
 
 
-def _make_share_og_jpeg(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
-    """Opaque JPEG thumbnail for iMessage / SMS / Slack link previews."""
-    src = project_path / Path(snapshot_name).name
-    if not src.is_file():
-        return None
-    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og.jpg"
-    try:
-        from PIL import Image
-
-        if out.is_file() and out.stat().st_mtime_ns >= src.stat().st_mtime_ns:
-            with Image.open(out) as existing:
-                return out.name, int(existing.size[0]), int(existing.size[1])
-
-        with Image.open(src) as img:
-            rgba = img.convert("RGBA")
-            # Composite onto the share-page dark background so transparent edges
-            # never become blank white tiles in Messages.
-            canvas = Image.new("RGBA", rgba.size, (13, 17, 23, 255))
-            canvas.alpha_composite(rgba)
-            rgb = canvas.convert("RGB")
-            max_edge = 1600
-            if max(rgb.size) > max_edge:
-                rgb.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
-            rgb.save(out, format="JPEG", quality=88, optimize=True, progressive=True)
-            return out.name, int(rgb.size[0]), int(rgb.size[1])
-    except Exception as exc:
-        logger.warning("Could not create JPEG share OG preview for %s: %s", src.name, exc)
-        return None
-
-
 def _share_preview_filename(project_path: Path, filename: str) -> str | None:
-    """Public link-preview image (opaque JPEG preferred; PNG snapshot fallback)."""
     snapshot = _share_snapshot_filename(project_path, filename)
     if not snapshot:
         return None
-    og = _make_share_og_jpeg(project_path, snapshot)
-    if og:
-        return og[0]
     return _make_share_preview_transparent(project_path, snapshot) or snapshot
-
-
-def _share_preview_image_meta(project_path: Path, filename: str) -> dict[str, Any]:
-    snapshot = _share_snapshot_filename(project_path, filename)
-    if not snapshot:
-        return {}
-    og = _make_share_og_jpeg(project_path, snapshot)
-    if og:
-        name, width, height = og
-        return {
-            "preview_file": name,
-            "preview_width": width,
-            "preview_height": height,
-            "preview_type": "image/jpeg",
-        }
-    preview = _make_share_preview_transparent(project_path, snapshot) or snapshot
-    return {"preview_file": preview, "preview_type": "image/png"}
 
 
 def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
@@ -9230,14 +9150,10 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
     for path in project_path.iterdir():
         if path.is_file() and path.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf", ".stl", ".glb", ".gltf"}:
             allowed.add(path.name)
-    preview_meta = _share_preview_image_meta(project_path, safe)
-    preview = preview_meta.get("preview_file")
+    preview = _share_snapshot_filename(project_path, safe)
     if preview:
-        allowed.add(str(preview))
-    snapshot = _share_snapshot_filename(project_path, safe)
-    if snapshot:
-        allowed.add(snapshot)
-        transparent_preview = _make_share_preview_transparent(project_path, snapshot)
+        allowed.add(preview)
+        transparent_preview = _make_share_preview_transparent(project_path, preview)
         if transparent_preview:
             allowed.add(transparent_preview)
     return allowed
@@ -9580,6 +9496,9 @@ def get_share_file(token: str, filename: str, step_mode: str | None = Query(None
     if hasattr(response, "headers"):
         response.headers.setdefault("Cache-Control", "public, max-age=3600")
         response.headers.setdefault("Access-Control-Allow-Origin", "*")
+        # Inline disposition so Messages/Slack render the thumbnail instead of treating it as a download.
+        if Path(safe).suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+            response.headers["Content-Disposition"] = f'inline; filename="{safe}"'
     return response
 
 
