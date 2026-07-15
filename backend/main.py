@@ -3651,7 +3651,7 @@ def render_agent_message(body: RenderAgentMessageRequest, request: Request, user
     project_context = _render_agent_project_context(body.project_id, user)
     trace_id = getattr(request.state, "trace_id", new_trace_id())
     matched_guides = getting_started_guides.match_guides(body.message, limit=2)
-    guide_media = getting_started_guides.media_for_guides(matched_guides)
+    guide_media = getting_started_guides.media_for_guides(matched_guides[:1])
     guide_context = getting_started_guides.guide_context_block(matched_guides)
     user_content = _render_agent_user_content(
         body.message,
