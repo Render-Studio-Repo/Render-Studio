@@ -11757,7 +11757,18 @@ function syncPromptTargetUI() {
   if (select) {
     select.disabled = !targetControlsEnabled;
     select.querySelector("option[value='edit']")?.toggleAttribute("disabled", !canEdit);
-    if (!canEdit && select.value === "edit") select.value = "new";
+    // Keep Edit selected when the viewport still has a selected object or face refs,
+    // even if the Browser tree briefly reports zero editable entries.
+    const keepEdit =
+      select.value === "edit"
+      && (
+        canEdit
+        || !!selectedFile
+        || (composer?.getReferences?.() || []).some((ref) =>
+          ["face", "edge", "corner", "lasso", "path", "component"].includes(String(ref.type || "").toLowerCase())
+        )
+      );
+    if (!keepEdit && select.value === "edit") select.value = "new";
   }
   if (objectSelect) {
     const current = entries.some((entry) => entry.name === objectSelect.value)
@@ -11812,6 +11823,29 @@ function promptBaseFilename({ canvasAttached = false } = {}) {
   const chosen = document.getElementById("prompt-target-object")?.value || selectedFile;
   if (!chosen || isComponentHidden(chosen) || isFixtureArtifactFilename(chosen)) return null;
   return chosen;
+}
+
+/** Prefer explicit edit target; fall back to face/component @refs so Mode 2.0 revises the viewport object. */
+function resolvePromptEditTarget(promptReferences = [], { canvasAttached = false } = {}) {
+  let targetMode = getPromptTargetMode();
+  let baseFilename = promptBaseFilename({ canvasAttached });
+  const surfaceTypes = new Set(["face", "edge", "corner", "lasso", "path", "component"]);
+  const refWithFile = (promptReferences || []).find(
+    (ref) => ref?.filename && surfaceTypes.has(String(ref.type || "").toLowerCase())
+  );
+  const hasSurfaceRef = (promptReferences || []).some((ref) =>
+    ["face", "edge", "corner", "lasso", "path"].includes(String(ref.type || "").toLowerCase())
+  );
+  if (!baseFilename && refWithFile?.filename) {
+    baseFilename = refWithFile.filename;
+  }
+  if (!baseFilename && selectedFile && !isComponentHidden(selectedFile) && !isFixtureArtifactFilename(selectedFile)) {
+    if (targetMode === "edit" || hasSurfaceRef) baseFilename = selectedFile;
+  }
+  if ((hasSurfaceRef || baseFilename) && (hasSurfaceRef || targetMode === "edit")) {
+    targetMode = "edit";
+  }
+  return { targetMode, baseFilename };
 }
 
 function annotatePickedReference(ref) {
@@ -14871,6 +14905,14 @@ async function generateRobotArtifacts(kind = "both") {
   } catch (err) {
     await refreshRobotArtifacts({ quiet: true });
     const msg = err?.message || "Robot artifact generation failed.";
+    if (/missing\s+gen_urdf|missing\s+gen_srdf|does not define callable gen_(?:urdf|srdf)/i.test(msg)) {
+      if (status) {
+        status.className = "status loading";
+        status.textContent = "This source needs robot generators first. Authoring URDF/SRDF with AI…";
+      }
+      await authorJakeRobotDescription({ source, kind, openMotion: false });
+      return;
+    }
     setEditStatus("error", msg);
     if (status) {
       status.className = "status error";
@@ -16478,6 +16520,31 @@ function renderWorkspaceRealtimeEditor(data = null) {
       }
     });
   });
+  projectsEl.querySelectorAll("[data-workspace-model-dropdown]").forEach((select) => {
+    select.addEventListener("change", async () => {
+      const option = select.selectedOptions?.[0];
+      const pid = option?.dataset.projectId || "";
+      const filename = option?.dataset.filename || "";
+      select.value = "";
+      if (!pid || !filename) return;
+      await openProjectById(pid);
+      if (!projectId) return;
+      try {
+        const data = await api(`/api/projects/${encodeURIComponent(pid)}`);
+        const browserComponents = normalizeBrowser(data).components || [];
+        const compCandidates = [
+          ...browserComponents,
+          ...browserComponents.flatMap((entry) => entry.children || []),
+        ];
+        const comp = compCandidates.find((entry) =>
+          entry.name === filename || entry.viewer_filename === filename || entry.filename === filename
+        );
+        if (comp) await openBrowserComponent(comp);
+      } catch {
+        /* Project open already succeeded; component targeting is best-effort. */
+      }
+    });
+  });
   projectsEl.querySelectorAll("[data-fusion-drag-row]").forEach((row) => {
     row.addEventListener("dragstart", (event) => {
       const payload = fusionDragPayloadFromRow(row);
@@ -16652,6 +16719,15 @@ function renderWorkspaceFusionComponents(project) {
       disabled: !filename,
     });
   }).join("");
+  const modelOptions = componentEntries
+    .map((entry) => {
+      const filename = entry.name || entry.viewer_filename || entry.filename || "";
+      if (!filename) return "";
+      const label = entry.label || entry.component_name || entry.stem || filename;
+      return `<option value="${appEscapeHtml(filename)}" data-project-id="${appEscapeHtml(project.id)}" data-filename="${appEscapeHtml(filename)}">${appEscapeHtml(label)}</option>`;
+    })
+    .filter(Boolean)
+    .join("");
   const bodyRows = bodies.map((entry) => {
     const filename = entry.name || entry.viewer_filename || entry.filename || "";
     const label = entry.label || entry.component_name || entry.stem || filename;
@@ -16676,6 +16752,13 @@ function renderWorkspaceFusionComponents(project) {
   })).join("");
   return `
     <div class="workspace-fusion-browser">
+      <label class="workspace-realtime-model-select">
+        <span>Open model</span>
+        <select data-workspace-model-dropdown>
+          <option value="">Choose a model from this workspace…</option>
+          ${modelOptions}
+        </select>
+      </label>
       ${renderFusionBrowserSection("Components", componentEntries.length, componentRows || renderFusionEmptyRow("No visible Fusion components yet."), { key: `components:${project.id}`, defaultOpen: false })}
       ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), { key: `bodies:${project.id}`, defaultOpen: false })}
       ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render3D project yet."), { key: `sketches:${project.id}`, defaultOpen: false })}
@@ -19583,9 +19666,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     await ensureProject();
     syncPromptTargetUI();
     pendingPromptSelectionContext = capturePromptSelectionContext();
-    const targetMode = getPromptTargetMode();
-    const targetBaseFilename = promptBaseFilename({ canvasAttached });
     const promptReferences = promptReferencesForSubmit();
+    const { targetMode, baseFilename: targetBaseFilename } = resolvePromptEditTarget(promptReferences, { canvasAttached });
     const status = document.getElementById("prompt-status");
     const reply = document.getElementById("prompt-reply");
     const genMode = promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : promptMode === "v2" ? "v2" : "standard";

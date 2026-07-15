@@ -3401,7 +3401,10 @@ def _run_text_to_cad_v2(
     last_error: str | None = None
     current_source: str | None = previous_source
     canonical_source: str | None = None
-    is_edit = bool(previous_source)
+    target_mode = str((context or {}).get("target_mode") or "").strip().lower()
+    # Prefer explicit edit intent (Mode 2.0 selected/face edits) even if source
+    # recovery races; previous_source still required for surgical revise content.
+    is_edit = bool(previous_source) or target_mode == "edit"
     if previous_source:
         previous_missing = _gen_step_local_undefined_names(previous_source)
         if previous_missing:
@@ -3489,6 +3492,26 @@ def _run_text_to_cad_v2(
             user_prompt=prompt,
             source_name=previous_source_name or source_name,
         )
+    guidance = str((context or {}).get("reference_edit_guidance") or "").strip()
+    if guidance:
+        edit_note = f"{edit_note}\n\nEDITOR CONSTRAINT:\n{guidance}\n"
+        if is_edit:
+            edit_note += (
+                "This is a viewport selected-object edit: revise the current generator/"
+                "STEP in place. Do not treat face/@component refs as contextual-only, "
+                "and do not regenerate from an older unrelated assembly baseline.\n"
+            )
+    # Keep the selected stem when editing — never rename from an improved prompt.
+    if is_edit and previous_source_name:
+        keep_stem = Path(previous_source_name).stem
+        if keep_stem and keep_stem != base:
+            base = keep_stem
+            source_name = f"{base}.py"
+            step_name = f"{base}.step"
+            glb_name = f"{base}.glb"
+            stl_name = f"{base}.stl"
+            three_mf_name = f"{base}.3mf"
+            source_path = project_path / source_name
     # Mirror upstream text-to-cad modeling behavior by default: keep the
     # generation prompt focused on the user request + edit lineage, while
     # preserving our upload/reference/inspect/selector tooling around it.
@@ -3502,6 +3525,12 @@ def _run_text_to_cad_v2(
             f"[2.0/text-to-cad] {jake_required_workflow_summary()}"
             + (" (revise/edit)" if is_edit else " (new part)"),
             trace_id=trace_id,
+            data={
+                "is_edit": is_edit,
+                "target_mode": target_mode or None,
+                "previous_source": previous_source_name,
+                "has_reference_edit_guidance": bool(guidance),
+            },
         )
     generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
     if mirror_upstream_modeling:

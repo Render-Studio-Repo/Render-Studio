@@ -724,12 +724,44 @@ def _fill_prompt_mode_from_generation(project_path: Path, entries: list[dict[str
         if not row.get("provider") and gen.get("provider"):
             row["provider"] = gen.get("provider")
             changed = True
-        target = str(request_body.get("target_mode") or "").strip().lower()
+        # Prefer explicit job/request target_mode; never demote a real edit to
+        # "new" just because base_filename was temporarily null in older builds.
+        target = str(
+            gen.get("target_mode")
+            or request_body.get("target_mode")
+            or row.get("target_mode")
+            or ""
+        ).strip().lower()
         if target not in {"new", "edit"}:
-            target = "edit" if (row.get("base_filename") or request_body.get("base_filename")) else "new"
+            has_base = bool(row.get("base_filename") or request_body.get("base_filename") or gen.get("base_filename"))
+            refs = request_body.get("references") or row.get("references") or []
+            has_face = any(str((r or {}).get("type") or "").lower() == "face" for r in refs if isinstance(r, dict))
+            has_component = any(
+                str((r or {}).get("type") or "").lower() == "component" for r in refs if isinstance(r, dict)
+            )
+            target = "edit" if (has_base or (has_face and has_component)) else "new"
         if (row.get("kind") or "cad") == "cad" and row.get("target_mode") != target:
             row["target_mode"] = target
             changed = True
+        # Recover missing base from face/component refs so history matches the edit.
+        if not row.get("base_filename"):
+            recovered_base = (
+                request_body.get("base_filename")
+                or gen.get("base_filename")
+                or next(
+                    (
+                        (r or {}).get("filename")
+                        for r in (request_body.get("references") or [])
+                        if isinstance(r, dict)
+                        and str(r.get("type") or "").lower() in {"component", "face"}
+                        and r.get("filename")
+                    ),
+                    None,
+                )
+            )
+            if recovered_base:
+                row["base_filename"] = recovered_base
+                changed = True
         if (
             request_body.get("codex_agent")
             or request_body.get("jake_codex_agent")

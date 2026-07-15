@@ -767,6 +767,25 @@ class RenderAgentSuggestRequest(BaseModel):
     thread_id: str | None = Field(None, max_length=80)
 
 
+class ProjectChatThreadCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=80)
+
+
+class ProjectChatMessageRequest(BaseModel):
+    body: str = Field(default="", max_length=8000)
+    parent_id: str | None = Field(default=None, max_length=64)
+    images: list[str] = Field(default_factory=list, max_length=6, description="Stored chat media names")
+
+
+class ProjectChatReactionRequest(BaseModel):
+    emoji: str = Field(..., min_length=1, max_length=8)
+
+
+class ProjectChatReadRequest(BaseModel):
+    thread_id: str | None = Field(default=None, max_length=64)
+    message_id: str | None = Field(default=None, max_length=64)
+
+
 class GettingStartedGenerateRequest(BaseModel):
     question: str = Field(..., min_length=3, max_length=2000)
     thread_id: str | None = Field(None, max_length=80)
@@ -2170,15 +2189,32 @@ def _infer_surface_edit_base(project_path: Path, body: PromptRequest) -> str | N
 
 def _with_reference_edit_base(project_path: Path, body: PromptRequest, trace_id: str | None) -> PromptRequest:
     inferred = _infer_surface_edit_base(project_path, body)
-    if not inferred:
-        return body
-    trace_add(
-        "info",
-        "Inferred base model for reference-anchored edit",
-        trace_id=trace_id,
-        data={"base_filename": inferred},
+    updates: dict[str, Any] = {}
+    if inferred:
+        updates["base_filename"] = inferred
+        trace_add(
+            "info",
+            "Inferred base model for reference-anchored edit",
+            trace_id=trace_id,
+            data={"base_filename": inferred},
+        )
+    # Face/length selected edits are always edit mode — older clients often sent "new".
+    looks_like_selected_edit = bool(
+        inferred
+        or _has_surface_edit_reference(body)
+        or _is_length_extend_edit(body)
     )
-    return body.model_copy(update={"base_filename": inferred})
+    if looks_like_selected_edit and str(getattr(body, "target_mode", "") or "").strip().lower() != "edit":
+        updates["target_mode"] = "edit"
+        trace_add(
+            "info",
+            "Forced target_mode=edit for selected/face viewport edit",
+            trace_id=trace_id,
+            data={"base_filename": updates.get("base_filename") or body.base_filename},
+        )
+    if not updates:
+        return body
+    return body.model_copy(update=updates)
 
 
 _PROMPT_REF_ONLY_RE = re.compile(
@@ -2448,11 +2484,65 @@ def _apply_part_placements(
     return applied
 
 
+def _is_length_extend_edit(body: PromptRequest) -> bool:
+    """True when the prompt asks to lengthen/extend the selected part (often with @face)."""
+    p = f" {body.prompt or ''} ".lower()
+    markers = (
+        " longer",
+        " lengthen",
+        " extend",
+        " extension",
+        " twice as long",
+        " 2x long",
+        " 2× long",
+        " double the length",
+        " double its length",
+        " double in length",
+        " make this part",
+        " increase the length",
+        " stretch",
+        " elongate",
+        " central span",
+        " longitudinal length",
+    )
+    if not any(m in p for m in markers):
+        return False
+    return bool(
+        body.base_filename
+        or _has_surface_edit_reference(body)
+        or any((r.type or "").lower() == "component" for r in body.references)
+        or str(getattr(body, "target_mode", "") or "").strip().lower() == "edit"
+    )
+
+
 def _reference_edit_guidance(prompt: str, refs: list[dict[str, Any]]) -> str | None:
     face_refs = [r for r in refs if str(r.get("type") or "").lower() == "face"]
     if not face_refs:
         return None
     p = f" {prompt or ''} ".lower()
+    lengthen_words = (
+        " longer",
+        " lengthen",
+        " extend",
+        " extension",
+        " twice as long",
+        " double the length",
+        " double its length",
+        " double in length",
+        " increase the length",
+        " stretch",
+        " elongate",
+        " central span",
+        " longitudinal",
+    )
+    if any(word in p for word in lengthen_words):
+        return (
+            "Face-anchored LENGTH edit of the CURRENT selected model: measure L_orig on the selected "
+            "STEP/component along the arm/part axis (use the picked face normal/position as the extend "
+            "anchor). Lengthen that existing part only — do NOT regenerate from an older assembly "
+            "baseline, do NOT treat the face as contextual-only, and do NOT invent a new unrelated stem. "
+            "Preserve end-interface geometry; insert extension in the central span and translate the far end."
+        )
     remove_words = (
         " remove ",
         " delete ",
@@ -2469,7 +2559,8 @@ def _reference_edit_guidance(prompt: str, refs: list[dict[str, Any]]) -> str | N
     if not any(word in p for word in remove_words):
         return (
             "Use the face reference data as exact edit anchors. Each face ref gives a picked planar face "
-            "with position/local_point, outward normal, face_indices, and face_area. Preserve unrelated geometry."
+            "with position/local_point, outward normal, face_indices, and face_area. Preserve unrelated geometry. "
+            "Edit the CURRENT selected object in the viewport — do not create a replacement model from scratch."
         )
     return (
         "Face-anchored removal edit: the selected face is the wall/section reference, not a generic point. "
@@ -8968,14 +9059,315 @@ def get_workspace_history(
     return {"entries": entries}
 
 
-@app.get("/api/projects/{project_id}/object-history")
-def get_object_history(
+def _project_chat_members(project_id: str) -> list[dict[str, Any]]:
+    team_id = teams_service.project_team_id(project_id)
+    members: list[dict[str, Any]] = []
+    if team_id:
+        try:
+            # Owner-visible membership listing may require a team member; fall back to SQL.
+            with get_conn() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT u.id, u.email, u.display_name, u.avatar_url
+                      FROM team_members tm
+                      JOIN users u ON u.id = tm.user_id
+                     WHERE tm.team_id = ?
+                     ORDER BY lower(u.display_name), lower(u.email)
+                    """,
+                    (team_id,),
+                ).fetchall()
+            members = [dict(row) for row in rows]
+        except Exception:
+            members = []
+    if not members:
+        owner = _project_owner(project_id) or {}
+        if owner.get("created_by"):
+            members = [
+                {
+                    "id": owner.get("created_by"),
+                    "email": owner.get("owner_email"),
+                    "display_name": owner.get("owner_name"),
+                    "avatar_url": _avatar_url_for_user_id(owner.get("created_by")),
+                }
+            ]
+    return members
+
+
+def _chat_image_public_url(project_id: str, image: dict[str, Any]) -> dict[str, Any]:
+    stored = Path(str(image.get("stored_name") or image.get("url") or "")).name
+    return {
+        **image,
+        "url": f"/api/projects/{project_id}/chat/media/{urllib.parse.quote(stored)}",
+    }
+
+
+def _decorate_chat_message(project_id: str, message: dict[str, Any]) -> dict[str, Any]:
+    row = dict(message)
+    row["images"] = [_chat_image_public_url(project_id, img) for img in (row.get("images") or [])]
+    return row
+
+
+def _notify_chat_message(project_id: str, thread: dict[str, Any], message: dict[str, Any], user: dict[str, Any]) -> None:
+    payload = {
+        "type": "project.chat.message",
+        "project_id": project_id,
+        "thread_id": thread.get("id"),
+        "thread_title": thread.get("title"),
+        "message": _decorate_chat_message(project_id, message),
+        "by_user_id": user.get("id"),
+        "by_user_name": user.get("display_name"),
+    }
+    hub.notify(project_id, payload)
+    _notify_project_workspace(project_id, payload)
+    mentioned_ids = {
+        str(m.get("id"))
+        for m in (message.get("mentions") or [])
+        if m.get("type") == "user" and m.get("id")
+    }
+    for uid in mentioned_ids:
+        if uid == user.get("id"):
+            continue
+        _notify_user(
+            uid,
+            {
+                **payload,
+                "type": "project.chat.mention",
+                "mention": True,
+            },
+        )
+
+
+def _maybe_reply_as_render_agent(
+    project_path: Path,
     project_id: str,
+    thread: dict[str, Any],
+    message: dict[str, Any],
+    user: dict[str, Any],
+    background_tasks: BackgroundTasks,
+) -> None:
+    mentions = message.get("mentions") or []
+    if not any(m.get("type") == "agent" for m in mentions):
+        return
+
+    def _run() -> None:
+        from backend.services import project_chat_service
+
+        try:
+            ai = _sam_ai_service()
+            system = (
+                "You are the Render Agent inside a Render3D project collaboration chat. "
+                "Reply helpfully and concisely (2-6 short sentences). "
+                "Focus on CAD, prompts, modeling steps, and Render3D product guidance."
+            )
+            user_content = (
+                f"Project: {project_id}\n"
+                f"User ({user.get('display_name') or 'User'}): {message.get('body') or ''}"
+            )
+            reply_text = ""
+            try:
+                answer, _trace = ai._call_model(
+                    system,
+                    user_content,
+                    trace_id=new_trace_id(),
+                    images=None,
+                    max_tokens=900,
+                    json_response=False,
+                )
+                reply_text = str(answer or "").strip()
+            except Exception as exc:
+                reply_text = (
+                    f"I saw your ping, {user.get('display_name') or 'there'}. "
+                    f"I couldn't complete a full answer just now ({exc}). "
+                    "Open the Render Agent panel for a deeper help thread."
+                )
+            if not reply_text:
+                reply_text = (
+                    f"Thanks for the ping, {user.get('display_name') or 'there'}. "
+                    "I'm here — ask me about modeling steps, prompts, or how to use Render3D."
+                )
+            agent_msg = project_chat_service.post_message(
+                project_path,
+                thread_id=thread["id"],
+                body=reply_text[:4000],
+                user=user,
+                parent_id=message.get("id"),
+                as_agent=True,
+            )
+            _notify_chat_message(
+                project_id,
+                thread,
+                agent_msg,
+                {"id": "render-agent", "display_name": "Render Agent"},
+            )
+        except Exception as exc:
+            logger.warning("Render Agent chat reply failed for %s: %s", project_id, exc)
+
+    background_tasks.add_task(_run)
+
+
+@app.get("/api/projects/{project_id}/chat/threads")
+def list_project_chat_threads(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    threads = project_chat_service.list_threads(path, user)
+    unread = project_chat_service.unread_summary(path, user["id"])
+    return {"threads": threads, "unread": unread}
+
+
+@app.post("/api/projects/{project_id}/chat/threads")
+def create_project_chat_thread(
+    project_id: str,
+    body: ProjectChatThreadCreateRequest,
     user: dict[str, Any] = Depends(get_current_user),
-    limit: int = Query(100, ge=1, le=200),
 ):
+    from backend.services import project_chat_service
+
     path = _require_project(user, project_id)
-    return {"entries": project_log_service.list_events(path, limit=limit)}
+    thread = project_chat_service.create_thread(path, title=body.title, user=user)
+    return {"thread": thread}
+
+
+@app.get("/api/projects/{project_id}/chat/threads/{thread_id}")
+def get_project_chat_thread(
+    project_id: str,
+    thread_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    thread = project_chat_service.get_thread(path, thread_id, user=user)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    thread["messages"] = [_decorate_chat_message(project_id, m) for m in thread.get("messages") or []]
+    return {"thread": thread, "unread": project_chat_service.unread_summary(path, user["id"])}
+
+
+@app.get("/api/projects/{project_id}/chat/mention-candidates")
+def list_chat_mention_candidates(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import project_chat_service
+
+    _require_project_read(user, project_id)
+    members = _project_chat_members(project_id)
+    return {"candidates": project_chat_service.mention_candidates(members)}
+
+
+@app.get("/api/projects/{project_id}/chat/unread")
+def get_project_chat_unread(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    return project_chat_service.unread_summary(path, user["id"])
+
+
+@app.post("/api/projects/{project_id}/chat/threads/{thread_id}/messages")
+async def post_project_chat_message(
+    project_id: str,
+    thread_id: str,
+    background_tasks: BackgroundTasks,
+    body: str = Form(""),
+    parent_id: str | None = Form(None),
+    images: list[UploadFile] = File(default=[]),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    thread = project_chat_service.get_thread(path, thread_id, user=user)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    saved_images: list[dict[str, Any]] = []
+    message_id = str(uuid.uuid4())[:10]
+    for index, upload in enumerate((images or [])[:6]):
+        try:
+            saved = project_chat_service.save_chat_image(path, upload, message_id=message_id, index=index)
+        except Exception:
+            saved = None
+        if saved:
+            saved_images.append(saved)
+    members = _project_chat_members(project_id)
+    candidates = project_chat_service.mention_candidates(members)
+    try:
+        message = project_chat_service.post_message(
+            path,
+            thread_id=thread["id"],
+            body=body or "",
+            user=user,
+            parent_id=parent_id or None,
+            images=saved_images,
+            mention_candidates_list=candidates,
+            message_id=message_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    # Preserve pre-allocated id when possible by rewriting file if empty images used random id —
+    # post_message assigns its own id; that's fine.
+    decorated = _decorate_chat_message(project_id, message)
+    _notify_chat_message(project_id, thread, message, user)
+    _maybe_reply_as_render_agent(path, project_id, thread, message, user, background_tasks)
+    return {"message": decorated, "unread": project_chat_service.unread_summary(path, user["id"])}
+
+
+@app.post("/api/projects/{project_id}/chat/threads/{thread_id}/messages/{message_id}/reactions")
+def react_project_chat_message(
+    project_id: str,
+    thread_id: str,
+    message_id: str,
+    body: ProjectChatReactionRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    try:
+        message = project_chat_service.toggle_reaction(
+            path, thread_id=thread_id, message_id=message_id, emoji=body.emoji, user=user
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    payload = {
+        "type": "project.chat.reaction",
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "message": _decorate_chat_message(project_id, message),
+    }
+    hub.notify(project_id, payload)
+    return {"message": _decorate_chat_message(project_id, message)}
+
+
+@app.post("/api/projects/{project_id}/chat/read")
+def mark_project_chat_read(
+    project_id: str,
+    body: ProjectChatReadRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    cursor = project_chat_service.mark_read(
+        path, user_id=user["id"], thread_id=body.thread_id, message_id=body.message_id
+    )
+    return {"ok": True, "read_cursor": cursor, "unread": project_chat_service.unread_summary(path, user["id"])}
+
+
+@app.get("/api/projects/{project_id}/chat/media/{filename}")
+def get_project_chat_media(
+    project_id: str,
+    filename: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    media = project_chat_service.resolve_media_path(path, filename)
+    if not media:
+        raise HTTPException(404, "Media not found")
+    return FileResponse(media)
 
 
 @app.get("/api/projects/{project_id}/project-history")
@@ -10738,8 +11130,20 @@ def generate_rigging_artifacts(
     project_store.touch_project(path)
     summary = _robot_artifact_summary(path)
     if errors and not outputs:
+        stderr_text = "\n".join(str(err.get("stderr") or "") for err in errors)
+        missing_generators: list[str] = []
+        if "does not define callable gen_urdf()" in stderr_text:
+            missing_generators.append("gen_urdf()")
+        if "does not define callable gen_srdf()" in stderr_text:
+            missing_generators.append("gen_srdf()")
+        message = "Robot artifact generation failed."
+        if missing_generators:
+            message = (
+                f"Python source is missing {', '.join(missing_generators)}. "
+                "Author URDF/SRDF with AI first, then generate robot artifacts."
+            )
         raise HTTPException(422, {
-            "message": "Robot artifact generation failed.",
+            "message": message,
             "outputs": outputs,
             "errors": errors,
             "summary": summary,
@@ -12126,6 +12530,20 @@ def _prompt_via_kernel(
                 trace_id=trace_id,
                 data={"base_filename": body.base_filename, "source": previous_source_name},
             )
+        elif str(getattr(body, "target_mode", "") or "").strip().lower() == "edit":
+            trace_add(
+                "warning",
+                "Edit requested but no Python source found for base model",
+                trace_id=trace_id,
+                data={"base_filename": body.base_filename},
+            )
+    # Carry edit intent into the design context so CREATE cannot silently win.
+    if isinstance(context, dict):
+        context = {
+            **context,
+            "target_mode": str(getattr(body, "target_mode", "") or "").strip().lower() or ("edit" if body.base_filename else "new"),
+            "base_filename": body.base_filename,
+        }
     timer = TraceTimer("Design pipeline", trace_id)
     cancel_check = lambda: generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir()
     try:
@@ -12728,14 +13146,36 @@ def prompt_cad(
         if normalized_mode == "v2":
             # Keep user-provided refs (especially DXF attachments/context) in 2.0 mode.
             # Only force pipeline knobs that are specific to v2 routing.
+            # NEVER clear base_filename on edits — that forces CREATE and regenerates
+            # from scratch instead of extending the selected viewport object / face.
             v2_skills = ["cad"]
             if "dxf" in {str(s).lower() for s in resolved_skills}:
                 v2_skills.append("dxf")
             updates.update({
-                "base_filename": None,
                 "fusion_target": "in_app",
                 "skills": v2_skills,
             })
+            target_mode = str(getattr(body, "target_mode", "") or "").strip().lower()
+            is_edit_intent = (
+                target_mode == "edit"
+                or _has_surface_edit_reference(body)
+                or _is_reference_anchored_addition(body)
+                or _is_length_extend_edit(body)
+            )
+            if is_edit_intent:
+                base = body.base_filename or _infer_surface_edit_base(project_path, body) or _reference_base_filename(body)
+                if base:
+                    updates["base_filename"] = base
+                    updates["target_mode"] = "edit"
+                    trace_add(
+                        "info",
+                        "Preserved/recovered base model for Mode 2.0 edit",
+                        trace_id=trace_id,
+                        data={"base_filename": base, "target_mode": "edit"},
+                    )
+            else:
+                # Fresh generative 2.0 only — do not inherit an unrelated prior base.
+                updates["base_filename"] = None
         design_body = body.model_copy(update=updates)
         model_meta = _resolve_prompt_model_meta(user, design_body, project_id=project_id)
         request_payload = design_body.model_dump(mode="json")
@@ -12847,7 +13287,14 @@ def prompt_cad(
             trace_id=trace_id,
         )
         updates: dict[str, Any] = {"skills": resolved_skills}
-        if body.base_filename:
+        # Keep base on edit / face-extend jobs so kernel revises the viewport object.
+        keep_base = (
+            str(getattr(body, "target_mode", "") or "").strip().lower() == "edit"
+            or _has_surface_edit_reference(body)
+            or _is_length_extend_edit(body)
+            or _is_reference_anchored_addition(body)
+        )
+        if body.base_filename and not keep_base:
             updates["base_filename"] = None
         design_body = body.model_copy(update=updates)
         return _prompt_via_kernel(project_id, design_body, trace_id, ai, user, project_path)

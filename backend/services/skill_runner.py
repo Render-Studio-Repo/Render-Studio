@@ -56,16 +56,30 @@ def list_skill_tools(skill_id: str) -> list[str]:
 
 def _pythonpath_for_skill(skill_dir: Path) -> str:
     parts: list[str] = []
-    packages = skill_dir / "scripts" / "packages"
-    if packages.is_dir():
-        for pkg in sorted(packages.iterdir()):
-            src = pkg / "src"
-            if src.is_dir():
-                parts.append(str(src))
+    seen: set[str] = set()
+
+    def add(path: Path) -> None:
+        key = str(path)
+        if path.is_dir() and key not in seen:
+            seen.add(key)
+            parts.append(key)
+
+    def add_skill_packages(root: Path) -> None:
+        packages = root / "scripts" / "packages"
+        if packages.is_dir():
+            for pkg in sorted(packages.iterdir()):
+                add(pkg / "src")
+
+    add_skill_packages(skill_dir)
+    skills_root = skill_dir.parent
+    if skills_root.is_dir():
+        for sibling in sorted(skills_root.iterdir()):
+            if sibling == skill_dir:
+                continue
+            add_skill_packages(sibling)
     for tool in KNOWN_TOOLS:
         tool_dir = skill_dir / "scripts" / tool
-        if tool_dir.is_dir():
-            parts.append(str(tool_dir))
+        add(tool_dir)
     existing = os.environ.get("PYTHONPATH", "")
     if existing:
         parts.append(existing)
