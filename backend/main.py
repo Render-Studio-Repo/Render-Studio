@@ -41,6 +41,7 @@ from backend.services import (
     project_log_service,
     project_store,
     prompt_history_service,
+    feedback_service,
     workspace_log_service,
 )
 from backend.services import kernel_bridge
@@ -774,6 +775,11 @@ class GettingStartedGenerateRequest(BaseModel):
 class AdminGuideReviewRequest(BaseModel):
     status: str = Field(..., description="approved | rejected | pending")
     note: str | None = Field(None, max_length=500)
+
+
+class AdminFeedbackReviewRequest(BaseModel):
+    status: str = Field(..., description="open | checked | approved | denied")
+    note: str | None = Field(None, max_length=1000)
 
 
 class WiringDiagnoseRequest(BaseModel):
@@ -3972,6 +3978,193 @@ def admin_review_pending_guide(
     if not item:
         raise HTTPException(404, "Pending guide not found")
     return {"ok": True, "item": item}
+
+
+def _feedback_context_snapshot(
+    *,
+    user: dict[str, Any],
+    project_id: str | None,
+    prompt_id: str | None,
+    trace_id: str | None,
+    context_json: str | None,
+) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    if context_json:
+        try:
+            parsed = json.loads(context_json)
+            if isinstance(parsed, dict):
+                context.update(parsed)
+        except json.JSONDecodeError:
+            context["context_parse_error"] = "Could not parse client context JSON."
+    if project_id:
+        try:
+            project_path = _require_project_read(user, project_id)
+            meta = project_store.load_meta(project_path)
+            context["project"] = {
+                "id": project_id,
+                "name": meta.get("name") or project_id,
+                "updated_at": meta.get("updated_at"),
+                "latest_file": meta.get("latest_file"),
+            }
+            if prompt_id:
+                entry = prompt_history_service.get_entry(project_path, prompt_id)
+                if entry:
+                    context["prompt_history"] = {
+                        key: entry.get(key)
+                        for key in (
+                            "id",
+                            "prompt",
+                            "success",
+                            "message",
+                            "error",
+                            "filename",
+                            "base_filename",
+                            "trace_id",
+                            "created_at",
+                            "model",
+                            "provider",
+                            "target_mode",
+                            "prompt_mode",
+                            "skills",
+                        )
+                        if entry.get(key) is not None
+                    }
+                    trace_id = trace_id or entry.get("trace_id")
+            gen = generation_service.load(project_path) or {}
+            matching_jobs = []
+            for job in gen.get("jobs") or []:
+                if trace_id and str(job.get("trace_id") or job.get("id") or "") != str(trace_id):
+                    continue
+                matching_jobs.append({
+                    key: job.get(key)
+                    for key in (
+                        "id",
+                        "status",
+                        "kind",
+                        "trace_id",
+                        "prompt_id",
+                        "prompt",
+                        "filename",
+                        "error",
+                        "mode",
+                        "target_mode",
+                        "started_at",
+                        "updated_at",
+                        "finished_at",
+                    )
+                    if job.get(key) is not None
+                })
+            if matching_jobs:
+                context["generation_jobs"] = matching_jobs[:5]
+        except Exception as exc:
+            context["project_context_error"] = str(exc)[:500]
+    if trace_id:
+        context["trace_id"] = trace_id
+        context["trace_log"] = [entry for entry in list_entries(120) if entry.get("trace_id") == trace_id][:40]
+    return context
+
+
+@app.post("/api/feedback/requests")
+async def submit_feedback_request(
+    kind: str = Form(...),
+    message: str = Form(...),
+    project_id: str | None = Form(None),
+    project_name: str | None = Form(None),
+    prompt_id: str | None = Form(None),
+    prompt_label: str | None = Form(None),
+    trace_id: str | None = Form(None),
+    page_url: str | None = Form(None),
+    context_json: str | None = Form(None),
+    screenshots: list[UploadFile] | None = File(None),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    kind_norm = (kind or "").strip().lower()
+    if kind_norm not in {"bug", "suggestion"}:
+        raise HTTPException(400, "kind must be bug or suggestion")
+    if not (message or "").strip():
+        raise HTTPException(400, "Message is required")
+    request_id = str(uuid.uuid4())[:10]
+    saved_screenshots = []
+    for index, upload in enumerate((screenshots or [])[: feedback_service.MAX_SCREENSHOTS], start=1):
+        saved = feedback_service.save_screenshot(upload, request_id=request_id, index=index)
+        if saved:
+            saved_screenshots.append(saved)
+    context = _feedback_context_snapshot(
+        user=user,
+        project_id=project_id,
+        prompt_id=prompt_id,
+        trace_id=trace_id,
+        context_json=context_json,
+    )
+    item = feedback_service.add_request(
+        kind=kind_norm,
+        message=message,
+        user=user,
+        project_id=project_id,
+        project_name=project_name,
+        prompt_id=prompt_id,
+        prompt_label=prompt_label,
+        trace_id=trace_id or context.get("trace_id"),
+        page_url=page_url,
+        context=context,
+        screenshots=saved_screenshots,
+    )
+    # Preserve the pre-generated id used for screenshot names.
+    if item["id"] != request_id:
+        item["screenshot_request_id"] = request_id
+    trace_add(
+        "info",
+        f"User submitted {kind_norm}: {message[:120]}",
+        trace_id=trace_id,
+        data={"feedback_id": item["id"], "project_id": project_id, "prompt_id": prompt_id},
+    )
+    return {"ok": True, "request": item}
+
+
+@app.get("/api/feedback/screenshots/{stored_name}")
+def feedback_screenshot(stored_name: str, user: dict[str, Any] = Depends(get_current_user)):
+    del user
+    path = feedback_service.screenshot_path(stored_name)
+    if not path:
+        raise HTTPException(404, "Screenshot not found")
+    return FileResponse(path)
+
+
+@app.get("/api/admin/feedback/summary")
+def admin_feedback_summary(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return feedback_service.summary()
+
+
+@app.get("/api/admin/feedback/requests")
+def admin_feedback_requests(
+    user: dict[str, Any] = Depends(get_current_user),
+    status: str = Query("all"),
+    kind: str = Query("all"),
+    limit: int = Query(120, ge=1, le=300),
+    mark_read: bool = Query(False),
+):
+    _require_a1projects_admin(user)
+    items = feedback_service.list_requests(status=status, kind=kind, limit=limit)
+    if mark_read:
+        feedback_service.mark_read()
+    return {"requests": items, "summary": feedback_service.summary()}
+
+
+@app.post("/api/admin/feedback/requests/{item_id}")
+def admin_review_feedback_request(
+    item_id: str,
+    body: AdminFeedbackReviewRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    try:
+        item = feedback_service.set_status(item_id, body.status, reviewer=user, note=body.note)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not item:
+        raise HTTPException(404, "Feedback request not found")
+    return {"ok": True, "item": item, "summary": feedback_service.summary()}
 
 
 def _avatar_path_for_user(user_id: str, ext: str) -> Path:

@@ -11,6 +11,7 @@ import { startShowMe } from "./show-me-tour.js?v=20260715-gs-deck";
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v2";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -254,9 +255,15 @@ export function createRenderAgent({
     else close();
   }
 
+  function layoutStorageKey() {
+    return panel.classList.contains("render-agent-panel--docs")
+      ? DOCS_PANEL_LAYOUT_KEY
+      : PANEL_LAYOUT_KEY;
+  }
+
   function readStickyLayout() {
     try {
-      const raw = JSON.parse(localStorage.getItem(PANEL_LAYOUT_KEY) || "null");
+      const raw = JSON.parse(localStorage.getItem(layoutStorageKey()) || "null");
       return raw && typeof raw === "object" ? raw : null;
     } catch {
       return null;
@@ -265,7 +272,7 @@ export function createRenderAgent({
 
   function writeStickyLayout(next) {
     try {
-      localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(next));
+      localStorage.setItem(layoutStorageKey(), JSON.stringify(next));
     } catch {
       /* ignore */
     }
@@ -277,10 +284,11 @@ export function createRenderAgent({
     const isDocs = panel.classList.contains("render-agent-panel--docs");
     if (isDocs) {
       panel.classList.add("render-agent-panel--popup");
+      panel.classList.remove("render-agent-panel--deck");
     }
     const saved = readStickyLayout();
-    const defaultW = Math.min(isDocs ? 360 : 400, Math.max(300, window.innerWidth - 32));
-    const defaultH = Math.min(isDocs ? 400 : 640, Math.max(320, window.innerHeight - (isDocs ? 140 : 96)));
+    const defaultW = Math.min(isDocs ? 300 : 400, Math.max(260, window.innerWidth - 32));
+    const defaultH = Math.min(isDocs ? 320 : 640, Math.max(280, window.innerHeight - (isDocs ? 160 : 96)));
     if (!saved) {
       panel.style.left = "auto";
       panel.style.right = "16px";
@@ -294,9 +302,9 @@ export function createRenderAgent({
       }
       return;
     }
-    if (saved.width) panel.style.width = `${Math.max(300, saved.width)}px`;
+    if (saved.width) panel.style.width = `${Math.max(260, saved.width)}px`;
     else panel.style.width = `${defaultW}px`;
-    if (saved.height) panel.style.height = `${Math.max(320, saved.height)}px`;
+    if (saved.height) panel.style.height = `${Math.max(260, saved.height)}px`;
     else panel.style.height = `${defaultH}px`;
     panel.style.maxHeight = "none";
     if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
@@ -341,10 +349,13 @@ export function createRenderAgent({
       hint.title = "Drag to move";
       head.insertBefore(hint, head.firstChild);
     }
-    if (!panel.querySelector(".render-agent-resize")) {
+    const edges = ["n", "s", "e", "w", "se", "sw", "ne", "nw"];
+    for (const edge of edges) {
+      if (panel.querySelector(`.render-agent-resize--${edge}`)) continue;
       const resize = document.createElement("div");
-      resize.className = "render-agent-resize";
-      resize.title = "Drag to resize";
+      resize.className = `render-agent-resize render-agent-resize--${edge}`;
+      resize.dataset.edge = edge;
+      resize.title = "Drag edge to resize";
       panel.appendChild(resize);
     }
 
@@ -358,21 +369,50 @@ export function createRenderAgent({
         panel.style.right = "auto";
         panel.style.left = `${left}px`;
         panel.style.top = `${top}px`;
-      } else if (drag.mode === "resize") {
-        const width = Math.max(300, Math.min(window.innerWidth - 16, drag.startW + (e.clientX - drag.sx)));
-        const height = Math.max(320, Math.min(window.innerHeight - 16, drag.startH + (e.clientY - drag.sy)));
-        panel.style.width = `${width}px`;
-        panel.style.height = `${height}px`;
-        panel.style.maxHeight = "none";
+        return;
       }
+      if (drag.mode !== "resize") return;
+      const dx = e.clientX - drag.sx;
+      const dy = e.clientY - drag.sy;
+      const edge = drag.edge || "se";
+      let width = drag.startW;
+      let height = drag.startH;
+      let left = drag.startLeft;
+      let top = drag.startTop;
+      if (edge.includes("e")) width = drag.startW + dx;
+      if (edge.includes("w")) {
+        width = drag.startW - dx;
+        left = drag.startLeft + dx;
+      }
+      if (edge.includes("s")) height = drag.startH + dy;
+      if (edge.includes("n")) {
+        height = drag.startH - dy;
+        top = drag.startTop + dy;
+      }
+      width = Math.max(260, Math.min(window.innerWidth - 16, width));
+      height = Math.max(260, Math.min(window.innerHeight - 16, height));
+      if (edge.includes("w")) {
+        left = Math.max(8, Math.min(drag.startLeft + drag.startW - 260, left));
+        width = drag.startLeft + drag.startW - left;
+      }
+      if (edge.includes("n")) {
+        top = Math.max(8, Math.min(drag.startTop + drag.startH - 260, top));
+        height = drag.startTop + drag.startH - top;
+      }
+      panel.style.right = "auto";
+      panel.style.left = `${left}px`;
+      panel.style.top = `${top}px`;
+      panel.style.width = `${width}px`;
+      panel.style.height = `${height}px`;
+      panel.style.maxHeight = "none";
     };
     const onUp = () => {
       if (!drag) return;
       drag = null;
       panel.classList.remove("is-dragging");
       writeStickyLayout({
-        left: parseFloat(panel.style.left) || null,
-        top: parseFloat(panel.style.top) || null,
+        left: parseFloat(panel.style.left) || panel.getBoundingClientRect().left,
+        top: parseFloat(panel.style.top) || panel.getBoundingClientRect().top,
         width: panel.offsetWidth,
         height: panel.offsetHeight,
       });
@@ -396,20 +436,26 @@ export function createRenderAgent({
       window.addEventListener("pointerup", onUp);
     });
 
-    panel.querySelector(".render-agent-resize")?.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      drag = {
-        mode: "resize",
-        sx: e.clientX,
-        sy: e.clientY,
-        startW: panel.offsetWidth,
-        startH: panel.offsetHeight,
-      };
-      panel.classList.add("is-dragging");
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+    panel.querySelectorAll(".render-agent-resize").forEach((handle) => {
+      handle.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = panel.getBoundingClientRect();
+        drag = {
+          mode: "resize",
+          edge: handle.dataset.edge || "se",
+          sx: e.clientX,
+          sy: e.clientY,
+          startW: rect.width,
+          startH: rect.height,
+          startLeft: rect.left,
+          startTop: rect.top,
+        };
+        panel.classList.add("is-dragging");
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      });
     });
   }
 

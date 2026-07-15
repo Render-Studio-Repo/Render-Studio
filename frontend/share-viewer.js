@@ -28,6 +28,11 @@ function isEmbedMode() {
   return new URLSearchParams(location.search).get("embed") === "1";
 }
 
+function isHeroEmbedMode() {
+  const params = new URLSearchParams(location.search);
+  return params.get("embed") === "1" && params.get("hero") === "1";
+}
+
 function $(id) {
   return document.getElementById(id);
 }
@@ -151,7 +156,9 @@ function escapeHtml(value) {
 async function main() {
   const token = tokenFromPath();
   const embed = isEmbedMode();
+  const heroEmbed = isHeroEmbedMode();
   if (embed) document.body.classList.add("share-embed");
+  if (heroEmbed) document.body.classList.add("share-hero");
   const titleEl = $("share-title");
   const subEl = $("share-subtitle");
   const statusEl = $("share-status");
@@ -241,11 +248,19 @@ async function main() {
   renderDownloads($("share-download-list"));
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070b12);
+  const heroEmbedActive = isHeroEmbedMode();
+  scene.background = heroEmbedActive ? null : new THREE.Color(0x070b12);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
   // CAD / share meshes are Z-up — match the main studio.
   camera.up.set(0, 0, 1);
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: heroEmbedActive,
+    powerPreference: "high-performance",
+  });
+  if (heroEmbedActive) {
+    renderer.setClearColor(0x000000, 0);
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   setupRenderer(renderer);
@@ -253,6 +268,7 @@ async function main() {
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.display = "block";
   renderer.domElement.style.touchAction = "none";
+  if (heroEmbedActive) renderer.domElement.style.background = "transparent";
   viewerEl.appendChild(renderer.domElement);
 
   // Z-up Orbit with full polar range = true 360° tumble (no horizon clip, no trackball roll).
@@ -262,11 +278,12 @@ async function main() {
   controls.rotateSpeed = 0.85;
   controls.zoomSpeed = 1.05;
   controls.panSpeed = 0.75;
-  controls.enablePan = true;
+  controls.enablePan = !heroEmbedActive;
+  controls.enableZoom = !heroEmbedActive;
   controls.minPolarAngle = 0.001;
   controls.maxPolarAngle = Math.PI - 0.001;
   controls.autoRotate = true;
-  controls.autoRotateSpeed = isEmbedMode() ? 0.55 : 1.35;
+  controls.autoRotateSpeed = heroEmbedActive ? 0.85 : (isEmbedMode() ? 0.55 : 1.35);
   controls.touches = {
     ONE: THREE.TOUCH.ROTATE,
     TWO: THREE.TOUCH.DOLLY_PAN,
@@ -348,7 +365,14 @@ async function main() {
     // Center on origin so orbiting under the model stays stable.
     root.position.set(-center.x, -center.y, -center.z);
     modelBox.setFromObject(root);
-    frameBox(modelBox, { pad: 1.38 });
+    frameBox(modelBox, { pad: heroEmbedActive ? 1.08 : 1.38 });
+    if (heroEmbedActive) {
+      // Seat the arm lower in the frame so it reads as sitting in the page.
+      controls.target.z -= orbitRadius * 0.04;
+      camera.position.z *= 0.92;
+      syncCameraClip();
+      controls.update();
+    }
   }
 
   function frameObject(obj) {

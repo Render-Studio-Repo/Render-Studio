@@ -28,8 +28,12 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(Number(value || 0));
 }
 
-async function api(path) {
-  const res = await fetch(path, { headers: authHeaders() });
+async function api(path, options = {}) {
+  const headers = authHeaders(options.headers || {});
+  if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+  const res = await fetch(path, { ...options, headers });
   if (!res.ok) {
     let message = res.statusText || "Request failed";
     try {
@@ -511,6 +515,22 @@ function renderDashboard(root, data) {
       </div>
     </section>
 
+    <section class="admin-panel admin-panel--feedback-inbox">
+      <div class="admin-agent-head">
+        <div>
+          <h3>Suggestions & bug reports</h3>
+          <p class="muted small admin-panel-hint">Unread user requests, screenshots, project/prompt context, and trace logs. Approve, deny, or mark checked.</p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-feedback-refresh">Refresh</button>
+      </div>
+      <div class="admin-agent-stats" id="admin-feedback-stats">
+        <span class="admin-pill"><strong>Loading…</strong></span>
+      </div>
+      <div id="admin-feedback-list" class="admin-feedback-list">
+        <p class="muted small">Loading feedback requests…</p>
+      </div>
+    </section>
+
     <section class="admin-panel">
       <h3>File Formats</h3>
       <div class="admin-pill-list">${countPills(data.project_format_counts, "format")}</div>
@@ -525,8 +545,12 @@ function renderDashboard(root, data) {
   root.querySelector("#admin-gs-refresh")?.addEventListener("click", () => {
     void loadGettingStartedApprovals(root);
   });
+  root.querySelector("#admin-feedback-refresh")?.addEventListener("click", () => {
+    void loadFeedbackInbox(root);
+  });
   void loadRenderAgentActivity(root);
   void loadGettingStartedApprovals(root);
+  void loadFeedbackInbox(root);
   const search = root.querySelector("#admin-user-search");
   const lookupList = root.querySelector("#admin-user-lookup-list");
   const allUsers = data.users || [];
@@ -584,6 +608,44 @@ function renderAgentActivityRows(items = []) {
       `;
     })
     .join("");
+}
+
+function renderFeedbackRows(items = []) {
+  if (!items.length) return `<p class="muted small">No feedback requests yet.</p>`;
+  return items.map((item) => {
+    const screenshots = (item.screenshots || []).map((shot, idx) => (
+      `<button type="button" class="admin-feedback-shot-link" data-feedback-shot="${escapeHtml(shot.url || "")}">Screenshot ${idx + 1}</button>`
+    )).join(" · ");
+    const context = item.context || {};
+    const prompt = context.prompt_history?.prompt || item.prompt_label || "";
+    const trace = item.trace_id || context.trace_id || context.prompt_history?.trace_id || "";
+    const unread = item.unread ? `<span class="admin-feedback-unread">Unread</span>` : "";
+    return `
+      <article class="admin-feedback-row admin-feedback-row--${escapeHtml(item.kind || "request")}" data-feedback-id="${escapeHtml(item.id)}">
+        <div class="admin-feedback-head">
+          <div>
+            <strong>${escapeHtml(item.kind === "bug" ? "Bug report" : "Suggestion")} ${unread}</strong>
+            <span class="muted small">${escapeHtml(item.user_name || "User")} · ${escapeHtml(item.user_email || "")} · ${formatDate(item.created_at)}</span>
+          </div>
+          <span class="admin-feedback-status">${escapeHtml(item.status || "open")}</span>
+        </div>
+        <p>${escapeHtml(item.message || "")}</p>
+        <p class="muted small">
+          ${item.project_id ? `Project: ${escapeHtml(item.project_name || item.project_id)}` : "No project"}
+          ${item.prompt_id ? ` · Prompt: ${escapeHtml(item.prompt_id)}` : ""}
+          ${trace ? ` · Trace: ${escapeHtml(trace)}` : ""}
+          ${item.page_url ? ` · <a href="${escapeHtml(item.page_url)}" target="_blank" rel="noopener">Page</a>` : ""}
+          ${screenshots ? ` · ${screenshots}` : ""}
+        </p>
+        ${prompt ? `<details class="admin-feedback-details"><summary>Prompt / trace context</summary><pre>${escapeHtml(JSON.stringify({ prompt, trace_log: context.trace_log || [], generation_jobs: context.generation_jobs || [] }, null, 2))}</pre></details>` : ""}
+        <div class="admin-gs-pending-actions">
+          <button type="button" class="btn accent btn-compact" data-feedback-review="approved">Approve</button>
+          <button type="button" class="btn secondary btn-compact" data-feedback-review="checked">Check</button>
+          <button type="button" class="btn secondary btn-compact" data-feedback-review="denied">Deny</button>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 async function loadGettingStartedApprovals(root) {
@@ -647,6 +709,62 @@ async function loadGettingStartedApprovals(root) {
   } catch (err) {
     pendingEl.innerHTML = `<p class="muted small">Could not load approvals: ${escapeHtml(err.message || "error")}</p>`;
     suggestEl.innerHTML = "";
+  }
+}
+
+async function loadFeedbackInbox(root) {
+  const statsEl = root.querySelector("#admin-feedback-stats");
+  const listEl = root.querySelector("#admin-feedback-list");
+  if (!statsEl || !listEl) return;
+  statsEl.innerHTML = `<span class="admin-pill"><strong>Loading…</strong></span>`;
+  listEl.innerHTML = `<p class="muted small">Loading feedback requests…</p>`;
+  try {
+    const data = await api("/api/admin/feedback/requests?status=all&limit=120&mark_read=true");
+    const summary = data.summary || {};
+    statsEl.innerHTML = `
+      <span class="admin-pill"><strong>Unread</strong><em>${formatNumber(summary.unread_count)}</em></span>
+      <span class="admin-pill"><strong>Open</strong><em>${formatNumber(summary.open_count)}</em></span>
+      <span class="admin-pill"><strong>Bugs</strong><em>${formatNumber(summary.bug_count)}</em></span>
+      <span class="admin-pill"><strong>Suggestions</strong><em>${formatNumber(summary.suggestion_count)}</em></span>
+    `;
+    listEl.innerHTML = renderFeedbackRows(data.requests || []);
+    listEl.querySelectorAll("[data-feedback-review]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("[data-feedback-id]");
+        const id = row?.getAttribute("data-feedback-id");
+        const status = btn.getAttribute("data-feedback-review");
+        if (!id || !status) return;
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/feedback/requests/${encodeURIComponent(id)}`, {
+            method: "POST",
+            body: JSON.stringify({ status }),
+          });
+          void loadFeedbackInbox(root);
+        } catch (err) {
+          btn.disabled = false;
+          alert(err.message || "Review failed");
+        }
+      });
+    });
+    listEl.querySelectorAll("[data-feedback-shot]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const url = btn.getAttribute("data-feedback-shot");
+        if (!url) return;
+        btn.disabled = true;
+        try {
+          const blobUrl = await authBlobUrl(url);
+          window.open(blobUrl, "_blank", "noopener");
+        } catch (err) {
+          alert(err.message || "Could not open screenshot");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (err) {
+    statsEl.innerHTML = "";
+    listEl.innerHTML = `<p class="muted small">Could not load feedback requests: ${escapeHtml(err.message || "error")}</p>`;
   }
 }
 

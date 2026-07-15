@@ -78,10 +78,20 @@
     body.share-embed .share-stage {
       position: absolute;
       inset: 0;
+      background: transparent !important;
     }
     body.share-embed #share-viewer canvas {
       width: 100% !important;
       height: 100% !important;
+      background: transparent !important;
+    }
+    html.share-embed,
+    body.share-embed,
+    html.share-embed body {
+      background: transparent !important;
+    }
+    body.share-embed.share-hero {
+      background: transparent !important;
     }
     header.share-top {
       display: flex;
@@ -833,6 +843,6 @@
       document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
     }
   </script>
-  <script type="module" src="/share-viewer.js?v=20260715-transparent-edges"></script>
+  <script type="module" src="/share-viewer.js?v=20260715-gs-hero-free"></script>
 </body>
 </html>

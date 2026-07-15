@@ -64,6 +64,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realti
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
+import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-gifs";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
@@ -612,6 +613,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
       setEditStatus("ok", "Model ready — opened in 3D view.");
     }
     pendingPromptSelectionContext = null;
+    void maybeAskGenerateSimulatedMotion(gen, pid);
   }
   clearCanvasGenerationPending(pid);
   markGenerationApplied(pid, gen.trace_id);
@@ -2516,6 +2518,197 @@ function askConvertImageToDrawing() {
     document.addEventListener("keydown", onKey);
     setBusy(false);
     modal.classList.remove("hidden");
+  });
+}
+
+const SIM_MOTION_PREF_KEY = "render3d:sim-motion-after-gen:v1";
+const SIM_MOTION_PREF_VALUES = new Set(["ask", "never", "urdf", "srdf", "both"]);
+const SIM_MOTION_HINT_RE =
+  /\b(urdf|srdf|robot(?:ic)?|cobot|humanoid|manipulator|end[-\s]?effector|gripper|scara|delta(?:\s+robot)?|gantry(?:\s+robot)?|industrial\s+arm|6[-\s]?axis|5[-\s]?axis|4[-\s]?axis|[1-8]\s*-?\s*dof|degrees?\s+of\s+freedom|articulated|kinematic|joint(?:ed|s)?|servo|actuator|linkage|pick[-\s]?and[-\s]?place|legged|walker|hexapod|quadruped)\b/i;
+
+function getSimMotionAfterGenPref() {
+  try {
+    const raw = String(localStorage.getItem(SIM_MOTION_PREF_KEY) || "ask").toLowerCase();
+    return SIM_MOTION_PREF_VALUES.has(raw) ? raw : "ask";
+  } catch {
+    return "ask";
+  }
+}
+
+function setSimMotionAfterGenPref(value, { announce = false } = {}) {
+  const next = SIM_MOTION_PREF_VALUES.has(value) ? value : "ask";
+  try {
+    localStorage.setItem(SIM_MOTION_PREF_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  if (announce) {
+    const labels = {
+      ask: "Ask after generating articulated models",
+      never: "Never ask to generate simulated motion",
+      urdf: "Always generate URDF after articulated models",
+      srdf: "Always generate SRDF after articulated models",
+      both: "Always generate URDF + SRDF after articulated models",
+    };
+    setEditStatus("ok", `${labels[next] || "Preference saved"}. Change anytime in Preferences.`);
+  }
+  return next;
+}
+
+function simMotionHintText(gen = {}) {
+  const chunks = [
+    gen.prompt,
+    gen.label,
+    gen.filename,
+    gen.stem,
+    selectedFile,
+    document.getElementById("prompt-input")?.value,
+  ]
+    .filter(Boolean)
+    .map(String);
+  return chunks.join("\n");
+}
+
+function modelLooksLikeSimMotionCandidate(gen = {}) {
+  if (!gen || gen.kind === "wiring") return false;
+  const mode = String(gen.mode || gen.prompt_mode || "").toLowerCase();
+  if (mode === "architect" || mode === "wiring") return false;
+  const text = simMotionHintText(gen);
+  if (!text.trim()) return false;
+  return SIM_MOTION_HINT_RE.test(text);
+}
+
+function pickSimMotionPythonSource(gen = {}, artifacts = null) {
+  const data = artifacts || robotArtifactData || {};
+  const sources = (data.sources || []).map(String).filter((name) => /\.py$/i.test(name));
+  if (!sources.length) return null;
+  const stem = fileStem(gen.filename || selectedFile || "").toLowerCase();
+  if (stem) {
+    const matched = sources.find((name) => fileStem(name).toLowerCase() === stem);
+    if (matched) return matched;
+  }
+  return sources[0];
+}
+
+function projectAlreadyHasSimMotion(gen = {}, artifacts = null) {
+  const data = artifacts || robotArtifactData || {};
+  const stem = fileStem(gen.filename || selectedFile || "").toLowerCase();
+  const artifactsList = (data.artifacts || []).map(String);
+  if (!artifactsList.length) return false;
+  if (stem) {
+    return artifactsList.some((name) => {
+      const lower = name.toLowerCase();
+      return fileStem(lower) === stem && (lower.endsWith(".urdf") || lower.endsWith(".srdf"));
+    });
+  }
+  return artifactsList.some((name) => /\.(urdf|srdf)$/i.test(name));
+}
+
+function askGenerateSimulatedMotion({ reason = "" } = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("sim-motion-confirm-modal");
+    if (!modal) {
+      resolve({ action: "skip", remember: false });
+      return;
+    }
+    let settled = false;
+    const reasonEl = modal.querySelector("#sim-motion-confirm-reason");
+    const rememberEl = modal.querySelector("#sim-motion-remember");
+    const bothBtn = modal.querySelector("#sim-motion-both");
+    const urdfBtn = modal.querySelector("#sim-motion-urdf");
+    const srdfBtn = modal.querySelector("#sim-motion-srdf");
+    const skipBtn = modal.querySelector("#sim-motion-skip");
+    const closeEls = [...modal.querySelectorAll("[data-sim-motion-close]")];
+    if (reasonEl) reasonEl.textContent = reason || "";
+    if (rememberEl) rememberEl.checked = true;
+    const finish = (action) => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", onKey);
+      bothBtn?.removeEventListener("click", onBoth);
+      urdfBtn?.removeEventListener("click", onUrdf);
+      srdfBtn?.removeEventListener("click", onSrdf);
+      skipBtn?.removeEventListener("click", onSkip);
+      closeEls.forEach((el) => el.removeEventListener("click", onSkip));
+      modal.classList.add("hidden");
+      resolve({ action, remember: !!rememberEl?.checked });
+    };
+    const onBoth = (e) => {
+      e?.preventDefault?.();
+      finish("both");
+    };
+    const onUrdf = (e) => {
+      e?.preventDefault?.();
+      finish("urdf");
+    };
+    const onSrdf = (e) => {
+      e?.preventDefault?.();
+      finish("srdf");
+    };
+    const onSkip = (e) => {
+      e?.preventDefault?.();
+      finish("skip");
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") finish("skip");
+    };
+    bothBtn?.addEventListener("click", onBoth);
+    urdfBtn?.addEventListener("click", onUrdf);
+    srdfBtn?.addEventListener("click", onSrdf);
+    skipBtn?.addEventListener("click", onSkip);
+    closeEls.forEach((el) => {
+      if (el === skipBtn) return;
+      el.addEventListener("click", onSkip);
+    });
+    document.addEventListener("keydown", onKey);
+    modal.classList.remove("hidden");
+    requestAnimationFrame(() => bothBtn?.focus?.({ preventScroll: true }));
+  });
+}
+
+async function maybeAskGenerateSimulatedMotion(gen, pid = projectId) {
+  if (!gen || pid !== projectId || !projectId) return;
+  if (!modelLooksLikeSimMotionCandidate(gen)) return;
+  const pref = getSimMotionAfterGenPref();
+  if (pref === "never") return;
+
+  let artifacts = robotArtifactData;
+  try {
+    artifacts = (await refreshRobotArtifacts({ quiet: true })) || artifacts;
+  } catch {
+    /* ignore */
+  }
+  if (projectAlreadyHasSimMotion(gen, artifacts)) return;
+  const source = pickSimMotionPythonSource(gen, artifacts);
+  if (!source) return;
+
+  let kind = pref;
+  if (pref === "ask") {
+    const match = String(simMotionHintText(gen)).match(SIM_MOTION_HINT_RE);
+    const reason = match?.[0]
+      ? `Detected “${match[0]}” in the prompt or filename — URDF/SRDF usually helps for motion.`
+      : "This design looks jointed — URDF/SRDF usually helps for motion.";
+    const choice = await askGenerateSimulatedMotion({ reason });
+    if (choice.action === "skip") {
+      if (choice.remember) setSimMotionAfterGenPref("never", { announce: true });
+      return;
+    }
+    kind = choice.action;
+    if (choice.remember) setSimMotionAfterGenPref(kind, { announce: true });
+  } else if (pref === "urdf" || pref === "srdf" || pref === "both") {
+    setEditStatus(
+      "ok",
+      `Generating ${pref.toUpperCase()} for simulation (Preferences → Simulated motion).`
+    );
+  } else {
+    return;
+  }
+
+  await authorJakeRobotDescription({
+    source,
+    kind,
+    openMotion: true,
+    announcePrefHint: pref === "ask",
   });
 }
 
@@ -4553,6 +4746,19 @@ function initWorkspaceActivityDropdown() {
 initWorkspaceActivityDropdown();
 
 const activityLog = createActivityLog(document.getElementById("activity-log-panel"), rawFetch);
+createFeedbackUI({
+  suggestionBtn: document.getElementById("btn-suggestion"),
+  bugBtn: document.getElementById("btn-report-bug"),
+  getProjects: () => allProjects,
+  getCurrentProjectId: () => projectId,
+  getSelectedFile: () => selectedFile,
+  getPromptText: () => composer?.getPromptText?.() || "",
+  onSubmitted: (request) => {
+    setEditStatus("ok", request?.kind === "bug" ? "Bug report sent to management." : "Suggestion sent to management.");
+    window.dispatchEvent(new CustomEvent("render3d:feedback-submitted", { detail: request }));
+  },
+});
+initManagementNotifications();
 
 async function ensureMissingBrowserComponentsLoaded({ keepGizmoOn = null, fitView = false } = {}) {
   if (!projectId) return;
@@ -5114,7 +5320,8 @@ function enterRiggingMode() {
   document.getElementById("btn-gizmo")?.classList.remove("active");
   objectTools.clearSelection();
   controls.enabled = true;
-  document.getElementById("rigging-chrome")?.classList.remove("hidden");
+  document.getElementById("app")?.classList.remove("sketch-editing");
+  document.querySelectorAll("#rigging-chrome.rigging-chrome").forEach((el) => el.classList.remove("hidden"));
   refreshRiggingPromptHistory();
   setRightTab("rigging");
   riggingPromptHistory.setTab("compose");
@@ -5164,7 +5371,7 @@ function enterRiggingMode() {
 }
 
 function exitRiggingMode() {
-  document.getElementById("rigging-chrome")?.classList.add("hidden");
+  document.querySelectorAll("#rigging-chrome.rigging-chrome").forEach((el) => el.classList.add("hidden"));
   stepModuleRuntime?.stop?.({ reset: true });
   planetaryGearRuntime?.stop?.({ reset: true });
   riggingEditor.hide();
@@ -14585,29 +14792,34 @@ document.querySelectorAll("[data-rig-pick]").forEach((btn) => {
   });
 });
 
-// Event delegation backup so toolbelt clicks always work (even after DOM refresh).
-document.getElementById("rigging-chrome")?.addEventListener("click", (event) => {
+// Document-level delegation so RIG toolbelt clicks always work (duplicate chrome / DOM refresh safe).
+document.addEventListener("click", (event) => {
+  const toolbelt = event.target.closest?.(".rigging-toolbelt");
+  if (!toolbelt) return;
   const toolBtn = event.target.closest?.("[data-rig-tool]");
   if (toolBtn) {
     event.preventDefault();
+    event.stopPropagation();
     handleRiggingAction("tool", { rigTool: toolBtn.dataset.rigTool }, { tool: toolBtn.dataset.rigTool });
     return;
   }
   const actionBtn = event.target.closest?.("[data-rig-action]");
   if (actionBtn) {
     event.preventDefault();
+    event.stopPropagation();
     handleRiggingAction(actionBtn.dataset.rigAction);
     return;
   }
   const pickBtn = event.target.closest?.("[data-rig-pick]");
   if (pickBtn) {
     event.preventDefault();
+    event.stopPropagation();
     activatePickMode(pickBtn.dataset.rigPick);
     document.querySelectorAll("[data-rig-pick]").forEach((b) => {
       b.classList.toggle("active", b.dataset.rigPick === pickBtn.dataset.rigPick);
     });
   }
-});
+}, true);
 
 function setRiggingWorkspaceMode(mode) {
   const next = mode === "urdf" ? "urdf" : "bones";
@@ -14640,38 +14852,59 @@ document.getElementById("btn-rigging-author-jake")?.addEventListener("click", ()
   void authorJakeRobotDescription();
 });
 
-async function authorJakeRobotDescription() {
+async function authorJakeRobotDescription(opts = {}) {
   if (!projectId) {
     setEditStatus("error", "Select a project first.");
-    return;
+    return null;
   }
-  const source = document.getElementById("rigging-artifact-source")?.value;
+  const kind = ["urdf", "srdf", "both"].includes(opts.kind) ? opts.kind : "both";
+  const sourceSelect = document.getElementById("rigging-artifact-source");
+  if (opts.source && sourceSelect) {
+    if (![...sourceSelect.options].some((opt) => opt.value === opts.source)) {
+      sourceSelect.insertAdjacentHTML(
+        "beforeend",
+        `<option value="${escapeHtml(opts.source)}">${escapeHtml(opts.source)}</option>`
+      );
+    }
+    sourceSelect.value = opts.source;
+  }
+  const source = opts.source || sourceSelect?.value;
   const status = document.getElementById("rigging-prompt-status");
   if (!source) {
     setEditStatus("error", "No Python source selected.");
-    return;
+    return null;
   }
   if (status) {
     status.className = "status loading";
-    status.textContent = "Authoring gen_urdf()/gen_srdf() (Jake)…";
+    status.textContent = `Authoring ${kind === "both" ? "gen_urdf()/gen_srdf()" : `gen_${kind}()`} (Jake)…`;
   }
-  setEditStatus("loading", "Authoring URDF/SRDF with AI…");
+  setEditStatus("loading", `Authoring ${kind.toUpperCase()} with AI…`);
   try {
     const data = await api(`/api/projects/${projectId}/rigging/author-robot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, kind: "both" }),
+      body: JSON.stringify({ source, kind }),
     }, 300000);
     robotArtifactData = data;
     await refreshFiles();
     renderRobotArtifacts();
     setRiggingWorkspaceMode("urdf");
-    const msg = data.message || "URDF/SRDF authored.";
+    let msg = data.message || `${kind.toUpperCase()} authored.`;
+    if (opts.announcePrefHint) {
+      msg += " Change auto-ask anytime in Preferences → Simulated motion.";
+    }
     setEditStatus("ok", msg);
     if (status) {
       status.className = "status ok";
       status.textContent = msg;
     }
+    if (opts.openMotion) {
+      if (workspaceModes.getDesignTab() !== "RIGGING") {
+        workspaceModes.setDesignTab("RIGGING");
+      }
+      openUrdfMotionModal();
+    }
+    return data;
   } catch (err) {
     const msg = err?.message || "Could not author URDF/SRDF.";
     setEditStatus("error", msg);
@@ -14679,6 +14912,7 @@ async function authorJakeRobotDescription() {
       status.className = "status error";
       status.textContent = msg;
     }
+    return null;
   }
 }
 
@@ -20867,8 +21101,22 @@ window.addEventListener("keydown", (e) => {
                 ${themeOptions}
               </select>
             </label>
+            <label class="profile-preference-field">
+              <span>
+                <b>Simulated motion</b>
+                <small>After generating an articulated model (robot / joints), ask to author URDF / SRDF for Rigging → Motion.</small>
+              </span>
+              <select id="pref-sim-motion-after-gen">
+                <option value="ask">Ask each time</option>
+                <option value="both">Always URDF + SRDF</option>
+                <option value="urdf">Always URDF only</option>
+                <option value="srdf">Always SRDF only</option>
+                <option value="never">Never ask</option>
+              </select>
+            </label>
             <p class="muted small profile-preferences-note">
               Viewport lighting can be adjusted from the ribbon Light button and is remembered on this device.
+              Simulated-motion choice is stored on this device only.
             </p>
           </section>
         </div>
@@ -20877,6 +21125,8 @@ window.addEventListener("keydown", (e) => {
     syncMousePreferenceUI();
     const themeSelect = panel.querySelector("#pref-app-theme");
     if (themeSelect) themeSelect.value = appTheme;
+    const simSelect = panel.querySelector("#pref-sim-motion-after-gen");
+    if (simSelect) simSelect.value = getSimMotionAfterGenPref();
   }
 
   function closePreferencesModal() {
@@ -20909,6 +21159,11 @@ window.addEventListener("keydown", (e) => {
     const themeSelect = e.target.closest("#pref-app-theme");
     if (themeSelect) {
       setAppTheme(themeSelect.value, { persist: true, announce: true });
+      return;
+    }
+    const simSelect = e.target.closest("#pref-sim-motion-after-gen");
+    if (simSelect) {
+      setSimMotionAfterGenPref(simSelect.value, { announce: true });
       return;
     }
     const avatarInput = e.target.closest("#profile-avatar-input");

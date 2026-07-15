@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-multi-gen-rows" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-sim-motion-ask" />
   <script type="importmap">
   {
     "imports": {
@@ -168,6 +168,10 @@
         <div id="workspace-mode-menu" class="workspace-mode-menu hidden" role="menu"></div>
       </div>
       <nav id="workspace-tabs" class="workspace-tabs" aria-label="Design tabs"></nav>
+      <div class="workspace-feedback-actions" aria-label="Feedback">
+        <button type="button" id="btn-suggestion" class="workspace-feedback-btn">Suggestions</button>
+        <button type="button" id="btn-report-bug" class="workspace-feedback-btn workspace-feedback-btn--bug">Report Bug</button>
+      </div>
       <div class="workspace-activity-switcher">
         <button type="button" id="btn-workspace-activity-toggle" class="workspace-activity-tab" aria-expanded="false" aria-controls="workspace-activity-dropdown">
           Activity <span class="workspace-activity-caret" aria-hidden="true">▾</span>
@@ -1723,6 +1727,29 @@
     </div>
   </div>
 
+
+  <div id="sim-motion-confirm-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="sim-motion-confirm-title">
+    <div class="auth-backdrop" data-sim-motion-close></div>
+    <div class="auth-card app-dialog-card">
+      <button type="button" class="auth-close" data-sim-motion-close aria-label="Close">&times;</button>
+      <h2 id="sim-motion-confirm-title" class="app-dialog-title">Generate simulated motion?</h2>
+      <p class="muted" id="sim-motion-confirm-copy">
+        This model looks articulated (robot / joints). GLB shows the shape; <strong>URDF</strong> and <strong>SRDF</strong> drive simulation in Rigging → Motion.
+      </p>
+      <p class="muted small" id="sim-motion-confirm-reason"></p>
+      <label class="sim-motion-remember">
+        <input type="checkbox" id="sim-motion-remember" checked />
+        <span>Remember my choice on this device. You can change it anytime in <strong>Preferences</strong>.</span>
+      </label>
+      <div class="app-dialog-actions" style="flex-wrap: wrap; gap: 0.5rem;">
+        <button type="button" class="btn accent" id="sim-motion-both" title="Author gen_urdf + gen_srdf, then generate both">URDF + SRDF</button>
+        <button type="button" class="btn secondary" id="sim-motion-urdf" title="Kinematic robot description">URDF only</button>
+        <button type="button" class="btn secondary" id="sim-motion-srdf" title="Planning groups / named poses">SRDF only</button>
+        <button type="button" class="btn secondary" id="sim-motion-skip" data-sim-motion-close>Not now</button>
+      </div>
+    </div>
+  </div>
+
   <div id="image-drawing-confirm-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="image-drawing-confirm-title">
     <div class="auth-backdrop" data-image-drawing-close></div>
     <div class="auth-card app-dialog-card">
@@ -1873,7 +1900,7 @@
     </div>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/app.js?v=20260715-transparent-tool"></script>
+  <script type="module" src="/app.js?v=20260715-sim-motion-ask"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
