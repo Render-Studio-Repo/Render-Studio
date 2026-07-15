@@ -54,6 +54,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("render3d")
 
 ROOT = Path(__file__).resolve().parent.parent
+# mtime-keyed cache for /files/.../bodies (trimesh split is expensive).
+_bodies_info_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_BODIES_INFO_CACHE_MAX = 256
+
 PROJECTS = ROOT / settings.projects_dir
 FRONTEND = ROOT / "frontend"
 AVATARS = ROOT / "data" / "avatars"
@@ -8516,6 +8520,21 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
             media_type="text/javascript",
             headers={"Cache-Control": "no-cache"},
         )
+    # Mesh previews are large; allow same-origin browser cache. Clients bust via ?_=epoch
+    # after edits / generation so reopening a project does not re-download unchanged GLBs.
+    if file_path.suffix.lower() in {".glb", ".gltf", ".stl", ".obj", ".ply", ".off"}:
+        try:
+            etag = f'W/"{file_path.stat().st_mtime_ns}"'
+        except OSError:
+            etag = 'W/"0"'
+        return FileResponse(
+            file_path,
+            filename=download_name,
+            headers={
+                "Cache-Control": "private, max-age=86400",
+                "ETag": etag,
+            },
+        )
     return FileResponse(file_path, filename=download_name)
 
 
@@ -11106,125 +11125,6 @@ def _background_kernel_build(
         generation_service.fail(project_path, f"Kernel build failed: {exc}", trace_id=trace_id)
 
 
-def _with_image_generated_dxf_reference(body: PromptRequest, ai: "AIService", trace_id: str | None) -> PromptRequest:
-    """Convert attached image references into a hidden DXF reference for CAD prompts."""
-    if not body.images:
-        return body
-    if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
-        return body
-    try:
-        dxf_text, call_trace = ai.generate_dxf_from_images(
-            body.prompt,
-            images=[img.model_dump() for img in body.images[:4]],
-            trace_id=trace_id,
-        )
-    except Exception as exc:
-        trace_add(
-            "warning",
-            f"Image-to-DXF conversion failed; continuing with image references only: {exc}",
-            trace_id=trace_id,
-        )
-        return body
-    if not dxf_text.strip():
-        return body
-    image_names = ", ".join(img.name for img in body.images[:4])
-    ref = GeoReference(
-        id="vision-reference",
-        type="dxf",
-        label=f"Vision DXF from image{'s' if len(body.images) != 1 else ''}",
-        filename="vision-reference.dxf",
-        stem="vision-reference",
-        format="dxf",
-        text_content=dxf_text[:90000],
-        text_truncated=len(dxf_text) > 90000,
-    )
-    instruction = (
-        "\n\nUse the attached generated DXF reference `@vision-reference` as the primary 2D drawing extracted "
-        f"from the uploaded image{'s' if len(body.images) != 1 else ''} ({image_names}). Follow the DXF geometry, "
-        "layers, proportions, notes, and inferred dimensions when creating the 3D model. Use the original image(s) "
-        "only to resolve ambiguity, color/material/style, and 3D depth."
-    )
-    trace_add(
-        "info",
-        "Generated hidden DXF reference from prompt image(s)",
-        trace_id=trace_id,
-        data={
-            "image_count": len(body.images),
-            "dxf_chars": len(dxf_text),
-            "model": call_trace.get("model"),
-            "provider": call_trace.get("provider"),
-        },
-    )
-    skills = body.skills
-    if "dxf" not in {str(s).lower() for s in skills}:
-        skills = [*skills, "dxf"]
-    return body.model_copy(update={
-        "prompt": f"{body.prompt}{instruction}"[:8000],
-        "references": [*body.references, ref],
-        "skills": skills,
-    })
-
-
-def _with_image_generated_dxf_reference(body: PromptRequest, ai: "AIService", trace_id: str | None) -> PromptRequest:
-    """Convert attached image references into a hidden DXF reference for CAD prompts."""
-    if not body.images:
-        return body
-    if any(str(ref.type or "").lower() == "dxf" for ref in body.references):
-        return body
-    try:
-        dxf_text, call_trace = ai.generate_dxf_from_images(
-            body.prompt,
-            images=[img.model_dump() for img in body.images[:4]],
-            trace_id=trace_id,
-        )
-    except Exception as exc:
-        trace_add(
-            "warning",
-            f"Image-to-DXF conversion failed; continuing with image references only: {exc}",
-            trace_id=trace_id,
-        )
-        return body
-    if not dxf_text.strip():
-        return body
-    image_names = ", ".join(img.name for img in body.images[:4])
-    ref = GeoReference(
-        id="vision-reference",
-        type="dxf",
-        label=f"Vision DXF from image{'s' if len(body.images) != 1 else ''}",
-        filename="vision-reference.dxf",
-        stem="vision-reference",
-        format="dxf",
-        text_content=dxf_text[:90000],
-        text_truncated=len(dxf_text) > 90000,
-    )
-    instruction = (
-        "\n\nUse the attached generated DXF reference `@vision-reference` as the primary 2D drawing extracted "
-        f"from the uploaded image{'s' if len(body.images) != 1 else ''} ({image_names}). Follow the DXF geometry, "
-        "layers, proportions, notes, and inferred dimensions when creating the 3D model. Use the original image(s) "
-        "only to resolve ambiguity, color/material/style, and 3D depth."
-    )
-    trace_add(
-        "info",
-        "Generated hidden DXF reference from prompt image(s)",
-        trace_id=trace_id,
-        data={
-            "image_count": len(body.images),
-            "dxf_chars": len(dxf_text),
-            "model": call_trace.get("model"),
-            "provider": call_trace.get("provider"),
-        },
-    )
-    skills = body.skills
-    if "dxf" not in {str(s).lower() for s in skills}:
-        skills = [*skills, "dxf"]
-    return body.model_copy(update={
-        "prompt": f"{body.prompt}{instruction}"[:8000],
-        "references": [*body.references, ref],
-        "skills": skills,
-    })
-
-
-
 IMPROVE_CAD_PROMPT_SYSTEM = """You rewrite user prompts into stronger text-to-CAD generation prompts for Render3D.
 
 Return JSON only:
@@ -13121,8 +13021,22 @@ def mesh_bodies_info(
         viewer_path = project_path / viewer if viewer else None
         if viewer_path is not None and viewer_path.is_file() and viewer_path.suffix.lower() in {".glb", ".gltf"}:
             mesh_src = viewer_path
+    try:
+        mtime = mesh_src.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    cache_key = str(mesh_src.resolve())
+    cached = _bodies_info_cache.get(cache_key)
+    if cached and cached[0] == mtime:
+        return cached[1]
     mesh = cad_service.load_mesh(mesh_src)
-    return cad_service.mesh_body_info(mesh)
+    info = cad_service.mesh_body_info(mesh)
+    _bodies_info_cache[cache_key] = (mtime, info)
+    if len(_bodies_info_cache) > _BODIES_INFO_CACHE_MAX:
+        # Drop oldest half (insertion order).
+        for drop_key in list(_bodies_info_cache.keys())[: len(_bodies_info_cache) // 2]:
+            _bodies_info_cache.pop(drop_key, None)
+    return info
 
 
 @app.post("/api/projects/{project_id}/files/{filename}/split-bodies")

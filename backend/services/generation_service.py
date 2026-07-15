@@ -29,7 +29,7 @@ def _emit(project_path: Path, data: dict[str, Any]) -> None:
         try:
             fn(project_path, data)
         except Exception as exc:
-            logger.debug("generation listener failed: %s", exc)
+            logger.warning("generation listener failed: %s", exc, exc_info=True)
 
 
 def _user_avatar_url(user: dict[str, Any] | None) -> str | None:

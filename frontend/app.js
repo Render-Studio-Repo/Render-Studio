@@ -611,6 +611,8 @@ function syncStopButtonVisibility() {
   syncCanvasGenerationUi();
 }
 
+let promptSubmitInFlight = false;
+
 function stopGenerationWatch() {
   if (generationPollTimer) {
     clearInterval(generationPollTimer);
@@ -619,6 +621,7 @@ function stopGenerationWatch() {
   const pid = generationWatchPid;
   generationWatchPid = null;
   generationWatchOverlay = null;
+  promptSubmitInFlight = false;
   if (pid) setProjectLoading(pid, false);
   clearCanvasGenerationPending(pid);
   syncViewportGenerationOverlay({ complete: true });
@@ -798,21 +801,15 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
   }
   generationWatchPid = pid;
   if (currentUser) {
-    const existingGen = allProjects.find((p) => p.id === pid)?.generation || {};
-    const ownedByOther =
-      existingGen.by_user_id
-      && existingGen.status === "running"
-      && existingGen.by_user_id !== currentUser.id;
     upsertProjectInList({
       id: pid,
       generation: {
-        ...existingGen,
+        ...(allProjects.find((p) => p.id === pid)?.generation || {}),
         status: "running",
-        kind: existingGen.kind || kind,
-        by_user_id: ownedByOther ? existingGen.by_user_id : (existingGen.by_user_id || currentUser.id),
-        by_user_name: ownedByOther ? existingGen.by_user_name : (existingGen.by_user_name || currentUser.display_name),
-        by_avatar_url: ownedByOther ? existingGen.by_avatar_url : (existingGen.by_avatar_url || currentUser.avatar_url),
-        prompt: existingGen.prompt || existingGen.label || null,
+        kind,
+        by_user_id: currentUser.id,
+        by_user_name: currentUser.display_name,
+        by_avatar_url: currentUser.avatar_url,
       },
     });
     renderProjectList();
@@ -2129,6 +2126,17 @@ function askConvertImageToDrawing() {
       return;
     }
     let settled = false;
+    const yesBtn = modal.querySelector("#image-drawing-confirm-yes");
+    const noBtn = modal.querySelector("#image-drawing-confirm-no");
+    const closeEls = [...modal.querySelectorAll("[data-image-drawing-close]")];
+    const setBusy = (busy) => {
+      [yesBtn, noBtn, ...closeEls].forEach((el) => {
+        if (!el || el.dataset.imageDrawingClose !== undefined && el.classList?.contains("auth-backdrop")) return;
+        if (el.tagName === "BUTTON") el.disabled = !!busy;
+      });
+      if (yesBtn) yesBtn.disabled = !!busy;
+      if (noBtn) noBtn.disabled = !!busy;
+    };
     const finish = (value) => {
       if (settled) return;
       settled = true;
@@ -2136,22 +2144,36 @@ function askConvertImageToDrawing() {
       yesBtn?.removeEventListener("click", onYes);
       noBtn?.removeEventListener("click", onNo);
       closeEls.forEach((el) => el.removeEventListener("click", onCancel));
+      setBusy(false);
       modal.classList.add("hidden");
       resolve(value);
     };
-    const onYes = () => finish("yes");
-    const onNo = () => finish("no");
-    const onCancel = () => finish("cancel");
+    const onYes = (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      setBusy(true);
+      finish("yes");
+    };
+    const onNo = (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      setBusy(true);
+      finish("no");
+    };
+    const onCancel = (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      finish("cancel");
+    };
     const onKey = (e) => {
       if (e.key === "Escape") finish("cancel");
     };
-    const yesBtn = modal.querySelector("#image-drawing-confirm-yes");
-    const noBtn = modal.querySelector("#image-drawing-confirm-no");
-    const closeEls = [...modal.querySelectorAll("[data-image-drawing-close]")];
+    // Drop any stale listeners from a prior open by cloning buttons.
     yesBtn?.addEventListener("click", onYes);
     noBtn?.addEventListener("click", onNo);
     closeEls.forEach((el) => el.addEventListener("click", onCancel));
     document.addEventListener("keydown", onKey);
+    setBusy(false);
     modal.classList.remove("hidden");
   });
 }
@@ -3164,6 +3186,80 @@ function reconcileCodexToggleWithKeys() {
 
 function getPromptGenerationSpeed() {
   return document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
+}
+
+const SPICE_KEY = "render3d:spice-prompt:v1";
+
+function isSpiceEnabled() {
+  return Boolean(document.getElementById("prompt-spice")?.checked);
+}
+
+function setSpiceEnabled(enabled, { persist = true } = {}) {
+  const input = document.getElementById("prompt-spice");
+  if (input) input.checked = Boolean(enabled);
+  if (persist) {
+    try {
+      localStorage.setItem(SPICE_KEY, enabled ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function initPromptSpiceToggle() {
+  let enabled = false;
+  try {
+    enabled = localStorage.getItem(SPICE_KEY) === "1";
+  } catch {
+    enabled = false;
+  }
+  const input = document.getElementById("prompt-spice");
+  if (!input) return;
+  input.checked = enabled;
+  input.addEventListener("change", () => {
+    setSpiceEnabled(input.checked);
+  });
+}
+
+async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
+  const original = String(promptText || "").trim();
+  if (!original || !isSpiceEnabled()) return original;
+  if (statusEl) {
+    statusEl.className = "status loading";
+    statusEl.textContent = "Spicing up prompt…";
+  }
+  try {
+    const data = await api("/api/prompt/improve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: original,
+        mode: promptMode === "draw" ? "draw" : promptMode || "standard",
+        target_mode: getPromptTargetMode?.() || "new",
+        speed: getPromptGenerationSpeed(),
+        project_id: projectId || null,
+        ...getPromptAiKeyBodyFields(),
+      }),
+    }, 90000);
+    const improved = String(data?.improved_prompt || "").trim();
+    if (!improved || improved === original) return original;
+    try {
+      composer?.setPromptText?.(improved);
+    } catch {
+      /* ignore */
+    }
+    if (statusEl) {
+      statusEl.className = "status ok";
+      statusEl.textContent = "Prompt spiced up — generating…";
+    }
+    return improved;
+  } catch (err) {
+    if (statusEl) {
+      statusEl.className = "status error";
+      statusEl.textContent = `Spice up failed (${formatUserError(err)}). Generating with original prompt…`;
+    }
+    return original;
+  }
 }
 
 function getWiringGenerationSpeed() {
@@ -11534,27 +11630,7 @@ async function fetchAllProjects() {
     const qs = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
     const data = await api(`/api/projects${qs}`);
     if (fetchGen !== projectsFetchGeneration) return allProjects;
-    const incoming = data.projects || [];
-    // Keep fresher in-memory "running" generation rows (WS can beat list HTTP).
-    const prevById = new Map((previousProjects || []).map((p) => [p.id, p]));
-    allProjects = incoming.map((p) => {
-      const prev = prevById.get(p.id);
-      const prevGen = prev?.generation;
-      const nextGen = p?.generation;
-      if (
-        prevGen?.status === "running"
-        && nextGen?.status !== "running"
-        && (!nextGen?.updated_at || String(prevGen.updated_at || "") >= String(nextGen.updated_at || ""))
-      ) {
-        return { ...p, generation: prevGen };
-      }
-      return p;
-    });
-    // Keep WS-only stubs (brand-new generating projects) that list API has not returned yet.
-    for (const prev of previousProjects || []) {
-      if (!prev?.id || allProjects.some((p) => p.id === prev.id)) continue;
-      if (prev?.generation?.status === "running") allProjects = [prev, ...allProjects];
-    }
+    allProjects = data.projects || [];
     if (!allProjects.length && teamId) {
       const all = await api("/api/projects");
       if (fetchGen !== projectsFetchGeneration) return allProjects;
@@ -13746,39 +13822,9 @@ function handleRealtimeEvent(msg = {}) {
   if (msg.type === "generation.updated") {
     const pid = msg.project_id;
     if (pid) {
-      const existing = allProjects.find((p) => p.id === pid);
-      const generation = msg.generation || { status: "idle" };
-      upsertProjectInList({
-        id: pid,
-        ...(existing || {}),
-        ...(msg.name ? { name: msg.name } : {}),
-        ...(msg.team_id ? { team_id: msg.team_id } : {}),
-        generation,
-        updated_at: generation.updated_at || existing?.updated_at,
-      });
+      upsertProjectInList({ id: pid, generation: msg.generation || { status: "idle" } });
       renderProjectList();
-      if (pid === projectId) {
-        if (generation.status === "running") {
-          // Observer path: show teammate generation without claiming ownership fields.
-          if (generationWatchPid !== pid) {
-            void resumeGenerationIfNeeded(pid, generation);
-          } else {
-            syncViewportGenerationOverlay();
-          }
-        } else {
-          syncViewportGenerationOverlay();
-        }
-      } else if (!existing && generation.status === "running") {
-        // Brand-new project may not be in the list yet — pull metadata once.
-        void ensureActiveProjectListed(pid).then((ok) => {
-          if (!ok) return;
-          const listed = allProjects.find((p) => p.id === pid);
-          if (listed) {
-            listed.generation = generation;
-            renderProjectList();
-          }
-        });
-      }
+      if (pid === projectId) syncViewportGenerationOverlay();
     }
     return;
   }
@@ -13827,12 +13873,9 @@ function handleRealtimeEvent(msg = {}) {
       upsertProjectInList({
         id: msg.project_id,
         name: msg.name || msg.meta?.name || msg.project_id,
-        team_id: msg.team_id || null,
-        folder_id: msg.folder_id || msg.meta?.folder_id || null,
         updated_at: msg.meta?.updated_at,
         created_at: msg.meta?.created_at,
         file_count: 0,
-        generation: allProjects.find((p) => p.id === msg.project_id)?.generation || { status: "idle" },
       });
       renderProjectList();
       if (msg.project_id === projectId) return;
@@ -17363,6 +17406,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   if (canvasAttached) prompt = augmentPromptForCanvasSketch(prompt);
   if (canvasAttached && prompt !== composer.getPromptText()) composer.setPromptText(prompt);
   if (!prompt) return;
+  if (promptSubmitInFlight) return;
   if (!suppressAiComposePanelSwitch) showAiComposePanel();
   suppressAiComposePanelSwitch = false;
   // Always clear a stale timeout/error banner when the user explicitly clicks Generate.
@@ -17396,15 +17440,22 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         await resumeGenerationIfNeeded(projectId, gen);
         return;
       }
+      // Still waiting for the server to accept this submit — keep the banner.
+      if (generationWatchPid === projectId && generationWatchOverlay?.pendingStart) {
+        return;
+      }
       // failed / canceled / idle — drop the stale UI and start a fresh generate.
       stopGenerationWatch();
       hideViewportOverlay(projectId);
       viewerOverlay.clearError();
       if (proj) proj.generation = { status: "idle" };
     } catch {
-      stopGenerationWatch();
-      hideViewportOverlay(projectId);
-      viewerOverlay.clearError();
+      // Keep a pending local watch; only tear down if we aren't mid-submit.
+      if (!(generationWatchPid === projectId && generationWatchOverlay?.pendingStart)) {
+        stopGenerationWatch();
+        hideViewportOverlay(projectId);
+        viewerOverlay.clearError();
+      }
     }
   }
   if (promptMode === "draw") {
@@ -17438,9 +17489,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   }
   if (!aiStatus?.ai_ready && promptMode !== "render") {
     const status = document.getElementById("prompt-status");
-    status.className = "status error";
-    status.textContent = "Add your OpenAI or Claude API key from the account menu before prompting.";
-    viewerOverlay.showError(status.textContent);
+    if (status) {
+      status.className = "status error";
+      status.textContent = "Add your OpenAI or Claude API key from the account menu before prompting.";
+      viewerOverlay.showError(status.textContent);
+    }
     aiKeyUi?.openRequired();
     return;
   }
@@ -17449,9 +17502,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     if (!openAiKeys.length) {
       setCodexEnabled(false);
       const status = document.getElementById("prompt-status");
-      status.className = "status error";
-      status.textContent = "Codex needs an OpenAI API key. Add one to continue.";
-      viewerOverlay.showError(status.textContent);
+      if (status) {
+        status.className = "status error";
+        status.textContent = "Codex needs an OpenAI API key. Add one to continue.";
+        viewerOverlay.showError(status.textContent);
+      }
       aiKeyUi?.openRequired?.({
         preferProvider: "openai",
         message: "Codex requires an OpenAI API key. Add one below (Claude keys won't work for Codex).",
@@ -17486,150 +17541,208 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     convertImagesToDrawing = choice === "yes";
   }
 
-  await ensureProject();
-  syncPromptTargetUI();
-  pendingPromptSelectionContext = capturePromptSelectionContext();
-  const targetMode = getPromptTargetMode();
-  const targetBaseFilename = promptBaseFilename({ canvasAttached });
-  const promptReferences = promptReferencesForSubmit();
-  const status = document.getElementById("prompt-status");
-  const reply = document.getElementById("prompt-reply");
-  const genMode = promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : promptMode === "v2" ? "v2" : "standard";
-  status.className = "status loading";
-  status.textContent = convertImagesToDrawing
-    ? "Converting image to drawing, then generating…"
-    : promptMode === "fusion"
-    ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${fusionTargetLabel()}... (builds, renders, reviews, repairs)`
-    : promptMode === "architect"
-    ? `${targetMode === "edit" ? "Editing selected module" : "Adding modular house part"} with Architect mode... (runs in background - safe to refresh)`
-    : promptMode === "v2"
-    ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with 2.0... (runs in background - safe to refresh)`
-    : `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
-  reply.textContent = "";
-  if (canvasAttached) markCanvasGenerationPending(projectId);
-  viewerOverlay.clearError();
-  beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
-  const genId = ++activePromptGenerationId;
-  userCancelRequested = false;
-  activePromptAbort = null;
-  let promptFailed = false;
+  promptSubmitInFlight = true;
   try {
-    const body = {
-      prompt,
-      base_filename: targetBaseFilename,
-      references: promptReferences,
-      images: promptImages,
-      convert_images_to_drawing: convertImagesToDrawing,
-      speed: getPromptGenerationSpeed(),
-      skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
-      ...getPromptAiKeyBodyFields(),
-      ...(promptMode === "fusion" ? { mode: "fusion", fusion_target: fusionTarget } : {}),
-      ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
-      ...(promptMode === "v2" ? { mode: "v2" } : {}),
-      ...(["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()
-        ? { codex_agent: true }
-        : {}),
-      ...getKnowledgePromptFields(),
-    };
-    lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
-    const data = await api(
-      `/api/projects/${projectId}/prompt`,
-      {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      },
-      120000
-    );
-    if (genId !== activePromptGenerationId) return;
-    if (data.answered) {
+    await ensureProject();
+    syncPromptTargetUI();
+    pendingPromptSelectionContext = capturePromptSelectionContext();
+    const targetMode = getPromptTargetMode();
+    const targetBaseFilename = promptBaseFilename({ canvasAttached });
+    const promptReferences = promptReferencesForSubmit();
+    const status = document.getElementById("prompt-status");
+    const reply = document.getElementById("prompt-reply");
+    const genMode = promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : promptMode === "v2" ? "v2" : "standard";
+
+    // Show the generation banner immediately so convert/spice waits don't look stuck.
+    if (canvasAttached) markCanvasGenerationPending(projectId);
+    viewerOverlay.clearError();
+    beginGenerationWatch(projectId, {
+      kind: "prompt",
+      mode: genMode,
+      pendingStart: true,
+    });
+    if (status) {
+      status.className = "status loading";
+      status.textContent = convertImagesToDrawing
+        ? "Converting image to drawing, then generating…"
+        : "Preparing generation…";
+    }
+
+    prompt = await maybeSpiceUpPrompt(prompt, { statusEl: status });
+    if (status) {
+      status.className = "status loading";
+      status.textContent = convertImagesToDrawing
+        ? "Converting image to drawing, then generating…"
+        : promptMode === "fusion"
+        ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${fusionTargetLabel()}... (builds, renders, reviews, repairs)`
+        : promptMode === "architect"
+        ? `${targetMode === "edit" ? "Editing selected module" : "Adding modular house part"} with Architect mode... (runs in background - safe to refresh)`
+        : promptMode === "v2"
+        ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with 2.0... (runs in background - safe to refresh)`
+        : `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
+    }
+    if (reply) reply.textContent = "";
+
+    const genId = ++activePromptGenerationId;
+    userCancelRequested = false;
+    activePromptAbort = null;
+    let promptFailed = false;
+    try {
+      const body = {
+        prompt,
+        base_filename: targetBaseFilename,
+        references: promptReferences,
+        images: promptImages,
+        convert_images_to_drawing: convertImagesToDrawing,
+        speed: getPromptGenerationSpeed(),
+        skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
+        ...getPromptAiKeyBodyFields(),
+        ...(promptMode === "fusion" ? { mode: "fusion", fusion_target: fusionTarget } : {}),
+        ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
+        ...(promptMode === "v2" ? { mode: "v2" } : {}),
+        ...(["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()
+          ? { codex_agent: true }
+          : {}),
+        ...getKnowledgePromptFields(),
+      };
+      lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
+      const data = await api(
+        `/api/projects/${projectId}/prompt`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        convertImagesToDrawing ? 360000 : 180000,
+      );
+      if (genId !== activePromptGenerationId) return;
+      if (data.answered) {
+        stopGenerationWatch();
+        if (status) {
+          status.className = "status ok";
+          status.textContent = data.prompt_id
+            ? `Answered · ${formatPromptRef({
+                promptId: data.prompt_id,
+                projectId,
+                filename: data.filename,
+                traceId: data.trace_id,
+                promptMode: data.prompt_mode || promptModeForRef(),
+                model: data.model || getSelectedPromptModelInfo().model,
+                provider: data.provider || getSelectedPromptModelInfo().provider,
+              })}`
+            : "Answered.";
+        }
+        if (reply) reply.textContent = data.message || "";
+        setEditStatus("ok", data.message || "Answered.");
+        await refreshPromptHistory();
+        showAiComposePanel();
+        pendingPromptSelectionContext = null;
+        return;
+      }
+      if (data.accepted || data.status === "running") {
+        if (!generationWatchOverlay || generationWatchPid !== projectId) {
+          beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
+        }
+        lastPromptCopyContext = {
+          ...lastPromptCopyContext,
+          promptId: data.prompt_id,
+          filename: data.filename || lastPromptCopyContext?.filename,
+          traceId: data.trace_id,
+        };
+        if (data.generation) {
+          const proj = allProjects.find((p) => p.id === projectId);
+          if (proj) proj.generation = data.generation;
+        }
+        if (status) {
+          status.textContent = promptMode === "fusion"
+            ? `Generating with ${fusionTargetLabel()} in background... building, rendering, reviewing, and repairing.`
+            : promptMode === "architect"
+            ? "Generating Architect module in background... building, rendering, reviewing, and repairing."
+            : promptMode === "v2"
+            ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
+            : "Generating in background... safe to switch tabs or refresh; model loads when ready.";
+        }
+        syncViewportGenerationOverlay();
+        syncStopButtonVisibility();
+        syncCanvasGenerationUi();
+        return;
+      }
       stopGenerationWatch();
-    status.className = "status ok";
-      status.textContent = data.prompt_id
-        ? `Answered · ${formatPromptRef({
-            promptId: data.prompt_id,
-            projectId,
-            filename: data.filename,
-            traceId: data.trace_id,
-            promptMode: data.prompt_mode || promptModeForRef(),
-            model: data.model || getSelectedPromptModelInfo().model,
-            provider: data.provider || getSelectedPromptModelInfo().provider,
-          })}`
-        : "Answered.";
-    reply.textContent = data.message || "";
-      setEditStatus("ok", data.message || "Answered.");
+      window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...data, projectId } }));
+      saveActiveModelPromptState();
+      selectedFile = data.filename;
+      await refreshFiles();
+      const placedFiles = (data.placed_parts || []).map((part) => part.filename).filter(Boolean);
+      await reloadViewportFromProject({
+        fitView: true,
+        latestFile: data.filename,
+        placedFiles,
+        loadAll: promptMode === "architect",
+      });
+      restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: data.filename });
+      pendingPromptSelectionContext = null;
+      viewerOverlay.clearError();
+      await refreshTimeline();
+      await refreshPromptHistory();
+      void refreshWorkspaceAiUsage();
+      showAiComposePanel();
+      clearPromptComposeResult();
+      setEditStatus("ok", data.message || "Model ready.");
+    } catch (err) {
+      if (genId !== activePromptGenerationId || userCancelRequested) {
+        if (userCancelRequested || !generationPollTimer) stopGenerationWatch();
+        return;
+      }
+      const alreadyRunning = /already (?:running|in progress)/i.test(String(err?.message || ""));
+      if (alreadyRunning && projectId) {
+        try {
+          const gen = await api(`/api/projects/${projectId}/generation`);
+          if (gen?.status === "running") {
+            const proj = allProjects.find((p) => p.id === projectId);
+            if (proj) proj.generation = gen;
+            beginGenerationWatch(projectId, {
+              kind: gen.kind || "prompt",
+              mode: generationPromptMode(gen, genMode),
+            });
+            if (status) {
+              status.className = "status loading";
+              status.textContent = "Generation already running — showing live progress…";
+            }
+            viewerOverlay.clearError();
+            return;
+          }
+        } catch {
+          /* fall through to normal error handling */
+        }
+      }
+      promptFailed = true;
+      pendingPromptSelectionContext = null;
+      stopGenerationWatch();
+      if (status) {
+        status.className = "status error";
+        status.textContent = formatUserError(err);
+      }
+      viewerOverlay.showError(formatUserError(err), lastPromptCopyContext || {});
       await refreshPromptHistory();
       showAiComposePanel();
-      pendingPromptSelectionContext = null;
-      return;
-    }
-    if (data.accepted || data.status === "running") {
-      if (!generationWatchOverlay || generationWatchPid !== projectId) {
-        beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
+    } finally {
+      if (genId === activePromptGenerationId) activePromptAbort = null;
+      if (genId !== activePromptGenerationId) return;
+      if (!generationPollTimer && !isCadGenerationActive(projectId)) {
+        hideViewportOverlay(projectId, { complete: !promptFailed });
+        syncStopButtonVisibility();
       }
-      lastPromptCopyContext = {
-        ...lastPromptCopyContext,
-        promptId: data.prompt_id,
-        filename: data.filename || lastPromptCopyContext?.filename,
-        traceId: data.trace_id,
-      };
-      if (data.generation) {
-        const proj = allProjects.find((p) => p.id === projectId);
-        if (proj) proj.generation = data.generation;
-      }
-      status.textContent = promptMode === "fusion"
-        ? `Generating with ${fusionTargetLabel()} in background... building, rendering, reviewing, and repairing.`
-        : promptMode === "architect"
-        ? "Generating Architect module in background... building, rendering, reviewing, and repairing."
-        : promptMode === "v2"
-        ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
-        : "Generating in background... safe to switch tabs or refresh; model loads when ready.";
-      syncViewportGenerationOverlay();
-      syncStopButtonVisibility();
-      syncCanvasGenerationUi();
-      return;
     }
-    stopGenerationWatch();
-    window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...data, projectId } }));
-    saveActiveModelPromptState();
-    selectedFile = data.filename;
-    await refreshFiles();
-    const placedFiles = (data.placed_parts || []).map((part) => part.filename).filter(Boolean);
-    await reloadViewportFromProject({
-      fitView: true,
-      latestFile: data.filename,
-      placedFiles,
-      loadAll: promptMode === "architect",
-    });
-    restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: data.filename });
-    pendingPromptSelectionContext = null;
-    viewerOverlay.clearError();
-    await refreshTimeline();
-    await refreshPromptHistory();
-    void refreshWorkspaceAiUsage();
-    showAiComposePanel();
-    clearPromptComposeResult();
-    setEditStatus("ok", data.message || "Model ready.");
   } catch (err) {
-    if (genId !== activePromptGenerationId || userCancelRequested) {
-      if (userCancelRequested || !generationPollTimer) stopGenerationWatch();
-      return;
-    }
-    promptFailed = true;
-    pendingPromptSelectionContext = null;
     stopGenerationWatch();
-    status.className = "status error";
-    status.textContent = formatUserError(err);
-    viewerOverlay.showError(formatUserError(err), lastPromptCopyContext || {});
-    await refreshPromptHistory();
-    showAiComposePanel();
-  } finally {
-    if (genId === activePromptGenerationId) activePromptAbort = null;
-    if (genId !== activePromptGenerationId) return;
-    if (!generationPollTimer && !isCadGenerationActive(projectId)) {
-      hideViewportOverlay(projectId, { complete: !promptFailed });
-      syncStopButtonVisibility();
+    const status = document.getElementById("prompt-status");
+    if (status) {
+      status.className = "status error";
+      status.textContent = formatUserError(err);
     }
+    viewerOverlay.showError(formatUserError(err), lastPromptCopyContext || {});
+  } finally {
+    if (!isGenerationUiActive(projectId)) promptSubmitInFlight = false;
   }
 });
 
