@@ -31,6 +31,17 @@ log() { echo "[backup-code] $*"; }
 
 mkdir -p "${SNAPSHOTS}" "${QUARANTINE}" "${BACKUP_ROOT}"
 
+# ── 0. Sync Recent Updates milestones from shipped sources ───────────────────
+if [[ -x "${ROOT}/.venv/bin/python" ]]; then
+  PY="${ROOT}/.venv/bin/python"
+else
+  PY="python3"
+fi
+if [[ -f "${ROOT}/scripts/scan-milestones.py" ]]; then
+  log "Scanning milestones for Recent Updates page"
+  "${PY}" "${ROOT}/scripts/scan-milestones.py" --quiet || log "Milestone scan skipped/failed (non-fatal)"
+fi
+
 # ── 1. Auto-commit all dirty/untracked git changes ───────────────────────────
 if git -C "${ROOT}" rev-parse --git-dir &>/dev/null; then
   if ! git -C "${ROOT}" diff --quiet HEAD 2>/dev/null || \

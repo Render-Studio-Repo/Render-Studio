@@ -257,6 +257,7 @@ export async function openFileExportMenu({
         Fusion 360
       </button>` : ""}
       <button type="button" class="btn file-export-bambu" title="Open this model as 3MF in local Bambu Studio and place it on the build plate">
+        <!-- @milestone id=send-to-bambu-studio title="Send to Bambu Studio" summary="Export prepares a plate-ready 3MF and opens it in local Bambu Studio so the part lands on the build plate." kind=feature href="/" -->
         <span class="file-export-bambu-mark" aria-hidden="true">B</span>
         Send to Bambu Studio
       </button>

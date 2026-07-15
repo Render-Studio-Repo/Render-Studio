@@ -1,0 +1,40 @@
+{
+  "items": [
+    {
+      "id": "send-to-bambu-studio",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Send to Bambu Studio",
+      "summary": "Export prepares a plate-ready 3MF and opens it in local Bambu Studio so the part lands on the build plate.",
+      "visual": "/docs/media/picks.gif?v=20260715-real",
+      "href": "/"
+    },
+    {
+      "id": "realtime-editor-popup",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Realtime editor viewport popup",
+      "summary": "Open a large realtime editor viewport from the workspace strip; after import/open it collapses to a compact left chip for the active object.",
+      "visual": "/docs/media/workspaces.gif?v=20260715-real",
+      "href": "/"
+    },
+    {
+      "id": "mode-2-selected-face-edit",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Mode 2.0 selected-face length edit",
+      "summary": "Face and component refs keep edit mode on the viewport object so lengthen/extend revises the selected part instead of regenerating from an older baseline.",
+      "visual": "/docs/media/picks.gif?v=20260715-real",
+      "href": "/getting-started.html#picks"
+    },
+    {
+      "id": "docs-sticky-topic-nav",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Sticky docs topic legend",
+      "summary": "The left topic legend on Getting Started and Complete docs stays with you while scrolling so you can jump between sections anytime.",
+      "visual": "/docs/media/render-agent.gif?v=20260715-real",
+      "href": "/docs.html#complete-docs"
+    }
+  ]
+}

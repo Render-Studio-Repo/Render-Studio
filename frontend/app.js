@@ -730,6 +730,9 @@ async function applyRiggingGenerationComplete(gen, pid = projectId) {
     await refreshFiles();
     await refreshRobotArtifacts({ quiet: true });
     await refreshRiggingPromptHistory();
+    setRiggingWorkspaceMode("urdf");
+    openUrdfMotionModal();
+    await ensureUrdfRobotScene({ quiet: true });
     if (document.body.classList.contains("rigging-design-tab")) {
       setRightTab("rigging");
     }
@@ -5561,7 +5564,7 @@ function enterRiggingMode() {
       if (urdfFile) {
         await ensureUrdfRobotScene({ quiet: false, force: true });
         if (urdfRobotRuntime.isLoaded?.()) {
-          setEditStatus("ok", `URDF robot ready (${urdfFile}). Press Play to animate joints.`);
+          setEditStatus("ok", `URDF robot ready (${urdfFile}). Use the viewport playground to pose joints and test motion.`);
           syncRiggingToolbelt();
           syncRiggingViewportPlaybackUi();
           return;
@@ -7617,8 +7620,8 @@ async function toggleRiggingPlayback() {
         setEditStatus(
           "ok",
           playing
-            ? "Playing URDF joint motion (SRDF home → reach)."
-            : "URDF playback paused.",
+            ? "Running URDF test sweep (SRDF home → reach)."
+            : "URDF test sweep paused.",
         );
         syncRiggingViewportPlaybackUi();
         return;
@@ -9269,7 +9272,7 @@ async function runMoveIt2Solve() {
   try {
     const payload = await moveIt2Client.request("srdf.solvePose", payloadBase);
     const kind = applyMoveIt2Result(payload);
-    if (kind) setEditStatus("ok", kind === "trajectory" ? "Playing MoveIt2 IK trajectory." : "MoveIt2 IK solve applied.");
+    if (kind) setEditStatus("ok", kind === "trajectory" ? "MoveIt2 IK trajectory running in viewport." : "MoveIt2 IK solve applied.");
     else setEditStatus("error", "MoveIt2 solve returned no joint values.");
   } catch (err) {
     setEditStatus("error", err?.message || "MoveIt2 solve failed.");
@@ -9294,7 +9297,7 @@ async function runMoveIt2Plan() {
   try {
     const payload = await moveIt2Client.request("srdf.planToPose", payloadBase);
     const kind = applyMoveIt2Result(payload);
-    if (kind) setEditStatus("ok", kind === "trajectory" ? "Playing MoveIt2 planned trajectory." : "MoveIt2 plan goal applied.");
+    if (kind) setEditStatus("ok", kind === "trajectory" ? "MoveIt2 planned path running in viewport." : "MoveIt2 plan goal applied.");
     else setEditStatus("error", "MoveIt2 plan returned no trajectory.");
   } catch (err) {
     setEditStatus("error", err?.message || "MoveIt2 plan failed.");
@@ -9493,15 +9496,24 @@ function isUrdfMotionModalOpen() {
 function openUrdfMotionModal() {
   const modal = document.getElementById("urdf-motion-modal");
   if (!modal) return;
+  const viewport = document.getElementById("viewport");
+  if (viewport && modal.parentElement !== viewport) viewport.appendChild(modal);
   modal.classList.remove("hidden");
-  document.body.classList.add("urdf-motion-open");
+  modal.classList.add("urdf-motion-dock");
+  document.body.classList.add("urdf-motion-open", "urdf-motion-docked");
   renderUrdfPanel();
-  void refreshRobotArtifacts({ quiet: true });
+  void (async () => {
+    await refreshRobotArtifacts({ quiet: true });
+    await ensureUrdfRobotScene({ quiet: true });
+    renderUrdfPanel();
+  })();
 }
 
 function closeUrdfMotionModal() {
-  document.getElementById("urdf-motion-modal")?.classList.add("hidden");
-  document.body.classList.remove("urdf-motion-open");
+  const modal = document.getElementById("urdf-motion-modal");
+  modal?.classList.add("hidden");
+  modal?.classList.remove("urdf-motion-dock");
+  document.body.classList.remove("urdf-motion-open", "urdf-motion-docked");
 }
 
 function renderUrdfPanel() {
@@ -9602,7 +9614,7 @@ function bindUrdfPanel() {
       const playing = urdfRobotRuntime.togglePlay?.({ durationSec: 3.6 }) ?? false;
       setEditStatus(
         "ok",
-        playing ? "Playing URDF joint sweep." : "URDF playback paused.",
+        playing ? "Running URDF test sweep." : "URDF test sweep paused.",
       );
       syncRiggingViewportPlaybackUi();
       return;
@@ -15202,7 +15214,12 @@ function setRiggingWorkspaceMode(mode) {
     /* ignore */
   }
   if (next === "urdf") {
-    void refreshRobotArtifacts({ quiet: true });
+    void (async () => {
+      await refreshRobotArtifacts({ quiet: true });
+      openUrdfMotionModal();
+    })();
+  } else {
+    closeUrdfMotionModal();
   }
 }
 

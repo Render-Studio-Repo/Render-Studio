@@ -1,5 +1,5 @@
 /**
- * Collapse Studio / Agent Store / Skills / Docs / Roadmap into a Menu dropdown
+ * Collapse Studio / Agent Store / Skills / Docs into a Menu dropdown
  * when the top toolbar can't fit the links without overlapping pick tools.
  */
 

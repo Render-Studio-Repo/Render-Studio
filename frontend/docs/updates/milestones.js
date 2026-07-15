@@ -9,6 +9,106 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "realtime-editor-popup",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Realtime editor viewport popup",
+    summary:
+      "Open a large realtime editor viewport from the workspace strip; after import/open it collapses to a compact left chip for the active object.",
+    visual: "/docs/media/workspaces.gif?v=20260715-real",
+    href: "/",
+  },
+  {
+    id: "mode-2-selected-face-edit",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Mode 2.0 selected-face length edit",
+    summary:
+      "Face and component refs keep edit mode on the viewport object so lengthen/extend revises the selected part instead of regenerating from an older baseline.",
+    visual: "/docs/media/picks.gif?v=20260715-real",
+    href: "/getting-started.html#picks",
+  },
+  {
+    id: "docs-sticky-topic-nav",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Sticky docs topic legend",
+    summary:
+      "The left topic legend on Getting Started and Complete docs stays with you while scrolling so you can jump between sections anytime.",
+    visual: "/docs/media/render-agent.gif?v=20260715-real",
+    href: "/docs.html#complete-docs",
+  },
+  {
+    id: "multi-gen",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Parallel generations",
+    summary:
+      "Run up to five CAD prompts at once; stop one or all from the viewport banner.",
+    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    href: "/getting-started.html#multi-gen",
+  },
+  {
+    id: "link-to-prompt",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Link project items to the prompt",
+    summary:
+      "Shift-select files in the Project browser and drag them into the AI prompt as @component references.",
+    visual: "/docs/media/picks.gif?v=20260715-real",
+    href: "/getting-started.html#link-to-prompt",
+  },
+  {
+    id: "solid-tools",
+    date: "2026-07-15",
+    kind: "tool",
+    title: "Solid modeling tools",
+    summary:
+      "Ribbon Create/Modify/Pattern plus direct tools: Press-Pull, fillet, transform, color, measure.",
+    visual: "/docs/media/picks.gif?v=20260715-real",
+    href: "/getting-started.html#solid-tools",
+  },
+  {
+    id: "sketch",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Constrained Sketch",
+    summary:
+      "2D sketch on a plane with constraints, then extrude to solid.",
+    visual: "/docs/media/canvas.gif?v=20260715-real",
+    href: "/getting-started.html#sketch",
+  },
+  {
+    id: "rigging-urdf",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "URDF / SRDF & Motion",
+    summary:
+      "GLB shows shape; URDF/SRDF drive simulation. Author Jake gen_urdf()/gen_srdf(), then open Motion.",
+    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    href: "/getting-started.html#rigging-urdf",
+  },
+  {
+    id: "cloud-sync",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Fusion 360 & Onshape sync",
+    summary:
+      "Connect cloud libraries to import and push without leaving Studio.",
+    visual: "/docs/media/cloud-sync.gif?v=20260715-real",
+    href: "/getting-started.html#cloud-sync",
+  },
+  {
+    id: "tips-tricks",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Tips and tricks",
+    summary:
+      "Shift-select files, drag refs into the prompt, keep prompts focused, share context.",
+    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    href: "/getting-started.html#tips-tricks",
+  },
+  {
     id: "send-to-bambu-studio",
     date: "2026-07-15",
     kind: "feature",

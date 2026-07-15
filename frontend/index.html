@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-fusion-browser" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-urdf-playground" />
   <script type="importmap">
   {
     "imports": {
@@ -46,8 +46,7 @@
           <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
           <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
           <a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
-          <a href="/roadmap.html" class="nav-tab" role="menuitem">Roadmap</a>
-        </div>
+</div>
       </nav>
       <div class="toolbar-pick">
         <span class="toolbar-pick-label">Pick</span>
@@ -381,7 +380,7 @@
             <span class="rigging-tool-sep" aria-hidden="true"></span>
             <div class="rigging-tool-group rigging-tool-group--actions">
               <button type="button" id="btn-rigging-toolbelt-generate" class="rigging-tool-btn rigging-tool-accent" title="Generate rig with Rigging AI">⚡ Generate</button>
-              <button type="button" class="rigging-tool-btn btn-rigging-toolbelt-motion" title="Open URDF / SRDF motion workbench">🤖 Motion</button>
+              <button type="button" class="rigging-tool-btn btn-rigging-toolbelt-motion" title="Open URDF / SRDF robot playground">🤖 Playground</button>
               <button type="button" id="btn-rigging-toolbelt-save" class="rigging-tool-btn" title="Save rig">💾 Save</button>
               <button type="button" id="btn-rigging-toolbelt-export" class="rigging-tool-btn" title="Export robot.urdf">📄 URDF</button>
               <button type="button" id="btn-rigging-toolbelt-auto" class="rigging-tool-btn" title="Auto chain rig">🦴 Auto Rig</button>
@@ -442,7 +441,7 @@
             <span class="rigging-tool-sep" aria-hidden="true"></span>
             <div class="rigging-tool-group rigging-tool-group--actions">
               <button type="button" id="btn-rigging-toolbelt-generate" class="rigging-tool-btn rigging-tool-accent" title="Generate rig with Rigging AI">⚡ Generate</button>
-              <button type="button" class="rigging-tool-btn btn-rigging-toolbelt-motion" title="Open URDF / SRDF motion workbench">🤖 Motion</button>
+              <button type="button" class="rigging-tool-btn btn-rigging-toolbelt-motion" title="Open URDF / SRDF robot playground">🤖 Playground</button>
               <button type="button" id="btn-rigging-toolbelt-save" class="rigging-tool-btn" title="Save rig">💾 Save</button>
               <button type="button" id="btn-rigging-toolbelt-export" class="rigging-tool-btn" title="Export robot.urdf">📄 URDF</button>
               <button type="button" id="btn-rigging-toolbelt-auto" class="rigging-tool-btn" title="Auto chain rig">🦴 Auto Rig</button>
@@ -1307,8 +1306,8 @@
                 <span id="rigging-side-tree-summary" class="muted small">No robot loaded</span>
               </div>
               <div id="rigging-side-link-tree" class="urdf-link-tree"></div>
-              <button type="button" class="btn accent full" id="btn-open-urdf-motion" style="margin-top:10px">Open URDF / SRDF Motion</button>
-              <p class="muted small" style="margin-top:8px">Opens the motion workbench for posing, trajectories, and MoveIt2.</p>
+              <button type="button" class="btn accent full" id="btn-open-urdf-motion" style="margin-top:10px">Open robot playground in viewport</button>
+              <p class="muted small" style="margin-top:8px">Embeds joint sliders, SRDF states, and MoveIt2 tests directly in the viewport.</p>
             </div>
           </div>
 
@@ -1329,8 +1328,8 @@
     <div class="urdf-motion-card" role="document">
       <header class="urdf-motion-header">
         <div>
-          <h2 id="urdf-motion-title">URDF / SRDF Motion</h2>
-          <p class="muted small">Pose the robot in the viewport, apply SRDF group states, and run MoveIt2 when the Jake server is online.</p>
+          <h2 id="urdf-motion-title">URDF / SRDF Robot Playground</h2>
+          <p class="muted small">Pose the robot directly in the viewport, apply SRDF group states, and test MoveIt2 IK/path planning.</p>
         </div>
         <div class="urdf-motion-header-actions">
           <button type="button" id="btn-urdf-refresh" class="btn secondary btn-compact">Refresh</button>
@@ -1369,7 +1368,7 @@
             <div id="urdf-joint-sliders" class="cad-param-list urdf-motion-sliders"></div>
             <div class="urdf-motion-actions">
               <button type="button" class="btn accent btn-compact" id="btn-urdf-load-scene">Load robot scene</button>
-              <button type="button" class="btn accent btn-compact" id="btn-urdf-play">Play / Pause</button>
+              <button type="button" class="btn secondary btn-compact" id="btn-urdf-play">Test sweep</button>
               <button type="button" class="btn secondary btn-compact" id="btn-urdf-reset">Reset pose</button>
               <button type="button" class="btn secondary btn-compact" id="btn-urdf-copy">Copy angles</button>
               <button type="button" class="btn secondary btn-compact" id="btn-urdf-export">Export URDF</button>
@@ -2040,7 +2039,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
-  <script type="module" src="/app.js?v=20260715-rigging-artifact-status"></script>
+  <script type="module" src="/app.js?v=20260715-urdf-playground"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
