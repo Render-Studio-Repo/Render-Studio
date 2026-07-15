@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-improved-prompt-details" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-toolbar-nav-menu" />
   <script type="importmap">
   {
     "imports": {
@@ -36,11 +36,17 @@
         <span class="btn-collapse-label">Management</span>
       </a>
       <nav class="toolbar-nav" aria-label="Main">
-        <a href="/" class="nav-tab active">Studio</a>
-        <a href="/agent-store.html" class="nav-tab">Agent Store</a>
-        <a href="/skills.html" class="nav-tab">Skills Library</a>
-        <a href="/docs.html" class="nav-tab">Docs</a>
-        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab active" role="menuitem">Studio</a>
+          <a href="/agent-store.html" class="nav-tab" role="menuitem">Agent Store</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/roadmap.html" class="nav-tab" role="menuitem">Roadmap</a>
+        </div>
       </nav>
       <div class="toolbar-pick">
         <span class="toolbar-pick-label">Pick</span>
@@ -1828,7 +1834,8 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260715-robots-browser"></script>
+  <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script type="module" src="/app.js?v=20260715-urdf-mm-scale"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

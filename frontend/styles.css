@@ -4950,12 +4950,45 @@ body.canvas-design-tab .main-column {
   #timeline-panel,
   .timeline-expand-tab,
   .toolbar-pick,
-  .toolbar-nav,
   #btn-toggle-ribbon,
   #btn-toggle-sidebar,
   .toolbar-actions #btn-new-project,
   .toolbar-actions .unit-select {
     display: none !important;
+  }
+
+  /* Keep main nav reachable via the Menu dropdown instead of hiding it. */
+  .toolbar-nav {
+    display: flex !important;
+  }
+  .toolbar-nav:not(.is-compact) {
+    /* Force compact styling if JS hasn't marked it yet */
+  }
+  .toolbar-nav .toolbar-nav-toggle {
+    display: inline-flex;
+  }
+  .toolbar-nav .toolbar-nav-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 200px;
+    padding: 6px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(13, 17, 23, 0.98);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+  .toolbar-nav.is-open .toolbar-nav-menu {
+    display: flex;
+  }
+  .toolbar-nav .nav-tab {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 8px 12px;
   }
 
   .toolbar {
@@ -5517,13 +5550,14 @@ body.canvas-design-tab .main-column {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1;
+  flex: 1 1 auto;
   justify-content: center;
   min-width: 0;
   padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #0d1117;
+  overflow: hidden;
 }
 
 .toolbar-pick-label {
@@ -5593,6 +5627,111 @@ body.canvas-design-tab .main-column {
   gap: 2px;
   flex-shrink: 0;
   margin-right: 4px;
+  position: relative;
+  z-index: 40;
+}
+
+.toolbar-nav-toggle {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: #161b22;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbar-nav-toggle:hover {
+  background: #21262d;
+  border-color: #484f58;
+}
+
+.toolbar-nav.is-compact .toolbar-nav-toggle {
+  display: inline-flex;
+}
+
+.toolbar-nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-nav.is-compact .toolbar-nav-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  padding: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.toolbar-nav.is-compact.is-open .toolbar-nav-menu {
+  display: flex;
+}
+
+/* Mid-width: shed lower-priority pick chrome before things collide. */
+@media (max-width: 1280px) {
+  .toolbar-pick .left-drag-mode-btn {
+    display: none !important;
+  }
+}
+@media (max-width: 1120px) {
+  .toolbar-actions #btn-new-project {
+    display: none !important;
+  }
+  .toolbar-pick-label {
+    display: none;
+  }
+}
+
+.toolbar-nav.is-compact .nav-tab {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px 12px;
+}
+
+/* Fallback: always prefer Menu under ~1180px even before JS measures. */
+@media (max-width: 1180px) {
+  .toolbar-nav .toolbar-nav-toggle {
+    display: inline-flex;
+  }
+  .toolbar-nav .toolbar-nav-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 200px;
+    padding: 6px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(13, 17, 23, 0.98);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(10px);
+  }
+  .toolbar-nav.is-open .toolbar-nav-menu {
+    display: flex;
+  }
+  .toolbar-nav .nav-tab {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 8px 12px;
+  }
 }
 
 .nav-tab {
@@ -5606,6 +5745,7 @@ body.canvas-design-tab .main-column {
   font-weight: 500;
   text-decoration: none;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 
 .nav-tab:hover {
@@ -5642,7 +5782,7 @@ body.canvas-design-tab .main-column {
   display: flex;
   gap: 6px;
   align-items: center;
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
   overflow: visible;
 }

@@ -8,7 +8,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-new-logo" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-toolbar-nav-menu" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -20,11 +20,17 @@
         </a>
       </div>
       <nav class="toolbar-nav" aria-label="Main">
-        <a href="/" class="nav-tab">Studio</a>
-        <a href="/agent-store.html" class="nav-tab active">Agent Store</a>
-        <a href="/skills.html" class="nav-tab">Skills Library</a>
-        <a href="/docs.html" class="nav-tab">Docs</a>
-        <a href="/roadmap.html" class="nav-tab">Roadmap</a>
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/agent-store.html" class="nav-tab active" role="menuitem">Agent Store</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/roadmap.html" class="nav-tab" role="menuitem">Roadmap</a>
+        </div>
       </nav>
     </header>
 
@@ -103,5 +109,6 @@
   </div>
 
   <script type="module" src="/agent-store.js?v=20260706-ui-fix"></script>
+<script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>

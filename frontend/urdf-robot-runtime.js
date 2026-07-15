@@ -246,14 +246,18 @@ function primitiveMesh(visual) {
   if (visual.kind === "box") {
     geometry = new THREE.BoxGeometry(visual.size[0], visual.size[1], visual.size[2]);
   } else if (visual.kind === "cylinder") {
-    geometry = new THREE.CylinderGeometry(visual.radius, visual.radius, visual.length, 24);
+    // URDF cylinders are Z-aligned. Three's CylinderGeometry is Y-aligned.
+    geometry = new THREE.CylinderGeometry(visual.radius, visual.radius, visual.length, 28);
     geometry.rotateX(Math.PI / 2);
   } else {
     geometry = new THREE.SphereGeometry(visual.radius || 0.02, 20, 14);
   }
   const mesh = new THREE.Mesh(geometry, materialFromRgba(visual.color));
+  mesh.castShadow = true;
+  mesh.receiveShadow = false;
   mesh.matrixAutoUpdate = false;
   mesh.matrix.copy(matrixFromRowMajor(visual.localTransform));
+  mesh.matrixWorldNeedsUpdate = true;
   return mesh;
 }
 
@@ -390,6 +394,8 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     root = new THREE.Group();
     root.name = `urdf:${urdf.name}`;
     root.userData.isUrdfRobot = true;
+    // Render3D CAD viewport is millimeter-based; URDF is meters.
+    root.scale.setScalar(1000);
     linkGroups = new Map();
 
     for (const link of urdf.links) {
@@ -411,6 +417,14 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     for (const joint of urdf.joints) {
       if (String(joint.type) === "fixed") jointValuesRad[joint.name] = 0;
       else jointValuesRad[joint.name] = 0;
+    }
+
+    // Prefer SRDF "home" so the arm opens in a readable pose, not collapsed at zeros.
+    const home = (srdf?.groupStates || []).find((s) => String(s.name).toLowerCase() === "home");
+    if (home?.jointValuesByName) {
+      Object.entries(home.jointValuesByName).forEach(([name, value]) => {
+        if (name in jointValuesRad) jointValuesRad[name] = asNum(value, 0);
+      });
     }
 
     scene?.add(root);

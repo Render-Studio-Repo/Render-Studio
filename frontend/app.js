@@ -105,7 +105,7 @@ import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260710-step-module";
-import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260710-jake-runtime";
+import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-mm-scale";
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
