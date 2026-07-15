@@ -270,6 +270,10 @@ class PromptRequest(BaseModel):
     )
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = Field(default=None, description="personal or team")
+    jake_codex_agent: bool = Field(
+        default=False,
+        description="Opt-in: run CAD 2.0 with host Codex + Jake cad@text-to-cad plugin (uses server ChatGPT login).",
+    )
 
 
 class SceneRenderRequest(BaseModel):
@@ -2183,13 +2187,15 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
     dxf_files = _build_dxf_context_entries(project_path, body.prompt, refs)
     if dxf_files:
         context["dxf_files"] = dxf_files
-    # Jake-identical CAD 2.0: per-user OpenAI/Claude API keys via tool agent.
-    # Codex is optional/opt-in only (uses host ChatGPT login — not multi-tenant safe).
+    # Jake-identical CAD 2.0: per-user OpenAI/Claude keys by default.
+    # Codex is opt-in via PromptRequest.jake_codex_agent (host ChatGPT login).
     if (body.mode or "standard").lower() in {"v2", "fusion", "architect"}:
         context["jake_identical_runtime"] = True
         context["strict_upstream_text_to_cad"] = True
         context["mirror_upstream_modeling"] = True
-        context["jake_codex_agent"] = False
+        use_codex = bool(getattr(body, "jake_codex_agent", False))
+        context["jake_codex_agent"] = use_codex
+        # Keep BYOK tool-agent as primary (or soft fallback when Codex is on).
         context["jake_tool_agent"] = True
     if (body.mode or "standard").lower() == "fusion":
         context["fusion_target"] = "fusion360" if (body.fusion_target or "").lower() == "fusion360" else "in_app"

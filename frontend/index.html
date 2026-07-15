@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260714-fusion-open-save-local" />
+  <link rel="stylesheet" href="/styles.css?v=20260714-jake-codex-toggle" />
   <script type="importmap">
   {
     "imports": {
@@ -1005,6 +1005,14 @@
                   <option value="quality">Quality</option>
                 </select>
               </label>
+              <label
+                id="prompt-jake-codex-toggle"
+                class="prompt-codex-toggle hidden"
+                title="Uses this server's Codex / ChatGPT login with Jake's cad@text-to-cad plugin. Off by default — everyone else uses their own OpenAI/Claude key."
+              >
+                <input type="checkbox" id="prompt-jake-codex" />
+                <span>Jake Codex</span>
+              </label>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
             </div>
             <label class="prompt-target-row">
@@ -1721,7 +1729,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260714-gen-timeout-fix"></script>
+  <script type="module" src="/app.js?v=20260714-jake-codex-toggle"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

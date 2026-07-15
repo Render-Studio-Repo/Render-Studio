@@ -781,6 +781,7 @@ function applyPromptModeUI(mode = promptMode) {
     skillsPromptUI?.render?.();
     skillsPromptUI?.updatePlan?.();
   }
+  syncJakeCodexToggleVisibility(promptMode);
 }
 
 function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standard", pendingStart = false } = {}) {
@@ -2648,6 +2649,44 @@ const promptHistory = createPromptHistoryUI({
 let promptMode = "v2";
 const PROMPT_SPEED_KEY = "render3d:prompt-speed:v1";
 const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
+const JAKE_CODEX_KEY = "render3d:jake-codex:v1";
+
+function isJakeCodexEnabled() {
+  return Boolean(document.getElementById("prompt-jake-codex")?.checked);
+}
+
+function setJakeCodexEnabled(enabled) {
+  const input = document.getElementById("prompt-jake-codex");
+  if (input) input.checked = Boolean(enabled);
+  try {
+    localStorage.setItem(JAKE_CODEX_KEY, enabled ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+  syncJakeCodexToggleVisibility();
+}
+
+function syncJakeCodexToggleVisibility(mode = promptMode) {
+  const wrap = document.getElementById("prompt-jake-codex-toggle");
+  if (!wrap) return;
+  const show = ["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase());
+  wrap.classList.toggle("hidden", !show);
+}
+
+(() => {
+  let enabled = false;
+  try {
+    enabled = localStorage.getItem(JAKE_CODEX_KEY) === "1";
+  } catch {
+    enabled = false;
+  }
+  const input = document.getElementById("prompt-jake-codex");
+  if (input) {
+    input.checked = enabled;
+    input.addEventListener("change", () => setJakeCodexEnabled(input.checked));
+  }
+  syncJakeCodexToggleVisibility();
+})();
 
 function getPromptGenerationSpeed() {
   return document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
@@ -16745,6 +16784,9 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       ...(promptMode === "fusion" ? { mode: "fusion", fusion_target: fusionTarget } : {}),
       ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
       ...(promptMode === "v2" ? { mode: "v2" } : {}),
+      ...(["v2", "fusion", "architect"].includes(promptMode) && isJakeCodexEnabled()
+        ? { jake_codex_agent: true }
+        : {}),
     };
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
     const data = await api(
