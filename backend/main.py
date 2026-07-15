@@ -14295,6 +14295,136 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
     }
 
 
+@app.post("/api/projects/{project_id}/render-region-edit")
+def render_region_edit(project_id: str, body: RenderRegionEditRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    """Edit a rectangular region of a render/reference image via OpenAI images.edit, then composite back."""
+    import io
+    from PIL import Image
+
+    trace_id = getattr(request.state, "trace_id", new_trace_id())
+    project_path = _require_project(user, project_id)
+    try:
+        full_bytes, _ext = _decode_data_url_image(body.source_image)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    ai = _render_ai_for_user(user, body, project_id)
+    if ai.provider != "openai":
+        raise HTTPException(400, "Region image edit needs an OpenAI key.")
+
+    try:
+        full_img = Image.open(io.BytesIO(full_bytes)).convert("RGBA")
+    except Exception as exc:
+        raise HTTPException(400, f"Could not read source image: {exc}") from exc
+
+    region = body.region or {}
+    try:
+        rx = max(0, int(region.get("x", 0)))
+        ry = max(0, int(region.get("y", 0)))
+        rw = max(1, int(region.get("w", full_img.width)))
+        rh = max(1, int(region.get("h", full_img.height)))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid region") from None
+    rw = min(rw, full_img.width - rx)
+    rh = min(rh, full_img.height - ry)
+    if rw < 8 or rh < 8:
+        raise HTTPException(400, "Selected region is too small")
+
+    crop = full_img.crop((rx, ry, rx + rw, ry + rh)).convert("RGBA")
+    crop_rgb = Image.new("RGB", crop.size, (255, 255, 255))
+    crop_rgb.paste(crop, mask=crop.split()[-1] if crop.mode == "RGBA" else None)
+    crop_buf = io.BytesIO()
+    crop_rgb.save(crop_buf, format="PNG")
+    crop_buf.seek(0)
+    crop_buf.name = "region.png"
+
+    edit_prompt = (
+        "Edit only this cropped image region according to the user instruction. "
+        "Preserve subject identity, perspective, and lighting continuity so it can be pasted back into the full photo. "
+        "Do not add borders, frames, or captions.\n\n"
+        f"User instruction: {body.prompt}"
+    )
+    try:
+        response = ai.client.images.edit(
+            model="gpt-image-1",
+            image=crop_buf,
+            prompt=edit_prompt,
+            size="1024x1024",
+        )
+        b64 = _extract_openai_image_b64(response)
+        if not b64:
+            raise RuntimeError("Image API returned no image data")
+        edited_bytes = base64.b64decode(b64)
+        edited = Image.open(io.BytesIO(edited_bytes)).convert("RGBA")
+        edited = edited.resize((rw, rh), Image.Resampling.LANCZOS)
+    except Exception as exc:
+        raise HTTPException(502, f"Region edit failed: {exc}") from exc
+
+    composed = full_img.copy()
+    composed.paste(edited, (rx, ry), edited)
+    out_buf = io.BytesIO()
+    composed.convert("RGB").save(out_buf, format="PNG")
+    render_bytes = out_buf.getvalue()
+
+    save_mode = str(body.save_mode or "new").lower()
+    source_name = Path(body.source_filename or "").name if body.source_filename else ""
+    renders_dir = project_path / "renders"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+    if save_mode == "replace" and source_name:
+        dest = renders_dir / source_name
+        if not dest.is_file():
+            alt = project_path / "references" / source_name
+            if alt.is_file():
+                dest = alt
+        if dest.parent.name not in cad_service.MARKUP_FOLDER_NAMES:
+            raise HTTPException(400, "Can only replace files under renders/ or references/")
+        dest.write_bytes(render_bytes)
+        filename = dest.name
+        url = (
+            f"/api/projects/{project_id}/files/{filename}"
+            if dest.parent.name == "references"
+            else f"/api/projects/{project_id}/renders/{filename}"
+        )
+    else:
+        filename = _write_scene_render(project_path, render_bytes)
+        url = f"/api/projects/{project_id}/renders/{filename}"
+
+    message = f"Region edit: {body.prompt}"
+    hist_entry = prompt_history_service.append_entry(
+        project_path,
+        prompt=body.prompt,
+        success=True,
+        message=message,
+        filename=filename,
+        base_filename=body.source_filename,
+        speed=body.speed,
+        references=[],
+        images=[{"id": "region", "name": "region.png", "media_type": "image/png"}],
+        trace_id=trace_id,
+        user_id=user["id"],
+        user_name=user["display_name"],
+        user_avatar_url=_avatar_url_for_user_id(user["id"]),
+        prompt_mode="render",
+        kind="render_region_edit",
+        model="gpt-image-1",
+        provider="openai",
+    )
+    return {
+        "kind": "render_region_edit",
+        "filename": filename,
+        "url": url,
+        "message": message,
+        "trace_id": trace_id,
+        "prompt_id": hist_entry.get("id") if hist_entry else None,
+        "model": "gpt-image-1",
+        "provider": "openai",
+        "prompt_mode": "render",
+        "file_kind": "image",
+        "section": "renders",
+        "save_mode": save_mode,
+    }
+
+
 @app.post("/api/projects/{project_id}/build")
 def build_program_endpoint(
     project_id: str,
