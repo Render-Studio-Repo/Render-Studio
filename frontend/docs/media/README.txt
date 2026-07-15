@@ -1,0 +1,1 @@
+Drop optional feature GIFs here (ai-generate.gif, workspaces.gif, share-folder.gif, reference-markup.gif, canvas.gif, picks.gif, wiring.gif, cloud-sync.gif, render-agent.gif). Until present, Getting Started shows looping CSS demos.

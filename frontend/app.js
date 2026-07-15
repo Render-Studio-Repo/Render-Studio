@@ -63,7 +63,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realti
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-agent-tips-refresh";
+import { createRenderAgent } from "./render-agent.js?v=20260715-ask-agent";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -18979,6 +18979,13 @@ window.addEventListener("keydown", (e) => {
     onStatus: (kind, message) => setEditStatus(kind, message),
   });
 
+  const askAgentParam = new URLSearchParams(window.location.search).get("askAgent")
+    || new URLSearchParams(window.location.search).get("agentQ");
+  if (askAgentParam) {
+    const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", cleanUrl || "/");
+  }
+
   const auth = createAuthUI({
     api,
     onUserMenuOpen: () => {
@@ -18992,9 +18999,17 @@ window.addEventListener("keydown", (e) => {
       connectUserRealtime();
       renderTeams();
       await startApp();
+      if (askAgentParam) {
+        setTimeout(() => renderAgentUi?.openWithQuestion?.(askAgentParam), 250);
+      }
     },
   });
   authUi = auth;
+
+  if (askAgentParam && !getToken?.()) {
+    // Prompt sign-in; question opens after onReady.
+    setTimeout(() => authUi?.openModal?.(), 300);
+  }
 
   window.addEventListener("render3d:open-fusion-library", () => {
     const appEl = document.getElementById("app");

@@ -145,7 +145,7 @@ export function createRenderAgent({
     }
   }
 
-  function open({ onboarding: showOnboarding = false } = {}) {
+  function open({ onboarding: showOnboarding = false, question = "" } = {}) {
     if (!currentUserId()) {
       onRequireLogin?.();
       return;
@@ -155,9 +155,22 @@ export function createRenderAgent({
       onboarding.classList.remove("hidden");
       markOnboardingSeen();
     }
+    if (question && input) {
+      input.value = String(question);
+    }
     void refreshThreads();
     void refreshTeamMembers();
-    setTimeout(() => input?.focus(), 50);
+    setTimeout(() => {
+      input?.focus();
+      if (question && input) {
+        const len = input.value.length;
+        input.setSelectionRange?.(len, len);
+      }
+    }, 50);
+  }
+
+  function openWithQuestion(question) {
+    open({ question: String(question || "").trim() });
   }
 
   function close() {
@@ -637,6 +650,7 @@ export function createRenderAgent({
 
   return {
     open,
+    openWithQuestion,
     close,
     setUser(user) {
       if (user && shouldShowOnboarding()) open({ onboarding: true });

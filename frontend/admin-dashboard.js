@@ -478,6 +478,22 @@ function renderDashboard(root, data) {
       </article>
     </section>
 
+    <section class="admin-panel admin-panel--agent-activity">
+      <div class="admin-agent-head">
+        <div>
+          <h3>Render Agent activity</h3>
+          <p class="muted small admin-panel-hint">Latest questions asked across all users in Render Agent chat.</p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-agent-refresh">Refresh</button>
+      </div>
+      <div class="admin-agent-stats" id="admin-agent-stats">
+        <span class="admin-pill"><strong>Loading…</strong></span>
+      </div>
+      <div class="admin-agent-activity-list" id="admin-agent-activity-list">
+        <p class="muted small">Loading Render Agent questions…</p>
+      </div>
+    </section>
+
     <section class="admin-panel">
       <h3>File Formats</h3>
       <div class="admin-pill-list">${countPills(data.project_format_counts, "format")}</div>
@@ -486,6 +502,10 @@ function renderDashboard(root, data) {
   `;
 
   root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root));
+  root.querySelector("#admin-agent-refresh")?.addEventListener("click", () => {
+    void loadRenderAgentActivity(root);
+  });
+  void loadRenderAgentActivity(root);
   const search = root.querySelector("#admin-user-search");
   const lookupList = root.querySelector("#admin-user-lookup-list");
   const allUsers = data.users || [];
@@ -513,6 +533,56 @@ function renderDashboard(root, data) {
         if (node.kind === "project" && node.project_id) void openProjectModal(node.project_id);
       },
     }));
+  }
+}
+
+function renderAgentActivityRows(items = []) {
+  if (!items.length) {
+    return `<p class="muted small">No Render Agent questions yet.</p>`;
+  }
+  return items
+    .map((item) => {
+      const when = formatDate(item.created_at);
+      const who = escapeHtml(item.asker_name || item.owner_name || "User");
+      const email = escapeHtml(item.owner_email || "");
+      const thread = escapeHtml(item.thread_title || "Thread");
+      const q = escapeHtml(item.question_preview || item.question || "");
+      const attachments = Number(item.attachment_count || 0);
+      return `
+        <article class="admin-agent-activity-row">
+          <div>
+            <strong>${who}</strong>
+            <span class="muted">${email}</span>
+          </div>
+          <div>
+            <p class="admin-agent-activity-q">${q || "<span class='muted'>(empty message)</span>"}</p>
+            <span class="muted">Thread · ${thread}${attachments ? ` · ${attachments} attachment${attachments === 1 ? "" : "s"}` : ""}</span>
+          </div>
+          <div class="admin-agent-activity-meta">${when}</div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+async function loadRenderAgentActivity(root) {
+  const statsEl = root.querySelector("#admin-agent-stats");
+  const listEl = root.querySelector("#admin-agent-activity-list");
+  if (!statsEl || !listEl) return;
+  statsEl.innerHTML = `<span class="admin-pill"><strong>Loading…</strong></span>`;
+  listEl.innerHTML = `<p class="muted small">Loading Render Agent questions…</p>`;
+  try {
+    const data = await api("/api/admin/render-agent/activity?limit=80");
+    const stats = data.stats || {};
+    statsEl.innerHTML = `
+      <span class="admin-pill"><strong>Questions</strong><em>${formatNumber(stats.question_count)}</em></span>
+      <span class="admin-pill"><strong>Threads</strong><em>${formatNumber(stats.thread_count)}</em></span>
+      <span class="admin-pill"><strong>Users</strong><em>${formatNumber(stats.user_count)}</em></span>
+    `;
+    listEl.innerHTML = renderAgentActivityRows(data.activity || []);
+  } catch (err) {
+    statsEl.innerHTML = "";
+    listEl.innerHTML = `<p class="muted small">Could not load Render Agent activity: ${escapeHtml(err.message || "error")}</p>`;
   }
 }
 
