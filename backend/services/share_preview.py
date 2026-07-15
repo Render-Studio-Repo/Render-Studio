@@ -1,7 +1,10 @@
 """Share-link social / text-message preview thumbnails.
 
-Builds transparent PNG previews from CAD iso snapshots so iMessage / SMS /
-Slack link unfurls show the model without a baked white card background.
+Builds dark (black) PNG link-preview thumbnails from CAD iso snapshots so
+iMessage / SMS / Slack unfurls show the model without a white card background.
+
+Transparent cutouts are still generated as an intermediate step, then composited
+onto solid black — messengers often flatten transparent PNGs onto white.
 """
 
 from __future__ import annotations
@@ -15,22 +18,59 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Solid studio black for OG / link-preview cards (iMessage, Slack, etc.).
+SHARE_OG_BACKGROUND_RGB = (0, 0, 0)
+
 
 def _snapshot_base_stem(snapshot_name: str) -> str:
     stem = Path(snapshot_name).stem
-    while stem.endswith("_share_transparent"):
-        stem = stem[: -len("_share_transparent")]
-    if stem.endswith("_share_og"):
-        stem = stem[: -len("_share_og")]
+    while True:
+        lowered = stem.lower()
+        if lowered.endswith("_share_transparent"):
+            stem = stem[: -len("_share_transparent")]
+            continue
+        if lowered.endswith("_share_og"):
+            stem = stem[: -len("_share_og")]
+            continue
+        break
     return stem
 
 
 def _is_share_preview_background_pixel(r: int, g: int, b: int, a: int) -> bool:
     if a == 0:
         return True
-    # CAD snapshots are usually white/off-white neutral backgrounds. Restrict
-    # to low-saturation edge-connected pixels so white model parts remain.
-    return min(r, g, b) >= 232 and (max(r, g, b) - min(r, g, b)) <= 28
+    spread = max(r, g, b) - min(r, g, b)
+    # Light CAD studio / off-white iso backgrounds (incl. soft blue-gray ~240,244,249).
+    if min(r, g, b) >= 220 and spread <= 36:
+        return True
+    # Dark viewport studio (#0d1117 / near-black) used by the share viewer.
+    if max(r, g, b) <= 28 and spread <= 18:
+        return True
+    return False
+
+
+def _legacy_share_og_needs_rebuild(og_path: Path) -> bool:
+    """True when an existing OG still has transparent or light corners (legacy)."""
+    try:
+        from PIL import Image
+
+        with Image.open(og_path) as img:
+            rgba = img.convert("RGBA")
+            width, height = rgba.size
+            samples = [
+                rgba.getpixel((0, 0)),
+                rgba.getpixel((width - 1, 0)),
+                rgba.getpixel((0, height - 1)),
+                rgba.getpixel((width - 1, height - 1)),
+            ]
+        for r, g, b, a in samples:
+            if a < 250:
+                return True
+            if min(r, g, b) >= 180:
+                return True
+        return False
+    except Exception:
+        return True
 
 
 def share_snapshot_filename(project_path: Path, filename: str, *, resolve_viewport=None) -> str | None:
@@ -187,6 +227,21 @@ def _decode_png_rgb_or_rgba(data: bytes) -> tuple[int, int, bytearray]:
     return width, height, rgba
 
 
+def _legacy_transparent_needs_rebuild(out_path: Path) -> bool:
+    """True when a cached transparent preview still has opaque light/dark studio corners."""
+    try:
+        from PIL import Image
+
+        with Image.open(out_path) as img:
+            rgba = img.convert("RGBA")
+            r, g, b, a = rgba.getpixel((0, 0))
+        if a < 250:
+            return False
+        return _is_share_preview_background_pixel(r, g, b, a)
+    except Exception:
+        return True
+
+
 def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> str | None:
     src = project_path / Path(snapshot_name).name
     if not src.is_file() or src.suffix.lower() != ".png":
@@ -195,7 +250,11 @@ def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> st
         return src.name if "_share_transparent" in src.name.lower() else None
     out = src.with_name(f"{_snapshot_base_stem(src.name)}_share_transparent.png")
     try:
-        if out.is_file() and out.stat().st_mtime_ns >= src.stat().st_mtime_ns:
+        if (
+            out.is_file()
+            and out.stat().st_mtime_ns >= src.stat().st_mtime_ns
+            and not _legacy_transparent_needs_rebuild(out)
+        ):
             return out.name
         width, height, rgba = _decode_png_rgb_or_rgba(src.read_bytes())
         transparent = bytearray(width * height)
@@ -283,7 +342,7 @@ def _draw_render3d_badge(image: Any) -> None:
 
 
 def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
-    """Transparent PNG thumbnail for iMessage / SMS / Slack link previews."""
+    """Black-background PNG thumbnail for iMessage / SMS / Slack link previews."""
     src = project_path / Path(snapshot_name).name
     if not src.is_file():
         return None
@@ -291,7 +350,11 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
     try:
         from PIL import Image
 
-        if out.is_file() and out.stat().st_mtime_ns >= src.stat().st_mtime_ns:
+        if (
+            out.is_file()
+            and out.stat().st_mtime_ns >= src.stat().st_mtime_ns
+            and not _legacy_share_og_needs_rebuild(out)
+        ):
             with Image.open(out) as existing:
                 return out.name, int(existing.size[0]), int(existing.size[1])
 
@@ -302,16 +365,19 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
             max_edge = 1600
             if max(rgba.size) > max_edge:
                 rgba.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
-            _draw_render3d_badge(rgba)
-            rgba.save(out, format="PNG", optimize=True)
-            return out.name, int(rgba.size[0]), int(rgba.size[1])
+            # Messengers often composite transparent PNGs onto white — bake black.
+            canvas = Image.new("RGBA", rgba.size, (*SHARE_OG_BACKGROUND_RGB, 255))
+            canvas.alpha_composite(rgba)
+            _draw_render3d_badge(canvas)
+            canvas.save(out, format="PNG", optimize=True)
+            return out.name, int(canvas.size[0]), int(canvas.size[1])
     except Exception as exc:
         logger.warning("Could not create PNG share OG preview for %s: %s", src.name, exc)
         return None
 
 
 def make_share_og_jpeg(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
-    """Backward-compatible wrapper; share previews are now transparent PNGs."""
+    """Backward-compatible wrapper; share previews are black-background PNGs."""
     return make_share_og_png(project_path, snapshot_name)
 
 

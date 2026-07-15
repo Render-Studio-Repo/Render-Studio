@@ -65,7 +65,8 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
-import { createProjectChatUI } from "./project-chat.js?v=20260715-mention-chips";
+import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-roles";
+import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
@@ -73,7 +74,7 @@ import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-bambu-studio";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-export-errors";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -166,7 +167,11 @@ let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
 let currentUser = null;
-const A1PROJECTS_ADMIN_EMAILS = new Set(["a1projects@protonmail.com", "a1projects.usa@gmail.com"]);
+const A1PROJECTS_ADMIN_EMAILS = new Set([
+  "a1projects@protonmail.com",
+  "a1projects.usa@gmail.com",
+  "mtgraytech@gmail.com",
+]);
 let authUi = null;
 let renderAgentUi = null;
 let selectedFile = null;
@@ -4939,6 +4944,16 @@ const projectChat = createProjectChatUI({
     document.getElementById("btn-render-agent")?.click();
   },
   onStatus: (kind, message) => setEditStatus(kind, message),
+});
+const workspaceManagement = createWorkspaceManagementUI({
+  menuButtonEl: document.getElementById("btn-workspace-mgmt-menu"),
+  panelEl: document.getElementById("profile-workspace-mgmt-panel"),
+  getTeams: () => allTeams,
+  onStatus: (kind, message) => setEditStatus(kind, message),
+  onTeamsChanged: () => {
+    refreshTeamMembersRealtime();
+    refreshWorkspacePanelRealtime();
+  },
 });
 initManagementNotifications();
 
@@ -21165,6 +21180,7 @@ window.addEventListener("keydown", (e) => {
     updateWorkspaceRenameButton();
     refreshTeamMembers();
     refreshTeamInvites();
+    workspaceManagement?.syncMenuVisibility?.();
   }
 
   function openWorkspaceRenameModal() {
@@ -22171,7 +22187,7 @@ window.addEventListener("keydown", (e) => {
           <div class="profile-workspace-head">
             <div>
               <strong>${appEscapeHtml(team.name)}</strong>
-              <span class="muted small">${appEscapeHtml(team.role || "member")}${team.id === activeTeamId ? " · current" : ""}</span>
+              <span class="muted small">${appEscapeHtml(team.role_label || team.role || "member")}${team.id === activeTeamId ? " · current" : ""}</span>
             </div>
             <label class="profile-workspace-visible">
               <input type="checkbox" data-action="workspace-visible" data-team-id="${appEscapeHtml(team.id)}" ${visible ? "checked" : ""} />
@@ -22202,7 +22218,7 @@ window.addEventListener("keydown", (e) => {
             ${memberRows.map((m) => `
               <div class="profile-workspace-member">
                 <span><strong>${appEscapeHtml(m.display_name || m.email)}</strong> <span class="muted">${appEscapeHtml(m.email || "")}</span></span>
-                <small>${appEscapeHtml(m.role || "member")}</small>
+                <small>${appEscapeHtml(m.role_label || m.role || "User")}</small>
               </div>
             `).join("") || `<p class="muted small">${loadError ? `Could not load members: ${appEscapeHtml(loadError)}` : "No members in this team yet."}</p>`}
           </div>
@@ -22228,9 +22244,11 @@ window.addEventListener("keydown", (e) => {
     const panel = document.getElementById("profile-workspace-panel");
     const costsPanel = document.getElementById("profile-costs-panel");
     const preferencesPanel = document.getElementById("profile-preferences-panel");
+    const mgmtPanel = document.getElementById("profile-workspace-mgmt-panel");
     if (!panel) return;
     costsPanel?.classList.add("hidden");
     preferencesPanel?.classList.add("hidden");
+    mgmtPanel?.classList.add("hidden");
     panel.classList.toggle("hidden");
     if (!panel.classList.contains("hidden")) {
       await refreshWorkspaceMenuPanel();
@@ -22414,7 +22432,7 @@ window.addEventListener("keydown", (e) => {
                 <div class="team-member-row">
                   <strong>${appEscapeHtml(m.display_name)}</strong>
                   <span class="muted">${appEscapeHtml(m.email)}</span>
-                  <small>${appEscapeHtml(m.role || "member")}</small>
+                  <small>${appEscapeHtml(m.role_label || m.role || "User")}</small>
                 </div>
               `).join("") || `<p class="muted small">No members yet.</p>`}
             </div>

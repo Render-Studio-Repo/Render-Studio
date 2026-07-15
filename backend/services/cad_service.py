@@ -457,7 +457,7 @@ def _has_native_step_provenance(project_path: Path, stem: str) -> bool:
     if (project_path / f".{stem}.step.js").is_file():
         return True
     # Edited/pulled meshes still point back to the generative base.
-    base = re.sub(r"(_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
+    base = re.sub(r"(__faceted|_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
     if base and base != stem:
         if (project_path / f"{base}.py").is_file():
             return True

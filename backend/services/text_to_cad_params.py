@@ -215,7 +215,7 @@ def resolve_source_for_model(project_path: Path, filename: str) -> tuple[Path, s
             return candidate, candidate.name
     # Strip other generative suffixes (pulled/mirrored/…) to find the authoring source.
     stripped = re.sub(
-        r"(_edited|_pulled|_mirrored|_extruded|_copy\d*|_body\d*|_clean(?:_parametric)?)+$",
+        r"(__faceted|_edited|_pulled|_mirrored|_extruded|_copy\d*|_body\d*|_clean(?:_parametric)?)+$",
         "",
         stem,
         flags=re.I,

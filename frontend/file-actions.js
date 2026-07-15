@@ -66,6 +66,87 @@ function formatApiError(err) {
   return "Could not list exports — showing usual download formats below.";
 }
 
+function friendlyExportError(err, fallback = "Export failed.") {
+  const raw = String(err?.message || fallback || "").trim();
+  if (/not authenticated|invalid or expired token|sign in|401/i.test(raw)) {
+    return {
+      title: "Sign in required",
+      message: "Your session is missing or expired. Sign in again, then retry this export.",
+      action: "Sign in",
+      kind: "auth",
+      detail: raw,
+    };
+  }
+  if (/Fusion request failed\s*\(502\)|Fusion export failed\s*\(502\)|502|bad gateway/i.test(raw)) {
+    return {
+      title: "Fusion is busy",
+      message: "Autodesk/Fusion did not finish that request. Reconnect Fusion if needed, then retry the export.",
+      action: "Retry",
+      kind: "fusion",
+      detail: raw,
+    };
+  }
+  return {
+    title: fallback,
+    message: raw || fallback,
+    action: "Retry",
+    kind: "generic",
+    detail: raw,
+  };
+}
+
+function showExportError(menu, err, { title = "Export failed", onRetry = null } = {}) {
+  if (!menu) {
+    alert(err?.message || title);
+    return;
+  }
+  const info = friendlyExportError(err, title);
+  menu.querySelector(".file-export-error-card")?.remove();
+  const card = document.createElement("div");
+  card.className = `file-export-error-card file-export-error-card--${info.kind}`;
+  card.innerHTML = `
+    <div class="file-export-error-icon" aria-hidden="true">${info.kind === "fusion" ? "F" : info.kind === "auth" ? "!" : "×"}</div>
+    <div class="file-export-error-body">
+      <strong>${escText(info.title)}</strong>
+      <p>${escText(info.message)}</p>
+      ${info.detail && info.detail !== info.message ? `<small>${escText(info.detail)}</small>` : ""}
+      <div class="file-export-error-actions">
+        ${info.kind === "auth" ? `<button type="button" class="btn btn-compact" data-export-sign-in>${escText(info.action)}</button>` : ""}
+        ${typeof onRetry === "function" ? `<button type="button" class="btn secondary btn-compact" data-export-retry>${escText(info.action)}</button>` : ""}
+      </div>
+    </div>
+  `;
+  const actions = menu.querySelector(".file-export-actions");
+  actions?.insertAdjacentElement("afterend", card) || menu.appendChild(card);
+  card.querySelector("[data-export-sign-in]")?.addEventListener("click", () => {
+    closeExportMenu();
+    document.getElementById("btn-auth")?.click();
+  });
+  card.querySelector("[data-export-retry]")?.addEventListener("click", () => {
+    card.remove();
+    onRetry?.();
+  });
+  keepMenuInViewport(menu);
+}
+
+function showExportSuccess(menu, message) {
+  if (!menu) return;
+  menu.querySelector(".file-export-error-card")?.remove();
+  menu.querySelector(".file-export-success-card")?.remove();
+  const card = document.createElement("div");
+  card.className = "file-export-success-card";
+  card.innerHTML = `
+    <div class="file-export-success-icon" aria-hidden="true">✓</div>
+    <div>
+      <strong>Export complete</strong>
+      <p>${escText(message)}</p>
+    </div>
+  `;
+  const actions = menu.querySelector(".file-export-actions");
+  actions?.insertAdjacentElement("afterend", card) || menu.appendChild(card);
+  keepMenuInViewport(menu);
+}
+
 async function downloadFile(url, filename, { retries = 3 } = {}) {
   let lastErr = null;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -337,7 +418,7 @@ export async function openFileExportMenu({
     || sorted.find((item) => item.format === "step")
     || null;
   const resolvedCloudFilename = cloudFilename || cloudStep?.name || filename;
-  const resolvedCloudStepIsFaceted = cloudStep?.step_kind === "faceted_mesh";
+  const resolvedCloudStepIsFaceted = false;
 
   for (const item of sorted) {
     const btn = document.createElement("button");
@@ -373,7 +454,7 @@ export async function openFileExportMenu({
               await downloadFile(url, dlName);
               chooser?.remove();
             } catch (err) {
-              alert(err.message || "Download failed");
+              showExportError(menu, err, { title: "Download failed" });
               menu.querySelector(".file-export-step-chooser")?.querySelectorAll("button")?.forEach((b) => (b.disabled = false));
             }
           }, btn);
@@ -385,7 +466,7 @@ export async function openFileExportMenu({
           : item.name;
         await downloadFile(url, dlName);
       } catch (err) {
-        alert(err.message || "Download failed");
+        showExportError(menu, err, { title: "Download failed" });
       }
     });
     list.appendChild(btn);
@@ -394,7 +475,8 @@ export async function openFileExportMenu({
   shareBtn?.addEventListener("click", async () => {
     try {
       shareBtn.disabled = true;
-      shareBtn.textContent = "Creating link...";
+      shareBtn.classList.add("is-loading");
+      shareBtn.textContent = "Creating share link...";
       const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(shareFilename)}/share`, {
         method: "POST",
         headers: authHeaders(),
@@ -413,8 +495,12 @@ export async function openFileExportMenu({
       shareBtn.textContent = "Link copied!";
     } catch (err) {
       shareBtn.textContent = "Copy share link";
-      alert(err.message || "Could not copy link");
+      showExportError(menu, err, {
+        title: "Could not copy share link",
+        onRetry: () => shareBtn.click(),
+      });
     } finally {
+      shareBtn.classList.remove("is-loading");
       shareBtn.disabled = false;
     }
   });
@@ -438,7 +524,10 @@ export async function openFileExportMenu({
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = `<img src="/onshape-logo.png" width="14" height="14" alt="" style="vertical-align:-2px" /> ${resetLabel}`;
-      alert(err.message || "Onshape action failed");
+      showExportError(menu, err, {
+        title: "Onshape action failed",
+        onRetry: () => onshapeAction(btn, endpoint, body, resetLabel),
+      });
     }
   }
 
@@ -484,11 +573,14 @@ export async function openFileExportMenu({
         : mirrorCount
           ? ` Also pushed to ${mirrorCount} teammate mirror${mirrorCount === 1 ? "" : "s"}.`
           : "";
-      alert(`Pushed ${data.name || resolvedCloudFilename} to Fusion.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
+      showExportSuccess(menu, `Pushed ${data.name || resolvedCloudFilename} to Fusion.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = original;
-      alert(err.message || "Fusion push failed");
+      showExportError(menu, err, {
+        title: "Fusion push failed",
+        onRetry: () => pushToOriginalFusion(btn),
+      });
     }
   }
 
@@ -503,7 +595,10 @@ export async function openFileExportMenu({
         allowFacetedStep: resolvedCloudStepIsFaceted,
       });
     } catch (err) {
-      alert(err.message || "Could not open Fusion export picker.");
+      showExportError(menu, err, {
+        title: "Could not open Fusion export picker",
+        onRetry: () => openSharedFusionExport(btn),
+      });
     } finally {
       btn.disabled = false;
       btn.innerHTML = original;
@@ -586,10 +681,14 @@ async function ensureThreeMfExport({ projectId, filename, exports }) {
 
 async function sendToBambuStudio({ btn, projectId, filename, exports }) {
   if (!btn) return;
+  const menu = btn.closest(".file-export-menu");
   const original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Preparing 3MF…`;
   try {
+    if (!getToken()) {
+      throw new Error("Not authenticated. Sign in to create the temporary 3MF share link Bambu Studio needs.");
+    }
     const threeMf = await ensureThreeMfExport({ projectId, filename, exports });
     // Share the 3MF itself so Bambu can fetch a public absolute URL.
     const shareRes = await fetch(
@@ -629,7 +728,10 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
   } catch (err) {
     btn.disabled = false;
     btn.innerHTML = original;
-    alert(err.message || "Could not send to Bambu Studio");
+    showExportError(menu, err, {
+      title: "Could not send to Bambu Studio",
+      onRetry: () => sendToBambuStudio({ btn, projectId, filename, exports }),
+    });
   }
 }
 
@@ -655,7 +757,7 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
     try {
       await downloadFile(fileUrl, threeMfName.replace(/\.3mf$/i, ".3MF"));
     } catch (err) {
-      alert(err.message || "Download failed");
+      showExportError(menu, err, { title: "3MF download failed" });
     }
   });
   btn.dataset.bambuFollowup = "1";
@@ -703,12 +805,33 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
   let selectedFolderName = "";
 
   const setStatus = (text, isError = false) => {
-    status.textContent = text || "";
+    if (isError && text) {
+      const info = friendlyExportError(new Error(text), "Fusion export failed");
+      status.innerHTML = `
+        <div class="file-export-inline-error file-export-inline-error--${info.kind}">
+          <strong>${escText(info.title)}</strong>
+          <span>${escText(info.message)}</span>
+          ${info.detail && info.detail !== info.message ? `<small>${escText(info.detail)}</small>` : ""}
+        </div>
+      `;
+    } else {
+      status.textContent = text || "";
+    }
     status.className = `file-export-fusion-status small ${isError ? "error" : "muted"}`;
     keepMenuInViewport(menu);
   };
   const setStatusHtml = (html, isError = false) => {
-    status.innerHTML = html || "";
+    if (isError && html) {
+      const info = friendlyExportError(new Error(html.replace(/<[^>]*>/g, " ")), "Fusion export failed");
+      status.innerHTML = `
+        <div class="file-export-inline-error file-export-inline-error--${info.kind}">
+          <strong>${escText(info.title)}</strong>
+          <span>${html}</span>
+        </div>
+      `;
+    } else {
+      status.innerHTML = html || "";
+    }
     status.className = `file-export-fusion-status small ${isError ? "error" : "muted"}`;
     keepMenuInViewport(menu);
   };

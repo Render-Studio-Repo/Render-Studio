@@ -778,6 +778,15 @@ class RenderAgentSuggestRequest(BaseModel):
 
 class ProjectChatThreadCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=80)
+    visibility: str | None = Field(default=None, max_length=16)
+
+
+class ProjectChatThreadInviteRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=64)
+
+
+class TeamMemberRoleRequest(BaseModel):
+    role: str = Field(..., min_length=1, max_length=16)
 
 
 class ProjectChatMessageRequest(BaseModel):
@@ -1886,6 +1895,27 @@ def _measure_model_dimensions(project_path: Path, filename: str | None = None) -
     }
 
 
+def _regenerate_native_step_for_cloud(project_path: Path, filename: str) -> Path | None:
+    """Rebuild the source-backed STEP so Fusion/Onshape receives a real solid."""
+    try:
+        from backend.services import text_to_cad_params
+
+        resolved = text_to_cad_params.resolve_source_for_model(project_path, filename)
+        if resolved is None:
+            return None
+        _, source_name = resolved
+        text_to_cad_params.regenerate_model(project_path, source_name)
+        rebuilt = cad_service.resolve_native_brep_step(project_path, filename)
+        if rebuilt is not None:
+            return rebuilt
+        source_step = project_path / f"{Path(source_name).stem}.step"
+        if source_step.is_file() and cad_service.is_editable_brep_step(source_step):
+            return source_step
+    except Exception as exc:
+        logger.warning("Could not regenerate native STEP for %s: %s", filename, exc)
+    return None
+
+
 def _step_for_cloud_cad(project_path: Path, filename: str, *, allow_faceted: bool = False) -> Path:
     """Return a Fusion/Onshape-editable STEP, refusing mesh-derived faceted STEP by default."""
     safe = Path(filename).name
@@ -1900,6 +1930,9 @@ def _step_for_cloud_cad(project_path: Path, filename: str, *, allow_faceted: boo
     native = cad_service.resolve_native_brep_step(project_path, safe)
     if native is not None:
         return native
+    rebuilt = _regenerate_native_step_for_cloud(project_path, safe)
+    if rebuilt is not None:
+        return rebuilt
 
     if suffix in cad_service.STEP_SUFFIXES:
         kind = cad_service.classify_step_file_kind(src)
@@ -6438,9 +6471,19 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     safe = Path(filename).name
     stem = safe[: safe.rfind(".")] if "." in safe else safe
     step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
-    source_path = path / f"{stem}.py"
+    upload_stem = step_path.stem
+    source_path = path / f"{upload_stem}.py"
+    if not source_path.is_file():
+        try:
+            from backend.services import text_to_cad_params
 
-    upload_name = Path(str(body.get("name") or f"{stem}.step")).name
+            resolved_source = text_to_cad_params.resolve_source_for_model(path, step_path.name)
+            if resolved_source is not None:
+                source_path = resolved_source[0]
+        except Exception:
+            pass
+
+    upload_name = Path(str(body.get("name") or f"{upload_stem}.step")).name
     if not upload_name.lower().endswith((".step", ".stp")):
         upload_name = f"{Path(upload_name).stem}.step"
 
@@ -6454,7 +6497,7 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             )
         if body.get("upload_source", True) and source_path.is_file():
             try:
-                source_name = f"{stem}.build123d.py"
+                source_name = f"{source_path.stem}.build123d.py"
                 result["source_upload"] = upload_step_to_folder(
                     token,
                     project_id=aps_project_id,
@@ -7659,6 +7702,34 @@ def team_management(team_id: str, user: dict[str, Any] = Depends(get_current_use
         return teams_service.team_management_summary(team_id, user["id"])
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+
+
+@app.patch("/api/teams/{team_id}/members/{target_user_id}/role")
+def set_team_member_role(
+    team_id: str,
+    target_user_id: str,
+    body: TeamMemberRoleRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        member = teams_service.set_member_role(team_id, target_user_id, body.role, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _notify_workspace(
+        team_id,
+        {
+            "type": "workspace.member.role",
+            "team_id": team_id,
+            "user_id": target_user_id,
+            "role": member.get("role"),
+            "role_label": member.get("role_label"),
+            "by": user["display_name"],
+            "by_user_id": user["id"],
+        },
+    )
+    return {"member": member}
 
 
 @app.post("/api/teams/{team_id}/members")
@@ -9122,6 +9193,15 @@ def _project_chat_members(project_id: str) -> list[dict[str, Any]]:
     return members
 
 
+def _project_workspace_role(project_id: str, user_id: str | None) -> str | None:
+    if not user_id:
+        return None
+    team_id = teams_service.project_team_id(project_id)
+    if not team_id:
+        return None
+    return teams_service.get_member_role(team_id, user_id)
+
+
 def _chat_image_public_url(project_id: str, image: dict[str, Any]) -> dict[str, Any]:
     stored = Path(str(image.get("stored_name") or image.get("url") or "")).name
     return {
@@ -9247,9 +9327,10 @@ def list_project_chat_threads(project_id: str, user: dict[str, Any] = Depends(ge
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    threads = project_chat_service.list_threads(path, user)
+    role = _project_workspace_role(project_id, user.get("id"))
+    threads = project_chat_service.list_threads(path, user, workspace_role=role)
     unread = project_chat_service.unread_summary(path, user["id"])
-    return {"threads": threads, "unread": unread}
+    return {"threads": threads, "unread": unread, "workspace_role": role}
 
 
 @app.post("/api/projects/{project_id}/chat/threads")
@@ -9261,7 +9342,14 @@ def create_project_chat_thread(
     from backend.services import project_chat_service
 
     path = _require_project(user, project_id)
-    thread = project_chat_service.create_thread(path, title=body.title, user=user)
+    role = _project_workspace_role(project_id, user.get("id"))
+    thread = project_chat_service.create_thread(
+        path,
+        title=body.title,
+        user=user,
+        visibility=body.visibility,
+        workspace_role=role,
+    )
     return {"thread": thread}
 
 
@@ -9274,11 +9362,44 @@ def get_project_chat_thread(
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    thread = project_chat_service.get_thread(path, thread_id, user=user)
+    role = _project_workspace_role(project_id, user.get("id"))
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
     if not thread:
         raise HTTPException(404, "Thread not found")
     thread["messages"] = [_decorate_chat_message(project_id, m) for m in thread.get("messages") or []]
     return {"thread": thread, "unread": project_chat_service.unread_summary(path, user["id"])}
+
+
+@app.post("/api/projects/{project_id}/chat/threads/{thread_id}/members")
+def invite_project_chat_thread_member(
+    project_id: str,
+    thread_id: str,
+    body: ProjectChatThreadInviteRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    role = _project_workspace_role(project_id, user.get("id"))
+    # Invitee must already be on the project team.
+    allowed_ids = {str(m.get("id")) for m in _project_chat_members(project_id) if m.get("id")}
+    if str(body.user_id) not in allowed_ids:
+        raise HTTPException(400, "Invitee must be a workspace teammate on this project")
+    try:
+        thread = project_chat_service.add_thread_member(
+            path,
+            thread_id=thread_id,
+            target_user_id=body.user_id,
+            requester=user,
+            workspace_role=role,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"thread": thread}
 
 
 @app.get("/api/projects/{project_id}/chat/mention-candidates")
@@ -9311,7 +9432,8 @@ async def post_project_chat_message(
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    thread = project_chat_service.get_thread(path, thread_id, user=user)
+    role = _project_workspace_role(project_id, user.get("id"))
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
     if not thread:
         raise HTTPException(404, "Thread not found")
     saved_images: list[dict[str, Any]] = []
@@ -9335,7 +9457,10 @@ async def post_project_chat_message(
             images=saved_images,
             mention_candidates_list=candidates,
             message_id=message_id,
+            workspace_role=role,
         )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except KeyError as exc:

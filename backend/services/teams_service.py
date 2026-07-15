@@ -10,9 +10,52 @@ from typing import Any
 from backend.auth import hash_password, verify_password
 from backend.database import get_conn
 
+# Workspace access roles (platform site-admin is separate — email allowlist).
+# owner = workspace admin (creator); manager = assigned; user = default member.
+WORKSPACE_ROLES = ("owner", "manager", "user")
+ROLE_ALIASES = {"member": "user", "admin": "owner"}
+ASSIGNABLE_ROLES = ("manager", "user")
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_role(role: str | None) -> str:
+    raw = str(role or "user").strip().lower()
+    mapped = ROLE_ALIASES.get(raw, raw)
+    return mapped if mapped in WORKSPACE_ROLES else "user"
+
+
+def display_role(role: str | None) -> str:
+    return {
+        "owner": "Admin",
+        "manager": "Manager",
+        "user": "User",
+    }.get(normalize_role(role), "User")
+
+
+def decorate_member_row(row: dict[str, Any] | Any) -> dict[str, Any]:
+    data = dict(row) if not isinstance(row, dict) else dict(row)
+    role = normalize_role(data.get("role"))
+    data["role"] = role
+    data["role_label"] = display_role(role)
+    return data
+
+
+def get_member_role(team_id: str, user_id: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
+            (team_id, user_id),
+        ).fetchone()
+    if not row:
+        return None
+    return normalize_role(row["role"])
+
+
+def can_manage_workspace(role: str | None) -> bool:
+    return normalize_role(role) in {"owner", "manager"}
 
 
 def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
@@ -69,7 +112,13 @@ def list_teams(user_id: str) -> list[dict[str, Any]]:
             """,
             (user_id,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["role"] = normalize_role(item.get("role"))
+        item["role_label"] = display_role(item["role"])
+        out.append(item)
+    return out
 
 
 def list_team_members(team_id: str, user_id: str) -> list[dict[str, Any]]:
@@ -81,11 +130,13 @@ def list_team_members(team_id: str, user_id: str) -> list[dict[str, Any]]:
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
             WHERE tm.team_id = ?
-            ORDER BY u.display_name
+            ORDER BY
+              CASE tm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END,
+              lower(u.display_name), lower(u.email)
             """,
             (team_id,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [decorate_member_row(r) for r in rows]
 
 
 def list_render_agent_invite_candidates(user_id: str, team_id: str | None = None) -> list[dict[str, Any]]:
@@ -242,7 +293,7 @@ def list_workspace_invite_candidates(user_id: str, team_id: str | None = None) -
 
 
 def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
-    """Owner-facing team roster: current members plus pending invites."""
+    """Workspace roster: members, pending invites, and management capabilities."""
     with get_conn() as conn:
         requester = conn.execute(
             "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
@@ -250,13 +301,19 @@ def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
         ).fetchone()
         if not requester:
             raise PermissionError("Not a member of this team")
+        team = conn.execute(
+            "SELECT id, name, created_by, created_at FROM teams WHERE id=?",
+            (team_id,),
+        ).fetchone()
         members = conn.execute(
             """
-            SELECT u.id, u.email, u.display_name, tm.role, tm.joined_at
+            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
             WHERE tm.team_id = ?
-            ORDER BY u.display_name
+            ORDER BY
+              CASE tm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END,
+              lower(u.display_name), lower(u.email)
             """,
             (team_id,),
         ).fetchall()
@@ -275,12 +332,63 @@ def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
             """,
             (team_id,),
         ).fetchall()
+        project_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM project_access WHERE team_id=?",
+            (team_id,),
+        ).fetchone()["n"]
+    role = normalize_role(requester["role"])
     return {
-        "members": [dict(r) for r in members],
+        "team": dict(team) if team else {"id": team_id},
+        "members": [decorate_member_row(r) for r in members],
         "invites": [dict(r) for r in invites],
         "candidates": list_workspace_invite_candidates(user_id, team_id),
-        "can_remove_members": requester["role"] == "owner",
+        "project_count": int(project_count or 0),
+        "requester_role": role,
+        "requester_role_label": display_role(role),
+        "can_manage_roles": role == "owner",
+        "can_remove_members": can_manage_workspace(role),
+        "can_invite": True,
+        "is_workspace_admin": role == "owner",
     }
+
+
+def set_member_role(
+    team_id: str,
+    target_user_id: str,
+    role: str,
+    requester_id: str,
+) -> dict[str, Any]:
+    """Workspace owner assigns manager / user roles."""
+    _require_team_owner(team_id, requester_id)
+    wanted = normalize_role(role)
+    if wanted not in ASSIGNABLE_ROLES:
+        raise ValueError("Role must be manager or user")
+    if target_user_id == requester_id:
+        raise ValueError("You cannot change your own workspace admin role")
+    with get_conn() as conn:
+        target = conn.execute(
+            "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
+            (team_id, target_user_id),
+        ).fetchone()
+        if not target:
+            raise ValueError("User is not a member of this workspace")
+        if normalize_role(target["role"]) == "owner":
+            raise ValueError("Cannot change the workspace admin role")
+        conn.execute(
+            "UPDATE team_members SET role=? WHERE team_id=? AND user_id=?",
+            (wanted, team_id, target_user_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at
+            FROM team_members tm
+            JOIN users u ON u.id = tm.user_id
+            WHERE tm.team_id=? AND tm.user_id=?
+            """,
+            (team_id, target_user_id),
+        ).fetchone()
+    return decorate_member_row(row)
 
 
 def _require_team_member(team_id: str, user_id: str) -> None:
@@ -294,13 +402,15 @@ def _require_team_member(team_id: str, user_id: str) -> None:
 
 
 def _require_team_owner(team_id: str, user_id: str) -> None:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-            (team_id, user_id),
-        ).fetchone()
-    if not row or row["role"] != "owner":
-        raise PermissionError("Only workspace owners can rename the workspace")
+    role = get_member_role(team_id, user_id)
+    if role != "owner":
+        raise PermissionError("Only workspace admins can do that")
+
+
+def _require_team_manager(team_id: str, user_id: str) -> None:
+    role = get_member_role(team_id, user_id)
+    if not can_manage_workspace(role):
+        raise PermissionError("Only workspace admins or managers can do that")
 
 
 def add_registered_user_to_team(team_id: str, email: str, requester_id: str) -> dict[str, Any]:
@@ -321,7 +431,7 @@ def add_registered_user_to_team(team_id: str, email: str, requester_id: str) -> 
         ).fetchone()
         if not existing:
             conn.execute(
-                "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
+                "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'user', ?)",
                 (team_id, user["id"], _now()),
             )
         conn.execute(
@@ -333,9 +443,10 @@ def add_registered_user_to_team(team_id: str, email: str, requester_id: str) -> 
 
 
 def remove_team_member(team_id: str, target_user_id: str, requester_id: str) -> dict[str, Any]:
-    _require_team_owner(team_id, requester_id)
+    _require_team_manager(team_id, requester_id)
     if target_user_id == requester_id:
         raise ValueError("You cannot remove yourself from your own workspace")
+    requester_role = get_member_role(team_id, requester_id)
     with get_conn() as conn:
         target = conn.execute(
             "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
@@ -343,8 +454,11 @@ def remove_team_member(team_id: str, target_user_id: str, requester_id: str) -> 
         ).fetchone()
         if not target:
             raise ValueError("Team member not found")
-        if target["role"] == "owner":
-            raise ValueError("Workspace owners cannot be removed here")
+        target_role = normalize_role(target["role"])
+        if target_role == "owner":
+            raise ValueError("Workspace admins cannot be removed here")
+        if requester_role == "manager" and target_role != "user":
+            raise ValueError("Managers can only remove users")
         conn.execute("DELETE FROM team_members WHERE team_id=? AND user_id=?", (team_id, target_user_id))
         conn.execute(
             "DELETE FROM user_team_key_opts WHERE user_id=? "
@@ -500,7 +614,7 @@ def accept_team_invite(invite_id: str, user_id: str, email: str) -> dict[str, An
         if not existing:
             conn.execute(
                 "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
-                (invite["team_id"], user_id, "member", _now()),
+                (invite["team_id"], user_id, "user", _now()),
             )
         conn.execute(
             "UPDATE team_invites SET status = 'accepted' WHERE id = ?",

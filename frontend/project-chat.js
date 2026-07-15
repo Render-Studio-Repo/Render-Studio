@@ -166,6 +166,13 @@ async function api(path, options = {}) {
   return res.json();
 }
 
+async function authBlobUrl(path) {
+  if (!path) return null;
+  const res = await fetch(path, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Could not load ${path}`);
+  return URL.createObjectURL(await res.blob());
+}
+
 function readLocalUnread() {
   try {
     return JSON.parse(localStorage.getItem(LS_UNREAD) || "{}");
@@ -200,6 +207,27 @@ export function createProjectChatUI({
   let mentionIndex = -1;
   let unread = { unread_count: 0, mention_count: 0 };
   let pollTimer = null;
+  let workspaceRole = null;
+  let activeThreadMeta = null;
+  let imageBlobUrls = [];
+
+  function revokeImageBlobs() {
+    for (const url of imageBlobUrls) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        /* ignore */
+      }
+    }
+    imageBlobUrls = [];
+  }
+
+  function canInviteToActiveThread() {
+    const me = getStoredUser()?.id;
+    if (!me || !activeThreadMeta) return false;
+    if (["owner", "manager"].includes(String(workspaceRole || ""))) return true;
+    return String(activeThreadMeta.created_by || "") === String(me);
+  }
 
   function setBadge() {
     if (!buttonEl) return;
@@ -276,6 +304,7 @@ export function createProjectChatUI({
         <div class="pc-body">
           <aside class="pc-threads" id="pc-threads" aria-label="Threads"></aside>
           <section class="pc-main">
+            <div id="pc-thread-invite" class="pc-thread-invite hidden"></div>
             <div class="pc-messages" id="pc-messages" aria-live="polite"></div>
             <div id="pc-reply-bar" class="pc-reply-bar hidden"></div>
             <div id="pc-drop-hint" class="pc-drop-hint hidden">Drop images to attach</div>
@@ -472,8 +501,14 @@ export function createProjectChatUI({
       .map((thread) => {
         const active = thread.id === activeThreadId ? " active" : "";
         const preview = thread.last_message?.body || "No messages yet";
+        const badge =
+          thread.visibility === "private"
+            ? `<em class="pc-thread-badge">Private</em>`
+            : thread.slug === "general"
+              ? `<em class="pc-thread-badge pc-thread-badge--shared">General</em>`
+              : `<em class="pc-thread-badge pc-thread-badge--shared">Shared</em>`;
         return `<button type="button" class="pc-thread-item${active}" data-thread-id="${esc(thread.id)}">
-          <strong>${esc(thread.title || "Thread")}</strong>
+          <strong>${esc(thread.title || "Thread")} ${badge}</strong>
           <span>${esc(preview.slice(0, 72))}</span>
         </button>`;
       })
@@ -481,6 +516,63 @@ export function createProjectChatUI({
     host.querySelectorAll("[data-thread-id]").forEach((btn) => {
       btn.addEventListener("click", () => void selectThread(btn.dataset.threadId));
     });
+  }
+
+  function renderInviteBar() {
+    const bar = overlay?.querySelector("#pc-thread-invite");
+    if (!bar) return;
+    if (!activeThreadMeta || !canInviteToActiveThread()) {
+      bar.classList.add("hidden");
+      bar.innerHTML = "";
+      return;
+    }
+    const memberIds = new Set(
+      (activeThreadMeta.members || []).map((m) => String(m.id)).concat(String(activeThreadMeta.created_by || ""))
+    );
+    const people = (candidates || []).filter((c) => c.type === "user" && c.id && !memberIds.has(String(c.id)));
+    const memberChips = (activeThreadMeta.members || [])
+      .map((m) => `<span class="pc-thread-member-chip">${esc(m.display_name || "User")}</span>`)
+      .join("");
+    bar.classList.remove("hidden");
+    bar.innerHTML = `
+      <div class="pc-thread-invite-row">
+        <select id="pc-invite-pick" aria-label="Invite teammate">
+          <option value="">Invite teammate…</option>
+          ${people
+            .map((c) => `<option value="${esc(c.id)}">${esc(c.display_name || c.email || "User")}</option>`)
+            .join("")}
+        </select>
+        <button type="button" class="btn btn-compact secondary" id="pc-invite-btn">Invite</button>
+      </div>
+      <div class="pc-thread-members">${memberChips || `<span class="muted small">Only you so far</span>`}</div>
+    `;
+    bar.querySelector("#pc-invite-btn")?.addEventListener("click", () => void inviteSelectedMember());
+  }
+
+  async function inviteSelectedMember() {
+    const projectId = getProjectId?.();
+    const pick = overlay?.querySelector("#pc-invite-pick");
+    const userId = pick?.value;
+    if (!projectId || !activeThreadId || !userId) return;
+    try {
+      const data = await api(
+        `/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(activeThreadId)}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+        }
+      );
+      if (data.thread) {
+        activeThreadMeta = data.thread;
+        threads = threads.map((t) => (t.id === data.thread.id ? { ...t, ...data.thread } : t));
+        renderThreads();
+        renderInviteBar();
+      }
+      onStatus?.("ok", "Teammate invited to thread");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not invite");
+    }
   }
 
   function avatarHtml(msg) {
@@ -508,6 +600,7 @@ export function createProjectChatUI({
   function renderMessages() {
     const host = overlay?.querySelector("#pc-messages");
     if (!host) return;
+    revokeImageBlobs();
     const roots = messages.filter((m) => !m.parent_id);
     const byParent = new Map();
     for (const msg of messages) {
@@ -518,7 +611,12 @@ export function createProjectChatUI({
 
     const renderOne = (msg, depth = 0) => {
       const images = (msg.images || [])
-        .map((img) => `<a class="pc-msg-image" href="${esc(img.url)}" target="_blank" rel="noopener"><img src="${esc(img.url)}" alt="${esc(img.filename || "image")}" /></a>`)
+        .map(
+          (img, index) =>
+            `<a class="pc-msg-image" href="${esc(img.url)}" target="_blank" rel="noopener" data-auth-img="${esc(img.url)}">
+              <img data-auth-src="${esc(img.url)}" alt="${esc(img.filename || `image-${index + 1}`)}" />
+            </a>`
+        )
         .join("");
       const replies = byParent.get(msg.id) || [];
       return `<article class="pc-message${msg.is_agent ? " pc-message--agent" : ""}${depth ? " pc-message--reply" : ""}" data-message-id="${esc(msg.id)}" style="--pc-depth:${depth}">
@@ -552,7 +650,30 @@ export function createProjectChatUI({
     host.querySelectorAll("[data-react]").forEach((btn) => {
       btn.addEventListener("click", () => void toggleReaction(btn.dataset.messageId, btn.dataset.react));
     });
+    void hydrateAuthImages(host);
     host.scrollTop = host.scrollHeight;
+  }
+
+  async function hydrateAuthImages(host) {
+    const imgs = [...(host?.querySelectorAll("img[data-auth-src]") || [])];
+    await Promise.all(
+      imgs.map(async (img) => {
+        const path = img.getAttribute("data-auth-src");
+        if (!path) return;
+        try {
+          const blobUrl = await authBlobUrl(path);
+          imageBlobUrls.push(blobUrl);
+          img.src = blobUrl;
+          const link = img.closest("a.pc-msg-image");
+          if (link) link.href = blobUrl;
+        } catch {
+          img.replaceWith(Object.assign(document.createElement("span"), {
+            className: "muted small",
+            textContent: "Image unavailable",
+          }));
+        }
+      })
+    );
   }
 
   function renderReplyBar() {
@@ -595,6 +716,7 @@ export function createProjectChatUI({
     if (!projectId) return;
     const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads`);
     threads = data.threads || [];
+    workspaceRole = data.workspace_role || null;
     unread = data.unread || unread;
     setBadge();
     if (!activeThreadId || !threads.some((t) => t.id === activeThreadId)) {
@@ -610,6 +732,8 @@ export function createProjectChatUI({
     renderThreads();
     const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(threadId)}`);
     messages = data.thread?.messages || [];
+    activeThreadMeta = data.thread || threads.find((t) => t.id === threadId) || null;
+    renderInviteBar();
     renderMessages();
     await api(`/api/projects/${encodeURIComponent(projectId)}/chat/read`, {
       method: "POST",
@@ -624,12 +748,18 @@ export function createProjectChatUI({
   async function createThread() {
     const projectId = getProjectId?.();
     if (!projectId) return;
-    const title = window.prompt("Thread title", "Design notes");
+    const isManager = ["owner", "manager"].includes(String(workspaceRole || ""));
+    const title = window.prompt("Thread title", isManager ? "Design notes" : "My notes");
     if (!title?.trim()) return;
+    let visibility = isManager ? "shared" : "private";
+    if (isManager) {
+      const shared = window.confirm("Create as a shared workspace thread?\n\nOK = shared with everyone\nCancel = private (invite only)");
+      visibility = shared ? "shared" : "private";
+    }
     const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim() }),
+      body: JSON.stringify({ title: title.trim(), visibility }),
     });
     await loadThreads();
     if (data.thread?.id) await selectThread(data.thread.id);

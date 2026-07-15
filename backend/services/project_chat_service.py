@@ -90,6 +90,8 @@ def _ensure_general_thread(data: dict[str, Any], user: dict[str, Any] | None = N
     threads = data.setdefault("threads", [])
     for thread in threads:
         if thread.get("slug") == "general" or str(thread.get("title") or "").lower() == "general":
+            thread.setdefault("visibility", "shared")
+            thread.setdefault("members", [])
             return thread
     thread = {
         "id": str(uuid.uuid4())[:10],
@@ -97,6 +99,8 @@ def _ensure_general_thread(data: dict[str, Any], user: dict[str, Any] | None = N
         "title": "General",
         "created_at": _now(),
         "created_by": (user or {}).get("id"),
+        "visibility": "shared",
+        "members": [],
         "messages": [],
     }
     threads.insert(0, thread)
@@ -115,6 +119,194 @@ def _find_message(thread: dict[str, Any], message_id: str) -> dict[str, Any] | N
         if msg.get("id") == message_id:
             return msg
     return None
+
+
+def _thread_member_ids(thread: dict[str, Any]) -> set[str]:
+    ids = {str(m.get("id")) for m in (thread.get("members") or []) if m.get("id")}
+    if thread.get("created_by"):
+        ids.add(str(thread["created_by"]))
+    return ids
+
+
+def user_can_access_thread(
+    thread: dict[str, Any],
+    user: dict[str, Any] | None,
+    *,
+    workspace_role: str | None = None,
+) -> bool:
+    """Shared threads are open to the project; private threads are invite-only (+ managers)."""
+    if not user:
+        return False
+    visibility = str(thread.get("visibility") or "shared").lower()
+    if visibility != "private":
+        return True
+    uid = str(user.get("id") or "")
+    if uid and uid in _thread_member_ids(thread):
+        return True
+    role = str(workspace_role or "").lower()
+    if role in {"owner", "manager", "admin"}:
+        return True
+    return False
+
+
+def _thread_summary(thread: dict[str, Any]) -> dict[str, Any]:
+    messages = thread.get("messages") or []
+    last = messages[-1] if messages else None
+    return {
+        "id": thread.get("id"),
+        "slug": thread.get("slug"),
+        "title": thread.get("title") or "Thread",
+        "created_at": thread.get("created_at"),
+        "created_by": thread.get("created_by"),
+        "visibility": thread.get("visibility") or "shared",
+        "members": list(thread.get("members") or []),
+        "member_count": len(_thread_member_ids(thread)),
+        "message_count": len(messages),
+        "last_message": (
+            {
+                "id": last.get("id"),
+                "body": (last.get("body") or "")[:160],
+                "created_at": last.get("created_at"),
+                "user_name": last.get("user_name"),
+            }
+            if last
+            else None
+        ),
+    }
+
+
+def list_threads(
+    project_path: Path,
+    user: dict[str, Any] | None = None,
+    *,
+    workspace_role: str | None = None,
+) -> list[dict[str, Any]]:
+    data = _load(project_path)
+    _ensure_general_thread(data, user)
+    _save(project_path, data)
+    out = []
+    for thread in data["threads"]:
+        thread.setdefault("visibility", "shared" if thread.get("slug") == "general" else (thread.get("visibility") or "private"))
+        thread.setdefault("members", [])
+        if not user_can_access_thread(thread, user, workspace_role=workspace_role):
+            continue
+        out.append(_thread_summary(thread))
+    return out
+
+
+def get_thread(
+    project_path: Path,
+    thread_id: str,
+    *,
+    user: dict[str, Any] | None = None,
+    workspace_role: str | None = None,
+) -> dict[str, Any] | None:
+    data = _load(project_path)
+    _ensure_general_thread(data, user)
+    thread = _find_thread(data, thread_id)
+    if not thread and thread_id in {"general", "default"}:
+        thread = _ensure_general_thread(data, user)
+    if not thread:
+        return None
+    thread.setdefault("visibility", "shared" if thread.get("slug") == "general" else "private")
+    thread.setdefault("members", [])
+    if not user_can_access_thread(thread, user, workspace_role=workspace_role):
+        return None
+    _save(project_path, data)
+    return {
+        "id": thread.get("id"),
+        "slug": thread.get("slug"),
+        "title": thread.get("title"),
+        "created_at": thread.get("created_at"),
+        "created_by": thread.get("created_by"),
+        "visibility": thread.get("visibility") or "shared",
+        "members": list(thread.get("members") or []),
+        "messages": list(thread.get("messages") or []),
+    }
+
+
+def create_thread(
+    project_path: Path,
+    *,
+    title: str,
+    user: dict[str, Any],
+    visibility: str | None = None,
+    workspace_role: str | None = None,
+) -> dict[str, Any]:
+    data = _load(project_path)
+    _ensure_general_thread(data, user)
+    clean = (title or "New thread").strip()[:80] or "New thread"
+    role = str(workspace_role or "").lower()
+    # Managers/admins can create shared workspace threads; users get private invite threads.
+    wanted = str(visibility or "").strip().lower()
+    if wanted not in {"shared", "private"}:
+        wanted = "shared" if role in {"owner", "manager", "admin"} else "private"
+    profile = _profile(user.get("id")) or {}
+    creator_member = {
+        "id": user.get("id"),
+        "display_name": user.get("display_name") or profile.get("display_name") or "User",
+        "avatar_url": user.get("avatar_url") or profile.get("avatar_url"),
+        "role": "owner",
+        "joined_at": _now(),
+    }
+    thread = {
+        "id": str(uuid.uuid4())[:10],
+        "slug": re.sub(r"[^a-z0-9]+", "-", clean.lower()).strip("-")[:40] or "thread",
+        "title": clean,
+        "created_at": _now(),
+        "created_by": user.get("id"),
+        "visibility": wanted,
+        "members": [creator_member],
+        "messages": [],
+    }
+    data["threads"].append(thread)
+    _save(project_path, data)
+    return _thread_summary(thread)
+
+
+def add_thread_member(
+    project_path: Path,
+    *,
+    thread_id: str,
+    target_user_id: str,
+    requester: dict[str, Any],
+    workspace_role: str | None = None,
+) -> dict[str, Any]:
+    data = _load(project_path)
+    thread = _find_thread(data, thread_id)
+    if not thread:
+        raise KeyError("Thread not found")
+    if not user_can_access_thread(thread, requester, workspace_role=workspace_role):
+        raise PermissionError("Thread not found")
+    uid = str(requester.get("id") or "")
+    role = str(workspace_role or "").lower()
+    can_invite = (
+        uid and uid == str(thread.get("created_by") or "")
+    ) or role in {"owner", "manager", "admin"}
+    if not can_invite:
+        raise PermissionError("Only the thread creator or workspace managers can invite")
+    if thread.get("slug") == "general" or (thread.get("visibility") or "shared") == "shared":
+        # Shared threads already include everyone — still record explicit invite for UI.
+        pass
+    profile = _profile(target_user_id)
+    if not profile:
+        raise ValueError("User not found")
+    members = thread.setdefault("members", [])
+    if not any(str(m.get("id")) == str(target_user_id) for m in members):
+        members.append(
+            {
+                "id": profile["id"],
+                "display_name": profile.get("display_name") or profile.get("email") or "User",
+                "avatar_url": profile.get("avatar_url"),
+                "role": "member",
+                "joined_at": _now(),
+            }
+        )
+        # Inviting someone to a shared thread is fine; private threads stay private.
+        if (thread.get("visibility") or "shared") != "private" and thread.get("slug") != "general":
+            thread["visibility"] = thread.get("visibility") or "shared"
+    _save(project_path, data)
+    return _thread_summary(thread)
 
 
 MENTION_RE = re.compile(
@@ -187,71 +379,6 @@ def mention_candidates(project_members: list[dict[str, Any]]) -> list[dict[str, 
     return out
 
 
-def list_threads(project_path: Path, user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    data = _load(project_path)
-    _ensure_general_thread(data, user)
-    _save(project_path, data)
-    out = []
-    for thread in data["threads"]:
-        messages = thread.get("messages") or []
-        last = messages[-1] if messages else None
-        out.append(
-            {
-                "id": thread.get("id"),
-                "slug": thread.get("slug"),
-                "title": thread.get("title") or "Thread",
-                "created_at": thread.get("created_at"),
-                "message_count": len(messages),
-                "last_message": (
-                    {
-                        "id": last.get("id"),
-                        "body": (last.get("body") or "")[:160],
-                        "created_at": last.get("created_at"),
-                        "user_name": last.get("user_name"),
-                    }
-                    if last
-                    else None
-                ),
-            }
-        )
-    return out
-
-
-def get_thread(project_path: Path, thread_id: str, *, user: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    data = _load(project_path)
-    _ensure_general_thread(data, user)
-    thread = _find_thread(data, thread_id)
-    if not thread and thread_id in {"general", "default"}:
-        thread = _ensure_general_thread(data, user)
-    if not thread:
-        return None
-    _save(project_path, data)
-    return {
-        "id": thread.get("id"),
-        "slug": thread.get("slug"),
-        "title": thread.get("title"),
-        "created_at": thread.get("created_at"),
-        "messages": list(thread.get("messages") or []),
-    }
-
-
-def create_thread(project_path: Path, *, title: str, user: dict[str, Any]) -> dict[str, Any]:
-    data = _load(project_path)
-    _ensure_general_thread(data, user)
-    clean = (title or "New thread").strip()[:80] or "New thread"
-    thread = {
-        "id": str(uuid.uuid4())[:10],
-        "slug": re.sub(r"[^a-z0-9]+", "-", clean.lower()).strip("-")[:40] or "thread",
-        "title": clean,
-        "created_at": _now(),
-        "created_by": user.get("id"),
-        "messages": [],
-    }
-    data["threads"].append(thread)
-    _save(project_path, data)
-    return {"id": thread["id"], "slug": thread["slug"], "title": thread["title"], "created_at": thread["created_at"], "messages": []}
-
-
 def _safe_image_ext(filename: str, content_type: str | None = None) -> str:
     suffix = Path(filename or "").suffix.lower()
     if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
@@ -299,6 +426,7 @@ def post_message(
     mention_candidates_list: list[dict[str, Any]] | None = None,
     as_agent: bool = False,
     message_id: str | None = None,
+    workspace_role: str | None = None,
 ) -> dict[str, Any]:
     text = (body or "").strip()
     if not text and not images:
@@ -310,6 +438,8 @@ def post_message(
     thread = _find_thread(data, thread_id)
     if not thread:
         raise KeyError("Thread not found")
+    if not as_agent and not user_can_access_thread(thread, user, workspace_role=workspace_role):
+        raise PermissionError("Thread not found")
     parent = None
     if parent_id:
         parent = _find_message(thread, parent_id)
