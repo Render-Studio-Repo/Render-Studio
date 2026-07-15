@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-at-mentions" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-knowledge" />
   <script type="importmap">
   {
     "imports": {
@@ -1013,7 +1013,21 @@
                 <input type="checkbox" id="prompt-codex" />
                 <span>Codex</span>
               </label>
+              <label
+                id="prompt-kb-toggle"
+                class="prompt-kb-toggle"
+                title="Include your knowledge bases (and skill-linked KBs) in this AI prompt"
+              >
+                <input type="checkbox" id="prompt-kb" />
+                <span>Knowledge</span>
+              </label>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
+            </div>
+            <div class="prompt-kb-row" id="prompt-kb-row">
+              <span class="prompt-kb-label">Knowledge bases</span>
+              <select id="prompt-kb-select" class="prompt-kb-select" multiple size="3" aria-label="Knowledge bases to use"></select>
+              <button type="button" id="prompt-kb-manage" class="btn secondary btn-compact">Manage</button>
+              <span id="prompt-kb-status" class="prompt-kb-status muted small"></span>
             </div>
             <label class="prompt-target-row">
               <span class="prompt-target-label">Target</span>
@@ -1684,6 +1698,43 @@
       </div>
     </div>
   </div>
+
+  <div id="knowledge-base-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="kb-modal-title">
+    <div class="auth-backdrop" id="kb-modal-backdrop"></div>
+    <div class="auth-card app-dialog-card kb-modal-card">
+      <button type="button" class="auth-close" id="kb-modal-close" aria-label="Close">&times;</button>
+      <h2 id="kb-modal-title" class="app-dialog-title">Knowledge bases</h2>
+      <p class="muted">Build folders of PDFs, text, drawings, and 3D models. Attach a base to skills and toggle Knowledge on the AI prompt to use it.</p>
+      <div class="kb-modal-layout">
+        <aside class="kb-modal-side">
+          <div class="kb-create-row">
+            <input id="kb-new-name" type="text" placeholder="New knowledge base name" />
+            <input id="kb-new-desc" type="text" placeholder="Short description (optional)" />
+            <button type="button" class="btn accent btn-compact" id="kb-create-btn">Create</button>
+          </div>
+          <div id="kb-list" class="kb-list"></div>
+          <button type="button" class="btn danger btn-compact" id="kb-delete-base">Delete selected base</button>
+        </aside>
+        <section class="kb-modal-main">
+          <div id="kb-detail-meta" class="kb-detail-meta"></div>
+          <div id="kb-skills" class="kb-skills"></div>
+          <div class="kb-upload-row">
+            <label class="btn secondary btn-compact">
+              Upload files
+              <input id="kb-upload-files" type="file" multiple hidden accept=".pdf,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log,.dxf,.svg,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,.ply,.png,.jpg,.jpeg,.webp,.iges,.igs" />
+            </label>
+            <label class="btn secondary btn-compact" title="Select an entire folder from your computer">
+              Upload folder
+              <input id="kb-upload-folder" type="file" multiple hidden webkitdirectory directory />
+            </label>
+            <button type="button" class="btn secondary btn-compact" id="kb-new-folder">New folder</button>
+          </div>
+          <div id="kb-tree" class="kb-tree"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <section id="render-agent-panel" class="render-agent-panel hidden" aria-label="Render Agent assistant">
     <header class="render-agent-head">
       <button type="button" id="render-agent-thread-menu" class="render-agent-menu-btn" aria-label="Open Render Agent threads" aria-expanded="false">
@@ -1743,7 +1794,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260715-component-bodies"></script>
+  <script type="module" src="/app.js?v=20260715-knowledge"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

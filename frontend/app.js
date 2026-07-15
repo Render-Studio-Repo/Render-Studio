@@ -56,6 +56,7 @@ import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-mention
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
+import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-project-reorder2";
@@ -3477,6 +3478,15 @@ const skillsPromptUI = createSkillsPromptUI({
 fetchSkillsCatalog((path, options) => fetch(path, options)).then(() => {
   skillsPromptUI.render();
   skillsPromptUI.updatePlan?.();
+});
+
+const knowledgePromptUI = createKnowledgePromptUI({
+  toggleWrap: document.getElementById("prompt-kb-toggle"),
+  checkbox: document.getElementById("prompt-kb"),
+  manageBtn: document.getElementById("prompt-kb-manage"),
+  selectEl: document.getElementById("prompt-kb-select"),
+  statusEl: document.getElementById("prompt-kb-status"),
+  modal: document.getElementById("knowledge-base-modal"),
 });
 safeRestoreActiveModelPromptState();
 
@@ -17458,6 +17468,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       ...(["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()
         ? { codex_agent: true }
         : {}),
+      ...getKnowledgePromptFields(),
     };
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
     const data = await api(

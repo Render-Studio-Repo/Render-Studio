@@ -952,7 +952,12 @@ class AIService:
             system = f"{system}\n\n{V2_DESIGN_ADDENDUM}"
         parts = [user_prompt]
         if project_context:
-            parts.append(f"\nContext: {json.dumps(project_context, separators=(',', ':'))}")
+            kb = project_context.get("knowledge_base") if isinstance(project_context, dict) else None
+            ctx = {k: v for k, v in (project_context or {}).items() if k != "knowledge_base"} if isinstance(project_context, dict) else project_context
+            if isinstance(kb, dict) and kb.get("text"):
+                parts.append(f"\n\nKnowledge base material to follow:\n{kb['text']}")
+            if ctx:
+                parts.append(f"\nContext: {json.dumps(ctx, separators=(',', ':'))}")
         if repair_note:
             parts.append(
                 "\nThe previous attempt FAILED. Fix it and return a corrected JSON object.\n"
@@ -1002,7 +1007,12 @@ class AIService:
         )
         parts = [user_prompt]
         if project_context:
-            parts.append(f"\nProject context: {json.dumps(project_context, separators=(',', ':'))}")
+            kb = project_context.get("knowledge_base") if isinstance(project_context, dict) else None
+            ctx = {k: v for k, v in (project_context or {}).items() if k != "knowledge_base"} if isinstance(project_context, dict) else project_context
+            if isinstance(kb, dict) and kb.get("text"):
+                parts.append(f"\n\nKnowledge base material to follow:\n{kb['text']}")
+            if ctx:
+                parts.append(f"\nProject context: {json.dumps(ctx, separators=(',', ':'))}")
         raw, trace = self._call_model(
             system,
             "".join(parts),
