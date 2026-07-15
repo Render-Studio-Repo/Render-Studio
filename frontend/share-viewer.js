@@ -156,10 +156,14 @@ async function main() {
   const btnRotate = $("btn-share-rotate");
   const btnFit = $("btn-share-fit");
   const btnInspector = $("btn-share-inspector");
+  const btnHistory = $("btn-share-history");
   const btnOpen = $("btn-share-open");
   const btnDownloadMenu = $("btn-share-download");
   const downloadSheet = $("share-download-sheet");
   const inspectorPanel = $("share-inspector-panel");
+  const inspectorTitle = $("share-inspector-title");
+  const sourceDetailsEl = $("share-source-details");
+  const promptHistoryEl = $("share-prompt-history");
   const componentListEl = $("share-component-list");
   const motionCard = $("share-motion-card");
   const motionStatus = $("share-motion-status");
@@ -348,6 +352,56 @@ async function main() {
     statusEl.textContent = msg;
   }
 
+  function modelLabel(item = {}) {
+    const provider = item.provider ? String(item.provider).toUpperCase() : "";
+    const model = item.model || item.ai_model || "";
+    return [provider, model].filter(Boolean).join(" · ") || "Model not recorded";
+  }
+
+  function formatDateLabel(raw) {
+    if (!raw) return "";
+    try {
+      return new Date(raw).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    } catch {
+      return String(raw);
+    }
+  }
+
+  function renderShareDetails() {
+    if (sourceDetailsEl) {
+      const source = meta.source_model || {};
+      const sharer = meta.shared_by;
+      sourceDetailsEl.innerHTML = `
+        <div class="sv-detail-card">
+          <strong>${escapeHtml(source.filename || meta.filename || "Shared model")}</strong>
+          <span>Preview: ${escapeHtml(source.viewer_filename || meta.viewer_filename || "not available")}</span>
+          <span>AI: ${escapeHtml(modelLabel(source))}${source.speed ? ` · ${escapeHtml(source.speed)}` : ""}</span>
+          ${sharer ? `<span>Shared by ${escapeHtml(sharer.display_name || sharer.email || "teammate")}</span>` : ""}
+        </div>
+      `;
+    }
+    if (!promptHistoryEl) return;
+    const rows = Array.isArray(meta.prompt_history) ? meta.prompt_history : [];
+    if (!rows.length) {
+      promptHistoryEl.innerHTML = `<p class="sv-hint">No prompt history was recorded for this shared model.</p>`;
+      return;
+    }
+    promptHistoryEl.innerHTML = rows.map((entry) => {
+      const prompt = entry.original_prompt || entry.prompt || "Prompt unavailable";
+      const file = entry.filename || entry.base_filename || "";
+      const when = formatDateLabel(entry.created_at);
+      const by = entry.user_name ? ` by ${entry.user_name}` : "";
+      const status = entry.success ? "Built" : "Failed";
+      return `
+        <article class="sv-history-card">
+          <strong>${escapeHtml(prompt)}</strong>
+          <span>${escapeHtml(modelLabel(entry))}${entry.speed ? ` · ${escapeHtml(entry.speed)}` : ""}</span>
+          <span>${escapeHtml(status)}${file ? ` · ${escapeHtml(file)}` : ""}${when ? ` · ${escapeHtml(when)}${escapeHtml(by)}` : ""}</span>
+        </article>
+      `;
+    }).join("");
+  }
+
   resize();
 
   const viewerUrl = meta.viewer_url
@@ -393,6 +447,8 @@ async function main() {
       </button>
     `).join("");
   }
+
+  renderShareDetails();
 
   async function loadSharedRobot() {
     const artifacts = Array.isArray(meta.robot?.artifacts) ? meta.robot.artifacts : [];
@@ -473,33 +529,55 @@ async function main() {
       location.href = `/?open_share=${encodeURIComponent(token)}`;
       return;
     }
+    const sharer = meta.shared_by;
+    const shareBack = !!(
+      sharer?.id
+      && window.confirm(`Remix this model into your editable Render3D project?\n\nAlso invite ${sharer.display_name || sharer.email || "the original sharer"} to collaborate on your remix?`)
+    );
+    if (!shareBack && sharer?.id) {
+      const proceed = window.confirm("Remix this model without inviting the original sharer?");
+      if (!proceed) return;
+    }
     const originalText = btnOpen.textContent;
     btnOpen.disabled = true;
-    btnOpen.textContent = "Opening…";
+    btnOpen.textContent = "Remixing…";
     try {
       const res = await fetch(`/api/share/${encodeURIComponent(token)}/open-in-project`, {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ share_with_sharer: shareBack }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || "Could not open project");
+      if (!res.ok) throw new Error(data.detail || "Could not remix project");
       location.href = data.url || `/?project=${encodeURIComponent(data.project_id)}`;
     } catch (err) {
-      setStatus(err?.message || "Could not open this share in a project.");
+      setStatus(err?.message || "Could not remix this share into a project.");
       btnOpen.disabled = false;
       btnOpen.textContent = originalText;
     }
   });
 
-  function syncInspectorUi(on) {
+  function syncInspectorUi(on, focus = "components") {
     btnInspector?.classList.toggle("active", on);
     btnInspector?.setAttribute("aria-pressed", String(on));
+    btnHistory?.classList.toggle("active", on && focus === "history");
+    btnHistory?.setAttribute("aria-pressed", String(on && focus === "history"));
     inspectorPanel?.classList.toggle("hidden", !on);
-    if (on) renderComponentTree();
+    if (inspectorTitle) inspectorTitle.textContent = focus === "history" ? "Prompt history" : "Model details";
+    if (on) {
+      renderShareDetails();
+      renderComponentTree();
+      if (focus === "history") {
+        promptHistoryEl?.scrollIntoView({ block: "nearest" });
+      }
+    }
   }
 
   btnInspector?.addEventListener("click", () => {
-    syncInspectorUi(inspectorPanel?.classList.contains("hidden"));
+    syncInspectorUi(inspectorPanel?.classList.contains("hidden"), "components");
+  });
+  btnHistory?.addEventListener("click", () => {
+    syncInspectorUi(inspectorPanel?.classList.contains("hidden") || !btnHistory.classList.contains("active"), "history");
   });
   inspectorPanel?.querySelector("#btn-share-inspector-close")?.addEventListener("click", () => syncInspectorUi(false));
   componentListEl?.addEventListener("click", (event) => {

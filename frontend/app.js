@@ -19428,20 +19428,34 @@ window.addEventListener("keydown", (e) => {
   async function openSharedPreviewIntoProject(token) {
     const cleanToken = String(token || "").trim();
     if (!cleanToken) return;
-    setEditStatus("loading", "Opening shared preview in your project...");
+    setEditStatus("loading", "Remixing shared preview into your project...");
     try {
+      const meta = await rawFetch(`/api/share/${encodeURIComponent(cleanToken)}`)
+        .then((res) => res.ok ? res.json() : null)
+        .catch(() => null);
+      const sharer = meta?.shared_by;
+      const shareBack = !!(
+        sharer?.id
+        && window.confirm(`Remix this model into your editable Render3D project?\n\nAlso invite ${sharer.display_name || sharer.email || "the original sharer"} to collaborate on your remix?`)
+      );
+      if (!shareBack && sharer?.id) {
+        const proceed = window.confirm("Remix this model without inviting the original sharer?");
+        if (!proceed) return;
+      }
       const data = await api(`/api/share/${encodeURIComponent(cleanToken)}/open-in-project`, {
         method: "POST",
-        body: JSON.stringify({}),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ share_with_sharer: shareBack }),
       });
       await fetchAllProjects();
       renderProjectList();
       await loadProject(data.project_id);
       const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
       window.history.replaceState({}, "", cleanUrl || "/");
-      setEditStatus("ok", `Opened shared preview as ${data.filename || "a Render3D project"}.`);
+      const collaboration = data.shared_with_sharer ? " Shared with the original sharer for collaboration." : "";
+      setEditStatus("ok", `Remixed shared preview as ${data.filename || "a Render3D project"}.${collaboration}`);
     } catch (err) {
-      setEditStatus("error", err?.message || "Could not open shared preview.");
+      setEditStatus("error", err?.message || "Could not remix shared preview.");
     }
   }
 

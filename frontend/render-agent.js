@@ -149,13 +149,14 @@ export function createRenderAgent({
   }
 
   function open({ onboarding: showOnboarding = false, question = "" } = {}) {
-    if (!currentUserId()) {
+    const docsPanel = panel.classList.contains("render-agent-panel--docs");
+    if (!currentUserId() && !docsPanel) {
       onRequireLogin?.();
       return;
     }
     panel.classList.remove("hidden");
     panel.classList.add("render-agent-panel--sticky");
-    if (panel.classList.contains("render-agent-panel--docs")) {
+    if (docsPanel) {
       panel.classList.add("render-agent-panel--popup");
     }
     document.getElementById("render-agent-fab")?.classList.add("hidden");
@@ -168,8 +169,17 @@ export function createRenderAgent({
     if (question && input) {
       input.value = String(question);
     }
-    void refreshThreads();
-    void refreshTeamMembers();
+    if (currentUserId()) {
+      void refreshThreads();
+      void refreshTeamMembers();
+    } else if (messagesEl && !(messagesEl.childElementCount)) {
+      messagesEl.innerHTML = `
+        <div class="render-agent-empty">
+          <strong>Ask me anything about Render3D.</strong>
+          <p class="muted small">Sign in to send a question — demos from Getting Started appear in replies.</p>
+        </div>
+      `;
+    }
     setTimeout(() => {
       input?.focus();
       if (question && input) {
@@ -777,6 +787,10 @@ export function createRenderAgent({
   async function sendMessage() {
     const message = input?.value.trim() || "";
     if (!message || busy) return;
+    if (!currentUserId()) {
+      onRequireLogin?.();
+      return;
+    }
     busy = true;
     input.value = "";
     setStatus("Render Agent is thinking...");

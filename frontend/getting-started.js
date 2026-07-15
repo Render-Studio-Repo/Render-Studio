@@ -2,7 +2,7 @@
 
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-real-gifs";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-agent-gifs";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-autoopen";
 
 const FEATURES = GETTING_STARTED_GUIDES;
 
@@ -190,11 +190,19 @@ function mountAgent() {
     onStatus: () => {},
   });
 
+  const openDefault = () => {
+    agent?.open?.();
+  };
+
+  // Expand agent panel by default on Getting Started
+  openDefault();
+
   const authUi = createAuthUI({
     api,
     onReady: (data) => {
       currentUser = data.user;
       agent?.setUser?.(data.user);
+      openDefault();
       const pending = sessionStorage.getItem("render3d:gsPendingAsk");
       if (pending) {
         sessionStorage.removeItem("render3d:gsPendingAsk");
@@ -207,11 +215,12 @@ function mountAgent() {
     if (data?.user) {
       currentUser = data.user;
       agent?.setUser?.(data.user);
-      const pending = sessionStorage.getItem("render3d:gsPendingAsk");
-      if (pending) {
-        sessionStorage.removeItem("render3d:gsPendingAsk");
-        setTimeout(() => void agent?.openWithQuestion?.(pending, { autoSend: true }), 400);
-      }
+    }
+    openDefault();
+    const pending = sessionStorage.getItem("render3d:gsPendingAsk");
+    if (pending && data?.user) {
+      sessionStorage.removeItem("render3d:gsPendingAsk");
+      setTimeout(() => void agent?.openWithQuestion?.(pending, { autoSend: true }), 400);
     }
   });
 
