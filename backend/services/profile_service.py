@@ -59,43 +59,51 @@ def migrate_user_handles(conn) -> None:
         conn.execute("ALTER TABLE users ADD COLUMN handle TEXT")
     except Exception:
         pass
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN bio TEXT")
-    except Exception:
-        pass
-    try:
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle_lower ON users(lower(handle))"
-        )
-    except Exception:
-        pass
-    try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS meeting_requests (
-              id TEXT PRIMARY KEY,
-              from_user_id TEXT NOT NULL,
-              to_user_id TEXT NOT NULL,
-              message TEXT,
-              proposed_time TEXT,
-              status TEXT NOT NULL DEFAULT 'pending',
-              channel TEXT NOT NULL DEFAULT 'chat',
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN bio TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN store_settings_json TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle_lower ON users(lower(handle))"
             )
-            """
-        )
-    except Exception:
-        pass
-    rows = conn.execute(
-        "SELECT id, email, display_name, handle FROM users"
-    ).fetchall()
-    for row in rows:
-        if row["handle"]:
-            continue
-        seed = row["display_name"] or (row["email"] or "user").split("@")[0]
-        handle = ensure_unique_handle(conn, seed, exclude_user_id=row["id"])
-        conn.execute("UPDATE users SET handle = ? WHERE id = ?", (handle, row["id"]))
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE model_listings ADD COLUMN billing_type TEXT NOT NULL DEFAULT 'one_time'")
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS meeting_requests (
+                  id TEXT PRIMARY KEY,
+                  from_user_id TEXT NOT NULL,
+                  to_user_id TEXT NOT NULL,
+                  message TEXT,
+                  proposed_time TEXT,
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  channel TEXT NOT NULL DEFAULT 'chat',
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
+        except Exception:
+            pass
+        rows = conn.execute(
+            "SELECT id, email, display_name, handle FROM users"
+        ).fetchall()
+        for row in rows:
+            if row["handle"]:
+                continue
+            seed = row["display_name"] or (row["email"] or "user").split("@")[0]
+            handle = ensure_unique_handle(conn, seed, exclude_user_id=row["id"])
+            conn.execute("UPDATE users SET handle = ? WHERE id = ?", (handle, row["id"]))
 
 
 def get_user_row(user_id: str | None = None, *, handle: str | None = None) -> dict[str, Any] | None:
@@ -112,6 +120,12 @@ def get_user_row(user_id: str | None = None, *, handle: str | None = None) -> di
     if not row:
         return None
     keys = row.keys()
+    store_settings = {}
+    if "store_settings_json" in keys and row["store_settings_json"]:
+        try:
+            store_settings = json.loads(row["store_settings_json"] or "{}") or {}
+        except Exception:
+            store_settings = {}
     return {
         "id": row["id"],
         "email": row["email"],
@@ -120,7 +134,35 @@ def get_user_row(user_id: str | None = None, *, handle: str | None = None) -> di
         "bio": row["bio"] if "bio" in keys else None,
         "avatar_url": row["avatar_url"] if "avatar_url" in keys else None,
         "created_at": row["created_at"],
+        "store_settings": store_settings if isinstance(store_settings, dict) else {},
     }
+
+
+def update_store_settings(user_id: str, settings: dict[str, Any]) -> dict[str, Any]:
+    cleaned = {
+        "store_enabled": bool(settings.get("store_enabled", False)),
+        "store_title": str(settings.get("store_title") or "").strip()[:80],
+        "store_tagline": str(settings.get("store_tagline") or "").strip()[:180],
+        "default_license": str(settings.get("default_license") or "proprietary").strip()[:40],
+        "default_access_mode": str(settings.get("default_access_mode") or "paid").strip()[:20],
+        "default_billing_type": str(settings.get("default_billing_type") or "one_time").strip()[:20],
+        "default_currency": str(settings.get("default_currency") or "USD").strip().upper()[:8],
+        "default_price_cents": max(0, min(1_000_000, int(settings.get("default_price_cents") or 0))),
+        "download_enabled": bool(settings.get("download_enabled", True)),
+        "show_on_profile": bool(settings.get("show_on_profile", True)),
+    }
+    with get_conn() as conn:
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN store_settings_json TEXT")
+        except Exception:
+            pass
+        conn.execute(
+            "UPDATE users SET store_settings_json = ? WHERE id = ?",
+            (json.dumps(cleaned, sort_keys=True), user_id),
+        )
+        conn.commit()
+    user = get_user_row(user_id)
+    return user or {}
 
 
 def update_profile(
@@ -252,6 +294,7 @@ def public_profile(user_id: str | None = None, *, handle: str | None = None, vie
         raise KeyError("User not found")
     handle_value = user.get("handle") or slugify_handle(user.get("display_name") or "user")
     profile_path = f"/u/{handle_value}"
+    store = user.get("store_settings") or {}
     return {
         "id": user["id"],
         "display_name": user["display_name"],
@@ -262,6 +305,7 @@ def public_profile(user_id: str | None = None, *, handle: str | None = None, vie
         "profile_url": profile_path,
         "profile_link": f"https://render3d.app{profile_path}",
         "is_self": bool(viewer and viewer.get("id") == user["id"]),
+        "store": store,
         "projects": _user_projects(user["id"]),
         "posts": _user_posts(user["id"]),
         "stats": {

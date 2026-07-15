@@ -10,13 +10,14 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-boot-dual-walkthrough" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-ai-setup-intro" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-remember-gear" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v2" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
   <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-3d-spice" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <link rel="stylesheet" href="/user-profile.css?v=20260715-user-profile" />
+  <link rel="stylesheet" href="/store-preferences.css?v=20260715-store-prefs" />
   <script type="importmap">
   {
     "imports": {
@@ -974,6 +975,7 @@
           <span id="project-cost-thumb-cost">Cost $0.00</span>
           <span id="project-cost-thumb-prompts">0 prompts</span>
           <span id="project-cost-thumb-tokens">0 tokens</span>
+          <button type="button" id="project-cost-thumb-credits" class="project-cost-thumb-credits hidden" title="Shared AI credits">Credits $0.00</button>
         </div>
       </div>
 
@@ -2099,6 +2101,82 @@
     </div>
   </div>
 
+  <div id="ai-setup-intro-modal" class="auth-modal welcome-modal ai-setup-intro-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ai-setup-intro-title">
+    <div class="auth-backdrop" data-ai-setup-close></div>
+    <div class="auth-card welcome-card ai-setup-intro-card">
+      <button type="button" class="auth-close" data-ai-setup-close aria-label="Close">&times;</button>
+      <div class="welcome-visual ai-setup-visual">
+        <div class="welcome-logo-badge ai-setup-logo-badge">
+          <span class="welcome-logo-gear" aria-hidden="true"></span>
+          <img src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
+          <button type="button" class="welcome-logo-signup ai-setup-logo-cta" data-ai-setup-action="key">
+            Connect key
+          </button>
+        </div>
+        <div class="welcome-robot" aria-hidden="true">
+          <div class="welcome-robot-base-unit">
+            <span class="welcome-robot-plate"></span>
+            <span class="welcome-robot-pedestal"></span>
+            <span class="welcome-robot-column"></span>
+          </div>
+          <div class="welcome-robot-shoulder">
+            <span class="welcome-robot-pivot"></span>
+            <div class="welcome-robot-boom">
+              <span class="welcome-robot-link welcome-robot-link--a"></span>
+              <span class="welcome-robot-elbow"></span>
+              <span class="welcome-robot-link welcome-robot-link--b"></span>
+              <div class="welcome-robot-hand">
+                <span class="welcome-robot-wrist"></span>
+                <span class="welcome-robot-grip">
+                  <span class="welcome-robot-jaw welcome-robot-jaw--a"></span>
+                  <span class="welcome-robot-jaw welcome-robot-jaw--b"></span>
+                </span>
+                <span class="welcome-robot-held"></span>
+              </div>
+            </div>
+          </div>
+          <span class="welcome-robot-placed"></span>
+        </div>
+      </div>
+      <div class="welcome-copy ai-setup-copy">
+        <p class="info-eyebrow">Finish AI setup</p>
+        <h2 id="ai-setup-intro-title">Connect AI before generating CAD</h2>
+        <p>
+          Your account is ready, but AI generation needs one more step: add your OpenAI or Claude API key,
+          load shared credits for Render3D’s platform key, or start the tutorial to learn the workflow first.
+        </p>
+      </div>
+      <div class="welcome-feature-grid ai-setup-step-grid">
+        <span>1. Add API key</span>
+        <span>2. Or load credits</span>
+        <span>3. Run tutorial</span>
+        <span>4. Generate CAD</span>
+      </div>
+      <div class="welcome-actions">
+        <button type="button" class="welcome-action welcome-action--primary" data-ai-setup-action="key">
+          <span class="welcome-action-icon" aria-hidden="true">01</span>
+          <span><strong>Connect API key</strong><small>OpenAI or Claude</small></span>
+        </button>
+        <button type="button" class="welcome-action" data-ai-setup-action="credits">
+          <span class="welcome-action-icon" aria-hidden="true">02</span>
+          <span><strong>Load credits</strong><small>Use Render3D’s shared key</small></span>
+        </button>
+        <button type="button" class="welcome-action" data-ai-setup-action="tutorial">
+          <span class="welcome-action-icon" aria-hidden="true">03</span>
+          <span><strong>Start tutorial</strong><small>Robot Arm walkthrough</small></span>
+        </button>
+        <a class="welcome-action" href="/getting-started.html">
+          <span class="welcome-action-icon" aria-hidden="true">04</span>
+          <span><strong>Getting Started</strong><small>Guides &amp; demos</small></span>
+        </a>
+      </div>
+      <label class="welcome-dismiss app-remember-choice">
+        <input id="ai-setup-dont-show" type="checkbox" />
+        <span>Don’t show this setup intro again</span>
+      </label>
+    </div>
+  </div>
+
   <div id="ai-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ai-key-title">
     <div class="auth-backdrop" data-ai-key-close></div>
     <div class="auth-card ai-keys-card">
@@ -2107,7 +2185,7 @@
         <img class="auth-logo" src="/render3d-logo.png?v=20260715-new-logo" alt="" width="40" height="40" />
         <div>
           <h2 id="ai-key-title">AI API keys</h2>
-          <p class="auth-subtitle">Save keys for OpenAI and Claude — switch between them any time.</p>
+          <p class="auth-subtitle">Add your own OpenAI or Claude key, or buy shared-key credits to use Render3D's platform key.</p>
         </div>
       </div>
 
@@ -2430,7 +2508,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-user-profile-handles"></script>
+  <script type="module" src="/app.js?v=20260715-store-prefs"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

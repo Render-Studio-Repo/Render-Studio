@@ -1,6 +1,15 @@
 {
   "items": [
     {
+      "id": "ai-setup-intro",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "AI setup intro",
+      "summary": "Signed-in users without AI access now get a Render3D intro-style setup window with clear next steps to connect an API key, load shared credits, or start a tutorial.",
+      "visual": "/docs/media/ai-generate.gif?v=20260715-real",
+      "href": "/"
+    },
+    {
       "id": "discord-public-model-announcements",
       "date": "2026-07-15",
       "kind": "feature",

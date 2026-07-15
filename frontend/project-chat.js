@@ -1,6 +1,8 @@
 /** Project collaboration chat — popup over the viewport. */
 
 import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
+import { matchGettingStartedGuides } from "./getting-started-guides.js?v=20260715-link-prompt";
+import { startShowMe } from "./show-me-tour.js?v=20260715-chat-show-me";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀"];
 const LS_UNREAD = "render3d:projectChatUnread:v1";
@@ -34,6 +36,17 @@ function simpleMarkdown(text) {
   );
   html = html.replace(/\n/g, "<br>");
   return html;
+}
+
+function guideActionsHtml(question = "") {
+  const guide = matchGettingStartedGuides(question, { limit: 1 })?.[0];
+  if (!guide?.id) return "";
+  return `
+    <div class="pc-agent-actions">
+      <button type="button" class="btn accent btn-compact" data-pc-show-me="${esc(guide.id)}">Show me</button>
+      <a class="btn secondary btn-compact" href="/getting-started.html#${esc(guide.id)}">Documentation</a>
+    </div>
+  `;
 }
 
 function createMentionChip(name, kind, id) {
@@ -352,18 +365,22 @@ export function createProjectChatUI({
 
     const input = overlay.querySelector("#pc-input");
     input?.addEventListener("keydown", (ev) => {
+      if (ev.isComposing) return;
       const menu = overlay.querySelector("#pc-mention-menu");
       const openMenu = menu && !menu.classList.contains("hidden");
-      if (openMenu && ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(ev.key)) {
+      if (openMenu && ["ArrowDown", "ArrowUp"].includes(ev.key)) {
         ev.preventDefault();
         const items = [...menu.querySelectorAll("[data-mention-pick]")];
         if (!items.length) return;
         if (ev.key === "ArrowDown") mentionIndex = (mentionIndex + 1) % items.length;
         if (ev.key === "ArrowUp") mentionIndex = (mentionIndex - 1 + items.length) % items.length;
         items.forEach((el, i) => el.classList.toggle("active", i === mentionIndex));
-        if ((ev.key === "Enter" || ev.key === "Tab") && mentionIndex >= 0) {
-          items[mentionIndex]?.click();
-        }
+        return;
+      }
+      if (openMenu && ["Enter", "Tab"].includes(ev.key) && mentionIndex >= 0) {
+        ev.preventDefault();
+        const items = [...menu.querySelectorAll("[data-mention-pick]")];
+        items[mentionIndex]?.click();
         return;
       }
       if (ev.key === "Enter" && !ev.shiftKey) {
@@ -603,6 +620,7 @@ export function createProjectChatUI({
     revokeImageBlobs();
     const roots = messages.filter((m) => !m.parent_id);
     const byParent = new Map();
+    const byId = new Map(messages.map((m) => [m.id, m]));
     for (const msg of messages) {
       if (!msg.parent_id) continue;
       if (!byParent.has(msg.parent_id)) byParent.set(msg.parent_id, []);
@@ -610,6 +628,11 @@ export function createProjectChatUI({
     }
 
     const renderOne = (msg, depth = 0) => {
+      const parent = msg.parent_id ? byId.get(msg.parent_id) : null;
+      const previousUser = [...messages]
+        .filter((item) => !item.is_agent && String(item.created_at || "") <= String(msg.created_at || ""))
+        .at(-1);
+      const guideActions = msg.is_agent ? guideActionsHtml(parent?.body || previousUser?.body || "") : "";
       const images = (msg.images || [])
         .map(
           (img, index) =>
@@ -629,6 +652,7 @@ export function createProjectChatUI({
           <button type="button" class="pc-reply-btn" data-reply-to="${esc(msg.id)}" data-reply-name="${esc(msg.user_name || "message")}">Reply</button>
         </div>
         <div class="pc-message-body">${simpleMarkdown(msg.body || "")}</div>
+        ${guideActions}
         ${images ? `<div class="pc-message-images">${images}</div>` : ""}
         ${reactionHtml(msg)}
         ${replies.map((child) => renderOne(child, Math.min(depth + 1, 4))).join("")}
@@ -649,6 +673,12 @@ export function createProjectChatUI({
     });
     host.querySelectorAll("[data-react]").forEach((btn) => {
       btn.addEventListener("click", () => void toggleReaction(btn.dataset.messageId, btn.dataset.react));
+    });
+    host.querySelectorAll("[data-pc-show-me]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const guideId = btn.getAttribute("data-pc-show-me") || "";
+        if (guideId) startShowMe(guideId, { onDocsPage: false });
+      });
     });
     void hydrateAuthImages(host);
     host.scrollTop = host.scrollHeight;
@@ -923,21 +953,11 @@ export function createProjectChatUI({
     }
   }
 
-  function prefillMention(candidate) {
+  async function prefillMention(candidate) {
     if (!candidate?.id) return;
-    void openChat().then?.(() => {}).catch?.(() => {});
-    void openChat();
+    await openChat();
     const input = overlay?.querySelector("#pc-input");
-    if (!input) {
-      // openChat is sync-ish after first open
-      setTimeout(() => {
-        const el = overlay?.querySelector("#pc-input");
-        if (!el) return;
-        insertMentionChip(el, candidate.handle || candidate.display_name || "User", candidate.type || "user", candidate.id);
-        el.focus();
-      }, 120);
-      return;
-    }
+    if (!input) return;
     insertMentionChip(input, candidate.handle || candidate.display_name || "User", candidate.type || "user", candidate.id);
     input.focus();
   }

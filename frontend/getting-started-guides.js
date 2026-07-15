@@ -60,6 +60,12 @@ export const GETTING_STARTED_GUIDES = [
       "prompt",
       "ai generate",
       "render mode",
+      "3d model",
+      "make a model",
+      "make 3d",
+      "create a model",
+      "create 3d",
+      "model on this platform",
       "2.0",
       "fusion"
     ],

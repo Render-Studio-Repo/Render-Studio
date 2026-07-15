@@ -1407,6 +1407,13 @@ export function createRenderAgent({
     event.preventDefault();
     void sendMessage();
   });
+  input?.addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage();
+    }
+  });
   renderAgentSource();
   renderInviteOptions();
   ensureStickyNoteControls();

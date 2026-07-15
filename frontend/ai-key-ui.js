@@ -46,6 +46,10 @@ function formatUsd(value) {
   return `$${n.toFixed(n >= 10 ? 0 : 2)}`;
 }
 
+function formatCents(cents) {
+  return formatUsd(Number(cents || 0) / 100);
+}
+
 export function createAIKeyUI({ api, onStatusChange }) {
   const modal = document.getElementById("ai-key-modal");
   const form = document.getElementById("ai-key-form");
@@ -209,9 +213,51 @@ export function createAIKeyUI({ api, onStatusChange }) {
     `;
   }
 
+  function renderCreditCard(credits = {}) {
+    const balance = Number(credits.balance_cents || 0);
+    const pct = credits.last_purchase_percent_left;
+    const pctLabel = pct == null ? "No purchase yet" : `${Math.max(0, Math.min(100, Number(pct))).toFixed(0)}% left from last buy`;
+    const models = (credits.models || []).map((m) => m.model).filter(Boolean).slice(0, 4).join(", ");
+    return `
+      <div class="ai-credit-card${credits.use_platform_key ? " ai-credit-card--active" : ""}">
+        <div class="ai-credit-head">
+          <div>
+            <span class="ai-credit-kicker">No API key? Borrow Render3D's</span>
+            <strong>Shared AI credits</strong>
+          </div>
+          <span class="ai-credit-balance" title="${esc(pctLabel)}">${formatCents(balance)}</span>
+        </div>
+        <p class="ai-credit-copy">
+          Use the platform OpenAI key, including ${esc(models || "available OpenAI models")}. Usage is billed from model cost plus ${Number(credits.markup_percent || 15)}%.
+        </p>
+        <div class="ai-credit-meter" title="${esc(pctLabel)}">
+          <span style="width:${pct == null ? 0 : Math.max(0, Math.min(100, Number(pct)))}%"></span>
+        </div>
+        <div class="ai-credit-actions">
+          <button type="button" class="btn ai-credit-btn-primary" data-action="enable-platform-key">
+            ${credits.use_platform_key ? "Using shared key" : "Use shared key"}
+          </button>
+          <select data-action="credit-amount" aria-label="Credit amount">
+            <option value="1000">$10 credits</option>
+            <option value="2000" selected>$20 credits</option>
+            <option value="5000">$50 credits</option>
+            <option value="10000">$100 credits</option>
+          </select>
+          <button type="button" class="btn ai-credit-pay-btn" data-action="buy-credits" data-provider="stripe">Stripe</button>
+          <button type="button" class="btn ai-credit-pay-btn" data-action="buy-credits" data-provider="paypal">PayPal</button>
+        </div>
+        <label class="ai-credit-autofill">
+          <input type="checkbox" data-action="auto-refill" ${credits.auto_refill_enabled ? "checked" : ""} />
+          <span>Auto refill ${formatCents(credits.auto_refill_amount_cents || 2000)} when credits drop below ${formatCents(credits.auto_refill_threshold_cents || 500)}</span>
+        </label>
+        <p class="ai-credit-note">${credits.payment_methods?.paypal ? "Stripe and PayPal checkout are available." : "Stripe checkout is live. PayPal is shown here and will enable once PayPal checkout credentials are configured."}</p>
+      </div>
+    `;
+  }
+
   function renderKeysList(keys = [], activeKeyId = null, teamKeys = []) {
     if (!keysList) return;
-    let html = "";
+    let html = renderCreditCard(status?.credits || {});
 
     // ── Personal keys ──
     if (keys.length) {
@@ -531,8 +577,8 @@ export function createAIKeyUI({ api, onStatusChange }) {
         message
           || (required
             ? (provider === "openai"
-              ? "Add an OpenAI API key before using Codex / AI generate."
-              : "Add a key before using the AI prompt.")
+              ? "Add your own OpenAI API key, or buy shared-key credits to borrow Render3D's API key."
+              : "Add your own key, or buy shared-key credits to use Render3D's API key.")
             : ""),
       );
       if (providerInput) providerInput.value = provider;
@@ -644,6 +690,51 @@ export function createAIKeyUI({ api, onStatusChange }) {
 
   // Delegate clicks in the keys list
   keysList?.addEventListener("click", async (e) => {
+    const enablePlatform = e.target.closest("[data-action='enable-platform-key']");
+    if (enablePlatform) {
+      setError("");
+      try {
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ use_platform_key: true }),
+        });
+        render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+      } catch (err) {
+        setError(err.message || "Could not enable shared key credits");
+      }
+      return;
+    }
+
+    const buyCredits = e.target.closest("[data-action='buy-credits']");
+    if (buyCredits) {
+      const provider = buyCredits.dataset.provider || "stripe";
+      const amount = Number(keysList.querySelector("[data-action='credit-amount']")?.value || 2000);
+      setError("");
+      buyCredits.disabled = true;
+      try {
+        const data = await api("/api/user/ai-credits/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount_cents: amount,
+            provider,
+            success_url: `${window.location.origin}${window.location.pathname}?ai_credits=success`,
+            cancel_url: `${window.location.origin}${window.location.pathname}?ai_credits=cancel`,
+          }),
+        });
+        if (data.url) {
+          window.location.href = data.url;
+          return;
+        }
+        if (data.credits) render({ ...(status || {}), credits: data.credits });
+      } catch (err) {
+        setError(err.message || `Could not start ${provider} checkout`);
+        buyCredits.disabled = false;
+      }
+      return;
+    }
+
     const openSharedAdd = e.target.closest("[data-action='open-shared-add']");
     if (openSharedAdd) {
       if (addSection) addSection.open = true;
@@ -886,6 +977,22 @@ export function createAIKeyUI({ api, onStatusChange }) {
     }
   });
 
+  keysList?.addEventListener("change", async (e) => {
+    const autoRefill = e.target.closest("[data-action='auto-refill']");
+    if (!autoRefill) return;
+    try {
+      const data = await api("/api/user/ai-credits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_refill_enabled: autoRefill.checked }),
+      });
+      render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+    } catch (err) {
+      setError(err.message || "Could not update auto refill");
+      autoRefill.checked = !autoRefill.checked;
+    }
+  });
+
   keysList?.addEventListener("change", (e) => {
     const teamFilter = e.target.closest("[data-action='team-filter']");
     if (!teamFilter) return;
@@ -950,7 +1057,7 @@ export function createAIKeyUI({ api, onStatusChange }) {
         required: true,
         preferProvider: opts.preferProvider || "openai",
         message: opts.message || "",
-        openAdd: opts.openAdd !== false,
+        openAdd: opts.openAdd === true,
       });
     },
   };

@@ -2,6 +2,7 @@
 
 const TOKEN_KEY = "render3d:token";
 const USER_KEY = "render3d:user";
+const PENDING_CONNECTION_PREFS_KEY = "render3d:pendingConnectionPrefs:v1";
 
 const ADMIN_EMAILS = new Set([
   "a1projects@protonmail.com",
@@ -207,6 +208,33 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       onshape: !!document.getElementById("auth-connect-onshape")?.checked,
       fusion: !!document.getElementById("auth-connect-fusion")?.checked,
     };
+  }
+
+  function savePendingConnectionPrefs(prefs = connectionPrefs()) {
+    try {
+      if (prefs?.onshape || prefs?.fusion) {
+        sessionStorage.setItem(PENDING_CONNECTION_PREFS_KEY, JSON.stringify({
+          onshape: !!prefs.onshape,
+          fusion: !!prefs.fusion,
+          created_at: Date.now(),
+        }));
+      } else {
+        sessionStorage.removeItem(PENDING_CONNECTION_PREFS_KEY);
+      }
+    } catch { /* best effort */ }
+  }
+
+  function consumePendingConnectionPrefs() {
+    try {
+      const raw = sessionStorage.getItem(PENDING_CONNECTION_PREFS_KEY);
+      sessionStorage.removeItem(PENDING_CONNECTION_PREFS_KEY);
+      if (!raw) return null;
+      const prefs = JSON.parse(raw);
+      if (!prefs || Date.now() - Number(prefs.created_at || 0) > 10 * 60 * 1000) return null;
+      return { onshape: !!prefs.onshape, fusion: !!prefs.fusion };
+    } catch {
+      return null;
+    }
   }
 
   function clearConnectionPrefs() {
@@ -418,6 +446,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
         return;
       }
       btn.classList.add("is-loading");
+      savePendingConnectionPrefs();
       window.location.href = `/oauth/${encodeURIComponent(provider)}/start`;
     });
   });
@@ -543,6 +572,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
 
       if (socialToken) {
         history.replaceState({}, "", window.location.pathname);
+        const pendingConnectPrefs = consumePendingConnectionPrefs();
         try {
           localStorage.setItem(TOKEN_KEY, socialToken);
           const data = await api("/api/auth/me");
@@ -552,6 +582,11 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
           setUserUI(data.user);
           showModal(false);
           onReady?.(data);
+          if (pendingConnectPrefs && !inOAuthPopup) {
+            window.setTimeout(() => {
+              void openCheckedConnections(pendingConnectPrefs);
+            }, 250);
+          }
           if (inOAuthPopup) notifyOpenerAndClose(socialProvider, true);
           return data;
         } catch {

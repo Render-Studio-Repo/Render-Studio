@@ -12,6 +12,7 @@ from backend.database import get_conn
 
 VALID_STATUSES = {"pending", "approved", "rejected", "archived"}
 VALID_ACCESS = {"free", "paid", "view_only"}
+VALID_BILLING = {"one_time", "subscription"}
 VALID_LICENSES = {
     "cc0",
     "cc-by",
@@ -23,6 +24,8 @@ VALID_LICENSES = {
     "editorial",
 }
 VALID_BOOST = {"none", "pending", "approved", "rejected"}
+STORE_FILE_EXTS = {".stl", ".step", ".stp", ".glb", ".gltf", ".obj", ".3mf", ".ply", ".off", ".zip"}
+MAX_EMBED_BYTES = 6_000_000
 
 
 def _now() -> str:
@@ -64,6 +67,8 @@ def _unique_slug(conn, base: str) -> str:
 def _row_to_listing(row: Any, *, owner: dict[str, Any] | None = None) -> dict[str, Any]:
     thumb_raw = row["thumbnail_json"] or ""
     thumbnail = _json_obj(thumb_raw) if thumb_raw.startswith("{") else ({"data_url": thumb_raw} if thumb_raw else None)
+    keys = row.keys()
+    billing = row["billing_type"] if "billing_type" in keys else "one_time"
     return {
         "id": row["id"],
         "slug": row["slug"],
@@ -81,6 +86,7 @@ def _row_to_listing(row: Any, *, owner: dict[str, Any] | None = None) -> dict[st
         "download_enabled": bool(row["download_enabled"]),
         "price_cents": int(row["price_cents"] or 0),
         "currency": row["currency"] or "USD",
+        "billing_type": billing or "one_time",
         "status": row["status"],
         "featured": bool(row["featured"]),
         "boost_status": row["boost_status"] or "none",
@@ -191,6 +197,12 @@ def create_listing(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
     if access_mode == "view_only":
         download_enabled = False
 
+    billing_type = str(data.get("billing_type") or "one_time").strip().lower()
+    if billing_type not in VALID_BILLING:
+        raise ValueError("billing_type must be one_time or subscription.")
+    if access_mode != "paid":
+        billing_type = "one_time"
+
     members = data.get("members") if isinstance(data.get("members"), list) else []
     gallery = data.get("gallery") if isinstance(data.get("gallery"), list) else []
     files = data.get("files") if isinstance(data.get("files"), list) else []
@@ -200,6 +212,10 @@ def create_listing(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
     now = _now()
     listing_id = str(uuid.uuid4())[:12]
     with get_conn() as conn:
+        try:
+            conn.execute("ALTER TABLE model_listings ADD COLUMN billing_type TEXT NOT NULL DEFAULT 'one_time'")
+        except Exception:
+            pass
         slug = _unique_slug(conn, str(data.get("slug") or name))
         # Ensure creator is a member
         member_rows = []
@@ -219,38 +235,212 @@ def create_listing(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
             )
         if user_id not in seen:
             member_rows.insert(0, {"id": user_id, "role": "owner"})
-        conn.execute(
-            """
-            INSERT INTO model_listings
-              (id, slug, name, tagline, description, body_md, category, thumbnail_json, gallery_json,
-               files_json, members_json, license, access_mode, download_enabled, price_cents, currency,
-               status, featured, boost_status, created_by, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',0,'none',?,?,?)
-            """,
-            (
-                listing_id,
-                slug,
-                name,
-                tagline,
-                description[:4000],
-                body_md,
-                str(data.get("category") or "models").strip()[:80],
-                json.dumps(thumbnail or {}, sort_keys=True),
-                json.dumps(gallery[:12], sort_keys=True),
-                json.dumps(files[:8], sort_keys=True),
-                json.dumps(member_rows, sort_keys=True),
-                license_key,
-                access_mode,
-                1 if download_enabled else 0,
-                price_cents,
-                str(data.get("currency") or "USD").strip().upper()[:8],
-                user_id,
-                now,
-                now,
-            ),
-        )
+        try:
+            conn.execute(
+                """
+                INSERT INTO model_listings
+                  (id, slug, name, tagline, description, body_md, category, thumbnail_json, gallery_json,
+                   files_json, members_json, license, access_mode, download_enabled, price_cents, currency,
+                   billing_type, status, featured, boost_status, created_by, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',0,'none',?,?,?)
+                """,
+                (
+                    listing_id,
+                    slug,
+                    name,
+                    tagline,
+                    description[:4000],
+                    body_md,
+                    str(data.get("category") or "models").strip()[:80],
+                    json.dumps(thumbnail or {}, sort_keys=True),
+                    json.dumps(gallery[:12], sort_keys=True),
+                    json.dumps(files[:8], sort_keys=True),
+                    json.dumps(member_rows, sort_keys=True),
+                    license_key,
+                    access_mode,
+                    1 if download_enabled else 0,
+                    price_cents,
+                    str(data.get("currency") or "USD").strip().upper()[:8],
+                    billing_type,
+                    user_id,
+                    now,
+                    now,
+                ),
+            )
+        except Exception:
+            conn.execute(
+                """
+                INSERT INTO model_listings
+                  (id, slug, name, tagline, description, body_md, category, thumbnail_json, gallery_json,
+                   files_json, members_json, license, access_mode, download_enabled, price_cents, currency,
+                   status, featured, boost_status, created_by, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',0,'none',?,?,?)
+                """,
+                (
+                    listing_id,
+                    slug,
+                    name,
+                    tagline,
+                    description[:4000],
+                    body_md,
+                    str(data.get("category") or "models").strip()[:80],
+                    json.dumps(thumbnail or {}, sort_keys=True),
+                    json.dumps(gallery[:12], sort_keys=True),
+                    json.dumps(files[:8], sort_keys=True),
+                    json.dumps(member_rows, sort_keys=True),
+                    license_key,
+                    access_mode,
+                    1 if download_enabled else 0,
+                    price_cents,
+                    str(data.get("currency") or "USD").strip().upper()[:8],
+                    user_id,
+                    now,
+                    now,
+                ),
+            )
         row = conn.execute("SELECT * FROM model_listings WHERE id = ?", (listing_id,)).fetchone()
     return _row_to_listing(row)
+
+
+def update_listing(user_id: str, listing_id_or_slug: str, data: dict[str, Any]) -> dict[str, Any]:
+    listing = get_listing(listing_id_or_slug, user_id=user_id, include_pending=True)
+    if not listing:
+        raise KeyError("Listing not found.")
+    if listing["created_by"] != user_id:
+        raise PermissionError("Only the product owner can update this listing.")
+
+    access_mode = str(data.get("access_mode") or listing["access_mode"]).strip().lower()
+    if access_mode not in VALID_ACCESS:
+        raise ValueError("access_mode must be free, paid, or view_only.")
+    license_key = str(data.get("license") or listing["license"]).strip().lower()
+    if license_key not in VALID_LICENSES:
+        raise ValueError("Unsupported license.")
+    billing_type = str(data.get("billing_type") or listing.get("billing_type") or "one_time").strip().lower()
+    if billing_type not in VALID_BILLING:
+        raise ValueError("billing_type must be one_time or subscription.")
+    price_cents = max(0, int(data.get("price_cents") if data.get("price_cents") is not None else listing["price_cents"]))
+    if access_mode == "paid" and price_cents <= 0:
+        price_cents = 100
+    if access_mode != "paid":
+        price_cents = 0
+        billing_type = "one_time"
+    download_enabled = bool(data.get("download_enabled") if "download_enabled" in data else listing["download_enabled"])
+    if access_mode == "view_only":
+        download_enabled = False
+
+    name = str(data.get("name") or listing["name"]).strip()[:120]
+    tagline = str(data.get("tagline") or listing["tagline"]).strip()[:180]
+    description = str(data.get("description") or listing["description"]).strip()[:4000]
+    body_md = str(data.get("body_md") if data.get("body_md") is not None else listing.get("body_md") or "").strip()[:20000]
+    files = data.get("files") if isinstance(data.get("files"), list) else listing.get("files") or []
+    gallery = data.get("gallery") if isinstance(data.get("gallery"), list) else listing.get("gallery") or []
+    thumbnail = data.get("thumbnail") if isinstance(data.get("thumbnail"), dict) else listing.get("thumbnail")
+    now = _now()
+    with get_conn() as conn:
+        try:
+            conn.execute("ALTER TABLE model_listings ADD COLUMN billing_type TEXT NOT NULL DEFAULT 'one_time'")
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                """
+                UPDATE model_listings
+                   SET name=?, tagline=?, description=?, body_md=?, category=?,
+                       thumbnail_json=?, gallery_json=?, files_json=?,
+                       license=?, access_mode=?, download_enabled=?, price_cents=?, currency=?,
+                       billing_type=?, updated_at=?,
+                       status=CASE WHEN status='approved' THEN 'pending' ELSE status END
+                 WHERE id=?
+                """,
+                (
+                    name,
+                    tagline,
+                    description,
+                    body_md,
+                    str(data.get("category") or listing.get("category") or "models")[:80],
+                    json.dumps(thumbnail or {}, sort_keys=True),
+                    json.dumps(gallery[:12], sort_keys=True),
+                    json.dumps(files[:8], sort_keys=True),
+                    license_key,
+                    access_mode,
+                    1 if download_enabled else 0,
+                    price_cents,
+                    str(data.get("currency") or listing.get("currency") or "USD").upper()[:8],
+                    billing_type,
+                    now,
+                    listing["id"],
+                ),
+            )
+        except Exception:
+            conn.execute(
+                """
+                UPDATE model_listings
+                   SET name=?, tagline=?, description=?, body_md=?,
+                       license=?, access_mode=?, download_enabled=?, price_cents=?, currency=?,
+                       files_json=?, updated_at=?
+                 WHERE id=?
+                """,
+                (
+                    name,
+                    tagline,
+                    description,
+                    body_md,
+                    license_key,
+                    access_mode,
+                    1 if download_enabled else 0,
+                    price_cents,
+                    str(data.get("currency") or listing.get("currency") or "USD").upper()[:8],
+                    json.dumps(files[:8], sort_keys=True),
+                    now,
+                    listing["id"],
+                ),
+            )
+        row = conn.execute("SELECT * FROM model_listings WHERE id = ?", (listing["id"],)).fetchone()
+    return _row_to_listing(row)
+
+
+def resolve_project_files(project_path: Any, filenames: list[str], *, project_id: str) -> list[dict[str, Any]]:
+    """Turn studio project files into listing file payloads (embed small files, else store refs)."""
+    import base64
+    from pathlib import Path
+
+    root = Path(project_path)
+    out: list[dict[str, Any]] = []
+    for raw in filenames[:8]:
+        name = Path(str(raw or "")).name
+        if not name:
+            continue
+        path = root / name
+        if not path.is_file():
+            continue
+        ext = path.suffix.lower()
+        if ext not in STORE_FILE_EXTS:
+            continue
+        size = path.stat().st_size
+        entry: dict[str, Any] = {
+            "name": name,
+            "filename": name,
+            "format": ext.lstrip("."),
+            "size": size,
+            "project_id": project_id,
+            "source": "project",
+        }
+        if size <= MAX_EMBED_BYTES:
+            data = path.read_bytes()
+            # crude media type
+            media = "model/stl" if ext == ".stl" else "application/octet-stream"
+            if ext in {".png", ".jpg", ".jpeg", ".webp"}:
+                media = f"image/{ext.lstrip('.')}"
+            b64 = base64.b64encode(data).decode("ascii")
+            entry["data_url"] = f"data:{media};base64,{b64}"
+            entry["embedded"] = True
+        else:
+            entry["embedded"] = False
+            entry["ref"] = f"/api/projects/{project_id}/files/{name}"
+        out.append(entry)
+    if not out:
+        raise ValueError("No valid model files selected (stl/step/glb/obj/3mf/…).")
+    return out
 
 
 def review_listing(listing_id_or_slug: str, *, status: str, featured: bool | None = None) -> dict[str, Any]:

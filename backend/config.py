@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     discord_updates_channel_id: str = ""
     discord_public_models_channel_id: str = ""
     discord_application_id: str = ""
+    discord_client_id: str = ""
+    discord_client_secret: str = ""
+    discord_redirect_uri: str = "https://render3d.app/oauth/discord/callback"
     discord_updates_webhook_url: str = ""
 
     # LinkedIn product-update announcements (member or organization URN)

@@ -735,10 +735,43 @@ class ModelListingSubmitRequest(BaseModel):
     download_enabled: bool = True
     price_cents: int = Field(default=0, ge=0, le=1_000_000)
     currency: str = Field(default="USD", min_length=3, max_length=8)
+    billing_type: str = Field(default="one_time", max_length=20)
     thumbnail: dict[str, Any] | None = None
     gallery: list[dict[str, Any]] = Field(default_factory=list)
     files: list[dict[str, Any]] = Field(default_factory=list)
     members: list[dict[str, Any]] = Field(default_factory=list)
+    project_id: str | None = Field(default=None, max_length=120)
+    project_filenames: list[str] = Field(default_factory=list)
+
+
+class ModelListingUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    tagline: str | None = Field(default=None, max_length=180)
+    description: str | None = Field(default=None, max_length=4000)
+    body_md: str | None = Field(default=None, max_length=20000)
+    category: str | None = Field(default=None, max_length=80)
+    license: str | None = Field(default=None, max_length=40)
+    access_mode: str | None = Field(default=None, max_length=20)
+    download_enabled: bool | None = None
+    price_cents: int | None = Field(default=None, ge=0, le=1_000_000)
+    currency: str | None = Field(default=None, min_length=3, max_length=8)
+    billing_type: str | None = Field(default=None, max_length=20)
+    thumbnail: dict[str, Any] | None = None
+    gallery: list[dict[str, Any]] | None = None
+    files: list[dict[str, Any]] | None = None
+
+
+class StoreSettingsRequest(BaseModel):
+    store_enabled: bool = False
+    store_title: str = Field(default="", max_length=80)
+    store_tagline: str = Field(default="", max_length=180)
+    default_license: str = Field(default="proprietary", max_length=40)
+    default_access_mode: str = Field(default="paid", max_length=20)
+    default_billing_type: str = Field(default="one_time", max_length=20)
+    default_currency: str = Field(default="USD", min_length=3, max_length=8)
+    default_price_cents: int = Field(default=0, ge=0, le=1_000_000)
+    download_enabled: bool = True
+    show_on_profile: bool = True
 
 
 class ModelListingReviewRequest(BaseModel):
@@ -3806,11 +3839,37 @@ def get_model_listing(
 
 @app.post("/api/model-listings")
 def submit_model_listing(body: ModelListingSubmitRequest, user: dict[str, Any] = Depends(get_current_user)):
+    payload = body.model_dump()
     try:
-        listing = model_marketplace_service.create_listing(user["id"], body.model_dump())
+        if body.project_id and body.project_filenames:
+            path = _require_project_read(user, body.project_id)
+            payload["files"] = model_marketplace_service.resolve_project_files(
+                path, body.project_filenames, project_id=body.project_id
+            )
+        listing = model_marketplace_service.create_listing(user["id"], payload)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     return {"listing": listing, "message": "Submitted for review."}
+
+
+@app.patch("/api/model-listings/{listing_id_or_slug}")
+def update_model_listing(
+    listing_id_or_slug: str,
+    body: ModelListingUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        listing = model_marketplace_service.update_listing(user["id"], listing_id_or_slug, data)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"listing": listing, "message": "Listing updated (re-queued for review if it was public)."}
 
 
 @app.patch("/api/model-listings/{listing_id_or_slug}/review")
@@ -4910,6 +4969,23 @@ def update_my_profile(body: UserProfileUpdateRequest, user: dict[str, Any] = Dep
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"user": updated}
+
+
+@app.get("/api/users/me/store-settings")
+def get_my_store_settings(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import profile_service
+
+    row = profile_service.get_user_row(user["id"]) or {}
+    return {"store_settings": row.get("store_settings") or {}, "user": row}
+
+
+@app.put("/api/users/me/store-settings")
+@app.patch("/api/users/me/store-settings")
+def update_my_store_settings(body: StoreSettingsRequest, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import profile_service
+
+    updated = profile_service.update_store_settings(user["id"], body.model_dump())
+    return {"user": updated, "store_settings": updated.get("store_settings") or {}}
 
 
 @app.get("/api/users/me/profile")

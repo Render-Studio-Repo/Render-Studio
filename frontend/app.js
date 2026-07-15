@@ -63,13 +63,14 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt-purple";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-profile-onboarding";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-social-fusion-connect";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-hide-shot-on-viewport";
-import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-handle-profile";
+import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-show-me-actions";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
+import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
-import { createRenderAgent } from "./render-agent.js?v=20260715-chat-fab-fallback";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
+import { createRenderAgent } from "./render-agent.js?v=20260715-chat-show-me-actions";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-ai-credit-billing";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-rigging-control-tab";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -130,6 +131,7 @@ const LS_WORKSPACE_REALTIME_COLLAPSED = "render3d:workspaceRealtimeCollapsed:v1"
 const LS_WORKSPACE_FUSION_SECTION_OPEN = "render3d:workspaceFusionSectionOpen:v1";
 const LS_FIRST_PROJECT_PROMPT_ONBOARDING = "render3d:firstProjectPromptOnboarding:v1";
 const LS_GOOGLE_NEW_USER_WALKTHROUGH = "render3d:googleNewUserWalkthrough:v1";
+const LS_AI_SETUP_INTRO_DISMISSED = "render3d:aiSetupIntroDismissed:v1";
 
 let projectId = null;
 const wiringLoadCache = { projectId: null, promise: null, data: null };
@@ -4864,6 +4866,7 @@ function renderProjectCostThumb(entries = [], summary = null) {
   const promptEl = document.getElementById("project-cost-thumb-prompts");
   const tokenEl = document.getElementById("project-cost-thumb-tokens");
   const chartEl = document.getElementById("project-cost-thumb-chart");
+  const creditEl = document.getElementById("project-cost-thumb-credits");
   const totalCost = Number((summary?.cost_usd ?? 0) > 0 ? summary.cost_usd : (summary?.openai_cost_usd ?? 0)) || 0;
   const costLabel = formatCostUsd(totalCost) || "$0.00";
   const tracked = Number(summary?.tracked_count ?? entries.filter((e) => e.cost_usd != null || e.usage).length) || 0;
@@ -4872,6 +4875,16 @@ function renderProjectCostThumb(entries = [], summary = null) {
   if (costEl) costEl.textContent = `Cost ${costLabel}`;
   if (promptEl) promptEl.textContent = `${tracked} tracked prompt${tracked === 1 ? "" : "s"}`;
   if (tokenEl) tokenEl.textContent = compactTokenCount(tokens);
+  if (creditEl) {
+    const credits = aiStatus?.credits || {};
+    const balance = Number(credits.balance_cents || 0) / 100;
+    const percent = credits.last_purchase_percent_left;
+    creditEl.textContent = `Credits ${formatCostUsd(balance) || "$0.00"}`;
+    creditEl.title = percent == null
+      ? "Open AI keys to buy shared-key credits."
+      : `${Math.max(0, Math.min(100, Number(percent))).toFixed(0)}% left from your last credit purchase. Click to buy more.`;
+    creditEl.classList.toggle("hidden", !credits.use_platform_key && balance <= 0);
+  }
   if (chartEl) {
     const recent = entries
       .slice()
@@ -4889,6 +4902,13 @@ function renderProjectCostThumb(entries = [], summary = null) {
   }
   wrap.classList.toggle("is-empty", !tracked);
 }
+
+document.getElementById("project-cost-thumb-credits")?.addEventListener("click", () => {
+  aiKeyUi?.openRequired?.({
+    message: "Buy more shared-key credits, manage auto-refill, or add your own API key.",
+    openAdd: false,
+  });
+});
 
 function promptHistoryReferencesForReuse(entry = {}) {
   const saved = Array.isArray(entry.references) ? entry.references : [];
@@ -5172,7 +5192,6 @@ const userProfileUi = createUserProfileUI({
     const handle = profile?.handle || profile?.display_name || "user";
     const id = profile?.id;
     if (!id) return;
-    // Prefill chat composer if available
     try {
       projectChat?.prefillMention?.({
         id,
@@ -5191,6 +5210,11 @@ try {
 } catch {
   /* ignore */
 }
+
+const storePreferencesUi = createStorePreferencesUI({
+  api,
+  getTeamId: () => document.getElementById("team-select")?.value || null,
+});
 function renderAgentObjectChoices() {
   const choices = [];
   const seen = new Set();
@@ -13643,10 +13667,87 @@ function renderAIStatus(status) {
   if (aiStatus.ai_ready) {
     el.className = "status";
     el.textContent = "";
+    renderProjectCostThumb(latestPromptHistoryEntries || [], allProjects.find((p) => p.id === projectId)?.usage_summary || null);
     return;
   }
   el.className = "status error";
-  el.textContent = "Add your OpenAI or Claude API key from the account menu before prompting.";
+  el.textContent = "Add your own AI key or buy shared-key credits before prompting.";
+  renderProjectCostThumb(latestPromptHistoryEntries || [], allProjects.find((p) => p.id === projectId)?.usage_summary || null);
+  maybeOfferSharedKeyCredits();
+}
+
+function aiSetupIntroKey(user = currentUser) {
+  return user?.id ? `${LS_AI_SETUP_INTRO_DISMISSED}:${user.id}` : LS_AI_SETUP_INTRO_DISMISSED;
+}
+
+function closeAISetupIntro({ remember = true } = {}) {
+  const modal = document.getElementById("ai-setup-intro-modal");
+  modal?.classList.add("hidden");
+  const dontShow = document.getElementById("ai-setup-dont-show");
+  if (remember || dontShow?.checked) {
+    try {
+      localStorage.setItem(aiSetupIntroKey(), "1");
+    } catch (_) {}
+  }
+}
+
+function shouldShowAISetupIntro() {
+  if (!currentUser || !aiStatus || aiStatus.ai_ready) return;
+  if (window.__render3dShowMeFromQuery) return false;
+  if (new URLSearchParams(window.location.search).has("showMe")) return false;
+  try {
+    if (localStorage.getItem(aiSetupIntroKey()) === "1") return false;
+  } catch (_) {}
+  return true;
+}
+
+function maybeOfferSharedKeyCredits() {
+  if (!shouldShowAISetupIntro()) return;
+  window.setTimeout(() => {
+    if (!shouldShowAISetupIntro()) return;
+    const modal = document.getElementById("ai-setup-intro-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    modal.querySelector("[data-ai-setup-action='key']")?.focus();
+  }, 900);
+}
+
+function initAISetupIntroModal() {
+  const modal = document.getElementById("ai-setup-intro-modal");
+  if (!modal) return;
+  modal.querySelectorAll("[data-ai-setup-close]").forEach((el) => {
+    el.addEventListener("click", () => closeAISetupIntro({ remember: true }));
+  });
+  modal.addEventListener("click", (event) => {
+    const actionEl = event.target.closest("[data-ai-setup-action]");
+    if (!actionEl) return;
+    const action = actionEl.dataset.aiSetupAction;
+    closeAISetupIntro({ remember: action !== "tutorial" });
+    if (action === "key") {
+      aiKeyUi?.openRequired?.({
+        message: "Add your OpenAI or Claude API key to start generating CAD.",
+        openAdd: true,
+      });
+      return;
+    }
+    if (action === "credits") {
+      aiKeyUi?.openRequired?.({
+        message: "Load shared-key credits to use Render3D's platform AI key without pasting your own key.",
+        openAdd: false,
+      });
+      return;
+    }
+    if (action === "tutorial") {
+      void import("./show-me-tour.js?v=20260715-ai-setup-intro").then((mod) => {
+        mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
+      });
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+      closeAISetupIntro({ remember: true });
+    }
+  });
 }
 
 function saveLastProjectId(id) {
@@ -22134,6 +22235,7 @@ window.addEventListener("keydown", (e) => {
 
 (async function init() {
   initPromptKeyPopup();
+  initAISetupIntroModal();
   initPromptGenerationSpeed();
   initPromptSpiceToggle();
   initWiringGenerationSpeed();
@@ -23751,6 +23853,9 @@ window.addEventListener("keydown", (e) => {
                 <button type="button" data-preferences-advanced-tab="authorized" class="${preferencesAdvancedTab === "authorized" ? "active" : ""}">
                   <b>Authorized apps</b><small>Stripe, PayPal, Phantom</small>
                 </button>
+                <button type="button" data-preferences-advanced-tab="store" class="${preferencesAdvancedTab === "store" ? "active" : ""}">
+                  <b>Store</b><small>Public shop, pricing, publish models</small>
+                </button>
                 <button type="button" data-preferences-advanced-tab="viewport" class="${preferencesAdvancedTab === "viewport" ? "active" : ""}">
                   <b>Viewport</b><small>Theme, mouse, navigation</small>
                 </button>
@@ -23848,6 +23953,10 @@ window.addEventListener("keydown", (e) => {
                   <p class="muted small">Loading authorized apps...</p>
                 </div>
               </article>
+              <article class="profile-preferences-category ${preferencesAdvancedTab === "store" ? "" : "hidden"}" data-preferences-advanced-panel="store">
+                <h3>Store &amp; public shop</h3>
+                <div data-store-body></div>
+              </article>
               <article class="profile-preferences-category ${preferencesAdvancedTab === "viewport" ? "" : "hidden"}" data-preferences-advanced-panel="viewport">
                 <h3>Viewport and controls</h3>
                 <label class="profile-preference-field">
@@ -23880,6 +23989,9 @@ window.addEventListener("keydown", (e) => {
     `;
     syncPreferencesMenuControls(panel);
     void hydrateAuthorizedApps(panel);
+    if (preferencesAdvancedOpen && preferencesAdvancedTab === "store") {
+      void storePreferencesUi?.hydrate?.(panel);
+    }
   }
 
   function closePreferencesModal() {
@@ -24012,6 +24124,9 @@ window.addEventListener("keydown", (e) => {
       preferencesAdvancedOpen = true;
       preferencesAdvancedTab = advancedTab.getAttribute("data-preferences-advanced-tab") || "generation";
       renderPreferencesMenuPanel();
+      if (preferencesAdvancedTab === "store") {
+        void storePreferencesUi?.hydrate?.(document.getElementById("profile-preferences-panel"));
+      }
       return;
     }
     const appAction = e.target.closest("[data-authorized-app-action]");
