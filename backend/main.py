@@ -2129,7 +2129,12 @@ def _reference_base_filename(body: PromptRequest) -> str | None:
 
 def _infer_surface_edit_base(project_path: Path, body: PromptRequest) -> str | None:
     """Best-effort recovery for older clients that sent face refs without a base file."""
-    if body.base_filename or not _is_reference_anchored_addition(body):
+    if body.base_filename:
+        return None
+    target_mode = str(getattr(body, "target_mode", "") or "").strip().lower()
+    has_surface_ref = _has_surface_edit_reference(body)
+    has_component_ref = any((r.type or "").lower() == "component" and (r.filename or r.viewer_filename) for r in body.references)
+    if not (target_mode == "edit" or _is_reference_anchored_addition(body) or (has_surface_ref and has_component_ref)):
         return None
     ref_base = _reference_base_filename(body)
     if ref_base:

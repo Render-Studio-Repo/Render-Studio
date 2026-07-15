@@ -49,7 +49,8 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260715-preserve-authored-colors";
+  setObjectTransparent,
+} from "./scene-style.js?v=20260715-transparent-edges";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-collab-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
@@ -7616,6 +7617,84 @@ document.querySelectorAll(".color-swatch").forEach((btn) => {
     if (colorToolInput) colorToolInput.value = btn.dataset.color || activeColorValue();
   });
 });
+
+let transparentPickEnabled = false;
+const transparentObjects = new Set();
+
+function ensureUniqueMeshMaterials(mesh) {
+  if (!mesh?.material || mesh.userData?._transparentUniqueMaterial) return;
+  mesh.material = Array.isArray(mesh.material)
+    ? mesh.material.map((mat) => mat?.clone?.() || mat)
+    : mesh.material?.clone?.() || mesh.material;
+  mesh.userData = mesh.userData || {};
+  mesh.userData._transparentUniqueMaterial = true;
+}
+
+function transparentTargetForMesh(mesh) {
+  if (!mesh) return null;
+  return componentRootForMesh(mesh) || mesh;
+}
+
+function syncViewportTransparent(obj) {
+  if (!obj) return;
+  obj.traverse?.((child) => {
+    if (!child.isMesh || child.userData?.isEdge || child.userData?.isSilhouette) return;
+    ensureUniqueMeshMaterials(child);
+  });
+  setObjectTransparent(obj, transparentObjects.has(obj), { wireframe: viewMode === "wireframe" });
+}
+
+function clearViewportTransparent() {
+  const targets = [...transparentObjects];
+  transparentObjects.clear();
+  targets.forEach((obj) => setObjectTransparent(obj, false, { wireframe: viewMode === "wireframe" }));
+}
+
+function setTransparentPickEnabled(on) {
+  transparentPickEnabled = !!on;
+  const btn = document.getElementById("btn-transparent-viewport");
+  btn?.classList.toggle("active", transparentPickEnabled);
+  btn?.setAttribute("aria-pressed", String(transparentPickEnabled));
+  if (renderer?.domElement) {
+    renderer.domElement.style.cursor = transparentPickEnabled ? "crosshair" : "";
+  }
+  if (transparentPickEnabled) {
+    directModeling.reset?.();
+    activatePickMode("off");
+    setEditStatus("ok", "Transparent: click an object to toggle see-through. Click again to restore.");
+  } else if (btn) {
+    setEditStatus("ok", "Transparent tool off.");
+  }
+}
+
+function toggleTransparentPick() {
+  setTransparentPickEnabled(!transparentPickEnabled);
+}
+
+function handleTransparentPickClick(e) {
+  if (!transparentPickEnabled || !currentMesh) return false;
+  if (e.button != null && e.button !== 0) return false;
+  const hit = pickObject(e, {
+    camera,
+    domElement: renderer.domElement,
+    meshRoot: currentMesh,
+  });
+  if (!hit?.mesh) {
+    setEditStatus("ok", "Transparent: click a model object to toggle see-through.");
+    return true;
+  }
+  const target = transparentTargetForMesh(hit.mesh);
+  if (!target) return true;
+  if (transparentObjects.has(target)) transparentObjects.delete(target);
+  else transparentObjects.add(target);
+  syncViewportTransparent(target);
+  const on = transparentObjects.has(target);
+  const label = catalogNameForMesh(hit.mesh) || target.name || "object";
+  setEditStatus("ok", on ? `Made ${label} transparent.` : `Restored ${label}.`);
+  return true;
+}
+
+document.getElementById("btn-transparent-viewport")?.addEventListener("click", toggleTransparentPick);
 
 document.getElementById("btn-split-bodies")?.addEventListener("click", () => {
   setRightTab("tools");
@@ -18082,6 +18161,10 @@ renderer.domElement.addEventListener("click", (e) => {
     const dx = e.clientX - pointerDownPos.x;
     const dy = e.clientY - pointerDownPos.y;
     if (dx * dx + dy * dy > 36) return;
+  }
+  if (handleTransparentPickClick(e)) {
+    e.preventDefault();
+    return;
   }
   if (handlePendingSnapTarget(e)) {
     e.preventDefault();

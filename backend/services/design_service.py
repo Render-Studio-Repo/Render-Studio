@@ -1975,8 +1975,10 @@ def _wire_jake_artifacts_to_product_shell(
     shell_glb = project_path / glb_name
     jake_glb = project_path / jake_hidden_glb_name(step_name)
     if step_path.is_file():
-        # Prefer Jake topology sidecar when present; always keep shell GLB for viewport.
-        if jake_glb.is_file() and (not shell_glb.is_file() or jake_glb.stat().st_mtime >= shell_glb.stat().st_mtime):
+        # Prefer the STEP-derived Jake/cadjs sidecar for viewport output. The
+        # shell GLB emitted by scripts/step can be Y-up while the sidecar keeps
+        # the STEP assembly in Render3D's expected Z-up orientation.
+        if jake_glb.is_file():
             shell_glb.write_bytes(jake_glb.read_bytes())
         elif shell_glb.is_file() and not jake_glb.is_file():
             jake_glb.write_bytes(shell_glb.read_bytes())

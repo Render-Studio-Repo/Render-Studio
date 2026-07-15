@@ -1664,7 +1664,7 @@ body.canvas-design-tab .main-column {
 .rigging-chrome {
   position: absolute;
   inset: 0;
-  z-index: 34;
+  z-index: 46;
   pointer-events: none;
   display: none;
   flex-direction: column;
@@ -1685,6 +1685,8 @@ body.canvas-design-tab .main-column {
   background: linear-gradient(180deg, #2a2118 0%, #1c1610 100%);
   border-bottom: 1px solid #5c3d1e;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  position: relative;
+  z-index: 2;
 }
 
 .rigging-tool-group {
@@ -23069,4 +23071,58 @@ body.theme-light .render-agent-tip {
   .updates-card {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* Rigging mode + sticky history */
+.rigging-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--panel, #161b22);
+}
+.rigging-prompt-panel .prompt-panel-tabs {
+  position: sticky;
+  top: 36px;
+  z-index: 3;
+  background: var(--panel, #161b22);
+  margin-bottom: 10px;
+}
+.rigging-mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0 0 12px;
+  flex-shrink: 0;
+}
+.rigging-mode-btn {
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  background: rgba(13, 17, 23, 0.72);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rigging-mode-btn:hover {
+  border-color: rgba(240, 136, 62, 0.55);
+  color: var(--text);
+}
+.rigging-mode-btn.active {
+  border-color: #f0883e;
+  color: #f0dcc8;
+  background: rgba(240, 136, 62, 0.14);
+}
+.rigging-mode-pane.hidden { display: none !important; }
+.rigging-side-tree-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 6px;
+}
+#app.rigging-design-tab #viewport canvas {
+  /* keep picks working under toolbelt overlay */
 }

@@ -547,3 +547,123 @@ export function setViewMode(mode, object3d) {
 export function reapplyViewMode(object3d) {
   setViewMode(viewMode, object3d);
 }
+
+// ─── click-to-transparent (viewport + share preview) ──────────────────────────
+
+const TRANSPARENT_SURFACE_OPACITY = 0.26;
+const materialBaseState = new WeakMap();
+const edgeBaseState = new WeakMap();
+
+function meshMaterials(mesh) {
+  if (!mesh?.material) return [];
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+}
+
+function ensureMaterialBase(mat) {
+  if (!mat || materialBaseState.has(mat)) return;
+  materialBaseState.set(mat, {
+    opacity: mat.opacity ?? 1,
+    transparent: !!mat.transparent,
+    depthWrite: mat.depthWrite !== false,
+    wireframe: !!mat.wireframe,
+  });
+}
+
+function ensureEdgeBase(edge) {
+  const mat = edge?.material;
+  if (!mat || edgeBaseState.has(mat)) return;
+  edgeBaseState.set(mat, {
+    opacity: mat.opacity ?? 0.92,
+    depthTest: mat.depthTest !== false,
+    color: mat.color ? mat.color.clone() : new THREE.Color(0x0a121c),
+    linewidth: mat.linewidth ?? 1,
+  });
+}
+
+function objectSurfaceMeshes(object3d) {
+  const meshes = [];
+  object3d?.traverse?.((child) => {
+    if (!child.isMesh || child.userData?.isEdge || child.userData?.isSilhouette) return;
+    meshes.push(child);
+  });
+  return meshes;
+}
+
+function applyTransparentSurface(mat, transparentOn, { wireframe = false } = {}) {
+  if (!mat) return;
+  ensureMaterialBase(mat);
+  const base = materialBaseState.get(mat) || {};
+  mat.wireframe = wireframe || !!base.wireframe;
+  if (transparentOn) {
+    mat.transparent = true;
+    mat.opacity = TRANSPARENT_SURFACE_OPACITY;
+    mat.depthWrite = false;
+  } else {
+    mat.transparent = !!base.transparent;
+    mat.opacity = base.opacity ?? 1;
+    mat.depthWrite = base.depthWrite !== false;
+  }
+  mat.needsUpdate = true;
+}
+
+function applyTransparentEdges(mesh, transparentOn) {
+  if (!mesh) return;
+  for (const child of mesh.children || []) {
+    if (child.userData?.isSilhouette) {
+      // Silhouette shells block the see-through view of inner creases.
+      child.visible = !transparentOn && viewMode !== "wireframe";
+      continue;
+    }
+    if (!child.userData?.isEdge || !child.material) continue;
+    ensureEdgeBase(child);
+    const mat = child.material;
+    const base = edgeBaseState.get(mat) || {};
+    if (transparentOn) {
+      // Brighter, always-on-top creases so internals read clearly through glass bodies.
+      mat.transparent = true;
+      mat.opacity = 1;
+      mat.depthTest = false;
+      mat.depthWrite = false;
+      if (mat.color) {
+        const lift = (base.color || mat.color).clone();
+        // Pull dark CAD edges toward a crisp light steel so they pop on dark canvas.
+        if (_luminance(lift) < 0.45) lift.lerp(new THREE.Color(0xd7e4f5), 0.72);
+        else lift.lerp(new THREE.Color(0xf4f8fc), 0.35);
+        mat.color.copy(lift);
+      }
+      child.renderOrder = 12;
+      child.visible = viewMode !== "wireframe";
+    } else {
+      mat.transparent = true;
+      mat.opacity = base.opacity ?? 0.92;
+      mat.depthTest = base.depthTest !== false;
+      mat.depthWrite = false;
+      if (mat.color && base.color) mat.color.copy(base.color);
+      child.renderOrder = 3;
+      child.visible = viewMode !== "wireframe";
+    }
+    mat.needsUpdate = true;
+  }
+}
+
+/**
+ * Make a node (component / body) see-through with stronger crease edges.
+ * Used by the main viewport Transparent tool and the share preview.
+ */
+export function setObjectTransparent(object3d, transparentOn, { wireframe = false } = {}) {
+  if (!object3d) return;
+  object3d.userData = object3d.userData || {};
+  object3d.userData.render3dTransparent = !!transparentOn;
+  for (const mesh of objectSurfaceMeshes(object3d)) {
+    for (const mat of meshMaterials(mesh)) {
+      applyTransparentSurface(mat, transparentOn, { wireframe });
+    }
+    applyTransparentEdges(mesh, transparentOn);
+  }
+}
+
+/** Re-sync surface + edge styling for nodes already marked transparent. */
+export function syncTransparentObject(object3d, { wireframe = false } = {}) {
+  if (!object3d) return;
+  setObjectTransparent(object3d, !!object3d.userData?.render3dTransparent, { wireframe });
+}

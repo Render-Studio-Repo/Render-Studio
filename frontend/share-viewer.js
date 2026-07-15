@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-preserve-authored-colors";
+import { applyCadStyle, setupRenderer, setObjectTransparent as styleSetObjectTransparent } from "./scene-style.js?v=20260715-transparent-edges";
 import { authHeaders, getToken } from "./auth.js?v=20260715-share-open-project";
 import { createUrdfRobotRuntime } from "./urdf-robot-runtime.js?v=20260715-share-public-urdf";
 
@@ -297,7 +297,6 @@ async function main() {
   const objectsById = new Map();
   let objectEntries = [];
   const transparentObjects = new Set();
-  const materialBaseState = new WeakMap();
   let wireframeEnabled = false;
   let transparentPickEnabled = false;
   let remixProjectsLoaded = false;
@@ -371,33 +370,6 @@ async function main() {
     return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   }
 
-  function ensureMaterialBase(mat) {
-    if (!mat || materialBaseState.has(mat)) return;
-    materialBaseState.set(mat, {
-      opacity: mat.opacity ?? 1,
-      transparent: !!mat.transparent,
-      depthWrite: mat.depthWrite !== false,
-      wireframe: !!mat.wireframe,
-    });
-  }
-
-  function applyMaterialState(mat, transparentOn) {
-    if (!mat) return;
-    ensureMaterialBase(mat);
-    const base = materialBaseState.get(mat) || {};
-    mat.wireframe = wireframeEnabled || !!base.wireframe;
-    if (transparentOn) {
-      mat.transparent = true;
-      mat.opacity = 0.22;
-      mat.depthWrite = false;
-    } else {
-      mat.transparent = !!base.transparent;
-      mat.opacity = base.opacity ?? 1;
-      mat.depthWrite = base.depthWrite !== false;
-    }
-    mat.needsUpdate = true;
-  }
-
   function objectMeshes(obj) {
     const meshes = [];
     obj?.traverse?.((child) => {
@@ -408,10 +380,8 @@ async function main() {
   }
 
   function syncObjectMaterialState(obj) {
-    const transparentOn = transparentObjects.has(obj);
-    objectMeshes(obj).forEach((mesh) => {
-      meshMaterials(mesh).forEach((mat) => applyMaterialState(mat, transparentOn));
-    });
+    objectMeshes(obj).forEach((mesh) => meshMaterials(mesh));
+    styleSetObjectTransparent(obj, transparentObjects.has(obj), { wireframe: wireframeEnabled });
   }
 
   function setObjectTransparent(obj, on) {
@@ -430,11 +400,12 @@ async function main() {
   }
 
   function syncWireframe() {
-    root.traverse((obj) => {
-      if (!obj.isMesh || obj.userData?.isEdge || obj.userData?.isSilhouette) return;
-      const transparentParent = [...transparentObjects].some((target) => target === obj || target.children?.includes?.(obj) || target.getObjectById?.(obj.id));
-      meshMaterials(obj).forEach((mat) => applyMaterialState(mat, transparentParent));
-    });
+    // Clone shared mats once, then restyle whole tree and re-assert transparent roots.
+    objectMeshes(root).forEach((mesh) => meshMaterials(mesh));
+    styleSetObjectTransparent(root, false, { wireframe: wireframeEnabled });
+    for (const target of transparentObjects) {
+      styleSetObjectTransparent(target, true, { wireframe: wireframeEnabled });
+    }
     btnWireframe?.classList.toggle("active", wireframeEnabled);
     btnWireframe?.setAttribute("aria-pressed", String(wireframeEnabled));
   }
