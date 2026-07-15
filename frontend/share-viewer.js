@@ -1039,6 +1039,10 @@ async function main() {
     syncInspectorUi(opening, "history");
   });
   inspectorPanel?.querySelector("#btn-share-inspector-close")?.addEventListener("click", () => syncInspectorUi(false));
+  $("btn-share-show-all-parts")?.addEventListener("click", () => {
+    isolateObject(null);
+    fitCamera();
+  });
   componentListEl?.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-action]");
     if (!btn) return;

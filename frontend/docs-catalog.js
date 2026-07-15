@@ -40,6 +40,53 @@ function ownerLabel(app) {
   return app.owner?.name || app.owner?.email || "Render3D creator";
 }
 
+const RELATED_TERMS = {
+  bambu: ["3mf", "printer", "print", "export", "plate"],
+  fusion: ["autodesk", "cloud", "step", "import", "export", "sync"],
+  onshape: ["cloud", "step", "import", "export", "sync"],
+  robot: ["rigging", "urdf", "srdf", "motion", "joints"],
+  delete: ["right click", "context menu", "remove", "object"],
+  share: ["remix", "public", "folder", "workspace", "collaboration"],
+  prompt: ["ai", "generate", "agent", "reference", "component"],
+  drawing: ["dxf", "sketch", "canvas", "markup"],
+};
+
+function queryTokens(query) {
+  const base = String(query || "").toLowerCase().match(/[a-z0-9.#+-]+/g) || [];
+  const expanded = [...base];
+  for (const token of base) {
+    for (const [key, terms] of Object.entries(RELATED_TERMS)) {
+      if (token.includes(key) || key.includes(token)) expanded.push(...terms);
+    }
+  }
+  return [...new Set(expanded.filter((token) => token.length > 1))];
+}
+
+function matchScore(text, query) {
+  const tokens = queryTokens(query);
+  if (!tokens.length) return 1;
+  const hay = String(text || "").toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (hay.includes(token)) score += 2;
+    else if (token.length > 3 && hay.includes(token.slice(0, -1))) score += 1;
+  }
+  return score;
+}
+
+function featureSearchText(feature) {
+  return [
+    feature.id,
+    feature.category,
+    feature.title,
+    feature.summary,
+    feature.where,
+    feature.ask,
+    ...(feature.steps || []),
+    ...(feature.keywords || []),
+  ].filter(Boolean).join(" ");
+}
+
 function featureCard(feature) {
   const steps = feature.steps || [];
   const shown = steps.slice(0, 4);
@@ -50,7 +97,7 @@ function featureCard(feature) {
        </div>`
     : `<div class="docs-feature-gif-wrap docs-feature-gif-wrap--empty" aria-hidden="true"></div>`;
   return `
-    <article class="docs-feature-card" id="doc-${esc(feature.id)}">
+    <article class="docs-feature-card" id="doc-${esc(feature.id)}" data-doc-text="${esc(featureSearchText(feature).toLowerCase())}">
       ${gif}
       <div class="docs-feature-body">
         <h4>${esc(feature.title)}</h4>
@@ -121,11 +168,12 @@ function mountCatalog() {
   enhanceDocsGifs(host);
 
   const input = host.querySelector("#docs-feature-filter");
-  input?.addEventListener("input", () => {
-    const q = String(input.value || "").trim().toLowerCase();
+  const applyFeatureFilter = (value) => {
+    const q = String(value || "").trim();
+    const cards = [...host.querySelectorAll(".docs-feature-card")];
     host.querySelectorAll(".docs-feature-card").forEach((card) => {
-      const text = card.textContent?.toLowerCase() || "";
-      card.classList.toggle("is-hidden", !!q && !text.includes(q));
+      const text = card.getAttribute("data-doc-text") || card.textContent || "";
+      card.classList.toggle("is-hidden", !!q && matchScore(text, q) <= 0);
     });
     host.querySelectorAll(".docs-category").forEach((section) => {
       const visible = [...section.querySelectorAll(".docs-feature-card")].some(
@@ -133,6 +181,22 @@ function mountCatalog() {
       );
       section.classList.toggle("is-hidden", !!q && !visible);
     });
+    const topSearch = document.getElementById("docs-topic-search");
+    const status = document.getElementById("docs-topic-search-status");
+    const count = cards.filter((card) => !card.classList.contains("is-hidden")).length;
+    if (status) {
+      status.textContent = q
+        ? `${count} similar doc topic${count === 1 ? "" : "s"} found for "${q}".`
+        : "Type what you are trying to do and similar docs will surface below.";
+    }
+    if (topSearch && topSearch.value !== q) topSearch.value = q;
+  };
+  input?.addEventListener("input", () => applyFeatureFilter(input.value));
+  const topicSearch = document.getElementById("docs-topic-search");
+  topicSearch?.addEventListener("input", () => {
+    if (input) input.value = topicSearch.value;
+    applyFeatureFilter(topicSearch.value);
+    document.getElementById("complete-docs")?.scrollIntoView({ block: "start", behavior: "smooth" });
   });
 }
 

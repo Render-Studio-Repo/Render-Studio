@@ -42,12 +42,67 @@ const TOC_SECTIONS = [
   },
 ];
 
+const RELATED_TERMS = {
+  fusion: ["autodesk", "cloud", "step", "export", "sync"],
+  onshape: ["cloud", "step", "export", "sync"],
+  robot: ["rigging", "urdf", "srdf", "motion", "joints"],
+  share: ["folder", "remix", "public", "collaboration"],
+  files: ["project", "reference", "drag", "component"],
+  prompt: ["ai", "generate", "agent", "reference"],
+  drawing: ["dxf", "sketch", "canvas", "markup"],
+  pick: ["face", "edge", "geometry", "path"],
+};
+
 function esc(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function queryTokens(query) {
+  const base = String(query || "").toLowerCase().match(/[a-z0-9.#+-]+/g) || [];
+  const expanded = [...base];
+  for (const token of base) {
+    for (const [key, terms] of Object.entries(RELATED_TERMS)) {
+      if (token.includes(key) || key.includes(token)) expanded.push(...terms);
+    }
+  }
+  return [...new Set(expanded.filter((token) => token.length > 1))];
+}
+
+function matchScore(text, query) {
+  const tokens = queryTokens(query);
+  if (!tokens.length) return 1;
+  const hay = String(text || "").toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (hay.includes(token)) score += 2;
+    else if (token.length > 3 && hay.includes(token.slice(0, -1))) score += 1;
+  }
+  return score;
+}
+
+function guideSearchText(feature) {
+  return [
+    feature.id,
+    feature.title,
+    feature.summary,
+    feature.ask,
+    ...(feature.steps || []),
+    ...(feature.keywords || []),
+  ].filter(Boolean).join(" ");
+}
+
+function tipSearchText(tip) {
+  return [
+    tip.topic,
+    tip.title,
+    tip.body,
+    tip.starter,
+    ...(tip.steps || []),
+  ].filter(Boolean).join(" ");
 }
 
 function demoHtml(feature) {
@@ -69,7 +124,7 @@ function demoHtml(feature) {
 function featureCard(feature, index) {
   const n = String(index + 1).padStart(2, "0");
   return `
-    <section class="gs-feature" id="${esc(feature.id)}">
+    <section class="gs-feature" id="${esc(feature.id)}" data-doc-text="${esc(guideSearchText(feature).toLowerCase())}">
       <div class="gs-feature-media">
         ${demoHtml(feature)}
         <p class="gs-demo-label">Live demo</p>
@@ -114,7 +169,7 @@ function tipCard(tip, index) {
   const steps = Array.isArray(tip.steps) ? tip.steps : [];
   const visual = tipVisual(tip.topic);
   return `
-    <article class="gs-tip-card gs-tip-card--${esc(visual.cls)}">
+    <article class="gs-tip-card gs-tip-card--${esc(visual.cls)}" data-doc-text="${esc(tipSearchText(tip).toLowerCase())}">
       <div class="gs-tip-thumb" aria-hidden="true">
         <span class="gs-tip-thumb-glyph">${esc(visual.glyph)}</span>
         <span class="gs-tip-thumb-label">${esc(visual.label)}</span>
@@ -266,6 +321,36 @@ function mountTocSpy() {
   const tips = document.getElementById("tips-library");
   if (tips) io.observe(tips);
   links[0]?.classList.add("is-active");
+}
+
+function mountTopicSearch() {
+  const input = document.getElementById("gs-topic-search");
+  const status = document.getElementById("gs-topic-search-status");
+  if (!input) return;
+  const apply = () => {
+    const q = input.value.trim();
+    const featureCards = [...document.querySelectorAll(".gs-feature")];
+    const tipCards = [...document.querySelectorAll(".gs-tip-card")];
+    featureCards.forEach((card) => {
+      const text = card.getAttribute("data-doc-text") || card.textContent || "";
+      card.classList.toggle("is-hidden", !!q && matchScore(text, q) <= 0);
+    });
+    tipCards.forEach((card) => {
+      const text = card.getAttribute("data-doc-text") || card.textContent || "";
+      card.classList.toggle("is-hidden", !!q && matchScore(text, q) <= 0);
+    });
+    document.getElementById("tips-library")?.classList.toggle(
+      "is-hidden",
+      !!q && !tipCards.some((card) => !card.classList.contains("is-hidden"))
+    );
+    const count = [...featureCards, ...tipCards].filter((card) => !card.classList.contains("is-hidden")).length;
+    if (status) {
+      status.textContent = q
+        ? `${count} matching guide${count === 1 ? "" : "s"} and tip${count === 1 ? "" : "s"} found for "${q}".`
+        : "Type what you are trying to do and matching guides/tips stay visible.";
+    }
+  };
+  input.addEventListener("input", apply);
 }
 
 function askTour(agent, authUi, question) {
@@ -442,6 +527,7 @@ function mountAgent() {
 mountToc();
 mountFeatures();
 mountTips();
+mountTopicSearch();
 mountReveal();
 mountTocSpy();
 

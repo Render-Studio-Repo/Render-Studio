@@ -29,6 +29,9 @@ def _snapshot_base_stem(snapshot_name: str) -> str:
         if lowered.endswith("_share_transparent"):
             stem = stem[: -len("_share_transparent")]
             continue
+        if lowered.endswith("_share_og_brand"):
+            stem = stem[: -len("_share_og_brand")]
+            continue
         if lowered.endswith("_share_og"):
             stem = stem[: -len("_share_og")]
             continue
@@ -40,8 +43,8 @@ def _is_share_preview_background_pixel(r: int, g: int, b: int, a: int) -> bool:
     if a == 0:
         return True
     spread = max(r, g, b) - min(r, g, b)
-    # Light CAD studio / off-white iso backgrounds (incl. soft blue-gray ~240,244,249).
-    if min(r, g, b) >= 220 and spread <= 36:
+    # Light CAD studio / off-white / soft blue-gray iso backgrounds.
+    if min(r, g, b) >= 200 and spread <= 40:
         return True
     # Dark viewport studio (#0d1117 / near-black) used by the share viewer.
     if max(r, g, b) <= 28 and spread <= 18:
@@ -50,7 +53,7 @@ def _is_share_preview_background_pixel(r: int, g: int, b: int, a: int) -> bool:
 
 
 def _legacy_share_og_needs_rebuild(og_path: Path) -> bool:
-    """True when an existing OG still has transparent or light corners (legacy)."""
+    """True when an existing OG still has transparent/light corners or old pill badge."""
     try:
         from PIL import Image
 
@@ -63,11 +66,17 @@ def _legacy_share_og_needs_rebuild(og_path: Path) -> bool:
                 rgba.getpixel((0, height - 1)),
                 rgba.getpixel((width - 1, height - 1)),
             ]
+            # Old pill badge sat near bottom-right with a dark rounded fill.
+            badge_probe = rgba.getpixel((max(0, width - 40), max(0, height - 40)))
         for r, g, b, a in samples:
             if a < 250:
                 return True
             if min(r, g, b) >= 180:
                 return True
+        # Force rebuild of previous pill-style marks (dark navy bubble).
+        br, bg, bb, ba = badge_probe
+        if ba > 200 and max(br, bg, bb) <= 40 and min(br, bg, bb) <= 18:
+            return True
         return False
     except Exception:
         return True
@@ -105,7 +114,7 @@ def share_snapshot_filename(project_path: Path, filename: str, *, resolve_viewpo
             return False
         # Never treat derived share assets as the source snapshot (avoids nested
         # `_share_transparent_share_transparent…` growth and broken OG URLs).
-        if "_share_transparent" in name or "_share_og." in name:
+        if "_share_transparent" in name or "_share_og" in name:
             return False
         return path.is_file()
 
@@ -296,49 +305,65 @@ def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> st
 
 
 def _draw_render3d_badge(image: Any) -> None:
-    """Stamp a small Render3D brand mark in the bottom-right corner."""
-    from PIL import ImageDraw, ImageFont
+    """Stamp a large Render3D wordmark (logo + text, no pill) in the bottom-right."""
+    from PIL import Image, ImageDraw, ImageFont
 
     width, height = image.size
-    margin = max(18, int(min(width, height) * 0.035))
-    badge_h = max(42, min(76, int(height * 0.09)))
-    badge_w = max(148, int(badge_h * 3.6))
-    x0 = max(margin, width - badge_w - margin)
-    y0 = max(margin, height - badge_h - margin)
-    x1 = width - margin
-    y1 = height - margin
-    radius = badge_h // 2
-    draw = ImageDraw.Draw(image, "RGBA")
-    draw.rounded_rectangle(
-        [x0, y0, x1, y1],
-        radius=radius,
-        fill=(7, 11, 18, 218),
-        outline=(88, 166, 255, 115),
-        width=max(1, badge_h // 24),
-    )
-
-    icon_size = int(badge_h * 0.68)
-    icon_x = x0 + int(badge_h * 0.18)
-    icon_y = y0 + (badge_h - icon_size) // 2
-    draw.ellipse([icon_x, icon_y, icon_x + icon_size, icon_y + icon_size], fill=(88, 166, 255, 255))
-    draw.polygon(
-        [
-            (icon_x + icon_size * 0.28, icon_y + icon_size * 0.23),
-            (icon_x + icon_size * 0.78, icon_y + icon_size * 0.5),
-            (icon_x + icon_size * 0.28, icon_y + icon_size * 0.77),
-        ],
-        fill=(230, 237, 243, 245),
-    )
-
+    margin = max(24, int(min(width, height) * 0.04))
+    # Much larger than the old pill badge — readable in iMessage / Slack cards.
+    mark_h = max(96, min(180, int(height * 0.16)))
+    icon_size = mark_h
+    gap = max(14, int(mark_h * 0.14))
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(14, int(badge_h * 0.34)))
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(36, int(mark_h * 0.52)))
     except Exception:
-        font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype("DejaVuSans.ttf", max(36, int(mark_h * 0.52)))
+        except Exception:
+            font = ImageFont.load_default()
+
     text = "Render3D"
-    text_x = icon_x + icon_size + int(badge_h * 0.18)
+    draw = ImageDraw.Draw(image, "RGBA")
     bbox = draw.textbbox((0, 0), text, font=font)
-    text_y = y0 + (badge_h - (bbox[3] - bbox[1])) // 2 - 1
-    draw.text((text_x, text_y), text, font=font, fill=(230, 237, 243, 255))
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    total_w = icon_size + gap + text_w
+    x0 = max(margin, width - total_w - margin)
+    y0 = max(margin, height - mark_h - margin)
+    icon_y = y0 + max(0, (mark_h - icon_size) // 2)
+    text_y = y0 + max(0, (mark_h - text_h) // 2) - 2
+
+    logo_paths = [
+        Path(__file__).resolve().parents[2] / "frontend" / "render3d-logo.png",
+        Path(__file__).resolve().parents[2] / "frontend" / "favicon-180.png",
+    ]
+    logo = None
+    for path in logo_paths:
+        if path.is_file():
+            try:
+                logo = Image.open(path).convert("RGBA")
+                break
+            except Exception:
+                logo = None
+    if logo is not None:
+        logo = logo.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+        image.alpha_composite(logo, (x0, icon_y))
+    else:
+        # Fallback drawn mark if logo assets are missing.
+        draw.ellipse([x0, icon_y, x0 + icon_size, icon_y + icon_size], fill=(88, 166, 255, 255))
+        draw.polygon(
+            [
+                (x0 + icon_size * 0.30, icon_y + icon_size * 0.24),
+                (x0 + icon_size * 0.78, icon_y + icon_size * 0.50),
+                (x0 + icon_size * 0.30, icon_y + icon_size * 0.76),
+            ],
+            fill=(230, 237, 243, 255),
+        )
+
+    text_x = x0 + icon_size + gap
+    # Soft shadow so white text stays readable on bright model surfaces too.
+    draw.text((text_x + 2, text_y + 2), text, font=font, fill=(0, 0, 0, 160))
+    draw.text((text_x, text_y), text, font=font, fill=(245, 248, 252, 255))
 
 
 def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
@@ -346,7 +371,8 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
     src = project_path / Path(snapshot_name).name
     if not src.is_file():
         return None
-    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og.png"
+    # New filename busts messenger caches that still hold the old white/pill OG.
+    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og_brand.png"
     try:
         from PIL import Image
 

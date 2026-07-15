@@ -23,6 +23,55 @@ function kindLabel(kind) {
   return "New feature";
 }
 
+let activeKind = "all";
+let activeQuery = "";
+
+const RELATED_TERMS = {
+  bambu: ["3mf", "printer", "print", "plate", "studio", "export"],
+  fusion: ["autodesk", "cloud", "step", "sync", "export", "import"],
+  onshape: ["cloud", "step", "sync", "export", "import"],
+  rigging: ["urdf", "srdf", "motion", "robot", "joints"],
+  share: ["remix", "public", "link", "collaboration", "copy"],
+  delete: ["right click", "context menu", "remove", "object"],
+  prompt: ["ai", "generate", "refs", "components", "agent"],
+  transparent: ["opacity", "see through", "viewport", "object"],
+};
+
+function searchableText(item) {
+  return [
+    item.id,
+    item.kind,
+    kindLabel(item.kind),
+    item.title,
+    item.summary,
+    item.href,
+    ...(item.keywords || []),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function queryTokens(query) {
+  const base = String(query || "").toLowerCase().match(/[a-z0-9.#+-]+/g) || [];
+  const expanded = [...base];
+  for (const token of base) {
+    for (const [key, terms] of Object.entries(RELATED_TERMS)) {
+      if (token.includes(key) || key.includes(token)) expanded.push(...terms);
+    }
+  }
+  return [...new Set(expanded.filter((token) => token.length > 1))];
+}
+
+function matchScore(item, query) {
+  const tokens = queryTokens(query);
+  if (!tokens.length) return 1;
+  const text = searchableText(item);
+  let score = 0;
+  for (const token of tokens) {
+    if (text.includes(token)) score += 2;
+    else if (token.length > 3 && text.includes(token.slice(0, -1))) score += 1;
+  }
+  return score;
+}
+
 function cardHtml(item) {
   const visual = item.visual
     ? `<div class="updates-visual">
@@ -48,12 +97,24 @@ function cardHtml(item) {
   `;
 }
 
-function mountList(kind = "all") {
+function mountList() {
   const host = document.getElementById("updates-list");
   if (!host) return;
-  const rows = listMilestones().filter((item) => kind === "all" || item.kind === kind);
+  const query = activeQuery.trim();
+  const rows = listMilestones()
+    .filter((item) => activeKind === "all" || item.kind === activeKind)
+    .map((item) => ({ item, score: matchScore(item, query) }))
+    .filter((row) => !query || row.score > 0)
+    .sort((a, b) => (query ? b.score - a.score : 0))
+    .map((row) => row.item);
+  const status = document.getElementById("updates-search-status");
+  if (status) {
+    status.textContent = query
+      ? `${rows.length} similar update${rows.length === 1 ? "" : "s"} found for "${query}".`
+      : "Search by what you want to do; similar updates will rise to the top.";
+  }
   if (!rows.length) {
-    host.innerHTML = `<p class="updates-empty muted">No updates in this filter yet.</p>`;
+    host.innerHTML = `<p class="updates-empty muted">No updates match that topic yet. Try Bambu, Fusion, rigging, share, prompt, or right-click.</p>`;
     return;
   }
   host.innerHTML = rows.map(cardHtml).join("");
@@ -77,7 +138,17 @@ function mountFilters() {
       el.classList.toggle("is-active", on);
       el.setAttribute("aria-selected", on ? "true" : "false");
     });
-    mountList(btn.getAttribute("data-kind") || "all");
+    activeKind = btn.getAttribute("data-kind") || "all";
+    mountList();
+  });
+}
+
+function mountSearch() {
+  const input = document.getElementById("updates-search");
+  if (!input) return;
+  input.addEventListener("input", () => {
+    activeQuery = input.value || "";
+    mountList();
   });
 }
 
@@ -112,5 +183,6 @@ async function api(path, options = {}, timeoutMs = 60000) {
 }
 
 mountFilters();
-mountList("all");
+mountSearch();
+mountList();
 // Auth + Render Agent FAB are mounted by docs-agent.js on this page.
