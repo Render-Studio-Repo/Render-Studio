@@ -5,6 +5,7 @@ import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 
 const SECTIONS = [
   { id: "components", label: "Components", icon: "cube" },
+  { id: "robots", label: "Robots (URDF / SRDF)", icon: "robot" },
   { id: "drawings", label: "DXF Drawings", icon: "drawing" },
   { id: "references", label: "Reference Files", icon: "file" },
   { id: "sketches", label: "Sketches", icon: "sketch" },
@@ -23,6 +24,9 @@ function iconSvg(type) {
   }
   if (type === "sketch") {
     return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M2 12 6 4l4 3 4-5"/></svg>';
+  }
+  if (type === "robot") {
+    return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="4" y="3" width="8" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6.2" cy="5.5" r="0.9" fill="currentColor"/><circle cx="9.8" cy="5.5" r="0.9" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.2" d="M6 9.5v2.5M10 9.5v2.5M4 12h8"/></svg>';
   }
   return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M2 8h4l2-3 2 6 2-3h2"/></svg>';
 }
@@ -62,6 +66,7 @@ export function createProjectTree(options = {}) {
     onOpenSketch,
     onEditSketch,
     onOpenWiring,
+    onOpenRobot,
     onToggleVisibility,
     onExport,
     onRename,
@@ -74,13 +79,13 @@ export function createProjectTree(options = {}) {
 
   let partProfiles = new Map();
   const hidden = new Set();
-  let browser = { components: [], drawings: [], references: [], sketches: [], wiring: [] };
+  let browser = { components: [], robots: [], drawings: [], references: [], sketches: [], wiring: [] };
   let selectedName = null;
   const selectedBrowserKeys = new Set();
   /** @type {Map<string, { entry: object, sectionId: string }>} */
   const browserEntryCache = new Map();
   let loading = false;
-  let expanded = { components: true, drawings: true, references: true, sketches: true, wiring: true };
+  let expanded = { components: true, robots: true, drawings: true, references: true, sketches: true, wiring: true };
   const childGroupsExpanded = new Set();
   const childGroupsInitialized = new Set();
   let suppressBrowserClick = false;
@@ -149,6 +154,8 @@ export function createProjectTree(options = {}) {
           empty.textContent =
             section.id === "components"
               ? "Drop STEP or mesh files in the viewport"
+              : section.id === "robots"
+                ? "No URDF/SRDF yet — generate from Rigging or drop robot files"
               : section.id === "drawings"
                 ? "Drop DXF files in the viewport"
                 : section.id === "references"
@@ -370,6 +377,7 @@ export function createProjectTree(options = {}) {
         return;
       }
       if (sectionId === "components") onOpenComponent?.(entry);
+      else if (sectionId === "robots") onOpenRobot?.(entry);
       else if (sectionId === "drawings") onOpenDrawing?.(entry);
       else if (sectionId === "references") onOpenReference?.(entry);
       else if (sectionId === "sketches") onOpenSketch?.(entry);
@@ -431,7 +439,7 @@ export function createProjectTree(options = {}) {
         });
         actions.append(prof, exp, ren, del);
       }
-    } else if (sectionId === "drawings" || sectionId === "references") {
+    } else if (sectionId === "drawings" || sectionId === "references" || sectionId === "robots") {
       const ren = document.createElement("button");
       ren.type = "button";
       ren.className = "browser-action-btn";
@@ -451,7 +459,7 @@ export function createProjectTree(options = {}) {
       actions.append(ren, del);
     }
 
-    if (sectionId === "drawings" || sectionId === "references") {
+    if (sectionId === "drawings" || sectionId === "references" || sectionId === "robots") {
       li.append(body, actions);
     } else {
       li.append(vis, body, actions);
@@ -464,6 +472,7 @@ export function createProjectTree(options = {}) {
       loading = false;
       browser = {
         components: data.components || [],
+        robots: data.robots || [],
         drawings: data.drawings || [],
         references: data.references || [],
         sketches: data.sketches || [],

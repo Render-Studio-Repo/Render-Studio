@@ -49,7 +49,7 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260710-jake-part-colors";
+} from "./scene-style.js?v=20260715-brighter-viewport";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
@@ -82,7 +82,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260714-reference-files";
+import { createProjectTree } from "./project-tree.js?v=20260715-robots-browser";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -1440,11 +1440,17 @@ function sceneRadius() {
   return Math.max(box.getSize(new THREE.Vector3()).length() * 0.5, 0.1);
 }
 
+function isRobotArtifactFilename(name = "") {
+  return /\.(urdf|srdf)$/i.test(String(name || ""));
+}
+
 function normalizeBrowser(data) {
   const browser = data?.browser || {};
   let components = (browser.components || []).filter((entry) => !isInternalCadSidecar(entry?.name) && !isInternalCadSidecar(entry?.viewer_filename));
   if (!components.length && data?.files?.length) {
-    components = filesToBrowserComponents((data.files || []).filter((file) => !isDxfDrawingFilename(file?.name)));
+    components = filesToBrowserComponents(
+      (data.files || []).filter((file) => !isDxfDrawingFilename(file?.name) && !isRobotArtifactFilename(file?.name)),
+    );
   }
   const browserDrawings = (browser.drawings || []).filter((entry) => !isInternalCadSidecar(entry?.name));
   const seenDrawings = new Set(browserDrawings.map((entry) => entry.name).filter(Boolean));
@@ -1457,8 +1463,20 @@ function normalizeBrowser(data) {
       format: "dxf",
       size: file.size,
     }));
+  const browserRobots = browser.robots || [];
+  const seenRobots = new Set(browserRobots.map((entry) => entry.name).filter(Boolean));
+  const fileRobots = (data?.files || [])
+    .filter((file) => isRobotArtifactFilename(file?.name) && !seenRobots.has(file.name))
+    .map((file) => ({
+      id: file.id || file.stem || fileStem(file.name),
+      name: file.name,
+      stem: file.stem || fileStem(file.name),
+      format: String(file.format || fileStem(file.name).split(".").pop() || "").replace(/^\./, "") || (/\.srdf$/i.test(file.name) ? "srdf" : "urdf"),
+      size: file.size,
+    }));
   return {
     components,
+    robots: [...browserRobots, ...fileRobots],
     sketches: browser.sketches || [],
     wiring: browser.wiring || [],
     drawings: [...browserDrawings, ...fileDrawings],
@@ -7903,6 +7921,23 @@ async function refreshRobotArtifacts({ quiet = false } = {}) {
   }
 }
 
+async function openRobotArtifact(entry) {
+  if (!entry?.name || !projectId) return;
+  selectedFile = entry.name;
+  projectTree.setSelected?.(entry.name);
+  if (workspaceModes.getDesignTab() !== "RIGGING") {
+    workspaceModes.setDesignTab("RIGGING");
+  } else {
+    enterRiggingMode();
+  }
+  setRightTab("rigging");
+  await refreshRobotArtifacts({ quiet: false });
+  if (/\.urdf$/i.test(entry.name) || /\.srdf$/i.test(entry.name)) {
+    await ensureUrdfRobotScene({ quiet: false, force: true });
+  }
+  setEditStatus("ok", `Opened robot artifact ${entry.name}.`);
+}
+
 function pickPreferredRobotFiles(data = {}) {
   const artifacts = data.artifacts || [];
   const urdfFile = artifacts.find((name) => /\.urdf$/i.test(name)) || null;
@@ -12474,6 +12509,9 @@ const projectTree = createProjectTree({
     workspaceModes.setMode("wiring");
     applyWorkspaceMode("wiring");
   },
+  onOpenRobot: (entry) => {
+    void openRobotArtifact(entry);
+  },
   onToggleVisibility: (entry, visible, sectionId) => {
     if (entry.format === "sketch" || sectionId === "sketches") {
       saveHiddenComponentState();
@@ -14327,8 +14365,21 @@ async function loadProject(id) {
         if (currentUser) await refreshPromptHistory();
       }
     } else if (!comps.length) {
-      showEmptyProjectViewport();
-      if (currentUser) await refreshPromptHistory();
+      const robots = browser.robots || [];
+      if (robots.length && !wiringMode) {
+        showEmptyProjectViewport({ keepBrowser: true });
+        if (currentUser) await refreshPromptHistory();
+        // Robot-only projects: jump into Rigging and load URDF/SRDF.
+        if (workspaceModes.getDesignTab() !== "RIGGING") {
+          workspaceModes.setDesignTab("RIGGING");
+        } else {
+          enterRiggingMode();
+        }
+        void refreshRobotArtifacts({ quiet: true });
+      } else {
+        showEmptyProjectViewport();
+        if (currentUser) await refreshPromptHistory();
+      }
     } else if (currentUser) {
       await refreshPromptHistory();
     }
@@ -15827,6 +15878,10 @@ function renderFileList(files = []) {
         if (isDxfDrawingFilename(f.name)) {
           await openDxfDrawingByName(f.name, { projectId });
           if (currentUser) await refreshPromptHistory();
+          return;
+        }
+        if (isRobotArtifactFilename(f.name)) {
+          await openRobotArtifact(f);
           return;
         }
         const viewer = f.viewer_filename || f.name;

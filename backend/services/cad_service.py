@@ -72,6 +72,8 @@ MESH_VIEW_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf"}
 PROPRIETARY_CAD_SUFFIXES = {".f3d", ".sldprt", ".sldasm", ".x_t", ".x_b", ".sat", ".sab"}
 ARCHIVE_CAD_SUFFIXES = {".f3z", ".zip"}
 SUPPORTED_EXPORT = {".stl", ".glb", ".obj", ".3mf", ".step"}
+# Robot description artifacts (listed in the project browser / file list, not timeline meshes).
+SUPPORTED_ROBOT = {".urdf", ".srdf"}
 MESH_DERIVED_EXPORTS = ("stl", "3mf", "step")
 # Specs, notes, and images dropped into the workspace (not CAD geometry).
 SUPPORTED_REFERENCE = {
@@ -314,8 +316,9 @@ def is_internal_model_artifact(path: Path | str) -> bool:
 
 def list_project_files(project_path: Path) -> list[dict[str, Any]]:
     files = []
+    listed = SUPPORTED_IMPORT | SUPPORTED_EXPORT | SUPPORTED_ROBOT
     for f in sorted(project_path.iterdir()):
-        if f.is_file() and f.suffix.lower() in SUPPORTED_IMPORT | SUPPORTED_EXPORT:
+        if f.is_file() and f.suffix.lower() in listed:
             if f.name.startswith("_active_") or f.name.startswith("_export_") or _is_internal_dxf_sidecar(f.name):
                 continue
             files.append(
@@ -592,8 +595,8 @@ def rename_model_file(project_path: Path, old_filename: str, new_filename: str) 
         raise ValueError("Invalid filename")
     if "/" in new or "\\" in new or ".." in new:
         raise ValueError("Invalid filename")
-    if Path(new).suffix.lower() not in SUPPORTED_IMPORT | SUPPORTED_EXPORT:
-        raise ValueError(f"Unsupported extension. Use: {sorted(SUPPORTED_IMPORT | SUPPORTED_EXPORT)}")
+    if Path(new).suffix.lower() not in SUPPORTED_IMPORT | SUPPORTED_EXPORT | SUPPORTED_ROBOT:
+        raise ValueError(f"Unsupported extension. Use: {sorted(SUPPORTED_IMPORT | SUPPORTED_EXPORT | SUPPORTED_ROBOT)}")
 
     old_path = project_path / old
     if not old_path.is_file():
@@ -1431,6 +1434,20 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
             }
         )
 
+    robots: list[dict[str, Any]] = []
+    for f in sorted(project_path.iterdir()):
+        if not f.is_file() or f.suffix.lower() not in SUPPORTED_ROBOT:
+            continue
+        robots.append(
+            {
+                "id": f.stem,
+                "name": f.name,
+                "stem": f.stem,
+                "format": f.suffix.lower().lstrip("."),
+                "size": f.stat().st_size,
+            }
+        )
+
     return {
         "components": components,
         "sketches": sketches,
@@ -1438,6 +1455,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         "drawings": drawings,
         "references": list_reference_files(project_path),
         "rigging": rigging_items,
+        "robots": robots,
     }
 
 

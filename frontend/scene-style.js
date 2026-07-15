@@ -12,9 +12,12 @@ export const FUSION = {
   canvas: 0x0d1117,
 
   // Default body colour (used when the mesh has no vertex colours)
-  body: 0xc8d3df,
-  bodyMetalness: 0.02,
-  bodyRoughness: 0.58,
+  body: 0xd5dee8,
+  bodyMetalness: 0.01,
+  bodyRoughness: 0.62,
+  // Soft unlit lift so cavity walls / undersides stay readable in dark studio.
+  bodyEmissive: 0x1a2433,
+  bodyEmissiveIntensity: 0.22,
 
   // How sharp a dihedral angle must be to draw a crease edge (degrees).
   // Lower than before so imported STEP models read like Onshape, with crisp
@@ -168,18 +171,17 @@ let shadowFloor = null;
 export function setupSceneLighting(scene) {
   scene.background = new THREE.Color(FUSION.canvas);
 
-  // Hemisphere: warm sky above, cool ground below — matches Onshape's
-  // neutral studio ambient without crushing shadow areas to pure black.
-  const hemi = new THREE.HemisphereLight(0xf7fbff, 0xe2ecf7, 1.45);
+  // Hemisphere: bright sky + lifted ground so open shells / pockets stay readable.
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xd7e4f4, 2.05);
   scene.add(hemi);
 
-  // Neutral ambient lift keeps underside geometry visible without flattening
-  // the model as much as another direct light would.
-  const ambient = new THREE.AmbientLight(0xffffff, 0.46);
+  // Strong ambient — CAD viewers prioritize part readability over cinematic contrast.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.92);
   scene.add(ambient);
 
-  // Key light: upper-left front (Z-up) — strong but not harsh
-  const key = new THREE.DirectionalLight(0xfff8f0, 1.9);
+  // Key light: upper-left front (Z-up). Softer than before so self-shadows
+  // (disabled on bodies anyway) don't dominate if re-enabled later.
+  const key = new THREE.DirectionalLight(0xfff8f0, 1.55);
   key.position.set(5, 6, 10);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -190,47 +192,52 @@ export function setupSceneLighting(scene) {
   key.shadow.camera.top   =  12;
   key.shadow.camera.bottom = -12;
   key.shadow.bias = -0.0001;
+  key.shadow.normalBias = 0.02;
   scene.add(key);
 
   // Right fill: cool-white to balance the warm key
-  const fill = new THREE.DirectionalLight(0xe8f3ff, 1.32);
+  const fill = new THREE.DirectionalLight(0xe8f3ff, 1.55);
   fill.position.set(-5, -3, 6);
   scene.add(fill);
 
   // Rim / back light: gives depth and separates parts from background
-  const rim = new THREE.DirectionalLight(0xb0d0f0, 0.62);
+  const rim = new THREE.DirectionalLight(0xc5daf0, 0.95);
   rim.position.set(0, -8, 7);
   scene.add(rim);
 
   // Camera-facing soft fill: prevents the front face from going flat-dark
-  const front = new THREE.DirectionalLight(0xffffff, 0.78);
+  const front = new THREE.DirectionalLight(0xffffff, 1.15);
   front.position.set(0, 12, 5);
   scene.add(front);
 
   // Under-fill: floor-bounce style lights from multiple lower angles so the
   // bottom and side walls do not collapse into one dark face.
-  const under = new THREE.DirectionalLight(0xfff4df, 1.35);
+  const under = new THREE.DirectionalLight(0xfff4df, 1.65);
   under.position.set(0, 0, -6);
   scene.add(under);
 
-  const underLeft = new THREE.DirectionalLight(0xeaf5ff, 0.82);
+  const underLeft = new THREE.DirectionalLight(0xeaf5ff, 1.15);
   underLeft.position.set(-5, 4, -4);
   scene.add(underLeft);
 
-  const underRight = new THREE.DirectionalLight(0xfff8ec, 0.82);
+  const underRight = new THREE.DirectionalLight(0xfff8ec, 1.15);
   underRight.position.set(5, -4, -4);
   scene.add(underRight);
 
-  return { key, fill, rim, hemi, ambient, front, under, underLeft, underRight };
+  // Extra inward fill for hollow assemblies (boxes, housings, battery trays).
+  const cavity = new THREE.DirectionalLight(0xffffff, 0.85);
+  cavity.position.set(2, -2, 4);
+  scene.add(cavity);
+
+  return { key, fill, rim, hemi, ambient, front, under, underLeft, underRight, cavity };
 }
 
 export function setupRenderer(renderer) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  // Slightly brighter than the original dark studio so generated models do not
-  // lose underside detail.
-  renderer.toneMappingExposure = 1.28;
+  // Lift midtones so enclosure interiors and side walls stay visible.
+  renderer.toneMappingExposure = 1.48;
 }
 
 // ─── shadow floor ─────────────────────────────────────────────────────────────
@@ -387,8 +394,10 @@ export function applyCadStyle(object3d) {
     const paletteColor = CAD_PART_PALETTE[index % CAD_PART_PALETTE.length].clone();
     const shouldPaletteColor = usePalette && (!info.hasColor || info.tooDark || info.source === "vertex");
 
+    // Cast onto the floor only — body receiveShadow makes hollow shells / pockets
+    // collapse to black (self-shadow), which hides interior detail.
     child.castShadow = !highFragmentModel;
-    child.receiveShadow = !highFragmentModel;
+    child.receiveShadow = false;
     child.renderOrder = 2;
     smoothDisplayGeometry(child);
 
@@ -401,6 +410,12 @@ export function applyCadStyle(object3d) {
     const origMap      = existingMats[0]?.map ?? null;
     const origMetal    = existingMats[0]?.metalness ?? FUSION.bodyMetalness;
     const origRough    = existingMats[0]?.roughness  ?? FUSION.bodyRoughness;
+    const metalness = shouldPaletteColor
+      ? FUSION.bodyMetalness
+      : Math.min(Number(origMetal) || 0, 0.18);
+    const roughness = shouldPaletteColor
+      ? FUSION.bodyRoughness
+      : Math.max(Number(origRough) || FUSION.bodyRoughness, 0.45);
 
     child.material = new THREE.MeshStandardMaterial({
       color:       shouldPaletteColor ? paletteColor
@@ -409,13 +424,15 @@ export function applyCadStyle(object3d) {
                  :                      FUSION.body,
       map:         shouldPaletteColor ? null : origMap,
       vertexColors: shouldPaletteColor ? false : vertexColors,
-      metalness:   shouldPaletteColor ? FUSION.bodyMetalness : origMetal,
-      roughness:   shouldPaletteColor ? FUSION.bodyRoughness : origRough,
+      metalness,
+      roughness,
+      emissive: new THREE.Color(FUSION.bodyEmissive),
+      emissiveIntensity: FUSION.bodyEmissiveIntensity,
       flatShading: false,
       polygonOffset:       true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits:  1,
-      envMapIntensity: shouldPaletteColor ? 0.82 : 0.62,
+      envMapIntensity: shouldPaletteColor ? 0.55 : 0.4,
     });
 
     if (!highFragmentModel) {
