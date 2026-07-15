@@ -162,30 +162,39 @@ label.new-project-workspace-remember {
   font-weight: 800;
   letter-spacing: -0.03em;
   color: transparent;
-  background-image: linear-gradient(
-    118deg,
-    #5c6570 0%,
-    #a8b0ba 14%,
-    #f8fafc 28%,
-    #8b949e 42%,
-    #e5e7eb 55%,
-    #6b7280 70%,
-    #ffffff 84%,
-    #9ca3af 100%
-  );
-  background-size: 220% 100%;
+  background-image:
+    linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.92) 0%,
+      rgba(255, 255, 255, 0) 38%,
+      rgba(255, 255, 255, 0) 62%,
+      rgba(255, 255, 255, 0.35) 100%
+    ),
+    linear-gradient(
+      118deg,
+      #4b5563 0%,
+      #9ca3af 12%,
+      #f8fafc 26%,
+      #6b7280 40%,
+      #e5e7eb 52%,
+      #52525b 66%,
+      #ffffff 80%,
+      #a1a1aa 100%
+    );
+  background-size: 100% 100%, 240% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   filter:
-    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.65))
-    drop-shadow(0 0 10px rgba(148, 163, 184, 0.28));
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.35))
+    drop-shadow(0 2px 2px rgba(0, 0, 0, 0.75))
+    drop-shadow(0 0 12px rgba(148, 163, 184, 0.35));
   animation: studio-metal-sheen 3.4s ease-in-out infinite;
 }
 
 @keyframes studio-metal-sheen {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  0%, 100% { background-position: 0 0, 0% 50%; }
+  50% { background-position: 0 0, 100% 50%; }
 }
 
 /* Real spinning metal gear; percent stays upright in the hub */
@@ -283,6 +292,10 @@ label.new-project-workspace-remember {
 
 /* Hide legacy SVG gear — replaced by metal PNG (works even if index.html reverts) */
 .studio-boot-logo-gear-svg {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 72px !important;
+  height: 72px !important;
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;

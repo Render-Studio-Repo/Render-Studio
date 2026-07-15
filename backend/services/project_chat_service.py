@@ -368,6 +368,73 @@ def add_thread_member(
     return _thread_summary(thread)
 
 
+def update_thread_settings(
+    project_path: Path,
+    *,
+    thread_id: str,
+    requester: dict[str, Any],
+    workspace_role: str | None = None,
+    title: str | None = None,
+    visibility: str | None = None,
+) -> dict[str, Any]:
+    data = _load(project_path)
+    thread = _find_thread(data, thread_id)
+    if not thread:
+        raise KeyError("Thread not found")
+    if not user_can_access_thread(thread, requester, workspace_role=workspace_role):
+        raise PermissionError("Thread not found")
+    uid = str(requester.get("id") or "")
+    role = str(workspace_role or "").lower()
+    can_manage = (
+        uid and uid == str(thread.get("created_by") or "")
+    ) or role in {"owner", "manager", "admin"}
+    if not can_manage:
+        raise PermissionError("Only the thread creator or workspace managers can change thread settings")
+    if title is not None:
+        clean = str(title or "").strip()[:80]
+        if clean:
+            thread["title"] = clean
+            thread["slug"] = re.sub(r"[^a-z0-9]+", "-", clean.lower()).strip("-")[:40] or thread.get("slug") or "thread"
+    if visibility is not None and thread.get("slug") != "general":
+        wanted = str(visibility or "").strip().lower()
+        if wanted not in {"shared", "private"}:
+            raise ValueError("Visibility must be shared or private")
+        thread["visibility"] = wanted
+    _save(project_path, data)
+    return _thread_summary(thread)
+
+
+def remove_thread_member(
+    project_path: Path,
+    *,
+    thread_id: str,
+    target_user_id: str,
+    requester: dict[str, Any],
+    workspace_role: str | None = None,
+) -> dict[str, Any]:
+    data = _load(project_path)
+    thread = _find_thread(data, thread_id)
+    if not thread:
+        raise KeyError("Thread not found")
+    if not user_can_access_thread(thread, requester, workspace_role=workspace_role):
+        raise PermissionError("Thread not found")
+    if thread.get("slug") == "general":
+        raise ValueError("The default Render Studio thread includes the workspace")
+    uid = str(requester.get("id") or "")
+    role = str(workspace_role or "").lower()
+    can_manage = (
+        uid and uid == str(thread.get("created_by") or "")
+    ) or role in {"owner", "manager", "admin"}
+    if not can_manage:
+        raise PermissionError("Only the thread creator or workspace managers can remove members")
+    target = str(target_user_id or "")
+    if target and target == str(thread.get("created_by") or ""):
+        raise ValueError("Transfer ownership before removing the creator")
+    thread["members"] = [m for m in (thread.get("members") or []) if str(m.get("id") or "") != target]
+    _save(project_path, data)
+    return _thread_summary(thread)
+
+
 MENTION_RE = re.compile(
     r"@\[(?P<label>[^\]]+)\]\((?P<kind>user|agent):(?P<id>[^)]+)\)|@(?P<bare>[A-Za-z][\w.-]{1,40})",
     re.UNICODE,

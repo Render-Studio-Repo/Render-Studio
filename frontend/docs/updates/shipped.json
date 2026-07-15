@@ -1,6 +1,24 @@
 {
   "items": [
     {
+      "id": "management-feedback-dms",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Management feedback DMs",
+      "summary": "Admins can now ask follow-up questions from suggestion and bug reports, sending realtime chat notifications to users without refreshing the dashboard.",
+      "visual": "/docs/media/share-folder.gif?v=20260715-real",
+      "href": "/admin-dashboard.html"
+    },
+    {
+      "id": "shared-workspaces-folder",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Shared workspaces folder",
+      "summary": "Shared workspaces now live under a dedicated Shared workspaces group with a compact folder menu for choosing which ones appear in the project browser.",
+      "visual": "/docs/media/share-folder.gif?v=20260715-real",
+      "href": "/"
+    },
+    {
       "id": "discord-authorized-app-linking",
       "date": "2026-07-15",
       "kind": "feature",

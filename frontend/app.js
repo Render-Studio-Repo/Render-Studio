@@ -64,7 +64,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-social-fusion-connect";
-import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-hide-shot-on-viewport";
+import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-inbox-collab";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
@@ -96,7 +96,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-no-iphone-banner";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-region-key-toggle";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-image-menu";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -13752,7 +13752,7 @@ function initAISetupIntroModal() {
       return;
     }
     if (action === "tutorial") {
-      void import("./show-me-tour.js?v=20260715-ai-setup-intro").then((mod) => {
+      void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
         mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
       });
     }
@@ -13793,7 +13793,7 @@ function maybeStartFirstProjectPromptOnboarding() {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-google-new-user").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1200);
@@ -13812,7 +13812,7 @@ function maybeStartGoogleNewUserWalkthrough(data = {}) {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-google-new-user").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1400);
@@ -14651,6 +14651,7 @@ const referenceFilesViewer = createReferenceFilesViewer({
     if (text) setEditStatus(kind || "ok", text);
   },
   onSendToPrompt: (payload) => sendReferenceMarkupToPrompt(payload),
+  onReferenceAction: (payload) => handleReferenceImageAction(payload),
   onRenderEdited: async ({ projectId: pid }) => {
     if (pid === projectId) {
       try {
@@ -14756,6 +14757,57 @@ async function sendReferenceMarkupToPrompt(payload = {}) {
       : `Sent ${payload.filename} to AI prompt.`,
   );
   promptImageList?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+}
+
+function currentModelFilenameForRenderTexture() {
+  if (selectedFile && !isReferenceFilename(selectedFile) && !isDxfDrawingFilename(selectedFile)) return selectedFile;
+  return projectAssembly?.list?.()?.[0]?.[0] || null;
+}
+
+async function handleReferenceImageAction(payload = {}) {
+  if (!payload?.filename) return;
+  const pid = payload.projectId || projectId;
+  if (payload.action === "texture-model") {
+    const baseFilename = currentModelFilenameForRenderTexture();
+    if (!baseFilename) {
+      setEditStatus("error", "Open or select a model before exporting this render as a texture reference.");
+      return;
+    }
+    await applyRenderedTextureReference({
+      renderFilename: payload.filename,
+      renderUrl: payload.blobUrl || `/api/projects/${encodeURIComponent(pid)}/files/${encodeURIComponent(payload.filename)}`,
+      baseFilename,
+      renderPrompt: payload.debugText || "",
+      autoGenerate: false,
+    });
+    return;
+  }
+  if (payload.action === "share-link") {
+    await openFileExportMenu({
+      api,
+      projectId: pid,
+      filename: payload.includeModel ? (currentModelFilenameForRenderTexture() || payload.filename) : payload.filename,
+      anchorEl: document.body,
+    });
+    setEditStatus("ok", payload.includeModel ? "Opened share/export menu with model included." : "Opened share/export menu for render image.");
+    return;
+  }
+  if (payload.action === "share-chat") {
+    await projectChat?.open?.();
+    setEditStatus("ok", `Project chat opened. Share ${payload.filename}${payload.includeModel ? " with the model" : ""}.`);
+    return;
+  }
+  if (payload.action === "share-dm") {
+    await projectChat?.open?.();
+    setEditStatus("ok", "DM sharing will use project chat recipients. Choose a teammate or mention them in chat.");
+    return;
+  }
+  if (payload.action === "store") {
+    preferencesAdvancedOpen = true;
+    preferencesAdvancedTab = "store";
+    openPreferencesModal();
+    setEditStatus("ok", `Store settings opened. Add ${payload.filename}${payload.includeModel ? " and the current model" : ""} to your public profile listing.`);
+  }
 }
 
 docTabs.onActivate((tab) => {
@@ -15295,11 +15347,26 @@ function attachCanvasSketchImage(dataUrl, target = "design") {
 const CANVAS_SKETCH_PROMPT_HINT =
   "Build a 3D CAD model from my attached canvas sketch reference image.";
 
+function canvasTaggedContextPrompt() {
+  const context = canvasModeInstance?.getTaggedContext?.();
+  if (!context?.summary) return "";
+  return [
+    "Canvas reference tags:",
+    context.summary,
+    "Use these tags to understand what the drawn shapes represent, their relative layout, and which parts should become CAD features.",
+  ].join("\n");
+}
+
 function augmentPromptForCanvasSketch(prompt) {
   const text = String(prompt || "").trim();
-  if (!text) return CANVAS_SKETCH_PROMPT_HINT;
-  if (/\b(sketch|drawing|reference image|attached canvas|canvas sketch)\b/i.test(text)) return text;
-  return `${text}\n\nUse the attached canvas sketch as a visual reference for the design.`;
+  const tagContext = canvasTaggedContextPrompt();
+  const base = !text
+    ? CANVAS_SKETCH_PROMPT_HINT
+    : /\b(sketch|drawing|reference image|attached canvas|canvas sketch)\b/i.test(text)
+      ? text
+      : `${text}\n\nUse the attached canvas sketch as a visual reference for the design.`;
+  if (!tagContext || base.includes("Canvas reference tags:")) return base;
+  return `${base}\n\n${tagContext}`;
 }
 
 function applyCanvasSketchToPrompt({ showFeedback = false } = {}) {
@@ -15317,13 +15384,20 @@ function applyCanvasSketchToPrompt({ showFeedback = false } = {}) {
   }
   const dataUrl = canvasModeInstance.getCanvasDataUrl?.();
   if (!dataUrl || !attachCanvasSketchImage(dataUrl, "design")) return false;
+  const tagContext = canvasTaggedContextPrompt();
+  if (tagContext) {
+    const currentPrompt = composer.getPromptText?.() || "";
+    if (!currentPrompt.includes("Canvas reference tags:")) {
+      composer.setPromptText?.(augmentPromptForCanvasSketch(currentPrompt));
+    }
+  }
   showAiComposePanel();
   promptImageList?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
   if (showFeedback) {
     const status = document.getElementById("prompt-status");
     if (status) {
       status.className = "status ok";
-      status.textContent = "Canvas sketch attached to AI prompt.";
+      status.textContent = tagContext ? "Canvas sketch and tags attached to AI prompt." : "Canvas sketch attached to AI prompt.";
     }
   }
   return true;
@@ -16763,6 +16837,15 @@ function handleRealtimeEvent(msg = {}) {
     || msg.type === "project.chat.reaction"
   ) {
     projectChat?.handleRealtime?.(msg);
+  }
+
+  if (msg.type === "management.feedback.message") {
+    const adminName = msg.admin_name || "Render3D support";
+    setEditStatus("ok", `${adminName} replied to your feedback${msg.project_id ? " in project chat" : ""}.`);
+    if (msg.project_id && msg.project_id !== projectId) {
+      projectChat?.handleRealtime?.({ ...msg, type: "project.chat.mention", mention: true });
+    }
+    return;
   }
 
   if (msg.type === "generation.updated") {
@@ -22334,7 +22417,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (showMeParam) {
     window.__render3dShowMeFromQuery = true;
-    void import("./show-me-tour.js?v=20260715-google-new-user").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }
@@ -22845,6 +22928,34 @@ window.addEventListener("keydown", (e) => {
     refreshTeamInvites();
     workspaceManagement?.syncMenuVisibility?.();
   }
+
+  document.getElementById("btn-shared-workspaces-menu")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const btn = event.currentTarget;
+    const menu = document.getElementById("shared-workspaces-menu");
+    if (!menu) return;
+    renderSharedWorkspaceMenu();
+    const open = menu.classList.toggle("hidden");
+    btn.setAttribute("aria-expanded", open ? "false" : "true");
+  });
+
+  document.getElementById("shared-workspaces-menu")?.addEventListener("change", async (event) => {
+    const input = event.target.closest("[data-shared-workspace-visible]");
+    if (!input) return;
+    setWorkspaceVisible(input.getAttribute("data-shared-workspace-visible"), input.checked);
+    renderTeams();
+    await onWorkspaceChange();
+    await refreshWorkspaceMenuPanel();
+  });
+
+  document.addEventListener("click", (event) => {
+    const menu = document.getElementById("shared-workspaces-menu");
+    const btn = document.getElementById("btn-shared-workspaces-menu");
+    if (!menu || menu.classList.contains("hidden")) return;
+    if (event.target.closest(".shared-workspace-menu")) return;
+    menu.classList.add("hidden");
+    btn?.setAttribute("aria-expanded", "false");
+  });
 
   function openWorkspaceRenameModal() {
     const team = getActiveTeam();
@@ -23518,6 +23629,61 @@ window.addEventListener("keydown", (e) => {
     status.textContent = message || "";
   }
 
+  let profileHandleCheckTimer = null;
+  let profileHandleCheckSeq = 0;
+
+  function setProfileHandleStatus(state = "idle", message = "Check") {
+    const status = document.getElementById("pref-handle-status");
+    if (!status) return;
+    status.className = `profile-handle-status is-${state}`;
+    status.textContent = message;
+  }
+
+  function profileHandleValue() {
+    return (document.getElementById("pref-handle")?.value || "").trim().replace(/^@+/, "");
+  }
+
+  function validateProfileHandleInline(handle) {
+    if (!handle) return "Enter a handle";
+    if (!/^[A-Za-z]/.test(handle)) return "Start with a letter";
+    if (!/^[A-Za-z][A-Za-z0-9_]{2,23}$/.test(handle)) return "3-24 letters, numbers, or _";
+    return "";
+  }
+
+  function scheduleProfileHandleAvailabilityCheck({ immediate = false } = {}) {
+    window.clearTimeout(profileHandleCheckTimer);
+    const run = async () => {
+      const handle = profileHandleValue();
+      const currentHandle = String(currentUser?.handle || "").replace(/^@/, "");
+      const invalid = validateProfileHandleInline(handle);
+      if (invalid) {
+        setProfileHandleStatus("error", invalid);
+        return;
+      }
+      if (handle.toLowerCase() === currentHandle.toLowerCase()) {
+        setProfileHandleStatus("ok", "✓ Current");
+        return;
+      }
+      const seq = ++profileHandleCheckSeq;
+      setProfileHandleStatus("checking", "Checking…");
+      try {
+        const data = await api(`/api/users/me/handle-availability?handle=${encodeURIComponent(handle)}`);
+        if (seq !== profileHandleCheckSeq) return;
+        if (data.valid === false) {
+          setProfileHandleStatus("error", data.message || "Invalid");
+        } else if (data.available) {
+          setProfileHandleStatus("ok", "✓ Available");
+        } else {
+          setProfileHandleStatus("error", "Taken");
+        }
+      } catch (err) {
+        if (seq !== profileHandleCheckSeq) return;
+        setProfileHandleStatus("error", err.message || "Could not check");
+      }
+    };
+    profileHandleCheckTimer = window.setTimeout(run, immediate ? 0 : 350);
+  }
+
   function applyUpdatedUser(user) {
     if (!user) return;
     currentUser = user;
@@ -23663,8 +23829,8 @@ window.addEventListener("keydown", (e) => {
     }
   });
 
-  let preferencesAdvancedOpen = false;
-  let preferencesAdvancedTab = "generation";
+  let preferencesAdvancedOpen = true;
+  let preferencesAdvancedTab = "authorized";
 
   function readRenderEditSaveMode() {
     try {
@@ -23747,6 +23913,8 @@ window.addEventListener("keydown", (e) => {
       const discordReady = !!discord?.connected;
       const discordConfigured = !!discord?.configured;
       const discordHandle = discordAccount?.handle || discordAccount?.display_name || "";
+      const googleAccountReady = String(currentUser?.email || "").toLowerCase().includes("@gmail.")
+        || String(currentUser?.email || "").toLowerCase().includes("@googlemail.");
       const discordDetail = discord?.error
         ? discord.error
         : discordReady
@@ -23785,17 +23953,28 @@ window.addEventListener("keydown", (e) => {
         {
           key: "discord",
           label: "Discord",
-          icon: "Discord",
+          iconHtml: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M19.54 5.33A16.7 16.7 0 0 0 15.42 4l-.2.39a12.3 12.3 0 0 1 3.63 1.82 13.55 13.55 0 0 0-4.38-1.31 13.82 13.82 0 0 0-4.95 0 13.55 13.55 0 0 0-4.38 1.31 12.3 12.3 0 0 1 3.63-1.82L8.58 4a16.7 16.7 0 0 0-4.12 1.33C1.85 9.21 1.14 13 1.5 16.73A16.56 16.56 0 0 0 6.55 19.3l.61-.84a10.82 10.82 0 0 1-1.92-.92l.47-.36a11.9 11.9 0 0 0 12.58 0l.47.36a10.82 10.82 0 0 1-1.92.92l.61.84a16.56 16.56 0 0 0 5.05-2.57c.43-4.34-.73-8.09-2.96-11.4ZM8.35 14.33c-.78 0-1.42-.72-1.42-1.6 0-.89.63-1.61 1.42-1.61.8 0 1.44.72 1.42 1.61 0 .88-.63 1.6-1.42 1.6Zm7.3 0c-.78 0-1.42-.72-1.42-1.6 0-.89.63-1.61 1.42-1.61.8 0 1.44.72 1.42 1.61 0 .88-.63 1.6-1.42 1.6Z"/></svg>`,
           detail: discordDetail,
           connected: discordReady,
           action: discordReady ? "unlink-discord" : "connect-discord",
           cta: discordReady ? "Unlink" : discordConfigured ? "Link" : "Setup needed",
           disabled: !!discord?.error || (!discordReady && !discordConfigured),
         },
+        {
+          key: "google-drive",
+          label: "Google Drive",
+          iconHtml: `<span class="authorized-app-google-drive-mark" aria-hidden="true"><i></i><b></b><em></em></span>`,
+          detail: googleAccountReady
+            ? "Backup storage identity connected. Drive file sync scopes are next."
+            : "Create backup storage and connect a Google Drive account",
+          connected: googleAccountReady,
+          action: "connect-google-drive",
+          cta: googleAccountReady ? "Reconnect" : "Connect",
+        },
       ];
       host.innerHTML = rows.map((row) => `
         <article class="authorized-app-row authorized-app-row--${appEscapeHtml(row.key)}">
-          <span class="authorized-app-icon">${appEscapeHtml(row.icon)}</span>
+          <span class="authorized-app-icon">${row.iconHtml || appEscapeHtml(row.icon)}</span>
           <span class="authorized-app-copy">
             <b>${appEscapeHtml(row.label)}</b>
             <small>${appEscapeHtml(row.detail)}</small>
@@ -23851,36 +24030,66 @@ window.addEventListener("keydown", (e) => {
                 <small class="muted">PNG or JPEG, under 1.5 MB.</small>
               </div>
             </div>
-            <label class="profile-preference-field">
-              <span>
-                <b>Display name</b>
-                <small>Shown in chat, presence, and your public profile.</small>
-              </span>
-              <input id="pref-display-name" type="text" maxlength="80" value="${appEscapeHtml(currentUser?.display_name || "")}" placeholder="Your name" />
-            </label>
-            <label class="profile-preference-field">
-              <span>
-                <b>Handle</b>
-                <small>Unique @tag for chat mentions and profile links (letters, numbers, _).</small>
-              </span>
-              <span style="display:inline-flex;align-items:center;gap:4px;width:100%">
-                <span class="profile-handle-field-prefix">@</span>
-                <input id="pref-handle" type="text" maxlength="24" value="${appEscapeHtml((currentUser?.handle || "").replace(/^@/, ""))}" placeholder="yourhandle" style="flex:1" />
-              </span>
-            </label>
-            <label class="profile-preference-field">
-              <span>
-                <b>Bio</b>
-                <small>Short public blurb on your profile popup.</small>
-              </span>
-              <textarea id="pref-bio" maxlength="500" rows="3" placeholder="What you design, build, or collaborate on…">${appEscapeHtml(currentUser?.bio || "")}</textarea>
-            </label>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="profile-identity-grid">
+              <label class="profile-preference-field profile-preference-field--stacked">
+                <span>
+                  <b>Display name</b>
+                  <small>Shown in chat, presence, and your public profile.</small>
+                </span>
+                <input id="pref-display-name" class="profile-pretty-input" type="text" maxlength="80" value="${appEscapeHtml(currentUser?.display_name || "")}" placeholder="Your name" autocomplete="name" />
+              </label>
+              <label class="profile-preference-field profile-preference-field--stacked">
+                <span>
+                  <b>Handle</b>
+                  <small>Unique @tag for mentions and profile links.</small>
+                </span>
+                <span class="profile-handle-input-wrap">
+                  <span class="profile-handle-field-prefix">@</span>
+                  <input id="pref-handle" class="profile-pretty-input" type="text" maxlength="24" value="${appEscapeHtml((currentUser?.handle || "").replace(/^@/, ""))}" placeholder="yourhandle" autocomplete="off" spellcheck="false" />
+                  <span id="pref-handle-status" class="profile-handle-status is-idle" aria-live="polite">Check</span>
+                </span>
+              </label>
+              <label class="profile-preference-field profile-preference-field--stacked profile-preference-field--bio">
+                <span>
+                  <b>Bio</b>
+                  <small>Short public blurb on your profile popup.</small>
+                </span>
+                <textarea id="pref-bio" class="profile-pretty-input" maxlength="500" rows="3" placeholder="What you design, build, or collaborate on…">${appEscapeHtml(currentUser?.bio || "")}</textarea>
+              </label>
+            </div>
+            <div class="profile-preferences-actions">
               <button type="button" id="pref-profile-save" class="btn accent btn-compact">Save profile</button>
               <button type="button" id="pref-profile-view" class="btn secondary btn-compact">View public profile</button>
               <small class="muted" id="pref-profile-link">${currentUser?.handle ? appEscapeHtml(`render3d.app/u/${currentUser.handle}`) : ""}</small>
             </div>
             <p id="profile-avatar-status" class="muted small profile-preferences-note"></p>
+          </section>
+          <section class="profile-preferences-section" id="pref-social-calendar-section">
+            <strong>Status, availability &amp; calendar</strong>
+            <label class="profile-preference-field">
+              <span>
+                <b>Status</b>
+                <small>Shown next to your name in chat.</small>
+              </span>
+              <span style="display:flex;gap:8px;align-items:center;width:100%;">
+                <select id="pref-status-icon" style="max-width:72px;"></select>
+                <input id="pref-status-text" class="profile-pretty-input" type="text" maxlength="80" placeholder="In a meeting, designing, AFK…" />
+              </span>
+            </label>
+            <div class="profile-preference-field profile-preference-field--stacked">
+              <span>
+                <b>Weekly meeting availability</b>
+                <small>0=Mon … 6=Sun. Times are minutes from midnight (e.g. 540–1020 = 9:00–17:00).</small>
+              </span>
+              <textarea id="pref-availability-json" class="profile-pretty-input" rows="4" placeholder='[{"weekday":1,"start_minute":540,"end_minute":1020,"available":true,"timezone":"America/Los_Angeles"}]'></textarea>
+            </div>
+            <div class="profile-preferences-actions">
+              <button type="button" id="pref-status-save" class="btn accent btn-compact">Save status</button>
+              <button type="button" id="pref-availability-save" class="btn secondary btn-compact">Save availability</button>
+              <button type="button" id="pref-cal-google" class="btn secondary btn-compact">Connect Google Calendar</button>
+              <button type="button" id="pref-cal-outlook" class="btn secondary btn-compact">Connect Outlook</button>
+            </div>
+            <p id="pref-calendar-status" class="muted small profile-preferences-note"></p>
           </section>
           <section class="profile-preferences-section">
             <strong>Controls</strong>
@@ -23956,7 +24165,7 @@ window.addEventListener("keydown", (e) => {
                   <b>CAD & files</b><small>Fusion, edits, workspace defaults</small>
                 </button>
                 <button type="button" data-preferences-advanced-tab="authorized" class="${preferencesAdvancedTab === "authorized" ? "active" : ""}">
-                  <b>Authorized apps</b><small>Stripe, PayPal, Phantom, Discord</small>
+                  <b>Authorized apps</b><small>Payouts, Discord, Drive backups</small>
                 </button>
                 <button type="button" data-preferences-advanced-tab="store" class="${preferencesAdvancedTab === "store" ? "active" : ""}">
                   <b>Store</b><small>Public shop, pricing, publish models</small>
@@ -24053,7 +24262,14 @@ window.addEventListener("keydown", (e) => {
               </article>
               <article class="profile-preferences-category profile-preferences-category--authorized ${preferencesAdvancedTab === "authorized" ? "" : "hidden"}" data-preferences-advanced-panel="authorized">
                 <h3>Authorized apps</h3>
-                <p class="muted small profile-preferences-note">Connected payout providers, marketplace account links, and notification integrations.</p>
+                <p class="muted small profile-preferences-note">Connected payout providers, marketplace account links, notification integrations, and backup storage.</p>
+                <div class="profile-backup-storage-card">
+                  <span class="profile-backup-storage-orb" aria-hidden="true"></span>
+                  <span>
+                    <b>Backup storage</b>
+                    <small>Create a cloud backup target for project exports, model files, and recovery snapshots. Connect Google Drive below to authorize the account.</small>
+                  </span>
+                </div>
                 <div id="pref-authorized-apps-list" class="authorized-apps-list">
                   <p class="muted small">Loading authorized apps...</p>
                 </div>
@@ -24093,6 +24309,7 @@ window.addEventListener("keydown", (e) => {
       </div>
     `;
     syncPreferencesMenuControls(panel);
+    scheduleProfileHandleAvailabilityCheck({ immediate: true });
     void hydrateAuthorizedApps(panel);
     if (preferencesAdvancedOpen && preferencesAdvancedTab === "store") {
       void storePreferencesUi?.hydrate?.(panel);
@@ -24253,6 +24470,11 @@ window.addEventListener("keydown", (e) => {
             await hydrateAuthorizedApps(panel);
             return;
           }
+          if (action === "connect-google-drive") {
+            setEditStatus("ok", "Opening Google authorization for backup storage...");
+            window.location.href = "/oauth/google/start";
+            return;
+          }
           const payments = await import("./marketplace-payments.js?v=20260715-payout-sso");
           if (action === "connect-stripe") {
             setEditStatus("ok", "Opening Stripe Express...");
@@ -24282,9 +24504,11 @@ window.addEventListener("keydown", (e) => {
     }
     if (!e.target.closest("#profile-avatar-remove") && !e.target.closest("#pref-profile-save") && !e.target.closest("#pref-profile-view")) return;
     if (e.target.closest("#pref-profile-view")) {
-      const handle = (document.getElementById("pref-handle")?.value || currentUser?.handle || "").trim().replace(/^@/, "");
-      if (handle) void userProfileUi?.openHandle?.(handle);
-      else if (currentUser?.id) void userProfileUi?.open?.({ userId: currentUser.id });
+      if (currentUser?.id) void userProfileUi?.open?.({ userId: currentUser.id });
+      else {
+        const handle = (currentUser?.handle || "").trim().replace(/^@/, "");
+        if (handle) void userProfileUi?.openHandle?.(handle);
+      }
       return;
     }
     if (e.target.closest("#pref-profile-save")) {
@@ -24308,6 +24532,103 @@ window.addEventListener("keydown", (e) => {
       return;
     }
     void removeProfileAvatar();
+  });
+
+
+  async function loadSocialCalendarPrefs() {
+    const iconSel = document.getElementById("pref-status-icon");
+    const statusNote = document.getElementById("pref-calendar-status");
+    try {
+      const [status, availability, connections] = await Promise.all([
+        api("/api/users/me/status"),
+        api("/api/users/me/availability"),
+        api("/api/users/me/calendar-connections"),
+      ]);
+      if (iconSel) {
+        const icons = status.icons || ["🟢", "🟡", "🔴", "🟣", "🔵", "💼", "🏠", "🎧", "☕", "🛠️"];
+        iconSel.innerHTML = icons.map((i) => `<option value="${appEscapeHtml(i)}">${i}</option>`).join("");
+        if (status.status_icon) iconSel.value = status.status_icon;
+      }
+      const text = document.getElementById("pref-status-text");
+      if (text) text.value = status.status_text || "";
+      const avail = document.getElementById("pref-availability-json");
+      if (avail) avail.value = JSON.stringify(availability.windows || [], null, 2);
+      const connected = (connections.connections || []).map((c) => c.provider).join(", ") || "none";
+      if (statusNote) statusNote.textContent = `Calendar connections: ${connected}`;
+    } catch (err) {
+      if (statusNote) statusNote.textContent = err.message || "Could not load calendar prefs";
+    }
+  }
+
+  document.getElementById("profile-preferences-panel")?.addEventListener("click", (e) => {
+    if (e.target.closest("#pref-status-save")) {
+      e.preventDefault();
+      void (async () => {
+        const statusNote = document.getElementById("pref-calendar-status");
+        try {
+          await api("/api/users/me/status", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              status_text: document.getElementById("pref-status-text")?.value || "",
+              status_icon: document.getElementById("pref-status-icon")?.value || "",
+            }),
+          });
+          if (statusNote) statusNote.textContent = "Status saved.";
+        } catch (err) {
+          if (statusNote) statusNote.textContent = err.message || "Could not save status";
+        }
+      })();
+      return;
+    }
+    if (e.target.closest("#pref-availability-save")) {
+      e.preventDefault();
+      void (async () => {
+        const statusNote = document.getElementById("pref-calendar-status");
+        try {
+          const raw = document.getElementById("pref-availability-json")?.value || "[]";
+          const windows = JSON.parse(raw);
+          await api("/api/users/me/availability", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ windows }),
+          });
+          if (statusNote) statusNote.textContent = "Availability saved.";
+        } catch (err) {
+          if (statusNote) statusNote.textContent = err.message || "Could not save availability";
+        }
+      })();
+      return;
+    }
+    if (e.target.closest("#pref-cal-google") || e.target.closest("#pref-cal-outlook")) {
+      e.preventDefault();
+      const provider = e.target.closest("#pref-cal-google") ? "google" : "microsoft";
+      void (async () => {
+        const statusNote = document.getElementById("pref-calendar-status");
+        try {
+          const data = await api(`/api/users/me/calendar/connect/${provider}`);
+          if (data.url) window.location.href = data.url;
+        } catch (err) {
+          if (statusNote) statusNote.textContent = err.message || "Calendar connect failed";
+        }
+      })();
+    }
+  });
+
+  document.getElementById("profile-preferences-panel")?.addEventListener("input", (e) => {
+    const handleInput = e.target.closest("#pref-handle");
+    if (handleInput) {
+      const cleaned = handleInput.value.replace(/^@+/, "").replace(/[^A-Za-z0-9_]/g, "");
+      if (cleaned !== handleInput.value) handleInput.value = cleaned;
+      const link = document.getElementById("pref-profile-link");
+      if (link) {
+        const savedHandle = String(currentUser?.handle || "").replace(/^@/, "");
+        link.textContent = cleaned
+          ? `render3d.app/u/${cleaned}${cleaned.toLowerCase() === savedHandle.toLowerCase() ? "" : " (save to publish)"}`
+          : "";
+      }
+      scheduleProfileHandleAvailabilityCheck();
+    }
   });
 
   document.addEventListener("keydown", (e) => {

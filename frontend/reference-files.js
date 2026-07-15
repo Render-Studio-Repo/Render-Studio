@@ -174,6 +174,7 @@ export function createReferenceFilesViewer(options = {}) {
     getAiKeyPickerState,
     setAiKeyPickerValue,
     onRenderEdited,
+    onReferenceAction,
   } = options;
 
   /** @type {Map<string, object>} */
@@ -186,7 +187,7 @@ export function createReferenceFilesViewer(options = {}) {
   let panY = 0;
   let zoom = 1;
   let panDrag = null;
-  let markupTool = "pen"; // pen | highlight | eraser | rect | arrow | text | region
+  let markupTool = "pan"; // pan | pen | highlight | eraser | rect | arrow | text | region
   let markupColor = "#f0883e";
   let markupWidth = 3;
   /** @type {string[]} */
@@ -443,19 +444,7 @@ export function createReferenceFilesViewer(options = {}) {
 
     const kind = tab.kind || kindFromName(tab.filename);
     const markupable = canMarkup(kind);
-    const statusText = tab.loading
-      ? "Loading…"
-      : tab.error
-        ? tab.error
-        : kind === "text"
-          ? "Edit text · notes save with Save · Send to AI includes notes"
-          : kind === "image"
-            ? "Pan · scroll zoom · Pen to markup · Send to AI includes marks + notes"
-            : kind === "pdf"
-              ? "Pen to markup pages · notes on the right · Send to AI includes marks + notes"
-              : kind === "file"
-                ? "Download or notes on the right · Send to AI includes notes"
-                : "Notes on the right";
+    const statusText = tab.loading ? "Loading…" : tab.error ? tab.error : "";
 
     let bodyHtml = "";
     if (tab.loading) {
@@ -498,11 +487,12 @@ export function createReferenceFilesViewer(options = {}) {
       <header class="dxf-viewer-toolbar ref-viewer-toolbar">
         <div class="dxf-viewer-title">
           <strong>${escapeHtml(tab.label || tab.filename)}</strong>
-          <span class="muted small">${escapeHtml(statusText)}</span>
+          ${statusText ? `<span class="muted small">${escapeHtml(statusText)}</span>` : ""}
         </div>
         <div class="dxf-viewer-actions ref-markup-toolbar">
           ${markupable ? `
             <div class="ref-tool-group" role="group" aria-label="Markup tools">
+              ${toolBtn("pan", "Pan", "Drag to move the image")}
               ${toolBtn("pen", "Pen", "Freehand pen")}
               ${toolBtn("highlight", "Highlight", "Highlighter")}
               ${toolBtn("rect", "Rect", "Rectangle")}
@@ -538,6 +528,8 @@ export function createReferenceFilesViewer(options = {}) {
               <button type="button" class="dxf-viewer-btn" data-ref-action="fit" title="Fit view">Fit</button>
             </div>
           ` : ""}
+          ${kindIsImage ? `<button type="button" class="dxf-viewer-btn" data-ref-action="texture-model" title="Use this render as a texture/material reference for the current model">Texture to model</button>` : ""}
+          ${kindIsImage ? `<button type="button" class="dxf-viewer-btn" data-ref-action="share-menu" title="Share or publish this render image">Share</button>` : ""}
           <button type="button" class="dxf-viewer-btn accent" data-ref-action="send-ai" title="Attach marked-up file and notes to the AI prompt">
             Send to AI${strokeCount ? ` (${strokeCount})` : ""}
           </button>
@@ -567,7 +559,6 @@ export function createReferenceFilesViewer(options = {}) {
         <aside class="ref-notes-panel" aria-label="Notes and markup">
           <label class="ref-notes-label" for="ref-notes-input">Notes / markup</label>
           <textarea id="ref-notes-input" class="ref-notes-editor" data-ref-notes placeholder="Write notes, callouts, or markup for this file…">${escapeHtml(tab.notes || "")}</textarea>
-          <p class="muted small ref-notes-hint">Saved with the file. Included when you Send to AI. Use ⌘Z / ⌘⇧Z while marking up.</p>
         </aside>
       </div>
     `;
@@ -955,6 +946,102 @@ export function createReferenceFilesViewer(options = {}) {
     const toggle = viewerEl?.querySelector('[data-ref-action="download-toggle"]');
     panel?.classList.add("hidden");
     toggle?.setAttribute("aria-expanded", "false");
+  }
+
+  function closeReferenceContextMenu() {
+    document.getElementById("ref-image-context-menu")?.remove();
+  }
+
+  function debugTagForTab(tab) {
+    return [
+      `Render3D render image`,
+      `project_id=${tab?.projectId || getProjectId?.() || ""}`,
+      `filename=${tab?.filename || ""}`,
+      `prompt_debug=include this project id and filename when reporting render image issues`,
+    ].join("\n");
+  }
+
+  async function copyRenderImageWithDebug(tab) {
+    const canvas = await buildExportCanvas(tab, { withMarkup: true });
+    const debug = debugTagForTab(tab);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Could not prepare image for clipboard.");
+    try {
+      if (navigator.clipboard?.write && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "image/png": blob,
+            "text/plain": new Blob([debug], { type: "text/plain" }),
+          }),
+        ]);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(debug);
+      } else {
+        throw new Error("Clipboard is not available in this browser.");
+      }
+      onStatus?.("ok", "Copied render image with project/debug tag.");
+    } catch (err) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(debug);
+        onStatus?.("ok", "Copied render debug tag. Browser blocked image clipboard access.");
+        return;
+      }
+      throw err;
+    }
+  }
+
+  function emitReferenceAction(action, tab, extra = {}) {
+    closeReferenceContextMenu();
+    onReferenceAction?.({
+      action,
+      filename: tab?.filename,
+      label: tab?.label || tab?.filename,
+      kind: tab?.kind || kindFromName(tab?.filename),
+      projectId: tab?.projectId || getProjectId?.(),
+      blobUrl: tab?.blobUrl,
+      debugText: debugTagForTab(tab),
+      includeModel: !!extra.includeModel,
+      source: "reference-image",
+    });
+  }
+
+  function askIncludeModel() {
+    return window.confirm("Include the current 3D model with this render share?");
+  }
+
+  function showReferenceContextMenu(event, tab) {
+    if (!tab || (tab.kind || kindFromName(tab.filename)) !== "image") return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeReferenceContextMenu();
+    const menu = document.createElement("div");
+    menu.id = "ref-image-context-menu";
+    menu.className = "ref-image-context-menu";
+    menu.style.left = `${Math.min(event.clientX, window.innerWidth - 260)}px`;
+    menu.style.top = `${Math.min(event.clientY, window.innerHeight - 250)}px`;
+    menu.innerHTML = `
+      <button type="button" data-ref-context="copy">Copy render image + debug tag</button>
+      <button type="button" data-ref-context="share-link">Share link...</button>
+      <button type="button" data-ref-context="share-chat">Share to project chat...</button>
+      <button type="button" data-ref-context="share-dm">Share to DM...</button>
+      <button type="button" data-ref-context="store">Add to public profile/store...</button>
+      <button type="button" data-ref-context="texture">Export texture back to model</button>
+    `;
+    document.body.appendChild(menu);
+    menu.addEventListener("click", (e) => {
+      const action = e.target.closest("[data-ref-context]")?.dataset.refContext;
+      if (!action) return;
+      if (action === "copy") {
+        void copyRenderImageWithDebug(tab).catch((err) => onStatus?.("error", err.message || "Could not copy render image."));
+        closeReferenceContextMenu();
+        return;
+      }
+      if (action === "share-link") emitReferenceAction("share-link", tab, { includeModel: askIncludeModel() });
+      else if (action === "share-chat") emitReferenceAction("share-chat", tab, { includeModel: askIncludeModel() });
+      else if (action === "share-dm") emitReferenceAction("share-dm", tab, { includeModel: askIncludeModel() });
+      else if (action === "store") emitReferenceAction("store", tab, { includeModel: askIncludeModel() });
+      else if (action === "texture") emitReferenceAction("texture-model", tab);
+    });
   }
 
   async function handleDownload(format) {
@@ -1458,6 +1545,16 @@ export function createReferenceFilesViewer(options = {}) {
     if (action === "fit") resetView();
     if (action === "send-ai") {
       void sendActiveToPrompt();
+      return;
+    }
+    if (action === "texture-model" && tab) {
+      emitReferenceAction("texture-model", tab);
+      return;
+    }
+    if (action === "share-menu" && tab) {
+      const btn = e.target.closest("[data-ref-action]");
+      const rect = btn?.getBoundingClientRect?.() || { left: e.clientX, bottom: e.clientY };
+      showReferenceContextMenu({ ...e, clientX: rect.left, clientY: rect.bottom + 6, preventDefault() {}, stopPropagation() {} }, tab);
     }
   });
 
@@ -1506,7 +1603,7 @@ export function createReferenceFilesViewer(options = {}) {
       if (!tab || !canMarkup(tab.kind)) return;
       if (!e.target.closest?.(".ref-viewer-stage-wrap")) return;
       e.preventDefault();
-      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const factor = Math.exp(-e.deltaY * 0.0008);
       zoom = Math.min(8, Math.max(0.2, zoom * factor));
       applyTransform();
       updateRegionOverlay();
@@ -1518,7 +1615,7 @@ export function createReferenceFilesViewer(options = {}) {
     const tab = activeFilename ? tabs.get(activeFilename) : null;
     if (!tab || !canMarkup(tab.kind) || drawMode) return;
     if (!e.target.closest?.(".ref-viewer-stage-wrap")) return;
-    if (e.target.closest?.("[data-ref-image-stack], [data-ref-pdf-page]")) return;
+    e.preventDefault();
     panDrag = { x: e.clientX - panX, y: e.clientY - panY };
     e.target.setPointerCapture?.(e.pointerId);
   });
@@ -1531,6 +1628,17 @@ export function createReferenceFilesViewer(options = {}) {
   });
   viewerEl?.addEventListener("pointerup", () => {
     panDrag = null;
+  });
+
+  viewerEl?.addEventListener("contextmenu", (e) => {
+    const tab = activeFilename ? tabs.get(activeFilename) : null;
+    if (!tab || (tab.kind || kindFromName(tab.filename)) !== "image") return;
+    if (!e.target.closest?.("[data-ref-image-stack], .ref-viewer-stage-wrap")) return;
+    showReferenceContextMenu(e, tab);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest?.("#ref-image-context-menu")) closeReferenceContextMenu();
   });
 
   return {

@@ -77,12 +77,70 @@ function countPills(items, keyName) {
 }
 
 let chartCleanups = [];
+const AGENT_ACTIVITY_DEFAULT_FILTERS = {
+  actor: "all",
+  modes: new Set(["render", "v2", "wiring", "rigging", "general"]),
+};
+const agentActivityFilters = {
+  actor: AGENT_ACTIVITY_DEFAULT_FILTERS.actor,
+  modes: new Set(AGENT_ACTIVITY_DEFAULT_FILTERS.modes),
+};
+let latestAgentActivity = [];
+let latestAgentStats = {};
+let adminRealtimeSocket = null;
+let adminRealtimeReconnectTimer = null;
+let adminDashboardRoot = null;
 
 function clearChartCleanups() {
   chartCleanups.forEach((fn) => {
     try { fn(); } catch { /* ignore */ }
   });
   chartCleanups = [];
+}
+
+function userRealtimeUrl() {
+  const token = encodeURIComponent(getToken());
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/api/ws/user?token=${token}`;
+}
+
+function scheduleAdminRealtimeReconnect() {
+  if (adminRealtimeReconnectTimer || !getToken()) return;
+  adminRealtimeReconnectTimer = window.setTimeout(() => {
+    adminRealtimeReconnectTimer = null;
+    connectAdminRealtime();
+  }, 2500);
+}
+
+function handleAdminRealtimeEvent(msg = {}) {
+  if (!adminDashboardRoot || msg.type !== "management.notification.updated") return;
+  const event = String(msg.event || "");
+  if (event.startsWith("feedback.")) {
+    void loadFeedbackInbox(adminDashboardRoot);
+  }
+  if (event.startsWith("new_user.")) {
+    void loadNewUserAlerts(adminDashboardRoot);
+  }
+}
+
+function connectAdminRealtime() {
+  adminRealtimeSocket?.close();
+  if (!getToken() || !isAdminUser(getStoredUser())) return;
+  const ws = new WebSocket(userRealtimeUrl());
+  adminRealtimeSocket = ws;
+  ws.onmessage = (event) => {
+    try {
+      handleAdminRealtimeEvent(JSON.parse(event.data));
+    } catch {
+      /* ignore malformed realtime payload */
+    }
+  };
+  ws.onclose = () => {
+    if (adminRealtimeSocket === ws) {
+      adminRealtimeSocket = null;
+      scheduleAdminRealtimeReconnect();
+    }
+  };
 }
 
 function renderUserRows(users = [], { clickable = true } = {}) {
@@ -395,9 +453,51 @@ function bindInteractive(root, data) {
   });
 }
 
+function bindAdminViewToolbar(root) {
+  const toolbar = root.querySelector(".admin-view-toolbar");
+  if (!toolbar) return;
+  const tabs = [...toolbar.querySelectorAll("[data-admin-view]")];
+  const setActive = (view) => {
+    tabs.forEach((tab) => tab.classList.toggle("active", tab.getAttribute("data-admin-view") === view));
+  };
+  const scrollToView = (view, { updateHash = true } = {}) => {
+    const section = root.querySelector(`#admin-section-${CSS.escape(view)}`);
+    if (!section) return;
+    setActive(view);
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (updateHash) {
+      try {
+        history.replaceState(null, "", `#${view}`);
+      } catch {
+        /* hash update is best effort */
+      }
+    }
+  };
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const view = tab.getAttribute("data-admin-view") || "overview";
+      scrollToView(view);
+    });
+  });
+  const initialHash = (window.location.hash || "").replace(/^#/, "");
+  if (initialHash && root.querySelector(`#admin-section-${CSS.escape(initialHash)}`)) {
+    window.setTimeout(() => scrollToView(initialHash, { updateHash: false }), 80);
+  }
+  const sections = [...root.querySelectorAll("[data-admin-section][id]")];
+  const observer = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    const view = visible?.target?.getAttribute("data-admin-section");
+    if (view) setActive(view);
+  }, { rootMargin: "-18% 0px -68% 0px", threshold: [0.1, 0.25, 0.5] });
+  sections.forEach((section) => observer.observe(section));
+  chartCleanups.push(() => observer.disconnect());
+}
+
 function renderUserLookup(users = []) {
   return `
-    <section class="admin-panel admin-lookup-panel">
+    <section class="admin-panel admin-lookup-panel" id="admin-section-users" data-admin-section="users">
       <div class="admin-lookup-head">
         <h3>User lookup</h3>
         <input type="search" id="admin-user-search" class="admin-user-search" placeholder="Search name or email…" />
@@ -409,11 +509,38 @@ function renderUserLookup(users = []) {
   `;
 }
 
+function renderAdminViewToolbar() {
+  const items = [
+    ["overview", "Overview", "Stats and trends"],
+    ["requests", "Requests", "Suggestions and bugs"],
+    ["new-users", "New Users", "Signup alerts"],
+    ["agent", "Render Agent", "User questions"],
+    ["approvals", "Approvals", "Guides and requests"],
+    ["users", "Users", "Lookup and cohorts"],
+    ["projects", "Projects", "Models and previews"],
+    ["prompts", "Prompts", "History and errors"],
+    ["network", "Network", "Collaboration graph"],
+    ["training", "Training", "Ready data"],
+  ];
+  return `
+    <nav class="admin-view-toolbar" aria-label="Management dashboard views">
+      ${items.map(([id, label, hint], index) => `
+        <button type="button" class="admin-view-tab${index === 0 ? " active" : ""}" data-admin-view="${id}">
+          <strong>${escapeHtml(label)}</strong>
+          <small>${escapeHtml(hint)}</small>
+        </button>
+      `).join("")}
+    </nav>
+  `;
+}
+
 function renderDashboard(root, data) {
   const stats = data.stats || {};
   const community = data.community || {};
   root.innerHTML = `
-    <section class="admin-hero-card">
+    ${renderAdminViewToolbar()}
+
+    <section class="admin-hero-card" id="admin-section-overview" data-admin-section="overview">
       <div>
         <p class="info-eyebrow">Management</p>
         <h2>Site Overview</h2>
@@ -431,7 +558,7 @@ function renderDashboard(root, data) {
       ${statCard("Success Rate", stats.success_rate == null ? "—" : `${Math.round(stats.success_rate * 100)}%`, "Prompt history success")}
     </section>
 
-    <section class="admin-grid admin-grid--wide-left">
+    <section class="admin-grid admin-grid--wide-left" data-admin-section="overview">
       <article class="admin-panel admin-panel--charts">
         <h3>Activity Trend</h3>
         <p class="muted small admin-panel-hint">Switch chart views and toggle series. Continuous last 30 days.</p>
@@ -451,7 +578,7 @@ function renderDashboard(root, data) {
       </article>
     </section>
 
-    <section class="admin-panel admin-panel--network">
+    <section class="admin-panel admin-panel--network" id="admin-section-network" data-admin-section="network">
       <h3>Collaboration brain</h3>
       <p class="muted small admin-panel-hint">Users ↔ projects ↔ teams. Owns, collab prompts, and workspace membership. Click a user or project node to open details.</p>
       <div id="admin-network-brain"></div>
@@ -459,7 +586,7 @@ function renderDashboard(root, data) {
 
     ${renderUserLookup(data.users || data.active_users || [])}
 
-    <section class="admin-grid">
+    <section class="admin-grid" data-admin-section="users">
       <article class="admin-panel">
         <h3>Recent Users</h3>
         <div class="admin-list">${renderUserRows(data.recent_users || [])}</div>
@@ -471,18 +598,18 @@ function renderDashboard(root, data) {
     </section>
 
     <section class="admin-grid admin-grid--wide-right">
-      <article class="admin-panel">
+      <article class="admin-panel" id="admin-section-projects" data-admin-section="projects">
         <h3>Recent Projects</h3>
         <p class="muted small admin-panel-hint">Click a row or <strong>View model</strong> for 3D preview + prompt detail.</p>
         <div class="admin-list">${renderProjectRows(data.recent_projects || [])}</div>
       </article>
-      <article class="admin-panel">
+      <article class="admin-panel" id="admin-section-prompts" data-admin-section="prompts">
         <h3>Recent Prompt History</h3>
         <div class="admin-list admin-list--prompts">${renderPromptRows(data.recent_prompts || [])}</div>
       </article>
     </section>
 
-    <section class="admin-panel admin-panel--agent-activity">
+    <section class="admin-panel admin-panel--agent-activity" id="admin-section-agent" data-admin-section="agent">
       <div class="admin-agent-head">
         <div>
           <h3>Render Agent activity</h3>
@@ -493,12 +620,13 @@ function renderDashboard(root, data) {
       <div class="admin-agent-stats" id="admin-agent-stats">
         <span class="admin-pill"><strong>Loading…</strong></span>
       </div>
+      <div class="admin-agent-controls" id="admin-agent-controls" aria-label="Render Agent activity filters"></div>
       <div class="admin-agent-activity-list" id="admin-agent-activity-list">
         <p class="muted small">Loading Render Agent questions…</p>
       </div>
     </section>
 
-    <section class="admin-panel admin-panel--gs-approvals">
+    <section class="admin-panel admin-panel--gs-approvals" id="admin-section-approvals" data-admin-section="approvals">
       <div class="admin-agent-head">
         <div>
           <h3>Getting Started approvals</h3>
@@ -515,7 +643,7 @@ function renderDashboard(root, data) {
       </div>
     </section>
 
-    <section class="admin-panel admin-panel--feedback-inbox">
+    <section class="admin-panel admin-panel--feedback-inbox" id="admin-section-new-users" data-admin-section="new-users">
       <div class="admin-alert-tabs" role="tablist" aria-label="Management inbox tabs">
         <button type="button" class="admin-alert-tab active" role="tab" aria-selected="true">New user alerts</button>
         <a class="admin-alert-tab" role="tab" href="#admin-feedback-list">Suggestions & bugs</a>
@@ -536,7 +664,7 @@ function renderDashboard(root, data) {
       <div id="admin-onboarding-template"></div>
     </section>
 
-    <section class="admin-panel admin-panel--feedback-inbox">
+    <section class="admin-panel admin-panel--feedback-inbox" id="admin-section-requests" data-admin-section="requests">
       <div class="admin-alert-tabs" role="tablist" aria-label="Management inbox tabs">
         <a class="admin-alert-tab" role="tab" href="#admin-new-user-list">New user alerts</a>
         <button type="button" class="admin-alert-tab active" role="tab" aria-selected="true">Suggestions & bugs</button>
@@ -556,7 +684,7 @@ function renderDashboard(root, data) {
       </div>
     </section>
 
-    <section class="admin-panel">
+    <section class="admin-panel" id="admin-section-training" data-admin-section="training">
       <h3>File Formats</h3>
       <div class="admin-pill-list">${countPills(data.project_format_counts, "format")}</div>
       <p class="muted small">Generated ${formatDate(data.generated_at)}</p>
@@ -567,6 +695,7 @@ function renderDashboard(root, data) {
   root.querySelector("#admin-agent-refresh")?.addEventListener("click", () => {
     void loadRenderAgentActivity(root);
   });
+  bindAgentActivityControls(root);
   root.querySelector("#admin-gs-refresh")?.addEventListener("click", () => {
     void loadGettingStartedApprovals(root);
   });
@@ -597,6 +726,7 @@ function renderDashboard(root, data) {
   void hydrateThumbs(root);
 
   clearChartCleanups();
+  bindAdminViewToolbar(root);
   const chartsHost = root.querySelector("#admin-activity-charts");
   const networkHost = root.querySelector("#admin-network-brain");
   if (chartsHost) chartCleanups.push(mountActivityCharts(chartsHost, data.daily || []));
@@ -610,11 +740,111 @@ function renderDashboard(root, data) {
   }
 }
 
+function agentActivityActor(item = {}) {
+  const text = [
+    item.actor,
+    item.source,
+    item.sender_type,
+    item.kind,
+    item.thread_title,
+    item.question,
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (/\b(system|assistant|render agent|agent reply|automated|tool|generated|pipeline)\b/.test(text)) return "system";
+  return "user";
+}
+
+function agentActivityMode(item = {}) {
+  const text = [
+    item.mode,
+    item.prompt_mode,
+    item.thread_title,
+    item.folder,
+    item.question,
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (/\b(wiring|schematic|circuit|arduino|servo|stepper|pin|gpio|breadboard)\b/.test(text)) return "wiring";
+  if (/\b(rigging|urdf|joint|kinematic|inverse kinematics|motion|simulate movement)\b/.test(text)) return "rigging";
+  if (/\b(2\.0|v2|text to cad|cad generate|build123d|source|step-valid|parametric)\b/.test(text)) return "v2";
+  if (/\b(render|photoreal|environment|kitchen|scene|lighting|material|texture)\b/.test(text)) return "render";
+  return "general";
+}
+
+function agentActivityModeLabel(mode) {
+  return {
+    render: "Render prompt",
+    v2: "2.0 CAD",
+    wiring: "Wiring",
+    rigging: "Rigging",
+    general: "General",
+  }[mode] || "General";
+}
+
+function normalizeAgentActivity(items = []) {
+  return items.map((item) => ({
+    ...item,
+    _actor: agentActivityActor(item),
+    _mode: agentActivityMode(item),
+  }));
+}
+
+function filteredAgentActivity(items = latestAgentActivity) {
+  return (items || []).filter((item) => {
+    if (agentActivityFilters.actor !== "all" && item._actor !== agentActivityFilters.actor) return false;
+    if (!agentActivityFilters.modes.has(item._mode)) return false;
+    return true;
+  });
+}
+
+function renderAgentFilterButton({ type, value, label, count, active }) {
+  return `
+    <button
+      type="button"
+      class="admin-agent-filter${active ? " active" : ""}"
+      data-agent-filter-type="${escapeHtml(type)}"
+      data-agent-filter-value="${escapeHtml(value)}"
+      aria-pressed="${active ? "true" : "false"}"
+    >
+      <span>${escapeHtml(label)}</span>
+      <em>${formatNumber(count)}</em>
+    </button>
+  `;
+}
+
+function renderAgentActivityControls(items = latestAgentActivity) {
+  const counts = items.reduce((acc, item) => {
+    acc.actor[item._actor] = (acc.actor[item._actor] || 0) + 1;
+    acc.mode[item._mode] = (acc.mode[item._mode] || 0) + 1;
+    return acc;
+  }, { actor: { all: items.length, user: 0, system: 0 }, mode: { render: 0, v2: 0, wiring: 0, rigging: 0, general: 0 } });
+  const modeOrder = ["render", "v2", "wiring", "rigging", "general"];
+  return `
+    <div class="admin-agent-filter-group" role="group" aria-label="Actor">
+      <span>Show</span>
+      ${renderAgentFilterButton({ type: "actor", value: "all", label: "All", count: counts.actor.all, active: agentActivityFilters.actor === "all" })}
+      ${renderAgentFilterButton({ type: "actor", value: "user", label: "Users", count: counts.actor.user, active: agentActivityFilters.actor === "user" })}
+      ${renderAgentFilterButton({ type: "actor", value: "system", label: "System", count: counts.actor.system, active: agentActivityFilters.actor === "system" })}
+    </div>
+    <div class="admin-agent-filter-group" role="group" aria-label="Prompt areas">
+      <span>Area</span>
+      ${modeOrder.map((mode) => renderAgentFilterButton({
+        type: "mode",
+        value: mode,
+        label: agentActivityModeLabel(mode),
+        count: counts.mode[mode] || 0,
+        active: agentActivityFilters.modes.has(mode),
+      })).join("")}
+    </div>
+  `;
+}
+
 function renderAgentActivityRows(items = []) {
+  const visible = filteredAgentActivity(items);
   if (!items.length) {
     return `<p class="muted small">No Render Agent questions yet.</p>`;
   }
-  return items
+  if (!visible.length) {
+    return `<p class="muted small admin-agent-empty">No questions match these filters. Turn on another user/system or prompt-area toggle.</p>`;
+  }
+  return visible
     .map((item) => {
       const when = formatDate(item.created_at);
       const who = escapeHtml(item.asker_name || item.owner_name || "User");
@@ -622,21 +852,68 @@ function renderAgentActivityRows(items = []) {
       const thread = escapeHtml(item.thread_title || "Thread");
       const q = escapeHtml(item.question_preview || item.question || "");
       const attachments = Number(item.attachment_count || 0);
+      const actor = item._actor === "system" ? "System" : "User";
+      const mode = agentActivityModeLabel(item._mode);
       return `
-        <article class="admin-agent-activity-row">
-          <div>
-            <strong>${who}</strong>
-            <span class="muted">${email}</span>
-          </div>
-          <div>
+        <article class="admin-agent-activity-row admin-agent-activity-row--${escapeHtml(item._mode)}">
+          <div class="admin-agent-activity-main">
+            <div class="admin-agent-activity-person">
+              <span class="admin-agent-avatar" aria-hidden="true">${escapeHtml((who || "U").trim().slice(0, 1).toUpperCase())}</span>
+              <div>
+                <strong>${who}</strong>
+                <span>${email || "No email"}</span>
+              </div>
+            </div>
             <p class="admin-agent-activity-q">${q || "<span class='muted'>(empty message)</span>"}</p>
-            <span class="muted">Thread · ${thread}${attachments ? ` · ${attachments} attachment${attachments === 1 ? "" : "s"}` : ""}</span>
+            <div class="admin-agent-activity-tags">
+              <span>${escapeHtml(actor)}</span>
+              <span>${escapeHtml(mode)}</span>
+              <span>Thread · ${thread}</span>
+              ${attachments ? `<span>${attachments} attachment${attachments === 1 ? "" : "s"}</span>` : ""}
+            </div>
           </div>
-          <div class="admin-agent-activity-meta">${when}</div>
+          <time class="admin-agent-activity-meta" datetime="${escapeHtml(item.created_at || "")}">${when}</time>
         </article>
       `;
     })
     .join("");
+}
+
+function renderAgentActivity(root) {
+  const listEl = root.querySelector("#admin-agent-activity-list");
+  const controlsEl = root.querySelector("#admin-agent-controls");
+  const statsEl = root.querySelector("#admin-agent-stats");
+  if (controlsEl) controlsEl.innerHTML = renderAgentActivityControls(latestAgentActivity);
+  if (listEl) listEl.innerHTML = renderAgentActivityRows(latestAgentActivity);
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <span class="admin-pill"><strong>Questions</strong><em>${formatNumber(latestAgentStats.question_count)}</em></span>
+      <span class="admin-pill"><strong>Threads</strong><em>${formatNumber(latestAgentStats.thread_count)}</em></span>
+      <span class="admin-pill"><strong>Users</strong><em>${formatNumber(latestAgentStats.user_count)}</em></span>
+      <span class="admin-pill"><strong>Visible</strong><em>${formatNumber(filteredAgentActivity().length)}</em></span>
+    `;
+  }
+}
+
+function bindAgentActivityControls(root) {
+  const controlsEl = root.querySelector("#admin-agent-controls");
+  if (!controlsEl) return;
+  controlsEl.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-agent-filter-type]");
+    if (!btn) return;
+    const type = btn.getAttribute("data-agent-filter-type");
+    const value = btn.getAttribute("data-agent-filter-value");
+    if (type === "actor") {
+      agentActivityFilters.actor = value || "all";
+    } else if (type === "mode") {
+      if (agentActivityFilters.modes.has(value)) {
+        if (agentActivityFilters.modes.size > 1) agentActivityFilters.modes.delete(value);
+      } else if (value) {
+        agentActivityFilters.modes.add(value);
+      }
+    }
+    renderAgentActivity(root);
+  });
 }
 
 function renderFeedbackRows(items = []) {
@@ -649,6 +926,13 @@ function renderFeedbackRows(items = []) {
     const prompt = context.prompt_history?.prompt || item.prompt_label || "";
     const trace = item.trace_id || context.trace_id || context.prompt_history?.trace_id || "";
     const unread = item.unread ? `<span class="admin-feedback-unread">Unread</span>` : "";
+    const adminMessages = (item.admin_messages || []).slice(-3).map((msg) => `
+      <li>
+        <strong>${escapeHtml(msg.admin_name || "Admin")}</strong>
+        <span>${escapeHtml(msg.message || "")}</span>
+        <small>${formatDate(msg.created_at)}${msg.project_id ? " · sent to chat" : " · sent notification"}</small>
+      </li>
+    `).join("");
     return `
       <article class="admin-feedback-row admin-feedback-row--${escapeHtml(item.kind || "request")}" data-feedback-id="${escapeHtml(item.id)}">
         <div class="admin-feedback-head">
@@ -667,7 +951,9 @@ function renderFeedbackRows(items = []) {
           ${screenshots ? ` · ${screenshots}` : ""}
         </p>
         ${prompt ? `<details class="admin-feedback-details"><summary>Prompt / trace context</summary><pre>${escapeHtml(JSON.stringify({ prompt, trace_log: context.trace_log || [], generation_jobs: context.generation_jobs || [] }, null, 2))}</pre></details>` : ""}
+        ${adminMessages ? `<ul class="admin-feedback-admin-messages">${adminMessages}</ul>` : ""}
         <div class="admin-gs-pending-actions">
+          <button type="button" class="btn accent btn-compact" data-feedback-message>Ask user</button>
           <button type="button" class="btn accent btn-compact" data-feedback-review="approved">Approve</button>
           <button type="button" class="btn secondary btn-compact" data-feedback-review="checked">Check</button>
           <button type="button" class="btn secondary btn-compact" data-feedback-review="denied">Deny</button>
@@ -781,6 +1067,26 @@ async function loadFeedbackInbox(root) {
       <span class="admin-pill"><strong>Suggestions</strong><em>${formatNumber(summary.suggestion_count)}</em></span>
     `;
     listEl.innerHTML = renderFeedbackRows(data.requests || []);
+    listEl.querySelectorAll("[data-feedback-message]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("[data-feedback-id]");
+        const id = row?.getAttribute("data-feedback-id");
+        if (!id) return;
+        const text = window.prompt("Message this user from Render3D support:");
+        if (!text || !text.trim()) return;
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/feedback/requests/${encodeURIComponent(id)}/message`, {
+            method: "POST",
+            body: JSON.stringify({ message: text.trim() }),
+          });
+          void loadFeedbackInbox(root);
+        } catch (err) {
+          btn.disabled = false;
+          alert(err.message || "Could not message user");
+        }
+      });
+    });
     listEl.querySelectorAll("[data-feedback-review]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const row = btn.closest("[data-feedback-id]");
@@ -880,20 +1186,28 @@ async function loadNewUserAlerts(root) {
 async function loadRenderAgentActivity(root) {
   const statsEl = root.querySelector("#admin-agent-stats");
   const listEl = root.querySelector("#admin-agent-activity-list");
+  const controlsEl = root.querySelector("#admin-agent-controls");
   if (!statsEl || !listEl) return;
   statsEl.innerHTML = `<span class="admin-pill"><strong>Loading…</strong></span>`;
+  if (controlsEl) controlsEl.innerHTML = "";
   listEl.innerHTML = `<p class="muted small">Loading Render Agent questions…</p>`;
   try {
     const data = await api("/api/admin/render-agent/activity?limit=80");
     const stats = data.stats || {};
+    latestAgentStats = stats;
+    latestAgentActivity = normalizeAgentActivity(data.activity || []);
     statsEl.innerHTML = `
       <span class="admin-pill"><strong>Questions</strong><em>${formatNumber(stats.question_count)}</em></span>
       <span class="admin-pill"><strong>Threads</strong><em>${formatNumber(stats.thread_count)}</em></span>
       <span class="admin-pill"><strong>Users</strong><em>${formatNumber(stats.user_count)}</em></span>
+      <span class="admin-pill"><strong>Visible</strong><em>${formatNumber(filteredAgentActivity().length)}</em></span>
     `;
-    listEl.innerHTML = renderAgentActivityRows(data.activity || []);
+    renderAgentActivity(root);
   } catch (err) {
+    latestAgentActivity = [];
+    latestAgentStats = {};
     statsEl.innerHTML = "";
+    if (controlsEl) controlsEl.innerHTML = "";
     listEl.innerHTML = `<p class="muted small">Could not load Render Agent activity: ${escapeHtml(err.message || "error")}</p>`;
   }
 }
@@ -921,8 +1235,10 @@ async function loadDashboard(root) {
 export function initAdminDashboard() {
   const root = document.getElementById("admin-dashboard-root");
   if (!root) return;
+  adminDashboardRoot = root;
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal();
   });
   loadDashboard(root);
+  connectAdminRealtime();
 }

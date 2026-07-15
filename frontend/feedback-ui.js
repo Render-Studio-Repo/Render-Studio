@@ -1,6 +1,6 @@
 /** Modern bug / suggestion feedback UI with page-wide image drop. */
 
-import { authHeaders, getStoredUser, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
+import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
 
 const MAX_SHOTS = 5;
 const ACCEPT = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -522,6 +522,8 @@ export function initManagementNotifications({ intervalMs = 30000 } = {}) {
   const toolbar = document.getElementById("btn-admin-dashboard-toolbar");
   const menuLink = document.getElementById("btn-admin-dashboard");
   let timer = null;
+  let socket = null;
+  let reconnectTimer = null;
 
   function ensureBadge(target) {
     if (!target) return null;
@@ -557,11 +559,53 @@ export function initManagementNotifications({ intervalMs = 30000 } = {}) {
     }
   }
 
+  function realtimeUrl() {
+    const token = encodeURIComponent(getToken());
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}/api/ws/user?token=${token}`;
+  }
+
+  function connectRealtime() {
+    if (socket || !isAdminUser(getStoredUser()) || !getToken()) return;
+    socket = new WebSocket(realtimeUrl());
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "management.notification.updated") {
+          apply(msg.summary || {});
+          window.dispatchEvent(new CustomEvent("render3d:management-notification", { detail: msg }));
+        }
+      } catch {
+        /* ignore malformed realtime payload */
+      }
+    };
+    socket.onclose = () => {
+      socket = null;
+      if (!reconnectTimer && isAdminUser(getStoredUser())) {
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = null;
+          connectRealtime();
+        }, 2500);
+      }
+    };
+  }
+
   void poll();
+  connectRealtime();
   window.addEventListener("storage", (event) => {
-    if (event.key === "render3d:user") void poll();
+    if (event.key === "render3d:user") {
+      void poll();
+      connectRealtime();
+    }
   });
   window.addEventListener("render3d:feedback-submitted", () => void poll());
   timer = window.setInterval(poll, intervalMs);
-  return { refresh: poll, stop: () => timer && window.clearInterval(timer) };
+  return {
+    refresh: poll,
+    stop: () => {
+      if (timer) window.clearInterval(timer);
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    },
+  };
 }

@@ -1,7 +1,69 @@
 /** Guided "Show me" tours for Getting Started + Studio. */
 
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-summary-popup";
+
 /** Tours that click the 3D viewport always seed the Robot Arm demo project. */
 const ROBOT_ARM_DEMO_TOURS = new Set(["picks", "select-object", "solid-tools", "link-to-prompt"]);
+
+const GUIDE_BY_ID = Object.fromEntries(
+  (GETTING_STARTED_GUIDES || []).map((g) => [g.id, g])
+);
+
+/** Tours whose docs guide id differs from the show-me id. */
+const TOUR_GUIDE_ALIAS = {
+  "prompt-onboarding": "ai-generate",
+};
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function resolveGuideForTour(guideId) {
+  const alias = TOUR_GUIDE_ALIAS[guideId] || guideId;
+  return GUIDE_BY_ID[alias] || GUIDE_BY_ID[guideId] || null;
+}
+
+function buildTourSummary(tour, guideId) {
+  const guide = resolveGuideForTour(guideId);
+  const custom = tour?.completionSummary || {};
+  const howItWorks = Array.isArray(custom.howItWorks) && custom.howItWorks.length
+    ? custom.howItWorks
+    : Array.isArray(guide?.steps)
+      ? guide.steps
+      : [];
+  const actions = Array.isArray(custom.actions) ? [...custom.actions] : [];
+  if (tour?.remixAction && !actions.some((a) => a.remix)) {
+    actions.push({
+      label: tour.remixLabel || "Remix example",
+      remix: true,
+    });
+  }
+  return {
+    title: custom.title || tour?.title || guide?.title || "Walkthrough complete",
+    body:
+      custom.body
+      || guide?.summary
+      || (tour?.example
+        ? `You finished the click-through. Try this next: ${tour.example}`
+        : "You finished this walkthrough. Use the demo below as a quick refresher of what it does and how it works."),
+    howItWorks,
+    gif: custom.gif || tour?.gif || guide?.gif || null,
+    actions,
+  };
+}
+
+function ensureSummaryStyles() {
+  if (document.getElementById("show-me-summary-css")) return;
+  const link = document.createElement("link");
+  link.id = "show-me-summary-css";
+  link.rel = "stylesheet";
+  link.href = "/show-me-summary.css?v=20260715-summary-popup";
+  document.head.appendChild(link);
+}
 
 const SHOW_ME_TOURS = {
   "ai-generate": {
@@ -24,35 +86,35 @@ const SHOW_ME_TOURS = {
     steps: [
       {
         selector: "#viewport, .viewport-shell, .studio-viewport",
-        label: "We'll use a private Robot Arm demo so you can learn Generate, selection, references, and editing on a real model.",
+        label: "Welcome to Studio. We'll use a private Robot Arm demo so you can learn the real workflow: write a prompt, choose speed or quality, reference project parts, select geometry in the viewport, and send better context to AI.",
         click: false,
       },
       {
         selector: "#prompt-spice-toggle, #prompt-spice-wrap",
-        label: "Improve prompt with AI is on by default. It rewrites rough text into a clearer CAD brief before Generate.",
+        label: "Improve prompt with AI is on by default. Think of it as a quick CAD brief writer: it keeps your idea, adds missing dimensions/constraints when it can, and makes the request easier for the model to build correctly.",
         click: false,
         reveal: "mobile-ai",
       },
       {
         selector: "#prompt-speed",
-        label: "Speed vs Quality: Speed is cheaper/faster for drafts. Quality spends more model time for harder geometry, repairs, and final parts.",
+        label: "Speed vs Quality controls how much model effort you spend. Use Speed for rough drafts and quick shape tests. Use Quality for harder geometry, final parts, repair passes, or when the first result needs stronger reasoning.",
         click: false,
         reveal: "mobile-ai",
       },
       {
         selector: "#project-browser, .browser-section, .file-browser, [data-mobile-corner='workspace']",
-        label: "Project components can be linked into the prompt, so AI knows exactly which part or file you mean.",
+        label: "Project components are not just files; they are prompt context. Link a component when you want AI to edit or design around a specific part instead of guessing from text alone.",
         click: false,
       },
       {
         selector: "#prompt-input, .prompt-editor, #prompt-pane-compose, [data-mobile-corner='ai']",
-        label: "Drag or reference project items here as @component context instead of describing everything from scratch.",
+        label: "Referenced items appear in the prompt as chips, like @component or @selected-object. This tells AI which exact model, drawing, or selected part should guide the response.",
         click: false,
         reveal: "mobile-ai",
       },
       {
         selector: "#btn-prompt, #prompt-generate, #btn-generate",
-        label: "Generate sends your prompt to Render AI. Use it for new parts, revisions, and edits to selected robot-arm pieces.",
+        label: "Generate sends the prompt plus any linked context to Render AI. Use it for new CAD, revisions, or selected-object edits. If a generation takes time, it continues in the project background.",
         click: false,
         reveal: "mobile-ai",
       },
@@ -100,13 +162,32 @@ const SHOW_ME_TOURS = {
       },
       {
         selector: "#prompt-kb-icon-btn, .prompt-kb-icon-wrap",
-        label: "Knowledge Base opens your saved docs, CAD, PDFs, and reference files so prompts can use your project memory.",
-        click: true,
+        label: "Knowledge Base is project memory. It stores docs, PDFs, CAD references, manuals, drawings, and prompt notes so future prompts can use repeatable context instead of starting from zero.",
+        click: false,
         reveal: "mobile-ai",
       },
       {
-        selector: "#knowledge-base-modal, .kb-modal-card, #prompt-kb-picker-list",
-        label: "Inside Knowledge Base, select collections, upload files/folders, and choose which references should be attached to AI.",
+        demo: "knowledge-base",
+        demoTarget: "create",
+        label: "Create a Knowledge Base first. Give it a name like Robot Arm Specs or Customer Requirements, then add a short description so teammates understand what it contains.",
+        click: false,
+      },
+      {
+        demo: "knowledge-base",
+        demoTarget: "upload",
+        label: "Add source material next. Drop PDFs, CAD files, screenshots, DXF drawings, spreadsheets, or notes. Render3D keeps them organized as reusable prompt context.",
+        click: false,
+      },
+      {
+        demo: "knowledge-base",
+        demoTarget: "select",
+        label: "Select the Knowledge Base when you want the AI prompt to use those files. Keep only relevant bases enabled so the model sees strong context instead of noise.",
+        click: false,
+      },
+      {
+        demo: "knowledge-base",
+        demoTarget: "attach",
+        label: "When a Knowledge Base is attached, your prompt can ask things like: use the wiring manual, match this CAD spec, or follow our robot assembly notes. That context travels with the Generate request.",
         click: false,
       },
       {
@@ -120,6 +201,21 @@ const SHOW_ME_TOURS = {
         click: false,
       },
     ],
+    completionSummary: {
+      title: "Studio walkthrough complete",
+      body: "You learned the main Studio loop: improve a prompt, choose speed or quality, link files and selected objects, use voice and modes, attach Knowledge Base context, ask Render Agent, and capture the viewport.",
+      howItWorks: [
+        "Write or improve a CAD prompt in Compose.",
+        "Link project files, @faces, or selected objects for context.",
+        "Choose Speed or Quality, then Generate.",
+        "Ask Render Agent when you are unsure what to click next.",
+      ],
+      actions: [
+        { label: "Demo Texture to Model", guideId: "reference-markup" },
+        { label: "Tour Wiring Simulator", guideId: "wiring" },
+        { label: "Tour Architect Mode", guideId: "architect-mode" },
+      ],
+    },
   },
   workspaces: {
     title: "Workspaces",
@@ -224,18 +320,67 @@ const SHOW_ME_TOURS = {
     remixAction: "wiring-stepper",
     remixLabel: "Remix Arduino stepper into my folder",
     steps: [
-      { selector: "#workspace-mode-btn", label: "Open workspace modes", click: true },
+      { selector: "#workspace-mode-btn", label: "Open workspace modes. Wiring lives beside CAD, Sketch, Canvas, and Architect so electronics can stay attached to the same project.", click: true },
       {
         selector: "#workspace-mode-menu .workspace-mode-option",
         matchText: "Wiring",
-        label: "Click Wiring Simulator",
+        label: "Click Wiring Simulator. This switches the center workspace from 3D model viewing into a circuit board and schematic canvas.",
         click: true,
         ensureMenu: true,
       },
-      { selector: "#btn-wiring-toolbelt-demo-stepper", label: "Load the Arduino → Stepper example", click: true },
-      { selector: "#wiring-viewport, #wiring-workspace, .wiring-canvas", label: "Arduino, ULN2003 driver, and 28BYJ-48 stepper appear on the board", click: false },
-      { selector: "#btn-wiring-code", label: "Open Code & Simulate to generate/run the control sketch", click: false },
-      { selector: "#btn-wiring-run-schematic", label: "Run schematic to animate and validate the circuit", click: false },
+      { selector: "#btn-wiring-toolbelt-demo-stepper", label: "Load the Arduino to Stepper example. Demos are safe starting points for learning wiring before building your own robot circuit.", click: true },
+      { selector: "#wiring-viewport, #wiring-workspace, .wiring-canvas", label: "The board shows components and connections. Drag parts to lay out the circuit, then use the schematic run tools to validate the loop.", click: false },
+      { selector: "#btn-wiring-code", label: "Code & Simulate generates or opens the control sketch. Use it when the wiring is mostly right and you want firmware logic to match the circuit.", click: false },
+      { selector: "#btn-wiring-run-schematic", label: "Run schematic animates and validates the circuit. It is the quick check before sending wiring back to AI or exporting build notes.", click: false },
+      { selector: "#btn-wiring-photo-debug", label: "Circuit Debugger lets you upload real wiring photos and ask what is wrong, such as crossed wires, wrong pins, or missing power/ground.", click: false },
+    ],
+  },
+  "architect-mode": {
+    title: "Architect Mode",
+    example: "",
+    studioPath: "/?showMe=architect-mode",
+    gif: "/docs/media/ai-generate.gif?v=20260715-real",
+    completionSummary: {
+      title: "Architect Mode",
+      body: "Architect is for modular house layouts. Build a wireframe shell with wall, door, and window tiles on a snap grid before styling.",
+      howItWorks: [
+        "Open Architect in the right panel.",
+        "Stay in Build and paint Wall tiles on the grid.",
+        "Add Door and Window openings early.",
+        "Move through Design → Structure → Comfort → Review as the layout matures.",
+      ],
+    },
+    steps: [
+      {
+        selector: '.right-panel-tab[data-right-tab="architect"], .architect-mode-tab',
+        label: "Open Architect in the right panel. Architect is for modular house layouts: walls, doors, windows, rooms, and grid-based building pieces.",
+        click: true,
+      },
+      {
+        selector: "#architect-prompt-panel, .architect-prompt-panel",
+        label: "Architect starts in Build. Build is intentionally not generative by default; it is a hands-on wireframe mode so you can create layout structure before asking AI for styled parts.",
+        click: false,
+      },
+      {
+        selector: ".architect-tile-btn[data-architect-step='draw']",
+        label: "Wall tiles are 3 ft by 9 ft bays. Pick Wall, then drag in the viewport to paint modular wall panels on the snap grid.",
+        click: false,
+      },
+      {
+        selector: ".architect-tile-btn[data-architect-step='door']",
+        label: "Door tiles reserve openings in the wall grid. Use them early so rooms have real entrances instead of sealed boxes.",
+        click: false,
+      },
+      {
+        selector: ".architect-tile-btn[data-architect-step='window']",
+        label: "Window tiles add openings for daylight. The goal is a clean modular shell first, then later phases can style and detail it.",
+        click: false,
+      },
+      {
+        selector: ".architect-phase-nav",
+        label: "The phases show the intended workflow: Build the layout, Design the look, add Structure, inspect Comfort, then Review before export. Build is the live phase right now.",
+        click: false,
+      },
     ],
   },
   "cloud-sync": {
@@ -332,6 +477,7 @@ let stepIndex = 0;
 let overlayMode = "studio";
 let overlayBound = false;
 let resizeHandler = null;
+let activeDemoEl = null;
 
 function ensureOverlay() {
   let el = document.getElementById("show-me-overlay");
@@ -392,8 +538,65 @@ function clearHighlight() {
   if (dim) dim.style.opacity = "";
 }
 
+function removeDemo() {
+  activeDemoEl?.remove();
+  activeDemoEl = null;
+}
+
+function ensureKnowledgeBaseDemo() {
+  if (activeDemoEl?.dataset?.demo === "knowledge-base") return activeDemoEl;
+  removeDemo();
+  const demo = document.createElement("div");
+  demo.className = "show-me-kb-demo";
+  demo.dataset.demo = "knowledge-base";
+  demo.innerHTML = `
+    <div class="show-me-kb-demo-head">
+      <span class="show-me-kb-demo-icon" aria-hidden="true">KB</span>
+      <div>
+        <strong>Knowledge Base</strong>
+        <small>Animated setup preview</small>
+      </div>
+    </div>
+    <div class="show-me-kb-demo-flow">
+      <button type="button" class="show-me-kb-node" data-kb-demo-target="create">
+        <span>01</span><strong>Create base</strong><small>Name + description</small>
+      </button>
+      <button type="button" class="show-me-kb-node" data-kb-demo-target="upload">
+        <span>02</span><strong>Add files</strong><small>PDF, CAD, images, docs</small>
+      </button>
+      <button type="button" class="show-me-kb-node" data-kb-demo-target="select">
+        <span>03</span><strong>Select context</strong><small>Attach only what matters</small>
+      </button>
+      <button type="button" class="show-me-kb-node" data-kb-demo-target="attach">
+        <span>04</span><strong>Use in prompt</strong><small>Generate with memory</small>
+      </button>
+    </div>
+    <div class="show-me-kb-demo-stack" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+  `;
+  document.body.appendChild(demo);
+  activeDemoEl = demo;
+  return demo;
+}
+
+function demoTarget(step) {
+  if (step.demo === "knowledge-base") {
+    const demo = ensureKnowledgeBaseDemo();
+    demo.querySelectorAll(".show-me-kb-node").forEach((node) => {
+      node.classList.toggle("is-active", node.getAttribute("data-kb-demo-target") === step.demoTarget);
+    });
+    return demo.querySelector(`[data-kb-demo-target="${step.demoTarget || "create"}"]`) || demo;
+  }
+  removeDemo();
+  return null;
+}
+
 function stopShowMe() {
   clearHighlight();
+  removeDemo();
+  document.getElementById("show-me-summary")?.remove();
+  document.getElementById("show-me-summary-backdrop")?.remove();
   activeTour = null;
   activeGuideId = null;
   stepIndex = 0;
@@ -589,16 +792,27 @@ function simulateClick(el) {
 
 function openDemoGif() {
   const tour = activeTour || getShowMeTour(activeGuideId);
+  if (!tour) {
+    stopShowMe();
+    return;
+  }
   const card = activeGuideId ? document.getElementById(activeGuideId) : null;
   const fromCard = card?.querySelector("img[src*='.gif'], video source, img.gs-demo-gif");
-  const url = fromCard?.getAttribute?.("src") || tour?.gif;
-  if (url) window.open(url, "_blank", "noopener");
+  const summary = buildTourSummary(tour, activeGuideId);
+  if (fromCard?.getAttribute?.("src")) summary.gif = fromCard.getAttribute("src");
+  clearHighlight();
+  document.getElementById("show-me-overlay")?.classList.add("hidden");
+  showCompletionSummary(summary);
 }
 
 function onNextClick() {
   if (overlayMode === "docs") {
     const path = activeTour?.studioPath || `/?showMe=${encodeURIComponent(activeGuideId || "")}`;
     window.location.href = path;
+    return;
+  }
+  if (document.getElementById("show-me-summary")) {
+    stopShowMe();
     return;
   }
   advanceShowMe(false);
@@ -647,29 +861,105 @@ function showTourComplete() {
   }
   fillExample(activeTour.example);
   clearHighlight();
+  removeDemo();
   const stepEl = document.getElementById("show-me-step");
   const nextBtn = document.getElementById("show-me-next");
   const skipBtn = document.getElementById("show-me-skip");
   const remixBtn = document.getElementById("show-me-remix");
+  const summary = buildTourSummary(activeTour, activeGuideId);
+  showCompletionSummary(summary);
+  document.getElementById("show-me-overlay")?.classList.add("hidden");
   if (stepEl) {
     stepEl.textContent = activeTour.remixAction
-      ? "Example complete. Remix it into your folder to keep editing from your own project."
-      : "Example complete.";
+      ? "Walkthrough complete. Review the summary, remix the example, or close."
+      : "Walkthrough complete. Review the summary below, or close.";
   }
   if (nextBtn) nextBtn.textContent = "Close";
   if (skipBtn) skipBtn.classList.add("hidden");
   if (remixBtn) {
     remixBtn.textContent = activeTour.remixLabel || "Remix example";
     remixBtn.disabled = false;
-    remixBtn.classList.toggle("hidden", !activeTour.remixAction);
+    remixBtn.classList.add("hidden");
   }
+}
+
+function showCompletionSummary(summary = {}) {
+  ensureSummaryStyles();
+  document.getElementById("show-me-summary")?.remove();
+  document.getElementById("show-me-summary-backdrop")?.remove();
+
+  const backdrop = document.createElement("div");
+  backdrop.id = "show-me-summary-backdrop";
+  backdrop.className = "show-me-summary-backdrop";
+  backdrop.addEventListener("click", stopShowMe);
+
+  const card = document.createElement("div");
+  card.id = "show-me-summary";
+  card.className = "show-me-summary";
+  card.setAttribute("role", "dialog");
+  card.setAttribute("aria-modal", "true");
+  card.setAttribute("aria-label", summary.title || "Walkthrough summary");
+
+  const how = Array.isArray(summary.howItWorks) ? summary.howItWorks.filter(Boolean) : [];
+  const gif = summary.gif || activeTour?.gif || null;
+  const actions = Array.isArray(summary.actions) ? summary.actions : [];
+
+  card.innerHTML = `
+    <div class="show-me-summary-glow" aria-hidden="true"></div>
+    <div class="show-me-summary-brand">
+      <img class="show-me-summary-logo" src="/render3d-logo.png?v=20260715-new-logo" alt="" width="40" height="40" />
+      <span class="show-me-summary-brand-word">Render3D</span>
+    </div>
+    ${gif ? `
+      <div class="show-me-summary-gif-wrap">
+        <img class="show-me-summary-gif" src="${escapeHtml(gif)}" alt="" loading="eager" decoding="async" />
+      </div>
+    ` : ""}
+    <strong>${escapeHtml(summary.title || "Walkthrough complete")}</strong>
+    <p class="show-me-summary-body">${escapeHtml(summary.body || "You finished this walkthrough.")}</p>
+    ${how.length ? `
+      <div class="show-me-summary-how">
+        <h4>How it works</h4>
+        <ol>
+          ${how.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+        </ol>
+      </div>
+    ` : ""}
+    <div class="show-me-summary-actions">
+      ${actions.map((action) => {
+        if (action.remix) {
+          return `<button type="button" class="btn accent btn-compact" data-summary-remix>${escapeHtml(action.label || "Remix example")}</button>`;
+        }
+        if (action.guideId) {
+          return `<button type="button" class="btn accent btn-compact" data-summary-tour="${escapeHtml(action.guideId)}">${escapeHtml(action.label || "Start tour")}</button>`;
+        }
+        return "";
+      }).join("")}
+      <button type="button" class="btn secondary btn-compact" data-summary-close>Close</button>
+    </div>
+  `;
+
+  document.body.appendChild(backdrop);
+  document.body.appendChild(card);
+
+  card.querySelectorAll("[data-summary-tour]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const guideId = btn.getAttribute("data-summary-tour") || "";
+      stopShowMe();
+      if (guideId) setTimeout(() => startShowMe(guideId, { onDocsPage: false }), 120);
+    });
+  });
+  card.querySelector("[data-summary-remix]")?.addEventListener("click", () => {
+    void runRemixAction();
+  });
+  card.querySelector("[data-summary-close]")?.addEventListener("click", stopShowMe);
 }
 
 function syncNextLabel() {
   const nextBtn = document.getElementById("show-me-next");
   if (!nextBtn || !activeTour) return;
   const steps = activeTour.steps || [];
-  if (stepIndex >= steps.length) nextBtn.textContent = activeTour.remixAction ? "Finish" : "Done";
+  if (stepIndex >= steps.length) nextBtn.textContent = "Summary";
   else nextBtn.textContent = `Next (${stepIndex + 1}/${steps.length})`;
 }
 
@@ -804,6 +1094,7 @@ async function ensureRobotArmForTour(guideId) {
 function resolveStepTarget(step) {
   if (step.ensureMenu) ensureWorkspaceMenuOpen();
   if (step.reveal) ensureReveal(step.reveal);
+  if (step.demo) return demoTarget(step);
   if (step.viewport) return getViewportEl();
   return findFirst(step.selector, step.matchText);
 }
@@ -815,11 +1106,7 @@ function advanceShowMe(skipClick) {
   }
   const steps = activeTour.steps || [];
   if (stepIndex >= steps.length) {
-    if (document.getElementById("show-me-remix")?.classList.contains("hidden") && activeTour.remixAction) {
-      showTourComplete();
-    } else {
-      stopShowMe();
-    }
+    showTourComplete();
     return;
   }
   const step = steps[stepIndex];
@@ -847,7 +1134,7 @@ function advanceShowMe(skipClick) {
       return;
     }
 
-    const el = findFirst(step.selector, step.matchText);
+    const el = step.demo ? demoTarget(step) : findFirst(step.selector, step.matchText);
     highlight(el, `${n}/${steps.length}: ${step.label}`);
     const shouldClick = !skipClick && step.click !== false && el && (isClickable(el) || step.click === true);
     if (shouldClick) {
@@ -862,7 +1149,7 @@ function advanceShowMe(skipClick) {
   if (stepIndex >= steps.length) {
     fillExample(activeTour.example);
     const nextBtn = document.getElementById("show-me-next");
-    if (nextBtn) nextBtn.textContent = activeTour.remixAction ? "Finish" : "Done";
+    if (nextBtn) nextBtn.textContent = "Summary";
   }
 }
 
@@ -904,7 +1191,7 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
         ? "Open Studio — we'll spin up a private Robot Arm project for the live click-through."
         : "Open Studio for a live click-through, or watch the demo GIF.";
     if (nextBtn) nextBtn.textContent = "Open Studio walkthrough";
-    if (skipBtn) skipBtn.textContent = tour.gif ? "Watch demo GIF" : "Close";
+    if (skipBtn) skipBtn.textContent = tour.gif ? "Watch summary GIF" : "Close";
     return true;
   }
 

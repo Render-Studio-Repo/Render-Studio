@@ -7,6 +7,18 @@ const GRID_MAJOR = 100;
 const BG_COLOR = "#0d1117";
 const GRID_MINOR_COLOR = "rgba(88, 166, 255, 0.12)";
 const GRID_MAJOR_COLOR = "rgba(88, 166, 255, 0.28)";
+const CANVAS_TAGS = [
+  "Robot",
+  "Building",
+  "Arm",
+  "Wheel",
+  "Base",
+  "Door",
+  "Window",
+  "Sensor",
+  "Motor",
+  "Floor",
+];
 
 export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } = {}) {
   let canvas, ctx;
@@ -26,6 +38,9 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
   let recordingStartTime = null;
   let recordingTimer = null;
   let textInput = null;
+  let elements = [];
+  let activeElement = null;
+  let tagMenu = null;
 
   function isActive() {
     return document.body.classList.contains("canvas-design-tab")
@@ -102,6 +117,7 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
             </div>
           </div>
           <canvas id="canvas-draw" class="canvas-draw"></canvas>
+          <div class="canvas-tag-layer" id="canvas-tag-layer" aria-label="Canvas shape tags"></div>
         </div>
       </div>`;
 
@@ -141,6 +157,7 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     img.onload = () => {
       drawGridBackground();
       ctx.drawImage(img, 0, 0, w, h);
+      renderTagBadges();
     };
     img.src = saved;
   }
@@ -187,8 +204,12 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     canvas.style.cursor = cursors[tool] || cursors.default;
   }
 
+  function cloneElements() {
+    return elements.map((el) => ({ ...el, bounds: { ...(el.bounds || {}) } }));
+  }
+
   function pushHistory() {
-    history.push(canvas.toDataURL());
+    history.push({ dataUrl: canvas.toDataURL(), elements: cloneElements() });
     if (history.length > 60) history.shift();
     redoStack = [];
     updateUndoRedo();
@@ -196,16 +217,23 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
 
   function undo() {
     if (!history.length) return;
-    redoStack.push(canvas.toDataURL());
-    restoreDataUrl(history.pop());
+    redoStack.push({ dataUrl: canvas.toDataURL(), elements: cloneElements() });
+    restoreSnapshot(history.pop());
     updateUndoRedo();
   }
 
   function redo() {
     if (!redoStack.length) return;
-    history.push(canvas.toDataURL());
-    restoreDataUrl(redoStack.pop());
+    history.push({ dataUrl: canvas.toDataURL(), elements: cloneElements() });
+    restoreSnapshot(redoStack.pop());
     updateUndoRedo();
+  }
+
+  function restoreSnapshot(state) {
+    if (!state) return;
+    elements = (state.elements || []).map((el) => ({ ...el, bounds: { ...(el.bounds || {}) } }));
+    restoreDataUrl(state.dataUrl);
+    renderTagBadges();
   }
 
   function restoreDataUrl(url) {
@@ -228,6 +256,9 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     if (!canvas) return;
     pushHistory();
     drawGridBackground();
+    elements = [];
+    closeTagMenu();
+    renderTagBadges();
   }
 
   function pt(e) {
@@ -241,12 +272,26 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerup", onUp);
     canvas.addEventListener("pointerleave", onUp);
+    canvas.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("click", (event) => {
+      if (!tagMenu || tagMenu.contains(event.target)) return;
+      closeTagMenu();
+    });
   }
 
   function onDown(e) {
+    if (e.button === 2) return;
+    closeTagMenu();
     if (tool === "text") { placeTextInput(pt(e)); return; }
     drawing = true;
     startPt = pt(e);
+    activeElement = {
+      id: `canvas-el-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: tool,
+      color,
+      strokeWidth,
+      bounds: pointBounds(startPt),
+    };
     pushHistory();
     snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
     if (tool === "pen" || tool === "eraser") {
@@ -259,6 +304,7 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
   function onMove(e) {
     if (!drawing) return;
     const cur = pt(e);
+    if (activeElement) activeElement.bounds = mergeBounds(activeElement.bounds, pointBounds(cur));
     if (tool === "pen") {
       ctx.strokeStyle = color;
       ctx.lineWidth = strokeWidth;
@@ -285,10 +331,64 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     drawing = false;
     if (tool !== "pen" && tool !== "eraser" && snapshot) {
       ctx.putImageData(snapshot, 0, 0);
-      drawShape(tool, startPt, pt(e));
+      const end = pt(e);
+      drawShape(tool, startPt, end);
+      if (activeElement) activeElement.bounds = boundsFromPoints(startPt, end);
     }
+    if (activeElement && tool !== "eraser" && meaningfulBounds(activeElement.bounds)) {
+      elements.push(activeElement);
+      renderTagBadges();
+    }
+    activeElement = null;
     snapshot = null;
     ctx.globalCompositeOperation = "source-over";
+  }
+
+  function pointBounds(p) {
+    return { x: p.x, y: p.y, w: 0, h: 0 };
+  }
+
+  function boundsFromPoints(a, b) {
+    const x = Math.min(a.x, b.x);
+    const y = Math.min(a.y, b.y);
+    return { x, y, w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+  }
+
+  function mergeBounds(a, b) {
+    const minX = Math.min(a.x, b.x);
+    const minY = Math.min(a.y, b.y);
+    const maxX = Math.max(a.x + a.w, b.x + b.w);
+    const maxY = Math.max(a.y + a.h, b.y + b.h);
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  function meaningfulBounds(bounds = {}) {
+    return Math.max(Number(bounds.w) || 0, Number(bounds.h) || 0) > 4;
+  }
+
+  function findElementAt(pos) {
+    const pad = 12;
+    for (let i = elements.length - 1; i >= 0; i -= 1) {
+      const el = elements[i];
+      const b = el.bounds || {};
+      if (
+        pos.x >= b.x - pad
+        && pos.x <= b.x + b.w + pad
+        && pos.y >= b.y - pad
+        && pos.y <= b.y + b.h + pad
+      ) return el;
+    }
+    return null;
+  }
+
+  function onContextMenu(event) {
+    event.preventDefault();
+    const target = findElementAt(pt(event));
+    if (!target) {
+      closeTagMenu();
+      return;
+    }
+    showTagMenu(target, event.clientX, event.clientY);
   }
 
   function drawShape(shapeType, a, b) {
@@ -359,10 +459,93 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     ctx.globalCompositeOperation = "source-over";
     const lines = text.split("\n");
     lines.forEach((line, i) => ctx.fillText(line, pos.x, pos.y + i * (fontSize + 4)));
+    const width = Math.max(...lines.map((line) => ctx.measureText(line).width), 24);
+    elements.push({
+      id: `canvas-el-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: "text",
+      text,
+      color,
+      strokeWidth,
+      bounds: { x: pos.x, y: pos.y - fontSize, w: width, h: lines.length * (fontSize + 4) },
+    });
+    renderTagBadges();
   }
 
   function dismissTextInput() {
     if (textInput) { textInput.remove(); textInput = null; }
+  }
+
+  function closeTagMenu() {
+    tagMenu?.remove();
+    tagMenu = null;
+  }
+
+  function showTagMenu(element, clientX, clientY) {
+    closeTagMenu();
+    tagMenu = document.createElement("div");
+    tagMenu.className = "canvas-tag-menu";
+    tagMenu.style.left = `${Math.min(window.innerWidth - 220, Math.max(8, clientX))}px`;
+    tagMenu.style.top = `${Math.min(window.innerHeight - 280, Math.max(8, clientY))}px`;
+    tagMenu.innerHTML = `
+      <strong>Tag this shape</strong>
+      <span>Tell AI what this drawing represents.</span>
+      <div class="canvas-tag-options">
+        ${CANVAS_TAGS.map((tag) => `<button type="button" data-canvas-tag="${tag}">${tag}</button>`).join("")}
+        <button type="button" data-canvas-tag-custom>Other…</button>
+        ${element.tag ? `<button type="button" data-canvas-tag-clear>Clear tag</button>` : ""}
+      </div>
+    `;
+    document.body.appendChild(tagMenu);
+    tagMenu.addEventListener("click", (event) => {
+      const tagBtn = event.target.closest("[data-canvas-tag]");
+      if (tagBtn) {
+        element.tag = tagBtn.getAttribute("data-canvas-tag");
+        closeTagMenu();
+        renderTagBadges();
+        return;
+      }
+      if (event.target.closest("[data-canvas-tag-custom]")) {
+        const custom = window.prompt("What is this shape?", element.tag || "");
+        if (custom?.trim()) element.tag = custom.trim().slice(0, 40);
+        closeTagMenu();
+        renderTagBadges();
+        return;
+      }
+      if (event.target.closest("[data-canvas-tag-clear]")) {
+        delete element.tag;
+        closeTagMenu();
+        renderTagBadges();
+      }
+    });
+  }
+
+  function renderTagBadges() {
+    const layer = containerEl?.querySelector("#canvas-tag-layer");
+    if (!layer) return;
+    layer.innerHTML = elements
+      .filter((el) => el.tag && el.bounds)
+      .map((el) => {
+        const b = el.bounds;
+        const x = Math.max(8, Math.min((canvas?.width || 0) - 110, b.x + b.w / 2 - 36));
+        const y = Math.max(8, b.y - 28);
+        return `<button type="button" class="canvas-tag-badge" data-canvas-el="${el.id}" style="left:${x}px;top:${y}px;">${escapeHtml(el.tag)}</button>`;
+      })
+      .join("");
+    layer.querySelectorAll("[data-canvas-el]").forEach((badge) => {
+      badge.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        const element = elements.find((el) => el.id === badge.getAttribute("data-canvas-el"));
+        if (element) showTagMenu(element, event.clientX, event.clientY);
+      });
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 
   function syncTranscript(text) {
@@ -469,6 +652,30 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
     return voiceTranscript.trim();
   }
 
+  function getTaggedContext() {
+    const width = canvas?.width || 1;
+    const height = canvas?.height || 1;
+    const tagged = elements
+      .filter((el) => el.tag && el.bounds)
+      .map((el, index) => {
+        const b = el.bounds;
+        return {
+          index: index + 1,
+          tag: el.tag,
+          type: el.type,
+          x: Math.round((b.x / width) * 100),
+          y: Math.round((b.y / height) * 100),
+          w: Math.round((b.w / width) * 100),
+          h: Math.round((b.h / height) * 100),
+          text: el.text || undefined,
+        };
+      });
+    const summary = tagged.length
+      ? tagged.map((el) => `${el.index}. ${el.tag} (${el.type}) at ${el.x}%,${el.y}% size ${el.w}%x${el.h}%${el.text ? ` text "${el.text}"` : ""}`).join("\n")
+      : "";
+    return { tagged, summary, totalElements: elements.length };
+  }
+
   function show() {
     containerEl?.classList.remove("hidden");
     containerEl?.closest(".canvas-workspace-wrap")?.classList.remove("hidden");
@@ -485,9 +692,12 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
   function destroy() {
     stopVoice();
     dismissTextInput();
+    closeTagMenu();
     history = [];
     redoStack = [];
+    elements = [];
     drawGridBackground();
+    renderTagBadges();
     updateUndoRedo();
     syncTranscript("");
   }
@@ -499,5 +709,5 @@ export function createCanvasMode({ containerEl, voiceEls, onTranscriptChange } =
 
   init();
 
-  return { show, hide, destroy, rebuild, stopVoice, getCanvasDataUrl, getTranscript, hasDrawing, clearCanvas };
+  return { show, hide, destroy, rebuild, stopVoice, getCanvasDataUrl, getTranscript, getTaggedContext, hasDrawing, clearCanvas };
 }

@@ -884,6 +884,11 @@ class ProjectChatThreadInviteRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=64)
 
 
+class ProjectChatThreadSettingsRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=80)
+    visibility: str | None = Field(default=None, max_length=16)
+
+
 class TeamMemberRoleRequest(BaseModel):
     role: str = Field(..., min_length=1, max_length=16)
 
@@ -923,6 +928,10 @@ class AdminGuideReviewRequest(BaseModel):
 class AdminFeedbackReviewRequest(BaseModel):
     status: str = Field(..., description="open | checked | approved | denied")
     note: str | None = Field(None, max_length=1000)
+
+
+class AdminFeedbackMessageRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
 
 
 class AdminNewUserReviewRequest(BaseModel):
@@ -1527,6 +1536,27 @@ def _notify_user_by_email(email: str, message: dict[str, Any]) -> None:
         ).fetchone()
     if row:
         _notify_user(row["id"], message)
+
+
+def _notify_management_update(event: str, payload: dict[str, Any] | None = None) -> None:
+    try:
+        summary_payload = {
+            "type": "management.notification.updated",
+            "event": event,
+            "summary": {
+                "feedback": feedback_service.summary(),
+                "new_users": new_user_alert_service.summary(),
+            },
+            **(payload or {}),
+        }
+        summary_payload["summary"]["unread_count"] = (
+            int(summary_payload["summary"]["feedback"].get("unread_count") or 0)
+            + int(summary_payload["summary"]["new_users"].get("unread_count") or 0)
+        )
+        for admin_email in A1PROJECTS_ADMIN_EMAILS:
+            _notify_user_by_email(admin_email, summary_payload)
+    except Exception:
+        logger.debug("Could not notify management update event=%s", event, exc_info=True)
 
 
 
@@ -4084,6 +4114,7 @@ def register(body: RegisterRequest, background_tasks: BackgroundTasks):
         raise HTTPException(400, str(exc)) from exc
     try:
         new_user_alert_service.add_new_user(user, source="email")
+        _notify_management_update("new_user.created")
     except Exception:
         logger.warning("Could not enqueue new user admin alert for user_id=%s", user.get("id"), exc_info=True)
     background_tasks.add_task(_send_welcome_email_background, dict(user))
@@ -4143,6 +4174,7 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
         if created_new_user:
             try:
                 new_user_alert_service.add_new_user(user, source=provider)
+                _notify_management_update("new_user.created")
             except Exception:
                 logger.warning("Could not enqueue social new user alert for user_id=%s", user.get("id"), exc_info=True)
             threading.Thread(target=_send_welcome_email_background, args=(dict(user),), daemon=True).start()
@@ -4826,6 +4858,7 @@ async def submit_feedback_request(
         trace_id=trace_id,
         data={"feedback_id": item["id"], "project_id": project_id, "prompt_id": prompt_id},
     )
+    _notify_management_update("feedback.created", {"request": item})
     return {"ok": True, "request": item}
 
 
@@ -4867,7 +4900,8 @@ def admin_new_user_alerts(
     _require_a1projects_admin(user)
     items = new_user_alert_service.list_alerts(status=status, limit=limit)
     if mark_read:
-        new_user_alert_service.mark_read()
+        if new_user_alert_service.mark_read():
+            _notify_management_update("new_user.read")
     return {"alerts": items, "summary": new_user_alert_service.summary()}
 
 
@@ -4884,6 +4918,7 @@ def admin_review_new_user_alert(
         raise HTTPException(422, str(exc)) from exc
     if not item:
         raise HTTPException(404, "New user alert not found")
+    _notify_management_update("new_user.reviewed", {"alert": item})
     return {"ok": True, "item": item, "summary": new_user_alert_service.summary()}
 
 
@@ -4908,7 +4943,8 @@ def admin_feedback_requests(
     _require_a1projects_admin(user)
     items = feedback_service.list_requests(status=status, kind=kind, limit=limit)
     if mark_read:
-        feedback_service.mark_read()
+        if feedback_service.mark_read():
+            _notify_management_update("feedback.read")
     return {"requests": items, "summary": feedback_service.summary()}
 
 
@@ -4925,7 +4961,105 @@ def admin_review_feedback_request(
         raise HTTPException(400, str(exc)) from exc
     if not item:
         raise HTTPException(404, "Feedback request not found")
+    _notify_management_update("feedback.reviewed", {"request": item})
     return {"ok": True, "item": item, "summary": feedback_service.summary()}
+
+
+@app.post("/api/admin/feedback/requests/{item_id}/message")
+def admin_message_feedback_user(
+    item_id: str,
+    body: AdminFeedbackMessageRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    from backend.services import project_chat_service
+
+    item = feedback_service.get_request(item_id)
+    if not item:
+        raise HTTPException(404, "Feedback request not found")
+    target_user_id = str(item.get("user_id") or "").strip()
+    text = (body.message or "").strip()
+    if not target_user_id:
+        raise HTTPException(400, "This feedback request is not tied to a user account.")
+    target_user = get_user_by_id(target_user_id) or {}
+    project_id = str(item.get("project_id") or "").strip()
+    chat_message = None
+    thread = None
+    if project_id:
+        try:
+            project_path = _require_project_read(user, project_id)
+            thread = project_chat_service.get_thread(project_path, "general", user=user, workspace_role="admin")
+            if not thread:
+                raise ValueError("Could not open project chat.")
+            mention_name = (
+                target_user.get("handle")
+                or target_user.get("display_name")
+                or target_user.get("email")
+                or item.get("user_name")
+                or "there"
+            )
+            body_text = (
+                f"@[{mention_name}](user:{target_user_id}) "
+                f"{text}\n\n"
+                f"_Reply here and the Render3D team will see it. Feedback #{item_id}._"
+            )
+            members = _project_chat_members(project_id)
+            if not any(str(m.get("id")) == target_user_id for m in members):
+                members.append(
+                    {
+                        "id": target_user_id,
+                        "email": target_user.get("email") or item.get("user_email"),
+                        "display_name": target_user.get("display_name") or item.get("user_name"),
+                        "avatar_url": _avatar_url_for_user_id(target_user_id),
+                        "handle": target_user.get("handle"),
+                    }
+                )
+            candidates = project_chat_service.mention_candidates(members)
+            chat_message = project_chat_service.post_message(
+                project_path,
+                thread_id=thread["id"],
+                body=body_text,
+                user=user,
+                mention_candidates_list=candidates,
+                workspace_role="admin",
+            )
+            _notify_chat_message(project_id, thread, chat_message, user)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Could not send feedback admin chat message item_id=%s project_id=%s", item_id, project_id, exc_info=True)
+            raise HTTPException(400, f"Could not send project chat message: {exc}") from exc
+
+    updated = feedback_service.add_admin_message(
+        item_id,
+        message=text,
+        reviewer=user,
+        channel="project_chat" if chat_message else "user_notification",
+        project_id=project_id or None,
+        thread_id=thread.get("id") if thread else None,
+        message_id=chat_message.get("id") if chat_message else None,
+    )
+    notify_payload = {
+        "type": "management.feedback.message",
+        "feedback_id": item_id,
+        "project_id": project_id or None,
+        "thread_id": thread.get("id") if thread else None,
+        "message": _decorate_chat_message(project_id, chat_message) if chat_message and project_id else None,
+        "admin_name": user.get("display_name") or user.get("email"),
+        "text": text,
+    }
+    _notify_user(target_user_id, notify_payload)
+    _notify_management_update("feedback.message.sent", {"request": updated or item})
+    return {
+        "ok": True,
+        "request": updated or item,
+        "chat": {
+            "project_id": project_id or None,
+            "thread_id": thread.get("id") if thread else None,
+            "message": _decorate_chat_message(project_id, chat_message) if chat_message and project_id else None,
+        },
+        "summary": feedback_service.summary(),
+    }
 
 
 def _avatar_path_for_user(user_id: str, ext: str) -> Path:
@@ -5007,6 +5141,8 @@ class UserProfileUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=80)
     handle: str | None = Field(default=None, max_length=24)
     bio: str | None = Field(default=None, max_length=500)
+    status_text: str | None = Field(default=None, max_length=80)
+    status_icon: str | None = Field(default=None, max_length=8)
 
 
 class MeetingRequestBody(BaseModel):
@@ -5014,6 +5150,39 @@ class MeetingRequestBody(BaseModel):
     proposed_time: str = Field(default="", max_length=120)
     channel: str = Field(default="chat", max_length=20)
     project_id: str | None = Field(default=None, max_length=120)
+    starts_at: str | None = Field(default=None, max_length=64)
+    ends_at: str | None = Field(default=None, max_length=64)
+    timezone: str | None = Field(default="UTC", max_length=64)
+    send_email: bool = True
+
+
+class AvailabilityWindowBody(BaseModel):
+    windows: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class StatusUpdateBody(BaseModel):
+    status_text: str | None = Field(default=None, max_length=80)
+    status_icon: str | None = Field(default=None, max_length=8)
+
+
+@app.get("/api/users/me/handle-availability")
+def my_handle_availability(handle: str = Query(..., min_length=1, max_length=24), user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import profile_service
+
+    try:
+        result = profile_service.handle_availability(handle, exclude_user_id=user["id"])
+    except ValueError as exc:
+        return {
+            "handle": handle.strip().lstrip("@"),
+            "available": False,
+            "valid": False,
+            "message": str(exc),
+        }
+    return {
+        **result,
+        "valid": True,
+        "message": "This handle is available." if result.get("available") else "That handle is already taken.",
+    }
 
 
 @app.patch("/api/users/me")
@@ -5026,6 +5195,8 @@ def update_my_profile(body: UserProfileUpdateRequest, user: dict[str, Any] = Dep
             display_name=body.display_name,
             handle=body.handle,
             bio=body.bio,
+            status_text=body.status_text,
+            status_icon=body.status_icon,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -5099,6 +5270,10 @@ def request_meeting_with_user(
             message=body.message,
             proposed_time=body.proposed_time,
             channel=body.channel,
+            starts_at=body.starts_at or "",
+            ends_at=body.ends_at or "",
+            timezone_name=body.timezone or "UTC",
+            send_email=bool(body.send_email),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -5137,6 +5312,253 @@ def request_meeting_with_user(
             logger.warning("meeting request chat post failed: %s", exc)
 
     return {"request": result, "chat_message": chat_posted}
+
+
+@app.get("/api/meeting-requests/{req_id}/ics")
+def download_meeting_ics(req_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import profile_service
+    from fastapi.responses import Response
+
+    try:
+        row = profile_service.get_meeting_request(req_id)
+        if not row:
+            raise KeyError("Meeting not found")
+        if user["id"] not in {row.get("from_user_id"), row.get("to_user_id")}:
+            raise HTTPException(403, "Not allowed")
+        ics, filename = profile_service.meeting_ics_payload(req_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return Response(
+        content=ics,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/users/me/presence")
+def heartbeat_presence(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    return social_service.touch_presence(user["id"])
+
+
+@app.get("/api/users/me/status")
+def get_my_status(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    return social_service.get_status(user["id"])
+
+
+@app.put("/api/users/me/status")
+@app.patch("/api/users/me/status")
+def update_my_status(body: StatusUpdateBody, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    return social_service.set_status(user["id"], text=body.status_text, icon=body.status_icon)
+
+
+@app.get("/api/users/me/availability")
+def get_my_availability(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    return social_service.get_availability(user["id"])
+
+
+@app.put("/api/users/me/availability")
+def put_my_availability(body: AvailabilityWindowBody, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    try:
+        return social_service.set_availability(user["id"], body.windows)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/users/{user_id}/availability")
+def get_user_availability(user_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    data = social_service.get_availability(user_id)
+    data["suggested_slots"] = social_service.suggested_slots(user_id)
+    return data
+
+
+@app.get("/api/stories")
+def list_stories(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    return {"stories": social_service.list_active_stories()}
+
+
+@app.post("/api/stories")
+async def post_story(
+    caption: str = Form(""),
+    file: UploadFile = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import social_service
+
+    raw = await file.read()
+    try:
+        story = social_service.create_story(
+            user_id=user["id"],
+            media_bytes=raw,
+            content_type=file.content_type or "",
+            caption=caption,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"story": story}
+
+
+@app.get("/api/stories/media/{user_id}/{filename}")
+def get_story_media(user_id: str, filename: str):
+    from backend.services import social_service
+    from fastapi.responses import FileResponse
+
+    try:
+        path = social_service.story_media_path(user_id, filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(path)
+
+
+@app.get("/api/projects/{project_id}/chat/members")
+def project_chat_members_enriched(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    _require_project_read(user, project_id)
+    members = _project_chat_members(project_id) or []
+    # Ensure current user is included
+    if not any(m.get("id") == user["id"] for m in members):
+        members = [user, *members]
+    enriched = social_service.enrich_members(members)
+    online_count = sum(1 for m in enriched if m.get("online"))
+    return {"members": enriched, "online_count": online_count, "member_count": len(enriched)}
+
+
+@app.get("/api/users/me/calendar-connections")
+def my_calendar_connections(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    return {"connections": social_service.list_calendar_connections(user["id"])}
+
+
+@app.get("/api/users/me/calendar/connect/{provider}")
+def calendar_connect_start(provider: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+    import secrets
+
+    try:
+        url = social_service.calendar_oauth_start_url(provider, user_id=user["id"], state=secrets.token_urlsafe(12))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"url": url, "provider": provider}
+
+
+@app.delete("/api/users/me/calendar-connections/{provider}")
+def calendar_disconnect(provider: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import social_service
+
+    social_service.disconnect_calendar(user["id"], provider)
+    return {"ok": True}
+
+
+@app.get("/oauth/calendar/callback")
+async def calendar_oauth_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """Exchange calendar OAuth code and store connection tokens."""
+    from backend.services import social_service
+    import httpx
+
+    if error:
+        return RedirectResponse(f"/?calendar_error={urllib.parse.quote(error)}", status_code=302)
+    if not code or not state or not state.startswith("calendar:"):
+        raise HTTPException(400, "Invalid calendar OAuth callback")
+    parts = state.split(":")
+    if len(parts) < 4:
+        raise HTTPException(400, "Invalid calendar OAuth state")
+    _, provider, user_id, _nonce = parts[0], parts[1], parts[2], parts[3]
+    redirect_uri = "https://render3d.app/oauth/calendar/callback"
+    try:
+        if provider == "google":
+            async with httpx.AsyncClient(timeout=30) as client:
+                token_res = await client.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "code": code,
+                        "client_id": settings.google_client_id,
+                        "client_secret": settings.google_client_secret,
+                        "redirect_uri": redirect_uri,
+                        "grant_type": "authorization_code",
+                    },
+                )
+                token_res.raise_for_status()
+                token = token_res.json()
+                info = await client.get(
+                    "https://openidconnect.googleapis.com/v1/userinfo",
+                    headers={"Authorization": f"Bearer {token.get('access_token')}"},
+                )
+                info.raise_for_status()
+                email = (info.json() or {}).get("email")
+            expires_at = None
+            if token.get("expires_in"):
+                expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(token["expires_in"]))).isoformat()
+            social_service.upsert_calendar_connection(
+                user_id,
+                provider="google",
+                access_token=token.get("access_token") or "",
+                refresh_token=token.get("refresh_token"),
+                scopes=token.get("scope") or "",
+                expires_at=expires_at,
+                email=email,
+            )
+        elif provider == "microsoft":
+            async with httpx.AsyncClient(timeout=30) as client:
+                token_res = await client.post(
+                    "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                    data={
+                        "code": code,
+                        "client_id": settings.microsoft_client_id,
+                        "client_secret": settings.microsoft_client_secret,
+                        "redirect_uri": redirect_uri,
+                        "grant_type": "authorization_code",
+                    },
+                )
+                token_res.raise_for_status()
+                token = token_res.json()
+                info = await client.get(
+                    "https://graph.microsoft.com/v1.0/me",
+                    headers={"Authorization": f"Bearer {token.get('access_token')}"},
+                )
+                info.raise_for_status()
+                me = info.json() or {}
+                email = me.get("mail") or me.get("userPrincipalName")
+            expires_at = None
+            if token.get("expires_in"):
+                expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(token["expires_in"]))).isoformat()
+            social_service.upsert_calendar_connection(
+                user_id,
+                provider="microsoft",
+                access_token=token.get("access_token") or "",
+                refresh_token=token.get("refresh_token"),
+                scopes=token.get("scope") or "",
+                expires_at=expires_at,
+                email=email,
+            )
+        else:
+            raise HTTPException(400, "Unsupported provider")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("calendar oauth failed")
+        return RedirectResponse(f"/?calendar_error={quote(str(exc)[:120])}", status_code=302)
+    return RedirectResponse("/?calendar_connected=1", status_code=302)
 
 
 # ── Onshape OAuth ─────────────────────────────────────────────────────────────
@@ -10407,6 +10829,63 @@ def invite_project_chat_thread_member(
             path,
             thread_id=thread_id,
             target_user_id=body.user_id,
+            requester=user,
+            workspace_role=role,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"thread": thread}
+
+
+@app.patch("/api/projects/{project_id}/chat/threads/{thread_id}")
+def update_project_chat_thread_settings(
+    project_id: str,
+    thread_id: str,
+    body: ProjectChatThreadSettingsRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    role = _project_workspace_role(project_id, user.get("id"))
+    try:
+        thread = project_chat_service.update_thread_settings(
+            path,
+            thread_id=thread_id,
+            requester=user,
+            workspace_role=role,
+            title=body.title,
+            visibility=body.visibility,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"thread": thread}
+
+
+@app.delete("/api/projects/{project_id}/chat/threads/{thread_id}/members/{user_id}")
+def remove_project_chat_thread_member(
+    project_id: str,
+    thread_id: str,
+    user_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    role = _project_workspace_role(project_id, user.get("id"))
+    try:
+        thread = project_chat_service.remove_thread_member(
+            path,
+            thread_id=thread_id,
+            target_user_id=user_id,
             requester=user,
             workspace_role=role,
         )

@@ -208,6 +208,8 @@ export function createProjectChatUI({
   getProjectName = () => "",
   onOpenRenderAgent = null,
   onStatus = null,
+  onOpenUserProfile = null,
+  getOnlineUserIds = null,
 } = {}) {
   let open = false;
   let overlay = null;
@@ -220,13 +222,31 @@ export function createProjectChatUI({
   let mentionIndex = -1;
   let unread = { unread_count: 0, mention_count: 0 };
   let pollTimer = null;
+  let socialTimer = null;
   let workspaceRole = null;
   let activeThreadMeta = null;
   let imageBlobUrls = [];
   let inboxView = "inbox";
   let groupPickerOpen = false;
+  let threadCreateOpen = false;
+  let threadSettingsOpen = false;
+  let threadContextOpen = false;
+  let contextThreadId = null;
   let clickRippleBroadcast = false;
   let remoteAssistActive = false;
+  let chatMembers = [];
+  let onlineCount = 0;
+  let stories = [];
+  let statusIcons = ["🟢", "🟡", "🔴", "🟣", "🔵", "💼", "🏠", "🎧", "☕", "🛠️"];
+
+  function ensureSocialStyles() {
+    if (document.getElementById("chat-social-css")) return;
+    const link = document.createElement("link");
+    link.id = "chat-social-css";
+    link.rel = "stylesheet";
+    link.href = "/chat-social.css?v=20260715-chat-social";
+    document.head.appendChild(link);
+  }
 
   function revokeImageBlobs() {
     for (const url of imageBlobUrls) {
@@ -314,7 +334,12 @@ export function createProjectChatUI({
             <span id="pc-subtitle" class="pc-subtitle muted">Collaborate on this model</span>
           </div>
           <div class="pc-head-actions">
-            <button type="button" class="pc-icon-btn" id="pc-new-group" title="New group">Group</button>
+            <button type="button" class="pc-icon-btn pc-people-plus-btn" id="pc-new-group" title="New group" aria-label="New group chat">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9.5 12.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm6.8-1.1a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2ZM3.2 19.6c.8-3.2 3.1-5.1 6.3-5.1s5.5 1.9 6.3 5.1H3.2Zm12.9-3.3c1.1.4 2 1.1 2.6 2h2.1c-.5-2.3-2.1-3.7-4.3-3.9a6.8 6.8 0 0 0-.4 1.9Z" />
+                <path d="M19.1 9.9v2.3h2.2v1.7h-2.2v2.3h-1.8v-2.3H15v-1.7h2.3V9.9h1.8Z" />
+              </svg>
+            </button>
             <button type="button" class="pc-icon-btn" id="pc-new-thread" title="New thread">＋</button>
             <button type="button" class="pc-icon-btn" id="pc-close" title="Close chat" aria-label="Close">✕</button>
           </div>
@@ -352,6 +377,7 @@ export function createProjectChatUI({
           </section>
         </div>
         <div id="pc-group-modal" class="pc-group-modal hidden" role="dialog" aria-modal="false" aria-label="Create chat group"></div>
+        <div id="pc-thread-modal" class="pc-group-modal hidden" role="dialog" aria-modal="false" aria-label="Thread settings"></div>
       </div>
     `;
     document.body.appendChild(overlay);
@@ -532,6 +558,33 @@ export function createProjectChatUI({
     groupPickerOpen = false;
     const modal = overlay?.querySelector("#pc-group-modal");
     modal?.classList.add("hidden");
+  }
+
+  function closeThreadModal() {
+    threadCreateOpen = false;
+    threadSettingsOpen = false;
+    const modal = overlay?.querySelector("#pc-thread-modal");
+    modal?.classList.add("hidden");
+    if (modal) modal.innerHTML = "";
+  }
+
+  function closeThreadContextMenu() {
+    threadContextOpen = false;
+    contextThreadId = null;
+    overlay?.querySelector("#pc-thread-context-menu")?.remove();
+  }
+
+  function canManageThread(thread = activeThreadMeta) {
+    const me = getStoredUser()?.id;
+    if (!me || !thread) return false;
+    if (["owner", "manager", "admin"].includes(String(workspaceRole || "").toLowerCase())) return true;
+    return String(thread.created_by || "") === String(me);
+  }
+
+  function openThreadCreateModal() {
+    threadCreateOpen = true;
+    threadSettingsOpen = false;
+    renderThreadCreateModal();
   }
 
   function renderGroupPicker() {

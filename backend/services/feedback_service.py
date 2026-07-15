@@ -135,6 +135,13 @@ def list_requests(*, status: str | None = None, kind: str | None = None, limit: 
     return items[: max(1, min(int(limit or 120), 300))]
 
 
+def get_request(item_id: str) -> dict[str, Any] | None:
+    for item in _load().get("items") or []:
+        if item.get("id") == item_id:
+            return item
+    return None
+
+
 def summary() -> dict[str, Any]:
     items = list(_load().get("items") or [])
     open_items = [item for item in items if item.get("status") == "open"]
@@ -166,6 +173,42 @@ def set_status(item_id: str, status: str, *, reviewer: dict[str, Any] | None = N
             item["reviewed_by_name"] = reviewer.get("display_name") or reviewer.get("email")
         if note:
             item["review_note"] = note[:1000]
+        _save(data)
+        return item
+    return None
+
+
+def add_admin_message(
+    item_id: str,
+    *,
+    message: str,
+    reviewer: dict[str, Any],
+    channel: str = "project_chat",
+    project_id: str | None = None,
+    thread_id: str | None = None,
+    message_id: str | None = None,
+) -> dict[str, Any] | None:
+    text = (message or "").strip()
+    if not text:
+        raise ValueError("Message is required")
+    data = _load()
+    for item in data.get("items") or []:
+        if item.get("id") != item_id:
+            continue
+        row = {
+            "id": str(uuid.uuid4())[:10],
+            "message": text[:4000],
+            "channel": channel,
+            "project_id": project_id,
+            "thread_id": thread_id,
+            "message_id": message_id,
+            "created_at": _now(),
+            "admin_id": (reviewer or {}).get("id"),
+            "admin_name": (reviewer or {}).get("display_name") or (reviewer or {}).get("email"),
+        }
+        item.setdefault("admin_messages", []).append(row)
+        item["updated_at"] = _now()
+        item["unread"] = False
         _save(data)
         return item
     return None

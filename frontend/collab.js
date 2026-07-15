@@ -494,5 +494,6 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     resizeLabels,
     renderLabels,
     remoteGroup,
+    getOnlineUserIds: () => [...remoteUsers.keys()],
   };
 }

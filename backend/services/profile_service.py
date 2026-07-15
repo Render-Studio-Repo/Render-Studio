@@ -36,6 +36,21 @@ def validate_handle(handle: str) -> str:
     return cleaned
 
 
+def handle_availability(handle: str, *, exclude_user_id: str | None = None) -> dict[str, Any]:
+    cleaned = validate_handle(handle)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM users WHERE lower(handle) = lower(?) LIMIT 1",
+            (cleaned,),
+        ).fetchone()
+    available = not row or (exclude_user_id and row["id"] == exclude_user_id)
+    return {
+        "handle": cleaned,
+        "available": bool(available),
+        "is_current": bool(row and exclude_user_id and row["id"] == exclude_user_id),
+    }
+
+
 def ensure_unique_handle(conn, desired: str, *, exclude_user_id: str | None = None) -> str:
     base = slugify_handle(desired)
     candidate = base
@@ -95,6 +110,12 @@ def migrate_user_handles(conn) -> None:
             )
         except Exception:
             pass
+        try:
+            from backend.services.social_service import migrate_social_features
+
+            migrate_social_features(conn)
+        except Exception:
+            pass
         rows = conn.execute(
             "SELECT id, email, display_name, handle FROM users"
         ).fetchall()
@@ -126,6 +147,15 @@ def get_user_row(user_id: str | None = None, *, handle: str | None = None) -> di
             store_settings = json.loads(row["store_settings_json"] or "{}") or {}
         except Exception:
             store_settings = {}
+    last_seen = row["last_seen_at"] if "last_seen_at" in keys else None
+    online = False
+    try:
+        from backend.services.social_service import ONLINE_WINDOW_SECONDS, _parse_iso, _now
+
+        seen = _parse_iso(last_seen)
+        online = bool(seen and (_now() - seen).total_seconds() <= ONLINE_WINDOW_SECONDS)
+    except Exception:
+        online = False
     return {
         "id": row["id"],
         "email": row["email"],
@@ -135,6 +165,11 @@ def get_user_row(user_id: str | None = None, *, handle: str | None = None) -> di
         "avatar_url": row["avatar_url"] if "avatar_url" in keys else None,
         "created_at": row["created_at"],
         "store_settings": store_settings if isinstance(store_settings, dict) else {},
+        "status_text": row["status_text"] if "status_text" in keys else None,
+        "status_icon": row["status_icon"] if "status_icon" in keys else None,
+        "status_updated_at": row["status_updated_at"] if "status_updated_at" in keys else None,
+        "last_seen_at": last_seen,
+        "online": online,
     }
 
 
@@ -171,6 +206,8 @@ def update_profile(
     display_name: str | None = None,
     handle: str | None = None,
     bio: str | None = None,
+    status_text: str | None = None,
+    status_icon: str | None = None,
 ) -> dict[str, Any]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -203,6 +240,18 @@ def update_profile(
                 raise ValueError("Bio must be 500 characters or fewer")
             updates.append("bio = ?")
             params.append(text or None)
+        if status_text is not None or status_icon is not None:
+            from backend.services.social_service import migrate_social_features
+
+            migrate_social_features(conn)
+            if status_text is not None:
+                updates.append("status_text = ?")
+                params.append(status_text.strip()[:80] or None)
+            if status_icon is not None:
+                updates.append("status_icon = ?")
+                params.append(status_icon.strip()[:8] or None)
+            updates.append("status_updated_at = ?")
+            params.append(_now())
         if updates:
             params.append(user_id)
             conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
@@ -295,17 +344,22 @@ def public_profile(user_id: str | None = None, *, handle: str | None = None, vie
     handle_value = user.get("handle") or slugify_handle(user.get("display_name") or "user")
     profile_path = f"/u/{handle_value}"
     store = user.get("store_settings") or {}
-    return {
+    profile = {
         "id": user["id"],
         "display_name": user["display_name"],
         "handle": handle_value,
         "bio": user.get("bio") or "",
         "avatar_url": user.get("avatar_url"),
+        "status_text": user.get("status_text") or "",
+        "status_icon": user.get("status_icon") or "",
+        "online": bool(user.get("online")),
         "created_at": user.get("created_at"),
         "profile_url": profile_path,
         "profile_link": f"https://render3d.app{profile_path}",
         "is_self": bool(viewer and viewer.get("id") == user["id"]),
         "store": store,
+        "availability": {"windows": []},
+        "suggested_slots": [],
         "projects": _user_projects(user["id"]),
         "posts": _user_posts(user["id"]),
         "stats": {
@@ -313,6 +367,14 @@ def public_profile(user_id: str | None = None, *, handle: str | None = None, vie
             "posts": len(_user_posts(user["id"], limit=100)),
         },
     }
+    try:
+        from backend.services.social_service import get_availability, suggested_slots
+
+        profile["availability"] = get_availability(user["id"])
+        profile["suggested_slots"] = suggested_slots(user["id"])
+    except Exception:
+        pass
+    return profile
 
 
 def create_meeting_request(
@@ -322,6 +384,10 @@ def create_meeting_request(
     message: str = "",
     proposed_time: str = "",
     channel: str = "chat",
+    starts_at: str = "",
+    ends_at: str = "",
+    timezone_name: str = "UTC",
+    send_email: bool = True,
 ) -> dict[str, Any]:
     if from_user.get("id") == to_user_id:
         raise ValueError("You can't request a meeting with yourself")
@@ -332,13 +398,39 @@ def create_meeting_request(
     if channel not in {"chat", "calendar", "both"}:
         channel = "chat"
     req_id = str(uuid.uuid4())[:12]
+    ics_uid = f"{req_id}@render3d.app"
     now = _now()
+
+    from backend.services.social_service import (
+        _parse_iso,
+        build_ics,
+        google_template_url,
+        outlook_deeplink,
+        send_calendar_invite_email,
+        settings as _settings_unused,
+    )
+    from backend.config import settings as app_settings
+
+    start_dt = _parse_iso(starts_at)
+    end_dt = _parse_iso(ends_at)
+    if start_dt and not end_dt:
+        end_dt = start_dt + __import__("datetime").timedelta(minutes=30)
+    if start_dt and end_dt and end_dt <= start_dt:
+        raise ValueError("Meeting end must be after start")
+
     with get_conn() as conn:
+        try:
+            from backend.services.social_service import migrate_social_features
+
+            migrate_social_features(conn)
+        except Exception:
+            pass
         conn.execute(
             """
             INSERT INTO meeting_requests
-              (id, from_user_id, to_user_id, message, proposed_time, status, channel, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+              (id, from_user_id, to_user_id, message, proposed_time, status, channel,
+               created_at, updated_at, starts_at, ends_at, timezone, ics_uid)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 req_id,
@@ -349,34 +441,68 @@ def create_meeting_request(
                 channel,
                 now,
                 now,
+                start_dt.isoformat() if start_dt else None,
+                end_dt.isoformat() if end_dt else None,
+                (timezone_name or "UTC")[:64],
+                ics_uid,
             ),
         )
         conn.commit()
 
     from_handle = from_user.get("handle") or slugify_handle(from_user.get("display_name") or "user")
     to_handle = target.get("handle") or slugify_handle(target.get("display_name") or "user")
-    title = quote(f"Render3D meeting with {target.get('display_name') or to_handle}")
-    details = quote(
+    meeting_title = f"Render3D meeting: {from_user.get('display_name') or from_handle} ↔ {target.get('display_name') or to_handle}"
+    details = (
         (message or f"Meeting request from @{from_handle} on Render3D").strip()
-        + f"\n\nProfile: https://render3d.app/u/{to_handle}"
+        + f"\n\nProfiles:\n- https://render3d.app/u/{from_handle}\n- https://render3d.app/u/{to_handle}"
     )
-    calendar_url = (
-        "https://calendar.google.com/calendar/render?action=TEMPLATE"
-        f"&text={title}&details={details}"
-    )
-    if proposed_time:
-        # Soft hint only — full ISO optional
-        calendar_url += f"&sf=true"
+    if proposed_time and not start_dt:
+        details += f"\nProposed time: {proposed_time}"
+
+    calendar_url = google_template_url(title=meeting_title, details=details, starts_at=start_dt, ends_at=end_dt)
+    outlook_url = outlook_deeplink(title=meeting_title, details=details, starts_at=start_dt, ends_at=end_dt)
+    ics_body = None
+    ics_download = f"/api/meeting-requests/{req_id}/ics"
+    email_result = {"ok": False, "error": "no_time"}
+    if start_dt and end_dt:
+        organizer = (app_settings.capacity_alert_from or "info@render3d.app").strip()
+        ics_body = build_ics(
+            uid=ics_uid,
+            title=meeting_title,
+            description=details,
+            starts_at=start_dt,
+            ends_at=end_dt,
+            organizer_email=organizer,
+            attendee_emails=[from_user.get("email") or "", target.get("email") or ""],
+        )
+        if send_email and channel in {"calendar", "both"}:
+            email_result = send_calendar_invite_email(
+                to_emails=[from_user.get("email") or "", target.get("email") or ""],
+                subject=meeting_title,
+                body_text=f"{details}\n\nA calendar invite (.ics) is attached.",
+                ics_body=ics_body,
+            )
+            if email_result.get("ok"):
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE meeting_requests SET email_sent_at = ? WHERE id = ?",
+                        (_now(), req_id),
+                    )
+                    conn.commit()
 
     chat_body = (
         f"📅 Meeting request for @[{target.get('display_name')}](user:{to_user_id})\n"
         f"From @[{from_user.get('display_name')}](user:{from_user['id']})"
     )
-    if proposed_time:
+    if start_dt and end_dt:
+        chat_body += f"\nWhen: {start_dt.isoformat()} → {end_dt.isoformat()}"
+    elif proposed_time:
         chat_body += f"\nProposed: {proposed_time}"
     if message:
         chat_body += f"\n\n{message.strip()}"
-    chat_body += f"\n\nCalendar: {calendar_url}"
+    chat_body += f"\n\nGoogle Calendar: {calendar_url}"
+    chat_body += f"\nOutlook: {outlook_url}"
+    chat_body += f"\nDownload .ics: https://render3d.app{ics_download}"
 
     return {
         "id": req_id,
@@ -386,18 +512,70 @@ def create_meeting_request(
             "id": from_user["id"],
             "display_name": from_user.get("display_name"),
             "handle": from_handle,
+            "email": from_user.get("email"),
         },
         "to_user": {
             "id": target["id"],
             "display_name": target.get("display_name"),
             "handle": to_handle,
+            "email": target.get("email"),
         },
         "message": (message or "").strip(),
         "proposed_time": proposed_time,
+        "starts_at": start_dt.isoformat() if start_dt else None,
+        "ends_at": end_dt.isoformat() if end_dt else None,
+        "timezone": timezone_name or "UTC",
         "calendar_url": calendar_url,
+        "outlook_url": outlook_url,
+        "ics_download_url": ics_download,
+        "ics_uid": ics_uid,
+        "email": email_result,
         "chat_body": chat_body,
         "created_at": now,
     }
+
+
+def get_meeting_request(req_id: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM meeting_requests WHERE id = ?", (req_id,)).fetchone()
+    if not row:
+        return None
+    keys = row.keys()
+    return {k: row[k] for k in keys}
+
+
+def meeting_ics_payload(req_id: str) -> tuple[str, str]:
+    from backend.services.social_service import _parse_iso, build_ics
+    from backend.config import settings as app_settings
+
+    row = get_meeting_request(req_id)
+    if not row:
+        raise KeyError("Meeting not found")
+    start_dt = _parse_iso(row.get("starts_at"))
+    end_dt = _parse_iso(row.get("ends_at"))
+    if not start_dt or not end_dt:
+        # Fallback: 30-min slot from now
+        start_dt = datetime.now(timezone.utc) + __import__("datetime").timedelta(hours=1)
+        end_dt = start_dt + __import__("datetime").timedelta(minutes=30)
+    from_user = get_user_row(row["from_user_id"]) or {}
+    to_user = get_user_row(row["to_user_id"]) or {}
+    title = f"Render3D meeting: {from_user.get('display_name') or 'User'} ↔ {to_user.get('display_name') or 'User'}"
+    details = (row.get("message") or "Render3D meeting").strip()
+    organizer = (app_settings.capacity_alert_from or "info@render3d.app").strip()
+    ics = build_ics(
+        uid=row.get("ics_uid") or f"{req_id}@render3d.app",
+        title=title,
+        description=details,
+        starts_at=start_dt,
+        ends_at=end_dt,
+        organizer_email=organizer,
+        attendee_emails=[from_user.get("email") or "", to_user.get("email") or ""],
+    )
+    return ics, f"render3d-meeting-{req_id}.ics"
+
+
+# Keep old symbol path for callers that imported create_meeting_request earlier content
+_UNUSED_QUOTE = quote
 
 
 def profile_mention_markdown(user: dict[str, Any]) -> str:
