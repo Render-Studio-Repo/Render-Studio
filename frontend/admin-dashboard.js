@@ -1,5 +1,6 @@
 import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260709-admin-matt";
 import { createMiniViewer } from "./mini-viewer.js?v=20260715-admin-preview";
+import { mountActivityCharts, mountNetworkBrain } from "./admin-charts.js?v=20260715-admin-charts";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -71,31 +72,13 @@ function countPills(items, keyName) {
   `).join("");
 }
 
-function renderDailyChart(days = []) {
-  if (!days.length) return '<p class="muted">No recent activity yet.</p>';
-  const max = Math.max(1, ...days.map((d) => Math.max(d.prompts || 0, d.projects_created || 0, d.users_joined || 0)));
-  return `
-    <div class="admin-daily-chart">
-      ${days.map((day) => {
-        const promptH = Math.max(4, ((day.prompts || 0) / max) * 100);
-        const projectH = Math.max(4, ((day.projects_created || 0) / max) * 100);
-        const userH = Math.max(4, ((day.users_joined || 0) / max) * 100);
-        return `
-          <div class="admin-day" title="${escapeHtml(day.date)} · ${day.prompts || 0} prompts · ${day.projects_created || 0} projects · ${day.users_joined || 0} users">
-            <i class="prompts" style="height:${promptH}%"></i>
-            <i class="projects" style="height:${projectH}%"></i>
-            <i class="users" style="height:${userH}%"></i>
-            <span>${escapeHtml(String(day.date || "").slice(5))}</span>
-          </div>
-        `;
-      }).join("")}
-    </div>
-    <div class="admin-legend">
-      <span><i class="prompts"></i>Prompts</span>
-      <span><i class="projects"></i>Projects</span>
-      <span><i class="users"></i>Users joined</span>
-    </div>
-  `;
+let chartCleanups = [];
+
+function clearChartCleanups() {
+  chartCleanups.forEach((fn) => {
+    try { fn(); } catch { /* ignore */ }
+  });
+  chartCleanups = [];
 }
 
 function renderUserRows(users = [], { clickable = true } = {}) {
@@ -403,9 +386,10 @@ function renderDashboard(root, data) {
     </section>
 
     <section class="admin-grid admin-grid--wide-left">
-      <article class="admin-panel">
+      <article class="admin-panel admin-panel--charts">
         <h3>Activity Trend</h3>
-        ${renderDailyChart(data.daily || [])}
+        <p class="muted small admin-panel-hint">Switch chart views and toggle series. Continuous last 30 days.</p>
+        <div id="admin-activity-charts"></div>
       </article>
       <article class="admin-panel">
         <h3>Community stats</h3>
@@ -419,6 +403,12 @@ function renderDashboard(root, data) {
         <h3 class="admin-subhead">Top Models</h3>
         <div class="admin-pill-list">${countPills(data.prompt_model_counts, "model")}</div>
       </article>
+    </section>
+
+    <section class="admin-panel admin-panel--network">
+      <h3>Collaboration brain</h3>
+      <p class="muted small admin-panel-hint">Users ↔ projects ↔ teams. Owns, collab prompts, and workspace membership. Click a user or project node to open details.</p>
+      <div id="admin-network-brain"></div>
     </section>
 
     ${renderUserLookup(data.users || data.active_users || [])}
@@ -469,6 +459,19 @@ function renderDashboard(root, data) {
   });
   bindInteractive(root, data);
   void hydrateThumbs(root);
+
+  clearChartCleanups();
+  const chartsHost = root.querySelector("#admin-activity-charts");
+  const networkHost = root.querySelector("#admin-network-brain");
+  if (chartsHost) chartCleanups.push(mountActivityCharts(chartsHost, data.daily || []));
+  if (networkHost) {
+    chartCleanups.push(mountNetworkBrain(networkHost, data.network || {}, {
+      onNodeClick(node) {
+        if (node.kind === "user" && node.user_id) void openUserPanel(root, node.user_id, data);
+        if (node.kind === "project" && node.project_id) void openProjectModal(node.project_id);
+      },
+    }));
+  }
 }
 
 async function loadDashboard(root) {
@@ -482,6 +485,7 @@ async function loadDashboard(root) {
     return;
   }
   root.innerHTML = '<section class="admin-hero-card"><h2>Loading dashboard…</h2><p class="muted">Aggregating users, projects, model previews, and prompt histories.</p></section>';
+  clearChartCleanups();
   try {
     const data = await api("/api/admin/dashboard");
     renderDashboard(root, data);

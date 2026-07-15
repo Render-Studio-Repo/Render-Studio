@@ -19172,6 +19172,172 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   padding-top: 8px;
 }
 
+.admin-chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.admin-chart-views {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-chart-view-btn {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.admin-chart-view-btn.active,
+.admin-chart-view-btn:hover {
+  color: var(--text);
+  border-color: rgba(88, 166, 255, 0.45);
+  background: rgba(56, 139, 253, 0.12);
+}
+
+.admin-chart-series {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-chart-series-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.admin-chart-series-toggle i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.admin-chart-canvas-wrap {
+  position: relative;
+  border: 1px solid rgba(139, 148, 158, 0.25);
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at top, rgba(56, 139, 253, 0.08), transparent 55%),
+    rgba(1, 4, 9, 0.35);
+  overflow: hidden;
+  min-height: 260px;
+}
+
+.admin-chart-svg {
+  width: 100%;
+  height: 260px;
+  display: block;
+}
+
+.admin-chart-grid {
+  stroke: rgba(139, 148, 158, 0.18);
+  stroke-width: 1;
+}
+
+.admin-chart-axis {
+  fill: #8b949e;
+  font-size: 10px;
+}
+
+.admin-chart-bar,
+.admin-chart-dot {
+  transition: opacity 0.15s ease;
+}
+
+.admin-chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  min-width: 140px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  background: rgba(13, 17, 23, 0.96);
+  color: var(--text);
+  font-size: 0.75rem;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-chart-tooltip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.admin-chart-tooltip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.admin-chart-meta {
+  margin-top: 8px;
+}
+
+.admin-panel--network {
+  margin-bottom: 16px;
+}
+
+.admin-network {
+  position: relative;
+}
+
+.admin-network-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.admin-network-canvas {
+  width: 100%;
+  height: 380px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  background:
+    radial-gradient(circle at 50% 45%, rgba(56, 139, 253, 0.12), transparent 42%),
+    radial-gradient(circle at 30% 70%, rgba(63, 185, 80, 0.08), transparent 40%),
+    #010409;
+  cursor: default;
+}
+
+.admin-network-tip {
+  position: absolute;
+  z-index: 4;
+  min-width: 140px;
+  max-width: 220px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  background: rgba(13, 17, 23, 0.96);
+  color: var(--text);
+  font-size: 0.75rem;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .admin-day {
   display: flex;
   flex-direction: column;

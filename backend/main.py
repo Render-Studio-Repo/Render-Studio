@@ -5732,6 +5732,15 @@ def admin_dashboard(
              ORDER BY pa.created_at DESC
             """
         ).fetchall()
+        team_member_rows = conn.execute(
+            """
+            SELECT tm.team_id, tm.user_id, tm.role, t.name AS team_name,
+                   u.display_name, u.email
+              FROM team_members tm
+              JOIN teams t ON t.id = tm.team_id
+              LEFT JOIN users u ON u.id = tm.user_id
+            """
+        ).fetchall()
 
     users_by_id: dict[str, dict[str, Any]] = {}
     for row in user_rows:
@@ -5764,6 +5773,8 @@ def admin_dashboard(
     daily_projects_created: Counter[str] = Counter()
     recent_prompts: list[dict[str, Any]] = []
     recent_projects: list[dict[str, Any]] = []
+    network_nodes: dict[str, dict[str, Any]] = {}
+    network_edge_keys: dict[tuple[str, str, str], dict[str, Any]] = {}
     projects_scanned = 0
     files_total = 0
     prompt_total = 0
@@ -5771,6 +5782,33 @@ def admin_dashboard(
     error_total = 0
     cost_total = 0.0
     tokens_total = 0
+
+    def _net_node(node_id: str, kind: str, label: str, **extra: Any) -> None:
+        if not node_id:
+            return
+        existing = network_nodes.get(node_id)
+        if existing:
+            existing["weight"] = int(existing.get("weight") or 1) + 1
+            for key, value in extra.items():
+                if value is not None and existing.get(key) in (None, "", 0):
+                    existing[key] = value
+            return
+        network_nodes[node_id] = {
+            "id": node_id,
+            "kind": kind,
+            "label": label or node_id,
+            "weight": 1,
+            **extra,
+        }
+
+    def _net_edge(source: str, target: str, kind: str, weight: int = 1) -> None:
+        if not source or not target or source == target:
+            return
+        key = (source, target, kind)
+        if key in network_edge_keys:
+            network_edge_keys[key]["weight"] = int(network_edge_keys[key].get("weight") or 0) + weight
+        else:
+            network_edge_keys[key] = {"source": source, "target": target, "kind": kind, "weight": weight}
 
     for row in user_rows:
         day = _admin_day(row["created_at"])
@@ -5834,6 +5872,27 @@ def admin_dashboard(
             **preview,
         }
         recent_projects.append(project_item)
+        owner_node = f"user:{owner_id}" if owner_id else None
+        project_node = f"project:{pid}"
+        team_node = f"team:{access['team_id']}" if access["team_id"] else None
+        _net_node(
+            project_node,
+            "project",
+            str(project_item["name"]),
+            project_id=pid,
+            has_model=bool(project_item.get("model_file")),
+        )
+        if owner_id:
+            _net_node(
+                owner_node,
+                "user",
+                str(access["owner_name"] or access["owner_email"] or owner_id),
+                user_id=owner_id,
+            )
+            _net_edge(owner_node, project_node, "owns", 2)
+        if team_node:
+            _net_node(team_node, "team", str(access["team_name"] or access["team_id"]), team_id=access["team_id"])
+            _net_edge(project_node, team_node, "workspace", 1)
         if owner_id in users_by_id:
             users_by_id[owner_id]["recent_projects"].append(project_item)
             if project_item.get("model_file"):
@@ -5902,6 +5961,16 @@ def admin_dashboard(
             recent_prompts.append(prompt_item)
             if entry_user_id in users_by_id:
                 users_by_id[entry_user_id]["recent_prompts"].append(prompt_item)
+            if entry_user_id:
+                collab_node = f"user:{entry_user_id}"
+                _net_node(
+                    collab_node,
+                    "user",
+                    str(entry.get("user_name") or access["owner_name"] or entry_user_id),
+                    user_id=entry_user_id,
+                )
+                edge_kind = "owns" if entry_user_id == owner_id else "collab"
+                _net_edge(collab_node, f"project:{pid}", edge_kind, 1)
 
     def _sort_dt_key(item: dict[str, Any], field: str) -> str:
         return str(item.get(field) or "")
@@ -5923,15 +5992,63 @@ def admin_dashboard(
         reverse=True,
     )[:user_limit]
 
-    days = sorted(set(daily_prompts) | set(daily_users_joined) | set(daily_projects_created))[-30:]
-    daily = [
-        {
-            "date": day,
-            "prompts": daily_prompts[day],
-            "users_joined": daily_users_joined[day],
-            "projects_created": daily_projects_created[day],
-        }
-        for day in days
+    days = []
+    today = datetime.now(timezone.utc).date()
+    for offset in range(29, -1, -1):
+        day = (today - timedelta(days=offset)).isoformat()
+        days.append(
+            {
+                "date": day,
+                "prompts": daily_prompts[day],
+                "users_joined": daily_users_joined[day],
+                "projects_created": daily_projects_created[day],
+            }
+        )
+    daily = days
+
+    for member in team_member_rows:
+        team_node = f"team:{member['team_id']}"
+        user_node = f"user:{member['user_id']}"
+        _net_node(team_node, "team", str(member["team_name"] or member["team_id"]), team_id=member["team_id"])
+        _net_node(
+            user_node,
+            "user",
+            str(member["display_name"] or member["email"] or member["user_id"]),
+            user_id=member["user_id"],
+        )
+        _net_edge(user_node, team_node, "member", 1)
+
+    # Keep the brain graph readable: prefer active users + recent projects + connected teams.
+    active_user_ids = {
+        f"user:{item['id']}"
+        for item in sorted(users, key=lambda u: int(u.get("prompt_count") or 0), reverse=True)[:28]
+    }
+    recent_project_ids = {f"project:{item['id']}" for item in recent_projects[:40]}
+    keep_nodes = set(active_user_ids) | set(recent_project_ids)
+    for edge in network_edge_keys.values():
+        if edge["source"] in keep_nodes or edge["target"] in keep_nodes:
+            if edge["kind"] in {"member", "workspace"} or edge["source"].startswith("team:") or edge["target"].startswith("team:"):
+                keep_nodes.add(edge["source"])
+                keep_nodes.add(edge["target"])
+            elif edge["source"] in recent_project_ids or edge["target"] in recent_project_ids:
+                keep_nodes.add(edge["source"])
+                keep_nodes.add(edge["target"])
+    network_nodes_out = [node for node_id, node in network_nodes.items() if node_id in keep_nodes]
+    # Enrich user node sizes from stats
+    for node in network_nodes_out:
+        if node["kind"] == "user":
+            uid = node.get("user_id")
+            stats_u = users_by_id.get(uid) if uid else None
+            if stats_u:
+                node["prompt_count"] = stats_u.get("prompt_count") or 0
+                node["project_count"] = stats_u.get("project_count") or 0
+                node["weight"] = max(1, int(stats_u.get("prompt_count") or 0) + int(stats_u.get("project_count") or 0))
+        elif node["kind"] == "project":
+            node["weight"] = max(1, int(node.get("weight") or 1))
+    network_edges_out = [
+        edge
+        for edge in network_edge_keys.values()
+        if edge["source"] in keep_nodes and edge["target"] in keep_nodes
     ]
 
     return {
@@ -5987,6 +6104,10 @@ def admin_dashboard(
         "prompt_model_counts": [{"model": k, "count": v} for k, v in prompt_model_counts.most_common(12)],
         "project_format_counts": [{"format": k, "count": v} for k, v in project_format_counts.most_common(12)],
         "daily": daily,
+        "network": {
+            "nodes": network_nodes_out,
+            "edges": network_edges_out,
+        },
     }
 
 
