@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-history-codex-target" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-multi-gen" />
   <script type="importmap">
   {
     "imports": {
@@ -1120,8 +1120,10 @@
             </div>
           </div>
           <div id="prompt-image-list" class="prompt-image-list"></div>
-          <button id="btn-prompt" class="btn accent full">Generate / modify with AI</button>
-          <button type="button" id="btn-stop-generation" class="btn danger full hidden" aria-label="Stop generating">Stop generating</button>
+          <div class="prompt-generate-row">
+            <button id="btn-prompt" class="btn accent full">Generate / modify with AI</button>
+            <button type="button" id="btn-stop-generation" class="btn danger full hidden" aria-label="Stop generating">Stop generating</button>
+          </div>
           <div id="prompt-status" class="status"></div>
           <div id="prompt-reply" class="reply"></div>
         </div>
@@ -1890,7 +1892,7 @@
     </div>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/app.js?v=20260715-history-codex-target"></script>
+  <script type="module" src="/app.js?v=20260715-multi-gen"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

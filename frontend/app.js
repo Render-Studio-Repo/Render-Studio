@@ -68,7 +68,7 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-improved-prompt-details";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-multi-gen";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
@@ -228,14 +228,19 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
     if (generationWatchPid === projectId && generationWatchOverlay) {
       inactiveOverlay?.setGenerating(false);
       const liveGen = allProjects.find((p) => p.id === projectId)?.generation;
+      const runningJobs = generationRunningJobs(liveGen, generationWatchOverlay);
       const watchProgress = generationWatchOverlay.progress || null;
       const liveProgress = liveGen?.progress || null;
-      const mergedProgress = liveProgress || watchProgress
+      const focused = runningJobs.find((j) => j.trace_id === generationWatchOverlay.focusedJobId) || runningJobs[0];
+      const focusedProgress = focused?.progress || liveProgress || watchProgress;
+      const mergedProgress = focusedProgress || watchProgress
         ? {
             ...(watchProgress || {}),
-            ...(liveProgress || {}),
+            ...(focusedProgress || {}),
             improved_prompt:
-              liveProgress?.improved_prompt
+              focusedProgress?.improved_prompt
+              ?? focusedProgress?.prompt_preview
+              ?? liveProgress?.improved_prompt
               ?? liveProgress?.prompt_preview
               ?? watchProgress?.improved_prompt
               ?? watchProgress?.prompt_preview,
@@ -244,8 +249,13 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
       activeOverlay.setGenerating(true, generationWatchOverlay.message, {
         ...generationWatchOverlay,
         progress: mergedProgress,
+        jobs: runningJobs,
       });
-      syncViewportGenerationUserBadge(liveGen?.status === "running" ? liveGen : generationWatchOverlay);
+      syncViewportGenerationUserBadge(
+        runningJobs.length > 1
+          ? { ...liveGen, status: "running", prompt: `${runningJobs.length} parts generating` }
+          : (liveGen?.status === "running" ? liveGen : generationWatchOverlay),
+      );
     } else if (viewportOverlayPid === projectId && viewportOverlayState) {
       viewerOverlay.setGenerating(true, viewportOverlayState.message, viewportOverlayState);
       wiringOverlay?.setGenerating(false);
@@ -254,22 +264,63 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
     return;
   }
   const currentGeneration = allProjects.find((p) => p.id === projectId)?.generation;
-  if (currentGeneration?.status === "running" && currentGeneration.kind !== "wiring") {
+  const runningJobs = generationRunningJobs(currentGeneration);
+  if ((currentGeneration?.status === "running" || runningJobs.length) && currentGeneration?.kind !== "wiring") {
     const mode = generationPromptMode(currentGeneration);
     viewerOverlay.setGenerating(true, promptGenerationOverlayOpts(mode).message, {
       kind: currentGeneration.kind || "prompt",
       promptMode: mode,
       progress: currentGeneration.progress,
+      jobs: runningJobs,
       ...promptGenerationOverlayOpts(mode),
     });
     wiringOverlay?.setGenerating(false);
-    syncViewportGenerationUserBadge(currentGeneration);
+    syncViewportGenerationUserBadge(
+      runningJobs.length > 1
+        ? { ...currentGeneration, status: "running", prompt: `${runningJobs.length} parts generating` }
+        : currentGeneration,
+    );
     return;
   }
   viewerOverlay.setGenerating(false, null, { complete: completeOpts.complete ?? false });
   wiringOverlay?.setGenerating(false, null, { complete: completeOpts.complete ?? false });
   syncViewportGenerationUserBadge(null);
   syncStopButtonVisibility();
+}
+
+function generationRunningJobs(gen, watchOverlay = null) {
+  const fromGen = Array.isArray(gen?.running_jobs) && gen.running_jobs.length
+    ? gen.running_jobs
+    : Array.isArray(gen?.jobs)
+      ? gen.jobs.filter((j) => j?.status === "running")
+      : [];
+  if (fromGen.length) return fromGen;
+  if (gen?.status === "running") {
+    return [{
+      id: gen.trace_id,
+      trace_id: gen.trace_id,
+      status: "running",
+      kind: gen.kind || "prompt",
+      prompt: gen.prompt,
+      label: gen.label,
+      mode: gen.mode,
+      progress: gen.progress,
+      by_user_name: gen.by_user_name,
+      by_user_id: gen.by_user_id,
+      by_avatar_url: gen.by_avatar_url,
+    }];
+  }
+  if (watchOverlay?.pendingStart) {
+    return [{
+      id: "pending",
+      trace_id: "pending",
+      status: "running",
+      kind: watchOverlay.kind || "prompt",
+      prompt: watchOverlay.prompt || watchOverlay.message,
+      progress: watchOverlay.progress,
+    }];
+  }
+  return [];
 }
 
 function generationUserAvatar(gen = {}) {
@@ -383,7 +434,10 @@ function isProjectGenerating(id) {
   if (!id) return false;
   if (generationWatchPid === id) return true;
   const proj = allProjects.find((p) => p.id === id);
-  return proj?.generation?.status === "running";
+  const gen = proj?.generation;
+  if (!gen) return false;
+  if (gen.status === "running") return true;
+  return Number(gen.running_count || 0) > 0 || generationRunningJobs(gen).length > 0;
 }
 
 const LS_CANVAS_GEN = "render3d:canvas-gen-pending";
@@ -614,10 +668,13 @@ function syncStopButtonVisibility() {
   if (btn) {
     btn.classList.toggle("hidden", !cadGenerating);
     if (!cadGenerating) btn.disabled = false;
+    const runningCount = generationRunningJobs(allProjects.find((p) => p.id === projectId)?.generation).length;
+    btn.textContent = runningCount > 1 ? `Stop generating (${runningCount})` : "Stop generating";
   }
+  // Keep Generate available while CAD jobs run so users can queue another part.
   if (promptBtn) {
-    promptBtn.classList.toggle("hidden", cadGenerating);
-    if (!cadGenerating) promptBtn.removeAttribute("disabled");
+    promptBtn.classList.remove("hidden");
+    if (!cadGenerating || !promptSubmitInFlight) promptBtn.removeAttribute("disabled");
   }
   if (wiringBtn) wiringBtn.classList.toggle("hidden", !wiringGenerating);
   if (wiringToolbeltBtn) wiringToolbeltBtn.classList.toggle("hidden", !wiringGenerating);
@@ -646,7 +703,7 @@ function stopGenerationWatch() {
   syncStopButtonVisibility();
 }
 
-async function cancelActiveGeneration() {
+async function cancelActiveGeneration(opts = {}) {
   const pid =
     (isGenerationUiActive(projectId) && projectId)
     || generationWatchPid
@@ -654,10 +711,32 @@ async function cancelActiveGeneration() {
     || projectId;
   if (!pid || !isGenerationUiActive(pid)) return;
 
+  let gen = allProjects.find((p) => p.id === pid)?.generation;
+  try {
+    gen = await api(`/api/projects/${pid}/generation`);
+    const proj = allProjects.find((p) => p.id === pid);
+    if (proj) proj.generation = gen;
+  } catch (_) {
+    /* use cached */
+  }
+  const runningJobs = generationRunningJobs(gen, generationWatchOverlay);
+  let traceId = opts.traceId || opts.trace_id || null;
+  if (!traceId && runningJobs.length > 1) {
+    const picked = await openGenerationCancelPicker(runningJobs, {
+      focusedJobId: opts.focusedJobId || null,
+    });
+    if (!picked) return;
+    traceId = picked === "__all__" ? null : picked;
+  } else if (!traceId && runningJobs.length === 1) {
+    traceId = runningJobs[0].trace_id || runningJobs[0].id || null;
+  }
+
   userCancelRequested = true;
-  activePromptGenerationId++;
-  activePromptAbort?.abort();
-  activePromptAbort = null;
+  if (!traceId || runningJobs.length <= 1) {
+    activePromptGenerationId++;
+    activePromptAbort?.abort();
+    activePromptAbort = null;
+  }
 
   const btn = document.getElementById("btn-stop-generation");
   const wiringBtn = document.getElementById("btn-wiring-stop");
@@ -666,7 +745,11 @@ async function cancelActiveGeneration() {
   if (wiringBtn) wiringBtn.disabled = true;
   if (wiringToolbeltBtn) wiringToolbeltBtn.disabled = true;
   try {
-    await api(`/api/projects/${pid}/generation/cancel`, { method: "POST" });
+    await api(`/api/projects/${pid}/generation/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(traceId ? { trace_id: traceId } : {}),
+    });
     if (pid === projectId) {
       const isWiring = generationWatchOverlay?.kind === "wiring";
       const stopMode = (generationWatchOverlay?.promptMode || "").toLowerCase();
@@ -681,22 +764,31 @@ async function cancelActiveGeneration() {
             ? "Stopping Fusion mode… killing generation now"
           : isV2
             ? "Stopping 2.0… killing generation now"
-            : "Stopping… killing generation now";
+            : runningJobs.length > 1 && traceId
+              ? "Stopping selected generation…"
+              : "Stopping… killing generation now";
       }
     }
-    let gen;
+    let nextGen;
     try {
-      gen = await api(`/api/projects/${pid}/generation`);
+      nextGen = await api(`/api/projects/${pid}/generation`);
+      const proj = allProjects.find((p) => p.id === pid);
+      if (proj) proj.generation = nextGen;
     } catch (_) {
       /* best-effort status check */
     }
-    if (gen?.status === "running") {
+    const stillRunning = generationRunningJobs(nextGen).length > 0 || nextGen?.status === "running";
+    if (stillRunning) {
       if (!generationPollTimer) {
         beginGenerationWatch(pid, {
-          kind: gen.kind || "prompt",
-          mode: generationPromptMode(gen, generationWatchOverlay?.promptMode || "standard"),
+          kind: nextGen?.kind || "prompt",
+          mode: generationPromptMode(nextGen, generationWatchOverlay?.promptMode || "standard"),
         });
+      } else {
+        syncViewportGenerationOverlay();
+        syncStopButtonVisibility();
       }
+      userCancelRequested = false;
     } else {
       stopGenerationWatch();
       hideViewportOverlay(pid);
@@ -704,11 +796,11 @@ async function cancelActiveGeneration() {
       document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
       document.getElementById("btn-wiring-toolbelt-generate")?.removeAttribute("disabled");
       userCancelRequested = false;
-      if (gen?.status === "canceled" && pid === projectId) {
-        const statusEl = document.getElementById(gen.kind === "wiring" ? "wiring-prompt-status" : "prompt-status");
+      if (nextGen?.status === "canceled" && pid === projectId) {
+        const statusEl = document.getElementById(nextGen.kind === "wiring" ? "wiring-prompt-status" : "prompt-status");
         if (statusEl) {
           statusEl.className = "status";
-          statusEl.textContent = gen.error || "Generation canceled.";
+          statusEl.textContent = nextGen.error || "Generation canceled.";
         }
       }
     }
@@ -724,6 +816,99 @@ async function cancelActiveGeneration() {
     if (wiringToolbeltBtn) wiringToolbeltBtn.disabled = false;
     syncStopButtonVisibility();
   }
+}
+
+function openGenerationCancelPicker(jobs, { focusedJobId = null } = {}) {
+  return new Promise((resolve) => {
+    const existing = document.getElementById("generation-cancel-modal");
+    existing?.remove();
+    const modal = document.createElement("div");
+    modal.id = "generation-cancel-modal";
+    modal.className = "auth-modal generation-cancel-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "generation-cancel-title");
+    const rows = (jobs || []).map((job, index) => {
+      const id = String(job.trace_id || job.id || "");
+      const pct = Math.round(Math.max(0, Math.min(100, Number(job.progress?.pct) || 0)));
+      const prompt = String(job.prompt || job.label || `Generation ${index + 1}`).trim();
+      const step = String(job.progress?.label || job.progress?.thinking || "Working…");
+      const mode = generationPromptMode(job);
+      const selected = focusedJobId && id === focusedJobId;
+      return `
+        <div class="generation-cancel-row${selected ? " is-focused" : ""}" data-trace-id="${appEscapeHtml(id)}">
+          <button type="button" class="generation-cancel-expand" aria-expanded="false" data-expand="${appEscapeHtml(id)}">Details</button>
+          <div class="generation-cancel-main">
+            <div class="generation-cancel-prompt">${appEscapeHtml(prompt.slice(0, 160))}${prompt.length > 160 ? "…" : ""}</div>
+            <div class="generation-cancel-meta">
+              <span>${pct}%</span>
+              <span>${appEscapeHtml(mode)}</span>
+              <span>${appEscapeHtml(String(step).slice(0, 80))}</span>
+            </div>
+            <div class="generation-cancel-track"><span style="width:${pct}%"></span></div>
+            <div class="generation-cancel-details hidden" hidden>
+              <p><strong>Prompt</strong></p>
+              <pre>${appEscapeHtml(prompt)}</pre>
+              <p><strong>Current step</strong> ${appEscapeHtml(String(step))}</p>
+              ${job.progress?.thinking ? `<p><strong>Detail</strong> ${appEscapeHtml(String(job.progress.thinking))}</p>` : ""}
+              ${id ? `<p class="muted small">trace:${appEscapeHtml(id)}</p>` : ""}
+            </div>
+          </div>
+          <button type="button" class="btn danger generation-cancel-one" data-stop="${appEscapeHtml(id)}">Stop this</button>
+        </div>
+      `;
+    }).join("");
+    modal.innerHTML = `
+      <div class="auth-backdrop" data-cancel-close="1"></div>
+      <div class="auth-card generation-cancel-card">
+        <button type="button" class="auth-close" data-cancel-close="1" aria-label="Close">&times;</button>
+        <h2 id="generation-cancel-title">Stop which generation?</h2>
+        <p class="muted small">Expand a row to confirm which prompt you are stopping. Other generations keep running.</p>
+        <div class="generation-cancel-list">${rows}</div>
+        <div class="generation-cancel-actions">
+          <button type="button" class="btn secondary" data-cancel-close="1">Keep generating</button>
+          <button type="button" class="btn danger" data-stop-all="1">Stop all</button>
+        </div>
+      </div>
+    `;
+    const finish = (value) => {
+      modal.remove();
+      document.removeEventListener("keydown", onKey);
+      resolve(value);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") finish(null);
+    };
+    document.addEventListener("keydown", onKey);
+    modal.addEventListener("click", (e) => {
+      if (e.target.closest?.("[data-cancel-close]")) {
+        finish(null);
+        return;
+      }
+      if (e.target.closest?.("[data-stop-all]")) {
+        finish("__all__");
+        return;
+      }
+      const stopBtn = e.target.closest?.("[data-stop]");
+      if (stopBtn) {
+        finish(stopBtn.getAttribute("data-stop") || null);
+        return;
+      }
+      const expandBtn = e.target.closest?.("[data-expand]");
+      if (expandBtn) {
+        const row = expandBtn.closest(".generation-cancel-row");
+        const details = row?.querySelector(".generation-cancel-details");
+        if (!details) return;
+        const open = details.classList.contains("hidden");
+        details.classList.toggle("hidden", !open);
+        details.hidden = !open;
+        expandBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        expandBtn.textContent = open ? "Hide" : "Details";
+        row?.classList.toggle("is-expanded", open);
+      }
+    });
+    document.body.appendChild(modal);
+  });
 }
 
 function promptGenerationOverlayOpts(mode = "standard") {
@@ -874,7 +1059,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       wiringStatus.textContent = "Generating schematic… safe to refresh.";
     }
   } else {
-    document.getElementById("btn-prompt")?.setAttribute("disabled", "true");
+    // Keep Generate enabled so another part can be queued while this runs.
     const statusEl = document.getElementById("prompt-status");
     if (statusEl && pid === projectId) {
       statusEl.className = "status loading";
@@ -896,7 +1081,8 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       const gen = await api(`/api/projects/${pid}/generation`);
       const proj = allProjects.find((p) => p.id === pid);
       if (proj) proj.generation = gen;
-      if (gen.status === "running") {
+      const runningJobs = generationRunningJobs(gen, generationWatchOverlay);
+      if (gen.status === "running" || runningJobs.length > 0) {
         if (generationWatchOverlay) {
           const liveMode = generationPromptMode(gen, generationWatchOverlay.promptMode || mode);
           Object.assign(generationWatchOverlay, {
@@ -913,6 +1099,22 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             },
             ...promptGenerationOverlayOpts(liveMode),
           });
+        }
+        // Apply any sibling jobs that finished while others still run.
+        for (const job of gen.jobs || []) {
+          if (job.status === "complete" && job.kind !== "wiring" && !wasGenerationApplied(pid, job.trace_id)) {
+            try {
+              await applyGenerationComplete(job, pid);
+            } catch (err) {
+              console.warn("apply completed parallel generation failed", err);
+            }
+          } else if (job.status === "complete" && job.kind === "wiring" && !wasGenerationApplied(pid, job.trace_id)) {
+            try {
+              await applyWiringGenerationComplete(job, pid);
+            } catch (err) {
+              console.warn("apply completed wiring generation failed", err);
+            }
+          }
         }
         syncViewportGenerationOverlay();
         syncExplorerLoadingUI();
@@ -931,6 +1133,19 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       }
       stopGenerationWatch();
       userCancelRequested = false;
+      // Handle finished jobs from the multi-job list first.
+      const finishedJobs = Array.isArray(gen.jobs) && gen.jobs.length ? gen.jobs : [gen];
+      for (const job of finishedJobs) {
+        if (job.status === "complete") {
+          if (job.kind === "wiring") {
+            if (!wasGenerationApplied(pid, job.trace_id)) {
+              await applyWiringGenerationComplete(job, pid);
+            }
+          } else if (!wasGenerationApplied(pid, job.trace_id)) {
+            await applyGenerationComplete(job, pid);
+          }
+        }
+      }
       if (gen.status === "complete") {
         if (gen.kind === "wiring") {
           if (!wasGenerationApplied(pid, gen.trace_id)) {
@@ -1192,7 +1407,7 @@ function errorCopyContext(extra = {}) {
 
 const viewerOverlay = createViewerOverlay(viewport, {
   fetchLogs: () => rawFetch("/api/logs?limit=40"),
-  onStopGeneration: () => void cancelActiveGeneration(),
+  onStopGeneration: (opts) => void cancelActiveGeneration(opts || {}),
   getCopyContext: errorCopyContext,
 });
 const sceneLights = setupSceneLighting(scene);
@@ -11230,7 +11445,7 @@ function formatApiDetail(detail, statusText = "", status = 0) {
     return "Server is restarting or busy — wait a few seconds and try Generate again.";
   }
   if (status === 409) {
-    return "A generation is already running for this project. Wait for it to finish or cancel it first.";
+    return "Too many generations are already running in this project. Wait for one to finish or stop one first.";
   }
   return (statusText || "").trim() || "Request failed";
 }
@@ -13394,7 +13609,7 @@ window.addEventListener("canvas:attach-sketch", () => {
 });
 wiringOverlay = createViewerOverlay(document.getElementById("wiring-viewport"), {
   fetchLogs: () => rawFetch("/api/logs?limit=40"),
-  onStopGeneration: () => void cancelActiveGeneration(),
+  onStopGeneration: (opts) => void cancelActiveGeneration(opts || {}),
   getCopyContext: errorCopyContext,
 });
 
@@ -18277,23 +18492,26 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       const gen = await api(`/api/projects/${projectId}/generation`);
       const proj = allProjects.find((p) => p.id === projectId);
       if (proj) proj.generation = gen;
-      if (gen?.status === "running") {
+      const runningJobs = generationRunningJobs(gen);
+      // Allow another CAD prompt while jobs are already running (multi-part).
+      if (gen?.status === "running" || runningJobs.length > 0) {
+        if (generationWatchPid !== projectId || !generationPollTimer) {
+          await resumeGenerationIfNeeded(projectId, gen);
+        }
+        // Fall through and submit an additional prompt.
+      } else if (gen?.status === "complete") {
         await resumeGenerationIfNeeded(projectId, gen);
+        // Fall through only if not still applying; complete is fine to start new.
+      } else if (generationWatchPid === projectId && generationWatchOverlay?.pendingStart) {
+        // Still waiting for the server to accept a prior submit — keep the banner.
         return;
+      } else {
+        // failed / canceled / idle — drop the stale UI and start a fresh generate.
+        stopGenerationWatch();
+        hideViewportOverlay(projectId);
+        viewerOverlay.clearError();
+        if (proj) proj.generation = { status: "idle" };
       }
-      if (gen?.status === "complete") {
-        await resumeGenerationIfNeeded(projectId, gen);
-        return;
-      }
-      // Still waiting for the server to accept this submit — keep the banner.
-      if (generationWatchPid === projectId && generationWatchOverlay?.pendingStart) {
-        return;
-      }
-      // failed / canceled / idle — drop the stale UI and start a fresh generate.
-      stopGenerationWatch();
-      hideViewportOverlay(projectId);
-      viewerOverlay.clearError();
-      if (proj) proj.generation = { status: "idle" };
     } catch {
       // Keep a pending local watch; only tear down if we aren't mid-submit.
       if (!(generationWatchPid === projectId && generationWatchOverlay?.pendingStart)) {
@@ -18559,11 +18777,12 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         if (userCancelRequested || !generationPollTimer) stopGenerationWatch();
         return;
       }
-      const alreadyRunning = /already (?:running|in progress)/i.test(String(err?.message || ""));
+      const alreadyRunning = /already (?:running|in progress)|too many generations/i.test(String(err?.message || ""));
       if (alreadyRunning && projectId) {
         try {
           const gen = await api(`/api/projects/${projectId}/generation`);
-          if (gen?.status === "running") {
+          const runningJobs = generationRunningJobs(gen);
+          if (gen?.status === "running" || runningJobs.length) {
             const proj = allProjects.find((p) => p.id === projectId);
             if (proj) proj.generation = gen;
             beginGenerationWatch(projectId, {
@@ -18572,7 +18791,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
             });
             if (status) {
               status.className = "status loading";
-              status.textContent = "Generation already running — showing live progress…";
+              status.textContent = runningJobs.length >= 5
+                ? "Already at 5 parallel generations — stop one or wait before starting another."
+                : runningJobs.length > 1
+                  ? `${runningJobs.length} generations running — showing live progress…`
+                  : "Generation already running — showing live progress…";
             }
             viewerOverlay.clearError();
             return;
@@ -18608,7 +18831,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
     viewerOverlay.showError(formatUserError(err), lastPromptCopyContext || {});
   } finally {
-    if (!isGenerationUiActive(projectId)) promptSubmitInFlight = false;
+    // Always clear submit lock so another part can be queued while jobs run.
+    promptSubmitInFlight = false;
   }
 });
 

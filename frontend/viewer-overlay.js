@@ -173,6 +173,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
           <span class="viewport-progress-pct">0%</span>
         </div>
       </div>
+      <div class="viewport-gen-jobs hidden" hidden aria-label="Active generations"></div>
       <div class="viewport-spinner-details hidden" hidden>
         <div class="viewport-agent-thinking">
           <div class="viewport-agent-thinking-label">Current step</div>
@@ -201,6 +202,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const progressStep = spinner.querySelector(".viewport-progress-step");
   const expandBtn = spinner.querySelector(".viewport-spinner-expand");
   const detailsEl = spinner.querySelector(".viewport-spinner-details");
+  const jobsEl = spinner.querySelector(".viewport-gen-jobs");
   const thinkingText = spinner.querySelector(".viewport-agent-thinking-text");
   const promptWrap = spinner.querySelector(".viewport-agent-prompt-wrap");
   const promptTextEl = spinner.querySelector(".viewport-agent-prompt-text");
@@ -240,6 +242,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   let progressTimer = null;
   let pollTimer = null;
   let finishTimer = null;
+  let activeJobs = [];
+  let focusedJobId = null;
 
   function clearProgressTimers() {
     if (progressTimer) {
@@ -254,6 +258,91 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       clearTimeout(finishTimer);
       finishTimer = null;
     }
+  }
+
+  function jobKey(job) {
+    return String(job?.trace_id || job?.id || "");
+  }
+
+  function truncatePrompt(text, max = 72) {
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    if (!s) return "Generating…";
+    return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+  }
+
+  function focusJob(jobId, { openDetails = false } = {}) {
+    focusedJobId = jobId || null;
+    const job = activeJobs.find((j) => jobKey(j) === focusedJobId) || activeJobs[0] || null;
+    if (job) {
+      applyProgressPayload(job.progress || {});
+      if (job.progress?.label) {
+        progressLabel = humanizeProgressText(job.progress.label, progressLabel);
+      }
+      const pct = Number(job.progress?.pct);
+      if (Number.isFinite(pct)) {
+        progressValue = pct;
+        traceProgress = Math.max(traceProgress, pct);
+      }
+    }
+    renderJobsList();
+    renderProgress();
+    if (openDetails) setDetailsOpen(true);
+  }
+
+  function renderJobsList() {
+    if (!jobsEl) return;
+    const multi = activeJobs.length > 1;
+    spinner.classList.toggle("viewport-spinner--multi", multi);
+    jobsEl.classList.toggle("hidden", !multi);
+    jobsEl.hidden = !multi;
+    if (!multi) {
+      jobsEl.innerHTML = "";
+      return;
+    }
+    if (!focusedJobId || !activeJobs.some((j) => jobKey(j) === focusedJobId)) {
+      focusedJobId = jobKey(activeJobs[0]);
+    }
+    jobsEl.innerHTML = activeJobs.map((job) => {
+      const id = jobKey(job);
+      const pct = Math.round(Math.max(0, Math.min(100, Number(job.progress?.pct) || 0)));
+      const label = humanizeProgressText(job.progress?.label || job.label || "", "Working…");
+      const prompt = truncatePrompt(job.prompt || job.label || "New part");
+      const selected = id === focusedJobId;
+      return `
+        <button type="button" class="viewport-gen-job${selected ? " is-selected" : ""}" data-job-id="${esc(id)}" title="${esc(prompt)}">
+          <span class="viewport-gen-job-top">
+            <span class="viewport-gen-job-prompt">${esc(prompt)}</span>
+            <span class="viewport-gen-job-pct">${pct}%</span>
+          </span>
+          <span class="viewport-gen-job-track"><span class="viewport-gen-job-fill" style="width:${pct}%"></span></span>
+          <span class="viewport-gen-job-meta">
+            <span class="viewport-gen-job-label">${esc(label)}</span>
+            <span class="viewport-gen-job-more">${selected && detailsOpen ? "Hide" : "View more"}</span>
+          </span>
+        </button>
+      `;
+    }).join("");
+    if (spinnerLabel) {
+      spinnerLabel.textContent = `${activeJobs.length} generating…`;
+    }
+  }
+
+  function setActiveJobs(jobs = []) {
+    const list = Array.isArray(jobs) ? jobs.filter((j) => String(j?.status || "running") === "running") : [];
+    activeJobs = list;
+    if (list.length <= 1) {
+      focusedJobId = list.length === 1 ? jobKey(list[0]) : null;
+      if (list.length === 1 && list[0]?.progress) {
+        applyProgressPayload(list[0].progress);
+      }
+    } else if (!focusedJobId || !list.some((j) => jobKey(j) === focusedJobId)) {
+      focusedJobId = jobKey(list[0]);
+      if (list[0]?.progress) applyProgressPayload(list[0].progress);
+    } else {
+      const focused = list.find((j) => jobKey(j) === focusedJobId);
+      if (focused?.progress) applyProgressPayload(focused.progress);
+    }
+    renderJobsList();
   }
 
   function setDetailsOpen(open) {
@@ -350,6 +439,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   }
 
   function renderProgress() {
+    if (activeJobs.length > 1) {
+      renderJobsList();
+      renderDetails();
+      return;
+    }
     const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
     const stats = stepStats(checklist);
     if (progressFill) progressFill.style.width = `${pct}%`;
@@ -560,12 +654,20 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     spinner.classList.add("hidden");
     spinner.classList.remove("viewport-spinner--v2");
     spinner.classList.remove("viewport-spinner--fusion");
+    spinner.classList.remove("viewport-spinner--multi");
     if (stopBtn) stopBtn.classList.add("hidden");
     progressValue = 0;
     traceProgress = 0;
     improvedPromptText = "";
     checklist = DEFAULT_CHECKLIST.map((item) => ({ ...item }));
     activity = [];
+    activeJobs = [];
+    focusedJobId = null;
+    if (jobsEl) {
+      jobsEl.innerHTML = "";
+      jobsEl.classList.add("hidden");
+      jobsEl.hidden = true;
+    }
     renderProgress();
   }
 
@@ -611,16 +713,18 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function setGenerating(active, message = "Generating…", opts = {}) {
     if (active) {
+      if (Array.isArray(opts.jobs)) setActiveJobs(opts.jobs);
+      else if (opts.job) setActiveJobs([opts.job]);
       if (generating) {
-        if (message) progressLabel = message;
+        if (message && activeJobs.length <= 1) progressLabel = message;
         if (opts.estimateMs) estimateMs = opts.estimateMs;
-        if (opts.progress) applyProgressPayload(opts.progress);
+        if (opts.progress && activeJobs.length <= 1) applyProgressPayload(opts.progress);
         applySpinnerVariant(opts);
         renderProgress();
         return;
       }
       startProgress(message, opts);
-      if (opts.progress) applyProgressPayload(opts.progress);
+      if (opts.progress && activeJobs.length <= 1) applyProgressPayload(opts.progress);
       renderProgress();
       return;
     }
@@ -669,11 +773,21 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   expandBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
     setDetailsOpen(!detailsOpen);
+    renderJobsList();
+  });
+
+  jobsEl?.addEventListener("click", (e) => {
+    const btn = e.target.closest?.(".viewport-gen-job");
+    if (!btn) return;
+    e.stopPropagation();
+    const id = btn.getAttribute("data-job-id") || "";
+    const same = id === focusedJobId;
+    focusJob(id, { openDetails: same ? !detailsOpen : true });
   });
 
   stopBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
-    onStopGeneration?.();
+    onStopGeneration?.({ jobs: activeJobs, focusedJobId });
   });
 
   bannerClose?.addEventListener("click", (e) => {
@@ -720,5 +834,5 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }
   });
 
-  return { setGenerating, isGenerating, updateProgress, setStopVisible, showError, clearError, dismiss };
+  return { setGenerating, isGenerating, updateProgress, setStopVisible, setActiveJobs, showError, clearError, dismiss };
 }

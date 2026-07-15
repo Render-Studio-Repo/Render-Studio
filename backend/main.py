@@ -11191,14 +11191,14 @@ class CancelGenerationRequest(BaseModel):
 @app.post("/api/projects/{project_id}/generation/cancel")
 def cancel_generation(
     project_id: str,
-    body: CancelGenerationRequest | None = None,
     user: dict[str, Any] = Depends(get_current_user),
+    body: CancelGenerationRequest = Body(default=CancelGenerationRequest()),
 ):
     # Allow workspace members and a1projects admins to stop a runaway generation.
     path = _require_project_read(user, project_id)
     if not generation_service.is_running(path):
         return generation_service.public_summary(path)
-    trace_id = (body.trace_id if body else None) or None
+    trace_id = str(body.trace_id or "").strip() or None
     return generation_service.request_cancel(path, trace_id=trace_id)
 
 
@@ -11374,6 +11374,7 @@ def _background_kernel_build(
                 "url": f"/api/projects/{project_id}/files/{primary}",
                 "timeline_index": entry["index"],
             },
+            trace_id=trace_id,
         )
     except Exception as exc:
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():

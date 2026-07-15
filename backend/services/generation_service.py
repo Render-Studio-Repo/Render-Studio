@@ -490,6 +490,7 @@ def _update_job(
     *,
     trace_id: str | None,
     mutator: Any,
+    create_if_missing: bool = False,
 ) -> dict[str, Any]:
     with _file_lock(project_path):
         path = _path(project_path)
@@ -508,10 +509,16 @@ def _update_job(
                 if str(job.get("trace_id") or job.get("id") or "") == str(trace_id):
                     target = job
                     break
+            if target is None and not create_if_missing:
+                # Do not mutate a sibling job when the target trace is unknown.
+                out = _compose_document(jobs) if jobs else (raw or {"status": "idle"})
+                return out
         if target is None and jobs:
-            # Legacy callers: update primary running job.
+            # Legacy callers without trace_id: update primary running job.
             target = _primary_job([j for j in jobs if j.get("status") == "running"]) or _primary_job(jobs)
         if target is None:
+            if not create_if_missing and not trace_id:
+                return raw or {"status": "idle", "jobs": [], "running_count": 0}
             target = {"id": str(trace_id or ""), "trace_id": trace_id, "status": "running"}
             jobs.append(target)
         mutator(target)
