@@ -2189,53 +2189,119 @@ function isPromptImageDrag(e) {
   return types && [...types].includes("Files");
 }
 
+function setPromptAttachBusy(busy, message = "") {
+  const drop = document.getElementById("prompt-image-drop");
+  const status = document.getElementById("prompt-status");
+  drop?.classList.toggle("is-loading", !!busy);
+  drop?.setAttribute("aria-busy", busy ? "true" : "false");
+  if (drop) {
+    let badge = drop.querySelector(".prompt-attach-busy");
+    if (busy) {
+      if (!badge) {
+        badge = document.createElement("div");
+        badge.className = "prompt-attach-busy";
+        badge.innerHTML = `<span class="prompt-attach-spinner" aria-hidden="true"></span><span class="prompt-attach-busy-text"></span>`;
+        drop.appendChild(badge);
+      }
+      const textEl = badge.querySelector(".prompt-attach-busy-text");
+      if (textEl) textEl.textContent = message || "Loading file…";
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+  if (status) {
+    if (busy) {
+      status.className = "status loading";
+      status.textContent = message || "Loading file…";
+    } else if (status.classList.contains("loading") && (!message || status.textContent === message || /loading|upload|attach|opening/i.test(status.textContent || ""))) {
+      status.className = "status";
+      status.textContent = "";
+    }
+  }
+  if (busy && message) setEditStatus("loading", message);
+}
+
 async function addPromptDxfFiles(files) {
   const MAX_DXF_CHARS = 400_000;
+  const list = [...files];
+  if (!list.length) return;
   let added = 0;
-  for (const file of [...files]) {
-    if (file.size > 8 * 1024 * 1024) {
-      viewerOverlay?.showError?.(`${file.name} is too large for a DXF reference (max 8 MB).`);
-      continue;
-    }
-    let uploaded = null;
-    try {
-      await ensureProject();
-      const form = new FormData();
-      form.append("file", file, file.name);
-      uploaded = await api(`/api/projects/${projectId}/upload`, {
-        method: "POST",
-        body: form,
+  const total = list.length;
+  showAiComposePanel();
+  setPromptAttachBusy(true, total === 1 ? `Loading DXF ${list[0].name}…` : `Loading ${total} DXF files…`);
+  try {
+    for (let i = 0; i < list.length; i += 1) {
+      const file = list[i];
+      const progress = total > 1 ? ` (${i + 1}/${total})` : "";
+      if (file.size > 8 * 1024 * 1024) {
+        viewerOverlay?.showError?.(`${file.name} is too large for a DXF reference (max 8 MB).`);
+        continue;
+      }
+      setPromptAttachBusy(true, `Uploading DXF${progress}: ${file.name}…`);
+      let uploaded = null;
+      try {
+        await ensureProject();
+        const form = new FormData();
+        form.append("file", file, file.name);
+        uploaded = await api(`/api/projects/${projectId}/upload`, {
+          method: "POST",
+          body: form,
+        });
+        setPromptAttachBusy(true, `Opening DXF${progress}: ${uploaded?.filename || file.name}…`);
+        await refreshFiles();
+      } catch (err) {
+        console.warn("DXF project upload failed; falling back to inline DXF reference", err);
+        setEditStatus("warn", `Attached ${file.name} as inline DXF; project upload failed.`);
+      }
+      setPromptAttachBusy(true, `Reading DXF${progress}: ${file.name}…`);
+      const text = await file.text();
+      const filename = uploaded?.filename || file.name;
+      const stem = filename.replace(/\.dxf$/i, "");
+      const id = `dxf:${projectId || "project"}:${filename}`;
+      const token = `@${stem.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "dxf"}`;
+      const truncated = text.length > MAX_DXF_CHARS;
+      composer.addReference({
+        id,
+        type: "dxf",
+        token,
+        label: filename,
+        filename,
+        stem,
+        format: "dxf",
+        text_content: truncated ? text.slice(0, MAX_DXF_CHARS) : text,
+        text_truncated: truncated,
+        projectId,
       });
-      await refreshFiles();
-    } catch (err) {
-      console.warn("DXF project upload failed; falling back to inline DXF reference", err);
-      setEditStatus("warn", `Attached ${file.name} as inline DXF; project upload failed.`);
+      added += 1;
+      if (uploaded?.filename && projectId) {
+        try {
+          setPromptAttachBusy(true, `Opening drawing tab: ${filename}…`);
+          referenceFilesViewer?.hideViewerOnly?.();
+          await dxfViewer.openTab(filename, {
+            projectId,
+            label: stem,
+          });
+        } catch (err) {
+          console.warn("Could not open DXF tab after prompt attach", err);
+        }
+      }
+      setEditStatus("ok", `Attached DXF reference ${filename}.`);
     }
-    const text = await file.text();
-    const filename = uploaded?.filename || file.name;
-    const stem = filename.replace(/\.dxf$/i, "");
-    const id = `dxf:${projectId || "project"}:${filename}`;
-    const token = `@${stem.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "dxf"}`;
-    const truncated = text.length > MAX_DXF_CHARS;
-    composer.addReference({
-      id,
-      type: "dxf",
-      token,
-      label: filename,
-      filename,
-      stem,
-      format: "dxf",
-      text_content: truncated ? text.slice(0, MAX_DXF_CHARS) : text,
-      text_truncated: truncated,
-      projectId,
-    });
-    added += 1;
-    setEditStatus("ok", `Attached DXF reference ${filename}.`);
-  }
-  if (added > 0) {
-    setSkillEnabled("dxf", true);
-    skillsPromptUI?.render?.();
-    skillsPromptUI?.updatePlan?.();
+    if (added > 0) {
+      setSkillEnabled("dxf", true);
+      skillsPromptUI?.render?.();
+      skillsPromptUI?.updatePlan?.();
+      const status = document.getElementById("prompt-status");
+      if (status) {
+        status.className = "status ok";
+        status.textContent =
+          added === 1
+            ? `Attached DXF — opened in a tab. Close the tab anytime with ×.`
+            : `Attached ${added} DXF files — opened in tabs.`;
+      }
+    }
+  } finally {
+    setPromptAttachBusy(false);
   }
   if (!restoringModelPromptState) saveActiveModelPromptState();
 }
@@ -2315,7 +2381,9 @@ async function handlePromptComposeDrop(e) {
   if (dxfFiles.length) {
     e.preventDefault();
     e.stopPropagation();
+    promptPaneCompose?.classList.remove("dragging-image");
     promptImageDrop?.classList.remove("dragging");
+    setPromptAttachBusy(true, dxfFiles.length === 1 ? `Loading DXF ${dxfFiles[0].name}…` : `Loading ${dxfFiles.length} DXF files…`);
     await addPromptDxfFiles(dxfFiles);
     return;
   }
@@ -2390,6 +2458,7 @@ promptImageDrop?.addEventListener("drop", async (e) => {
     e.preventDefault();
     e.stopPropagation();
     promptImageDrop.classList.remove("dragging");
+    setPromptAttachBusy(true, dxfFiles.length === 1 ? `Loading DXF ${dxfFiles[0].name}…` : `Loading ${dxfFiles.length} DXF files…`);
     await addPromptDxfFiles(dxfFiles);
     return;
   }

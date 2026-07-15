@@ -8633,6 +8633,36 @@ body.panel-resizing-row * {
   font-size: 0.7rem;
 }
 
+.prompt-image-drop.is-loading {
+  pointer-events: none;
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.14);
+}
+
+.prompt-attach-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.prompt-attach-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(88, 166, 255, 0.25);
+  border-top-color: var(--accent, #58a6ff);
+  border-radius: 50%;
+  animation: prompt-attach-spin 0.7s linear infinite;
+}
+
+@keyframes prompt-attach-spin {
+  to { transform: rotate(360deg); }
+}
+
 .prompt-image-list {
   display: flex;
   flex-wrap: wrap;

@@ -107,7 +107,10 @@ def _normalize_stale(data: dict[str, Any] | None) -> dict[str, Any] | None:
         return {
             **data,
             "status": "failed",
-            "error": "Generation timed out or was interrupted (server restart). Retry the prompt.",
+            "error": (
+                f"Generation timed out after {int(MAX_RUNNING_SECONDS / 60)} minutes "
+                "(still waiting on AI/CAD). Cancel and retry, or simplify the prompt."
+            ),
             "updated_at": _now_iso(),
         }
     return data
@@ -199,6 +202,54 @@ def fail(project_path: Path, error: str, *, trace_id: str | None = None, extra: 
     return out
 
 
+PIPELINE_CHECKLIST = (
+    {"id": "analyze", "label": "Analyze prompt & references"},
+    {"id": "brief", "label": "Write CAD brief"},
+    {"id": "ai_source", "label": "Write / edit build123d source"},
+    {"id": "step", "label": "Run scripts/step (STEP / GLB)"},
+    {"id": "inspect", "label": "Inspect geometry (facts / planes)"},
+    {"id": "snapshot", "label": "Render multi-view snapshot"},
+    {"id": "snapshot_review", "label": "Visual review (fail-closed)"},
+    {"id": "finalize", "label": "Finalize artifacts"},
+)
+
+_STAGE_ALIASES = {
+    "analyze": "analyze",
+    "plan": "analyze",
+    "build": "step",
+    "brief": "brief",
+    "ai_source": "ai_source",
+    "step": "step",
+    "inspect": "inspect",
+    "inspect-quality": "inspect",
+    "snapshot": "snapshot",
+    "snapshot_review": "snapshot_review",
+    "finalize": "finalize",
+}
+
+
+def _checklist_for_stage(stage: str | None, *, current_label: str | None = None) -> list[dict[str, Any]]:
+    """Jake-style pipeline checklist derived from the active progress stage."""
+    normalized = _STAGE_ALIASES.get(str(stage or "").strip().lower(), "")
+    ids = [item["id"] for item in PIPELINE_CHECKLIST]
+    active_idx = ids.index(normalized) if normalized in ids else -1
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(PIPELINE_CHECKLIST):
+        if active_idx < 0:
+            status = "pending"
+        elif i < active_idx:
+            status = "done"
+        elif i == active_idx:
+            status = "active"
+        else:
+            status = "pending"
+        entry = {"id": item["id"], "label": item["label"], "status": status}
+        if status == "active" and current_label:
+            entry["detail"] = str(current_label)[:240]
+        out.append(entry)
+    return out
+
+
 def update_progress(
     project_path: Path,
     progress: dict[str, Any],
@@ -216,7 +267,9 @@ def update_progress(
     stage = progress.get("stage")
     pct = progress.get("pct")
     label = progress.get("label")
-    next_progress: dict[str, Any] = {}
+    detail = progress.get("detail") or progress.get("thinking")
+    prev = data.get("progress") if isinstance(data.get("progress"), dict) else {}
+    next_progress: dict[str, Any] = dict(prev or {})
     if stage is not None:
         next_progress["stage"] = stage
     if pct is not None:
@@ -226,6 +279,43 @@ def update_progress(
             pass
     if label is not None:
         next_progress["label"] = str(label)[:240]
+    if detail is not None:
+        next_progress["thinking"] = str(detail)[:500]
+    elif label is not None:
+        next_progress["thinking"] = str(label)[:500]
+
+    # Prefer caller-supplied checklist; otherwise derive Jake pipeline checklist.
+    if isinstance(progress.get("checklist"), list) and progress.get("checklist"):
+        next_progress["checklist"] = progress["checklist"][:16]
+    else:
+        next_progress["checklist"] = _checklist_for_stage(
+            next_progress.get("stage"),
+            current_label=next_progress.get("label"),
+        )
+
+    # Rolling activity log (what the agent is doing).
+    activity = list(next_progress.get("activity") or [])
+    incoming = progress.get("activity")
+    if isinstance(incoming, list):
+        for item in incoming:
+            if isinstance(item, dict) and item.get("text"):
+                activity.append({
+                    "ts": item.get("ts") or _now_iso(),
+                    "text": str(item.get("text"))[:300],
+                    "stage": item.get("stage") or next_progress.get("stage"),
+                })
+            elif isinstance(item, str) and item.strip():
+                activity.append({"ts": _now_iso(), "text": item.strip()[:300], "stage": next_progress.get("stage")})
+    elif label is not None:
+        last = activity[-1]["text"] if activity and isinstance(activity[-1], dict) else None
+        if last != str(label)[:300]:
+            activity.append({
+                "ts": _now_iso(),
+                "text": str(label)[:300],
+                "stage": next_progress.get("stage"),
+            })
+    next_progress["activity"] = activity[-40:]
+
     if not next_progress:
         return data
     data["progress"] = next_progress

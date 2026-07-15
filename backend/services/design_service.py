@@ -3443,9 +3443,11 @@ def _run_text_to_cad_v2(
             raise DesignCanceled("Generation canceled.")
         if progress_callback:
             action = "Editing" if (is_edit or current_source) else "Writing"
+            # Keep pct moving past brief's 10% so the UI does not look frozen.
+            src_pct = 18 if attempt == 0 else min(55, 18 + attempt * 3)
             progress_callback({
                 "stage": "ai_source",
-                "pct": 10 if attempt == 0 else 14,
+                "pct": src_pct,
                 "label": f"{action} build123d source with {label_prefix} CAD skill (attempt {attempt + 1}/{total_attempts})...",
             })
         try:
