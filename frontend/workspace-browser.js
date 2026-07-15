@@ -1,6 +1,6 @@
 /** Workspace folders + drag-and-drop project organization. */
 
-import { recognizePart } from "./part-catalog.js?v=20260617-part-drag";
+import { recognizePart } from "./part-catalog.js?v=20260715-elec-none";
 import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 
 const FOLDER_COLLAPSE_KEY = "render3d:folder-collapsed";
@@ -1059,7 +1059,7 @@ export function createWorkspaceBrowser({
     const safeStem = stem || entry.stem || entry.name.replace(/\.[^.]+$/, "");
     const safeStored = stored || getPartProfile?.(safeStem) || null;
     const safeRecognized = recognized || recognizePart(safeStem);
-    const safeWiringType = wiringType || safeStored?.wiring_type || safeRecognized?.wiringType || null;
+    const safeWiringType = wiringType || safeStored?.wiring_type || null;
     return {
       type: "component",
       projectId: project?.id || null,
@@ -1120,7 +1120,7 @@ export function createWorkspaceBrowser({
       const stem = entry.stem || entry.name?.replace(/\.[^.]+$/, "");
       const stored = sectionId === "components" ? (getPartProfile?.(stem) || null) : null;
       const recognized = sectionId === "components" ? recognizePart(stem) : null;
-      const wiringType = stored?.wiring_type || recognized?.wiringType || null;
+      const wiringType = stored?.wiring_type || null;
       selected.push(hierarchyPayload(project, sectionId, entry, { stem, stored, recognized, wiringType }));
     }
     if (!selected.length && fallbackPayload) return [fallbackPayload];
@@ -1441,7 +1441,7 @@ export function createWorkspaceBrowser({
             const stem = entry.stem || entry.name.replace(/\.[^.]+$/, "");
             const recognized = isComponent ? recognizePart(stem) : null;
             const stored = isComponent ? (getPartProfile?.(stem) || null) : null;
-            const wiringType = stored?.wiring_type || recognized?.wiringType || null;
+            const wiringType = stored?.wiring_type || null;
 
             const editHint = isEditableSketch ? ` <span class="proj-hierarchy-edit-hint" title="Double-click to edit">✎</span>` : "";
             btn.innerHTML = `<span class="proj-hierarchy-item-name">${escapeHtml(hierarchyDisplayName(entry))}</span>${editHint}`;

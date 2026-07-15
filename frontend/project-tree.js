@@ -1,6 +1,6 @@
 /** Fusion 360-style project browser tree (components, sketches, wiring, drawings, references). */
 
-import { recognizePart } from "./part-catalog.js?v=20260617-part-drag";
+import { recognizePart } from "./part-catalog.js?v=20260715-elec-none";
 import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 
 const SECTIONS = [
@@ -194,7 +194,7 @@ export function createProjectTree(options = {}) {
     const safeStem = stem || entry.stem || entry.name.replace(/\.[^.]+$/, "");
     const safeStored = stored || (sectionId === "components" ? getPartProfile?.(safeStem) || partProfiles.get(safeStem) || null : null);
     const safeRecognized = recognized || (sectionId === "components" ? recognizePart(safeStem) : null);
-    const safeWiringType = wiringType || safeStored?.wiring_type || safeRecognized?.wiringType || null;
+    const safeWiringType = wiringType || safeStored?.wiring_type || null;
     const pid = getProjectId?.() || null;
     if (sectionId === "components") {
       return {
@@ -247,7 +247,7 @@ export function createProjectTree(options = {}) {
       const stem = entry.stem || entry.name?.replace(/\.[^.]+$/, "");
       const stored = sectionId === "components" ? (getPartProfile?.(stem) || partProfiles.get(stem) || null) : null;
       const recognized = sectionId === "components" ? recognizePart(stem) : null;
-      const wiringType = stored?.wiring_type || recognized?.wiringType || null;
+      const wiringType = stored?.wiring_type || null;
       selected.push(componentPayload(entry, sectionId, { stem, stored, recognized, wiringType }));
     }
     if (!selected.length && fallbackPayload) return [fallbackPayload];
@@ -310,7 +310,7 @@ export function createProjectTree(options = {}) {
       recognized = recognizePart(stem);
       stored = (getPartProfile?.(stem)) || partProfiles.get(stem) || null;
       // A saved/sourced profile is authoritative over the filename heuristic.
-      const wiringType = stored?.wiring_type || recognized?.wiringType || null;
+      const wiringType = stored?.wiring_type || null;
       const kindLabel = stored?.kind || recognized?.kind || null;
       const sourced = !!stored?.source;
       li.classList.add("browser-item--draggable");

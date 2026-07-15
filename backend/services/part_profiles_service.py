@@ -55,6 +55,11 @@ WIRING_TYPES = {
     "button", "sensor", "motor",
 }
 
+# Mechanical shells / fixtures — never auto-assign an electrical pin type.
+_ENCLOSURE_RE = re.compile(
+    r"\b(case|enclosure|housing|lid|cover|shell|chassis|bracket|holder|stand|bezel|faceplate)\b"
+)
+
 # Ordered (most specific first) recognition rules: regex -> (wiring_type, kind, datasheet hint)
 _RULES: list[tuple[re.Pattern[str], str, str, str]] = [
     (re.compile(r"28byj|stepper|nema\s*\d|nema\d"), "stepper", "Stepper motor", "stepper coil pinout (28BYJ-48 / NEMA) datasheet"),
@@ -66,7 +71,8 @@ _RULES: list[tuple[re.Pattern[str], str, str, str]] = [
     (re.compile(r"raspberry|\brpi\b|\bpi[_\- ]?(zero|3|4|5|pico)\b|bcm283|rp2040"), "raspberry-pi", "Raspberry Pi", "Raspberry Pi 40-pin GPIO header"),
     (re.compile(r"2n2222|bc547|bc548|tip120|mosfet|irf\d|irlz|npn|pnp|transistor"), "transistor", "Transistor", "base/collector/emitter pinout"),
     (re.compile(r"1n4148|1n400\d|schottky|flyback|\bdiode\b"), "diode", "Diode", "anode/cathode (band = cathode)"),
-    (re.compile(r"resistor|\b\d+k?(ohm|r)\b|\bohm\b|2\d{2}r"), "resistor", "Resistor", "resistor value / colour code"),
+    # Avoid bare "5R" / "UV-5R" style model codes — require resistor / ohm wording.
+    (re.compile(r"resistor|\b\d+(\.\d+)?\s*k?\s*ohms?\b|\bohm\b"), "resistor", "Resistor", "resistor value / colour code"),
     (re.compile(r"\bled\b|neopixel|ws2812|diffused|5mm[_\- ]?led"), "led", "LED", "LED forward voltage + anode/cathode"),
     (re.compile(r"button|push[_\- ]?button|tactile|momentary|switch|\bspst\b"), "button", "Push button", "switch contact pinout"),
     (re.compile(r"sensor|hc[_\- ]?sr04|ultrasonic|\bpir\b|\bdht\d{2}\b|photo|ldr|potentiometer|\bpot\b|encoder|hall|imu|mpu6050"), "sensor", "Sensor / input module", "sensor module pinout"),
@@ -87,9 +93,15 @@ def _normalize(name: str) -> str:
 
 
 def recognize(name: str) -> dict[str, Any] | None:
-    """Heuristic recognition from a file name. Returns None when nothing matches."""
+    """Heuristic recognition from a file name. Returns None when nothing matches.
+
+    Cases / enclosures / lids never auto-map to an electrical pin type — those are
+    mechanical CAD parts even when the name mentions ESP32, Arduino, etc.
+    """
     norm = _normalize(name)
     if not norm:
+        return None
+    if _ENCLOSURE_RE.search(norm):
         return None
     for pattern, wiring_type, kind, datasheet in _RULES:
         if pattern.search(norm):
@@ -124,15 +136,21 @@ def save_all(project_path: Path, profiles: dict[str, Any]) -> None:
 
 
 def seed_profile(stem: str, filename: str | None = None) -> dict[str, Any]:
+    """Create a blank profile for a generated/imported CAD part.
+
+    Electrical type stays unset (none) until the user explicitly picks one in the
+    component profile UI — filename heuristics must not auto-assign pins.
+    """
     rec = recognize(stem)
     profile: dict[str, Any] = {
         "stem": stem,
         "filename": filename or stem,
         "label": _pretty_label(stem) or stem,
-        "wiring_type": rec["wiring_type"] if rec else None,
+        # Always default Electrical type (pins) to none for newly generated models.
+        "wiring_type": None,
         "kind": rec["kind"] if rec else "Unrecognized part",
         "datasheet": rec["datasheet"] if rec else None,
-        "confidence": "high" if rec else "low",
+        "confidence": "low",
         "stats": {},
         "source": None,
         "updated_at": _now(),
@@ -140,10 +158,28 @@ def seed_profile(stem: str, filename: str | None = None) -> dict[str, Any]:
     return profile
 
 
+def _should_clear_auto_wiring(profile: dict[str, Any], stem: str) -> bool:
+    """Drop auto-guessed pin types (esp. enclosures) that were never user-confirmed."""
+    wiring = profile.get("wiring_type")
+    if not wiring:
+        return False
+    if profile.get("confidence") == "user" or profile.get("source"):
+        return False
+    if _ENCLOSURE_RE.search(_normalize(stem)) or _ENCLOSURE_RE.search(_normalize(profile.get("label") or "")):
+        return True
+    # Legacy auto-seeds used confidence "high" from filename recognition.
+    return profile.get("confidence") == "high"
+
+
 def get_or_seed(project_path: Path, stem: str, filename: str | None = None) -> dict[str, Any]:
     profiles = load_all(project_path)
     if stem in profiles:
-        return profiles[stem]
+        current = profiles[stem]
+        if _should_clear_auto_wiring(current, stem):
+            current = {**current, "wiring_type": None, "confidence": "low", "updated_at": _now()}
+            profiles[stem] = current
+            save_all(project_path, profiles)
+        return current
     profile = seed_profile(stem, filename)
     profiles[stem] = profile
     save_all(project_path, profiles)
@@ -157,8 +193,13 @@ def save_profile(project_path: Path, stem: str, patch: dict[str, Any]) -> dict[s
     for key, value in patch.items():
         if key in allowed:
             current[key] = value
-    if patch.get("wiring_type") and patch["wiring_type"] not in WIRING_TYPES:
-        current["wiring_type"] = None
+    # Explicit clear: empty string / null means "none".
+    if "wiring_type" in patch:
+        wt = patch.get("wiring_type")
+        if not wt or wt not in WIRING_TYPES:
+            current["wiring_type"] = None
+        else:
+            current["wiring_type"] = wt
     current["stem"] = stem
     current["updated_at"] = _now()
     profiles[stem] = current

@@ -175,9 +175,9 @@ export function createComponentProfileUI({ api, rawFetch, getProjectId, createMi
     const stem = entry?.stem || entry?.name?.replace(/\.[^.]+$/, "") || entry?.name || "";
     const idToken = pid && stem ? `component:${pid}:${stem}` : "";
     const recognized = stem ? recognizePart(stem) : null;
-    const wiringType = profile?.wiring_type || recognized?.wiringType || "";
+    const wiringType = profile?.wiring_type || "";
     const kindLabel = profile?.kind || recognized?.kind || "";
-    const tagLabel = wiringType ? wiringType.replace(/-/g, " ") : kindLabel;
+    const tagLabel = wiringType ? wiringType.replace(/-/g, " ") : "";
     const hasTags = idToken || tagLabel;
 
     if (!hasTags) {

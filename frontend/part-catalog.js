@@ -9,7 +9,10 @@
  * chat.
  *
  * Rules are ordered most-specific first; the first match wins.
+ * Cases / enclosures never auto-map — those stay electrically "none".
  */
+
+const ENCLOSURE_RE = /\b(case|enclosure|housing|lid|cover|shell|chassis|bracket|holder|stand|bezel|faceplate)\b/;
 
 const RULES = [
   {
@@ -67,7 +70,8 @@ const RULES = [
     datasheet: "diode anode/cathode (band = cathode) datasheet",
   },
   {
-    test: /(resistor|\b\d+k?(ohm|r)\b|\bohm\b|2\d{2}r)/,
+    // Avoid bare "5R" / "UV-5R" model codes — require resistor / ohm wording.
+    test: /(resistor|\b\d+(\.\d+)?\s*k?\s*ohms?\b|\bohm\b)/,
     wiringType: "resistor",
     kind: "Resistor",
     datasheet: "resistor value / colour-code reference",
@@ -131,7 +135,7 @@ export function prettyPartLabel(name) {
 
 /**
  * Recognize an electronic part from a file name / stem.
- * Returns null when nothing matches.
+ * Returns null when nothing matches, and always null for cases/enclosures.
  *
  * @returns {{
  *   wiringType: string, kind: string, label: string,
@@ -141,6 +145,8 @@ export function prettyPartLabel(name) {
 export function recognizePart(name) {
   const norm = normalize(name);
   if (!norm) return null;
+  // Mechanical shells keep Electrical type = none even if the name mentions a board.
+  if (ENCLOSURE_RE.test(norm)) return null;
   for (const rule of RULES) {
     if (rule.test.test(norm)) {
       const partNumber = partNumberGuess(norm);

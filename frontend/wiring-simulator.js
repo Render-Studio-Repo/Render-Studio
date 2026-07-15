@@ -2,7 +2,7 @@
 
 import { resolveIssueWireIds } from "./wiring-focus-diagram.js?v=20260619-readable";
 
-import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260617-part-drag";
+import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260715-elec-none";
 
 const PALETTE = [
   { type: "raspberry-pi", label: "Raspberry Pi", w: 148, h: 188, color: "#c51a4a" },
@@ -1968,7 +1968,7 @@ export function createWiringSimulator(options = {}) {
       ? { wiringType: profile.wiring_type, kind: profile.kind, label: profile.label, datasheet: profile.datasheet }
       : payload.part && payload.wiringType
       ? { wiringType: payload.wiringType, ...payload.part }
-      : recognizePart(stem);
+      : null;
     const pt = clientToWorld(clientX, clientY);
     const x = Math.max(8, pt.x - 40);
     const y = Math.max(8, pt.y - 20);

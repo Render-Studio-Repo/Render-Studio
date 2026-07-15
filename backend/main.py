@@ -10261,7 +10261,7 @@ def save_part_profile(
 ):
     path = _require_project(user, project_id)
     profile = part_profiles_service.save_profile(
-        path, stem, patch.model_dump(exclude_none=True)
+        path, stem, patch.model_dump(exclude_unset=True)
     )
     _notify_project(project_id, {"type": "parts.updated", "stem": stem, "by": user["display_name"]})
     return profile
