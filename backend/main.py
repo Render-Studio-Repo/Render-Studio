@@ -1376,7 +1376,7 @@ def _measure_component_mm(project_path: Path, filename: str | None, stem: str | 
     if filename:
         candidates.append(project_path / filename)
     if stem:
-        for ext in (".glb", ".step", ".stp", ".stl", ".obj", ".gltf"):
+        for ext in (".glb", ".step", ".stp", ".stl", ".obj", ".gltf", ".3mf", ".iges", ".igs", ".brep", ".brp"):
             candidates.append(project_path / f"{stem}{ext}")
     seen: set[Path] = set()
     for path in candidates:
