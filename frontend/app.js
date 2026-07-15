@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-renders-section";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-public-history";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
@@ -111,6 +111,7 @@ import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtim
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
+import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-realtime-editor-popup";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = 480000;
@@ -4596,7 +4597,7 @@ async function refreshPromptHistory() {
     return [];
   }
   try {
-    const data = await api(`/api/projects/${projectId}/prompt-history?kind=cad`);
+    const data = await api(`${projectHistoryApiPath(projectId, "prompt-history")}?kind=cad`);
     const entries = data.entries || [];
     latestPromptHistoryEntries = entries;
     try {
@@ -4612,6 +4613,14 @@ async function refreshPromptHistory() {
         proj.usage_summary = data.usage_summary;
         workspaceBrowser?.render?.();
       }
+    }
+    const proj = allProjects.find((p) => p.id === projectId);
+    if (proj && data.generated_by) {
+      proj.generated_by = data.generated_by;
+      if (!proj.owner_name && data.generated_by.display_name) {
+        proj.owner_name = data.generated_by.display_name;
+      }
+      workspaceBrowser?.render?.();
     }
     return entries;
   } catch {
@@ -12963,8 +12972,17 @@ function isAnonymousPublicProject(id = projectId) {
   return !currentUser && !!id && allProjects.some((p) => p.id === id && p.public);
 }
 
+function isPublicProject(id = projectId) {
+  return !!id && allProjects.some((p) => p.id === id && p.public);
+}
+
 function projectApiPath(id = projectId) {
   return isAnonymousPublicProject(id) ? `/api/public/projects/${id}` : `/api/projects/${id}`;
+}
+
+function projectHistoryApiPath(id = projectId, kind = "prompt-history") {
+  const base = isAnonymousPublicProject(id) ? `/api/public/projects/${id}` : `/api/projects/${id}`;
+  return `${base}/${kind}`;
 }
 
 function projectFileUrl(id, filename) {
@@ -14861,10 +14879,68 @@ async function generateRobotArtifacts(kind = "both") {
   }
 }
 
+async function setupRobotMotionWorkflow({ autoGenerate = true } = {}) {
+  if (!projectId) {
+    setEditStatus("error", "Select a project first.");
+    return;
+  }
+  workspaceModes.setDesignTab("RIGGING");
+  ribbon?.setDesignTab?.("RIGGING");
+  enterRiggingMode();
+  setRightTab("rigging");
+  riggingPromptHistory.setTab("compose");
+  setRiggingWorkspaceMode("urdf");
+
+  const status = document.getElementById("rigging-prompt-status");
+  if (status) {
+    status.className = "status loading";
+    status.textContent = "Checking robot motion setup…";
+  }
+  setEditStatus("loading", "Setting up robot rigging, URDF/SRDF, and MoveIt2 motion…");
+
+  const artifacts = await refreshRobotArtifacts({ quiet: true }) || robotArtifactData || {};
+  if (projectAlreadyHasSimMotion({ filename: selectedFile }, artifacts)) {
+    await ensureUrdfRobotScene({ quiet: false, force: true });
+    openUrdfMotionModal();
+    setEditStatus("ok", "Robot motion workbench ready. Use joint sliders, Play, or MoveIt2 Plan path.");
+    if (status) {
+      status.className = "status ok";
+      status.textContent = "URDF/SRDF already exists. Motion workbench opened.";
+    }
+    return;
+  }
+
+  const source = pickSimMotionPythonSource({ filename: selectedFile }, artifacts);
+  if (!source) {
+    const input = document.getElementById("rigging-prompt-input");
+    if (input && !input.value.trim()) {
+      input.value = "Set up this model as a robot: define base_link, movable revolute/prismatic joints, joint limits, link hierarchy, end effector, URDF/SRDF, and a MoveIt2 planning group.";
+    }
+    const msg = "No Python CAD source found yet. Generate the robot model from AI Compose first, then click Rig Robot again.";
+    setEditStatus("error", msg);
+    if (status) {
+      status.className = "status error";
+      status.textContent = msg;
+    }
+    return;
+  }
+
+  const sourceSelect = document.getElementById("rigging-artifact-source");
+  if (sourceSelect) sourceSelect.value = source;
+  if (!autoGenerate) {
+    setEditStatus("ok", "Rig Robot setup opened. Click Author URDF/SRDF with AI when ready.");
+    return;
+  }
+  await authorJakeRobotDescription({ source, kind: "both", openMotion: true });
+}
+
 document.getElementById("btn-rigging-artifacts-refresh")?.addEventListener("click", () => refreshRobotArtifacts());
 document.getElementById("btn-rigging-generate-urdf")?.addEventListener("click", () => generateRobotArtifacts("urdf"));
 document.getElementById("btn-rigging-generate-srdf")?.addEventListener("click", () => generateRobotArtifacts("srdf"));
 document.getElementById("btn-rigging-generate-robot")?.addEventListener("click", () => generateRobotArtifacts("both"));
+document.getElementById("btn-rig-robot-viewport")?.addEventListener("click", () => {
+  void setupRobotMotionWorkflow();
+});
 
 document.getElementById("btn-rigging-demo-gear-train")?.addEventListener("click", () => {
   loadGearTrainDemo({ switchToRigging: true });
@@ -14957,10 +15033,10 @@ try {
 }
 
 document.getElementById("btn-rigging-author-jake")?.addEventListener("click", () => {
-  void authorJakeRobotDescription();
+  void authorJakeRobotDescription({ openMotion: true });
 });
 
-async function authorJakeRobotDescription({ source: requestedSource = "", kind = "both", openMotion = false } = {}) {
+async function authorJakeRobotDescription({ source: requestedSource = "", kind = "both", openMotion = false, announcePrefHint = false } = {}) {
   if (!projectId) {
     setEditStatus("error", "Select a project first.");
     return;
@@ -14994,7 +15070,9 @@ async function authorJakeRobotDescription({ source: requestedSource = "", kind =
     setEditStatus("ok", msg);
     if (status) {
       status.className = "status ok";
-      status.textContent = msg;
+      status.textContent = announcePrefHint
+        ? `${msg} Future robot models will use your saved motion preference.`
+        : msg;
     }
   } catch (err) {
     const msg = err?.message || "Could not author URDF/SRDF.";
@@ -15886,7 +15964,8 @@ async function loadProject(id) {
           gizmoPanel.hide();
           setEditStatus("ok", "All components are hidden.");
         }
-        if (currentUser) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshObjectHistory();
       } else {
         await loadProjectComponents(comps, {
           projectId: id,
@@ -15894,13 +15973,15 @@ async function loadProject(id) {
           loadGen,
           fitView: true,
         });
-        if (currentUser) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshObjectHistory();
       }
     } else if (!comps.length) {
       const robots = browser.robots || [];
       if (robots.length && !wiringMode) {
         showEmptyProjectViewport({ keepBrowser: true });
-        if (currentUser) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshObjectHistory();
         // Robot-only projects: jump into Rigging and load URDF/SRDF.
         if (workspaceModes.getDesignTab() !== "RIGGING") {
           workspaceModes.setDesignTab("RIGGING");
@@ -15910,10 +15991,12 @@ async function loadProject(id) {
         void refreshRobotArtifacts({ quiet: true });
       } else {
         showEmptyProjectViewport();
-        if (currentUser) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshPromptHistory();
+        if (currentUser || isPublicProject(id)) await refreshObjectHistory();
       }
-    } else if (currentUser) {
+    } else if (currentUser || isPublicProject(id)) {
       await refreshPromptHistory();
+      await refreshObjectHistory();
     }
     // Background: hydrate Bodies tree + sketches after the viewport is already showing.
     if (loadGen === loadProjectGeneration) {
@@ -16093,7 +16176,7 @@ async function refreshTimeline() {
 async function refreshObjectHistory() {
   if (!projectId) return;
   try {
-    const data = await api(`/api/projects/${projectId}/project-history`);
+    const data = await api(projectHistoryApiPath(projectId, "project-history"));
     objectHistory.render(data.entries || []);
     const cur = timelineData?.current_index;
     if (cur != null && cur >= 0) objectHistory.highlightActive(cur);
@@ -17389,6 +17472,11 @@ async function refreshWorkspaceRealtimeEditor() {
     renderWorkspaceRealtimeEditor(null);
   }
 }
+
+installRealtimePopupApi({
+  refresh: refreshWorkspaceRealtimeEditor,
+  getProjectId: () => projectId,
+});
 
 function renderFileList(files = []) {
   const list = document.getElementById("file-list");

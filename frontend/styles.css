@@ -6407,6 +6407,17 @@ label.btn { display: inline-flex; align-items: center; }
   background: rgba(154, 52, 18, 0.32);
 }
 
+.sim-motion-card {
+  max-width: 520px;
+}
+
+.sim-motion-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 14px 0 10px;
+}
+
 .viewport-lighting-tab {
   position: absolute;
   left: 14px;

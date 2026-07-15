@@ -975,6 +975,15 @@ def _public_project_summaries(
                 "owner_user_id": row["created_by"],
                 "owner_email": row["owner_email"],
                 "owner_name": row["owner_name"],
+                "generated_by": (
+                    {
+                        "user_id": row["created_by"],
+                        "display_name": row["owner_name"],
+                        "avatar_url": None,
+                    }
+                    if row["owner_name"]
+                    else None
+                ),
             }
         )
     return out
@@ -8228,6 +8237,83 @@ def list_public_projects():
     return {"folder": _public_folder_summary(), "projects": _public_project_summaries()}
 
 
+def _public_prompt_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    prompt = entry.get("prompt") or entry.get("original_prompt")
+    if not prompt:
+        return None
+    return {
+        "id": entry.get("id"),
+        "prompt": entry.get("prompt") or "",
+        "original_prompt": entry.get("original_prompt"),
+        "prompt_improved": bool(entry.get("prompt_improved")),
+        "success": entry.get("success") is not False,
+        "error": entry.get("error"),
+        "kind": entry.get("kind") or "cad",
+        "filename": entry.get("filename"),
+        "base_filename": entry.get("base_filename"),
+        "target_mode": entry.get("target_mode"),
+        "model": entry.get("model"),
+        "provider": entry.get("provider"),
+        "prompt_mode": entry.get("prompt_mode") or entry.get("speed"),
+        "speed": entry.get("speed"),
+        "created_at": entry.get("created_at"),
+        "user_id": entry.get("user_id"),
+        "user_name": entry.get("user_name"),
+        "user_avatar_url": entry.get("user_avatar_url"),
+    }
+
+
+def _public_prompt_history(
+    project_path: Path,
+    *,
+    limit: int = 80,
+    base_filename: str | None = None,
+    kind: str | None = "cad",
+) -> list[dict[str, Any]]:
+    try:
+        entries = prompt_history_service.list_entries(
+            project_path, limit=limit, base_filename=base_filename, kind=kind
+        )
+    except Exception:
+        entries = []
+    # Filename filters can miss renamed / sidecar viewers — fall back to project prompts.
+    if base_filename and not entries:
+        try:
+            entries = prompt_history_service.list_entries(project_path, limit=limit, kind=kind)
+        except Exception:
+            entries = []
+    out: list[dict[str, Any]] = []
+    for entry in entries:
+        row = _public_prompt_entry(entry)
+        if row:
+            out.append(row)
+    return out
+
+
+def _public_generated_by(project_path: Path, owner: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    prompts = _public_prompt_history(project_path, limit=20, kind="cad")
+    latest = next((e for e in prompts if e.get("success")), prompts[0] if prompts else None)
+    if latest and latest.get("user_name"):
+        return {
+            "user_id": latest.get("user_id"),
+            "display_name": latest.get("user_name"),
+            "avatar_url": latest.get("user_avatar_url"),
+            "prompt_id": latest.get("id"),
+            "created_at": latest.get("created_at"),
+            "filename": latest.get("filename"),
+        }
+    if owner and owner.get("owner_name"):
+        return {
+            "user_id": owner.get("created_by") or owner.get("owner_user_id"),
+            "display_name": owner.get("owner_name"),
+            "avatar_url": None,
+            "prompt_id": None,
+            "created_at": None,
+            "filename": None,
+        }
+    return None
+
+
 @app.get("/api/public/projects/{project_id}")
 def get_public_project(project_id: str):
     if not _is_public_project(project_id):
@@ -8235,6 +8321,8 @@ def get_public_project(project_id: str):
     project_path = PROJECTS / project_id
     owner = _project_owner(project_id) or {}
     summary = project_store.project_summary(project_path)
+    prompts = _public_prompt_history(project_path, limit=80, kind="cad")
+    generated_by = _public_generated_by(project_path, owner)
     summary.update(
         {
             "folder_id": PUBLIC_FOLDER_ID,
@@ -8243,9 +8331,58 @@ def get_public_project(project_id: str):
             "owner_user_id": owner.get("created_by"),
             "owner_email": owner.get("owner_email"),
             "owner_name": owner.get("owner_name"),
+            "generated_by": generated_by,
+            "prompt_history": prompts,
+            "prompt_count": len(prompts),
         }
     )
     return summary
+
+
+@app.get("/api/public/projects/{project_id}/prompt-history")
+def get_public_prompt_history(
+    project_id: str,
+    limit: int = Query(80, ge=1, le=200),
+    base_filename: str | None = Query(None),
+    kind: str | None = Query("cad", description="Filter by prompt kind: cad or wiring"),
+):
+    if not _is_public_project(project_id):
+        raise HTTPException(404, "Project not found")
+    project_path = PROJECTS / project_id
+    entries = _public_prompt_history(
+        project_path, limit=limit, base_filename=base_filename, kind=kind
+    )
+    owner = _project_owner(project_id) or {}
+    return {
+        "entries": entries,
+        "generated_by": _public_generated_by(project_path, owner),
+        "usage_summary": None,
+        "filtered_usage_summary": None,
+    }
+
+
+@app.get("/api/public/projects/{project_id}/project-history")
+def get_public_project_history(
+    project_id: str,
+    limit: int = Query(150, ge=1, le=300),
+):
+    if not _is_public_project(project_id):
+        raise HTTPException(404, "Project not found")
+    project_path = PROJECTS / project_id
+    entries = []
+    for entry in project_log_service.list_events(project_path, limit=limit):
+        row = dict(entry)
+        # Public viewers can inspect history but not restore timeline snapshots.
+        row["restorable"] = False
+        meta = dict(row.get("meta") or {})
+        # Keep generator identity; drop internal-only noise if present.
+        row["meta"] = {
+            k: meta.get(k)
+            for k in ("prompt", "prompt_id", "model", "provider", "prompt_mode", "speed", "success", "source")
+            if meta.get(k) is not None
+        }
+        entries.append(row)
+    return {"entries": entries, "generated_by": _public_generated_by(project_path, _project_owner(project_id) or {})}
 
 
 @app.post("/api/projects/{project_id}/public")
@@ -9440,34 +9577,7 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
 
 
 def _share_prompt_history(project_path: Path, filename: str, *, limit: int = 8) -> list[dict[str, Any]]:
-    try:
-        entries = prompt_history_service.list_entries(project_path, limit=limit, base_filename=filename, kind="cad")
-    except Exception:
-        return []
-    out: list[dict[str, Any]] = []
-    for entry in entries:
-        if not (entry.get("prompt") or entry.get("original_prompt")):
-            continue
-        out.append(
-            {
-                "id": entry.get("id"),
-                "prompt": entry.get("prompt"),
-                "original_prompt": entry.get("original_prompt"),
-                "prompt_improved": bool(entry.get("prompt_improved")),
-                "success": bool(entry.get("success")),
-                "error": entry.get("error"),
-                "filename": entry.get("filename"),
-                "base_filename": entry.get("base_filename"),
-                "target_mode": entry.get("target_mode"),
-                "model": entry.get("model"),
-                "provider": entry.get("provider"),
-                "speed": entry.get("speed"),
-                "created_at": entry.get("created_at"),
-                "user_name": entry.get("user_name"),
-                "cost_usd": entry.get("cost_usd"),
-            }
-        )
-    return out
+    return _public_prompt_history(project_path, limit=limit, base_filename=filename, kind="cad")
 
 
 def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any]:
@@ -9538,6 +9648,25 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         if sharer
         else None
     )
+    generated_by = None
+    if latest_prompt and latest_prompt.get("user_name"):
+        generated_by = {
+            "user_id": latest_prompt.get("user_id"),
+            "display_name": latest_prompt.get("user_name"),
+            "avatar_url": latest_prompt.get("user_avatar_url"),
+            "prompt_id": latest_prompt.get("id"),
+            "created_at": latest_prompt.get("created_at"),
+            "filename": latest_prompt.get("filename"),
+        }
+    elif shared_by:
+        generated_by = {
+            "user_id": shared_by.get("id"),
+            "display_name": shared_by.get("display_name"),
+            "avatar_url": shared_by.get("avatar_url"),
+            "prompt_id": None,
+            "created_at": None,
+            "filename": filename,
+        }
     return {
         "token": token,
         "project_id": project_id,
@@ -9551,8 +9680,10 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
             "ai_model": latest_prompt.get("model") if latest_prompt else None,
             "provider": latest_prompt.get("provider") if latest_prompt else None,
             "speed": latest_prompt.get("speed") if latest_prompt else None,
+            "generated_by": generated_by,
         },
         "prompt_history": prompt_history,
+        "generated_by": generated_by,
         "shared_by": shared_by,
         "exports": exports,
         "preview_file": preview_file,
