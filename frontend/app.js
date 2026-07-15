@@ -71,7 +71,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260714-agent-detail
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260714-fusion-open-save-local";
+import { initFusionPanel } from "./fusion-panel.js?v=20260714-gen-timeout-fix";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
@@ -933,7 +933,8 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           }
         }
       } else if (gen.status === "failed") {
-        const msg = formatUserError({ message: gen.error || "Generation failed." });
+        const rawError = String(gen.error || "Generation failed.");
+        const msg = formatUserError({ message: rawError });
         const copyContext = {
           promptId: gen.prompt_id,
           projectId: pid,
@@ -946,7 +947,10 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           statusEl.className = "status error";
           statusEl.textContent = msg;
         }
-        if (pid === projectId) {
+        // Only popup once per failed trace — avoids re-showing old timeout banners on refresh/Generate.
+        const alreadyShown = generationWatchOverlay?.shownFailureTrace === gen.trace_id;
+        if (pid === projectId && !alreadyShown) {
+          if (generationWatchOverlay) generationWatchOverlay.shownFailureTrace = gen.trace_id;
           if (gen.kind === "wiring") {
             wiringOverlay?.showError(msg, copyContext);
             await refreshWiringPromptHistory();
@@ -954,6 +958,9 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             viewerOverlay.showError(msg, copyContext);
             await refreshPromptHistory();
           }
+        } else if (pid === projectId) {
+          if (gen.kind === "wiring") await refreshWiringPromptHistory();
+          else await refreshPromptHistory();
         }
       } else if (gen.status === "canceled") {
         const msg = gen.error || "Generation canceled.";
@@ -16607,6 +16614,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   if (!prompt) return;
   if (!suppressAiComposePanelSwitch) showAiComposePanel();
   suppressAiComposePanelSwitch = false;
+  // Always clear a stale timeout/error banner when the user explicitly clicks Generate.
+  viewerOverlay.clearError();
+  const promptStatusEl = document.getElementById("prompt-status");
+  if (promptStatusEl?.classList.contains("error")) {
+    promptStatusEl.className = "status";
+    promptStatusEl.textContent = "";
+  }
   if (workspaceModes?.isWiring?.()) {
     const wiringInput = document.getElementById("wiring-prompt-input");
     const wiringStatus = document.getElementById("wiring-prompt-status");
@@ -16631,11 +16645,15 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         await resumeGenerationIfNeeded(projectId, gen);
         return;
       }
+      // failed / canceled / idle — drop the stale UI and start a fresh generate.
       stopGenerationWatch();
       hideViewportOverlay(projectId);
+      viewerOverlay.clearError();
+      if (proj) proj.generation = { status: "idle" };
     } catch {
-      syncViewportGenerationOverlay();
-      return;
+      stopGenerationWatch();
+      hideViewportOverlay(projectId);
+      viewerOverlay.clearError();
     }
   }
   if (promptMode === "draw") {

@@ -69,6 +69,52 @@ def _process_is_alive(pid: Any) -> bool:
     return True
 
 
+def _normalize_stale(data: dict[str, Any] | None, *, project_path: Path | None = None) -> dict[str, Any] | None:
+    """Fail only truly abandoned jobs — never timeout a live worker mid-CAD/AI."""
+    if not data or data.get("status") != "running":
+        return data
+    # Live uvicorn/worker process still owns this job — keep it running even past
+    # 20 minutes so long DXF/CAD prompts are not false-failed into the UI.
+    if _process_is_alive(data.get("worker_pid")):
+        return data
+
+    heartbeat = data.get("updated_at") or data.get("started_at")
+    if not heartbeat:
+        return data
+    try:
+        t0 = datetime.fromisoformat(str(heartbeat).replace("Z", "+00:00"))
+        idle = (datetime.now(timezone.utc) - t0).total_seconds()
+    except ValueError:
+        return data
+    # Worker is dead. Give a short grace for restarts, then persist failure once.
+    if idle <= 90:
+        return data
+
+    error = (
+        f"Generation timed out after {int(MAX_RUNNING_SECONDS / 60)} minutes "
+        "(still waiting on AI/CAD). Cancel and retry, or simplify the prompt."
+    )
+    failed = {
+        **data,
+        "status": "failed",
+        "error": error,
+        "finished_at": data.get("finished_at") or _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    _RUNNING_TRACES.pop(str(Path(project_path).name if project_path else data.get("project_id") or ""), None)
+    if project_path is not None and project_path.is_dir():
+        try:
+            # Persist so the UI doesn't keep re-popping this on every poll/Generate.
+            path = _path(project_path)
+            tmp_path = path.with_name(f"{path.name}.tmp")
+            tmp_path.write_text(json.dumps(failed, indent=2), encoding="utf-8")
+            tmp_path.replace(path)
+            _emit(project_path, failed)
+        except OSError:
+            logger.debug("Could not persist stale generation failure for %s", project_path.name, exc_info=True)
+    return failed
+
+
 def load(project_path: Path) -> dict[str, Any] | None:
     path = _path(project_path)
     if not path.is_file():
@@ -77,7 +123,7 @@ def load(project_path: Path) -> dict[str, Any] | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
-    return _normalize_stale(data)
+    return _normalize_stale(data, project_path=project_path)
 
 
 def save(project_path: Path, data: dict[str, Any]) -> dict[str, Any]:
@@ -89,30 +135,6 @@ def save(project_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     tmp_path = path.with_name(f"{path.name}.tmp")
     tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp_path.replace(path)
-    return data
-
-
-def _normalize_stale(data: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not data or data.get("status") != "running":
-        return data
-    started = data.get("started_at")
-    if not started:
-        return data
-    try:
-        t0 = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
-        age = (datetime.now(timezone.utc) - t0).total_seconds()
-    except ValueError:
-        return data
-    if age > MAX_RUNNING_SECONDS:
-        return {
-            **data,
-            "status": "failed",
-            "error": (
-                f"Generation timed out after {int(MAX_RUNNING_SECONDS / 60)} minutes "
-                "(still waiting on AI/CAD). Cancel and retry, or simplify the prompt."
-            ),
-            "updated_at": _now_iso(),
-        }
     return data
 
 
