@@ -195,7 +195,19 @@ def build_update_payload(update: dict[str, Any]) -> dict[str, Any]:
     if visual:
         embed["image"] = {"url": visual}
 
-    content = f"**{kind_label}** · **New Render3D update**"
+    author_handle = str(update.get("author_handle") or "").strip().lstrip("@")
+    if author_handle:
+        profile = f"{PUBLIC_BASE}/u/{author_handle}"
+        embed["fields"].append(
+            {
+                "name": "Author",
+                "value": f"[@{author_handle}]({profile})",
+                "inline": True,
+            }
+        )
+        content = f"**{kind_label}** · **New Render3D update** · [@{author_handle}]({profile})"
+    else:
+        content = f"**{kind_label}** · **New Render3D update**"
     return {"content": content, "embeds": [embed], "allowed_mentions": {"parse": []}}
 
 

@@ -171,6 +171,10 @@ def build_commentary(update: dict[str, Any]) -> str:
         parts.append("")
         parts.append(f"Try it: {href}")
         parts.append(f"Updates: {PUBLIC_BASE}/updates.html")
+    author_handle = str(update.get("author_handle") or "").strip().lstrip("@")
+    if author_handle:
+        parts.append("")
+        parts.append(f"Author: @{author_handle} — {PUBLIC_BASE}/u/{author_handle}")
     parts.append("")
     parts.append("#Render3D #CAD #AI")
     return "\n".join(parts)[:2800]
