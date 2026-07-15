@@ -697,6 +697,15 @@ def _require_project(user: dict[str, Any], project_id: str) -> Path:
     return path
 
 
+def _require_project_write(user: dict[str, Any], project_id: str) -> Path:
+    """Team members or a1projects admins may mutate a project (generate, edit, etc.)."""
+    if teams_service.can_access_project(user["id"], project_id) or _is_a1projects_admin(user):
+        path = PROJECTS / project_id
+        if path.is_dir():
+            return path
+    raise HTTPException(404, "Project not found")
+
+
 _FUSION_SYNC_LOCKS: dict[str, threading.Lock] = {}
 _FUSION_SYNC_LOCKS_GUARD = threading.Lock()
 
@@ -11225,7 +11234,7 @@ def prompt_cad(
     user: dict[str, Any] = Depends(get_current_user),
 ):
     trace_id = getattr(request.state, "trace_id", new_trace_id())
-    project_path = _require_project(user, project_id)
+    project_path = _require_project_write(user, project_id)
     body = _resolve_prompt_reference_body(project_id, project_path, body, user, trace_id)
     body = _with_reference_edit_base(project_path, body, trace_id)
     inferred_edit_base = _infer_implicit_edit_base(project_path, body)

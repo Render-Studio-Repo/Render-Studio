@@ -1012,6 +1012,9 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             if (gen.kind === "wiring") await refreshWiringPromptHistory();
             else await refreshPromptHistory();
           }
+          // Failed runs are finished — always unlock Generate for a retry.
+          document.getElementById("btn-prompt")?.removeAttribute("disabled");
+          promptSubmitInFlight = false;
         }
       } else if (gen.status === "canceled") {
         const rawCancel = gen.error || "Generation canceled.";
@@ -3233,7 +3236,7 @@ function getPromptGenerationSpeed() {
   return document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
 }
 
-const SPICE_KEY = "render3d:spice-prompt:v1";
+const SPICE_KEY = "render3d:spice-prompt:v2";
 const SPICE_COMPARE_KEY = "render3d:spice-prompt-compare:v1";
 
 /** @type {{ original: string, improved: string, unchanged?: boolean, at?: string } | null} */
@@ -3330,14 +3333,14 @@ function openSpiceCompareModal() {
 }
 
 function initPromptSpiceToggle() {
-  // Default ON so new users get clearer CAD prompts; persist explicit off as "0".
-  let enabled = true;
+  // Default OFF — send the user's exact prompt unless they opt into Improve.
+  let enabled = false;
   try {
     const saved = localStorage.getItem(SPICE_KEY);
-    if (saved === "0") enabled = false;
-    else if (saved === "1") enabled = true;
+    if (saved === "1") enabled = true;
+    else if (saved === "0") enabled = false;
   } catch {
-    enabled = true;
+    enabled = false;
   }
   const input = document.getElementById("prompt-spice");
   if (!input) return;
@@ -14350,9 +14353,33 @@ function handleRealtimeEvent(msg = {}) {
   if (msg.type === "generation.updated") {
     const pid = msg.project_id;
     if (pid) {
-      upsertProjectInList({ id: pid, generation: msg.generation || { status: "idle" } });
+      const existing = allProjects.find((p) => p.id === pid);
+      const gen = msg.generation || { status: "idle" };
+      const patch = { id: pid, generation: gen };
+      // Live generations from other users should appear under the admin "other renders" folder.
+      if (
+        !existing
+        && gen?.by_user_id
+        && currentUser?.id
+        && gen.by_user_id !== currentUser.id
+      ) {
+        patch.folder_id = "__other_user_renders__";
+        patch.folder_name = "New renders from other users";
+        patch.read_only_project = true;
+        patch.owner_user_id = gen.by_user_id;
+        patch.owner_name = gen.by_user_name;
+        patch.name = `${gen.by_user_name || "User"} · generating`;
+      } else if (existing?.read_only_project && gen?.by_user_name) {
+        patch.owner_name = gen.by_user_name;
+      }
+      upsertProjectInList(patch);
       renderProjectList();
-      if (pid === projectId) syncViewportGenerationOverlay();
+      if (pid === projectId) {
+        syncViewportGenerationOverlay();
+        if (gen?.status === "running") {
+          void resumeGenerationIfNeeded(pid, gen);
+        }
+      }
     }
     return;
   }
