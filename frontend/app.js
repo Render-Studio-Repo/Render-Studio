@@ -13840,7 +13840,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
   }
   projectsEl.innerHTML = `
     <strong>Fusion linked folders</strong>
-    <p class="muted small">Local edits sync back to Fusion when you open linked files or sync. Click any Fusion file to save it into Render3D (pick a workspace folder), open it for view/edit, or push your current model back.</p>
+    <p class="muted small">Local edits sync back to Fusion when you open linked files or sync. Teammates only receive files when they <strong>Link mirror on this same Render3D project</strong> — then Sync / Push all mirrors the full file set into their Fusion folder.</p>
     ${staleMirrorCount ? `
       <div class="workspace-fusion-stale-banner">
         <p class="muted small error">${staleMirrorCount} stale Fusion mirror${staleMirrorCount === 1 ? "" : "s"} on old Render3D projects still point at hubs you no longer have access to. They do not affect your current link.</p>
@@ -13928,15 +13928,41 @@ function renderWorkspaceRealtimeEditor(data = null) {
         const result = await api(`/api/projects/${encodeURIComponent(pid)}/fusion-mirror/sync-from-fusion`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ import_bodies: true }),
+          body: JSON.stringify({ import_bodies: false }),
         });
         btn.textContent = result.changed ? "Synced ✓" : "Latest";
-        setEditStatus("ok", result.changed ? "Fusion update synced through Render3D." : "Fusion mirror already has the latest version.");
+        const extra = result.teammate_files_pushed
+          ? ` Mirrored ${result.teammate_files_pushed} file${result.teammate_files_pushed === 1 ? "" : "s"} to teammates.`
+          : "";
+        setEditStatus("ok", (result.message || (result.changed ? "Fusion update synced through Render3D." : "Fusion mirror already has the latest version.")) + extra);
         await refreshWorkspaceRealtimeEditor();
       } catch (err) {
         btn.disabled = false;
         btn.textContent = original;
         setEditStatus("error", err.message || "Could not sync Fusion folder.");
+      }
+    });
+  });
+  projectsEl.querySelectorAll("[data-workspace-push-all-fusion]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pid = btn.dataset.workspacePushAllFusion;
+      if (!pid) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Pushing…";
+      try {
+        const result = await api(`/api/projects/${encodeURIComponent(pid)}/fusion-mirror/push-all-to-teammates`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        btn.textContent = result.files_pushed ? "Pushed ✓" : "Up to date";
+        setEditStatus("ok", result.message || "Teammate Fusion folders updated.");
+        await refreshWorkspaceRealtimeEditor();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = original;
+        setEditStatus("error", err.message || "Could not push files to teammates.");
       }
     });
   });
@@ -14140,7 +14166,7 @@ function renderWorkspaceFusionMirrors(project) {
               <span>${appEscapeHtml(fusionMirrorPathLabel(mirror))}</span>
               ${latestLink}
             </p>
-            <p class="muted small workspace-fusion-mirror-hint">Click a file to open &amp; edit. Use Save to keep a local Render3D copy.</p>
+            <p class="muted small workspace-fusion-mirror-hint">Click a file to open &amp; edit. Use Save to keep a local Render3D copy.${mirror.user_id === getStoredUser()?.id ? " Use Sync / Push all so teammates get every file in this project." : " This folder only fills after they link on the same project and someone syncs."}</p>
             <div class="workspace-fusion-browser">
               ${renderFusionBrowserSection(
                 mirror.folder_label || "Fusion folder",
@@ -14153,7 +14179,10 @@ function renderWorkspaceFusionMirrors(project) {
               )}
             </div>
             ${mirror.user_id === getStoredUser()?.id
-              ? `<button type="button" class="btn btn-compact" data-workspace-sync-fusion="${appEscapeHtml(project.id)}">Sync with Fusion</button>`
+              ? `<div class="workspace-fusion-mirror-actions">
+                  <button type="button" class="btn btn-compact" data-workspace-sync-fusion="${appEscapeHtml(project.id)}">Sync with Fusion</button>
+                  <button type="button" class="btn btn-compact secondary" data-workspace-push-all-fusion="${appEscapeHtml(project.id)}" title="Upload every project file into each teammate's linked Fusion folder">Push all to teammates</button>
+                </div>`
               : ""}
           </div>
         `;

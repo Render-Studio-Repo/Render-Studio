@@ -3951,6 +3951,184 @@ def _push_file_to_fusion_mirrors(
     return {"pushed_mirrors": pushed_mirrors, "push_errors": push_errors, "skipped": None}
 
 
+def _iter_project_fusion_push_filenames(project_path: Path) -> list[str]:
+    """Local CAD files that can be mirrored to Fusion as STEP (deduped by stem)."""
+    by_stem: dict[str, str] = {}
+    for path in sorted(project_path.iterdir()):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        if cad_service.is_internal_model_artifact(path):
+            continue
+        suffix = path.suffix.lower()
+        if suffix not in cad_service.STEP_SUFFIXES and suffix not in {".stl", ".3mf", ".obj", ".glb", ".gltf"}:
+            continue
+        if "__faceted" in path.stem.lower() or "__part_" in path.stem.lower():
+            continue
+        stem = path.stem.lower()
+        # Prefer native STEP over mesh/GLB for the same stem.
+        existing = by_stem.get(stem)
+        if existing is None:
+            by_stem[stem] = path.name
+            continue
+        existing_is_step = Path(existing).suffix.lower() in cad_service.STEP_SUFFIXES
+        if suffix in cad_service.STEP_SUFFIXES and not existing_is_step:
+            by_stem[stem] = path.name
+    return list(by_stem.values())
+
+
+def _fan_out_project_files_to_mirrors(
+    project_id: str,
+    project_path: Path,
+    *,
+    skip_user_ids: set[str] | None = None,
+    only_user_ids: set[str] | None = None,
+    filenames: list[str] | None = None,
+    missing_only: bool = True,
+) -> dict[str, Any]:
+    """Push project CAD files into teammate (or newly linked) Fusion mirror folders.
+
+    When ``missing_only`` is true, skip uploads whose filename already exists in the
+    destination folder so routine syncs do not thrash Autodesk.
+    """
+    skip_user_ids = set(skip_user_ids or set())
+    only_user_ids = set(only_user_ids or set())
+    candidates = filenames or _iter_project_fusion_push_filenames(project_path)
+    pushed_mirrors: list[dict[str, Any]] = []
+    push_errors: list[str] = []
+    if not candidates:
+        return {
+            "pushed_mirrors": pushed_mirrors,
+            "push_errors": push_errors,
+            "files_considered": 0,
+            "files_pushed": 0,
+        }
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT project_id, user_id, aps_project_id, folder_id, hub_label, aps_project_label, folder_label
+              FROM project_fusion_mirrors
+             WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchall()
+
+    from backend.services.autodesk_oauth import get_valid_access_token, list_folder_contents
+
+    files_pushed = 0
+    for row in rows:
+        mirror = dict(row)
+        user_id = str(mirror.get("user_id") or "")
+        if not user_id or user_id in skip_user_ids:
+            continue
+        if only_user_ids and user_id not in only_user_ids:
+            continue
+        aps_project_id = str(mirror.get("aps_project_id") or "")
+        folder_id = str(mirror.get("folder_id") or "")
+        if not aps_project_id or not folder_id:
+            continue
+        token = get_valid_access_token(user_id)
+        if not token:
+            push_errors.append(f"Autodesk token missing for user {user_id}")
+            continue
+
+        existing_names: set[str] = set()
+        if missing_only:
+            try:
+                contents = list_folder_contents(token, aps_project_id, folder_id)
+                for item in contents.get("items") or []:
+                    name = str(item.get("name") or "").strip().lower()
+                    if name:
+                        existing_names.add(name)
+                        existing_names.add(Path(name).stem.lower())
+            except Exception as exc:
+                push_errors.append(f"Could not list mirror for {user_id}: {exc}")
+                logger.warning(
+                    "Fusion teammate list failed project=%s user=%s: %s",
+                    project_id,
+                    user_id,
+                    exc,
+                )
+                continue
+
+        for filename in candidates:
+            upload_stem = Path(filename).stem.lower()
+            upload_step_name = f"{Path(filename).stem}.step".lower()
+            if missing_only and (upload_step_name in existing_names or upload_stem in existing_names):
+                continue
+            try:
+                step_path = _step_for_cloud_cad(project_path, filename, allow_faceted=False)
+            except Exception as exc:
+                push_errors.append(f"{filename}: {exc}")
+                continue
+            try:
+                from backend.services.autodesk_oauth import upload_step_to_folder
+
+                upload_name = f"{step_path.stem}.step"
+                uploaded = upload_step_to_folder(
+                    token,
+                    project_id=aps_project_id,
+                    folder_id=folder_id,
+                    filename=upload_name,
+                    data=step_path.read_bytes(),
+                )
+                now = datetime.now(timezone.utc).isoformat()
+                with get_conn() as conn:
+                    conn.execute(
+                        """
+                        UPDATE project_fusion_mirrors
+                           SET last_item_id = COALESCE(?, last_item_id),
+                               last_version_id = COALESCE(?, last_version_id),
+                               last_pushed_at = ?,
+                               updated_at = ?
+                         WHERE project_id = ? AND user_id = ?
+                        """,
+                        (
+                            uploaded.get("item_id"),
+                            uploaded.get("version_id"),
+                            now,
+                            now,
+                            project_id,
+                            user_id,
+                        ),
+                    )
+                files_pushed += 1
+                existing_names.add(upload_name.lower())
+                existing_names.add(step_path.stem.lower())
+                pushed_mirrors.append(
+                    {
+                        "user_id": user_id,
+                        "aps_project_id": aps_project_id,
+                        "folder_id": folder_id,
+                        "item_id": uploaded.get("item_id"),
+                        "version_id": uploaded.get("version_id"),
+                        "filename": upload_name,
+                    }
+                )
+                logger.info(
+                    "Fusion teammate mirror seeded project=%s file=%s user=%s",
+                    project_id,
+                    upload_name,
+                    user_id,
+                )
+            except Exception as exc:
+                push_errors.append(f"{filename} → {user_id}: {exc}")
+                logger.warning(
+                    "Fusion teammate seed failed project=%s file=%s user=%s: %s",
+                    project_id,
+                    filename,
+                    user_id,
+                    exc,
+                )
+
+    return {
+        "pushed_mirrors": pushed_mirrors,
+        "push_errors": push_errors,
+        "files_considered": len(candidates),
+        "files_pushed": files_pushed,
+    }
+
+
 def _background_push_new_file_to_fusion(project_id: str, project_path: Path, filename: str) -> None:
     """Best-effort Fusion mirror upload for newly generated/uploaded files."""
     result = _push_file_to_fusion_mirrors(project_id, project_path, filename)
@@ -4334,7 +4512,31 @@ def save_project_fusion_mirror(
         team_id=str(team_id) if team_id else None,
         body=body,
     )
-    return {"ok": True, "mirror": mirror}
+    # Seed this newly linked Fusion folder with every CAD file already in the
+    # shared Render3D project so teammates start from the same set.
+    path = PROJECTS / project_id
+    seed = {"files_pushed": 0, "push_errors": [], "pushed_mirrors": []}
+    if path.is_dir():
+        seed = _fan_out_project_files_to_mirrors(
+            project_id,
+            path,
+            only_user_ids={str(user["id"])},
+            missing_only=True,
+        )
+        # Also push this project's files out to any other teammates who already linked.
+        teammate_seed = _fan_out_project_files_to_mirrors(
+            project_id,
+            path,
+            skip_user_ids={str(user["id"])},
+            missing_only=True,
+        )
+        seed = {
+            "files_pushed": int(seed.get("files_pushed") or 0) + int(teammate_seed.get("files_pushed") or 0),
+            "files_considered": max(int(seed.get("files_considered") or 0), int(teammate_seed.get("files_considered") or 0)),
+            "pushed_mirrors": list(seed.get("pushed_mirrors") or []) + list(teammate_seed.get("pushed_mirrors") or []),
+            "push_errors": list(seed.get("push_errors") or []) + list(teammate_seed.get("push_errors") or []),
+        }
+    return {"ok": True, "mirror": mirror, "seed": seed}
 
 
 @app.delete("/api/projects/{project_id}/fusion-mirror")
@@ -4370,6 +4572,49 @@ def push_local_changes_to_fusion_mirror(
         filename=(body or {}).get("filename"),
         force=bool((body or {}).get("force", False)),
     )
+
+
+@app.post("/api/projects/{project_id}/fusion-mirror/push-all-to-teammates")
+def push_all_fusion_files_to_teammates(
+    project_id: str,
+    body: dict = Body(default={}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Upload every project CAD file into each teammate's linked Fusion mirror folder."""
+    path = _require_project(user, project_id)
+    with get_conn() as conn:
+        mine = conn.execute(
+            "SELECT 1 FROM project_fusion_mirrors WHERE project_id = ? AND user_id = ?",
+            (project_id, user["id"]),
+        ).fetchone()
+        others = conn.execute(
+            "SELECT COUNT(*) AS c FROM project_fusion_mirrors WHERE project_id = ? AND user_id != ?",
+            (project_id, user["id"]),
+        ).fetchone()
+    if not mine:
+        raise HTTPException(422, "Link your Fusion mirror on this project before pushing to teammates.")
+    if not others or int(others["c"] or 0) < 1:
+        raise HTTPException(
+            422,
+            "No teammate Fusion mirrors on this project yet. Each teammate must open this same Render3D project and Link mirror to their own Fusion folder.",
+        )
+    force = bool((body or {}).get("force", False))
+    result = _fan_out_project_files_to_mirrors(
+        project_id,
+        path,
+        skip_user_ids={str(user["id"])},
+        missing_only=not force,
+    )
+    count = int(result.get("files_pushed") or 0)
+    return {
+        "ok": True,
+        "message": (
+            f"Mirrored {count} file{'s' if count != 1 else ''} to teammate Fusion folders."
+            if count
+            else "Teammate Fusion folders already have these files."
+        ),
+        **result,
+    }
 
 
 @app.post("/api/projects/{project_id}/fusion-mirror/sync-from-fusion")
@@ -4561,22 +4806,19 @@ def _sync_project_fusion_mirror_from_fusion_locked(
     pushed_mirrors: list[dict[str, Any]] = list(local_push.get("pushed_mirrors") or [])
     push_errors: list[str] = list(import_errors)
     push_errors.extend(local_push.get("push_errors") or [])
-    # Fan-out imported Fusion updates to teammate mirrors only — skip the syncing user's
-    # folder to avoid creating a new Fusion version that would re-trigger the next pull.
-    for result in imported:
-        filename = result.get("filename") or result.get("viewer_filename")
-        if not filename:
-            continue
-        push = _push_file_to_fusion_mirrors(
-            project_id,
-            path,
-            str(filename),
-            skip_user_ids={str(user["id"])},
-        )
-        pushed_mirrors.extend(push.get("pushed_mirrors") or [])
-        push_errors.extend(push.get("push_errors") or [])
+    # Mirror the full shared project set into teammate Fusion folders (missing files only).
+    # This is what makes "everyone's Fusion folder" converge — not just the one file that changed.
+    fanout = _fan_out_project_files_to_mirrors(
+        project_id,
+        path,
+        skip_user_ids={str(user["id"])},
+        missing_only=True,
+    )
+    pushed_mirrors.extend(fanout.get("pushed_mirrors") or [])
+    push_errors.extend(fanout.get("push_errors") or [])
+    fanout_count = int(fanout.get("files_pushed") or 0)
 
-    changed = bool(imported) or bool(local_push.get("pushed"))
+    changed = bool(imported) or bool(local_push.get("pushed")) or fanout_count > 0
     if imported:
         latest = imported[-1]
         viewer = latest.get("viewer_filename") or latest.get("filename")
@@ -4618,13 +4860,17 @@ def _sync_project_fusion_mirror_from_fusion_locked(
         parts.append(
             f"Imported {len(imported)} update{'s' if len(imported) != 1 else ''} from Fusion"
         )
-    if pushed_mirrors and (imported or local_push.get("pushed")):
+    if fanout_count:
+        parts.append(
+            f"mirrored {fanout_count} file{'s' if fanout_count != 1 else ''} to teammate Fusion folder{'s' if fanout_count != 1 else ''}"
+        )
+    elif pushed_mirrors and (imported or local_push.get("pushed")):
         parts.append(f"updated {len(pushed_mirrors)} mirror{'s' if len(pushed_mirrors) != 1 else ''}")
     if parts:
         message = ", and ".join(parts) + "."
     else:
         message = "Fusion mirror folder is reachable. Local and Fusion copies are already in sync."
-    if import_errors and not imported and not local_push.get("pushed"):
+    if import_errors and not imported and not local_push.get("pushed") and not fanout_count:
         message = f"Could not import Fusion updates: {import_errors[0]}"
 
     return {
@@ -4643,6 +4889,7 @@ def _sync_project_fusion_mirror_from_fusion_locked(
         ],
         "pushed_mirrors": pushed_mirrors,
         "push_errors": push_errors,
+        "teammate_files_pushed": fanout_count,
     }
 
 
