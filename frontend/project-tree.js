@@ -70,6 +70,7 @@ export function createProjectTree(options = {}) {
     onOpenComponent,
     onOpenDrawing,
     onOpenReference,
+    onSendReferenceToPrompt,
     onOpenSketch,
     onEditSketch,
     onOpenWiring,
@@ -448,6 +449,18 @@ export function createProjectTree(options = {}) {
         actions.append(prof, exp, ren, del);
       }
     } else if (sectionId === "references" || sectionId === "robots") {
+      if (sectionId === "references" && !isDxfEntry(entry)) {
+        const sendAi = document.createElement("button");
+        sendAi.type = "button";
+        sendAi.className = "browser-action-btn browser-action-send-ai";
+        sendAi.textContent = "AI";
+        sendAi.title = "Send this file, notes, and markups to the AI prompt";
+        sendAi.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onSendReferenceToPrompt?.(entry);
+        });
+        actions.append(sendAi);
+      }
       const ren = document.createElement("button");
       ren.type = "button";
       ren.className = "browser-action-btn";

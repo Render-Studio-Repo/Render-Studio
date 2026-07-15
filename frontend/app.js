@@ -53,7 +53,7 @@ import {
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-meta";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-model";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-meta";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
@@ -72,7 +72,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-improved-pro
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-live";
+import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
@@ -90,7 +90,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-auto-reload-idle";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-ref-files";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-ref-markup-ai";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-component-bodies";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -12423,6 +12423,13 @@ const workspaceBrowser = createWorkspaceBrowser({
   onMakePublicProject: (p) => makeProjectPublic(p),
   onCreateProjectInFolder: (folderId) => createNewProjectInFolder(folderId),
   onOpenHierarchyItem: (project, entry, sectionId) => openHierarchyItem(project, entry, sectionId),
+  onSendReferenceToPrompt: (_project, entry) => {
+    if (!entry?.name) return;
+    void (async () => {
+      await openReferenceFile(entry);
+      await referenceFilesViewer.sendToPrompt?.(entry.name);
+    })();
+  },
   onOpenProfile: (project, entry) => componentProfileUI.open(entry, project?.id),
   onRenameHierarchyItem: (project, entry) => renameHierarchyComponent(project, entry),
   onDeleteHierarchyItem: (project, entry) => deleteHierarchyComponent(project, entry),
@@ -12730,6 +12737,7 @@ const referenceFilesViewer = createReferenceFilesViewer({
   onStatus: (kind, text) => {
     if (text) setEditStatus(kind || "ok", text);
   },
+  onSendToPrompt: (payload) => sendReferenceMarkupToPrompt(payload),
   onActiveChange: (filename) => {
     if (filename) {
       selectedFile = filename;
@@ -12742,6 +12750,91 @@ const referenceFilesViewer = createReferenceFilesViewer({
     }
   },
 });
+
+async function sendReferenceMarkupToPrompt(payload = {}) {
+  if (!payload?.filename) return;
+  showAiComposePanel();
+  let attachedImages = 0;
+  for (const img of payload.images || []) {
+    if (promptImages.length >= 8) break;
+    const exists = promptImages.some(
+      (p) => p.name === img.name || (p.source_filename && p.source_filename === payload.filename),
+    );
+    // Replace prior marked version of the same reference file
+    promptImages = promptImages.filter(
+      (p) => !(p.source_filename && p.source_filename === payload.filename),
+    );
+    if (promptImages.length >= 8) break;
+    promptImages.push({
+      id: img.id || `ref-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: img.name || `${payload.label || payload.filename}-marked.png`,
+      media_type: img.media_type || "image/png",
+      data_url: img.data_url,
+      source_filename: payload.filename,
+    });
+    attachedImages += 1;
+    void exists;
+  }
+  if (attachedImages) renderPromptImages();
+
+  if (payload.documentText) {
+    const stem = String(payload.label || payload.filename || "doc")
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "doc";
+    composer.addReference({
+      id: `document:${projectId || "project"}:${payload.filename}:notes`,
+      type: "document",
+      token: `@doc-${stem}-notes`,
+      label: `${payload.filename} notes`,
+      filename: payload.filename,
+      stem,
+      format: "notes",
+      text_content: payload.documentText,
+      projectId,
+    });
+  }
+
+  const noteBits = [];
+  noteBits.push(`[Reference: ${payload.filename}]`);
+  if (payload.strokeCount) {
+    noteBits.push(
+      `Attached marked-up ${payload.kind === "pdf" ? "PDF page(s)" : "image"} with ${payload.strokeCount} hand-drawn markup stroke(s). Use the marks as design intent.`,
+    );
+  } else if (attachedImages) {
+    noteBits.push(`Attached ${payload.kind === "pdf" ? "PDF preview" : "image"} as visual reference.`);
+  }
+  if (payload.notes) {
+    noteBits.push(`Notes:\n${payload.notes}`);
+  }
+  const block = noteBits.join("\n");
+  const current = String(composer.getPromptText?.() || "").trim();
+  const marker = `[Reference: ${payload.filename}]`;
+  if (current.includes(marker)) {
+    // Replace prior block for this file
+    const re = new RegExp(
+      `\\[Reference:\\s*${payload.filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\][\\s\\S]*?(?=\\n\\[Reference:|$)`,
+      "i",
+    );
+    const next = current.replace(re, `${block}\n\n`).trim();
+    composer.setPromptText(next);
+  } else {
+    composer.setPromptText(current ? `${current}\n\n${block}` : block);
+  }
+
+  if (!restoringModelPromptState) saveActiveModelPromptState();
+  const parts = [];
+  if (attachedImages) parts.push("marked-up image");
+  if (payload.notes) parts.push("notes");
+  if (payload.strokeCount) parts.push(`${payload.strokeCount} markup stroke${payload.strokeCount === 1 ? "" : "s"}`);
+  setEditStatus(
+    "ok",
+    parts.length
+      ? `Sent ${payload.filename} to AI prompt (${parts.join(" · ")}).`
+      : `Sent ${payload.filename} to AI prompt.`,
+  );
+  promptImageList?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+}
 
 docTabs.onActivate((tab) => {
   if (!tab) return;
@@ -12788,6 +12881,13 @@ const projectTree = createProjectTree({
   onOpenComponent: (entry) => openBrowserComponent(entry),
   onOpenDrawing: (entry) => openDxfDrawing(entry),
   onOpenReference: (entry) => openReferenceFile(entry),
+  onSendReferenceToPrompt: (entry) => {
+    if (!entry?.name) return;
+    void (async () => {
+      await openReferenceFile(entry);
+      await referenceFilesViewer.sendToPrompt?.(entry.name);
+    })();
+  },
   onOpenProfile: (entry) => componentProfileUI.open(entry),
   getPartProfile,
   onOpenSketch: (entry) => openSketchInViewport(entry),

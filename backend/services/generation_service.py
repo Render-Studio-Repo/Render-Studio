@@ -155,6 +155,9 @@ def start(
     request_body: dict[str, Any] | None = None,
     restart_count: int = 0,
     replace_running: bool = False,
+    model: str | None = None,
+    provider: str | None = None,
+    speed: str | None = None,
 ) -> dict[str, Any]:
     if is_canceled(project_path):
         if is_running(project_path):
@@ -182,6 +185,14 @@ def start(
         "restart_count": restart_count,
         "worker_pid": os.getpid(),
     }
+    if speed:
+        data["speed"] = str(speed).lower()
+    elif isinstance(request_body, dict) and request_body.get("speed"):
+        data["speed"] = str(request_body.get("speed")).lower()
+    if model:
+        data["model"] = model
+    if provider:
+        data["provider"] = provider
     if request_body:
         data["request_body"] = request_body
     _CANCELED_PROJECTS.discard(project_path.name)
@@ -438,7 +449,7 @@ def public_summary(project_path: Path) -> dict[str, Any]:
         "status", "kind", "trace_id", "started_at", "updated_at", "finished_at",
         "prompt", "label", "message", "filename", "url", "error",
         "timeline_index", "prompt_id", "by_user_id", "by_user_name", "by_avatar_url", "mode",
-        "benign_interrupt",
+        "benign_interrupt", "model", "provider", "speed",
     )}
     if data.get("progress"):
         out["progress"] = data.get("progress")

@@ -280,3 +280,72 @@ def add_thread_member(user_id: str, thread_id: str, target_user_id: str, *, team
 
 def sender_for_user(user: dict[str, Any]) -> dict[str, Any]:
     return _sender(user)
+
+
+def list_recent_activity(*, limit: int = 80) -> dict[str, Any]:
+    """Admin: latest Render Agent questions across all users (from JSON stores)."""
+    limit = max(1, min(int(limit or 80), 300))
+    events: list[dict[str, Any]] = []
+    thread_count = 0
+    question_count = 0
+    active_users: set[str] = set()
+
+    for path in _all_user_files():
+        owner_id = _user_from_file(path)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        threads = data.get("threads") if isinstance(data, dict) else None
+        if not isinstance(threads, list):
+            continue
+        owner = _profile(owner_id) or {
+            "id": owner_id,
+            "email": None,
+            "display_name": owner_id,
+            "avatar_url": None,
+        }
+        for thread in threads:
+            if not isinstance(thread, dict):
+                continue
+            thread_count += 1
+            messages = thread.get("messages") or []
+            if not isinstance(messages, list):
+                continue
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                if (msg.get("role") or "") != "user":
+                    continue
+                question_count += 1
+                active_users.add(owner_id)
+                content = str(msg.get("content") or "").strip()
+                sender = msg.get("sender") if isinstance(msg.get("sender"), dict) else {}
+                events.append(
+                    {
+                        "id": msg.get("id") or f"{thread.get('id')}-{msg.get('created_at')}",
+                        "created_at": msg.get("created_at") or thread.get("updated_at") or thread.get("created_at"),
+                        "question": content[:500],
+                        "question_preview": (content[:160] + ("…" if len(content) > 160 else "")),
+                        "thread_id": thread.get("id"),
+                        "thread_title": thread.get("title") or "Untitled thread",
+                        "folder": thread.get("folder") or "",
+                        "owner_user_id": owner_id,
+                        "owner_email": owner.get("email"),
+                        "owner_name": owner.get("display_name") or owner.get("email") or owner_id,
+                        "asker_user_id": sender.get("id") or owner_id,
+                        "asker_name": sender.get("display_name") or owner.get("display_name") or owner_id,
+                        "attachment_count": len(msg.get("attachments") or []),
+                    }
+                )
+
+    events.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return {
+        "generated_at": _now(),
+        "stats": {
+            "question_count": question_count,
+            "thread_count": thread_count,
+            "user_count": len(active_users),
+        },
+        "activity": events[:limit],
+    }

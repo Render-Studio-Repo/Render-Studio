@@ -284,7 +284,9 @@ export function createPromptHistoryUI({
           kindLabel,
           modeLabel ? `<span class="ph-mode">${escapeHtml(modeLabel)}</span>` : null,
           speedLabel ? `<span class="ph-speed">${escapeHtml(speedLabel)}</span>` : null,
-          modelLabel ? `<span class="ph-model">${escapeHtml(modelLabel)}</span>` : null,
+          modelLabel
+            ? `<span class="ph-model" title="AI model used for this prompt"><span class="ph-model-label">Model</span> ${escapeHtml(modelLabel)}</span>`
+            : `<span class="ph-model ph-model--unknown" title="Model was not recorded for this run">Model unknown</span>`,
           improved ? `<span class="ph-improved">Improved</span>` : null,
           costLabel ? `<span class="ph-cost">${escapeHtml(costLabel)}</span>` : null,
           e.filename ? escapeHtml(e.filename) : null,

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Getting Started — Render3D Docs</title>
+  <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
+  <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-getting-started" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/agent-store.html" class="nav-tab" role="menuitem">Agent Store</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/docs.html" class="nav-tab active" role="menuitem">Docs</a>
+          <a href="/roadmap.html" class="nav-tab" role="menuitem">Roadmap</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content gs-page">
+        <header class="info-hero">
+          <p class="info-eyebrow">Docs · Getting Started</p>
+          <h2>Learn Render3D in minutes</h2>
+          <p class="info-lead">
+            Browse each feature below: watch a quick looping demo, read the steps, then
+            <strong>Ask Render Agent</strong> for a guided answer in Studio.
+          </p>
+          <p class="gs-doc-links muted small">
+            <a href="/docs.html">Full documentation</a>
+            ·
+            <a href="/">Open Studio</a>
+          </p>
+        </header>
+
+        <nav class="gs-toc" aria-label="Feature index">
+          <a href="#ai-generate">AI Generate</a>
+          <a href="#workspaces">Workspaces</a>
+          <a href="#share-folders">Share folders</a>
+          <a href="#reference-markup">Reference markup</a>
+          <a href="#canvas">Canvas</a>
+          <a href="#picks">Geometry picks</a>
+          <a href="#wiring">Wiring</a>
+          <a href="#cloud-sync">Fusion / Onshape</a>
+          <a href="#render-agent">Render Agent</a>
+        </nav>
+
+        <!-- Feature cards injected + static fallbacks -->
+        <div id="gs-features" class="gs-features"></div>
+
+        <section class="info-section">
+          <h3>Need something else?</h3>
+          <p>
+            Open Studio and click <strong>Agent</strong> in the ribbon, or jump straight in:
+          </p>
+          <p>
+            <a class="btn accent" href="/?askAgent=Give%20me%20a%20tour%20of%20Render3D%20for%20a%20new%20user">Ask Render Agent for a tour</a>
+            <a class="btn secondary" href="/docs.html">Browse full docs</a>
+          </p>
+        </section>
+      </article>
+    </main>
+  </div>
+
+  <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script type="module" src="/getting-started.js?v=20260715-getting-started"></script>
+</body>
+</html>

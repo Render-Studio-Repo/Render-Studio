@@ -450,6 +450,14 @@ def _backfill_from_generation(project_path: Path) -> None:
         row["model"] = gen.get("model")
     if gen.get("provider"):
         row["provider"] = gen.get("provider")
+    if not row.get("model"):
+        # Prefer intended model stamped at generation start; fall back to request body hints.
+        intended = str(request_body.get("model") or "").strip()
+        if intended:
+            row["model"] = intended
+        provider_hint = str(request_body.get("provider") or "").strip()
+        if provider_hint and not row.get("provider"):
+            row["provider"] = provider_hint
     original = str(request_body.get("original_prompt") or "").strip()
     if original and original != recovered_prompt.strip():
         row["original_prompt"] = original

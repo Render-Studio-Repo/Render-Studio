@@ -4,6 +4,7 @@ import { authHeaders } from "./auth.js";
 
 const IMPORTABLE_EXTS = /\.(step|stp|stl|3mf|obj|glb|gltf)$/i;
 const LS_FUSION_FOLDER_OPEN = "render3d:fusionLibraryFolderOpen:v1";
+const FUSION_FOLDER_FILE_PREVIEW = 8;
 
 export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLabel, getSelectedFile, getWorkspaceId, onImported, onView, onOpenProject, onStatus, onMirrorLinked } = {}) {
   const section = document.getElementById("fusion-library-section");
@@ -961,6 +962,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
 
     let selectedItem = null;
     let contents = { folders: [], items: [] };
+    let contentsExpanded = false;
     const peopleEl = modal.querySelector("[data-mirror-people]");
     const contentsEl = modal.querySelector("[data-mirror-contents]");
     const previewEl = modal.querySelector("[data-mirror-preview]");
@@ -1028,6 +1030,10 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         contentsEl.innerHTML = `<p class="muted small">This folder is empty.</p>`;
         return;
       }
+      const previewCount = FUSION_FOLDER_FILE_PREVIEW;
+      const showAll = contentsExpanded || items.length <= previewCount;
+      const visibleItems = showAll ? items : items.slice(0, previewCount);
+      const hiddenCount = Math.max(0, items.length - visibleItems.length);
       contentsEl.innerHTML = `
         <ul class="fusion-mirror-contents-list">
           ${folders.map((child) => `
@@ -1037,7 +1043,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
               <button type="button" class="btn btn-compact" data-open-subfolder="${esc(child.id)}">Open</button>
             </li>
           `).join("")}
-          ${items.map((file) => {
+          ${visibleItems.map((file) => {
             const selected = selectedItem?.id === file.id;
             const imported = importedMap.has(file.id);
             return `
@@ -1051,8 +1057,25 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
               </li>
             `;
           }).join("")}
+          ${hiddenCount ? `
+            <li class="fusion-mirror-contents-item is-more">
+              <button type="button" class="btn btn-compact fusion-view-more" data-view-all-files>
+                View more (${hiddenCount} more)
+              </button>
+            </li>
+          ` : ""}
         </ul>
       `;
+      contentsEl.querySelector("[data-view-all-files]")?.addEventListener("click", () => {
+        contentsExpanded = true;
+        renderContentsTree();
+      });
+      wireContentsInteractions();
+    }
+
+    function wireContentsInteractions() {
+      const folders = contents.folders || [];
+      const items = contents.items || [];
       contentsEl.querySelectorAll("[data-open-subfolder]").forEach((button) => {
         button.addEventListener("click", async () => {
           const child = folders.find((entry) => entry.id === button.dataset.openSubfolder);
@@ -1215,11 +1238,34 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
           open: isFusionFolderOpen(child.id),
         }));
       }
-      for (const file of data.items || []) panel.appendChild(itemRow(file, folder));
+      appendFolderFileRows(panel, folder, data.items || []);
       if (!panel.children.length) panel.innerHTML = `<p class="muted small">Folder is empty.</p>`;
     } catch (err) {
       panel.innerHTML = `<p class="muted small error">${esc(err.message || "Failed to load folder.")}</p>`;
     }
+  }
+
+  function appendFolderFileRows(panel, folder, files, { limit = FUSION_FOLDER_FILE_PREVIEW } = {}) {
+    const list = Array.isArray(files) ? files : [];
+    if (!list.length) return;
+    const previewCount = Math.max(5, Math.min(10, Number(limit) || FUSION_FOLDER_FILE_PREVIEW));
+    const visible = list.slice(0, previewCount);
+    const rest = list.slice(previewCount);
+    for (const file of visible) panel.appendChild(itemRow(file, folder));
+    if (!rest.length) return;
+
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.className = "btn btn-compact fusion-view-more";
+    moreBtn.textContent = `View more (${rest.length} more)`;
+    moreBtn.title = `Show all ${list.length} models in this folder`;
+    moreBtn.addEventListener("click", () => {
+      const frag = document.createDocumentFragment();
+      for (const file of rest) frag.appendChild(itemRow(file, folder));
+      panel.insertBefore(frag, moreBtn);
+      moreBtn.remove();
+    });
+    panel.appendChild(moreBtn);
   }
 
   function itemRow(file, folder) {

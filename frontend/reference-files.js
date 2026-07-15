@@ -1,4 +1,4 @@
-/** Closable tabs for PDF / text / image reference files with notes + markup. */
+/** Closable tabs for PDF / text / image reference files with notes, pen markup, and Send to AI. */
 
 function escapeHtml(value) {
   return String(value || "")
@@ -20,6 +20,57 @@ function labelFromName(filename = "") {
   return String(filename || "").replace(/\.[^.]+$/, "") || filename;
 }
 
+let pdfjsLibPromise = null;
+
+async function loadPdfJs() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import(
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs"
+    ).then((mod) => {
+      mod.GlobalWorkerOptions.workerSrc =
+        "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+      return mod;
+    });
+  }
+  return pdfjsLibPromise;
+}
+
+function strokeSvg(strokes = [], pageIndex = null) {
+  return (strokes || [])
+    .filter((stroke) => {
+      if (pageIndex == null) return true;
+      const p = stroke.page == null ? 0 : Number(stroke.page);
+      return p === pageIndex;
+    })
+    .map((stroke) => {
+      const pts = (stroke.points || [])
+        .map((p) => `${Number(p[0])},${Number(p[1])}`)
+        .join(" ");
+      if (!pts) return "";
+      return `<polyline points="${pts}" fill="none" stroke="${escapeHtml(stroke.color || "#f0883e")}" stroke-width="${Number(stroke.width) || 2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`;
+    })
+    .join("");
+}
+
+function drawStrokesOnCtx(ctx, strokes = [], pageIndex = null) {
+  for (const stroke of strokes || []) {
+    const p = stroke.page == null ? 0 : Number(stroke.page);
+    if (pageIndex != null && p !== pageIndex) continue;
+    const pts = stroke.points || [];
+    if (pts.length < 2) continue;
+    ctx.beginPath();
+    ctx.strokeStyle = stroke.color || "#f0883e";
+    ctx.lineWidth = Number(stroke.width) || 3;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.moveTo(Number(pts[0][0]), Number(pts[0][1]));
+    for (let i = 1; i < pts.length; i += 1) {
+      ctx.lineTo(Number(pts[i][0]), Number(pts[i][1]));
+    }
+    ctx.stroke();
+  }
+}
+
 export function createReferenceFilesViewer(options = {}) {
   const {
     tabBarEl,
@@ -31,6 +82,7 @@ export function createReferenceFilesViewer(options = {}) {
     onStatus,
     onActiveChange,
     onBeforeOpen,
+    onSendToPrompt,
   } = options;
 
   /** @type {Map<string, object>} */
@@ -84,6 +136,10 @@ export function createReferenceFilesViewer(options = {}) {
     stage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
   }
 
+  function canMarkup(kind) {
+    return kind === "image" || kind === "pdf";
+  }
+
   function renderTabs() {
     if (docTabs) {
       for (const tab of tabs.values()) {
@@ -118,18 +174,6 @@ export function createReferenceFilesViewer(options = {}) {
       .join("");
   }
 
-  function strokeSvg(strokes = []) {
-    return (strokes || [])
-      .map((stroke) => {
-        const pts = (stroke.points || [])
-          .map((p) => `${Number(p[0])},${Number(p[1])}`)
-          .join(" ");
-        if (!pts) return "";
-        return `<polyline points="${pts}" fill="none" stroke="${escapeHtml(stroke.color || "#f0883e")}" stroke-width="${Number(stroke.width) || 2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`;
-      })
-      .join("");
-  }
-
   function renderViewer() {
     if (!viewerEl) return;
     const tab = activeFilename ? tabs.get(activeFilename) : null;
@@ -143,17 +187,20 @@ export function createReferenceFilesViewer(options = {}) {
     onActiveChange?.(tab.filename);
 
     const kind = tab.kind || kindFromName(tab.filename);
+    const markupable = canMarkup(kind);
     const statusText = tab.loading
       ? "Loading…"
       : tab.error
         ? tab.error
         : kind === "text"
-          ? "Edit text · notes & markup save with Save"
+          ? "Edit text · notes save with Save · Send to AI includes notes"
           : kind === "image"
-            ? "Pan · scroll zoom · Pen to markup · notes on the right"
-            : kind === "file"
-              ? "Download or notes on the right"
-            : "Notes & markup on the right · scroll PDF inside the frame";
+            ? "Pan · scroll zoom · Pen to markup · Send to AI includes marks + notes"
+            : kind === "pdf"
+              ? "Pen to markup pages · notes on the right · Send to AI includes marks + notes"
+              : kind === "file"
+                ? "Download or notes on the right · Send to AI includes notes"
+                : "Notes on the right";
 
     let bodyHtml = "";
     if (tab.loading) {
@@ -166,16 +213,20 @@ export function createReferenceFilesViewer(options = {}) {
       bodyHtml = `
         <div class="ref-viewer-stage-wrap">
           <div class="ref-viewer-stage">
-            <div class="ref-image-stack" data-ref-image-stack>
+            <div class="ref-image-stack" data-ref-image-stack data-page="0">
               <img class="ref-image" src="${escapeHtml(tab.blobUrl || "")}" alt="${escapeHtml(tab.label || tab.filename)}" draggable="false" />
-              <svg class="ref-markup-svg" xmlns="http://www.w3.org/2000/svg">${strokeSvg(tab.strokes)}</svg>
+              <svg class="ref-markup-svg" xmlns="http://www.w3.org/2000/svg">${strokeSvg(tab.strokes, 0)}</svg>
             </div>
           </div>
         </div>`;
     } else if (kind === "pdf") {
       bodyHtml = `
-        <div class="ref-pdf-frame">
-          <iframe class="ref-pdf-iframe" title="${escapeHtml(tab.label || tab.filename)}" src="${escapeHtml(tab.blobUrl || "")}"></iframe>
+        <div class="ref-viewer-stage-wrap ref-pdf-markup-wrap">
+          <div class="ref-viewer-stage">
+            <div class="ref-pdf-pages" data-ref-pdf-pages>
+              <div class="ref-viewer-empty">Rendering PDF…</div>
+            </div>
+          </div>
         </div>`;
     } else {
       bodyHtml = `<div class="ref-viewer-empty">
@@ -184,6 +235,7 @@ export function createReferenceFilesViewer(options = {}) {
       </div>`;
     }
 
+    const strokeCount = (tab.strokes || []).length;
     viewerEl.innerHTML = `
       <header class="dxf-viewer-toolbar ref-viewer-toolbar">
         <div class="dxf-viewer-title">
@@ -191,9 +243,12 @@ export function createReferenceFilesViewer(options = {}) {
           <span class="muted small">${escapeHtml(statusText)}</span>
         </div>
         <div class="dxf-viewer-actions">
-          ${kind === "image" ? `<button type="button" class="dxf-viewer-btn ${drawMode ? "active" : ""}" data-ref-action="pen" title="Draw markup">Pen</button>` : ""}
-          ${kind === "image" ? `<button type="button" class="dxf-viewer-btn" data-ref-action="clear-strokes" title="Clear markup strokes">Clear marks</button>` : ""}
-          ${kind === "image" ? `<button type="button" class="dxf-viewer-btn" data-ref-action="fit" title="Fit view">Fit</button>` : ""}
+          ${markupable ? `<button type="button" class="dxf-viewer-btn ${drawMode ? "active" : ""}" data-ref-action="pen" title="Draw markup on this file">Pen</button>` : ""}
+          ${markupable ? `<button type="button" class="dxf-viewer-btn" data-ref-action="clear-strokes" title="Clear markup strokes">Clear marks</button>` : ""}
+          ${markupable ? `<button type="button" class="dxf-viewer-btn" data-ref-action="fit" title="Fit view">Fit</button>` : ""}
+          <button type="button" class="dxf-viewer-btn accent" data-ref-action="send-ai" title="Attach marked-up file and notes to the AI prompt">
+            Send to AI${strokeCount ? ` (${strokeCount})` : ""}
+          </button>
           <button type="button" class="dxf-viewer-btn primary" data-ref-action="save" title="Save text and markup">Save</button>
           <button type="button" class="dxf-viewer-btn" data-ref-action="close" title="Close tab">Close</button>
         </div>
@@ -203,12 +258,16 @@ export function createReferenceFilesViewer(options = {}) {
         <aside class="ref-notes-panel" aria-label="Notes and markup">
           <label class="ref-notes-label" for="ref-notes-input">Notes / markup</label>
           <textarea id="ref-notes-input" class="ref-notes-editor" data-ref-notes placeholder="Write notes, callouts, or markup for this file…">${escapeHtml(tab.notes || "")}</textarea>
-          <p class="muted small ref-notes-hint">Saved with the file in this project.</p>
+          <p class="muted small ref-notes-hint">Saved with the file. Included when you Send to AI.</p>
         </aside>
       </div>
     `;
-    if (kind === "image") applyTransform();
-    bindImageMarkup(tab);
+    if (markupable) applyTransform();
+    viewerEl.classList.toggle("ref-draw-mode", !!drawMode && markupable);
+    if (kind === "image") bindMarkupSurface(tab);
+    if (kind === "pdf" && !tab.loading && !tab.error) {
+      void renderPdfPages(tab);
+    }
   }
 
   function markDirty(tab) {
@@ -218,59 +277,250 @@ export function createReferenceFilesViewer(options = {}) {
     else renderTabs();
   }
 
-  function bindImageMarkup(tab) {
-    const stack = viewerEl?.querySelector("[data-ref-image-stack]");
-    const img = stack?.querySelector("img");
-    if (!stack || !img) return;
+  function syncNotesFromDom(tab) {
+    if (!tab) return;
+    const notesEl = viewerEl?.querySelector("[data-ref-notes]");
+    const textEl = viewerEl?.querySelector("[data-ref-text]");
+    if (notesEl) tab.notes = notesEl.value;
+    if (textEl) tab.textContent = textEl.value;
+  }
 
-    const syncSvgSize = () => {
-      const svg = stack.querySelector(".ref-markup-svg");
-      if (!svg) return;
-      const w = img.naturalWidth || img.clientWidth || 1;
-      const h = img.naturalHeight || img.clientHeight || 1;
-      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-      svg.setAttribute("width", String(w));
-      svg.setAttribute("height", String(h));
-    };
-    if (img.complete) syncSvgSize();
-    else img.addEventListener("load", syncSvgSize, { once: true });
+  function bindMarkupSurface(tab, root = null) {
+    const stacks = root
+      ? [root]
+      : [...(viewerEl?.querySelectorAll("[data-ref-image-stack], [data-ref-pdf-page]") || [])];
+    for (const stack of stacks) {
+      if (!stack || stack.dataset.markupBound === "1") continue;
+      stack.dataset.markupBound = "1";
+      const pageIndex = Number(stack.dataset.page || 0);
+      const media = stack.querySelector("img, canvas");
+      if (!media) continue;
 
-    const toLocal = (e) => {
-      const rect = img.getBoundingClientRect();
-      const w = img.naturalWidth || rect.width || 1;
-      const h = img.naturalHeight || rect.height || 1;
-      const x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * w;
-      const y = ((e.clientY - rect.top) / Math.max(1, rect.height)) * h;
-      return [x, y];
-    };
+      const syncSvgSize = () => {
+        const svg = stack.querySelector(".ref-markup-svg");
+        if (!svg) return;
+        const w =
+          media.naturalWidth ||
+          media.width ||
+          media.clientWidth ||
+          Number(media.getAttribute("width")) ||
+          1;
+        const h =
+          media.naturalHeight ||
+          media.height ||
+          media.clientHeight ||
+          Number(media.getAttribute("height")) ||
+          1;
+        svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+        svg.setAttribute("width", String(w));
+        svg.setAttribute("height", String(h));
+      };
 
-    const redraw = () => {
-      const svg = stack.querySelector(".ref-markup-svg");
-      if (svg) svg.innerHTML = strokeSvg(tab.strokes);
-      syncSvgSize();
-    };
+      if (media.tagName === "IMG") {
+        if (media.complete) syncSvgSize();
+        else media.addEventListener("load", syncSvgSize, { once: true });
+      } else {
+        syncSvgSize();
+      }
 
-    stack.addEventListener("pointerdown", (e) => {
-      if (!drawMode) return;
-      e.preventDefault();
-      drawing = true;
-      currentStroke = { points: [toLocal(e)], color: "#f0883e", width: 3 };
-      tab.strokes = [...(tab.strokes || []), currentStroke];
-      stack.setPointerCapture?.(e.pointerId);
-      redraw();
-      markDirty(tab);
-    });
-    stack.addEventListener("pointermove", (e) => {
-      if (!drawing || !currentStroke) return;
-      currentStroke.points.push(toLocal(e));
-      redraw();
-    });
-    const endStroke = () => {
-      drawing = false;
-      currentStroke = null;
+      const toLocal = (e) => {
+        const rect = media.getBoundingClientRect();
+        const w =
+          media.naturalWidth ||
+          media.width ||
+          Number(media.getAttribute("width")) ||
+          rect.width ||
+          1;
+        const h =
+          media.naturalHeight ||
+          media.height ||
+          Number(media.getAttribute("height")) ||
+          rect.height ||
+          1;
+        const x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * w;
+        const y = ((e.clientY - rect.top) / Math.max(1, rect.height)) * h;
+        return [x, y];
+      };
+
+      const redraw = () => {
+        const svg = stack.querySelector(".ref-markup-svg");
+        if (svg) svg.innerHTML = strokeSvg(tab.strokes, pageIndex);
+        syncSvgSize();
+      };
+
+      stack.addEventListener("pointerdown", (e) => {
+        if (!drawMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        drawing = true;
+        currentStroke = {
+          points: [toLocal(e)],
+          color: "#f0883e",
+          width: 3,
+          page: pageIndex,
+        };
+        tab.strokes = [...(tab.strokes || []), currentStroke];
+        stack.setPointerCapture?.(e.pointerId);
+        redraw();
+        markDirty(tab);
+      });
+      stack.addEventListener("pointermove", (e) => {
+        if (!drawing || !currentStroke || currentStroke.page !== pageIndex) return;
+        currentStroke.points.push(toLocal(e));
+        redraw();
+      });
+      const endStroke = () => {
+        drawing = false;
+        currentStroke = null;
+      };
+      stack.addEventListener("pointerup", endStroke);
+      stack.addEventListener("pointercancel", endStroke);
+    }
+  }
+
+  async function renderPdfPages(tab) {
+    const host = viewerEl?.querySelector("[data-ref-pdf-pages]");
+    if (!host || !tab.blobUrl) return;
+    try {
+      const pdfjs = await loadPdfJs();
+      const loadingTask = pdfjs.getDocument(tab.blobUrl);
+      const pdf = await loadingTask.promise;
+      tab.pdfPageCount = pdf.numPages;
+      host.innerHTML = "";
+      const maxPages = Math.min(pdf.numPages, 20);
+      for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.35 });
+        const pageEl = document.createElement("div");
+        pageEl.className = "ref-pdf-page";
+        pageEl.dataset.refPdfPage = "";
+        pageEl.dataset.page = String(pageNum - 1);
+        const canvas = document.createElement("canvas");
+        canvas.className = "ref-pdf-canvas";
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext("2d");
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.classList.add("ref-markup-svg");
+        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        svg.innerHTML = strokeSvg(tab.strokes, pageNum - 1);
+        pageEl.append(canvas, svg);
+        host.appendChild(pageEl);
+        bindMarkupSurface(tab, pageEl);
+      }
+      if (pdf.numPages > maxPages) {
+        const note = document.createElement("p");
+        note.className = "muted small ref-pdf-more";
+        note.textContent = `Showing first ${maxPages} of ${pdf.numPages} pages for markup.`;
+        host.appendChild(note);
+      }
+    } catch (err) {
+      host.innerHTML = `<div class="ref-viewer-empty">Could not render PDF for markup (${escapeHtml(err.message || "error")}). Notes still work — use Send to AI for notes.</div>`;
+    }
+  }
+
+  async function compositeMarkedImage(tab) {
+    const kind = tab.kind || kindFromName(tab.filename);
+    if (kind === "image") {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error("Could not load image for Send to AI"));
+        img.src = tab.blobUrl;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      drawStrokesOnCtx(ctx, tab.strokes, 0);
+      return canvas.toDataURL("image/png");
+    }
+    if (kind === "pdf") {
+      const pageCanvases = [...(viewerEl?.querySelectorAll(".ref-pdf-page canvas") || [])];
+      if (!pageCanvases.length) {
+        // Ensure pages are rendered before compositing
+        await renderPdfPages(tab);
+      }
+      const pages = [...(viewerEl?.querySelectorAll(".ref-pdf-page") || [])];
+      if (!pages.length) return null;
+      const markedPages = pages.filter((pageEl) => {
+        const idx = Number(pageEl.dataset.page || 0);
+        return (tab.strokes || []).some((s) => (s.page == null ? 0 : Number(s.page)) === idx);
+      });
+      const usePages = markedPages.length ? markedPages : pages.slice(0, Math.min(3, pages.length));
+      const gap = 12;
+      const widths = usePages.map((el) => el.querySelector("canvas")?.width || 0);
+      const heights = usePages.map((el) => el.querySelector("canvas")?.height || 0);
+      const width = Math.max(...widths, 1);
+      const height = heights.reduce((sum, h) => sum + h, 0) + gap * Math.max(0, usePages.length - 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      let y = 0;
+      for (const pageEl of usePages) {
+        const src = pageEl.querySelector("canvas");
+        const idx = Number(pageEl.dataset.page || 0);
+        if (!src) continue;
+        ctx.save();
+        ctx.translate(0, y);
+        ctx.drawImage(src, 0, 0);
+        drawStrokesOnCtx(ctx, tab.strokes, idx);
+        ctx.restore();
+        y += src.height + gap;
+      }
+      return canvas.toDataURL("image/png");
+    }
+    return null;
+  }
+
+  async function buildSendPayload(tab) {
+    syncNotesFromDom(tab);
+    const kind = tab.kind || kindFromName(tab.filename);
+    const notes = String(tab.notes || "").trim();
+    const strokes = tab.strokes || [];
+    const images = [];
+    if (canMarkup(kind)) {
+      try {
+        const dataUrl = await compositeMarkedImage(tab);
+        if (dataUrl) {
+          images.push({
+            id: `ref-mark-${Date.now()}`,
+            name: `${labelFromName(tab.filename)}-marked.png`,
+            media_type: "image/png",
+            data_url: dataUrl,
+            source_filename: tab.filename,
+            markup_strokes: strokes.length,
+          });
+        }
+      } catch (err) {
+        onStatus?.("error", err.message || "Could not build marked image");
+      }
+    }
+    let documentText = null;
+    if (kind === "text") {
+      const parts = [];
+      if (notes) parts.push(`Notes:\n${notes}`);
+      if (tab.textContent?.trim()) parts.push(tab.textContent.trim());
+      documentText = parts.join("\n\n") || null;
+    } else if (notes) {
+      documentText = `Notes for ${tab.filename}:\n${notes}`;
+    }
+    return {
+      filename: tab.filename,
+      label: tab.label || tab.filename,
+      kind,
+      notes,
+      strokeCount: strokes.length,
+      images,
+      documentText,
+      projectId: tab.projectId,
     };
-    stack.addEventListener("pointerup", endStroke);
-    stack.addEventListener("pointercancel", endStroke);
   }
 
   async function loadTab(tab) {
@@ -315,10 +565,7 @@ export function createReferenceFilesViewer(options = {}) {
   async function saveActive() {
     const tab = activeFilename ? tabs.get(activeFilename) : null;
     if (!tab) return;
-    const notesEl = viewerEl?.querySelector("[data-ref-notes]");
-    const textEl = viewerEl?.querySelector("[data-ref-text]");
-    if (notesEl) tab.notes = notesEl.value;
-    if (textEl) tab.textContent = textEl.value;
+    syncNotesFromDom(tab);
 
     try {
       if (tab.kind === "text") {
@@ -350,7 +597,6 @@ export function createReferenceFilesViewer(options = {}) {
 
   function activate(filename, { syncShared = true } = {}) {
     if (!tabs.has(filename)) return;
-    // Persist unsaved notes from previous tab into memory
     const prev = activeFilename ? tabs.get(activeFilename) : null;
     if (prev) {
       const notesEl = viewerEl?.querySelector("[data-ref-notes]");
@@ -363,7 +609,7 @@ export function createReferenceFilesViewer(options = {}) {
       }
     }
     activeFilename = filename;
-    if ((tabs.get(filename)?.kind) === "image") resetView();
+    if (canMarkup(tabs.get(filename)?.kind)) resetView();
     if (syncShared) syncDocTab(tabs.get(filename), { activate: true });
     else renderTabs();
     renderViewer();
@@ -386,7 +632,7 @@ export function createReferenceFilesViewer(options = {}) {
     }
     if (activeFilename === filename) {
       activeFilename = tabs.keys().next().value || null;
-      if (activeFilename && tabs.get(activeFilename)?.kind === "image") resetView();
+      if (activeFilename && canMarkup(tabs.get(activeFilename)?.kind)) resetView();
     }
     renderTabs();
     renderViewer();
@@ -436,6 +682,31 @@ export function createReferenceFilesViewer(options = {}) {
     return tab;
   }
 
+  async function sendActiveToPrompt() {
+    const tab = activeFilename ? tabs.get(activeFilename) : null;
+    if (!tab) return null;
+    try {
+      await saveActive();
+    } catch {
+      /* still try to send */
+    }
+    const payload = await buildSendPayload(tab);
+    if (onSendToPrompt) {
+      await onSendToPrompt(payload);
+    }
+    return payload;
+  }
+
+  async function sendFilenameToPrompt(filename) {
+    if (!filename) return null;
+    if (!tabs.has(filename)) {
+      await openTab(filename);
+    } else {
+      activate(filename);
+    }
+    return sendActiveToPrompt();
+  }
+
   if (!docTabs) {
     tabBarEl?.addEventListener("click", (e) => {
       const closeBtn = e.target.closest("[data-ref-close]");
@@ -464,7 +735,9 @@ export function createReferenceFilesViewer(options = {}) {
     }
     if (action === "pen") {
       drawMode = !drawMode;
-      renderViewer();
+      viewerEl.classList.toggle("ref-draw-mode", drawMode);
+      const penBtn = viewerEl.querySelector('[data-ref-action="pen"]');
+      penBtn?.classList.toggle("active", drawMode);
       return;
     }
     if (action === "clear-strokes" && tab) {
@@ -474,6 +747,9 @@ export function createReferenceFilesViewer(options = {}) {
       return;
     }
     if (action === "fit") resetView();
+    if (action === "send-ai") {
+      void sendActiveToPrompt();
+    }
   });
 
   viewerEl?.addEventListener("input", (e) => {
@@ -486,7 +762,7 @@ export function createReferenceFilesViewer(options = {}) {
     "wheel",
     (e) => {
       const tab = activeFilename ? tabs.get(activeFilename) : null;
-      if (!tab || tab.kind !== "image" || drawMode) return;
+      if (!tab || !canMarkup(tab.kind) || drawMode) return;
       if (!e.target.closest?.(".ref-viewer-stage-wrap")) return;
       e.preventDefault();
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
@@ -498,8 +774,9 @@ export function createReferenceFilesViewer(options = {}) {
 
   viewerEl?.addEventListener("pointerdown", (e) => {
     const tab = activeFilename ? tabs.get(activeFilename) : null;
-    if (!tab || tab.kind !== "image" || drawMode) return;
+    if (!tab || !canMarkup(tab.kind) || drawMode) return;
     if (!e.target.closest?.(".ref-viewer-stage-wrap")) return;
+    if (e.target.closest?.("[data-ref-image-stack], [data-ref-pdf-page]")) return;
     panDrag = { x: e.clientX - panX, y: e.clientY - panY };
     e.target.setPointerCapture?.(e.pointerId);
   });
@@ -516,10 +793,12 @@ export function createReferenceFilesViewer(options = {}) {
   return {
     openTab,
     closeTab,
+    sendToPrompt: sendFilenameToPrompt,
+    sendActiveToPrompt,
     activateFromShared(filename) {
       if (!tabs.has(filename)) return false;
       activeFilename = filename;
-      if ((tabs.get(filename)?.kind) === "image") resetView();
+      if (canMarkup(tabs.get(filename)?.kind)) resetView();
       renderViewer();
       onActiveChange?.(filename);
       return true;

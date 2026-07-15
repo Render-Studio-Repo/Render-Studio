@@ -145,6 +145,7 @@ export function createWorkspaceBrowser({
   onMakePublicProject,
   onCreateProjectInFolder,
   onOpenHierarchyItem,
+  onSendReferenceToPrompt,
   canDeleteProject,
   onEditHierarchyItem,
   onOpenProfile,
@@ -1240,6 +1241,11 @@ export function createWorkspaceBrowser({
       </div>
       <button type="button" data-action="copy-id">Copy ${kindLabel} ID</button>
       <button type="button" data-action="open">Open / view</button>
+      ${
+        sectionId === "references" && !(entry.format === "dxf" || /\.dxf$/i.test(String(entry.name || "")))
+          ? `<button type="button" data-action="send-ai">Send to AI prompt</button>`
+          : ""
+      }
     `;
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();
@@ -1257,6 +1263,8 @@ export function createWorkspaceBrowser({
         await copyExplorerId(idToken);
       } else if (action === "open") {
         onOpenHierarchyItem?.(project, entry, sectionId);
+      } else if (action === "send-ai") {
+        onSendReferenceToPrompt?.(project, entry);
       } else if (action === "attach" && payload) {
         onAttachWiringComponent?.(project, entry, payload);
       }

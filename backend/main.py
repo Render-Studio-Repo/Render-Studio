@@ -1381,6 +1381,54 @@ def _members_with_daily_ai_usage(members: list[dict[str, Any]], key_id: str) -> 
     return out
 
 
+def _resolve_prompt_model_meta(
+    user: dict[str, Any],
+    body: Any,
+    *,
+    project_id: str | None = None,
+) -> dict[str, str | None]:
+    """Resolve the model/provider that will be used for a prompt, without creating an AI client."""
+    speed = str(getattr(body, "speed", None) or "fast").lower()
+    if speed not in {"fast", "quality"}:
+        speed = "fast"
+    mode = (getattr(body, "mode", None) or "standard").lower()
+    resolve_speed = speed
+    # Jake authoring (CAD 2.0 / Fusion / Architect) uses the quality model path.
+    if mode in {"v2", "fusion", "architect"} and resolve_speed == "fast":
+        resolve_speed = "quality"
+    key_id = getattr(body, "ai_key_id", None)
+    key_source = getattr(body, "ai_key_source", None)
+    try:
+        if key_id:
+            effective = user_ai_keys_service.resolve_key_for_user(
+                user["id"], key_id, key_source, project_id=project_id
+            )
+        else:
+            effective = user_ai_keys_service.get_effective_key_for_user(user["id"], project_id=project_id)
+    except Exception:
+        effective = {}
+    provider = str((effective or {}).get("provider") or "").strip().lower() or None
+    model = None
+    if provider == "openai":
+        key_model = str((effective or {}).get("model") or "").strip()
+        if resolve_speed == "fast":
+            model = settings.openai_model
+        elif key_model:
+            model = key_model
+        else:
+            model = settings.openai_model_quality
+    elif provider == "anthropic":
+        model = str((effective or {}).get("model") or "").strip() or settings.anthropic_model
+    elif effective:
+        model = str((effective or {}).get("model") or "").strip() or None
+        provider = provider or "openai"
+    return {
+        "model": model,
+        "provider": provider,
+        "speed": speed,
+    }
+
+
 def _get_ai_for_user(
     user: dict[str, Any],
     speed: str = "fast",
@@ -6496,6 +6544,18 @@ def admin_dashboard(
     }
 
 
+@app.get("/api/admin/render-agent/activity")
+def admin_render_agent_activity(
+    user: dict[str, Any] = Depends(get_current_user),
+    limit: int = Query(80, ge=1, le=300),
+):
+    """Latest Render Agent questions asked by anyone on the site."""
+    _require_a1projects_admin(user)
+    from backend.services import render_agent_service
+
+    return render_agent_service.list_recent_activity(limit=limit)
+
+
 @app.get("/api/admin/users/{user_id}")
 def admin_user_detail(user_id: str, user: dict[str, Any] = Depends(get_current_user)):
     """Individual user activity, stats, and recent models for management lookup."""
@@ -11457,6 +11517,12 @@ def prompt_cad(
                 "skills": v2_skills,
             })
         design_body = body.model_copy(update=updates)
+        model_meta = _resolve_prompt_model_meta(user, design_body, project_id=project_id)
+        request_payload = design_body.model_dump(mode="json")
+        if model_meta.get("model"):
+            request_payload["model"] = model_meta["model"]
+        if model_meta.get("provider"):
+            request_payload["provider"] = model_meta["provider"]
         try:
             generation_service.start(
                 project_path,
@@ -11465,7 +11531,10 @@ def prompt_cad(
                 user=user,
                 prompt=body.prompt,
                 mode=body.mode,
-                request_body=design_body.model_dump(mode="json"),
+                request_body=request_payload,
+                model=model_meta.get("model"),
+                provider=model_meta.get("provider"),
+                speed=model_meta.get("speed") or design_body.speed,
             )
         except generation_service.GenerationCanceled as exc:
             raise HTTPException(499, exc.message) from exc
