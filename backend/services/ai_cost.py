@@ -8,6 +8,24 @@ from typing import Any
 # USD per 1M tokens — update when provider pricing changes.
 OPENAI_PRICING: dict[str, dict[str, float]] = {
     "gpt-5.5-pro": {"input": 30.0, "output": 180.0},
+    "gpt-5.6-sol": {
+        "input": 5.0,
+        "output": 30.0,
+        "cached_input": 0.5,
+        "long_context_threshold": 272_000,
+        "long_context_input": 10.0,
+        "long_context_output": 45.0,
+        "long_context_cached_input": 1.0,
+    },
+    "gpt-5.6": {
+        "input": 5.0,
+        "output": 30.0,
+        "cached_input": 0.5,
+        "long_context_threshold": 272_000,
+        "long_context_input": 10.0,
+        "long_context_output": 45.0,
+        "long_context_cached_input": 1.0,
+    },
     "gpt-5.5": {
         "input": 5.0,
         "output": 30.0,

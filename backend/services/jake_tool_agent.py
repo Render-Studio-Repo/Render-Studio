@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from backend.services.ai_service import AIService, RESPONSES_ONLY_MODELS
+from backend.services.ai_service import AIService, uses_openai_responses_api
 from backend.services.cad_authoring_agent import (
     build_snapshot_job,
     classify_cli_failure,
@@ -508,12 +508,9 @@ class JakeToolAgent:
 
     def _run_openai(self) -> dict[str, Any]:
         model = self.ai.model
-        use_responses = (
-            model in RESPONSES_ONLY_MODELS
-            or model.startswith("gpt-5.5-pro")
-            or model.startswith("gpt-5.5")
-        )
-        if use_responses:
+        # GPT-5.5 / GPT-5.6 Sol must use Responses tools — chat.completions under-drives
+        # the CAD skill loop and is a common cause of weak Sol geometry.
+        if uses_openai_responses_api(model):
             return self._run_openai_responses()
         return self._run_openai_chat()
 
@@ -585,21 +582,29 @@ class JakeToolAgent:
         )
 
     def _run_openai_responses(self) -> dict[str, Any]:
-        """gpt-5.5 Responses API tool loop."""
+        """OpenAI Responses API tool loop (GPT-5.5 / GPT-5.6 Sol and peers)."""
         input_items: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt()},
             {"role": "user", "content": self._user_kickoff()},
         ]
+        reasoning = None
+        try:
+            reasoning = self.ai._reasoning_param()
+        except Exception:
+            reasoning = None
         for turn in range(self.max_turns):
             self._raise_if_canceled()
             self._emit("ai_source", f"Agent turn {turn + 1}/{self.max_turns}…", min(70, 16 + turn * 2))
             t0 = time.perf_counter()
-            response = self.ai.client.responses.create(
-                model=self.ai.model,
-                input=input_items,
-                tools=_responses_tools(),
-                max_output_tokens=8192,
-            )
+            create_kwargs: dict[str, Any] = {
+                "model": self.ai.model,
+                "input": input_items,
+                "tools": _responses_tools(),
+                "max_output_tokens": 8192,
+            }
+            if reasoning:
+                create_kwargs.update(reasoning)
+            response = self.ai.client.responses.create(**create_kwargs)
             self.ai_traces.append(
                 {
                     "provider": "openai",

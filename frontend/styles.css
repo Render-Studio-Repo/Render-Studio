@@ -11778,11 +11778,12 @@ label input { margin-top: 4px; }
 
 .prompt-skills-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: 6px;
   margin-bottom: 8px;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .prompt-skills-label {
@@ -11790,14 +11791,18 @@ label input { margin-top: 4px; }
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
 .prompt-skills-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  max-height: 52px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .prompt-skills-chips.is-collapsed {
@@ -11813,6 +11818,12 @@ label input { margin-top: 4px; }
   font-size: 0.72rem;
   font-weight: 700;
   cursor: pointer;
+  flex-shrink: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 11.5rem;
 }
 
 .prompt-skills-toggle::after {
@@ -11833,7 +11844,17 @@ label input { margin-top: 4px; }
 
 .prompt-skills-link {
   font-size: 0.72rem;
-  margin-right: 2px;
+  margin-right: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.prompt-skills-trail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .skills-manage-link {

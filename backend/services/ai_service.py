@@ -23,6 +23,34 @@ logger = logging.getLogger(__name__)
 RESPONSES_ONLY_MODELS = {"gpt-5.5-pro", "gpt-5.5-pro-2026-04-23"}
 PRO_MODELS = RESPONSES_ONLY_MODELS | {settings.openai_model_quality}
 
+
+def uses_openai_responses_api(model: str | None) -> bool:
+    """Whether this OpenAI model should use the Responses API (tools / CAD agent).
+
+    GPT-5.5* and GPT-5.6* (Sol/Terra/Luna) are Responses-first. Older chat-only
+    ids fall back to chat.completions.
+    """
+    m = (model or "").strip()
+    if not m:
+        return False
+    if m in RESPONSES_ONLY_MODELS:
+        return True
+    if m.startswith("gpt-5.5") or m.startswith("gpt-5.6"):
+        return True
+    return False
+
+
+def is_openai_frontier_model(model: str | None) -> bool:
+    """Longer timeouts / reasoning for frontier OpenAI models."""
+    m = (model or "").strip()
+    return bool(
+        m in PRO_MODELS
+        or m.startswith("gpt-5.5")
+        or m.startswith("gpt-5.6")
+        or m.endswith("-pro")
+        or m.endswith("-sol")
+    )
+
 DESIGN_SYSTEM_PROMPT = """You are Render3D's CAD design engine. You are an expert mechanical engineer
 and CAD modeler. You think step-by-step about HOW to construct 3D objects using boolean
 operations (union, subtraction, intersection), just like Fusion 360, SolidWorks, or ForgeCAD.
@@ -858,7 +886,7 @@ class AIService:
         self.cancel_check = None  # optional Callable[[], bool] set by generation runners
         if self.provider == "openai":
             # Pro / reasoning models routinely exceed 90s, especially with skills + images.
-            ai_timeout = 300.0 if self.model in PRO_MODELS or str(self.model).startswith("gpt-5.5") else 180.0
+            ai_timeout = 300.0 if is_openai_frontier_model(self.model) else 180.0
             self.client = OpenAI(api_key=self.api_key, timeout=ai_timeout)
         elif self.provider != "anthropic":
             raise RuntimeError(f"Unsupported AI provider: {self.provider}")
@@ -1400,7 +1428,14 @@ class AIService:
         if self.provider != "openai":
             return None
         model = self.model
-        if model in PRO_MODELS or model.startswith("gpt-5.5-pro"):
+        # Pro / Sol frontier models: leave reasoning to the API default unless configured.
+        if model in PRO_MODELS or model.startswith("gpt-5.5-pro") or model.endswith("-sol"):
+            effort = settings.openai_reasoning_effort
+            if effort and effort not in {"none", "low"}:
+                return {"reasoning": {"effort": effort}}
+            # Sol benefits from at least medium effort for CAD tool loops.
+            if model.startswith("gpt-5.6") or model.endswith("-sol"):
+                return {"reasoning": {"effort": "medium"}}
             return None
         effort = settings.openai_reasoning_effort
         if effort and effort != "none":
