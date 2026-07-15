@@ -78,5 +78,12 @@ class Settings(BaseSettings):
     capacity_alert_from: str = "info@render3d.app"
     capacity_alert_to: str = "sam@render3d.app"
 
+    # Marketplace payments (Stripe Connect + Link)
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    marketplace_platform_fee_bps: int = 1000  # 10%
+    public_base_url: str = "https://render3d.app"
+
 
 settings = Settings()

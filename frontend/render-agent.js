@@ -6,12 +6,12 @@ import {
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-link-prompt";
-import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle3";
+import { startShowMe } from "./show-me-tour.js?v=20260715-wiring-stepper-remix";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
-const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v6";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v7";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -445,23 +445,31 @@ export function createRenderAgent({
       panel.classList.remove("render-agent-panel--deck");
     }
     const saved = readStickyLayout();
-    const defaultW = Math.min(isDocs ? 440 : 400, Math.max(260, window.innerWidth - 32));
-    const defaultH = Math.min(isDocs ? 560 : 640, Math.max(280, window.innerHeight - 112));
-    const defaultTop = isDocs ? Math.max(72, window.innerHeight - defaultH - 78) : 72;
+    const defaultW = Math.min(isDocs ? 420 : 400, Math.max(260, window.innerWidth - 32));
+    // Docs panel: shorter so it sits in the lower half of the viewport.
+    const defaultH = Math.min(
+      isDocs ? 460 : 640,
+      Math.max(280, window.innerHeight - (isDocs ? 140 : 112)),
+    );
+    const defaultTop = isDocs
+      ? Math.max(96, window.innerHeight - defaultH - 28)
+      : 72;
     if (!saved) {
       panel.style.left = "auto";
       panel.style.right = "16px";
       panel.style.width = `${defaultW}px`;
       panel.style.height = `${defaultH}px`;
       panel.style.maxHeight = "none";
+      panel.style.bottom = "auto";
       panel.style.top = `${defaultTop}px`;
       return;
     }
     if (saved.width) panel.style.width = `${Math.max(isDocs ? 320 : 260, saved.width)}px`;
     else panel.style.width = `${defaultW}px`;
-    if (saved.height) panel.style.height = `${Math.max(isDocs ? 420 : 260, saved.height)}px`;
+    if (saved.height) panel.style.height = `${Math.max(isDocs ? 360 : 260, saved.height)}px`;
     else panel.style.height = `${defaultH}px`;
     panel.style.maxHeight = "none";
+    panel.style.bottom = "auto";
     if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
       panel.style.right = "auto";
       panel.style.left = `${Math.max(8, Math.min(window.innerWidth - 80, saved.left))}px`;

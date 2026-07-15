@@ -1676,7 +1676,7 @@ def _safe_object_name(value: Any, fallback: str) -> str:
 
 
 def _prepare_mesh_for_3mf(raw_mesh: trimesh.Trimesh) -> trimesh.Trimesh | None:
-    """Repair, scale to millimeters, and weld mesh for slicer-friendly 3MF."""
+    """Repair, scale to millimeters, weld, and seat on the Z=0 build plate."""
     if not isinstance(raw_mesh, trimesh.Trimesh) or raw_mesh.is_empty:
         return None
     mesh = repair_mesh(raw_mesh.copy())
@@ -1692,6 +1692,36 @@ def _prepare_mesh_for_3mf(raw_mesh: trimesh.Trimesh) -> trimesh.Trimesh | None:
     if len(mesh.vertices) == 0 or len(mesh.faces) == 0:
         return None
     return mesh
+
+
+def _seat_meshes_on_build_plate(items: list[tuple[str, trimesh.Trimesh]]) -> list[tuple[str, trimesh.Trimesh]]:
+    """Center XY and drop the combined assembly onto Z=0 so slicers place it on the bed."""
+    if not items:
+        return items
+    mins = []
+    maxs = []
+    for _, mesh in items:
+        bounds = np.asarray(mesh.bounds, dtype=float)
+        mins.append(bounds[0])
+        maxs.append(bounds[1])
+    lo = np.min(np.vstack(mins), axis=0)
+    hi = np.max(np.vstack(maxs), axis=0)
+    shift = np.array(
+        [
+            -0.5 * (lo[0] + hi[0]),
+            -0.5 * (lo[1] + hi[1]),
+            -float(lo[2]),
+        ],
+        dtype=float,
+    )
+    if not np.any(np.abs(shift) > 1e-9):
+        return items
+    seated: list[tuple[str, trimesh.Trimesh]] = []
+    for name, mesh in items:
+        copy = mesh.copy()
+        copy.apply_translation(shift)
+        seated.append((name, copy))
+    return seated
 
 
 def _meshes_from_scene(scene: trimesh.Scene) -> list[tuple[str, trimesh.Trimesh]]:
@@ -1798,10 +1828,14 @@ def export_scene_3mf(scene: trimesh.Scene, path: Path) -> Path:
 
     object_id = 1
     exported = 0
+    prepared: list[tuple[str, trimesh.Trimesh]] = []
     for name, raw_mesh in scene_items:
         mesh = _prepare_mesh_for_3mf(raw_mesh)
         if mesh is None:
             continue
+        prepared.append((name, mesh))
+    prepared = _seat_meshes_on_build_plate(prepared)
+    for name, mesh in prepared:
         _append_3mf_mesh_object(
             resources,
             build,

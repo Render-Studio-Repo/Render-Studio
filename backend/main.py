@@ -3817,12 +3817,136 @@ def review_marketplace_boost(
         raise HTTPException(422, str(exc)) from exc
 
 
+class MarketplaceCheckoutRequest(BaseModel):
+    kind: str = Field(..., max_length=20)
+    listing_id: str = Field(..., max_length=80)
+    success_url: str | None = Field(default=None, max_length=500)
+    cancel_url: str | None = Field(default=None, max_length=500)
+
+
+class MarketplacePaypalRequest(BaseModel):
+    email: str = Field(default="", max_length=200)
+
+
+@app.get("/api/marketplace/payments/config")
+def marketplace_payments_config():
+    from backend.services import marketplace_payments_service as payments
+
+    return payments.public_config()
+
+
+@app.get("/api/marketplace/seller")
+def marketplace_seller_status(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import marketplace_payments_service as payments
+
+    return {"seller": payments.refresh_connect_status(user)}
+
+
+@app.post("/api/marketplace/seller/connect")
+def marketplace_seller_connect(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import marketplace_payments_service as payments
+
+    base = str(getattr(settings, "public_base_url", None) or _request_origin(request)).rstrip("/")
+    return_url = f"{base}/marketplace.html?seller=connected#payments-readme"
+    refresh_url = f"{base}/marketplace.html?seller=refresh#payments-readme"
+    try:
+        return payments.create_connect_onboarding_link(user, return_url=return_url, refresh_url=refresh_url)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/marketplace/seller/paypal")
+def marketplace_seller_paypal(
+    body: MarketplacePaypalRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import marketplace_payments_service as payments
+
+    try:
+        return {"seller": payments.set_paypal_email(user, body.email)}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/marketplace/fee-preview")
+def marketplace_fee_preview(price_cents: int = Query(0, ge=0, le=1_000_000)):
+    from backend.services import marketplace_payments_service as payments
+
+    return payments.fee_breakdown(price_cents)
+
+
+@app.post("/api/marketplace/checkout")
+def marketplace_checkout(
+    body: MarketplaceCheckoutRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import marketplace_payments_service as payments
+
+    kind = str(body.kind or "").strip().lower()
+    listing = None
+    if kind == "agent":
+        listing = agent_marketplace_service.get_listing(body.listing_id, user_id=user["id"], include_pending=False)
+    elif kind in {"model", "knowledge"}:
+        listing = model_marketplace_service.get_listing(body.listing_id, user_id=user["id"], include_pending=False)
+        if listing and kind == "knowledge":
+            # knowledge bases are model listings with product_type/category markers
+            pass
+    else:
+        raise HTTPException(422, "kind must be agent, model, or knowledge")
+    if not listing:
+        raise HTTPException(404, "Listing not found")
+
+    origin = _request_origin(request)
+    success = body.success_url or f"{origin}/marketplace.html?purchase=success"
+    cancel = body.cancel_url or f"{origin}/marketplace.html?purchase=cancel"
+    try:
+        result = payments.create_checkout_session(
+            buyer=user,
+            kind="model" if kind == "knowledge" else kind,
+            listing=listing,
+            success_url=success,
+            cancel_url=cancel,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return result
+
+
+@app.post("/api/marketplace/stripe/webhook")
+async def marketplace_stripe_webhook(request: Request):
+    from backend.services import marketplace_payments_service as payments
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature")
+    try:
+        return payments.handle_stripe_webhook(payload, sig)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+def _send_welcome_email_background(user: dict[str, Any]) -> None:
+    try:
+        result = onboarding_email_service.send_welcome_email(user)
+        logger.info("onboarding welcome email result user_id=%s ok=%s error=%s", user.get("id"), result.get("ok"), result.get("error"))
+    except Exception:
+        logger.warning("Could not send onboarding welcome email for user_id=%s", user.get("id"), exc_info=True)
+
+
 @app.post("/api/auth/register")
-def register(body: RegisterRequest):
+def register(body: RegisterRequest, background_tasks: BackgroundTasks):
     try:
         user = teams_service.create_user(body.email, body.password, body.display_name)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    try:
+        new_user_alert_service.add_new_user(user, source="email")
+    except Exception:
+        logger.warning("Could not enqueue new user admin alert for user_id=%s", user.get("id"), exc_info=True)
+    background_tasks.add_task(_send_welcome_email_background, dict(user))
     token = create_access_token(user["id"])
     teams = teams_service.list_teams(user["id"])
     return {"token": token, "user": user, "teams": teams, "ai": _ai_status_for_user(user)}
@@ -3875,6 +3999,12 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
     try:
         profile = exchange_code_for_profile(provider, code)
         user = upsert_social_user(profile)
+        if user.pop("_created_new_user", False):
+            try:
+                new_user_alert_service.add_new_user(user, source=provider)
+            except Exception:
+                logger.warning("Could not enqueue social new user alert for user_id=%s", user.get("id"), exc_info=True)
+            threading.Thread(target=_send_welcome_email_background, args=(dict(user),), daemon=True).start()
         token = create_access_token(user["id"])
     except Exception as exc:
         logger.warning("Social OAuth callback failed for %s: %s", provider, exc)
@@ -4458,6 +4588,59 @@ def feedback_screenshot(stored_name: str, user: dict[str, Any] = Depends(get_cur
 def admin_feedback_summary(user: dict[str, Any] = Depends(get_current_user)):
     _require_a1projects_admin(user)
     return feedback_service.summary()
+
+
+@app.get("/api/admin/management/summary")
+def admin_management_summary(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    feedback = feedback_service.summary()
+    new_users = new_user_alert_service.summary()
+    unread_count = int(feedback.get("unread_count") or 0) + int(new_users.get("unread_count") or 0)
+    return {
+        "unread_count": unread_count,
+        "feedback": feedback,
+        "new_users": new_users,
+    }
+
+
+@app.get("/api/admin/new-users")
+def admin_new_user_alerts(
+    user: dict[str, Any] = Depends(get_current_user),
+    status: str = Query("all"),
+    limit: int = Query(120, ge=1, le=300),
+    mark_read: bool = Query(False),
+):
+    _require_a1projects_admin(user)
+    items = new_user_alert_service.list_alerts(status=status, limit=limit)
+    if mark_read:
+        new_user_alert_service.mark_read()
+    return {"alerts": items, "summary": new_user_alert_service.summary()}
+
+
+@app.post("/api/admin/new-users/{item_id}")
+def admin_review_new_user_alert(
+    item_id: str,
+    body: AdminNewUserReviewRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    try:
+        item = new_user_alert_service.set_status(item_id, body.status, reviewer=user, note=body.note)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not item:
+        raise HTTPException(404, "New user alert not found")
+    return {"ok": True, "item": item, "summary": new_user_alert_service.summary()}
+
+
+@app.get("/api/admin/onboarding-email/template")
+def admin_onboarding_email_template(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    sample = {
+        "display_name": "New Render3D user",
+        "email": "new-user@example.com",
+    }
+    return {"template": onboarding_email_service.render_welcome_email(sample)}
 
 
 @app.get("/api/admin/feedback/requests")
@@ -10244,7 +10427,18 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
                 break
     download_name = safe
     if file_path.suffix.lower() == ".3mf":
-        download_name = f"{file_path.stem}.3MF"
+        download_name = f"{file_path.stem}.3mf"
+        return FileResponse(
+            file_path,
+            filename=download_name,
+            media_type="model/3mf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{download_name}"',
+                "Cache-Control": "public, max-age=120",
+                "Access-Control-Allow-Origin": "*",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     # ES module imports require a JavaScript MIME type (hidden .*.step.js sidecars).
     if file_path.suffix.lower() in {".js", ".mjs"} or file_path.name.endswith(".step.js"):
         return FileResponse(

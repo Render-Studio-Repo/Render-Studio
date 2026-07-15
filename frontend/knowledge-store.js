@@ -1,4 +1,10 @@
 import { authHeaders, getToken } from "./auth.js";
+import {
+  bindPriceFeeHint,
+  isPaidListing,
+  mountSellerPanel,
+  startCheckout,
+} from "./marketplace-payments.js?v=20260715-mkt-payments";
 
 const listEl = document.getElementById("kb-store-list");
 const statusEl = document.getElementById("kb-store-status");
@@ -107,6 +113,10 @@ function productCard(item, { compact = false } = {}) {
         <button type="button" class="btn secondary btn-compact" data-feature="${escapeAttr(item.slug)}">${item.featured ? "Unfeature" : "Feature"}</button>
       </div>`
     : "";
+  const paid = isPaidListing(item);
+  const buyBtn = paid
+    ? `<button type="button" class="btn primary btn-compact" data-buy="${escapeAttr(item.id || item.slug)}">Buy ${escapeHtml(priceLabel(item))}</button>`
+    : "";
   return `<article class="agent-product-card marketplace-product-card knowledge-product-card${compact ? " agent-product-card-compact" : ""}">
     ${media}
     <div class="agent-product-top">
@@ -118,6 +128,7 @@ function productCard(item, { compact = false } = {}) {
     <p class="agent-product-tagline">${escapeHtml(item.tagline)}</p>
     ${compact ? "" : `<div class="marketplace-body muted small">${simpleMarkdown((item.body_md || item.description || "").slice(0, 480))}</div>`}
     <div class="agent-app-actions">
+      ${buyBtn}
       <span class="muted small">${files.length} file${files.length === 1 ? "" : "s"} · ${item.can_download ? "downloadable" : "preview only"}</span>
       ${getToken() && item.created_by ? `<button type="button" class="btn secondary btn-compact" data-boost="${escapeAttr(item.slug)}">Apply boost</button>` : ""}
     </div>
@@ -201,6 +212,25 @@ function bindActions(root = document) {
   });
   root.querySelectorAll("[data-boost]").forEach((btn) => {
     btn.addEventListener("click", () => applyBoost(btn.dataset.boost));
+  });
+  root.querySelectorAll("[data-buy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!getToken()) {
+        alert("Sign in to purchase.");
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const result = await startCheckout({ kind: "knowledge", listingId: btn.dataset.buy });
+        if (result.already_owned || result.demo) {
+          if (statusEl) statusEl.textContent = result.message || "Purchase complete.";
+          await loadListings();
+        }
+      } catch (err) {
+        alert(err.message || "Checkout failed.");
+        btn.disabled = false;
+      }
+    });
   });
 }
 

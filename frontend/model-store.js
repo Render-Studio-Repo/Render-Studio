@@ -1,4 +1,10 @@
 import { authHeaders, getToken } from "./auth.js";
+import {
+  bindPriceFeeHint,
+  isPaidListing,
+  mountSellerPanel,
+  startCheckout,
+} from "./marketplace-payments.js?v=20260715-mkt-payments";
 
 const listEl = document.getElementById("model-store-list");
 const statusEl = document.getElementById("model-store-status");
@@ -129,6 +135,10 @@ function productCard(item, { compact = false } = {}) {
         <button type="button" class="btn secondary btn-compact" data-feature="${escapeAttr(item.slug)}">${item.featured ? "Unfeature" : "Feature"}</button>
       </div>`
     : "";
+  const paid = isPaidListing(item);
+  const buyBtn = paid
+    ? `<button type="button" class="btn primary btn-compact" data-buy="${escapeAttr(item.id || item.slug)}">Buy ${escapeHtml(priceLabel(item))}</button>`
+    : "";
   const mine = getToken() && item.created_by;
   return `<article class="agent-product-card marketplace-product-card${compact ? " agent-product-card-compact" : ""}">
     ${media}
@@ -141,7 +151,8 @@ function productCard(item, { compact = false } = {}) {
     <p class="agent-product-tagline">${escapeHtml(item.tagline)}</p>
     ${compact ? "" : `<div class="marketplace-body muted small">${simpleMarkdown((item.body_md || item.description || "").slice(0, 480))}</div>`}
     <div class="agent-app-actions">
-      ${item.can_download && item.files?.length ? `<span class="muted small">${item.files.length} file${item.files.length === 1 ? "" : "s"}</span>` : `<span class="muted small">Preview</span>`}
+      ${buyBtn}
+      ${item.can_download && item.files?.length && !paid ? `<span class="muted small">${item.files.length} file${item.files.length === 1 ? "" : "s"}</span>` : !paid ? `<span class="muted small">Preview</span>` : ""}
       ${mine ? `<button type="button" class="btn secondary btn-compact" data-boost="${escapeAttr(item.slug)}">Apply boost</button>` : ""}
     </div>
     ${adminControls}
@@ -220,6 +231,25 @@ function bindActions(root = document) {
   });
   root.querySelectorAll("[data-boost]").forEach((btn) => {
     btn.addEventListener("click", () => applyBoost(btn.dataset.boost));
+  });
+  root.querySelectorAll("[data-buy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!getToken()) {
+        alert("Sign in to purchase.");
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const result = await startCheckout({ kind: "model", listingId: btn.dataset.buy });
+        if (result.already_owned || result.demo) {
+          if (statusEl) statusEl.textContent = result.message || "Purchase complete.";
+          await loadListings();
+        }
+      } catch (err) {
+        alert(err.message || "Checkout failed.");
+        btn.disabled = false;
+      }
+    });
   });
 }
 
@@ -377,6 +407,11 @@ searchEl?.addEventListener("input", () => {
 
 wireEditorToolbar();
 wireDropZone();
+mountSellerPanel(document.getElementById("model-seller-host"));
+bindPriceFeeHint(
+  document.querySelector("#model-listing-form input[name='price_cents']"),
+  document.getElementById("model-fee-hint"),
+);
 loadListings().catch((err) => {
   if (statusEl) statusEl.textContent = err.message || "Failed to load";
 });

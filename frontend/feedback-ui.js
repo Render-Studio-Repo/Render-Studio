@@ -521,7 +521,7 @@ export function initManagementNotifications({ intervalMs = 30000 } = {}) {
       return;
     }
     try {
-      apply(await requestJson("/api/admin/feedback/summary"));
+      apply(await requestJson("/api/admin/management/summary"));
     } catch {
       /* ignore badge refresh failures */
     }

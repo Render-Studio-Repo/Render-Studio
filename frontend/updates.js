@@ -72,6 +72,18 @@ function matchScore(item, query) {
   return score;
 }
 
+const searchStreakTimers = new WeakMap();
+
+function triggerSearchStreak(input) {
+  const shell = input?.closest?.(".docs-topic-search");
+  if (!shell) return;
+  shell.classList.remove("is-searching");
+  void shell.offsetWidth;
+  shell.classList.add("is-searching");
+  window.clearTimeout(searchStreakTimers.get(shell));
+  searchStreakTimers.set(shell, window.setTimeout(() => shell.classList.remove("is-searching"), 1000));
+}
+
 function cardHtml(item) {
   const visual = item.visual
     ? `<div class="updates-visual">
@@ -147,6 +159,7 @@ function mountSearch() {
   const input = document.getElementById("updates-search");
   if (!input) return;
   input.addEventListener("input", () => {
+    triggerSearchStreak(input);
     activeQuery = input.value || "";
     mountList();
   });

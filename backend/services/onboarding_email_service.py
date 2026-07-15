@@ -12,8 +12,8 @@ from backend.config import settings
 
 logger = logging.getLogger("render3d.onboarding_email")
 
-GETTING_STARTED_GIF = "https://render3d.app/gifs/getting-started/ai-generate.gif"
-KNOWLEDGE_GIF = "https://render3d.app/gifs/getting-started/knowledge-base.gif"
+GETTING_STARTED_GIF = "https://render3d.app/assets/onboarding/text-to-cad-demo.gif"
+KNOWLEDGE_GIF = "https://render3d.app/assets/onboarding/robot-motion-demo.gif"
 
 
 def smtp_configured() -> bool:
@@ -54,8 +54,8 @@ def render_welcome_email(user: dict[str, Any]) -> dict[str, str]:
         <p style="margin:0 0 10px;color:#9da7b3;">A couple short GIFs to get you moving:</p>
         <a href="{GETTING_STARTED_GIF}" style="color:#58a6ff;">Generate your first CAD model</a><br />
         <img src="{GETTING_STARTED_GIF}" alt="Generate a model demo" style="width:100%;max-width:620px;margin:10px 0 18px;border-radius:14px;border:1px solid #30363d;" />
-        <a href="{KNOWLEDGE_GIF}" style="color:#58a6ff;">Use knowledge bases for prompt context</a><br />
-        <img src="{KNOWLEDGE_GIF}" alt="Knowledge base demo" style="width:100%;max-width:620px;margin:10px 0 18px;border-radius:14px;border:1px solid #30363d;" />
+        <a href="{KNOWLEDGE_GIF}" style="color:#58a6ff;">Explore robot motion and rigging workflows</a><br />
+        <img src="{KNOWLEDGE_GIF}" alt="Robot motion demo" style="width:100%;max-width:620px;margin:10px 0 18px;border-radius:14px;border:1px solid #30363d;" />
         <p style="margin:18px 0 0;color:#9da7b3;line-height:1.55;">Need help? Reply to this email or open Render Agent from the app.</p>
       </div>
     </div>
@@ -78,7 +78,7 @@ Try these first:
 
 GIF demos:
 - Generate your first CAD model: {GETTING_STARTED_GIF}
-- Use knowledge bases for prompt context: {KNOWLEDGE_GIF}
+- Explore robot motion and rigging workflows: {KNOWLEDGE_GIF}
 """
     return {"subject": subject, "html": html_body, "text": text_body}
 
@@ -87,6 +87,8 @@ def send_welcome_email(user: dict[str, Any]) -> dict[str, Any]:
     email = str(user.get("email") or "").strip()
     if not email:
         return {"ok": False, "error": "missing_email"}
+    if email.endswith("@social.render3d.local"):
+        return {"ok": False, "error": "placeholder_social_email"}
     template = render_welcome_email(user)
     if not smtp_configured():
         logger.info("Welcome email not sent to %s: SMTP is not configured.", email)

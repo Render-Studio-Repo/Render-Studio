@@ -8,10 +8,9 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-marketplace-fx" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
 </head>
 <body class="info-page marketplace-futuristic marketplace-store-page">
   <div id="app" class="app-info">
@@ -40,7 +39,7 @@
 
     <main class="info-main">
       <article class="info-content skills-page agent-store-page model-store-page knowledge-store-page">
-        <header class="info-hero marketplace-hub-hero">
+        <header class="info-hero">
           <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · Knowledge Bases</p>
           <h2>Knowledge Base Center</h2>
           <p class="info-lead">
@@ -109,7 +108,7 @@
 
         <section class="info-section agent-submit-section">
           <h3>Publish a knowledge base</h3>
-          <p class="muted">Drag in docs, PDFs, markdown, CAD refs, images, prompts, and setup files. Listings go to review before appearing publicly.</p>
+          <p class="muted">Paid sales keep <strong>90%</strong> after a <strong>10%</strong> fee — <a href="/marketplace.html#payments-readme">Payments README</a>. Drag in docs, PDFs, markdown, CAD refs, images, prompts, and setup files. Listings go to review before appearing publicly.</p>
           <form id="kb-listing-form" class="agent-app-form">
             <div class="marketplace-drop-zone" data-kb-drop>
               <strong>Drop knowledge base files here</strong>
@@ -137,6 +136,7 @@
                 </select>
               </label>
               <label>Price cents <input name="price_cents" type="number" min="0" max="1000000" value="0" /></label>
+              <p class="marketplace-fee-hint agent-form-wide" id="kb-fee-hint"></p>
               <label class="agent-check"><input name="download_enabled" type="checkbox" checked /> Allow downloads</label>
               <label class="agent-form-wide">Tagline <input name="tagline" required maxlength="180" placeholder="Reusable CAD and robotics docs for Render3D prompts." /></label>
               <label class="agent-form-wide">Short description <textarea name="description" required maxlength="4000" rows="3" placeholder="What users get and how it helps their prompts or workflows."></textarea></label>
@@ -160,7 +160,7 @@
       </article>
     </main>
   </div>
-  <script type="module" src="/knowledge-store.js?v=20260715-marketplace-fx"></script>
+  <script type="module" src="/knowledge-store.js?v=20260715-mkt-payments"></script>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>

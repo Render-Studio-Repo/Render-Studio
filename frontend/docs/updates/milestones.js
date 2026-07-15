@@ -44,7 +44,7 @@ export const MILESTONE_UPDATES = [
     kind: "feature",
     title: "Sticky docs topic legend",
     summary:
-      "The left topic legend on Getting Started and Complete docs stays with you while scrolling so you can jump between sections anytime.",
+      "The left topic legend on Getting Started and Full Documentation stays with you while scrolling so you can jump between sections anytime.",
     visual: "/docs/media/render-agent.gif?v=20260715-real",
     href: "/docs.html#complete-docs",
   },

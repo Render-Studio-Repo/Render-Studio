@@ -267,6 +267,39 @@ def init_db() -> None:
                 reviewed_at TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS marketplace_seller_accounts (
+                user_id TEXT PRIMARY KEY,
+                stripe_account_id TEXT,
+                charges_enabled INTEGER NOT NULL DEFAULT 0,
+                payouts_enabled INTEGER NOT NULL DEFAULT 0,
+                details_submitted INTEGER NOT NULL DEFAULT 0,
+                paypal_email TEXT NOT NULL DEFAULT '',
+                payout_method TEXT NOT NULL DEFAULT 'stripe',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS marketplace_purchases (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                listing_id TEXT NOT NULL,
+                listing_slug TEXT,
+                buyer_user_id TEXT NOT NULL,
+                seller_user_id TEXT NOT NULL,
+                price_cents INTEGER NOT NULL,
+                platform_fee_cents INTEGER NOT NULL DEFAULT 0,
+                seller_net_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                stripe_session_id TEXT,
+                stripe_payment_intent TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                paid_at TEXT,
+                FOREIGN KEY (buyer_user_id) REFERENCES users(id),
+                FOREIGN KEY (seller_user_id) REFERENCES users(id)
+            );
             """
         )
         for col_sql in (
@@ -288,6 +321,18 @@ def init_db() -> None:
             pass
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_marketplace_boost_status ON marketplace_boost_apps(status, kind)")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_marketplace_purchases_buyer ON marketplace_purchases(buyer_user_id, status)"
+            )
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_purchases_session ON marketplace_purchases(stripe_session_id)"
+            )
         except sqlite3.OperationalError:
             pass
         try:

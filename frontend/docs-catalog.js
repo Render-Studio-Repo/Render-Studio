@@ -87,6 +87,18 @@ function featureSearchText(feature) {
   ].filter(Boolean).join(" ");
 }
 
+const searchStreakTimers = new WeakMap();
+
+function triggerSearchStreak(input) {
+  const shell = input?.closest?.(".docs-topic-search, .docs-catalog-filter");
+  if (!shell) return;
+  shell.classList.remove("is-searching");
+  void shell.offsetWidth;
+  shell.classList.add("is-searching");
+  window.clearTimeout(searchStreakTimers.get(shell));
+  searchStreakTimers.set(shell, window.setTimeout(() => shell.classList.remove("is-searching"), 1000));
+}
+
 function featureCard(feature) {
   const steps = feature.steps || [];
   const shown = steps.slice(0, 4);
@@ -191,9 +203,13 @@ function mountCatalog() {
     }
     if (topSearch && topSearch.value !== q) topSearch.value = q;
   };
-  input?.addEventListener("input", () => applyFeatureFilter(input.value));
+  input?.addEventListener("input", () => {
+    triggerSearchStreak(input);
+    applyFeatureFilter(input.value);
+  });
   const topicSearch = document.getElementById("docs-topic-search");
   topicSearch?.addEventListener("input", () => {
+    triggerSearchStreak(topicSearch);
     if (input) input.value = topicSearch.value;
     applyFeatureFilter(topicSearch.value);
     document.getElementById("complete-docs")?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -317,6 +333,7 @@ async function mountAgentDocs() {
 
   const input = host.querySelector("#agent-doc-filter");
   input?.addEventListener("input", () => {
+    triggerSearchStreak(input);
     const q = String(input.value || "").trim().toLowerCase();
     const cards = [...host.querySelectorAll(".agent-doc-card")];
     cards.forEach((card) => {

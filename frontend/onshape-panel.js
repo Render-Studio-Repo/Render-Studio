@@ -270,25 +270,84 @@ export function initOnshapePanel({ api, onImported, onView, getCurrentProjectId 
 
   // ── load documents ───────────────────────────────────────────────────────
 
+  function renderDisconnected() {
+    setStatus("Sign in with Onshape to browse your documents.");
+    if (!listEl) return;
+    listEl.innerHTML = `
+      <div class="cloud-library-connect">
+        <p class="muted small">Link Onshape to browse documents and import Part Studios or assemblies into Render3D.</p>
+        <button type="button" class="btn primary btn-compact btn-cloud-connect-now" data-cloud="onshape">
+          <img src="/onshape-logo.png?v=20260617-small" width="14" height="14" alt="" />
+          Connect now
+        </button>
+      </div>
+    `;
+    listEl.querySelector(".btn-cloud-connect-now")?.addEventListener("click", () => {
+      const profileBtn = document.getElementById("btn-onshape-connect");
+      if (profileBtn) {
+        profileBtn.click();
+        return;
+      }
+      void startOnshapeConnect();
+    });
+  }
+
+  async function startOnshapeConnect() {
+    try {
+      const res = await fetch("/api/onshape/oauth-url", {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Could not start Onshape connect (${res.status})`);
+      const url = data.url || "/oauth/start";
+      window.open(url, "render3d-onshape-connect", "popup=yes,width=720,height=820");
+    } catch (err) {
+      setStatus(err.message || "Could not start Onshape connection.", true);
+      window.open("/oauth/start", "render3d-onshape-connect", "popup=yes,width=720,height=820");
+    }
+  }
+
   async function loadDocuments() {
     if (!listEl) return;
-    listEl.innerHTML = '';
-    setStatus('Loading your Onshape documents…');
+    listEl.innerHTML = "";
+    setStatus("Loading your Onshape documents…");
     try {
-      const data = await api('/api/onshape/documents?limit=30');
+      // Prefer an explicit status check so we can show Connect now immediately.
+      try {
+        const statusRes = await fetch("/api/onshape/status", { headers: authHeaders() });
+        if (statusRes.ok) {
+          const status = await statusRes.json();
+          if (!status?.linked) {
+            renderDisconnected();
+            return;
+          }
+        }
+      } catch {
+        /* fall through to documents fetch */
+      }
+
+      const data = await api("/api/onshape/documents?limit=30");
       docsCache = data.documents || [];
       clearStatus();
       renderDocs(docsCache);
     } catch (err) {
-      if (/not linked|401/i.test(err.message)) {
-        setStatus('Sign in with Onshape to browse your documents.');
+      if (/not linked|401|not authenticated/i.test(err.message || "")) {
+        renderDisconnected();
       } else {
-        setStatus(err.message || 'Could not load documents.', true);
+        setStatus(err.message || "Could not load documents.", true);
       }
     }
   }
 
-  btnRefresh?.addEventListener('click', () => loadDocuments());
+  btnRefresh?.addEventListener("click", () => loadDocuments());
+
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (!event.data || event.data.type !== "render3d:oauth-done") return;
+    if (String(event.data.provider || "").toLowerCase() !== "onshape") return;
+    if (event.data.ok) loadDocuments();
+  });
 
   // Auto-load when the section becomes visible (IntersectionObserver)
   const observer = new IntersectionObserver((entries) => {

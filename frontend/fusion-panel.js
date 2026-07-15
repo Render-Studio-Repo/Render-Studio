@@ -395,7 +395,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       const status = await api("/api/autodesk/status");
       linkedAccount = status?.linked ? status : null;
       if (!linkedAccount) {
-        setStatus("Connect Fusion 360 from your profile menu to browse your library.");
         renderDisconnectedControls();
         return;
       }
@@ -421,18 +420,42 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       await loadProjects();
     } catch (err) {
       const msg = err.message || "Could not load Fusion library.";
-      setStatus(/not linked|401/i.test(msg) ? "Connect Autodesk to browse your Fusion library." : msg, !/not linked|401/i.test(msg));
+      setStatus(/not linked|401/i.test(msg) ? "Connect Fusion 360 to browse your documents." : msg, !/not linked|401/i.test(msg));
       if (/not linked|401/i.test(msg)) renderDisconnectedControls();
     }
   }
 
   function renderDisconnectedControls() {
-    controlsEl.innerHTML = `
-      <button type="button" class="btn btn-compact btn-fusion-connect-account">Connect Fusion 360</button>
-    `;
-    controlsEl.querySelector(".btn-fusion-connect-account")?.addEventListener("click", () => {
-      window.location.href = "/oauth/autodesk/start";
-    });
+    setStatus("Connect Fusion 360 to browse your documents.");
+    controlsEl.innerHTML = "";
+    if (listEl) {
+      listEl.innerHTML = `
+        <div class="cloud-library-connect">
+          <p class="muted small">Link Autodesk Fusion 360 to browse hubs, import models, and sync mirror folders.</p>
+          <button type="button" class="btn primary btn-compact btn-cloud-connect-now" data-cloud="fusion">
+            <img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" />
+            Connect now
+          </button>
+        </div>
+      `;
+      listEl.querySelector(".btn-cloud-connect-now")?.addEventListener("click", () => {
+        const profileBtn = document.getElementById("btn-fusion-connect");
+        if (profileBtn) {
+          profileBtn.click();
+          return;
+        }
+        window.location.href = "/oauth/autodesk/start";
+      });
+    } else {
+      controlsEl.innerHTML = `
+        <button type="button" class="btn primary btn-compact btn-fusion-connect-account">Connect now</button>
+      `;
+      controlsEl.querySelector(".btn-fusion-connect-account")?.addEventListener("click", () => {
+        const profileBtn = document.getElementById("btn-fusion-connect");
+        if (profileBtn) profileBtn.click();
+        else window.location.href = "/oauth/autodesk/start";
+      });
+    }
   }
 
   async function disconnectAutodeskAccount(btn) {

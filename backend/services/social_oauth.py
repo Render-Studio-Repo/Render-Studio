@@ -272,6 +272,7 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
     display_name = str(profile.get("display_name") or "").strip() or (email.split("@")[0] if email else "Render3D User")
     picture_url = str(profile.get("picture_url") or "").strip() or None
     now = _now()
+    created_new_user = False
 
     with get_conn() as conn:
         row = conn.execute(
@@ -302,6 +303,7 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
                     "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
                     (team_id, user_id, "owner", now),
                 )
+                created_new_user = True
 
         if picture_url:
             conn.execute(
@@ -325,4 +327,6 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
             "SELECT id, email, display_name, avatar_url, created_at FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
-    return dict(user)
+    out = dict(user)
+    out["_created_new_user"] = created_new_user
+    return out

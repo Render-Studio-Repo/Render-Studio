@@ -1,4 +1,10 @@
 import { authHeaders, getToken } from "./auth.js";
+import {
+  bindPriceFeeHint,
+  isPaidListing,
+  mountSellerPanel,
+  startCheckout,
+} from "./marketplace-payments.js?v=20260715-mkt-payments";
 
 const listEl = document.getElementById("agent-store-list");
 const statusEl = document.getElementById("agent-store-status");
@@ -247,14 +253,16 @@ function visibleApps() {
 }
 
 function productCard(app, { compact = false } = {}) {
+  const paid = isPaidListing(app);
   const installText = app.installed
     ? "Installed"
     : app.access_mode === "view_only"
       ? "View only"
-      : app.price_cents > 0 || app.premium || app.access_mode === "paid"
-        ? "Purchase required"
+      : paid
+        ? `Buy ${priceLabel(app)}`
         : "Install";
-  const disabled = app.installed || app.access_mode === "view_only" || app.price_cents > 0 || app.premium || app.access_mode === "paid" ? "disabled" : "";
+  const disabled = app.installed || app.access_mode === "view_only" ? "disabled" : "";
+  const actionAttr = paid && !app.installed ? `data-buy="${escapeAttr(app.id || app.slug)}"` : `data-install="${app.slug}"`;
   const adminControls = isAdmin
     ? `<div class="agent-admin-controls">
         <button type="button" class="btn secondary btn-compact" data-review="${app.slug}" data-status="approved">Approve</button>
@@ -284,7 +292,7 @@ function productCard(app, { compact = false } = {}) {
     ${compact ? "" : `<p class="agent-product-desc muted">${escapeHtml(app.description)}</p>${manifestLine(app)}`}
     ${app.source_url && !compact ? `<p class="small"><a href="${escapeHtml(app.source_url)}" target="_blank" rel="noopener">Source / docs</a></p>` : ""}
     <div class="agent-app-actions">
-      <button type="button" class="btn primary btn-compact" data-install="${app.slug}" ${disabled}>${installText}</button>
+      <button type="button" class="btn primary btn-compact" ${actionAttr} ${disabled}>${installText}</button>
       ${app.installed ? `<button type="button" class="btn secondary btn-compact" data-uninstall="${app.slug}">Uninstall</button>` : ""}
       ${boostBtn}
     </div>
@@ -295,6 +303,26 @@ function productCard(app, { compact = false } = {}) {
 function bindCardActions(root = document) {
   root.querySelectorAll("[data-install]").forEach((btn) => {
     btn.addEventListener("click", () => installApp(btn.dataset.install));
+  });
+  root.querySelectorAll("[data-buy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!getToken()) {
+        if (statusEl) statusEl.textContent = "Sign in to purchase.";
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const result = await startCheckout({ kind: "agent", listingId: btn.dataset.buy });
+        if (result.already_owned || result.demo) {
+          if (statusEl) statusEl.textContent = result.message || "Purchase complete — installing…";
+          const app = apps.find((a) => a.id === btn.dataset.buy || a.slug === btn.dataset.buy);
+          await installApp(app?.slug || btn.dataset.buy);
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = err.message || "Checkout failed.";
+        btn.disabled = false;
+      }
+    });
   });
   root.querySelectorAll("[data-uninstall]").forEach((btn) => {
     btn.addEventListener("click", () => uninstallApp(btn.dataset.uninstall));
@@ -585,6 +613,11 @@ searchEl?.addEventListener("input", () => {
 [filterAccess, filterLicense, filterDownload, filterBoosted].forEach((el) => el?.addEventListener("change", render));
 
 wireDropZone();
+mountSellerPanel(document.getElementById("agent-seller-host"));
+bindPriceFeeHint(
+  document.querySelector("#agent-app-form input[name='price_cents']"),
+  document.getElementById("agent-fee-hint"),
+);
 loadApps().catch((err) => {
   if (statusEl) statusEl.textContent = err.message || "Could not load agent apps.";
 });

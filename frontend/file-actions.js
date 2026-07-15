@@ -724,21 +724,46 @@ function detectClientOs() {
 }
 
 function bambuStudioOpenUrls(fileUrl) {
+  // MakerWorld-style unencoded HTTPS works best with Bambu's protocol parser.
+  // Encoded variants are kept as fallbacks for picky browsers/OS handlers.
   const encoded = encodeURIComponent(fileUrl);
   return {
-    windows: `bambustudio://open?file=${encoded}`,
-    linux: `bambustudio://open?file=${encoded}`,
+    windows: `bambustudio://open?file=${fileUrl}`,
+    windowsEncoded: `bambustudio://open?file=${encoded}`,
+    linux: `bambustudio://open?file=${fileUrl}`,
+    linuxEncoded: `bambustudio://open?file=${encoded}`,
     // macOS registers a different scheme than Windows/Linux.
     macos: `bambustudioopen://${fileUrl}`,
+    macosEncoded: `bambustudioopen://${encoded}`,
   };
 }
 
-async function ensureThreeMfExport({ projectId, filename, exports }) {
-  let threeMf = (exports || []).find((item) => String(item.format || "").toLowerCase() === "3mf")
-    || (exports || []).find((item) => /\.3mf$/i.test(item.name || ""));
-  if (threeMf?.name) return threeMf;
+function launchBambuProtocol(url) {
+  // location.assign is more reliable than a synthetic <a> click for custom schemes.
+  try {
+    window.location.href = url;
+    return;
+  } catch {
+    /* fall through */
+  }
+  const opener = document.createElement("a");
+  opener.href = url;
+  opener.rel = "noopener";
+  opener.style.display = "none";
+  document.body.appendChild(opener);
+  opener.click();
+  opener.remove();
+}
 
-  // Refresh mesh exports so a missing 3MF sidecar is generated when possible.
+async function ensureThreeMfExport({ projectId, filename, exports, forceRefresh = false }) {
+  let threeMf = !forceRefresh
+    ? (
+      (exports || []).find((item) => String(item.format || "").toLowerCase() === "3mf")
+      || (exports || []).find((item) => /\.3mf$/i.test(item.name || ""))
+    )
+    : null;
+
+  // Always regenerate when sending to Bambu so the 3MF is plate-seated (Z=0) and fresh.
   try {
     await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports/regenerate`,
@@ -757,7 +782,8 @@ async function ensureThreeMfExport({ projectId, filename, exports }) {
   }
   const data = await res.json();
   threeMf = (data.exports || []).find((item) => String(item.format || "").toLowerCase() === "3mf")
-    || (data.exports || []).find((item) => /\.3mf$/i.test(item.name || ""));
+    || (data.exports || []).find((item) => /\.3mf$/i.test(item.name || ""))
+    || threeMf;
   if (!threeMf?.name) {
     throw new Error("No 3MF is available for this model yet. Download STL instead, or regenerate the model.");
   }
@@ -774,7 +800,12 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
     if (!getToken()) {
       throw new Error("Not authenticated. Sign in to create the temporary 3MF share link Bambu Studio needs.");
     }
-    const threeMf = await ensureThreeMfExport({ projectId, filename, exports });
+    const threeMf = await ensureThreeMfExport({
+      projectId,
+      filename,
+      exports,
+      forceRefresh: true,
+    });
     // Share the 3MF itself so Bambu can fetch a public absolute URL.
     const shareRes = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(threeMf.name)}/share`,
@@ -788,7 +819,9 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
     const token = share.token;
     if (!token) throw new Error("Could not create a public 3MF link for Bambu Studio.");
 
-    const filePath = `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(threeMf.name)}`;
+    // Keep a clean .3mf path — Bambu's downloader keys off the extension.
+    const safeName = String(threeMf.name || "model.3mf").replace(/\.3MF$/i, ".3mf");
+    const filePath = `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(safeName)}`;
     const fileUrl = `${window.location.origin}${filePath}`;
     const urls = bambuStudioOpenUrls(fileUrl);
     const os = detectClientOs();
@@ -796,16 +829,18 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
 
     btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Opening Bambu Studio…`;
 
-    // Trigger the OS protocol handler. Bambu downloads the 3MF and places it on the plate.
-    const opener = document.createElement("a");
-    opener.href = primary;
-    opener.style.display = "none";
-    document.body.appendChild(opener);
-    opener.click();
-    opener.remove();
+    // Also download the 3MF so the user can open it from Downloads if the protocol
+    // only focuses an already-running Studio window without importing.
+    try {
+      await downloadFile(fileUrl, safeName);
+    } catch {
+      /* non-fatal — protocol open still attempted */
+    }
+
+    launchBambuProtocol(primary);
 
     btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sent to Bambu ✓`;
-    showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: threeMf.name });
+    showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: safeName });
     setTimeout(() => {
       btn.disabled = false;
       if (!btn.dataset.bambuFollowup) btn.innerHTML = original;
@@ -826,21 +861,33 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
   menu.querySelector(".file-export-bambu-followup")?.remove();
   const panel = document.createElement("div");
   panel.className = "file-export-bambu-followup";
-  const alt = os === "macos" ? urls.windows : urls.macos;
+  const alt = os === "macos"
+    ? (urls.windowsEncoded || urls.windows)
+    : (urls.macos || urls.macosEncoded);
+  const encodedPrimary = os === "macos" ? urls.macosEncoded : (urls[`${os}Encoded`] || urls.windowsEncoded);
   panel.innerHTML = `
-    <p><strong>${escText(threeMfName)}</strong> was sent to Bambu Studio as a plate-ready 3MF.</p>
-    <p class="muted small">If Studio did not open, install Bambu Studio and allow the browser to open bambustudio links.</p>
+    <p><strong>${escText(threeMfName)}</strong> was prepared as a plate-ready 3MF.</p>
+    <p class="muted small">If Studio opened with an empty plate:</p>
+    <ul class="muted small file-export-bambu-tips">
+      <li>Click <strong>Yes</strong> on Bambu’s “not from a trusted site” prompt</li>
+      <li>In Bambu Preferences, enable <strong>Keep only one Bambu Studio instance</strong></li>
+      <li>Open the downloaded <strong>${escText(threeMfName)}</strong> from your Downloads folder (File → Import)</li>
+    </ul>
     <div class="file-export-bambu-followup-actions">
       <button type="button" class="btn secondary btn-compact" data-bambu-alt>Try alternate open link</button>
-      <button type="button" class="btn secondary btn-compact" data-bambu-download>Download 3MF</button>
+      <button type="button" class="btn secondary btn-compact" data-bambu-encoded>Try encoded link</button>
+      <button type="button" class="btn secondary btn-compact" data-bambu-download>Download 3MF again</button>
     </div>
   `;
   panel.querySelector("[data-bambu-alt]")?.addEventListener("click", () => {
-    window.location.href = alt;
+    launchBambuProtocol(alt);
+  });
+  panel.querySelector("[data-bambu-encoded]")?.addEventListener("click", () => {
+    launchBambuProtocol(encodedPrimary || alt);
   });
   panel.querySelector("[data-bambu-download]")?.addEventListener("click", async () => {
     try {
-      await downloadFile(fileUrl, threeMfName.replace(/\.3mf$/i, ".3MF"));
+      await downloadFile(fileUrl, threeMfName);
     } catch (err) {
       showExportError(menu, err, { title: "3MF download failed" });
     }

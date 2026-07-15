@@ -233,8 +233,9 @@ async function main() {
   function bambuStudioOpenUrls(fileUrl) {
     const encoded = encodeURIComponent(fileUrl);
     return {
-      windows: `bambustudio://open?file=${encoded}`,
-      linux: `bambustudio://open?file=${encoded}`,
+      windows: `bambustudio://open?file=${fileUrl}`,
+      windowsEncoded: `bambustudio://open?file=${encoded}`,
+      linux: `bambustudio://open?file=${fileUrl}`,
       macos: `bambustudioopen://${fileUrl}`,
     };
   }
@@ -257,7 +258,16 @@ async function main() {
     const fileUrl = absoluteFileUrl(threeMf.url);
     const urls = bambuStudioOpenUrls(fileUrl);
     const os = detectClientOs();
+    // Also download so the user can File→Import if Studio only focuses an empty window.
+    const a = document.createElement("a");
+    a.href = fileUrl;
+    a.download = String(threeMf.name || "model.3mf").replace(/\.3MF$/i, ".3mf");
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     window.location.href = urls[os] || urls.windows;
+    setStatus("Opening Bambu Studio… If the plate is empty, click Yes on the trust prompt, or import the downloaded 3MF.");
   }
 
   function renderDownloadMenu(into) {

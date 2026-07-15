@@ -64,7 +64,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-export
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-auth-connect-social";
-import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-modern";
+import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-new-user-alerts";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-roles";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
@@ -74,9 +74,9 @@ import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-export-loading";
-import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
-import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-bambu-plate";
+import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
+import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260630-architect-local-transform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
@@ -15573,6 +15573,8 @@ function setProjectLoading(id, loading) {
 
 function renderProjectList() {
   window.__appProjectListReady = true;
+  window.__dismissStudioBoot?.();
+  document.body.classList.remove("studio-booting");
   workspaceBrowser.render();
 }
 
@@ -15868,6 +15870,7 @@ async function openProjectById(id) {
 }
 
 window.__openProject = openProjectById;
+window.__remixWiringStepperExample = remixWiringStepperExampleIntoFolder;
 
 async function refreshProjectShell({
   refreshInvites = false,
@@ -16502,6 +16505,47 @@ async function createNewProjectInFolder(folderId) {
   await fetchAllProjects();
   await loadProject(project_id);
   renderProjectList();
+}
+
+async function remixWiringStepperExampleIntoFolder({ folderId = null } = {}) {
+  const sourceProject = allProjects.find((p) => String(p.id) === String(projectId || ""));
+  const rawFolderId = folderId ?? sourceProject?.folder_id ?? null;
+  const targetFolderId = rawFolderId && !String(rawFolderId).startsWith("__") ? rawFolderId : null;
+  const teamId = getFolderTeamId();
+  if (!teamId) {
+    throw new Error("Could not find a workspace for the example project.");
+  }
+  writeSavedWorkspaceId(teamId);
+  const teamSelect = document.getElementById("team-select");
+  if (teamSelect && [...teamSelect.options].some((opt) => opt.value === teamId)) {
+    teamSelect.value = teamId;
+  }
+  const qs = `?team_id=${encodeURIComponent(teamId)}&name=${encodeURIComponent("Arduino Stepper Wiring Example")}`;
+  const { project_id, meta } = await api(`/api/projects${qs}`, { method: "POST" });
+  if (targetFolderId) {
+    await api(`/api/projects/${project_id}/folder`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder_id: targetFolderId }),
+    });
+  }
+  upsertProjectInList({
+    id: project_id,
+    name: meta?.name || "Arduino Stepper Wiring Example",
+    created_at: meta?.created_at,
+    updated_at: meta?.updated_at,
+    file_count: 0,
+    folder_id: targetFolderId || null,
+  });
+  ribbon.reset();
+  await fetchAllProjects();
+  await loadProject(project_id);
+  renderProjectList();
+  workspaceModes?.setDesignTab?.("WIRING");
+  setRightTab("wiring");
+  await loadWiringDemo("stepper");
+  setEditStatus("ok", "Arduino stepper example remixed into your folder.");
+  return { project_id, folder_id: targetFolderId || null };
 }
 
 async function ensureProject() {
@@ -20883,7 +20927,7 @@ window.addEventListener("keydown", (e) => {
     }
   }
   if (showMeParam) {
-    void import("./show-me-tour.js?v=20260715-robot-arm").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-wiring-stepper-remix").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }
@@ -22715,6 +22759,9 @@ window.addEventListener("keydown", (e) => {
       if (browser) {
         browser.innerHTML = '<p class="muted small browser-empty">Sign in to view your projects</p>';
       }
+      window.__appProjectListReady = true;
+      window.__dismissStudioBoot?.();
+      document.body.classList.remove("studio-booting");
       auth.openModal?.();
     }
     document.getElementById("prompt-status").className = "status";
@@ -22723,6 +22770,8 @@ window.addEventListener("keydown", (e) => {
 })().catch((err) => {
   console.error("Editor startup failed:", err);
   window.__appProjectListReady = true;
+  window.__dismissStudioBoot?.();
+  document.body.classList.remove("studio-booting");
   const browser = document.getElementById("project-browser");
   if (browser) {
     browser.innerHTML = `<p class="status error browser-empty">Editor failed to start: ${appEscapeHtml(err?.message || "Unknown error")}</p>`;

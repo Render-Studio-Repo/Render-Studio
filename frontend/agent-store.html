@@ -8,10 +8,9 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-marketplace-fx" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
 </head>
 <body class="info-page marketplace-futuristic marketplace-store-page">
   <div id="app" class="app-info">
@@ -40,7 +39,7 @@
 
     <main class="info-main">
       <article class="info-content skills-page agent-store-page">
-        <header class="info-hero marketplace-hub-hero">
+        <header class="info-hero">
           <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · Agents</p>
           <h2>Agent Store</h2>
           <p class="info-lead">
@@ -108,7 +107,8 @@
 
         <section class="info-section agent-submit-section">
           <h3>Submit an Agent App</h3>
-          <p class="muted">Submit for review. Keep secrets out of manifests.</p>
+          <p class="muted">Submit for review. Keep secrets out of manifests. Paid listings take a <strong>10%</strong> platform fee — <a href="/marketplace.html#payments-readme">Payments README</a>.</p>
+          <div id="agent-seller-host"></div>
           <form id="agent-app-form" class="agent-app-form">
             <div class="marketplace-drop-zone" data-agent-drop>
               <strong>Drop agent assets here</strong>
@@ -143,6 +143,7 @@
                 </select>
               </label>
               <label>Price cents <input name="price_cents" type="number" min="0" max="1000000" value="0" /></label>
+              <p class="marketplace-fee-hint agent-form-wide" id="agent-fee-hint"></p>
               <label class="agent-check"><input name="download_enabled" type="checkbox" checked /> Allow downloads / install assets</label>
               <label class="agent-form-wide">Tagline <input name="tagline" required maxlength="180" placeholder="Generate two-part silicone molds with vents and clips." /></label>
               <label class="agent-form-wide">Source URL <input name="source_url" maxlength="600" placeholder="https://github.com/you/agent-app" /></label>
@@ -169,7 +170,7 @@
       </article>
     </main>
   </div>
-  <script type="module" src="/agent-store.js?v=20260715-marketplace-fx"></script>
+  <script type="module" src="/agent-store.js?v=20260715-mkt-payments"></script>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>

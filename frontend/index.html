@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-logo-signup" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-robot-boot" />
   <script type="importmap">
   {
     "imports": {
@@ -21,7 +21,90 @@
   </script>
   <link rel="stylesheet" href="/ribbon.css?v=20260616-no-newmodel" />
 </head>
-<body class="theme-dark">
+<body class="theme-dark studio-booting">
+  <div id="studio-boot-screen" class="studio-boot-screen" role="status" aria-live="polite" aria-busy="true" style="--boot-progress: 8; --boot-progress-pct: 8%;">
+    <div class="studio-boot-card">
+      <div class="studio-boot-stage" aria-hidden="true">
+        <div class="studio-boot-grid"></div>
+        <div class="studio-boot-printer">
+          <span class="studio-boot-printer-head"></span>
+          <span class="studio-boot-print-beam"></span>
+          <span class="studio-boot-build-plate"></span>
+          <span class="studio-boot-part studio-boot-part--base"></span>
+          <span class="studio-boot-part studio-boot-part--arm"></span>
+          <span class="studio-boot-part studio-boot-part--cap"></span>
+        </div>
+        <div class="studio-boot-robot">
+          <span class="studio-boot-robot-body"></span>
+          <span class="studio-boot-robot-head"></span>
+          <span class="studio-boot-robot-eye studio-boot-robot-eye--left"></span>
+          <span class="studio-boot-robot-eye studio-boot-robot-eye--right"></span>
+          <span class="studio-boot-robot-arm studio-boot-robot-arm--left"></span>
+          <span class="studio-boot-robot-arm studio-boot-robot-arm--right"></span>
+          <span class="studio-boot-robot-claw"></span>
+        </div>
+        <div class="studio-boot-energy">
+          <span class="studio-boot-energy-fill"></span>
+          <span class="studio-boot-spark studio-boot-spark--a"></span>
+          <span class="studio-boot-spark studio-boot-spark--b"></span>
+          <span class="studio-boot-spark studio-boot-spark--c"></span>
+        </div>
+      </div>
+      <p class="studio-boot-title">Loading studio</p>
+      <p id="studio-boot-sub" class="studio-boot-sub">Preparing projects and editor...</p>
+      <div class="studio-boot-progress" aria-hidden="true">
+        <span class="studio-boot-progress-fill"></span>
+      </div>
+      <p class="studio-boot-progress-copy"><span id="studio-boot-percent">8%</span> assembled</p>
+      <div class="studio-boot-logo" aria-hidden="true">
+        <img src="/render3d-logo.png?v=20260715-new-logo" alt="" width="34" height="34" />
+        <span>Render3D</span>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var boot = document.getElementById("studio-boot-screen");
+    var pctEl = document.getElementById("studio-boot-percent");
+    var subEl = document.getElementById("studio-boot-sub");
+    var current = 8;
+    var target = 88;
+    var timer = null;
+    function clamp(n) {
+      n = Number(n);
+      if (!isFinite(n)) return current;
+      return Math.max(0, Math.min(100, n));
+    }
+    function render() {
+      if (!boot) return;
+      current += (target - current) * 0.12;
+      if (Math.abs(target - current) < 0.25) current = target;
+      var shown = Math.round(current);
+      boot.style.setProperty("--boot-progress", shown);
+      boot.style.setProperty("--boot-progress-pct", shown + "%");
+      if (pctEl) pctEl.textContent = shown + "%";
+      if (shown >= 100 && timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    }
+    window.__setStudioBootProgress = function (pct, message) {
+      target = clamp(pct);
+      if (message && subEl) subEl.textContent = message;
+      render();
+    };
+    timer = setInterval(function () {
+      if (!boot || boot.classList.contains("is-done")) {
+        clearInterval(timer);
+        timer = null;
+        return;
+      }
+      if (target < 92) target += 0.35;
+      render();
+    }, 120);
+    render();
+  })();
+  </script>
   <div id="app">
     <header class="toolbar">
       <div class="brand">
@@ -1708,7 +1791,7 @@
         </a>
         <a class="welcome-action" href="/docs.html#complete-docs">
           <span class="welcome-action-icon" aria-hidden="true">02</span>
-          <span><strong>Full Docs</strong><small>All features</small></span>
+          <span><strong>Full Documentation</strong><small>Guides &amp; features</small></span>
         </a>
         <button type="button" class="welcome-action" id="welcome-create-account">
           <span class="welcome-action-icon" aria-hidden="true">03</span>
@@ -1795,65 +1878,64 @@
     function esc(s) {
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
+    function dismissBoot() {
+      document.body.classList.remove("studio-booting");
+      var el = document.getElementById("studio-boot-screen");
+      if (!el || el.classList.contains("is-done")) return;
+      if (window.__setStudioBootProgress) window.__setStudioBootProgress(100, "Studio ready.");
+      el.classList.add("is-done");
+      el.setAttribute("aria-busy", "false");
+      setTimeout(function () { el.remove(); }, 520);
+    }
+    window.__dismissStudioBoot = window.__dismissStudioBoot || dismissBoot;
     function show(html) {
       var b = document.getElementById("project-browser");
       if (b && !window.__appProjectListReady) b.innerHTML = html;
     }
+    function spinner(msg) {
+      return '<div class="browser-boot-spinner" role="status"><span class="studio-boot-spinner studio-boot-spinner--inline" aria-hidden="true"></span><p class="muted small">' + esc(msg) + "</p></div>";
+    }
     var editorFailed = false;
-    show('<p class="muted small browser-empty">Loading projects…</p>');
+    if (window.__setStudioBootProgress) window.__setStudioBootProgress(18, "Preparing projects and editor...");
+    show(spinner("Loading studio…"));
     window.addEventListener("error", function (e) {
       if (window.__appProjectListReady) return;
       editorFailed = true;
       show('<p class="status error browser-empty">Editor failed to start (' + esc(e.message || "error") + '). Try Ctrl+Shift+R to hard refresh.</p>');
+      dismissBoot();
     });
     window.addEventListener("unhandledrejection", function (e) {
       if (window.__appProjectListReady) return;
       editorFailed = true;
       var reason = e.reason && (e.reason.message || e.reason);
       show('<p class="status error browser-empty">Editor failed to start (' + esc(reason || "error") + '). Try Ctrl+Shift+R to hard refresh.</p>');
+      dismissBoot();
     });
     var token = getToken();
     if (!token) {
       show('<p class="muted small browser-empty">Sign in to view your projects</p>');
+      dismissBoot();
       return;
     }
+    // Warm session only — do not dump project names before the editor is ready.
     fetch("/api/auth/me", { headers: authHeaders() })
       .then(function (r) {
         if (!r.ok) throw new Error("Session expired — sign in again");
+        if (window.__setStudioBootProgress) window.__setStudioBootProgress(42, "Authenticating workspace...");
         return r.json();
       })
-      .then(function (me) {
-        var teams = me.teams || [];
-        var saved = localStorage.getItem("render3d:lastWorkspaceId");
-        var teamId = saved && teams.some(function (t) { return t.id === saved; }) ? saved : (teams[0] && teams[0].id);
-        var qs = teamId ? "?team_id=" + encodeURIComponent(teamId) : "";
-        return fetch("/api/projects" + qs, { headers: authHeaders() }).then(function (r) {
-          if (!r.ok) throw new Error("Could not load projects");
-          return r.json();
-        });
-      })
-      .then(function (data) {
+      .then(function () {
         if (window.__appProjectListReady || editorFailed) return;
-        var projects = data.projects || [];
-        if (!projects.length) {
-          show('<p class="muted small browser-empty">No projects yet — create one or upload a model.</p>');
-          return;
-        }
-        var b = document.getElementById("project-browser");
-        if (!b) return;
-        var html = '<p class="muted small">' + projects.length + ' project(s) — loading editor…</p><ul class="project-list">';
-        projects.forEach(function (p) {
-          html += '<li class="proj-item"><button type="button" class="proj-row-body"><span class="proj-name">' + esc(p.name || p.id) + '</span></button></li>';
-        });
-        html += "</ul>";
-        b.innerHTML = html;
+        if (window.__setStudioBootProgress) window.__setStudioBootProgress(72, "Warming project browser...");
+        show(spinner("Loading editor…"));
       })
       .catch(function (err) {
         show('<p class="status error browser-empty">' + esc(err.message || "Could not load projects") + "</p>");
+        dismissBoot();
       });
   })();
   </script>
-  <script type="module" src="/early-boot.js?v=20260611-project-recovery"></script>
+  <script type="module" src="/early-boot.js?v=20260715-robot-boot"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="prompt-target-popup" class="prompt-target-popup hidden" role="dialog" aria-modal="false" aria-label="Select object to edit"></div>
   <div id="fusion-capability-modal" class="fusion-capability-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title">
@@ -2054,7 +2136,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-robot-arm-demo"></script>
+  <script type="module" src="/app.js?v=20260715-wiring-stepper-remix"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

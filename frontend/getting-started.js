@@ -3,8 +3,8 @@
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-robot-arm";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-robot-arm";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
-import { createRenderAgent } from "./render-agent.js?v=20260715-docs-no-close-fab";
-import { startShowMe } from "./show-me-tour.js?v=20260715-robot-arm";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-agent-lower";
+import { startShowMe } from "./show-me-tour.js?v=20260715-wiring-stepper-remix";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 const FEATURES = GETTING_STARTED_GUIDES;
@@ -88,6 +88,18 @@ function matchScore(text, query) {
     else if (token.length > 3 && hay.includes(token.slice(0, -1))) score += 1;
   }
   return score;
+}
+
+const searchStreakTimers = new WeakMap();
+
+function triggerSearchStreak(input) {
+  const shell = input?.closest?.(".docs-topic-search");
+  if (!shell) return;
+  shell.classList.remove("is-searching");
+  void shell.offsetWidth;
+  shell.classList.add("is-searching");
+  window.clearTimeout(searchStreakTimers.get(shell));
+  searchStreakTimers.set(shell, window.setTimeout(() => shell.classList.remove("is-searching"), 1000));
 }
 
 function guideSearchText(feature) {
@@ -252,7 +264,7 @@ function mountToc() {
     .join("");
   host.innerHTML = `
     <p class="gs-toc-title">On this page</p>
-    <a class="gs-toc-docs" href="/docs.html#complete-docs">Complete documentation</a>
+    <a class="gs-toc-docs" href="/docs.html#complete-docs">Full Documentation</a>
     ${sectionHtml}
     ${extraLinks ? `<div class="gs-toc-group"><p class="gs-toc-group-title">More</p>${extraLinks}</div>` : ""}
     <div class="gs-toc-group">
@@ -356,7 +368,10 @@ function mountTopicSearch() {
         : "Type what you are trying to do and matching guides/tips stay visible.";
     }
   };
-  input.addEventListener("input", apply);
+  input.addEventListener("input", () => {
+    triggerSearchStreak(input);
+    apply();
+  });
 }
 
 function askTour(agent, authUi, question) {

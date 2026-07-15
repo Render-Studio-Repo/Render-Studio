@@ -516,6 +516,31 @@ function renderDashboard(root, data) {
     </section>
 
     <section class="admin-panel admin-panel--feedback-inbox">
+      <div class="admin-alert-tabs" role="tablist" aria-label="Management inbox tabs">
+        <button type="button" class="admin-alert-tab active" role="tab" aria-selected="true">New user alerts</button>
+        <a class="admin-alert-tab" role="tab" href="#admin-feedback-list">Suggestions & bugs</a>
+      </div>
+      <div class="admin-agent-head">
+        <div>
+          <h3>New user alerts</h3>
+          <p class="muted small admin-panel-hint">Realtime signup notifications for admins. Check, contact, or dismiss after review.</p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-new-user-refresh">Refresh</button>
+      </div>
+      <div class="admin-agent-stats" id="admin-new-user-stats">
+        <span class="admin-pill"><strong>Loading…</strong></span>
+      </div>
+      <div id="admin-new-user-list" class="admin-feedback-list">
+        <p class="muted small">Loading new user alerts…</p>
+      </div>
+      <div id="admin-onboarding-template"></div>
+    </section>
+
+    <section class="admin-panel admin-panel--feedback-inbox">
+      <div class="admin-alert-tabs" role="tablist" aria-label="Management inbox tabs">
+        <a class="admin-alert-tab" role="tab" href="#admin-new-user-list">New user alerts</a>
+        <button type="button" class="admin-alert-tab active" role="tab" aria-selected="true">Suggestions & bugs</button>
+      </div>
       <div class="admin-agent-head">
         <div>
           <h3>Suggestions & bug reports</h3>
@@ -548,8 +573,12 @@ function renderDashboard(root, data) {
   root.querySelector("#admin-feedback-refresh")?.addEventListener("click", () => {
     void loadFeedbackInbox(root);
   });
+  root.querySelector("#admin-new-user-refresh")?.addEventListener("click", () => {
+    void loadNewUserAlerts(root);
+  });
   void loadRenderAgentActivity(root);
   void loadGettingStartedApprovals(root);
+  void loadNewUserAlerts(root);
   void loadFeedbackInbox(root);
   const search = root.querySelector("#admin-user-search");
   const lookupList = root.querySelector("#admin-user-lookup-list");
@@ -642,6 +671,30 @@ function renderFeedbackRows(items = []) {
           <button type="button" class="btn accent btn-compact" data-feedback-review="approved">Approve</button>
           <button type="button" class="btn secondary btn-compact" data-feedback-review="checked">Check</button>
           <button type="button" class="btn secondary btn-compact" data-feedback-review="denied">Deny</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderNewUserRows(items = []) {
+  if (!items.length) return `<p class="muted small">No new user alerts yet.</p>`;
+  return items.map((item) => {
+    const unread = item.unread ? `<span class="admin-feedback-unread">Unread</span>` : "";
+    return `
+      <article class="admin-feedback-row admin-feedback-row--new-user" data-new-user-alert-id="${escapeHtml(item.id)}">
+        <div class="admin-feedback-head">
+          <div>
+            <strong>New user signup ${unread}</strong>
+            <span class="muted small">${escapeHtml(item.user_name || "User")} · ${escapeHtml(item.user_email || "")} · ${formatDate(item.created_at)}</span>
+          </div>
+          <span class="admin-feedback-status">${escapeHtml(item.status || "new")}</span>
+        </div>
+        <p>${escapeHtml(item.user_name || "A new user")} created an account from ${escapeHtml(item.source || "signup")}.</p>
+        <div class="admin-gs-pending-actions">
+          <button type="button" class="btn accent btn-compact" data-new-user-review="contacted">Contacted</button>
+          <button type="button" class="btn secondary btn-compact" data-new-user-review="checked">Check</button>
+          <button type="button" class="btn secondary btn-compact" data-new-user-review="dismissed">Dismiss</button>
         </div>
       </article>
     `;
@@ -765,6 +818,62 @@ async function loadFeedbackInbox(root) {
   } catch (err) {
     statsEl.innerHTML = "";
     listEl.innerHTML = `<p class="muted small">Could not load feedback requests: ${escapeHtml(err.message || "error")}</p>`;
+  }
+}
+
+async function loadNewUserAlerts(root) {
+  const statsEl = root.querySelector("#admin-new-user-stats");
+  const listEl = root.querySelector("#admin-new-user-list");
+  const templateEl = root.querySelector("#admin-onboarding-template");
+  if (!statsEl || !listEl) return;
+  statsEl.innerHTML = `<span class="admin-pill"><strong>Loading…</strong></span>`;
+  listEl.innerHTML = `<p class="muted small">Loading new user alerts…</p>`;
+  try {
+    const data = await api("/api/admin/new-users?status=all&limit=120&mark_read=true");
+    const summary = data.summary || {};
+    statsEl.innerHTML = `
+      <span class="admin-pill"><strong>Unread</strong><em>${formatNumber(summary.unread_count)}</em></span>
+      <span class="admin-pill"><strong>Open</strong><em>${formatNumber(summary.open_count)}</em></span>
+      <span class="admin-pill"><strong>Total</strong><em>${formatNumber(summary.total_count)}</em></span>
+    `;
+    listEl.innerHTML = renderNewUserRows(data.alerts || []);
+    listEl.querySelectorAll("[data-new-user-review]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("[data-new-user-alert-id]");
+        const id = row?.getAttribute("data-new-user-alert-id");
+        const status = btn.getAttribute("data-new-user-review");
+        if (!id || !status) return;
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/new-users/${encodeURIComponent(id)}`, {
+            method: "POST",
+            body: JSON.stringify({ status }),
+          });
+          void loadNewUserAlerts(root);
+        } catch (err) {
+          btn.disabled = false;
+          alert(err.message || "Review failed");
+        }
+      });
+    });
+    if (templateEl) {
+      try {
+        const templateData = await api("/api/admin/onboarding-email/template");
+        const template = templateData.template || {};
+        templateEl.innerHTML = `
+          <details class="admin-feedback-details">
+            <summary>Preview onboarding email template</summary>
+            <p class="muted small"><strong>${escapeHtml(template.subject || "Welcome email")}</strong></p>
+            <pre>${escapeHtml(template.text || "")}</pre>
+          </details>
+        `;
+      } catch {
+        templateEl.innerHTML = "";
+      }
+    }
+  } catch (err) {
+    statsEl.innerHTML = "";
+    listEl.innerHTML = `<p class="muted small">Could not load new user alerts: ${escapeHtml(err.message || "error")}</p>`;
   }
 }
 

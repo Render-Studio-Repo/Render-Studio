@@ -11,7 +11,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-marketplace-fx" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
 </head>
 <body class="info-page marketplace-hub-page marketplace-futuristic">
   <div class="marketplace-fx" aria-hidden="true">
@@ -79,32 +81,98 @@
         <header class="info-hero marketplace-hub-hero">
           <p class="info-eyebrow marketplace-eyebrow">Render3D · Live Catalog</p>
           <h2 class="marketplace-title">Product Marketplace</h2>
-          <p class="info-lead marketplace-lead">Browse and publish 3D models, knowledge bases, and agent apps with shared licensing, access, download, review, and boost options.</p>
+          <p class="info-lead marketplace-lead">Browse and publish 3D models, knowledge bases, and agent apps. Set prices, connect Stripe or PayPal, and keep 90% of every sale.</p>
         </header>
 
-        <div class="marketplace-choice-grid">
-          <a class="marketplace-choice marketplace-choice--models" href="/model-store.html">
-            <span class="marketplace-choice-kicker">3D Models</span>
-            <strong>3D Model Products</strong>
-            <p>Upload models, write product posts, add members, toggle downloads, choose licenses, price them, filter the catalog, and request boosts.</p>
-            <span class="marketplace-choice-cta">Open model products</span>
-          </a>
-          <a class="marketplace-choice marketplace-choice--knowledge" href="/knowledge-store.html">
-            <span class="marketplace-choice-kicker">Knowledge Bases</span>
-            <strong>Knowledge Base Center</strong>
-            <p>Package docs, PDFs, CAD references, prompts, setup guides, and project context as marketable knowledge products.</p>
-            <span class="marketplace-choice-cta">Open knowledge bases</span>
-          </a>
-          <a class="marketplace-choice marketplace-choice--agents" href="/agent-store.html">
-            <span class="marketplace-choice-kicker">Agents</span>
-            <strong>Agent Store</strong>
-            <p>Install skills, workflows, connectors, and tools. Submit apps, set licensing, free/paid/view-only access, and apply for a boost.</p>
-            <span class="marketplace-choice-cta">Open agent apps</span>
-          </a>
+        <nav class="marketplace-hub-tabs docs-category-tabs" aria-label="Marketplace sections">
+          <button type="button" class="docs-category-tab active" data-mkt-tab="catalog">Catalog</button>
+          <button type="button" class="docs-category-tab" data-mkt-tab="readme" id="payments-readme-tab">Payments README</button>
+        </nav>
+
+        <section id="mkt-panel-readme" class="marketplace-readme" hidden>
+          <h3>Payments README</h3>
+          <p>Render3D marketplace checkout uses <strong>Stripe</strong> (including <strong>Link</strong> one-click pay) so buyers can purchase agents, knowledge bases, and 3D models securely. Sellers connect a bank account through Stripe Express, or save a PayPal email for payout preference.</p>
+
+          <h4>Platform split</h4>
+          <p>Every paid listing takes a flat <strong>10% platform fee</strong>. The remaining <strong>90%</strong> goes to the seller.</p>
+          <table class="marketplace-split-table">
+            <thead>
+              <tr><th>Buyer pays</th><th>Render3D (10%)</th><th>Seller (90%)</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>$10.00</td><td>$1.00</td><td>$9.00</td></tr>
+              <tr><td>$25.00</td><td>$2.50</td><td>$22.50</td></tr>
+              <tr><td>$100.00</td><td>$10.00</td><td>$90.00</td></tr>
+            </tbody>
+          </table>
+
+          <h4>How sellers get paid</h4>
+          <ul>
+            <li><strong>Stripe / bank</strong> — Connect Express onboarding links your bank. Card &amp; Link checkouts transfer net proceeds after the 10% fee.</li>
+            <li><strong>PayPal</strong> — Save the PayPal email you want payouts associated with. Use it alongside Stripe while bank onboarding completes.</li>
+            <li><strong>Free &amp; view-only</strong> — No fee. Paid mode requires a connected payout method before you publish for sale.</li>
+          </ul>
+
+          <h4>Buyer checkout</h4>
+          <ul>
+            <li>Paid items open Stripe Checkout with <strong>card</strong> and <strong>Link</strong>.</li>
+            <li>After payment, agent installs unlock automatically; model/knowledge downloads follow the listing’s download toggle.</li>
+            <li>Minimum paid price is <strong>$1.00</strong> (100 cents).</li>
+          </ul>
+
+          <div id="marketplace-seller-host"></div>
+        </section>
+
+        <div id="mkt-panel-catalog">
+          <div class="marketplace-choice-grid">
+            <a class="marketplace-choice marketplace-choice--models" href="/model-store.html">
+              <span class="marketplace-choice-kicker">3D Models</span>
+              <strong>3D Model Products</strong>
+              <p>Upload models, write product posts, add members, toggle downloads, choose licenses, price them, filter the catalog, and request boosts.</p>
+              <span class="marketplace-choice-cta">Open model products</span>
+            </a>
+            <a class="marketplace-choice marketplace-choice--knowledge" href="/knowledge-store.html">
+              <span class="marketplace-choice-kicker">Knowledge Bases</span>
+              <strong>Knowledge Base Center</strong>
+              <p>Package docs, PDFs, CAD references, prompts, setup guides, and project context as marketable knowledge products.</p>
+              <span class="marketplace-choice-cta">Open knowledge bases</span>
+            </a>
+            <a class="marketplace-choice marketplace-choice--agents" href="/agent-store.html">
+              <span class="marketplace-choice-kicker">Agents</span>
+              <strong>Agent Store</strong>
+              <p>Install skills, workflows, connectors, and tools. Submit apps, set licensing, free/paid/view-only access, and apply for a boost.</p>
+              <span class="marketplace-choice-cta">Open agent apps</span>
+            </a>
+          </div>
         </div>
       </article>
     </main>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script type="module">
+    import { mountSellerPanel } from "/marketplace-payments.js?v=20260715-mkt-payments";
+
+    const catalog = document.getElementById("mkt-panel-catalog");
+    const readme = document.getElementById("mkt-panel-readme");
+    const tabs = document.querySelectorAll("[data-mkt-tab]");
+
+    function showTab(id) {
+      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.mktTab === id));
+      catalog.hidden = id !== "catalog";
+      readme.hidden = id !== "readme";
+      if (id === "readme") {
+        history.replaceState({}, "", "#payments-readme");
+      } else if (location.hash === "#payments-readme") {
+        history.replaceState({}, "", location.pathname + location.search);
+      }
+    }
+
+    tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.mktTab)));
+    mountSellerPanel(document.getElementById("marketplace-seller-host"));
+
+    if (location.hash === "#payments-readme" || /seller=|purchase=/.test(location.search)) {
+      showTab("readme");
+    }
+  </script>
 </body>
 </html>

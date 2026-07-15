@@ -1,0 +1,268 @@
+/* Shared slick button / tab motion for Docs + Product Marketplace */
+
+:root {
+  --ui-motion: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.info-page .btn,
+.info-page .docs-category-tab,
+.info-page .welcome-action,
+.info-page .gs-hero-actions .btn,
+.info-page .docs-hero-actions .btn,
+.marketplace-futuristic .btn,
+.marketplace-futuristic .marketplace-choice-cta,
+.marketplace-futuristic .docs-category-tab {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform 0.28s var(--ui-motion),
+    box-shadow 0.28s var(--ui-motion),
+    border-color 0.28s var(--ui-motion),
+    background 0.28s var(--ui-motion),
+    color 0.22s ease,
+    filter 0.28s var(--ui-motion);
+  will-change: transform;
+}
+
+.info-page .btn::after,
+.info-page .docs-category-tab::after,
+.marketplace-futuristic .btn::after,
+.marketplace-futuristic .marketplace-choice-cta::after {
+  content: "";
+  position: absolute;
+  inset: -40% auto -40% -40%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: translateX(-120%) skewX(-18deg);
+  transition: none;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.info-page .btn:hover::after,
+.info-page .docs-category-tab:hover::after,
+.marketplace-futuristic .btn:hover::after,
+.marketplace-futuristic .marketplace-choice-cta:hover::after {
+  animation: ui-btn-sheen 0.7s var(--ui-motion);
+}
+
+@keyframes ui-btn-sheen {
+  to { transform: translateX(420%) skewX(-18deg); }
+}
+
+.info-page .btn:hover,
+.info-page .gs-hero-actions .btn:hover,
+.info-page .docs-hero-actions .btn:hover,
+.marketplace-futuristic .btn:hover {
+  transform: translateY(-2px) scale(1.015);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(125, 211, 252, 0.18);
+}
+
+.info-page .btn:active,
+.marketplace-futuristic .btn:active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 0.12s;
+}
+
+.info-page .btn.accent,
+.info-page .btn.primary,
+.marketplace-futuristic .btn.primary {
+  box-shadow: 0 8px 22px rgba(31, 122, 240, 0.22);
+}
+
+.info-page .btn.accent:hover,
+.info-page .btn.primary:hover,
+.marketplace-futuristic .btn.primary:hover {
+  filter: saturate(1.08) brightness(1.04);
+  box-shadow: 0 14px 30px rgba(31, 122, 240, 0.34);
+}
+
+.info-page .docs-category-tab {
+  border-radius: 999px;
+}
+
+.info-page .docs-category-tab:hover {
+  transform: translateY(-1px);
+}
+
+.info-page .docs-category-tab.active {
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.45), 0 8px 20px rgba(88, 166, 255, 0.18);
+  animation: ui-tab-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes ui-tab-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.4), 0 8px 18px rgba(88, 166, 255, 0.14); }
+  50% { box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.65), 0 10px 26px rgba(88, 166, 255, 0.26); }
+}
+
+.info-page .welcome-action {
+  transition: transform 0.3s var(--ui-motion), border-color 0.25s ease, box-shadow 0.3s var(--ui-motion), background 0.25s ease;
+}
+
+.info-page .welcome-action:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
+.info-page .welcome-action--primary {
+  animation: ui-primary-glow 3s ease-in-out infinite;
+}
+
+@keyframes ui-primary-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.35), 0 10px 28px rgba(249, 115, 22, 0.18); }
+  50% { box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.55), 0 14px 34px rgba(249, 115, 22, 0.3); }
+}
+
+.marketplace-futuristic .marketplace-choice {
+  transition: transform 0.35s var(--ui-motion), border-color 0.25s ease, box-shadow 0.35s var(--ui-motion);
+}
+
+.marketplace-futuristic .marketplace-choice:hover {
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(61, 231, 255, 0.28);
+}
+
+.marketplace-futuristic .marketplace-choice-cta {
+  display: inline-flex;
+  margin-top: 14px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(61, 231, 255, 0.4);
+  background: linear-gradient(135deg, rgba(61, 231, 255, 0.2), rgba(31, 122, 240, 0.18));
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.marketplace-hub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 22px;
+}
+
+.marketplace-hub-tabs .docs-category-tab {
+  text-decoration: none;
+}
+
+.marketplace-readme {
+  margin: 8px 0 28px;
+  padding: 22px 22px 8px;
+  border-radius: 18px;
+  border: 1px solid rgba(61, 231, 255, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(61, 231, 255, 0.12), transparent 42%),
+    rgba(8, 14, 24, 0.82);
+  animation: ui-panel-in 0.45s var(--ui-motion);
+}
+
+.marketplace-readme[hidden] {
+  display: none !important;
+}
+
+@keyframes ui-panel-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.marketplace-readme h3 {
+  margin: 0 0 8px;
+  font-family: "Orbitron", "Sora", sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.marketplace-readme h4 {
+  margin: 18px 0 8px;
+  font-size: 0.95rem;
+  color: #9bd7ff;
+}
+
+.marketplace-readme p,
+.marketplace-readme li {
+  color: #b7c7d8;
+  line-height: 1.55;
+}
+
+.marketplace-readme ul {
+  margin: 0 0 12px;
+  padding-left: 1.2rem;
+}
+
+.marketplace-split-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 18px;
+  font-size: 0.86rem;
+}
+
+.marketplace-split-table th,
+.marketplace-split-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(61, 231, 255, 0.14);
+  text-align: left;
+}
+
+.marketplace-split-table th {
+  color: #8fa3b8;
+  font-weight: 650;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.marketplace-seller-panel {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 8px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(61, 231, 255, 0.2);
+  background: rgba(4, 10, 18, 0.72);
+}
+
+.marketplace-seller-panel .seller-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.marketplace-seller-status {
+  font-size: 0.82rem;
+  color: #8fa3b8;
+}
+
+.marketplace-seller-status.is-ready {
+  color: #3fb950;
+}
+
+.marketplace-fee-hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: #8fa3b8;
+}
+
+.marketplace-fee-hint strong {
+  color: #7dd3fc;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info-page .btn,
+  .info-page .docs-category-tab,
+  .info-page .welcome-action,
+  .marketplace-futuristic .btn,
+  .marketplace-futuristic .marketplace-choice,
+  .info-page .docs-category-tab.active,
+  .info-page .welcome-action--primary {
+    animation: none !important;
+    transition: none !important;
+  }
+  .info-page .btn::after,
+  .marketplace-futuristic .btn::after {
+    display: none;
+  }
+}

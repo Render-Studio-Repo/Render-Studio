@@ -112,9 +112,11 @@ const SHOW_ME_TOURS = {
   },
   wiring: {
     title: "Wiring Simulator",
-    example: "Wire this enclosure for an ESP32, motor driver, and limit switches",
+    example: "Arduino Uno drives a 28BYJ-48 stepper through a ULN2003 driver",
     studioPath: "/?designTab=WIRING&showMe=wiring",
     gif: "/docs/media/wiring.gif?v=20260715-real",
+    remixAction: "wiring-stepper",
+    remixLabel: "Remix Arduino stepper into my folder",
     steps: [
       { selector: "#workspace-mode-btn", label: "Open workspace modes", click: true },
       {
@@ -124,9 +126,10 @@ const SHOW_ME_TOURS = {
         click: true,
         ensureMenu: true,
       },
-      { selector: "#project-browser, .browser-section, .file-browser", label: "Drag a 3D component from here", click: false },
-      { selector: "#wiring-prompt-input, #wiring-prompt-panel, .wiring-prompt-panel", label: "Drop it into the Wiring prompt", click: false },
-      { selector: "#wiring-workspace, #wiring-canvas, .wiring-canvas, .wiring-stage", label: "Or drop onto the wiring board", click: false },
+      { selector: "#btn-wiring-toolbelt-demo-stepper", label: "Load the Arduino → Stepper example", click: true },
+      { selector: "#wiring-viewport, #wiring-workspace, .wiring-canvas", label: "Arduino, ULN2003 driver, and 28BYJ-48 stepper appear on the board", click: false },
+      { selector: "#btn-wiring-code", label: "Open Code & Simulate to generate/run the control sketch", click: false },
+      { selector: "#btn-wiring-run-schematic", label: "Run schematic to animate and validate the circuit", click: false },
     ],
   },
   "cloud-sync": {
@@ -250,6 +253,7 @@ function ensureOverlay() {
         <p id="show-me-step" class="show-me-step"></p>
         <div class="show-me-actions">
           <button type="button" class="btn secondary btn-compact" id="show-me-skip">Skip</button>
+          <button type="button" class="btn secondary btn-compact hidden" id="show-me-remix">Remix example</button>
           <button type="button" class="btn accent btn-compact" id="show-me-next">Next</button>
         </div>
       </div>
@@ -261,6 +265,7 @@ function ensureOverlay() {
     el.querySelector(".show-me-close")?.addEventListener("click", stopShowMe);
     el.querySelector("#show-me-skip")?.addEventListener("click", onSkipClick);
     el.querySelector("#show-me-next")?.addEventListener("click", onNextClick);
+    el.querySelector("#show-me-remix")?.addEventListener("click", onRemixClick);
   }
   return el;
 }
@@ -288,6 +293,7 @@ function stopShowMe() {
   stepIndex = 0;
   overlayMode = "studio";
   document.getElementById("show-me-overlay")?.classList.add("hidden");
+  document.getElementById("show-me-remix")?.classList.add("hidden");
   if (resizeHandler) {
     window.removeEventListener("resize", resizeHandler);
     resizeHandler = null;
@@ -492,6 +498,30 @@ function onNextClick() {
   advanceShowMe(false);
 }
 
+async function runRemixAction() {
+  if (!activeTour?.remixAction) return;
+  const remixBtn = document.getElementById("show-me-remix");
+  const stepEl = document.getElementById("show-me-step");
+  try {
+    if (remixBtn) remixBtn.disabled = true;
+    if (stepEl) stepEl.textContent = "Creating a remix project in your folder...";
+    if (activeTour.remixAction === "wiring-stepper" && typeof window.__remixWiringStepperExample === "function") {
+      await window.__remixWiringStepperExample();
+      if (stepEl) stepEl.textContent = "Remixed. The Arduino stepper project is open in your folder.";
+      setTimeout(stopShowMe, 900);
+      return;
+    }
+    throw new Error("This example cannot be remixed yet.");
+  } catch (err) {
+    if (stepEl) stepEl.textContent = err?.message || "Could not remix this example.";
+    if (remixBtn) remixBtn.disabled = false;
+  }
+}
+
+function onRemixClick() {
+  void runRemixAction();
+}
+
 function onSkipClick() {
   if (overlayMode === "docs") {
     if (activeTour?.gif || document.getElementById(activeGuideId)?.querySelector("img[src*='.gif']")) {
@@ -504,11 +534,36 @@ function onSkipClick() {
   advanceShowMe(true);
 }
 
+function showTourComplete() {
+  if (!activeTour) {
+    stopShowMe();
+    return;
+  }
+  fillExample(activeTour.example);
+  clearHighlight();
+  const stepEl = document.getElementById("show-me-step");
+  const nextBtn = document.getElementById("show-me-next");
+  const skipBtn = document.getElementById("show-me-skip");
+  const remixBtn = document.getElementById("show-me-remix");
+  if (stepEl) {
+    stepEl.textContent = activeTour.remixAction
+      ? "Example complete. Remix it into your folder to keep editing from your own project."
+      : "Example complete.";
+  }
+  if (nextBtn) nextBtn.textContent = "Close";
+  if (skipBtn) skipBtn.classList.add("hidden");
+  if (remixBtn) {
+    remixBtn.textContent = activeTour.remixLabel || "Remix example";
+    remixBtn.disabled = false;
+    remixBtn.classList.toggle("hidden", !activeTour.remixAction);
+  }
+}
+
 function syncNextLabel() {
   const nextBtn = document.getElementById("show-me-next");
   if (!nextBtn || !activeTour) return;
   const steps = activeTour.steps || [];
-  if (stepIndex >= steps.length) nextBtn.textContent = "Done";
+  if (stepIndex >= steps.length) nextBtn.textContent = activeTour.remixAction ? "Finish" : "Done";
   else nextBtn.textContent = `Next (${stepIndex + 1}/${steps.length})`;
 }
 
@@ -654,8 +709,11 @@ function advanceShowMe(skipClick) {
   }
   const steps = activeTour.steps || [];
   if (stepIndex >= steps.length) {
-    fillExample(activeTour.example);
-    stopShowMe();
+    if (document.getElementById("show-me-remix")?.classList.contains("hidden") && activeTour.remixAction) {
+      showTourComplete();
+    } else {
+      stopShowMe();
+    }
     return;
   }
   const step = steps[stepIndex];
@@ -698,7 +756,7 @@ function advanceShowMe(skipClick) {
   if (stepIndex >= steps.length) {
     fillExample(activeTour.example);
     const nextBtn = document.getElementById("show-me-next");
-    if (nextBtn) nextBtn.textContent = "Done";
+    if (nextBtn) nextBtn.textContent = activeTour.remixAction ? "Finish" : "Done";
   }
 }
 
@@ -719,6 +777,8 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
   stepIndex = 0;
   overlay?.classList.remove("hidden");
   document.getElementById("show-me-title").textContent = tour.title;
+  document.getElementById("show-me-remix")?.classList.add("hidden");
+  document.getElementById("show-me-skip")?.classList.remove("hidden");
 
   if (!resizeHandler) {
     resizeHandler = () => {

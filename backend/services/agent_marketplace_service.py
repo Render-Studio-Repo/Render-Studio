@@ -287,8 +287,13 @@ def install_listing(user_id: str, app_id_or_slug: str) -> dict[str, Any]:
         raise ValueError("Listing not found.")
     if listing.get("access_mode") == "view_only":
         raise PermissionError("This listing is view-only and cannot be installed.")
-    if listing.get("access_mode") == "paid" or listing["premium"] or listing["price_cents"] > 0:
-        raise PermissionError("Purchase is required before installing this app.")
+    paid = listing.get("access_mode") == "paid" or listing["premium"] or listing["price_cents"] > 0
+    if paid:
+        from backend.services import marketplace_payments_service as payments
+
+        owner_id = listing.get("created_by") or (listing.get("owner") or {}).get("id")
+        if owner_id != user_id and not payments.has_entitlement(user_id, "agent", listing["id"]):
+            raise PermissionError("Purchase is required before installing this app.")
     with get_conn() as conn:
         conn.execute(
             """

@@ -1,4 +1,4 @@
-import { getShowMeTour, startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle3";
+import { getShowMeTour, startShowMe } from "./show-me-tour.js?v=20260715-wiring-stepper-remix";
 
 function initRoadmapShowMe() {
   document.querySelectorAll("[data-show-me], [data-doc-link]").forEach((btn) => {
