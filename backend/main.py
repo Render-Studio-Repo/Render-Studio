@@ -3541,7 +3541,9 @@ RENDER_AGENT_SYSTEM_PROMPT = """You are Render Agent, the in-app support assista
 Answer practical questions about Render3D tooling, CAD workflows, Fusion 360/Onshape sync, file uploads,
 AI model generation, sketches, wiring diagrams, BOMs, project folders, permissions, and troubleshooting.
 Be concise and action-oriented. If the user asks for destructive actions, explain the safe workflow first.
-You can use attached images and text snippets as context. You cannot directly edit files from this chat."""
+You can use attached images and text snippets as context. You cannot directly edit files from this chat.
+When Getting Started documentation matches the question, follow those official steps and mention that a
+looping demo GIF is shown in the chat when one is attached."""
 
 
 def _render_agent_project_context(project_id: str | None, user: dict[str, Any]) -> dict[str, Any] | None:
@@ -3576,6 +3578,7 @@ def _render_agent_user_content(
     thread: dict[str, Any],
     project_context: dict[str, Any] | None,
     attachments: list[RenderAgentAttachment],
+    guide_context: str | None = None,
 ) -> str:
     history = [
         {"role": item.get("role"), "content": str(item.get("content") or "")[:1400]}
@@ -3596,10 +3599,13 @@ def _render_agent_user_content(
         "current_project": project_context,
         "text_attachments": text_attachments,
     }
-    return (
+    parts = [
         f"User question:\n{message}\n\n"
         f"Render3D context JSON:\n{json.dumps(context, separators=(',', ':'), default=str)}"
-    )
+    ]
+    if guide_context:
+        parts.append(f"\n\n{guide_context}")
+    return "".join(parts)
 
 
 @app.get("/api/render-agent/threads")
@@ -3629,7 +3635,7 @@ def get_render_agent_thread(thread_id: str, user: dict[str, Any] = Depends(get_c
 
 @app.post("/api/render-agent/messages")
 def render_agent_message(body: RenderAgentMessageRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
-    from backend.services import render_agent_service
+    from backend.services import getting_started_guides, render_agent_service
 
     thread = render_agent_service.get_thread(user["id"], body.thread_id or "") if body.thread_id else None
     if not thread:
@@ -3644,11 +3650,15 @@ def render_agent_message(body: RenderAgentMessageRequest, request: Request, user
     attachments = body.attachments[:6]
     project_context = _render_agent_project_context(body.project_id, user)
     trace_id = getattr(request.state, "trace_id", new_trace_id())
+    matched_guides = getting_started_guides.match_guides(body.message, limit=2)
+    guide_media = getting_started_guides.media_for_guides(matched_guides)
+    guide_context = getting_started_guides.guide_context_block(matched_guides)
     user_content = _render_agent_user_content(
         body.message,
         thread=thread,
         project_context=project_context,
         attachments=attachments,
+        guide_context=guide_context or None,
     )
     images = [
         item.model_dump()
@@ -3680,7 +3690,20 @@ def render_agent_message(body: RenderAgentMessageRequest, request: Request, user
             for item in attachments
         ],
     }
-    assistant_message = {"role": "assistant", "content": answer, "attachments": []}
+    assistant_message = {
+        "role": "assistant",
+        "content": answer,
+        "attachments": [],
+        "media": guide_media,
+        "guides": [
+            {
+                "id": g.get("id"),
+                "title": g.get("title"),
+                "summary": g.get("summary"),
+            }
+            for g in matched_guides
+        ],
+    }
     updated = render_agent_service.append_messages(user["id"], thread["id"], [user_message, assistant_message])
     return {
         "thread": updated,

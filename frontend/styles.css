@@ -21974,3 +21974,239 @@ body.theme-light .render-agent-tip {
 .render-agent-status.error {
   color: #ff7b72;
 }
+
+/* ── Getting Started docs ─────────────────────────────────────────────────── */
+
+.gs-page {
+  max-width: 980px;
+}
+
+.gs-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 28px;
+}
+
+.gs-toc a {
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.gs-toc a:hover {
+  border-bottom-color: currentColor;
+}
+
+.gs-features {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.gs-feature-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .gs-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gs-demo {
+  position: relative;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0d1117;
+  aspect-ratio: 16 / 10;
+}
+
+.gs-demo-gif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 2;
+  background: #0d1117;
+}
+
+.gs-demo.has-gif .gs-demo-stage {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gs-demo-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 8px;
+}
+
+.gs-demo-chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #8b949e;
+}
+
+.gs-demo-chrome span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #484f58;
+}
+
+.gs-demo-chrome em {
+  margin-left: 6px;
+  font-style: normal;
+}
+
+.gs-demo-body {
+  position: relative;
+  flex: 1;
+  border-radius: 10px;
+  border: 1px solid rgba(139, 148, 158, 0.2);
+  background: linear-gradient(160deg, #161b22, #0d1117);
+}
+
+.gs-summary {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.gs-detail-title {
+  margin: 16px 0 8px;
+  font-size: 0.9rem;
+}
+
+.gs-steps {
+  margin: 0 0 16px 1.1rem;
+  padding: 0;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.gs-steps li + li {
+  margin-top: 6px;
+}
+
+.gs-ask-btn {
+  display: inline-flex;
+}
+
+.gs-demo-label {
+  margin-top: 8px;
+}
+
+/* ── Render Agent sticky note + media ─────────────────────────────────────── */
+
+.render-agent-panel--sticky {
+  resize: none;
+  max-height: none;
+  height: min(640px, calc(100vh - 80px));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  border-color: rgba(210, 168, 255, 0.28);
+}
+
+.render-agent-panel--sticky .render-agent-head {
+  cursor: grab;
+  user-select: none;
+}
+
+.render-agent-panel--sticky.is-dragging .render-agent-head {
+  cursor: grabbing;
+}
+
+.render-agent-drag-hint {
+  color: #8b949e;
+  font-size: 0.95rem;
+  line-height: 1;
+  margin-right: 2px;
+  cursor: grab;
+}
+
+.render-agent-resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(139, 148, 158, 0.7) 50%) no-repeat bottom right / 12px 12px;
+  z-index: 3;
+}
+
+.render-agent-panel--docs .render-agent-people-row--docs {
+  display: none;
+}
+
+.render-agent-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10110;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  background: rgba(13, 17, 23, 0.94);
+  color: var(--text);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+}
+
+.render-agent-fab.hidden {
+  display: none;
+}
+
+.render-agent-fab img {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.render-agent-media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.render-agent-media {
+  margin: 0;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #010409;
+}
+
+.render-agent-media img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+.render-agent-media figcaption {
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  color: #8b949e;
+  border-top: 1px solid rgba(139, 148, 158, 0.2);
+}

@@ -63,7 +63,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realti
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-ask-agent";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-sticky";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";

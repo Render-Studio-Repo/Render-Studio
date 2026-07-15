@@ -5,9 +5,11 @@ import {
   getCurrentTip,
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-agent-tips-refresh";
+import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-gs-guides";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
+const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -63,6 +65,7 @@ export function createRenderAgent({
   getSelectedAiKey,
   onRequireLogin,
   onStatus,
+  stickyNote = true,
 } = {}) {
   const btn = document.getElementById("btn-render-agent");
   const panel = document.getElementById("render-agent-panel");
@@ -83,7 +86,7 @@ export function createRenderAgent({
   const fileInput = document.getElementById("render-agent-file-input");
   const statusEl = document.getElementById("render-agent-status");
 
-  if (!btn || !panel || !form || !messagesEl) return null;
+  if (!panel || !form || !messagesEl) return null;
 
   let threads = [];
   let activeThread = null;
@@ -151,6 +154,9 @@ export function createRenderAgent({
       return;
     }
     panel.classList.remove("hidden");
+    document.getElementById("render-agent-fab")?.classList.add("hidden");
+    ensureStickyNoteControls();
+    restoreStickyLayout();
     if (showOnboarding && onboarding) {
       onboarding.classList.remove("hidden");
       markOnboardingSeen();
@@ -169,12 +175,147 @@ export function createRenderAgent({
     }, 50);
   }
 
-  function openWithQuestion(question) {
-    open({ question: String(question || "").trim() });
+  async function openWithQuestion(question, { autoSend = false } = {}) {
+    const q = String(question || "").trim();
+    open({ question: q });
+    if (!q || !autoSend || !currentUserId()) return;
+    for (let i = 0; i < 24 && !activeThread?.id; i += 1) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (input) input.value = q;
+    await sendMessage();
   }
 
   function close() {
     panel.classList.add("hidden");
+    document.getElementById("render-agent-fab")?.classList.remove("hidden");
+  }
+
+  function toggle() {
+    if (panel.classList.contains("hidden")) open();
+    else close();
+  }
+
+  function readStickyLayout() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PANEL_LAYOUT_KEY) || "null");
+      return raw && typeof raw === "object" ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeStickyLayout(next) {
+    try {
+      localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function restoreStickyLayout() {
+    if (!stickyNote) return;
+    panel.classList.add("render-agent-panel--sticky");
+    const saved = readStickyLayout();
+    if (!saved) {
+      panel.style.left = "";
+      panel.style.top = "64px";
+      panel.style.right = "16px";
+      panel.style.width = "";
+      panel.style.height = "";
+      return;
+    }
+    if (saved.width) panel.style.width = `${Math.max(300, saved.width)}px`;
+    if (saved.height) panel.style.height = `${Math.max(320, saved.height)}px`;
+    if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      panel.style.right = "auto";
+      panel.style.left = `${saved.left}px`;
+      panel.style.top = `${saved.top}px`;
+    }
+  }
+
+  function ensureStickyNoteControls() {
+    if (!stickyNote || panel.dataset.stickyReady === "1") return;
+    panel.dataset.stickyReady = "1";
+    panel.classList.add("render-agent-panel--sticky");
+    const head = panel.querySelector(".render-agent-head");
+    if (head && !head.querySelector(".render-agent-drag-hint")) {
+      const hint = document.createElement("span");
+      hint.className = "render-agent-drag-hint";
+      hint.textContent = "⠿";
+      hint.title = "Drag to move";
+      head.insertBefore(hint, head.firstChild);
+    }
+    if (!panel.querySelector(".render-agent-resize")) {
+      const resize = document.createElement("div");
+      resize.className = "render-agent-resize";
+      resize.title = "Drag to resize";
+      panel.appendChild(resize);
+    }
+
+    let drag = null;
+    const onMove = (e) => {
+      if (!drag) return;
+      e.preventDefault();
+      if (drag.mode === "move") {
+        const left = Math.max(8, Math.min(window.innerWidth - 80, drag.startLeft + (e.clientX - drag.sx)));
+        const top = Math.max(8, Math.min(window.innerHeight - 80, drag.startTop + (e.clientY - drag.sy)));
+        panel.style.right = "auto";
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+      } else if (drag.mode === "resize") {
+        const width = Math.max(300, Math.min(window.innerWidth - 16, drag.startW + (e.clientX - drag.sx)));
+        const height = Math.max(320, Math.min(window.innerHeight - 16, drag.startH + (e.clientY - drag.sy)));
+        panel.style.width = `${width}px`;
+        panel.style.height = `${height}px`;
+        panel.style.maxHeight = "none";
+      }
+    };
+    const onUp = () => {
+      if (!drag) return;
+      drag = null;
+      panel.classList.remove("is-dragging");
+      writeStickyLayout({
+        left: parseFloat(panel.style.left) || null,
+        top: parseFloat(panel.style.top) || null,
+        width: panel.offsetWidth,
+        height: panel.offsetHeight,
+      });
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    head?.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest("button, a, input, select, textarea")) return;
+      const rect = panel.getBoundingClientRect();
+      drag = {
+        mode: "move",
+        sx: e.clientX,
+        sy: e.clientY,
+        startLeft: rect.left,
+        startTop: rect.top,
+      };
+      panel.classList.add("is-dragging");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+
+    panel.querySelector(".render-agent-resize")?.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      drag = {
+        mode: "resize",
+        sx: e.clientX,
+        sy: e.clientY,
+        startW: panel.offsetWidth,
+        startH: panel.offsetHeight,
+      };
+      panel.classList.add("is-dragging");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
   }
 
   function renderThreadMenu() {
@@ -407,11 +548,13 @@ export function createRenderAgent({
     messagesEl.innerHTML = `
       ${tipHtml}
       ${messages
-      .map((msg) => {
+      .map((msg, index) => {
         const fallbackSender = msg.role === "user" ? getCurrentUser?.() : { display_name: "Render Agent" };
         const sender = msg.sender || fallbackSender || {};
         const name = sender.display_name || (msg.role === "user" ? "You" : "Render Agent");
         const avatar = msg.role === "user" ? avatarHtml(sender) : agentLogoHtml();
+        const prevUser = [...messages.slice(0, index)].reverse().find((m) => m.role === "user");
+        const mediaHtml = renderMessageMedia(msg, prevUser?.content || "");
         return `
         <article class="render-agent-message render-agent-message--${esc(msg.role || "assistant")}">
           <header class="render-agent-message-head">
@@ -421,6 +564,7 @@ export function createRenderAgent({
               <small>${esc(msg.created_at ? new Date(msg.created_at).toLocaleString([], { hour: "2-digit", minute: "2-digit" }) : "")}</small>
             </div>
           </header>
+          ${mediaHtml}
           <div class="render-agent-message-content">${renderMessageText(msg.content || "")}</div>
         </article>
       `;
@@ -428,7 +572,32 @@ export function createRenderAgent({
       .join("")}
     `;
     bindTipActions(messagesEl);
+    messagesEl.querySelectorAll(".render-agent-media img").forEach((img) => {
+      img.addEventListener("error", () => img.closest(".render-agent-media")?.remove());
+    });
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function renderMessageMedia(msg, previousUserText = "") {
+    let media = Array.isArray(msg?.media) ? [...msg.media] : [];
+    if (!media.length && msg?.role === "assistant" && previousUserText) {
+      media = matchGettingStartedGuides(previousUserText, { limit: 1 })
+        .map(guideMediaPayload)
+        .filter(Boolean)
+        // Only show if the gif is already referenced in docs paths we know.
+        .filter((item) => item?.url);
+    }
+    if (!media.length) return "";
+    return `
+      <div class="render-agent-media-list">
+        ${media.map((item) => `
+          <figure class="render-agent-media">
+            <img src="${esc(item.url)}" alt="${esc(item.title || "Demo")}" loading="lazy" />
+            <figcaption>${esc(item.title || "Getting Started demo")}</figcaption>
+          </figure>
+        `).join("")}
+      </div>
+    `;
   }
 
   function renderAttachments() {
@@ -629,8 +798,9 @@ export function createRenderAgent({
     }
   }
 
-  btn.addEventListener("click", () => open());
+  btn?.addEventListener("click", () => open());
   closeBtn?.addEventListener("click", close);
+  document.getElementById("render-agent-fab")?.addEventListener("click", () => open());
   threadMenuBtn?.addEventListener("click", () => {
     const openMenu = threadPopover?.classList.toggle("hidden") === false;
     threadMenuBtn.setAttribute("aria-expanded", openMenu ? "true" : "false");
@@ -647,11 +817,13 @@ export function createRenderAgent({
   });
   renderAgentSource();
   renderInviteOptions();
+  ensureStickyNoteControls();
 
   return {
     open,
     openWithQuestion,
     close,
+    toggle,
     setUser(user) {
       if (user && shouldShowOnboarding()) open({ onboarding: true });
     },

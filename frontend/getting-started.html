@@ -8,7 +8,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-getting-started" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-gs-agent-sticky" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -32,6 +32,11 @@
           <a href="/roadmap.html" class="nav-tab" role="menuitem">Roadmap</a>
         </div>
       </nav>
+      <div class="toolbar-spacer"></div>
+      <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Sign in">
+        <span class="auth-icon" aria-hidden="true">👤</span>
+        <span id="auth-avatar" class="auth-avatar hidden" aria-hidden="true"></span>
+      </button>
     </header>
 
     <main class="info-main">
@@ -41,7 +46,7 @@
           <h2>Learn Render3D in minutes</h2>
           <p class="info-lead">
             Browse each feature below: watch a quick looping demo, read the steps, then
-            <strong>Ask Render Agent</strong> for a guided answer in Studio.
+            <strong>Ask Render Agent</strong> — a sticky chat opens on the right so you can keep reading.
           </p>
           <p class="gs-doc-links muted small">
             <a href="/docs.html">Full documentation</a>
@@ -62,16 +67,15 @@
           <a href="#render-agent">Render Agent</a>
         </nav>
 
-        <!-- Feature cards injected + static fallbacks -->
         <div id="gs-features" class="gs-features"></div>
 
         <section class="info-section">
           <h3>Need something else?</h3>
           <p>
-            Open Studio and click <strong>Agent</strong> in the ribbon, or jump straight in:
+            Open the sticky Render Agent note anytime, or jump into Studio:
           </p>
           <p>
-            <a class="btn accent" href="/?askAgent=Give%20me%20a%20tour%20of%20Render3D%20for%20a%20new%20user">Ask Render Agent for a tour</a>
+            <a class="btn accent" id="gs-ask-tour" href="#">Ask Render Agent for a tour</a>
             <a class="btn secondary" href="/docs.html">Browse full docs</a>
           </p>
         </section>
@@ -79,7 +83,82 @@
     </main>
   </div>
 
+  <button type="button" id="render-agent-fab" class="render-agent-fab" title="Ask Render Agent" aria-label="Ask Render Agent">
+    <img src="/render3d-logo.png?v=20260715-new-logo" alt="" />
+    <span>Ask Agent</span>
+  </button>
+
+  <section id="render-agent-panel" class="render-agent-panel render-agent-panel--docs hidden" aria-label="Render Agent assistant">
+    <header class="render-agent-head">
+      <button type="button" id="render-agent-thread-menu" class="render-agent-menu-btn" aria-label="Open Render Agent threads" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="render-agent-title">
+        <strong>Render Agent</strong>
+        <span id="render-agent-active-thread-label">Sticky help note — drag or resize freely</span>
+      </div>
+      <img class="render-agent-head-logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
+      <button type="button" id="render-agent-close" class="render-agent-close" aria-label="Close Render Agent">&times;</button>
+    </header>
+    <div id="render-agent-thread-popover" class="render-agent-thread-popover hidden">
+      <div id="render-agent-thread-list" class="render-agent-thread-list"></div>
+      <button type="button" id="render-agent-new-thread" class="btn secondary btn-compact">New</button>
+    </div>
+    <div class="render-agent-people-row render-agent-people-row--docs">
+      <div id="render-agent-members" class="render-agent-members" aria-label="Thread members"></div>
+      <select id="render-agent-invite-select" class="render-agent-invite-select" aria-label="Invite teammate to thread">
+        <option value="">Invite teammate…</option>
+      </select>
+      <button type="button" id="render-agent-invite-btn" class="btn secondary btn-compact">Invite</button>
+    </div>
+    <div id="render-agent-onboarding" class="render-agent-onboarding hidden">
+      <strong>Need help?</strong>
+      <span>Ask about any Getting Started topic — matching demos appear as GIFs in the reply.</span>
+    </div>
+    <div id="render-agent-messages" class="render-agent-messages" aria-live="polite"></div>
+    <div id="render-agent-attachments" class="render-agent-attachments"></div>
+    <form id="render-agent-form" class="render-agent-form">
+      <label class="render-agent-upload">
+        Upload
+        <input type="file" id="render-agent-file-input" multiple accept="image/png,image/jpeg,image/webp,.txt,.md,.csv,.json,.svg,.dxf,.step,.stp,.pdf" hidden />
+      </label>
+      <textarea id="render-agent-input" rows="2" placeholder="Ask about Generate, workspaces, folders, markup, Fusion…"></textarea>
+      <button type="submit" class="btn accent btn-compact">Ask</button>
+    </form>
+    <p id="render-agent-status" class="render-agent-status muted small"></p>
+  </section>
+
+  <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="auth-backdrop" data-auth-close></div>
+    <div class="auth-card">
+      <button type="button" class="auth-close" data-auth-close aria-label="Close">&times;</button>
+      <div class="auth-card-header">
+        <img class="auth-logo" src="/render3d-logo.png?v=20260715-new-logo" alt="" width="40" height="40" />
+        <div>
+          <h2 id="auth-title">Welcome back</h2>
+          <p class="auth-subtitle">Sign in to ask Render Agent</p>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Log in</button>
+        <button type="button" class="auth-tab" data-tab="register">Create account</button>
+      </div>
+      <p id="auth-error" class="auth-error"></p>
+      <form id="auth-form-login" class="auth-form">
+        <label>Email<input type="email" id="login-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" /></label>
+        <button type="submit" class="btn accent auth-submit">Log in</button>
+      </form>
+      <form id="auth-form-register" class="auth-form hidden">
+        <label>Name<input type="text" id="register-name" required autocomplete="name" placeholder="Your name" /></label>
+        <label>Email<input type="email" id="register-email" required autocomplete="email" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <button type="submit" class="btn accent auth-submit">Create account</button>
+      </form>
+    </div>
+  </div>
+
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/getting-started.js?v=20260715-getting-started"></script>
+  <script type="module" src="/getting-started.js?v=20260715-gs-agent-sticky"></script>
 </body>
 </html>
