@@ -885,7 +885,8 @@ def _record_history(
         user_avatar_url=_avatar_url_for_user_id(user["id"]) if user else None,
         snapshot_mode=snapshot_mode,
     )
-    # Mark Fusion-linked projects dirty so accessing Fusion pushes local edits back.
+    # Mark Fusion-linked projects dirty and schedule an async push so extrudes /
+    # generates / mesh edits land in everyone's linked Fusion folder without blocking UI.
     if kind not in {"autodesk_import", "fusion_sync", "fusion_push"} and filename:
         suffix = Path(str(filename)).suffix.lower()
         if suffix in {".step", ".stp", ".stl", ".3mf", ".obj", ".glb", ".gltf", ".py"} or not suffix:
@@ -896,6 +897,10 @@ def _record_history(
                     project_store.save_meta(project_path, project_meta)
             except Exception:
                 logger.debug("Could not mark fusion_pending_push for %s", project_path.name, exc_info=True)
+            try:
+                _schedule_background_fusion_push(project_path.name, project_path, filename)
+            except Exception:
+                logger.debug("Could not schedule Fusion push for %s", project_path.name, exc_info=True)
     log_entry = project_log_service.log_timeline_entry(project_path, entry)
     if user:
         _notify_project_history(project_path.name, log_entry, user)
@@ -3847,6 +3852,7 @@ def _push_file_to_fusion_mirrors(
     filename: str,
     *,
     skip_user_ids: set[str] | None = None,
+    allow_faceted_fallback: bool = False,
 ) -> dict[str, Any]:
     """Upload a local STEP to every linked Fusion mirror folder.
 
@@ -3878,8 +3884,24 @@ def _push_file_to_fusion_mirrors(
     try:
         step_path = _step_for_cloud_cad(project_path, safe, allow_faceted=False)
     except HTTPException as exc:
-        logger.info("Fusion mirror skipped for project=%s file=%s: %s", project_id, safe, exc.detail)
-        return {"pushed_mirrors": pushed_mirrors, "push_errors": push_errors, "skipped": str(exc.detail)}
+        if allow_faceted_fallback:
+            try:
+                step_path = _step_for_cloud_cad(project_path, safe, allow_faceted=True)
+            except Exception as faceted_exc:
+                logger.info(
+                    "Fusion mirror skipped for project=%s file=%s: %s",
+                    project_id,
+                    safe,
+                    getattr(faceted_exc, "detail", faceted_exc),
+                )
+                return {
+                    "pushed_mirrors": pushed_mirrors,
+                    "push_errors": push_errors,
+                    "skipped": str(getattr(faceted_exc, "detail", faceted_exc)),
+                }
+        else:
+            logger.info("Fusion mirror skipped for project=%s file=%s: %s", project_id, safe, exc.detail)
+            return {"pushed_mirrors": pushed_mirrors, "push_errors": push_errors, "skipped": str(exc.detail)}
     except Exception as exc:
         logger.warning("Fusion mirror STEP resolution failed for project=%s file=%s: %s", project_id, safe, exc)
         return {"pushed_mirrors": pushed_mirrors, "push_errors": [f"STEP resolution failed: {exc}"], "skipped": None}
@@ -4124,7 +4146,57 @@ def _fan_out_project_files_to_mirrors(
 
 def _background_push_new_file_to_fusion(project_id: str, project_path: Path, filename: str) -> None:
     """Best-effort Fusion mirror upload for newly generated/uploaded files."""
-    result = _push_file_to_fusion_mirrors(project_id, project_path, filename)
+    _background_push_render_edit_to_fusion(project_id, project_path, filename)
+
+
+_FUSION_PUSH_DEBOUNCE_S = 2.5
+_FUSION_PUSH_LOCK = threading.Lock()
+_FUSION_PUSH_TIMERS: dict[str, threading.Timer] = {}
+_FUSION_PUSH_PENDING: dict[str, str | None] = {}
+
+
+def _background_push_render_edit_to_fusion(
+    project_id: str,
+    project_path: Path,
+    filename: str | None = None,
+) -> None:
+    """Async push of a local edit/generated file into every linked Fusion mirror.
+
+    Runs off the request path so extrudes / generates stay snappy. Uses a faceted
+    STEP fallback when no native B-rep sibling exists (mesh edits).
+    """
+    project_path = Path(project_path)
+    if not project_path.is_dir():
+        return
+    try:
+        with get_conn() as conn:
+            has_mirror = conn.execute(
+                "SELECT 1 FROM project_fusion_mirrors WHERE project_id = ? LIMIT 1",
+                (project_id,),
+            ).fetchone()
+        if not has_mirror:
+            return
+    except Exception:
+        logger.debug("Fusion mirror check failed project=%s", project_id, exc_info=True)
+        return
+
+    safe = Path(str(filename or "")).name
+    if not safe:
+        safe = str(project_store.latest_model_file(project_path) or "")
+    if not safe:
+        return
+
+    try:
+        result = _push_file_to_fusion_mirrors(
+            project_id,
+            project_path,
+            safe,
+            allow_faceted_fallback=True,
+        )
+    except Exception:
+        logger.exception("Background Fusion push failed project=%s file=%s", project_id, safe)
+        return
+
     if result.get("pushed_mirrors"):
         try:
             meta = project_store.load_meta(project_path)
@@ -4132,6 +4204,76 @@ def _background_push_new_file_to_fusion(project_id: str, project_path: Path, fil
             project_store.save_meta(project_path, meta)
         except Exception:
             logger.debug("Could not clear fusion_pending_push after background push", exc_info=True)
+        logger.info(
+            "Background Fusion push project=%s file=%s mirrors=%s",
+            project_id,
+            safe,
+            len(result.get("pushed_mirrors") or []),
+        )
+        try:
+            _notify_project_workspace(
+                project_id,
+                {
+                    "type": "fusion.mirror.updated",
+                    "project_id": project_id,
+                    "filename": safe,
+                    "pushed_count": len(result.get("pushed_mirrors") or []),
+                },
+            )
+        except Exception:
+            logger.debug("Could not notify fusion.mirror.updated", exc_info=True)
+    elif result.get("skipped"):
+        logger.info(
+            "Background Fusion push skipped project=%s file=%s reason=%s",
+            project_id,
+            safe,
+            result.get("skipped"),
+        )
+    elif result.get("push_errors"):
+        logger.warning(
+            "Background Fusion push errors project=%s file=%s: %s",
+            project_id,
+            safe,
+            "; ".join(str(e) for e in (result.get("push_errors") or [])[:3]),
+        )
+
+
+def _schedule_background_fusion_push(
+    project_id: str,
+    project_path: Path,
+    filename: str | None = None,
+) -> None:
+    """Debounce Fusion uploads so rapid extrudes/edits coalesce into one push."""
+    project_id = str(project_id or "").strip()
+    if not project_id:
+        return
+    path = Path(project_path)
+
+    def _run() -> None:
+        with _FUSION_PUSH_LOCK:
+            _FUSION_PUSH_TIMERS.pop(project_id, None)
+            pending = _FUSION_PUSH_PENDING.pop(project_id, None)
+        try:
+            _background_push_render_edit_to_fusion(project_id, path, pending)
+        except Exception:
+            logger.exception("Debounced Fusion push failed project=%s", project_id)
+
+    with _FUSION_PUSH_LOCK:
+        if filename:
+            _FUSION_PUSH_PENDING[project_id] = Path(str(filename)).name
+        elif project_id not in _FUSION_PUSH_PENDING:
+            _FUSION_PUSH_PENDING[project_id] = None
+        old = _FUSION_PUSH_TIMERS.pop(project_id, None)
+        if old is not None:
+            try:
+                old.cancel()
+            except Exception:
+                pass
+        timer = threading.Timer(_FUSION_PUSH_DEBOUNCE_S, _run)
+        timer.daemon = True
+        timer.name = f"fusion-push-{project_id}"
+        _FUSION_PUSH_TIMERS[project_id] = timer
+        timer.start()
 
 
 def _project_needs_fusion_push(project_path: Path, mirror: dict[str, Any]) -> bool:

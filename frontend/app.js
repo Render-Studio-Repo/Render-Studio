@@ -13307,7 +13307,7 @@ function handleRealtimeEvent(msg = {}) {
     }
     refreshProjectShell({ refreshInvites: true, refreshMembers: true });
   }
-  if (msg.type === "workspace.render_folder.updated") {
+  if (msg.type === "workspace.render_folder.updated" || msg.type === "fusion.mirror.updated") {
     if (msg.team) {
       const idx = allTeams.findIndex((team) => team.id === msg.team.id);
       if (idx >= 0) allTeams[idx] = { ...allTeams[idx], ...msg.team };
