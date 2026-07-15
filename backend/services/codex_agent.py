@@ -249,10 +249,31 @@ def _event_activity(event: dict[str, Any]) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _pick_artifacts(project_path: Path, preferred_base: str) -> dict[str, str]:
-    """Find the best source/step/glb trio after Codex finishes."""
+def _pick_artifacts(
+    project_path: Path,
+    preferred_base: str,
+    *,
+    min_mtime: float | None = None,
+    require_fresh: bool = False,
+) -> dict[str, str]:
+    """Find the best source/step/glb trio after Codex finishes.
+
+    When ``require_fresh`` is set with ``min_mtime`` (unix seconds), ignore
+    pre-existing STEP/source pairs that were not rewritten during this run.
+    That prevents early-accept from treating an older project model as the
+    new generation result.
+    """
     preferred_base = re.sub(r"[^a-zA-Z0-9_-]+", "_", preferred_base).strip("_") or "model"
     candidates: list[tuple[float, str, Path, Path, Path]] = []
+    slack = 2.0
+
+    def _is_fresh(path: Path) -> bool:
+        if min_mtime is None:
+            return True
+        try:
+            return path.stat().st_mtime >= (min_mtime - slack)
+        except OSError:
+            return False
 
     for py in project_path.glob("*.py"):
         if py.name.startswith(".") or py.name == "AGENTS.md":
@@ -274,26 +295,38 @@ def _pick_artifacts(project_path: Path, preferred_base: str) -> dict[str, str]:
                 glb = jake_glb
         if not step.is_file():
             continue
+        if require_fresh and not (_is_fresh(step) or _is_fresh(py)):
+            continue
         score = step.stat().st_mtime
         if stem == preferred_base:
             score += 1e12
         if glb.is_file():
             score += 1e6
+            if require_fresh and _is_fresh(glb):
+                score += 1e5
+        if require_fresh and _is_fresh(step):
+            score += 5e4
+        if require_fresh and _is_fresh(py):
+            score += 1e4
         candidates.append((score, stem, py, step, glb if glb.is_file() else step))
 
     if not candidates:
-        # Fall back to preferred names if present.
+        # Fall back to preferred names if present (and fresh when required).
         py = project_path / f"{preferred_base}.py"
         step = project_path / f"{preferred_base}.step"
         glb = project_path / f"{preferred_base}.glb"
-        if py.is_file() and step.is_file():
+        if py.is_file() and step.is_file() and (not require_fresh or _is_fresh(step) or _is_fresh(py)):
             return {
                 "source": py.name,
                 "step": step.name,
                 "glb": glb.name if glb.is_file() else step.name,
                 "base": preferred_base,
             }
-        raise CodexFailed("Codex finished without a gen_step() Python + STEP pair.")
+        raise CodexFailed(
+            "Codex finished without a fresh gen_step() Python + STEP pair."
+            if require_fresh
+            else "Codex finished without a gen_step() Python + STEP pair."
+        )
 
     candidates.sort(key=lambda row: row[0], reverse=True)
     _, stem, py, step, glb = candidates[0]
@@ -388,15 +421,12 @@ def run_codex_agent(
     cmd.append("-")  # read prompt from stdin
 
     timeout = float(timeout_sec or os.environ.get("CODEX_TIMEOUT_SEC") or os.environ.get("JAKE_CODEX_TIMEOUT_SEC") or DEFAULT_TIMEOUT_SEC)
+    started_at = time.time()
 
-    def _emit(stage: str, label: str, pct: int | None = None) -> None:
+    def _emit(stage: str, text: str, pct: int | None = None) -> None:
         if not progress_callback:
             return
-        payload: dict[str, Any] = {
-            "stage": stage,
-            "label": label,
-            "activity": [{"text": label, "stage": stage}],
-        }
+        payload: dict[str, Any] = {"stage": stage, "label": text, "thinking": text}
         if pct is not None:
             payload["pct"] = pct
         progress_callback(payload)
@@ -465,9 +495,15 @@ def run_codex_agent(
                 raise RuntimeError("Generation canceled.")
             if time.monotonic() > deadline:
                 _kill_proc(proc)
-                # Prefer returning a renderable model over hard-failing after timeout.
+                # Prefer returning a renderable model over hard-failing after timeout,
+                # but only if Codex actually wrote fresh artifacts during this run.
                 try:
-                    early = _pick_artifacts(project_path, base)
+                    early = _pick_artifacts(
+                        project_path,
+                        base,
+                        min_mtime=started_at,
+                        require_fresh=True,
+                    )
                     if (project_path / early["glb"]).is_file() and (project_path / early["step"]).is_file():
                         events.append({"type": "render3d.early_accept", "reason": "timeout_with_artifacts"})
                         break
@@ -475,11 +511,18 @@ def run_codex_agent(
                     pass
                 raise CodexFailed(f"Codex CAD agent timed out after {int(timeout)}s.")
 
-            # If STEP+GLB already exist, don't let snapshot tooling hang the viewer.
+            # If a FRESH STEP+GLB pair appears during this run, don't let snapshot tooling hang forever.
             try:
-                early = _pick_artifacts(project_path, base)
-                glb_ok = (project_path / early["glb"]).is_file()
-                step_ok = (project_path / early["step"]).is_file()
+                early = _pick_artifacts(
+                    project_path,
+                    base,
+                    min_mtime=started_at,
+                    require_fresh=True,
+                )
+                glb_path = project_path / early["glb"]
+                step_path = project_path / early["step"]
+                glb_ok = glb_path.is_file() and glb_path.stat().st_mtime >= (started_at - 2.0)
+                step_ok = step_path.is_file() and step_path.stat().st_mtime >= (started_at - 2.0)
                 if glb_ok and step_ok:
                     now = time.monotonic()
                     if artifacts_ready_since is None:
@@ -490,8 +533,11 @@ def run_codex_agent(
                         _kill_proc(proc)
                         events.append({"type": "render3d.early_accept", "reason": "artifacts_ready"})
                         break
+                else:
+                    artifacts_ready_since = None
             except Exception:
-                pass
+                # No fresh artifacts yet — keep waiting on Codex.
+                artifacts_ready_since = None
 
             activity_holder = {"n": activity_n}
             if proc.poll() is not None:
@@ -535,9 +581,22 @@ def run_codex_agent(
     artifacts = None
     artifact_error = None
     try:
-        artifacts = _pick_artifacts(project_path, base)
+        artifacts = _pick_artifacts(
+            project_path,
+            base,
+            min_mtime=started_at,
+            require_fresh=True,
+        )
     except Exception as exc:
         artifact_error = str(exc)
+        # Edit runs may keep the same filenames; allow non-fresh only when Codex exited 0
+        # and the preferred source was rewritten (mtime check already failed above).
+        if is_edit and exit_code == 0:
+            try:
+                artifacts = _pick_artifacts(project_path, base)
+                artifact_error = None
+            except Exception as edit_exc:
+                artifact_error = str(edit_exc)
 
     if artifacts is None:
         detail = artifact_error or "no STEP artifacts"
