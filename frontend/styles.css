@@ -12731,6 +12731,58 @@ label input { margin-top: 4px; }
   font-weight: 600;
 }
 
+.ph-skills-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: -1px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.ph-skills-label {
+  margin-right: 1px;
+  font-weight: 600;
+  color: #8b949e;
+}
+
+.ph-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 7px;
+  border: 1px solid #58a6ff44;
+  border-radius: 999px;
+  background: #1f6feb18;
+  color: #a5d6ff;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.ph-skill-chip.hidden {
+  display: none;
+}
+
+.ph-skills-toggle {
+  padding: 1px 3px;
+  border: 0;
+  background: transparent;
+  color: #79c0ff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ph-skills-toggle:hover,
+.ph-skills-toggle:focus-visible {
+  color: #a5d6ff;
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .ph-view-more {
   align-self: flex-start;
   margin-top: 2px;

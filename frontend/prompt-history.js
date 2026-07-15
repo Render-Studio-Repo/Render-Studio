@@ -1,6 +1,7 @@
 /** Prompt compose / history tabs (CAD AI + Wiring AI panels). */
 
 import { copyPromptRef, copyText, formatPromptRef, formatPromptModeLabel, formatModelLabel, formatSpeedLabel, formatTargetModeLabel } from "./prompt-ref.js?v=20260715-history-codex-target";
+import { skillLabel } from "./skills-library.js?v=20260706-ui-fix";
 
 export function createPromptHistoryUI({
   listEl,
@@ -251,6 +252,36 @@ export function createPromptHistoryUI({
     return Boolean(entry?.prompt_improved) || (original && original !== prompt);
   }
 
+  function entrySkills(entry) {
+    const seen = new Set();
+    return (Array.isArray(entry?.skills) ? entry.skills : [])
+      .map((skill) => String(skill || "").trim().toLowerCase())
+      .filter((skill) => {
+        if (!skill || seen.has(skill)) return false;
+        seen.add(skill);
+        return true;
+      });
+  }
+
+  function renderSkillsUsed(entry) {
+    const skills = entrySkills(entry);
+    if (!skills.length) return "";
+    const visible = skills.slice(0, 3);
+    const hidden = skills.slice(3);
+    const chips = [
+      ...visible.map((skill) => `<span class="ph-skill-chip" title="${escapeHtml(skill)}">${escapeHtml(skillLabel(skill))}</span>`),
+      ...hidden.map((skill) => `<span class="ph-skill-chip ph-skill-chip--extra hidden" title="${escapeHtml(skill)}">${escapeHtml(skillLabel(skill))}</span>`),
+    ].join("");
+    const toggle = hidden.length
+      ? `<button type="button" class="ph-skills-toggle" data-skills-toggle="${escapeHtml(entry.id)}" aria-expanded="false">+${hidden.length} more</button>`
+      : "";
+    return `<div class="ph-skills-row" data-skills-row="${escapeHtml(entry.id)}">
+      <span class="ph-skills-label">Skills used</span>
+      ${chips}
+      ${toggle}
+    </div>`;
+  }
+
   function render(entries, summary = null) {
     if (!listEl) return;
     if (!entries?.length) {
@@ -329,6 +360,7 @@ export function createPromptHistoryUI({
               improved ? "View more · original vs improved" : "View more"
             }</button>`
           : "";
+        const skillsUsed = renderSkillsUsed(e);
         return `<div class="prompt-history-item${selected}" data-id="${escapeHtml(e.id)}">
           <button type="button" class="ph-ref-btn" data-ref-id="${escapeHtml(e.id)}" title="Copy chat reference ID">${escapeHtml(ref)}</button>
           <button type="button" class="ph-body-btn">
@@ -336,6 +368,7 @@ export function createPromptHistoryUI({
             <span class="ph-prompt">${escapeHtml(preview)}</span>
             ${reply}
           </button>
+          ${skillsUsed}
           ${viewMore}
         </div>`;
       })
@@ -391,6 +424,21 @@ export function createPromptHistoryUI({
             ? (entryHasImprovedPrompt(entry) ? "View more · original vs improved" : "View more")
             : "Show less";
         }
+      });
+    });
+
+    listEl.querySelectorAll(".ph-skills-toggle").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const row = btn.closest(".ph-skills-row");
+        if (!row) return;
+        const expanded = btn.getAttribute("aria-expanded") === "true";
+        row.querySelectorAll(".ph-skill-chip--extra").forEach((chip) => {
+          chip.classList.toggle("hidden", expanded);
+        });
+        btn.setAttribute("aria-expanded", String(!expanded));
+        btn.textContent = expanded ? `+${row.querySelectorAll(".ph-skill-chip--extra").length} more` : "Show less";
       });
     });
 

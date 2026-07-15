@@ -1233,43 +1233,61 @@
           <button type="button" class="rigging-prompt-tab" data-pane="history">History</button>
         </div>
         <div id="rigging-prompt-pane-compose" class="prompt-pane active">
-          <p class="muted small"><strong>Rigging shows joint bones</strong> (orange spheres) — not CAD geometry. Build gears first in <strong>SOLID → AI Compose</strong>, then use Rigging for shaft animation and URDF export.</p>
-          <div class="prompt-input-head">
-            <span class="prompt-input-head-label muted small">Rig prompt</span>
-            <button type="button" class="prompt-mic-btn" data-mic-target="rigging-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
-              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
-            </button>
+          <div class="rigging-mode-toggle" role="group" aria-label="Rigging mode">
+            <button type="button" class="rigging-mode-btn active" data-rigging-mode="bones" title="Edit bone hierarchy in the viewport">Bones</button>
+            <button type="button" class="rigging-mode-btn" data-rigging-mode="urdf" title="Jake text-to-cad URDF / SRDF motion">URDF / SRDF</button>
           </div>
-          <textarea id="rigging-prompt-input" rows="6" placeholder="e.g. 4-DOF arm: base_link fixed, link_1 shoulder revolute Z, link_2 elbow revolute Z, ee_link gripper. Animate a pick-and-place cycle…"></textarea>
-          <div id="rigging-prompt-image-drop" class="rigging-prompt-image-drop" role="button" tabindex="0">
-            <input id="rigging-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
-            <span>Add reference photo (optional)</span>
+
+          <div id="rigging-mode-bones" class="rigging-mode-pane">
+            <p class="muted small"><strong>Rigging shows joint bones</strong> (orange spheres) — not CAD geometry. Build the part in <strong>SOLID → AI Compose</strong>, then place bones here or generate a rig.</p>
+            <div class="prompt-input-head">
+              <span class="prompt-input-head-label muted small">Rig prompt</span>
+              <button type="button" class="prompt-mic-btn" data-mic-target="rigging-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
+                <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
+              </button>
+            </div>
+            <textarea id="rigging-prompt-input" rows="5" placeholder="e.g. 4-DOF arm: base_link fixed, link_1 shoulder revolute Z, link_2 elbow revolute Z, ee_link gripper. Animate a pick-and-place cycle…"></textarea>
+            <div id="rigging-prompt-image-drop" class="rigging-prompt-image-drop" role="button" tabindex="0">
+              <input id="rigging-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+              <span>Add reference photo (optional)</span>
+            </div>
+            <div id="rigging-prompt-image-list" class="rigging-prompt-image-list"></div>
+            <button type="button" id="btn-rigging-prompt" class="btn accent full">Generate rig / animation</button>
+            <button type="button" id="btn-rigging-demo-gear-train" class="btn secondary full">Build mounted 2-gear model</button>
+            <button type="button" id="btn-rigging-demo-arm" class="btn secondary full">Load demo (4-DOF arm)</button>
           </div>
-          <div id="rigging-prompt-image-list" class="rigging-prompt-image-list"></div>
-          <button type="button" id="btn-rigging-prompt" class="btn accent full">Generate rig / animation</button>
-          <button type="button" id="btn-rigging-demo-gear-train" class="btn secondary full">Build mounted 2-gear model</button>
-          <button type="button" id="btn-rigging-demo-arm" class="btn secondary full">Load demo (4-DOF arm)</button>
-          <div class="urdf-joint-panel rigging-robot-artifacts">
-            <div class="cad-param-head">
-              <div>
-                <strong>Robot Artifacts</strong>
-                <span>Generate URDF/SRDF, then open the motion workbench</span>
+
+          <div id="rigging-mode-urdf" class="rigging-mode-pane hidden">
+            <p class="muted small">Jake-style robot description: author <code>gen_urdf()</code> / <code>gen_srdf()</code> from the CAD Python source, then simulate joints.</p>
+            <div class="urdf-joint-panel rigging-robot-artifacts">
+              <div class="cad-param-head">
+                <div>
+                  <strong>Robot Artifacts</strong>
+                  <span>Source → URDF / SRDF → Motion</span>
+                </div>
+                <button type="button" class="btn secondary btn-compact" id="btn-rigging-artifacts-refresh">Refresh</button>
               </div>
-              <button type="button" class="btn secondary btn-compact" id="btn-rigging-artifacts-refresh">Refresh</button>
+              <label class="cad-param-row">
+                <span>Python source</span>
+                <select id="rigging-artifact-source"></select>
+              </label>
+              <div class="cad-param-actions">
+                <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-urdf">Generate URDF</button>
+                <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-srdf">Generate SRDF</button>
+                <button type="button" class="btn accent btn-compact" id="btn-rigging-generate-robot">Generate Both</button>
+              </div>
+              <button type="button" class="btn accent full" id="btn-rigging-author-jake" style="margin-top:8px">Author URDF/SRDF with AI (Jake)</button>
+              <div class="urdf-artifact-list" id="rigging-artifact-list"></div>
+              <div class="rigging-side-tree-head">
+                <strong>Link / joint tree</strong>
+                <span id="rigging-side-tree-summary" class="muted small">No robot loaded</span>
+              </div>
+              <div id="rigging-side-link-tree" class="urdf-link-tree"></div>
+              <button type="button" class="btn accent full" id="btn-open-urdf-motion" style="margin-top:10px">Open URDF / SRDF Motion</button>
+              <p class="muted small" style="margin-top:8px">Opens the motion workbench for posing, trajectories, and MoveIt2.</p>
             </div>
-            <label class="cad-param-row">
-              <span>Python source</span>
-              <select id="rigging-artifact-source"></select>
-            </label>
-            <div class="cad-param-actions">
-              <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-urdf">Generate URDF</button>
-              <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-srdf">Generate SRDF</button>
-              <button type="button" class="btn accent btn-compact" id="btn-rigging-generate-robot">Generate Both</button>
-            </div>
-            <div class="urdf-artifact-list" id="rigging-artifact-list"></div>
-            <button type="button" class="btn accent full" id="btn-open-urdf-motion" style="margin-top:10px">Open URDF / SRDF Motion</button>
-            <p class="muted small" style="margin-top:8px">Opens a larger workbench for link tree, joint posing, trajectory play, and MoveIt2.</p>
           </div>
+
           <div id="rigging-prompt-status" class="status"></div>
         </div>
         <div id="rigging-prompt-pane-history" class="prompt-pane hidden">
@@ -1916,7 +1934,7 @@
     </div>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/app.js?v=20260715-viewport-part-colors"></script>
+  <script type="module" src="/app.js?v=20260715-no-z-axis"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

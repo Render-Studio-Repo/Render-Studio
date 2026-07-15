@@ -124,6 +124,7 @@ def append_entry(
     prompt_improved: bool | None = None,
     target_mode: str | None = None,
     codex_agent: bool | None = None,
+    skills: list[str] | None = None,
     entry_id: str | None = None,
 ) -> dict[str, Any]:
     data = load(project_path)
@@ -222,6 +223,16 @@ def append_entry(
     entry["target_mode"] = normalized_target
     if codex_agent:
         entry["codex_agent"] = True
+    normalized_skills = []
+    seen_skills = set()
+    for skill in skills or []:
+        skill_id = str(skill or "").strip().lower()
+        if not skill_id or skill_id in seen_skills:
+            continue
+        normalized_skills.append(skill_id)
+        seen_skills.add(skill_id)
+    if normalized_skills:
+        entry["skills"] = normalized_skills[:20]
     if upsert_at is not None:
         # Resume / retry completed — replace the interrupt stub in place.
         entry.pop("recovered", None)

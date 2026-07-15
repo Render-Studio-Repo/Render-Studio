@@ -10414,6 +10414,118 @@ def generate_rigging_artifacts(
     }
 
 
+@app.post("/api/projects/{project_id}/rigging/author-robot")
+def author_robot_description(
+    project_id: str,
+    body: RiggingArtifactGenerateRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Author Jake-style gen_urdf()/gen_srdf() into the CAD Python source, then generate artifacts."""
+    import re as _re
+
+    from backend.services import skill_runner
+
+    path = _require_project(user, project_id)
+    source = Path(body.source).name
+    source_path = path / source
+    if not source_path.is_file() or source_path.suffix.lower() != ".py":
+        raise HTTPException(404, "Python source file not found")
+    kind = (body.kind or "both").strip().lower()
+    if kind not in {"urdf", "srdf", "both"}:
+        raise HTTPException(422, "kind must be urdf, srdf, or both")
+
+    text = source_path.read_text(encoding="utf-8")
+    needs_urdf = "def gen_urdf" not in text
+    needs_srdf = "def gen_srdf" not in text
+    authored = False
+    if needs_urdf or needs_srdf:
+        ai = _sam_ai_service()
+        prompt = (
+            "You are editing a build123d / Jake text-to-cad Python CAD source for a robot.\n"
+            "Add Jake-compatible top-level zero-arg functions without removing gen_step()/existing CAD.\n"
+            "Requirements:\n"
+            "- Keep all existing CAD code working.\n"
+            "- Add `def gen_urdf():` returning xml.etree.ElementTree robot Element (or XML string).\n"
+            "- Add `def gen_srdf():` returning SRDF XML Element/string with a planning group for the arm.\n"
+            "- Units in URDF must be meters/radians. Convert from mm constants in the source.\n"
+            "- Model a kinematic chain from base_link through the joints already defined (J1..Jn or similar).\n"
+            "- Prefer revolute joints with explicit axis + limits.\n"
+            "- Visual/collision mesh filenames may reference the sibling STL if present, else omit meshes.\n"
+            "- Return ONLY the full updated Python source file contents.\n\n"
+            f"SOURCE FILE NAME: {source}\n\n"
+            f"CURRENT SOURCE:\n{text[:120000]}"
+        )
+        try:
+            patched, _trace = ai._call_model(
+                "You author Jake text-to-cad robot generators. Output only valid Python source.",
+                prompt,
+                max_tokens=12000,
+                json_response=False,
+            )
+        except Exception as exc:
+            raise HTTPException(502, f"Could not author robot generators: {exc}") from exc
+        patched_text = str(patched or "").strip()
+        if patched_text.startswith("```"):
+            patched_text = _re.sub(r"^```(?:python)?\s*", "", patched_text)
+            patched_text = _re.sub(r"\s*```$", "", patched_text)
+        if "def gen_urdf" not in patched_text:
+            raise HTTPException(502, "AI patch did not include gen_urdf(); refused to overwrite source.")
+        backup = source_path.with_suffix(source_path.suffix + ".bak-before-urdf")
+        if not backup.is_file():
+            backup.write_text(text, encoding="utf-8")
+        source_path.write_text(patched_text.rstrip() + "\n", encoding="utf-8")
+        authored = True
+
+    outputs: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    stem = source_path.stem
+
+    def run_one(tool: str, output_name: str, timeout: float = 120.0) -> None:
+        result = skill_runner.run_skill_tool(
+            tool,
+            tool,
+            [f"{source}={output_name}"],
+            cwd=path,
+            timeout_sec=timeout,
+        )
+        payload = {
+            "tool": tool,
+            "filename": output_name,
+            "stdout": (result.get("stdout") or "")[-4000:],
+            "stderr": (result.get("stderr") or "")[-4000:],
+            "exit_code": result.get("exit_code"),
+        }
+        if result.get("ok") and (path / output_name).is_file():
+            outputs.append(payload)
+        else:
+            errors.append(payload)
+
+    if kind in {"urdf", "both"}:
+        run_one("urdf", f"{stem}.urdf")
+    if kind in {"srdf", "both"}:
+        run_one("srdf", f"{stem}.srdf")
+
+    project_store.touch_project(path)
+    summary = _robot_artifact_summary(path)
+    if errors and not outputs:
+        raise HTTPException(422, {
+            "message": "Robot authoring/generation failed.",
+            "authored": authored,
+            "outputs": outputs,
+            "errors": errors,
+            "summary": summary,
+        })
+    msg = "Authored and generated robot artifacts." if authored else "Generated robot artifacts."
+    return {
+        "message": msg,
+        "authored": authored,
+        "outputs": outputs,
+        "errors": errors,
+        **summary,
+    }
+
+
 @app.put("/api/projects/{project_id}/rigging")
 @app.post("/api/projects/{project_id}/rigging")
 def save_rigging(
@@ -11575,6 +11687,7 @@ def _save_prompt_history(
             codex_agent=bool(
                 getattr(body, "codex_agent", False) or getattr(body, "jake_codex_agent", False)
             ),
+            skills=list(getattr(body, "skills", None) or []),
             entry_id=str(getattr(body, "prompt_id", None) or "").strip() or None,
             **usage_meta,
             **key_meta,
@@ -12218,6 +12331,7 @@ def prompt_cad(
                 f"Missing DXF content for: {', '.join(missing_dxf_content[:3])}",
             )
         resolved_skills = [*resolved_skills, "dxf"] if "dxf" not in {s.lower() for s in resolved_skills} else resolved_skills
+    body = body.model_copy(update={"skills": resolved_skills})
 
     trace_add(
         "info",

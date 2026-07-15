@@ -53,7 +53,7 @@ import {
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-collab-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-codex-target";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-skills";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
@@ -2079,7 +2079,6 @@ const SKETCH_CANVAS = 0xe8e8e8;
 let savedSceneBg = null;
 let gridAxesGroup = null;
 let gridDotsGroup = null;
-let axesHelper = null;
 
 function disposeSceneObject(obj) {
   obj?.traverse?.((child) => {
@@ -2161,10 +2160,6 @@ function rebuildGrid() {
     scene.remove(gridDotsGroup);
     disposeSceneObject(gridDotsGroup);
   }
-  if (axesHelper) {
-    scene.remove(axesHelper);
-    disposeSceneObject(axesHelper);
-  }
 
   const size = niceGridSize(sceneRadius());
   const divisions = Math.min(240, Math.max(80, Math.round(size / (size >= 100 ? 5 : 0.25))));
@@ -2173,7 +2168,7 @@ function rebuildGrid() {
   gridHelper.rotation.x = Math.PI / 2;
   makeGridDepthAware(gridHelper);
   gridHelper.visible = gridVisible;
-scene.add(gridHelper);
+  scene.add(gridHelper);
 
   gridAxesGroup = new THREE.Group();
   gridAxesGroup.name = "large-grid-axes";
@@ -2187,10 +2182,6 @@ scene.add(gridHelper);
   gridDotsGroup = buildGridDots(size, dotStep, themeColors.gridMinor);
   gridDotsGroup.visible = gridVisible;
   scene.add(gridDotsGroup);
-
-  axesHelper = new THREE.AxesHelper(Math.max(size * 0.035, 1));
-  axesHelper.visible = gridVisible;
-  scene.add(axesHelper);
 }
 
 function setGridVisible(visible) {
@@ -2198,7 +2189,6 @@ function setGridVisible(visible) {
   if (gridHelper) gridHelper.visible = visible;
   if (gridAxesGroup) gridAxesGroup.visible = visible;
   if (gridDotsGroup) gridDotsGroup.visible = visible;
-  if (axesHelper) axesHelper.visible = visible;
   syncGridToggleButtons();
 }
 
@@ -8971,6 +8961,10 @@ function renderRobotArtifacts() {
   if (sliders) sliders.innerHTML = jointHtml;
   const tree = document.getElementById("urdf-link-tree");
   if (tree) tree.innerHTML = treeHtml;
+  const sideTree = document.getElementById("rigging-side-link-tree");
+  if (sideTree) sideTree.innerHTML = treeHtml || `<p class="muted small">Generate URDF to populate the tree.</p>`;
+  const sideSummary = document.getElementById("rigging-side-tree-summary");
+  if (sideSummary) sideSummary.textContent = `${(data.links || []).length} link(s) · ${movableCount} joint(s)`;
   const summary = document.getElementById("urdf-joint-summary");
   if (summary) summary.textContent = `${movableCount} movable joint(s)`;
   const linkSummary = document.getElementById("urdf-link-summary");
@@ -14508,6 +14502,103 @@ document.querySelectorAll("[data-rig-pick]").forEach((btn) => {
     });
   });
 });
+
+// Event delegation backup so toolbelt clicks always work (even after DOM refresh).
+document.getElementById("rigging-chrome")?.addEventListener("click", (event) => {
+  const toolBtn = event.target.closest?.("[data-rig-tool]");
+  if (toolBtn) {
+    event.preventDefault();
+    handleRiggingAction("tool", { rigTool: toolBtn.dataset.rigTool }, { tool: toolBtn.dataset.rigTool });
+    return;
+  }
+  const actionBtn = event.target.closest?.("[data-rig-action]");
+  if (actionBtn) {
+    event.preventDefault();
+    handleRiggingAction(actionBtn.dataset.rigAction);
+    return;
+  }
+  const pickBtn = event.target.closest?.("[data-rig-pick]");
+  if (pickBtn) {
+    event.preventDefault();
+    activatePickMode(pickBtn.dataset.rigPick);
+    document.querySelectorAll("[data-rig-pick]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.rigPick === pickBtn.dataset.rigPick);
+    });
+  }
+});
+
+function setRiggingWorkspaceMode(mode) {
+  const next = mode === "urdf" ? "urdf" : "bones";
+  document.querySelectorAll("[data-rigging-mode]").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-rigging-mode") === next);
+  });
+  document.getElementById("rigging-mode-bones")?.classList.toggle("hidden", next !== "bones");
+  document.getElementById("rigging-mode-urdf")?.classList.toggle("hidden", next !== "urdf");
+  try {
+    localStorage.setItem("render3d:riggingMode:v1", next);
+  } catch {
+    /* ignore */
+  }
+  if (next === "urdf") {
+    void refreshRobotArtifacts({ quiet: true });
+  }
+}
+
+document.querySelectorAll("[data-rigging-mode]").forEach((btn) => {
+  btn.addEventListener("click", () => setRiggingWorkspaceMode(btn.getAttribute("data-rigging-mode")));
+});
+try {
+  const savedMode = localStorage.getItem("render3d:riggingMode:v1");
+  if (savedMode === "urdf" || savedMode === "bones") setRiggingWorkspaceMode(savedMode);
+} catch {
+  /* ignore */
+}
+
+document.getElementById("btn-rigging-author-jake")?.addEventListener("click", () => {
+  void authorJakeRobotDescription();
+});
+
+async function authorJakeRobotDescription() {
+  if (!projectId) {
+    setEditStatus("error", "Select a project first.");
+    return;
+  }
+  const source = document.getElementById("rigging-artifact-source")?.value;
+  const status = document.getElementById("rigging-prompt-status");
+  if (!source) {
+    setEditStatus("error", "No Python source selected.");
+    return;
+  }
+  if (status) {
+    status.className = "status loading";
+    status.textContent = "Authoring gen_urdf()/gen_srdf() (Jake)…";
+  }
+  setEditStatus("loading", "Authoring URDF/SRDF with AI…");
+  try {
+    const data = await api(`/api/projects/${projectId}/rigging/author-robot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, kind: "both" }),
+    }, 300000);
+    robotArtifactData = data;
+    await refreshFiles();
+    renderRobotArtifacts();
+    setRiggingWorkspaceMode("urdf");
+    const msg = data.message || "URDF/SRDF authored.";
+    setEditStatus("ok", msg);
+    if (status) {
+      status.className = "status ok";
+      status.textContent = msg;
+    }
+  } catch (err) {
+    const msg = err?.message || "Could not author URDF/SRDF.";
+    setEditStatus("error", msg);
+    if (status) {
+      status.className = "status error";
+      status.textContent = msg;
+    }
+  }
+}
 
 function enterWiringMode() {
   catalogPanel?.close?.();
