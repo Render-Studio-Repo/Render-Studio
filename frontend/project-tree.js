@@ -75,6 +75,7 @@ export function createProjectTree(options = {}) {
     onEditSketch,
     onOpenWiring,
     onOpenRobot,
+    onOpenSection,
     onToggleVisibility,
     onExport,
     onRename,
@@ -150,6 +151,7 @@ export function createProjectTree(options = {}) {
       toggle.addEventListener("click", () => {
         expanded[section.id] = !expanded[section.id];
         render();
+        onOpenSection?.(section.id, items);
       });
       sectionEl.appendChild(toggle);
 

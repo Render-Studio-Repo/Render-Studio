@@ -82,7 +82,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260715-ref-files";
+import { createProjectTree } from "./project-tree.js?v=20260715-mobile-section-recenter";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -1519,6 +1519,19 @@ const MOBILE_INTERACTION_QUERY = window.matchMedia?.("(max-width: 820px), (point
 function isMobileInteraction() {
   return Boolean(MOBILE_INTERACTION_QUERY?.matches);
 }
+
+function applyMobileTouchControls() {
+  if (!controls?.touches || !THREE.TOUCH) return;
+  controls.touches.ONE = THREE.TOUCH.ROTATE;
+  controls.touches.TWO = THREE.TOUCH.PAN ?? THREE.TOUCH.DOLLY_PAN;
+}
+
+applyMobileTouchControls();
+MOBILE_INTERACTION_QUERY?.addEventListener?.("change", () => {
+  applyMobileTouchControls();
+  applyLeftDragMouseButtons();
+  syncLeftDragModeButton();
+});
 function normalizedMousePreset(preset) {
   return Object.prototype.hasOwnProperty.call(MOUSE_CONTROL_PRESETS, preset) ? preset : "render3d";
 }
@@ -13164,6 +13177,7 @@ const projectTree = createProjectTree({
   onOpenRobot: (entry) => {
     void openRobotArtifact(entry);
   },
+  onOpenSection: (sectionId) => recenterMobileViewportForSection(sectionId),
   onToggleVisibility: (entry, visible, sectionId) => {
     if (entry.format === "sketch" || sectionId === "sketches") {
       saveHiddenComponentState();
@@ -13348,11 +13362,35 @@ function renderProjectBrowser(browser) {
   }
 }
 
+function recenterMobileViewportForSection(sectionId = "components") {
+  if (!isMobileInteraction()) return;
+  closeMobilePanels();
+  referenceFilesViewer?.hideViewerOnly?.();
+  if (workspaceModes?.getMode?.() !== "design") {
+    workspaceModes?.setMode?.("design");
+    applyWorkspaceMode("design");
+  }
+  requestAnimationFrame(() => {
+    resize();
+    if (sectionId === "components" && selectedFile && projectAssembly.has(selectedFile)) {
+      fitCameraToComponent(selectedFile);
+    } else {
+      fitCamera();
+    }
+  });
+}
+
 document.getElementById("btn-mobile-models")?.addEventListener("click", openMobileModelPicker);
 document.querySelectorAll("[data-mobile-model-close]").forEach((el) => {
   el.addEventListener("click", closeMobileModelPicker);
 });
-document.getElementById("btn-mobile-fit")?.addEventListener("click", () => fitCamera());
+document.getElementById("btn-mobile-fit")?.addEventListener("click", () => {
+  recenterMobileViewportForSection("components");
+});
+document.getElementById("btn-mobile-top")?.addEventListener("click", () => {
+  closeMobilePanels();
+  viewCube.snapTo?.("top");
+});
 document.getElementById("btn-mobile-grid")?.addEventListener("click", () => {
   document.getElementById("btn-grid-viewport")?.click();
 });

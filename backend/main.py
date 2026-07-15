@@ -8939,9 +8939,11 @@ def _share_snapshot_filename(project_path: Path, filename: str) -> str | None:
     candidates: list[Path] = []
     for root in roots:
         candidates = _collect(
-            [f"{root}_snapshot_iso_*.png", f"{root}_snapshot_iso*.png", f"{root}_snapshot_*.png"],
+            [f"{root}_snapshot_iso_*.png", f"{root}_snapshot_iso*.png"],
             prefer_root=root,
         )
+        if not candidates:
+            candidates = _collect([f"{root}_snapshot_*.png"], prefer_root=root)
         if candidates:
             break
     if not candidates:
@@ -8950,7 +8952,10 @@ def _share_snapshot_filename(project_path: Path, filename: str) -> str | None:
         candidates = _collect(["*_snapshot_*.png"])
     if not candidates:
         return None
-    return max(candidates, key=lambda p: p.stat().st_mtime).name
+    # Prefer true iso renders over front/top when timestamps are close
+    iso = [p for p in candidates if "_snapshot_iso" in p.name.lower()]
+    pool = iso or candidates
+    return max(pool, key=lambda p: p.stat().st_mtime).name
 
 
 def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
@@ -9036,7 +9041,7 @@ def _share_page_html(token: str, request: Request) -> str:
     logo = html.escape(f"{origin}/render3d-logo.png?v=20260715-new-logo", quote=True)
     project_name = html.escape(str(meta.get("project_name") or "Shared model"))
     filename = html.escape(str(meta.get("filename") or ""))
-    og_block = f"""
+    og_block = f"""<!-- SHARE_META_START -->
   <title>{title}</title>
   <meta name="description" content="{description}" />
   <link rel="icon" type="image/png" href="{logo}" sizes="any" />
@@ -9055,11 +9060,14 @@ def _share_page_html(token: str, request: Request) -> str:
   <meta name="twitter:description" content="{description}" />
   <meta name="twitter:image" content="{image}" />
   <meta name="render3d:project" content="{html.escape(str(meta.get('project_name') or ''), quote=True)}" />
-  <!-- SHARE_BOOTSTRAP
-  {json.dumps({"project_name": meta.get("project_name"), "filename": meta.get("filename"), "preview_url": meta.get("preview_url")}, ensure_ascii=True)}
-  -->
-"""
-    if "<!-- SHARE_META -->" in raw:
+  <!-- SHARE_META_END -->"""
+    start = "<!-- SHARE_META_START -->"
+    end = "<!-- SHARE_META_END -->"
+    if start in raw and end in raw:
+        before, rest = raw.split(start, 1)
+        _, after = rest.split(end, 1)
+        raw = before + og_block + after
+    elif "<!-- SHARE_META -->" in raw:
         raw = raw.replace("<!-- SHARE_META -->", og_block, 1)
     else:
         raw = raw.replace("</head>", og_block + "\n</head>", 1)
