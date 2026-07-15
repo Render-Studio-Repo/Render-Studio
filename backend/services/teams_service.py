@@ -483,8 +483,8 @@ def leave_team(team_id: str, user_id: str) -> dict[str, Any]:
         ).fetchone()
         if not row:
             raise ValueError("You are not a member of this workspace")
-        if row["role"] == "owner":
-            raise ValueError("Workspace owners cannot leave their own workspace")
+        if normalize_role(row["role"]) == "owner":
+            raise ValueError("Workspace admins cannot leave their own workspace")
         conn.execute("DELETE FROM team_members WHERE team_id=? AND user_id=?", (team_id, user_id))
         conn.execute(
             "DELETE FROM user_team_key_opts WHERE user_id=? "

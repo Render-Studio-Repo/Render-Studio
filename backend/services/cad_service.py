@@ -476,10 +476,16 @@ def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
         candidates.append(project_path / safe)
     for suffix in (".step", ".stp"):
         candidates.append(project_path / f"{stem}{suffix}")
-    base = re.sub(r"(_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
-    if base and base != stem:
+    base = re.sub(r"(__faceted|_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
+    base_variants = [base]
+    if base.startswith("."):
+        base_variants.append(base[1:])
+    for variant in list(base_variants):
+        if variant.lower().endswith((".step", ".stp")):
+            base_variants.append(Path(variant).stem)
+    for variant in dict.fromkeys(v for v in base_variants if v and v != stem):
         for suffix in (".step", ".stp"):
-            candidates.append(project_path / f"{base}{suffix}")
+            candidates.append(project_path / f"{variant}{suffix}")
     seen: set[str] = set()
     for path in candidates:
         key = str(path.resolve()) if path.exists() else path.name

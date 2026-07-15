@@ -224,6 +224,14 @@ def resolve_source_for_model(project_path: Path, filename: str) -> tuple[Path, s
         candidate = project_path / f"{stripped}.py"
         if candidate.is_file():
             return candidate, candidate.name
+        variants = [stripped[1:] if stripped.startswith(".") else stripped]
+        for variant in list(variants):
+            if variant.lower().endswith((".step", ".stp")):
+                variants.append(Path(variant).stem)
+        for variant in dict.fromkeys(v for v in variants if v):
+            candidate = project_path / f"{variant}.py"
+            if candidate.is_file():
+                return candidate, candidate.name
     return None
 
 

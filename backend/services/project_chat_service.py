@@ -186,7 +186,9 @@ def list_threads(
     _save(project_path, data)
     out = []
     for thread in data["threads"]:
-        thread.setdefault("visibility", "shared" if thread.get("slug") == "general" else (thread.get("visibility") or "private"))
+        # Existing threads without a visibility flag stay shared so current chats don't disappear.
+        if "visibility" not in thread:
+            thread["visibility"] = "shared" if thread.get("slug") == "general" else "shared"
         thread.setdefault("members", [])
         if not user_can_access_thread(thread, user, workspace_role=workspace_role):
             continue
