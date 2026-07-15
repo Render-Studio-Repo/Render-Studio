@@ -3262,22 +3262,95 @@ Fusion mode extra review:
     return note, trace
 
 
+def _footprint_score_at_z(vertices, z_val: float, tol: float) -> float:
+    """Prefer a large, roughly square slice — typical of a machine base plate."""
+    import numpy as np
+
+    mask = np.abs(vertices[:, 2] - z_val) < tol
+    if int(mask.sum()) < 8:
+        return 0.0
+    xy = vertices[mask][:, :2]
+    span = xy.max(axis=0) - xy.min(axis=0)
+    mn = float(min(span[0], span[1]))
+    mx = float(max(span[0], span[1]))
+    if mx <= 1e-9:
+        return 0.0
+    return mn * (1.0 - abs(span[0] - span[1]) / mx)
+
+
+def _seat_mesh_on_xy_floor(mesh) -> None:
+    """Center in X/Y and put the lowest point on z = 0."""
+    bounds = mesh.bounds
+    mesh.apply_translation(
+        [
+            -(bounds[0, 0] + bounds[1, 0]) / 2.0,
+            -(bounds[0, 1] + bounds[1, 1]) / 2.0,
+            -bounds[0, 2],
+        ]
+    )
+
+
+def _ensure_base_footprint_on_min_z(mesh) -> bool:
+    """If the larger square footprint is at max Z, flip 180° about X so the base sits down."""
+    import math
+
+    import numpy as np
+    import trimesh
+
+    verts = mesh.vertices
+    extent_z = float(mesh.extents[2])
+    if extent_z <= 1e-9:
+        return False
+    tol = extent_z / 25.0
+    score_min = _footprint_score_at_z(verts, float(verts[:, 2].min()), tol)
+    score_max = _footprint_score_at_z(verts, float(verts[:, 2].max()), tol)
+    if score_max > score_min * 1.05 and score_max > 1e-6:
+        mesh.apply_transform(trimesh.transformations.rotation_matrix(math.pi, [1, 0, 0]))
+        return True
+    return False
+
+
 def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
-    """Convert upstream text-to-cad's native Y-up preview GLB to Render3D Z-up."""
+    """Convert upstream text-to-cad's native Y-up preview GLB to Render3D Z-up.
+
+    Picks +90° or -90° about X so the larger base-like footprint ends at min Z,
+    then seats the mesh on the XY floor (z = 0).
+    """
     if not glb_path.is_file():
         return
     try:
+        import numpy as np
         import trimesh
 
         scene = trimesh.load(glb_path, force="scene")
-        bounds = getattr(scene, "bounds", None)
-        if bounds is not None:
-            size = bounds[1] - bounds[0]
-            # Skip if already clearly Z-up (height along Z dominates).
-            if float(size[2]) >= float(size[1]) * 1.05 and float(size[2]) >= max(float(size[0]), float(size[1])) * 0.9:
-                return
-        scene.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2.0, [1, 0, 0]))
-        scene.export(glb_path, file_type="glb")
+        mesh = scene.dump(concatenate=True) if hasattr(scene, "dump") else scene
+        if mesh is None:
+            return
+        if not hasattr(mesh, "vertices"):
+            # Fall back to scene transform path
+            mesh = trimesh.util.concatenate(tuple(scene.geometry.values()))
+
+        size = mesh.extents
+        already_z_up = float(size[2]) >= float(size[1]) * 1.05
+
+        if not already_z_up:
+            # Try both Y-up → Z-up directions; keep the one with base footprint at min Z.
+            candidates = []
+            for angle in (math.pi / 2.0, -math.pi / 2.0):
+                trial = mesh.copy()
+                trial.apply_transform(trimesh.transformations.rotation_matrix(angle, [1, 0, 0]))
+                tol = float(trial.extents[2]) / 25.0 + 1e-9
+                s_min = _footprint_score_at_z(trial.vertices, float(trial.vertices[:, 2].min()), tol)
+                s_max = _footprint_score_at_z(trial.vertices, float(trial.vertices[:, 2].max()), tol)
+                # Higher score at min Z is better; slight preference for +90 on ties.
+                score = s_min - s_max
+                candidates.append((score, angle, trial))
+            candidates.sort(key=lambda item: item[0], reverse=True)
+            _best_score, _angle, mesh = candidates[0]
+
+        _ensure_base_footprint_on_min_z(mesh)
+        _seat_mesh_on_xy_floor(mesh)
+        mesh.export(glb_path, file_type="glb")
     except Exception as exc:
         logger.warning("Could not convert text-to-cad GLB to Z-up (%s): %s", glb_path.name, exc)
 

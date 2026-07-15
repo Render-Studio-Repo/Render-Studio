@@ -532,7 +532,7 @@ async function main() {
     const sharer = meta.shared_by;
     const shareBack = !!(
       sharer?.id
-      && window.confirm(`Remix this model into your editable Render3D project?\n\nAlso invite ${sharer.display_name || sharer.email || "the original sharer"} to collaborate on your remix?`)
+      && window.confirm(`Remix this model into your editable Render3D project?\n\nAlso create a collaboration workspace with ${sharer.display_name || sharer.email || "the original sharer"} for this remix?`)
     );
     if (!shareBack && sharer?.id) {
       const proceed = window.confirm("Remix this model without inviting the original sharer?");

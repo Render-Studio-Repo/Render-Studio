@@ -1,6 +1,7 @@
 /** Getting Started feature guides for Docs. */
 
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-real-gifs";
+import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-agent-tips-refresh";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
 import { createRenderAgent } from "./render-agent.js?v=20260715-gs-autoopen";
 
@@ -16,6 +17,7 @@ const TOC_LABELS = {
   wiring: "Wiring",
   "cloud-sync": "Fusion / Onshape",
   "render-agent": "Render Agent",
+  "tips-tricks": "Tips & tricks",
 };
 
 function esc(value) {
@@ -63,6 +65,26 @@ function featureCard(feature, index) {
         </button>
       </div>
     </section>
+  `;
+}
+
+function tipCard(tip, index) {
+  const ask = tip.starter || `Tell me more about this Render3D tip: ${tip.title}`;
+  const steps = Array.isArray(tip.steps) ? tip.steps : [];
+  return `
+    <article class="gs-tip-card">
+      <p class="gs-tip-topic">${esc(tip.topic || "Tip")} · ${String(index + 1).padStart(2, "0")}</p>
+      <h4>${esc(tip.title)}</h4>
+      <p>${esc(tip.body)}</p>
+      ${steps.length ? `
+        <ol class="gs-tip-steps">
+          ${steps.map((step) => `<li>${esc(step)}</li>`).join("")}
+        </ol>
+      ` : ""}
+      <button type="button" class="btn secondary btn-compact gs-tip-ask" data-gs-ask="${esc(ask)}">
+        Ask about this tip
+      </button>
+    </article>
   `;
 }
 
@@ -124,8 +146,14 @@ function mountFeatures() {
   });
 }
 
+function mountTips() {
+  const host = document.getElementById("gs-tips-grid");
+  if (!host) return;
+  host.innerHTML = GETTING_STARTED_TIPS.map((tip, i) => tipCard(tip, i)).join("");
+}
+
 function mountReveal() {
-  const nodes = document.querySelectorAll(".gs-feature, .gs-closing, .gs-hero");
+  const nodes = document.querySelectorAll(".gs-feature, .gs-tips-section, .gs-closing, .gs-hero");
   if (!("IntersectionObserver" in window)) {
     nodes.forEach((el) => el.classList.add("is-visible"));
     return;
@@ -232,6 +260,12 @@ function mountAgent() {
     askTour(agent, authUi, btn.getAttribute("data-gs-ask") || "");
   });
 
+  document.getElementById("gs-tips-grid")?.addEventListener("click", (e) => {
+    const btn = e.target.closest?.("[data-gs-ask]");
+    if (!btn) return;
+    askTour(agent, authUi, btn.getAttribute("data-gs-ask") || "");
+  });
+
   document.getElementById("gs-ask-tour")?.addEventListener("click", (e) => {
     e.preventDefault();
     askTour(agent, authUi, tourQ);
@@ -246,6 +280,7 @@ function mountAgent() {
 
 mountToc();
 mountFeatures();
+mountTips();
 mountReveal();
 mountTocSpy();
 mountAgent();

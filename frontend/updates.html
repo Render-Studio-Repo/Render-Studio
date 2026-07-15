@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recent Updates — Render3D Docs</title>
+  <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
+  <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-updates" />
+</head>
+<body class="info-page gs-body updates-body">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/agent-store.html" class="nav-tab" role="menuitem">Agent Store</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/updates.html" class="nav-tab active" role="menuitem">Updates</a>
+          <a href="/roadmap.html" class="nav-tab" role="menuitem">Roadmap</a>
+        </div>
+      </nav>
+      <div class="toolbar-spacer"></div>
+      <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Sign in">
+        <span class="auth-icon" aria-hidden="true">👤</span>
+        <span id="auth-avatar" class="auth-avatar hidden" aria-hidden="true"></span>
+      </button>
+    </header>
+
+    <main class="info-main gs-main">
+      <article class="gs-page updates-page">
+        <header class="updates-hero">
+          <p class="gs-kicker">Docs</p>
+          <h2 class="gs-hero-title">Recent Updates</h2>
+          <p class="gs-hero-lead">
+            Milestone features and tools that change how you work in Render3D — not polish-only UI tweaks.
+          </p>
+          <div class="gs-hero-actions">
+            <a class="btn accent" href="/getting-started.html">Getting Started</a>
+            <a class="btn secondary" href="/docs.html">Full documentation</a>
+          </div>
+        </header>
+
+        <div class="updates-filters" role="tablist" aria-label="Filter updates">
+          <button type="button" class="updates-filter is-active" data-kind="all" role="tab" aria-selected="true">All</button>
+          <button type="button" class="updates-filter" data-kind="feature" role="tab" aria-selected="false">Features</button>
+          <button type="button" class="updates-filter" data-kind="tool" role="tab" aria-selected="false">Tools</button>
+        </div>
+
+        <div id="updates-list" class="updates-list" aria-live="polite"></div>
+      </article>
+    </main>
+  </div>
+
+  <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="auth-backdrop" data-auth-close></div>
+    <div class="auth-card">
+      <button type="button" class="auth-close" data-auth-close aria-label="Close">&times;</button>
+      <div class="auth-card-header">
+        <img class="auth-logo" src="/render3d-logo.png?v=20260715-new-logo" alt="" width="40" height="40" />
+        <div>
+          <h2 id="auth-title">Welcome back</h2>
+          <p class="auth-subtitle">Sign in to Render3D</p>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Log in</button>
+        <button type="button" class="auth-tab" data-tab="register">Create account</button>
+      </div>
+      <p id="auth-error" class="auth-error"></p>
+      <form id="auth-form-login" class="auth-form">
+        <label>Email<input type="email" id="login-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" /></label>
+        <button type="submit" class="btn accent auth-submit">Log in</button>
+      </form>
+      <form id="auth-form-register" class="auth-form hidden">
+        <label>Name<input type="text" id="register-name" required autocomplete="name" placeholder="Your name" /></label>
+        <label>Email<input type="email" id="register-email" required autocomplete="email" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <button type="submit" class="btn accent auth-submit">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script type="module" src="/updates.js?v=20260715-updates"></script>
+</body>
+</html>

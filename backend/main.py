@@ -9209,9 +9209,10 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         allowed.add(viewer_filename)
     meta = project_store.load_meta(project_path)
     project_name = str(meta.get("name") or project_id)
-    preview_file = _share_preview_filename(project_path, filename)
+    preview_meta = _share_preview_image_meta(project_path, filename)
+    preview_file = preview_meta.get("preview_file") or _share_preview_filename(project_path, filename)
     preview_url = (
-        f"/api/share/{token}/files/{urllib.parse.quote(preview_file)}"
+        f"/api/share/{token}/files/{urllib.parse.quote(str(preview_file))}"
         if preview_file
         else None
     )
@@ -9266,6 +9267,9 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         "preview_file": preview_file,
         "preview_url": preview_url,
         "preview_image_url": absolute_preview or absolute_icon,
+        "preview_width": preview_meta.get("preview_width"),
+        "preview_height": preview_meta.get("preview_height"),
+        "preview_type": preview_meta.get("preview_type") or ("image/jpeg" if str(preview_file or "").lower().endswith(".jpg") else "image/png"),
         "browser": browser,
         "robot": {**robot, "artifacts": robot_artifacts},
         "share_title": f"{project_name} · with Render3D",
@@ -9289,6 +9293,15 @@ def _share_page_html(token: str, request: Request) -> str:
     logo = html.escape(f"{origin}/render3d-logo.png?v=20260715-new-logo", quote=True)
     project_name = html.escape(str(meta.get("project_name") or "Shared model"))
     filename = html.escape(str(meta.get("filename") or ""))
+    image_type = html.escape(str(meta.get("preview_type") or "image/jpeg"), quote=True)
+    image_width = meta.get("preview_width")
+    image_height = meta.get("preview_height")
+    image_size_tags = ""
+    if image_width and image_height:
+        image_size_tags = (
+            f'\n  <meta property="og:image:width" content="{int(image_width)}" />'
+            f'\n  <meta property="og:image:height" content="{int(image_height)}" />'
+        )
     og_block = f"""<!-- SHARE_META_START -->
   <title>{title}</title>
   <meta name="description" content="{description}" />
@@ -9302,7 +9315,9 @@ def _share_page_html(token: str, request: Request) -> str:
   <meta property="og:description" content="{description}" />
   <meta property="og:url" content="{url}" />
   <meta property="og:image" content="{image}" />
-  <meta property="og:image:alt" content="{title}" />
+  <meta property="og:image:secure_url" content="{image}" />
+  <meta property="og:image:type" content="{image_type}" />
+  <meta property="og:image:alt" content="{title}" />{image_size_tags}
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="{title}" />
   <meta name="twitter:description" content="{description}" />
@@ -9374,7 +9389,18 @@ def open_share_in_project(
     teams = teams_service.list_teams(user["id"])
     if not teams:
         raise HTTPException(400, "No workspace available")
+    sharer_user = get_user_by_id(str(share.get("created_by") or "")) if share.get("created_by") else None
+    wants_share_back = bool(body.get("share_with_sharer")) and sharer_user and sharer_user.get("id") != user["id"]
     team_id = teams[0]["id"]
+    collaboration_team = None
+    if wants_share_back:
+        try:
+            label = Path(shared_filename).stem.replace("_", " ").strip() or "Shared Remix"
+            collaboration_team = teams_service.create_team(user["id"], f"{label} Remix")
+            team_id = collaboration_team["id"]
+        except Exception as exc:
+            wants_share_back = False
+            logger.warning("Could not create collaboration workspace for share remix: %s", exc)
     project_id = str(uuid.uuid4())[:8]
     dest_path = cad_service.project_dir(PROJECTS, project_id)
     source_meta = project_store.load_meta(source_path)
@@ -9398,8 +9424,7 @@ def open_share_in_project(
         raise HTTPException(500, "Could not copy shared files")
     shared_with_sharer = False
     share_back_error = None
-    sharer_user = get_user_by_id(str(share.get("created_by") or "")) if share.get("created_by") else None
-    if bool(body.get("share_with_sharer")) and sharer_user and sharer_user.get("id") != user["id"]:
+    if wants_share_back and sharer_user:
         try:
             teams_service.add_registered_user_to_team(team_id, str(sharer_user.get("email") or ""), user["id"])
             shared_with_sharer = True
@@ -9416,6 +9441,7 @@ def open_share_in_project(
             "share_token": token,
             "copied_files": copied,
             "shared_with_original_sharer": shared_with_sharer,
+            "collaboration_team_id": collaboration_team.get("id") if collaboration_team else None,
             **({"share_back_error": share_back_error} if share_back_error else {}),
         },
         user=user,
@@ -9456,7 +9482,7 @@ def open_share_in_project(
     }
 
 
-@app.get("/api/share/{token}/files/{filename}")
+@app.api_route("/api/share/{token}/files/{filename}", methods=["GET", "HEAD"])
 def get_share_file(token: str, filename: str, step_mode: str | None = Query(None)):
     project_id, project_path, share = _resolve_share_token(token)
     shared_filename = Path(str(share.get("filename") or "")).name
@@ -9465,10 +9491,15 @@ def get_share_file(token: str, filename: str, step_mode: str | None = Query(None
     safe = Path(filename).name
     if safe not in _share_allowed_filenames(project_path, shared_filename):
         raise HTTPException(404, "File not found")
-    return _file_response(project_path, project_id, safe, step_mode=step_mode)
+    response = _file_response(project_path, project_id, safe, step_mode=step_mode)
+    # Link-preview crawlers (iMessage especially) probe with HEAD first.
+    if hasattr(response, "headers"):
+        response.headers.setdefault("Cache-Control", "public, max-age=3600")
+        response.headers.setdefault("Access-Control-Allow-Origin", "*")
+    return response
 
 
-@app.get("/share/{token}", include_in_schema=False)
+@app.api_route("/share/{token}", methods=["GET", "HEAD"], include_in_schema=False)
 def share_preview_page(token: str, request: Request):
     """Public share viewer — validates the token, then serves the mobile-friendly preview page."""
     return HTMLResponse(
