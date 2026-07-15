@@ -3436,50 +3436,130 @@ def _run_text_to_cad_v2(
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
 
-    # Jake tool-using authoring agent (edit tools + run step/inspect/snapshot in-loop).
-    # Falls back to the legacy full-file rewrite loop if the tool agent cannot finish.
-    use_tool_agent = bool(jake_identical) and bool((context or {}).get("jake_tool_agent", True))
-    if use_tool_agent and not canonical_source:
-        try:
-            from backend.services.jake_tool_agent import run_jake_tool_agent
-
-            # Prefer a filesystem-safe stem (spaces break CLIs).
-            safe_base = re.sub(r"[^a-zA-Z0-9_-]+", "_", base).strip("_") or "model"
-            if safe_base != base:
-                source_name = f"{safe_base}.py"
-                step_name = f"{safe_base}.step"
-                glb_name = f"{safe_base}.glb"
-                stl_name = f"{safe_base}.stl"
-                three_mf_name = f"{safe_base}.3mf"
+    # Prefer Jake's real Codex CAD agent (cad@text-to-cad plugin). Optional
+    # in-process tool-agent imitation is fallback-only unless explicitly forced.
+    ctx = context or {}
+    use_codex_agent = bool(jake_identical) and bool(ctx.get("jake_codex_agent", True))
+    use_tool_agent = bool(jake_identical) and bool(ctx.get("jake_tool_agent", False))
+    if (use_codex_agent or use_tool_agent) and not canonical_source:
+        # Prefer a filesystem-safe stem (spaces break CLIs).
+        safe_base = re.sub(r"[^a-zA-Z0-9_-]+", "_", base).strip("_") or "model"
+        if safe_base != base:
+            source_name = f"{safe_base}.py"
+            step_name = f"{safe_base}.step"
+            glb_name = f"{safe_base}.glb"
+            stl_name = f"{safe_base}.stl"
+            three_mf_name = f"{safe_base}.3mf"
+            source_path = project_path / source_name
+            if previous_source and previous_source_name and Path(previous_source_name).name != source_name:
+                # Keep edit lineage on the original filename when revising.
+                source_name = Path(previous_source_name).name
+                stem = Path(source_name).stem
+                step_name, glb_name = f"{stem}.step", f"{stem}.glb"
+                stl_name, three_mf_name = f"{stem}.stl", f"{stem}.3mf"
                 source_path = project_path / source_name
-                if previous_source and previous_source_name and Path(previous_source_name).name != source_name:
-                    # Keep edit lineage on the original filename when revising.
-                    source_name = Path(previous_source_name).name
-                    stem = Path(source_name).stem
-                    step_name, glb_name = f"{stem}.step", f"{stem}.glb"
-                    stl_name, three_mf_name = f"{stem}.stl", f"{stem}.3mf"
-                    source_path = project_path / source_name
-                    safe_base = stem
-                base = safe_base
+                safe_base = stem
+            base = safe_base
 
-            agent_result = run_jake_tool_agent(
-                ai=ai,
-                project_path=project_path,
-                prompt=generation_prompt,
-                cad_brief=cad_brief,
-                source_name=source_name,
-                step_name=step_name,
-                glb_name=glb_name,
-                stl_name=stl_name,
-                three_mf_name=three_mf_name,
-                previous_source=previous_source,
-                is_edit=is_edit,
-                max_turns=max(28, (max_repairs + 1) * 3),
-                cancel_check=cancel_check,
-                progress_callback=progress_callback,
-                trace_id=trace_id,
-            )
-            ai_traces.extend(agent_result.get("ai_traces") or [])
+        agent_result = None
+        agent_runtime = None
+        agent_exc_message = None
+
+        if use_codex_agent:
+            try:
+                from backend.services.jake_codex_agent import (
+                    JakeCodexUnavailable,
+                    run_jake_codex_agent,
+                )
+
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "stage": "authoring",
+                            "pct": 16,
+                            "label": "Starting Jake Codex CAD agent…",
+                        }
+                    )
+                agent_result = run_jake_codex_agent(
+                    project_path=project_path,
+                    prompt=generation_prompt,
+                    cad_brief=cad_brief,
+                    source_name=source_name,
+                    step_name=step_name,
+                    glb_name=glb_name,
+                    stl_name=stl_name,
+                    three_mf_name=three_mf_name,
+                    previous_source=previous_source,
+                    is_edit=is_edit,
+                    cancel_check=cancel_check,
+                    progress_callback=progress_callback,
+                    trace_id=trace_id,
+                )
+                agent_runtime = "jake_codex"
+            except DesignCanceled:
+                raise
+            except JakeCodexUnavailable as unavailable:
+                agent_exc_message = str(unavailable)
+                trace_add(
+                    "warning",
+                    f"[2.0/text-to-cad] Codex unavailable; will try fallback: {agent_exc_message[:400]}",
+                    trace_id=trace_id,
+                )
+            except Exception as agent_exc:
+                agent_exc_message = str(agent_exc)
+                if "canceled" in agent_exc_message.lower():
+                    raise DesignCanceled("Generation canceled.") from agent_exc
+                trace_add(
+                    "warning",
+                    f"[2.0/text-to-cad] Codex agent failed: {agent_exc_message[:500]}",
+                    trace_id=trace_id,
+                )
+
+        if agent_result is None and (
+            use_tool_agent or (use_codex_agent and agent_exc_message)
+        ):
+            # Soft fallback to in-process imitation only after Codex fails/unavailable,
+            # or when jake_tool_agent was explicitly requested.
+            try:
+                from backend.services.jake_tool_agent import run_jake_tool_agent
+
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "stage": "authoring",
+                            "pct": 18,
+                            "label": "Codex unavailable — falling back to in-process tool agent…",
+                        }
+                    )
+                agent_result = run_jake_tool_agent(
+                    ai=ai,
+                    project_path=project_path,
+                    prompt=generation_prompt,
+                    cad_brief=cad_brief,
+                    source_name=source_name,
+                    step_name=step_name,
+                    glb_name=glb_name,
+                    stl_name=stl_name,
+                    three_mf_name=three_mf_name,
+                    previous_source=previous_source,
+                    is_edit=is_edit,
+                    max_turns=max(28, (max_repairs + 1) * 3),
+                    cancel_check=cancel_check,
+                    progress_callback=progress_callback,
+                    trace_id=trace_id,
+                )
+                agent_runtime = "jake_tool_agent"
+                ai_traces.extend(agent_result.get("ai_traces") or [])
+            except DesignCanceled:
+                raise
+            except Exception as tool_exc:
+                agent_exc_message = (
+                    f"{agent_exc_message + ' | ' if agent_exc_message else ''}"
+                    f"tool agent: {tool_exc}"
+                )
+                agent_result = None
+
+        if agent_result is not None:
             source_name = agent_result["source"]
             step_name = agent_result["step"]
             glb_name = agent_result["glb"]
@@ -3550,22 +3630,28 @@ def _run_text_to_cad_v2(
 
             display_name = title_from_prompt(prompt)
             apply_prompt_project_name(project_path, prompt, fallback=display_name)
+            runtime_label = "Jake Codex CAD agent" if agent_runtime == "jake_codex" else "Jake tool-using authoring agent"
             trace_add(
                 "info",
-                "[2.0/text-to-cad] Jake tool agent completed step/inspect/snapshot gates.",
+                f"[2.0/text-to-cad] {runtime_label} completed step/inspect/snapshot gates.",
                 trace_id=trace_id,
             )
             return {
                 "intent": "generative",
                 "message": (
-                    f"Built {display_name} with the Jake tool-using authoring agent "
+                    f"Built {display_name} with the {runtime_label} "
                     f"({'Architect' if architect_mode else 'Fusion' if fusion_mode else '2.0'})."
                 ),
                 "design_plan": {
-                    "requirements_analysis": f"CAD {label_prefix} routed to Jake tool agent.",
+                    "requirements_analysis": f"CAD {label_prefix} routed to {runtime_label}.",
                     "cad_feature_plan": (
-                        "Tool-using agent edited gen_step() source, ran scripts/step, "
-                        "inspect, and mandatory snapshot in one continuous session."
+                        "Jake Codex / CAD skill edited gen_step() source, ran scripts/step, "
+                        "inspect, and mandatory snapshot in one continuous agent session."
+                        if agent_runtime == "jake_codex"
+                        else (
+                            "Tool-using agent edited gen_step() source, ran scripts/step, "
+                            "inspect, and mandatory snapshot in one continuous session."
+                        )
                     ),
                     "step_ready_brep_output": f"Validated STEP artifact: {step_name}",
                     "text_to_cad_source": source_name,
@@ -3587,7 +3673,7 @@ def _run_text_to_cad_v2(
                     "dfm": None,
                     "warnings": [],
                     "text_to_cad": {
-                        "runtime": "jake_tool_agent",
+                        "runtime": agent_runtime or "jake_codex",
                         "authoring_agent": True,
                         "visual_gate": "fail_closed_multi_view",
                         "naming": {
@@ -3611,29 +3697,28 @@ def _run_text_to_cad_v2(
                 "dfm_warnings": [],
                 "v2_text_to_cad": True,
                 "jake_identical_runtime": True,
-                "jake_tool_agent": True,
+                "jake_codex_agent": agent_runtime == "jake_codex",
+                "jake_tool_agent": agent_runtime == "jake_tool_agent",
                 "fusion_text_to_cad": fusion_mode,
                 "architect_text_to_cad": architect_mode,
             }
-        except DesignCanceled:
-            raise
-        except Exception as agent_exc:
-            last_error = str(agent_exc)
-            repair_note = (
-                "Jake tool-using authoring agent did not finish. "
-                "Falling back to file-rewrite repair loop.\n"
-                f"{last_error}"
-            )
-            trace_add(
-                "warning",
-                f"[2.0/text-to-cad] tool agent failed; fallback loop: {last_error[:500]}",
-                trace_id=trace_id,
-            )
-            current_source = (
-                source_path.read_text(encoding="utf-8", errors="ignore")
-                if source_path.is_file()
-                else previous_source
-            )
+
+        last_error = agent_exc_message or "Jake agent did not finish"
+        repair_note = (
+            "Jake Codex / tool authoring agent did not finish. "
+            "Falling back to file-rewrite repair loop.\n"
+            f"{last_error}"
+        )
+        trace_add(
+            "warning",
+            f"[2.0/text-to-cad] agent failed; fallback loop: {last_error[:500]}",
+            trace_id=trace_id,
+        )
+        current_source = (
+            source_path.read_text(encoding="utf-8", errors="ignore")
+            if source_path.is_file()
+            else previous_source
+        )
 
     # Canonical templates are one-shot; free-form AI source uses Jake's repair loop.
     total_attempts = 1 if canonical_source else (max_repairs + 1)

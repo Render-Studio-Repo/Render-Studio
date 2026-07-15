@@ -2183,11 +2183,15 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
     dxf_files = _build_dxf_context_entries(project_path, body.prompt, refs)
     if dxf_files:
         context["dxf_files"] = dxf_files
-    # Jake-identical CAD 2.0 runtime (skill CLIs + repair). Keep Render3D refs/uploads above.
+    # Jake-identical CAD 2.0 runtime: real Codex + cad@text-to-cad plugin.
+    # Keep Render3D refs/uploads above.
     if (body.mode or "standard").lower() in {"v2", "fusion", "architect"}:
         context["jake_identical_runtime"] = True
         context["strict_upstream_text_to_cad"] = True
         context["mirror_upstream_modeling"] = True
+        context["jake_codex_agent"] = True
+        # In-process imitation is fallback-only; Jake's agent is Codex.
+        context["jake_tool_agent"] = False
     if (body.mode or "standard").lower() == "fusion":
         context["fusion_target"] = "fusion360" if (body.fusion_target or "").lower() == "fusion360" else "in_app"
     if (body.mode or "standard").lower() == "architect":
