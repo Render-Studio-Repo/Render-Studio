@@ -423,6 +423,11 @@ searchEl?.addEventListener("input", () => {
 
 wireDropZone();
 wireEditorToolbar();
+mountSellerPanel(document.getElementById("kb-seller-host"));
+bindPriceFeeHint(
+  document.querySelector("#kb-listing-form input[name='price_cents']"),
+  document.getElementById("kb-fee-hint"),
+);
 loadListings().catch((err) => {
   if (statusEl) statusEl.textContent = err.message || "Failed to load";
 });
