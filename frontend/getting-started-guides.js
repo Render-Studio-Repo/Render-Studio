@@ -149,6 +149,27 @@ export const GETTING_STARTED_GUIDES = [
     ask: "What can Render Agent help with, and how is it different from the CAD Generate prompt?",
     keywords: ["render agent", "help chat", "ask agent", "assistant", "agent button"],
   },
+  {
+    id: "tips-tricks",
+    title: "Tips and tricks",
+    demo: "tips",
+    gif: "/docs/media/ai-generate.gif?v=20260715-real",
+    summary: "Fast workflow habits that make prompts, references, collaboration, and edits work better.",
+    steps: [
+      "In the Project browser, click one file, then hold Shift and click another file to select a range.",
+      "Drag selected project files into the AI prompt to attach them as references for the next generation.",
+      "Use @face, @edge, @path, and @component chips instead of describing locations in plain language.",
+      "Keep the first prompt focused on the main object, then revise the selected result with smaller edits.",
+      "Use Send to AI from marked-up PDFs/images when callouts or notes matter.",
+      "Share folders or share model links when you need teammates or clients to review the same context.",
+    ],
+    ask: "Give me practical Render3D tips and tricks for selecting files, dragging references into the AI prompt, using geometry picks, and getting better CAD generations.",
+    keywords: [
+      "tips", "tricks", "shift select", "multiple files", "drag files", "drag to prompt",
+      "project browser", "project files", "attach references", "reference files", "best practices",
+      "workflow", "chips", "@component", "@face", "@edge", "send to ai",
+    ],
+  },
 ];
 
 export function matchGettingStartedGuides(question, { limit = 2 } = {}) {

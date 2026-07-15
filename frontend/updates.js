@@ -1,7 +1,7 @@
 /** Recent Updates page — milestone features & tools. */
 
 import { listMilestones } from "./docs/updates/milestones.js?v=20260715-updates";
-import { createAuthUI, getStoredUser } from "./auth.js?v=20260709-admin-matt";
+import { authHeaders, createAuthUI } from "./auth.js?v=20260709-admin-matt";
 
 function esc(value) {
   return String(value ?? "")
@@ -79,17 +79,36 @@ function mountFilters() {
   });
 }
 
-function mountAuth() {
-  let currentUser = getStoredUser();
-  createAuthUI({
-    api: async () => ({}),
-    onReady: (data) => {
-      currentUser = data.user;
-    },
-  });
-  return currentUser;
+async function api(path, options = {}, timeoutMs = 60000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(path, {
+      ...options,
+      signal: ctrl.signal,
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...authHeaders(options.headers || {}),
+      },
+    });
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { detail: text };
+    }
+    if (!res.ok) {
+      const err = new Error(data?.detail || data?.message || res.statusText || "Request failed");
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 mountFilters();
 mountList("all");
-mountAuth();
+createAuthUI({ api });

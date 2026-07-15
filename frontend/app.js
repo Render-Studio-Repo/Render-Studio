@@ -11444,35 +11444,94 @@ function ensureModelZUp(object3d, filename = "") {
   const max = Math.max(sx, sy, sz);
   if (!(max > 0)) return false;
 
+  let rotated = false;
   // Already standing in Z-up (height along Z).
-  if (sz >= max * 0.99) return false;
-  // Tallest axis is Y → classic Y-up standing model.
-  if (sy >= max * 0.99) {
+  if (sz >= max * 0.99) {
+    rotated = false;
+  } else if (sy >= max * 0.99) {
+    // Tallest axis is Y → classic Y-up standing model.
     object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  } else if (sz < Math.min(sx, sy) * 0.5) {
+    // Flat Z-up plate/gear on the XY floor (thin Z vs both plan extents).
+    return false;
+  } else if (max <= 25 && sy >= sz * 0.98) {
+    object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  } else if (sy > sz * 1.12 && sy >= sx * 0.9) {
+    object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  }
+
+  if (rotated) {
     object3d.updateMatrixWorld(true);
+    // If the wider footprint ended up on +Z, flip 180° so the base sits down.
+    if (footprintPrefersFlip180(object3d)) {
+      object3d.rotateX(Math.PI);
+      object3d.updateMatrixWorld(true);
+    }
     object3d.userData.render3dZUp = true;
     object3d.userData.render3dZUpSource = filename || true;
     return true;
   }
-  // Flat Z-up plate/gear on the XY floor (thin Z vs both plan extents).
-  if (sz < Math.min(sx, sy) * 0.5) return false;
-  // Meter-scale Y-up previews (robots, assemblies) where Y ≈ height and X is reach.
-  if (max <= 25 && sy >= sz * 0.98) {
-    object3d.rotateX(Math.PI / 2);
-    object3d.updateMatrixWorld(true);
-    object3d.userData.render3dZUp = true;
-    object3d.userData.render3dZUpSource = filename || true;
-    return true;
-  }
-  // Y clearly taller than Z and comparable to X.
-  if (sy > sz * 1.12 && sy >= sx * 0.9) {
-    object3d.rotateX(Math.PI / 2);
+
+  // Already Z-up-ish but possibly inverted (base on +Z).
+  if (sz >= sy * 0.9 && footprintPrefersFlip180(object3d)) {
+    object3d.rotateX(Math.PI);
     object3d.updateMatrixWorld(true);
     object3d.userData.render3dZUp = true;
     object3d.userData.render3dZUpSource = filename || true;
     return true;
   }
   return false;
+}
+
+/** Rough base-vs-top footprint test using the world AABB corners of child geometries. */
+function footprintPrefersFlip180(object3d) {
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  if (box.isEmpty()) return false;
+  const size = box.getSize(new THREE.Vector3());
+  if (!(size.z > 1e-9)) return false;
+  const tol = size.z * 0.04;
+  let minArea = 0;
+  let maxArea = 0;
+  object3d.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    const pos = child.geometry.attributes?.position;
+    if (!pos) return;
+    const v = new THREE.Vector3();
+    let minSpanX = 0; let minSpanY = 0; let minCount = 0;
+    let maxSpanX = 0; let maxSpanY = 0; let maxCount = 0;
+    let minMinX = Infinity; let minMaxX = -Infinity; let minMinY = Infinity; let minMaxY = -Infinity;
+    let maxMinX = Infinity; let maxMaxX = -Infinity; let maxMinY = Infinity; let maxMaxY = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(child.matrixWorld);
+      if (Math.abs(v.z - box.min.z) <= tol) {
+        minCount += 1;
+        minMinX = Math.min(minMinX, v.x); minMaxX = Math.max(minMaxX, v.x);
+        minMinY = Math.min(minMinY, v.y); minMaxY = Math.max(minMaxY, v.y);
+      }
+      if (Math.abs(v.z - box.max.z) <= tol) {
+        maxCount += 1;
+        maxMinX = Math.min(maxMinX, v.x); maxMaxX = Math.max(maxMaxX, v.x);
+        maxMinY = Math.min(maxMinY, v.y); maxMaxY = Math.max(maxMaxY, v.y);
+      }
+    }
+    if (minCount >= 8) {
+      minSpanX = minMaxX - minMinX; minSpanY = minMaxY - minMinY;
+      const mn = Math.min(minSpanX, minSpanY);
+      const mx = Math.max(minSpanX, minSpanY) || 1;
+      minArea += mn * (1 - Math.abs(minSpanX - minSpanY) / mx);
+    }
+    if (maxCount >= 8) {
+      maxSpanX = maxMaxX - maxMinX; maxSpanY = maxMaxY - maxMinY;
+      const mn = Math.min(maxSpanX, maxSpanY);
+      const mx = Math.max(maxSpanX, maxSpanY) || 1;
+      maxArea += mn * (1 - Math.abs(maxSpanX - maxSpanY) / mx);
+    }
+  });
+  return maxArea > minArea * 1.05 && maxArea > 1e-8;
 }
 
 function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true } = {}) {
@@ -11490,6 +11549,15 @@ function materializeObject(object3d, { center = true, normalizePivot = center, f
   }
   if (normalizePivot) {
     normalizeObjectPivotToBounds(object3d);
+  }
+  if (center) {
+    // Re-seat after pivot normalize so the mesh cannot end up straddling z = 0.
+    object3d.updateMatrixWorld(true);
+    const seated = new THREE.Box3().setFromObject(object3d);
+    if (Number.isFinite(seated.min.z) && Math.abs(seated.min.z) > 1e-9) {
+      object3d.position.z -= seated.min.z;
+      object3d.updateMatrixWorld(true);
+    }
   }
   applyCadStyle(object3d);
   positionShadowFloor(scene, object3d);
