@@ -798,15 +798,21 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
   }
   generationWatchPid = pid;
   if (currentUser) {
+    const existingGen = allProjects.find((p) => p.id === pid)?.generation || {};
+    const ownedByOther =
+      existingGen.by_user_id
+      && existingGen.status === "running"
+      && existingGen.by_user_id !== currentUser.id;
     upsertProjectInList({
       id: pid,
       generation: {
-        ...(allProjects.find((p) => p.id === pid)?.generation || {}),
+        ...existingGen,
         status: "running",
-        kind,
-        by_user_id: currentUser.id,
-        by_user_name: currentUser.display_name,
-        by_avatar_url: currentUser.avatar_url,
+        kind: existingGen.kind || kind,
+        by_user_id: ownedByOther ? existingGen.by_user_id : (existingGen.by_user_id || currentUser.id),
+        by_user_name: ownedByOther ? existingGen.by_user_name : (existingGen.by_user_name || currentUser.display_name),
+        by_avatar_url: ownedByOther ? existingGen.by_avatar_url : (existingGen.by_avatar_url || currentUser.avatar_url),
+        prompt: existingGen.prompt || existingGen.label || null,
       },
     });
     renderProjectList();
@@ -2920,57 +2926,6 @@ const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
 const CODEX_KEY = "render3d:codex:v1";
 const CODEX_KEY_LEGACY = "render3d:jake-codex:v1";
 const CODEX_OPENAI_KEY = "render3d:codexOpenAiKey:v1";
-
-const PROMPT_SPICE_KEY = "render3d:prompt-spice:v1";
-
-function isPromptSpiceEnabled() {
-  return Boolean(document.getElementById("prompt-spice")?.checked);
-}
-
-function setPromptSpiceEnabled(on) {
-  const el = document.getElementById("prompt-spice");
-  if (el) el.checked = !!on;
-  try {
-    localStorage.setItem(PROMPT_SPICE_KEY, on ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
-  document.getElementById("prompt-spice-toggle")?.classList.toggle("is-on", !!on);
-}
-
-function initPromptSpiceToggle() {
-  const el = document.getElementById("prompt-spice");
-  if (!el) return;
-  let saved = false;
-  try {
-    saved = localStorage.getItem(PROMPT_SPICE_KEY) === "1";
-  } catch {
-    saved = false;
-  }
-  el.checked = saved;
-  document.getElementById("prompt-spice-toggle")?.classList.toggle("is-on", saved);
-  el.addEventListener("change", () => setPromptSpiceEnabled(el.checked));
-}
-
-async function spiceUpPromptForCad(prompt, { mode = promptMode, targetMode = "new" } = {}) {
-  const data = await api("/api/prompt/improve", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompt,
-      mode: mode === "render" ? "standard" : mode,
-      target_mode: targetMode,
-      speed: getPromptGenerationSpeed?.() || "fast",
-      project_id: projectId || null,
-      ...getPromptAiKeyBodyFields(),
-    }),
-  }, 90000);
-  const improved = String(data?.improved_prompt || "").trim();
-  if (!improved) throw new Error("AI returned an empty improved prompt");
-  return improved;
-}
-
-
 
 function isCodexEnabled() {
   return Boolean(document.getElementById("prompt-codex")?.checked);
@@ -11579,7 +11534,27 @@ async function fetchAllProjects() {
     const qs = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
     const data = await api(`/api/projects${qs}`);
     if (fetchGen !== projectsFetchGeneration) return allProjects;
-    allProjects = data.projects || [];
+    const incoming = data.projects || [];
+    // Keep fresher in-memory "running" generation rows (WS can beat list HTTP).
+    const prevById = new Map((previousProjects || []).map((p) => [p.id, p]));
+    allProjects = incoming.map((p) => {
+      const prev = prevById.get(p.id);
+      const prevGen = prev?.generation;
+      const nextGen = p?.generation;
+      if (
+        prevGen?.status === "running"
+        && nextGen?.status !== "running"
+        && (!nextGen?.updated_at || String(prevGen.updated_at || "") >= String(nextGen.updated_at || ""))
+      ) {
+        return { ...p, generation: prevGen };
+      }
+      return p;
+    });
+    // Keep WS-only stubs (brand-new generating projects) that list API has not returned yet.
+    for (const prev of previousProjects || []) {
+      if (!prev?.id || allProjects.some((p) => p.id === prev.id)) continue;
+      if (prev?.generation?.status === "running") allProjects = [prev, ...allProjects];
+    }
     if (!allProjects.length && teamId) {
       const all = await api("/api/projects");
       if (fetchGen !== projectsFetchGeneration) return allProjects;
@@ -13771,9 +13746,39 @@ function handleRealtimeEvent(msg = {}) {
   if (msg.type === "generation.updated") {
     const pid = msg.project_id;
     if (pid) {
-      upsertProjectInList({ id: pid, generation: msg.generation || { status: "idle" } });
+      const existing = allProjects.find((p) => p.id === pid);
+      const generation = msg.generation || { status: "idle" };
+      upsertProjectInList({
+        id: pid,
+        ...(existing || {}),
+        ...(msg.name ? { name: msg.name } : {}),
+        ...(msg.team_id ? { team_id: msg.team_id } : {}),
+        generation,
+        updated_at: generation.updated_at || existing?.updated_at,
+      });
       renderProjectList();
-      if (pid === projectId) syncViewportGenerationOverlay();
+      if (pid === projectId) {
+        if (generation.status === "running") {
+          // Observer path: show teammate generation without claiming ownership fields.
+          if (generationWatchPid !== pid) {
+            void resumeGenerationIfNeeded(pid, generation);
+          } else {
+            syncViewportGenerationOverlay();
+          }
+        } else {
+          syncViewportGenerationOverlay();
+        }
+      } else if (!existing && generation.status === "running") {
+        // Brand-new project may not be in the list yet — pull metadata once.
+        void ensureActiveProjectListed(pid).then((ok) => {
+          if (!ok) return;
+          const listed = allProjects.find((p) => p.id === pid);
+          if (listed) {
+            listed.generation = generation;
+            renderProjectList();
+          }
+        });
+      }
     }
     return;
   }
@@ -13822,9 +13827,12 @@ function handleRealtimeEvent(msg = {}) {
       upsertProjectInList({
         id: msg.project_id,
         name: msg.name || msg.meta?.name || msg.project_id,
+        team_id: msg.team_id || null,
+        folder_id: msg.folder_id || msg.meta?.folder_id || null,
         updated_at: msg.meta?.updated_at,
         created_at: msg.meta?.created_at,
         file_count: 0,
+        generation: allProjects.find((p) => p.id === msg.project_id)?.generation || { status: "idle" },
       });
       renderProjectList();
       if (msg.project_id === projectId) return;
@@ -17357,47 +17365,6 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   if (!prompt) return;
   if (!suppressAiComposePanelSwitch) showAiComposePanel();
   suppressAiComposePanelSwitch = false;
-
-  // Optional: rewrite prompt for stronger text-to-CAD before generate/edit.
-  if (isPromptSpiceEnabled() && promptMode !== "draw" && !isDimensionQuestion(prompt)) {
-    if (!aiStatus?.ai_ready && promptMode !== "render") {
-      const statusEl = document.getElementById("prompt-status");
-      if (statusEl) {
-        statusEl.className = "status error";
-        statusEl.textContent = "Add your AI API key before using Spice up.";
-      }
-      viewerOverlay.showError("Add your AI API key before using Spice up.");
-      aiKeyUi?.openRequired();
-      return;
-    }
-    const statusEl = document.getElementById("prompt-status");
-    if (statusEl) {
-      statusEl.className = "status loading";
-      statusEl.textContent = "Spicing up your prompt for text-to-CAD…";
-    }
-    try {
-      const improved = await spiceUpPromptForCad(prompt, {
-        mode: promptMode,
-        targetMode: getPromptTargetMode?.() || "new",
-      });
-      if (improved && improved !== prompt) {
-        prompt = improved;
-        composer.setPromptText(improved);
-        if (statusEl) {
-          statusEl.className = "status ok";
-          statusEl.textContent = "Prompt spiced up — generating with the improved text…";
-        }
-        setEditStatus("ok", "Prompt spiced up for CAD.");
-      }
-    } catch (err) {
-      if (statusEl) {
-        statusEl.className = "status error";
-        statusEl.textContent = formatUserError(err) || "Could not spice up prompt.";
-      }
-      viewerOverlay.showError(formatUserError(err) || "Could not spice up prompt.");
-      return;
-    }
-  }
   // Always clear a stale timeout/error banner when the user explicitly clicks Generate.
   viewerOverlay.clearError();
   const promptStatusEl = document.getElementById("prompt-status");
@@ -18009,6 +17976,7 @@ window.addEventListener("keydown", (e) => {
 (async function init() {
   initPromptKeyPopup();
   initPromptGenerationSpeed();
+  initPromptSpiceToggle();
   initWiringGenerationSpeed();
 
   aiKeyUi = createAIKeyUI({
