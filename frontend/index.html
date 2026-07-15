@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-canvas-shape-tags" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-realtime-workspaces" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-remember-gear" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v2" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -306,7 +306,7 @@
       try { localStorage.setItem("render3d:welcomeSeen:v1", "1"); } catch (e) {}
       document.getElementById("welcome-modal")?.classList.add("hidden");
       window.setTimeout(function () {
-        import("./show-me-tour.js?v=20260715-walkthrough-kb-summary")
+        import("./show-me-tour.js?v=20260715-intro-suggestions")
           .then(function (mod) {
             if (!mod.startShowMe?.(guideId, { onDocsPage: false })) {
               window.location.href = "/?showMe=" + encodeURIComponent(guideId);
@@ -435,7 +435,7 @@
               </span>
               <div>
                 <strong>Fusion 360</strong>
-                <small id="fusion-connection-status">Disconnected</small>
+                <small id="fusion-connection-status">Click to connect</small>
               </div>
             </button>
           </div>
@@ -765,13 +765,11 @@
           title="Someone is generating with AI"
           aria-label="Someone is generating with AI"
         ></button>
-        <div class="viewport-tool-stack" aria-label="Viewport quick tools">
-          <button type="button" id="btn-rig-robot-viewport" class="viewport-view-btn viewport-view-btn--rig" title="Set up robot rigging, URDF/SRDF, and MoveIt2 motion">Rig Robot</button>
-          <button type="button" id="btn-color-viewport" class="viewport-view-btn viewport-view-btn--paint" title="Color selected object or picked faces">🎨 Color</button>
-        </div>
         <div class="viewport-view-bar" aria-label="Viewport display">
           <div class="viewport-shot-control">
-            <button type="button" id="btn-screenshot-viewport" class="viewport-view-btn viewport-view-btn--shot" title="Download a screenshot using saved screenshot settings">Screenshot</button>
+            <button type="button" id="btn-screenshot-viewport" class="viewport-view-btn viewport-view-btn--shot" title="Download a screenshot using saved screenshot settings" aria-label="Take screenshot">
+              <span aria-hidden="true">📷</span>
+            </button>
             <button type="button" id="btn-screenshot-options" class="viewport-view-btn viewport-shot-options" aria-haspopup="menu" aria-expanded="false" aria-controls="viewport-shot-menu" title="Screenshot options">▾</button>
             <div id="viewport-shot-menu" class="viewport-shot-menu hidden" role="menu" aria-label="Screenshot options">
               <button type="button" data-shot-mode="viewport" role="menuitem">
@@ -2517,7 +2515,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-render-image-menu"></script>
+  <script type="module" src="/app.js?v=20260715-realtime-workspaces"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

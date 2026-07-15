@@ -72,6 +72,12 @@ function matchScore(item, query) {
   return score;
 }
 
+function realHowToHref(item) {
+  const href = String(item?.href || "").trim();
+  if (!href || href === "/" || href === "/#" || href === "#") return "";
+  return href;
+}
+
 const searchStreakTimers = new WeakMap();
 
 function triggerSearchStreak(input) {
@@ -90,8 +96,9 @@ function cardHtml(item) {
          <img src="${esc(item.visual)}" alt="" loading="lazy" />
        </div>`
     : `<div class="updates-visual updates-visual--empty" aria-hidden="true"></div>`;
-  const link = item.href
-    ? `<a class="updates-more" href="${esc(item.href)}">See how it works</a>`
+  const href = realHowToHref(item);
+  const link = href
+    ? `<a class="updates-more" href="${esc(href)}">See how it works</a>`
     : "";
   return `
     <article class="updates-card" id="${esc(item.id)}" data-kind="${esc(item.kind || "feature")}">

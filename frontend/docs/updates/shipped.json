@@ -85,8 +85,8 @@
       "id": "rendered-texture-apply",
       "date": "2026-07-15",
       "kind": "feature",
-      "title": "Rendered texture apply prompt",
-      "summary": "Photoreal Render now asks the image model for realistic material and recolor cues, then offers to attach the render as a reference for recoloring the original CAD model.",
+      "title": "Rendered texture wrapping",
+      "summary": "Photoreal Render can now use the generated image file as a texture map, wrap it directly onto the selected model, and save a textured GLB without sending the wrap through an AI CAD prompt.",
       "visual": "/docs/media/ai-generate.gif?v=20260715-real",
       "href": "/"
     },

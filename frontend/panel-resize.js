@@ -18,7 +18,7 @@ const LIMITS = {
   leftWidth: [180, 520],
   rightWidth: [220, 560],
   leftLogHeight: [72, 480],
-  timelineHeight: [64, 360],
+  timelineHeight: [118, 360],
 };
 
 function clamp(n, [min, max]) {

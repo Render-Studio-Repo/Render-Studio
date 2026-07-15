@@ -61,7 +61,7 @@ function ensureSummaryStyles() {
   const link = document.createElement("link");
   link.id = "show-me-summary-css";
   link.rel = "stylesheet";
-  link.href = "/show-me-summary.css?v=20260715-summary-popup";
+  link.href = "/show-me-summary.css?v=20260715-intro-suggestions";
   document.head.appendChild(link);
 }
 
@@ -211,8 +211,12 @@ const SHOW_ME_TOURS = {
         "Ask Render Agent when you are unsure what to click next.",
       ],
       actions: [
-        { label: "Demo Texture to Model", guideId: "reference-markup" },
+        { label: "AI Generate Deep Dive", guideId: "ai-generate" },
+        { label: "Select Objects & Parts", guideId: "select-object" },
+        { label: "Geometry Picks", guideId: "picks" },
+        { label: "Reference Markup", guideId: "reference-markup" },
         { label: "Tour Wiring Simulator", guideId: "wiring" },
+        { label: "Team Workspaces", guideId: "workspaces" },
         { label: "Tour Architect Mode", guideId: "architect-mode" },
       ],
     },
@@ -925,6 +929,7 @@ function showCompletionSummary(summary = {}) {
         </ol>
       </div>
     ` : ""}
+    ${actions.length ? `<h4 class="show-me-summary-next-title">Suggested tutorials</h4>` : ""}
     <div class="show-me-summary-actions">
       ${actions.map((action) => {
         if (action.remix) {

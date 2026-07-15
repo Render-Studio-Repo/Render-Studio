@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -19,6 +20,17 @@ ASSIGNABLE_ROLES = ("manager", "user")
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _ensure_invite_token_column(conn) -> None:
+    try:
+        conn.execute("ALTER TABLE team_invites ADD COLUMN token TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _invite_token() -> str:
+    return secrets.token_urlsafe(24)
 
 
 def normalize_role(role: str | None) -> str:
@@ -89,6 +101,21 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
                 "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
                 (team_id, user_id, "owner", now),
             )
+            pending_invites = conn.execute(
+                "SELECT id, team_id FROM team_invites WHERE lower(email)=lower(?) AND status='pending'",
+                (email,),
+            ).fetchall()
+            for invite in pending_invites:
+                existing = conn.execute(
+                    "SELECT 1 FROM team_members WHERE team_id=? AND user_id=?",
+                    (invite["team_id"], user_id),
+                ).fetchone()
+                if not existing:
+                    conn.execute(
+                        "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'user', ?)",
+                        (invite["team_id"], user_id, now),
+                    )
+                conn.execute("UPDATE team_invites SET status='accepted' WHERE id=?", (invite["id"],))
             conn.commit()
         except sqlite3.IntegrityError as exc:
             raise ValueError("Email already registered") from exc
@@ -317,6 +344,7 @@ def list_workspace_invite_candidates(user_id: str, team_id: str | None = None) -
 def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
     """Workspace roster: members, pending invites, and management capabilities."""
     with get_conn() as conn:
+        _ensure_invite_token_column(conn)
         requester = conn.execute(
             "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
             (team_id, user_id),
@@ -577,6 +605,7 @@ def invite_user_to_team(team_id: str, email: str, inviter_id: str) -> dict[str, 
     _require_team_member(team_id, inviter_id)
     email = email.strip().lower()
     with get_conn() as conn:
+        _ensure_invite_token_column(conn)
         user = conn.execute("SELECT id, email, display_name FROM users WHERE email = ?", (email,)).fetchone()
         if user:
             existing = conn.execute(
@@ -588,29 +617,36 @@ def invite_user_to_team(team_id: str, email: str, inviter_id: str) -> dict[str, 
 
         pending = conn.execute(
             """
-            SELECT id FROM team_invites
+            SELECT id, token FROM team_invites
             WHERE team_id = ? AND email = ? AND status = 'pending'
             """,
             (team_id, email),
         ).fetchone()
         if pending:
-            return {"status": "invited", "email": email, "invite_id": pending["id"]}
+            token = pending["token"] if "token" in pending.keys() else None
+            if not token:
+                token = _invite_token()
+                conn.execute("UPDATE team_invites SET token=? WHERE id=?", (token, pending["id"]))
+                conn.commit()
+            return {"status": "invited", "email": email, "invite_id": pending["id"], "invite_token": token}
 
         invite_id = str(uuid.uuid4())[:8]
+        token = _invite_token()
         conn.execute(
             """
-            INSERT INTO team_invites (id, team_id, email, invited_by, status, created_at)
-            VALUES (?, ?, ?, ?, 'pending', ?)
+            INSERT INTO team_invites (id, team_id, email, invited_by, status, created_at, token)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?)
             """,
-            (invite_id, team_id, email, inviter_id, _now()),
+            (invite_id, team_id, email, inviter_id, _now(), token),
         )
         conn.commit()
-        return {"status": "invited", "email": email, "invite_id": invite_id}
+        return {"status": "invited", "email": email, "invite_id": invite_id, "invite_token": token}
 
 
 def list_pending_invites(email: str) -> list[dict[str, Any]]:
     email = email.strip().lower()
     with get_conn() as conn:
+        _ensure_invite_token_column(conn)
         rows = conn.execute(
             """
             SELECT i.id, i.team_id, i.email, i.invited_by, i.created_at,
@@ -630,6 +666,7 @@ def list_pending_invites(email: str) -> list[dict[str, Any]]:
 def accept_team_invite(invite_id: str, user_id: str, email: str) -> dict[str, Any]:
     email = email.strip().lower()
     with get_conn() as conn:
+        _ensure_invite_token_column(conn)
         invite = conn.execute(
             "SELECT * FROM team_invites WHERE id = ? AND status = 'pending'",
             (invite_id,),
@@ -655,6 +692,48 @@ def accept_team_invite(invite_id: str, user_id: str, email: str) -> dict[str, An
 
     folders_service.grant_pending_folder_shares(user_id, email, invite["team_id"])
     return {"status": "accepted", "team": dict(team)}
+
+
+def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
+    token = str(token or "").strip()
+    if not token:
+        raise ValueError("Invite link is missing its token")
+    with get_conn() as conn:
+        _ensure_invite_token_column(conn)
+        invite = conn.execute(
+            """
+            SELECT i.*, t.name AS team_name
+            FROM team_invites i
+            JOIN teams t ON t.id = i.team_id
+            WHERE i.id = ? AND i.status = 'pending'
+            """,
+            (invite_id,),
+        ).fetchone()
+        if not invite or str(invite["token"] or "") != token:
+            raise ValueError("Invite not found or expired")
+        user = conn.execute("SELECT id, email, display_name FROM users WHERE lower(email)=lower(?)", (invite["email"],)).fetchone()
+        if not user:
+            return {
+                "status": "signup_required",
+                "email": invite["email"],
+                "team": {"id": invite["team_id"], "name": invite["team_name"]},
+            }
+        existing = conn.execute(
+            "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
+            (invite["team_id"], user["id"]),
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+                (invite["team_id"], user["id"], "user", _now()),
+            )
+        conn.execute("UPDATE team_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
+        conn.commit()
+        team = {"id": invite["team_id"], "name": invite["team_name"]}
+    from backend.services import folders_service
+
+    folders_service.grant_pending_folder_shares(user["id"], invite["email"], invite["team_id"])
+    return {"status": "accepted", "team": team, "user": dict(user)}
 
 
 def decline_team_invite(invite_id: str, email: str) -> dict[str, Any]:

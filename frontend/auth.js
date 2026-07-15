@@ -81,6 +81,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   const adminDashboardToolbar = document.getElementById("btn-admin-dashboard-toolbar");
   const onshapeStatusEl = document.getElementById("onshape-connection-status");
   const fusionStatusEl = document.getElementById("fusion-connection-status");
+  const fusionConnectBtn = document.getElementById("btn-fusion-connect");
 
   let loggedInUser = null;
 
@@ -91,13 +92,23 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
 
   function setFusionBadge(show, account = null) {
     fusionBadge?.classList.toggle("hidden", !show);
+    fusionConnectBtn?.classList.toggle("is-connected", !!show);
+    fusionConnectBtn?.classList.toggle("is-disconnected", !show);
     if (fusionStatusEl) {
-      if (!show) fusionStatusEl.textContent = "Disconnected";
+      if (!show) fusionStatusEl.textContent = "Click to connect";
       else {
         const label = account?.autodesk_email || account?.autodesk_name || "Connected";
         fusionStatusEl.textContent = label;
       }
     }
+    fusionConnectBtn?.setAttribute(
+      "title",
+      show ? "Open Fusion Library" : "Connect Autodesk Fusion 360",
+    );
+    fusionConnectBtn?.setAttribute(
+      "aria-label",
+      show ? "Fusion 360 connected. Open Fusion Library." : "Fusion 360 disconnected. Click to connect.",
+    );
   }
 
   function showModal(show) {
@@ -504,12 +515,14 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     return { linked: false, redirecting: false };
   }
 
-  document.getElementById("btn-fusion-connect")?.addEventListener("click", () => {
+  fusionConnectBtn?.addEventListener("click", () => {
     closeUserMenu();
     if (fusionBadge && !fusionBadge.classList.contains("hidden")) {
       openFusionLibraryPanel();
     } else {
-      void startAutodeskConnect({ promptForCredentials: false });
+      void startAutodeskConnect({ promptForCredentials: false }).catch((err) => {
+        if (authError) authError.textContent = err.message || "Could not start Fusion connection.";
+      });
     }
   });
 

@@ -26,6 +26,7 @@ export function createGizmoPanel({
   onStatus,
   onSnapRequest,
   onTransformStrokeEnd,
+  onColor,
 }) {
   let panel = null;
   let panelFloat = null;
@@ -129,6 +130,7 @@ export function createGizmoPanel({
         </div>
       </div>
       <div class="gizmo-panel-actions">
+        <button type="button" class="btn secondary gizmo-panel-color" data-gz-color title="Color selected object or picked faces">Color</button>
         <button type="button" class="btn secondary" data-gz-reset>Reset</button>
         <button type="button" class="btn secondary" data-gz-copy title="Apply the transform to a duplicate body">Copy</button>
         <button type="button" class="btn primary" data-gz-apply>Apply</button>
@@ -355,6 +357,10 @@ export function createGizmoPanel({
     panel.querySelector("[data-gz-reset]").addEventListener("click", () => {
       resetObject();
       setStatus("muted", "Reset to original pose");
+    });
+    panel.querySelector("[data-gz-color]")?.addEventListener("click", () => {
+      onColor?.();
+      setStatus("muted", "Color tool opened");
     });
     panel.querySelector("[data-gz-apply]").addEventListener("click", () => apply(false));
     panel.querySelector("[data-gz-copy]").addEventListener("click", () => apply(true));

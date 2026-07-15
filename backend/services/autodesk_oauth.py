@@ -290,7 +290,7 @@ def list_projects(access_token: str, hub_id: str) -> list[dict[str, Any]]:
         attrs = project.get("attributes") or {}
         projects.append({
             "id": project.get("id"),
-            "name": attrs.get("name") || project.get("id"),
+            "name": attrs.get("name") or project.get("id"),
             "type": project.get("type"),
             "last_modified": attrs.get("lastModifiedTime") or attrs.get("updatedTime") or attrs.get("createTime"),
             "created": attrs.get("createTime") or attrs.get("createdTime"),

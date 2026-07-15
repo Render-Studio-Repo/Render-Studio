@@ -1005,10 +1005,6 @@ export function createReferenceFilesViewer(options = {}) {
     });
   }
 
-  function askIncludeModel() {
-    return window.confirm("Include the current 3D model with this render share?");
-  }
-
   function showReferenceContextMenu(event, tab) {
     if (!tab || (tab.kind || kindFromName(tab.filename)) !== "image") return;
     event.preventDefault();
@@ -1036,10 +1032,10 @@ export function createReferenceFilesViewer(options = {}) {
         closeReferenceContextMenu();
         return;
       }
-      if (action === "share-link") emitReferenceAction("share-link", tab, { includeModel: askIncludeModel() });
-      else if (action === "share-chat") emitReferenceAction("share-chat", tab, { includeModel: askIncludeModel() });
-      else if (action === "share-dm") emitReferenceAction("share-dm", tab, { includeModel: askIncludeModel() });
-      else if (action === "store") emitReferenceAction("store", tab, { includeModel: askIncludeModel() });
+      if (action === "share-link") emitReferenceAction("share-link", tab);
+      else if (action === "share-chat") emitReferenceAction("share-chat", tab);
+      else if (action === "share-dm") emitReferenceAction("share-dm", tab);
+      else if (action === "store") emitReferenceAction("store", tab);
       else if (action === "texture") emitReferenceAction("texture-model", tab);
     });
   }

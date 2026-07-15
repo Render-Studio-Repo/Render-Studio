@@ -5834,6 +5834,7 @@ const gizmoPanel = createGizmoPanel({
   },
   onStatus: setEditStatus,
   onSnapRequest: beginSnapTarget,
+  onColor: () => showColorTool(),
   onTransformStrokeEnd: (stroke) => {
     if (!stroke?.before) return;
     pushViewportUndoAction({
@@ -8655,7 +8656,6 @@ async function paintCurrentModel(scope) {
 }
 
 document.getElementById("btn-color-tool")?.addEventListener("click", showColorTool);
-document.getElementById("btn-color-viewport")?.addEventListener("click", showColorTool);
 document.getElementById("btn-color-object")?.addEventListener("click", () => {
   void paintCurrentModel("object");
 });
@@ -12218,6 +12218,41 @@ function promptReferencesForSubmit() {
   return [...refs, ...additions.filter((ref) => !existingIds.has(ref.id))];
 }
 
+function resolveRenderGeometryTarget(promptReferences = []) {
+  const componentRefs = (promptReferences || []).filter((ref) => {
+    const type = String(ref?.type || "").toLowerCase();
+    return ["component", "face", "edge", "corner", "lasso", "path"].includes(type) && (ref.filename || ref.viewer_filename);
+  });
+  for (const ref of componentRefs) {
+    const candidates = [ref.filename, ref.viewer_filename].filter(Boolean);
+    for (const name of candidates) {
+      if (projectAssembly.has(name)) {
+        return {
+          filename: name,
+          ref,
+          object: projectAssembly.get(name),
+        };
+      }
+    }
+  }
+  const fallback = currentModelFilenameForRenderTexture();
+  return fallback && projectAssembly.has(fallback)
+    ? { filename: fallback, ref: null, object: projectAssembly.get(fallback) }
+    : { filename: fallback || null, ref: null, object: null };
+}
+
+function prepareLinkedGeometryForRender(promptReferences = []) {
+  const target = resolveRenderGeometryTarget(promptReferences);
+  if (!target.object || !target.filename) return target;
+  projectAssembly.setVisible(target.filename, true);
+  selectedFile = target.filename;
+  projectTree.setSelected(target.filename);
+  featureEditor.setModel(projectId, target.filename);
+  fitCameraToComponent(target.filename);
+  controls.update();
+  return target;
+}
+
 function promptTargetColor(entry) {
   const seed = String(entry?.name || entry?.stem || "object");
   let hash = 0;
@@ -13767,7 +13802,7 @@ function initAISetupIntroModal() {
       return;
     }
     if (action === "tutorial") {
-      void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
+      void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
         mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
       });
     }
@@ -13808,7 +13843,7 @@ function maybeStartFirstProjectPromptOnboarding() {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1200);
@@ -13827,7 +13862,7 @@ function maybeStartGoogleNewUserWalkthrough(data = {}) {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1400);
@@ -14779,6 +14814,207 @@ function currentModelFilenameForRenderTexture() {
   return projectAssembly?.list?.()?.[0]?.[0] || null;
 }
 
+let renderShareTargetModalEl = null;
+
+function renderShareFileUrl(pid, filename) {
+  return `/api/projects/${encodeURIComponent(pid)}/files/${encodeURIComponent(filename)}`;
+}
+
+async function renderShareBlob(payload, pid) {
+  const url = payload.blobUrl || renderShareFileUrl(pid, payload.filename);
+  const res = String(url).startsWith("blob:") || String(url).startsWith("data:")
+    ? await fetch(url)
+    : await rawFetch(url);
+  if (!res.ok) throw new Error("Could not load render image for sharing.");
+  return res.blob();
+}
+
+function closeRenderShareTargetModal() {
+  renderShareTargetModalEl?.classList.add("hidden");
+}
+
+function ensureRenderShareTargetModal() {
+  if (renderShareTargetModalEl) return renderShareTargetModalEl;
+  const modal = document.createElement("div");
+  modal.className = "auth-modal hidden";
+  modal.id = "render-share-target-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.innerHTML = `
+    <div class="auth-backdrop" data-render-share-close></div>
+    <div class="auth-card app-dialog-card render-share-target-card">
+      <button type="button" class="auth-close" data-render-share-close aria-label="Close">&times;</button>
+      <h2 class="app-dialog-title">Share Render</h2>
+      <p class="muted small">Select a teammate, group, or thread to send this render to.</p>
+      <div data-render-share-body></div>
+      <p class="auth-error hidden" data-render-share-error></p>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-render-share-close]").forEach((el) => {
+    el.addEventListener("click", closeRenderShareTargetModal);
+  });
+  return modal;
+}
+
+function threadShareLabel(thread = {}) {
+  if (thread.kind === "group") return "Group";
+  if (thread.visibility === "private") return "Private thread";
+  if (thread.slug === "general") return "Project chat";
+  return "Thread";
+}
+
+async function postRenderShareToThread({ pid, threadId, payload }) {
+  if (!threadId) throw new Error("Choose a chat target first.");
+  const blob = await renderShareBlob(payload, pid);
+  const form = new FormData();
+  const label = payload.label || payload.filename;
+  form.append("body", [`Shared render: ${label}`, payload.debugText || ""].filter(Boolean).join("\n\n"));
+  form.append("images", blob, payload.filename);
+  return api(`/api/projects/${encodeURIComponent(pid)}/chat/threads/${encodeURIComponent(threadId)}/messages`, {
+    method: "POST",
+    body: form,
+  });
+}
+
+async function shareRenderToProjectChat(payload = {}, pid = projectId) {
+  if (!pid || !payload?.filename) return;
+  setEditStatus("loading", "Sharing render to project chat...");
+  try {
+    const threadData = await api(`/api/projects/${encodeURIComponent(pid)}/chat/threads`);
+    const threads = threadData.threads || [];
+    const target =
+      threads.find((thread) => thread.slug === "general")
+      || threads.find((thread) => thread.visibility !== "private")
+      || threads[0];
+    if (!target?.id) throw new Error("No project chat thread is available.");
+    await postRenderShareToThread({ pid, threadId: target.id, payload });
+    void projectChat?.refreshUnread?.();
+    await projectChat?.open?.();
+    setEditStatus("ok", "Render shared to project chat.");
+  } catch (err) {
+    setEditStatus("error", err.message || "Could not share render to project chat.");
+  }
+}
+
+async function openRenderShareTargetPicker(payload = {}, pid = projectId) {
+  if (!pid || !payload?.filename) return;
+  const modal = ensureRenderShareTargetModal();
+  const body = modal.querySelector("[data-render-share-body]");
+  const error = modal.querySelector("[data-render-share-error]");
+  modal.classList.remove("hidden");
+  if (error) {
+    error.classList.add("hidden");
+    error.textContent = "";
+  }
+  body.innerHTML = `<p class="muted small">Loading people and threads...</p>`;
+  try {
+    const [threadData, memberData] = await Promise.all([
+      api(`/api/projects/${encodeURIComponent(pid)}/chat/threads`),
+      api(`/api/projects/${encodeURIComponent(pid)}/chat/members`),
+    ]);
+    const me = String(currentUser?.id || "");
+    const members = (memberData.members || []).filter((member) => member?.id && String(member.id) !== me);
+    const threads = threadData.threads || [];
+    const groups = threads.filter((thread) => thread.kind === "group");
+    const groupIds = new Set(groups.map((thread) => thread.id));
+    const otherThreads = threads.filter((thread) => !groupIds.has(thread.id));
+    body.innerHTML = `
+      <div class="render-share-target-section">
+        <strong>People</strong>
+        <div class="render-share-target-list">
+          ${members.length ? members.map((member) => `
+            <button type="button" class="render-share-target" data-share-user="${appEscapeHtml(member.id)}">
+              <span>${appEscapeHtml(member.display_name || member.email || "Teammate")}</span>
+              <small>${appEscapeHtml(member.email || member.handle || "Direct message")}</small>
+            </button>
+          `).join("") : `<p class="muted small">No teammates are available for this project yet.</p>`}
+        </div>
+      </div>
+      <div class="render-share-target-section">
+        <strong>Groups</strong>
+        <div class="render-share-target-list">
+          ${groups.length ? groups.map((thread) => `
+            <button type="button" class="render-share-target" data-share-thread="${appEscapeHtml(thread.id)}">
+              <span>${appEscapeHtml(thread.title || "Group")}</span>
+              <small>${Number(thread.member_count || 1)} people · ${threadShareLabel(thread)}</small>
+            </button>
+          `).join("") : `<p class="muted small">No group threads yet.</p>`}
+        </div>
+      </div>
+      <div class="render-share-target-section">
+        <strong>Threads</strong>
+        <div class="render-share-target-list">
+          ${otherThreads.length ? otherThreads.map((thread) => `
+            <button type="button" class="render-share-target" data-share-thread="${appEscapeHtml(thread.id)}">
+              <span>${appEscapeHtml(thread.title || "Thread")}</span>
+              <small>${threadShareLabel(thread)} · ${Number(thread.message_count || 0)} messages</small>
+            </button>
+          `).join("") : `<p class="muted small">No other threads yet.</p>`}
+        </div>
+      </div>
+    `;
+    const setBusy = (target, busy) => {
+      body.querySelectorAll("button").forEach((btn) => {
+        btn.disabled = busy;
+      });
+      if (target && busy) target.querySelector("small").textContent = "Sending...";
+    };
+    body.querySelectorAll("[data-share-thread]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        setBusy(btn, true);
+        try {
+          await postRenderShareToThread({ pid, threadId: btn.dataset.shareThread, payload });
+          closeRenderShareTargetModal();
+          void projectChat?.refreshUnread?.();
+          setEditStatus("ok", "Render shared to chat.");
+        } catch (err) {
+          setBusy(btn, false);
+          if (error) {
+            error.textContent = err.message || "Could not share render.";
+            error.classList.remove("hidden");
+          }
+        }
+      });
+    });
+    body.querySelectorAll("[data-share-user]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const userId = btn.dataset.shareUser;
+        const member = members.find((entry) => String(entry.id) === String(userId));
+        setBusy(btn, true);
+        try {
+          const created = await api(`/api/projects/${encodeURIComponent(pid)}/chat/threads`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: member?.display_name || member?.email || "Direct message",
+              visibility: "private",
+              kind: "dm",
+              invite_user_ids: [userId],
+            }),
+          });
+          await postRenderShareToThread({ pid, threadId: created.thread?.id, payload });
+          closeRenderShareTargetModal();
+          void projectChat?.refreshUnread?.();
+          setEditStatus("ok", `Render shared with ${member?.display_name || member?.email || "teammate"}.`);
+        } catch (err) {
+          setBusy(btn, false);
+          if (error) {
+            error.textContent = err.message || "Could not share render.";
+            error.classList.remove("hidden");
+          }
+        }
+      });
+    });
+  } catch (err) {
+    body.innerHTML = "";
+    if (error) {
+      error.textContent = err.message || "Could not load chat recipients.";
+      error.classList.remove("hidden");
+    }
+  }
+}
+
 async function handleReferenceImageAction(payload = {}) {
   if (!payload?.filename) return;
   const pid = payload.projectId || projectId;
@@ -14793,7 +15029,6 @@ async function handleReferenceImageAction(payload = {}) {
       renderUrl: payload.blobUrl || `/api/projects/${encodeURIComponent(pid)}/files/${encodeURIComponent(payload.filename)}`,
       baseFilename,
       renderPrompt: payload.debugText || "",
-      autoGenerate: false,
     });
     return;
   }
@@ -14808,13 +15043,11 @@ async function handleReferenceImageAction(payload = {}) {
     return;
   }
   if (payload.action === "share-chat") {
-    await projectChat?.open?.();
-    setEditStatus("ok", `Project chat opened. Share ${payload.filename}${payload.includeModel ? " with the model" : ""}.`);
+    await shareRenderToProjectChat(payload, pid);
     return;
   }
   if (payload.action === "share-dm") {
-    await projectChat?.open?.();
-    setEditStatus("ok", "DM sharing will use project chat recipients. Choose a teammate or mention them in chat.");
+    await openRenderShareTargetPicker(payload, pid);
     return;
   }
   if (payload.action === "store") {
@@ -15189,7 +15422,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Fit view", hint: "Center the current model", run: () => fitCamera() },
         { label: "Screenshot", hint: "Download a PNG of the viewport", run: () => document.getElementById("btn-screenshot-viewport")?.click() },
         { label: "Measure", hint: "Open model measurement tool", run: () => document.getElementById("btn-measure")?.click() },
-        { label: "Color", hint: "Color selected object or faces", run: () => document.getElementById("btn-color-viewport")?.click() },
+        { label: "Color", hint: "Color selected object or faces", run: () => showColorTool() },
         { label: "Transparent", hint: "Click objects to make them see-through", run: () => document.getElementById("btn-transparent-viewport")?.click() },
       ]);
       return;
@@ -16138,10 +16371,6 @@ document.getElementById("btn-rigging-artifacts-refresh")?.addEventListener("clic
 document.getElementById("btn-rigging-generate-urdf")?.addEventListener("click", () => generateRobotArtifacts("urdf"));
 document.getElementById("btn-rigging-generate-srdf")?.addEventListener("click", () => generateRobotArtifacts("srdf"));
 document.getElementById("btn-rigging-generate-robot")?.addEventListener("click", () => generateRobotArtifacts("both"));
-document.getElementById("btn-rig-robot-viewport")?.addEventListener("click", () => {
-  void setupRobotMotionWorkflow();
-});
-
 document.getElementById("btn-rigging-demo-gear-train")?.addEventListener("click", () => {
   loadGearTrainDemo({ switchToRigging: true });
 });
@@ -16690,7 +16919,40 @@ function appEscapeHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
-async function openProjectById(id) {
+function setProjectUrl(id, { replace = false } = {}) {
+  if (!id || !window.history?.pushState) return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("project") === String(id) && !replace) return;
+  url.searchParams.set("project", String(id));
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  window.history[replace ? "replaceState" : "pushState"]({ projectId: id }, "", next || "/");
+}
+
+function removeProjectUrlParam({ replace = true } = {}) {
+  if (!window.history?.replaceState) return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("project")) return;
+  url.searchParams.delete("project");
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  window.history[replace ? "replaceState" : "pushState"]({}, "", next || "/");
+}
+
+function projectIdFromSameOriginLink(anchor) {
+  if (!anchor?.href || anchor.download) return null;
+  const target = (anchor.getAttribute("target") || "").trim().toLowerCase();
+  if (target && target !== "_self") return null;
+  let url;
+  try {
+    url = new URL(anchor.href, window.location.href);
+  } catch {
+    return null;
+  }
+  if (url.origin !== window.location.origin) return null;
+  if (url.pathname !== "/" && url.pathname !== window.location.pathname) return null;
+  return url.searchParams.get("project");
+}
+
+async function openProjectById(id, { updateUrl = true, replaceUrl = false, throwOnError = false } = {}) {
   if (!id) return;
   try {
     // Stay in wiring/canvas mode when picking projects from those views.
@@ -16701,13 +16963,29 @@ async function openProjectById(id) {
       applyWorkspaceMode("design");
     }
     await loadProject(id);
+    if (updateUrl) setProjectUrl(id, { replace: replaceUrl });
   } catch (err) {
     console.error("openProject failed:", err);
     setEditStatus("error", err.message || "Could not open project");
+    if (throwOnError) throw err;
   }
 }
 
 window.__openProject = openProjectById;
+document.addEventListener("click", (event) => {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const anchor = event.target?.closest?.("a[href]");
+  const id = projectIdFromSameOriginLink(anchor);
+  if (!id) return;
+  event.preventDefault();
+  void openProjectById(id);
+});
+
+window.addEventListener("popstate", () => {
+  const id = new URLSearchParams(window.location.search).get("project");
+  if (!id || id === projectId) return;
+  void openProjectById(id, { updateUrl: false });
+});
 window.__remixWiringStepperExample = remixWiringStepperExampleIntoFolder;
 
 async function refreshProjectShell({
@@ -17981,8 +18259,44 @@ function renderWorkspaceRealtimeEditor(data = null) {
   if (!folderEl || !projectsEl) return;
   if (!data) {
     updateWorkspaceFusionAutoSync(null);
-    folderEl.innerHTML = "Select one workspace to use the realtime editor.";
-    projectsEl.innerHTML = "";
+    const teams = allTeams.length ? allTeams : [];
+    folderEl.innerHTML = `
+      <strong>Select a workspace</strong>
+      <span>The realtime editor needs one workspace so it can load that workspace's Fusion mirrors.</span>
+    `;
+    projectsEl.innerHTML = teams.length
+      ? `
+        <strong>Available workspaces</strong>
+        <div class="workspace-realtime-team-list">
+          ${teams.map((team) => {
+            const members = workspaceMemberCount(team);
+            const personal = isPersonalWorkspace(team);
+            return `
+              <button type="button" class="workspace-realtime-team-option" data-realtime-team="${appEscapeHtml(team.id)}">
+                <span>${appEscapeHtml(personal ? personalWorkspaceLabel() : team.name || "Workspace")}</span>
+                <small>${personal ? "Personal workspace" : `${members || 1} member${members === 1 ? "" : "s"} · shared workspace`}</small>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      `
+      : `<span>No workspaces loaded yet. Sign in or refresh your workspace list, then reopen Realtime editor.</span>`;
+    projectsEl.querySelectorAll("[data-realtime-team]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const teamId = btn.getAttribute("data-realtime-team") || "";
+        const sel = document.getElementById("team-select");
+        if (!teamId || !sel) return;
+        const hidden = hiddenWorkspaceIds();
+        if (hidden.has(teamId)) {
+          setWorkspaceVisible(teamId, true);
+          renderTeams();
+        }
+        sel.value = teamId;
+        writeSavedWorkspaceId(teamId);
+        await onWorkspaceChange({ deferProjectPick: true });
+        await refreshWorkspaceRealtimeEditor();
+      });
+    });
     window.applyRealtimeBrowserControls?.();
     return;
   }
@@ -20808,7 +21122,7 @@ document.addEventListener("click", async (e) => {
     window.Render3DMobileChrome?.closeMobileToolsPopup?.();
     if (tool === "screenshot") await downloadViewportScreenshot();
     if (tool === "transparent") document.getElementById("btn-transparent-viewport")?.click();
-    if (tool === "color") document.getElementById("btn-color-viewport")?.click();
+    if (tool === "color") showColorTool();
     if (tool === "fit") fitCamera();
     if (tool === "top") viewCube.snapTo?.("top");
     if (tool === "models") openMobileModelPicker();
@@ -20816,7 +21130,7 @@ document.addEventListener("click", async (e) => {
     if (tool === "select") { openMobileRightPanel("tools"); activatePickMode("object"); }
     if (tool === "face") { openMobileRightPanel("tools"); activatePickMode("face"); }
     if (tool === "measure") document.getElementById("btn-measure")?.click();
-    if (tool === "rig") document.getElementById("btn-rig-robot-viewport")?.click();
+    if (tool === "rig") void setupRobotMotionWorkflow();
     if (tool === "ai") { showAiComposePanel(); openMobileRightPanel(workspaceModes?.isWiring?.() ? "wiring" : "prompt"); }
     return;
   }
@@ -21283,55 +21597,165 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function renderedImageUrlToFile(url, filename = "rendered-material-reference.png") {
+async function renderedImageUrlToTexture(url) {
   const blob = await fetchRenderedImageBlob(url);
-  return new File([blob], filename, { type: blob.type || "image/png" });
+  const dataUrl = await blobToDataUrl(blob);
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load rendered image as a texture."));
+    img.src = dataUrl;
+  });
+  const texture = new THREE.Texture(image);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.flipY = false;
+  texture.needsUpdate = true;
+  return texture;
 }
 
-async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename, renderPrompt, autoGenerate = false }) {
+function applyBoxProjectionUvs(geometry) {
+  if (!geometry?.attributes?.position) return geometry;
+  const geom = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  geom.computeBoundingBox();
+  if (!geom.attributes.normal) geom.computeVertexNormals();
+  const pos = geom.attributes.position;
+  const normal = geom.attributes.normal;
+  const box = geom.boundingBox;
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const min = box.min;
+  const sx = Math.max(size.x, 1e-6);
+  const sy = Math.max(size.y, 1e-6);
+  const sz = Math.max(size.z, 1e-6);
+  const uvs = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const nx = Math.abs(normal?.getX(i) || 0);
+    const ny = Math.abs(normal?.getY(i) || 0);
+    const nz = Math.abs(normal?.getZ(i) || 0);
+    let u;
+    let v;
+    if (nx >= ny && nx >= nz) {
+      u = (y - min.y) / sy;
+      v = (z - min.z) / sz;
+    } else if (ny >= nx && ny >= nz) {
+      u = (x - min.x) / sx;
+      v = (z - min.z) / sz;
+    } else {
+      u = (x - min.x) / sx;
+      v = (y - min.y) / sy;
+    }
+    uvs[i * 2] = u;
+    uvs[i * 2 + 1] = v;
+  }
+  geom.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  return geom;
+}
+
+function stripViewportHelperObjects(root) {
+  const helpers = [];
+  root.traverse((child) => {
+    if (child.userData?.isEdge || child.userData?.isSilhouette) helpers.push(child);
+  });
+  helpers.forEach((child) => child.parent?.remove(child));
+}
+
+function applyTextureToModelClone(object, texture) {
+  const clone = object.clone(true);
+  clone.position.set(0, 0, 0);
+  clone.quaternion.set(0, 0, 0, 1);
+  clone.scale.set(1, 1, 1);
+  stripViewportHelperObjects(clone);
+  clone.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    child.geometry = applyBoxProjectionUvs(child.geometry);
+    child.material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: texture,
+      metalness: 0.04,
+      roughness: 0.58,
+      side: child.material?.side ?? THREE.FrontSide,
+      envMapIntensity: 0.35,
+    });
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+  return clone;
+}
+
+async function exportObjectToGlb(object) {
+  object.updateMatrixWorld(true);
+  const exporter = new GLTFExporter();
+  return await new Promise((resolve, reject) => {
+    exporter.parse(
+      object,
+      (result) => {
+        if (result instanceof ArrayBuffer) {
+          resolve(result);
+          return;
+        }
+        try {
+          resolve(new TextEncoder().encode(JSON.stringify(result)).buffer);
+        } catch (err) {
+          reject(err);
+        }
+      },
+      (err) => reject(err),
+      { binary: true, onlyVisible: true, trs: false },
+    );
+  });
+}
+
+function renderedTextureOutputFilename(baseFilename) {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const stem = fileStem(baseFilename)
+    .replace(/_edited(?:_\d+)?$/i, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "textured_model";
+  return `${stem}_edited_${stamp}.glb`;
+}
+
+async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename }) {
   if (!projectId || !baseFilename) {
-    setEditStatus("error", "Open a model before applying a rendered texture reference.");
+    setEditStatus("error", "Open a model before applying a rendered texture.");
     return;
   }
   closeRenderedTexturePrompt();
   try {
-    showAiComposePanel();
-    applyPromptModeUI("v2");
-    selectedFile = baseFilename;
-    projectTree.setSelected?.(baseFilename);
-    const targetModeSelect = document.getElementById("prompt-target-mode");
-    const targetObjectSelect = document.getElementById("prompt-target-object");
-    if (targetModeSelect) targetModeSelect.value = "edit";
-    syncPromptTargetUI();
-    if (targetObjectSelect) targetObjectSelect.value = baseFilename;
-    syncPromptTargetUI();
+    setEditStatus("loading", `Wrapping rendered texture onto ${baseFilename}...`);
+    const catalogName = projectAssembly.has(baseFilename)
+      ? baseFilename
+      : assemblyCatalogMatchingStem(baseFilename);
+    const sourceObject = catalogName ? projectAssembly.get(catalogName) : null;
+    if (!sourceObject) throw new Error("Load the target model in the viewport before applying the rendered texture.");
 
-    const file = await renderedImageUrlToFile(
-      renderUrl,
-      String(renderFilename || "rendered-material-reference.png").replace(/\.[^.]+$/, "-material-reference.png")
-    );
-    await addPromptImages([file]);
-    const materialPrompt = [
-      "Use the attached photoreal render as a material and recolor reference for the selected CAD model.",
-      "",
-      `Target model: ${baseFilename}`,
-      renderPrompt ? `Rendered scene prompt: ${renderPrompt}` : "",
-      "",
-      "Recolor the model to look more realistic while preserving all geometry, dimensions, holes, snap features, and functional faces.",
-      "Translate the rendered look into CAD-friendly material zones: plausible base colors, subtle roughness/metal/plastic/wood cues, accent panels, seams, edge wear, or decals only where they fit the object.",
-      "If the render implies multiple materials, create clear named color/material regions rather than redesigning the shape.",
-    ].filter(Boolean).join("\n");
-    composer.setPromptText?.(materialPrompt);
-    saveActiveModelPromptState();
-    if (autoGenerate) {
-      setEditStatus("ok", "Rendered material reference attached. Starting recolor edit...");
-      requestAnimationFrame(() => document.getElementById("btn-prompt")?.click());
-    } else {
-      setEditStatus("ok", "Rendered material reference attached. Review the recolor prompt, then click Generate.");
-    }
+    const texture = await renderedImageUrlToTexture(renderUrl);
+    const texturedObject = applyTextureToModelClone(sourceObject, texture);
+    const glbBuffer = await exportObjectToGlb(texturedObject);
+    const filename = renderedTextureOutputFilename(baseFilename || renderFilename);
+    const form = new FormData();
+    form.append("file", new File([new Blob([glbBuffer], { type: "model/gltf-binary" })], filename, { type: "model/gltf-binary" }), filename);
+    const uploaded = await api(`/api/projects/${projectId}/upload`, {
+      method: "POST",
+      body: form,
+    });
+    const viewerFile = uploaded?.viewer_filename || uploaded?.filename || filename;
+    await afterModelEdit({
+      filename: viewerFile,
+      url: uploaded?.url || `/api/projects/${projectId}/files/${encodeURIComponent(viewerFile)}`,
+      replaceCatalog: catalogName || baseFilename,
+      action: "texture_wrap",
+      label: "Applied rendered texture",
+    });
+    setEditStatus("ok", `Wrapped rendered texture onto ${baseFilename}.`);
+    viewerOverlay.clearError();
   } catch (err) {
-    setEditStatus("error", err.message || "Could not attach rendered texture reference.");
-    viewerOverlay.showError(err.message || "Could not attach rendered texture reference.");
+    setEditStatus("error", err.message || "Could not apply rendered texture.");
+    viewerOverlay.showError(err.message || "Could not apply rendered texture.");
   }
 }
 
@@ -21353,15 +21777,14 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         <span>New render</span>
       </div>
       <div class="render-texture-copy">
-        <p class="render-texture-eyebrow">Material reference ready</p>
+        <p class="render-texture-eyebrow">Texture ready</p>
         <h2 id="render-texture-title">Apply this rendered look to your model?</h2>
         <p>
-          Render3D can attach this image to the AI CAD prompt and prepare an edit that recolors
-          <strong>${appEscapeHtml(baseFilename)}</strong> with realistic material zones while preserving the geometry.
+          Render3D will use this image file as a texture map and wrap it directly around
+          <strong>${appEscapeHtml(baseFilename)}</strong>. No AI prompt is used for this wrap step.
         </p>
         <div class="render-texture-actions">
           <button type="button" class="btn secondary" data-render-texture-close>Not now</button>
-          <button type="button" class="btn secondary" id="render-texture-prepare">Edit prompt first</button>
           <button type="button" class="btn accent" id="render-texture-apply">Apply rendered texture</button>
         </div>
       </div>
@@ -21372,10 +21795,7 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
     el.addEventListener("click", closeRenderedTexturePrompt);
   });
   modal.querySelector("#render-texture-apply")?.addEventListener("click", () => {
-    void applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename, renderPrompt, autoGenerate: true });
-  });
-  modal.querySelector("#render-texture-prepare")?.addEventListener("click", () => {
-    void applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename, renderPrompt, autoGenerate: false });
+    void applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename, renderPrompt });
   });
   void fetchRenderedImageBlob(renderUrl)
     .then(blobToDataUrl)
@@ -21388,14 +21808,17 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
     });
 }
 
-async function runSceneRenderPrompt(prompt) {
+async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesForSubmit()) {
   await ensureProject();
   const status = document.getElementById("prompt-status");
   const reply = document.getElementById("prompt-reply");
-  const renderBaseFilename = selectedFile || null;
+  const renderTarget = prepareLinkedGeometryForRender(promptReferences);
+  const renderBaseFilename = renderTarget.filename || selectedFile || null;
   if (status) {
     status.className = "status loading";
-    status.textContent = "Rendering photoreal scene… this can take a moment.";
+    status.textContent = renderTarget.ref
+      ? `Rendering photoreal scene from linked geometry: ${renderBaseFilename}…`
+      : "Rendering photoreal scene… this can take a moment.";
   }
   if (reply) reply.textContent = "";
   lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
@@ -21691,7 +22114,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     promptSubmitInFlight = true;
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
     try {
-      await runSceneRenderPrompt(prompt);
+      await runSceneRenderPrompt(prompt, promptReferencesForSubmit());
     } catch (err) {
       const status = document.getElementById("prompt-status");
       const msg = formatUserError(err);
@@ -22432,7 +22855,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (showMeParam) {
     window.__render3dShowMeFromQuery = true;
-    void import("./show-me-tour.js?v=20260715-render-image-demo").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }
@@ -22737,15 +23160,12 @@ window.addEventListener("keydown", (e) => {
       await onWorkspaceChange({ deferProjectPick: true });
       const urlProject = new URLSearchParams(window.location.search).get("project");
       if (urlProject) {
-        const params = new URLSearchParams(window.location.search);
-        params.delete("project");
-        const qs = params.toString();
-        window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
         try {
-          await loadProject(urlProject);
+          await openProjectById(urlProject, { replaceUrl: true, throwOnError: true });
           captureSessionSnapshot();
         } catch (err) {
           console.warn("URL project open failed:", err);
+          removeProjectUrlParam();
           const restored = await restoreSessionSnapshot();
           if (!restored) await ensureProject();
         }
@@ -23846,6 +24266,13 @@ window.addEventListener("keydown", (e) => {
 
   let preferencesAdvancedOpen = true;
   let preferencesAdvancedTab = "authorized";
+  let emailPreferences = {
+    chat_alerts: false,
+    purchase_alerts: false,
+    calendar_meetings: true,
+    credit_refills: true,
+    workspace_invites: true,
+  };
 
   function readRenderEditSaveMode() {
     try {
@@ -23904,6 +24331,40 @@ window.addEventListener("keydown", (e) => {
     if (spiceToggle) spiceToggle.checked = isSpicePreferenceEnabled();
     const codexToggle = panel.querySelector("#pref-advanced-codex-agent");
     if (codexToggle) codexToggle.checked = isCodexPreferenceEnabled();
+    panel.querySelectorAll("[data-email-pref]").forEach((input) => {
+      input.checked = !!emailPreferences[input.dataset.emailPref];
+    });
+  }
+
+  async function loadEmailPreferences(panel = document.getElementById("profile-preferences-panel")) {
+    if (!currentUser) return;
+    try {
+      const data = await api("/api/users/me/email-preferences");
+      emailPreferences = { ...emailPreferences, ...(data.preferences || {}) };
+      syncPreferencesMenuControls(panel);
+    } catch (err) {
+      const note = panel?.querySelector("#pref-email-status");
+      if (note) note.textContent = `Could not load email preferences: ${err.message || "error"}`;
+    }
+  }
+
+  async function saveEmailPreference(key, value, panel = document.getElementById("profile-preferences-panel")) {
+    if (!key) return;
+    emailPreferences = { ...emailPreferences, [key]: !!value };
+    syncPreferencesMenuControls(panel);
+    const note = panel?.querySelector("#pref-email-status");
+    try {
+      const data = await api("/api/users/me/email-preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: !!value }),
+      });
+      emailPreferences = { ...emailPreferences, ...(data.preferences || {}) };
+      syncPreferencesMenuControls(panel);
+      if (note) note.textContent = "Email preferences saved.";
+    } catch (err) {
+      if (note) note.textContent = err.message || "Could not save email preferences.";
+    }
   }
 
   async function hydrateAuthorizedApps(panel = document.getElementById("profile-preferences-panel")) {
@@ -24163,6 +24624,46 @@ window.addEventListener("keydown", (e) => {
               Viewport lighting can be adjusted from the ribbon Light button and is remembered on this device.
             </p>
           </section>
+          <section class="profile-preferences-section profile-preferences-section--wide">
+            <strong>Email notifications</strong>
+            <p class="muted small profile-preferences-note">Choose which Render3D events should send email. Workspace invites, meeting requests, and credit refill emails are on by default.</p>
+            <label class="profile-preference-switch">
+              <span>
+                <b>Chat alerts</b>
+                <small>Email me when I am mentioned or a thread needs attention.</small>
+              </span>
+              <input type="checkbox" data-email-pref="chat_alerts" />
+            </label>
+            <label class="profile-preference-switch">
+              <span>
+                <b>Purchase alerts</b>
+                <small>Email receipts and marketplace purchase updates.</small>
+              </span>
+              <input type="checkbox" data-email-pref="purchase_alerts" />
+            </label>
+            <label class="profile-preference-switch">
+              <span>
+                <b>Meeting requests and calendar scheduling</b>
+                <small>Email me when someone requests or schedules a Google Calendar meeting.</small>
+              </span>
+              <input type="checkbox" data-email-pref="calendar_meetings" />
+            </label>
+            <label class="profile-preference-switch">
+              <span>
+                <b>Credit refill alerts</b>
+                <small>Email me when shared-key credits are re-upped or auto-refilled.</small>
+              </span>
+              <input type="checkbox" data-email-pref="credit_refills" />
+            </label>
+            <label class="profile-preference-switch">
+              <span>
+                <b>Workspace invites</b>
+                <small>Email me when someone invites me to join a workspace.</small>
+              </span>
+              <input type="checkbox" data-email-pref="workspace_invites" />
+            </label>
+            <p id="pref-email-status" class="muted small profile-preferences-note"></p>
+          </section>
           <section id="profile-preferences-advanced" class="profile-preferences-section profile-preferences-section--wide profile-preferences-advanced ${preferencesAdvancedOpen ? "" : "hidden"}">
             <div class="profile-preferences-advanced-head">
               <div>
@@ -24325,6 +24826,7 @@ window.addEventListener("keydown", (e) => {
     `;
     syncPreferencesMenuControls(panel);
     scheduleProfileHandleAvailabilityCheck({ immediate: true });
+    void loadEmailPreferences(panel);
     void hydrateAuthorizedApps(panel);
     if (preferencesAdvancedOpen && preferencesAdvancedTab === "store") {
       void storePreferencesUi?.hydrate?.(panel);

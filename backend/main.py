@@ -1306,6 +1306,7 @@ def _prompt_timeline_meta(body: PromptRequest, **extra: Any) -> dict[str, Any]:
     meta: dict[str, Any] = {
         "prompt": body.prompt,
         "speed": body.speed,
+        "prompt_mode": (getattr(body, "mode", None) or "standard").lower(),
         "base_filename": body.base_filename,
         "target_mode": target,
         "generative_edit": target == "edit",
@@ -5156,6 +5157,14 @@ class MeetingRequestBody(BaseModel):
     send_email: bool = True
 
 
+class EmailPreferencesRequest(BaseModel):
+    chat_alerts: bool | None = None
+    purchase_alerts: bool | None = None
+    calendar_meetings: bool | None = None
+    credit_refills: bool | None = None
+    workspace_invites: bool | None = None
+
+
 class AvailabilityWindowBody(BaseModel):
     windows: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -5203,6 +5212,21 @@ def update_my_profile(body: UserProfileUpdateRequest, user: dict[str, Any] = Dep
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"user": updated}
+
+
+@app.get("/api/users/me/email-preferences")
+def get_my_email_preferences(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import email_notification_service
+
+    return {"preferences": email_notification_service.get_preferences(user["id"])}
+
+
+@app.put("/api/users/me/email-preferences")
+@app.patch("/api/users/me/email-preferences")
+def update_my_email_preferences(body: EmailPreferencesRequest, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import email_notification_service
+
+    return {"preferences": email_notification_service.update_preferences(user["id"], body.model_dump(exclude_none=True))}
 
 
 @app.get("/api/users/me/store-settings")
@@ -5261,7 +5285,15 @@ def request_meeting_with_user(
     body: MeetingRequestBody,
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    from backend.services import profile_service, project_chat_service
+    from backend.services import email_notification_service, profile_service, project_chat_service
+    target_email_allowed = True
+    if body.send_email:
+        with get_conn() as conn:
+            target_row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        target_email_allowed = email_notification_service.user_allows_email(
+            target_row["id"] if target_row else user_id,
+            "calendar_meetings",
+        )
 
     try:
         result = profile_service.create_meeting_request(
@@ -5273,7 +5305,7 @@ def request_meeting_with_user(
             starts_at=body.starts_at or "",
             ends_at=body.ends_at or "",
             timezone_name=body.timezone or "UTC",
-            send_email=bool(body.send_email),
+            send_email=bool(body.send_email) and target_email_allowed,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -8979,7 +9011,7 @@ def leave_team(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
 
 
 @app.post("/api/teams/{team_id}/invite")
-def invite_to_team(team_id: str, body: TeamInviteRequest, user: dict[str, Any] = Depends(get_current_user)):
+def invite_to_team(team_id: str, body: TeamInviteRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
     try:
         result = teams_service.invite_user_to_team(team_id, body.email, user["id"])
     except PermissionError as exc:
@@ -8995,6 +9027,32 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, user: dict[str, Any] =
             "by_user_id": user["id"],
         },
     )
+    if result.get("status") == "invited" and result.get("invite_id") and result.get("invite_token"):
+        try:
+            from backend.services import email_notification_service
+
+            with get_conn() as conn:
+                team = conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)).fetchone()
+                target_user = conn.execute(
+                    "SELECT id FROM users WHERE lower(email)=lower(?)",
+                    (body.email.strip().lower(),),
+                ).fetchone()
+            base = str(getattr(settings, "public_base_url", None) or _request_origin(request)).rstrip("/")
+            invite_url = (
+                f"{base}/api/teams/invites/{result['invite_id']}/claim"
+                f"?token={urllib.parse.quote(str(result['invite_token']))}"
+            )
+            email_result = email_notification_service.send_workspace_invite_email(
+                to_email=body.email.strip().lower(),
+                inviter_name=user.get("display_name") or user.get("email") or "A teammate",
+                team_name=(team["name"] if team else "Render3D workspace"),
+                invite_url=invite_url,
+                user_id=(target_user["id"] if target_user else None),
+            )
+            result["email"] = email_result
+            result["invite_url"] = invite_url
+        except Exception:
+            logger.warning("Could not send workspace invite email team_id=%s email=%s", team_id, body.email, exc_info=True)
     _notify_user_by_email(
         body.email,
         {
@@ -9007,6 +9065,22 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, user: dict[str, Any] =
         },
     )
     return result
+
+
+@app.get("/api/teams/invites/{invite_id}/claim")
+def claim_team_invite_link(invite_id: str, token: str = Query(..., min_length=1)):
+    try:
+        result = teams_service.claim_team_invite(invite_id, token)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if result.get("status") == "accepted":
+        return RedirectResponse(url=f"/?workspace_joined={urllib.parse.quote(str(result.get('team', {}).get('id') or ''))}", status_code=303)
+    email = str(result.get("email") or "")
+    team_id = str(result.get("team", {}).get("id") or "")
+    return RedirectResponse(
+        url=f"/?signup=1&invite_id={urllib.parse.quote(invite_id)}&invite_email={urllib.parse.quote(email)}&team_id={urllib.parse.quote(team_id)}",
+        status_code=303,
+    )
 
 
 @app.get("/api/teams/invite-candidates")
@@ -14395,8 +14469,9 @@ def _scene_render_prompt(user_prompt: str, project_name: str | None, base_filena
         context += f" ({base_filename})"
     return (
         "Create a photorealistic product/environment render using the provided viewport image as the exact 3D model reference. "
-        "Preserve the model's geometry, proportions, and visible orientation. "
-        "Do not redesign the model. Place it naturally in the requested real-life environment with realistic lighting, shadows, "
+        "The viewport image is generated from the actual linked CAD geometry; treat its silhouette, topology, proportions, parts, holes, "
+        "openings, joints, and visible orientation as authoritative. "
+        "Do not redesign, simplify, add, remove, or reshape model geometry. Place it naturally in the requested real-life environment with realistic lighting, shadows, "
         "camera perspective, contact with surfaces, and plausible scale. "
         "Improve the visual material treatment to make the model feel real: choose plausible base colors, subtle roughness/metal/plastic/wood cues, "
         "edge wear, seams, decals, or contrast panels only when they fit the object. Keep these recolor and texture decisions believable, "

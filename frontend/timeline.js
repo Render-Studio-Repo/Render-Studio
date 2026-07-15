@@ -51,6 +51,18 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     return "▣";
   }
 
+  function promptModeForEntry(entry = {}) {
+    const meta = entry.meta || {};
+    return String(
+      entry.prompt_mode ||
+      entry.mode ||
+      meta.prompt_mode ||
+      meta.mode ||
+      meta.source ||
+      ""
+    ).toLowerCase();
+  }
+
   function userAvatar(entry) {
     const name = entry.user_name || (entry.user_id ? "Teammate" : "User");
     const initial = escapeHtml(String(name).trim().charAt(0).toUpperCase() || "?");
@@ -196,8 +208,11 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         btn.type = "button";
         btn.className = "timeline-step";
         const kind = String(e.kind || "").toLowerCase();
+        const promptMode = promptModeForEntry(e);
         if (kind === "restore") btn.classList.add("timeline-step--restore");
         if (kind === "prompt" || kind === "build") btn.classList.add("timeline-step--prompt");
+        if (promptMode === "v2" || promptMode === "2.0") btn.classList.add("timeline-step--v2");
+        if (kind === "render" || kind === "scene_render" || promptMode === "render") btn.classList.add("timeline-step--render");
         if (e.pending || e.id === "__pending_prompt__") btn.classList.add("timeline-step--pending");
         if (e.user_id) btn.classList.add("timeline-step--collab");
         const label = entryLabel(e);

@@ -155,6 +155,17 @@
   margin-top: 6px;
 }
 
+.show-me-summary-next-title {
+  position: relative;
+  z-index: 1;
+  margin: 4px 0 10px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fb923c;
+}
+
 .show-me-summary-actions {
   position: relative;
   z-index: 1;
