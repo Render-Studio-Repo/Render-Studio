@@ -91,10 +91,21 @@ const SHOW_ME_TOURS = {
   "tips-tricks": {
     title: "Tips & tricks",
     example: "",
-    studioPath: "/?showMe=tips-tricks",
+    studioPath: "/getting-started.html#tips-library",
     gif: null,
     steps: [
-      { selector: "#project-browser, .file-browser", label: "Project browser" },
+      { selector: "#tips-library, .gs-tips-section", label: "Tips & tricks library" },
+    ],
+  },
+  "link-to-prompt": {
+    title: "Link project items to the prompt",
+    example: "Use @component-1 as the mating part and keep clearances at 0.3 mm",
+    studioPath: "/?showMe=link-to-prompt",
+    gif: "/docs/media/picks.gif?v=20260715-real",
+    steps: [
+      { selector: "#project-browser, .browser-section, .file-browser", label: "Project browser — select files" },
+      { selector: "#prompt-input, .prompt-editor, #prompt-pane-compose", label: "AI prompt — drop files here" },
+      { selector: ".ribbon-pick, #pick-face-btn, [data-tool='pick-face']", label: "Pick tools for @face / @edge / @path" },
     ],
   },
 };

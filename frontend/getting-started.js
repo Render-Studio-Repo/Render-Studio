@@ -1,10 +1,10 @@
 /** Getting Started feature guides for Docs. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-wiring-link";
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-link-prompt";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-fix";
-import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-fix";
+import { createRenderAgent } from "./render-agent.js?v=20260715-link-prompt";
+import { startShowMe } from "./show-me-tour.js?v=20260715-link-prompt";
 
 const FEATURES = GETTING_STARTED_GUIDES;
 
@@ -18,7 +18,8 @@ const TOC_LABELS = {
   wiring: "Wiring",
   "cloud-sync": "Fusion / Onshape",
   "render-agent": "Render Agent",
-  "tips-tricks": "Tips & tricks",
+  "link-to-prompt": "Link to prompt",
+  "tips-library": "Tips & tricks",
 };
 
 function esc(value) {
@@ -131,7 +132,7 @@ function mountToc() {
     ${FEATURES.map((f) => `
       <a href="#${esc(f.id)}" data-gs-toc="${esc(f.id)}">${esc(TOC_LABELS[f.id] || f.title)}</a>
     `).join("")}
-    <a href="#create-guide" data-gs-toc="create-guide">Create a guide</a>
+    <a href="#tips-library" data-gs-toc="tips-library">${esc(TOC_LABELS["tips-library"])}</a>
   `;
 }
 
@@ -196,8 +197,8 @@ function mountTocSpy() {
     const el = document.getElementById(f.id);
     if (el) io.observe(el);
   });
-  const create = document.getElementById("create-guide");
-  if (create) io.observe(create);
+  const tips = document.getElementById("tips-library");
+  if (tips) io.observe(tips);
   links[0]?.classList.add("is-active");
 }
 
@@ -377,4 +378,25 @@ mountFeatures();
 mountTips();
 mountReveal();
 mountTocSpy();
+
+function syncDocsCategoryTabs() {
+  const hash = String(location.hash || "").replace(/^#/, "");
+  document.querySelectorAll(".docs-category-tabs .docs-category-tab").forEach((tab) => {
+    const href = tab.getAttribute("href") || "";
+    const isTips = href.includes("tips-library");
+    const isGettingStarted = href.endsWith("getting-started.html") || href === "/getting-started.html";
+    let active = false;
+    if (hash === "tips-library") active = isTips;
+    else if (!hash) active = isGettingStarted && !isTips;
+    else active = false;
+    if (isGettingStarted && !isTips && hash && hash !== "tips-library") {
+      // Feature anchors still count as Getting Started.
+      active = true;
+    }
+    tab.classList.toggle("active", active);
+  });
+}
+syncDocsCategoryTabs();
+window.addEventListener("hashchange", syncDocsCategoryTabs);
+
 mountAgent();

@@ -5,8 +5,8 @@ import {
   getCurrentTip,
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
-import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-wiring-link";
-import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-fix";
+import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-link-prompt";
+import { startShowMe } from "./show-me-tour.js?v=20260715-link-prompt";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
@@ -24,10 +24,120 @@ function esc(value = "") {
   }[ch]));
 }
 
-function renderMessageText(value = "") {
+function renderInlineMarkdown(value = "") {
   return esc(value)
-    .replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, "<strong>$1</strong>")
-    .replace(/\n/g, "<br>");
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, "<strong>$1</strong>");
+}
+
+function stripOuterPromptQuotes(value = "") {
+  const trimmed = String(value || "").trim();
+  return trimmed.replace(/^["“](.*)["”]$/s, "$1").trim();
+}
+
+function renderMessageText(value = "") {
+  const lines = String(value || "").replace(/\r\n/g, "\n").split("\n");
+  const blocks = [];
+  let paragraph = [];
+  let quote = [];
+  let list = null;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push(`<p>${renderInlineMarkdown(paragraph.join(" ").trim())}</p>`);
+    paragraph = [];
+  };
+
+  const flushQuote = () => {
+    if (!quote.length) return;
+    const prompt = stripOuterPromptQuotes(quote.join(" "));
+    blocks.push(`
+      <div class="render-agent-prompt-card">
+        <span class="render-agent-prompt-card-kicker">Prompt example</span>
+        <p>${renderInlineMarkdown(prompt)}</p>
+      </div>
+    `);
+    quote = [];
+  };
+
+  const flushList = () => {
+    if (!list?.items?.length) {
+      list = null;
+      return;
+    }
+    const tag = list.type === "ol" ? "ol" : "ul";
+    blocks.push(`<${tag} class="render-agent-rich-list">${list.items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${tag}>`);
+    list = null;
+  };
+
+  const flushAll = () => {
+    flushParagraph();
+    flushQuote();
+    flushList();
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushAll();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      flushAll();
+      const level = heading[1].length <= 2 ? "h3" : "h4";
+      blocks.push(`<${level} class="render-agent-rich-heading">${renderInlineMarkdown(heading[2])}</${level}>`);
+      continue;
+    }
+
+    const quoteMatch = line.match(/^>\s?(.*)$/);
+    if (quoteMatch) {
+      flushParagraph();
+      flushList();
+      quote.push(quoteMatch[1]);
+      continue;
+    }
+
+    const cue = line.match(/^(?:-{0,2}>|=>|→|➜)\s+(.+)$/);
+    if (cue) {
+      flushAll();
+      blocks.push(`
+        <div class="render-agent-cue">
+          <span class="render-agent-cue-icon" aria-hidden="true"></span>
+          <span>${renderInlineMarkdown(cue[1])}</span>
+        </div>
+      `);
+      continue;
+    }
+
+    const unordered = line.match(/^[-*]\s+(.+)$/);
+    if (unordered) {
+      flushParagraph();
+      flushQuote();
+      if (list?.type !== "ul") flushList();
+      list ||= { type: "ul", items: [] };
+      list.items.push(unordered[1]);
+      continue;
+    }
+
+    const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (ordered) {
+      flushParagraph();
+      flushQuote();
+      if (list?.type !== "ol") flushList();
+      list ||= { type: "ol", items: [] };
+      list.items.push(ordered[1]);
+      continue;
+    }
+
+    flushQuote();
+    flushList();
+    paragraph.push(line);
+  }
+
+  flushAll();
+  return blocks.join("");
 }
 
 function fileToDataUrl(file) {

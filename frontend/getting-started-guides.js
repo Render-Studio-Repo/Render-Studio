@@ -1,11 +1,35 @@
 /** Shared Getting Started feature guides + GIF catalog for Docs and Render Agent. */
 
+export const GETTING_STARTED_CATEGORIES = [
+  { id: "ai-cad", title: "AI CAD" },
+  { id: "projects", title: "Projects & collaboration" },
+  { id: "modeling", title: "Modeling & viewport" },
+  { id: "sketch-canvas", title: "Sketch & Canvas" },
+  { id: "rigging", title: "Rigging & motion" },
+  { id: "wiring", title: "Wiring" },
+  { id: "cloud", title: "Cloud CAD" },
+  { id: "help", title: "Help & preferences" },
+];
+
+const GIF = {
+  ai: "/docs/media/ai-generate.gif?v=20260715-real",
+  workspaces: "/docs/media/workspaces.gif?v=20260715-real",
+  share: "/docs/media/share-folder.gif?v=20260715-real",
+  markup: "/docs/media/reference-markup.gif?v=20260715-real",
+  canvas: "/docs/media/canvas.gif?v=20260715-real",
+  picks: "/docs/media/picks.gif?v=20260715-real",
+  wiring: "/docs/media/wiring.gif?v=20260715-real",
+  cloud: "/docs/media/cloud-sync.gif?v=20260715-real",
+  agent: "/docs/media/render-agent.gif?v=20260715-real",
+};
+
 export const GETTING_STARTED_GUIDES = [
   {
     id: "ai-generate",
+    category: "ai-cad",
     title: "Generate CAD with AI",
     demo: "generate",
-    gif: "/docs/media/ai-generate.gif?v=20260715-real",
+    gif: GIF.ai,
     summary: "Describe a part in the prompt panel and Generate creates geometry in your project.",
     steps: [
       "Open a project (or create one) in the left explorer.",
@@ -21,10 +45,42 @@ export const GETTING_STARTED_GUIDES = [
     ],
   },
   {
+    id: "multi-gen",
+    category: "ai-cad",
+    title: "Parallel generations",
+    demo: "generate",
+    gif: GIF.ai,
+    summary: "Run multiple CAD prompts at once (up to 5). Stop one job or all from the viewport banner.",
+    steps: [
+      "Start Generate while another job is still running.",
+      "Watch per-prompt progress rows in the viewport banner.",
+      "Click View more for details; Stop opens a picker when several are running.",
+    ],
+    ask: "How do parallel CAD generations and Stop generating work?",
+    keywords: ["parallel", "multi gen", "stop generating", "multiple prompts", "banner"],
+  },
+  {
+    id: "picks",
+    category: "ai-cad",
+    title: "Pick faces, edges & paths",
+    demo: "picks",
+    gif: GIF.picks,
+    summary: "Click geometry into the prompt as @face / @edge / @path so edits land on the right feature.",
+    steps: [
+      "Select a pick mode (face, edge, line path, etc.) in the toolbar.",
+      "Click the geometry on the model.",
+      "A chip like @face-1 appears in the prompt.",
+      "Write the edit: “fillet @face-1 2 mm” and Generate.",
+    ],
+    ask: "How do geometry picks and @face / @path references work in the AI prompt?",
+    keywords: ["@face", "@edge", "@path", "pick", "geometry pick", "face pick", "edge pick"],
+  },
+  {
     id: "workspaces",
+    category: "projects",
     title: "Workspaces & teammates",
     demo: "workspaces",
-    gif: "/docs/media/workspaces.gif?v=20260715-real",
+    gif: GIF.workspaces,
     summary: "Shared workspaces keep projects, folders, and invites in one place for your team.",
     steps: [
       "Open the account / workspace menu and pick or create a workspace.",
@@ -40,9 +96,10 @@ export const GETTING_STARTED_GUIDES = [
   },
   {
     id: "share-folders",
+    category: "projects",
     title: "Share a private folder",
     demo: "share",
-    gif: "/docs/media/share-folder.gif?v=20260715-real",
+    gif: GIF.share,
     summary: "Keep folders private, then share with specific teammates so they appear instantly in their explorer.",
     steps: [
       "Right-click a folder → Share.",
@@ -57,9 +114,10 @@ export const GETTING_STARTED_GUIDES = [
   },
   {
     id: "reference-markup",
+    category: "projects",
     title: "Reference files, pen markup & Send to AI",
     demo: "markup",
-    gif: "/docs/media/reference-markup.gif?v=20260715-real",
+    gif: GIF.markup,
     summary: "Drop PDFs or images into a project, draw on them, add notes, then send markups into the AI prompt.",
     steps: [
       "Drag a PDF or image into the project (or upload under Reference Files).",
@@ -75,10 +133,27 @@ export const GETTING_STARTED_GUIDES = [
     ],
   },
   {
+    id: "solid-tools",
+    category: "modeling",
+    title: "Solid modeling tools",
+    demo: "picks",
+    gif: GIF.picks,
+    summary: "Use the SOLID tab ribbon and Tools panel for extrude, Press-Pull, fillet, transform, color, and measure.",
+    steps: [
+      "Switch to the SOLID design tab.",
+      "Use Ribbon Create / Modify / Pattern for features.",
+      "Open Right → Tools for Press-Pull, Transform (G), Color, Measure, Split.",
+      "Toggle Section, Grid, Transparent, and Fit as needed.",
+    ],
+    ask: "What solid modeling tools and viewport controls should I learn first?",
+    keywords: ["solid", "press-pull", "fillet", "extrude", "transform", "gizmo", "measure", "section"],
+  },
+  {
     id: "canvas",
+    category: "sketch-canvas",
     title: "Canvas sketch mode",
     demo: "canvas",
-    gif: "/docs/media/canvas.gif?v=20260715-real",
+    gif: GIF.canvas,
     summary: "Sketch freely on the Canvas design tab, then attach the sketch to your AI prompt.",
     steps: [
       "In Design, switch to the CANVAS tab.",
@@ -90,25 +165,46 @@ export const GETTING_STARTED_GUIDES = [
     keywords: ["canvas", "sketch", "canvas mode", "attach sketch", "design tab canvas"],
   },
   {
-    id: "picks",
-    title: "Pick faces, edges & paths",
-    demo: "picks",
-    gif: "/docs/media/picks.gif?v=20260715-real",
-    summary: "Click geometry into the prompt as @face / @edge / @path so edits land on the right feature.",
+    id: "sketch",
+    category: "sketch-canvas",
+    title: "Constrained Sketch",
+    demo: "canvas",
+    gif: GIF.canvas,
+    summary: "Create a constrained 2D sketch on a plane, then extrude it into a solid.",
     steps: [
-      "Select a pick mode (face, edge, line path, etc.) in the toolbar.",
-      "Click the geometry on the model.",
-      "A chip like @face-1 appears in the prompt.",
-      "Write the edit: “fillet @face-1 2 mm” and Generate.",
+      "Open the SKETCH design tab and start a sketch on XY/XZ/YZ or a face.",
+      "Draw with Line, Rectangle, Circle; add constraints and dimensions.",
+      "Finish Sketch, then Extrude (new / add / cut).",
     ],
-    ask: "How do geometry picks and @face / @path references work in the AI prompt?",
-    keywords: ["@face", "@edge", "@path", "pick", "geometry pick", "face pick", "edge pick"],
+    ask: "How do I create a constrained sketch and extrude it?",
+    keywords: ["sketch tab", "constraints", "extrude sketch", "dimension"],
+  },
+  {
+    id: "rigging-urdf",
+    category: "rigging",
+    title: "Rigging, URDF / SRDF & Motion",
+    demo: "generate",
+    gif: GIF.ai,
+    summary: "GLB shows the shape; URDF/SRDF drive simulation. Author Jake generators, then open Motion.",
+    steps: [
+      "Build the solid on SOLID, then open RIGGING.",
+      "Switch to URDF / SRDF mode in the Rigging panel.",
+      "Select the CAD Python source → Author URDF/SRDF with AI (Jake) or Generate.",
+      "Inspect the link/joint tree, then Open URDF / SRDF Motion.",
+      "After generate, if the model looks articulated, accept the simulated-motion popup (Preferences can remember your choice).",
+    ],
+    ask: "How do I generate URDF/SRDF for a robot and open the Motion workbench?",
+    keywords: [
+      "rigging", "urdf", "srdf", "motion", "jake", "gen_urdf", "gen_srdf",
+      "simulated motion", "bones", "joints",
+    ],
   },
   {
     id: "wiring",
+    category: "wiring",
     title: "Wiring Simulator",
     demo: "wiring",
-    gif: "/docs/media/wiring.gif?v=20260715-real",
+    gif: GIF.wiring,
     summary: "Switch to Wiring to breadboard circuits, link CAD parts into the wiring prompt, and validate drivers.",
     steps: [
       "Open your project and switch to the WIRING design tab.",
@@ -126,9 +222,10 @@ export const GETTING_STARTED_GUIDES = [
   },
   {
     id: "cloud-sync",
+    category: "cloud",
     title: "Fusion 360 & Onshape sync",
     demo: "cloud",
-    gif: "/docs/media/cloud-sync.gif?v=20260715-real",
+    gif: GIF.cloud,
     summary: "Connect cloud CAD libraries so you can import and push models without leaving Studio.",
     steps: [
       "Open the Fusion or Onshape library panel in the left sidebar.",
@@ -141,9 +238,10 @@ export const GETTING_STARTED_GUIDES = [
   },
   {
     id: "render-agent",
+    category: "help",
     title: "Render Agent help chat",
     demo: "agent",
-    gif: "/docs/media/render-agent.gif?v=20260715-real",
+    gif: GIF.agent,
     summary: "The ribbon Agent button opens a chat for tooling, workflows, and project questions — separate from CAD Generate.",
     steps: [
       "Click Agent in the ribbon (or use Ask Render Agent from Getting Started).",
@@ -155,10 +253,27 @@ export const GETTING_STARTED_GUIDES = [
     keywords: ["render agent", "help chat", "ask agent", "assistant", "agent button"],
   },
   {
+    id: "preferences",
+    category: "help",
+    title: "Preferences & simulated motion",
+    demo: "agent",
+    gif: GIF.agent,
+    summary: "Set mouse controls, theme, and whether to ask for URDF/SRDF after articulated CAD generates.",
+    steps: [
+      "Open Account → Preferences.",
+      "Choose mouse preset and dark/light appearance.",
+      "Under Simulated motion, pick Ask each time, Always URDF/SRDF, or Never ask.",
+      "You can also remember a choice from the post-generate popup.",
+    ],
+    ask: "Where do I change Preferences and the simulated-motion after-generate setting?",
+    keywords: ["preferences", "theme", "mouse", "simulated motion", "settings"],
+  },
+  {
     id: "tips-tricks",
+    category: "help",
     title: "Tips and tricks",
     demo: "tips",
-    gif: "/docs/media/ai-generate.gif?v=20260715-real",
+    gif: GIF.ai,
     summary: "Fast workflow habits that make prompts, references, collaboration, and edits work better.",
     steps: [
       "In the Project browser, click one file, then hold Shift and click another file to select a range.",
@@ -176,6 +291,13 @@ export const GETTING_STARTED_GUIDES = [
     ],
   },
 ];
+
+export function guidesByCategory() {
+  return GETTING_STARTED_CATEGORIES.map((cat) => ({
+    ...cat,
+    guides: GETTING_STARTED_GUIDES.filter((g) => g.category === cat.id),
+  })).filter((row) => row.guides.length);
+}
 
 export function matchGettingStartedGuides(question, { limit = 2 } = {}) {
   let text = String(question || "").toLowerCase().trim();

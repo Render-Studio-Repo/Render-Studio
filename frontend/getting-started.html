@@ -4,6 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Getting Started — Render3D Docs</title>
+  <meta name="description" content="Start generating CAD with AI, referencing files, selecting geometry, and asking Render Agent in Render3D." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Render3D" />
+  <meta property="og:title" content="Getting Started — Render3D Docs" />
+  <meta property="og:description" content="Generate CAD with AI, reference files, pick geometry, and ask Render Agent." />
+  <meta property="og:url" content="https://render3d.app/getting-started.html" />
+  <meta property="og:image" content="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <meta property="og:image:secure_url" content="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Render3D Getting Started docs banner with a small orange robot arm and Render3D logo." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Getting Started — Render3D Docs" />
+  <meta name="twitter:description" content="Generate CAD with AI, reference files, pick geometry, and ask Render Agent." />
+  <meta name="twitter:image" content="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <link rel="image_src" href="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
   <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
@@ -11,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-show-me-fix" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-link-prompt" />
 </head>
 <body class="info-page gs-body">
   <div id="app" class="app-info">
@@ -52,8 +69,15 @@
             <p class="gs-hero-lead">
               Watch a short demo, follow the steps, then ask Render Agent — a movable help panel opens on the right.
             </p>
+            <nav class="docs-category-tabs" aria-label="Docs categories">
+              <a class="docs-category-tab active" href="/getting-started.html">Getting Started</a>
+              <a class="docs-category-tab" href="#tips-library">Tips &amp; tricks</a>
+              <a class="docs-category-tab" href="/updates.html">Updates</a>
+              <a class="docs-category-tab" href="/docs.html">Reference</a>
+            </nav>
             <div class="gs-hero-actions">
               <a class="btn accent" id="gs-ask-tour" href="#">Ask Render Agent for a tour</a>
+              <a class="btn secondary" href="#tips-library">Tips &amp; tricks</a>
               <a class="btn secondary" href="/docs.html">Full documentation</a>
             </div>
           </div>
@@ -77,11 +101,11 @@
             <div id="gs-features" class="gs-features"></div>
 
             <section id="tips-library" class="gs-tips-section" aria-labelledby="tips-library-title">
-              <p class="gs-feature-index">Tips &amp; tricks</p>
-              <h3 id="tips-library-title">Useful workflows people miss</h3>
+              <p class="gs-feature-index">Docs category</p>
+              <h3 id="tips-library-title">Tips &amp; tricks</h3>
               <p class="gs-summary">
-                Short, practical moves for referencing files, selecting geometry, keeping generations focused,
-                collaborating, and getting better results from the AI prompt.
+                Browse short workflow tips by topic — prompting, DXF, references, collaboration, and more.
+                Ask Agent about any tip to get a walkthrough.
               </p>
               <div id="gs-tips-grid" class="gs-tips-grid"></div>
             </section>
@@ -176,6 +200,6 @@
   </div>
 
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/getting-started.js?v=20260715-show-me-fix"></script>
+  <script type="module" src="/getting-started.js?v=20260715-link-prompt"></script>
 </body>
 </html>

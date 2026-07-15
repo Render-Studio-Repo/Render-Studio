@@ -22453,6 +22453,154 @@ body.theme-light .render-agent-tip {
   padding-left: 42px;
 }
 
+.render-agent-message-content p {
+  margin: 0 0 9px;
+}
+
+.render-agent-message-content p:last-child,
+.render-agent-message-content .render-agent-rich-list:last-child,
+.render-agent-message-content .render-agent-prompt-card:last-child,
+.render-agent-message-content .render-agent-cue:last-child {
+  margin-bottom: 0;
+}
+
+.render-agent-message-content strong {
+  color: #f0f6fc;
+  font-weight: 800;
+}
+
+.render-agent-message-content code {
+  padding: 1px 5px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 6px;
+  background: rgba(1, 4, 9, 0.48);
+  color: #c9d1d9;
+  font-size: 0.82em;
+}
+
+.render-agent-rich-heading {
+  margin: 12px 0 7px;
+  color: #f0f6fc;
+  font-size: 0.92rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.render-agent-rich-heading:first-child {
+  margin-top: 0;
+}
+
+.render-agent-rich-list {
+  margin: 0 0 10px;
+  padding-left: 22px;
+  color: #c9d1d9;
+}
+
+.render-agent-rich-list li {
+  margin: 4px 0;
+}
+
+.render-agent-prompt-card {
+  position: relative;
+  margin: 8px 0 12px;
+  padding: 10px 12px 11px;
+  border: 1px solid rgba(249, 115, 22, 0.36);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(249, 115, 22, 0.18), transparent 40%),
+    linear-gradient(145deg, rgba(22, 27, 34, 0.96), rgba(13, 17, 23, 0.9));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.render-agent-prompt-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(#f97316, #fbbf24);
+}
+
+.render-agent-prompt-card-kicker {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.16);
+  color: #fdba74;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.render-agent-prompt-card p {
+  margin: 0;
+  color: #f0f6fc;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.render-agent-cue {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 8px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 11px;
+  background: rgba(56, 139, 253, 0.1);
+  color: #dbeafe;
+}
+
+.render-agent-cue-icon {
+  position: relative;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.render-agent-cue-icon::before,
+.render-agent-cue-icon::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.render-agent-cue-icon::before {
+  left: 1px;
+  width: 15px;
+  height: 3px;
+  border-radius: 999px;
+  background: #58a6ff;
+  animation: render-agent-cue-slide 1.25s ease-in-out infinite;
+}
+
+.render-agent-cue-icon::after {
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-top: 3px solid #58a6ff;
+  border-right: 3px solid #58a6ff;
+  transform: translateY(-50%) rotate(45deg);
+  animation: render-agent-cue-tip 1.25s ease-in-out infinite;
+}
+
+@keyframes render-agent-cue-slide {
+  0%, 100% { transform: translate(0, -50%); opacity: 0.65; }
+  50% { transform: translate(5px, -50%); opacity: 1; }
+}
+
+@keyframes render-agent-cue-tip {
+  0%, 100% { transform: translate(0, -50%) rotate(45deg); opacity: 0.65; }
+  50% { transform: translate(5px, -50%) rotate(45deg); opacity: 1; }
+}
+
 .render-agent-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -23065,6 +23213,44 @@ body.gs-agent-open .gs-page {
     opacity: 1 !important;
     transform: none !important;
   }
+}
+
+/* ── Docs category tabs ───────────────────────────────────────────────────── */
+
+.docs-category-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.docs-category-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  background: rgba(22, 27, 34, 0.72);
+  color: #c9d1d9;
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.docs-category-tab:hover {
+  border-color: rgba(88, 166, 255, 0.45);
+  color: #f0f3f6;
+}
+
+.docs-category-tab.active {
+  border-color: rgba(88, 166, 255, 0.55);
+  background: rgba(88, 166, 255, 0.16);
+  color: #79b8ff;
+}
+
+.gs-hero-copy .docs-category-tabs {
+  margin: 0 0 14px;
 }
 
 /* ── Show me guided tour ──────────────────────────────────────────────────── */

@@ -8,7 +8,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-getting-started" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-link-prompt" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -41,15 +41,22 @@
           <p class="info-eyebrow">Documentation</p>
           <h2>Render3D CAD Visualizer</h2>
           <p class="info-lead">
-            A CAD project visualizer inspired by ForgeCAD: orbit, zoom, and pan a 3D viewport,
-            upload meshes, edit transforms, and generate new geometry from natural-language prompts
-            via <strong>GPT-5.5 Pro</strong>.
+            Complete product documentation for Studio — AI CAD, modeling, sketch, rigging/URDF,
+            wiring, cloud sync, collaboration, and more — with how-tos and demo GIFs.
+            New here? Start with <a href="/getting-started.html">Getting Started</a>.
           </p>
           <p style="margin-top:14px">
-            <a class="btn accent" href="/getting-started.html">Getting Started — demos &amp; Ask Agent</a>
+            <a class="btn accent" href="#complete-docs">Complete documentation</a>
+            <a class="btn secondary" href="/getting-started.html">Getting Started — GIF demos</a>
+            <a class="btn secondary" href="/getting-started.html#tips-library">Tips &amp; tricks</a>
             <a class="btn secondary" href="/updates.html">Recent Updates</a>
-            <a class="btn secondary" href="#quick-start">Jump to quick start</a>
           </p>
+          <nav class="docs-category-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="/getting-started.html#tips-library">Tips &amp; tricks</a>
+            <a class="docs-category-tab" href="/updates.html">Updates</a>
+            <a class="docs-category-tab active" href="/docs.html">Reference</a>
+          </nav>
         </header>
 
         <section class="info-section" id="getting-started-callout">
@@ -59,6 +66,14 @@
             quick looping demos, step-by-step detail, and a button to ask the Render Agent about each one.
             See <a href="/updates.html">Recent Updates</a> for milestone features and tools as they ship.
           </p>
+        </section>
+
+
+        <section class="info-section" id="complete-docs">
+          <div class="docs-catalog-layout">
+            <nav class="docs-catalog-nav" id="docs-catalog-nav" aria-label="Documentation categories"></nav>
+            <div id="docs-catalog" class="docs-catalog"></div>
+          </div>
         </section>
 
         <section class="info-section">
@@ -246,26 +261,6 @@ make 2mm wire loops 10mm high along this path
 add wire clips between these two objects using @path-1</code></pre>
         </section>
 
-        <section class="info-section">
-          <h3>Features</h3>
-          <ul class="info-list">
-            <li><strong>3D viewer</strong> — Orbit, pan, zoom; grid toggle; fit-to-view</li>
-            <li><strong>Edit timeline</strong> — Fusion-style history; drag the slider or click steps to restore earlier states</li>
-            <li><strong>Geometric references</strong> — Pick corners, faces, edges, lasso regions, and line paths; insert <code>@corner-1</code> or <code>@path-1</code> chips into prompts</li>
-            <li><strong>Reference-aware AI</strong> — e.g. “at @corner-1 drill a 3mm hole through the part”</li>
-            <li><strong>File import</strong> — STL, OBJ, GLB/GLTF, PLY, OFF, and 3MF upload with timeline history</li>
-            <li><strong>Gizmo edit</strong> — Transform controls with server-side save</li>
-            <li><strong>AI CAD prompting</strong> — GPT-5.5 Pro builds and modifies geometry via Trimesh</li>
-            <li><strong>Stop generating</strong> — cancel an in-flight OpenAI/Claude generation to avoid wasting time and tokens</li>
-            <li><strong>Project prompt drafts</strong> — prompt text and references are saved per project when you switch away and restored when you return</li>
-            <li><strong>Object visibility</strong> — right-click a component in the workspace browser and choose Hide object / Show object</li>
-            <li><strong>Color tool</strong> — select an object or face and apply a color from the Create/viewport controls</li>
-            <li><strong>Component profiles</strong> — source imported parts, store datasheets/pinouts/specs, and feed verified dimensions to wiring and CAD generation</li>
-            <li><strong>Driver-aware wiring</strong> — motors and steppers are validated through driver boards such as ULN2003 instead of wiring Arduino pins directly to coils</li>
-            <li><strong>Code + simulation</strong> — wiring designs can generate Arduino-style code, open an editable code tab, and run visual actuator simulations when wiring validates</li>
-            <li><strong>AI cost analytics</strong> — compare cost, tokens, prompt counts, and AI calls by time range, user, project, or recent prompt</li>
-          </ul>
-        </section>
 
         <section class="info-section">
           <h3>Draw mode local edits</h3>
@@ -414,5 +409,6 @@ python run.py</code></pre>
     </main>
   </div>
 <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script type="module" src="/docs-catalog.js?v=20260715-docs-catalog"></script>
 </body>
 </html>

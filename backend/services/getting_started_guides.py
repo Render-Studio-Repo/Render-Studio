@@ -155,6 +155,26 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         ],
         "keywords": ["render agent", "help chat", "ask agent", "assistant", "agent button"],
     },
+    {
+        "id": "link-to-prompt",
+        "title": "Link project items to the prompt",
+        "gif": f"/docs/media/picks.gif?{GIF_CACHE}",
+        "summary": "Attach CAD parts, drawings, and geometry from your project into the AI prompt so generations use the right context.",
+        "ask": "How do I link items from my project into the AI prompt — drag files, @component, @face/@edge/@path, and Send to AI from markups?",
+        "steps": [
+            "In the Project browser, click a file (Shift-click to select a range).",
+            "Drag the selected files into the AI prompt — reference chips appear for the next generate.",
+            "Or pick geometry on the model to insert @face / @edge / @path chips.",
+            "Drop a component chip (@component) when the edit should target a whole part.",
+            "For PDFs/images with callouts: open the file, mark it up, then Send to AI.",
+            "Wiring: drag a component into the Wiring prompt (or onto the board) the same way.",
+        ],
+        "keywords": [
+            "link to prompt", "attach to prompt", "drag to prompt", "drag files", "project browser",
+            "reference chips", "@component", "@face", "@edge", "@path", "attach references",
+            "shift select", "multiple files", "send to ai", "wiring prompt", "link model",
+        ],
+    },
 ]
 
 TOUR_HINTS = (
