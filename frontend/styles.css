@@ -1188,12 +1188,78 @@ body:not(.info-page) {
 }
 
 .pc-mention {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(220px, 100%);
+  margin: 0 1px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 139, 253, 0.45);
+  background: rgba(31, 111, 235, 0.22);
   color: #79c0ff;
-  font-weight: 700;
+  font-weight: 650;
+  line-height: 1.25;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.pc-mention-label {
+  font-size: 0.86em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pc-mention--agent {
+  border-color: rgba(63, 185, 80, 0.45);
+  background: rgba(46, 160, 67, 0.18);
   color: #7ee787;
+}
+
+.pc-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: min(220px, 100%);
+  margin: 0 1px;
+  padding: 0 1px 0 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 139, 253, 0.45);
+  background: rgba(31, 111, 235, 0.22);
+  color: #79c0ff;
+  font-weight: 650;
+  line-height: 1.25;
+  vertical-align: baseline;
+  user-select: none;
+}
+
+.pc-mention-chip--agent {
+  border-color: rgba(63, 185, 80, 0.45);
+  background: rgba(46, 160, 67, 0.18);
+  color: #7ee787;
+}
+
+.pc-mention-chip-label {
+  font-size: 0.86em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pc-mention-chip-remove {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  cursor: pointer;
+  font-size: 0.95em;
+  line-height: 1;
+  padding: 0 5px 0 2px;
+}
+
+.pc-mention-chip-remove:hover {
+  opacity: 1;
 }
 
 .pc-message-images {
@@ -1354,7 +1420,8 @@ body:not(.info-page) {
   position: relative;
 }
 
-#pc-input {
+#pc-input,
+.pc-input {
   width: 100%;
   min-height: 78px;
   resize: vertical;
@@ -1364,7 +1431,22 @@ body:not(.info-page) {
   color: var(--text);
   padding: 10px 12px;
   font: inherit;
-  line-height: 1.4;
+  line-height: 1.45;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+}
+
+.pc-input:focus {
+  border-color: rgba(56, 139, 253, 0.65);
+  box-shadow: 0 0 0 1px rgba(56, 139, 253, 0.25);
+}
+
+.pc-input:empty:before {
+  content: attr(data-placeholder);
+  color: rgba(139, 148, 158, 0.9);
+  pointer-events: none;
 }
 
 .pc-mention-menu {
@@ -2232,19 +2314,15 @@ body.canvas-design-tab .main-column {
 
 #app.rigging-design-tab .viewport-hint {
   border-color: #f0883e;
-  top: 58px;
+  top: 12px;
 }
 
-/* Keep generation / latest-prompt pill below the RIG toolbelt */
 #app.rigging-design-tab .viewport-generation-user {
-  top: 58px;
+  top: 12px;
   z-index: 48;
 }
 
-#app.rigging-design-tab #timeline-panel {
-  display: none !important;
-}
-
+/* Keep project history timeline available; anim bar sits above it in the viewport */
 #app.rigging-design-tab .timeline-expand-tab {
   display: none !important;
 }
@@ -2258,60 +2336,215 @@ body.canvas-design-tab .main-column {
 }
 
 #app.rigging-design-tab #rigging-chrome:not(.hidden) {
-  display: flex;
+  display: block;
 }
 
 #app.rigging-design-tab #viewport {
   cursor: default;
 }
 
-/* ── Fusion 360 rigging / animation workspace ─────────────────────────────── */
+/* ── Clean viewport rigging overlay (no orange toolbelt) ──────────────────── */
 .rigging-chrome {
   position: absolute;
   inset: 0;
   z-index: 46;
   pointer-events: none;
   display: none;
-  flex-direction: column;
-  justify-content: space-between;
 }
 
 .rigging-chrome.hidden {
+  display: none !important;
+}
+
+.rigging-viewport-manage {
+  pointer-events: auto;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 3;
+  width: min(280px, calc(100% - 24px));
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.88);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.rigging-manage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.75);
+}
+
+.rigging-manage-head strong {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e6edf3;
+}
+
+.rigging-manage-toggle {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  border-radius: 8px;
+  background: rgba(22, 27, 34, 0.9);
+  color: #8b949e;
+  cursor: pointer;
+}
+
+.rigging-manage-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.rigging-viewport-manage.is-collapsed .rigging-manage-body {
   display: none;
 }
 
-.rigging-toolbelt {
-  pointer-events: auto;
+.rigging-manage-actions {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 12px;
-  background: linear-gradient(180deg, #2a2118 0%, #1c1610 100%);
-  border-bottom: 1px solid #5c3d1e;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  position: relative;
-  z-index: 2;
 }
 
-.rigging-tool-group {
+.rigging-manage-row {
+  display: grid;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #8b949e;
+}
+
+.rigging-manage-row select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #e6edf3;
+}
+
+.rigging-manage-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: #c9d1d9;
+}
+
+.rigging-adjust-dock {
+  pointer-events: auto;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  max-height: calc(100% - 88px);
+}
+
+.rigging-adjust-tab {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.rigging-tool-group--actions {
-  margin-left: auto;
-}
-
-.rigging-tool-label {
-  font-size: 0.65rem;
+  gap: 8px;
+  padding: 12px 8px;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-radius: 10px 0 0 10px;
+  background: rgba(13, 17, 23, 0.9);
+  color: #e6edf3;
+  cursor: pointer;
+  font-size: 0.72rem;
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #a3713a;
-  margin-right: 4px;
+  text-transform: uppercase;
+}
+
+.rigging-adjust-tab em {
+  font-style: normal;
+  color: #79c0ff;
+}
+
+.rigging-adjust-panel {
+  width: min(320px, calc(100vw - 80px));
+  max-height: inherit;
+  display: none;
+  flex-direction: column;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: rgba(13, 17, 23, 0.92);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.rigging-adjust-dock:not(.is-collapsed) .rigging-adjust-panel {
+  display: flex;
+}
+
+.rigging-adjust-dock:not(.is-collapsed) .rigging-adjust-tab {
+  border-radius: 10px 0 0 10px;
+}
+
+.rigging-adjust-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.75);
+}
+
+.rigging-adjust-sliders {
+  padding: 10px 12px 14px;
+  overflow: auto;
+  max-height: min(58vh, 520px);
+}
+
+.rigging-adjust-sliders .cad-param-row {
+  grid-template-columns: minmax(72px, 0.9fr) minmax(0, 1.4fr) 64px auto;
+}
+
+.rigging-toolbelt {
+  display: none !important;
+}
+
+.rigging-anim-panel {
+  pointer-events: auto;
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.9);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  padding: 8px 10px;
+}
+
+#app.rigging-design-tab #timeline-panel {
+  /* Project history stays available under the viewport column */
+  display: block;
+}
+
+#app.rigging-design-tab .viewport-hint {
+  border-color: #f0883e;
+  top: 12px;
+}
+
+/* legacy toolbelt tokens kept for any residual buttons */
+.rigging-tool-group {
+  display: none;
 }
 
 .rigging-tool-btn {
@@ -2319,10 +2552,10 @@ body.canvas-design-tab .main-column {
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
-  border: 1px solid #5c3d1e;
+  border: 1px solid #30363d;
   border-radius: 5px;
-  background: #2d2218;
-  color: #f0dcc8;
+  background: #21262d;
+  color: #e6edf3;
   font-size: 0.74rem;
   font-weight: 600;
   cursor: pointer;
@@ -2359,11 +2592,7 @@ body.canvas-design-tab .main-column {
 }
 
 .rigging-anim-panel {
-  pointer-events: auto;
-  flex-shrink: 0;
-  background: linear-gradient(0deg, #161b22 0%, #1c2128 100%);
-  border-top: 1px solid #30363d;
-  padding: 8px 12px 10px;
+  /* Layout owned by the clean viewport overlay rule above. */
 }
 
 .rigging-anim-timeline {
@@ -6323,10 +6552,13 @@ body.canvas-design-tab .main-column {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1 1 auto;
-  justify-content: center;
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  width: max-content;
+  max-width: 100%;
   min-width: 0;
-  padding: 4px 10px;
+  margin-right: auto;
+  padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #0d1117;

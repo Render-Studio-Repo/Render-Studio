@@ -141,9 +141,17 @@ export function createRiggingEditor({
     return n;
   }
 
+  let forceHideBones = true;
+
   function syncBoneOverlayVisibility() {
     const meshDriven = meshDriver.isMeshDriven?.();
-    group.visible = active && !meshDriven;
+    const showBones = !forceHideBones;
+    group.visible = active && !meshDriven && showBones;
+  }
+
+  function setBoneOverlayVisible(visible) {
+    forceHideBones = !visible;
+    syncBoneOverlayVisibility();
   }
 
   function activeAnimation() {
@@ -1016,6 +1024,7 @@ export function createRiggingEditor({
     exportUrdfText,
     applyRigData,
     refreshMeshBindings,
+    setBoneOverlayVisible,
     isActive: () => active,
     getTool: () => tool,
     getBones: () => bones,

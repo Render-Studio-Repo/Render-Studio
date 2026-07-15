@@ -30,10 +30,121 @@ function simpleMarkdown(text) {
   html = html.replace(/(^|[^\*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
   html = html.replace(
     /@\[([^\]]+)\]\((user|agent):([^)]+)\)/g,
-    '<span class="pc-mention pc-mention--$2" data-mention-kind="$2" data-mention-id="$3">@$1</span>'
+    '<span class="pc-mention pc-mention--$2" data-mention-kind="$2" data-mention-id="$3"><span class="pc-mention-label">@$1</span></span>'
   );
   html = html.replace(/\n/g, "<br>");
   return html;
+}
+
+function createMentionChip(name, kind, id) {
+  const chip = document.createElement("span");
+  chip.className = `pc-mention-chip pc-mention-chip--${kind === "agent" ? "agent" : "user"}`;
+  chip.contentEditable = "false";
+  chip.dataset.mentionKind = kind;
+  chip.dataset.mentionId = id;
+  chip.dataset.mentionName = name;
+  chip.dataset.token = `@[${name}](${kind}:${id})`;
+  chip.title = `@${name}`;
+  const label = document.createElement("span");
+  label.className = "pc-mention-chip-label";
+  label.textContent = `@${name}`;
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "pc-mention-chip-remove";
+  remove.title = "Remove mention";
+  remove.setAttribute("aria-label", `Remove @${name}`);
+  remove.textContent = "×";
+  remove.addEventListener("mousedown", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+  });
+  remove.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const parent = chip.parentNode;
+    chip.remove();
+    if (parent?.normalize) parent.normalize();
+  });
+  chip.append(label, remove);
+  return chip;
+}
+
+function serializeComposer(el) {
+  if (!el) return "";
+  let out = "";
+  const walk = (node) => {
+    if (!node) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.nodeValue || "";
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.classList?.contains("pc-mention-chip")) {
+      out += node.dataset.token || "";
+      return;
+    }
+    if (node.tagName === "BR") {
+      out += "\n";
+      return;
+    }
+    const block = node.tagName === "DIV" || node.tagName === "P";
+    if (block && out && !out.endsWith("\n")) out += "\n";
+    for (const child of node.childNodes) walk(child);
+  };
+  for (const child of el.childNodes) walk(child);
+  return out.replace(/\u00a0/g, " ").replace(/\n+$/g, "").trim();
+}
+
+function clearComposer(el) {
+  if (!el) return;
+  el.innerHTML = "";
+}
+
+function textBeforeCaret(el) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !el.contains(sel.anchorNode)) {
+    return el.innerText || "";
+  }
+  const range = sel.getRangeAt(0).cloneRange();
+  range.selectNodeContents(el);
+  range.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+  return range.toString();
+}
+
+function insertMentionChip(el, name, kind, id) {
+  el.focus();
+  const sel = window.getSelection();
+  const chip = createMentionChip(name, kind, id);
+  if (sel && sel.rangeCount && el.contains(sel.anchorNode)) {
+    const caret = sel.getRangeAt(0);
+    const node = caret.startContainer;
+    const offset = caret.startOffset;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.nodeValue || "";
+      const before = text.slice(0, offset);
+      const match = before.match(/@([^\s@]*)$/);
+      if (match) {
+        const start = offset - match[0].length;
+        node.nodeValue = text.slice(0, start) + text.slice(offset);
+        caret.setStart(node, start);
+        caret.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(caret);
+      }
+    }
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(chip);
+    const space = document.createTextNode("\u00a0");
+    chip.after(space);
+    range.setStartAfter(space);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return;
+  }
+  el.appendChild(chip);
+  el.appendChild(document.createTextNode("\u00a0"));
 }
 
 async function api(path, options = {}) {
@@ -182,7 +293,7 @@ export function createProjectChatUI({
               </div>
               <div id="pc-pending-images" class="pc-pending-images"></div>
               <div class="pc-input-wrap">
-                <textarea id="pc-input" rows="3" placeholder="Write a message… Use @ to tag people or @RenderAgent"></textarea>
+                <div id="pc-input" class="pc-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Write a message… Use @ to tag people or @RenderAgent"></div>
                 <div id="pc-mention-menu" class="pc-mention-menu hidden" role="listbox"></div>
               </div>
               <div class="pc-send-row">
@@ -258,28 +369,23 @@ export function createProjectChatUI({
   function applyFormat(kind) {
     const input = overlay?.querySelector("#pc-input");
     if (!input) return;
-    const start = input.selectionStart || 0;
-    const end = input.selectionEnd || 0;
-    const value = input.value;
-    const selected = value.slice(start, end) || (kind === "mention" ? "" : "text");
+    input.focus();
+    if (kind === "mention") {
+      document.execCommand("insertText", false, "@");
+      updateMentionMenu(true);
+      return;
+    }
+    if (kind === "emoji") {
+      document.execCommand("insertText", false, "🎉");
+      return;
+    }
+    const sel = window.getSelection();
+    const selected = sel?.toString() || "text";
     let insert = selected;
     if (kind === "bold") insert = `**${selected}**`;
     if (kind === "italic") insert = `*${selected}*`;
     if (kind === "code") insert = `\`${selected}\``;
-    if (kind === "emoji") {
-      insert = "🎉";
-    }
-    if (kind === "mention") {
-      input.value = `${value.slice(0, start)}@${value.slice(end)}`;
-      input.focus();
-      input.setSelectionRange(start + 1, start + 1);
-      updateMentionMenu(true);
-      return;
-    }
-    input.value = value.slice(0, start) + insert + value.slice(end);
-    input.focus();
-    const caret = start + insert.length;
-    input.setSelectionRange(caret, caret);
+    document.execCommand("insertText", false, insert);
   }
 
   function addFiles(files) {
@@ -318,8 +424,7 @@ export function createProjectChatUI({
     const input = overlay?.querySelector("#pc-input");
     const menu = overlay?.querySelector("#pc-mention-menu");
     if (!input || !menu) return;
-    const caret = input.selectionStart || 0;
-    const before = input.value.slice(0, caret);
+    const before = textBeforeCaret(input);
     const match = before.match(/@([^\s@]*)$/);
     if (!match && !force) {
       menu.classList.add("hidden");
@@ -348,15 +453,12 @@ export function createProjectChatUI({
       .join("");
     menu.classList.remove("hidden");
     menu.querySelectorAll("[data-mention-pick]").forEach((btn) => {
+      btn.addEventListener("mousedown", (ev) => ev.preventDefault());
       btn.addEventListener("click", () => {
         const name = btn.dataset.mentionName || "User";
         const kind = btn.dataset.mentionType || "user";
         const id = btn.dataset.mentionPick;
-        const token = `@[${name}](${kind}:${id})`;
-        const start = input.selectionStart || 0;
-        const value = input.value;
-        const before = value.slice(0, start).replace(/@([^\s@]*)$/, "");
-        input.value = `${before}${token} ${value.slice(start)}`;
+        insertMentionChip(input, name, kind, id);
         menu.classList.add("hidden");
         input.focus();
       });
@@ -537,7 +639,7 @@ export function createProjectChatUI({
     const projectId = getProjectId?.();
     const input = overlay?.querySelector("#pc-input");
     if (!projectId || !activeThreadId || !input) return;
-    const body = input.value.trim();
+    const body = serializeComposer(input);
     if (!body && !pendingFiles.length) return;
     const form = new FormData();
     form.append("body", body);
@@ -545,23 +647,29 @@ export function createProjectChatUI({
     for (const file of pendingFiles) form.append("images", file, file.name);
     const sendBtn = overlay.querySelector("#pc-send");
     if (sendBtn) sendBtn.disabled = true;
+    const taggedAgent = /@\[[^\]]+\]\(agent:[^)]+\)/i.test(body) || /@render\s*agent\b/i.test(body);
     try {
       const data = await api(
         `/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(activeThreadId)}/messages`,
         { method: "POST", body: form }
       );
-      input.value = "";
+      clearComposer(input);
       pendingFiles = [];
       replyTo = null;
       renderPending();
       renderReplyBar();
       if (data.message) {
         messages = [...messages.filter((m) => m.id !== data.message.id), data.message];
-        // Reload to include agent replies shortly.
+        renderMessages();
+        // Reload so agent replies (parent_id) show up shortly after send.
         await selectThread(activeThreadId);
-        setTimeout(() => void selectThread(activeThreadId), 1800);
+        if (taggedAgent) {
+          setTimeout(() => void selectThread(activeThreadId), 1200);
+          setTimeout(() => void selectThread(activeThreadId), 3200);
+        }
       }
-      onStatus?.("ok", "Message sent");
+      onStatus?.("ok", taggedAgent ? "Message sent — Render Agent is replying…" : "Message sent");
+      input.focus();
     } catch (err) {
       onStatus?.("error", err.message || "Could not send message");
     } finally {

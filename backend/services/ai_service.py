@@ -57,6 +57,15 @@ def is_sol_model(model: str | None) -> bool:
     m = (model or "").strip().lower()
     return bool(m.endswith("-sol") or "-sol" in m)
 
+
+def cad_authoring_max_tokens(model: str | None) -> int:
+    """Pro / Sol CAD briefs + build123d sources routinely exceed 8k output tokens."""
+    if is_sol_model(model) or str(model or "").endswith("-pro") or "gpt-5.5-pro" in str(model or "").lower():
+        return 32768
+    if is_openai_frontier_model(model):
+        return 16384
+    return 8192
+
 DESIGN_SYSTEM_PROMPT = """You are Render3D's CAD design engine. You are an expert mechanical engineer
 and CAD modeler. You think step-by-step about HOW to construct 3D objects using boolean
 operations (union, subtraction, intersection), just like Fusion 360, SolidWorks, or ForgeCAD.

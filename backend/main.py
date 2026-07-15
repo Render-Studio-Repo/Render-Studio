@@ -1169,6 +1169,30 @@ def _other_user_render_summaries(user: dict[str, Any], team_id: str | None = Non
     return out
 
 
+def _prompt_timeline_meta(body: PromptRequest, **extra: Any) -> dict[str, Any]:
+    """Shared timeline meta for AI prompt jobs — marks generative edits for collab UI."""
+    target = str(getattr(body, "target_mode", "") or "").strip().lower()
+    if target not in {"new", "edit"}:
+        target = "edit" if getattr(body, "base_filename", None) else "new"
+    meta: dict[str, Any] = {
+        "prompt": body.prompt,
+        "speed": body.speed,
+        "base_filename": body.base_filename,
+        "target_mode": target,
+        "generative_edit": target == "edit",
+        **extra,
+    }
+    return meta
+
+
+def _prompt_timeline_label(body: PromptRequest, prompt: str | None = None) -> str:
+    text = prompt if prompt is not None else (body.prompt or "")
+    short = (text[:48] + "…") if len(text) > 48 else text
+    meta = _prompt_timeline_meta(body)
+    prefix = "Edit: " if meta.get("generative_edit") else "AI: "
+    return prefix + short
+
+
 def _record_history(
     project_path: Path,
     kind: str,
@@ -3086,23 +3110,20 @@ def _rebuild_cooking_appliance_toolhead(
         if whisk_swap
         else result.get("program", {}).get("description") or "Model rebuilt."
     )
-    label = "AI: " + (body.prompt[:48] + "…" if len(body.prompt) > 48 else body.prompt)
+    label = _prompt_timeline_label(body)
     entry = _record_history(
         project_path,
         "prompt",
         label,
         primary,
-        meta={
-            "program": result.get("program"),
-            "files": result.get("files"),
-            "intent": "toolhead_rebuild",
-            "prompt": body.prompt,
-            "message": message,
-            "speed": body.speed,
-            "base_filename": body.base_filename,
-            "references": refs_list,
-            "trace_id": trace_id,
-        },
+        meta=_prompt_timeline_meta(
+            body,
+            program=result.get("program"),
+            files=result.get("files"),
+            intent="toolhead_rebuild",
+            message=message,
+            trace_id=trace_id,
+        ),
         user=user,
     )
     hist_entry = _save_prompt_history(
@@ -9160,39 +9181,47 @@ def _maybe_reply_as_render_agent(
     def _run() -> None:
         from backend.services import project_chat_service
 
+        who = user.get("display_name") or "there"
+        raw_body = str(message.get("body") or "")
+        # Strip rich mention tokens so the model answers the actual question.
+        clean_body = re.sub(
+            r"@\[[^\]]+\]\((?:user|agent):[^)]+\)",
+            "",
+            raw_body,
+        ).strip() or raw_body
+        reply_text = (
+            f"Thanks for the ping, {who}. "
+            "I'm here — ask me about modeling steps, prompts, or how to use Render3D."
+        )
         try:
             ai = _sam_ai_service()
             system = (
                 "You are the Render Agent inside a Render3D project collaboration chat. "
                 "Reply helpfully and concisely (2-6 short sentences). "
-                "Focus on CAD, prompts, modeling steps, and Render3D product guidance."
+                "Focus on CAD, prompts, modeling steps, and Render3D product guidance. "
+                "Do not invent file names or claim you already edited the model."
             )
             user_content = (
                 f"Project: {project_id}\n"
-                f"User ({user.get('display_name') or 'User'}): {message.get('body') or ''}"
+                f"User ({who}): {clean_body}"
             )
-            reply_text = ""
-            try:
-                answer, _trace = ai._call_model(
-                    system,
-                    user_content,
-                    trace_id=new_trace_id(),
-                    images=None,
-                    max_tokens=900,
-                    json_response=False,
-                )
-                reply_text = str(answer or "").strip()
-            except Exception as exc:
-                reply_text = (
-                    f"I saw your ping, {user.get('display_name') or 'there'}. "
-                    f"I couldn't complete a full answer just now ({exc}). "
-                    "Open the Render Agent panel for a deeper help thread."
-                )
-            if not reply_text:
-                reply_text = (
-                    f"Thanks for the ping, {user.get('display_name') or 'there'}. "
-                    "I'm here — ask me about modeling steps, prompts, or how to use Render3D."
-                )
+            answer, _trace = ai._call_model(
+                system,
+                user_content,
+                trace_id=new_trace_id(),
+                images=None,
+                max_tokens=900,
+                json_response=False,
+            )
+            reply_text = str(answer or "").strip() or reply_text
+        except Exception as exc:
+            logger.warning("Render Agent chat LLM failed for %s: %s", project_id, exc)
+            reply_text = (
+                f"I saw your ping, {who}. "
+                "I couldn't complete a full answer just now. "
+                "Open the Render Agent panel for a deeper help thread, or ask again in a moment."
+            )
+        try:
             agent_msg = project_chat_service.post_message(
                 project_path,
                 thread_id=thread["id"],
@@ -9208,7 +9237,7 @@ def _maybe_reply_as_render_agent(
                 {"id": "render-agent", "display_name": "Render Agent"},
             )
         except Exception as exc:
-            logger.warning("Render Agent chat reply failed for %s: %s", project_id, exc)
+            logger.warning("Render Agent chat reply post failed for %s: %s", project_id, exc)
 
     background_tasks.add_task(_run)
 
@@ -12788,17 +12817,19 @@ def _prompt_via_kernel(
     usage_meta = _usage_history_fields(out.get("ai_trace"))
     entry = _record_history(
         project_path, "prompt", label, primary,
-        meta={
-            "program": result.get("program"), "files": result.get("files"),
-            "intent": out.get("intent"), "prompt": body.prompt,
-            "message": out.get("message"), "speed": body.speed,
-            "placed_parts": placed_parts,
-            "design_plan": out.get("design_plan"),
-            "base_filename": body.base_filename,
-            "sim": result.get("sim"), "dfm": result.get("dfm"),
-            "trace_id": trace_id,
+        meta=_prompt_timeline_meta(
+            body,
+            program=result.get("program"),
+            files=result.get("files"),
+            intent=out.get("intent"),
+            message=out.get("message"),
+            placed_parts=placed_parts,
+            design_plan=out.get("design_plan"),
+            sim=result.get("sim"),
+            dfm=result.get("dfm"),
+            trace_id=trace_id,
             **usage_meta,
-        },
+        ),
         user=user,
     )
     hist_entry = _save_prompt_history(
@@ -13530,14 +13561,12 @@ def prompt_cad(
         "prompt",
         label,
         out_path.name,
-        meta={
-            "actions": actions,
-            "references": refs_list,
-            "prompt": body.prompt,
-            "message": plan_message,
-            "speed": body.speed,
-            "base_filename": body.base_filename,
-        },
+        meta=_prompt_timeline_meta(
+            body,
+            actions=actions,
+            references=refs_list,
+            message=plan_message,
+        ),
         user=user,
     )
 

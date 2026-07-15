@@ -65,7 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
-import { createProjectChatUI } from "./project-chat.js?v=20260715-project-chat";
+import { createProjectChatUI } from "./project-chat.js?v=20260715-mention-chips";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
@@ -107,7 +107,7 @@ import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
-import { createRiggingEditor } from "./rigging-editor.js?v=20260710-step-module";
+import { createRiggingEditor } from "./rigging-editor.js?v=20260715-rigging-viewport";
 import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-hierarchy-play";
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
@@ -731,8 +731,9 @@ async function applyRiggingGenerationComplete(gen, pid = projectId) {
     await refreshRobotArtifacts({ quiet: true });
     await refreshRiggingPromptHistory();
     setRiggingWorkspaceMode("urdf");
-    openUrdfMotionModal();
     await ensureUrdfRobotScene({ quiet: true });
+    syncRiggingViewportOverlay({ status: "Rigging ready — pose joints in Adjustments." });
+    await syncRiggingAdjustSliders({ autoExpand: true });
     if (document.body.classList.contains("rigging-design-tab")) {
       setRightTab("rigging");
     }
@@ -5599,6 +5600,7 @@ function enterRiggingMode() {
 
 function exitRiggingMode() {
   document.querySelectorAll("#rigging-chrome.rigging-chrome").forEach((el) => el.classList.add("hidden"));
+  closeUrdfMotionModal();
   stepModuleRuntime?.stop?.({ reset: true });
   planetaryGearRuntime?.stop?.({ reset: true });
   riggingEditor.hide();
@@ -7195,6 +7197,144 @@ function syncRiggingToolbelt() {
   });
 }
 
+function setRiggingAdjustCollapsed(collapsed) {
+  const dock = document.getElementById("rigging-adjust-dock");
+  const toggle = document.getElementById("btn-rigging-adjust-toggle");
+  if (!dock) return;
+  dock.classList.toggle("is-collapsed", !!collapsed);
+  toggle?.setAttribute("aria-expanded", String(!collapsed));
+}
+
+function syncRiggingViewportOverlay({ status = "" } = {}) {
+  const data = robotArtifactData || {};
+  const joints = (data.joints || []).filter((j) => String(j.type || "").toLowerCase() !== "fixed");
+  const links = data.links || [];
+  const artifacts = data.artifacts || [];
+  const statusEl = document.getElementById("rigging-manage-status");
+  const metaEl = document.getElementById("rigging-manage-meta");
+  const sourceSelect = document.getElementById("rigging-vp-artifact-source");
+  const panelSource = document.getElementById("rigging-artifact-source");
+  if (sourceSelect) {
+    const current = sourceSelect.value || panelSource?.value || "";
+    sourceSelect.innerHTML = (data.sources || []).length
+      ? (data.sources || []).map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")
+      : `<option value="">No Python source</option>`;
+    if (current && [...sourceSelect.options].some((opt) => opt.value === current)) sourceSelect.value = current;
+  }
+  if (statusEl) {
+    statusEl.textContent = status
+      || (urdfRobotRuntime.isLoaded?.()
+        ? "Robot scene loaded — pose joints in Adjustments."
+        : "Load a robot or motion module to pose joints.");
+  }
+  if (metaEl) {
+    metaEl.textContent = `${artifacts.length} artifact(s) · ${links.length} link(s) · ${joints.length} joint(s)`;
+  }
+}
+
+async function syncRiggingAdjustSliders({ autoExpand = false } = {}) {
+  const host = document.getElementById("rigging-adjust-sliders");
+  const countEl = document.getElementById("rigging-adjust-count");
+  if (!host) return 0;
+  const jointHtml = robotJointSlidersHtml(robotArtifactData?.joints || []);
+  let cadHtml = "";
+  let cadCount = 0;
+  try {
+    if (projectId && selectedFile) {
+      const cadParams = await fetchCadParams(rawFetch, projectId, selectedFile);
+      if (cadParams?.params?.length) {
+        cadCount = cadParams.params.length;
+        cadHtml = cadParamControlsHtml(cadParams);
+      }
+    }
+  } catch {
+    /* optional */
+  }
+  const movable = (robotArtifactData?.joints || []).filter((j) => String(j.type || "").toLowerCase() !== "fixed");
+  const total = movable.length + cadCount;
+  host.innerHTML = `
+    ${movable.length ? `<div class="rigging-adjust-section"><strong class="muted small">Joints</strong>${jointHtml}</div>` : ""}
+    ${cadHtml ? `<div class="rigging-adjust-section">${cadHtml}</div>` : ""}
+    ${!total ? `<p class="cad-param-hint">No joint or parametric adjustments yet. Load a robot or open a Jake text-to-cad model.</p>` : ""}
+  `;
+  if (countEl) countEl.textContent = String(total);
+  if (cadHtml) {
+    bindCadParamControls(host, {
+      projectId,
+      filename: selectedFile,
+      api,
+      rawFetch,
+      onStatus: setEditStatus,
+      getPreviewRoot: () => projectAssembly.getRoot() || currentMesh,
+    });
+  }
+  if (autoExpand && total > 0) setRiggingAdjustCollapsed(false);
+  else if (!total) setRiggingAdjustCollapsed(true);
+  return total;
+}
+
+function bindRiggingViewportOverlayUi() {
+  if (bindRiggingViewportOverlayUi._ready) return;
+  bindRiggingViewportOverlayUi._ready = true;
+
+  document.getElementById("btn-rigging-manage-collapse")?.addEventListener("click", () => {
+    const manage = document.getElementById("rigging-viewport-manage");
+    const collapsed = !manage?.classList.contains("is-collapsed");
+    manage?.classList.toggle("is-collapsed", collapsed);
+    const btn = document.getElementById("btn-rigging-manage-collapse");
+    if (btn) {
+      btn.textContent = collapsed ? "▸" : "▾";
+      btn.setAttribute("aria-expanded", String(!collapsed));
+    }
+  });
+
+  const setCollapsed = (collapsed) => setRiggingAdjustCollapsed(collapsed);
+  document.getElementById("btn-rigging-adjust-toggle")?.addEventListener("click", () => {
+    const dock = document.getElementById("rigging-adjust-dock");
+    setCollapsed(!dock?.classList.contains("is-collapsed"));
+  });
+  document.getElementById("btn-rigging-adjust-close")?.addEventListener("click", () => setCollapsed(true));
+
+  document.getElementById("rigging-show-bones")?.addEventListener("change", (e) => {
+    const on = !!e.target?.checked;
+    riggingEditor.setBoneOverlayVisible?.(on);
+  });
+
+  document.getElementById("btn-rigging-vp-load")?.addEventListener("click", async () => {
+    try {
+      await refreshRobotArtifacts({ quiet: true });
+      await ensureUrdfRobotScene({ force: true });
+      syncRiggingViewportOverlay({ status: urdfRobotRuntime.isLoaded?.() ? "Robot scene loaded." : "Could not load robot scene." });
+      await syncRiggingAdjustSliders({ autoExpand: true });
+    } catch (err) {
+      setEditStatus("error", err?.message || "Could not load robot.");
+    }
+  });
+  document.getElementById("btn-rigging-vp-refresh")?.addEventListener("click", async () => {
+    await refreshRobotArtifacts({ quiet: false });
+    syncRiggingViewportOverlay();
+    await syncRiggingAdjustSliders({ autoExpand: false });
+  });
+  document.getElementById("btn-rigging-vp-reset")?.addEventListener("click", () => resetRobotJointPose());
+  document.getElementById("btn-rigging-vp-generate")?.addEventListener("click", () => {
+    setRightTab("rigging");
+    document.getElementById("btn-rigging-prompt")?.click();
+  });
+  document.getElementById("rigging-vp-artifact-source")?.addEventListener("change", (e) => {
+    const panel = document.getElementById("rigging-artifact-source");
+    if (panel) panel.value = e.target.value;
+  });
+
+  document.getElementById("rigging-adjust-sliders")?.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const id = input.dataset.robotUrdfJoint || input.dataset.robotUrdfJointNumber;
+    if (!id) return;
+    const joint = (robotArtifactData?.joints || []).find((item) => item.name === id) || null;
+    applyRobotJointDisplayValue(id, input.value, joint);
+  });
+}
+
 function enterCanvasTab() {
   catalogPanel?.close?.();
   exitRiggingMode();
@@ -7240,7 +7380,7 @@ function handleDesignTabChange(tab) {
     setEditStatus("ok", "Sketch mode — click Create Sketch to enter locked 2D edit.");
   } else if (tab === "RIGGING") {
     focusViewportForShortcuts();
-    setEditStatus("ok", "Rigging mode — Add Bone, Connect hierarchy, Save Rig.");
+    setEditStatus("ok", "Rigging — model viewport with manage overlay, adjustments, and timeline.");
   } else if (tab === "ARCHITECT") {
     focusViewportForShortcuts();
     setEditStatus("ok", "Architect — drag walls, Shift+drag rooms, right-click delete. Middle pans; Shift+middle orbits.");
@@ -9487,6 +9627,8 @@ function renderRobotArtifacts() {
   const linkSummary = document.getElementById("urdf-link-summary");
   if (linkSummary) linkSummary.textContent = `${(data.links || []).length} link(s) · ${movableCount} joint(s)`;
   fillMoveIt2Selectors(data);
+  syncRiggingViewportOverlay();
+  void syncRiggingAdjustSliders({ autoExpand: false });
 }
 
 function isUrdfMotionModalOpen() {
@@ -9496,6 +9638,13 @@ function isUrdfMotionModalOpen() {
 function openUrdfMotionModal() {
   const modal = document.getElementById("urdf-motion-modal");
   if (!modal) return;
+  const app = document.getElementById("app");
+  if (!app?.classList.contains("rigging-design-tab")) {
+    workspaceModes?.setDesignTab?.("RIGGING");
+    ribbon?.setDesignTab?.("RIGGING");
+    setRightTab("rigging");
+    riggingPromptHistory.setTab("compose");
+  }
   const viewport = document.getElementById("viewport");
   if (viewport && modal.parentElement !== viewport) viewport.appendChild(modal);
   modal.classList.remove("hidden");
@@ -9594,6 +9743,7 @@ function applySrdfGroupStateFromSelect(selectEl) {
 }
 
 function bindUrdfPanel() {
+  bindRiggingViewportOverlayUi();
   document.getElementById("btn-open-urdf-motion")?.addEventListener("click", () => openUrdfMotionModal());
   document.querySelectorAll(".btn-rigging-toolbelt-motion").forEach((btn) => {
     btn.addEventListener("click", () => openUrdfMotionModal());
@@ -15097,11 +15247,12 @@ async function setupRobotMotionWorkflow({ autoGenerate = true } = {}) {
   const artifacts = await refreshRobotArtifacts({ quiet: true }) || robotArtifactData || {};
   if (projectAlreadyHasSimMotion({ filename: selectedFile }, artifacts)) {
     await ensureUrdfRobotScene({ quiet: false, force: true });
-    openUrdfMotionModal();
-    setEditStatus("ok", "Robot motion workbench ready. Use joint sliders, Play, or MoveIt2 Plan path.");
+    syncRiggingViewportOverlay({ status: "Robot motion ready." });
+    await syncRiggingAdjustSliders({ autoExpand: true });
+    setEditStatus("ok", "Robot motion ready. Use Adjustments + timeline to pose and play.");
     if (status) {
       status.className = "status ok";
-      status.textContent = "URDF/SRDF already exists. Motion workbench opened.";
+      status.textContent = "URDF/SRDF already exists. Use Adjustments in the viewport.";
     }
     return;
   }
@@ -15216,7 +15367,14 @@ function setRiggingWorkspaceMode(mode) {
   if (next === "urdf") {
     void (async () => {
       await refreshRobotArtifacts({ quiet: true });
-      openUrdfMotionModal();
+      // Keep the clean viewport: load robot + sliders instead of the old docked playground chrome.
+      try {
+        await ensureUrdfRobotScene({ quiet: true, force: false });
+      } catch {
+        /* optional */
+      }
+      syncRiggingViewportOverlay();
+      await syncRiggingAdjustSliders({ autoExpand: true });
     })();
   } else {
     closeUrdfMotionModal();
@@ -15278,7 +15436,8 @@ async function authorJakeRobotDescription({ source: requestedSource = "", kind =
     setRiggingWorkspaceMode("urdf");
     if (openMotion) {
       await ensureUrdfRobotScene({ quiet: true, force: true });
-      openUrdfMotionModal();
+      syncRiggingViewportOverlay({ status: "Robot authored — use Adjustments to pose joints." });
+      await syncRiggingAdjustSliders({ autoExpand: true });
     }
     const msg = data.message || "URDF/SRDF authored.";
     setEditStatus("ok", msg);

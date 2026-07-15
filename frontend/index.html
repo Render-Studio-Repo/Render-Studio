@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-urdf-playground" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-mention-chips" />
   <script type="importmap">
   {
     "imports": {
@@ -359,33 +359,43 @@
           </footer>
         </div>
         <div id="rigging-chrome" class="rigging-chrome hidden" aria-live="polite">
-          <header class="rigging-toolbelt" role="toolbar" aria-label="Rigging tools">
-            <div class="rigging-tool-group">
-              <span class="rigging-tool-label">Rig</span>
-              <button type="button" class="rigging-tool-btn active" data-rig-tool="select" title="Select bone">↖ Select</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="move" title="Move bone">✥ Move</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="rotate" title="Rotate joint">↻ Rotate</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="add" title="Add bone">● Add Bone</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="connect" title="Connect hierarchy">⛓ Connect</button>
-              <button type="button" class="rigging-tool-btn" data-rig-action="keyframe" title="Keyframe (K)">◆ Key</button>
+          <aside id="rigging-viewport-manage" class="rigging-viewport-manage" aria-label="Rigging controls">
+            <div class="rigging-manage-head">
+              <strong>Rigging</strong>
+              <button type="button" class="rigging-manage-toggle" id="btn-rigging-manage-collapse" title="Collapse" aria-expanded="true">▾</button>
             </div>
-            <span class="rigging-tool-sep" aria-hidden="true"></span>
-            <div class="rigging-tool-group">
-              <span class="rigging-tool-label">Pick</span>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="object" title="Select object">Object</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="face" title="Select face">Face</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="edge" title="Select edge">Edge</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="off" title="Orbit view">Orbit</button>
+            <div class="rigging-manage-body" id="rigging-manage-body">
+              <p class="rigging-manage-status muted small" id="rigging-manage-status">Load a robot or motion module to pose joints.</p>
+              <div class="rigging-manage-actions">
+                <button type="button" class="btn accent btn-compact" id="btn-rigging-vp-load">Load robot</button>
+                <button type="button" class="btn secondary btn-compact" id="btn-rigging-vp-refresh">Refresh</button>
+                <button type="button" class="btn secondary btn-compact" id="btn-rigging-vp-reset">Reset pose</button>
+                <button type="button" class="btn secondary btn-compact" id="btn-rigging-vp-generate" title="Generate with Rigging AI">Generate</button>
+              </div>
+              <label class="rigging-manage-row">
+                <span>Source</span>
+                <select id="rigging-vp-artifact-source" aria-label="Robot source file"></select>
+              </label>
+              <div class="rigging-manage-meta muted small" id="rigging-manage-meta">No artifacts yet</div>
+              <label class="rigging-manage-check">
+                <input type="checkbox" id="rigging-show-bones" />
+                Show bone overlay
+              </label>
             </div>
-            <span class="rigging-tool-sep" aria-hidden="true"></span>
-            <div class="rigging-tool-group rigging-tool-group--actions">
-              <button type="button" id="btn-rigging-toolbelt-generate" class="rigging-tool-btn rigging-tool-accent" title="Generate rig with Rigging AI">⚡ Generate</button>
-              <button type="button" class="rigging-tool-btn btn-rigging-toolbelt-motion" title="Open URDF / SRDF robot playground">🤖 Playground</button>
-              <button type="button" id="btn-rigging-toolbelt-save" class="rigging-tool-btn" title="Save rig">💾 Save</button>
-              <button type="button" id="btn-rigging-toolbelt-export" class="rigging-tool-btn" title="Export robot.urdf">📄 URDF</button>
-              <button type="button" id="btn-rigging-toolbelt-auto" class="rigging-tool-btn" title="Auto chain rig">🦴 Auto Rig</button>
+          </aside>
+          <aside id="rigging-adjust-dock" class="rigging-adjust-dock is-collapsed" aria-label="Rigging adjustments">
+            <button type="button" class="rigging-adjust-tab" id="btn-rigging-adjust-toggle" aria-expanded="false" title="Adjustments">
+              <span>Adjustments</span>
+              <em id="rigging-adjust-count">0</em>
+            </button>
+            <div class="rigging-adjust-panel" id="rigging-adjust-panel">
+              <div class="rigging-adjust-head">
+                <strong>Pose &amp; params</strong>
+                <button type="button" class="btn-icon" id="btn-rigging-adjust-close" title="Retract" aria-label="Retract adjustments">›</button>
+              </div>
+              <div id="rigging-adjust-sliders" class="cad-param-list rigging-adjust-sliders"></div>
             </div>
-          </header>
+          </aside>
           <footer id="rigging-anim-panel" class="rigging-anim-panel"></footer>
         </div>
         <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
@@ -418,36 +428,6 @@
             <span id="sketch-status-hint" class="sketch-status-hint">Click to place first point</span>
             <span id="sketch-status-stats" class="sketch-status-stats"></span>
           </footer>
-        </div>
-        <div id="rigging-chrome" class="rigging-chrome hidden" aria-live="polite">
-          <header class="rigging-toolbelt" role="toolbar" aria-label="Rigging tools">
-            <div class="rigging-tool-group">
-              <span class="rigging-tool-label">Rig</span>
-              <button type="button" class="rigging-tool-btn active" data-rig-tool="select" title="Select bone">↖ Select</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="move" title="Move bone">✥ Move</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="rotate" title="Rotate joint">↻ Rotate</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="add" title="Add bone">● Add Bone</button>
-              <button type="button" class="rigging-tool-btn" data-rig-tool="connect" title="Connect hierarchy">⛓ Connect</button>
-              <button type="button" class="rigging-tool-btn" data-rig-action="keyframe" title="Keyframe (K)">◆ Key</button>
-            </div>
-            <span class="rigging-tool-sep" aria-hidden="true"></span>
-            <div class="rigging-tool-group">
-              <span class="rigging-tool-label">Pick</span>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="object" title="Select object">Object</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="face" title="Select face">Face</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="edge" title="Select edge">Edge</button>
-              <button type="button" class="rigging-tool-btn" data-rig-pick="off" title="Orbit view">Orbit</button>
-            </div>
-            <span class="rigging-tool-sep" aria-hidden="true"></span>
-            <div class="rigging-tool-group rigging-tool-group--actions">
-              <button type="button" id="btn-rigging-toolbelt-generate" class="rigging-tool-btn rigging-tool-accent" title="Generate rig with Rigging AI">⚡ Generate</button>
-              <button type="button" class="rigging-tool-btn btn-rigging-toolbelt-motion" title="Open URDF / SRDF robot playground">🤖 Playground</button>
-              <button type="button" id="btn-rigging-toolbelt-save" class="rigging-tool-btn" title="Save rig">💾 Save</button>
-              <button type="button" id="btn-rigging-toolbelt-export" class="rigging-tool-btn" title="Export robot.urdf">📄 URDF</button>
-              <button type="button" id="btn-rigging-toolbelt-auto" class="rigging-tool-btn" title="Auto chain rig">🦴 Auto Rig</button>
-            </div>
-          </header>
-          <footer id="rigging-anim-panel" class="rigging-anim-panel"></footer>
         </div>
         <div id="viewport-hint" class="viewport-hint hidden">
           <strong id="pick-hint-title">Pick mode</strong>
@@ -1262,7 +1242,7 @@
           </div>
 
           <div id="rigging-mode-bones" class="rigging-mode-pane">
-            <p class="muted small"><strong>Rigging shows joint bones</strong> (orange spheres) — not CAD geometry. Build the part in <strong>SOLID → AI Compose</strong>, then place bones here or generate a rig.</p>
+            <p class="muted small"><strong>Bones mode</strong> is optional. The viewport shows your model; use the left overlay to load/manage the robot and the Adjustments strip for Jake-style joint/param sliders. Timeline is at the bottom.</p>
             <div class="prompt-input-head">
               <span class="prompt-input-head-label muted small">Rig prompt</span>
               <button type="button" class="prompt-mic-btn" data-mic-target="rigging-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
@@ -2039,7 +2019,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
-  <script type="module" src="/app.js?v=20260715-urdf-playground"></script>
+  <script type="module" src="/app.js?v=20260715-mention-chips"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
