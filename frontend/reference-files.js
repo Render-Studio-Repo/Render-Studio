@@ -236,6 +236,7 @@ export function createReferenceFilesViewer(options = {}) {
     }
 
     const strokeCount = (tab.strokes || []).length;
+    const kindIsImage = kind === "image";
     viewerEl.innerHTML = `
       <header class="dxf-viewer-toolbar ref-viewer-toolbar">
         <div class="dxf-viewer-title">
@@ -249,6 +250,20 @@ export function createReferenceFilesViewer(options = {}) {
           <button type="button" class="dxf-viewer-btn accent" data-ref-action="send-ai" title="Attach marked-up file and notes to the AI prompt">
             Send to AI${strokeCount ? ` (${strokeCount})` : ""}
           </button>
+          ${
+            kindIsImage || tab.blobUrl
+              ? `<div class="ref-download-menu">
+                  <button type="button" class="dxf-viewer-btn" data-ref-action="download-toggle" aria-haspopup="true" aria-expanded="false" title="Download this image">Download ▾</button>
+                  <div class="ref-download-menu-panel hidden" data-ref-download-panel role="menu">
+                    <button type="button" role="menuitem" data-ref-download="png">PNG${strokeCount ? " (with markup)" : ""}</button>
+                    <button type="button" role="menuitem" data-ref-download="jpeg">JPEG</button>
+                    <button type="button" role="menuitem" data-ref-download="webp">WebP</button>
+                    <button type="button" role="menuitem" data-ref-download="svg">SVG${strokeCount ? " (with markup)" : ""}</button>
+                    ${tab.blobUrl ? `<button type="button" role="menuitem" data-ref-download="original">Original file</button>` : ""}
+                  </div>
+                </div>`
+              : ""
+          }
           <button type="button" class="dxf-viewer-btn primary" data-ref-action="save" title="Save text and markup">Save</button>
           <button type="button" class="dxf-viewer-btn" data-ref-action="close" title="Close tab">Close</button>
         </div>
@@ -477,6 +492,123 @@ export function createReferenceFilesViewer(options = {}) {
       return canvas.toDataURL("image/png");
     }
     return null;
+  }
+
+  function stemForDownload(tab) {
+    return String(tab?.label || labelFromName(tab?.filename) || "render").replace(/[^\w.-]+/g, "_") || "render";
+  }
+
+  function triggerBlobDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) throw new Error("Invalid image data");
+    const binary = atob(match[2]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: match[1] });
+  }
+
+  async function loadImageElement(src) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error("Could not load image"));
+      img.src = src;
+    });
+    return img;
+  }
+
+  async function buildExportCanvas(tab, { withMarkup = true } = {}) {
+    const src = withMarkup ? await compositeMarkedImage(tab) : null;
+    if (src) {
+      const img = await loadImageElement(src);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      return canvas;
+    }
+    if (!tab.blobUrl) throw new Error("Nothing to download");
+    const img = await loadImageElement(tab.blobUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    if (withMarkup) drawStrokesOnCtx(ctx, tab.strokes, 0);
+    return canvas;
+  }
+
+  async function downloadAsRaster(tab, format) {
+    const canvas = await buildExportCanvas(tab, { withMarkup: true });
+    const mime =
+      format === "jpeg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
+    const quality = format === "png" ? undefined : 0.92;
+    const dataUrl = canvas.toDataURL(mime, quality);
+    const ext = format === "jpeg" ? "jpg" : format;
+    triggerBlobDownload(dataUrlToBlob(dataUrl), `${stemForDownload(tab)}.${ext}`);
+  }
+
+  async function downloadAsSvg(tab) {
+    const img = await loadImageElement(tab.blobUrl);
+    const width = img.naturalWidth || img.width || 1024;
+    const height = img.naturalHeight || img.height || 1024;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+    const pngUrl = canvas.toDataURL("image/png");
+    const markup = strokeSvg(tab.strokes, 0);
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <image width="${width}" height="${height}" xlink:href="${pngUrl}" href="${pngUrl}" />
+  <g class="markup">${markup}</g>
+</svg>`;
+    triggerBlobDownload(new Blob([svg], { type: "image/svg+xml" }), `${stemForDownload(tab)}.svg`);
+  }
+
+  async function downloadOriginal(tab) {
+    if (!tab.blobUrl) throw new Error("Nothing to download");
+    const a = document.createElement("a");
+    a.href = tab.blobUrl;
+    a.download = tab.filename || `${stemForDownload(tab)}.png`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function closeDownloadPanel() {
+    const panel = viewerEl?.querySelector("[data-ref-download-panel]");
+    const toggle = viewerEl?.querySelector('[data-ref-action="download-toggle"]');
+    panel?.classList.add("hidden");
+    toggle?.setAttribute("aria-expanded", "false");
+  }
+
+  async function handleDownload(format) {
+    const tab = activeFilename ? tabs.get(activeFilename) : null;
+    if (!tab) return;
+    closeDownloadPanel();
+    try {
+      if (format === "original") await downloadOriginal(tab);
+      else if (format === "svg") await downloadAsSvg(tab);
+      else await downloadAsRaster(tab, format);
+      onStatus?.("ok", `Downloaded ${format.toUpperCase()}`);
+    } catch (err) {
+      onStatus?.("error", err.message || "Download failed");
+    }
   }
 
   async function buildSendPayload(tab) {
@@ -722,9 +854,22 @@ export function createReferenceFilesViewer(options = {}) {
   }
 
   viewerEl?.addEventListener("click", (e) => {
+    const downloadFmt = e.target.closest("[data-ref-download]")?.dataset.refDownload;
+    if (downloadFmt) {
+      e.preventDefault();
+      void handleDownload(downloadFmt);
+      return;
+    }
     const action = e.target.closest("[data-ref-action]")?.dataset.refAction;
     if (!action) return;
     const tab = activeFilename ? tabs.get(activeFilename) : null;
+    if (action === "download-toggle") {
+      const panel = viewerEl.querySelector("[data-ref-download-panel]");
+      const toggle = viewerEl.querySelector('[data-ref-action="download-toggle"]');
+      const open = panel?.classList.toggle("hidden") === false;
+      toggle?.setAttribute("aria-expanded", String(!!open));
+      return;
+    }
     if (action === "save") {
       void saveActive();
       return;

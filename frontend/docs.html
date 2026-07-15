@@ -8,7 +8,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-show-me-circle" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-agent-store-docs" />
 </head>
 <body class="info-page">
   <div id="app" class="app-info">
@@ -48,11 +48,13 @@
           <p style="margin-top:14px">
             <a class="btn accent" href="#complete-docs">Complete documentation</a>
             <a class="btn secondary" href="/getting-started.html">Getting Started — GIF demos</a>
+            <a class="btn secondary" href="#agent-store-docs">Agent Store docs</a>
             <a class="btn secondary" href="/getting-started.html#tips-library">Tips &amp; tricks</a>
             <a class="btn secondary" href="/updates.html">Recent Updates</a>
           </p>
           <nav class="docs-category-tabs" aria-label="Docs categories">
             <a class="docs-category-tab" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="#agent-store-docs">Agent Store</a>
             <a class="docs-category-tab" href="/getting-started.html#tips-library">Tips &amp; tricks</a>
             <a class="docs-category-tab" href="/updates.html">Updates</a>
             <a class="docs-category-tab active" href="/docs.html">Reference</a>
@@ -66,6 +68,23 @@
             quick looping demos, step-by-step detail, and a button to ask the Render Agent about each one.
             See <a href="/updates.html">Recent Updates</a> for milestone features and tools as they ship.
           </p>
+        </section>
+
+        <section class="info-section" id="agent-store-docs">
+          <div class="agent-docs-head">
+            <div>
+              <p class="info-eyebrow">Agent Store documentation</p>
+              <h3>Public agent docs and submitted apps</h3>
+              <p class="muted">
+                Approved community submissions are published here automatically so users can search
+                agents, browse by category, and see the newest additions before installing from the store.
+              </p>
+            </div>
+            <a class="btn secondary" href="/agent-store.html">Open Agent Store</a>
+          </div>
+          <div id="agent-docs" class="agent-docs" aria-live="polite">
+            <p class="muted">Loading public agent documentation…</p>
+          </div>
         </section>
 
 
@@ -409,6 +428,6 @@ python run.py</code></pre>
     </main>
   </div>
 <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/docs-catalog.js?v=20260715-docs-catalog"></script>
+  <script type="module" src="/docs-catalog.js?v=20260715-agent-store-docs"></script>
 </body>
 </html>

@@ -109,6 +109,8 @@ SUPPORTED_REFERENCE = {
 REFERENCE_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".html", ".htm", ".rtf"}
 REFERENCE_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".tif", ".tiff"}
 REFERENCE_DIRNAME = "references"
+RENDERS_DIRNAME = "renders"
+MARKUP_FOLDER_NAMES = frozenset({REFERENCE_DIRNAME, RENDERS_DIRNAME})
 
 DEFAULT_APPEARANCE_PALETTE = np.array(
     [
@@ -137,6 +139,12 @@ def references_dir(project_path: Path) -> Path:
     return path
 
 
+def renders_dir(project_path: Path) -> Path:
+    path = Path(project_path) / RENDERS_DIRNAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def is_reference_suffix(suffix: str) -> bool:
     return str(suffix or "").lower() in SUPPORTED_REFERENCE
 
@@ -153,7 +161,7 @@ def reference_kind(filename: str) -> str:
 
 
 def resolve_project_file(project_path: Path, filename: str) -> Path | None:
-    """Resolve a basename in the project root or references/ folder."""
+    """Resolve a basename in the project root, references/, or renders/ folder."""
     safe = Path(filename).name
     if not safe or safe in {".", ".."}:
         return None
@@ -163,6 +171,9 @@ def resolve_project_file(project_path: Path, filename: str) -> Path | None:
     ref = Path(project_path) / REFERENCE_DIRNAME / safe
     if ref.is_file():
         return ref
+    render = Path(project_path) / RENDERS_DIRNAME / safe
+    if render.is_file():
+        return render
     return None
 
 
@@ -254,6 +265,35 @@ def list_reference_files(project_path: Path) -> list[dict[str, Any]]:
     return refs
 
 
+def list_render_files(project_path: Path) -> list[dict[str, Any]]:
+    """Photoreal scene renders saved under project/renders/."""
+    items: list[dict[str, Any]] = []
+    root = Path(project_path) / RENDERS_DIRNAME
+    if not root.is_dir():
+        return items
+    image_suffixes = REFERENCE_IMAGE_SUFFIXES | {".png", ".jpg", ".jpeg", ".webp"}
+    for f in sorted(root.iterdir(), key=lambda p: p.name.lower(), reverse=True):
+        if not f.is_file():
+            continue
+        if f.name.endswith(".markup.json"):
+            continue
+        if f.suffix.lower() not in image_suffixes:
+            continue
+        items.append(
+            {
+                "id": f.stem,
+                "name": f.name,
+                "stem": f.stem,
+                "format": f.suffix.lower().lstrip("."),
+                "kind": "image",
+                "size": f.stat().st_size,
+                "url": f"renders/{f.name}",
+                "section": "renders",
+            }
+        )
+    return items
+
+
 def unique_reference_path(project_path: Path, filename: str) -> Path:
     dest_dir = references_dir(project_path)
     safe = Path(filename).name or "reference.bin"
@@ -278,7 +318,7 @@ def rename_reference_file(project_path: Path, old_filename: str, new_filename: s
     if Path(new).suffix.lower() not in SUPPORTED_REFERENCE:
         raise ValueError(f"Unsupported reference type. Use: {sorted(SUPPORTED_REFERENCE)}")
     src = resolve_project_file(project_path, old)
-    if src is None or REFERENCE_DIRNAME not in src.parts:
+    if src is None or src.parent.name not in MARKUP_FOLDER_NAMES:
         raise ValueError("Reference file not found")
     dest = src.with_name(new)
     if dest.exists() and dest.resolve() != src.resolve():
@@ -298,7 +338,7 @@ def rename_reference_file(project_path: Path, old_filename: str, new_filename: s
 
 def delete_reference_file(project_path: Path, filename: str) -> list[str]:
     src = resolve_project_file(project_path, filename)
-    if src is None or src.parent.name != REFERENCE_DIRNAME:
+    if src is None or src.parent.name not in MARKUP_FOLDER_NAMES:
         raise FileNotFoundError(f"Cannot delete missing reference: {filename}")
     deleted = [src.name]
     markup = markup_sidecar_path(src)
@@ -1562,6 +1602,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         "wiring": wiring_items,
         "drawings": drawings,
         "references": list_reference_files(project_path),
+        "renders": list_render_files(project_path),
         "rigging": rigging_items,
         "robots": robots,
     }

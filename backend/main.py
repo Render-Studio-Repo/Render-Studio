@@ -10193,7 +10193,7 @@ def rename_file_endpoint(
     new_primary = Path(body.name).name
     resolved = cad_service.resolve_project_file(path, safe)
     try:
-        if resolved is not None and resolved.parent.name == cad_service.REFERENCE_DIRNAME:
+        if resolved is not None and resolved.parent.name in cad_service.MARKUP_FOLDER_NAMES:
             renamed = cad_service.rename_reference_file(path, safe, new_primary)
         else:
             renamed = cad_service.rename_model_file(path, safe, new_primary)
@@ -10219,12 +10219,13 @@ def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(g
     if resolved is None:
         raise HTTPException(404, "File not found")
 
-    if resolved.parent.name == cad_service.REFERENCE_DIRNAME:
+    if resolved.parent.name in cad_service.MARKUP_FOLDER_NAMES:
         try:
             deleted_files = cad_service.delete_reference_file(project_path, safe)
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc)) from exc
         project_store.touch_project(project_path)
+        is_render = resolved.parent.name == cad_service.RENDERS_DIRNAME
         _notify_project(
             project_id,
             {
@@ -10233,13 +10234,15 @@ def delete_file(project_id: str, filename: str, user: dict[str, Any] = Depends(g
                 "deleted_files": deleted_files,
                 "by": user["display_name"],
                 "by_user_id": user["id"],
-                "reference": True,
+                "reference": not is_render,
+                "render": is_render,
             },
         )
         return {
             "deleted": safe,
             "deleted_files": deleted_files,
-            "reference": True,
+            "reference": not is_render,
+            "render": is_render,
         }
 
     entry = _record_history(
@@ -12944,6 +12947,8 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
         "model": "gpt-image-1",
         "provider": "openai",
         "prompt_mode": "render",
+        "file_kind": "image",
+        "section": "renders",
     }
 
 

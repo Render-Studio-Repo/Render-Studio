@@ -7,6 +7,7 @@ const SECTIONS = [
   { id: "components", label: "Components", icon: "cube" },
   { id: "robots", label: "Robots (URDF / SRDF)", icon: "robot" },
   { id: "references", label: "Reference Files", icon: "file" },
+  { id: "renders", label: "Renders", icon: "render" },
   { id: "sketches", label: "Sketches", icon: "sketch" },
   { id: "wiring", label: "Wiring", icon: "wire" },
 ];
@@ -34,6 +35,9 @@ function iconSvg(type) {
   }
   if (type === "robot") {
     return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="4" y="3" width="8" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6.2" cy="5.5" r="0.9" fill="currentColor"/><circle cx="9.8" cy="5.5" r="0.9" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.2" d="M6 9.5v2.5M10 9.5v2.5M4 12h8"/></svg>';
+  }
+  if (type === "render") {
+    return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6.5" r="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/><path fill="none" stroke="currentColor" stroke-width="1.2" d="M2.8 12.2 6.2 8.5l2.2 2.1 2.4-3.1 2.4 4.7"/></svg>';
   }
   return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M2 8h4l2-3 2 6 2-3h2"/></svg>';
 }
@@ -88,13 +92,13 @@ export function createProjectTree(options = {}) {
 
   let partProfiles = new Map();
   const hidden = new Set();
-  let browser = { components: [], robots: [], drawings: [], references: [], sketches: [], wiring: [] };
+  let browser = { components: [], robots: [], drawings: [], references: [], renders: [], sketches: [], wiring: [] };
   let selectedName = null;
   const selectedBrowserKeys = new Set();
   /** @type {Map<string, { entry: object, sectionId: string }>} */
   const browserEntryCache = new Map();
   let loading = false;
-  let expanded = { components: true, robots: true, references: true, sketches: true, wiring: true };
+  let expanded = { components: true, robots: true, references: true, renders: true, sketches: true, wiring: true };
   const childGroupsExpanded = new Set();
   const childGroupsInitialized = new Set();
   let suppressBrowserClick = false;
@@ -168,6 +172,8 @@ export function createProjectTree(options = {}) {
                 ? "No URDF/SRDF yet — generate from Rigging or drop robot files"
                 : section.id === "references"
                   ? "Drop PDF, DXF, text, or images in the viewport"
+                  : section.id === "renders"
+                    ? "No renders yet — use the Render prompt tab"
                 : section.id === "sketches"
                   ? "No sketches — Finish Sketch to save one"
                   : "Open Wiring Simulator to design a circuit";
@@ -301,7 +307,10 @@ export function createProjectTree(options = {}) {
     li.className = "browser-item";
     if (child) li.classList.add("browser-item--child");
     if (sectionId === "references" && isDxfEntry(entry)) li.classList.add("browser-item--drawing");
-    if (sectionId === "references" && !isDxfEntry(entry)) li.classList.add("browser-item--reference");
+    if ((sectionId === "references" && !isDxfEntry(entry)) || sectionId === "renders") {
+      li.classList.add("browser-item--reference");
+    }
+    if (sectionId === "renders") li.classList.add("browser-item--render");
     const selectionKey = browserSelectionKey(sectionId, entry);
     browserEntryCache.set(selectionKey, { entry, sectionId });
     if (entry.name === selectedName || entry.id === selectedName) {
@@ -391,6 +400,7 @@ export function createProjectTree(options = {}) {
         if (isDxfEntry(entry)) onOpenDrawing?.(entry);
         else onOpenReference?.(entry);
       }
+      else if (sectionId === "renders") onOpenReference?.(entry);
       else if (sectionId === "sketches") onOpenSketch?.(entry);
       else onOpenWiring?.(entry);
       render();
@@ -450,8 +460,8 @@ export function createProjectTree(options = {}) {
         });
         actions.append(prof, exp, ren, del);
       }
-    } else if (sectionId === "references" || sectionId === "robots") {
-      if (sectionId === "references" && !isDxfEntry(entry)) {
+    } else if (sectionId === "references" || sectionId === "robots" || sectionId === "renders") {
+      if ((sectionId === "references" && !isDxfEntry(entry)) || sectionId === "renders") {
         const sendAi = document.createElement("button");
         sendAi.type = "button";
         sendAi.className = "browser-action-btn browser-action-send-ai";
@@ -482,7 +492,7 @@ export function createProjectTree(options = {}) {
       actions.append(ren, del);
     }
 
-    if (sectionId === "references" || sectionId === "robots") {
+    if (sectionId === "references" || sectionId === "robots" || sectionId === "renders") {
       li.append(body, actions);
     } else {
       li.append(vis, body, actions);
@@ -498,6 +508,7 @@ export function createProjectTree(options = {}) {
         robots: data.robots || [],
         drawings: data.drawings || [],
         references: data.references || [],
+        renders: data.renders || [],
         sketches: data.sketches || [],
         wiring: data.wiring || [],
       };

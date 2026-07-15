@@ -255,17 +255,19 @@ async function main() {
 
   const scene = new THREE.Scene();
   const heroEmbedActive = isHeroEmbedMode();
-  scene.background = heroEmbedActive ? null : new THREE.Color(0x070b12);
+  // Match Getting Started / Docs page canvas (#0d1117) so the hero iframe
+  // does not flash a lighter share-page background behind the arm.
+  scene.background = new THREE.Color(heroEmbedActive ? 0x0d1117 : 0x070b12);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
   // CAD / share meshes are Z-up — match the main studio.
   camera.up.set(0, 0, 1);
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    alpha: heroEmbedActive,
+    alpha: false,
     powerPreference: "high-performance",
   });
   if (heroEmbedActive) {
-    renderer.setClearColor(0x000000, 0);
+    renderer.setClearColor(0x0d1117, 1);
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -274,7 +276,7 @@ async function main() {
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.display = "block";
   renderer.domElement.style.touchAction = "none";
-  if (heroEmbedActive) renderer.domElement.style.background = "transparent";
+  if (heroEmbedActive) renderer.domElement.style.background = "#0d1117";
   viewerEl.appendChild(renderer.domElement);
 
   // Z-up Orbit with full polar range = true 360° tumble (no horizon clip, no trackball roll).

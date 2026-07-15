@@ -1242,7 +1242,8 @@ export function createWorkspaceBrowser({
       <button type="button" data-action="copy-id">Copy ${kindLabel} ID</button>
       <button type="button" data-action="open">Open / view</button>
       ${
-        sectionId === "references" && !(entry.format === "dxf" || /\.dxf$/i.test(String(entry.name || "")))
+        (sectionId === "references" || sectionId === "renders") &&
+        !(entry.format === "dxf" || /\.dxf$/i.test(String(entry.name || "")))
           ? `<button type="button" data-action="send-ai">Send to AI prompt</button>`
           : ""
       }
@@ -1402,7 +1403,7 @@ export function createWorkspaceBrowser({
   }
 
   function buildProjectHierarchy(project) {
-    const browser = project.browser || { components: [], drawings: [], references: [], sketches: [], wiring: [] };
+    const browser = project.browser || { components: [], drawings: [], references: [], renders: [], sketches: [], wiring: [] };
     const wrap = document.createElement("div");
     wrap.className = "proj-hierarchy";
 
@@ -1410,6 +1411,7 @@ export function createWorkspaceBrowser({
     const sections = [
       { id: "components", label: "Components", items: browser.components || [] },
       { id: "references", label: "Reference Files", items: referenceItems },
+      { id: "renders", label: "Renders", items: browser.renders || [] },
       { id: "sketches", label: "Sketches", items: browser.sketches || [] },
       { id: "wiring", label: "Wiring", items: browser.wiring || [] },
     ];
@@ -1447,6 +1449,8 @@ export function createWorkspaceBrowser({
               ? "No components"
               : section.id === "references"
                 ? "No reference files"
+                : section.id === "renders"
+                  ? "No renders yet"
                 : section.id === "sketches"
                   ? "No sketches"
                   : "No wiring";
@@ -1459,8 +1463,8 @@ export function createWorkspaceBrowser({
             const item = document.createElement("li");
             item.className = "proj-hierarchy-item";
             const isComponent = section.id === "components";
-            const isReference = section.id === "references";
-            const isDxf = isReference && (entry.format === "dxf" || /\.dxf$/i.test(String(entry.name || "")));
+            const isReference = section.id === "references" || section.id === "renders";
+            const isDxf = section.id === "references" && (entry.format === "dxf" || /\.dxf$/i.test(String(entry.name || "")));
             const isEditableSketch = section.id === "sketches";
             const itemHidden = isComponent && (entry.__hidden ?? !!isHierarchyItemHidden?.(project, entry, section.id));
             const selectionKey = hierarchySelectionKey(project, section.id, entry);

@@ -166,12 +166,18 @@ function _meshColorInfo(mesh) {
   };
 }
 
+function _isColorfulAuthored(info) {
+  if (!info?.hasColor || info.washed || info.tooDark) return false;
+  return _chroma(info.color) >= 0.08 && _luminance(info.color) >= 0.18;
+}
+
 function _useGeneratedPalette(meshInfos) {
   if (!meshInfos.length) return false;
   const missingCount = meshInfos.filter((m) => !m.info.hasColor).length;
   const washedCount = meshInfos.filter((m) => m.info.washed || !m.info.hasColor).length;
   const vertexCount = meshInfos.filter((m) => m.info.source === "vertex").length;
   const materialCount = meshInfos.filter((m) => m.info.source === "material").length;
+  const colorfulCount = meshInfos.filter((m) => _isColorfulAuthored(m.info)).length;
   const colors = meshInfos.map((m) => m.info.color);
   let maxDist = 0;
   for (let i = 0; i < colors.length; i++) {
@@ -184,6 +190,14 @@ function _useGeneratedPalette(meshInfos) {
   // real color (for example a fully orange model). Only generate CAD palette
   // colors when the source is missing, neutral/washed, or too dark to read.
   if (missingCount === 0 && washedCount === 0 && (materialCount > 0 || vertexCount > 0)) {
+    return false;
+  }
+
+  // Robot / multi-body assemblies often mix colorful shells with dark motors,
+  // bearings, and cable tubes. Rainbow-painting those dark internals causes
+  // bright blue/green streaks through orange shells (z-fighting). Keep authored
+  // shell colors and leave dark parts dark (they may also be hidden below).
+  if (colorfulCount >= 1 && colorfulCount >= Math.max(1, Math.ceil(meshInfos.length * 0.12))) {
     return false;
   }
 
@@ -201,6 +215,96 @@ function _useGeneratedPalette(meshInfos) {
   // (single body → first palette colour; multi-body → distinct colours).
   return missingCount > 0 || washedCount > 0
     || (meshInfos.length > 1 && vertexCount === meshInfos.length && maxDist < 0.28);
+}
+
+function _meshWorldBox(mesh) {
+  mesh.updateWorldMatrix?.(true, false);
+  const geo = mesh.geometry;
+  if (!geo) return new THREE.Box3();
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  const box = geo.boundingBox.clone();
+  box.applyMatrix4(mesh.matrixWorld);
+  return box;
+}
+
+function _boxVolume(box) {
+  if (!box || box.isEmpty()) return 0;
+  const size = box.getSize(new THREE.Vector3());
+  return Math.max(0, size.x) * Math.max(0, size.y) * Math.max(0, size.z);
+}
+
+function _boxOverlapRatio(a, b) {
+  const inter = a.clone().intersect(b);
+  if (inter.isEmpty()) return 0;
+  const interVol = _boxVolume(inter);
+  const denom = Math.min(_boxVolume(a), _boxVolume(b));
+  return denom > 1e-12 ? interVol / denom : 0;
+}
+
+function _boxContainedRatio(inner, outer) {
+  const inter = inner.clone().intersect(outer);
+  if (inter.isEmpty()) return 0;
+  const innerVol = _boxVolume(inner);
+  return innerVol > 1e-12 ? _boxVolume(inter) / innerVol : 0;
+}
+
+/**
+ * Detect nested / coplanar assembly solids that cause orange↔blue z-fighting
+ * (motors, bearings, joint datums, cable sleeves stuffed inside link shells).
+ */
+function _classifyOverlappingInternals(meshInfos) {
+  const hide = new Set();
+  const shellBias = new Set();
+  if (meshInfos.length < 2 || meshInfos.length > 400) return { hide, shellBias };
+
+  const rows = meshInfos.map(({ mesh, info }, index) => {
+    const box = _meshWorldBox(mesh);
+    return {
+      index,
+      mesh,
+      info,
+      box,
+      vol: _boxVolume(box),
+      colorful: _isColorfulAuthored(info),
+      darkish: !!(info.tooDark || info.washed || _luminance(info.color) < 0.28),
+    };
+  });
+
+  for (const candidate of rows) {
+    if (hide.has(candidate.index)) continue;
+    for (const shell of rows) {
+      if (shell.index === candidate.index) continue;
+      if (shell.vol < candidate.vol * 1.08) continue;
+      const contained = _boxContainedRatio(candidate.box, shell.box);
+      const overlap = _boxOverlapRatio(candidate.box, shell.box);
+
+      // Dark / washed solid mostly inside a colorful shell → hide (review geometry).
+      if (
+        shell.colorful
+        && candidate.darkish
+        && !candidate.colorful
+        && (contained >= 0.68 || (overlap >= 0.55 && contained >= 0.4))
+      ) {
+        hide.add(candidate.index);
+        shellBias.add(shell.index);
+        break;
+      }
+
+      // Near-duplicate tubes / sleeves sharing volume with a larger shell.
+      if (
+        shell.colorful
+        && overlap >= 0.7
+        && candidate.vol < shell.vol * 0.9
+        && (candidate.darkish || !candidate.colorful)
+      ) {
+        hide.add(candidate.index);
+        shellBias.add(shell.index);
+        break;
+      }
+    }
+  }
+
+  return { hide, shellBias };
 }
 
 function _hasPreservableFragmentColors(meshInfos) {
@@ -409,6 +513,9 @@ export function applyCadStyle(object3d) {
   const highFragmentModel = faceFragmented || meshes.length > HIGH_FRAGMENT_MESH_COUNT;
   // Per-mesh palette only for real multi-body assemblies, not triangle dumps.
   const usePalette = !faceFragmented && _useGeneratedPalette(meshInfos);
+  const { hide: hideInternals, shellBias } = faceFragmented
+    ? { hide: new Set(), shellBias: new Set() }
+    : _classifyOverlappingInternals(meshInfos);
 
   // One shared material for face dumps — identical colour + less z-fighting churn.
   let sharedFaceMaterial = null;
@@ -435,9 +542,24 @@ export function applyCadStyle(object3d) {
   }
 
   meshInfos.forEach(({ mesh: child, info }, index) => {
+    // Nested motors / bearings / cable sleeves that share surfaces with colorful
+    // shells — hide so they cannot z-fight (blue streaks through orange links).
+    if (hideInternals.has(index)) {
+      child.visible = false;
+      child.userData.cadInternalHidden = true;
+      child.castShadow = false;
+      child.receiveShadow = false;
+      return;
+    }
+    if (child.userData.cadInternalHidden) {
+      child.visible = true;
+      delete child.userData.cadInternalHidden;
+    }
+
     child.castShadow = !highFragmentModel;
     child.receiveShadow = false;
-    child.renderOrder = 2;
+    const preferShell = shellBias.has(index) || _isColorfulAuthored(info);
+    child.renderOrder = preferShell ? 3 : 2;
     smoothDisplayGeometry(child);
 
     if (faceFragmented && sharedFaceMaterial) {
@@ -481,6 +603,11 @@ export function applyCadStyle(object3d) {
     emissive.g = Math.min(emissive.g, 0.16);
     emissive.b = Math.min(emissive.b, 0.18);
 
+    // Shells pull slightly forward in the depth buffer; remaining dark overlaps
+    // push back so coplanar assembly solids stop flickering when orbiting.
+    const polygonOffsetFactor = preferShell ? -1 : (info.tooDark || info.washed ? 4 : 1);
+    const polygonOffsetUnits = preferShell ? -1 : (info.tooDark || info.washed ? 4 : 1);
+
     child.material = new THREE.MeshStandardMaterial({
       color: bodyColor,
       map: shouldPaletteColor ? null : origMap,
@@ -491,8 +618,8 @@ export function applyCadStyle(object3d) {
       emissiveIntensity: shouldPaletteColor ? 0.14 : FUSION.bodyEmissiveIntensity,
       flatShading: false,
       polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
+      polygonOffsetFactor,
+      polygonOffsetUnits,
       envMapIntensity: 0.28,
     });
 
@@ -525,7 +652,15 @@ export function setViewMode(mode, object3d) {
   if (!object3d) return;
   object3d.traverse((child) => {
     if (child.userData.isEdge || child.userData.isSilhouette) {
+      if (child.parent?.userData?.cadInternalHidden) {
+        child.visible = false;
+        return;
+      }
       child.visible = viewMode !== "wireframe";
+      return;
+    }
+    if (child.userData?.cadInternalHidden) {
+      child.visible = false;
       return;
     }
     if (!child.isMesh || !child.material) return;
@@ -584,6 +719,7 @@ function objectSurfaceMeshes(object3d) {
   const meshes = [];
   object3d?.traverse?.((child) => {
     if (!child.isMesh || child.userData?.isEdge || child.userData?.isSilhouette) return;
+    if (child.userData?.cadInternalHidden) return;
     meshes.push(child);
   });
   return meshes;

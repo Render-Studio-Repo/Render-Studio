@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-show-me-circle" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-render-download" />
   <script type="importmap">
   {
     "imports": {
@@ -1613,6 +1613,64 @@
     </div>
   </div>
 
+  <div id="welcome-modal" class="auth-modal welcome-modal hidden" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+    <div class="auth-backdrop" data-welcome-close></div>
+    <div class="auth-card welcome-card">
+      <button type="button" class="auth-close" data-welcome-close aria-label="Close">&times;</button>
+      <div class="welcome-visual" aria-hidden="true">
+        <div class="welcome-logo-badge">
+          <img src="/render3d-logo.png?v=20260715-new-logo" alt="" />
+        </div>
+        <div class="welcome-robot">
+          <span class="welcome-robot-base"></span>
+          <span class="welcome-robot-joint welcome-robot-joint--base"></span>
+          <span class="welcome-robot-arm welcome-robot-arm--lower"></span>
+          <span class="welcome-robot-joint welcome-robot-joint--elbow"></span>
+          <span class="welcome-robot-arm welcome-robot-arm--upper"></span>
+          <span class="welcome-robot-joint welcome-robot-joint--wrist"></span>
+          <span class="welcome-robot-claw welcome-robot-claw--top"></span>
+          <span class="welcome-robot-claw welcome-robot-claw--bottom"></span>
+        </div>
+      </div>
+      <div class="welcome-copy">
+        <p class="info-eyebrow">Welcome to Render3D</p>
+        <h2 id="welcome-title">AI CAD software for turning ideas into 3D models</h2>
+        <p>
+          Render3D helps you generate CAD from prompts, edit selected faces and parts,
+          reference files or sketches, wire electronics, share projects, and ask Render Agent for help.
+        </p>
+      </div>
+      <div class="welcome-feature-grid">
+        <span>Prompt to CAD</span>
+        <span>Reference files</span>
+        <span>Sketch & Canvas</span>
+        <span>Wiring + robotics</span>
+      </div>
+      <div class="welcome-actions">
+        <a class="welcome-action welcome-action--primary" href="/getting-started.html">
+          <span class="welcome-action-icon" aria-hidden="true">01</span>
+          <span><strong>Getting Started</strong><small>Quick tour + demos</small></span>
+        </a>
+        <a class="welcome-action" href="/docs.html#complete-docs">
+          <span class="welcome-action-icon" aria-hidden="true">02</span>
+          <span><strong>Full Docs</strong><small>All features</small></span>
+        </a>
+        <button type="button" class="welcome-action" id="welcome-create-account">
+          <span class="welcome-action-icon" aria-hidden="true">03</span>
+          <span><strong>Create Account</strong><small>Save projects</small></span>
+        </button>
+        <a class="welcome-action" href="/docs.html#agent-store-docs">
+          <span class="welcome-action-icon" aria-hidden="true">04</span>
+          <span><strong>More Info</strong><small>Agents + store</small></span>
+        </a>
+      </div>
+      <label class="welcome-dismiss">
+        <input id="welcome-dont-show" type="checkbox" />
+        <span>Don’t show this again</span>
+      </label>
+    </div>
+  </div>
+
   <div id="ai-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ai-key-title">
     <div class="auth-backdrop" data-ai-key-close></div>
     <div class="auth-card ai-keys-card">
@@ -1939,7 +1997,8 @@
     </div>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/app.js?v=20260715-show-me-circle"></script>
+  <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
+  <script type="module" src="/app.js?v=20260715-scene-render"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

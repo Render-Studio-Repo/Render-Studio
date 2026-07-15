@@ -15,6 +15,7 @@ let isAdmin = false;
 let activeCategory = "All";
 let searchQuery = "";
 let activeCreatorId = new URLSearchParams(window.location.search).get("creator") || "";
+let activeAgentSlug = new URLSearchParams(window.location.search).get("agent") || "";
 
 const DEFAULT_CATEGORIES = ["All", "Featured", "Mold Making", "CAD", "Robotics", "Sourcing", "Automation", "Connectors", "Premium"];
 
@@ -329,6 +330,11 @@ async function loadApps() {
   const data = await res.json();
   apps = data.apps || [];
   isAdmin = !!data.admin;
+  if (activeAgentSlug) {
+    searchQuery = activeAgentSlug;
+    if (searchEl) searchEl.value = activeAgentSlug;
+    activeAgentSlug = "";
+  }
   if (statusEl) {
     statusEl.textContent = `${apps.length} app${apps.length === 1 ? "" : "s"} available${isAdmin ? " · admin review enabled" : ""}`;
   }

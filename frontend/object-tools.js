@@ -35,6 +35,7 @@ export function createObjectTools({
   }
 
   function removeHighlight() {
+    clearPartTint();
     for (const h of highlights) {
       scene.remove(h);
       h.geometry?.dispose?.();
@@ -109,59 +110,140 @@ export function createObjectTools({
     return box.isEmpty() ? new THREE.Box3().setFromObject(mesh) : box;
   }
 
-  function addSelectionHighlight(item) {
+  function clearPartTint() {
+    for (const h of highlights) {
+      const tinted = h.userData?.tintedMeshes;
+      if (!Array.isArray(tinted)) continue;
+      for (const entry of tinted) {
+        const mat = entry.mesh?.material;
+        if (!mat || !entry.backup) continue;
+        const mats = Array.isArray(mat) ? mat : [mat];
+        mats.forEach((m, i) => {
+          const b = entry.backup[i];
+          if (!m || !b) return;
+          if (m.emissive && b.emissive) m.emissive.copy(b.emissive);
+          if (b.emissiveIntensity != null) m.emissiveIntensity = b.emissiveIntensity;
+          m.needsUpdate = true;
+        });
+      }
+    }
+  }
+
+  function tintPartMesh(mesh, colorHex = 0x3d8bfd) {
+    if (!mesh?.isMesh || !mesh.material) return null;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const backup = mats.map((m) => ({
+      emissive: m.emissive?.clone?.() || null,
+      emissiveIntensity: m.emissiveIntensity,
+    }));
+    for (const m of mats) {
+      if (!m) continue;
+      if (!m.emissive) m.emissive = new THREE.Color(0x000000);
+      m.emissive.setHex(colorHex);
+      m.emissiveIntensity = Math.max(Number(m.emissiveIntensity) || 0, 0.45);
+      m.needsUpdate = true;
+    }
+    return { mesh, backup };
+  }
+
+  function addSelectionHighlight(item, { partLevel = false } = {}) {
+    const color = partLevel ? 0xffb020 : 0x58a6ff;
     let h = null;
-    if ((item.bodyCount || 1) > 1 && item.bodyIndex != null) {
-      h = new THREE.Box3Helper(bodyBounds(item.mesh, item.bodyIndex), 0x58a6ff);
+    if (partLevel && (item.bodyCount || 1) > 1 && Number.isInteger(item.bodyIndex)) {
+      h = new THREE.Box3Helper(bodyBounds(item.mesh, item.bodyIndex), color);
+    } else if (partLevel && item.mesh?.isMesh) {
+      h = new THREE.BoxHelper(item.mesh, color);
     } else {
-      h = new THREE.BoxHelper(item.mesh, 0x58a6ff);
+      h = new THREE.BoxHelper(item.root || item.mesh, color);
     }
     h.userData.isObjectHighlight = true;
+    h.userData.partLevel = !!partLevel;
+    if (h.material) {
+      h.material.depthTest = false;
+      h.material.transparent = true;
+      h.material.opacity = 0.95;
+      h.material.linewidth = 2;
+    }
+    h.renderOrder = 1002;
+    const tinted = [];
+    if (partLevel && item.mesh?.isMesh) {
+      const tint = tintPartMesh(item.mesh, 0xff8a1f);
+      if (tint) tinted.push(tint);
+    }
+    h.userData.tintedMeshes = tinted;
     scene.add(h);
     highlights.push(h);
   }
 
-  function selectObject({ mesh, root, faceIndex = null, bodyIndex = null, catalogName = null }) {
+  function selectObject({
+    mesh,
+    root,
+    faceIndex = null,
+    bodyIndex = null,
+    catalogName = null,
+    wholeModel = false,
+    partLevel = false,
+    isRoot: isRootOverride = null,
+  } = {}) {
     if (!mesh || !root) return;
     const meshes = listSelectableMeshes(root);
     const resolvedCatalog = catalogName || root.userData?.catalogFilename || null;
     const hasMatchingBodyInfo =
       !resolvedCatalog || !bodyInfoFilename || String(bodyInfoFilename) === String(resolvedCatalog);
     const activeBodyCount = hasMatchingBodyInfo ? Math.max(1, Number(bodyInfo?.count) || 1) : 1;
+    const selectWhole = wholeModel || (!partLevel && isRootOverride !== false);
     const candidateBody = Number.isInteger(bodyIndex) ? bodyIndex : bodyIndexForFace(faceIndex);
-    const resolvedBody =
-      activeBodyCount > 1 ? Math.max(0, Math.min(candidateBody, activeBodyCount - 1)) : 0;
-    const isRoot = mesh === root && meshes.length <= 1;
+    const resolvedBody = selectWhole
+      ? 0
+      : activeBodyCount > 1
+        ? Math.max(0, Math.min(candidateBody, activeBodyCount - 1))
+        : Math.max(0, meshes.indexOf(mesh));
+    const attachMesh = selectWhole ? root : (meshes[resolvedBody] || mesh);
+    const isRoot =
+      isRootOverride != null
+        ? !!isRootOverride
+        : selectWhole || (attachMesh === root && meshes.length <= 1 && !(partLevel && activeBodyCount > 1));
     const bodyNames = hasMatchingBodyInfo ? bodyInfo?.body_names : null;
+    const wholeLabel = resolvedCatalog
+      ? resolvedCatalog.replace(/\.[^.]+$/, "")
+      : root?.name?.trim() || "Model";
+    const partLabel =
+      activeBodyCount > 1
+        ? bodyNames?.[resolvedBody] || meshLabel(attachMesh, root, resolvedBody)
+        : meshLabel(attachMesh, root, resolvedBody);
     selected = {
-      mesh,
+      mesh: attachMesh,
       root,
-      bodyIndex: resolvedBody,
-      faceIndex,
-      label: activeBodyCount > 1
-        ? bodyNames?.[resolvedBody] || meshLabel(mesh, root, resolvedBody)
-        : resolvedCatalog
-        ? resolvedCatalog.replace(/\.[^.]+$/, "")
-        : meshLabel(mesh, root, resolvedBody),
+      bodyIndex: selectWhole ? 0 : resolvedBody,
+      faceIndex: selectWhole ? null : faceIndex,
+      label: selectWhole ? wholeLabel : partLabel,
       isRoot,
+      partLevel: !selectWhole && !!partLevel,
       meshCount: meshes.length,
       bodyCount: activeBodyCount,
       catalogName: resolvedCatalog,
     };
     selected.selections = [
       {
-        mesh,
+        mesh: attachMesh,
         root,
-        bodyIndex: resolvedBody,
+        bodyIndex: selected.bodyIndex,
         bodyCount: activeBodyCount,
         catalogName: resolvedCatalog,
         label: selected.label,
+        partLevel: selected.partLevel,
       },
     ];
+    clearPartTint();
     removeHighlight();
-    addSelectionHighlight(selected.selections[0]);
-    transformControls?.attach?.(mesh);
-    setStatus("ok", `Selected ${selected.label} · Delete / Backspace / X to delete · Cmd+Z to undo`);
+    addSelectionHighlight(selected.selections[0], { partLevel: selected.partLevel });
+    transformControls?.attach?.(attachMesh);
+    setStatus(
+      "ok",
+      selected.partLevel
+        ? `Selected part ${selected.label} · drag to move · double-click another part to switch · Cmd+Z to undo`
+        : `Selected ${selected.label} · drag to move whole model · double-click a part to select it · Cmd+Z to undo`,
+    );
     window.dispatchEvent(new CustomEvent("render3d:object-selection-changed", { detail: { selected } }));
   }
 
@@ -202,7 +284,13 @@ export function createObjectTools({
   function selectRoot(root) {
     if (!root) return;
     const meshes = listSelectableMeshes(root);
-    selectObject({ mesh: meshes[0] || root, root, bodyIndex: 0 });
+    selectObject({
+      mesh: meshes[0] || root,
+      root,
+      bodyIndex: 0,
+      wholeModel: true,
+      catalogName: root.userData?.catalogFilename || null,
+    });
   }
 
   async function refreshBodyInfo(filenameOverride = null) {

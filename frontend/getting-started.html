@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-docs-catalog" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-gs-hero-banner" />
 </head>
 <body class="info-page gs-body">
   <div id="app" class="app-info">
@@ -64,36 +64,40 @@
     <main class="info-main gs-main">
       <article class="gs-page">
         <header class="gs-hero">
-          <div class="gs-hero-copy">
-            <p class="gs-kicker">Getting Started</p>
-            <h2 class="gs-hero-title">Render3D</h2>
-            <p class="gs-hero-lead">
-              Watch a short demo, follow the steps, then ask Render Agent — a movable help panel opens on the right.
-            </p>
-            <nav class="docs-category-tabs" aria-label="Docs categories">
-              <a class="docs-category-tab active" href="/getting-started.html">Getting Started</a>
-              <a class="docs-category-tab" href="#tips-library">Tips &amp; tricks</a>
-              <a class="docs-category-tab" href="/updates.html">Updates</a>
-              <a class="docs-category-tab" href="/docs.html#complete-docs">Complete docs</a>
-            </nav>
-            <div class="gs-hero-actions">
-              <a class="btn accent" id="gs-ask-tour" href="#">Ask Render Agent for a tour</a>
-              <a class="btn secondary" href="#tips-library">Tips &amp; tricks</a>
-              <a class="btn secondary" href="/docs.html#complete-docs">Complete documentation</a>
+          <div class="gs-hero-banner">
+            <div class="gs-hero-copy">
+              <p class="gs-kicker">Getting Started</p>
+              <h2 class="gs-hero-title">Render3D</h2>
+              <p class="gs-hero-lead">
+                Watch a short demo, follow the steps, then ask Render Agent — a movable help panel opens on the right.
+              </p>
+              <div class="gs-hero-actions">
+                <a class="btn accent" id="gs-ask-tour" href="#">Ask Render Agent for a tour</a>
+                <a class="btn secondary" href="#tips-library">Tips &amp; tricks</a>
+                <a class="btn secondary" href="/docs.html#complete-docs">Complete documentation</a>
+              </div>
+            </div>
+            <div class="gs-hero-visual" aria-hidden="true">
+              <div class="gs-hero-robot-wrap">
+                <div class="gs-hero-robot welcome-robot">
+                  <span class="welcome-robot-base"></span>
+                  <span class="welcome-robot-joint welcome-robot-joint--base"></span>
+                  <span class="welcome-robot-arm welcome-robot-arm--lower"></span>
+                  <span class="welcome-robot-joint welcome-robot-joint--elbow"></span>
+                  <span class="welcome-robot-arm welcome-robot-arm--upper"></span>
+                  <span class="welcome-robot-joint welcome-robot-joint--wrist"></span>
+                  <span class="welcome-robot-claw welcome-robot-claw--top"></span>
+                  <span class="welcome-robot-claw welcome-robot-claw--bottom"></span>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="gs-hero-visual" aria-hidden="true">
-            <iframe
-              class="gs-hero-frame"
-              src="/share/M2HtOd5IddEiOZfTTXpoVvRW?embed=1&hero=1"
-              title="6-axis industrial robot preview"
-              loading="lazy"
-              allow="autoplay"
-              allowtransparency="true"
-              referrerpolicy="no-referrer-when-downgrade"
-            ></iframe>
-            <div class="gs-hero-visual-fade"></div>
-          </div>
+          <nav class="docs-category-tabs gs-hero-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab active" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="#tips-library">Tips &amp; tricks</a>
+            <a class="docs-category-tab" href="/updates.html">Updates</a>
+            <a class="docs-category-tab" href="/docs.html#complete-docs">Complete docs</a>
+          </nav>
         </header>
 
         <div class="gs-shell">
@@ -201,6 +205,6 @@
   </div>
 
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/getting-started.js?v=20260715-docs-catalog"></script>
+  <script type="module" src="/getting-started.js?v=20260715-gitbook-toc-agent-small"></script>
 </body>
 </html>

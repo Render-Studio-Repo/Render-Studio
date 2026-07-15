@@ -45,7 +45,12 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=canvas",
     gif: "/docs/media/canvas.gif?v=20260715-real",
     steps: [
-      { selector: '[data-design-tab="CANVAS"]', label: "Click Canvas tab", click: true },
+      {
+        selector: '[data-design-tab="CANVAS"], #workspace-mode-btn',
+        label: "Click Canvas tab",
+        click: true,
+        matchText: "CANVAS",
+      },
     ],
   },
   picks: {
@@ -54,8 +59,18 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=picks",
     gif: "/docs/media/picks.gif?v=20260715-real",
     steps: [
-      { selector: "#btn-pick-face", label: "Click Face pick", click: true },
-      { selector: "#prompt-input, .prompt-editor", label: "@face chips land in the prompt", click: false },
+      {
+        selector: "#btn-pick-face, .mobile-tool-btn[data-pick='face'], button[data-pick='face']",
+        label: "Click Face pick",
+        click: true,
+        reveal: "mobile-tools",
+      },
+      {
+        selector: "#prompt-input, .prompt-editor, [data-mobile-corner='ai']",
+        label: "@face chips land in the prompt",
+        click: false,
+        reveal: "mobile-ai",
+      },
     ],
   },
   wiring: {
@@ -110,9 +125,23 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=link-to-prompt",
     gif: "/docs/media/picks.gif?v=20260715-real",
     steps: [
-      { selector: "#project-browser, .browser-section, .file-browser", label: "Select files in Project browser", click: false },
-      { selector: "#prompt-input, .prompt-editor, #prompt-pane-compose", label: "Drop them into the AI prompt", click: false },
-      { selector: "#btn-pick-face", label: "Or click Face pick for @face chips", click: true },
+      {
+        selector: "#project-browser, .browser-section, .file-browser, [data-mobile-corner='workspace']",
+        label: "Select files in Project browser",
+        click: false,
+      },
+      {
+        selector: "#prompt-input, .prompt-editor, #prompt-pane-compose, [data-mobile-corner='ai']",
+        label: "Drop them into the AI prompt",
+        click: false,
+        reveal: "mobile-ai",
+      },
+      {
+        selector: "#btn-pick-face, .mobile-tool-btn[data-pick='face'], button[data-pick='face']",
+        label: "Or click Face pick for @face chips",
+        click: true,
+        reveal: "mobile-tools",
+      },
     ],
   },
 };
@@ -195,6 +224,18 @@ function stopShowMe() {
   }
 }
 
+function isOnScreen(el) {
+  if (!el || !el.isConnected) return false;
+  if (el.closest?.(".hidden")) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  const rect = el.getBoundingClientRect();
+  if (rect.width < 4 || rect.height < 4) return false;
+  if (rect.bottom < 8 || rect.right < 8) return false;
+  if (rect.top > window.innerHeight - 8 || rect.left > window.innerWidth - 8) return false;
+  return true;
+}
+
 function findFirst(selector, matchText) {
   const needle = String(matchText || "").trim().toLowerCase();
   const parts = String(selector || "")
@@ -202,48 +243,94 @@ function findFirst(selector, matchText) {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const tryList = (visibleOnly) => {
-    for (const part of parts) {
-      const nodes = Array.from(document.querySelectorAll(part));
-      for (const el of nodes) {
-        if (visibleOnly && !el.getClientRects().length) continue;
-        if (el.closest?.(".hidden")) continue;
-        if (needle) {
-          const text = `${el.textContent || ""} ${el.getAttribute("title") || ""}`.toLowerCase();
-          if (!text.includes(needle)) continue;
-        }
-        return el;
+  for (const part of parts) {
+    const nodes = Array.from(document.querySelectorAll(part));
+    for (const el of nodes) {
+      if (!isOnScreen(el)) continue;
+      if (needle) {
+        const text = `${el.textContent || ""} ${el.getAttribute("title") || ""} ${el.getAttribute("aria-label") || ""}`.toLowerCase();
+        if (!text.includes(needle)) continue;
       }
+      return el;
     }
-    return null;
-  };
+  }
+  return null;
+}
 
-  return tryList(true) || tryList(false);
+function isNarrowViewport() {
+  return window.matchMedia("(max-width: 900px)").matches;
 }
 
 function ensureWorkspaceMenuOpen() {
   const menu = document.getElementById("workspace-mode-menu");
   if (!menu || !menu.classList.contains("hidden")) return;
   const btn = document.getElementById("workspace-mode-btn");
-  if (btn) btn.click();
+  if (btn && isOnScreen(btn)) btn.click();
+}
+
+function openMobileSheet(sheetId) {
+  if (!isNarrowViewport()) return;
+  const sheet = document.getElementById(sheetId);
+  if (!sheet) return;
+  document.querySelectorAll(".mobile-sheet.mobile-open, .sidebar.mobile-open").forEach((n) => {
+    n.classList.remove("mobile-open");
+  });
+  sheet.classList.add("mobile-open");
+  sheet.setAttribute("aria-hidden", "false");
+  document.getElementById("mobile-backdrop")?.classList.remove("hidden");
+  document.body.classList.add("mobile-sheet-open");
+}
+
+function ensureReveal(kind) {
+  if (!kind) return;
+  if (kind === "mobile-tools") openMobileSheet("mobile-tools-sheet");
+  if (kind === "mobile-ai") {
+    if (isNarrowViewport()) {
+      const aiBtn = document.querySelector("[data-mobile-corner='ai']");
+      if (aiBtn && isOnScreen(aiBtn)) aiBtn.click();
+      else {
+        document.querySelector(".sidebar.right")?.classList.add("mobile-open");
+        document.getElementById("mobile-backdrop")?.classList.remove("hidden");
+        document.body.classList.add("mobile-sheet-open");
+      }
+    }
+  }
 }
 
 function placeCircle(el) {
   const circle = document.getElementById("show-me-circle");
   const click = document.getElementById("show-me-click");
   const dim = document.getElementById("show-me-dim");
-  if (!el || !circle || !click) return;
+  if (!circle || !click) return;
+  if (!el || !isOnScreen(el)) {
+    circle.classList.remove("is-on");
+    click.classList.remove("is-on", "is-press");
+    if (dim) {
+      dim.style.opacity = "0.5";
+      dim.style.background = "rgba(1, 4, 9, 0.55)";
+    }
+    return;
+  }
   const rect = el.getBoundingClientRect();
   const cx = rect.left + rect.width / 2;
   const cy = rect.top + rect.height / 2;
-  const diameter = Math.max(48, Math.min(180, Math.max(rect.width, rect.height) + 36));
+  const diameter = Math.max(56, Math.min(180, Math.max(rect.width, rect.height) + 40));
+  const radius = diameter / 2;
   circle.style.width = `${diameter}px`;
   circle.style.height = `${diameter}px`;
-  circle.style.left = `${cx - diameter / 2}px`;
-  circle.style.top = `${cy - diameter / 2}px`;
+  circle.style.left = `${cx - radius}px`;
+  circle.style.top = `${cy - radius}px`;
   circle.classList.add("is-on");
-  // Hole is cut by the circle's box-shadow; keep base dim subtle when circle is on.
-  if (dim) dim.style.opacity = "0";
+  if (dim) {
+    dim.style.opacity = "1";
+    // Soft blue wash in the hole so the target reads clearly against the dim.
+    dim.style.background =
+      `radial-gradient(circle at ${cx}px ${cy}px,` +
+      ` rgba(126, 200, 255, 0.2) 0px,` +
+      ` rgba(126, 200, 255, 0.06) ${Math.max(16, radius - 10)}px,` +
+      ` transparent ${Math.max(20, radius - 2)}px,` +
+      ` rgba(1, 4, 9, 0.72) ${radius + 4}px)`;
+  }
   click.style.left = `${cx}px`;
   click.style.top = `${cy}px`;
   click.classList.add("is-on");
@@ -355,6 +442,12 @@ function syncNextLabel() {
   else nextBtn.textContent = `Next (${stepIndex + 1}/${steps.length})`;
 }
 
+function resolveStepTarget(step) {
+  if (step.ensureMenu) ensureWorkspaceMenuOpen();
+  if (step.reveal) ensureReveal(step.reveal);
+  return findFirst(step.selector, step.matchText);
+}
+
 function advanceShowMe(skipClick) {
   if (!activeTour) {
     stopShowMe();
@@ -367,17 +460,23 @@ function advanceShowMe(skipClick) {
     return;
   }
   const step = steps[stepIndex];
-  if (step.ensureMenu) ensureWorkspaceMenuOpen();
-  const el = findFirst(step.selector, step.matchText);
   const n = stepIndex + 1;
-  highlight(el, `${n}/${steps.length}: ${step.label}`);
-  const shouldClick = !skipClick && step.click !== false && (isClickable(el) || step.click === true);
-  if (shouldClick && el) {
-    setTimeout(() => {
-      if (step.ensureMenu) ensureWorkspaceMenuOpen();
-      simulateClick(el);
-    }, 320);
-  }
+  // Reveal panels first, then place the circle on a visible control.
+  resolveStepTarget(step);
+  setTimeout(() => {
+    if (!activeTour) return;
+    if (step.ensureMenu) ensureWorkspaceMenuOpen();
+    if (step.reveal) ensureReveal(step.reveal);
+    const el = findFirst(step.selector, step.matchText);
+    highlight(el, `${n}/${steps.length}: ${step.label}`);
+    const shouldClick = !skipClick && step.click !== false && el && (isClickable(el) || step.click === true);
+    if (shouldClick) {
+      setTimeout(() => {
+        if (!activeTour) return;
+        simulateClick(el);
+      }, 280);
+    }
+  }, step.reveal || step.ensureMenu ? 180 : 0);
   stepIndex += 1;
   syncNextLabel();
   if (stepIndex >= steps.length) {

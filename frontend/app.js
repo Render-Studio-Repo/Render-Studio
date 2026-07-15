@@ -60,12 +60,12 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realtime-sync";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-renders-section";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
-import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-circle";
+import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-circle4";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -81,10 +81,10 @@ import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-er
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
 import { createDirectModeling } from "./direct-modeling.js?v=20260714-extrude-face-drag";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
-import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
+import { createObjectTools } from "./object-tools.js?v=20260715-part-select-highlight";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260715-mobile-section-recenter";
+import { createProjectTree } from "./project-tree.js?v=20260715-renders-section";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -92,7 +92,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-click-to-refresh";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-ref-markup-ai";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-download";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-component-bodies";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -1444,7 +1444,11 @@ function createFallbackRenderer(error) {
 let renderer;
 let webglAvailable = true;
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: "high-performance",
+    preserveDrawingBuffer: true,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
   setupRenderer(renderer);
 } catch (err) {
@@ -1791,6 +1795,7 @@ function normalizeBrowser(data) {
     wiring: browser.wiring || [],
     drawings: [...browserDrawings, ...fileDrawings],
     references: browser.references || [],
+    renders: browser.renders || [],
   };
 }
 
@@ -1918,7 +1923,14 @@ function selectAssemblyComponent(catalogName, { autoGizmo = false, fitView = fal
   syncPromptTargetUI();
   projectTree.setSelected(catalogName);
   featureEditor.setModel(projectId, catalogName);
-  objectTools.selectObject?.({ mesh: obj, root: obj, bodyIndex: 0, catalogName });
+  objectTools.selectObject?.({
+    mesh: obj,
+    root: obj,
+    bodyIndex: 0,
+    catalogName,
+    wholeModel: true,
+    isRoot: true,
+  });
   if (autoGizmo) {
     showObjectGizmo(obj, "translate", { switchTab: false });
   }
@@ -1949,19 +1961,50 @@ function browserBodySelectionName(catalogName, bodyIndex) {
   return child?.name || catalogName;
 }
 
-function selectObjectHit(hit, { showGizmo = true } = {}) {
+/** Single-click: select the whole model/component. Double-click uses partLevel: true. */
+function selectObjectHit(hit, { showGizmo = true, partLevel = false } = {}) {
   if (!hit?.mesh) return null;
   const target = selectionTargetFromMesh(hit.mesh);
   const wholeLocalModule = target.catalogName && isLocalAssemblyObject(target.catalogName, target.root);
-  const bodyIndex = wholeLocalModule ? 0 : bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
   if (target.catalogName) {
     selectedFile = target.catalogName;
     syncPromptTargetUI();
-    projectTree.setSelected(wholeLocalModule ? target.catalogName : browserBodySelectionName(target.catalogName, bodyIndex));
     featureEditor.setModel(projectId, target.catalogName);
   }
-  objectTools.selectObject({ ...target, faceIndex: wholeLocalModule ? null : hit.faceIndex, bodyIndex });
-  if (showGizmo) showObjectGizmo(target.mesh, "translate", { switchTab: false });
+  if (partLevel && !wholeLocalModule) {
+    const bodyIndex = bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
+    if (target.catalogName) {
+      projectTree.setSelected(browserBodySelectionName(target.catalogName, bodyIndex));
+    }
+    const applyPartSelect = () => {
+      objectTools.selectObject({
+        ...target,
+        faceIndex: hit.faceIndex,
+        bodyIndex,
+        partLevel: true,
+        wholeModel: false,
+        isRoot: false,
+      });
+      if (showGizmo) {
+        showObjectGizmo(objectTools.getSelection()?.mesh || target.mesh, "translate", { switchTab: false });
+      }
+      setEditStatus("ok", "Part selected · highlighted · drag to move this part · Cmd+Z to undo");
+    };
+    const pending = objectTools.refreshBodyInfo?.(target.catalogName);
+    if (pending?.then) pending.finally(applyPartSelect);
+    else applyPartSelect();
+  } else {
+    if (target.catalogName) projectTree.setSelected(target.catalogName);
+    objectTools.selectObject({
+      mesh: target.root || target.mesh,
+      root: target.root || target.mesh,
+      catalogName: target.catalogName,
+      bodyIndex: 0,
+      wholeModel: true,
+      isRoot: true,
+    });
+    if (showGizmo) showObjectGizmo(target.root || target.mesh, "translate", { switchTab: false });
+  }
   renderer.domElement.focus({ preventScroll: true });
   syncExportButton();
   return target;
@@ -1984,9 +2027,13 @@ async function selectBrowserBody(entry, { fitView = false } = {}) {
     root,
     bodyIndex,
     catalogName,
+    partLevel: true,
+    wholeModel: false,
+    isRoot: false,
   });
   if (fitView) fitCameraToComponent(catalogName);
   setEditStatus("ok", `Selected ${entry.body_name || entry.label || `Body ${bodyIndex + 1}`} inside ${catalogName}.`);
+  showObjectGizmo(mesh || root, "translate", { switchTab: false });
   syncPromptTargetUI();
   syncExportButton();
   return true;
@@ -4147,6 +4194,7 @@ function promptModeForRef(mode = promptMode) {
   if (normalized === "architect") return "architect";
   if (normalized === "v2") return "v2";
   if (normalized === "draw") return "draw";
+  if (normalized === "render") return "render";
   return "standard";
 }
 
@@ -4846,12 +4894,23 @@ async function afterModelEdit(data) {
     timelineData = data.timeline;
     timeline.setTimeline(data.timeline, { scroll: true, scrollAlign: "end" });
   }
+  if (isBakedTransform) {
+    const newIndex =
+      data.timeline_index ??
+      data.timeline_entry?.index ??
+      timelineData?.current_index ??
+      null;
+    if (Number.isInteger(newIndex) && newIndex > 0) {
+      rememberTransformUndoCheckpoint(newIndex - 1);
+    }
+  }
   await refreshTimeline();
   await refreshPromptHistory();
 }
 
 let objectClipboard = null;
 const viewportUndoStack = [];
+const viewportRedoStack = [];
 
 function captureViewportAssemblyState() {
   return projectAssembly.list().map(([name, obj]) => ({
@@ -4860,15 +4919,38 @@ function captureViewportAssemblyState() {
   }));
 }
 
-function pushViewportUndoAction(action) {
+function pushViewportUndoAction(action, { clearRedo = true } = {}) {
   if (!action) return;
   viewportUndoStack.push(action);
   if (viewportUndoStack.length > 20) viewportUndoStack.shift();
+  if (clearRedo) viewportRedoStack.length = 0;
+}
+
+function rememberTransformUndoCheckpoint(beforeIndex = null) {
+  const idx = beforeIndex != null ? beforeIndex : timelineCurrentIndex();
+  if (idx == null || idx < 0) return;
+  pushViewportUndoAction({
+    type: "timeline-transform",
+    beforeIndex: idx,
+    label: "transform",
+  });
 }
 
 function undoViewportAction() {
   const action = viewportUndoStack.pop();
   if (!action) return false;
+  if (action.type === "timeline-transform") {
+    const target = Number(action.beforeIndex);
+    if (!Number.isInteger(target) || target < 0) return false;
+    viewportRedoStack.push({
+      type: "timeline-transform-redo",
+      afterIndex: timelineCurrentIndex(),
+    });
+    void restoreTimeline(target).then(() => {
+      setEditStatus("ok", "Undo move: object restored.");
+    });
+    return true;
+  }
   if (action.type === "fusion-component-drop") {
     const beforeNames = new Set((action.before || []).map((item) => item.name));
     for (const [name] of [...projectAssembly.list()]) {
@@ -4889,6 +4971,25 @@ function undoViewportAction() {
       fitCamera();
     }
     setEditStatus("ok", `Undo drop: removed ${action.label || "component"}.`);
+    return true;
+  }
+  return false;
+}
+
+function redoViewportAction() {
+  const action = viewportRedoStack.pop();
+  if (!action) return false;
+  if (action.type === "timeline-transform-redo") {
+    const target = Number(action.afterIndex);
+    if (!Number.isInteger(target) || target < 0) return false;
+    pushViewportUndoAction({
+      type: "timeline-transform",
+      beforeIndex: timelineCurrentIndex(),
+      label: "transform",
+    }, { clearRedo: false });
+    void restoreTimeline(target).then(() => {
+      setEditStatus("ok", "Redo move: object moved again.");
+    });
     return true;
   }
   return false;
@@ -5167,12 +5268,19 @@ const gizmoPanel = createGizmoPanel({
   getMesh: () => currentMesh,
   getModelInfo: () => {
     const selection = objectTools?.getSelection?.();
+    const partLevel = !!selection?.partLevel;
+    const bodyCount = Math.max(
+      Number(selection?.bodyCount) || 1,
+      partLevel ? Number(selection?.meshCount) || 1 : 1,
+    );
     return {
       projectId,
       filename: selection?.catalogName || catalogNameForMesh(transformControls.object) || selectedFile,
       bodyIndex: selection?.bodyIndex ?? null,
-      bodyCount: selection?.bodyCount || 1,
-      isRoot: selection?.isRoot ?? true,
+      bodyCount,
+      // Whole-model selection must stay isRoot so transforms bake the full file.
+      // Part selection must NOT be root so body transforms apply and Cmd+Z undoes the part move.
+      isRoot: partLevel ? false : (selection?.isRoot ?? true),
     };
   },
   getMmPerModelUnit: currentMmPerModelUnit,
@@ -9420,7 +9528,7 @@ function showAiComposePanel() {
   }
   setRightTab("prompt");
   promptHistory.setTab("compose");
-  applyPromptModeUI("v2");
+  // Preserve the user's selected prompt mode (Render / Draw / 2.0 / Fusion).
 }
 
 function activateArchitectPrompt(kind = "room") {
@@ -10117,7 +10225,7 @@ function openMarkingMenu(event) {
     ["🧱", "AI Wall Texture", () => setArchitectPromptForSelectedEdit("texture_ai")],
     ["▣", "Pick Face", () => { activatePickMode("face"); setEditStatus("ok", "Click faces on the model to add @face references."); }],
     ["⌁", "Pick Edge", () => { activatePickMode("edge"); setEditStatus("ok", "Click near edges on the model to add @edge references."); }],
-    ["▣", "Select object", () => { activatePickMode("object"); setEditStatus("ok", "Click objects in the viewport · Delete / Backspace / X to delete · Cmd+Z to undo."); }],
+    ["▣", "Select object", () => { activatePickMode("object"); setEditStatus("ok", "Click to select the whole model · double-click a part to select just that part · Cmd+Z to undo moves."); }],
     ["↶", "History", () => setRightTab("history")],
   ];
   menu.innerHTML = actions
@@ -10501,7 +10609,7 @@ function showEmptyProjectViewport({ keepBrowser = false } = {}) {
   const list = document.getElementById("file-list");
   if (list) list.innerHTML = "";
   if (!keepBrowser) {
-    projectTree.render({ components: [], sketches: [], wiring: [], drawings: [], references: [] });
+    projectTree.render({ components: [], sketches: [], wiring: [], drawings: [], references: [], renders: [] });
   }
   timeline.setTimeline({ entries: [], current_index: -1 });
   objectHistory.render([]);
@@ -13083,7 +13191,7 @@ async function openHierarchyItem(project, entry, sectionId) {
     await openBrowserComponent(entry);
     return;
   }
-  if (sectionId === "drawings" || sectionId === "references") {
+  if (sectionId === "drawings" || sectionId === "references" || sectionId === "renders") {
     if (entry.format === "dxf" || isDxfDrawingFilename(entry.name)) {
       await openDxfDrawing(entry);
     } else {
@@ -18252,9 +18360,24 @@ function finishActiveLinePath() {
 }
 
 renderer.domElement.addEventListener("dblclick", (e) => {
-  if (getPickMode() !== "line") return;
+  if (getPickMode() === "line") {
+    e.preventDefault();
+    finishActiveLinePath();
+    return;
+  }
+  if (directModeling.isToolActive?.()) return;
+  if (sketchEditor.isActive?.()) return;
+  if (!currentMesh) return;
+  if (getPickMode() !== "object" && getPickMode() !== "off") return;
+  const hit = pickObject(e, {
+    camera,
+    domElement: renderer.domElement,
+    meshRoot: currentMesh,
+  });
+  if (!hit?.mesh) return;
+  // Double-click drills into a specific part/body and highlights it.
+  selectObjectHit(hit, { showGizmo: true, partLevel: true });
   e.preventDefault();
-  finishActiveLinePath();
 });
 
 function finishActiveLasso(e) {
@@ -18430,15 +18553,8 @@ renderer.domElement.addEventListener("click", (e) => {
       e.preventDefault();
       return;
     }
-    if (objectTools.getSelection()?.mesh === hit.mesh) {
-      objectTools.clearSelection();
-      gizmoPanel.hide();
-      transformControls.detach();
-      document.getElementById("btn-gizmo")?.classList.remove("active");
-      setEditStatus("", "");
-    } else {
-      selectObjectHit(hit);
-    }
+    // Single click selects the whole model. Double-click selects a part.
+    selectObjectHit(hit, { showGizmo: true, partLevel: false });
     e.preventDefault();
     return;
   }
@@ -19016,6 +19132,90 @@ async function runDrawRoutePrompt(prompt, pathRef) {
   return data;
 }
 
+function captureViewportPng() {
+  if (!webglAvailable || !renderer?.domElement) {
+    throw new Error("3D viewport is not available for rendering.");
+  }
+  if (!currentMesh && !(projectAssembly?.count?.() > 0)) {
+    throw new Error("Load or generate a model first, then describe the environment (e.g. “in a kitchen”).");
+  }
+  const renderCam = sketchEditor?.getRenderCamera?.() || camera;
+  renderer.render(scene, renderCam);
+  const dataUrl = renderer.domElement.toDataURL("image/png");
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+    throw new Error("Could not capture the viewport. Try again after the model finishes loading.");
+  }
+  return dataUrl;
+}
+
+async function runSceneRenderPrompt(prompt) {
+  await ensureProject();
+  const status = document.getElementById("prompt-status");
+  const reply = document.getElementById("prompt-reply");
+  if (status) {
+    status.className = "status loading";
+    status.textContent = "Rendering photoreal scene… this can take a moment.";
+  }
+  if (reply) reply.textContent = "";
+  lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
+  const viewport_image = captureViewportPng();
+  const speed = document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
+  const data = await api(
+    `/api/projects/${projectId}/scene-render`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        viewport_image,
+        base_filename: selectedFile || null,
+        speed,
+        ...getPromptAiKeyBodyFields(),
+      }),
+    },
+    240000,
+  );
+  lastPromptCopyContext = {
+    ...lastPromptCopyContext,
+    promptId: data?.prompt_id,
+    traceId: data?.trace_id,
+    filename: data?.filename,
+  };
+  await refreshFiles();
+  const filename = data?.filename;
+  if (filename) {
+    selectedFile = filename;
+    projectTree.setSelected(filename);
+    dxfViewer?.hideViewerOnly?.();
+    await referenceFilesViewer.openTab(filename, {
+      projectId,
+      label: String(filename).replace(/\.[^.]+$/, "") || "Render",
+      kind: data.file_kind || "image",
+    });
+  }
+  if (status) {
+    status.className = "status ok";
+    status.textContent = data?.message || `Rendered scene saved as ${filename || "PNG"}.`;
+  }
+  if (reply) {
+    reply.textContent = [
+      data?.message || "Photoreal render ready.",
+      filename ? `Saved under Renders → ${filename}` : null,
+      "Markup, Send to AI, and Download (PNG / JPEG / WebP / SVG) are available in the image tab.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  setEditStatus("ok", status?.textContent || "Render complete.");
+  viewerOverlay.clearError();
+  try {
+    await refreshPromptHistory();
+  } catch {
+    /* optional */
+  }
+  return data;
+}
+
 async function runDrawPrompt(prompt) {
   await ensureProject();
   const status = document.getElementById("prompt-status");
@@ -19119,7 +19319,7 @@ document.getElementById("viewport-generation-user")?.addEventListener("click", a
 
 document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   const canvasAttached = applyCanvasSketchToPrompt();
-  if (canvasAttached && promptMode === "draw") applyPromptModeUI("render");
+  if (canvasAttached && promptMode === "draw") applyPromptModeUI("v2");
   let prompt = composer.getPromptText();
   if (canvasAttached) prompt = augmentPromptForCanvasSketch(prompt);
   if (canvasAttached && prompt !== composer.getPromptText()) composer.setPromptText(prompt);
@@ -19205,6 +19405,25 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         status.textContent = formatUserError(err);
       }
       viewerOverlay.showError(formatUserError(err));
+    }
+    return;
+  }
+  if (promptMode === "render") {
+    promptSubmitInFlight = true;
+    lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
+    try {
+      await runSceneRenderPrompt(prompt);
+    } catch (err) {
+      const status = document.getElementById("prompt-status");
+      const msg = formatUserError(err);
+      if (status) {
+        status.className = "status error";
+        status.textContent = msg;
+      }
+      viewerOverlay.showError(msg);
+      if (/openai key/i.test(msg)) aiKeyUi?.openRequired?.();
+    } finally {
+      promptSubmitInFlight = false;
     }
     return;
   }
@@ -19899,7 +20118,7 @@ window.addEventListener("keydown", (e) => {
     }
   }
   if (showMeParam) {
-    void import("./show-me-tour.js?v=20260715-show-me-circle").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-show-me-circle4").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }

@@ -5,13 +5,24 @@ import {
   getCurrentTip,
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
-import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-link-prompt";
-import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle";
+import { matchGettingStartedGuides } from "./getting-started-guides.js?v=20260715-guides-media";
+import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle4";
+
+function guideMediaPayload(guide) {
+  if (!guide?.gif) return null;
+  return {
+    id: guide.id,
+    title: guide.title,
+    url: guide.gif,
+    kind: "gif",
+    summary: guide.summary || "",
+  };
+}
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
 const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
-const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v3";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v4";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -404,8 +415,8 @@ export function createRenderAgent({
       panel.classList.remove("render-agent-panel--deck");
     }
     const saved = readStickyLayout();
-    const defaultW = Math.min(isDocs ? 300 : 400, Math.max(260, window.innerWidth - 32));
-    const defaultH = Math.min(isDocs ? 450 : 640, Math.max(280, window.innerHeight - (isDocs ? 96 : 96)));
+    const defaultW = Math.min(isDocs ? 280 : 400, Math.max(260, window.innerWidth - 32));
+    const defaultH = Math.min(isDocs ? 390 : 640, Math.max(280, window.innerHeight - 96));
     if (!saved) {
       panel.style.left = "auto";
       panel.style.right = "16px";
@@ -419,9 +430,9 @@ export function createRenderAgent({
       }
       return;
     }
-    if (saved.width) panel.style.width = `${Math.max(isDocs ? 292 : 260, saved.width)}px`;
+    if (saved.width) panel.style.width = `${Math.max(isDocs ? 270 : 260, saved.width)}px`;
     else panel.style.width = `${defaultW}px`;
-    if (saved.height) panel.style.height = `${Math.max(isDocs ? 430 : 260, saved.height)}px`;
+    if (saved.height) panel.style.height = `${Math.max(isDocs ? 360 : 260, saved.height)}px`;
     else panel.style.height = `${defaultH}px`;
     panel.style.maxHeight = "none";
     if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
