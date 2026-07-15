@@ -237,7 +237,7 @@ export async function openFileExportMenu({
   menu.className = "file-export-menu";
   menu.innerHTML = `
     <div class="file-export-title">${title || `Export ${filename}`}</div>
-    <p class="file-export-hint muted small">${hint || "Download GLB, STL, STEP, or 3MF — or copy a public preview link with format downloads."}</p>
+    <p class="file-export-hint muted small">${hint || "Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to Bambu Studio — or copy a public preview link."}</p>
     <p class="file-export-status muted small">Preparing exports…</p>
     <div class="file-export-list"></div>
     <div class="file-export-actions">
@@ -256,6 +256,10 @@ export async function openFileExportMenu({
         <img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" />
         Fusion 360
       </button>` : ""}
+      <button type="button" class="btn file-export-bambu" title="Open this model as 3MF in local Bambu Studio and place it on the build plate">
+        <span class="file-export-bambu-mark" aria-hidden="true">B</span>
+        Send to Bambu Studio
+      </button>
     </div>
   `;
   const rect = anchorEl.getBoundingClientRect();
@@ -279,6 +283,7 @@ export async function openFileExportMenu({
   const onshapeBtn = menu.querySelector(".file-export-onshape");
   const pushBtn   = menu.querySelector(".file-export-onshape-push");
   const fusionActionBtn = menu.querySelector(".file-export-fusion-action");
+  const bambuBtn = menu.querySelector(".file-export-bambu");
 
   let data = null;
   let fetchError = null;
@@ -515,8 +520,146 @@ export async function openFileExportMenu({
     await openSharedFusionExport(fusionActionBtn);
   });
 
+  bambuBtn?.addEventListener("click", async () => {
+    await sendToBambuStudio({
+      btn: bambuBtn,
+      projectId,
+      filename: shareFilename,
+      exports: sorted,
+    });
+  });
+
   const rect2 = anchorEl.getBoundingClientRect();
   menu.style.top = `${Math.min(rect2.bottom + 6, window.innerHeight - Math.max(220, menu.offsetHeight + 12))}px`;
+}
+
+function detectClientOs() {
+  const ua = navigator.userAgent || "";
+  const platform = navigator.platform || "";
+  if (/Mac|iPhone|iPad|iPod/i.test(ua) || /Mac/i.test(platform)) return "macos";
+  if (/Win/i.test(ua) || /Win/i.test(platform)) return "windows";
+  if (/Linux|X11|CrOS/i.test(ua)) return "linux";
+  return "windows";
+}
+
+function bambuStudioOpenUrls(fileUrl) {
+  const encoded = encodeURIComponent(fileUrl);
+  return {
+    windows: `bambustudio://open?file=${encoded}`,
+    linux: `bambustudio://open?file=${encoded}`,
+    // macOS registers a different scheme than Windows/Linux.
+    macos: `bambustudioopen://${fileUrl}`,
+  };
+}
+
+async function ensureThreeMfExport({ projectId, filename, exports }) {
+  let threeMf = (exports || []).find((item) => String(item.format || "").toLowerCase() === "3mf")
+    || (exports || []).find((item) => /\.3mf$/i.test(item.name || ""));
+  if (threeMf?.name) return threeMf;
+
+  // Refresh mesh exports so a missing 3MF sidecar is generated when possible.
+  try {
+    await fetch(
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports/regenerate`,
+      { method: "POST", headers: authHeaders() },
+    );
+  } catch {
+    /* non-fatal — re-list below */
+  }
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Could not prepare 3MF export (${res.status})`);
+  }
+  const data = await res.json();
+  threeMf = (data.exports || []).find((item) => String(item.format || "").toLowerCase() === "3mf")
+    || (data.exports || []).find((item) => /\.3mf$/i.test(item.name || ""));
+  if (!threeMf?.name) {
+    throw new Error("No 3MF is available for this model yet. Download STL instead, or regenerate the model.");
+  }
+  return threeMf;
+}
+
+async function sendToBambuStudio({ btn, projectId, filename, exports }) {
+  if (!btn) return;
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Preparing 3MF…`;
+  try {
+    const threeMf = await ensureThreeMfExport({ projectId, filename, exports });
+    // Share the 3MF itself so Bambu can fetch a public absolute URL.
+    const shareRes = await fetch(
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(threeMf.name)}/share`,
+      { method: "POST", headers: authHeaders() },
+    );
+    if (!shareRes.ok) {
+      const data = await shareRes.json().catch(() => ({}));
+      throw new Error(data.detail || `Could not create a public 3MF link (${shareRes.status})`);
+    }
+    const share = await shareRes.json();
+    const token = share.token;
+    if (!token) throw new Error("Could not create a public 3MF link for Bambu Studio.");
+
+    const filePath = `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(threeMf.name)}`;
+    const fileUrl = `${window.location.origin}${filePath}`;
+    const urls = bambuStudioOpenUrls(fileUrl);
+    const os = detectClientOs();
+    const primary = urls[os] || urls.windows;
+
+    btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Opening Bambu Studio…`;
+
+    // Trigger the OS protocol handler. Bambu downloads the 3MF and places it on the plate.
+    const opener = document.createElement("a");
+    opener.href = primary;
+    opener.style.display = "none";
+    document.body.appendChild(opener);
+    opener.click();
+    opener.remove();
+
+    btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sent to Bambu ✓`;
+    showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: threeMf.name });
+    setTimeout(() => {
+      btn.disabled = false;
+      if (!btn.dataset.bambuFollowup) btn.innerHTML = original;
+    }, 1600);
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerHTML = original;
+    alert(err.message || "Could not send to Bambu Studio");
+  }
+}
+
+function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
+  const menu = btn.closest(".file-export-menu");
+  if (!menu) return;
+  menu.querySelector(".file-export-bambu-followup")?.remove();
+  const panel = document.createElement("div");
+  panel.className = "file-export-bambu-followup";
+  const alt = os === "macos" ? urls.windows : urls.macos;
+  panel.innerHTML = `
+    <p><strong>${escText(threeMfName)}</strong> was sent to Bambu Studio as a plate-ready 3MF.</p>
+    <p class="muted small">If Studio did not open, install Bambu Studio and allow the browser to open bambustudio links.</p>
+    <div class="file-export-bambu-followup-actions">
+      <button type="button" class="btn secondary btn-compact" data-bambu-alt>Try alternate open link</button>
+      <button type="button" class="btn secondary btn-compact" data-bambu-download>Download 3MF</button>
+    </div>
+  `;
+  panel.querySelector("[data-bambu-alt]")?.addEventListener("click", () => {
+    window.location.href = alt;
+  });
+  panel.querySelector("[data-bambu-download]")?.addEventListener("click", async () => {
+    try {
+      await downloadFile(fileUrl, threeMfName.replace(/\.3mf$/i, ".3MF"));
+    } catch (err) {
+      alert(err.message || "Download failed");
+    }
+  });
+  btn.dataset.bambuFollowup = "1";
+  btn.insertAdjacentElement("afterend", panel);
+  keepMenuInViewport(menu);
 }
 
 async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, allowFacetedStep = false }) {

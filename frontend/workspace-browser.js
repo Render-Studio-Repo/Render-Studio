@@ -1628,15 +1628,31 @@ export function createWorkspaceBrowser({
     return wrap;
   }
 
+  function activeGenerationForBadge(project = {}) {
+    const jobs = Array.isArray(project.generation?.running_jobs) && project.generation.running_jobs.length
+      ? project.generation.running_jobs
+      : Array.isArray(project.generation?.jobs)
+        ? project.generation.jobs.filter((job) => job?.status === "running")
+        : [];
+    return jobs.find((job) => String(job?.kind || "").toLowerCase() === "rigging")
+      || jobs[0]
+      || project.generation
+      || {};
+  }
+
   function generationExplorerBadge(gen = {}) {
     if (!gen || gen.status !== "running") return "";
     const name = gen.by_user_name || "Someone";
     const initial = escapeHtml(String(name).trim().charAt(0).toUpperCase() || "A");
     const avatar = gen.by_avatar_url || "";
+    const rigging = String(gen.kind || "").toLowerCase() === "rigging";
     const avatarEl = avatar
       ? `<span class="proj-gen-avatar proj-gen-avatar--image" style="background-image:url('${escapeHtml(avatar)}')" title="${escapeHtml(name)} generating"></span>`
       : `<span class="proj-gen-avatar" title="${escapeHtml(name)} generating">${initial}</span>`;
-    return `<span class="proj-gen-user" aria-label="${escapeHtml(name)} generating with AI">${avatarEl}<span class="proj-gen-ai">AI</span></span>`;
+    const rigIcon = rigging
+      ? `<span class="proj-gen-rig-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 12.5h8M5 12.5V9l3-3 3 3v3.5M8 6V2.5M6.5 4h3M8 2.5l2 1.5M8 2.5 6 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
+      : "";
+    return `<span class="proj-gen-user${rigging ? " proj-gen-user--rigging" : ""}" aria-label="${escapeHtml(name)} ${rigging ? "generating rigging" : "generating with AI"}">${avatarEl}${rigIcon}<span class="proj-gen-ai">${rigging ? "RIG" : "AI"}</span></span>`;
   }
 
   function buildProjectRow(p) {
@@ -1688,14 +1704,16 @@ export function createWorkspaceBrowser({
     const body = document.createElement("button");
     body.type = "button";
     body.className = "proj-row-body";
-    const genBadge = generating && p.generation?.status === "running"
-      ? generationExplorerBadge(p.generation)
+    const activeGen = activeGenerationForBadge(p);
+    const activeKind = String(activeGen?.kind || p.generation?.kind || "").toLowerCase();
+    const genBadge = generating && activeGen?.status === "running"
+      ? generationExplorerBadge(activeGen)
       : "";
     const spinner = showSpinner && !genBadge
       ? '<span class="proj-loading-spinner" aria-hidden="true"></span>'
       : "";
     const loadingLabel = generating
-      ? '<span class="proj-loading-label">Generating…</span>'
+      ? `<span class="proj-loading-label${activeKind === "rigging" ? " proj-loading-label--rigging" : ""}">${activeKind === "rigging" ? "Rigging…" : "Generating…"}</span>`
       : loading
         ? '<span class="proj-loading-label">Loading…</span>'
         : "";

@@ -43,15 +43,24 @@ export function setRealtimeActiveObject(info = null) {
   });
 }
 
-export function finishRealtimeObjectLoad(info = {}, { getProjectId } = {}) {
+export function finishRealtimeObjectLoad(info = {}, { getProjectId, onOpened } = {}) {
   const label = String(info.label || info.filename || info.itemName || "Object").trim();
+  const projectId = info.projectId || getProjectId?.() || "";
   closeWorkspaceRealtimePopup();
   setRealtimeActiveObject({
     label,
     filename: info.filename || "",
-    projectId: info.projectId || getProjectId?.() || "",
+    projectId,
     hint: info.hint || "In viewport · click to browse",
   });
+  if (typeof onOpened === "function") {
+    onOpened({
+      label,
+      filename: info.filename || "",
+      projectId,
+      projectName: info.projectName || "",
+    });
+  }
 }
 
 export function openWorkspaceRealtimePopup({ refresh } = {}) {
@@ -115,7 +124,10 @@ export function installRealtimePopupApi(api = {}) {
     openWorkspaceRealtimePopup: () => openWorkspaceRealtimePopup({ refresh: api.refresh }),
     closeWorkspaceRealtimePopup,
     setRealtimeActiveObject,
-    finishRealtimeObjectLoad: (info) => finishRealtimeObjectLoad(info, { getProjectId: api.getProjectId }),
+    finishRealtimeObjectLoad: (info) => finishRealtimeObjectLoad(info, {
+      getProjectId: api.getProjectId,
+      onOpened: api.onOpened,
+    }),
     isRealtimePopupOpen,
   };
   Object.assign(window, wrapped);

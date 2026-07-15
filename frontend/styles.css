@@ -493,6 +493,11 @@ body.theme-light .gizmo-panel {
   color: #f8fbff;
 }
 
+body.theme-light .viewport-generation-user--rigging {
+  background: rgba(69, 36, 15, 0.92);
+  border-color: rgba(249, 115, 22, 0.55);
+}
+
 body.theme-light .viewport-generation-user .muted,
 body.theme-light .viewport-hint .muted,
 body.theme-light .gizmo-panel .muted {
@@ -6778,10 +6783,37 @@ label.btn { display: inline-flex; align-items: center; }
   cursor: pointer;
 }
 
+.viewport-generation-user--rigging {
+  border-color: rgba(249, 115, 22, 0.58);
+  background: linear-gradient(135deg, rgba(54, 28, 12, 0.94), rgba(13, 17, 23, 0.9));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(249, 115, 22, 0.18);
+}
+
 .vgu-avatar {
   width: 28px;
   height: 28px;
   flex: 0 0 auto;
+}
+
+.viewport-generation-user--rigging .vgu-avatar {
+  background: rgba(249, 115, 22, 0.18);
+  color: #fdba74;
+}
+
+.vgu-kind-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.16);
+  color: #fb923c;
+  flex: 0 0 auto;
+}
+
+.vgu-kind-icon svg {
+  width: 15px;
+  height: 15px;
 }
 
 .vgu-copy {
@@ -6812,6 +6844,11 @@ label.btn { display: inline-flex; align-items: center; }
   font-size: 0.62rem;
   font-weight: 900;
   letter-spacing: 0.08em;
+}
+
+.viewport-generation-user--rigging .vgu-ai {
+  background: rgba(249, 115, 22, 0.18);
+  color: #fdba74;
 }
 
 #viewport.pick-mode {
@@ -7734,6 +7771,23 @@ body.mobile-sheet-open {
   display: block;
 }
 
+.viewport-spinner--rigging {
+  border-color: rgba(249, 115, 22, 0.58);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(249, 115, 22, 0.22), transparent 46%),
+    linear-gradient(135deg, rgba(54, 28, 12, 0.96), rgba(13, 17, 23, 0.94));
+  box-shadow:
+    0 10px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(249, 115, 22, 0.16),
+    0 0 38px rgba(249, 115, 22, 0.16);
+}
+
+.viewport-spinner--rigging .viewport-spinner-ring {
+  border-color: rgba(249, 115, 22, 0.2);
+  border-top-color: #fb923c;
+  filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.55));
+}
+
 .fusion-loader-ring {
   position: absolute;
   inset: 1px;
@@ -8137,6 +8191,20 @@ body.mobile-sheet-open {
 
 .viewport-spinner--fusion .viewport-progress-pct {
   color: #7dd3fc;
+}
+
+.viewport-spinner--rigging .viewport-progress-track {
+  background: rgba(249, 115, 22, 0.16);
+  border-color: rgba(253, 186, 116, 0.35);
+}
+
+.viewport-spinner--rigging .viewport-progress-fill {
+  background: linear-gradient(90deg, #c2410c, #f97316 55%, #fdba74);
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.62);
+}
+
+.viewport-spinner--rigging .viewport-progress-pct {
+  color: #fdba74;
 }
 
 @keyframes viewport-spin {
@@ -10848,6 +10916,28 @@ section h2 {
   color: transparent;
 }
 
+.proj-gen-user--rigging .proj-gen-avatar {
+  background: rgba(249, 115, 22, 0.18);
+  color: #fdba74;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.3);
+}
+
+.proj-gen-rig-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(249, 115, 22, 0.16);
+  color: #fb923c;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.22);
+}
+
+.proj-gen-rig-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
 .proj-gen-ai {
   padding: 1px 5px;
   border-radius: 999px;
@@ -10858,11 +10948,20 @@ section h2 {
   letter-spacing: 0.08em;
 }
 
+.proj-gen-user--rigging .proj-gen-ai {
+  background: rgba(249, 115, 22, 0.16);
+  color: #fdba74;
+}
+
 .proj-loading-label {
   font-size: 0.68rem;
   font-weight: 600;
   color: #58a6ff;
   letter-spacing: 0.02em;
+}
+
+.proj-loading-label--rigging {
+  color: #fb923c;
 }
 
 /* ── New-model badge dot ── */
@@ -11613,6 +11712,70 @@ section h2 {
 .file-export-fusion:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* BAMBU-STUDIO-EXPORT */
+.file-export-bambu {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 174, 239, 0.45);
+  background: rgba(0, 174, 239, 0.12);
+  color: #7ad7ff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.file-export-bambu:hover:not(:disabled) {
+  background: rgba(0, 174, 239, 0.2);
+  border-color: rgba(0, 174, 239, 0.75);
+  color: #b6ecff;
+}
+
+.file-export-bambu:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.file-export-bambu-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: #00aeef;
+  color: #041018;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.file-export-bambu-followup {
+  margin-top: 6px;
+  padding: 8px 9px;
+  border: 1px solid rgba(0, 174, 239, 0.28);
+  border-radius: 8px;
+  background: rgba(0, 174, 239, 0.08);
+}
+
+.file-export-bambu-followup p {
+  margin: 0 0 6px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: #c9d1d9;
+}
+
+.file-export-bambu-followup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .file-export-fusion-picker {
@@ -21335,6 +21498,153 @@ body.kb-modal-open {
 .workspace-realtime-body {
   display: block;
   min-width: 0;
+}
+
+.workspace-realtime-editor.is-collapsed .workspace-realtime-body {
+  display: none;
+}
+
+.workspace-realtime-editor.is-collapsed .workspace-realtime-toggle {
+  transform: none;
+}
+
+.workspace-realtime-active {
+  margin-top: 8px;
+}
+
+.workspace-realtime-active-chip {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(88, 166, 255, 0.08);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-realtime-active-chip strong {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.workspace-realtime-active-chip small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.workspace-realtime-focus {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid rgba(48, 54, 61, 0.85);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.55);
+  min-width: 0;
+}
+
+.workspace-realtime-focus.hidden {
+  display: none !important;
+}
+
+.workspace-realtime-focus-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workspace-realtime-focus-head h2 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.workspace-realtime-focus-head .muted {
+  margin: 2px 0 0;
+}
+
+.workspace-browser-section.is-realtime-suppressed {
+  display: none !important;
+}
+
+.workspace-realtime-mirror-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-realtime-mirror-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workspace-realtime-mirror-summary strong {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.workspace-realtime-mirror-cards {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-realtime-mirror-card {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(48, 54, 61, 0.7);
+  border-radius: 8px;
+  background: rgba(22, 27, 34, 0.65);
+}
+
+.workspace-realtime-mirror-card.is-stale {
+  border-color: rgba(248, 81, 73, 0.35);
+}
+
+.workspace-realtime-mirror-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-realtime-mirror-card-head > span {
+  font-weight: 700;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-realtime-mirror-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: #79c0ff;
+}
+
+.workspace-realtime-mirror-empty {
+  padding: 8px;
+  border: 1px dashed rgba(48, 54, 61, 0.8);
+  border-radius: 8px;
+}
+
+.workspace-realtime-browser-host {
+  min-width: 0;
+}
+
+.design-browser-root--realtime-focus {
+  max-height: min(52vh, 560px);
+  min-height: 180px;
 }
 
 .workspace-realtime-editor.is-collapsed .workspace-realtime-body {

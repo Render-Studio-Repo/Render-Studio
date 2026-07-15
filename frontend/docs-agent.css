@@ -27,5 +27,48 @@
 }
 
 .render-agent-fab.hidden {
-  display: none;
+  display: none !important;
+}
+
+/*
+ * Left topic legend (Getting Started TOC + Complete docs catalog nav).
+ * Parent #app / .info-main use overflow:auto which breaks position:sticky —
+ * restore viewport sticky so the legend scrolls with you.
+ */
+body.docs-body #app.app-info,
+body.gs-body #app.app-info {
+  overflow: visible;
+}
+
+body.docs-body .info-main,
+body.gs-body .info-main {
+  overflow: visible;
+}
+
+body.docs-body,
+body.gs-body {
+  overflow-x: hidden;
+}
+
+.docs-catalog-nav,
+.gs-toc {
+  position: sticky !important;
+  top: 68px !important;
+  align-self: start;
+  z-index: 5;
+  max-height: calc(100vh - 88px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 980px) {
+  .docs-catalog-nav,
+  .gs-toc {
+    position: static !important;
+    top: auto !important;
+    max-height: none;
+    overflow: visible;
+  }
 }

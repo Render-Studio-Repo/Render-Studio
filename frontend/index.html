@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-project-chat" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-bambu-studio" />
   <script type="importmap">
   {
     "imports": {
@@ -249,6 +249,17 @@
             </button>
             <div id="workspace-realtime-active" class="workspace-realtime-active hidden" aria-live="polite"></div>
           </div>
+        </section>
+        <section id="workspace-realtime-focus" class="workspace-realtime-focus hidden" aria-label="Realtime open project">
+          <div class="workspace-realtime-focus-head">
+            <div>
+              <h2 id="workspace-realtime-focus-title">Open project</h2>
+              <p class="muted small" id="workspace-realtime-focus-sub">Components · Fusion mirrors</p>
+            </div>
+            <button type="button" id="workspace-realtime-focus-back" class="btn secondary btn-compact" title="Back to workspace projects">Projects</button>
+          </div>
+          <div id="workspace-realtime-mirror-panel" class="workspace-realtime-mirror-panel"></div>
+          <div id="workspace-realtime-browser-host" class="workspace-realtime-browser-host"></div>
         </section>
         <section class="workspace-browser-section">
           <div class="workspace-browser-head">
@@ -2029,7 +2040,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-first-visit-welcome"></script>
-  <script type="module" src="/app.js?v=20260715-sol-no-timeout"></script>
+  <script type="module" src="/app.js?v=20260715-bambu-studio"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

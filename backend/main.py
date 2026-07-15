@@ -9952,7 +9952,7 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
     except Exception:
         pass
     for path_ in project_path.iterdir():
-        if path_.is_file() and path_.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf", ".stl", ".glb", ".gltf"}:
+        if path_.is_file() and path_.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf", ".stl", ".glb", ".gltf", ".3mf"}:
             allowed.add(path_.name)
     preview_meta = _share_preview_image_meta(project_path, safe)
     preview = preview_meta.get("preview_file")
@@ -11318,7 +11318,11 @@ def rigging_prompt(
             prompt=body.prompt,
             label="Rigging robot motion",
             mode="rigging",
-            request_body=body.model_dump(),
+            request_body={
+                "prompt": body.prompt,
+                "speed": body.speed,
+                "image_count": len(body.images),
+            },
             allow_parallel=True,
         )
     except generation_service.GenerationInProgress as exc:

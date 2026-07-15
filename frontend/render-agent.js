@@ -308,6 +308,20 @@ export function createRenderAgent({
   function syncFabState(isOpen) {
     const fab = document.getElementById("render-agent-fab");
     if (!fab) return;
+    const docsPanel = panel.classList.contains("render-agent-panel--docs");
+    if (docsPanel) {
+      // Docs: hide the FAB while the agent is open so there is no "Close Agent"
+      // button; the panel header × dismisses the agent.
+      fab.classList.toggle("hidden", !!isOpen);
+      fab.classList.remove("is-open");
+      fab.setAttribute("aria-pressed", isOpen ? "true" : "false");
+      fab.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      fab.title = "Ask Render Agent";
+      fab.setAttribute("aria-label", "Ask Render Agent");
+      const label = fab.querySelector("span");
+      if (label) label.textContent = "Ask Agent";
+      return;
+    }
     fab.classList.remove("hidden");
     fab.classList.toggle("is-open", !!isOpen);
     fab.setAttribute("aria-pressed", isOpen ? "true" : "false");

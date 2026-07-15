@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-public-history";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-rigging-status";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
@@ -71,9 +71,9 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-multi-gen-rows";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-public-share-link";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-bambu-studio";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-fusion-view-more";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -112,7 +112,7 @@ import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtim
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
-import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-realtime-editor-popup";
+import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-realtime-focus";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6h client ceiling — Sol/CAD 2.0 must not abort at 8 min
@@ -16547,10 +16547,180 @@ document.getElementById("workspace-realtime-toggle")?.addEventListener("click", 
   setWorkspaceRealtimeCollapsed(!isWorkspaceRealtimeCollapsed());
 });
 
+let lastWorkspaceRealtimeData = null;
+let realtimeFocusProjectId = null;
+
+function designBrowserHome() {
+  return document.getElementById("project-chrome-hidden") || document.body;
+}
+
+function mountDesignBrowserInRealtimeFocus() {
+  const host = document.getElementById("workspace-realtime-browser-host");
+  const browser = document.getElementById("design-browser");
+  if (!host || !browser) return;
+  if (browser.parentElement !== host) host.appendChild(browser);
+  browser.classList.add("design-browser-root--realtime-focus");
+}
+
+function unmountDesignBrowserFromRealtimeFocus() {
+  const browser = document.getElementById("design-browser");
+  const home = designBrowserHome();
+  if (!browser || !home) return;
+  if (browser.parentElement !== home) home.appendChild(browser);
+  browser.classList.remove("design-browser-root--realtime-focus");
+}
+
+function fusionMirrorVersionLabel(mirror = {}, items = []) {
+  const version = String(mirror.last_version_id || "");
+  if (!version) return "not synced";
+  const match = version.match(/[?&]version=([^&]+)/);
+  if (match?.[1]) return `v${match[1]}`;
+  const item = items.find((candidate) =>
+    candidate.id === mirror.last_item_id || candidate.version_id === mirror.last_version_id
+  ) || items[0];
+  if (item?.version_number != null) return `v${item.version_number}`;
+  if (item?.version_id) {
+    const v = String(item.version_id).match(/[?&]version=([^&]+)/);
+    if (v?.[1]) return `v${v[1]}`;
+  }
+  return "latest";
+}
+
+function renderRealtimeFocusMirrorPanel(data = lastWorkspaceRealtimeData) {
+  const panel = document.getElementById("workspace-realtime-mirror-panel");
+  if (!panel) return;
+  const pid = realtimeFocusProjectId;
+  if (!pid) {
+    panel.innerHTML = "";
+    return;
+  }
+  const projects = data?.projects || [];
+  const project = projects.find((entry) => entry.id === pid)
+    || projects.find((entry) => String(entry.id) === String(pid));
+  const title = document.getElementById("workspace-realtime-focus-title");
+  const sub = document.getElementById("workspace-realtime-focus-sub");
+  if (title) title.textContent = project?.name || "Open project";
+  if (sub) {
+    const fileCount = project?.file_count ?? project?.files?.length ?? (project?.browser?.components || []).length;
+    sub.textContent = `${fileCount || 0} project file${fileCount === 1 ? "" : "s"} · Fusion mirrors`;
+  }
+  const mirrors = project?.fusion_mirrors || [];
+  if (!mirrors.length) {
+    panel.innerHTML = `
+      <div class="workspace-realtime-mirror-empty muted small">
+        No Fusion mirrors linked on this project yet. Open Realtime editor → link a mirror, then Sync / Push all.
+      </div>
+    `;
+    return;
+  }
+  const me = getStoredUser()?.id;
+  panel.innerHTML = `
+    <div class="workspace-realtime-mirror-summary">
+      <strong>Mirrors</strong>
+      <span class="muted small">${mirrors.length} linked</span>
+    </div>
+    <div class="workspace-realtime-mirror-cards">
+      ${mirrors.map((mirror) => {
+        const contents = mirror.contents || {};
+        const folders = contents.folders || [];
+        const items = activeFusionMirrorItems(mirror, contents.items || []);
+        const fileCount = folders.length + items.length;
+        const version = fusionMirrorVersionLabel(mirror, items);
+        const mine = mirror.user_id === me;
+        const stale = !!contents.needs_relink;
+        return `
+          <div class="workspace-realtime-mirror-card${stale ? " is-stale" : ""}">
+            <div class="workspace-realtime-mirror-card-head">
+              <span>${appEscapeHtml(mirror.display_name || mirror.email || "Teammate")}</span>
+              <small>${mine ? "You" : "Teammate"}${stale ? " · stale" : ""}</small>
+            </div>
+            <p class="muted small">${appEscapeHtml(fusionMirrorPathLabel(mirror))}</p>
+            <div class="workspace-realtime-mirror-stats">
+              <span>${fileCount} file${fileCount === 1 ? "" : "s"}</span>
+              <span>Sync ${appEscapeHtml(version)}</span>
+            </div>
+            ${mine ? `<button type="button" class="btn btn-compact" data-realtime-focus-sync="${appEscapeHtml(pid)}">Sync with Fusion</button>` : ""}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+  panel.querySelectorAll("[data-realtime-focus-sync]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const syncPid = btn.dataset.realtimeFocusSync;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Syncing…";
+      try {
+        const result = await api(`/api/projects/${encodeURIComponent(syncPid)}/fusion-mirror/sync-from-fusion`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ import_bodies: false }),
+        });
+        btn.textContent = result.changed ? "Synced ✓" : "Latest";
+        setEditStatus("ok", result.message || (result.changed ? "Fusion update synced." : "Already latest."));
+        await refreshWorkspaceRealtimeEditor();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = original;
+        setEditStatus("error", err.message || "Could not sync Fusion folder.");
+      }
+    });
+  });
+}
+
+function enterRealtimeProjectFocus({ projectId: pid, projectName = "", label = "", filename = "" } = {}) {
+  const focusId = pid || projectId;
+  if (!focusId) return;
+  realtimeFocusProjectId = focusId;
+  if (typeof window.closeWorkspaceRealtimePopup === "function") {
+    window.closeWorkspaceRealtimePopup();
+  }
+  const focus = document.getElementById("workspace-realtime-focus");
+  const projectsSection = document.querySelector(".workspace-browser-section");
+  focus?.classList.remove("hidden");
+  projectsSection?.classList.add("is-realtime-suppressed");
+  document.getElementById("app")?.classList.add("realtime-project-focus");
+  const title = document.getElementById("workspace-realtime-focus-title");
+  if (title) title.textContent = projectName || label || "Open project";
+  mountDesignBrowserInRealtimeFocus();
+  if (lastProjectBrowser) renderProjectBrowser(lastProjectBrowser);
+  renderRealtimeFocusMirrorPanel(lastWorkspaceRealtimeData);
+  if (typeof window.setRealtimeActiveObject === "function") {
+    window.setRealtimeActiveObject({
+      label: label || filename || projectName || "Object",
+      filename: filename || "",
+      projectId: focusId,
+      hint: "In viewport · click to browse",
+    });
+  }
+  if (!lastWorkspaceRealtimeData) void refreshWorkspaceRealtimeEditor();
+}
+
+function exitRealtimeProjectFocus() {
+  realtimeFocusProjectId = null;
+  const focus = document.getElementById("workspace-realtime-focus");
+  const projectsSection = document.querySelector(".workspace-browser-section");
+  focus?.classList.add("hidden");
+  projectsSection?.classList.remove("is-realtime-suppressed");
+  document.getElementById("app")?.classList.remove("realtime-project-focus");
+  unmountDesignBrowserFromRealtimeFocus();
+  const panel = document.getElementById("workspace-realtime-mirror-panel");
+  if (panel) panel.innerHTML = "";
+}
+
+document.getElementById("workspace-realtime-focus-back")?.addEventListener("click", () => {
+  exitRealtimeProjectFocus();
+});
+
 function renderWorkspaceRealtimeEditor(data = null) {
   syncWorkspaceRealtimeCollapse();
+  lastWorkspaceRealtimeData = data;
   const folderEl = document.getElementById("workspace-render-folder-card");
   const projectsEl = document.getElementById("workspace-fusion-projects");
+  if (realtimeFocusProjectId) {
+    renderRealtimeFocusMirrorPanel(data);
+  }
   if (!folderEl || !projectsEl) return;
   if (!data) {
     updateWorkspaceFusionAutoSync(null);
@@ -16654,8 +16824,14 @@ function renderWorkspaceRealtimeEditor(data = null) {
           setAssemblyComponentVisible(comp, true);
           if (comp.name) selectAssemblyComponent(comp.name, { fitView: true });
         }
+        enterRealtimeProjectFocus({
+          projectId: pid,
+          projectName: data?.name || "",
+          label: comp?.label || comp?.name || filename,
+          filename,
+        });
       } catch {
-        /* Project open already succeeded; component targeting is best-effort. */
+        enterRealtimeProjectFocus({ projectId: pid, label: filename, filename });
       }
     });
   });
@@ -16679,8 +16855,14 @@ function renderWorkspaceRealtimeEditor(data = null) {
           entry.name === filename || entry.viewer_filename === filename || entry.filename === filename
         );
         if (comp) await openBrowserComponent(comp);
+        enterRealtimeProjectFocus({
+          projectId: pid,
+          projectName: data?.name || "",
+          label: comp?.label || comp?.name || filename,
+          filename,
+        });
       } catch {
-        /* Project open already succeeded; component targeting is best-effort. */
+        enterRealtimeProjectFocus({ projectId: pid, label: filename, filename });
       }
     });
   });
@@ -17589,6 +17771,12 @@ async function viewFusionWorkspaceFile(payload) {
     // No linked/open project — save as a new local project, then open.
     const result = await saveFusionWorkspaceFile(payload, { destination: "new", folderId: "" });
     setEditStatus("ok", `Saved and opened ${result.name || payload.itemName}.`);
+    enterRealtimeProjectFocus({
+      projectId: result.project_id || projectId,
+      projectName: result.name || "",
+      label: payload.itemName || result.filename || result.name || "Object",
+      filename: result.filename || "",
+    });
     return result;
   }
   if (targetProjectId !== projectId) await openProjectById(targetProjectId);
@@ -17614,6 +17802,12 @@ async function viewFusionWorkspaceFile(payload) {
     .find((entry) => entry.name === filename || entry.viewer_filename === filename);
   if (comp) {
     await openBrowserComponent(comp);
+    enterRealtimeProjectFocus({
+      projectId: projectId || targetProjectId,
+      projectName: data?.name || "",
+      label: payload.itemName || filename,
+      filename,
+    });
     return { filename, project_id: projectId || targetProjectId };
   }
   await loadModel(
@@ -17621,6 +17815,12 @@ async function viewFusionWorkspaceFile(payload) {
     filename,
     { projectId: projectId || targetProjectId, fitView: true },
   );
+  enterRealtimeProjectFocus({
+    projectId: projectId || targetProjectId,
+    projectName: data?.name || "",
+    label: payload.itemName || filename,
+    filename,
+  });
   return { filename, project_id: projectId || targetProjectId };
 }
 
@@ -17698,6 +17898,7 @@ async function refreshWorkspaceRealtimeEditor() {
 installRealtimePopupApi({
   refresh: refreshWorkspaceRealtimeEditor,
   getProjectId: () => projectId,
+  onOpened: (info) => enterRealtimeProjectFocus(info),
 });
 
 function renderFileList(files = []) {
