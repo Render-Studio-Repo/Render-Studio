@@ -1,4 +1,5 @@
 import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260709-admin-matt";
+import { createMiniViewer } from "./mini-viewer.js?v=20260715-admin-preview";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -34,13 +35,20 @@ async function api(path) {
       const data = await res.json();
       message = data.detail || message;
     } catch {
-      /* ignore non-json errors */
+      /* ignore */
     }
     const err = new Error(message);
     err.status = res.status;
     throw err;
   }
   return res.json();
+}
+
+async function authBlobUrl(path) {
+  if (!path) return null;
+  const res = await fetch(path, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Could not load ${path}`);
+  return URL.createObjectURL(await res.blob());
 }
 
 function statCard(label, value, hint = "") {
@@ -90,10 +98,10 @@ function renderDailyChart(days = []) {
   `;
 }
 
-function renderUserRows(users = []) {
+function renderUserRows(users = [], { clickable = true } = {}) {
   if (!users.length) return '<p class="muted">No users yet.</p>';
   return users.map((user) => `
-    <article class="admin-user-row">
+    <article class="admin-user-row${clickable ? " admin-row--clickable" : ""}" ${clickable ? `data-user-id="${escapeHtml(user.id)}"` : ""}>
       <div>
         <strong>${escapeHtml(user.display_name || user.email || "User")}</strong>
         <span>${escapeHtml(user.email || "")}</span>
@@ -101,9 +109,10 @@ function renderUserRows(users = []) {
       <div class="admin-row-stats">
         <span>${formatNumber(user.project_count)} projects</span>
         <span>${formatNumber(user.prompt_count)} prompts</span>
+        <span>${formatNumber(user.model_count || 0)} models</span>
         <span>${formatMoney(user.total_cost_usd)}</span>
       </div>
-      <small>Joined ${formatDate(user.created_at)} · active ${formatDate(user.last_active_at)}</small>
+      <small>Joined ${formatDate(user.created_at)} · active ${formatDate(user.last_active_at)}${user.training_ready_count ? ` · ${formatNumber(user.training_ready_count)} training-ready` : ""}</small>
     </article>
   `).join("");
 }
@@ -111,29 +120,38 @@ function renderUserRows(users = []) {
 function renderProjectRows(projects = []) {
   if (!projects.length) return '<p class="muted">No projects yet.</p>';
   return projects.map((project) => `
-    <article class="admin-project-row">
-      <div>
-        <strong>${escapeHtml(project.name || project.id)}</strong>
-        <span>${escapeHtml(project.owner_name || project.owner_email || "Unknown owner")}</span>
+    <article class="admin-project-row admin-row--clickable" data-project-id="${escapeHtml(project.id)}">
+      <div class="admin-project-thumb" data-preview-url="${escapeHtml(project.preview_url || "")}" aria-hidden="true">
+        ${project.model_file || project.preview_url ? '<span class="admin-thumb-fallback">3D</span>' : '<span class="admin-thumb-fallback">—</span>'}
       </div>
-      <div class="admin-row-stats">
-        <span>${formatNumber(project.file_count)} files</span>
-        ${project.public ? "<span>Public</span>" : ""}
+      <div class="admin-project-main">
+        <div>
+          <strong>${escapeHtml(project.name || project.id)}</strong>
+          <span>${escapeHtml(project.owner_name || project.owner_email || "Unknown owner")}</span>
+          ${project.training_ready ? '<em class="admin-ready-tag">training-ready</em>' : ""}
+        </div>
+        <div class="admin-row-stats">
+          <span>${formatNumber(project.file_count)} files</span>
+          ${project.public ? "<span>Public</span>" : ""}
+          ${project.model_file ? `<span>${escapeHtml(project.model_file)}</span>` : ""}
+        </div>
+        <small>${escapeHtml(project.latest_file || "No model file")} · updated ${formatDate(project.updated_at)}</small>
+        ${project.latest_prompt ? `<p class="admin-project-prompt">${escapeHtml(project.latest_prompt)}</p>` : ""}
       </div>
-      <small>${escapeHtml(project.latest_file || "No model file")} · updated ${formatDate(project.updated_at)}</small>
+      <button type="button" class="btn secondary btn-compact admin-preview-btn" data-project-id="${escapeHtml(project.id)}">View model</button>
     </article>
   `).join("");
 }
 
-function renderPromptRows(prompts = []) {
+function renderPromptRows(prompts = [], { openProject = true } = {}) {
   if (!prompts.length) return '<p class="muted">No prompt history yet.</p>';
   return prompts.map((prompt) => `
-    <article class="admin-prompt-row ${prompt.success ? "" : "admin-prompt-row--error"}">
+    <article class="admin-prompt-row ${prompt.success ? "" : "admin-prompt-row--error"}${openProject ? " admin-row--clickable" : ""}" ${openProject && prompt.project_id ? `data-project-id="${escapeHtml(prompt.project_id)}"` : ""}>
       <div class="admin-prompt-head">
         <strong>${escapeHtml(prompt.user_name || prompt.owner_name || "Unknown user")}</strong>
         <span>${escapeHtml(prompt.kind || "cad")} · ${escapeHtml(prompt.prompt_mode || "mode")} · ${formatDate(prompt.created_at)}</span>
       </div>
-      <p>${escapeHtml(prompt.prompt || "(empty prompt)")}</p>
+      <p>${escapeHtml(prompt.prompt || prompt.prompt_preview || "(empty prompt)")}</p>
       <small>
         ${escapeHtml(prompt.project_name || prompt.project_id || "Project")}
         ${prompt.filename ? ` · ${escapeHtml(prompt.filename)}` : ""}
@@ -145,14 +163,232 @@ function renderPromptRows(prompts = []) {
   `).join("");
 }
 
+let modalState = {
+  el: null,
+  viewer: null,
+  blobUrls: [],
+};
+
+function revokeModalBlobs() {
+  modalState.blobUrls.forEach((url) => {
+    try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+  });
+  modalState.blobUrls = [];
+}
+
+function closeModal() {
+  modalState.viewer?.dispose?.();
+  modalState.viewer = null;
+  revokeModalBlobs();
+  modalState.el?.remove();
+  modalState.el = null;
+}
+
+async function hydrateThumbs(root) {
+  const thumbs = [...(root.querySelectorAll(".admin-project-thumb[data-preview-url]") || [])];
+  await Promise.all(thumbs.map(async (thumb) => {
+    const url = thumb.getAttribute("data-preview-url");
+    if (!url) return;
+    try {
+      const blobUrl = await authBlobUrl(url);
+      thumb.style.backgroundImage = `url("${blobUrl}")`;
+      thumb.classList.add("has-image");
+      thumb.dataset.blobUrl = blobUrl;
+    } catch {
+      /* keep fallback */
+    }
+  }));
+}
+
+function ensureModalShell() {
+  closeModal();
+  const el = document.createElement("div");
+  el.className = "admin-modal-backdrop";
+  el.innerHTML = `
+    <div class="admin-modal" role="dialog" aria-modal="true" aria-label="Model preview">
+      <header class="admin-modal-head">
+        <div>
+          <p class="info-eyebrow">3D Model Preview</p>
+          <h2 id="admin-modal-title">Loading…</h2>
+          <p class="muted small" id="admin-modal-sub"></p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-modal-close">Close</button>
+      </header>
+      <div class="admin-modal-body">
+        <div class="admin-modal-viewer-wrap">
+          <div id="admin-modal-viewer" class="admin-modal-viewer"></div>
+          <div class="admin-modal-snaps" id="admin-modal-snaps"></div>
+        </div>
+        <aside class="admin-modal-side">
+          <h3>Latest prompts</h3>
+          <div id="admin-modal-prompts" class="admin-list admin-list--prompts"></div>
+          <h3 class="admin-subhead">Files</h3>
+          <div id="admin-modal-files" class="admin-pill-list"></div>
+        </aside>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(el);
+  modalState.el = el;
+  el.querySelector("#admin-modal-close")?.addEventListener("click", closeModal);
+  el.addEventListener("click", (event) => {
+    if (event.target === el) closeModal();
+  });
+  return el;
+}
+
+async function openProjectModal(projectId) {
+  const el = ensureModalShell();
+  const title = el.querySelector("#admin-modal-title");
+  const sub = el.querySelector("#admin-modal-sub");
+  const promptsEl = el.querySelector("#admin-modal-prompts");
+  const filesEl = el.querySelector("#admin-modal-files");
+  const snapsEl = el.querySelector("#admin-modal-snaps");
+  const viewerEl = el.querySelector("#admin-modal-viewer");
+  title.textContent = "Loading project…";
+  promptsEl.innerHTML = '<p class="muted">Loading prompts…</p>';
+
+  try {
+    const data = await api(`/api/admin/projects/${encodeURIComponent(projectId)}`);
+    const project = data.project || {};
+    title.textContent = project.name || project.id || "Project";
+    sub.textContent = [
+      project.owner_name || project.owner_email || "Unknown owner",
+      project.model_file || project.latest_file || "No model",
+      `updated ${formatDate(project.updated_at)}`,
+      project.training_ready ? "training-ready" : null,
+    ].filter(Boolean).join(" · ");
+
+    promptsEl.innerHTML = renderPromptRows(data.prompts || [], { openProject: false });
+    filesEl.innerHTML = (data.files || []).slice(0, 24).map((file) => `
+      <span class="admin-pill"><strong>${escapeHtml(file.name || "")}</strong></span>
+    `).join("") || '<span class="muted small">No CAD files</span>';
+
+    snapsEl.innerHTML = "";
+    for (const snapUrl of (project.snapshot_urls || []).slice(0, 4)) {
+      try {
+        const blobUrl = await authBlobUrl(snapUrl);
+        modalState.blobUrls.push(blobUrl);
+        const img = document.createElement("img");
+        img.src = blobUrl;
+        img.alt = "Snapshot";
+        snapsEl.appendChild(img);
+      } catch {
+        /* skip */
+      }
+    }
+
+    modalState.viewer = createMiniViewer(viewerEl, { autoRotate: true, background: 0x0d1117 });
+    if (project.model_url) {
+      const glbBlob = await authBlobUrl(project.model_url);
+      modalState.blobUrls.push(glbBlob);
+      await modalState.viewer.load(glbBlob);
+    } else {
+      viewerEl.innerHTML = '<p class="muted admin-viewer-empty">No GLB preview available for this project.</p>';
+    }
+  } catch (err) {
+    title.textContent = "Could not open project";
+    sub.textContent = err.message || "Request failed";
+    promptsEl.innerHTML = `<p class="muted">${escapeHtml(err.message || "Request failed")}</p>`;
+  }
+}
+
+async function openUserPanel(root, userId, dashboardData) {
+  const panel = root.querySelector("#admin-user-detail");
+  if (!panel) return;
+  panel.innerHTML = '<p class="muted">Loading user activity…</p>';
+  panel.classList.remove("hidden");
+  try {
+    const data = await api(`/api/admin/users/${encodeURIComponent(userId)}`);
+    const user = data.user || {};
+    const stats = data.stats || {};
+    const community = dashboardData.community || {};
+    panel.innerHTML = `
+      <div class="admin-user-detail-head">
+        <div>
+          <p class="info-eyebrow">User lookup</p>
+          <h3>${escapeHtml(user.display_name || user.email || "User")}</h3>
+          <p class="muted small">${escapeHtml(user.email || "")} · joined ${formatDate(user.created_at)} · active ${formatDate(user.last_active_at)}</p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-user-detail-close">Close</button>
+      </div>
+      <div class="admin-stats-grid admin-stats-grid--compact">
+        ${statCard("Projects", formatNumber(stats.project_count))}
+        ${statCard("Prompts", formatNumber(stats.prompt_count), stats.success_rate == null ? "" : `${Math.round(stats.success_rate * 100)}% success`)}
+        ${statCard("Models", formatNumber(stats.model_count), `${formatNumber(stats.training_ready_count)} training-ready`)}
+        ${statCard("Spend", formatMoney(stats.estimated_cost_usd), `${formatNumber(stats.total_tokens)} tokens`)}
+      </div>
+      <div class="admin-compare muted small">
+        Community avg: ${formatNumber(community.avg_projects_per_user)} projects / ${formatNumber(community.avg_prompts_per_user)} prompts per user
+        · community training-ready ${formatNumber(community.training_ready_count)}
+      </div>
+      <div class="admin-grid">
+        <article>
+          <h4>Recent models</h4>
+          <div class="admin-list">${renderProjectRows(data.projects || [])}</div>
+        </article>
+        <article>
+          <h4>Recent prompts</h4>
+          <div class="admin-list admin-list--prompts">${renderPromptRows(data.recent_prompts || [])}</div>
+        </article>
+      </div>
+    `;
+    panel.querySelector("#admin-user-detail-close")?.addEventListener("click", () => {
+      panel.classList.add("hidden");
+      panel.innerHTML = "";
+    });
+    bindInteractive(panel, dashboardData);
+    void hydrateThumbs(panel);
+  } catch (err) {
+    panel.innerHTML = `<p class="muted">${escapeHtml(err.message || "Could not load user")}</p>`;
+  }
+}
+
+function bindInteractive(root, data) {
+  root.querySelectorAll("[data-project-id]").forEach((el) => {
+    const open = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = el.getAttribute("data-project-id") || el.dataset.projectId;
+      if (id) void openProjectModal(id);
+    };
+    if (el.matches("button.admin-preview-btn")) {
+      el.addEventListener("click", open);
+    } else if (el.matches(".admin-project-row, .admin-prompt-row")) {
+      el.addEventListener("click", open);
+    }
+  });
+  root.querySelectorAll(".admin-user-row[data-user-id]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = el.getAttribute("data-user-id");
+      if (id) void openUserPanel(root.closest(".admin-dashboard") || root, id, data);
+    });
+  });
+}
+
+function renderUserLookup(users = []) {
+  return `
+    <section class="admin-panel admin-lookup-panel">
+      <div class="admin-lookup-head">
+        <h3>User lookup</h3>
+        <input type="search" id="admin-user-search" class="admin-user-search" placeholder="Search name or email…" />
+      </div>
+      <p class="muted small">Click a user for individual stats vs community averages, recent models, and prompts (for future training).</p>
+      <div id="admin-user-lookup-list" class="admin-list admin-list--lookup">${renderUserRows(users.slice(0, 20))}</div>
+      <div id="admin-user-detail" class="admin-user-detail hidden"></div>
+    </section>
+  `;
+}
+
 function renderDashboard(root, data) {
   const stats = data.stats || {};
+  const community = data.community || {};
   root.innerHTML = `
     <section class="admin-hero-card">
       <div>
         <p class="info-eyebrow">Management</p>
         <h2>Site Overview</h2>
-        <p class="info-lead">Users, project activity, prompt history, model usage, and estimated AI spend across Render3D.</p>
+        <p class="info-lead">Users, recent model activity, prompt history, and training-ready prompt↔model pairs across Render3D.</p>
       </div>
       <button type="button" class="btn secondary" id="admin-refresh">Refresh</button>
     </section>
@@ -162,7 +398,7 @@ function renderDashboard(root, data) {
       ${statCard("Projects", formatNumber(stats.project_count), "Tracked project folders")}
       ${statCard("Prompts", formatNumber(stats.prompt_count), `${formatNumber(stats.success_count)} succeeded · ${formatNumber(stats.error_count)} errors`)}
       ${statCard("AI Spend", formatMoney(stats.estimated_cost_usd), `${formatNumber(stats.total_tokens)} tokens`)}
-      ${statCard("Files", formatNumber(stats.file_count), "CAD and export files")}
+      ${statCard("Models", formatNumber(stats.model_count || community.model_count || 0), `${formatNumber(stats.training_ready_count || 0)} training-ready`)}
       ${statCard("Success Rate", stats.success_rate == null ? "—" : `${Math.round(stats.success_rate * 100)}%`, "Prompt history success")}
     </section>
 
@@ -172,12 +408,20 @@ function renderDashboard(root, data) {
         ${renderDailyChart(data.daily || [])}
       </article>
       <article class="admin-panel">
-        <h3>Prompt Mix</h3>
+        <h3>Community stats</h3>
+        <div class="admin-pill-list">
+          <span class="admin-pill"><strong>Avg projects/user</strong><em>${formatNumber(community.avg_projects_per_user)}</em></span>
+          <span class="admin-pill"><strong>Avg prompts/user</strong><em>${formatNumber(community.avg_prompts_per_user)}</em></span>
+          <span class="admin-pill"><strong>Training-ready</strong><em>${formatNumber(community.training_ready_count)}</em></span>
+        </div>
+        <h3 class="admin-subhead">Prompt Mix</h3>
         <div class="admin-pill-list">${countPills(data.prompt_kind_counts, "kind")}</div>
         <h3 class="admin-subhead">Top Models</h3>
         <div class="admin-pill-list">${countPills(data.prompt_model_counts, "model")}</div>
       </article>
     </section>
+
+    ${renderUserLookup(data.users || data.active_users || [])}
 
     <section class="admin-grid">
       <article class="admin-panel">
@@ -193,6 +437,7 @@ function renderDashboard(root, data) {
     <section class="admin-grid admin-grid--wide-right">
       <article class="admin-panel">
         <h3>Recent Projects</h3>
+        <p class="muted small admin-panel-hint">Click a row or <strong>View model</strong> for 3D preview + prompt detail.</p>
         <div class="admin-list">${renderProjectRows(data.recent_projects || [])}</div>
       </article>
       <article class="admin-panel">
@@ -207,7 +452,23 @@ function renderDashboard(root, data) {
       <p class="muted small">Generated ${formatDate(data.generated_at)}</p>
     </section>
   `;
+
   root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root));
+  const search = root.querySelector("#admin-user-search");
+  const lookupList = root.querySelector("#admin-user-lookup-list");
+  const allUsers = data.users || [];
+  search?.addEventListener("input", () => {
+    const q = search.value.trim().toLowerCase();
+    const filtered = !q
+      ? allUsers.slice(0, 20)
+      : allUsers.filter((u) => `${u.display_name || ""} ${u.email || ""}`.toLowerCase().includes(q)).slice(0, 30);
+    if (lookupList) {
+      lookupList.innerHTML = renderUserRows(filtered);
+      bindInteractive(lookupList, data);
+    }
+  });
+  bindInteractive(root, data);
+  void hydrateThumbs(root);
 }
 
 async function loadDashboard(root) {
@@ -220,7 +481,7 @@ async function loadDashboard(root) {
     root.innerHTML = '<section class="admin-hero-card"><h2>Admin only</h2><p class="muted">This dashboard is only visible to admin users.</p><a class="btn secondary" href="/">Back to Studio</a></section>';
     return;
   }
-  root.innerHTML = '<section class="admin-hero-card"><h2>Loading dashboard…</h2><p class="muted">Aggregating users, projects, and prompt histories.</p></section>';
+  root.innerHTML = '<section class="admin-hero-card"><h2>Loading dashboard…</h2><p class="muted">Aggregating users, projects, model previews, and prompt histories.</p></section>';
   try {
     const data = await api("/api/admin/dashboard");
     renderDashboard(root, data);
@@ -232,5 +493,8 @@ async function loadDashboard(root) {
 export function initAdminDashboard() {
   const root = document.getElementById("admin-dashboard-root");
   if (!root) return;
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeModal();
+  });
   loadDashboard(root);
 }

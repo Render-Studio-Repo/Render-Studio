@@ -2031,14 +2031,6 @@ function getPromptMentionables() {
   return items;
 }
 
-function focusPromptComposer() {
-  if (composer?.editor) {
-    composer.editor.focus();
-    return;
-  }
-  focusPromptComposer();
-}
-
 function isExplorerPromptRef(ref) {
   return (
     ref?.type === "component" ||
@@ -2915,7 +2907,7 @@ const promptHistory = createPromptHistoryUI({
     promptImages = [];
     renderPromptImages();
     saveActiveModelPromptState();
-    focusPromptComposer();
+    document.getElementById("prompt-input")?.focus();
     const refCount = refs.length;
     setEditStatus("ok", refCount ? `Reused prompt with ${refCount} reference${refCount === 1 ? "" : "s"}.` : "Reused prompt.");
   },
@@ -8258,7 +8250,7 @@ function activateArchitectPrompt(kind = "room") {
   promptHistory.setTab("compose");
   saveActiveModelPromptState();
   setEditStatus("ok", "Architect prompt loaded — review it, then Generate modular house part.");
-  focusPromptComposer();
+  document.getElementById("prompt-input")?.focus();
 }
 
 document.querySelectorAll("[data-right-tab]").forEach((btn) => {
@@ -8803,16 +8795,12 @@ function openGenerativeEdits() {
     selectAssemblyComponent(filename, { fitView: false });
   }
   syncPromptTargetUI();
-  const input = document.getElementById("prompt-input");
   const example =
     "Resize the selected object: make the main body ___ mm wider, adjust the related supports/holes/clearances proportionally, and preserve the existing functional relationships.";
-  if (input && !input.value.trim()) {
-    input.value = example;
-    input.focus();
-    input.select();
-  } else {
-    input?.focus();
+  if (!composer.getPromptText()) {
+    composer.setPromptText(example);
   }
+  focusPromptComposer();
   setEditStatus(
     filename ? "ok" : "error",
     filename

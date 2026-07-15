@@ -825,11 +825,49 @@ def _is_other_user_render_project(project_id: str, user: dict[str, Any]) -> bool
 
 
 def _require_project_read(user: dict[str, Any], project_id: str) -> Path:
-    if teams_service.can_access_project(user["id"], project_id) or _is_other_user_render_project(project_id, user) or _is_public_project(project_id):
+    if (
+        teams_service.can_access_project(user["id"], project_id)
+        or _is_other_user_render_project(project_id, user)
+        or _is_public_project(project_id)
+        or _is_a1projects_admin(user)
+    ):
         path = PROJECTS / project_id
         if path.is_dir():
             return path
     raise HTTPException(404, "Project not found")
+
+
+def _admin_preview_assets(project_path: Path, project_id: str, latest_file: str | None = None) -> dict[str, Any]:
+    """Snapshot PNG + GLB URLs for management previews."""
+    stem = Path(latest_file).stem if latest_file else None
+    snapshots = [p for p in project_path.glob("*_snapshot_iso_*.png") if p.is_file() and "opposite" not in p.name.lower()]
+    if not snapshots:
+        snapshots = [p for p in project_path.glob("*_snapshot_iso*.png") if p.is_file()]
+    if not snapshots:
+        snapshots = [p for p in project_path.glob("*_snapshot_*.png") if p.is_file()]
+    if stem:
+        preferred = [p for p in snapshots if p.name.startswith(f"{stem}_snapshot")]
+        snapshots = preferred or snapshots
+    preview_file = max(snapshots, key=lambda p: p.stat().st_mtime).name if snapshots else None
+
+    model_file = None
+    if latest_file and Path(latest_file).suffix.lower() in {".glb", ".gltf"} and (project_path / latest_file).is_file():
+        model_file = latest_file
+    elif stem and (project_path / f"{stem}.glb").is_file():
+        model_file = f"{stem}.glb"
+    else:
+        glbs = [p for p in project_path.glob("*.glb") if p.is_file() and "_part" not in p.stem.lower()]
+        if not glbs:
+            glbs = [p for p in project_path.glob("*.glb") if p.is_file()]
+        if glbs:
+            model_file = max(glbs, key=lambda p: p.stat().st_mtime).name
+
+    return {
+        "preview_file": preview_file,
+        "preview_url": f"/api/projects/{project_id}/files/{preview_file}" if preview_file else None,
+        "model_file": model_file,
+        "model_url": f"/api/projects/{project_id}/files/{model_file}" if model_file else None,
+    }
 
 
 def _other_user_render_summaries(user: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
@@ -5709,11 +5747,13 @@ def admin_dashboard(
             "prompt_count": 0,
             "success_count": 0,
             "error_count": 0,
-            "total_cost_usd": 0.0,
+                "total_cost_usd": 0.0,
             "total_tokens": 0,
             "last_active_at": row["created_at"],
             "recent_projects": [],
             "recent_prompts": [],
+            "model_count": 0,
+            "training_ready_count": 0,
         }
 
     prompt_kind_counts: Counter[str] = Counter()
@@ -5762,33 +5802,49 @@ def admin_dashboard(
             fmt = str(file_info.get("format") or Path(file_info.get("name") or "").suffix.lstrip(".") or "file").lower()
             project_format_counts[fmt] += 1
         updated_at = meta.get("updated_at") or access["created_at"]
+        latest_file = project_store.latest_model_file(project_path)
+        preview = _admin_preview_assets(project_path, pid, latest_file)
+        try:
+            entries = prompt_history_service.list_entries(project_path, limit=200)
+        except Exception as exc:
+            logger.info("Admin dashboard skipped prompt history for %s: %s", pid, exc)
+            entries = []
+        latest_prompt_text = None
+        latest_prompt_at = None
+        if entries:
+            newest_prompt = max(entries, key=lambda item: str(item.get("created_at") or ""))
+            latest_prompt_text = _admin_prompt_preview(newest_prompt.get("prompt"), 180)
+            latest_prompt_at = newest_prompt.get("created_at")
         project_item = {
             "id": pid,
             "name": meta.get("name") or pid,
             "created_at": meta.get("created_at") or access["created_at"],
             "updated_at": updated_at,
             "file_count": len(files),
-            "latest_file": project_store.latest_model_file(project_path),
+            "latest_file": latest_file,
             "owner_user_id": owner_id,
             "owner_name": access["owner_name"],
             "owner_email": access["owner_email"],
             "team_id": access["team_id"],
             "team_name": access["team_name"],
             "public": bool(access["is_public"]),
+            "latest_prompt": latest_prompt_text,
+            "latest_prompt_at": latest_prompt_at,
+            "training_ready": bool(preview.get("model_file") and latest_prompt_text),
+            **preview,
         }
         recent_projects.append(project_item)
         if owner_id in users_by_id:
             users_by_id[owner_id]["recent_projects"].append(project_item)
+            if project_item.get("model_file"):
+                users_by_id[owner_id]["model_count"] += 1
+            if project_item.get("training_ready"):
+                users_by_id[owner_id]["training_ready_count"] += 1
             owner_dt = _parse_admin_dt(users_by_id[owner_id].get("last_active_at"))
             project_dt = _parse_admin_dt(updated_at)
             if project_dt and (owner_dt is None or project_dt > owner_dt):
                 users_by_id[owner_id]["last_active_at"] = updated_at
 
-        try:
-            entries = prompt_history_service.list_entries(project_path, limit=200)
-        except Exception as exc:
-            logger.info("Admin dashboard skipped prompt history for %s: %s", pid, exc)
-            entries = []
         for entry in entries:
             prompt_total += 1
             kind = str(entry.get("kind") or "cad")
@@ -5891,7 +5947,38 @@ def admin_dashboard(
             "success_rate": round(success_total / prompt_total, 4) if prompt_total else None,
             "estimated_cost_usd": round(cost_total, 6),
             "total_tokens": tokens_total,
+            "model_count": sum(1 for item in recent_projects if item.get("model_file")),
+            "training_ready_count": sum(1 for item in recent_projects if item.get("training_ready")),
         },
+        "community": {
+            "user_count": len(users_by_id),
+            "project_count": projects_scanned,
+            "prompt_count": prompt_total,
+            "success_rate": round(success_total / prompt_total, 4) if prompt_total else None,
+            "estimated_cost_usd": round(cost_total, 6),
+            "model_count": sum(1 for item in recent_projects if item.get("model_file")),
+            "training_ready_count": sum(1 for item in recent_projects if item.get("training_ready")),
+            "avg_prompts_per_user": round(prompt_total / len(users_by_id), 2) if users_by_id else 0,
+            "avg_projects_per_user": round(projects_scanned / len(users_by_id), 2) if users_by_id else 0,
+        },
+        "users": [
+            {
+                "id": item["id"],
+                "email": item["email"],
+                "display_name": item["display_name"],
+                "created_at": item["created_at"],
+                "last_active_at": item["last_active_at"],
+                "project_count": item["project_count"],
+                "prompt_count": item["prompt_count"],
+                "success_count": item["success_count"],
+                "error_count": item["error_count"],
+                "total_cost_usd": item["total_cost_usd"],
+                "total_tokens": item["total_tokens"],
+                "model_count": item["model_count"],
+                "training_ready_count": item["training_ready_count"],
+            }
+            for item in sorted(users, key=lambda u: str(u.get("last_active_at") or ""), reverse=True)
+        ],
         "recent_users": recent_users,
         "active_users": active_users,
         "recent_projects": recent_projects[:project_limit],
@@ -5900,6 +5987,231 @@ def admin_dashboard(
         "prompt_model_counts": [{"model": k, "count": v} for k, v in prompt_model_counts.most_common(12)],
         "project_format_counts": [{"format": k, "count": v} for k, v in project_format_counts.most_common(12)],
         "daily": daily,
+    }
+
+
+@app.get("/api/admin/users/{user_id}")
+def admin_user_detail(user_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    """Individual user activity, stats, and recent models for management lookup."""
+    _require_a1projects_admin(user)
+    from backend.services.ai_cost import entry_effective_cost
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT id, email, display_name, created_at, avatar_url, ai_provider, ai_model
+              FROM users
+             WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        access_rows = conn.execute(
+            """
+            SELECT pa.project_id, pa.team_id, pa.created_by, pa.created_at, pa.is_public,
+                   t.name AS team_name
+              FROM project_access pa
+              LEFT JOIN teams t ON t.id = pa.team_id
+             WHERE pa.created_by = ?
+             ORDER BY pa.created_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    if not row:
+        raise HTTPException(404, "User not found")
+
+    projects: list[dict[str, Any]] = []
+    prompts: list[dict[str, Any]] = []
+    prompt_count = success_count = error_count = 0
+    cost_total = 0.0
+    tokens_total = 0
+    model_count = training_ready = 0
+    last_active = row["created_at"]
+
+    for access in access_rows:
+        pid = access["project_id"]
+        project_path = PROJECTS / pid
+        if not project_path.is_dir():
+            continue
+        try:
+            meta = project_store.load_meta(project_path)
+        except Exception:
+            meta = {"id": pid, "name": pid}
+        try:
+            files = cad_service.list_project_files(project_path)
+        except Exception:
+            files = []
+        latest_file = project_store.latest_model_file(project_path)
+        preview = _admin_preview_assets(project_path, pid, latest_file)
+        updated_at = meta.get("updated_at") or access["created_at"]
+        project_item = {
+            "id": pid,
+            "name": meta.get("name") or pid,
+            "created_at": meta.get("created_at") or access["created_at"],
+            "updated_at": updated_at,
+            "file_count": len(files),
+            "latest_file": latest_file,
+            "public": bool(access["is_public"]),
+            "team_name": access["team_name"],
+            **preview,
+        }
+        try:
+            entries = prompt_history_service.list_entries(project_path, limit=80)
+        except Exception:
+            entries = []
+        if entries:
+            newest = max(entries, key=lambda item: str(item.get("created_at") or ""))
+            project_item["latest_prompt"] = _admin_prompt_preview(newest.get("prompt"), 220)
+            project_item["latest_prompt_at"] = newest.get("created_at")
+        project_item["training_ready"] = bool(project_item.get("model_file") and project_item.get("latest_prompt"))
+        if project_item.get("model_file"):
+            model_count += 1
+        if project_item.get("training_ready"):
+            training_ready += 1
+        projects.append(project_item)
+        upd = _parse_admin_dt(updated_at)
+        active = _parse_admin_dt(last_active)
+        if upd and (active is None or upd > active):
+            last_active = updated_at
+
+        for entry in entries:
+            prompt_count += 1
+            if entry.get("success") is False:
+                error_count += 1
+            else:
+                success_count += 1
+            usage = entry.get("usage") or {}
+            entry_tokens = int(usage.get("total_tokens") or usage.get("tokens") or 0) if isinstance(usage, dict) else 0
+            tokens_total += entry_tokens
+            cost = entry_effective_cost(entry)
+            if cost is not None:
+                cost_total += float(cost)
+            entry_dt = _parse_admin_dt(entry.get("created_at"))
+            active = _parse_admin_dt(last_active)
+            if entry_dt and (active is None or entry_dt > active):
+                last_active = entry.get("created_at")
+            prompts.append(
+                {
+                    "id": entry.get("id"),
+                    "project_id": pid,
+                    "project_name": project_item["name"],
+                    "prompt": entry.get("prompt") or "",
+                    "prompt_preview": _admin_prompt_preview(entry.get("prompt"), 280),
+                    "success": entry.get("success") is not False,
+                    "error": entry.get("error"),
+                    "kind": entry.get("kind") or "cad",
+                    "created_at": entry.get("created_at"),
+                    "filename": entry.get("filename"),
+                    "model": entry.get("model"),
+                    "prompt_mode": entry.get("prompt_mode") or entry.get("speed"),
+                    "cost_usd": round(float(cost), 6) if cost is not None else None,
+                }
+            )
+
+    projects.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    prompts.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return {
+        "user": {
+            "id": row["id"],
+            "email": row["email"],
+            "display_name": row["display_name"],
+            "created_at": row["created_at"],
+            "avatar_url": row["avatar_url"],
+            "ai_provider": row["ai_provider"],
+            "ai_model": row["ai_model"],
+            "last_active_at": last_active,
+        },
+        "stats": {
+            "project_count": len(projects),
+            "prompt_count": prompt_count,
+            "success_count": success_count,
+            "error_count": error_count,
+            "success_rate": round(success_count / prompt_count, 4) if prompt_count else None,
+            "estimated_cost_usd": round(cost_total, 6),
+            "total_tokens": tokens_total,
+            "model_count": model_count,
+            "training_ready_count": training_ready,
+        },
+        "projects": projects[:40],
+        "recent_prompts": prompts[:40],
+    }
+
+
+@app.get("/api/admin/projects/{project_id}")
+def admin_project_detail(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    """Project model preview payload: GLB/snapshot, prompts, and owner stats hooks."""
+    _require_a1projects_admin(user)
+    from backend.services.ai_cost import entry_effective_cost
+
+    project_path = PROJECTS / project_id
+    if not project_path.is_dir():
+        raise HTTPException(404, "Project not found")
+    owner = _project_owner(project_id) or {}
+    try:
+        meta = project_store.load_meta(project_path)
+    except Exception:
+        meta = {"id": project_id, "name": project_id}
+    try:
+        files = cad_service.list_project_files(project_path)
+    except Exception:
+        files = []
+    latest_file = project_store.latest_model_file(project_path)
+    preview = _admin_preview_assets(project_path, project_id, latest_file)
+    try:
+        entries = prompt_history_service.list_entries(project_path, limit=60)
+    except Exception:
+        entries = []
+    prompts = []
+    for entry in entries:
+        cost = entry_effective_cost(entry)
+        prompts.append(
+            {
+                "id": entry.get("id"),
+                "prompt": entry.get("prompt") or "",
+                "success": entry.get("success") is not False,
+                "error": entry.get("error"),
+                "kind": entry.get("kind") or "cad",
+                "created_at": entry.get("created_at"),
+                "filename": entry.get("filename"),
+                "model": entry.get("model"),
+                "provider": entry.get("provider"),
+                "prompt_mode": entry.get("prompt_mode") or entry.get("speed"),
+                "cost_usd": round(float(cost), 6) if cost is not None else None,
+                "user_name": entry.get("user_name") or owner.get("owner_name"),
+                "references": entry.get("references") or [],
+            }
+        )
+    prompts.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    snapshot_files = sorted(
+        [p.name for p in project_path.glob("*_snapshot_*.png") if p.is_file()],
+        key=lambda name: (project_path / name).stat().st_mtime,
+        reverse=True,
+    )[:8]
+    return {
+        "project": {
+            "id": project_id,
+            "name": meta.get("name") or project_id,
+            "created_at": meta.get("created_at"),
+            "updated_at": meta.get("updated_at"),
+            "file_count": len(files),
+            "latest_file": latest_file,
+            "public": bool(owner.get("is_public")),
+            "owner_user_id": owner.get("created_by"),
+            "owner_name": owner.get("owner_name"),
+            "owner_email": owner.get("owner_email"),
+            "team_id": owner.get("team_id"),
+            "training_ready": bool(preview.get("model_file") and prompts),
+            **preview,
+            "snapshot_urls": [f"/api/projects/{project_id}/files/{name}" for name in snapshot_files],
+        },
+        "files": [
+            {
+                "name": f.get("name"),
+                "format": f.get("format"),
+                "url": f"/api/projects/{project_id}/files/{f.get('name')}",
+            }
+            for f in files[:80]
+        ],
+        "prompts": prompts,
     }
 
 

@@ -7,7 +7,15 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260706-admin-fusion-fix" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-admin-activity" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body class="info-page admin-dashboard-page">
   <div id="app" class="app-info">
@@ -34,7 +42,7 @@
   </div>
 
   <script type="module">
-    import { initAdminDashboard } from "./admin-dashboard.js?v=20260709-admin-matt";
+    import { initAdminDashboard } from "./admin-dashboard.js?v=20260715-admin-activity";
     initAdminDashboard();
   </script>
 </body>
