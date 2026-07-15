@@ -7,9 +7,9 @@ const SHOW_ME_TOURS = {
     studioPath: "/?promptMode=v2&showMe=ai-generate",
     gif: "/docs/media/ai-generate.gif?v=20260715-real",
     steps: [
-      { selector: "#prompt-pane-compose, .prompt-compose-toolbar, #prompt-input, .prompt-editor", label: "AI CAD Prompt" },
-      { selector: '[data-prompt-mode="v2"], .prompt-mode-btn--v2', label: "2.0 mode" },
-      { selector: "#prompt-generate, #btn-generate, button.prompt-generate", label: "Generate" },
+      { selector: "#prompt-pane-compose, .prompt-compose-toolbar, #prompt-input, .prompt-editor", label: "Open the AI CAD prompt", click: false },
+      { selector: '[data-prompt-mode="v2"], .prompt-mode-btn--v2', label: "Click 2.0 mode", click: true },
+      { selector: "#btn-prompt, #prompt-generate, #btn-generate", label: "Generate button (highlight only)", click: false },
     ],
   },
   workspaces: {
@@ -18,7 +18,7 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=workspaces",
     gif: "/docs/media/workspaces.gif?v=20260715-real",
     steps: [
-      { selector: "#btn-auth, .btn-auth, #workspace-picker, .workspace-mode-btn", label: "Account / workspace" },
+      { selector: "#btn-auth, .btn-auth", label: "Click Account", click: true },
     ],
   },
   "share-folders": {
@@ -27,7 +27,7 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=share-folders",
     gif: "/docs/media/share-folder.gif?v=20260715-real",
     steps: [
-      { selector: "#project-browser, .browser-section, .file-browser", label: "Project browser" },
+      { selector: "#project-browser, .browser-section, .file-browser", label: "Project browser — folders live here", click: false },
     ],
   },
   "reference-markup": {
@@ -36,7 +36,7 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=reference-markup",
     gif: "/docs/media/reference-markup.gif?v=20260715-real",
     steps: [
-      { selector: "#project-browser, .browser-section", label: "Project files" },
+      { selector: "#project-browser, .browser-section", label: "Open a PDF/image from Project files", click: false },
     ],
   },
   canvas: {
@@ -45,7 +45,7 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=canvas",
     gif: "/docs/media/canvas.gif?v=20260715-real",
     steps: [
-      { selector: '[data-design-tab="canvas"], #design-tab-canvas, button[data-tab="canvas"]', label: "Canvas tab" },
+      { selector: '[data-design-tab="CANVAS"]', label: "Click Canvas tab", click: true },
     ],
   },
   picks: {
@@ -54,8 +54,8 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=picks",
     gif: "/docs/media/picks.gif?v=20260715-real",
     steps: [
-      { selector: ".ribbon-pick, #pick-face-btn, [data-tool='pick-face']", label: "Pick tools" },
-      { selector: "#prompt-input, .prompt-editor", label: "Prompt" },
+      { selector: "#btn-pick-face", label: "Click Face pick", click: true },
+      { selector: "#prompt-input, .prompt-editor", label: "@face chips land in the prompt", click: false },
     ],
   },
   wiring: {
@@ -64,10 +64,17 @@ const SHOW_ME_TOURS = {
     studioPath: "/?designTab=WIRING&showMe=wiring",
     gif: "/docs/media/wiring.gif?v=20260715-real",
     steps: [
-      { selector: '[data-design-tab="WIRING"], #design-tab-wiring, button[data-tab="WIRING"], .workspace-modes [data-mode="wiring"]', label: "Wiring tab" },
-      { selector: "#project-browser, .browser-section, .file-browser, .browser-item", label: "Project browser — drag your 3D component" },
-      { selector: "#wiring-prompt-input, #wiring-prompt-panel, .wiring-prompt-panel", label: "Wiring prompt — drop the component here" },
-      { selector: "#wiring-workspace, #wiring-canvas, .wiring-canvas, .wiring-stage", label: "Or drop onto the wiring board for pins" },
+      { selector: "#workspace-mode-btn", label: "Open workspace modes", click: true },
+      {
+        selector: "#workspace-mode-menu .workspace-mode-option",
+        matchText: "Wiring",
+        label: "Click Wiring Simulator",
+        click: true,
+        ensureMenu: true,
+      },
+      { selector: "#project-browser, .browser-section, .file-browser", label: "Drag a 3D component from here", click: false },
+      { selector: "#wiring-prompt-input, #wiring-prompt-panel, .wiring-prompt-panel", label: "Drop it into the Wiring prompt", click: false },
+      { selector: "#wiring-workspace, #wiring-canvas, .wiring-canvas, .wiring-stage", label: "Or drop onto the wiring board", click: false },
     ],
   },
   "cloud-sync": {
@@ -76,7 +83,7 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=cloud-sync",
     gif: "/docs/media/cloud-sync.gif?v=20260715-real",
     steps: [
-      { selector: "#fusion-library, #onshape-library, .fusion-panel", label: "Cloud libraries" },
+      { selector: "#fusion-library-section, #fusion-library, .fusion-library-section", label: "Open Fusion library", click: true },
     ],
   },
   "render-agent": {
@@ -85,7 +92,7 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=render-agent",
     gif: "/docs/media/render-agent.gif?v=20260715-real",
     steps: [
-      { selector: "#btn-render-agent, #render-agent-fab", label: "Agent" },
+      { selector: "#btn-render-agent, #render-agent-fab, .render-agent-fab", label: "Click Agent", click: true },
     ],
   },
   "tips-tricks": {
@@ -94,7 +101,7 @@ const SHOW_ME_TOURS = {
     studioPath: "/getting-started.html#tips-library",
     gif: null,
     steps: [
-      { selector: "#tips-library, .gs-tips-section", label: "Tips & tricks library" },
+      { selector: "#tips-library, .gs-tips-section", label: "Tips & tricks library", click: false },
     ],
   },
   "link-to-prompt": {
@@ -103,9 +110,9 @@ const SHOW_ME_TOURS = {
     studioPath: "/?showMe=link-to-prompt",
     gif: "/docs/media/picks.gif?v=20260715-real",
     steps: [
-      { selector: "#project-browser, .browser-section, .file-browser", label: "Project browser — select files" },
-      { selector: "#prompt-input, .prompt-editor, #prompt-pane-compose", label: "AI prompt — drop files here" },
-      { selector: ".ribbon-pick, #pick-face-btn, [data-tool='pick-face']", label: "Pick tools for @face / @edge / @path" },
+      { selector: "#project-browser, .browser-section, .file-browser", label: "Select files in Project browser", click: false },
+      { selector: "#prompt-input, .prompt-editor, #prompt-pane-compose", label: "Drop them into the AI prompt", click: false },
+      { selector: "#btn-pick-face", label: "Or click Face pick for @face chips", click: true },
     ],
   },
 };
@@ -116,14 +123,26 @@ let stepIndex = 0;
 /** @type {"studio" | "docs"} */
 let overlayMode = "studio";
 let overlayBound = false;
+let resizeHandler = null;
 
 function ensureOverlay() {
   let el = document.getElementById("show-me-overlay");
+  if (el && !el.querySelector("#show-me-circle")) {
+    el.remove();
+    el = null;
+    overlayBound = false;
+  }
   if (!el) {
     el = document.createElement("div");
     el.id = "show-me-overlay";
     el.className = "show-me-overlay hidden";
     el.innerHTML = `
+      <div class="show-me-dim" id="show-me-dim" aria-hidden="true"></div>
+      <div class="show-me-circle" id="show-me-circle" aria-hidden="true"></div>
+      <div class="show-me-click" id="show-me-click" aria-hidden="true">
+        <span class="show-me-click-ring"></span>
+        <span class="show-me-click-dot"></span>
+      </div>
       <div class="show-me-card">
         <div class="show-me-card-top">
           <strong id="show-me-title">Show me</strong>
@@ -135,7 +154,6 @@ function ensureOverlay() {
           <button type="button" class="btn accent btn-compact" id="show-me-next">Next</button>
         </div>
       </div>
-      <div class="show-me-spotlight" id="show-me-spotlight" aria-hidden="true"></div>
     `;
     document.body.appendChild(el);
   }
@@ -150,8 +168,18 @@ function ensureOverlay() {
 
 function clearHighlight() {
   document.querySelectorAll(".show-me-target").forEach((n) => n.classList.remove("show-me-target"));
-  const spot = document.getElementById("show-me-spotlight");
-  if (spot) spot.style.cssText = "";
+  const circle = document.getElementById("show-me-circle");
+  const click = document.getElementById("show-me-click");
+  const dim = document.getElementById("show-me-dim");
+  if (circle) {
+    circle.classList.remove("is-on");
+    circle.style.cssText = "";
+  }
+  if (click) {
+    click.classList.remove("is-on", "is-press");
+    click.style.cssText = "";
+  }
+  if (dim) dim.style.opacity = "";
 }
 
 function stopShowMe() {
@@ -161,35 +189,85 @@ function stopShowMe() {
   stepIndex = 0;
   overlayMode = "studio";
   document.getElementById("show-me-overlay")?.classList.add("hidden");
+  if (resizeHandler) {
+    window.removeEventListener("resize", resizeHandler);
+    resizeHandler = null;
+  }
 }
 
-function findFirst(selector) {
-  for (const part of String(selector || "").split(",")) {
-    const el = document.querySelector(part.trim());
-    if (el && el.offsetParent !== null) return el;
-  }
-  for (const part of String(selector || "").split(",")) {
-    const el = document.querySelector(part.trim());
-    if (el) return el;
-  }
-  return null;
+function findFirst(selector, matchText) {
+  const needle = String(matchText || "").trim().toLowerCase();
+  const parts = String(selector || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const tryList = (visibleOnly) => {
+    for (const part of parts) {
+      const nodes = Array.from(document.querySelectorAll(part));
+      for (const el of nodes) {
+        if (visibleOnly && !el.getClientRects().length) continue;
+        if (el.closest?.(".hidden")) continue;
+        if (needle) {
+          const text = `${el.textContent || ""} ${el.getAttribute("title") || ""}`.toLowerCase();
+          if (!text.includes(needle)) continue;
+        }
+        return el;
+      }
+    }
+    return null;
+  };
+
+  return tryList(true) || tryList(false);
+}
+
+function ensureWorkspaceMenuOpen() {
+  const menu = document.getElementById("workspace-mode-menu");
+  if (!menu || !menu.classList.contains("hidden")) return;
+  const btn = document.getElementById("workspace-mode-btn");
+  if (btn) btn.click();
+}
+
+function placeCircle(el) {
+  const circle = document.getElementById("show-me-circle");
+  const click = document.getElementById("show-me-click");
+  const dim = document.getElementById("show-me-dim");
+  if (!el || !circle || !click) return;
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const diameter = Math.max(48, Math.min(180, Math.max(rect.width, rect.height) + 36));
+  circle.style.width = `${diameter}px`;
+  circle.style.height = `${diameter}px`;
+  circle.style.left = `${cx - diameter / 2}px`;
+  circle.style.top = `${cy - diameter / 2}px`;
+  circle.classList.add("is-on");
+  // Hole is cut by the circle's box-shadow; keep base dim subtle when circle is on.
+  if (dim) dim.style.opacity = "0";
+  click.style.left = `${cx}px`;
+  click.style.top = `${cy}px`;
+  click.classList.add("is-on");
 }
 
 function highlight(el, label) {
   clearHighlight();
-  if (!el) return;
-  el.classList.add("show-me-target");
-  el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-  const rect = el.getBoundingClientRect();
-  const spot = document.getElementById("show-me-spotlight");
-  if (spot) {
-    spot.style.left = `${Math.max(8, rect.left - 8)}px`;
-    spot.style.top = `${Math.max(8, rect.top - 8)}px`;
-    spot.style.width = `${Math.max(24, rect.width + 16)}px`;
-    spot.style.height = `${Math.max(24, rect.height + 16)}px`;
-  }
   const stepEl = document.getElementById("show-me-step");
   if (stepEl) stepEl.textContent = label || "Look here";
+  if (!el) {
+    const dim = document.getElementById("show-me-dim");
+    if (dim) dim.style.opacity = "1";
+    return;
+  }
+  el.classList.add("show-me-target");
+  try {
+    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  } catch {
+    /* ignore */
+  }
+  requestAnimationFrame(() => {
+    placeCircle(el);
+    setTimeout(() => placeCircle(el), 220);
+  });
 }
 
 function fillExample(example) {
@@ -208,15 +286,35 @@ function fillExample(example) {
   }
 }
 
-function clickIfSafe(el) {
-  if (!el) return;
+function isClickable(el) {
+  if (!el) return false;
   const tag = (el.tagName || "").toLowerCase();
-  if (tag === "button" || el.getAttribute("role") === "button" || el.classList.contains("nav-tab") || el.classList.contains("prompt-mode-btn")) {
-    try {
+  if (tag === "button" || tag === "a" || tag === "summary") return true;
+  if (el.getAttribute("role") === "button" || el.getAttribute("role") === "tab") return true;
+  if (el.classList.contains("nav-tab") || el.classList.contains("prompt-mode-btn")) return true;
+  if (el.classList.contains("workspace-tab") || el.classList.contains("workspace-mode-btn")) return true;
+  if (el.classList.contains("workspace-mode-option") || el.classList.contains("pick-btn")) return true;
+  if (el.hasAttribute("data-design-tab") || el.hasAttribute("data-prompt-mode") || el.hasAttribute("data-mode")) return true;
+  if (el.hasAttribute("data-tab") || el.hasAttribute("data-tool") || el.hasAttribute("data-panel")) return true;
+  return typeof el.onclick === "function";
+}
+
+function simulateClick(el) {
+  if (!el) return false;
+  const marker = document.getElementById("show-me-click");
+  marker?.classList.remove("is-press");
+  void marker?.offsetWidth;
+  marker?.classList.add("is-press");
+  try {
+    // Prefer native click so listeners that call stopPropagation (workspace menu) work.
+    if (typeof el.click === "function") {
       el.click();
-    } catch {
-      /* ignore */
+      return true;
     }
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -225,9 +323,7 @@ function openDemoGif() {
   const card = activeGuideId ? document.getElementById(activeGuideId) : null;
   const fromCard = card?.querySelector("img[src*='.gif'], video source, img.gs-demo-gif");
   const url = fromCard?.getAttribute?.("src") || tour?.gif;
-  if (url) {
-    window.open(url, "_blank", "noopener");
-  }
+  if (url) window.open(url, "_blank", "noopener");
 }
 
 function onNextClick() {
@@ -251,6 +347,14 @@ function onSkipClick() {
   advanceShowMe(true);
 }
 
+function syncNextLabel() {
+  const nextBtn = document.getElementById("show-me-next");
+  if (!nextBtn || !activeTour) return;
+  const steps = activeTour.steps || [];
+  if (stepIndex >= steps.length) nextBtn.textContent = "Done";
+  else nextBtn.textContent = `Next (${stepIndex + 1}/${steps.length})`;
+}
+
 function advanceShowMe(skipClick) {
   if (!activeTour) {
     stopShowMe();
@@ -263,10 +367,19 @@ function advanceShowMe(skipClick) {
     return;
   }
   const step = steps[stepIndex];
-  const el = findFirst(step.selector);
-  highlight(el, `${stepIndex + 1}/${steps.length}: ${step.label}`);
-  if (!skipClick) clickIfSafe(el);
+  if (step.ensureMenu) ensureWorkspaceMenuOpen();
+  const el = findFirst(step.selector, step.matchText);
+  const n = stepIndex + 1;
+  highlight(el, `${n}/${steps.length}: ${step.label}`);
+  const shouldClick = !skipClick && step.click !== false && (isClickable(el) || step.click === true);
+  if (shouldClick && el) {
+    setTimeout(() => {
+      if (step.ensureMenu) ensureWorkspaceMenuOpen();
+      simulateClick(el);
+    }, 320);
+  }
   stepIndex += 1;
+  syncNextLabel();
   if (stepIndex >= steps.length) {
     fillExample(activeTour.example);
     const nextBtn = document.getElementById("show-me-next");
@@ -292,24 +405,29 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
   overlay?.classList.remove("hidden");
   document.getElementById("show-me-title").textContent = tour.title;
 
+  if (!resizeHandler) {
+    resizeHandler = () => {
+      const target = document.querySelector(".show-me-target");
+      if (target) placeCircle(target);
+    };
+    window.addEventListener("resize", resizeHandler);
+  }
+
   if (onDocsPage) {
     overlayMode = "docs";
     const card = document.getElementById(guideId);
-    if (card) {
-      highlight(card, `${tour.title} — guide on this page`);
-    } else {
-      clearHighlight();
-    }
+    if (card) highlight(card, `${tour.title} — guide on this page`);
+    else clearHighlight();
     document.getElementById("show-me-step").textContent =
-      "Use Open Studio for a live UI walkthrough, or Watch demo GIF for the looping preview.";
+      "Open Studio for a live click-through, or watch the demo GIF.";
     if (nextBtn) nextBtn.textContent = "Open Studio walkthrough";
     if (skipBtn) skipBtn.textContent = tour.gif ? "Watch demo GIF" : "Close";
     return true;
   }
 
   overlayMode = "studio";
-  if (nextBtn) nextBtn.textContent = "Next";
-  if (skipBtn) skipBtn.textContent = "Skip";
+  if (skipBtn) skipBtn.textContent = "Skip step";
+  syncNextLabel();
   advanceShowMe(false);
   return true;
 }
@@ -317,7 +435,10 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
 export function maybeAutoStartShowMeFromQuery() {
   const id = new URLSearchParams(window.location.search).get("showMe");
   if (!id) return;
-  const clean = `${window.location.pathname}${window.location.hash || ""}`;
+  const params = new URLSearchParams(window.location.search);
+  params.delete("showMe");
+  const qs = params.toString();
+  const clean = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}`;
   window.history.replaceState({}, "", clean || "/");
-  setTimeout(() => startShowMe(id, { onDocsPage: false }), 700);
+  setTimeout(() => startShowMe(id, { onDocsPage: false }), 900);
 }

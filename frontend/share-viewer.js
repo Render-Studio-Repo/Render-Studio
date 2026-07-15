@@ -460,10 +460,10 @@ async function main() {
     return objectMeshes(root).filter((mesh) => mesh.visible !== false);
   }
 
-  function closestNamedObject(mesh) {
+  function closestTransparentTarget(mesh) {
     let cur = mesh;
     while (cur && cur !== root) {
-      if (objectEntries.some((entry) => entry.obj === cur)) return cur;
+      if (objectEntries.some((entry) => entry.obj === cur) && objectMeshes(cur).length) return cur;
       cur = cur.parent;
     }
     return mesh;
@@ -743,8 +743,8 @@ async function main() {
 
   btnTransparent?.addEventListener("click", () => {
     transparentPickEnabled = !transparentPickEnabled;
-    controls.enabled = !transparentPickEnabled;
-    renderer.domElement.style.cursor = transparentPickEnabled ? "crosshair" : "";
+    controls.enabled = true;
+    renderer.domElement.style.cursor = transparentPickEnabled ? "copy" : "";
     if (transparentPickEnabled) setAutoRotate(false);
     btnTransparent.classList.toggle("active", transparentPickEnabled);
     btnTransparent.setAttribute("aria-pressed", String(transparentPickEnabled));
@@ -911,40 +911,49 @@ async function main() {
 
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
+  let transparentPointerStart = null;
 
-  function stopTransparentPointerEvent(event) {
-    if (!transparentPickEnabled) return false;
-    if (event.button != null && event.button !== 0) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation?.();
-    return true;
+  function rememberTransparentPointer(event) {
+    if (!transparentPickEnabled || event.target !== renderer.domElement) return;
+    if (event.button != null && event.button !== 0) return;
+    transparentPointerStart = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      t: performance.now(),
+    };
   }
 
   function pickTransparentObject(event) {
     if (!transparentPickEnabled || event.target !== renderer.domElement) return;
-    if (!stopTransparentPointerEvent(event)) return;
+    if (event.button != null && event.button !== 0) return;
+    const start = transparentPointerStart;
+    transparentPointerStart = null;
+    if (!start || start.id !== event.pointerId) return;
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    const elapsed = performance.now() - start.t;
+    // Treat a short, steady tap/click as selection; let drags continue to OrbitControls.
+    if (moved > 7 || elapsed > 900) return;
     const rect = renderer.domElement.getBoundingClientRect();
     pointerNdc.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
     pointerNdc.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
     raycaster.setFromCamera(pointerNdc, camera);
-    const hit = raycaster.intersectObjects(allPickableMeshes(), true)[0];
+    const hits = raycaster.intersectObjects(allPickableMeshes(), true);
+    const hit = hits.find((item) => item?.object && objectMeshes(item.object).length) || hits[0];
     if (!hit?.object) return;
-    const target = closestNamedObject(hit.object);
+    event.preventDefault();
+    const target = closestTransparentTarget(hit.object);
     setObjectTransparent(target, !transparentObjects.has(target));
   }
 
-  function blockTransparentPointer(event) {
-    if (transparentPickEnabled && event.target === renderer.domElement) {
-      stopTransparentPointerEvent(event);
-    }
+  function clearTransparentPointer(event) {
+    if (transparentPointerStart?.id === event.pointerId) transparentPointerStart = null;
   }
 
-  // Attach to the parent in capture phase so OrbitControls never receives
-  // transparent-tool clicks first.
-  viewerEl.addEventListener("pointerdown", pickTransparentObject, true);
-  viewerEl.addEventListener("pointerup", blockTransparentPointer, true);
-  viewerEl.addEventListener("pointermove", blockTransparentPointer, true);
+  // Keep OrbitControls live in transparent mode: drags rotate; steady clicks toggle parts.
+  viewerEl.addEventListener("pointerdown", rememberTransparentPointer, true);
+  viewerEl.addEventListener("pointerup", pickTransparentObject, true);
+  viewerEl.addEventListener("pointercancel", clearTransparentPointer, true);
 
   function syncSectionUi(on) {
     btnSection?.classList.toggle("active", on);

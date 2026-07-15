@@ -1,25 +1,34 @@
 /** Getting Started feature guides for Docs. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-link-prompt";
+import {
+  GETTING_STARTED_GUIDES,
+  guidesByCategory,
+} from "./getting-started-guides.js?v=20260715-docs-catalog";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-link-prompt";
-import { startShowMe } from "./show-me-tour.js?v=20260715-link-prompt";
+import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-circle";
+import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle";
 
 const FEATURES = GETTING_STARTED_GUIDES;
 
 const TOC_LABELS = {
   "ai-generate": "AI Generate",
+  "multi-gen": "Parallel gens",
   workspaces: "Workspaces",
   "share-folders": "Share folders",
   "reference-markup": "Reference markup",
+  "solid-tools": "Solid tools",
   canvas: "Canvas",
+  sketch: "Sketch",
+  "rigging-urdf": "URDF / Motion",
   picks: "Geometry picks",
+  "link-to-prompt": "Link to prompt",
   wiring: "Wiring",
   "cloud-sync": "Fusion / Onshape",
   "render-agent": "Render Agent",
-  "link-to-prompt": "Link to prompt",
-  "tips-library": "Tips & tricks",
+  preferences: "Preferences",
+  "tips-tricks": "Tips & tricks",
+  "tips-library": "Tips library",
 };
 
 function esc(value) {
@@ -127,29 +136,40 @@ async function api(path, options = {}, timeoutMs = 60000) {
 function mountToc() {
   const host = document.getElementById("gs-toc");
   if (!host) return;
+  const cats = guidesByCategory();
   host.innerHTML = `
     <p class="gs-toc-title">On this page</p>
-    ${FEATURES.map((f) => `
-      <a href="#${esc(f.id)}" data-gs-toc="${esc(f.id)}">${esc(TOC_LABELS[f.id] || f.title)}</a>
+    <a class="gs-toc-docs" href="/docs.html#complete-docs">Complete documentation</a>
+    ${cats.map((cat) => `
+      <div class="gs-toc-group">
+        <p class="gs-toc-group-title">${esc(cat.title)}</p>
+        ${cat.guides.map((f) => `
+          <a href="#${esc(f.id)}" data-gs-toc="${esc(f.id)}">${esc(TOC_LABELS[f.id] || f.title)}</a>
+        `).join("")}
+      </div>
     `).join("")}
-    <a href="#tips-library" data-gs-toc="tips-library">${esc(TOC_LABELS["tips-library"])}</a>
+    <a href="#tips-library" data-gs-toc="tips-library">${esc(TOC_LABELS["tips-library"] || "Tips library")}</a>
   `;
 }
 
 function mountFeatures() {
   const host = document.getElementById("gs-features");
   if (!host) return;
-  host.innerHTML = FEATURES.map((f, i) => featureCard(f, i)).join("");
+  let index = 0;
+  const cats = guidesByCategory();
+  host.innerHTML = cats.map((cat) => `
+    <section class="gs-category" id="cat-${esc(cat.id)}" data-gs-category="${esc(cat.id)}">
+      <header class="gs-category-head">
+        <p class="gs-category-kicker">Category</p>
+        <h3 class="gs-category-title">${esc(cat.title)}</h3>
+      </header>
+      ${cat.guides.map((f) => featureCard(f, index++)).join("")}
+    </section>
+  `).join("");
   host.querySelectorAll(".gs-demo-gif").forEach((img) => {
-    img.addEventListener("error", () => {
-      img.remove();
-    });
-    img.addEventListener("load", () => {
-      img.closest(".gs-demo")?.classList.add("has-gif");
-    });
-    if (img.complete && img.naturalWidth) {
-      img.closest(".gs-demo")?.classList.add("has-gif");
-    }
+    img.addEventListener("error", () => { img.remove(); });
+    img.addEventListener("load", () => { img.closest(".gs-demo")?.classList.add("has-gif"); });
+    if (img.complete && img.naturalWidth) img.closest(".gs-demo")?.classList.add("has-gif");
   });
 }
 
@@ -160,7 +180,7 @@ function mountTips() {
 }
 
 function mountReveal() {
-  const nodes = document.querySelectorAll(".gs-feature, .gs-tips-section, .gs-closing, .gs-hero, .gs-create");
+  const nodes = document.querySelectorAll(".gs-feature, .gs-category, .gs-tips-section, .gs-closing, .gs-hero, .gs-create");
   if (!("IntersectionObserver" in window)) {
     nodes.forEach((el) => el.classList.add("is-visible"));
     return;
@@ -394,6 +414,13 @@ function syncDocsCategoryTabs() {
       active = true;
     }
     tab.classList.toggle("active", active);
+  });
+  document.querySelectorAll(".toolbar-nav-menu .nav-tab").forEach((tab) => {
+    const href = tab.getAttribute("href") || "";
+    const isTips = href.includes("tips-library");
+    const isDocs = href.endsWith("/docs.html") || href === "/docs.html";
+    if (isTips) tab.classList.toggle("active", hash === "tips-library");
+    if (isDocs) tab.classList.toggle("active", hash !== "tips-library");
   });
 }
 syncDocsCategoryTabs();

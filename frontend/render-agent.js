@@ -6,7 +6,7 @@ import {
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-link-prompt";
-import { startShowMe } from "./show-me-tour.js?v=20260715-link-prompt";
+import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";

@@ -65,7 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-inbox";
-import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-fix";
+import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-circle";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -19887,17 +19887,19 @@ window.addEventListener("keydown", (e) => {
   }
   if (designTabParam) {
     const tab = String(designTabParam).toUpperCase();
-    if (["SOLID", "SKETCH", "WIRING", "CANVAS", "RIGGING", "ARCHITECT", "CATALOG"].includes(tab)) {
-      try {
+    try {
+      if (tab === "WIRING") {
+        workspaceModes.setMode("wiring");
+      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "CATALOG"].includes(tab)) {
         workspaceModes.setDesignTab(tab);
         ribbon?.setDesignTab?.(tab);
-      } catch {
-        /* ignore until modes ready */
       }
+    } catch {
+      /* ignore until modes ready */
     }
   }
   if (showMeParam) {
-    void import("./show-me-tour.js?v=20260715-show-me-fix").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-show-me-circle").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }

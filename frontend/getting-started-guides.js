@@ -1,295 +1,389 @@
 /** Shared Getting Started feature guides + GIF catalog for Docs and Render Agent. */
 
 export const GETTING_STARTED_CATEGORIES = [
-  { id: "ai-cad", title: "AI CAD" },
-  { id: "projects", title: "Projects & collaboration" },
-  { id: "modeling", title: "Modeling & viewport" },
-  { id: "sketch-canvas", title: "Sketch & Canvas" },
-  { id: "rigging", title: "Rigging & motion" },
-  { id: "wiring", title: "Wiring" },
-  { id: "cloud", title: "Cloud CAD" },
-  { id: "help", title: "Help & preferences" },
+  {
+    "id": "ai-cad",
+    "title": "AI CAD & prompting"
+  },
+  {
+    "id": "projects",
+    "title": "Projects & collaboration"
+  },
+  {
+    "id": "modeling",
+    "title": "Solid modeling & viewport"
+  },
+  {
+    "id": "sketch-canvas",
+    "title": "Sketch & Canvas"
+  },
+  {
+    "id": "rigging",
+    "title": "Rigging & motion"
+  },
+  {
+    "id": "wiring",
+    "title": "Wiring & electronics"
+  },
+  {
+    "id": "cloud",
+    "title": "Import, export & cloud CAD"
+  },
+  {
+    "id": "architect",
+    "title": "Architect & catalog"
+  },
+  {
+    "id": "help",
+    "title": "Help, preferences & skills"
+  }
 ];
-
-const GIF = {
-  ai: "/docs/media/ai-generate.gif?v=20260715-real",
-  workspaces: "/docs/media/workspaces.gif?v=20260715-real",
-  share: "/docs/media/share-folder.gif?v=20260715-real",
-  markup: "/docs/media/reference-markup.gif?v=20260715-real",
-  canvas: "/docs/media/canvas.gif?v=20260715-real",
-  picks: "/docs/media/picks.gif?v=20260715-real",
-  wiring: "/docs/media/wiring.gif?v=20260715-real",
-  cloud: "/docs/media/cloud-sync.gif?v=20260715-real",
-  agent: "/docs/media/render-agent.gif?v=20260715-real",
-};
 
 export const GETTING_STARTED_GUIDES = [
   {
-    id: "ai-generate",
-    category: "ai-cad",
-    title: "Generate CAD with AI",
-    demo: "generate",
-    gif: GIF.ai,
-    summary: "Describe a part in the prompt panel and Generate creates geometry in your project.",
-    steps: [
-      "Open a project (or create one) in the left explorer.",
-      "Write a clear prompt: size, units, and what the part does.",
-      "Optional: attach images, DXF, or @component references.",
-      "Choose a mode (Render / 2.0 / Fusion) and click Generate.",
-      "Revise with follow-ups instead of restarting from scratch.",
+    "id": "ai-generate",
+    "category": "ai-cad",
+    "title": "Generate CAD with AI",
+    "demo": "generate",
+    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
+    "summary": "Describe a part; Generate builds geometry into the open project.",
+    "steps": [
+      "Open or create a project in the left explorer.",
+      "Write size, units, and what the part does.",
+      "Optional: attach images, DXF, or @component refs.",
+      "Pick Render / 2.0 / Fusion and click Generate.",
+      "Revise with follow-ups instead of restarting."
     ],
-    ask: "How do I write a strong first CAD generate prompt in Render3D, and when should I use Render vs 2.0 vs Fusion mode?",
-    keywords: [
-      "generate", "prompt", "cad generate", "ai generate", "first prompt",
-      "render mode", "2.0", "fusion mode", "modify with ai", "quality", "speed",
+    "ask": "How do I write a strong first CAD generate prompt?",
+    "keywords": [
+      "generate",
+      "prompt",
+      "ai generate",
+      "render mode",
+      "2.0",
+      "fusion"
     ],
+    "where": "Right panel \u2192 AI \u2192 Compose"
   },
   {
-    id: "multi-gen",
-    category: "ai-cad",
-    title: "Parallel generations",
-    demo: "generate",
-    gif: GIF.ai,
-    summary: "Run multiple CAD prompts at once (up to 5). Stop one job or all from the viewport banner.",
-    steps: [
-      "Start Generate while another job is still running.",
-      "Watch per-prompt progress rows in the viewport banner.",
-      "Click View more for details; Stop opens a picker when several are running.",
+    "id": "multi-gen",
+    "category": "ai-cad",
+    "title": "Parallel generations",
+    "demo": "generate",
+    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
+    "summary": "Run up to five CAD prompts at once; stop one or all from the viewport banner.",
+    "steps": [
+      "Start a Generate while another is still running.",
+      "Watch skinny progress rows in the viewport banner.",
+      "Use View more for details; Stop opens a picker when several run."
     ],
-    ask: "How do parallel CAD generations and Stop generating work?",
-    keywords: ["parallel", "multi gen", "stop generating", "multiple prompts", "banner"],
+    "ask": "How do parallel CAD generations and Stop work?",
+    "keywords": [
+      "parallel",
+      "multi gen",
+      "stop generating",
+      "multiple prompts"
+    ],
+    "where": "AI Compose + viewport generation overlay"
   },
   {
-    id: "picks",
-    category: "ai-cad",
-    title: "Pick faces, edges & paths",
-    demo: "picks",
-    gif: GIF.picks,
-    summary: "Click geometry into the prompt as @face / @edge / @path so edits land on the right feature.",
-    steps: [
-      "Select a pick mode (face, edge, line path, etc.) in the toolbar.",
-      "Click the geometry on the model.",
-      "A chip like @face-1 appears in the prompt.",
-      "Write the edit: “fillet @face-1 2 mm” and Generate.",
+    "id": "picks",
+    "category": "ai-cad",
+    "title": "Pick faces, edges & paths",
+    "demo": "picks",
+    "gif": "/docs/media/picks.gif?v=20260715-real",
+    "summary": "Click geometry into the prompt as @face / @edge / @path chips.",
+    "steps": [
+      "Choose Face, Edge, Line/path, or related pick mode.",
+      "Click the model \u2014 a chip appears in the prompt.",
+      "Write the edit, e.g. \u201cfillet @face-1 2 mm\u201d, then Generate."
     ],
-    ask: "How do geometry picks and @face / @path references work in the AI prompt?",
-    keywords: ["@face", "@edge", "@path", "pick", "geometry pick", "face pick", "edge pick"],
+    "ask": "How do geometry picks and @face references work?",
+    "keywords": [
+      "@face",
+      "@edge",
+      "@path",
+      "pick",
+      "geometry"
+    ],
+    "where": "Top toolbar pick modes + AI prompt"
   },
   {
-    id: "workspaces",
-    category: "projects",
-    title: "Workspaces & teammates",
-    demo: "workspaces",
-    gif: GIF.workspaces,
-    summary: "Shared workspaces keep projects, folders, and invites in one place for your team.",
-    steps: [
-      "Open the account / workspace menu and pick or create a workspace.",
-      "Invite coworkers by email — they need an account (or get an invite).",
-      "Projects in that workspace sync live for members who are online.",
-      "Switch workspaces anytime from the same menu.",
+    "id": "link-to-prompt",
+    "category": "ai-cad",
+    "title": "Link project items to the prompt",
+    "demo": "picks",
+    "gif": "/docs/media/picks.gif?v=20260715-real",
+    "summary": "Shift-select files in the Project browser and drag them into the AI prompt as @component references.",
+    "steps": [
+      "In the Project browser, click one file, then Shift-click another to select a range.",
+      "Drag the selection into the AI prompt box \u2014 reference chips appear.",
+      "Combine with @face / @edge / @path picks for precise edits."
     ],
-    ask: "How do workspaces, invites, and live collaboration work in Render3D?",
-    keywords: [
-      "workspace", "workspaces", "teammate", "invite", "collaboration", "team",
-      "shared workspace", "coworkers",
+    "ask": "How do I link project files and geometry into the AI prompt with @component and picks?",
+    "keywords": [
+      "link to prompt",
+      "drag to prompt",
+      "@component",
+      "project browser",
+      "shift select",
+      "attach files",
+      "reference chips"
     ],
+    "where": "Project browser \u2192 drag into AI prompt"
   },
   {
-    id: "share-folders",
-    category: "projects",
-    title: "Share a private folder",
-    demo: "share",
-    gif: GIF.share,
-    summary: "Keep folders private, then share with specific teammates so they appear instantly in their explorer.",
-    steps: [
-      "Right-click a folder → Share.",
-      "Pick a team member from the dropdown (no need to retype their email).",
-      "Leave Private checked so only people you share with can see it.",
-      "They see the folder live — no refresh required.",
+    "id": "workspaces",
+    "category": "projects",
+    "title": "Workspaces & teammates",
+    "demo": "workspaces",
+    "gif": "/docs/media/workspaces.gif?v=20260715-real",
+    "summary": "Shared workspaces keep projects, folders, and invites together.",
+    "steps": [
+      "Create or switch a workspace from the account menu.",
+      "Invite coworkers by email.",
+      "Projects sync live for members who are online."
     ],
-    ask: "How do I share a private folder with a teammate, and what do they see on their side?",
-    keywords: [
-      "share folder", "private folder", "folder share", "share with", "explorer folder",
+    "ask": "How do workspaces and invites work?",
+    "keywords": [
+      "workspace",
+      "invite",
+      "team",
+      "collaboration"
     ],
+    "where": "Account menu \u2192 Team workspaces"
   },
   {
-    id: "reference-markup",
-    category: "projects",
-    title: "Reference files, pen markup & Send to AI",
-    demo: "markup",
-    gif: GIF.markup,
-    summary: "Drop PDFs or images into a project, draw on them, add notes, then send markups into the AI prompt.",
-    steps: [
-      "Drag a PDF or image into the project (or upload under Reference Files).",
-      "It opens in a Docs-style tab beside the 3D viewport.",
-      "Click Pen to draw callouts; write notes in the right panel.",
-      "Click Save, then Send to AI — marked image + notes go into the prompt.",
-      "Or use the AI button on the file in the project browser.",
+    "id": "share-folders",
+    "category": "projects",
+    "title": "Share a private folder",
+    "demo": "share",
+    "gif": "/docs/media/share-folder.gif?v=20260715-real",
+    "summary": "Folders stay private until you share them with specific teammates.",
+    "steps": [
+      "Right-click a folder \u2192 Share.",
+      "Pick a teammate from the dropdown.",
+      "Keep Private checked so only sharees see it."
     ],
-    ask: "How do reference file tabs, pen markup on PDFs/images, notes, and Send to AI work together?",
-    keywords: [
-      "reference", "markup", "pen", "pdf", "send to ai", "annotate", "drawing on",
-      "reference file", "notes",
+    "ask": "How do I share a private folder?",
+    "keywords": [
+      "share folder",
+      "private folder"
     ],
+    "where": "Explorer \u2192 right-click folder \u2192 Share"
   },
   {
-    id: "solid-tools",
-    category: "modeling",
-    title: "Solid modeling tools",
-    demo: "picks",
-    gif: GIF.picks,
-    summary: "Use the SOLID tab ribbon and Tools panel for extrude, Press-Pull, fillet, transform, color, and measure.",
-    steps: [
+    "id": "reference-markup",
+    "category": "projects",
+    "title": "Reference files, pen markup & Send to AI",
+    "demo": "markup",
+    "gif": "/docs/media/reference-markup.gif?v=20260715-real",
+    "summary": "Open PDFs/images in tabs, mark them up, and push callouts into the CAD prompt.",
+    "steps": [
+      "Drop a PDF or image into the project.",
+      "Open the Docs-style tab and use Pen + notes.",
+      "Save, then Send to AI."
+    ],
+    "ask": "How do reference markup and Send to AI work?",
+    "keywords": [
+      "reference",
+      "markup",
+      "pdf",
+      "send to ai"
+    ],
+    "where": "Document tabs \u00b7 Pen \u00b7 Send to AI"
+  },
+  {
+    "id": "solid-tools",
+    "category": "modeling",
+    "title": "Solid modeling tools",
+    "demo": "picks",
+    "gif": "/docs/media/picks.gif?v=20260715-real",
+    "summary": "Ribbon Create/Modify/Pattern plus direct tools: Press-Pull, fillet, transform, color, measure.",
+    "steps": [
       "Switch to the SOLID design tab.",
-      "Use Ribbon Create / Modify / Pattern for features.",
-      "Open Right → Tools for Press-Pull, Transform (G), Color, Measure, Split.",
-      "Toggle Section, Grid, Transparent, and Fit as needed.",
+      "Use Ribbon Create for primitives and features.",
+      "Use Tools for Press-Pull, Transform (G), Color, Measure, Split."
     ],
-    ask: "What solid modeling tools and viewport controls should I learn first?",
-    keywords: ["solid", "press-pull", "fillet", "extrude", "transform", "gizmo", "measure", "section"],
+    "ask": "What solid modeling tools are available?",
+    "keywords": [
+      "solid",
+      "press-pull",
+      "fillet",
+      "extrude",
+      "transform",
+      "gizmo"
+    ],
+    "where": "SOLID tab \u00b7 Ribbon \u00b7 Right Tools"
   },
   {
-    id: "canvas",
-    category: "sketch-canvas",
-    title: "Canvas sketch mode",
-    demo: "canvas",
-    gif: GIF.canvas,
-    summary: "Sketch freely on the Canvas design tab, then attach the sketch to your AI prompt.",
-    steps: [
-      "In Design, switch to the CANVAS tab.",
-      "Draw your concept with the canvas tools.",
-      "Use Attach / Prompt to drop the sketch into the AI compose panel.",
-      "Generate a 3D model that follows the sketch.",
+    "id": "sketch",
+    "category": "sketch-canvas",
+    "title": "Constrained Sketch",
+    "demo": "canvas",
+    "gif": "/docs/media/canvas.gif?v=20260715-real",
+    "summary": "2D sketch on a plane with constraints, then extrude to solid.",
+    "steps": [
+      "Open SKETCH and create a sketch on XY/XZ/YZ or a face.",
+      "Draw with Line/Rect/Circle and add constraints.",
+      "Finish Sketch, then Extrude (new/add/cut)."
     ],
-    ask: "How do I use Canvas mode and attach a sketch to the AI CAD prompt?",
-    keywords: ["canvas", "sketch", "canvas mode", "attach sketch", "design tab canvas"],
+    "ask": "How do I create and extrude a constrained sketch?",
+    "keywords": [
+      "sketch",
+      "constraint",
+      "extrude sketch"
+    ],
+    "where": "Design tabs \u2192 SKETCH"
   },
   {
-    id: "sketch",
-    category: "sketch-canvas",
-    title: "Constrained Sketch",
-    demo: "canvas",
-    gif: GIF.canvas,
-    summary: "Create a constrained 2D sketch on a plane, then extrude it into a solid.",
-    steps: [
-      "Open the SKETCH design tab and start a sketch on XY/XZ/YZ or a face.",
-      "Draw with Line, Rectangle, Circle; add constraints and dimensions.",
-      "Finish Sketch, then Extrude (new / add / cut).",
+    "id": "canvas",
+    "category": "sketch-canvas",
+    "title": "Canvas sketch mode",
+    "demo": "canvas",
+    "gif": "/docs/media/canvas.gif?v=20260715-real",
+    "summary": "Freehand concept pad \u2014 attach the sketch to AI Compose.",
+    "steps": [
+      "Switch to CANVAS.",
+      "Draw with pen/shapes.",
+      "Attach / Prompt to send into AI Compose, then Generate."
     ],
-    ask: "How do I create a constrained sketch and extrude it?",
-    keywords: ["sketch tab", "constraints", "extrude sketch", "dimension"],
+    "ask": "How do I use Canvas and attach a sketch to AI?",
+    "keywords": [
+      "canvas",
+      "attach sketch"
+    ],
+    "where": "Design tabs \u2192 CANVAS"
   },
   {
-    id: "rigging-urdf",
-    category: "rigging",
-    title: "Rigging, URDF / SRDF & Motion",
-    demo: "generate",
-    gif: GIF.ai,
-    summary: "GLB shows the shape; URDF/SRDF drive simulation. Author Jake generators, then open Motion.",
-    steps: [
-      "Build the solid on SOLID, then open RIGGING.",
-      "Switch to URDF / SRDF mode in the Rigging panel.",
-      "Select the CAD Python source → Author URDF/SRDF with AI (Jake) or Generate.",
-      "Inspect the link/joint tree, then Open URDF / SRDF Motion.",
-      "After generate, if the model looks articulated, accept the simulated-motion popup (Preferences can remember your choice).",
+    "id": "rigging-urdf",
+    "category": "rigging",
+    "title": "URDF / SRDF & Motion",
+    "demo": "generate",
+    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
+    "summary": "GLB shows shape; URDF/SRDF drive simulation. Author Jake gen_urdf()/gen_srdf(), then open Motion.",
+    "steps": [
+      "In Rigging, switch to URDF / SRDF mode.",
+      "Select the CAD Python source.",
+      "Author with AI (Jake) or Generate URDF/SRDF.",
+      "Inspect the link/joint tree, then Open URDF / SRDF Motion."
     ],
-    ask: "How do I generate URDF/SRDF for a robot and open the Motion workbench?",
-    keywords: [
-      "rigging", "urdf", "srdf", "motion", "jake", "gen_urdf", "gen_srdf",
-      "simulated motion", "bones", "joints",
+    "ask": "How do I generate URDF/SRDF and open Motion?",
+    "keywords": [
+      "urdf",
+      "srdf",
+      "motion",
+      "jake",
+      "gen_urdf",
+      "simulated motion"
     ],
+    "where": "Rigging \u2192 URDF/SRDF mode \u00b7 Motion workbench"
   },
   {
-    id: "wiring",
-    category: "wiring",
-    title: "Wiring Simulator",
-    demo: "wiring",
-    gif: GIF.wiring,
-    summary: "Switch to Wiring to breadboard circuits, link CAD parts into the wiring prompt, and validate drivers.",
-    steps: [
-      "Open your project and switch to the WIRING design tab.",
-      "To link a 3D model to the Wiring AI prompt: drag the component from the left project browser into the Wiring prompt box — a reference chip appears.",
-      "Or drop the component onto the wiring board to place it as a part with pins.",
-      "Describe the circuit in the wiring prompt and Generate.",
-      "Wire pin-to-pin; run validation for motors/drivers. Optional: attach a breadboard photo.",
+    "id": "wiring",
+    "category": "wiring",
+    "title": "Wiring Simulator",
+    "demo": "wiring",
+    "gif": "/docs/media/wiring.gif?v=20260715-real",
+    "summary": "Breadboard circuits from AI, wire pin-to-pin, validate drivers, code & simulate.",
+    "steps": [
+      "Switch to Wiring mode.",
+      "Drag a 3D part into the wiring prompt or board.",
+      "Describe the circuit and Generate.",
+      "Wire pins; open Code & Simulate when ready."
     ],
-    ask: "How do I use the Wiring Simulator, including linking a 3D model to the wiring prompt, AI generate, and validation?",
-    keywords: [
-      "wiring", "wire", "wirign", "wireing", "circuit", "breadboard", "wiring simulator",
-      "gpio", "schematic", "arduino", "esp32", "wiring prompt", "link model", "3d model",
-      "drag component", "component reference", "wiring canvas",
+    "ask": "How do I use the Wiring Simulator?",
+    "keywords": [
+      "wiring",
+      "breadboard",
+      "circuit",
+      "gpio"
     ],
+    "where": "Workspace \u2192 Wiring Simulator"
   },
   {
-    id: "cloud-sync",
-    category: "cloud",
-    title: "Fusion 360 & Onshape sync",
-    demo: "cloud",
-    gif: GIF.cloud,
-    summary: "Connect cloud CAD libraries so you can import and push models without leaving Studio.",
-    steps: [
-      "Open the Fusion or Onshape library panel in the left sidebar.",
-      "Sign in / connect when prompted.",
-      "Browse, import into a project, or push local changes back.",
-      "Use Fusion prompt mode when you want Fusion-oriented generation.",
+    "id": "cloud-sync",
+    "category": "cloud",
+    "title": "Fusion 360 & Onshape sync",
+    "demo": "cloud",
+    "gif": "/docs/media/cloud-sync.gif?v=20260715-real",
+    "summary": "Connect cloud libraries to import and push without leaving Studio.",
+    "steps": [
+      "Connect Fusion or Onshape from Account \u2192 Cloud.",
+      "Browse the left library panel and import into a project.",
+      "Push local changes back when needed."
     ],
-    ask: "How do I connect Fusion 360 or Onshape and import or push models in Render3D?",
-    keywords: ["fusion", "onshape", "cloud sync", "import fusion", "push to fusion", "autodesk"],
+    "ask": "How do I connect Fusion or Onshape?",
+    "keywords": [
+      "fusion",
+      "onshape",
+      "cloud"
+    ],
+    "where": "Left Fusion / Onshape libraries \u00b7 Account cloud connections"
   },
   {
-    id: "render-agent",
-    category: "help",
-    title: "Render Agent help chat",
-    demo: "agent",
-    gif: GIF.agent,
-    summary: "The ribbon Agent button opens a chat for tooling, workflows, and project questions — separate from CAD Generate.",
-    steps: [
-      "Click Agent in the ribbon (or use Ask Render Agent from Getting Started).",
-      "Ask about tools, folders, Fusion, wiring, prompts, etc.",
-      "Attach screenshots or files when helpful.",
-      "Invite teammates into a thread for shared troubleshooting.",
+    "id": "render-agent",
+    "category": "help",
+    "title": "Render Agent help chat",
+    "demo": "agent",
+    "gif": "/docs/media/render-agent.gif?v=20260715-real",
+    "summary": "Product help (not CAD Generate) \u2014 tools, Fusion, workflows, with demo GIFs.",
+    "steps": [
+      "Click Agent in the ribbon (or Ask Agent on Getting Started).",
+      "Ask about tools, folders, Fusion, wiring, prompts.",
+      "Attach screenshots when helpful."
     ],
-    ask: "What can Render Agent help with, and how is it different from the CAD Generate prompt?",
-    keywords: ["render agent", "help chat", "ask agent", "assistant", "agent button"],
+    "ask": "What can Render Agent help with?",
+    "keywords": [
+      "render agent",
+      "ask agent",
+      "help"
+    ],
+    "where": "Ribbon Agent \u00b7 Getting Started Ask Agent"
   },
   {
-    id: "preferences",
-    category: "help",
-    title: "Preferences & simulated motion",
-    demo: "agent",
-    gif: GIF.agent,
-    summary: "Set mouse controls, theme, and whether to ask for URDF/SRDF after articulated CAD generates.",
-    steps: [
-      "Open Account → Preferences.",
-      "Choose mouse preset and dark/light appearance.",
-      "Under Simulated motion, pick Ask each time, Always URDF/SRDF, or Never ask.",
-      "You can also remember a choice from the post-generate popup.",
+    "id": "preferences",
+    "category": "help",
+    "title": "Preferences, theme & mouse",
+    "demo": "agent",
+    "gif": "/docs/media/render-agent.gif?v=20260715-real",
+    "summary": "Avatar, mouse presets, dark/light theme, and simulated-motion after generate.",
+    "steps": [
+      "Open Preferences from the account menu.",
+      "Set mouse controls and appearance.",
+      "Choose Simulated motion: ask / always URDF\u00b7SRDF / never."
     ],
-    ask: "Where do I change Preferences and the simulated-motion after-generate setting?",
-    keywords: ["preferences", "theme", "mouse", "simulated motion", "settings"],
+    "ask": "Where do I change Preferences and simulated-motion defaults?",
+    "keywords": [
+      "preferences",
+      "theme",
+      "mouse",
+      "simulated motion"
+    ],
+    "where": "Account \u2192 Preferences"
   },
   {
-    id: "tips-tricks",
-    category: "help",
-    title: "Tips and tricks",
-    demo: "tips",
-    gif: GIF.ai,
-    summary: "Fast workflow habits that make prompts, references, collaboration, and edits work better.",
-    steps: [
-      "In the Project browser, click one file, then hold Shift and click another file to select a range.",
-      "Drag selected project files into the AI prompt to attach them as references for the next generation.",
-      "Use @face, @edge, @path, and @component chips instead of describing locations in plain language.",
-      "Keep the first prompt focused on the main object, then revise the selected result with smaller edits.",
-      "Use Send to AI from marked-up PDFs/images when callouts or notes matter.",
-      "Share folders or share model links when you need teammates or clients to review the same context.",
+    "id": "tips-tricks",
+    "category": "help",
+    "title": "Tips and tricks",
+    "demo": "tips",
+    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
+    "summary": "Shift-select files, drag refs into the prompt, keep prompts focused, share context.",
+    "steps": [
+      "Shift-click in the Project browser to select a file range.",
+      "Drag files into the AI prompt as references.",
+      "Prefer @face/@edge/@path chips over vague locations.",
+      "Generate the main object first, then revise selected results."
     ],
-    ask: "Give me practical Render3D tips and tricks for selecting files, dragging references into the AI prompt, using geometry picks, and getting better CAD generations.",
-    keywords: [
-      "tips", "tricks", "shift select", "multiple files", "drag files", "drag to prompt",
-      "project browser", "project files", "attach references", "reference files", "best practices",
-      "workflow", "chips", "@component", "@face", "@edge", "send to ai",
+    "ask": "Give me practical Render3D tips and tricks.",
+    "keywords": [
+      "tips",
+      "tricks",
+      "shift select",
+      "best practices"
     ],
-  },
+    "where": "Getting Started \u00b7 Tips library"
+  }
 ];
 
 export function guidesByCategory() {
@@ -302,27 +396,17 @@ export function guidesByCategory() {
 export function matchGettingStartedGuides(question, { limit = 2 } = {}) {
   let text = String(question || "").toLowerCase().trim();
   if (!text) return [];
-  for (const [src, dst] of [
-    ["wirign", "wiring"],
-    ["wireing", "wiring"],
-    ["schemtic", "schematic"],
-    ["bredboard", "breadboard"],
-  ]) {
+  for (const [src, dst] of [["wirign","wiring"],["wireing","wiring"],["schemtic","schematic"],["bredboard","breadboard"]]) {
     text = text.replaceAll(src, dst);
   }
-
   for (const guide of GETTING_STARTED_GUIDES) {
     const ask = String(guide.ask || "").toLowerCase().trim();
     if (!ask) continue;
     if (text === ask) return [guide];
-    if (text.length > 28 && ask.length > 28 && (text.includes(ask.slice(0, 56)) || ask.includes(text.slice(0, 56)))) {
-      return [guide];
-    }
+    if (text.length > 28 && ask.length > 28 && (text.includes(ask.slice(0, 56)) || ask.includes(text.slice(0, 56)))) return [guide];
   }
-
   const tourHints = ["tour", "getting started", "new user", "how do i start", "onboarding", "for a new user"];
   const isTour = tourHints.some((hint) => text.includes(hint));
-
   const scored = GETTING_STARTED_GUIDES.map((guide) => {
     let score = 0;
     const title = String(guide.title || "").toLowerCase();
@@ -330,32 +414,15 @@ export function matchGettingStartedGuides(question, { limit = 2 } = {}) {
     if (guide.id && text.includes(String(guide.id).replace(/-/g, " "))) score += 4;
     for (const raw of guide.keywords || []) {
       const kw = String(raw || "").toLowerCase().trim();
-      if (!kw) continue;
-      if (text.includes(kw)) score += kw.includes(" ") ? 3 : 2;
+      if (kw && text.includes(kw)) score += kw.includes(" ") ? 3 : 2;
     }
-    for (const step of guide.steps || []) {
-      const words = String(step).toLowerCase().split(/\W+/).filter((w) => w.length > 5);
-      for (const w of words.slice(0, 6)) {
-        if (text.includes(w)) score += 0.35;
-      }
-    }
-    if (isTour && ["ai-generate", "workspaces", "share-folders", "render-agent"].includes(guide.id)) {
-      score += 3;
-    }
+    if (isTour && ["ai-generate", "workspaces", "share-folders", "render-agent"].includes(guide.id)) score += 3;
     return { guide, score };
-  })
-    .filter((row) => row.score >= 2.5)
-    .sort((a, b) => b.score - a.score || a.guide.title.localeCompare(b.guide.title));
+  }).filter((row) => row.score >= 2.5).sort((a, b) => b.score - a.score || a.guide.title.localeCompare(b.guide.title));
   return scored.slice(0, limit).map((row) => row.guide);
 }
 
 export function guideMediaPayload(guide) {
   if (!guide?.gif) return null;
-  return {
-    id: guide.id,
-    title: guide.title,
-    url: guide.gif,
-    kind: "gif",
-    summary: guide.summary || "",
-  };
+  return { id: guide.id, title: guide.title, url: guide.gif, kind: "gif", summary: guide.summary || "" };
 }
