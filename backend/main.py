@@ -1148,6 +1148,12 @@ def _broadcast_generation_update(project_path: Path, data: dict[str, Any] | None
     by_user_id = summary.get("by_user_id")
     if by_user_id:
         _notify_user(by_user_id, payload)
+    # a1projects admins watch other users' renders across teams — push live status to them too.
+    for admin_email in A1PROJECTS_ADMIN_EMAILS:
+        try:
+            _notify_user_by_email(admin_email, payload)
+        except Exception:
+            logger.debug("Could not notify admin %s of generation update", admin_email, exc_info=True)
 
 
 generation_service.register_listener(_broadcast_generation_update)
