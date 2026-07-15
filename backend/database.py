@@ -171,6 +171,49 @@ def init_db() -> None:
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (app_id) REFERENCES agent_app_listings(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS knowledge_bases (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS knowledge_folders (
+                id TEXT PRIMARY KEY,
+                kb_id TEXT NOT NULL,
+                parent_id TEXT,
+                name TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_id) REFERENCES knowledge_folders(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS knowledge_items (
+                id TEXT PRIMARY KEY,
+                kb_id TEXT NOT NULL,
+                folder_id TEXT,
+                name TEXT NOT NULL,
+                media_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+                storage_path TEXT NOT NULL,
+                text_excerpt TEXT NOT NULL DEFAULT '',
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+                FOREIGN KEY (folder_id) REFERENCES knowledge_folders(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS knowledge_skill_links (
+                kb_id TEXT NOT NULL,
+                skill_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (kb_id, skill_id),
+                FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+            );
             """
         )
         try:

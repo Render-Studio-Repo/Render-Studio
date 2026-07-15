@@ -494,10 +494,11 @@ def run_codex_agent(
     err_thread.start()
 
     deadline = time.monotonic() + timeout
-    artifacts_ready_since: float | None = None
     artifact_mtime_token: tuple[float, float] | None = None
+    last_artifact_change_at: float | None = None
     last_activity_at = time.monotonic()
     quiet_sec = 60.0
+    announced_ready = False
     try:
         while True:
             if cancel_check and cancel_check():
@@ -539,15 +540,17 @@ def run_codex_agent(
                     token = (glb_path.stat().st_mtime, step_path.stat().st_mtime)
                     if artifact_mtime_token != token:
                         artifact_mtime_token = token
-                        artifacts_ready_since = now
-                        _emit(
-                            "finalize",
-                            f"Model ready ({early['glb']}); waiting for Codex to go quiet…",
-                            82,
-                        )
-                    elif (
-                        artifacts_ready_since is not None
-                        and now - artifacts_ready_since >= quiet_sec
+                        last_artifact_change_at = now
+                        if not announced_ready:
+                            announced_ready = True
+                            _emit(
+                                "finalize",
+                                f"Model ready ({early['glb']}); waiting for Codex to go quiet…",
+                                82,
+                            )
+                    if (
+                        last_artifact_change_at is not None
+                        and now - last_artifact_change_at >= quiet_sec
                         and now - last_activity_at >= quiet_sec
                     ):
                         _emit("finalize", f"Accepting {early['source']} / {early['step']} (snapshot optional)", 86)
@@ -555,12 +558,12 @@ def run_codex_agent(
                         events.append({"type": "render3d.early_accept", "reason": "artifacts_ready_quiet"})
                         break
                 else:
-                    artifacts_ready_since = None
                     artifact_mtime_token = None
+                    last_artifact_change_at = None
             except Exception:
                 # No fresh artifacts yet — keep waiting on Codex.
-                artifacts_ready_since = None
                 artifact_mtime_token = None
+                last_artifact_change_at = None
 
             activity_holder = {"n": activity_n}
             if proc.poll() is not None:
@@ -576,7 +579,6 @@ def run_codex_agent(
                     )
                     if activity_holder["n"] > prev_n:
                         last_activity_at = time.monotonic()
-                        artifacts_ready_since = None
                 activity_n = activity_holder["n"]
                 break
             line = proc.stdout.readline()
@@ -592,8 +594,6 @@ def run_codex_agent(
             )
             if activity_n > prev_n:
                 last_activity_at = time.monotonic()
-                # Keep waiting — Codex is still iterating (inspect/repair/rewrite).
-                artifacts_ready_since = None
 
     finally:
         stop_reader.set()

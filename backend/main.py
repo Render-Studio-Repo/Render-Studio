@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -283,6 +283,15 @@ class PromptRequest(BaseModel):
     codex_agent: bool = Field(
         default=False,
         description="Opt-in: run CAD 2.0 with host Codex + cad@text-to-cad plugin (uses server ChatGPT login).",
+    )
+    use_knowledge_base: bool = Field(
+        default=False,
+        description="When true, inject selected knowledge bases (and skill-linked KBs) into the prompt context.",
+    )
+    knowledge_base_ids: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description="Knowledge base IDs to include when use_knowledge_base is true.",
     )
 
 
@@ -2454,6 +2463,31 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
     return context
 
 
+def _attach_knowledge_context(
+    context: dict[str, Any],
+    body: PromptRequest,
+    user: dict[str, Any] | None,
+    skills: list[str] | None = None,
+) -> dict[str, Any]:
+    if not body.use_knowledge_base or not user:
+        return context
+    try:
+        from backend.services import knowledge_service
+
+        kb = knowledge_service.build_prompt_context(
+            user["id"],
+            knowledge_base_ids=list(body.knowledge_base_ids or []),
+            skill_ids=list(skills or body.skills or []),
+        )
+    except Exception as exc:
+        logger.info("Knowledge base context skipped: %s", exc)
+        return context
+    if not kb or not kb.get("text"):
+        return context
+    context = {**context, "knowledge_base": kb}
+    return context
+
+
 def _is_fresh_design_request(body: PromptRequest) -> bool:
     """Route to the parametric kernel (full rebuild) instead of legacy mesh-edit actions."""
     if body.references:
@@ -2756,6 +2790,146 @@ def plan_prompt_skills(body: SkillPlanRequest, user: dict[str, Any] | None = Dep
         if item.get("id") and (not item.get("install_required") or item.get("installed"))
     ]
     return {"skills": planned, "requested": requested, "available": available}
+
+
+class KnowledgeBaseCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+
+
+class KnowledgeBaseUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    skill_ids: list[str] | None = Field(default=None, max_length=40)
+
+
+class KnowledgeFolderCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    parent_id: str | None = None
+
+
+@app.get("/api/knowledge-bases")
+def list_knowledge_bases(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    return {"knowledge_bases": knowledge_service.list_knowledge_bases(user["id"])}
+
+
+@app.post("/api/knowledge-bases")
+def create_knowledge_base(body: KnowledgeBaseCreateRequest, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    kb = knowledge_service.create_knowledge_base(user["id"], body.name, body.description)
+    return {"knowledge_base": kb}
+
+
+@app.get("/api/knowledge-bases/{kb_id}")
+def get_knowledge_base_tree(kb_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    try:
+        return knowledge_service.get_kb_tree(user["id"], kb_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.patch("/api/knowledge-bases/{kb_id}")
+def update_knowledge_base(
+    kb_id: str,
+    body: KnowledgeBaseUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import knowledge_service
+
+    try:
+        kb = knowledge_service.update_knowledge_base(
+            user["id"],
+            kb_id,
+            name=body.name,
+            description=body.description,
+            skill_ids=body.skill_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"knowledge_base": kb}
+
+
+@app.delete("/api/knowledge-bases/{kb_id}")
+def delete_knowledge_base(kb_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    try:
+        knowledge_service.delete_knowledge_base(user["id"], kb_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.post("/api/knowledge-bases/{kb_id}/folders")
+def create_knowledge_folder(
+    kb_id: str,
+    body: KnowledgeFolderCreateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import knowledge_service
+
+    try:
+        folder = knowledge_service.create_folder(user["id"], kb_id, body.name, parent_id=body.parent_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"folder": folder}
+
+
+@app.post("/api/knowledge-bases/{kb_id}/items")
+async def upload_knowledge_items(
+    kb_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+    folder_id: str | None = Form(default=None),
+    files: list[UploadFile] = File(default_factory=list),
+):
+    from backend.services import knowledge_service
+
+    if not files:
+        raise HTTPException(400, "No files uploaded")
+    uploaded: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for upload in files[:80]:
+        raw_name = upload.filename or "file"
+        name = Path(raw_name).name
+        try:
+            data = await upload.read()
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+            continue
+        try:
+            item = knowledge_service.add_item_bytes(
+                user["id"],
+                kb_id,
+                filename=name,
+                data=data,
+                media_type=upload.content_type or "application/octet-stream",
+                folder_id=folder_id or None,
+                relative_path=str(raw_name),
+            )
+            uploaded.append(item)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            errors.append(f"{name}: {exc}")
+    return {"uploaded": uploaded, "errors": errors, "count": len(uploaded)}
+
+
+@app.delete("/api/knowledge-bases/{kb_id}/items/{item_id}")
+def delete_knowledge_item(kb_id: str, item_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import knowledge_service
+
+    try:
+        knowledge_service.delete_item(user["id"], kb_id, item_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True}
 
 
 @app.get("/api/skills/{skill_id}")
@@ -10402,7 +10576,12 @@ def _prompt_via_kernel(
     from backend.services.design_service import DesignBuildError, DesignCanceled
 
     refs_list = [r.model_dump() for r in body.references]
-    context = _slim_context(project_id, project_path, body)
+    context = _attach_knowledge_context(
+        _slim_context(project_id, project_path, body),
+        body,
+        user,
+        skills=body.skills,
+    )
     previous_source, previous_source_name = (None, None)
     if (getattr(body, "mode", "standard") or "standard").lower() in {"v2", "fusion", "architect"} and body.base_filename:
         previous_source, previous_source_name = _source_for_base_model(project_path, body.base_filename)
@@ -11058,7 +11237,12 @@ def prompt_cad(
 
     refs_list = [r.model_dump() for r in body.references]
     refs_map = cad_service.references_map(refs_list)
-    context = _slim_context(project_id, project_path, body)
+    context = _attach_knowledge_context(
+        _slim_context(project_id, project_path, body),
+        body,
+        user,
+        skills=resolved_skills,
+    )
 
     try:
         plan, ai_trace = ai.generate_cad_plan(
