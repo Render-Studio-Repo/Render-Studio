@@ -98,6 +98,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
 
   function setLoggedOutUI() {
     loggedInUser = null;
+    document.body.classList.remove("is-admin");
     btnAuth?.classList.remove("signed-in");
     authIcon?.classList.remove("hidden");
     authAvatar?.classList.add("hidden");
@@ -141,6 +142,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     btnAuth?.setAttribute("title", user.display_name);
     btnAuth?.setAttribute("aria-label", `Account: ${user.display_name}`);
     const isAdmin = isAdminUser(user);
+    document.body.classList.toggle("is-admin", isAdmin);
     adminDashboardLink?.classList.toggle("hidden", !isAdmin);
     adminDashboardToolbar?.classList.toggle("hidden", !isAdmin);
   }

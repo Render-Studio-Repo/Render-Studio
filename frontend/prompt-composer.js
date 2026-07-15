@@ -77,6 +77,20 @@ export function createPromptComposer({
     return ref.token || `@${ref.id}`;
   }
 
+  function shortenChipLabel(text, max = 28) {
+    const value = String(text || "").trim();
+    if (value.length <= max) return value;
+    return `${value.slice(0, Math.max(8, max - 1))}…`;
+  }
+
+  function formatChipLabel(ref) {
+    const detail = formatRefDetail(ref);
+    if (detail && !/^[-+]?\d/.test(detail) && detail.length <= 36) {
+      return detail.startsWith("@") ? detail : `@${detail}`;
+    }
+    return shortenChipLabel(formatToken(ref), 32);
+  }
+
   function attachChipHandlers(chip, ref) {
     chip.querySelector(".ref-remove")?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -96,7 +110,17 @@ export function createPromptComposer({
     const chip = document.createElement("span");
     chip.className = inline ? "ref-chip ref-chip--inline" : "ref-chip";
     chip.dataset.refId = ref.id;
-    chip.innerHTML = `<span class="ref-token">${escapeHtml(formatToken(ref))}</span><span class="ref-coords">${escapeHtml(formatRefDetail(ref))}</span><button type="button" class="ref-remove" title="Remove">×</button>`;
+    chip.title = formatToken(ref);
+    if (inline) {
+      chip.innerHTML = `<span class="ref-token">${escapeHtml(formatChipLabel(ref))}</span><button type="button" class="ref-remove" title="Remove">×</button>`;
+    } else {
+      const detail = formatRefDetail(ref);
+      const token = formatToken(ref);
+      const showDetail = detail && detail !== token && !token.endsWith(detail);
+      chip.innerHTML = `<span class="ref-token">${escapeHtml(shortenChipLabel(token, 36))}</span>${
+        showDetail ? `<span class="ref-coords">${escapeHtml(shortenChipLabel(detail, 24))}</span>` : ""
+      }<button type="button" class="ref-remove" title="Remove">×</button>`;
+    }
     attachChipHandlers(chip, ref);
     return chip;
   }
@@ -226,9 +250,10 @@ export function createPromptComposer({
     mention.dataset.refId = ref.id;
     mention.dataset.token = token;
     mention.setAttribute("data-type", ref.type || "component");
+    mention.title = token;
     const label = document.createElement("span");
     label.className = "prompt-mention-label";
-    label.textContent = token;
+    label.textContent = formatChipLabel(ref);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "prompt-mention-remove";

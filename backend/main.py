@@ -895,16 +895,18 @@ def _admin_preview_assets(project_path: Path, project_id: str, latest_file: str 
 
 
 def _other_user_render_summaries(user: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
+    """Admin folder: teammates' projects, including ones still generating (0 files yet)."""
     if not _is_a1projects_admin(user):
         return []
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT pa.project_id, pa.created_by, u.email AS owner_email, u.display_name AS owner_name
+            SELECT pa.project_id, pa.created_by, pa.created_at, u.email AS owner_email, u.display_name AS owner_name
             FROM project_access pa
             LEFT JOIN users u ON u.id = pa.created_by
             WHERE pa.created_by IS NOT NULL AND pa.created_by != ?
             ORDER BY pa.created_at DESC
+            LIMIT 200
             """,
             (user["id"],),
         ).fetchall()
@@ -913,20 +915,40 @@ def _other_user_render_summaries(user: dict[str, Any], team_id: str | None = Non
         project_path = PROJECTS / row["project_id"]
         if not project_path.is_dir():
             continue
-        summary = project_store.project_summary(project_path)
-        if not summary.get("file_count"):
-            continue
+        # Fast summary includes generation.status — needed while Aaron is still generating.
+        summary = project_store.project_list_summary(project_path)
+        gen = summary.get("generation") or {}
+        gen_status = str(gen.get("status") or "")
+        has_files = bool(summary.get("file_count"))
+        is_live = gen_status in {"running", "queued", "starting", "pending"}
+        if not has_files and not is_live:
+            # Keep brand-new empty projects briefly so they appear as soon as created.
+            created = row["created_at"] or summary.get("created_at") or ""
+            try:
+                from datetime import datetime, timezone, timedelta
+                created_dt = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - created_dt > timedelta(hours=6):
+                    continue
+            except Exception:
+                continue
         out.append(
             {
                 **summary,
                 "team_id": team_id,
                 "folder_id": OTHER_USER_RENDERS_FOLDER_ID,
+                "folder_name": OTHER_USER_RENDERS_FOLDER_NAME,
                 "read_only_project": True,
                 "owner_user_id": row["created_by"],
                 "owner_email": row["owner_email"],
-                "owner_name": row["owner_name"],
+                "owner_name": row["owner_name"] or gen.get("by_user_name"),
+                "sort_order": -1000 if is_live else int(bool(not has_files)) * -100,
             }
         )
+    # Generating first, then newest.
+    out.sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
+    out.sort(key=lambda p: 0 if (p.get("generation") or {}).get("status") in {"running", "queued", "starting", "pending"} else 1)
     return out
 
 
@@ -7411,6 +7433,9 @@ def list_projects(
             "folder_id": fid,
             "folder_name": folders_service.folder_name(fid),
             "sort_order": int(row.get("sort_order") or 0),
+            "owner_user_id": row.get("created_by"),
+            "owner_email": row.get("owner_email"),
+            "owner_name": row.get("owner_name") or (p.get("generation") or {}).get("by_user_name"),
         }
         projects.append(p)
     # Stable sort: newest first within the same sort_order, then ascending sort_order.
@@ -7508,6 +7533,15 @@ def create_project(
             "meta": meta,
             "by": user["display_name"],
             "by_user_id": user["id"],
+            "by_user_name": user["display_name"],
+            "owner_user_id": user["id"],
+            "owner_name": user["display_name"],
+            "owner_email": user.get("email"),
+            "folder_id": None,
+            "sort_order": 0,
+            "created_at": meta.get("created_at"),
+            "updated_at": meta.get("updated_at") or meta.get("created_at"),
+            "generation": {"status": "idle"},
         },
     )
     return {"project_id": project_id, "team_id": tid, "meta": meta}

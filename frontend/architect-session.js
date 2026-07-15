@@ -81,11 +81,11 @@ export function createArchitectSession(opts) {
     const hintEl = document.getElementById("architect-domino-hint");
     if (hintEl) {
       if (mode === "draw") {
-        hintEl.textContent = "Drag walls · Shift+drag room · Right-click deletes one · Shift+right-drag erases area · Middle pans · Shift+middle orbits / tilts";
+        hintEl.textContent = "Drag walls · Shift+drag room · Right-click deletes one · Shift+right-drag erases area · Middle orbits / tilts · Shift+middle pans";
       } else if (mode === "window") {
-        hintEl.textContent = "Drag window tiles · Right-click deletes · Shift+right-drag erases area · Middle pans";
+        hintEl.textContent = "Drag window tiles · Right-click deletes · Shift+right-drag erases area · Middle orbits · Shift+middle pans";
       } else if (mode === "door") {
-        hintEl.textContent = "Drag door tiles · Right-click deletes · Shift+right-drag erases area · Middle pans";
+        hintEl.textContent = "Drag door tiles · Right-click deletes · Shift+right-drag erases area · Middle orbits · Shift+middle pans";
       } else {
         hintEl.textContent = "Click to select · Right-click or Delete removes · Shift+right-drag erases area";
       }
@@ -162,7 +162,7 @@ export function createArchitectSession(opts) {
     syncToolbar();
     onStatus?.(
       "ok",
-      "Architect — drag walls, Shift+drag rooms, Shift+right-drag erase. Middle pans; Shift+middle orbits & pans up/down.",
+      "Architect — drag walls, Shift+drag rooms, Shift+right-drag erase. Middle orbits / tilts; Shift+middle pans.",
     );
   }
 

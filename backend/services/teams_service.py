@@ -598,9 +598,11 @@ def user_project_access(user_id: str, team_id: str | None = None) -> list[dict[s
         if team_id:
             rows = conn.execute(
                 """
-                SELECT pa.project_id, pa.team_id, pa.folder_id, pa.sort_order
+                SELECT pa.project_id, pa.team_id, pa.folder_id, pa.sort_order,
+                       pa.created_by, u.email AS owner_email, u.display_name AS owner_name
                 FROM project_access pa
                 JOIN team_members tm ON tm.team_id = pa.team_id
+                LEFT JOIN users u ON u.id = pa.created_by
                 WHERE tm.user_id = ? AND pa.team_id = ?
                 ORDER BY pa.sort_order ASC, pa.created_at DESC
                 """,
@@ -609,9 +611,11 @@ def user_project_access(user_id: str, team_id: str | None = None) -> list[dict[s
         else:
             rows = conn.execute(
                 """
-                SELECT pa.project_id, pa.team_id, pa.folder_id, pa.sort_order
+                SELECT pa.project_id, pa.team_id, pa.folder_id, pa.sort_order,
+                       pa.created_by, u.email AS owner_email, u.display_name AS owner_name
                 FROM project_access pa
                 JOIN team_members tm ON tm.team_id = pa.team_id
+                LEFT JOIN users u ON u.id = pa.created_by
                 WHERE tm.user_id = ?
                 ORDER BY pa.sort_order ASC, pa.created_at DESC
                 """,

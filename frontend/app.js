@@ -52,7 +52,7 @@ import {
 } from "./scene-style.js?v=20260710-jake-part-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
-import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-mentions";
+import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -3207,11 +3207,14 @@ function setSpiceEnabled(enabled, { persist = true } = {}) {
 }
 
 function initPromptSpiceToggle() {
-  let enabled = false;
+  // Default ON so new users get clearer CAD prompts; persist explicit off as "0".
+  let enabled = true;
   try {
-    enabled = localStorage.getItem(SPICE_KEY) === "1";
+    const saved = localStorage.getItem(SPICE_KEY);
+    if (saved === "0") enabled = false;
+    else if (saved === "1") enabled = true;
   } catch {
-    enabled = false;
+    enabled = true;
   }
   const input = document.getElementById("prompt-spice");
   if (!input) return;
@@ -3226,7 +3229,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
   if (!original || !isSpiceEnabled()) return original;
   if (statusEl) {
     statusEl.className = "status loading";
-    statusEl.textContent = "Spicing up prompt…";
+    statusEl.textContent = "Improving prompt with AI…";
   }
   try {
     const data = await api("/api/prompt/improve", {
@@ -3250,13 +3253,13 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
     }
     if (statusEl) {
       statusEl.className = "status ok";
-      statusEl.textContent = "Prompt spiced up — generating…";
+      statusEl.textContent = "Prompt improved — generating…";
     }
     return improved;
   } catch (err) {
     if (statusEl) {
       statusEl.className = "status error";
-      statusEl.textContent = `Spice up failed (${formatUserError(err)}). Generating with original prompt…`;
+      statusEl.textContent = `Improve prompt with AI failed (${formatUserError(err)}). Generating with original prompt…`;
     }
     return original;
   }
