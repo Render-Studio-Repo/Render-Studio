@@ -9,7 +9,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: 14px;
   width: min(360px, calc(100% - 28px));
   max-width: min(360px, calc(100% - 28px));
   box-sizing: border-box;
@@ -24,6 +24,7 @@
 
 /* Spinner lives inside the stack — override absolute bottom-right placement */
 .viewport-hud-stack .viewport-spinner {
+  order: 2;
   position: relative !important;
   right: auto !important;
   bottom: auto !important;
@@ -34,6 +35,7 @@
 }
 
 .viewport-ready-banner {
+  order: 1;
   position: relative;
   width: 100%;
   box-sizing: border-box;
@@ -53,7 +55,7 @@
     0 0 28px rgba(63, 185, 80, 0.12);
   pointer-events: auto;
   opacity: 0;
-  transform: translateY(12px) scale(0.98);
+  transform: translateY(-8px) scale(0.98);
   filter: blur(2px);
   transition:
     opacity 0.38s ease,
@@ -69,7 +71,7 @@
 
 .viewport-ready-banner.is-leaving {
   opacity: 0;
-  transform: translateY(8px) scale(0.98);
+  transform: translateY(-8px) scale(0.98);
   filter: blur(1px);
   pointer-events: none;
 }

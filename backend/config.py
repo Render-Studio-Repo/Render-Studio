@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     # Discord product-update announcements
     discord_bot_token: str = ""
     discord_updates_channel_id: str = ""
+    discord_public_models_channel_id: str = ""
     discord_application_id: str = ""
     discord_updates_webhook_url: str = ""
 

@@ -56,12 +56,16 @@ def decode_token(token: str) -> str | None:
 def user_row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
+    keys = row.keys()
     return {
         "id": row["id"],
         "email": row["email"],
         "display_name": row["display_name"],
-        "avatar_url": row["avatar_url"] if "avatar_url" in row.keys() else None,
+        "handle": row["handle"] if "handle" in keys else None,
+        "bio": row["bio"] if "bio" in keys else None,
+        "avatar_url": row["avatar_url"] if "avatar_url" in keys else None,
         "created_at": row["created_at"],
+        "profile_url": f"/u/{row['handle']}" if ("handle" in keys and row["handle"]) else None,
     }
 
 
@@ -74,7 +78,7 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
 def get_user_by_email(email: str) -> dict[str, Any] | None:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, email, display_name, avatar_url, created_at FROM users WHERE email = ?",
+            "SELECT * FROM users WHERE email = ?",
             (email.strip().lower(),),
         ).fetchone()
     return user_row_to_dict(row)

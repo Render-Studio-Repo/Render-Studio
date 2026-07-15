@@ -121,8 +121,8 @@ function esc(value) {
     .replace(/"/g, "&quot;");
 }
 
-const READY_BANNER_CSS = "/viewport-ready-banner.css?v=20260715-ready-banner";
-const GEN_LOADER_CSS = "/viewport-gen-loader.css?v=20260715-gen-loader";
+const READY_BANNER_CSS = "/viewport-ready-banner.css?v=20260715-ready-above-loader";
+const GEN_LOADER_CSS = "/viewport-gen-loader.css?v=20260715-robot-place-part";
 function ensureOverlayStylesheet(href, dataAttr) {
   if (typeof document === "undefined") return;
   if (document.querySelector(`link[${dataAttr}="1"]`)) return;

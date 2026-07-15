@@ -302,6 +302,33 @@ def init_db() -> None:
                 FOREIGN KEY (buyer_user_id) REFERENCES users(id),
                 FOREIGN KEY (seller_user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS ai_credit_accounts (
+                user_id TEXT PRIMARY KEY,
+                balance_cents INTEGER NOT NULL DEFAULT 0,
+                auto_refill_enabled INTEGER NOT NULL DEFAULT 0,
+                auto_refill_threshold_cents INTEGER NOT NULL DEFAULT 500,
+                auto_refill_amount_cents INTEGER NOT NULL DEFAULT 2000,
+                use_platform_key INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_credit_transactions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                amount_cents INTEGER NOT NULL,
+                balance_after_cents INTEGER NOT NULL,
+                provider TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                project_id TEXT,
+                stripe_session_id TEXT,
+                meta_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
             """
         )
         for col_sql in (
@@ -382,6 +409,12 @@ def init_db() -> None:
         try:
             conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
         except sqlite3.OperationalError:
+            pass
+        try:
+            from backend.services.profile_service import migrate_user_handles
+
+            migrate_user_handles(conn)
+        except Exception:
             pass
         try:
             conn.execute("ALTER TABLE teams ADD COLUMN render_folder_provider TEXT NOT NULL DEFAULT 'render3d'")

@@ -199,9 +199,9 @@ def build_update_payload(update: dict[str, Any]) -> dict[str, Any]:
     return {"content": content, "embeds": [embed], "allowed_mentions": {"parse": []}}
 
 
-def send_channel_message(payload: dict[str, Any]) -> dict[str, Any]:
+def send_channel_message(payload: dict[str, Any], *, channel_id: str | None = None) -> dict[str, Any]:
     webhook = _webhook_url()
-    if webhook:
+    if webhook and not channel_id:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             webhook,
@@ -224,7 +224,7 @@ def send_channel_message(payload: dict[str, Any]) -> dict[str, Any]:
                 pass
             raise RuntimeError(f"Discord webhook {err.code}: {detail or err}") from err
 
-    channel = _channel_id()
+    channel = (channel_id or _channel_id()).strip()
     if not channel:
         raise RuntimeError("DISCORD_UPDATES_CHANNEL_ID is not configured")
     if not _token():

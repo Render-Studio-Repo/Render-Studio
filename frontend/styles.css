@@ -845,7 +845,7 @@ body:not(.info-page) {
 
 .studio-boot-card {
   position: relative;
-  width: min(520px, calc(100vw - 32px));
+  width: min(680px, calc(100vw - 32px));
   min-height: 420px;
   overflow: hidden;
   padding: 30px 30px 92px;
@@ -1429,6 +1429,38 @@ body:not(.info-page) {
     background 0.35s ease;
 }
 
+.studio-boot-walkthroughs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.studio-boot-walkthroughs .studio-boot-learn-more {
+  width: 100%;
+  min-height: 62px;
+  margin: 0;
+  padding-right: 12px;
+}
+
+.studio-boot-walkthroughs .studio-boot-learn-label {
+  white-space: normal;
+}
+
+.studio-boot-learn-more--random {
+  border-color: rgba(125, 211, 252, 0.42);
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.22), rgba(249, 115, 22, 0.16) 54%, rgba(88, 166, 255, 0.14)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%),
+    rgba(8, 12, 20, 0.88);
+}
+
+.studio-boot-learn-more--random .studio-boot-learn-gear {
+  color: #7dd3fc;
+  font-weight: 950;
+  font-size: 1rem;
+}
+
 .studio-boot-learn-more::before {
   content: "";
   position: absolute;
@@ -1964,6 +1996,15 @@ body:not(.info-page) {
     min-height: 390px;
     padding: 22px 18px 88px;
     border-radius: 22px;
+  }
+
+  .studio-boot-walkthroughs {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .studio-boot-walkthroughs .studio-boot-learn-more {
+    min-height: 54px;
   }
 
   .studio-boot-stage {

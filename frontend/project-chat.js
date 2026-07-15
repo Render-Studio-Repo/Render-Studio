@@ -476,7 +476,7 @@ export function createProjectChatUI({
           : `<span class="pc-avatar pc-avatar--initial">${esc((c.display_name || "?").charAt(0).toUpperCase())}</span>`;
         return `<button type="button" class="pc-mention-item${i === 0 ? " active" : ""}" data-mention-pick="${esc(c.id)}" data-mention-type="${esc(c.type)}" data-mention-name="${esc(c.display_name)}" data-mention-handle="${esc(c.handle || c.display_name)}">
           ${avatar}
-          <span><strong>${esc(c.display_name)}</strong><small>${esc(c.type === "agent" ? "AI assistant" : c.email || "Teammate")}</small></span>
+          <span><strong>@${esc(c.handle || c.display_name)}</strong><small>${esc(c.type === "agent" ? "AI assistant" : c.display_name || c.email || "Teammate")}</small></span>
         </button>`;
       })
       .join("");
@@ -484,7 +484,7 @@ export function createProjectChatUI({
     menu.querySelectorAll("[data-mention-pick]").forEach((btn) => {
       btn.addEventListener("mousedown", (ev) => ev.preventDefault());
       btn.addEventListener("click", () => {
-        const name = btn.dataset.mentionName || "User";
+        const name = btn.dataset.mentionHandle || btn.dataset.mentionName || "User";
         const kind = btn.dataset.mentionType || "user";
         const id = btn.dataset.mentionPick;
         insertMentionChip(input, name, kind, id);
@@ -505,7 +505,7 @@ export function createProjectChatUI({
           thread.visibility === "private"
             ? `<em class="pc-thread-badge">Private</em>`
             : thread.slug === "general"
-              ? `<em class="pc-thread-badge pc-thread-badge--shared">General</em>`
+              ? `<em class="pc-thread-badge pc-thread-badge--shared">Render Studio</em>`
               : `<em class="pc-thread-badge pc-thread-badge--shared">Shared</em>`;
         return `<button type="button" class="pc-thread-item${active}" data-thread-id="${esc(thread.id)}">
           <strong>${esc(thread.title || "Thread")} ${badge}</strong>
@@ -923,6 +923,25 @@ export function createProjectChatUI({
     }
   }
 
+  function prefillMention(candidate) {
+    if (!candidate?.id) return;
+    void openChat().then?.(() => {}).catch?.(() => {});
+    void openChat();
+    const input = overlay?.querySelector("#pc-input");
+    if (!input) {
+      // openChat is sync-ish after first open
+      setTimeout(() => {
+        const el = overlay?.querySelector("#pc-input");
+        if (!el) return;
+        insertMentionChip(el, candidate.handle || candidate.display_name || "User", candidate.type || "user", candidate.id);
+        el.focus();
+      }, 120);
+      return;
+    }
+    insertMentionChip(input, candidate.handle || candidate.display_name || "User", candidate.type || "user", candidate.id);
+    input.focus();
+  }
+
   buttonEl?.addEventListener("click", toggle);
 
   // Warm unread badge for current project.
@@ -937,6 +956,7 @@ export function createProjectChatUI({
     toggle,
     refreshUnread,
     handleRealtime,
+    prefillMention,
     destroy() {
       if (pollTimer) window.clearInterval(pollTimer);
       overlay?.remove();

@@ -65,14 +65,15 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-profile-onboarding";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-hide-shot-on-viewport";
-import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-open-empty";
+import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-handle-profile";
+import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-chat-fab-fallback";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-rigging-control-tab";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-robot-place-part";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-fusion-picker";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
@@ -5161,6 +5162,35 @@ const projectChat = createProjectChatUI({
   onStatus: (kind, message) => setEditStatus(kind, message),
 });
 
+const userProfileUi = createUserProfileUI({
+  api,
+  getProjectId: () => projectId,
+  onOpenChat: () => {
+    document.getElementById("btn-project-chat")?.click();
+  },
+  onMessageUser: (profile) => {
+    const handle = profile?.handle || profile?.display_name || "user";
+    const id = profile?.id;
+    if (!id) return;
+    // Prefill chat composer if available
+    try {
+      projectChat?.prefillMention?.({
+        id,
+        display_name: profile.display_name || handle,
+        handle,
+        type: "user",
+      });
+    } catch {
+      /* optional */
+    }
+    setEditStatus("ok", `Mention @${handle} in Render Studio chat.`);
+  },
+});
+try {
+  userProfileUi.bindDeepLinks?.();
+} catch {
+  /* ignore */
+}
 function renderAgentObjectChoices() {
   const choices = [];
   const seen = new Set();
@@ -23602,7 +23632,7 @@ window.addEventListener("keydown", (e) => {
         </div>
         <div class="profile-preferences-grid">
           <section class="profile-preferences-section profile-preferences-section--wide">
-            <strong>Profile picture</strong>
+            <strong>Profile</strong>
             <div class="profile-avatar-preference">
               <span class="profile-avatar-preview ${avatar ? "profile-avatar-preview--image" : ""}" style="${avatar ? `background-image:url('${appEscapeHtml(avatar)}')` : ""}">${avatar ? "" : appEscapeHtml(initial)}</span>
               <div class="profile-avatar-actions">
@@ -23613,6 +23643,35 @@ window.addEventListener("keydown", (e) => {
                 <button type="button" id="profile-avatar-remove" class="btn secondary btn-compact" ${avatar ? "" : "disabled"}>Remove</button>
                 <small class="muted">PNG or JPEG, under 1.5 MB.</small>
               </div>
+            </div>
+            <label class="profile-preference-field">
+              <span>
+                <b>Display name</b>
+                <small>Shown in chat, presence, and your public profile.</small>
+              </span>
+              <input id="pref-display-name" type="text" maxlength="80" value="${appEscapeHtml(currentUser?.display_name || "")}" placeholder="Your name" />
+            </label>
+            <label class="profile-preference-field">
+              <span>
+                <b>Handle</b>
+                <small>Unique @tag for chat mentions and profile links (letters, numbers, _).</small>
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:4px;width:100%">
+                <span class="profile-handle-field-prefix">@</span>
+                <input id="pref-handle" type="text" maxlength="24" value="${appEscapeHtml((currentUser?.handle || "").replace(/^@/, ""))}" placeholder="yourhandle" style="flex:1" />
+              </span>
+            </label>
+            <label class="profile-preference-field">
+              <span>
+                <b>Bio</b>
+                <small>Short public blurb on your profile popup.</small>
+              </span>
+              <textarea id="pref-bio" maxlength="500" rows="3" placeholder="What you design, build, or collaborate on…">${appEscapeHtml(currentUser?.bio || "")}</textarea>
+            </label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button type="button" id="pref-profile-save" class="btn accent btn-compact">Save profile</button>
+              <button type="button" id="pref-profile-view" class="btn secondary btn-compact">View public profile</button>
+              <small class="muted" id="pref-profile-link">${currentUser?.handle ? appEscapeHtml(`render3d.app/u/${currentUser.handle}`) : ""}</small>
             </div>
             <p id="profile-avatar-status" class="muted small profile-preferences-note"></p>
           </section>
@@ -23988,7 +24047,33 @@ window.addEventListener("keydown", (e) => {
       })();
       return;
     }
-    if (!e.target.closest("#profile-avatar-remove")) return;
+    if (!e.target.closest("#profile-avatar-remove") && !e.target.closest("#pref-profile-save") && !e.target.closest("#pref-profile-view")) return;
+    if (e.target.closest("#pref-profile-view")) {
+      const handle = (document.getElementById("pref-handle")?.value || currentUser?.handle || "").trim().replace(/^@/, "");
+      if (handle) void userProfileUi?.openHandle?.(handle);
+      else if (currentUser?.id) void userProfileUi?.open?.({ userId: currentUser.id });
+      return;
+    }
+    if (e.target.closest("#pref-profile-save")) {
+      void (async () => {
+        const display_name = document.getElementById("pref-display-name")?.value || "";
+        const handle = (document.getElementById("pref-handle")?.value || "").trim().replace(/^@/, "");
+        const bio = document.getElementById("pref-bio")?.value || "";
+        setProfileAvatarStatus("Saving profile…");
+        try {
+          const data = await api("/api/users/me", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ display_name, handle, bio }),
+          });
+          applyUpdatedUser(data.user);
+          setProfileAvatarStatus("Profile saved.", "status ok");
+        } catch (err) {
+          setProfileAvatarStatus(err.message || "Could not save profile.", "status error");
+        }
+      })();
+      return;
+    }
     void removeProfileAvatar();
   });
 

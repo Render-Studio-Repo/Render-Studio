@@ -46,6 +46,7 @@ from backend.services import (
     new_user_alert_service,
     onboarding_email_service,
     workspace_log_service,
+    ai_credit_service,
 )
 from backend.services import kernel_bridge
 from backend.services.design_service import is_custom_sketch_structural_request
@@ -670,6 +671,20 @@ class UserAIKeyRenameRequest(BaseModel):
     model: str | None = Field(None, min_length=1, max_length=120)
 
 
+class UserAICreditSettingsRequest(BaseModel):
+    use_platform_key: bool | None = None
+    auto_refill_enabled: bool | None = None
+    auto_refill_threshold_cents: int | None = Field(None, ge=0, le=100_000)
+    auto_refill_amount_cents: int | None = Field(None, ge=500, le=100_000)
+
+
+class UserAICreditCheckoutRequest(BaseModel):
+    amount_cents: int = Field(default=2000, ge=500, le=100_000)
+    provider: str = Field(default="stripe", max_length=20)
+    success_url: str | None = Field(default=None, max_length=500)
+    cancel_url: str | None = Field(default=None, max_length=500)
+
+
 class AutodeskCredentialsRequest(BaseModel):
     client_id: str = Field(..., min_length=10, max_length=256)
     client_secret: str = Field(..., min_length=20, max_length=512)
@@ -1052,7 +1067,7 @@ def _public_project_summaries(
         project_path = PROJECTS / project_id
         if not project_path.is_dir():
             continue
-        summary = project_store.project_summary(project_path)
+        summary = project_store.project_list_summary(project_path)
         if not summary.get("file_count"):
             continue
         can_manage = bool(viewer_user and teams_service.can_access_project(viewer_user["id"], project_id))
@@ -1607,6 +1622,21 @@ def _daily_ai_spend_for_user(user_id: str) -> float:
 
 def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
     status = user_ai_keys_service.status_for_user(user)
+    try:
+        status["credits"] = ai_credit_service.status(user)
+    except Exception:
+        status["credits"] = {"available": False, "balance_cents": 0, "markup_percent": 15}
+    credits = status.get("credits") or {}
+    if credits.get("use_platform_key") and credits.get("available") and int(credits.get("balance_cents") or 0) > 0:
+        status["ai_ready"] = True
+        status["provider"] = "openai"
+        status["model"] = settings.openai_model
+        status["effective"] = status.get("effective") or {
+            "source": "platform",
+            "provider": "openai",
+            "model": settings.openai_model,
+            "key_name": "Render3D shared API key",
+        }
     daily_usage = _daily_ai_usage_for_user(user["id"])
     spent_today = float(daily_usage.get("cost_usd") or 0)
     tokens_today = int(daily_usage.get("tokens") or 0)
@@ -1678,6 +1708,10 @@ def _resolve_prompt_model_meta(
             effective = user_ai_keys_service.get_effective_key_for_user(user["id"], project_id=project_id)
     except Exception:
         effective = {}
+    if not effective and ai_credit_service.status(user).get("use_platform_key"):
+        provider = "openai"
+        model = settings.openai_model if resolve_speed == "fast" else settings.openai_model_quality
+        return {"model": model, "provider": provider, "speed": speed}
     provider = str((effective or {}).get("provider") or "").strip().lower() or None
     model = None
     if provider == "openai":
@@ -1734,9 +1768,19 @@ def _get_ai_for_user(
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     if not effective or not effective.get("api_key"):
+        credits = ai_credit_service.status(user)
+        if credits.get("use_platform_key") and credits.get("available"):
+            if int(credits.get("balance_cents") or 0) <= 0:
+                raise HTTPException(status_code=402, detail="Buy shared-key credits to use the platform AI key.")
+            provider = "openai"
+            model = settings.openai_model if speed == "fast" else settings.openai_model_quality
+            ai = AIService(model=model, api_key=settings.openai_api_key, provider=provider)
+            setattr(ai, "billing_source", "platform")
+            setattr(ai, "billing_user_id", user["id"])
+            return ai
         raise HTTPException(
             status_code=403,
-            detail="Add your OpenAI or Claude API key from the account menu before generating.",
+            detail="Add your OpenAI or Claude API key, or buy shared-key credits from the account menu before generating.",
         )
     if effective.get("source") == "team":
         usage_today = _daily_ai_usage_for_user(user["id"], shared_key_id=effective.get("key_id"))
@@ -4837,6 +4881,125 @@ def delete_my_avatar(user: dict[str, Any] = Depends(get_current_user)):
     return {"user": updated, "avatar_url": None}
 
 
+class UserProfileUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=80)
+    handle: str | None = Field(default=None, max_length=24)
+    bio: str | None = Field(default=None, max_length=500)
+
+
+class MeetingRequestBody(BaseModel):
+    message: str = Field(default="", max_length=1000)
+    proposed_time: str = Field(default="", max_length=120)
+    channel: str = Field(default="chat", max_length=20)
+    project_id: str | None = Field(default=None, max_length=120)
+
+
+@app.patch("/api/users/me")
+def update_my_profile(body: UserProfileUpdateRequest, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import profile_service
+
+    try:
+        updated = profile_service.update_profile(
+            user["id"],
+            display_name=body.display_name,
+            handle=body.handle,
+            bio=body.bio,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"user": updated}
+
+
+@app.get("/api/users/me/profile")
+def get_my_public_profile(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import profile_service
+
+    return {"profile": profile_service.public_profile(user["id"], viewer=user)}
+
+
+@app.get("/api/users/{user_id}/profile")
+def get_user_public_profile(
+    user_id: str,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    from backend.services import profile_service
+
+    try:
+        return {"profile": profile_service.public_profile(user_id, viewer=user)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/handles/{handle}/profile")
+def get_handle_public_profile(
+    handle: str,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    from backend.services import profile_service
+
+    try:
+        return {"profile": profile_service.public_profile(handle=handle, viewer=user)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/users/{user_id}/meeting-request")
+def request_meeting_with_user(
+    user_id: str,
+    body: MeetingRequestBody,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import profile_service, project_chat_service
+
+    try:
+        result = profile_service.create_meeting_request(
+            from_user=user,
+            to_user_id=user_id,
+            message=body.message,
+            proposed_time=body.proposed_time,
+            channel=body.channel,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    chat_posted = None
+    if body.channel in {"chat", "both"} and body.project_id:
+        try:
+            path = _require_project_read(user, body.project_id)
+            members = _project_chat_members(body.project_id)
+            threads = project_chat_service.list_threads(path, user)
+            studio = next(
+                (
+                    t
+                    for t in threads
+                    if t.get("slug") == "general"
+                    or str(t.get("title") or "").lower() in {"render studio", "general"}
+                ),
+                None,
+            )
+            if studio:
+                candidates = project_chat_service.mention_candidates(members or [user, result["to_user"]])
+                chat_posted = project_chat_service.post_message(
+                    path,
+                    thread_id=studio["id"],
+                    body=result["chat_body"],
+                    user=user,
+                    mention_candidates_list=candidates,
+                )
+                try:
+                    _notify_chat_message(body.project_id, studio, chat_posted, user)
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.warning("meeting request chat post failed: %s", exc)
+
+    return {"request": result, "chat_message": chat_posted}
+
+
 # ── Onshape OAuth ─────────────────────────────────────────────────────────────
 
 @app.get("/oauth/start")
@@ -7247,6 +7410,52 @@ def get_user_ai_key_status(user: dict[str, Any] = Depends(get_current_user)):
     return {"ai": _ai_status_for_user(user)}
 
 
+@app.get("/api/user/ai-credits")
+def get_user_ai_credits(user: dict[str, Any] = Depends(get_current_user)):
+    return {"credits": ai_credit_service.status(user)}
+
+
+@app.patch("/api/user/ai-credits")
+def update_user_ai_credits(body: UserAICreditSettingsRequest, user: dict[str, Any] = Depends(get_current_user)):
+    ai_credit_service.update_settings(
+        user["id"],
+        use_platform_key=body.use_platform_key,
+        auto_refill_enabled=body.auto_refill_enabled,
+        auto_refill_threshold_cents=body.auto_refill_threshold_cents,
+        auto_refill_amount_cents=body.auto_refill_amount_cents,
+    )
+    return {"credits": ai_credit_service.status(user), "ai": _ai_status_for_user(user)}
+
+
+@app.post("/api/user/ai-credits/checkout")
+def create_user_ai_credit_checkout(
+    body: UserAICreditCheckoutRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    base = str(getattr(settings, "public_base_url", None) or _request_origin(request)).rstrip("/")
+    success_url = body.success_url or f"{base}/?ai_credits=success"
+    cancel_url = body.cancel_url or f"{base}/?ai_credits=cancel"
+    try:
+        return ai_credit_service.create_checkout_session(
+            user,
+            amount_cents=body.amount_cents,
+            provider=body.provider,
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/user/ai-credits/demo")
+def demo_user_ai_credits(
+    body: UserAICreditCheckoutRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    return {"credits": ai_credit_service.demo_add(user, body.amount_cents), "ai": _ai_status_for_user(user)}
+
+
 @app.post("/api/user/ai-key")
 @app.put("/api/user/ai-key")
 def set_user_ai_key(body: UserAIKeyRequest, user: dict[str, Any] = Depends(get_current_user)):
@@ -8945,6 +9154,102 @@ def _public_generated_by(project_path: Path, owner: dict[str, Any] | None = None
     return None
 
 
+def _absolute_public_url(path: str, request: Request | None = None) -> str:
+    base = str(getattr(settings, "public_base_url", None) or (_public_origin(request) if request else "https://render3d.app")).rstrip("/")
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    return f"{base}/{path.lstrip('/')}"
+
+
+def _public_project_latest_prompt(project_path: Path) -> dict[str, Any] | None:
+    prompts = _public_prompt_history(project_path, limit=20, kind="cad")
+    return next((e for e in prompts if e.get("success")), prompts[0] if prompts else None)
+
+
+def _public_project_preview_url(project_id: str, project_path: Path, latest_file: str | None, request: Request | None = None) -> str | None:
+    if not latest_file:
+        return None
+    try:
+        meta = share_preview.share_preview_image_meta(
+            project_path,
+            latest_file,
+            resolve_viewport=cad_service.resolve_viewport_filename,
+        )
+        preview_file = meta.get("preview_file")
+    except Exception:
+        logger.debug("Could not build public Discord preview project_id=%s", project_id, exc_info=True)
+        preview_file = None
+    if not preview_file:
+        preview_file = share_preview.share_snapshot_filename(
+            project_path,
+            latest_file,
+            resolve_viewport=cad_service.resolve_viewport_filename,
+        )
+    if not preview_file:
+        return None
+    return _absolute_public_url(
+        f"/api/public/projects/{project_id}/files/{urllib.parse.quote(Path(preview_file).name)}",
+        request,
+    )
+
+
+def _announce_public_project_to_discord(project_id: str, request_origin: str | None = None) -> None:
+    channel_id = str(getattr(settings, "discord_public_models_channel_id", "") or "").strip()
+    if not channel_id:
+        return
+    try:
+        from backend.services import discord_updates_service as discord
+
+        project_path = PROJECTS / project_id
+        if not project_path.is_dir() or not _is_public_project(project_id):
+            return
+        owner = _project_owner(project_id) or {}
+        summary = project_store.project_summary(project_path)
+        latest_file = summary.get("latest_file") or project_store.latest_model_file(project_path)
+        prompt = _public_project_latest_prompt(project_path)
+        generated_by = _public_generated_by(project_path, owner) or {}
+        username = (
+            generated_by.get("display_name")
+            or owner.get("owner_name")
+            or (prompt or {}).get("user_name")
+            or "Render3D user"
+        )
+        description = _admin_prompt_preview(
+            (prompt or {}).get("prompt")
+            or (prompt or {}).get("original_prompt")
+            or f"Public Render3D model with {summary.get('file_count') or 0} project file(s).",
+            700,
+        )
+        base = str(request_origin or getattr(settings, "public_base_url", None) or "https://render3d.app").rstrip("/")
+        view_url = f"{base}/?project={urllib.parse.quote(project_id)}"
+        preview_url = _public_project_preview_url(project_id, project_path, latest_file)
+        embed: dict[str, Any] = {
+            "title": str(summary.get("name") or project_id)[:256],
+            "url": view_url,
+            "description": description[:4000],
+            "color": 0xF97316,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "author": {"name": str(username)[:256]},
+            "fields": [
+                {"name": "Creator", "value": str(username)[:1024], "inline": True},
+                {"name": "View", "value": f"[Open public model]({view_url})", "inline": True},
+            ],
+            "footer": {"text": "Render3D public model"},
+        }
+        if latest_file:
+            embed["fields"].append({"name": "File", "value": str(latest_file)[:1024], "inline": True})
+        if preview_url:
+            embed["image"] = {"url": preview_url}
+        payload = {
+            "content": f"New public Render3D model from **{str(username)[:80]}**",
+            "embeds": [embed],
+            "allowed_mentions": {"parse": []},
+        }
+        discord.send_channel_message(payload, channel_id=channel_id)
+    except Exception:
+        logger.warning("Could not announce public project to Discord project_id=%s", project_id, exc_info=True)
+
+
 @app.get("/api/public/projects/{project_id}")
 def get_public_project(project_id: str):
     if not _is_public_project(project_id):
@@ -9019,17 +9324,27 @@ def get_public_project_history(
 @app.post("/api/projects/{project_id}/public")
 def set_project_public(
     project_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
     body: dict = Body({}),
     user: dict[str, Any] = Depends(get_current_user),
 ):
     path = _require_project(user, project_id)
     make_public = bool(body.get("public", True))
+    was_public = False
     with get_conn() as conn:
+        row = conn.execute(
+            "SELECT is_public FROM project_access WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        was_public = bool(row["is_public"]) if row else False
         conn.execute(
             "UPDATE project_access SET is_public = ? WHERE project_id = ?",
             (1 if make_public else 0, project_id),
         )
         conn.commit()
+    if make_public and not was_public:
+        background_tasks.add_task(_announce_public_project_to_discord, project_id, _public_origin(request))
     return {
         "project_id": project_id,
         "public": make_public,
@@ -9668,18 +9983,29 @@ def _project_chat_members(project_id: str) -> list[dict[str, Any]]:
     members: list[dict[str, Any]] = []
     if team_id:
         try:
-            # Owner-visible membership listing may require a team member; fall back to SQL.
             with get_conn() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT u.id, u.email, u.display_name, u.avatar_url
-                      FROM team_members tm
-                      JOIN users u ON u.id = tm.user_id
-                     WHERE tm.team_id = ?
-                     ORDER BY lower(u.display_name), lower(u.email)
-                    """,
-                    (team_id,),
-                ).fetchall()
+                try:
+                    rows = conn.execute(
+                        """
+                        SELECT u.id, u.email, u.display_name, u.avatar_url, u.handle
+                          FROM team_members tm
+                          JOIN users u ON u.id = tm.user_id
+                         WHERE tm.team_id = ?
+                         ORDER BY lower(u.display_name), lower(u.email)
+                        """,
+                        (team_id,),
+                    ).fetchall()
+                except Exception:
+                    rows = conn.execute(
+                        """
+                        SELECT u.id, u.email, u.display_name, u.avatar_url
+                          FROM team_members tm
+                          JOIN users u ON u.id = tm.user_id
+                         WHERE tm.team_id = ?
+                         ORDER BY lower(u.display_name), lower(u.email)
+                        """,
+                        (team_id,),
+                    ).fetchall()
             members = [dict(row) for row in rows]
         except Exception:
             members = []
@@ -13239,6 +13565,28 @@ def _save_prompt_history(
                 key_meta = {}
                 effective = {}
         usage_meta = _usage_history_fields(ai_traces)
+        platform_credit_charge = None
+        if user and not effective:
+            try:
+                credits = ai_credit_service.status(user)
+                if credits.get("use_platform_key"):
+                    key_meta = {"key_source": "platform", "shared_key_name": "Render3D shared API key"}
+                    platform_trace = {
+                        "cost_usd": usage_meta.get("cost_usd"),
+                        "model": usage_meta.get("model"),
+                        "provider": usage_meta.get("provider") or "openai",
+                    }
+                    platform_credit_charge = ai_credit_service.spend_for_trace(
+                        user["id"],
+                        platform_trace,
+                        project_id=project_path.name,
+                    )
+                    if platform_credit_charge:
+                        key_meta["platform_credit_charge"] = platform_credit_charge
+            except ValueError:
+                raise
+            except Exception as exc:
+                logger.debug("platform credit charge failed: %s", exc)
         if not usage_meta.get("model") and effective:
             model = (effective.get("model") or "").strip()
             if not model and effective.get("provider") == "openai":
@@ -13276,6 +13624,8 @@ def _save_prompt_history(
             **usage_meta,
             **key_meta,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
     except Exception as exc:
         logger.debug("prompt history save failed: %s", exc)
     return None

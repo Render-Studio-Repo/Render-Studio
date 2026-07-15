@@ -59,6 +59,8 @@ def can_manage_workspace(role: str | None) -> bool:
 
 
 def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
+    from backend.services.profile_service import ensure_unique_handle, slugify_handle
+
     email = email.strip().lower()
     display_name = display_name.strip() or email.split("@")[0]
     user_id = str(uuid.uuid4())[:12]
@@ -66,10 +68,18 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
     now = _now()
     with get_conn() as conn:
         try:
-            conn.execute(
-                "INSERT INTO users (id, email, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-                (user_id, email, display_name, hash_password(password), now),
-            )
+            handle = ensure_unique_handle(conn, slugify_handle(display_name or email.split("@")[0]))
+            try:
+                conn.execute(
+                    "INSERT INTO users (id, email, display_name, password_hash, created_at, handle) VALUES (?, ?, ?, ?, ?, ?)",
+                    (user_id, email, display_name, hash_password(password), now, handle),
+                )
+            except sqlite3.OperationalError:
+                conn.execute(
+                    "INSERT INTO users (id, email, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (user_id, email, display_name, hash_password(password), now),
+                )
+                handle = None
             first_name = display_name.split()[0] if display_name.split() else display_name
             conn.execute(
                 "INSERT INTO teams (id, name, created_by, created_at) VALUES (?, ?, ?, ?)",
@@ -82,7 +92,11 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
             conn.commit()
         except sqlite3.IntegrityError as exc:
             raise ValueError("Email already registered") from exc
-    return {"id": user_id, "email": email, "display_name": display_name, "created_at": now}
+    out = {"id": user_id, "email": email, "display_name": display_name, "created_at": now}
+    if handle:
+        out["handle"] = handle
+        out["profile_url"] = f"/u/{handle}"
+    return out
 
 
 def authenticate(email: str, password: str) -> dict[str, Any] | None:
@@ -91,10 +105,13 @@ def authenticate(email: str, password: str) -> dict[str, Any] | None:
         row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     if not row or not verify_password(password, row["password_hash"]):
         return None
+    keys = row.keys()
     return {
         "id": row["id"],
         "email": row["email"],
         "display_name": row["display_name"],
+        "handle": row["handle"] if "handle" in keys else None,
+        "avatar_url": row["avatar_url"] if "avatar_url" in keys else None,
         "created_at": row["created_at"],
     }
 
@@ -658,19 +675,37 @@ def list_users(query: str = "", limit: int = 50) -> list[dict[str, Any]]:
     q = f"%{query.strip().lower()}%"
     with get_conn() as conn:
         if query.strip():
-            rows = conn.execute(
-                """
-                SELECT id, email, display_name FROM users
-                WHERE lower(email) LIKE ? OR lower(display_name) LIKE ?
-                ORDER BY display_name LIMIT ?
-                """,
-                (q, q, limit),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, email, display_name, handle, avatar_url FROM users
+                    WHERE lower(email) LIKE ?
+                       OR lower(display_name) LIKE ?
+                       OR lower(COALESCE(handle, '')) LIKE ?
+                    ORDER BY display_name LIMIT ?
+                    """,
+                    (q, q, q, limit),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = conn.execute(
+                    """
+                    SELECT id, email, display_name FROM users
+                    WHERE lower(email) LIKE ? OR lower(display_name) LIKE ?
+                    ORDER BY display_name LIMIT ?
+                    """,
+                    (q, q, limit),
+                ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT id, email, display_name FROM users ORDER BY display_name LIMIT ?",
-                (limit,),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT id, email, display_name, handle, avatar_url FROM users ORDER BY display_name LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = conn.execute(
+                    "SELECT id, email, display_name FROM users ORDER BY display_name LIMIT ?",
+                    (limit,),
+                ).fetchall()
     return [dict(r) for r in rows]
 
 

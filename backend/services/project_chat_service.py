@@ -63,10 +63,16 @@ def _profile(user_id: str | None) -> dict[str, Any] | None:
     if not user_id:
         return None
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT id, email, display_name, avatar_url FROM users WHERE id=?",
-            (user_id,),
-        ).fetchone()
+        try:
+            row = conn.execute(
+                "SELECT id, email, display_name, avatar_url, handle FROM users WHERE id=?",
+                (user_id,),
+            ).fetchone()
+        except Exception:
+            row = conn.execute(
+                "SELECT id, email, display_name, avatar_url FROM users WHERE id=?",
+                (user_id,),
+            ).fetchone()
     return dict(row) if row else None
 
 
@@ -81,6 +87,7 @@ def _sender(user: dict[str, Any] | None, *, as_agent: bool = False) -> dict[str,
     return {
         "id": user.get("id") if user else None,
         "display_name": (user or {}).get("display_name") or "User",
+        "handle": (user or {}).get("handle"),
         "avatar_url": (user or {}).get("avatar_url"),
         "is_agent": False,
     }
@@ -89,18 +96,45 @@ def _sender(user: dict[str, Any] | None, *, as_agent: bool = False) -> dict[str,
 def _ensure_general_thread(data: dict[str, Any], user: dict[str, Any] | None = None) -> dict[str, Any]:
     threads = data.setdefault("threads", [])
     for thread in threads:
-        if thread.get("slug") == "general" or str(thread.get("title") or "").lower() == "general":
+        slug = str(thread.get("slug") or "").lower()
+        title = str(thread.get("title") or "").lower()
+        if slug in {"general", "render-studio"} or title in {"general", "render studio"}:
+            thread["slug"] = "general"
+            thread["title"] = "Render Studio"
             thread.setdefault("visibility", "shared")
             thread.setdefault("members", [])
+            # Keep every project member on the default channel
+            if user and user.get("id"):
+                members = thread.setdefault("members", [])
+                if not any(str(m.get("id")) == str(user["id"]) for m in members):
+                    members.append(
+                        {
+                            "id": user["id"],
+                            "display_name": user.get("display_name"),
+                            "handle": user.get("handle"),
+                            "avatar_url": user.get("avatar_url"),
+                        }
+                    )
             return thread
     thread = {
         "id": str(uuid.uuid4())[:10],
         "slug": "general",
-        "title": "General",
+        "title": "Render Studio",
         "created_at": _now(),
         "created_by": (user or {}).get("id"),
         "visibility": "shared",
-        "members": [],
+        "members": (
+            [
+                {
+                    "id": user["id"],
+                    "display_name": user.get("display_name"),
+                    "handle": user.get("handle"),
+                    "avatar_url": user.get("avatar_url"),
+                }
+            ]
+            if user and user.get("id")
+            else []
+        ),
         "messages": [],
     }
     threads.insert(0, thread)
@@ -346,13 +380,19 @@ def parse_mentions(body: str, candidates: list[dict[str, Any]] | None = None) ->
         for cand in candidates or []:
             name = str(cand.get("display_name") or "")
             email = str(cand.get("email") or "")
-            handle = re.sub(r"[^a-z0-9]+", "", name.lower())
-            if bare.lower() == handle or bare.lower() == email.split("@")[0].lower() or bare.lower() == name.lower().replace(" ", ""):
+            stored_handle = str(cand.get("handle") or "").lower().lstrip("@")
+            handle = stored_handle or re.sub(r"[^a-z0-9]+", "", name.lower())
+            if (
+                bare.lower() == handle
+                or bare.lower() == stored_handle
+                or bare.lower() == email.split("@")[0].lower()
+                or bare.lower() == name.lower().replace(" ", "")
+            ):
                 key = f"user:{cand.get('id')}"
                 if key in seen:
                     break
                 seen.add(key)
-                found.append({"type": "user", "id": cand.get("id"), "name": name or email})
+                found.append({"type": "user", "id": cand.get("id"), "name": name or email, "handle": cand.get("handle")})
                 break
     return found
 
@@ -368,14 +408,18 @@ def mention_candidates(project_members: list[dict[str, Any]]) -> list[dict[str, 
         }
     ]
     for member in project_members:
+        display = member.get("display_name") or member.get("email") or "User"
+        stored = (member.get("handle") or "").strip().lstrip("@")
+        handle = stored or (re.sub(r"[^A-Za-z0-9_]", "", str(display))[:24] or "user")
         out.append(
             {
                 "id": member.get("id") or member.get("user_id"),
-                "display_name": member.get("display_name") or member.get("email") or "User",
+                "display_name": display,
                 "avatar_url": member.get("avatar_url"),
                 "email": member.get("email"),
                 "type": "user",
-                "handle": re.sub(r"[^A-Za-z0-9]", "", str(member.get("display_name") or "user"))[:24] or "user",
+                "handle": handle,
+                "profile_url": f"/u/{handle}",
             }
         )
     return out

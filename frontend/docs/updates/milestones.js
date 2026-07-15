@@ -9,6 +9,16 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "discord-public-model-announcements",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Discord public model announcements",
+    summary:
+      "When a project is pushed to Public, Render3D can now post a Discord bot announcement with the project title, creator, description, thumbnail, and public view link.",
+    visual: "/docs/media/share-folder.gif?v=20260715-real",
+    href: "/",
+  },
+  {
     id: "google-new-user-robot-walkthrough",
     date: "2026-07-15",
     kind: "feature",

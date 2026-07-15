@@ -10,12 +10,13 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-preferences-premium" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-boot-dual-walkthrough" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-remember-gear" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v2" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
   <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-3d-spice" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/user-profile.css?v=20260715-user-profile" />
   <script type="importmap">
   {
     "imports": {
@@ -108,22 +109,35 @@
         <span class="studio-boot-tip-kicker">Studio tip</span>
         <p id="studio-boot-tip-text">Type <strong>@</strong> in the AI prompt to link imported files, objects, or selected faces.</p>
       </div>
-      <button type="button" id="studio-boot-learn-more" class="studio-boot-learn-more" aria-pressed="false">
-        <span class="studio-boot-learn-gearbox" aria-hidden="true">
-          <span class="studio-boot-learn-teeth"></span>
-          <span class="studio-boot-learn-gear">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-              <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z" stroke="currentColor" stroke-width="1.6"/>
-              <path d="M12 2.6l.7 2.2 2.1-.7 1.1 2 2.1.8-.7 2.1 1.9 1.2-1.2 1.9.7 2.1-2.1.8-1.1 2-2.1-.7L12 21.4l-.7-2.2-2.1.7-1.1-2-2.1-.8.7-2.1-1.9-1.2 1.2-1.9-.7-2.1 2.1-.8 1.1-2 2.1.7L12 2.6Z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
-            </svg>
+      <div class="studio-boot-walkthroughs" aria-label="Choose a walkthrough after loading">
+        <button type="button" id="studio-boot-learn-more" class="studio-boot-learn-more" aria-pressed="false" data-walkthrough-id="prompt-onboarding">
+          <span class="studio-boot-learn-gearbox" aria-hidden="true">
+            <span class="studio-boot-learn-teeth"></span>
+            <span class="studio-boot-learn-gear">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M12 2.6l.7 2.2 2.1-.7 1.1 2 2.1.8-.7 2.1 1.9 1.2-1.2 1.9.7 2.1-2.1.8-1.1 2-2.1-.7L12 21.4l-.7-2.2-2.1.7-1.1-2-2.1-.8.7-2.1-1.9-1.2 1.2-1.9-.7-2.1 2.1-.8 1.1-2 2.1.7L12 2.6Z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+              </svg>
+            </span>
           </span>
-        </span>
-        <span class="studio-boot-learn-copy">
-          <span class="studio-boot-learn-kicker" data-learn-kicker>Studio walkthrough</span>
-          <span class="studio-boot-learn-label" data-learn-label>Learn more after loading</span>
-        </span>
-        <span class="studio-boot-learn-chevron" aria-hidden="true">›</span>
-      </button>
+          <span class="studio-boot-learn-copy">
+            <span class="studio-boot-learn-kicker" data-learn-kicker>Studio walkthrough</span>
+            <span class="studio-boot-learn-label" data-learn-label>New account tour</span>
+          </span>
+          <span class="studio-boot-learn-chevron" aria-hidden="true">›</span>
+        </button>
+        <button type="button" id="studio-boot-random-walkthrough" class="studio-boot-learn-more studio-boot-learn-more--random" aria-pressed="false" data-walkthrough-id="ai-generate">
+          <span class="studio-boot-learn-gearbox" aria-hidden="true">
+            <span class="studio-boot-learn-teeth"></span>
+            <span class="studio-boot-learn-gear">?</span>
+          </span>
+          <span class="studio-boot-learn-copy">
+            <span class="studio-boot-learn-kicker" data-learn-kicker>Random walkthrough</span>
+            <span class="studio-boot-learn-label" data-learn-label>Changes every reload</span>
+          </span>
+          <span class="studio-boot-learn-chevron" aria-hidden="true">›</span>
+        </button>
+      </div>
       <div class="studio-boot-progress" aria-hidden="true">
         <span class="studio-boot-progress-fill"></span>
       </div>
@@ -155,16 +169,30 @@
   <script>
   (function () {
     var WALKTHROUGH_KEY = "render3d:bootWalkthroughQueued:v1";
+    var WALKTHROUGH_ID_KEY = "render3d:bootWalkthroughId:v1";
     var boot = document.getElementById("studio-boot-screen");
     var pctEl = document.getElementById("studio-boot-percent");
     var logoPctEl = document.getElementById("studio-boot-logo-percent");
     var subEl = document.getElementById("studio-boot-sub");
     var tipEl = document.getElementById("studio-boot-tip-text");
-    var learnBtn = document.getElementById("studio-boot-learn-more");
+    var learnBtns = Array.prototype.slice.call(document.querySelectorAll("[data-walkthrough-id]"));
+    var randomBtn = document.getElementById("studio-boot-random-walkthrough");
     var current = 8;
     var target = 88;
     var timer = null;
     var tipIndex = 0;
+    var randomWalkthroughs = [
+      { id: "ai-generate", kicker: "AI Generate", label: "Build CAD from text" },
+      { id: "wiring", kicker: "Wiring simulator", label: "Arduino stepper demo" },
+      { id: "picks", kicker: "Geometry picks", label: "Use face references" },
+      { id: "select-object", kicker: "Select objects", label: "Pick parts and bodies" },
+      { id: "link-to-prompt", kicker: "Prompt context", label: "Drag files into AI" },
+      { id: "solid-tools", kicker: "Solid tools", label: "Select and edit parts" },
+      { id: "canvas", kicker: "Canvas", label: "Sketch ideas visually" },
+      { id: "workspaces", kicker: "Workspaces", label: "Teams and projects" },
+      { id: "render-agent", kicker: "Render Agent", label: "Ask for help in-app" },
+      { id: "cloud-sync", kicker: "Fusion / Onshape", label: "Cloud CAD sync" }
+    ];
     var tips = [
       "Type <strong>@</strong> in the AI prompt to link imported files, objects, or selected faces.",
       "Use <strong>Face</strong> pick to create @face references before asking AI to edit a surface.",
@@ -177,24 +205,48 @@
       if (!isFinite(n)) return current;
       return Math.max(0, Math.min(100, n));
     }
-    function setQueued(on) {
+    function pickRandomWalkthrough() {
+      if (!randomBtn || !randomWalkthroughs.length) return;
+      var picked = randomWalkthroughs[Math.floor(Math.random() * randomWalkthroughs.length)];
+      randomBtn.setAttribute("data-walkthrough-id", picked.id);
+      var label = randomBtn.querySelector("[data-learn-label]");
+      var kicker = randomBtn.querySelector("[data-learn-kicker]");
+      if (label) label.textContent = picked.label;
+      if (kicker) kicker.textContent = picked.kicker;
+    }
+    function getQueuedWalkthroughId() {
       try {
-        if (on) sessionStorage.setItem(WALKTHROUGH_KEY, "1");
-        else sessionStorage.removeItem(WALKTHROUGH_KEY);
-      } catch (e) {}
-      if (learnBtn) {
-        learnBtn.classList.toggle("is-queued", !!on);
-        learnBtn.classList.toggle("is-morphing", !!on);
-        learnBtn.setAttribute("aria-pressed", on ? "true" : "false");
-        var label = learnBtn.querySelector("[data-learn-label]");
-        var kicker = learnBtn.querySelector("[data-learn-kicker]");
-        if (label) label.textContent = on ? "Walkthrough queued" : "Learn more after loading";
-        if (kicker) kicker.textContent = on ? "Gearbox armed" : "Studio walkthrough";
+        return sessionStorage.getItem(WALKTHROUGH_ID_KEY) || (sessionStorage.getItem(WALKTHROUGH_KEY) === "1" ? "ai-generate" : "");
+      } catch (e) {
+        return "";
+      }
+    }
+    function setQueued(on, guideId) {
+      var selectedId = guideId || "prompt-onboarding";
+      try {
         if (on) {
-          window.setTimeout(function () {
-            learnBtn.classList.remove("is-morphing");
-          }, 650);
+          sessionStorage.setItem(WALKTHROUGH_KEY, "1");
+          sessionStorage.setItem(WALKTHROUGH_ID_KEY, selectedId);
+        } else {
+          sessionStorage.removeItem(WALKTHROUGH_KEY);
+          sessionStorage.removeItem(WALKTHROUGH_ID_KEY);
         }
+      } catch (e) {}
+      learnBtns.forEach(function (btn) {
+        var active = !!on && btn.getAttribute("data-walkthrough-id") === selectedId;
+        btn.classList.toggle("is-queued", active);
+        btn.classList.toggle("is-morphing", active);
+        btn.setAttribute("aria-pressed", active ? "true" : "false");
+        var label = btn.querySelector("[data-learn-label]");
+        var originalLabel = btn.getAttribute("data-original-label") || (label ? label.textContent : "");
+        if (!btn.getAttribute("data-original-label")) btn.setAttribute("data-original-label", originalLabel);
+        if (label) label.textContent = active ? "Walkthrough queued" : originalLabel;
+        if (active) window.setTimeout(function () {
+          btn.classList.remove("is-morphing");
+        }, 650);
+      });
+      if (on && subEl) {
+        subEl.textContent = "Walkthrough will start when Studio is ready.";
       }
     }
     function isQueued() {
@@ -240,28 +292,31 @@
       if (!boot || boot.classList.contains("is-done")) return;
       rotateTip();
     }, 4200);
-    learnBtn?.addEventListener("click", function () {
-      setQueued(true);
-      if (subEl) subEl.textContent = "Walkthrough will start when Studio is ready.";
+    pickRandomWalkthrough();
+    learnBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        setQueued(true, btn.getAttribute("data-walkthrough-id") || "prompt-onboarding");
+      });
     });
     window.__maybeStartStudioBootWalkthrough = function () {
       if (!isQueued()) return;
+      var guideId = getQueuedWalkthroughId() || "prompt-onboarding";
       setQueued(false);
       try { localStorage.setItem("render3d:welcomeSeen:v1", "1"); } catch (e) {}
       document.getElementById("welcome-modal")?.classList.add("hidden");
       window.setTimeout(function () {
-        import("./show-me-tour.js?v=20260715-boot-walkthrough")
+        import("./show-me-tour.js?v=20260715-boot-walkthrough-dual")
           .then(function (mod) {
-            if (!mod.startShowMe?.("ai-generate", { onDocsPage: false })) {
-              window.location.href = "/?showMe=ai-generate";
+            if (!mod.startShowMe?.(guideId, { onDocsPage: false })) {
+              window.location.href = "/?showMe=" + encodeURIComponent(guideId);
             }
           })
           .catch(function () {
-            window.location.href = "/?showMe=ai-generate";
+            window.location.href = "/?showMe=" + encodeURIComponent(guideId);
           });
       }, 220);
     };
-    if (isQueued()) setQueued(true);
+    if (isQueued()) setQueued(true, getQueuedWalkthroughId() || "prompt-onboarding");
     render();
   })();
   </script>
@@ -2375,7 +2430,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-rigging-control-tab"></script>
+  <script type="module" src="/app.js?v=20260715-user-profile-handles"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

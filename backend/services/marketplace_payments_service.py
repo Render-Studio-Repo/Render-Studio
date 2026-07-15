@@ -498,6 +498,12 @@ def handle_stripe_webhook(payload: bytes, sig_header: str | None) -> dict[str, A
 
     if etype == "checkout.session.completed":
         session_id = data.get("id")
+        metadata = data.get("metadata") or {}
+        if metadata.get("kind") == "ai_credits":
+            from backend.services import ai_credit_service
+
+            credited = ai_credit_service.handle_success_session(session_id)
+            return {"handled": True, "ai_credits": credited}
         pi = data.get("payment_intent")
         if isinstance(pi, dict):
             pi = pi.get("id")
