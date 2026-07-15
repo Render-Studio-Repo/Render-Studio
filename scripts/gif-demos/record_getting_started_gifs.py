@@ -11,7 +11,7 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, Page, Browser
 
-BASE = "https://render3d.app"
+BASE = "http://127.0.0.1:8001"
 EMAIL = "demo.docs.gif@r3d-studios.com"
 PASSWORD = "DemoGif2026!"
 OUT = Path("/home/ubuntu/frontend/docs/media")

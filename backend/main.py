@@ -11180,13 +11180,26 @@ def get_generation_status(project_id: str, user: dict[str, Any] = Depends(get_cu
     return generation_service.public_summary(path)
 
 
+class CancelGenerationRequest(BaseModel):
+    trace_id: str | None = Field(
+        default=None,
+        max_length=128,
+        description="Cancel only this generation job. Omit to cancel every running job.",
+    )
+
+
 @app.post("/api/projects/{project_id}/generation/cancel")
-def cancel_generation(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+def cancel_generation(
+    project_id: str,
+    body: CancelGenerationRequest | None = None,
+    user: dict[str, Any] = Depends(get_current_user),
+):
     # Allow workspace members and a1projects admins to stop a runaway generation.
     path = _require_project_read(user, project_id)
     if not generation_service.is_running(path):
         return generation_service.public_summary(path)
-    return generation_service.request_cancel(path)
+    trace_id = (body.trace_id if body else None) or None
+    return generation_service.request_cancel(path, trace_id=trace_id)
 
 
 def _background_prompt_kernel(
@@ -11240,7 +11253,7 @@ def _background_prompt_kernel(
         for key in ("usage", "cost_usd", "model", "provider", "ai_calls"):
             if result.get(key) is not None:
                 complete_payload[key] = result.get(key)
-        generation_service.complete(project_path, complete_payload)
+        generation_service.complete(project_path, complete_payload, trace_id=trace_id)
         filename = result.get("filename")
         if filename:
             import threading
