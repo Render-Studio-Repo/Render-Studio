@@ -49,7 +49,7 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260715-brighter-viewport";
+} from "./scene-style.js?v=20260715-solid-body-color";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
@@ -105,7 +105,7 @@ import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260710-step-module";
-import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-mm-scale";
+import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-primitives-play";
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
@@ -1215,13 +1215,15 @@ function initViewportLightingControl() {
   const slider = document.getElementById("viewport-light-slider");
   if (!slider) return;
   const panel = document.querySelector(".viewport-lighting-tab");
-  let saved = Number(slider.value || slider.max || 180);
+  let saved = Number(slider.value || 100);
   try {
     const raw = localStorage.getItem(VIEWPORT_LIGHTING_KEY);
     if (raw != null) saved = Number(raw);
   } catch {
     /* local storage is best-effort */
   }
+  // Always start at a balanced 100% — old 180% presets washed models out.
+  if (!Number.isFinite(saved) || saved < 35 || saved > 115) saved = 100;
   slider.value = String(applyViewportLighting(saved));
   slider.addEventListener("input", () => {
     const pct = applyViewportLighting(slider.value);
@@ -1491,6 +1493,8 @@ function isInternalCadSidecar(name = "") {
     || lower.startsWith("_export_")
     || lower.endsWith(".ezdxf.dxf")
     || (lower.startsWith(".") && lower.endsWith(".step.glb"))
+    // Face-dumped OCC previews — prefer the solid/body GLB for viewing.
+    || lower.includes("__faceted.")
   );
 }
 
@@ -3230,6 +3234,10 @@ function getPromptGenerationSpeed() {
 }
 
 const SPICE_KEY = "render3d:spice-prompt:v1";
+const SPICE_COMPARE_KEY = "render3d:spice-prompt-compare:v1";
+
+/** @type {{ original: string, improved: string, unchanged?: boolean, at?: string } | null} */
+let lastSpicePromptCompare = null;
 
 function isSpiceEnabled() {
   return Boolean(document.getElementById("prompt-spice")?.checked);
@@ -3247,6 +3255,80 @@ function setSpiceEnabled(enabled, { persist = true } = {}) {
   }
 }
 
+function loadSpicePromptCompare() {
+  try {
+    const raw = sessionStorage.getItem(SPICE_COMPARE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const original = String(parsed.original || "").trim();
+    const improved = String(parsed.improved || "").trim();
+    if (!original || !improved) return null;
+    return {
+      original,
+      improved,
+      unchanged: Boolean(parsed.unchanged) || original === improved,
+      at: parsed.at ? String(parsed.at) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveSpicePromptCompare(compare) {
+  lastSpicePromptCompare = compare;
+  try {
+    if (!compare) {
+      sessionStorage.removeItem(SPICE_COMPARE_KEY);
+    } else {
+      sessionStorage.setItem(SPICE_COMPARE_KEY, JSON.stringify(compare));
+    }
+  } catch {
+    /* ignore */
+  }
+  syncSpiceCompareViewButton();
+}
+
+function syncSpiceCompareViewButton() {
+  const btn = document.getElementById("prompt-spice-view-btn");
+  const group = document.getElementById("prompt-spice-group");
+  const ready = Boolean(lastSpicePromptCompare?.original && lastSpicePromptCompare?.improved);
+  if (btn) {
+    btn.disabled = !ready;
+    btn.title = ready
+      ? "View original vs improved prompt"
+      : "View original vs improved prompt (available after Improve runs)";
+  }
+  group?.classList.toggle("prompt-spice-group--ready", ready);
+}
+
+function closeSpiceCompareModal() {
+  const modal = document.getElementById("prompt-spice-compare-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  document.getElementById("prompt-spice-view-btn")?.setAttribute("aria-expanded", "false");
+}
+
+function openSpiceCompareModal() {
+  const compare = lastSpicePromptCompare || loadSpicePromptCompare();
+  if (!compare?.original || !compare?.improved) return;
+  lastSpicePromptCompare = compare;
+  const modal = document.getElementById("prompt-spice-compare-modal");
+  const originalEl = document.getElementById("prompt-spice-original");
+  const improvedEl = document.getElementById("prompt-spice-improved");
+  const noteEl = document.getElementById("prompt-spice-compare-note");
+  if (!modal || !originalEl || !improvedEl) return;
+  originalEl.textContent = compare.original;
+  improvedEl.textContent = compare.improved;
+  if (noteEl) {
+    noteEl.textContent = compare.unchanged
+      ? "The improved prompt matched your original — nothing was changed."
+      : "Your original wording is on the left. The AI rewrite used for generation is on the right.";
+  }
+  modal.classList.remove("hidden");
+  document.getElementById("prompt-spice-view-btn")?.setAttribute("aria-expanded", "true");
+}
+
 function initPromptSpiceToggle() {
   // Default ON so new users get clearer CAD prompts; persist explicit off as "0".
   let enabled = true;
@@ -3262,6 +3344,26 @@ function initPromptSpiceToggle() {
   input.checked = enabled;
   input.addEventListener("change", () => {
     setSpiceEnabled(input.checked);
+  });
+
+  lastSpicePromptCompare = loadSpicePromptCompare();
+  syncSpiceCompareViewButton();
+
+  const viewBtn = document.getElementById("prompt-spice-view-btn");
+  viewBtn?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openSpiceCompareModal();
+  });
+
+  const modal = document.getElementById("prompt-spice-compare-modal");
+  modal?.querySelectorAll("[data-spice-compare-close]").forEach((el) => {
+    el.addEventListener("click", () => closeSpiceCompareModal());
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!modal || modal.classList.contains("hidden")) return;
+    closeSpiceCompareModal();
   });
 }
 
@@ -3320,6 +3422,12 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
     }, 90000);
     const improved = String(data?.improved_prompt || "").trim();
     if (!improved || improved === original) {
+      saveSpicePromptCompare({
+        original,
+        improved: original,
+        unchanged: true,
+        at: new Date().toISOString(),
+      });
       pushSpiceOverlayProgress({
         pct: 6,
         stage: "analyze",
@@ -3331,6 +3439,12 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
       });
       return original;
     }
+    saveSpicePromptCompare({
+      original,
+      improved,
+      unchanged: false,
+      at: new Date().toISOString(),
+    });
     try {
       composer?.setPromptText?.(improved);
     } catch {
@@ -10967,6 +11081,12 @@ function resolveViewerPaths(filename, url) {
   if (ext === "3mf" || ext === "ply" || ext === "off" || ext === "step" || ext === "stp") {
     viewFilename = `${fileStem(filename)}.glb`;
     viewUrl = url.replace(/\/files\/[^/?#]+/, `/files/${encodeURIComponent(viewFilename)}`);
+  }
+  // Prefer solid body GLB over OCC face-dump (__faceted) for STEP-style viewing.
+  if (/__faceted\.(glb|gltf)$/i.test(viewFilename)) {
+    const solid = viewFilename.replace(/__faceted(?=\.(glb|gltf)$)/i, "");
+    viewFilename = solid;
+    viewUrl = (viewUrl || "").replace(/__faceted(?=\.(glb|gltf)(?:\?|#|$))/i, "");
   }
   return { viewFilename, viewUrl };
 }

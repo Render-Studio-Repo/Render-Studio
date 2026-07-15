@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-solid-body-color";
 
 const FORMAT_LABELS = {
   glb: "GLB",
@@ -191,6 +192,7 @@ async function main() {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  setupRenderer(renderer);
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.display = "block";
@@ -214,16 +216,21 @@ async function main() {
     TWO: THREE.TOUCH.DOLLY_PAN,
   };
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x6b7c8f, 1.6));
-  const key = new THREE.DirectionalLight(0xffffff, 2.1);
-  key.position.set(4, -5, 6);
+  // Match studio balanced CAD lighting.
+  scene.add(new THREE.HemisphereLight(0xf4f7fb, 0x556274, 0.88));
+  scene.add(new THREE.AmbientLight(0xe6eef6, 0.48));
+  const key = new THREE.DirectionalLight(0xfff5ec, 1.12);
+  key.position.set(5, -5, 9);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xb8d4ff, 1.05);
-  fill.position.set(-4, 3, -2);
+  const fill = new THREE.DirectionalLight(0xd9e7ff, 0.74);
+  fill.position.set(-6, 5, 5);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight(0xffffff, 0.55);
-  rim.position.set(0, 6, -4);
+  const rim = new THREE.DirectionalLight(0xc5d6ea, 0.52);
+  rim.position.set(1, 8, -7);
   scene.add(rim);
+  const under = new THREE.DirectionalLight(0xe4eef8, 0.58);
+  under.position.set(0, 0, -9);
+  scene.add(under);
 
   const root = new THREE.Group();
   scene.add(root);
@@ -306,6 +313,7 @@ async function main() {
         (gltf) => {
           root.clear();
           root.add(gltf.scene);
+          applyCadStyle(root);
           fitCamera();
           setStatus("");
           resolve();

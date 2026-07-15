@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-toolbar-nav-menu" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-spice-compare" />
   <script type="importmap">
   {
     "imports": {
@@ -1020,14 +1020,31 @@
                 <input type="checkbox" id="prompt-codex" />
                 <span>Codex</span>
               </label>
-              <label
-                id="prompt-spice-toggle"
-                class="prompt-spice-toggle"
-                title="Before generating, AI rewrites your prompt into a clearer, more detailed CAD brief so the model builds closer to what you meant. On by default — turn off to send your exact wording."
-              >
-                <input type="checkbox" id="prompt-spice" checked />
-                <span>Improve prompt with AI</span>
-              </label>
+              <div class="prompt-spice-group" id="prompt-spice-group">
+                <label
+                  id="prompt-spice-toggle"
+                  class="prompt-spice-toggle"
+                  title="Before generating, AI rewrites your prompt into a clearer, more detailed CAD brief so the model builds closer to what you meant. On by default — turn off to send your exact wording."
+                >
+                  <input type="checkbox" id="prompt-spice" checked />
+                  <span>Improve prompt with AI</span>
+                </label>
+                <button
+                  type="button"
+                  id="prompt-spice-view-btn"
+                  class="prompt-spice-view-btn"
+                  disabled
+                  aria-haspopup="dialog"
+                  aria-controls="prompt-spice-compare-modal"
+                  title="View original vs improved prompt"
+                  aria-label="View original vs improved prompt"
+                >
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/>
+                    <circle cx="8" cy="8" r="2" />
+                  </svg>
+                </button>
+              </div>
               <span class="muted small" id="prompt-mode-hint">Render creates or regenerates CAD. Draw edits selected faces/objects directly.</span>
             </div>
             <label class="prompt-target-row">
@@ -1689,6 +1706,28 @@
     </div>
   </div>
 
+  <div id="prompt-spice-compare-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-spice-compare-title">
+    <div class="auth-backdrop" data-spice-compare-close></div>
+    <div class="auth-card app-dialog-card prompt-spice-compare-card">
+      <button type="button" class="auth-close" data-spice-compare-close aria-label="Close">&times;</button>
+      <h2 id="prompt-spice-compare-title" class="app-dialog-title">Prompt comparison</h2>
+      <p id="prompt-spice-compare-note" class="muted small prompt-spice-compare-note"></p>
+      <div class="prompt-spice-compare-grid">
+        <section class="prompt-spice-compare-pane">
+          <h3 class="prompt-spice-compare-heading">Your prompt</h3>
+          <pre id="prompt-spice-original" class="prompt-spice-compare-text"></pre>
+        </section>
+        <section class="prompt-spice-compare-pane prompt-spice-compare-pane--improved">
+          <h3 class="prompt-spice-compare-heading">Improved prompt</h3>
+          <pre id="prompt-spice-improved" class="prompt-spice-compare-text"></pre>
+        </section>
+      </div>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn secondary" data-spice-compare-close>Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="image-drawing-confirm-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="image-drawing-confirm-title">
     <div class="auth-backdrop" data-image-drawing-close></div>
     <div class="auth-card app-dialog-card">
@@ -1835,7 +1874,7 @@
     </div>
   </div>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/app.js?v=20260715-urdf-primitives-play"></script>
+  <script type="module" src="/app.js?v=20260715-solid-body-color"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

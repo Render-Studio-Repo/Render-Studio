@@ -845,11 +845,23 @@ def viewer_filename_for_model(filename: str, project_path: Path) -> str:
     """Pick the file the Three.js viewer should load for a browser tree entry."""
     safe = Path(filename).name
     suffix = Path(safe).suffix.lower()
+    stem = Path(safe).stem
+
     if suffix in STEP_SUFFIXES:
-        glb = project_path / f"{Path(safe).stem}.glb"
-        if glb.is_file():
-            return glb.name
+        # Prefer solid preview GLB over face-dumped OCC mesh.
+        solid_glb = project_path / f"{stem}.glb"
+        faceted_glb = project_path / f"{stem}__faceted.glb"
+        if solid_glb.is_file():
+            return solid_glb.name
+        if faceted_glb.is_file():
+            return faceted_glb.name
     if suffix in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
+        # If someone points at *__faceted.glb, prefer the solid sibling when present.
+        if "__faceted" in stem.lower():
+            solid_stem = re.sub(r"__faceted$", "", stem, flags=re.I)
+            solid = project_path / f"{solid_stem}{suffix}"
+            if solid.is_file():
+                return solid.name
         return safe
     return safe
 

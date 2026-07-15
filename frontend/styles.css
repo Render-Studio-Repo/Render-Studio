@@ -17506,14 +17506,34 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   background: rgba(245, 158, 11, 0.12);
 }
 
+.prompt-spice-group {
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(13, 17, 23, 0.72);
+  overflow: hidden;
+}
+
+.prompt-spice-group:has(#prompt-spice:checked) {
+  border-color: rgba(88, 166, 255, 0.75);
+  background: rgba(56, 139, 253, 0.14);
+}
+
+.prompt-spice-group:has(#prompt-spice:checked) .prompt-spice-toggle,
+.prompt-spice-group:has(#prompt-spice:checked) .prompt-spice-view-btn:not(:disabled) {
+  color: #79c0ff;
+}
+
 .prompt-spice-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid rgba(88, 166, 255, 0.35);
-  border-radius: 999px;
-  background: rgba(13, 17, 23, 0.72);
+  padding: 4px 8px 4px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
@@ -17528,10 +17548,103 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   cursor: pointer;
 }
 
-.prompt-spice-toggle:has(input:checked) {
-  border-color: rgba(88, 166, 255, 0.75);
+.prompt-spice-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-left: 1px solid rgba(88, 166, 255, 0.28);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.45;
+}
+
+.prompt-spice-view-btn:disabled {
+  cursor: default;
+  opacity: 0.28;
+}
+
+.prompt-spice-view-btn:not(:disabled):hover {
+  opacity: 1;
+  background: rgba(56, 139, 253, 0.18);
   color: #79c0ff;
-  background: rgba(56, 139, 253, 0.14);
+}
+
+.prompt-spice-view-btn:not(:disabled):focus-visible {
+  outline: 2px solid rgba(88, 166, 255, 0.7);
+  outline-offset: -2px;
+  opacity: 1;
+}
+
+.prompt-spice-group--ready .prompt-spice-view-btn:not(:disabled) {
+  opacity: 0.9;
+}
+
+.prompt-spice-compare-card {
+  width: min(760px, 100%);
+}
+
+.prompt-spice-compare-note {
+  margin: -4px 0 12px;
+}
+
+.prompt-spice-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.prompt-spice-compare-pane {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prompt-spice-compare-heading {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.prompt-spice-compare-pane--improved .prompt-spice-compare-heading {
+  color: #79c0ff;
+}
+
+.prompt-spice-compare-text {
+  margin: 0;
+  padding: 10px 12px;
+  min-height: 120px;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text);
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.prompt-spice-compare-pane--improved .prompt-spice-compare-text {
+  border-color: rgba(88, 166, 255, 0.45);
+  background: rgba(56, 139, 253, 0.08);
+}
+
+@media (max-width: 720px) {
+  .prompt-spice-compare-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .prompt-skills-trail {
