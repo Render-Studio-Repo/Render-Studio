@@ -51,6 +51,12 @@ def is_openai_frontier_model(model: str | None) -> bool:
         or m.endswith("-sol")
     )
 
+
+def is_sol_model(model: str | None) -> bool:
+    """GPT-5.6 Sol and peers — very long reasoning; do not short-timeout."""
+    m = (model or "").strip().lower()
+    return bool(m.endswith("-sol") or "-sol" in m)
+
 DESIGN_SYSTEM_PROMPT = """You are Render3D's CAD design engine. You are an expert mechanical engineer
 and CAD modeler. You think step-by-step about HOW to construct 3D objects using boolean
 operations (union, subtraction, intersection), just like Fusion 360, SolidWorks, or ForgeCAD.
@@ -886,7 +892,13 @@ class AIService:
         self.cancel_check = None  # optional Callable[[], bool] set by generation runners
         if self.provider == "openai":
             # Pro / reasoning models routinely exceed 90s, especially with skills + images.
-            ai_timeout = 300.0 if is_openai_frontier_model(self.model) else 180.0
+            # Sol can sit quiet for many minutes while still streaming keepalives.
+            if is_sol_model(self.model):
+                ai_timeout = 1200.0
+            elif is_openai_frontier_model(self.model):
+                ai_timeout = 300.0
+            else:
+                ai_timeout = 180.0
             self.client = OpenAI(api_key=self.api_key, timeout=ai_timeout)
         elif self.provider != "anthropic":
             raise RuntimeError(f"Unsupported AI provider: {self.provider}")
@@ -1588,7 +1600,13 @@ class AIService:
         # Hard wall-clock timeout: httpx read-timeout resets on every received byte,
         # so frontier models (which stream keepalives) can hang indefinitely despite
         # timeout=300 on the client.  Enforce a true total elapsed limit here.
-        hard_timeout = 480.0 if is_openai_frontier_model(model) else 300.0
+        # Sol regularly needs 20–40+ minutes for CAD briefs / large assemblies.
+        if is_sol_model(model):
+            hard_timeout = 2400.0
+        elif is_openai_frontier_model(model):
+            hard_timeout = 480.0
+        else:
+            hard_timeout = 300.0
         t0 = time.perf_counter()
         trace: dict[str, Any] = {
             "model": model,

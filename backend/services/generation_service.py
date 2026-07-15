@@ -308,21 +308,46 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
     if job.get("status") != "running":
         return job
     if _process_is_alive(job.get("worker_pid")):
+        # Live worker — never wall-clock cancel mid Sol/CAD (progress may be quiet for a long time).
         return job
-    heartbeat = job.get("updated_at") or job.get("started_at")
-    if not heartbeat:
-        return job
-    try:
-        t0 = datetime.fromisoformat(str(heartbeat).replace("Z", "+00:00"))
-        idle = (datetime.now(timezone.utc) - t0).total_seconds()
-    except ValueError:
-        return job
-    if idle <= 90:
-        return job
-    error = (
-        f"Generation timed out after {int(MAX_RUNNING_SECONDS / 60)} minutes "
-        "(still waiting on AI/CAD). Cancel and retry, or simplify the prompt."
+
+    now = datetime.now(timezone.utc)
+    idle = _job_idle_seconds(job, now=now)
+    age = _job_age_seconds(job, now=now)
+    has_body = isinstance(job.get("request_body"), dict) and bool(job.get("request_body"))
+    restart_count = int(job.get("restart_count") or 0)
+    max_age = _job_max_running_seconds(job)
+
+    # Dead worker but still recoverable after a deploy/crash: leave status=running
+    # so startup recovery can resume. Do NOT fake a "20 minute timeout" after ~90s —
+    # that cancelled GPT-5.6 Sol while it was still writing the CAD brief.
+    can_recover = (
+        has_body
+        and restart_count < MAX_RESTART_COUNT
+        and (age is None or age <= max_age)
     )
+    if can_recover:
+        return job
+
+    if idle is None or idle <= STALE_IDLE_SECONDS:
+        return job
+
+    minutes = int(max_age / 60)
+    if has_body and restart_count >= MAX_RESTART_COUNT:
+        error = (
+            "Generation stopped after repeated server restarts. "
+            "Retry the prompt — long models like GPT-5.6 Sol were not finished."
+        )
+    elif age is not None and age > max_age:
+        error = (
+            f"Generation abandoned after {minutes} minutes with no live worker "
+            "(still waiting on AI/CAD). Retry the prompt."
+        )
+    else:
+        error = (
+            "Generation stopped — the worker exited and could not be resumed. "
+            "Retry the prompt."
+        )
     failed = {
         **job,
         "status": "failed",
@@ -953,19 +978,14 @@ def find_stuck_jobs(projects_root: Path) -> list[dict[str, Any]]:
                 continue
             if not job.get("request_body"):
                 continue
-            if job.get("restart_count", 0) >= 2:
+            if job.get("restart_count", 0) >= MAX_RESTART_COUNT:
                 continue
             if _process_is_alive(job.get("worker_pid")):
                 continue
-            started = job.get("started_at")
-            if not started:
+            age = _job_age_seconds(job, now=now)
+            if age is None:
                 continue
-            try:
-                t0 = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
-                age = (now - t0).total_seconds()
-            except ValueError:
-                continue
-            if age > MAX_RUNNING_SECONDS:
+            if age > _job_max_running_seconds(job):
                 continue
             results.append({
                 "project_path": d,

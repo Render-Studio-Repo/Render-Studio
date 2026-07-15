@@ -115,7 +115,7 @@ import { createSectionView } from "./section-view.js?v=20260629-section-outline-
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-realtime-editor-popup";
 
 const API = "";
-const PROMPT_TIMEOUT_MS = 480000;
+const PROMPT_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6h client ceiling — Sol/CAD 2.0 must not abort at 8 min
 const LS_LAST_PROJECT = "render3d:lastProjectId";
 const LS_LAST_WORKSPACE = "render3d:lastWorkspaceId";
 const LS_MODEL_PROMPT_STATE = "render3d:modelPromptState:v1";
@@ -390,6 +390,7 @@ function syncViewportGenerationUserBadge(gen) {
   if (!btn) return;
   if (!gen || gen.status !== "running" || gen.kind === "wiring") {
     btn.classList.add("hidden");
+    btn.classList.remove("viewport-generation-user--rigging");
     btn.innerHTML = "";
     return;
   }
@@ -1364,7 +1365,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           traceId: gen.trace_id,
           promptText: gen.prompt || lastPromptCopyContext?.promptText,
         };
-        const statusEl = document.getElementById(gen.kind === "wiring" ? "wiring-prompt-status" : "prompt-status");
+        const statusEl = document.getElementById(generationStatusElementId(gen));
         // Server-restart interrupts are expected after deploys — never popup the viewport error.
         if (gen.benign_interrupt || isBenignGenerationInterrupt(rawError)) {
           if (statusEl && pid === projectId) {
@@ -1379,6 +1380,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           userCancelRequested = false;
           if (pid === projectId) {
             if (gen.kind === "wiring") await refreshWiringPromptHistory();
+            else if (gen.kind === "rigging") await refreshRiggingPromptHistory();
             else await refreshPromptHistory();
           }
         } else {
@@ -1393,12 +1395,16 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             if (gen.kind === "wiring") {
               wiringOverlay?.showError(msg, copyContext);
               await refreshWiringPromptHistory();
+            } else if (gen.kind === "rigging") {
+              viewerOverlay.showError(msg, copyContext);
+              await refreshRiggingPromptHistory();
             } else {
               viewerOverlay.showError(msg, copyContext);
               await refreshPromptHistory();
             }
           } else if (pid === projectId) {
             if (gen.kind === "wiring") await refreshWiringPromptHistory();
+            else if (gen.kind === "rigging") await refreshRiggingPromptHistory();
             else await refreshPromptHistory();
           }
           // Failed runs are finished — always unlock Generate for a retry.
@@ -1410,7 +1416,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         const msg = isBenignGenerationInterrupt(rawCancel)
           ? "Ready — previous run stopped during a server update. Retry if needed."
           : rawCancel;
-        const statusEl = document.getElementById(gen.kind === "wiring" ? "wiring-prompt-status" : "prompt-status");
+        const statusEl = document.getElementById(generationStatusElementId(gen));
         if (statusEl && pid === projectId) {
           statusEl.className = "status";
           statusEl.textContent = msg;
@@ -1448,6 +1454,10 @@ async function resumeGenerationIfNeeded(pid, generation) {
   if (generation.status === "complete" && !wasGenerationApplied(pid, generation.trace_id)) {
     if (generation.kind === "wiring") {
       await applyWiringGenerationComplete(generation, pid);
+      return;
+    }
+    if (generation.kind === "rigging") {
+      await applyRiggingGenerationComplete(generation, pid);
       return;
     }
     await applyGenerationComplete(generation, pid);
@@ -12530,7 +12540,7 @@ async function api(path, options = {}, timeoutMs = 200000) {
       }
       const isPrompt = path.includes("/prompt");
       const msg = isPrompt
-        ? "Generation timed out (8 min limit). Try a simpler prompt, disable extra skills, or use fast mode."
+        ? "Generation request timed out waiting for the server. The job may still be running — refresh and check History. GPT-5.6 Sol can take a long time; do not cancel if progress is still updating."
         : "Request timed out — is the server running?";
       activityLog.push({ level: "error", message: `✗ ${method} ${path} (timeout)`, duration_ms: ms, data: { error: msg } });
       throw new Error(msg);
@@ -14903,8 +14913,9 @@ async function runRiggingPrompt() {
   }
   if (status) {
     status.className = "status loading";
-    status.textContent = "Generating rig…";
+    status.textContent = "Generating rigging… safe to refresh or switch projects.";
   }
+  beginGenerationWatch(projectId, { kind: "rigging", mode: "rigging", pendingStart: true });
   try {
     const data = await api(`/api/projects/${projectId}/rigging/prompt`, {
       method: "POST",
@@ -14920,6 +14931,16 @@ async function runRiggingPrompt() {
         speed: document.getElementById("prompt-speed")?.value || "fast",
       }),
     });
+    if (data?.accepted || data?.status === "running") {
+      const liveGen = data.generation || { status: "running", kind: "rigging", trace_id: data.trace_id };
+      const proj = allProjects.find((p) => p.id === projectId);
+      if (proj) proj.generation = liveGen;
+      if (status) {
+        status.className = "status loading";
+        status.textContent = "Generating rigging in background… safe to refresh.";
+      }
+      return;
+    }
     riggingEditor.applyRigData(data.rigging);
     await refreshFiles();
     await refreshRobotArtifacts({ quiet: true });
@@ -14928,6 +14949,7 @@ async function runRiggingPrompt() {
       status.className = "status ok";
       status.textContent = data.message || "Rig updated.";
     }
+    markGenerationApplied(projectId, data.trace_id);
     riggingPromptImages = [];
     renderRiggingPromptImages();
   } catch (err) {

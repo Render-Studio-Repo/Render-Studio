@@ -154,7 +154,7 @@ def _recover_stuck_generations() -> None:
                 continue
 
             restart_count = int(original_data.get("restart_count") or 0) + 1
-            if restart_count > 2:
+            if restart_count > generation_service.MAX_RESTART_COUNT:
                 generation_service.interrupt_for_restart(
                     project_path_,
                     "Generation stopped during a server update. You can retry the prompt.",

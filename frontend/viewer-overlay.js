@@ -649,10 +649,26 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     return values.some((value) => /\bfusion\b/i.test(String(value || "")));
   }
 
+  function isRiggingOverlay(opts = {}) {
+    const values = [
+      opts.promptMode,
+      opts.prompt_mode,
+      opts.mode,
+      opts.generationMode,
+      opts.generation_mode,
+      opts.variant,
+      opts.kind,
+      opts.message,
+    ];
+    return values.some((value) => /\brig(?:ging)?\b/i.test(String(value || "")));
+  }
+
   function applySpinnerVariant(opts = {}) {
     const fusion = isFusionOverlay(opts);
+    const rigging = isRiggingOverlay(opts);
     spinner.classList.toggle("viewport-spinner--fusion", fusion);
-    spinner.classList.toggle("viewport-spinner--v2", !fusion && isV2Overlay(opts));
+    spinner.classList.toggle("viewport-spinner--rigging", rigging);
+    spinner.classList.toggle("viewport-spinner--v2", !fusion && !rigging && isV2Overlay(opts));
   }
 
   function startProgress(message, opts = {}) {
