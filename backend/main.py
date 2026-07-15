@@ -13726,14 +13726,15 @@ def _background_kernel_build(
         generation_service.fail(project_path, f"Kernel build failed: {exc}", trace_id=trace_id)
 
 
-IMPROVE_CAD_PROMPT_SYSTEM = """You rewrite user prompts into stronger text-to-CAD generation prompts for Render3D.
+IMPROVE_CAD_PROMPT_SYSTEM = """You rewrite user prompts into stronger text-to-CAD generation prompts for Render3D Mode 2.0 / parametric CAD.
 
 Return JSON only:
 {"improved_prompt":"..."}
 
 Rules for improved_prompt:
 - Keep the user's intent, product, and constraints. Do not invent a totally different part.
-- Make it concrete for CAD: units (mm preferred), overall size envelope, key dimensions, wall thickness, fillets/chamfers when relevant.
+- Make it concrete for parametric CAD: units (mm preferred), overall size envelope, key dimensions, wall thickness, fillets/chamfers when relevant.
+- Prefer named features (base, boss, pocket, rib, hole pattern) and clear solids over vague styling words.
 - State manufacturing intent when useful (FDM print, CNC, sheet metal, snap-fit, assembly of named bodies).
 - Prefer one clear primary solid/job; list secondary features as short clauses in one paragraph.
 - Name mating/fit relationships if the part must fit something else.
@@ -13743,10 +13744,30 @@ Rules for improved_prompt:
 - Keep under 1200 characters when possible; hard max 4000.
 """
 
+IMPROVE_RENDER_PROMPT_SYSTEM = """You rewrite user prompts into stronger Render-mode prompts for Render3D.
+
+Render mode generates a model meant to look right when shown / rendered in the viewport — clear shape, proportions, materials, and presentation — not a Mode 2.0 parametric feature tree.
+
+Return JSON only:
+{"improved_prompt":"..."}
+
+Rules for improved_prompt:
+- Keep the user's intent and subject. Do not invent a totally different object.
+- Optimize for how the object should LOOK when rendered: silhouette, proportions, major volumes, surface finish, color/material, and grounding on a flat floor.
+- Call out visual details that help rendering: matte vs glossy, metal/plastic/wood, soft edges vs sharp, open vs solid, thin walls vs chunky, symmetry.
+- Include a sensible size envelope in mm when the user gave no scale (overall length × width × height).
+- Prefer concrete visual nouns over CAD jargon (avoid “extrude, loft, pocket, pad, feature tree”).
+- State orientation clearly so it sits upright on the ground (e.g. wheels on floor, wings level, base down).
+- For edits, describe the visible change to make (what should look different in the render).
+- Put the entire rewrite inside the improved_prompt string. Escape newlines as \\n inside the JSON string.
+- Do not mention that you are an AI or that you rewrote the prompt.
+- Keep under 1200 characters when possible; hard max 4000.
+"""
+
 
 @app.post("/api/prompt/improve")
 def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
-    """Rewrite a freeform prompt into a stronger text-to-CAD prompt using the user's AI key."""
+    """Rewrite a freeform prompt into a stronger Render3D prompt using the user's AI key."""
     trace_id = getattr(request.state, "trace_id", new_trace_id())
     original = (body.prompt or "").strip()
     if not original:
@@ -13760,18 +13781,32 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     )
     mode = (body.mode or "standard").strip().lower()
     target = (body.target_mode or "new").strip().lower()
+    use_render_improve = mode in {"render", "standard", ""}
     mode_hint = {
         "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
         "fusion": "Fusion 360 parametric CAD. Prefer feature-friendly dimensions and clear solids.",
         "architect": "Modular architecture / room kit parts with separate named bodies and snap interfaces.",
         "draw": "Direct modeling edit of selected faces/edges. Be specific about which features change.",
-        "render": "Mesh/render scene style CAD. Still include sizes and clear geometry.",
-        "standard": "General CAD generation. Include sizes, features, and manufacturing intent.",
-    }.get(mode, "General CAD generation. Include sizes, features, and manufacturing intent.")
+        "render": (
+            "Render mode — improve for how the object should look when rendered in the viewport "
+            "(shape, proportions, materials, finish, upright orientation). Not Mode 2.0 parametric instructions."
+        ),
+        "standard": (
+            "Render / standard generation — improve for clear visual geometry and presentation, "
+            "not Mode 2.0 feature-tree wording."
+        ),
+    }.get(mode, "General generation. Include shape, size, and how it should look when rendered.")
     target_hint = (
         "This is an EDIT of an existing selected object — preserve overall identity and only change what the user asked."
         if target == "edit"
         else "This is a NEW object generation."
+    )
+    system_prompt = IMPROVE_RENDER_PROMPT_SYSTEM if use_render_improve else IMPROVE_CAD_PROMPT_SYSTEM
+    plain_retry = (
+        "Rewrite this into a stronger Render-mode prompt focused on how the object should look when rendered. "
+        "Return only the improved prompt text."
+        if use_render_improve
+        else "Rewrite this into a stronger parametric CAD / Mode 2.0 prompt. Return only the improved prompt text."
     )
     user_content = (
         f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
@@ -13783,7 +13818,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     improved = ""
     try:
         raw, call_trace = ai._call_model(
-            IMPROVE_CAD_PROMPT_SYSTEM,
+            system_prompt,
             user_content,
             trace_id=trace_id,
             max_tokens=4096,
@@ -13795,7 +13830,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         if not improved:
             # One plain-text retry without JSON constraints.
             raw2, call_trace2 = ai._call_model(
-                "Rewrite this into a stronger text-to-CAD prompt. Return only the improved prompt text.",
+                plain_retry,
                 user_content,
                 trace_id=trace_id,
                 max_tokens=2048,
@@ -13816,6 +13851,8 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     return {
         "prompt": original,
         "improved_prompt": improved,
+        "mode": mode,
+        "improve_style": "render" if use_render_improve else "cad",
         "trace": {
             "model": call_trace.get("model"),
             "provider": call_trace.get("provider"),

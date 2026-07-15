@@ -92,9 +92,16 @@ class Settings(BaseSettings):
     discord_updates_webhook_url: str = ""
 
     # LinkedIn product-update announcements (member or organization URN)
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
     linkedin_access_token: str = ""
     linkedin_author_urn: str = ""
     linkedin_enabled: bool = True
+    linkedin_schedule_name: str = "Sam's posts"
+    linkedin_schedule_timezone: str = "America/New_York"
+    linkedin_schedule_weekday_hours: str = "10"
+    linkedin_schedule_sunday_hours: str = "10,16"
+    linkedin_schedule_recent_window: int = 10
 
 
 settings = Settings()

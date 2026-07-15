@@ -4370,7 +4370,12 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
     pct: 4,
     stage: "analyze",
     label: "Improving prompt with AI…",
-    thinking: "Rewriting your prompt for clearer CAD geometry…",
+    thinking:
+      promptMode === "v2" || promptMode === "fusion" || promptMode === "architect"
+        ? "Rewriting your prompt for clearer parametric CAD…"
+        : promptMode === "draw"
+          ? "Rewriting your prompt for a clearer direct edit…"
+          : "Rewriting your prompt for a clearer rendered look…",
     activity: [
       { text: "Improving prompt with AI…", stage: "analyze" },
     ],
@@ -4381,7 +4386,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: original,
-        mode: promptMode === "draw" ? "draw" : promptMode || "standard",
+        mode: promptMode === "draw" ? "draw" : promptMode || "render",
         target_mode: getPromptTargetMode?.() || "new",
         speed: getPromptGenerationSpeed(),
         project_id: projectId || null,

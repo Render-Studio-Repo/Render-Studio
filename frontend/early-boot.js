@@ -14,7 +14,7 @@ function showBrowser(html) {
   if (browser && !window.__appProjectListReady) browser.innerHTML = html;
 }
 
-function bootSpinner(message = "Loading studio…") {
+function bootSpinner(message = "Loading Render3D Studio…") {
   return `<div class="browser-boot-spinner" role="status" aria-live="polite">
     <span class="studio-boot-spinner studio-boot-spinner--inline" aria-hidden="true"></span>
     <p class="muted small">${esc(message)}</p>
@@ -38,7 +38,7 @@ window.__dismissStudioBoot = dismissStudioBoot;
 
 async function loadProjects() {
   window.__setStudioBootProgress?.(18, "Preparing projects and editor...");
-  showBrowser(bootSpinner("Loading studio…"));
+  showBrowser(bootSpinner("Loading Render3D Studio…"));
 
   const token = getToken();
   if (!token) {
