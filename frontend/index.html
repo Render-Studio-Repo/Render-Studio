@@ -1014,14 +1014,32 @@
                   <option value="quality">Quality</option>
                 </select>
               </label>
-              <label
-                id="prompt-codex-toggle"
-                class="prompt-codex-toggle hidden"
-                title="Run 2.0 with the Codex CAD agent. Requires an OpenAI API key."
-              >
-                <input type="checkbox" id="prompt-codex" />
-                <span>Codex</span>
-              </label>
+              <div class="prompt-codex-wrap hidden" id="prompt-codex-wrap">
+                <label
+                  id="prompt-codex-toggle"
+                  class="prompt-codex-toggle"
+                  aria-describedby="prompt-codex-tip"
+                >
+                  <input type="checkbox" id="prompt-codex" />
+                  <span>Codex</span>
+                </label>
+                <div id="prompt-codex-tip" class="prompt-spice-tip prompt-codex-tip" role="tooltip">
+                  <div class="prompt-spice-tip-top">
+                    <span class="prompt-spice-tip-badge prompt-codex-tip-badge">During generate</span>
+                    <strong class="prompt-spice-tip-title">Codex CAD agent</strong>
+                  </div>
+                  <p class="prompt-spice-tip-body">
+                    Checking this runs generation with the Codex CAD agent instead of the default in-app tool loop.
+                    Codex owns edit → step → inspect → snapshot → repair in one session, so geometry issues get caught before the model lands in the viewport.
+                  </p>
+                  <ul class="prompt-spice-tip-list">
+                    <li>Off: default Render3D tool agent (still builds CAD)</li>
+                    <li>On: Codex self-checks with inspect + multi-view snapshots</li>
+                    <li>Helps the agent fix orientation, fit, and failed builds mid-run</li>
+                    <li>Requires an OpenAI API key</li>
+                  </ul>
+                </div>
+              </div>
               <div class="prompt-spice-wrap" id="prompt-spice-wrap">
                 <div class="prompt-spice-group" id="prompt-spice-group">
                   <label
