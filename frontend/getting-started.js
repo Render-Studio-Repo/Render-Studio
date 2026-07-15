@@ -3,7 +3,8 @@
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-tips-tricks";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-gs-autoopen";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-hero-robot";
+import { startShowMe } from "./show-me-tour.js?v=20260715-gs-deck";
 
 const FEATURES = GETTING_STARTED_GUIDES;
 
@@ -46,9 +47,8 @@ function demoHtml(feature) {
 
 function featureCard(feature, index) {
   const n = String(index + 1).padStart(2, "0");
-  const flip = index % 2 === 1 ? " gs-feature--flip" : "";
   return `
-    <section class="gs-feature${flip}" id="${esc(feature.id)}">
+    <section class="gs-feature" id="${esc(feature.id)}">
       <div class="gs-feature-media">
         ${demoHtml(feature)}
         <p class="gs-demo-label">Live demo</p>
@@ -60,9 +60,14 @@ function featureCard(feature, index) {
         <ol class="gs-steps">
           ${(feature.steps || []).map((step) => `<li>${esc(step)}</li>`).join("")}
         </ol>
-        <button type="button" class="btn accent gs-ask-btn" data-gs-ask="${esc(feature.ask)}">
-          Ask Render Agent about this
-        </button>
+        <div class="gs-feature-actions">
+          <button type="button" class="btn accent gs-ask-btn" data-gs-ask="${esc(feature.ask)}">
+            Ask Agent
+          </button>
+          <button type="button" class="btn secondary gs-show-me-btn" data-gs-show-me="${esc(feature.id)}">
+            Show me
+          </button>
+        </div>
       </div>
     </section>
   `;
@@ -126,6 +131,7 @@ function mountToc() {
     ${FEATURES.map((f) => `
       <a href="#${esc(f.id)}" data-gs-toc="${esc(f.id)}">${esc(TOC_LABELS[f.id] || f.title)}</a>
     `).join("")}
+    <a href="#create-guide" data-gs-toc="create-guide">Create a guide</a>
   `;
 }
 
@@ -153,7 +159,7 @@ function mountTips() {
 }
 
 function mountReveal() {
-  const nodes = document.querySelectorAll(".gs-feature, .gs-tips-section, .gs-closing, .gs-hero");
+  const nodes = document.querySelectorAll(".gs-feature, .gs-tips-section, .gs-closing, .gs-hero, .gs-create");
   if (!("IntersectionObserver" in window)) {
     nodes.forEach((el) => el.classList.add("is-visible"));
     return;
@@ -175,7 +181,6 @@ function mountReveal() {
 function mountTocSpy() {
   const links = [...document.querySelectorAll("[data-gs-toc]")];
   if (!links.length || !("IntersectionObserver" in window)) return;
-  const byId = new Map(links.map((a) => [a.getAttribute("data-gs-toc"), a]));
   const io = new IntersectionObserver(
     (entries) => {
       const visible = entries
@@ -191,7 +196,9 @@ function mountTocSpy() {
     const el = document.getElementById(f.id);
     if (el) io.observe(el);
   });
-  byId.get(FEATURES[0]?.id)?.classList.add("is-active");
+  const create = document.getElementById("create-guide");
+  if (create) io.observe(create);
+  links[0]?.classList.add("is-active");
 }
 
 function askTour(agent, authUi, question) {
@@ -201,6 +208,71 @@ function askTour(agent, authUi, question) {
     return;
   }
   void agent?.openWithQuestion?.(question, { autoSend: true });
+  agent?.enterPresentationDeck?.();
+}
+
+async function generateCustomGuide(agent, authUi, question) {
+  if (!getToken()) {
+    sessionStorage.setItem("render3d:gsPendingAsk", question);
+    authUi?.openModal?.();
+    return;
+  }
+  const status = document.getElementById("gs-create-status");
+  if (status) status.textContent = "Generating GIF instructions…";
+  try {
+    agent?.open?.();
+    agent?.enterPresentationDeck?.();
+    const data = await api("/api/getting-started/generate-guide", {
+      method: "POST",
+      body: JSON.stringify({
+        question,
+        thread_id: null,
+      }),
+    }, 120000);
+    const guide = data.guide || {};
+    const media = data.media || [];
+    const steps = (guide.steps || []).map((s, i) => `${i + 1}. ${s}`).join("\n");
+    const reply = [
+      `**${guide.title || "Custom guide"}**`,
+      guide.summary || "",
+      "",
+      steps,
+      "",
+      data.matched_existing
+        ? "This already exists in Getting Started — opening the matching demo."
+        : "Queued for management approval to add to Getting Started.",
+    ].filter(Boolean).join("\n");
+
+    // Seed a local assistant-style card via asking the agent the guide ask, with deck open.
+    await agent?.openWithQuestion?.(guide.ask || question, { autoSend: true });
+    if (status) {
+      status.textContent = data.matched_existing
+        ? "Matched an existing Getting Started guide."
+        : (data.detail || "Submitted for management approval.");
+    }
+    // Also surface generated steps under the form.
+    const preview = document.getElementById("gs-create-preview");
+    if (preview) {
+      preview.classList.remove("hidden");
+      preview.innerHTML = `
+        <div class="gs-create-preview-card">
+          ${media[0]?.url ? `<img src="${esc(media[0].url)}" alt="" />` : ""}
+          <div>
+            <strong>${esc(guide.title || "Guide")}</strong>
+            <p>${esc(guide.summary || "")}</p>
+            <ol>${(guide.steps || []).map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+            <div class="gs-feature-actions">
+              <button type="button" class="btn accent btn-compact" data-gs-ask="${esc(guide.ask || question)}">Ask Agent</button>
+              ${guide.id ? `<button type="button" class="btn secondary btn-compact" data-gs-show-me="${esc(String(guide.id).replace(/^user-.*/, "ai-generate"))}">Show me</button>` : ""}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    void reply;
+  } catch (err) {
+    if (status) status.textContent = err.message || "Could not generate guide.";
+  }
 }
 
 function mountAgent() {
@@ -219,10 +291,11 @@ function mountAgent() {
   });
 
   const openDefault = () => {
-    agent?.open?.();
+    agent?.open?.({ onboarding: true });
+    agent?.enterPresentationDeck?.();
   };
 
-  // Expand agent panel by default on Getting Started
+  // Expand agent panel by default on Getting Started (desktop presentation size).
   openDefault();
 
   const authUi = createAuthUI({
@@ -255,6 +328,11 @@ function mountAgent() {
   const tourQ = "Give me a tour of Render3D for a new user";
 
   document.getElementById("gs-features")?.addEventListener("click", (e) => {
+    const show = e.target.closest?.("[data-gs-show-me]");
+    if (show) {
+      startShowMe(show.getAttribute("data-gs-show-me") || "", { onDocsPage: true });
+      return;
+    }
     const btn = e.target.closest?.("[data-gs-ask]");
     if (!btn) return;
     askTour(agent, authUi, btn.getAttribute("data-gs-ask") || "");
@@ -273,6 +351,23 @@ function mountAgent() {
 
   document.getElementById("gs-ask-again")?.addEventListener("click", () => {
     askTour(agent, authUi, tourQ);
+  });
+
+  document.getElementById("gs-create-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = document.getElementById("gs-create-question")?.value?.trim() || "";
+    if (!q) return;
+    void generateCustomGuide(agent, authUi, q);
+  });
+
+  document.getElementById("gs-create-preview")?.addEventListener("click", (e) => {
+    const show = e.target.closest?.("[data-gs-show-me]");
+    if (show) {
+      startShowMe(show.getAttribute("data-gs-show-me") || "", { onDocsPage: true });
+      return;
+    }
+    const btn = e.target.closest?.("[data-gs-ask]");
+    if (btn) askTour(agent, authUi, btn.getAttribute("data-gs-ask") || "");
   });
 
   return { agent, authUi };

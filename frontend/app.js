@@ -49,7 +49,7 @@ import {
   setViewMode,
   reapplyViewMode,
   viewMode,
-} from "./scene-style.js?v=20260715-preserve-glb-colors";
+} from "./scene-style.js?v=20260715-preserve-authored-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-collab-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
@@ -63,7 +63,8 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realti
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-agent-gifs";
+import { createRenderAgent } from "./render-agent.js?v=20260715-gs-deck";
+import { maybeAutoStartShowMeFromQuery } from "./show-me-tour.js?v=20260715-gs-deck";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -3686,8 +3687,7 @@ function initPromptSpiceToggle() {
     openSpiceCompareModal();
   });
 
-  initPromptHoverTip("prompt-spice-wrap", "prompt-spice-tip", { tipWidth: 280 });
-  initPromptHoverTip("prompt-codex-wrap", "prompt-codex-tip", { tipWidth: 300 });
+  initPromptSpiceHoverTip();
 
   const modal = document.getElementById("prompt-spice-compare-modal");
   modal?.querySelectorAll("[data-spice-compare-close]").forEach((el) => {
@@ -3700,9 +3700,9 @@ function initPromptSpiceToggle() {
   });
 }
 
-function initPromptHoverTip(wrapId, tipId, { tipWidth = 280 } = {}) {
-  const wrap = document.getElementById(wrapId);
-  const tip = document.getElementById(tipId);
+function initPromptSpiceHoverTip() {
+  const wrap = document.getElementById("prompt-spice-wrap");
+  const tip = document.getElementById("prompt-spice-tip");
   if (!wrap || !tip) return;
 
   // Portal to body so parent overflow/stacking can't clip the card.
@@ -3716,11 +3716,11 @@ function initPromptHoverTip(wrapId, tipId, { tipWidth = 280 } = {}) {
 
   const placeTip = () => {
     const rect = wrap.getBoundingClientRect();
-    const width = Math.min(tipWidth, Math.max(220, window.innerWidth * 0.72));
-    tip.style.width = `${width}px`;
+    const tipWidth = Math.min(280, Math.max(220, window.innerWidth * 0.72));
+    tip.style.width = `${tipWidth}px`;
     const gap = 10;
     let left = rect.left;
-    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+    left = Math.max(8, Math.min(left, window.innerWidth - tipWidth - 8));
     tip.style.left = `${Math.round(left)}px`;
     tip.style.bottom = "auto";
     // Measure while hidden using a temporary show class without animation.
@@ -3776,10 +3776,6 @@ function initPromptHoverTip(wrapId, tipId, { tipWidth = 280 } = {}) {
   window.addEventListener("resize", () => {
     if (open) placeTip();
   });
-}
-
-function initPromptSpiceHoverTip() {
-  initPromptHoverTip("prompt-spice-wrap", "prompt-spice-tip", { tipWidth: 280 });
 }
 
 function pushSpiceOverlayProgress(progress = {}) {
@@ -19546,6 +19542,7 @@ window.addEventListener("keydown", (e) => {
       connectUserRealtime();
       renderTeams();
       await startApp();
+      maybeAutoStartShowMeFromQuery();
       if (askAgentParam) {
         setTimeout(() => renderAgentUi?.openWithQuestion?.(askAgentParam), 250);
       }

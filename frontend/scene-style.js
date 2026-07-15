@@ -180,6 +180,13 @@ function _useGeneratedPalette(meshInfos) {
     }
   }
 
+  // Preserve authored GLB/STEP appearance colors even when every body shares one
+  // real color (for example a fully orange model). Only generate CAD palette
+  // colors when the source is missing, neutral/washed, or too dark to read.
+  if (missingCount === 0 && washedCount === 0 && (materialCount > 0 || vertexCount > 0)) {
+    return false;
+  }
+
   // Multi-body assemblies that are monochrome / washed → distinct part colours.
   const monochromeAssembly = meshInfos.length > 1 && maxDist < 0.28;
   if (monochromeAssembly) return true;

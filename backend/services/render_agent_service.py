@@ -284,6 +284,116 @@ def sender_for_user(user: dict[str, Any]) -> dict[str, Any]:
     return _sender(user)
 
 
+def _shares_path() -> Path:
+    root = Path(settings.data_dir) / "render_agent_shares"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def create_share(user_id: str, thread_id: str) -> dict[str, Any]:
+    """Create a public share token anyone can use to preview a Render Agent chat."""
+    found = _find_thread_for_user(user_id, thread_id)
+    if not found:
+        raise PermissionError("Thread not found")
+    owner_id, data, thread = found
+    share_id = thread.get("share_id") or str(uuid.uuid4())[:12]
+    thread["share_id"] = share_id
+    thread["share_created_at"] = thread.get("share_created_at") or _now()
+    thread["updated_at"] = _now()
+    _save(owner_id, data)
+    payload = {
+        "share_id": share_id,
+        "owner_id": owner_id,
+        "thread_id": thread_id,
+        "created_at": thread["share_created_at"],
+        "created_by": user_id,
+    }
+    (_shares_path() / f"{share_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {
+        "share_id": share_id,
+        "thread_id": thread_id,
+        "url_path": f"/agent-chat.html?chat={share_id}",
+    }
+
+
+def get_shared_thread(share_id: str) -> dict[str, Any] | None:
+    clean = re.sub(r"[^A-Za-z0-9_-]", "", str(share_id or ""))[:24]
+    if not clean:
+        return None
+    meta_path = _shares_path() / f"{clean}.json"
+    owner_id = None
+    thread_id = None
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            owner_id = meta.get("owner_id")
+            thread_id = meta.get("thread_id")
+        except Exception:
+            meta = {}
+    if not owner_id or not thread_id:
+        # Fallback: scan thread stores for share_id
+        for path in _all_user_files():
+            oid = _user_from_file(path)
+            data = _load(oid)
+            for thread in data.get("threads") or []:
+                if thread.get("share_id") == clean:
+                    owner_id = oid
+                    thread_id = thread.get("id")
+                    break
+            if owner_id:
+                break
+    if not owner_id or not thread_id:
+        return None
+    data = _load(owner_id)
+    thread = next((t for t in data.get("threads") or [] if t.get("id") == thread_id), None)
+    if not thread:
+        return None
+    owner = _profile(owner_id) or {"id": owner_id, "display_name": "User"}
+    messages = []
+    for msg in thread.get("messages") or []:
+        messages.append(
+            {
+                "id": msg.get("id"),
+                "role": msg.get("role"),
+                "content": msg.get("content"),
+                "media": msg.get("media") or [],
+                "guides": msg.get("guides") or [],
+                "created_at": msg.get("created_at"),
+                "sender": {
+                    "display_name": (msg.get("sender") or {}).get("display_name")
+                    or ("You" if msg.get("role") == "user" else "Render Agent"),
+                },
+            }
+        )
+    return {
+        "share_id": clean,
+        "thread": {
+            "id": thread.get("id"),
+            "title": thread.get("title") or "Shared Render Agent chat",
+            "created_at": thread.get("created_at"),
+            "updated_at": thread.get("updated_at"),
+            "messages": messages,
+        },
+        "owner": {
+            "display_name": owner.get("display_name") or owner.get("email") or "User",
+        },
+    }
+
+
+def get_thread_by_id_any(thread_id: str) -> tuple[str, dict[str, Any]] | None:
+    """Lookup a thread by id across all users (for admin / share tooling)."""
+    clean = str(thread_id or "").strip()
+    if not clean:
+        return None
+    for path in _all_user_files():
+        owner_id = _user_from_file(path)
+        data = _load(owner_id)
+        for thread in data.get("threads") or []:
+            if thread.get("id") == clean or thread.get("share_id") == clean:
+                return owner_id, thread
+    return None
+
+
 def list_recent_activity(*, limit: int = 80) -> dict[str, Any]:
     """Admin: latest Render Agent questions across all users (from JSON stores)."""
     limit = max(1, min(int(limit or 80), 300))

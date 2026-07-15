@@ -494,6 +494,23 @@ function renderDashboard(root, data) {
       </div>
     </section>
 
+    <section class="admin-panel admin-panel--gs-approvals">
+      <div class="admin-agent-head">
+        <div>
+          <h3>Getting Started approvals</h3>
+          <p class="muted small admin-panel-hint">User-generated GIF guides waiting for approval, plus Suggest-to-developer requests.</p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-gs-refresh">Refresh</button>
+      </div>
+      <div id="admin-gs-pending" class="admin-gs-pending-list">
+        <p class="muted small">Loading…</p>
+      </div>
+      <h3 class="admin-subhead">Developer suggestions</h3>
+      <div id="admin-gs-suggestions" class="admin-gs-pending-list">
+        <p class="muted small">Loading…</p>
+      </div>
+    </section>
+
     <section class="admin-panel">
       <h3>File Formats</h3>
       <div class="admin-pill-list">${countPills(data.project_format_counts, "format")}</div>
@@ -505,7 +522,11 @@ function renderDashboard(root, data) {
   root.querySelector("#admin-agent-refresh")?.addEventListener("click", () => {
     void loadRenderAgentActivity(root);
   });
+  root.querySelector("#admin-gs-refresh")?.addEventListener("click", () => {
+    void loadGettingStartedApprovals(root);
+  });
   void loadRenderAgentActivity(root);
+  void loadGettingStartedApprovals(root);
   const search = root.querySelector("#admin-user-search");
   const lookupList = root.querySelector("#admin-user-lookup-list");
   const allUsers = data.users || [];
@@ -563,6 +584,70 @@ function renderAgentActivityRows(items = []) {
       `;
     })
     .join("");
+}
+
+async function loadGettingStartedApprovals(root) {
+  const pendingEl = root.querySelector("#admin-gs-pending");
+  const suggestEl = root.querySelector("#admin-gs-suggestions");
+  if (!pendingEl || !suggestEl) return;
+  pendingEl.innerHTML = `<p class="muted small">Loading…</p>`;
+  suggestEl.innerHTML = `<p class="muted small">Loading…</p>`;
+  try {
+    const data = await api("/api/admin/getting-started/pending?status=pending&limit=80");
+    const pending = data.pending_guides || [];
+    const suggestions = data.developer_suggestions || [];
+    pendingEl.innerHTML = pending.length
+      ? pending.map((item) => {
+          const g = item.guide || {};
+          const steps = (g.steps || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+          return `
+            <article class="admin-gs-pending-row" data-pending-id="${escapeHtml(item.id)}">
+              <strong>${escapeHtml(g.title || "Untitled")}</strong>
+              <p class="muted small">${escapeHtml(item.user_name || "")} · ${escapeHtml(item.question || "")}</p>
+              <p>${escapeHtml(g.summary || "")}</p>
+              <ol>${steps}</ol>
+              ${g.gif ? `<p class="muted small"><a href="${escapeHtml(g.gif)}" target="_blank" rel="noopener">Demo GIF</a>${item.share_url ? ` · <a href="${escapeHtml(item.share_url)}" target="_blank" rel="noopener">Chat</a>` : ""}</p>` : ""}
+              <div class="admin-gs-pending-actions">
+                <button type="button" class="btn accent btn-compact" data-gs-review="approved">Approve</button>
+                <button type="button" class="btn secondary btn-compact" data-gs-review="rejected">Reject</button>
+              </div>
+            </article>
+          `;
+        }).join("")
+      : `<p class="muted small">No pending Getting Started guides.</p>`;
+    suggestEl.innerHTML = suggestions.length
+      ? suggestions.map((item) => `
+          <article class="admin-gs-pending-row">
+            <strong>${escapeHtml(item.user_name || "User")}</strong>
+            <p>${escapeHtml(item.message || "")}</p>
+            <p class="muted small">${escapeHtml(item.created_at || "")}${item.share_url ? ` · <a href="${escapeHtml(item.share_url)}" target="_blank" rel="noopener">Open chat</a>` : ""}${item.sms?.ok ? " · SMS sent" : " · SMS queued/logged"}</p>
+          </article>
+        `).join("")
+      : `<p class="muted small">No developer suggestions yet.</p>`;
+
+    pendingEl.querySelectorAll("[data-gs-review]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("[data-pending-id]");
+        const id = row?.getAttribute("data-pending-id");
+        const status = btn.getAttribute("data-gs-review");
+        if (!id || !status) return;
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/getting-started/pending/${encodeURIComponent(id)}`, {
+            method: "POST",
+            body: JSON.stringify({ status }),
+          });
+          void loadGettingStartedApprovals(root);
+        } catch (err) {
+          btn.disabled = false;
+          alert(err.message || "Review failed");
+        }
+      });
+    });
+  } catch (err) {
+    pendingEl.innerHTML = `<p class="muted small">Could not load approvals: ${escapeHtml(err.message || "error")}</p>`;
+    suggestEl.innerHTML = "";
+  }
 }
 
 async function loadRenderAgentActivity(root) {

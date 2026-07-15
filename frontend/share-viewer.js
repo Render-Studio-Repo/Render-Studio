@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-preserve-glb-colors";
+import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260715-preserve-authored-colors";
 import { authHeaders, getToken } from "./auth.js?v=20260715-share-open-project";
 import { createUrdfRobotRuntime } from "./urdf-robot-runtime.js?v=20260715-share-public-urdf";
 
@@ -22,6 +22,10 @@ function tokenFromPath() {
   const parts = location.pathname.split("/").filter(Boolean);
   const idx = parts.indexOf("share");
   return idx >= 0 ? decodeURIComponent(parts[idx + 1] || "") : "";
+}
+
+function isEmbedMode() {
+  return new URLSearchParams(location.search).get("embed") === "1";
 }
 
 function $(id) {
@@ -146,6 +150,8 @@ function escapeHtml(value) {
 
 async function main() {
   const token = tokenFromPath();
+  const embed = isEmbedMode();
+  if (embed) document.body.classList.add("share-embed");
   const titleEl = $("share-title");
   const subEl = $("share-subtitle");
   const statusEl = $("share-status");
@@ -167,6 +173,8 @@ async function main() {
   const sourceDetailsEl = $("share-source-details");
   const promptHistoryEl = $("share-prompt-history");
   const componentListEl = $("share-component-list");
+  const transparentTip = $("share-transparent-tip");
+  const btnTransparentTipClose = $("btn-share-transparent-tip-close");
   const motionCard = $("share-motion-card");
   const motionStatus = $("share-motion-status");
   const btnMotionPlay = $("btn-share-motion-play");
@@ -251,7 +259,7 @@ async function main() {
   controls.minPolarAngle = 0.001;
   controls.maxPolarAngle = Math.PI - 0.001;
   controls.autoRotate = true;
-  controls.autoRotateSpeed = 1.35;
+  controls.autoRotateSpeed = isEmbedMode() ? 0.55 : 1.35;
   controls.touches = {
     ONE: THREE.TOUCH.ROTATE,
     TWO: THREE.TOUCH.DOLLY_PAN,
@@ -451,6 +459,26 @@ async function main() {
     return mesh;
   }
 
+  function objectDepth(obj) {
+    let depth = 0;
+    let cur = obj?.parent;
+    while (cur && cur !== root && cur !== loadedScene) {
+      if (String(cur.name || "").trim()) depth += 1;
+      cur = cur.parent;
+    }
+    return Math.min(depth, 5);
+  }
+
+  function parentLabel(obj) {
+    let cur = obj?.parent;
+    while (cur && cur !== root && cur !== loadedScene) {
+      const label = String(cur.name || "").trim();
+      if (label) return label;
+      cur = cur.parent;
+    }
+    return meta.filename || "Shared model";
+  }
+
   function resize() {
     const w = viewerEl.clientWidth || window.innerWidth;
     const h = viewerEl.clientHeight || Math.max(320, window.innerHeight - 120);
@@ -467,6 +495,10 @@ async function main() {
     }
     statusEl.classList.remove("hidden");
     statusEl.textContent = msg;
+  }
+
+  function setTransparentTipVisible(on) {
+    transparentTip?.classList.toggle("hidden", !on);
   }
 
   function modelLabel(item = {}) {
@@ -555,11 +587,23 @@ async function main() {
       const name = item.name || item.filename || item.stem || item.label;
       if (!name) continue;
       const obj = objectsByName.get(name) || objectsByName.get(item.viewer_filename) || null;
-      addRow({ label: name, kind: item.kind || item.format || "component", obj });
+      addRow({
+        label: name,
+        kind: item.kind || item.format || "part",
+        obj,
+        depth: obj ? objectDepth(obj) : 0,
+        parent: obj ? parentLabel(obj) : (meta.filename || "Shared model"),
+      });
     }
     if (loadedScene) {
       objectsByName.forEach((obj, label) => {
-        addRow({ label, kind: obj.isMesh ? "mesh" : "group", obj });
+        addRow({
+          label,
+          kind: obj.isMesh ? "mesh" : "assembly",
+          obj,
+          depth: objectDepth(obj),
+          parent: parentLabel(obj),
+        });
       });
     }
     const unique = [];
@@ -572,17 +616,24 @@ async function main() {
       if (unique.length >= 80) break;
     }
     if (!unique.length) {
-      componentListEl.innerHTML = `<p class="sv-hint">No component tree metadata was provided for this share.</p>`;
+      componentListEl.innerHTML = `<p class="sv-hint">No part tree metadata was provided for this share.</p>`;
       return;
     }
     componentListEl.innerHTML = unique.map((row) => {
       const canAct = !!row.obj;
       const isTransparent = canAct && transparentObjects.has(row.obj);
+      const meshCount = canAct ? objectMeshes(row.obj).length : 0;
+      const depth = Math.max(0, Math.min(5, Number(row.depth) || 0));
+      const relation = row.parent ? `${row.parent} -> ${row.label}` : row.label;
       return `
-        <div>
+        <div class="sv-tree-node${isTransparent ? " is-transparent" : ""}" style="--depth:${depth}">
           <button type="button" class="sv-tree-btn" data-action="frame" data-target="${escapeHtml(row.id)}">
-            <span>${escapeHtml(row.label)}</span>
-            <small>${escapeHtml(row.kind)}</small>
+            <span class="sv-tree-glyph" aria-hidden="true">${row.kind === "assembly" ? "A" : row.kind === "mesh" ? "M" : "P"}</span>
+            <span class="sv-tree-main">
+              <strong>${escapeHtml(row.label)}</strong>
+              <em>${escapeHtml(relation)}</em>
+            </span>
+            <small>${escapeHtml(row.kind)}${meshCount ? ` · ${meshCount} mesh${meshCount === 1 ? "" : "es"}` : ""}</small>
           </button>
           ${canAct ? `
             <div class="sv-tree-actions">
@@ -682,10 +733,14 @@ async function main() {
 
   btnTransparent?.addEventListener("click", () => {
     transparentPickEnabled = !transparentPickEnabled;
+    controls.enabled = !transparentPickEnabled;
+    renderer.domElement.style.cursor = transparentPickEnabled ? "crosshair" : "";
+    if (transparentPickEnabled) setAutoRotate(false);
     btnTransparent.classList.toggle("active", transparentPickEnabled);
     btnTransparent.setAttribute("aria-pressed", String(transparentPickEnabled));
-    setStatus(transparentPickEnabled ? "Transparent tool on: click a part to toggle transparency." : "");
+    setTransparentTipVisible(transparentPickEnabled);
   });
+  btnTransparentTipClose?.addEventListener("click", () => setTransparentTipVisible(false));
 
   btnOpen?.addEventListener("click", async () => {
     if (!getToken()) {
@@ -767,18 +822,19 @@ async function main() {
 
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
-  let transparentPointer = null;
 
-  renderer.domElement.addEventListener("pointerdown", (event) => {
-    if (!transparentPickEnabled || event.button !== 0) return;
-    transparentPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
-  });
+  function stopTransparentPointerEvent(event) {
+    if (!transparentPickEnabled) return false;
+    if (event.button != null && event.button !== 0) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    return true;
+  }
 
-  renderer.domElement.addEventListener("pointerup", (event) => {
-    if (!transparentPickEnabled || !transparentPointer || transparentPointer.id !== event.pointerId) return;
-    const moved = Math.hypot(event.clientX - transparentPointer.x, event.clientY - transparentPointer.y);
-    transparentPointer = null;
-    if (moved > 6) return;
+  function pickTransparentObject(event) {
+    if (!transparentPickEnabled || event.target !== renderer.domElement) return;
+    if (!stopTransparentPointerEvent(event)) return;
     const rect = renderer.domElement.getBoundingClientRect();
     pointerNdc.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
     pointerNdc.y = -(((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 - 1);
@@ -787,8 +843,19 @@ async function main() {
     if (!hit?.object) return;
     const target = closestNamedObject(hit.object);
     setObjectTransparent(target, !transparentObjects.has(target));
-    frameObject(target);
-  });
+  }
+
+  function blockTransparentPointer(event) {
+    if (transparentPickEnabled && event.target === renderer.domElement) {
+      stopTransparentPointerEvent(event);
+    }
+  }
+
+  // Attach to the parent in capture phase so OrbitControls never receives
+  // transparent-tool clicks first.
+  viewerEl.addEventListener("pointerdown", pickTransparentObject, true);
+  viewerEl.addEventListener("pointerup", blockTransparentPointer, true);
+  viewerEl.addEventListener("pointermove", blockTransparentPointer, true);
 
   function syncSectionUi(on) {
     btnSection?.classList.toggle("active", on);
@@ -836,7 +903,9 @@ async function main() {
     btnDownloadMenu?.classList.remove("active");
   });
 
-  controls.addEventListener("start", () => setAutoRotate(false));
+  controls.addEventListener("start", () => {
+    if (!isEmbedMode()) setAutoRotate(false);
+  });
   // Block browser gestures that steal the drag (scroll / pinch-zoom page).
   renderer.domElement.addEventListener(
     "touchmove",

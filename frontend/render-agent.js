@@ -6,6 +6,7 @@ import {
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-tips-tricks";
+import { startShowMe } from "./show-me-tour.js?v=20260715-gs-deck";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
@@ -230,19 +231,24 @@ export function createRenderAgent({
   function restoreStickyLayout() {
     if (!stickyNote) return;
     panel.classList.add("render-agent-panel--sticky");
-    if (panel.classList.contains("render-agent-panel--docs")) {
+    const isDocs = panel.classList.contains("render-agent-panel--docs");
+    if (isDocs) {
       panel.classList.add("render-agent-panel--popup");
     }
     const saved = readStickyLayout();
-    const defaultW = Math.min(400, Math.max(300, window.innerWidth - 32));
-    const defaultH = Math.min(640, Math.max(360, window.innerHeight - 96));
+    const defaultW = Math.min(isDocs ? 360 : 400, Math.max(300, window.innerWidth - 32));
+    const defaultH = Math.min(isDocs ? 400 : 640, Math.max(320, window.innerHeight - (isDocs ? 140 : 96)));
     if (!saved) {
       panel.style.left = "auto";
       panel.style.right = "16px";
-      panel.style.top = "72px";
       panel.style.width = `${defaultW}px`;
       panel.style.height = `${defaultH}px`;
       panel.style.maxHeight = "none";
+      if (isDocs) {
+        panel.style.top = `${Math.max(64, window.innerHeight - defaultH - 20)}px`;
+      } else {
+        panel.style.top = "72px";
+      }
       return;
     }
     if (saved.width) panel.style.width = `${Math.max(300, saved.width)}px`;
@@ -257,8 +263,27 @@ export function createRenderAgent({
     } else {
       panel.style.left = "auto";
       panel.style.right = "16px";
-      panel.style.top = "72px";
+      panel.style.top = isDocs
+        ? `${Math.max(64, window.innerHeight - defaultH - 20)}px`
+        : "72px";
     }
+  }
+
+
+  function enterPresentationDeck() {
+    panel.classList.add("render-agent-panel--deck");
+    const w = Math.min(760, Math.max(420, window.innerWidth - 48));
+    const h = Math.min(820, Math.max(480, window.innerHeight - 48));
+    panel.style.width = `${w}px`;
+    panel.style.height = `${h}px`;
+    panel.style.maxHeight = "none";
+    panel.style.left = "auto";
+    panel.style.right = "20px";
+    panel.style.top = "64px";
+  }
+
+  function leavePresentationDeck() {
+    panel.classList.remove("render-agent-panel--deck");
   }
 
   function ensureStickyNoteControls() {
@@ -539,9 +564,12 @@ export function createRenderAgent({
         </div>
         <strong class="render-agent-tip-title">${esc(tip.title)}</strong>
         <p class="render-agent-tip-body">${esc(tip.body)}</p>
-        <button type="button" class="btn secondary btn-compact render-agent-tip-try" data-tip-starter="${esc(tip.starter)}">
-          Ask this
-        </button>
+        <div class="render-agent-tip-actions">
+          <button type="button" class="btn secondary btn-compact render-agent-tip-try" data-tip-starter="${esc(tip.starter)}">
+            Ask this
+          </button>
+          <a class="btn secondary btn-compact" href="/getting-started.html">Getting Started docs</a>
+        </div>
       </div>
     `;
   }
@@ -555,6 +583,13 @@ export function createRenderAgent({
           input.focus();
           input.setSelectionRange(starter.length, starter.length);
         }
+      });
+    });
+    root?.querySelectorAll("[data-show-me]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-show-me") || "";
+        const onDocs = panel.classList.contains("render-agent-panel--docs");
+        startShowMe(id, { onDocsPage: onDocs });
       });
     });
   }
@@ -607,24 +642,36 @@ export function createRenderAgent({
 
   function renderMessageMedia(msg, previousUserText = "") {
     let media = Array.isArray(msg?.media) ? [...msg.media] : [];
+    const guides = Array.isArray(msg?.guides) ? msg.guides : [];
     if (!media.length && msg?.role === "assistant" && previousUserText) {
       media = matchGettingStartedGuides(previousUserText, { limit: 2 })
         .map(guideMediaPayload)
         .filter(Boolean)
         .filter((item) => item?.url);
     }
+    if (media.length) {
+      // Bigger PowerPoint-style window when GIF instructions render.
+      enterPresentationDeck();
+    }
     if (!media.length) return "";
     return `
       <div class="render-agent-media-list">
-        ${media.map((item) => `
-          <figure class="render-agent-media">
+        ${media.map((item, idx) => {
+          const guideId = item.id || guides[idx]?.id || guides[0]?.id || "";
+          return `
+          <figure class="render-agent-media render-agent-media--deck">
             <img src="${esc(item.url)}" alt="${esc(item.title || "Demo")}" loading="lazy" />
             <figcaption>
               <strong>${esc(item.title || "Getting Started demo")}</strong>
               ${item.summary ? `<span>${esc(item.summary)}</span>` : ""}
+              <div class="render-agent-media-actions">
+                ${guideId ? `<button type="button" class="btn accent btn-compact" data-show-me="${esc(guideId)}">Show me</button>` : ""}
+                <a class="btn secondary btn-compact" href="/getting-started.html${guideId ? `#${esc(guideId)}` : ""}">Docs</a>
+              </div>
             </figcaption>
           </figure>
-        `).join("")}
+        `;
+        }).join("")}
       </div>
     `;
   }
@@ -815,6 +862,7 @@ export function createRenderAgent({
           project_id: getProjectId?.() || null,
           attachments,
           selected_file: getSelectedFile?.() || null,
+          use_sam: agentKeyMode !== "selected",
           ...(agentKeyMode === "selected" ? (getSelectedAiKey?.() || {}) : {}),
         }),
       }, 240000);
@@ -860,14 +908,159 @@ export function createRenderAgent({
   renderAgentSource();
   renderInviteOptions();
   ensureStickyNoteControls();
+  ensureAgentActionBar();
+  bindThreadContextMenu();
+
+
+  function ensureAgentActionBar() {
+    if (panel.querySelector(".render-agent-action-bar")) return;
+    const formEl = form;
+    if (!formEl) return;
+    const bar = document.createElement("div");
+    bar.className = "render-agent-action-bar";
+    bar.innerHTML = `
+      <button type="button" class="btn secondary btn-compact" data-ra-action="suggest">Suggest to developer</button>
+      <button type="button" class="btn secondary btn-compact" data-ra-action="share">Copy share link</button>
+      <a class="btn secondary btn-compact" href="/getting-started.html">Getting Started</a>
+    `;
+    formEl.insertAdjacentElement("beforebegin", bar);
+    bar.addEventListener("click", (event) => {
+      const btn = event.target.closest?.("[data-ra-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-ra-action");
+      if (action === "suggest") void suggestToDeveloper();
+      if (action === "share") void copyShareLink();
+    });
+  }
+
+  async function suggestToDeveloper() {
+    if (!currentUserId()) {
+      onRequireLogin?.();
+      return;
+    }
+    const draft = (input?.value || "").trim()
+      || window.prompt("What should we change or add?", "Please improve…")
+      || "";
+    if (!draft.trim()) return;
+    setStatus("Sending suggestion…");
+    try {
+      const data = await api("/api/render-agent/suggest-to-developer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: draft.trim(),
+          thread_id: activeThread?.id || null,
+        }),
+      });
+      setStatus(data.detail || (data.sms_sent ? "Texted the developer." : "Saved for management."));
+    } catch (err) {
+      setStatus(err.message || "Could not send suggestion.", true);
+    }
+  }
+
+  async function copyShareLink() {
+    if (!currentUserId()) {
+      onRequireLogin?.();
+      return;
+    }
+    if (!activeThread?.id) {
+      setStatus("Open or start a chat first.", true);
+      return;
+    }
+    try {
+      const data = await api(`/api/render-agent/threads/${encodeURIComponent(activeThread.id)}/share`, {
+        method: "POST",
+      });
+      const url = data.url || `${window.location.origin}${data.url_path || ""}`;
+      await navigator.clipboard.writeText(url);
+      setStatus(`Share link copied (${data.share_id}).`);
+    } catch (err) {
+      setStatus(err.message || "Could not create share link.", true);
+    }
+  }
+
+  async function copyChatId(threadId) {
+    const id = String(threadId || activeThread?.id || "").trim();
+    if (!id) return;
+    try {
+      // Prefer share id so anyone can open the preview.
+      const data = await api(`/api/render-agent/threads/${encodeURIComponent(id)}/share`, { method: "POST" });
+      const shareId = data.share_id || id;
+      await navigator.clipboard.writeText(shareId);
+      setStatus(`Copied chat id: ${shareId}`);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(id);
+        setStatus(`Copied chat id: ${id}`);
+      } catch (err) {
+        setStatus(err.message || "Could not copy chat id.", true);
+      }
+    }
+  }
+
+  function bindThreadContextMenu() {
+    if (threadListEl?.dataset.ctxBound === "1") return;
+    if (!threadListEl) return;
+    threadListEl.dataset.ctxBound = "1";
+    threadListEl.addEventListener("contextmenu", (event) => {
+      const row = event.target.closest?.("[data-thread-id]");
+      if (!row) return;
+      event.preventDefault();
+      const id = row.getAttribute("data-thread-id");
+      const existing = document.getElementById("render-agent-ctx");
+      existing?.remove();
+      const menu = document.createElement("div");
+      menu.id = "render-agent-ctx";
+      menu.className = "render-agent-ctx";
+      menu.style.left = `${event.clientX}px`;
+      menu.style.top = `${event.clientY}px`;
+      menu.innerHTML = `
+        <button type="button" data-ctx="copy-id">Copy chat id</button>
+        <button type="button" data-ctx="share">Copy share link</button>
+        <button type="button" data-ctx="open-preview">Open preview</button>
+      `;
+      document.body.appendChild(menu);
+      const close = () => menu.remove();
+      menu.addEventListener("click", async (e) => {
+        const btn = e.target.closest?.("[data-ctx]");
+        if (!btn) return;
+        const act = btn.getAttribute("data-ctx");
+        close();
+        if (act === "copy-id") await copyChatId(id);
+        if (act === "share") {
+          activeThread = { ...(activeThread || {}), id };
+          await copyShareLink();
+        }
+        if (act === "open-preview") {
+          try {
+            const data = await api(`/api/render-agent/threads/${encodeURIComponent(id)}/share`, { method: "POST" });
+            window.open(data.url || data.url_path, "_blank", "noopener");
+          } catch (err) {
+            setStatus(err.message || "Could not open preview.", true);
+          }
+        }
+      });
+      setTimeout(() => document.addEventListener("click", close, { once: true }), 0);
+    });
+  }
+
 
   return {
     open,
     openWithQuestion,
     close,
     toggle,
+    suggestToDeveloper,
+    copyShareLink,
+    enterPresentationDeck,
     setUser(user) {
-      if (user && shouldShowOnboarding()) open({ onboarding: true });
+      const desktop = window.matchMedia?.("(min-width: 901px)").matches !== false
+        && !window.matchMedia?.("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)")?.matches;
+      if (user && shouldShowOnboarding() && desktop) {
+        open({ onboarding: true });
+        // Ensure tip is visible for first-time desktop users.
+        renderMessages();
+      }
     },
   };
 }

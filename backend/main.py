@@ -758,6 +758,22 @@ class RenderAgentMessageRequest(BaseModel):
     speed: str = "fast"
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = None
+    use_sam: bool = True
+
+
+class RenderAgentSuggestRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    thread_id: str | None = Field(None, max_length=80)
+
+
+class GettingStartedGenerateRequest(BaseModel):
+    question: str = Field(..., min_length=3, max_length=2000)
+    thread_id: str | None = Field(None, max_length=80)
+
+
+class AdminGuideReviewRequest(BaseModel):
+    status: str = Field(..., description="approved | rejected | pending")
+    note: str | None = Field(None, max_length=500)
 
 
 class WiringDiagnoseRequest(BaseModel):
@@ -1552,6 +1568,24 @@ def _resolve_prompt_model_meta(
         "provider": provider,
         "speed": speed,
     }
+
+
+def _sam_openai_key() -> dict[str, str] | None:
+    """Platform OpenAI key used for Sam's cheap gpt-4o-mini agent / render fallbacks."""
+    key = (settings.openai_api_key or "").strip()
+    if not key:
+        return None
+    return {"api_key": key, "model": "gpt-4o-mini", "provider": "openai", "name": "Sam's gpt-4o-mini"}
+
+
+def _sam_ai_service() -> AIService:
+    sam = _sam_openai_key()
+    if not sam:
+        raise HTTPException(
+            status_code=503,
+            detail="Sam's gpt-4o-mini is unavailable (platform OPENAI_API_KEY not configured).",
+        )
+    return AIService(model="gpt-4o-mini", api_key=sam["api_key"], provider="openai")
 
 
 def _get_ai_for_user(
@@ -3660,13 +3694,17 @@ def render_agent_message(body: RenderAgentMessageRequest, request: Request, user
     thread = render_agent_service.get_thread(user["id"], body.thread_id or "") if body.thread_id else None
     if not thread:
         thread = render_agent_service.create_thread(user["id"], body.message[:70])
-    ai = _get_ai_for_user(
-        user,
-        body.speed,
-        key_id=body.ai_key_id,
-        key_source=body.ai_key_source,
-        project_id=body.project_id,
-    )
+    # Default: Sam's gpt-4o-mini for Render Agent unless the user opts into their own key.
+    if body.use_sam and not body.ai_key_id:
+        ai = _sam_ai_service()
+    else:
+        ai = _get_ai_for_user(
+            user,
+            body.speed,
+            key_id=body.ai_key_id,
+            key_source=body.ai_key_source,
+            project_id=body.project_id,
+        )
     attachments = body.attachments[:6]
     project_context = _render_agent_project_context(body.project_id, user)
     trace_id = getattr(request.state, "trace_id", new_trace_id())
@@ -3720,6 +3758,9 @@ def render_agent_message(body: RenderAgentMessageRequest, request: Request, user
                 "id": g.get("id"),
                 "title": g.get("title"),
                 "summary": g.get("summary"),
+                "steps": g.get("steps") or [],
+                "gif": g.get("gif"),
+                "show_me": g.get("id"),
             }
             for g in matched_guides
         ],
@@ -3735,6 +3776,197 @@ def render_agent_message(body: RenderAgentMessageRequest, request: Request, user
             "cost_usd": call_trace.get("cost_usd"),
         },
     }
+
+
+def _public_origin(request: Request) -> str:
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or "").split(",")[0].strip()
+    if not host:
+        return str(request.base_url).rstrip("/")
+    return f"{proto}://{host}".rstrip("/")
+
+
+@app.post("/api/render-agent/threads/{thread_id}/share")
+def share_render_agent_thread(thread_id: str, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import render_agent_service
+
+    try:
+        share = render_agent_service.create_share(user["id"], thread_id)
+    except PermissionError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    origin = _public_origin(request)
+    share["url"] = f"{origin}{share['url_path']}"
+    return share
+
+
+@app.get("/api/render-agent/share/{share_id}")
+def get_shared_render_agent_thread(share_id: str):
+    from backend.services import render_agent_service
+
+    payload = render_agent_service.get_shared_thread(share_id)
+    if not payload:
+        raise HTTPException(404, "Shared chat not found")
+    return payload
+
+
+@app.post("/api/render-agent/suggest-to-developer")
+def suggest_to_developer(body: RenderAgentSuggestRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import gs_feedback_service, render_agent_service, sms_notify
+
+    share_url = None
+    thread_id = (body.thread_id or "").strip() or None
+    if thread_id:
+        try:
+            share = render_agent_service.create_share(user["id"], thread_id)
+            share_url = f"{_public_origin(request)}{share['url_path']}"
+        except PermissionError:
+            share_url = None
+    who = user.get("display_name") or user.get("email") or user.get("id")
+    sms_body = (
+        f"Render3D suggest from {who}:\n"
+        f"{body.message.strip()[:700]}\n"
+        f"Chat: {share_url or '(no chat link)'}"
+    )
+    sms_result = sms_notify.send_sms(sms_body, to=sms_notify.DEVELOPER_PHONE)
+    item = gs_feedback_service.add_developer_suggestion(
+        user=user,
+        message=body.message,
+        thread_id=thread_id,
+        share_url=share_url,
+        sms_result=sms_result,
+    )
+    return {
+        "ok": True,
+        "suggestion": item,
+        "sms_sent": bool(sms_result.get("ok")),
+        "share_url": share_url,
+        "detail": "Thanks — sent to the developer." if sms_result.get("ok") else "Saved for management; SMS queued until Twilio is configured.",
+    }
+
+
+@app.post("/api/getting-started/generate-guide")
+def generate_getting_started_guide(
+    body: GettingStartedGenerateRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Generate GIF instructions for a user question; queue novel guides for management approval."""
+    from backend.services import getting_started_guides, gs_feedback_service, render_agent_service
+
+    matched = getting_started_guides.match_guides(body.question, limit=1)
+    share_url = None
+    thread_id = (body.thread_id or "").strip() or None
+    if thread_id:
+        try:
+            share = render_agent_service.create_share(user["id"], thread_id)
+            share_url = f"{_public_origin(request)}{share['url_path']}"
+        except PermissionError:
+            share_url = None
+
+    if matched:
+        guide = matched[0]
+        return {
+            "ok": True,
+            "matched_existing": True,
+            "guide": guide,
+            "media": getting_started_guides.media_for_guides([guide]),
+            "pending": None,
+            "share_url": share_url,
+        }
+
+    ai = _sam_ai_service()
+    prompt = (
+        "Create a short Getting Started guide for Render3D CAD software.\n"
+        "Return JSON only with keys: title, summary, steps (array of 3-6 short steps), "
+        "keywords (array of short strings), ask (one follow-up question).\n"
+        f"User question: {body.question.strip()}"
+    )
+    try:
+        raw, _trace = ai._call_model(
+            "You write concise onboarding docs for Render3D. Output valid JSON only.",
+            prompt,
+            max_tokens=900,
+            json_response=True,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Could not generate guide: {exc}") from exc
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = {"title": body.question[:80], "summary": raw[:300], "steps": [raw[:200]], "keywords": [], "ask": body.question}
+    else:
+        parsed = raw if isinstance(raw, dict) else {}
+    # Attach closest GIF from catalog by keyword overlap with all guides.
+    fallback = getting_started_guides.GETTING_STARTED_GUIDES[0]
+    closest = getting_started_guides.match_guides(
+        " ".join([parsed.get("title") or "", parsed.get("summary") or "", " ".join(parsed.get("keywords") or [])]),
+        limit=1,
+    )
+    gif_src = (closest[0] if closest else fallback).get("gif")
+    guide = {
+        "id": f"user-{(parsed.get('title') or 'guide')[:24]}",
+        "title": str(parsed.get("title") or body.question)[:120],
+        "summary": str(parsed.get("summary") or "")[:500],
+        "steps": [str(s)[:240] for s in (parsed.get("steps") or [])][:8] or [
+            "Open Studio and try the related tool.",
+            "Ask Render Agent if a step is unclear.",
+        ],
+        "gif": gif_src,
+        "ask": str(parsed.get("ask") or body.question)[:500],
+        "keywords": [str(k)[:40] for k in (parsed.get("keywords") or [])][:20],
+        "demo": "generate",
+    }
+    pending = gs_feedback_service.add_pending_guide(
+        user=user,
+        question=body.question,
+        guide=guide,
+        matched_existing=False,
+        thread_id=thread_id,
+        share_url=share_url,
+    )
+    return {
+        "ok": True,
+        "matched_existing": False,
+        "guide": guide,
+        "media": [{"url": guide["gif"], "title": guide["title"], "summary": guide["summary"]}],
+        "pending": pending,
+        "share_url": share_url,
+        "detail": "Queued for management approval to add to Getting Started.",
+    }
+
+
+@app.get("/api/admin/getting-started/pending")
+def admin_list_pending_guides(
+    user: dict[str, Any] = Depends(get_current_user),
+    status: str = Query("pending"),
+    limit: int = Query(80, ge=1, le=200),
+):
+    _require_a1projects_admin(user)
+    from backend.services import gs_feedback_service
+
+    return {
+        "pending_guides": gs_feedback_service.list_pending_guides(status=status if status != "all" else None, limit=limit),
+        "developer_suggestions": gs_feedback_service.list_developer_suggestions(limit=limit),
+    }
+
+
+@app.post("/api/admin/getting-started/pending/{item_id}")
+def admin_review_pending_guide(
+    item_id: str,
+    body: AdminGuideReviewRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    from backend.services import gs_feedback_service
+
+    status = (body.status or "").strip().lower()
+    if status not in {"approved", "rejected", "pending"}:
+        raise HTTPException(400, "status must be approved, rejected, or pending")
+    item = gs_feedback_service.set_pending_guide_status(item_id, status, note=body.note)
+    if not item:
+        raise HTTPException(404, "Pending guide not found")
+    return {"ok": True, "item": item}
 
 
 def _avatar_path_for_user(user_id: str, ext: str) -> Path:

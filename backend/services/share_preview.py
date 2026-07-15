@@ -1,7 +1,7 @@
 """Share-link social / text-message preview thumbnails.
 
-Builds an opaque JPEG from the CAD iso snapshot so iMessage / SMS / Slack
-link unfurls show the model instead of a blank or favicon tile.
+Builds transparent PNG previews from CAD iso snapshots so iMessage / SMS /
+Slack link unfurls show the model without a baked white card background.
 """
 
 from __future__ import annotations
@@ -23,6 +23,14 @@ def _snapshot_base_stem(snapshot_name: str) -> str:
     if stem.endswith("_share_og"):
         stem = stem[: -len("_share_og")]
     return stem
+
+
+def _is_share_preview_background_pixel(r: int, g: int, b: int, a: int) -> bool:
+    if a == 0:
+        return True
+    # CAD snapshots are usually white/off-white neutral backgrounds. Restrict
+    # to low-saturation edge-connected pixels so white model parts remain.
+    return min(r, g, b) >= 232 and (max(r, g, b) - min(r, g, b)) <= 28
 
 
 def share_snapshot_filename(project_path: Path, filename: str, *, resolve_viewport=None) -> str | None:
@@ -57,7 +65,7 @@ def share_snapshot_filename(project_path: Path, filename: str, *, resolve_viewpo
             return False
         # Never treat derived share assets as the source snapshot (avoids nested
         # `_share_transparent_share_transparent…` growth and broken OG URLs).
-        if "_share_transparent" in name or "_share_og." in name or name.endswith("_share_og.jpg"):
+        if "_share_transparent" in name or "_share_og." in name:
             return False
         return path.is_file()
 
@@ -197,7 +205,7 @@ def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> st
             if pixel_index < 0 or pixel_index >= width * height or transparent[pixel_index]:
                 return
             base = pixel_index * 4
-            if rgba[base + 3] and rgba[base] >= 245 and rgba[base + 1] >= 245 and rgba[base + 2] >= 245:
+            if _is_share_preview_background_pixel(rgba[base], rgba[base + 1], rgba[base + 2], rgba[base + 3]):
                 transparent[pixel_index] = 1
                 queue.append(pixel_index)
 
@@ -228,12 +236,58 @@ def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> st
         return None
 
 
-def make_share_og_jpeg(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
-    """Opaque JPEG thumbnail for iMessage / SMS / Slack link previews."""
+def _draw_render3d_badge(image: Any) -> None:
+    """Stamp a small Render3D brand mark in the bottom-right corner."""
+    from PIL import ImageDraw, ImageFont
+
+    width, height = image.size
+    margin = max(18, int(min(width, height) * 0.035))
+    badge_h = max(42, min(76, int(height * 0.09)))
+    badge_w = max(148, int(badge_h * 3.6))
+    x0 = max(margin, width - badge_w - margin)
+    y0 = max(margin, height - badge_h - margin)
+    x1 = width - margin
+    y1 = height - margin
+    radius = badge_h // 2
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.rounded_rectangle(
+        [x0, y0, x1, y1],
+        radius=radius,
+        fill=(7, 11, 18, 218),
+        outline=(88, 166, 255, 115),
+        width=max(1, badge_h // 24),
+    )
+
+    icon_size = int(badge_h * 0.68)
+    icon_x = x0 + int(badge_h * 0.18)
+    icon_y = y0 + (badge_h - icon_size) // 2
+    draw.ellipse([icon_x, icon_y, icon_x + icon_size, icon_y + icon_size], fill=(88, 166, 255, 255))
+    draw.polygon(
+        [
+            (icon_x + icon_size * 0.28, icon_y + icon_size * 0.23),
+            (icon_x + icon_size * 0.78, icon_y + icon_size * 0.5),
+            (icon_x + icon_size * 0.28, icon_y + icon_size * 0.77),
+        ],
+        fill=(230, 237, 243, 245),
+    )
+
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(14, int(badge_h * 0.34)))
+    except Exception:
+        font = ImageFont.load_default()
+    text = "Render3D"
+    text_x = icon_x + icon_size + int(badge_h * 0.18)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_y = y0 + (badge_h - (bbox[3] - bbox[1])) // 2 - 1
+    draw.text((text_x, text_y), text, font=font, fill=(230, 237, 243, 255))
+
+
+def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
+    """Transparent PNG thumbnail for iMessage / SMS / Slack link previews."""
     src = project_path / Path(snapshot_name).name
     if not src.is_file():
         return None
-    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og.jpg"
+    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og.png"
     try:
         from PIL import Image
 
@@ -241,26 +295,31 @@ def make_share_og_jpeg(project_path: Path, snapshot_name: str) -> tuple[str, int
             with Image.open(out) as existing:
                 return out.name, int(existing.size[0]), int(existing.size[1])
 
-        with Image.open(src) as img:
+        transparent_name = make_share_preview_transparent(project_path, src.name)
+        transparent_src = project_path / transparent_name if transparent_name else src
+        with Image.open(transparent_src) as img:
             rgba = img.convert("RGBA")
-            canvas = Image.new("RGBA", rgba.size, (13, 17, 23, 255))
-            canvas.alpha_composite(rgba)
-            rgb = canvas.convert("RGB")
             max_edge = 1600
-            if max(rgb.size) > max_edge:
-                rgb.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
-            rgb.save(out, format="JPEG", quality=88, optimize=True, progressive=True)
-            return out.name, int(rgb.size[0]), int(rgb.size[1])
+            if max(rgba.size) > max_edge:
+                rgba.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+            _draw_render3d_badge(rgba)
+            rgba.save(out, format="PNG", optimize=True)
+            return out.name, int(rgba.size[0]), int(rgba.size[1])
     except Exception as exc:
-        logger.warning("Could not create JPEG share OG preview for %s: %s", src.name, exc)
+        logger.warning("Could not create PNG share OG preview for %s: %s", src.name, exc)
         return None
+
+
+def make_share_og_jpeg(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
+    """Backward-compatible wrapper; share previews are now transparent PNGs."""
+    return make_share_og_png(project_path, snapshot_name)
 
 
 def share_preview_filename(project_path: Path, filename: str, *, resolve_viewport=None) -> str | None:
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
     if not snapshot:
         return None
-    og = make_share_og_jpeg(project_path, snapshot)
+    og = make_share_og_png(project_path, snapshot)
     if og:
         return og[0]
     return make_share_preview_transparent(project_path, snapshot) or snapshot
@@ -270,14 +329,14 @@ def share_preview_image_meta(project_path: Path, filename: str, *, resolve_viewp
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
     if not snapshot:
         return {}
-    og = make_share_og_jpeg(project_path, snapshot)
+    og = make_share_og_png(project_path, snapshot)
     if og:
         name, width, height = og
         return {
             "preview_file": name,
             "preview_width": width,
             "preview_height": height,
-            "preview_type": "image/jpeg",
+            "preview_type": "image/png",
         }
     preview = make_share_preview_transparent(project_path, snapshot) or snapshot
     return {"preview_file": preview, "preview_type": "image/png"}

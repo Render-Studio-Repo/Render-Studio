@@ -50,6 +50,39 @@
       min-height: 100dvh;
       min-height: 100vh;
     }
+    html.share-embed,
+    body.share-embed {
+      grid-template-rows: 1fr;
+    }
+    html.share-embed body {
+      display: grid;
+      grid-template-rows: 1fr;
+    }
+    body.share-embed .share-top,
+    body.share-embed .share-tools,
+    body.share-embed .share-toolbar,
+    body.share-embed .share-hint,
+    body.share-embed .share-drawer,
+    body.share-embed .share-fab,
+    body.share-embed .share-status,
+    body.share-embed #share-status,
+    body.share-embed .share-bottom,
+    body.share-embed footer,
+    body.share-embed #share-section-panel,
+    body.share-embed #share-inspector-panel,
+    body.share-embed #share-download-sheet,
+    body.share-embed #share-transparent-tip {
+      display: none !important;
+    }
+    body.share-embed #share-viewer,
+    body.share-embed .share-stage {
+      position: absolute;
+      inset: 0;
+    }
+    body.share-embed #share-viewer canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
     header.share-top {
       display: flex;
       align-items: flex-start;
@@ -157,6 +190,51 @@
       z-index: 2;
     }
     #share-status.hidden { display: none; }
+    #share-transparent-tip {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index: 6;
+      width: min(320px, calc(100vw - 28px));
+      padding: 12px 42px 12px 14px;
+      border: 1px solid rgba(88, 166, 255, 0.36);
+      border-radius: 14px;
+      background: rgba(13, 17, 23, 0.94);
+      color: var(--text);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(12px);
+    }
+    #share-transparent-tip.hidden { display: none; }
+    #share-transparent-tip strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #79c0ff;
+      font-size: 0.84rem;
+    }
+    #share-transparent-tip span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    #share-transparent-tip button {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(48, 54, 61, 0.88);
+      border-radius: 999px;
+      background: #161b22;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    #share-transparent-tip button:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
     .share-bottom {
       border-top: 1px solid #21262d;
       background: var(--panel);
@@ -452,6 +530,11 @@
 
   <main id="share-viewer">
     <div id="share-status">Loading preview…</div>
+    <div id="share-transparent-tip" class="hidden" role="status" aria-live="polite">
+      <strong>Transparent tool on</strong>
+      <span>Click a part to toggle transparency. Dragging is paused while this tool is active.</span>
+      <button type="button" id="btn-share-transparent-tip-close" aria-label="Dismiss transparent tool tip">&times;</button>
+    </div>
     <div id="share-section-panel" class="hidden" aria-label="Section analysis">
       <div class="sv-top">
         <strong>Section analysis</strong>
@@ -511,6 +594,12 @@
     </div>
   </div>
 
-  <script type="module" src="/share-viewer.js?v=20260715-preview-parts-tools"></script>
+  <script>
+    if (new URLSearchParams(location.search).get("embed") === "1") {
+      document.documentElement.classList.add("share-embed");
+      document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
+    }
+  </script>
+  <script type="module" src="/share-viewer.js?v=20260715-share-embed"></script>
 </body>
 </html>

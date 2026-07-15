@@ -22223,23 +22223,25 @@ body.theme-light .render-agent-tip {
 }
 
 .gs-page {
-  max-width: 1180px;
-  margin: 0 auto;
+  max-width: min(1120px, calc(100% - 392px));
+  margin: 0;
+  margin-right: auto;
   width: 100%;
-  padding: 0 24px;
+  padding: 0 20px 0 24px;
   font-family: var(--gs-body);
+  box-sizing: border-box;
 }
 
 .gs-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: 28px;
-  align-items: end;
-  min-height: min(72vh, 640px);
-  padding: 36px 0 28px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 20px 28px;
+  align-items: center;
+  min-height: 0;
+  padding: 18px 0 12px;
   opacity: 0;
-  transform: translateY(18px);
-  transition: opacity 0.55s ease, transform 0.55s ease;
+  transform: translateY(12px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
 }
 
 .gs-hero.is-visible {
@@ -22258,9 +22260,9 @@ body.theme-light .render-agent-tip {
 }
 
 .gs-hero-title {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   font-family: var(--gs-display);
-  font-size: clamp(2.4rem, 5vw, 3.6rem);
+  font-size: clamp(2.1rem, 4.2vw, 3rem);
   font-weight: 800;
   letter-spacing: -0.045em;
   line-height: 0.98;
@@ -22268,10 +22270,10 @@ body.theme-light .render-agent-tip {
 }
 
 .gs-hero-lead {
-  margin: 0 0 22px;
-  max-width: 36ch;
-  font-size: 1.08rem;
-  line-height: 1.55;
+  margin: 0 0 16px;
+  max-width: 34ch;
+  font-size: 1rem;
+  line-height: 1.5;
   color: #9da7b3;
 }
 
@@ -22283,58 +22285,49 @@ body.theme-light .render-agent-tip {
 
 .gs-hero-visual {
   position: relative;
-  min-height: 280px;
+  min-height: 260px;
+  height: clamp(260px, 38vh, 380px);
   border: 1px solid var(--gs-line);
   overflow: hidden;
-  background:
-    linear-gradient(145deg, rgba(13, 17, 23, 0.2), rgba(13, 17, 23, 0.85)),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 23px,
-      rgba(88, 166, 255, 0.05) 23px,
-      rgba(88, 166, 255, 0.05) 24px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 23px,
-      rgba(88, 166, 255, 0.05) 23px,
-      rgba(88, 166, 255, 0.05) 24px
-    );
-  mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 100%);
+  background: #070b12;
+}
+
+.gs-hero-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #070b12;
+  pointer-events: none;
 }
 
 .gs-hero-gif {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 280px;
-  max-height: 420px;
+  min-height: 260px;
+  max-height: 380px;
   object-fit: cover;
   object-position: left center;
   opacity: 0.92;
-  animation: gs-hero-drift 18s ease-in-out infinite alternate;
 }
 
 .gs-hero-visual-fade {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(90deg, rgba(11, 16, 23, 0.55), transparent 35%, transparent 70%, rgba(11, 16, 23, 0.35));
-}
-
-@keyframes gs-hero-drift {
-  from { transform: scale(1.02) translate3d(0, 0, 0); }
-  to { transform: scale(1.06) translate3d(-1.5%, -1%, 0); }
+  background: linear-gradient(90deg, rgba(11, 16, 23, 0.45), transparent 28%, transparent 72%, rgba(11, 16, 23, 0.25));
+  z-index: 1;
 }
 
 .gs-shell {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 22px;
   align-items: start;
-  padding-top: 8px;
+  padding-top: 4px;
 }
 
 .gs-toc {
@@ -22394,7 +22387,7 @@ body.theme-light .render-agent-tip {
   grid-template-areas: "media copy";
   gap: 32px;
   align-items: center;
-  padding: 40px 0;
+  padding: 24px 0;
   border-top: 1px solid rgba(48, 54, 61, 0.7);
   opacity: 0;
   transform: translateY(22px);
@@ -22675,6 +22668,11 @@ body.theme-light .render-agent-tip {
 }
 
 @media (max-width: 980px) {
+  .gs-page {
+    max-width: 100%;
+    padding: 0 20px;
+  }
+
   .gs-shell {
     grid-template-columns: 1fr;
   }
@@ -22708,18 +22706,19 @@ body.theme-light .render-agent-tip {
   .gs-hero {
     grid-template-columns: 1fr;
     min-height: 0;
-    padding-top: 28px;
+    padding-top: 14px;
   }
 
   .gs-hero-visual {
     order: -1;
-    min-height: 200px;
+    min-height: 220px;
+    height: 240px;
     mask-image: none;
   }
 
   .gs-hero-gif {
-    min-height: 200px;
-    max-height: 260px;
+    min-height: 220px;
+    max-height: 240px;
   }
 
   .gs-feature,
