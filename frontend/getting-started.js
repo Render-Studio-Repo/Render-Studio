@@ -1,9 +1,9 @@
 /** Getting Started feature guides for Docs. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-guides-media";
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-link-prompt";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-guides-media";
+import { createRenderAgent } from "./render-agent.js?v=20260715-show-me-circle4";
 import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle4";
 
 const FEATURES = GETTING_STARTED_GUIDES;
@@ -93,21 +93,44 @@ function featureCard(feature, index) {
   `;
 }
 
+function tipVisual(topic = "") {
+  const key = String(topic).toLowerCase();
+  if (key.includes("dxf") || key.includes("drawing")) return { cls: "drawing", label: "DXF", glyph: "2D" };
+  if (key.includes("software")) return { cls: "software", label: "Mode", glyph: "2.0" };
+  if (key.includes("project")) return { cls: "files", label: "Files", glyph: "REF" };
+  if (key.includes("geometry")) return { cls: "geometry", label: "Pick", glyph: "@F" };
+  if (key.includes("editing")) return { cls: "editing", label: "Edit", glyph: "REV" };
+  if (key.includes("reference")) return { cls: "markup", label: "Markup", glyph: "PEN" };
+  if (key.includes("canvas")) return { cls: "canvas", label: "Sketch", glyph: "SK" };
+  if (key.includes("collab")) return { cls: "collab", label: "Team", glyph: "TM" };
+  if (key.includes("cloud")) return { cls: "cloud", label: "CAD", glyph: "CAD" };
+  if (key.includes("wiring")) return { cls: "wiring", label: "Wire", glyph: "IO" };
+  return { cls: "prompt", label: "Prompt", glyph: "AI" };
+}
+
 function tipCard(tip, index) {
   const ask = tip.starter || `Tell me more about this Render3D tip: ${tip.title}`;
   const steps = Array.isArray(tip.steps) ? tip.steps : [];
+  const visual = tipVisual(tip.topic);
   return `
-    <article class="gs-tip-card">
-      <p class="gs-tip-topic">${esc(tip.topic || "Tip")} · ${String(index + 1).padStart(2, "0")}</p>
-      <h4>${esc(tip.title)}</h4>
-      <p>${esc(tip.body)}</p>
-      ${steps.length ? `
-        <ol class="gs-tip-steps">
-          ${steps.map((step) => `<li>${esc(step)}</li>`).join("")}
-        </ol>
-      ` : ""}
-      <button type="button" class="btn secondary btn-compact gs-tip-ask" data-gs-ask="${esc(ask)}">
-        Ask about this tip
+    <article class="gs-tip-card gs-tip-card--${esc(visual.cls)}">
+      <div class="gs-tip-thumb" aria-hidden="true">
+        <span class="gs-tip-thumb-glyph">${esc(visual.glyph)}</span>
+        <span class="gs-tip-thumb-label">${esc(visual.label)}</span>
+      </div>
+      <div class="gs-tip-content">
+        <p class="gs-tip-topic">${esc(tip.topic || "Tip")} · ${String(index + 1).padStart(2, "0")}</p>
+        <h4>${esc(tip.title)}</h4>
+        <p>${esc(tip.body)}</p>
+        ${steps.length ? `
+          <ol class="gs-tip-steps">
+            ${steps.map((step) => `<li>${esc(step)}</li>`).join("")}
+          </ol>
+        ` : ""}
+      </div>
+      <button type="button" class="gs-tip-ask" data-gs-ask="${esc(ask)}">
+        <span>Ask about this tip</span>
+        <small>Open Render Agent</small>
       </button>
     </article>
   `;

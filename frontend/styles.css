@@ -23808,23 +23808,152 @@ body.gs-agent-open .gs-page {
   padding: 0;
 }
 
+.gs-tips-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);
+  gap: 18px;
+  align-items: start;
+  padding: 18px;
+  border: 1px solid rgba(88, 166, 255, 0.16);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(88, 166, 255, 0.14), transparent 38%),
+    linear-gradient(135deg, rgba(13, 17, 23, 0.72), rgba(22, 27, 34, 0.54));
+}
+
+.gs-tips-tabs {
+  justify-content: flex-end;
+  margin: 0;
+}
+
 .gs-tips-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px;
+  gap: 16px;
   margin-top: 24px;
 }
 
 .gs-tip-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-height: 100%;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid rgba(88, 166, 255, 0.16);
+  border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(22, 27, 34, 0.82), rgba(13, 17, 23, 0.86)),
     radial-gradient(circle at 10% 0%, rgba(88, 166, 255, 0.12), transparent 36%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.gs-tip-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(88, 166, 255, 0.34);
+  background:
+    linear-gradient(180deg, rgba(22, 27, 34, 0.92), rgba(13, 17, 23, 0.9)),
+    radial-gradient(circle at 10% 0%, rgba(88, 166, 255, 0.18), transparent 40%);
+}
+
+.gs-tip-thumb {
+  position: relative;
+  min-height: 112px;
+  overflow: hidden;
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 14px;
+  background:
+    linear-gradient(rgba(88, 166, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(88, 166, 255, 0.07) 1px, transparent 1px),
+    radial-gradient(circle at 30% 16%, rgba(88, 166, 255, 0.22), transparent 40%),
+    #0d1117;
+  background-size: 24px 24px, 24px 24px, auto, auto;
+}
+
+.gs-tip-thumb::after {
+  content: "";
+  position: absolute;
+  right: -26px;
+  top: -30px;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: rgba(249, 115, 22, 0.18);
+  filter: blur(2px);
+}
+
+.gs-tip-thumb-glyph {
+  position: absolute;
+  left: 16px;
+  bottom: 18px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 58px;
+  height: 42px;
+  padding: 0 10px;
+  border-radius: 14px;
+  background: rgba(1, 4, 9, 0.6);
+  color: #f0f6fc;
+  font-family: var(--gs-display);
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.gs-tip-thumb-label {
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  z-index: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.14);
+  color: #79b8ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gs-tip-card--drawing .gs-tip-thumb,
+.gs-tip-card--markup .gs-tip-thumb {
+  background:
+    linear-gradient(rgba(253, 186, 116, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(253, 186, 116, 0.08) 1px, transparent 1px),
+    radial-gradient(circle at 70% 20%, rgba(249, 115, 22, 0.24), transparent 38%),
+    #111827;
+  background-size: 22px 22px, 22px 22px, auto, auto;
+}
+
+.gs-tip-card--software .gs-tip-thumb,
+.gs-tip-card--cloud .gs-tip-thumb {
+  background:
+    radial-gradient(circle at 22% 20%, rgba(163, 113, 247, 0.26), transparent 40%),
+    linear-gradient(135deg, rgba(22, 27, 34, 0.95), rgba(30, 41, 59, 0.92));
+}
+
+.gs-tip-card--files .gs-tip-thumb,
+.gs-tip-card--collab .gs-tip-thumb {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(63, 185, 80, 0.2), transparent 42%),
+    linear-gradient(135deg, rgba(13, 17, 23, 0.95), rgba(20, 83, 45, 0.26));
+}
+
+.gs-tip-card--geometry .gs-tip-thumb,
+.gs-tip-card--editing .gs-tip-thumb,
+.gs-tip-card--wiring .gs-tip-thumb {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(88, 166, 255, 0.24), transparent 40%),
+    radial-gradient(circle at 82% 70%, rgba(249, 115, 22, 0.2), transparent 42%),
+    #0d1117;
+}
+
+.gs-tip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
 }
 
 .gs-tip-topic {
@@ -23865,7 +23994,41 @@ body.gs-agent-open .gs-page {
 
 .gs-tip-ask {
   margin-top: auto;
-  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 12px;
+  background: rgba(88, 166, 255, 0.09);
+  color: #dbeafe;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.gs-tip-ask span,
+.gs-tip-ask small {
+  display: block;
+}
+
+.gs-tip-ask span {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.gs-tip-ask small {
+  color: #8b949e;
+  font-size: 0.7rem;
+}
+
+.gs-tip-ask:hover,
+.gs-tip-ask:focus-visible {
+  border-color: rgba(88, 166, 255, 0.58);
+  background: rgba(88, 166, 255, 0.16);
+  outline: none;
 }
 
 @media (max-width: 980px) {
@@ -23908,6 +24071,14 @@ body.gs-agent-open .gs-page {
 
   .gs-toc-group {
     margin-bottom: 0;
+  }
+
+  .gs-tips-head {
+    grid-template-columns: 1fr;
+  }
+
+  .gs-tips-tabs {
+    justify-content: flex-start;
   }
 }
 

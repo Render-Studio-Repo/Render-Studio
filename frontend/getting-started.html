@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-gs-hero-banner4" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-gs-hero-banner3" />
 </head>
 <body class="info-page gs-body">
   <div id="app" class="app-info">
@@ -63,7 +63,7 @@
 
     <main class="info-main gs-main">
       <article class="gs-page">
-        <header class="gs-hero is-visible">
+        <header class="gs-hero">
           <div class="gs-hero-banner">
             <div class="gs-hero-copy">
               <p class="gs-kicker">Getting Started</p>
@@ -106,12 +106,22 @@
             <div id="gs-features" class="gs-features"></div>
 
             <section id="tips-library" class="gs-tips-section" aria-labelledby="tips-library-title">
-              <p class="gs-feature-index">Docs category</p>
-              <h3 id="tips-library-title">Tips &amp; tricks</h3>
-              <p class="gs-summary">
-                Browse short workflow tips by topic — prompting, DXF, references, collaboration, and more.
-                Ask Agent about any tip to get a walkthrough.
-              </p>
+              <div class="gs-tips-head">
+                <div>
+                  <p class="gs-feature-index">Docs category</p>
+                  <h3 id="tips-library-title">Tips &amp; tricks</h3>
+                  <p class="gs-summary">
+                    Browse short workflow tips by topic — prompting, DXF, references, collaboration, and more.
+                    Ask Agent about any tip to get a walkthrough.
+                  </p>
+                </div>
+                <nav class="docs-category-tabs gs-tips-tabs" aria-label="Docs categories">
+                  <a class="docs-category-tab" href="/getting-started.html">Getting Started</a>
+                  <a class="docs-category-tab active" href="#tips-library">Tips &amp; tricks</a>
+                  <a class="docs-category-tab" href="/docs.html#complete-docs">Complete docs</a>
+                  <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+                </nav>
+              </div>
               <div id="gs-tips-grid" class="gs-tips-grid"></div>
             </section>
 

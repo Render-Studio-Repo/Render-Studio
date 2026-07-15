@@ -4813,8 +4813,12 @@ async function ensureMissingBrowserComponentsLoaded({ keepGizmoOn = null, fitVie
   if (!projectId) return;
   const browser = normalizeBrowser(await api(`/api/projects/${projectId}`));
   const visibleComps = (browser.components || []).filter((c) => !isBrowserComponentHidden(c));
+  // Only pull auto-load / primary parts. Loading every browser entry after paint/edit
+  // was resurrecting leftover edit artifacts as overlapping twin models.
+  const toConsider = visibleComps.filter((c) => c.auto_load === true || c.primary === true);
+  // Also keep any already-loaded siblings visible, but do not invent new ones.
   let loadedAny = false;
-  for (const entry of visibleComps) {
+  for (const entry of toConsider) {
     // Same part can be catalogued as .step while the viewport holds the painted/edited .glb
     // (or vice versa). Never load a second copy when any same-stem entry is already present.
     const existing =
