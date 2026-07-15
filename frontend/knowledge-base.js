@@ -177,12 +177,10 @@ function renderKbCardStats(kb) {
 export function createKnowledgePromptUI({
   iconBtn,
   badgeEl,
-  popover,
   pickerList,
   overviewEl,
   dropZone,
   dropInput,
-  manageBtn,
   statusEl,
   modal,
 } = {}) {
@@ -194,7 +192,6 @@ export function createKnowledgePromptUI({
   let tree = null;
   let skills = [];
   let currentFolderId = null;
-  let popoverOpen = false;
   let uploading = false;
   let canEditActive = true;
 
@@ -264,21 +261,63 @@ export function createKnowledgePromptUI({
     const selectedBases = allBases().filter((b) => selected.includes(b.id));
     const selectedFiles = selectedBases.reduce((n, kb) => n + Number(kb.item_count || 0), 0);
     const selectedBytes = selectedBases.reduce((n, kb) => n + Number(kb.total_bytes || kb.stats?.total_bytes || 0), 0);
+    const totalFiles = Number(userStats?.item_count || 0);
+    const totalBytes = Number(userStats?.total_bytes || 0);
+    const baseCount = Number(userStats?.knowledge_base_count ?? bases.length);
     if (overviewEl) {
       overviewEl.innerHTML = `
-        ${renderStatsPanel(userStats, { title: "Your knowledge library", compact: true })}
-        <div class="prompt-kb-selected-summary">
-          <span><em>${selected.length}</em> selected for this prompt</span>
-          <span><em>${selectedFiles}</em> files in scope</span>
-          <span><em>${formatBytes(selectedBytes)}</em> selected storage</span>
+        <div class="prompt-kb-selected-summary kb-overview-summary">
+          <span><em>${baseCount}</em> bases</span>
+          <span><em>${totalFiles}</em> files</span>
+          <span><em>${formatBytes(totalBytes)}</em> library</span>
+          <span><em>${selected.length}</em> selected</span>
+          <span><em>${selectedFiles}</em> in prompt</span>
+          <span><em>${formatBytes(selectedBytes)}</em> selected</span>
           <span><em>${sharedBases.length}</em> shared with you</span>
         </div>
       `;
     }
     const modalOverview = modal?.querySelector("#kb-overview-stats");
     if (modalOverview) {
-      modalOverview.innerHTML = renderStatsPanel(userStats, { title: "Account knowledge stats" });
+      modalOverview.innerHTML = `
+        ${renderStatsPanel(userStats, { title: "Your knowledge library" })}
+        <div class="kb-stats-prompt-scope">
+          <div class="kb-stats-head"><strong>Selected for this prompt</strong></div>
+          <div class="prompt-kb-selected-summary">
+            <span><em>${selected.length}</em> bases selected</span>
+            <span><em>${selectedFiles}</em> files in scope</span>
+            <span><em>${formatBytes(selectedBytes)}</em> selected storage</span>
+            <span><em>${sharedBases.length}</em> shared with you</span>
+          </div>
+          ${selectedBases.length ? `
+            <div class="kb-stats-selected-list">
+              ${selectedBases.map((kb) => `
+                <article class="kb-stats-selected-card">
+                  <strong>${esc(kb.name)}${kb.access === "shared" || kb.shared_with_me ? ` <span class="kb-shared-tag">Shared</span>` : ""}</strong>
+                  ${renderKbCardStats(kb)}
+                </article>
+              `).join("")}
+            </div>
+          ` : `<p class="muted small">No knowledge bases selected for the AI prompt yet.</p>`}
+        </div>
+      `;
     }
+  }
+
+  function openStatsOverlay() {
+    const overlay = modal?.querySelector("#kb-stats-overlay");
+    if (!overlay) return;
+    renderOverview();
+    overlay.classList.remove("hidden");
+    modal?.querySelector("#kb-view-stats")?.setAttribute("aria-expanded", "true");
+  }
+
+  function closeStatsOverlay() {
+    const overlay = modal?.querySelector("#kb-stats-overlay");
+    if (!overlay || overlay.classList.contains("hidden")) return false;
+    overlay.classList.add("hidden");
+    modal?.querySelector("#kb-view-stats")?.setAttribute("aria-expanded", "false");
+    return true;
   }
 
   function renderKbPickItem(kb, selected) {
@@ -287,18 +326,21 @@ export function createKnowledgePromptUI({
     const via = shared && kb.shared_via?.length
       ? ` · via ${esc(kb.shared_via.map((r) => r.label).join(", "))}`
       : "";
+    const active = kb.id === activeKbId;
     return `
-      <label class="prompt-kb-pick-item${selected.has(kb.id) ? " is-selected" : ""}${shared ? " is-shared" : ""}">
-        <input type="checkbox" data-kb-id="${esc(kb.id)}" ${selected.has(kb.id) ? "checked" : ""} />
-        <span class="prompt-kb-pick-body">
+      <div class="prompt-kb-pick-item${selected.has(kb.id) ? " is-selected" : ""}${shared ? " is-shared" : ""}${active ? " is-active" : ""}" data-open-kb="${esc(kb.id)}">
+        <label class="prompt-kb-pick-check" title="Use in AI prompt">
+          <input type="checkbox" data-kb-id="${esc(kb.id)}" ${selected.has(kb.id) ? "checked" : ""} />
+        </label>
+        <button type="button" class="prompt-kb-pick-body" data-open-kb="${esc(kb.id)}">
           <span class="prompt-kb-pick-title">
             <strong>${esc(kb.name)}${shared ? ` <span class="kb-shared-tag">Shared</span>` : ""}</strong>
             ${kb.description ? `<em class="prompt-kb-pick-desc">${esc(kb.description)}</em>` : ""}
             ${shared ? `<em class="prompt-kb-pick-desc">Shared with you${owner}${via}</em>` : ""}
           </span>
           ${renderKbCardStats(kb)}
-        </span>
-      </label>
+        </button>
+      </div>
     `;
   }
 
@@ -307,7 +349,7 @@ export function createKnowledgePromptUI({
     const selected = new Set(getSelectedKnowledgeBaseIds());
     renderOverview();
     if (!bases.length && !sharedBases.length) {
-      pickerList.innerHTML = `<p class="muted small">No knowledge bases yet. Click Manage to create one.</p>`;
+      pickerList.innerHTML = `<p class="muted small">No knowledge bases yet. Create one to get started.</p>`;
       return;
     }
     const parts = [];
@@ -321,6 +363,7 @@ export function createKnowledgePromptUI({
     }
     pickerList.innerHTML = parts.join("");
     pickerList.querySelectorAll("input[data-kb-id]").forEach((input) => {
+      input.addEventListener("click", (event) => event.stopPropagation());
       input.addEventListener("change", () => {
         const ids = [...pickerList.querySelectorAll("input[data-kb-id]:checked")]
           .map((el) => el.getAttribute("data-kb-id"))
@@ -329,6 +372,21 @@ export function createKnowledgePromptUI({
         syncIcon();
         renderPicker();
         updateDropHint();
+      });
+    });
+    pickerList.querySelectorAll("[data-open-kb]").forEach((el) => {
+      el.addEventListener("click", (event) => {
+        if (event.target.closest("input[data-kb-id], .prompt-kb-pick-check")) return;
+        const kbId = el.getAttribute("data-open-kb");
+        if (!kbId) return;
+        activeKbId = kbId;
+        currentFolderId = null;
+        const active = findBase(activeKbId);
+        canEditActive = !(active?.access === "shared" || active?.shared_with_me);
+        syncEditControls();
+        updateDropHint();
+        renderPicker();
+        void loadTree(activeKbId);
       });
     });
   }
@@ -359,65 +417,9 @@ export function createKnowledgePromptUI({
     }
   }
 
-  function openPopover() {
-    popoverOpen = true;
-    popover?.classList.remove("hidden");
-    iconBtn?.setAttribute("aria-expanded", "true");
-    void refreshBases();
-  }
-
-  function closePopover() {
-    popoverOpen = false;
-    popover?.classList.add("hidden");
-    iconBtn?.setAttribute("aria-expanded", "false");
-  }
-
-  function togglePopover() {
-    if (popoverOpen) closePopover();
-    else openPopover();
-  }
-
   function renderModalList() {
-    const list = modal?.querySelector("#kb-list");
-    if (!list) return;
-    if (!bases.length && !sharedBases.length) {
-      list.innerHTML = `<p class="muted small">No knowledge bases yet. Create one to get started.</p>`;
-      return;
-    }
-    const parts = [];
-    if (bases.length) {
-      parts.push(`<div class="kb-list-section">Your bases</div>`);
-      parts.push(bases.map((kb) => `
-        <button type="button" class="kb-list-item${kb.id === activeKbId ? " active" : ""}" data-kb-id="${esc(kb.id)}">
-          <strong>${esc(kb.name)}</strong>
-          <span class="kb-list-cats">${kb.item_count || 0} files · ${formatBytes(kb.total_bytes)} · ${formatPct(kb.stats?.text_ready_rate, kb.text_ready_count, kb.item_count)} AI-ready</span>
-          <em>${esc(kb.description || "No description")}</em>
-        </button>
-      `).join(""));
-    }
-    if (sharedBases.length) {
-      parts.push(`<div class="kb-list-section">Shared with you</div>`);
-      parts.push(sharedBases.map((kb) => `
-        <button type="button" class="kb-list-item kb-list-item--shared${kb.id === activeKbId ? " active" : ""}" data-kb-id="${esc(kb.id)}">
-          <strong>${esc(kb.name)} <span class="kb-shared-tag">Shared</span></strong>
-          <span class="kb-list-cats">${kb.item_count || 0} files · from ${esc(kb.owner?.display_name || "owner")}</span>
-          <em>${esc((kb.shared_via || []).map((r) => r.label).join(" · ") || kb.description || "Shared knowledge base")}</em>
-        </button>
-      `).join(""));
-    }
-    list.innerHTML = parts.join("");
-    list.querySelectorAll("[data-kb-id]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeKbId = btn.getAttribute("data-kb-id");
-        currentFolderId = null;
-        const active = findBase(activeKbId);
-        canEditActive = !(active?.access === "shared" || active?.shared_with_me);
-        renderModalList();
-        updateDropHint();
-        syncEditControls();
-        void loadTree(activeKbId);
-      });
-    });
+    // Side list is the picker; keep for refresh hooks.
+    renderPicker();
   }
 
   function syncEditControls() {
@@ -781,8 +783,9 @@ export function createKnowledgePromptUI({
   }
 
   function openModal() {
-    closePopover();
     modal?.classList.remove("hidden");
+    iconBtn?.setAttribute("aria-expanded", "true");
+    document.body.classList.add("kb-modal-open");
     void (async () => {
       try {
         const catalog = await fetchSkillsCatalog((path, options) => fetch(path, options));
@@ -810,28 +813,24 @@ export function createKnowledgePromptUI({
   }
 
   function closeModal() {
+    closeStatsOverlay();
     modal?.classList.add("hidden");
+    iconBtn?.setAttribute("aria-expanded", "false");
+    document.body.classList.remove("kb-modal-open");
   }
 
   iconBtn?.addEventListener("click", (event) => {
     event.stopPropagation();
-    togglePopover();
-  });
-  manageBtn?.addEventListener("click", (event) => {
-    event.stopPropagation();
     openModal();
   });
-  popover?.addEventListener("click", (event) => event.stopPropagation());
-  document.addEventListener("click", () => {
-    if (popoverOpen) closePopover();
-  });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && popoverOpen) closePopover();
+    if (event.key !== "Escape" || !modal || modal.classList.contains("hidden")) return;
+    if (closeStatsOverlay()) return;
+    closeModal();
   });
 
   const openDropPicker = () => dropInput?.click();
   bindDropTarget(dropZone, { openFilePicker: openDropPicker });
-  bindDropTarget(popover, { openFilePicker: null });
   bindDropTarget(modal?.querySelector(".kb-modal-card") || modal, { openFilePicker: null });
   bindDropTarget(modal?.querySelector("#kb-modal-drop"), {
     openFilePicker: () => modal?.querySelector("#kb-upload-files")?.click(),
@@ -848,7 +847,11 @@ export function createKnowledgePromptUI({
   });
 
   modal?.querySelector("#kb-modal-close")?.addEventListener("click", closeModal);
+  modal?.querySelector("#kb-modal-done")?.addEventListener("click", closeModal);
   modal?.querySelector("#kb-modal-backdrop")?.addEventListener("click", closeModal);
+  modal?.querySelector("#kb-view-stats")?.addEventListener("click", openStatsOverlay);
+  modal?.querySelector("#kb-stats-overlay-close")?.addEventListener("click", closeStatsOverlay);
+  modal?.querySelector("#kb-stats-overlay-backdrop")?.addEventListener("click", closeStatsOverlay);
   modal?.querySelector("#kb-create-btn")?.addEventListener("click", () => void createBase());
   modal?.querySelector("#kb-new-folder")?.addEventListener("click", () => void createFolder());
   modal?.querySelector("#kb-upload-files")?.addEventListener("change", (event) => {

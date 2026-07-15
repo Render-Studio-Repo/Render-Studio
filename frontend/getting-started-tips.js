@@ -77,10 +77,17 @@ export const GETTING_STARTED_TIPS = [
 
 const TIP_INDEX_KEY = "render3d:getting-started-tip:v1";
 
+/** Tip chosen for this page load (set by bumpTipOnRefresh / bumpTipForNewThread). */
+let pageTipIndex = null;
+
+function tipCount() {
+  return GETTING_STARTED_TIPS.length || 1;
+}
+
 function readIndex() {
   try {
     const raw = Number(localStorage.getItem(TIP_INDEX_KEY));
-    if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw) % GETTING_STARTED_TIPS.length;
+    if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw) % tipCount();
   } catch {
     /* ignore */
   }
@@ -89,28 +96,43 @@ function readIndex() {
 
 function writeIndex(index) {
   try {
-    localStorage.setItem(TIP_INDEX_KEY, String(index % GETTING_STARTED_TIPS.length));
+    localStorage.setItem(TIP_INDEX_KEY, String(index % tipCount()));
   } catch {
     /* ignore */
   }
 }
 
-/** Advance tip on every page load / hard refresh. */
+function pickFreshIndex(avoid = null) {
+  const n = tipCount();
+  if (n <= 1) return 0;
+  const skip = avoid == null ? readIndex() : avoid;
+  let next = Math.floor(Math.random() * n);
+  for (let i = 0; i < 10 && next === skip; i += 1) {
+    next = Math.floor(Math.random() * n);
+  }
+  if (next === skip) next = (skip + 1) % n;
+  return next;
+}
+
+/** Pick a new tip on every page load / hard refresh. */
 export function bumpTipOnRefresh() {
-  const next = (readIndex() + 1) % GETTING_STARTED_TIPS.length;
+  const next = pickFreshIndex(readIndex());
   writeIndex(next);
+  pageTipIndex = next;
   return next;
 }
 
 /** Advance tip when opening a brand-new empty chat thread. */
 export function bumpTipForNewThread() {
-  const next = (readIndex() + 1) % GETTING_STARTED_TIPS.length;
+  const next = pickFreshIndex(pageTipIndex ?? readIndex());
   writeIndex(next);
+  pageTipIndex = next;
   return next;
 }
 
 export function getCurrentTip() {
-  return GETTING_STARTED_TIPS[readIndex() % GETTING_STARTED_TIPS.length];
+  const idx = pageTipIndex != null ? pageTipIndex : readIndex();
+  return GETTING_STARTED_TIPS[idx % tipCount()];
 }
 
 export function tipTopicClass(topic = "") {

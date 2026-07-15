@@ -1106,6 +1106,35 @@ def _notify_user_by_email(email: str, message: dict[str, Any]) -> None:
         _notify_user(row["id"], message)
 
 
+
+def _notify_ai_keys_changed(
+    user_ids: list[str] | None = None,
+    *,
+    team_id: str | None = None,
+    reason: str = "updated",
+    key_id: str | None = None,
+) -> None:
+    """Push AI key list updates so recipients see shared keys without refreshing."""
+    payload = {"type": "ai.keys.changed", "reason": reason}
+    if team_id:
+        payload["team_id"] = team_id
+    if key_id:
+        payload["key_id"] = key_id
+    ids: list[str] = []
+    if user_ids:
+        ids.extend([uid for uid in user_ids if uid])
+    elif team_id:
+        try:
+            ids.extend(teams_service.team_member_ids(team_id) or [])
+        except Exception:
+            ids = []
+    seen: set[str] = set()
+    for uid in ids:
+        if uid in seen:
+            continue
+        seen.add(uid)
+        _notify_user(uid, payload)
+
 def _notify_project_workspace(project_id: str, message: dict[str, Any]) -> None:
     team_id = teams_service.project_team_id(project_id)
     if team_id:
@@ -6887,6 +6916,8 @@ def add_team_ai_key(team_id: str, body: UserAIKeyRequest, user: dict[str, Any] =
             )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    shared_key_id = (keys[0].get("id") if keys else None)
+    _notify_ai_keys_changed(team_id=team_id, reason="shared", key_id=shared_key_id)
     return {"team_keys": keys, "ai": _ai_status_for_user(user)}
 
 
@@ -6896,6 +6927,7 @@ def delete_team_ai_key(team_id: str, key_id: str, user: dict[str, Any] = Depends
         user_ai_keys_service.delete_team_shared_key(team_id, key_id, user["id"])
     except (ValueError, PermissionError) as exc:
         raise HTTPException(403, str(exc)) from exc
+    _notify_ai_keys_changed(team_id=team_id, reason="removed", key_id=key_id)
     return {"ok": True}
 
 
@@ -6962,6 +6994,21 @@ def set_team_key_member_access(
         )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(403, str(exc)) from exc
+    reason = "updated"
+    if granted is True:
+        reason = "granted"
+    elif granted is False:
+        reason = "revoked"
+    elif use_key is True:
+        reason = "assigned"
+    elif use_key is False:
+        reason = "unassigned"
+    _notify_ai_keys_changed(
+        [target_user_id, user["id"]],
+        team_id=team_id,
+        reason=reason,
+        key_id=key_id,
+    )
     return {"members": _members_with_daily_ai_usage(members, key_id)}
 
 
@@ -6983,6 +7030,8 @@ def add_team_ai_key(team_id: str, body: UserAIKeyRequest, user: dict[str, Any] =
         )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    shared_key_id = (keys[0].get("id") if keys else None)
+    _notify_ai_keys_changed(team_id=team_id, reason="shared", key_id=shared_key_id)
     return {"team_keys": keys, "ai": _ai_status_for_user(user)}
 
 
@@ -6992,6 +7041,7 @@ def delete_team_ai_key(team_id: str, key_id: str, user: dict[str, Any] = Depends
         user_ai_keys_service.delete_team_shared_key(team_id, key_id, user["id"])
     except (ValueError, PermissionError) as exc:
         raise HTTPException(403, str(exc)) from exc
+    _notify_ai_keys_changed(team_id=team_id, reason="removed", key_id=key_id)
     return {"ok": True}
 
 
@@ -7045,6 +7095,21 @@ def set_team_key_member_access(
         )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(403, str(exc)) from exc
+    reason = "updated"
+    if granted is True:
+        reason = "granted"
+    elif granted is False:
+        reason = "revoked"
+    elif use_key is True:
+        reason = "assigned"
+    elif use_key is False:
+        reason = "unassigned"
+    _notify_ai_keys_changed(
+        [target_user_id, user["id"]],
+        team_id=team_id,
+        reason=reason,
+        key_id=key_id,
+    )
     return {"members": members}
 
 

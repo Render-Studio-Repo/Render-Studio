@@ -56,15 +56,15 @@ import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-mention
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
-import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-share";
+import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-stats-popup";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260714-project-reorder2";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-agent-tips2";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
+import { createRenderAgent } from "./render-agent.js?v=20260715-agent-tips-refresh";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-ai-key-live-share";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -3483,12 +3483,10 @@ fetchSkillsCatalog((path, options) => fetch(path, options)).then(() => {
 const knowledgePromptUI = createKnowledgePromptUI({
   iconBtn: document.getElementById("prompt-kb-icon-btn"),
   badgeEl: document.getElementById("prompt-kb-icon-badge"),
-  popover: document.getElementById("prompt-kb-popover"),
   pickerList: document.getElementById("prompt-kb-picker-list"),
   overviewEl: document.getElementById("prompt-kb-overview"),
   dropZone: document.getElementById("prompt-kb-drop"),
   dropInput: document.getElementById("prompt-kb-drop-input"),
-  manageBtn: document.getElementById("prompt-kb-manage"),
   statusEl: document.getElementById("prompt-kb-status"),
   modal: document.getElementById("knowledge-base-modal"),
 });
@@ -13715,6 +13713,39 @@ function projectSummaryFromRealtime(msg = {}) {
   };
 }
 
+
+let aiKeysLiveRefreshTimer = null;
+let aiKeysLiveRefreshInFlight = false;
+
+function scheduleSharedAiKeysLiveRefresh(msg = {}) {
+  if (aiKeysLiveRefreshTimer) clearTimeout(aiKeysLiveRefreshTimer);
+  aiKeysLiveRefreshTimer = setTimeout(() => {
+    aiKeysLiveRefreshTimer = null;
+    void refreshSharedAiKeysLive(msg);
+  }, 120);
+}
+
+async function refreshSharedAiKeysLive(msg = {}) {
+  if (!aiKeyUi?.refresh || aiKeysLiveRefreshInFlight) {
+    if (aiKeysLiveRefreshInFlight) scheduleSharedAiKeysLiveRefresh(msg);
+    return;
+  }
+  aiKeysLiveRefreshInFlight = true;
+  try {
+    await aiKeyUi.refresh();
+    const reason = String(msg.reason || "");
+    if (reason === "shared" || reason === "granted" || reason === "assigned") {
+      setEditStatus("ok", "A shared AI key is now available — no refresh needed.");
+    } else if (reason === "removed" || reason === "revoked" || reason === "unassigned") {
+      setEditStatus("ok", "Shared AI key access was updated.");
+    }
+  } catch (err) {
+    console.warn("Could not refresh shared AI keys:", err);
+  } finally {
+    aiKeysLiveRefreshInFlight = false;
+  }
+}
+
 function handleRealtimeEvent(msg = {}) {
   if (!msg?.type) return;
   if (msg.entry) workspaceActivity.prependEntry(msg.entry);
@@ -13781,6 +13812,11 @@ function handleRealtimeEvent(msg = {}) {
       if (msg.project_id === projectId) return;
     }
     refreshProjectShell();
+    return;
+  }
+
+  if (msg.type === "ai.keys.changed") {
+    scheduleSharedAiKeysLiveRefresh(msg);
     return;
   }
 

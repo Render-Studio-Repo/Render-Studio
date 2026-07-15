@@ -4,11 +4,11 @@ import {
   bumpTipOnRefresh,
   getCurrentTip,
   tipTopicClass,
-} from "./getting-started-tips.js?v=20260715-agent-tips2";
+} from "./getting-started-tips.js?v=20260715-agent-tips-refresh";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
-const RENDER3D_LOGO_URL = "/favicon.svg";
+const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -390,7 +390,10 @@ export function createRenderAgent({
       bindTipActions(messagesEl);
       return;
     }
-    messagesEl.innerHTML = messages
+    const tipHtml = renderAgentTipCard({ compact: true });
+    messagesEl.innerHTML = `
+      ${tipHtml}
+      ${messages
       .map((msg) => {
         const fallbackSender = msg.role === "user" ? getCurrentUser?.() : { display_name: "Render Agent" };
         const sender = msg.sender || fallbackSender || {};
@@ -409,7 +412,9 @@ export function createRenderAgent({
         </article>
       `;
       })
-      .join("");
+      .join("")}
+    `;
+    bindTipActions(messagesEl);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
