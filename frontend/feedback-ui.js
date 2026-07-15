@@ -415,7 +415,31 @@ export function createFeedbackUI({
 
   function isForeignDropTarget(target) {
     return !!target?.closest?.(
-      "#viewport, #prompt-panel, #prompt-pane-compose, #prompt-image-drop, #wiring-prompt-image-drop, #rigging-prompt-image-drop, #project-chat-overlay, .pc-composer, .prompt-composer, .prompt-dropzone, [data-no-feedback-drop], input, textarea, .CodeMirror, .monaco-editor"
+      [
+        "#viewport",
+        "#viewport-drop-overlay",
+        ".viewport-drop-overlay",
+        "#app",
+        ".main-column",
+        "#ref-viewer",
+        "#dxf-viewer",
+        "#doc-tab-bar",
+        "#prompt-panel",
+        "#prompt-pane-compose",
+        "#prompt-image-drop",
+        "#wiring-prompt-image-drop",
+        "#rigging-prompt-image-drop",
+        "#project-chat-overlay",
+        ".pc-composer",
+        ".prompt-composer",
+        ".prompt-dropzone",
+        ".sidebar",
+        "[data-no-feedback-drop]",
+        "input",
+        "textarea",
+        ".CodeMirror",
+        ".monaco-editor",
+      ].join(", "),
     );
   }
 
@@ -428,7 +452,12 @@ export function createFeedbackUI({
   }
 
   document.addEventListener("dragenter", (ev) => {
-    if (!hasImageDrag(ev) || isForeignDropTarget(ev.target)) return;
+    if (!hasImageDrag(ev)) return;
+    // Viewport / studio surfaces own image drops — never keep the screenshot banner up there.
+    if (isForeignDropTarget(ev.target)) {
+      hidePageDrop();
+      return;
+    }
     ev.preventDefault();
     dragDepth += 1;
     if (modal) {
@@ -439,7 +468,11 @@ export function createFeedbackUI({
   });
 
   document.addEventListener("dragover", (ev) => {
-    if (!hasImageDrag(ev) || isForeignDropTarget(ev.target)) return;
+    if (!hasImageDrag(ev)) return;
+    if (isForeignDropTarget(ev.target)) {
+      hidePageDrop();
+      return;
+    }
     ev.preventDefault();
     if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
   });

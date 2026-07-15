@@ -10,9 +10,8 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-markup-mobile-boot" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-learn-gearbox" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
-  <link rel="stylesheet" href="/viewport-gen-loader.css?v=20260715-gen-loader" />
   <script type="importmap">
   {
     "imports": {
@@ -60,8 +59,21 @@
         <span class="studio-boot-tip-kicker">Studio tip</span>
         <p id="studio-boot-tip-text">Type <strong>@</strong> in the AI prompt to link imported files, objects, or selected faces.</p>
       </div>
-      <button type="button" id="studio-boot-learn-more" class="studio-boot-learn-more">
-        Learn more after loading
+      <button type="button" id="studio-boot-learn-more" class="studio-boot-learn-more" aria-pressed="false">
+        <span class="studio-boot-learn-gearbox" aria-hidden="true">
+          <span class="studio-boot-learn-teeth"></span>
+          <span class="studio-boot-learn-gear">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M12 2.6l.7 2.2 2.1-.7 1.1 2 2.1.8-.7 2.1 1.9 1.2-1.2 1.9.7 2.1-2.1.8-1.1 2-2.1-.7L12 21.4l-.7-2.2-2.1.7-1.1-2-2.1-.8.7-2.1-1.9-1.2 1.2-1.9-.7-2.1 2.1-.8 1.1-2 2.1.7L12 2.6Z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </span>
+        <span class="studio-boot-learn-copy">
+          <span class="studio-boot-learn-kicker" data-learn-kicker>Studio walkthrough</span>
+          <span class="studio-boot-learn-label" data-learn-label>Learn more after loading</span>
+        </span>
+        <span class="studio-boot-learn-chevron" aria-hidden="true">›</span>
       </button>
       <div class="studio-boot-progress" aria-hidden="true">
         <span class="studio-boot-progress-fill"></span>
@@ -104,7 +116,17 @@
       } catch (e) {}
       if (learnBtn) {
         learnBtn.classList.toggle("is-queued", !!on);
-        learnBtn.textContent = on ? "Walkthrough queued" : "Learn more after loading";
+        learnBtn.classList.toggle("is-morphing", !!on);
+        learnBtn.setAttribute("aria-pressed", on ? "true" : "false");
+        var label = learnBtn.querySelector("[data-learn-label]");
+        var kicker = learnBtn.querySelector("[data-learn-kicker]");
+        if (label) label.textContent = on ? "Walkthrough queued" : "Learn more after loading";
+        if (kicker) kicker.textContent = on ? "Gearbox armed" : "Studio walkthrough";
+        if (on) {
+          window.setTimeout(function () {
+            learnBtn.classList.remove("is-morphing");
+          }, 650);
+        }
       }
     }
     function isQueued() {
@@ -2242,7 +2264,6 @@
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
   <script type="module" src="/app.js?v=20260715-at-scene-refs"></script>
-  <script type="module" src="/gen-spinner-boot.js?v=20260715-gen-loader"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

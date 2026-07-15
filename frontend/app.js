@@ -67,12 +67,12 @@ import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-drop-card";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-roles";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
-import { createRenderAgent } from "./render-agent.js?v=20260715-agent-followup-context";
+import { createRenderAgent } from "./render-agent.js?v=20260715-do-it-for-me";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-gen-loader";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-fusion-picker";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
@@ -793,7 +793,7 @@ function stopGenerationWatch() {
   const pid = generationWatchPid;
   generationWatchPid = null;
   generationWatchOverlay = null;
-  // Do not clear promptSubmitInFlight here — poll teardown mid-submit hid the banner.
+  promptSubmitInFlight = false;
   if (pid) setProjectLoading(pid, false);
   clearCanvasGenerationPending(pid);
   syncViewportGenerationOverlay({ complete: true });
@@ -1211,10 +1211,6 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       const proj = allProjects.find((p) => p.id === pid);
       if (proj) proj.generation = gen;
       const runningJobs = generationRunningJobs(gen, generationWatchOverlay);
-      const hasServerRunning =
-        gen.status === "running"
-        || (Array.isArray(gen.running_jobs) && gen.running_jobs.some((j) => String(j?.trace_id || j?.id || "") !== "pending"))
-        || (Array.isArray(gen.jobs) && gen.jobs.some((j) => j?.status === "running" && String(j?.trace_id || j?.id || "") !== "pending"));
       if (gen.status === "running" || runningJobs.length > 0) {
         if (generationWatchOverlay) {
           const liveMode = generationWatchOverlay.kind === "rigging"
@@ -1222,7 +1218,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             : generationPromptMode(gen, generationWatchOverlay.promptMode || mode);
           Object.assign(generationWatchOverlay, {
             promptMode: liveMode,
-            pendingStart: hasServerRunning ? false : Boolean(generationWatchOverlay.pendingStart),
+            pendingStart: false,
             benignInterruptAt: null,
             progress: {
               ...(generationWatchOverlay.progress || {}),
@@ -1265,15 +1261,9 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         return;
       }
       const watchAgeMs = Math.max(0, Date.now() - Number(generationWatchOverlay?.startedAt || Date.now()));
-      if (generationWatchOverlay?.pendingStart) {
-        syncViewportGenerationOverlay();
-        syncStopButtonVisibility();
-        syncCanvasGenerationUi();
-        return;
-      }
       if (
-        (!gen.status || gen.status === "idle")
-        && watchAgeMs < 20_000
+        (!gen.status || gen.status === "idle") &&
+        (generationWatchOverlay?.pendingStart || watchAgeMs < 20_000)
       ) {
         syncStopButtonVisibility();
         syncCanvasGenerationUi();
@@ -16653,6 +16643,7 @@ async function createNewProject() {
   ribbon.reset();
   await fetchAllProjects();
   await loadProject(project_id);
+  return project_id;
 }
 
 async function createNewProjectInFolder(folderId) {

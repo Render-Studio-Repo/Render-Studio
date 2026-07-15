@@ -170,11 +170,17 @@ function isImage(file) {
 export function createRenderAgent({
   api,
   getProjectId,
+  getProjects = () => [],
+  getProjectName = () => "",
   getSelectedFile,
+  getObjectChoices = () => [],
   getCurrentUser,
   getTeams,
   getSelectedWorkspaceId,
   getSelectedAiKey,
+  onOpenProject,
+  onCreateProject,
+  onSelectObject,
   onRequireLogin,
   onStatus,
   stickyNote = true,
@@ -221,6 +227,8 @@ export function createRenderAgent({
   let invitePicker = null;
   let agentSourceRow = null;
   let pendingQuestionContext = "";
+  let doItWizard = null;
+  let doItNote = null;
 
   function setStatus(message = "", isError = false) {
     if (statusEl) {
@@ -1143,6 +1151,219 @@ export function createRenderAgent({
     }
   }
 
+  function projectOptionsHtml(selectedId = getProjectId?.() || "") {
+    const projects = [...(getProjects?.() || [])].filter((project) => project?.id);
+    return projects.length
+      ? projects.map((project) => `
+        <option value="${esc(project.id)}"${String(project.id) === String(selectedId || "") ? " selected" : ""}>${esc(project.name || project.id)}</option>
+      `).join("")
+      : `<option value="">No projects yet</option>`;
+  }
+
+  function objectOptionsHtml(selectedName = getSelectedFile?.() || "") {
+    const choices = [...(getObjectChoices?.() || [])].filter((item) => item?.id || item?.filename);
+    return [
+      `<option value="">No specific object / whole project</option>`,
+      ...choices.map((item) => {
+        const value = item.id || item.filename;
+        const label = item.label || item.filename || value;
+        const sub = item.kind ? ` (${item.kind})` : "";
+        return `<option value="${esc(value)}"${String(value) === String(selectedName || "") ? " selected" : ""}>${esc(label + sub)}</option>`;
+      }),
+    ].join("");
+  }
+
+  function removeDoItWizard() {
+    doItWizard?.remove();
+    doItWizard = null;
+  }
+
+  function showDoItWizard() {
+    if (!currentUserId()) {
+      onRequireLogin?.();
+      return;
+    }
+    open();
+    removeDoItWizard();
+    const currentProjectId = getProjectId?.() || "";
+    const currentProjectName = getProjectName?.() || currentProjectId;
+    doItWizard = document.createElement("div");
+    doItWizard.className = "render-agent-doit-modal";
+    doItWizard.setAttribute("role", "dialog");
+    doItWizard.setAttribute("aria-modal", "true");
+    doItWizard.setAttribute("aria-labelledby", "render-agent-doit-title");
+    doItWizard.innerHTML = `
+      <div class="render-agent-doit-backdrop" data-doit-close></div>
+      <form class="render-agent-doit-card">
+        <header>
+          <p class="render-agent-doit-eyebrow">Guided automation</p>
+          <h2 id="render-agent-doit-title">Do it for me</h2>
+          <p>Describe the result you want. Render Agent will step through the setup with sticky notes, then hand the task to AI.</p>
+        </header>
+        <label class="render-agent-doit-field">
+          <span>What do you want to do?</span>
+          <textarea id="render-agent-doit-task" rows="4" required placeholder="Example: make the selected bracket stronger, add rounded corners, and keep the mounting holes aligned."></textarea>
+        </label>
+        <fieldset class="render-agent-doit-fieldset">
+          <legend>Project</legend>
+          <label class="render-agent-doit-radio">
+            <input type="radio" name="render-agent-doit-project-mode" value="current" ${currentProjectId ? "checked" : "disabled"} />
+            <span><strong>Use current project</strong><small>${currentProjectId ? esc(currentProjectName || currentProjectId) : "No project is open"}</small></span>
+          </label>
+          <label class="render-agent-doit-radio">
+            <input type="radio" name="render-agent-doit-project-mode" value="existing" ${currentProjectId ? "" : "checked"} />
+            <span><strong>Select project</strong><select id="render-agent-doit-project">${projectOptionsHtml(currentProjectId)}</select></span>
+          </label>
+          <label class="render-agent-doit-radio">
+            <input type="radio" name="render-agent-doit-project-mode" value="new" />
+            <span><strong>Create new project</strong><small>Render Agent will create and open a clean project first.</small></span>
+          </label>
+        </fieldset>
+        <label class="render-agent-doit-field">
+          <span>Object to edit, if applicable</span>
+          <select id="render-agent-doit-object">${objectOptionsHtml()}</select>
+          <small>Leave this as whole project when the task is not object-specific.</small>
+        </label>
+        <p class="render-agent-doit-status muted small" id="render-agent-doit-status"></p>
+        <footer>
+          <button type="button" class="btn secondary" data-doit-close>Cancel</button>
+          <button type="submit" class="btn accent">Start guided steps</button>
+        </footer>
+      </form>
+    `;
+    document.body.appendChild(doItWizard);
+    const task = doItWizard.querySelector("#render-agent-doit-task");
+    const status = doItWizard.querySelector("#render-agent-doit-status");
+    doItWizard.querySelectorAll("[data-doit-close]").forEach((el) => el.addEventListener("click", removeDoItWizard));
+    doItWizard.addEventListener("change", (event) => {
+      const mode = doItWizard.querySelector("input[name='render-agent-doit-project-mode']:checked")?.value || "current";
+      doItWizard.querySelector("#render-agent-doit-project")?.toggleAttribute("disabled", mode !== "existing");
+    });
+    doItWizard.querySelector("form")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const desired = task?.value?.trim() || "";
+      if (!desired) {
+        if (status) status.textContent = "Describe what you want Render Agent to do.";
+        return;
+      }
+      const mode = doItWizard.querySelector("input[name='render-agent-doit-project-mode']:checked")?.value || "current";
+      const selectedProjectId = mode === "existing"
+        ? doItWizard.querySelector("#render-agent-doit-project")?.value || ""
+        : currentProjectId;
+      if (mode !== "new" && !selectedProjectId) {
+        if (status) status.textContent = "Select a project or choose Create new project.";
+        return;
+      }
+      const objectId = doItWizard.querySelector("#render-agent-doit-object")?.value || "";
+      removeDoItWizard();
+      void runDoItForMe({ desired, mode, projectId: selectedProjectId, objectId });
+    });
+    task?.focus();
+  }
+
+  function removeDoItNote() {
+    doItNote?.remove();
+    doItNote = null;
+    document.querySelectorAll(".render-agent-doit-target").forEach((el) => el.classList.remove("render-agent-doit-target"));
+  }
+
+  function waitForDoItContinue(step) {
+    removeDoItNote();
+    const target = step.selector ? document.querySelector(step.selector) : null;
+    target?.classList?.add("render-agent-doit-target");
+    doItNote = document.createElement("div");
+    doItNote.className = "render-agent-doit-note";
+    doItNote.innerHTML = `
+      <strong>${esc(step.title || "Render Agent")}</strong>
+      <p>${esc(step.body || "")}</p>
+      <button type="button" class="btn accent btn-compact">Continue</button>
+    `;
+    document.body.appendChild(doItNote);
+    if (target) {
+      const rect = target.getBoundingClientRect();
+      doItNote.style.left = `${Math.min(window.innerWidth - 330, Math.max(14, rect.left))}px`;
+      doItNote.style.top = `${Math.min(window.innerHeight - 170, Math.max(14, rect.bottom + 12))}px`;
+      target.scrollIntoView?.({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+    return new Promise((resolve) => {
+      doItNote.querySelector("button")?.addEventListener("click", () => {
+        removeDoItNote();
+        resolve();
+      }, { once: true });
+    });
+  }
+
+  async function runDoItForMe({ desired, mode, projectId: selectedProjectId, objectId }) {
+    open();
+    setStatus("Starting guided automation…");
+    try {
+      await waitForDoItContinue({
+        selector: "#render-agent-panel",
+        title: "1. I’m setting up the workspace",
+        body: "I need a project first because every CAD edit, upload, and prompt result is saved into a Render3D project.",
+      });
+      let targetProjectId = selectedProjectId || getProjectId?.() || "";
+      if (mode === "new") {
+        await waitForDoItContinue({
+          selector: "#btn-new-project, #project-browser",
+          title: "2. I’m creating a new project",
+          body: "You chose a clean workspace, so I’ll create a project before asking AI to make changes.",
+        });
+        targetProjectId = await onCreateProject?.();
+      } else if (targetProjectId && targetProjectId !== getProjectId?.()) {
+        await waitForDoItContinue({
+          selector: "#project-browser",
+          title: "2. I’m opening the selected project",
+          body: "I’m switching to the project you selected so the agent works against the right files and context.",
+        });
+        await onOpenProject?.(targetProjectId);
+      }
+      if (!targetProjectId) throw new Error("No project was selected or created.");
+
+      const objectChoice = (getObjectChoices?.() || []).find((item) => String(item.id || item.filename) === String(objectId));
+      if (objectChoice) {
+        await waitForDoItContinue({
+          selector: "#viewport, #design-browser",
+          title: "3. I’m selecting the object",
+          body: "This pins the task to the object you chose instead of editing the whole project by accident.",
+        });
+        await onSelectObject?.(objectChoice);
+      } else {
+        await waitForDoItContinue({
+          selector: "#viewport, #prompt-input",
+          title: "3. I’m using project-level context",
+          body: "No specific object was required, so I’ll describe the request using the current project as context.",
+        });
+      }
+
+      const objectLine = objectChoice
+        ? `Target object: ${objectChoice.label || objectChoice.filename || objectChoice.id}`
+        : "Target object: whole project / no specific object";
+      const projectLine = `Project: ${getProjectName?.() || targetProjectId}`;
+      const finalPrompt = [
+        "Do it for me in Render3D.",
+        projectLine,
+        objectLine,
+        "",
+        "Task:",
+        desired,
+        "",
+        "Explain the buttons/actions you would use and why before any destructive step. If a model generation/edit is needed, produce the exact prompt or next command for the active project.",
+      ].join("\n");
+      await waitForDoItContinue({
+        selector: "#render-agent-form",
+        title: "4. I’m sending the task to Render Agent",
+        body: "This asks the agent to plan or execute the next safe step using the selected project and object context.",
+      });
+      if (input) input.value = finalPrompt;
+      await sendMessage();
+      setStatus("Do it for me request sent.");
+    } catch (err) {
+      removeDoItNote();
+      setStatus(err?.message || "Could not run Do it for me.", true);
+    }
+  }
+
   btn?.addEventListener("click", () => open());
   closeBtn?.addEventListener("click", close);
   document.getElementById("render-agent-fab")?.addEventListener("click", () => toggle());
@@ -1175,6 +1396,7 @@ export function createRenderAgent({
     const bar = document.createElement("div");
     bar.className = "render-agent-action-bar";
     bar.innerHTML = `
+      <button type="button" class="btn accent btn-compact" data-ra-action="do-it">Do it for me</button>
       <button type="button" class="btn secondary btn-compact" data-ra-action="suggest">Suggest to developer</button>
       <button type="button" class="btn secondary btn-compact" data-ra-action="share">Copy share link</button>
       <a class="btn secondary btn-compact" href="/getting-started.html">Getting Started</a>
@@ -1184,6 +1406,7 @@ export function createRenderAgent({
       const btn = event.target.closest?.("[data-ra-action]");
       if (!btn) return;
       const action = btn.getAttribute("data-ra-action");
+      if (action === "do-it") showDoItWizard();
       if (action === "suggest") void suggestToDeveloper();
       if (action === "share") void copyShareLink();
     });
@@ -1308,6 +1531,7 @@ export function createRenderAgent({
     toggle,
     suggestToDeveloper,
     copyShareLink,
+    showDoItWizard,
     enterPresentationDeck,
     setUser(user) {
       if (!user) return;

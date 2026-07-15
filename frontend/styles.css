@@ -1307,40 +1307,263 @@ body:not(.info-page) {
 }
 
 .studio-boot-learn-more {
+  --learn-radius: 999px;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 12px;
   width: max-content;
   max-width: 100%;
+  min-height: 48px;
   margin: 0 0 16px;
-  padding: 8px 12px;
-  border: 1px solid rgba(249, 115, 22, 0.42);
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.18), rgba(88, 166, 255, 0.14));
+  padding: 8px 14px 8px 8px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(249, 115, 22, 0.48);
+  border-radius: var(--learn-radius);
+  background:
+    linear-gradient(135deg, rgba(249, 115, 22, 0.22), rgba(14, 165, 233, 0.16) 48%, rgba(88, 166, 255, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%),
+    rgba(8, 12, 20, 0.88);
   color: #f0f6fc;
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 800;
+  text-align: left;
   cursor: pointer;
   box-shadow:
-    0 0 18px rgba(249, 115, 22, 0.12),
-    0 0 18px rgba(88, 166, 255, 0.1);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(88, 166, 255, 0.08),
+    0 10px 28px rgba(0, 0, 0, 0.28),
+    0 0 22px rgba(249, 115, 22, 0.16);
+  transition:
+    border-radius 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.28s ease,
+    box-shadow 0.28s ease,
+    transform 0.28s ease,
+    padding 0.45s ease,
+    gap 0.45s ease,
+    background 0.35s ease;
+}
+
+.studio-boot-learn-more::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% 50%, rgba(249, 115, 22, 0.28), transparent 42%),
+    radial-gradient(circle at 86% 40%, rgba(56, 189, 248, 0.22), transparent 40%);
+  opacity: 0.9;
+  transition: opacity 0.3s ease;
+}
+
+.studio-boot-learn-more::after {
+  content: "";
+  position: absolute;
+  inset: -40% auto -40% -30%;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  transform: skewX(-18deg) translateX(-120%);
+  transition: none;
+  pointer-events: none;
+}
+
+.studio-boot-learn-more:hover::after,
+.studio-boot-learn-more:focus-visible::after {
+  animation: studio-learn-sheen 0.85s ease;
 }
 
 .studio-boot-learn-more:hover,
 .studio-boot-learn-more:focus-visible {
-  border-color: rgba(125, 211, 252, 0.7);
-  box-shadow:
-    0 0 24px rgba(249, 115, 22, 0.18),
-    0 0 24px rgba(88, 166, 255, 0.18);
+  border-color: rgba(125, 211, 252, 0.78);
   transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(56, 189, 248, 0.18),
+    0 14px 34px rgba(0, 0, 0, 0.34),
+    0 0 28px rgba(249, 115, 22, 0.22),
+    0 0 28px rgba(56, 189, 248, 0.16);
+}
+
+.studio-boot-learn-gearbox {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.2), transparent 45%),
+    linear-gradient(145deg, rgba(249, 115, 22, 0.35), rgba(14, 165, 233, 0.28));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 14px rgba(249, 115, 22, 0.22);
+  transition:
+    width 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s ease,
+    background 0.35s ease;
+}
+
+.studio-boot-learn-teeth {
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    conic-gradient(
+      from 0deg,
+      transparent 0 10deg,
+      rgba(253, 186, 116, 0.95) 10deg 18deg,
+      transparent 18deg 46deg,
+      rgba(125, 211, 252, 0.95) 46deg 54deg,
+      transparent 54deg 82deg,
+      rgba(253, 186, 116, 0.95) 82deg 90deg,
+      transparent 90deg 118deg,
+      rgba(125, 211, 252, 0.95) 118deg 126deg,
+      transparent 126deg 154deg,
+      rgba(253, 186, 116, 0.95) 154deg 162deg,
+      transparent 162deg 190deg,
+      rgba(125, 211, 252, 0.95) 190deg 198deg,
+      transparent 198deg 226deg,
+      rgba(253, 186, 116, 0.95) 226deg 234deg,
+      transparent 234deg 262deg,
+      rgba(125, 211, 252, 0.95) 262deg 270deg,
+      transparent 270deg 298deg,
+      rgba(253, 186, 116, 0.95) 298deg 306deg,
+      transparent 306deg 334deg,
+      rgba(125, 211, 252, 0.95) 334deg 342deg,
+      transparent 342deg 360deg
+    );
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  transition: opacity 0.35s ease;
+}
+
+.studio-boot-learn-gear {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #ffe8cc;
+  transition: color 0.3s ease, transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.studio-boot-learn-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.studio-boot-learn-kicker {
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fdba74;
+}
+
+.studio-boot-learn-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #f8fbff;
+  white-space: nowrap;
+}
+
+.studio-boot-learn-chevron {
+  margin-left: 2px;
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 1.15rem;
+  font-weight: 500;
+  transition: opacity 0.3s ease, transform 0.35s ease;
 }
 
 .studio-boot-learn-more.is-queued {
+  --learn-radius: 14px;
+  padding: 10px 14px 10px 10px;
+  gap: 14px;
   border-color: rgba(125, 211, 252, 0.72);
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.28), rgba(249, 115, 22, 0.18));
-  color: #e0f2fe;
+  background:
+    linear-gradient(145deg, rgba(14, 165, 233, 0.28), rgba(249, 115, 22, 0.2) 55%, rgba(88, 166, 255, 0.14)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 40%),
+    rgba(6, 10, 18, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 0 0 1px rgba(56, 189, 248, 0.12),
+    0 0 0 1px rgba(249, 115, 22, 0.16),
+    0 12px 32px rgba(0, 0, 0, 0.38),
+    0 0 28px rgba(56, 189, 248, 0.2),
+    0 0 24px rgba(249, 115, 22, 0.16);
+}
+
+.studio-boot-learn-more.is-queued .studio-boot-learn-gearbox {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.22), transparent 42%),
+    linear-gradient(160deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
+  box-shadow:
+    inset 0 0 0 1px rgba(125, 211, 252, 0.35),
+    inset 0 0 12px rgba(249, 115, 22, 0.18),
+    0 0 16px rgba(56, 189, 248, 0.22);
+}
+
+.studio-boot-learn-more.is-queued .studio-boot-learn-teeth {
+  opacity: 1;
+  animation: studio-learn-teeth-spin 4.8s linear infinite;
+}
+
+.studio-boot-learn-more.is-queued .studio-boot-learn-gear {
+  color: #7dd3fc;
+  animation: studio-learn-gear-spin 2.4s linear infinite;
+}
+
+.studio-boot-learn-more.is-queued .studio-boot-learn-kicker {
+  color: #7dd3fc;
+}
+
+.studio-boot-learn-more.is-queued .studio-boot-learn-chevron {
+  opacity: 0;
+  transform: translateX(6px);
+}
+
+.studio-boot-learn-more.is-morphing .studio-boot-learn-gearbox {
+  animation: studio-learn-gearbox-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes studio-learn-sheen {
+  from { transform: skewX(-18deg) translateX(-120%); }
+  to { transform: skewX(-18deg) translateX(320%); }
+}
+
+@keyframes studio-learn-gear-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes studio-learn-teeth-spin {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes studio-learn-gearbox-pop {
+  0% { transform: scale(0.86) rotate(-12deg); }
+  55% { transform: scale(1.08) rotate(8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@media (max-width: 820px) {
+  .studio-boot-learn-more {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .studio-boot-learn-label {
+    white-space: normal;
+  }
 }
 
 .studio-boot-progress {
@@ -1590,7 +1813,11 @@ body:not(.info-page) {
   .studio-boot-robot-eye,
   .studio-boot-spark,
   .studio-boot-logo img,
-  .studio-boot-spinner {
+  .studio-boot-spinner,
+  .studio-boot-learn-more.is-queued .studio-boot-learn-teeth,
+  .studio-boot-learn-more.is-queued .studio-boot-learn-gear,
+  .studio-boot-learn-more.is-morphing .studio-boot-learn-gearbox,
+  .studio-boot-learn-more:hover::after {
     animation: none !important;
     transition: none !important;
   }

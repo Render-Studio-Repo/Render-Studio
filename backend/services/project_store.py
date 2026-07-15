@@ -173,6 +173,8 @@ def touch_project(
         meta["created_at"] = now
     meta["updated_at"] = now
     meta["id"] = project_path.name
+    files = cad_service.list_project_files(project_path)
+    meta["file_count"] = len(files)
     if name:
         if name_source == "user":
             meta["name"] = name
@@ -180,7 +182,6 @@ def touch_project(
         elif _ai_may_set_project_name(project_path, meta):
             meta["name"] = name
     elif not meta.get("name") or meta["name"] == meta["id"]:
-        files = cad_service.list_project_files(project_path)
         if files:
             meta["name"] = files[-1]["name"].rsplit(".", 1)[0].replace("_", " ")
     save_meta(project_path, meta)
@@ -248,14 +249,31 @@ def project_list_summary(project_path: Path) -> dict[str, Any]:
             touch = datetime.fromtimestamp(project_path.stat().st_mtime, tz=timezone.utc).isoformat()
         except OSError:
             touch = meta.get("created_at")
+    try:
+        file_count = len(cad_service.list_project_files(project_path))
+    except OSError:
+        file_count = int(meta.get("file_count") or 0)
+    # Keep meta cache in sync so future reads stay cheap/accurate.
+    if meta.get("file_count") != file_count:
+        meta["file_count"] = file_count
+        try:
+            save_meta(project_path, meta)
+        except OSError:
+            pass
+    timeline_entries = 0
+    try:
+        timeline_entries = len((history_service.load_timeline(project_path) or {}).get("entries") or [])
+    except Exception:
+        timeline_entries = 0
     return {
         "id": project_path.name,
         "name": meta.get("name") or project_path.name,
         "created_at": meta.get("created_at"),
         "updated_at": touch or meta.get("updated_at"),
-        "file_count": meta.get("file_count", 0),
+        "file_count": file_count,
         "files": [],
         "browser": {"components": [], "sketches": [], "wiring": [], "drawings": [], "references": [], "renders": []},
+        "timeline": {"entries": [{} for _ in range(timeline_entries)]},
         "latest_file": None,
         "usage_summary": None,
         "generation": generation_service.public_summary(project_path),
