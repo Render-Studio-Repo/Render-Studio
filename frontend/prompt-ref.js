@@ -26,6 +26,13 @@ export function formatPromptModeLabel(mode) {
   return m;
 }
 
+export function formatSpeedLabel(speed) {
+  const s = String(speed || "").trim().toLowerCase();
+  if (s === "quality") return "Quality";
+  if (s === "fast" || s === "speed") return "Speed";
+  return null;
+}
+
 export function formatModelLabel(model, provider) {
   const prov = String(provider || "").trim().toLowerCase();
   if (prov === "deterministic") return null;

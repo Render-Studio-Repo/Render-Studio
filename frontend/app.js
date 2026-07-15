@@ -53,8 +53,8 @@ import {
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260629-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260707-restore-history-refs";
-import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-meta";
+import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-meta";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
@@ -2977,6 +2977,18 @@ const promptHistory = createPromptHistoryUI({
   listEl: document.getElementById("prompt-history-list"),
   summaryEl: document.getElementById("prompt-history-summary"),
   getProjectId: () => projectId,
+  onViewPromptCompare: ({ original, improved, unchanged, promptImproved, entry }) => {
+    openSpiceCompareModal({
+      original: original || improved,
+      improved: improved || original,
+      unchanged: Boolean(unchanged),
+      promptImproved: Boolean(promptImproved),
+      fromHistory: true,
+      note: promptImproved
+        ? `History · ${entry?.user_name || "user"} · original vs Improved with AI`
+        : `History · ${entry?.user_name || "user"} · full prompt`,
+    });
+  },
   onReuse: (entry) => {
     const reusedMode = generationPromptMode({ prompt_mode: entry.prompt_mode }, promptMode);
     if (["v2", "fusion", "architect", "draw", "standard"].includes(reusedMode)) {
@@ -3318,10 +3330,10 @@ function closeSpiceCompareModal() {
   document.getElementById("prompt-spice-view-btn")?.setAttribute("aria-expanded", "false");
 }
 
-function openSpiceCompareModal() {
-  const compare = lastSpicePromptCompare || loadSpicePromptCompare();
+function openSpiceCompareModal(compareOverride = null) {
+  const compare = compareOverride || lastSpicePromptCompare || loadSpicePromptCompare();
   if (!compare?.original || !compare?.improved) return;
-  lastSpicePromptCompare = compare;
+  if (!compareOverride) lastSpicePromptCompare = compare;
   const modal = document.getElementById("prompt-spice-compare-modal");
   const originalEl = document.getElementById("prompt-spice-original");
   const improvedEl = document.getElementById("prompt-spice-improved");
@@ -3330,9 +3342,15 @@ function openSpiceCompareModal() {
   originalEl.textContent = compare.original;
   improvedEl.textContent = compare.improved;
   if (noteEl) {
-    noteEl.textContent = compare.unchanged
-      ? "The improved prompt matched your original — nothing was changed."
-      : "Your original wording is on the left. The AI rewrite used for generation is on the right.";
+    if (compare.note) {
+      noteEl.textContent = compare.note;
+    } else if (compare.unchanged) {
+      noteEl.textContent = "The improved prompt matched your original — nothing was changed.";
+    } else if (compare.fromHistory && !compare.promptImproved) {
+      noteEl.textContent = "Full prompt text from history.";
+    } else {
+      noteEl.textContent = "Your original wording is on the left. The AI rewrite used for generation is on the right.";
+    }
   }
   modal.classList.remove("hidden");
   document.getElementById("prompt-spice-view-btn")?.setAttribute("aria-expanded", "true");

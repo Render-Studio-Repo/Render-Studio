@@ -1,6 +1,6 @@
 /** Prompt compose / history tabs (CAD AI + Wiring AI panels). */
 
-import { copyPromptRef, copyText, formatPromptRef, formatPromptModeLabel, formatModelLabel } from "./prompt-ref.js";
+import { copyPromptRef, copyText, formatPromptRef, formatPromptModeLabel, formatModelLabel, formatSpeedLabel } from "./prompt-ref.js";
 
 export function createPromptHistoryUI({
   listEl,
@@ -9,6 +9,7 @@ export function createPromptHistoryUI({
   onTabChange,
   getProjectId,
   onRefCopied,
+  onViewPromptCompare = null,
   tabSelector = ".prompt-tab",
   panes = null,
   refStatusEl = null,
@@ -237,6 +238,19 @@ export function createPromptHistoryUI({
     summaryEl.classList.remove("hidden");
   }
 
+  function promptPreview(text, limit = 220) {
+    const raw = String(text || "").trim();
+    if (!raw) return "";
+    if (raw.length <= limit) return raw;
+    return `${raw.slice(0, limit).trimEnd()}…`;
+  }
+
+  function entryHasImprovedPrompt(entry) {
+    const original = String(entry?.original_prompt || "").trim();
+    const prompt = String(entry?.prompt || "").trim();
+    return Boolean(entry?.prompt_improved) || (original && original !== prompt);
+  }
+
   function render(entries, summary = null) {
     if (!listEl) return;
     if (!entries?.length) {
@@ -257,14 +271,21 @@ export function createPromptHistoryUI({
           : null;
         const kindLabel = (e.kind || "cad") === "wiring" ? "Wiring" : null;
         const modeLabel = formatPromptModeLabel(e.prompt_mode);
+        const speedLabel = formatSpeedLabel(e.speed);
         const modelLabel = formatModelLabel(e.model, e.provider);
         const costLabel = entryCostLabel(e);
+        const improved = entryHasImprovedPrompt(e);
+        const fullPrompt = String(e.prompt || "");
+        const preview = promptPreview(fullPrompt);
+        const canExpand = improved || fullPrompt.length > 220;
         const metaParts = [
           who,
           when,
           kindLabel,
           modeLabel ? `<span class="ph-mode">${escapeHtml(modeLabel)}</span>` : null,
+          speedLabel ? `<span class="ph-speed">${escapeHtml(speedLabel)}</span>` : null,
           modelLabel ? `<span class="ph-model">${escapeHtml(modelLabel)}</span>` : null,
+          improved ? `<span class="ph-improved">Improved</span>` : null,
           costLabel ? `<span class="ph-cost">${escapeHtml(costLabel)}</span>` : null,
           e.filename ? escapeHtml(e.filename) : null,
           e.reference_count ? `${e.reference_count} ref` : null,
@@ -289,13 +310,19 @@ export function createPromptHistoryUI({
           provider: e.provider,
         });
         const selected = e.id === selectedId ? " ph-selected" : "";
+        const viewMore = canExpand
+          ? `<button type="button" class="ph-view-more" data-view-more="${escapeHtml(e.id)}">${
+              improved ? "View more · original vs improved" : "View more"
+            }</button>`
+          : "";
         return `<div class="prompt-history-item${selected}" data-id="${escapeHtml(e.id)}">
           <button type="button" class="ph-ref-btn" data-ref-id="${escapeHtml(e.id)}" title="Copy chat reference ID">${escapeHtml(ref)}</button>
           <button type="button" class="ph-body-btn">
             <span class="ph-head">${status}<span class="ph-meta">${meta}</span></span>
-            <span class="ph-prompt">${escapeHtml(e.prompt)}</span>
+            <span class="ph-prompt">${escapeHtml(preview)}</span>
             ${reply}
           </button>
+          ${viewMore}
         </div>`;
       })
       .join("");
@@ -318,6 +345,38 @@ export function createPromptHistoryUI({
         await copyEntryRef(entry);
         onReuse?.(entry);
         setTab("compose");
+      });
+    });
+
+    listEl.querySelectorAll(".ph-view-more").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const entry = entries.find((item) => item.id === btn.dataset.viewMore);
+        if (!entry) return;
+        selectEntry(entry.id);
+        const original = String(entry.original_prompt || "").trim();
+        const improved = String(entry.prompt || "").trim();
+        if (onViewPromptCompare) {
+          onViewPromptCompare({
+            original: original || improved,
+            improved,
+            unchanged: !original || original === improved,
+            promptImproved: entryHasImprovedPrompt(entry),
+            entry,
+          });
+          return;
+        }
+        // Fallback: expand inline if no compare handler is wired.
+        const promptEl = btn.closest(".prompt-history-item")?.querySelector(".ph-prompt");
+        if (promptEl) {
+          const expanded = btn.dataset.expanded === "1";
+          promptEl.textContent = expanded ? promptPreview(improved) : improved;
+          btn.dataset.expanded = expanded ? "0" : "1";
+          btn.textContent = expanded
+            ? (entryHasImprovedPrompt(entry) ? "View more · original vs improved" : "View more")
+            : "Show less";
+        }
       });
     });
 

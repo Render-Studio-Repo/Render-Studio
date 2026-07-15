@@ -12212,9 +12212,40 @@ label input { margin-top: 4px; }
   text-transform: lowercase;
 }
 
+.ph-speed {
+  color: #7ee787;
+  font-weight: 600;
+}
+
 .ph-model {
   color: #79c0ff;
   font-weight: 500;
+}
+
+.ph-improved {
+  color: #d2a8ff;
+  font-weight: 600;
+}
+
+.ph-view-more {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: #79c0ff;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ph-view-more:hover,
+.ph-view-more:focus-visible {
+  color: #a5d6ff;
+  outline: none;
 }
 
 .prompt-history-list {
