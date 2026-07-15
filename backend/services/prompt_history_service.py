@@ -128,14 +128,28 @@ def append_entry(
 ) -> dict[str, Any]:
     data = load(project_path)
     entries: list[dict[str, Any]] = data.get("entries", [])
-    upsert_at = _find_upsert_index(
-        entries,
-        entry_id=entry_id,
-        trace_id=trace_id,
-        prompt=prompt,
-        original_prompt=original_prompt,
-    )
-    keep_id = entry_id or (entries[upsert_at].get("id") if upsert_at is not None else None) or str(uuid.uuid4())[:10]
+    id_match_at: int | None = None
+    if entry_id:
+        for i, existing in enumerate(entries):
+            if existing.get("id") == entry_id:
+                id_match_at = i
+                break
+    upsert_at = id_match_at
+    if upsert_at is None:
+        upsert_at = _find_upsert_index(
+            entries,
+            entry_id=None,
+            trace_id=trace_id,
+            prompt=prompt,
+            original_prompt=original_prompt,
+        )
+    if id_match_at is not None:
+        keep_id = entry_id
+    elif upsert_at is not None:
+        # Resume matched an interrupt stub — keep that @prompt id so the user does not lose their place.
+        keep_id = entries[upsert_at].get("id") or entry_id or str(uuid.uuid4())[:10]
+    else:
+        keep_id = entry_id or str(uuid.uuid4())[:10]
     keep_created = (
         entries[upsert_at].get("created_at")
         if upsert_at is not None

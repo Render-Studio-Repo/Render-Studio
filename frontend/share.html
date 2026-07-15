@@ -309,6 +309,43 @@
       padding-top: 10px;
       border-top: 1px solid rgba(48, 54, 61, 0.7);
     }
+    .sv-detail-card {
+      padding: 9px 10px;
+      border: 1px solid rgba(48, 54, 61, 0.78);
+      border-radius: 12px;
+      background: rgba(22, 27, 34, 0.72);
+    }
+    .sv-detail-card strong,
+    .sv-history-card strong {
+      display: block;
+      font-size: 0.78rem;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    .sv-detail-card span,
+    .sv-history-card span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      line-height: 1.35;
+    }
+    .sv-section-title {
+      margin: 12px 0 6px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 800;
+    }
+    .sv-history-card {
+      display: block;
+      padding: 9px 10px;
+      border: 1px solid rgba(48, 54, 61, 0.78);
+      border-radius: 12px;
+      background: rgba(22, 27, 34, 0.72);
+    }
+    .sv-history-card + .sv-history-card { margin-top: 6px; }
     .sv-hint {
       margin: 8px 0 0;
       color: var(--muted);
@@ -382,8 +419,9 @@
       <button type="button" class="share-tool active" id="btn-share-rotate" aria-pressed="true">Rotate</button>
       <button type="button" class="share-tool" id="btn-share-section" aria-pressed="false">Section</button>
       <button type="button" class="share-tool" id="btn-share-inspector" aria-pressed="false">Components</button>
+      <button type="button" class="share-tool" id="btn-share-history" aria-pressed="false">History</button>
       <button type="button" class="share-tool" id="btn-share-fit">Fit</button>
-      <button type="button" class="share-tool share-tool--primary" id="btn-share-open">Open project</button>
+      <button type="button" class="share-tool share-tool--primary" id="btn-share-open">Remix model</button>
       <button type="button" class="share-tool" id="btn-share-download">Download</button>
     </div>
   </header>
@@ -415,9 +453,13 @@
     </div>
     <div id="share-inspector-panel" class="hidden" aria-label="Component and motion inspector">
       <div class="sv-top">
-        <strong>Components</strong>
-        <button type="button" id="btn-share-inspector-close" aria-label="Close components">Close</button>
+        <strong id="share-inspector-title">Model details</strong>
+        <button type="button" id="btn-share-inspector-close" aria-label="Close model details">Close</button>
       </div>
+      <div id="share-source-details" class="sv-list"></div>
+      <p class="sv-section-title">Prompt history</p>
+      <div id="share-prompt-history" class="sv-list"></div>
+      <p class="sv-section-title">Components</p>
       <div id="share-component-list" class="sv-list"></div>
       <div id="share-motion-card" class="sv-motion-card hidden">
         <div class="sv-top">

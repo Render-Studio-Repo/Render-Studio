@@ -9159,6 +9159,37 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
     return allowed
 
 
+def _share_prompt_history(project_path: Path, filename: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    try:
+        entries = prompt_history_service.list_entries(project_path, limit=limit, base_filename=filename, kind="cad")
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for entry in entries:
+        if not (entry.get("prompt") or entry.get("original_prompt")):
+            continue
+        out.append(
+            {
+                "id": entry.get("id"),
+                "prompt": entry.get("prompt"),
+                "original_prompt": entry.get("original_prompt"),
+                "prompt_improved": bool(entry.get("prompt_improved")),
+                "success": bool(entry.get("success")),
+                "error": entry.get("error"),
+                "filename": entry.get("filename"),
+                "base_filename": entry.get("base_filename"),
+                "target_mode": entry.get("target_mode"),
+                "model": entry.get("model"),
+                "provider": entry.get("provider"),
+                "speed": entry.get("speed"),
+                "created_at": entry.get("created_at"),
+                "user_name": entry.get("user_name"),
+                "cost_usd": entry.get("cost_usd"),
+            }
+        )
+    return out
+
+
 def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any]:
     project_id, project_path, share = _resolve_share_token(token)
     filename = Path(str(share.get("filename") or "")).name
@@ -9201,6 +9232,20 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         for name in robot.get("artifacts") or []
         if Path(name).name in allowed
     ]
+    prompt_history = _share_prompt_history(project_path, filename)
+    latest_prompt = next((entry for entry in prompt_history if entry.get("success")), prompt_history[0] if prompt_history else None)
+    created_by = str(share.get("created_by") or "")
+    sharer = get_user_by_id(created_by) if created_by else None
+    shared_by = (
+        {
+            "id": sharer.get("id"),
+            "display_name": sharer.get("display_name"),
+            "email": sharer.get("email"),
+            "avatar_url": sharer.get("avatar_url"),
+        }
+        if sharer
+        else None
+    )
     return {
         "token": token,
         "project_id": project_id,
@@ -9208,6 +9253,15 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         "filename": filename,
         "viewer_filename": viewer_filename,
         "viewer_url": f"/api/share/{token}/files/{urllib.parse.quote(viewer_filename)}",
+        "source_model": {
+            "filename": filename,
+            "viewer_filename": viewer_filename,
+            "ai_model": latest_prompt.get("model") if latest_prompt else None,
+            "provider": latest_prompt.get("provider") if latest_prompt else None,
+            "speed": latest_prompt.get("speed") if latest_prompt else None,
+        },
+        "prompt_history": prompt_history,
+        "shared_by": shared_by,
         "exports": exports,
         "preview_file": preview_file,
         "preview_url": preview_url,
@@ -9308,7 +9362,11 @@ def get_share_metadata(token: str, request: Request):
 
 
 @app.post("/api/share/{token}/open-in-project")
-def open_share_in_project(token: str, user: dict[str, Any] = Depends(get_current_user)):
+def open_share_in_project(
+    token: str,
+    body: dict[str, Any] = Body(default={}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
     source_project_id, source_path, share = _resolve_share_token(token)
     shared_filename = Path(str(share.get("filename") or "")).name
     if not shared_filename or not (source_path / shared_filename).is_file():
@@ -9338,12 +9396,28 @@ def open_share_in_project(token: str, user: dict[str, Any] = Depends(get_current
             logger.warning("Could not copy shared file %s into %s: %s", safe, project_id, exc)
     if not copied:
         raise HTTPException(500, "Could not copy shared files")
+    shared_with_sharer = False
+    share_back_error = None
+    sharer_user = get_user_by_id(str(share.get("created_by") or "")) if share.get("created_by") else None
+    if bool(body.get("share_with_sharer")) and sharer_user and sharer_user.get("id") != user["id"]:
+        try:
+            teams_service.add_registered_user_to_team(team_id, str(sharer_user.get("email") or ""), user["id"])
+            shared_with_sharer = True
+        except Exception as exc:
+            share_back_error = str(exc)
+            logger.warning("Could not share remix %s back with %s: %s", project_id, sharer_user.get("id"), exc)
     _record_history(
         dest_path,
         "share_import",
         f"Open shared preview {shared_filename}",
         shared_filename,
-        meta={"source_project_id": source_project_id, "share_token": token, "copied_files": copied},
+        meta={
+            "source_project_id": source_project_id,
+            "share_token": token,
+            "copied_files": copied,
+            "shared_with_original_sharer": shared_with_sharer,
+            **({"share_back_error": share_back_error} if share_back_error else {}),
+        },
         user=user,
     )
     project_store.touch_project(dest_path, name=project_name, name_source="user")
@@ -9366,6 +9440,18 @@ def open_share_in_project(token: str, user: dict[str, Any] = Depends(get_current
         "team_id": team_id,
         "filename": shared_filename,
         "copied_files": copied,
+        "shared_with_sharer": shared_with_sharer,
+        "share_back_error": share_back_error,
+        "shared_by": (
+            {
+                "id": sharer_user.get("id"),
+                "display_name": sharer_user.get("display_name"),
+                "email": sharer_user.get("email"),
+                "avatar_url": sharer_user.get("avatar_url"),
+            }
+            if sharer_user
+            else None
+        ),
         "url": f"/?project={project_id}",
     }
 
