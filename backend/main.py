@@ -3586,6 +3586,11 @@ def _upsert_project_fusion_mirror(
     if not aps_project_id or not folder_id:
         raise HTTPException(422, "aps_project_id and folder_id are required.")
     result = result or {}
+    # Optional: pin a specific Fusion item when linking a model (not just the folder).
+    item_id = str(body.get("item_id") or body.get("last_item_id") or "").strip() or None
+    version_id = str(body.get("version_id") or body.get("last_version_id") or "").strip() or None
+    if item_id and not result.get("item_id"):
+        result = {**result, "item_id": item_id, "version_id": version_id}
     with get_conn() as conn:
         conn.execute(
             """

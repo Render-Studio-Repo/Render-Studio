@@ -1,4 +1,4 @@
-/** Bottom-right HUD spinner, progress bar, and clickable error banner in the 3D viewport. */
+/** Bottom-right HUD spinner, progress bar, expandable agent checklist, and error banner. */
 
 const LOG_STAGES = [
   { match: /CAD prompt started/i, pct: 5, label: "Starting AI prompt…" },
@@ -22,7 +22,57 @@ const LOG_STAGES = [
   { match: /Kernel build|Building model/i, pct: 78, label: "Running kernel build…" },
   { match: /Wiring prompt done/i, pct: 94, label: "Schematic ready…" },
   { match: /Design done|CAD prompt done|Kernel build done/i, pct: 96, label: "Almost done…" },
+  { match: /authoring-agent|Jake|CAD brief|scripts\/step|scripts\/inspect|scripts\/snapshot/i, pct: 20, label: "CAD authoring agent working…" },
 ];
+
+const DEFAULT_CHECKLIST = [
+  { id: "analyze", label: "Analyze prompt & references", status: "pending" },
+  { id: "brief", label: "Write CAD brief", status: "pending" },
+  { id: "ai_source", label: "Write / edit build123d source", status: "pending" },
+  { id: "step", label: "Run scripts/step (STEP / GLB)", status: "pending" },
+  { id: "inspect", label: "Inspect geometry (facts / planes)", status: "pending" },
+  { id: "snapshot", label: "Render multi-view snapshot", status: "pending" },
+  { id: "snapshot_review", label: "Visual review (fail-closed)", status: "pending" },
+  { id: "finalize", label: "Finalize artifacts", status: "pending" },
+];
+
+const STAGE_ALIASES = {
+  analyze: "analyze",
+  plan: "analyze",
+  build: "step",
+  brief: "brief",
+  ai_source: "ai_source",
+  step: "step",
+  inspect: "inspect",
+  "inspect-quality": "inspect",
+  snapshot: "snapshot",
+  snapshot_review: "snapshot_review",
+  finalize: "finalize",
+};
+
+function checklistFromStage(stage, currentLabel = "") {
+  const normalized = STAGE_ALIASES[String(stage || "").trim().toLowerCase()] || "";
+  const ids = DEFAULT_CHECKLIST.map((item) => item.id);
+  const activeIdx = ids.indexOf(normalized);
+  return DEFAULT_CHECKLIST.map((item, i) => {
+    let status = "pending";
+    if (activeIdx >= 0) {
+      if (i < activeIdx) status = "done";
+      else if (i === activeIdx) status = "active";
+    }
+    const entry = { id: item.id, label: item.label, status };
+    if (status === "active" && currentLabel) entry.detail = String(currentLabel).slice(0, 240);
+    return entry;
+  });
+}
+
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, getCopyContext } = {}) {
   if (!viewportEl) {
@@ -62,13 +112,30 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       </div>
     </div>
     <div class="viewport-spinner-body">
-      <p class="viewport-spinner-label">Generating…</p>
+      <div class="viewport-spinner-head">
+        <p class="viewport-spinner-label">Generating…</p>
+        <button type="button" class="viewport-spinner-expand" aria-expanded="false" title="Show what the AI is doing" aria-label="Show generation details">Details</button>
+      </div>
       <div class="viewport-progress" aria-hidden="true">
         <div class="viewport-progress-track">
           <div class="viewport-progress-fill"></div>
         </div>
         <div class="viewport-progress-meta">
           <span class="viewport-progress-pct">0%</span>
+        </div>
+      </div>
+      <div class="viewport-spinner-details hidden" hidden>
+        <div class="viewport-agent-thinking">
+          <div class="viewport-agent-thinking-label">Now</div>
+          <p class="viewport-agent-thinking-text">Waiting for AI…</p>
+        </div>
+        <div class="viewport-agent-checklist-wrap">
+          <div class="viewport-agent-section-title">Checklist</div>
+          <ul class="viewport-agent-checklist"></ul>
+        </div>
+        <div class="viewport-agent-activity-wrap">
+          <div class="viewport-agent-section-title">Activity</div>
+          <ul class="viewport-agent-activity"></ul>
         </div>
       </div>
       <button type="button" class="btn danger viewport-stop-btn hidden" aria-label="Stop generating">Stop generating</button>
@@ -78,6 +145,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const stopBtn = spinner.querySelector(".viewport-stop-btn");
   const progressFill = spinner.querySelector(".viewport-progress-fill");
   const progressPct = spinner.querySelector(".viewport-progress-pct");
+  const expandBtn = spinner.querySelector(".viewport-spinner-expand");
+  const detailsEl = spinner.querySelector(".viewport-spinner-details");
+  const thinkingText = spinner.querySelector(".viewport-agent-thinking-text");
+  const checklistEl = spinner.querySelector(".viewport-agent-checklist");
+  const activityEl = spinner.querySelector(".viewport-agent-activity");
 
   const banner = document.createElement("div");
   banner.className = "viewport-error-banner hidden";
@@ -99,9 +171,13 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   viewportEl.appendChild(root);
 
   let generating = false;
+  let detailsOpen = false;
   let progressValue = 0;
   let traceProgress = 0;
   let progressLabel = "Generating…";
+  let thinkingLabel = "Waiting for AI…";
+  let checklist = DEFAULT_CHECKLIST.map((item) => ({ ...item }));
+  let activity = [];
   let progressStart = 0;
   let estimateMs = 150000;
   let progressTimer = null;
@@ -123,18 +199,114 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }
   }
 
+  function setDetailsOpen(open) {
+    detailsOpen = !!open;
+    spinner.classList.toggle("viewport-spinner--expanded", detailsOpen);
+    detailsEl?.classList.toggle("hidden", !detailsOpen);
+    if (detailsEl) detailsEl.hidden = !detailsOpen;
+    if (expandBtn) {
+      expandBtn.setAttribute("aria-expanded", detailsOpen ? "true" : "false");
+      expandBtn.textContent = detailsOpen ? "Hide" : "Details";
+      expandBtn.title = detailsOpen ? "Hide generation details" : "Show what the AI is doing";
+    }
+  }
+
+  function renderChecklist() {
+    if (!checklistEl) return;
+    const items = checklist.length ? checklist : DEFAULT_CHECKLIST;
+    checklistEl.innerHTML = items.map((item) => {
+      const status = item.status || "pending";
+      const mark = status === "done" ? "✓" : status === "active" ? "●" : "○";
+      const detail = item.detail ? `<span class="viewport-agent-check-detail">${esc(item.detail)}</span>` : "";
+      return `
+        <li class="viewport-agent-check viewport-agent-check--${esc(status)}" data-status="${esc(status)}">
+          <span class="viewport-agent-check-mark" aria-hidden="true">${mark}</span>
+          <span class="viewport-agent-check-body">
+            <span class="viewport-agent-check-label">${esc(item.label || item.id || "Step")}</span>
+            ${detail}
+          </span>
+        </li>
+      `;
+    }).join("");
+  }
+
+  function renderActivity() {
+    if (!activityEl) return;
+    const rows = [...activity].slice(-12).reverse();
+    if (!rows.length) {
+      activityEl.innerHTML = `<li class="viewport-agent-activity-item muted">No activity yet…</li>`;
+      return;
+    }
+    activityEl.innerHTML = rows.map((row) => {
+      const text = typeof row === "string" ? row : (row?.text || "");
+      const stage = typeof row === "object" && row?.stage ? `<span class="viewport-agent-activity-stage">${esc(row.stage)}</span>` : "";
+      return `<li class="viewport-agent-activity-item">${stage}<span>${esc(text)}</span></li>`;
+    }).join("");
+  }
+
+  function renderDetails() {
+    if (thinkingText) thinkingText.textContent = thinkingLabel || progressLabel || "Working…";
+    renderChecklist();
+    renderActivity();
+  }
+
   function renderProgress() {
     const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
     if (progressFill) progressFill.style.width = `${pct}%`;
     if (progressPct) progressPct.textContent = `${pct}%`;
     if (spinnerLabel) spinnerLabel.textContent = progressLabel;
+    renderDetails();
+  }
+
+  function applyProgressPayload(progress) {
+    if (!progress || typeof progress !== "object") return;
+    if (progress.pct != null) {
+      const pct = Number(progress.pct);
+      if (Number.isFinite(pct)) {
+        if (pct > traceProgress) traceProgress = pct;
+        if (pct > progressValue) progressValue = pct;
+      }
+    }
+    if (progress.label) {
+      progressLabel = String(progress.label);
+      thinkingLabel = String(progress.thinking || progress.label);
+    } else if (progress.thinking) {
+      thinkingLabel = String(progress.thinking);
+    }
+    if (Array.isArray(progress.checklist) && progress.checklist.length) {
+      checklist = progress.checklist.map((item) => ({
+        id: item.id || item.label,
+        label: item.label || item.id || "Step",
+        status: item.status || "pending",
+        detail: item.detail || "",
+      }));
+    } else if (progress.stage) {
+      checklist = checklistFromStage(progress.stage, progress.label || thinkingLabel);
+    }
+    if (Array.isArray(progress.activity)) {
+      activity = progress.activity;
+    } else if (progress.label) {
+      const last = activity.length ? activity[activity.length - 1] : null;
+      const lastText = typeof last === "string" ? last : last?.text;
+      if (lastText !== progress.label) {
+        activity = [...activity, { ts: new Date().toISOString(), text: progress.label, stage: progress.stage }].slice(-40);
+      }
+    }
   }
 
   function bumpProgress(pct, label) {
     if (!generating) return;
     if (pct > traceProgress) traceProgress = pct;
     if (pct > progressValue) progressValue = pct;
-    if (label) progressLabel = label;
+    if (label) {
+      progressLabel = label;
+      thinkingLabel = label;
+      const last = activity.length ? activity[activity.length - 1] : null;
+      const lastText = typeof last === "string" ? last : last?.text;
+      if (lastText !== label) {
+        activity = [...activity, { ts: new Date().toISOString(), text: label }].slice(-40);
+      }
+    }
     renderProgress();
   }
 
@@ -211,6 +383,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     progressValue = 0;
     traceProgress = 0;
     progressLabel = message;
+    thinkingLabel = opts.progress?.thinking || opts.progress?.label || message;
+    checklist = Array.isArray(opts.progress?.checklist) && opts.progress.checklist.length
+      ? opts.progress.checklist
+      : DEFAULT_CHECKLIST.map((item) => ({ ...item }));
+    activity = Array.isArray(opts.progress?.activity) ? opts.progress.activity : [];
     progressStart = Date.now();
     estimateMs = opts.estimateMs || (opts.mode === "build" ? 90000 : isV2Overlay(opts) ? 900000 : 360000);
     applySpinnerVariant(opts);
@@ -228,17 +405,22 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   function hideSpinner() {
     generating = false;
     clearProgressTimers();
+    setDetailsOpen(false);
     spinner.classList.add("hidden");
     spinner.classList.remove("viewport-spinner--v2");
     spinner.classList.remove("viewport-spinner--fusion");
     if (stopBtn) stopBtn.classList.add("hidden");
     progressValue = 0;
     traceProgress = 0;
+    checklist = DEFAULT_CHECKLIST.map((item) => ({ ...item }));
+    activity = [];
     renderProgress();
   }
 
   function finishProgress() {
     bumpProgress(100, "Done");
+    checklist = checklist.map((item) => ({ ...item, status: "done" }));
+    renderProgress();
     clearProgressTimers();
     finishTimer = setTimeout(hideSpinner, 420);
   }
@@ -274,17 +456,14 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       if (generating) {
         if (message) progressLabel = message;
         if (opts.estimateMs) estimateMs = opts.estimateMs;
-        if (opts.progress?.pct != null) {
-          bumpProgress(Number(opts.progress.pct), opts.progress.label || message);
-        }
+        if (opts.progress) applyProgressPayload(opts.progress);
         applySpinnerVariant(opts);
         renderProgress();
         return;
       }
       startProgress(message, opts);
-      if (opts.progress?.pct != null) {
-        bumpProgress(Number(opts.progress.pct), opts.progress.label || message);
-      }
+      if (opts.progress) applyProgressPayload(opts.progress);
+      renderProgress();
       return;
     }
     if (opts.complete && generating) finishProgress();
@@ -328,6 +507,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     setGenerating(false);
     clearError();
   }
+
+  expandBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setDetailsOpen(!detailsOpen);
+  });
 
   stopBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
