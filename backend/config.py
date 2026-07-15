@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     discord_bot_token: str = ""
     discord_updates_channel_id: str = ""
     discord_application_id: str = ""
+    discord_updates_webhook_url: str = ""
+
+    # LinkedIn product-update announcements (member or organization URN)
+    linkedin_access_token: str = ""
+    linkedin_author_urn: str = ""
+    linkedin_enabled: bool = True
 
 
 settings = Settings()

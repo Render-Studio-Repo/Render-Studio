@@ -8,11 +8,15 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-mkt-payments" />
-  <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-mkt-payments" />
-  <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-appstore" />
+  <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-appstore" />
+  <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-appstore" />
 </head>
 <body class="info-page marketplace-futuristic marketplace-store-page">
+  <div class="marketplace-fx" aria-hidden="true">
+    <div class="marketplace-grid-bg"></div>
+  </div>
+
   <div id="app" class="app-info">
     <header class="toolbar">
       <div class="brand">
@@ -43,15 +47,15 @@
           <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · Knowledge Bases</p>
           <h2>Knowledge Base Center</h2>
           <p class="info-lead">
-            Publish document packs, CAD references, prompt libraries, setup manuals, and workflow context with the same marketplace permissions as models and agent apps.
+            Browse and install document packs, CAD references, prompt libraries, and setup manuals — MakerWorld-style cards with clear Get buttons.
           </p>
         </header>
 
         <section class="agent-store-hero marketplace-modern-hero">
           <div>
-            <p class="info-eyebrow">Market reusable context</p>
+            <p class="info-eyebrow">Install context packs</p>
             <h3>Knowledge products for CAD, sourcing, robotics, teams, and support</h3>
-            <p class="muted">Free, paid, and view-only listings share the same review, license, download, and boost controls as other stores.</p>
+            <p class="muted">Filter by access, license, and downloads. Free, paid, and view-only share the same review and boost controls.</p>
           </div>
           <div class="agent-store-search">
             <input id="kb-store-search" type="search" placeholder="Search manuals, CAD context, prompts, workflows..." />
@@ -161,7 +165,7 @@
       </article>
     </main>
   </div>
-  <script type="module" src="/knowledge-store.js?v=20260715-mkt-payments"></script>
+  <script type="module" src="/knowledge-store.js?v=20260715-appstore"></script>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>

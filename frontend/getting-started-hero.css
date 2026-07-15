@@ -96,8 +96,9 @@
   left: 10px;
   bottom: 12px;
   width: 320px;
-  height: 196px;
-  transform-origin: 90px 145px;
+  height: 168px;
+  transform: none;
+  transform-origin: left bottom;
 }
 
 .gs-hero-frame,

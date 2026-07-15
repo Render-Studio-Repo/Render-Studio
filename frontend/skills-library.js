@@ -3,6 +3,7 @@
 import { authHeaders, getToken } from "./auth.js";
 
 const STORAGE_KEY = "render3d:enabled-skills";
+const SKILL_MEDIA_KEY = "render3d:skill-media:v1";
 const DEFAULT_ENABLED = ["cad"];
 const BLUEPRINT_VISION_ID = "blueprint-vision";
 
@@ -132,6 +133,32 @@ function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
+function readSkillMediaMap() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SKILL_MEDIA_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readSkillMedia(skillId) {
+  return readSkillMediaMap()[String(skillId || "").toLowerCase()] || null;
+}
+
+function writeSkillMedia(skillId, media) {
+  const id = String(skillId || "").toLowerCase();
+  if (!id) return;
+  const map = readSkillMediaMap();
+  if (media) map[id] = media;
+  else delete map[id];
+  try {
+    localStorage.setItem(SKILL_MEDIA_KEY, JSON.stringify(map));
+  } catch {
+    throw new Error("That clip is too large to save in this browser. Try a smaller GIF or short WebM/MP4.");
+  }
+}
+
 function toolsLine(skill) {
   const tools = skill.tools || [];
   const refs = skill.references || [];
@@ -159,14 +186,52 @@ function skillStoreUrl(skill = {}) {
     || (slug ? `/agent-store.html?skill=${encodeURIComponent(slug)}` : "/agent-store.html");
 }
 
+function skillVisualKind(skill = {}) {
+  const text = `${skill.id || ""} ${skill.name || ""} ${skill.description || ""}`.toLowerCase();
+  if (/house|architect|room|wall|roof|window/.test(text)) return "build";
+  if (/bambu|gcode|print|manufactur|mold|silicone|sendcutsend/.test(text)) return "make";
+  if (/vision|blueprint|image|photo|drawing|diagram/.test(text)) return "scan";
+  if (/robot|urdf|srdf|sdf|moveit|joint|motion/.test(text)) return "robot";
+  if (/cad|step|part|assembly|inspect|validate/.test(text)) return "cad";
+  return "agent";
+}
+
+function skillHowToText(skill = {}) {
+  const name = skill.name || skill.id || "This skill";
+  const desc = String(skill.description || skill.preview || "").trim();
+  const category = skillCategory(skill).toLowerCase();
+  const base = desc
+    ? `${name} helps Render3D ${desc.charAt(0).toLowerCase()}${desc.slice(1)}`
+    : `${name} adds a focused ${category} workflow to Render3D.`;
+  return `${base} Enable it for prompts, then describe the output you want in Studio; Render3D will route relevant requests to @skill:${skill.id} and use its tools or references when they apply.`;
+}
+
+function skillMediaHtml(skill = {}) {
+  const media = readSkillMedia(skill.id);
+  if (!media?.dataUrl) return "";
+  const label = media.kind === "generated" ? "Generated loop" : "Uploaded clip";
+  if (String(media.type || "").startsWith("video/")) {
+    return `<video class="skill-card-media" src="${escapeHtml(media.dataUrl)}" autoplay muted loop playsinline title="${escapeHtml(label)}"></video>`;
+  }
+  return `<img class="skill-card-media" src="${escapeHtml(media.dataUrl)}" alt="${escapeHtml(label)} for ${escapeHtml(skill.name || skill.id)}" />`;
+}
+
 function skillVisualHtml(skill = {}) {
   const category = skillCategory(skill).toLowerCase();
+  const visualKind = skillVisualKind(skill);
   const initials = String(skill.name || skill.id || "SK").split(/[\s-_]+/).filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase();
+  const mediaHtml = skillMediaHtml(skill);
   return `
-    <div class="skill-card-visual skill-card-visual--${escapeHtml(category)}" aria-hidden="true">
-      <span class="skill-card-orbit"></span>
-      <span class="skill-card-gear"></span>
-      <strong>${escapeHtml(initials || "SK")}</strong>
+    <div class="skill-card-visual skill-card-visual--${escapeHtml(category)} skill-card-visual--${escapeHtml(visualKind)}" aria-hidden="true">
+      ${mediaHtml || `
+        <span class="skill-anim-grid"></span>
+        <span class="skill-anim-path"></span>
+        <span class="skill-anim-object skill-anim-object--a"></span>
+        <span class="skill-anim-object skill-anim-object--b"></span>
+        <span class="skill-card-orbit"></span>
+        <span class="skill-card-gear"></span>
+        <strong>${escapeHtml(initials || "SK")}</strong>
+      `}
     </div>
   `;
 }
@@ -385,6 +450,7 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
         const refs = skill.references || [];
         const category = skillCategory(skill);
         const storeUrl = skillStoreUrl(skill);
+        const media = readSkillMedia(skill.id);
         return `<article class="skill-card${on ? " skill-card-active" : ""}" data-skill="${escapeHtml(skill.id)}" tabindex="0">
           ${skillVisualHtml(skill)}
           <div class="skill-card-body">
@@ -403,6 +469,7 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
             <div class="skill-stats">
               <span>${tools.length} tool${tools.length === 1 ? "" : "s"}</span>
               <span>${refs.length} ref${refs.length === 1 ? "" : "s"}</span>
+              <span>${media ? (media.kind === "generated" ? "3D loop" : "Clip") : "Loop ready"}</span>
               <span>${skill.install_required && !skill.installed ? "Download" : "Ready"}</span>
             </div>
             ${toolsLine(skill)}
@@ -471,6 +538,7 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
       const refs = merged.references || [];
       const storeUrl = skillStoreUrl(merged);
       const referenceBodies = merged.reference_bodies || {};
+      const media = readSkillMedia(merged.id);
       detailEl.innerHTML = `<div class="skill-detail-head">
           <div>
             <span class="skill-card-category">${escapeHtml(skillCategory(merged))}</span>
@@ -483,14 +551,25 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
           ${skillVisualHtml(merged)}
           <div>
             <p>${escapeHtml(merged.description || merged.preview || "No description provided.")}</p>
+            <p class="skill-detail-explainer">${escapeHtml(skillHowToText(merged))}</p>
             <div class="skill-stats skill-stats--detail">
               <span>${tools.length} Python tool${tools.length === 1 ? "" : "s"}</span>
               <span>${refs.length} reference doc${refs.length === 1 ? "" : "s"}</span>
+              <span>${media ? (media.kind === "generated" ? "Generated 3D loop" : "Uploaded clip") : "Animated preview"}</span>
               <span>${merged.installed === false ? "Needs download" : "Available"}</span>
             </div>
             <div class="skill-card-actions">
               <a class="btn accent btn-compact" href="${escapeHtml(storeUrl)}" target="${storeUrl.startsWith("http") ? "_blank" : "_self"}" rel="noopener">Open user store</a>
               <button type="button" class="btn secondary btn-compact" data-skill-enable="${escapeHtml(merged.id)}">${isSkillEnabled(merged.id) ? "Disable skill" : "Enable skill"}</button>
+            </div>
+            <div class="skill-media-tools">
+              <label class="btn secondary btn-compact">
+                Upload GIF/clip
+                <input type="file" data-skill-media-upload="${escapeHtml(merged.id)}" accept="image/gif,image/webp,image/png,video/mp4,video/webm" hidden />
+              </label>
+              <button type="button" class="btn secondary btn-compact" data-skill-media-generate="${escapeHtml(merged.id)}">Generate 3D loop</button>
+              ${media?.dataUrl ? `<button type="button" class="btn ghost btn-compact" data-skill-media-clear="${escapeHtml(merged.id)}">Clear media</button>` : ""}
+              <small class="muted">Use a small repeating GIF/WebM/MP4, or generate a Render3D loop from the skill summary.</small>
             </div>
           </div>
         </div>
@@ -512,6 +591,51 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
         setSkillEnabled(skillId, !isSkillEnabled(skillId));
         renderCatalog();
         renderStatus();
+        void showSkillDetail(skillId);
+      });
+      detailEl.querySelector("[data-skill-media-upload]")?.addEventListener("change", (event) => {
+        const input = event.currentTarget;
+        const file = input.files?.[0];
+        if (!file) return;
+        if (file.size > 2_500_000) {
+          detailEl.querySelector(".skill-media-tools small").textContent = "Clip is too large. Use a GIF/WebM/MP4 under 2.5 MB.";
+          input.value = "";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            writeSkillMedia(input.dataset.skillMediaUpload, {
+              kind: "uploaded",
+              type: file.type || "image/gif",
+              name: file.name,
+              dataUrl: reader.result,
+              at: new Date().toISOString(),
+            });
+            renderCatalog();
+            void showSkillDetail(input.dataset.skillMediaUpload);
+          } catch (err) {
+            detailEl.querySelector(".skill-media-tools small").textContent = err.message || "Could not save this clip.";
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+      detailEl.querySelector("[data-skill-media-generate]")?.addEventListener("click", (event) => {
+        const skillId = event.currentTarget.dataset.skillMediaGenerate;
+        writeSkillMedia(skillId, {
+          kind: "generated",
+          type: "render3d/skill-loop",
+          dataUrl: "",
+          visualKind: skillVisualKind(merged),
+          at: new Date().toISOString(),
+        });
+        renderCatalog();
+        void showSkillDetail(skillId);
+      });
+      detailEl.querySelector("[data-skill-media-clear]")?.addEventListener("click", (event) => {
+        const skillId = event.currentTarget.dataset.skillMediaClear;
+        writeSkillMedia(skillId, null);
+        renderCatalog();
         void showSkillDetail(skillId);
       });
       detailEl.scrollIntoView({ behavior: "smooth", block: "nearest" });

@@ -104,7 +104,7 @@ function productCard(item, { compact = false } = {}) {
   const thumb = thumbUrl(item);
   const files = knowledgeFiles(item);
   const media = thumb
-    ? `<div class="marketplace-thumb" style="background-image:url('${escapeAttr(thumb)}')"></div>`
+    ? `<div class="marketplace-thumb knowledge-marketplace-thumb" style="background-image:url('${escapeAttr(thumb)}')"></div>`
     : `<div class="marketplace-thumb marketplace-thumb--empty marketplace-thumb--kb">KB</div>`;
   const adminControls = isAdmin
     ? `<div class="agent-admin-controls">
@@ -114,9 +114,9 @@ function productCard(item, { compact = false } = {}) {
       </div>`
     : "";
   const paid = isPaidListing(item);
-  const buyBtn = paid
-    ? `<button type="button" class="btn primary btn-compact" data-buy="${escapeAttr(item.id || item.slug)}">Buy ${escapeHtml(priceLabel(item))}</button>`
-    : "";
+  const getBtn = paid
+    ? `<button type="button" class="btn primary btn-compact" data-buy="${escapeAttr(item.id || item.slug)}">Get · ${escapeHtml(priceLabel(item))}</button>`
+    : `<button type="button" class="btn primary btn-compact" disabled>${item.can_download ? "Get" : "View"}</button>`;
   return `<article class="agent-product-card marketplace-product-card knowledge-product-card${compact ? " agent-product-card-compact" : ""}">
     ${media}
     <div class="agent-product-top">
@@ -128,7 +128,7 @@ function productCard(item, { compact = false } = {}) {
     <p class="agent-product-tagline">${escapeHtml(item.tagline)}</p>
     ${compact ? "" : `<div class="marketplace-body muted small">${simpleMarkdown((item.body_md || item.description || "").slice(0, 480))}</div>`}
     <div class="agent-app-actions">
-      ${buyBtn}
+      ${getBtn}
       <span class="muted small">${files.length} file${files.length === 1 ? "" : "s"} · ${item.can_download ? "downloadable" : "preview only"}</span>
       ${getToken() && item.created_by ? `<button type="button" class="btn secondary btn-compact" data-boost="${escapeAttr(item.slug)}">Apply boost</button>` : ""}
     </div>

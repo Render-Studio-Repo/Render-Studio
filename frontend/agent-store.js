@@ -254,13 +254,6 @@ function visibleApps() {
 
 function productCard(app, { compact = false } = {}) {
   const paid = isPaidListing(app);
-  const installText = app.installed
-    ? "Installed"
-    : app.access_mode === "view_only"
-      ? "View only"
-      : paid
-        ? `Buy ${priceLabel(app)}`
-        : "Install";
   const disabled = app.installed || app.access_mode === "view_only" ? "disabled" : "";
   const actionAttr = paid && !app.installed ? `data-buy="${escapeAttr(app.id || app.slug)}"` : `data-install="${app.slug}"`;
   const adminControls = isAdmin
@@ -273,12 +266,20 @@ function productCard(app, { compact = false } = {}) {
   const boostBtn = getToken() && app.created_by
     ? `<button type="button" class="btn secondary btn-compact" data-boost="${escapeAttr(app.slug)}">Apply boost</button>`
     : "";
-  const iconHtml = String(appIcon(app)).includes("marketplace-thumb")
-    ? appIcon(app)
-    : `<div class="agent-product-icon">${escapeHtml(appIcon(app))}</div>`;
+  const iconRaw = appIcon(app);
+  const coverHtml = String(iconRaw).includes("marketplace-thumb")
+    ? iconRaw.replace("marketplace-thumb--inline", "marketplace-thumb marketplace-thumb--cover")
+    : `<div class="agent-cover"><div class="agent-product-icon">${escapeHtml(iconRaw)}</div></div>`;
+  const getLabel = app.installed
+    ? "Installed"
+    : app.access_mode === "view_only"
+      ? "View"
+      : paid
+        ? `Get · ${priceLabel(app)}`
+        : "Get";
   return `<article class="agent-product-card${app.installed ? " skill-card-active" : ""}${compact ? " agent-product-card-compact" : ""}">
+    ${coverHtml}
     <div class="agent-product-top">
-      ${iconHtml}
       <div class="agent-app-price">${escapeHtml(priceLabel(app))}</div>
     </div>
     <h4>${escapeHtml(app.name)}</h4>
@@ -292,7 +293,7 @@ function productCard(app, { compact = false } = {}) {
     ${compact ? "" : `<p class="agent-product-desc muted">${escapeHtml(app.description)}</p>${manifestLine(app)}`}
     ${app.source_url && !compact ? `<p class="small"><a href="${escapeHtml(app.source_url)}" target="_blank" rel="noopener">Source / docs</a></p>` : ""}
     <div class="agent-app-actions">
-      <button type="button" class="btn primary btn-compact" ${actionAttr} ${disabled}>${installText}</button>
+      <button type="button" class="btn primary btn-compact" ${actionAttr} ${disabled}>${getLabel}</button>
       ${app.installed ? `<button type="button" class="btn secondary btn-compact" data-uninstall="${app.slug}">Uninstall</button>` : ""}
       ${boostBtn}
     </div>

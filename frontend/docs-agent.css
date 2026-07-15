@@ -5,10 +5,11 @@
   position: fixed !important;
   z-index: 12050 !important;
   right: 16px;
-  top: 72px !important;
+  top: auto;
+  bottom: 24px;
   left: auto;
-  width: min(440px, calc(100vw - 24px)) !important;
-  height: min(640px, calc(100vh - 96px)) !important;
+  width: min(420px, calc(100vw - 24px));
+  height: min(460px, calc(100vh - 120px));
   max-height: none !important;
   border-radius: 16px;
   box-shadow:

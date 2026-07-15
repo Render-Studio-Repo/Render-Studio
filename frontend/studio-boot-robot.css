@@ -1,0 +1,333 @@
+/* Boot-stage industrial robot arm — fixed base, shoulder swing, place on ground */
+
+/* Hide legacy disconnected robot pieces if any remain */
+.studio-boot-robot,
+.studio-boot-drop-zone,
+.studio-boot-transfer-part {
+  display: none !important;
+}
+
+.studio-boot-arm {
+  --arm-metal: #d97706;
+  --arm-metal-hi: #fdba74;
+  --arm-metal-lo: #7c2d12;
+  --arm-steel: #94a3b8;
+  --arm-ink: #0b1220;
+  position: absolute;
+  right: 8px;
+  bottom: 18px;
+  width: 250px;
+  height: 168px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* ── Fixed base (never moves) ─────────────────────────────────────────────── */
+
+.studio-boot-arm-base {
+  position: absolute;
+  right: 18px;
+  bottom: 0;
+  width: 86px;
+  height: 54px;
+  z-index: 1;
+}
+
+.studio-boot-arm-base-plate {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 12px;
+  border-radius: 5px;
+  border: 1px solid rgba(253, 186, 116, 0.45);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 55%),
+    linear-gradient(90deg, #9a3412, #ea580c 50%, #9a3412);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.studio-boot-arm-pedestal {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 10px;
+  height: 22px;
+  border-radius: 6px 6px 3px 3px;
+  border: 1px solid rgba(255, 237, 213, 0.35);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 40%),
+    linear-gradient(180deg, #f97316, #9a3412);
+  box-shadow: inset 0 -6px 10px rgba(67, 20, 7, 0.55);
+}
+
+.studio-boot-arm-column {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  width: 22px;
+  height: 56px;
+  margin-left: -11px;
+  border-radius: 7px 7px 4px 4px;
+  border: 1px solid rgba(255, 237, 213, 0.4);
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.28), transparent 35% 65%, rgba(255, 255, 255, 0.12)),
+    linear-gradient(180deg, #fb923c, #c2410c);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 0 16px rgba(249, 115, 22, 0.2);
+}
+
+.studio-boot-arm-column::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  width: 30px;
+  height: 16px;
+  margin-left: -15px;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.35);
+  background: linear-gradient(180deg, #cbd5e1, #64748b);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* ── Shoulder (ONLY moving joint for the swing) ───────────────────────────── */
+
+.studio-boot-arm-shoulder {
+  position: absolute;
+  right: 48px;
+  bottom: 86px;
+  width: 0;
+  height: 0;
+  z-index: 3;
+  transform-origin: center center;
+  animation: studio-boot-shoulder-swing 6.2s cubic-bezier(0.45, 0.05, 0.25, 1) infinite;
+}
+
+.studio-boot-arm-joint {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(253, 186, 116, 0.75);
+  background:
+    radial-gradient(circle at 38% 32%, #f8fafc 0 16%, #334155 28% 48%, #0f172a 55% 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 0 12px rgba(249, 115, 22, 0.35);
+}
+
+.studio-boot-arm-joint--shoulder {
+  left: -15px;
+  top: -15px;
+  width: 30px;
+  height: 30px;
+  z-index: 5;
+}
+
+.studio-boot-arm-boom {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 168px;
+  height: 28px;
+  transform-origin: 0 50%;
+  transform: translate(-154px, -14px) rotate(8deg);
+}
+
+.studio-boot-arm-link {
+  position: absolute;
+  top: 50%;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 237, 213, 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 45%),
+    linear-gradient(90deg, #b45309, #f97316 55%, #fdba74);
+  box-shadow:
+    inset 0 -5px 8px rgba(124, 45, 18, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+.studio-boot-arm-link--upper {
+  left: 8px;
+  width: 78px;
+}
+
+.studio-boot-arm-joint--elbow {
+  left: 78px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  z-index: 4;
+}
+
+.studio-boot-arm-link--fore {
+  left: 90px;
+  width: 58px;
+  height: 13px;
+  margin-top: -6.5px;
+}
+
+.studio-boot-arm-wrist {
+  position: absolute;
+  left: 140px;
+  top: 50%;
+  width: 42px;
+  height: 36px;
+  margin-top: -18px;
+}
+
+.studio-boot-arm-joint--wrist {
+  left: -2px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  z-index: 4;
+}
+
+.studio-boot-arm-gripper {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+}
+
+.studio-boot-arm-jaw {
+  position: absolute;
+  width: 8px;
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid rgba(226, 232, 240, 0.55);
+  background: linear-gradient(180deg, #e2e8f0, #64748b);
+  box-shadow: 0 0 8px rgba(125, 211, 252, 0.2);
+  transform-origin: top center;
+  animation: studio-boot-jaw 6.2s ease-in-out infinite;
+}
+
+.studio-boot-arm-jaw--l {
+  left: 4px;
+  top: 4px;
+}
+
+.studio-boot-arm-jaw--r {
+  right: 4px;
+  top: 4px;
+  animation-name: studio-boot-jaw-r;
+}
+
+.studio-boot-arm-payload {
+  position: absolute;
+  left: 8px;
+  top: 18px;
+  width: 22px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.9), rgba(14, 116, 144, 0.85));
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+  opacity: 0;
+  animation: studio-boot-payload 6.2s ease-in-out infinite;
+}
+
+.studio-boot-arm-ground-part {
+  position: absolute;
+  right: 118px;
+  bottom: 10px;
+  width: 28px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.9), rgba(14, 116, 144, 0.85));
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.3);
+  opacity: 0;
+  transform: scale(0.7);
+  animation: studio-boot-ground-part 6.2s ease-in-out infinite;
+  z-index: 2;
+}
+
+/* Shoulder swing: reach left (over printer) → lift → swing right → place → return */
+@keyframes studio-boot-shoulder-swing {
+  0%, 18% {
+    transform: rotate(10deg);
+  }
+  32%, 42% {
+    transform: rotate(46deg); /* reach down to printer */
+  }
+  50% {
+    transform: rotate(22deg); /* lift */
+  }
+  64%, 74% {
+    transform: rotate(-32deg); /* swing over ground pad */
+  }
+  84% {
+    transform: rotate(-12deg);
+  }
+  94%, 100% {
+    transform: rotate(10deg);
+  }
+}
+
+@keyframes studio-boot-jaw {
+  0%, 28% { transform: rotate(-18deg); }
+  36%, 48% { transform: rotate(-4deg); } /* close on pick */
+  58%, 70% { transform: rotate(-4deg); }
+  76%, 86% { transform: rotate(-20deg); } /* open to place */
+  92%, 100% { transform: rotate(-18deg); }
+}
+
+@keyframes studio-boot-jaw-r {
+  0%, 28% { transform: rotate(18deg); }
+  36%, 48% { transform: rotate(4deg); }
+  58%, 70% { transform: rotate(4deg); }
+  76%, 86% { transform: rotate(20deg); }
+  92%, 100% { transform: rotate(18deg); }
+}
+
+@keyframes studio-boot-payload {
+  0%, 32% { opacity: 0; transform: translateY(4px) scale(0.7); }
+  38%, 72% { opacity: 1; transform: translateY(0) scale(1); }
+  78%, 100% { opacity: 0; transform: translateY(6px) scale(0.85); }
+}
+
+@keyframes studio-boot-ground-part {
+  0%, 72% { opacity: 0; transform: translateY(-8px) scale(0.6); }
+  78%, 90% { opacity: 1; transform: translateY(0) scale(1); }
+  96%, 100% { opacity: 0.4; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 640px) {
+  .studio-boot-arm {
+    right: -6px;
+    width: 210px;
+    transform: scale(0.88);
+    transform-origin: right bottom;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-boot-arm-shoulder,
+  .studio-boot-arm-jaw,
+  .studio-boot-arm-jaw--r,
+  .studio-boot-arm-payload,
+  .studio-boot-arm-ground-part {
+    animation: none !important;
+  }
+
+  .studio-boot-arm-shoulder {
+    transform: rotate(18deg);
+  }
+
+  .studio-boot-arm-payload,
+  .studio-boot-arm-ground-part {
+    opacity: 1;
+  }
+}

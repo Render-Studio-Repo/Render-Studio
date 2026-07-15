@@ -105,9 +105,10 @@ function enhanceNav(nav) {
     const gaps = gapOf(toolbar) * 5;
     const totalNeeded = brandW + adminW + linksW + pickNeeded + actionsW + authW + gaps + 16;
     const infoPage = document.body.classList.contains("info-page");
+    const mobileNav = window.matchMedia("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)").matches;
     const needsCompact = infoPage
       ? brandW + linksW + 56 > toolbar.clientWidth
-      : totalNeeded > toolbar.clientWidth || window.innerWidth <= 1180;
+      : mobileNav;
 
     if (needsCompact) nav.classList.add("is-compact");
     if (wasOpen && needsCompact) setOpen(true);

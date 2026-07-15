@@ -185,7 +185,7 @@ export function createRenderAgent({
   onStatus,
   stickyNote = true,
 } = {}) {
-  const btn = document.getElementById("btn-render-agent");
+  let btn = document.getElementById("btn-render-agent");
   const panel = document.getElementById("render-agent-panel");
   const closeBtn = document.getElementById("render-agent-close");
   const threadMenuBtn = document.getElementById("render-agent-thread-menu");
@@ -205,6 +205,18 @@ export function createRenderAgent({
   const statusEl = document.getElementById("render-agent-status");
 
   if (!panel || !form || !messagesEl) return null;
+
+  if (!btn && !document.getElementById("render-agent-fab")) {
+    btn = document.createElement("button");
+    btn.type = "button";
+    btn.id = "render-agent-fab";
+    btn.className = "render-agent-fab";
+    btn.title = "Ask Render Agent";
+    btn.setAttribute("aria-label", "Ask Render Agent");
+    btn.setAttribute("aria-pressed", "false");
+    btn.innerHTML = `<img src="${RENDER3D_LOGO_URL}" alt="" /><span>Ask Agent</span>`;
+    document.body.appendChild(btn);
+  }
 
   let threads = [];
   let activeThread = null;
@@ -1375,7 +1387,9 @@ export function createRenderAgent({
     }
   }
 
-  btn?.addEventListener("click", () => open());
+  if (btn?.id !== "render-agent-fab") {
+    btn?.addEventListener("click", () => open());
+  }
   closeBtn?.addEventListener("click", close);
   document.getElementById("render-agent-fab")?.addEventListener("click", () => toggle());
   syncFabState(!panel.classList.contains("hidden"));

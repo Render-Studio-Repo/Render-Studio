@@ -1,41 +1,46 @@
 [
   {
     "id": "render-agent-do-it-for-me",
+    "kind": "feature",
     "title": "Render Agent: Do it for me",
-    "discord": "**New in Render3D \u2014 Render Agent: Do it for me**\nTell the agent what you want. It gathers the task, project, and object, then walks each setup step with sticky notes before it runs.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/getting-started.html#render-agent)\nUpdates: https://render3d.app/updates.html",
-    "linkedin": "New in Render3D for CAD developers and makers:\n\nRender Agent \u2192 Do it for me\nDescribe the outcome. The agent collects task + project + object context, explains each setup step with sticky notes, then sends the request for you.\n\nBuilt for faster onboarding inside a real AI CAD studio \u2014 not a slide deck.\n\nClick here to try it: https://render3d.app/getting-started.html#render-agent\nChangelog: https://render3d.app/updates.html\n\n#CAD #AI #3DPrinting #Robotics #Render3D #Developers",
+    "discord": "**Feature**\n**New in Render3D \u2014 Render Agent: Do it for me**\nTell the agent what you want. It gathers the task, project, and object, then walks each setup step with sticky notes before it runs.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/getting-started.html#render-agent)\nUpdates: https://render3d.app/updates.html",
+    "linkedin": "**Feature**\n\nNew in Render3D for CAD developers and makers:\n\nRender Agent \u2192 Do it for me\nDescribe the outcome. The agent collects task + project + object context, explains each setup step with sticky notes, then sends the request for you.\n\nBuilt for faster onboarding inside a real AI CAD studio \u2014 not a slide deck.\n\nClick here to try it: https://render3d.app/getting-started.html#render-agent\nUpdates: https://render3d.app/updates.html\n\n#CAD #AI #3DPrinting #Robotics #Render3D #Developers",
     "gif": "render-agent.social.gif",
     "href": "https://render3d.app/getting-started.html#render-agent"
   },
   {
     "id": "mode-2-selected-face-edit",
+    "kind": "feature",
     "title": "Mode 2.0 selected-face edits",
-    "discord": "**New in Render3D \u2014 Mode 2.0 face-accurate edits**\nPick a face or part, then ask AI to lengthen/extend. Edits stay locked to the selected object instead of regenerating from an old baseline.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/getting-started.html#picks)\nUpdates: https://render3d.app/updates.html",
-    "linkedin": "Shipping a precision upgrade in Render3D Mode 2.0:\n\nSelected-face length edits\nFace/component refs now keep generative edit mode on the live viewport object, so \u201cmake this 20mm longer\u201d revises the part you picked \u2014 not a stale baseline.\n\nClick here to try it: https://render3d.app/getting-started.html#picks\nMore updates: https://render3d.app/updates.html\n\n#GenerativeDesign #CAD #AI #Manufacturing #Render3D",
+    "discord": "**Feature**\n**New in Render3D \u2014 Mode 2.0 face-accurate edits**\nPick a face or part, then ask AI to lengthen/extend. Edits stay locked to the selected object instead of regenerating from an old baseline.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/getting-started.html#picks)\nUpdates: https://render3d.app/updates.html",
+    "linkedin": "**Feature**\n\nShipping a precision upgrade in Render3D Mode 2.0:\n\nSelected-face length edits\nFace/component refs now keep generative edit mode on the live viewport object, so \u201cmake this 20mm longer\u201d revises the part you picked \u2014 not a stale baseline.\n\nClick here to try it: https://render3d.app/getting-started.html#picks\nUpdates: https://render3d.app/updates.html\n\n#GenerativeDesign #CAD #AI #Manufacturing #Render3D",
     "gif": "picks.social.gif",
     "href": "https://render3d.app/getting-started.html#picks"
   },
   {
     "id": "mobile-app-chrome",
+    "kind": "feature",
     "title": "App-like mobile studio",
-    "discord": "**New in Render3D \u2014 App-like mobile studio**\nHamburger grid menu, profile top-right, tools FAB, and a locked viewport (no accidental zoom while tapping menus). Pick a model in Explorer and it opens instantly \u2014 no extra \u00d7 tap.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/)\nUpdates: https://render3d.app/updates.html",
-    "linkedin": "Render3D mobile just got a true app shell:\n\n\u2022 Central \u2630 menu grid for studio actions\n\u2022 Profile control top-right (same as desktop)\n\u2022 Bottom tools FAB for Grid / Transparent / Orbit / AI\n\u2022 Viewport zoom locked so menus feel native\n\u2022 Explorer model select auto-opens the part\n\nClick here to try it: https://render3d.app/\nChangelog: https://render3d.app/updates.html\n\n#MobileCAD #AI #3D #ProductDesign #Render3D",
+    "discord": "**Feature**\n**New in Render3D \u2014 App-like mobile studio**\nHamburger grid menu, profile top-right, tools FAB, and a locked viewport (no accidental zoom while tapping menus). Pick a model in Explorer and it opens instantly \u2014 no extra \u00d7 tap.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/)\nUpdates: https://render3d.app/updates.html",
+    "linkedin": "**Feature**\n\nRender3D mobile just got a true app shell:\n\n\u2022 Central \u2630 menu grid for studio actions\n\u2022 Profile control top-right (same as desktop)\n\u2022 Bottom tools FAB for Grid / Transparent / Orbit / AI\n\u2022 Viewport zoom locked so menus feel native\n\u2022 Explorer model select auto-opens the part\n\nClick here to try it: https://render3d.app/\nUpdates: https://render3d.app/updates.html\n\n#MobileCAD #AI #3D #ProductDesign #Render3D",
     "gif": "select-object.social.gif",
     "href": "https://render3d.app/"
   },
   {
     "id": "gen-loader-ready-banner",
+    "kind": "improve",
     "title": "Metallic gen loader + ready banner",
-    "discord": "**New in Render3D \u2014 Generation HUD**\nBottom-right metallic loader with a mini printer + robot: the part prints with the progress bar, then the robot picks & places at 100%. When the model is ready, a status banner fades in above it.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/)\nUpdates: https://render3d.app/updates.html",
-    "linkedin": "A small UX detail that changes how AI CAD feels in Render3D:\n\nGeneration HUD (bottom-right)\n\u2022 Metallic loader card\n\u2022 Printer builds the part with the progress bar\n\u2022 Robot picks and places at 100%\n\u2022 \u201cModel ready\u201d banner with prompt/project/file/trace context, then auto-fade\n\nAlso fixed the Generate double-click race so the loader appears on the first click.\n\nClick here to try it: https://render3d.app/\nUpdates: https://render3d.app/updates.html\n\n#UX #AI #CAD #Render3D #DeveloperExperience",
+    "discord": "**Improve**\n**New in Render3D \u2014 Generation HUD**\nBottom-right metallic loader with a mini printer + robot: the part prints with the progress bar, then the robot picks & places at 100%. When the model is ready, a status banner fades in above it.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/)\nUpdates: https://render3d.app/updates.html",
+    "linkedin": "**Improve**\n\nA small UX detail that changes how AI CAD feels in Render3D:\n\nGeneration HUD (bottom-right)\n\u2022 Metallic loader card\n\u2022 Printer builds the part with the progress bar\n\u2022 Robot picks and places at 100%\n\u2022 \u201cModel ready\u201d banner with prompt/project/file/trace context, then auto-fade\n\nAlso fixed the Generate double-click race so the loader appears on the first click.\n\nClick here to try it: https://render3d.app/\nUpdates: https://render3d.app/updates.html\n\n#UX #AI #CAD #Render3D #DeveloperExperience",
     "gif": "ai-generate.social.gif",
     "href": "https://render3d.app/"
   },
   {
     "id": "realtime-editor-popup",
+    "kind": "feature",
     "title": "Realtime editor viewport popup",
-    "discord": "**New in Render3D \u2014 Realtime editor popup**\nOpen a large realtime viewport from the workspace strip. After import/open it collapses to a compact left chip for the active object.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/)\nUpdates: https://render3d.app/updates.html",
-    "linkedin": "Render3D realtime collaboration got a cleaner viewport flow:\n\nRealtime editor popup\nLaunch a large shared viewport from the workspace strip, then collapse it to a compact chip once the active object is open \u2014 better for reviews without losing context.\n\nClick here to try it: https://render3d.app/\nUpdates: https://render3d.app/updates.html\n\n#Collaboration #CAD #Realtime #Render3D",
+    "discord": "**Feature**\n**New in Render3D \u2014 Realtime editor popup**\nOpen a large realtime viewport from the workspace strip. After import/open it collapses to a compact left chip for the active object.\n\n\ud83d\udc49 [Click here to try it](https://render3d.app/)\nUpdates: https://render3d.app/updates.html",
+    "linkedin": "**Feature**\n\nRender3D realtime collaboration got a cleaner viewport flow:\n\nRealtime editor popup\nLaunch a large shared viewport from the workspace strip, then collapse it to a compact chip once the active object is open \u2014 better for reviews without losing context.\n\nClick here to try it: https://render3d.app/\nUpdates: https://render3d.app/updates.html\n\n#Collaboration #CAD #Realtime #Render3D",
     "gif": "workspaces.social.gif",
     "href": "https://render3d.app/"
   }

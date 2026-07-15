@@ -133,6 +133,7 @@ export function createWorkspaceBrowser({
   api,
   getWorkspaceId,
   getFolderTeamId = getWorkspaceId,
+  getWorkspaceMeta = () => ({}),
   getProjects,
   getActiveProjectId,
   isProjectLoading,
@@ -219,6 +220,11 @@ export function createWorkspaceBrowser({
 
   function folderListKey(folderId) {
     return folderId || "__root__";
+  }
+
+  function rootFolderLabel() {
+    const meta = getWorkspaceMeta?.(resolveTeamId()) || {};
+    return meta.rootLabel || "Personal files";
   }
 
   function isCommunityFolder(folder) {
@@ -367,7 +373,7 @@ export function createWorkspaceBrowser({
     submenu.setAttribute("role", "menu");
     const currentFolderId = effectiveProjectFolderId(project);
     const targets = [
-      { id: null, label: "Unfiled", icon: "📁" },
+      { id: null, label: rootFolderLabel(), icon: "📁" },
       ...folders
         .filter((f) => !(f.virtual || f.read_only || f.public))
         .map((f) => ({ id: f.id, label: f.name, icon: "📂" })),
@@ -867,7 +873,7 @@ export function createWorkspaceBrowser({
           editFolderModalEl.querySelector("#folder-edit-save")?.click();
         });
         row.querySelector("[data-edit-remove]")?.addEventListener("click", async () => {
-          if (!window.confirm(`Remove “${project.name || project.id}” from this folder?\n\nIt will move to Unfiled.`)) return;
+          if (!window.confirm(`Remove “${project.name || project.id}” from this folder?\n\nIt will move to ${rootFolderLabel()}.`)) return;
           await moveProjectToFolder(project.id, null);
           renderProjectRows(folder);
         });
@@ -1023,7 +1029,7 @@ export function createWorkspaceBrowser({
     });
     menu.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
       closeContextMenu();
-      if (!window.confirm(`Delete folder "${folder.name}"? Projects inside will move to Unfiled.`)) return;
+      if (!window.confirm(`Delete folder "${folder.name}"? Projects inside will move to ${rootFolderLabel()}.`)) return;
       const teamId = getWorkspaceId();
       try {
         await api(`/api/teams/${teamId}/folders/${folder.id}`, { method: "DELETE" });
@@ -1040,7 +1046,9 @@ export function createWorkspaceBrowser({
     return String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function hierarchyEntryKey(project, sectionId, entry) {
@@ -1887,7 +1895,10 @@ export function createWorkspaceBrowser({
     const searching = query.length > 0;
     const filterProjects = (list, folderName = "") =>
       searching ? list.filter((p) => matchesProjectSearch(p, query, folderName)) : list;
-    const rootProjects = filterProjects(allRootProjects, "Unfiled");
+    const folderTeamId = resolveTeamId();
+    const workspaceMeta = getWorkspaceMeta?.(folderTeamId) || {};
+    const rootLabel = workspaceMeta.rootLabel || "Personal files";
+    const rootProjects = filterProjects(allRootProjects, rootLabel);
     const folderProjects = (fid, folderName = "") =>
       filterProjects(
         sortProjectsForDisplay(projects.filter((p) => p.folder_id === fid)),
@@ -1945,7 +1956,6 @@ export function createWorkspaceBrowser({
       container.querySelector(".project-search-input")?.focus();
     });
 
-    const folderTeamId = resolveTeamId();
     const toolbar = document.createElement("div");
     toolbar.className = "folder-toolbar";
     if (folderTeamId) {
@@ -2000,21 +2010,40 @@ export function createWorkspaceBrowser({
     });
 
     if (showPrivateGroup && (showCommunityGroup || privateFolders.length || rootProjects.length || !searching)) {
-      appendFolderGroupLabel(container, "Private");
+      appendFolderGroupLabel(container, workspaceMeta.shared ? "Shared workspace" : "Personal");
     }
 
     if (rootProjects.length || !searching) {
       const rootCollapsed = searching ? false : collapsedFolders.has(folderStorageId(null));
       const rootZone = document.createElement("section");
       rootZone.className = "folder-zone folder-zone-root";
+      rootZone.classList.toggle("folder-zone-root--personal", !!workspaceMeta.personal);
+      rootZone.classList.toggle("folder-zone-root--shared", !!workspaceMeta.shared);
       if (rootCollapsed) rootZone.classList.add("folder-zone-collapsed");
       rootZone.dataset.folderId = "";
       const rootHeader = document.createElement("header");
       rootHeader.className = "folder-header";
       rootHeader.append(
         buildFolderCollapseBtn(null, rootCollapsed),
-        Object.assign(document.createElement("span"), { className: "folder-icon", textContent: "📁" }),
-        Object.assign(document.createElement("span"), { className: "folder-title", textContent: "Unfiled" }),
+        Object.assign(document.createElement("span"), {
+          className: "folder-icon",
+          textContent: workspaceMeta.shared ? "🟧" : "📁",
+        }),
+        Object.assign(document.createElement("span"), { className: "folder-title", textContent: rootLabel }),
+        ...(workspaceMeta.shared
+          ? [
+              Object.assign(document.createElement("span"), {
+                className: "folder-workspace-highlight",
+                textContent: "Shared workspace",
+                title: "You are creating inside a shared workspace.",
+              }),
+              Object.assign(document.createElement("span"), {
+                className: "folder-share-badge folder-share-badge--workspace",
+                textContent: `👥 ${workspaceMeta.memberCount || ""}`.trim(),
+                title: `${workspaceMeta.memberCount || 1} member${Number(workspaceMeta.memberCount || 1) === 1 ? "" : "s"} in this workspace`,
+              }),
+            ]
+          : []),
         Object.assign(document.createElement("span"), {
           className: "folder-count muted small",
           textContent: rootProjects.length ? `${rootProjects.length}` : "",

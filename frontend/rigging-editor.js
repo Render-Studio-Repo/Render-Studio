@@ -86,6 +86,7 @@ export function createRiggingEditor({
   getProjectId,
   onStatus,
   onChange,
+  onAnimationStateChange,
   timelineContainer,
 }) {
   const dom = renderer.domElement;
@@ -156,6 +157,23 @@ export function createRiggingEditor({
 
   function activeAnimation() {
     return animations.find((a) => a.id === activeAnimationId) || animations[0] || null;
+  }
+
+  function hasPlayableAnimation() {
+    const anim = activeAnimation();
+    if (!anim || !bones.length) return false;
+    const times = [...new Set((anim.keyframes || [])
+      .filter((kf) => kf && Number.isFinite(kf.time))
+      .map((kf) => Number(kf.time).toFixed(3)))];
+    return times.length >= 2;
+  }
+
+  function notifyAnimationState() {
+    onAnimationStateChange?.({
+      playable: hasPlayableAnimation(),
+      playing: !!animTimeline?.isPlaying?.(),
+      animation: activeAnimation(),
+    });
   }
 
   function boneById(id) {
@@ -359,6 +377,7 @@ export function createRiggingEditor({
     } finally {
       syncingTimeline = false;
     }
+    notifyAnimationState();
   }
 
   function interpolatePoses(t) {
@@ -452,13 +471,18 @@ export function createRiggingEditor({
     }
     animTimeline?.refreshMarkers(anim.keyframes);
     scheduleSave();
+    notifyAnimationState();
     onStatus?.("ok", `Keyframe at ${t.toFixed(2)}s`);
   }
 
   function startPlayback() {
     stopPlayback(false);
     const anim = activeAnimation();
-    if (!anim) return;
+    if (!anim || !hasPlayableAnimation()) {
+      animTimeline?.setPlaying(false);
+      notifyAnimationState();
+      return;
+    }
     playbackFrom = animTimeline?.getTime() ?? 0;
     playbackStart = performance.now();
     const tick = (now) => {
@@ -487,6 +511,7 @@ export function createRiggingEditor({
     } else if (active) {
       group.visible = true;
     }
+    notifyAnimationState();
   }
 
   function scheduleSave() {
@@ -541,6 +566,7 @@ export function createRiggingEditor({
     connectFromId = null;
     renderAll();
     refreshMeshBindings();
+    notifyAnimationState();
   }
 
   function applyRigData(data) {
@@ -554,6 +580,7 @@ export function createRiggingEditor({
     renderAll();
     refreshMeshBindings();
     scheduleSave();
+    notifyAnimationState();
   }
 
   function addBone(at) {
@@ -601,6 +628,7 @@ export function createRiggingEditor({
     selectedId = bones[0]?.id || null;
     renderAll();
     scheduleSave();
+    notifyAnimationState();
     onStatus?.("ok", "Auto rig chain created — adjust bones and export URDF.");
   }
 
@@ -671,6 +699,7 @@ export function createRiggingEditor({
     animTimeline?.setPlaying(true);
     startPlayback();
     scheduleSave();
+    notifyAnimationState();
     onStatus?.(
       previewOnly ? "ok" : "ok",
       previewOnly
@@ -1031,8 +1060,16 @@ export function createRiggingEditor({
     getJointControls: jointControls,
     setJointValue,
     getSelectedId: () => selectedId,
-    togglePlay: () => animTimeline?.togglePlay(),
+    togglePlay: () => {
+      if (!hasPlayableAnimation()) {
+        animTimeline?.setPlaying(false);
+        notifyAnimationState();
+        return false;
+      }
+      return animTimeline?.togglePlay();
+    },
     setPlaying: (p) => (p ? startPlayback() : stopPlayback()),
     isPlaying: () => !!animTimeline?.isPlaying?.(),
+    hasPlayableAnimation,
   };
 }

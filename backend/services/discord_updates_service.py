@@ -25,15 +25,20 @@ def _channel_id() -> str:
     return (getattr(settings, "discord_updates_channel_id", None) or "").strip()
 
 
+def _webhook_url() -> str:
+    return (getattr(settings, "discord_updates_webhook_url", None) or "").strip()
+
+
 def configured() -> bool:
-    return bool(_token() and _channel_id())
+    """Bot token+channel, or a channel webhook URL."""
+    return bool(_webhook_url()) or bool(_token() and _channel_id())
 
 
 def invite_url() -> str:
-    """Bot invite with View Channel + Send Messages + Embed Links."""
+    """Bot invite with View + Send + Embed Links + Attach Files."""
     client_id = (getattr(settings, "discord_application_id", None) or "").strip() or "1527052867742076958"
-    # 1024 view + 2048 send + 16384 embed links
-    return f"https://discord.com/oauth2/authorize?client_id={client_id}&permissions=19456&scope=bot"
+    # 1024 view + 2048 send + 16384 embed links + 32768 attach files
+    return f"https://discord.com/oauth2/authorize?client_id={client_id}&permissions=52224&scope=bot"
 
 
 def _load_posted() -> set[str]:
@@ -98,18 +103,27 @@ def connection_status() -> dict[str, Any]:
     out: dict[str, Any] = {
         "configured": configured(),
         "channel_id": _channel_id() or None,
+        "webhook_configured": bool(_webhook_url()),
         "invite_url": invite_url(),
         "bot": None,
         "guild_count": 0,
         "channel_ok": False,
         "error": None,
     }
-    if not configured():
-        out["error"] = "Missing DISCORD_BOT_TOKEN or DISCORD_UPDATES_CHANNEL_ID"
+    if _webhook_url():
+        out["channel_ok"] = True
+        out["via"] = "webhook"
+        return out
+    if not (_token() and _channel_id()):
+        out["error"] = (
+            "Missing Discord credentials. Set DISCORD_UPDATES_WEBHOOK_URL, "
+            "or DISCORD_BOT_TOKEN + DISCORD_UPDATES_CHANNEL_ID"
+        )
         return out
     try:
         me = bot_identity()
         out["bot"] = {"id": me.get("id"), "username": me.get("username")}
+        out["via"] = "bot"
         guilds = _api("/users/@me/guilds")
         if isinstance(guilds, list):
             out["guild_count"] = len(guilds)
@@ -123,7 +137,8 @@ def connection_status() -> dict[str, Any]:
             if out["guild_count"] == 0:
                 out["error"] = (
                     "Bot is not in any Discord server yet. "
-                    f"Invite it first: {invite_url()}"
+                    f"Invite it first: {invite_url()} "
+                    "(or set DISCORD_UPDATES_WEBHOOK_URL for the updates channel)"
                 )
     except Exception as err:
         out["error"] = str(err)
@@ -157,13 +172,22 @@ def build_update_payload(update: dict[str, Any]) -> dict[str, Any]:
         "improve": 0xD2A8FF,
     }.get(kind, 0x58A6FF)
 
+    kind_label = {
+        "feature": "Feature",
+        "tool": "Tool",
+        "fix": "Fix",
+        "improve": "Improve",
+    }.get(kind, kind.title())
+
     embed: dict[str, Any] = {
         "title": title[:256],
         "description": (summary or "New Render3D update.")[:4000],
         "color": color,
         "timestamp": f"{date_s}T12:00:00.000Z" if len(date_s) == 10 else datetime.now(timezone.utc).isoformat(),
-        "footer": {"text": f"Render3D · {kind}"},
-        "fields": [],
+        "footer": {"text": f"Render3D · {kind_label}"},
+        "fields": [
+            {"name": "Type", "value": f"**{kind_label}**", "inline": True},
+        ],
     }
     if href:
         embed["url"] = href
@@ -171,15 +195,108 @@ def build_update_payload(update: dict[str, Any]) -> dict[str, Any]:
     if visual:
         embed["image"] = {"url": visual}
 
-    content = f"**New Render3D update** · {kind}"
+    content = f"**{kind_label}** · **New Render3D update**"
     return {"content": content, "embeds": [embed], "allowed_mentions": {"parse": []}}
 
 
 def send_channel_message(payload: dict[str, Any]) -> dict[str, Any]:
+    webhook = _webhook_url()
+    if webhook:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            webhook,
+            data=data,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": USER_AGENT,
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read().decode("utf-8") or "{}"
+                return json.loads(raw) if raw.strip() else {"ok": True}
+        except urllib.error.HTTPError as err:
+            detail = ""
+            try:
+                detail = err.read().decode("utf-8", errors="replace")[:800]
+            except Exception:
+                pass
+            raise RuntimeError(f"Discord webhook {err.code}: {detail or err}") from err
+
     channel = _channel_id()
     if not channel:
         raise RuntimeError("DISCORD_UPDATES_CHANNEL_ID is not configured")
+    if not _token():
+        raise RuntimeError("DISCORD_BOT_TOKEN is not configured")
     return _api(f"/channels/{channel}/messages", method="POST", body=payload)
+
+
+def send_channel_message_with_file(
+    content: str,
+    file_path: Path,
+    *,
+    filename: str | None = None,
+) -> dict[str, Any]:
+    """Post text + one attachment via bot API or webhook (multipart)."""
+    import mimetypes
+    import uuid
+
+    path = Path(file_path)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    name = filename or path.name
+    mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+    payload = {"content": str(content or "")[:2000], "allowed_mentions": {"parse": []}}
+    boundary = f"----Render3D{uuid.uuid4().hex}"
+    body = bytearray()
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(b'Content-Disposition: form-data; name="payload_json"\r\n')
+    body.extend(b"Content-Type: application/json\r\n\r\n")
+    body.extend(json.dumps(payload).encode())
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(
+        f'Content-Disposition: form-data; name="files[0]"; filename="{name}"\r\n'.encode()
+    )
+    body.extend(f"Content-Type: {mime}\r\n\r\n".encode())
+    body.extend(path.read_bytes())
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode())
+
+    webhook = _webhook_url()
+    if webhook:
+        url = webhook if "wait=" in webhook else (
+            f"{webhook}{'&' if '?' in webhook else '?'}wait=true"
+        )
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": USER_AGENT,
+        }
+    else:
+        channel = _channel_id()
+        token = _token()
+        if not channel or not token:
+            raise RuntimeError("Discord bot token/channel or webhook required")
+        url = f"{API_BASE}/channels/{channel}/messages"
+        headers = {
+            "Authorization": f"Bot {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": USER_AGENT,
+        }
+
+    req = urllib.request.Request(url, data=bytes(body), method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = resp.read().decode("utf-8") or "{}"
+            return json.loads(raw) if raw.strip() else {"ok": True}
+    except urllib.error.HTTPError as err:
+        detail = ""
+        try:
+            detail = err.read().decode("utf-8", errors="replace")[:800]
+        except Exception:
+            pass
+        raise RuntimeError(f"Discord multipart {err.code}: {detail or err}") from err
 
 
 def announce_update(update: dict[str, Any], *, force: bool = False) -> dict[str, Any]:

@@ -830,11 +830,35 @@ export function createProjectChatUI({
 
   async function openChat() {
     if (!getToken()) {
+      ensureOverlay();
+      overlay.classList.remove("hidden");
+      open = true;
+      document.body.classList.add("project-chat-open");
+      const title = overlay.querySelector("#pc-title");
+      const subtitle = overlay.querySelector("#pc-subtitle");
+      const messagesEl = overlay.querySelector("#pc-messages");
+      if (title) title.textContent = "Project chat";
+      if (subtitle) subtitle.textContent = "Sign in required";
+      if (messagesEl) {
+        messagesEl.innerHTML = `<div class="pc-empty"><strong>Sign in to use project chat.</strong><span class="muted">After signing in, teammates can chat, mention each other, and attach images here.</span></div>`;
+      }
       onStatus?.("error", "Sign in to use project chat");
       return;
     }
     const projectId = getProjectId?.();
     if (!projectId) {
+      ensureOverlay();
+      overlay.classList.remove("hidden");
+      open = true;
+      document.body.classList.add("project-chat-open");
+      const title = overlay.querySelector("#pc-title");
+      const subtitle = overlay.querySelector("#pc-subtitle");
+      const messagesEl = overlay.querySelector("#pc-messages");
+      if (title) title.textContent = "Project chat";
+      if (subtitle) subtitle.textContent = "Open a project first";
+      if (messagesEl) {
+        messagesEl.innerHTML = `<div class="pc-empty"><strong>Open a project to start chatting.</strong><span class="muted">Project chat is tied to the active Render3D workspace.</span></div>`;
+      }
       onStatus?.("error", "Open a project to chat");
       return;
     }

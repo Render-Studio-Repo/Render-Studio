@@ -13,6 +13,7 @@ export function createRiggingAnimationTimeline(container, callbacks = {}) {
       <button type="button" class="rigging-anim-btn" data-action="stop" title="Stop">■</button>
       <span class="rigging-anim-time" id="rigging-anim-time">0:00.0 / 0:05.0</span>
       <span class="rigging-anim-frame" id="rigging-anim-frame">F0</span>
+      <button type="button" class="rigging-anim-btn rigging-anim-collapse" data-action="collapse" title="Collapse animation banner" aria-expanded="true">▴</button>
       <button type="button" class="rigging-anim-btn rigging-anim-key" data-action="keyframe" title="Insert keyframe (K)">◆ Key</button>
     </div>
     <div class="rigging-anim-scrub">
@@ -39,6 +40,7 @@ export function createRiggingAnimationTimeline(container, callbacks = {}) {
   let currentTime = 0;
   let playing = false;
   let keyframeTimes = [];
+  let collapsed = false;
 
   function formatTime(sec) {
     const m = Math.floor(sec / 60);
@@ -105,6 +107,14 @@ export function createRiggingAnimationTimeline(container, callbacks = {}) {
 
   wrap.querySelector('[data-action="keyframe"]')?.addEventListener("click", () => {
     onKeyframe?.(currentTime);
+  });
+
+  wrap.querySelector('[data-action="collapse"]')?.addEventListener("click", (event) => {
+    collapsed = !collapsed;
+    wrap.classList.toggle("is-collapsed", collapsed);
+    event.currentTarget.textContent = collapsed ? "▾" : "▴";
+    event.currentTarget.title = collapsed ? "Expand animation banner" : "Collapse animation banner";
+    event.currentTarget.setAttribute("aria-expanded", collapsed ? "false" : "true");
   });
 
   wrap.querySelector('[data-action="prev-key"]')?.addEventListener("click", () => {

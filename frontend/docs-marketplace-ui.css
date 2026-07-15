@@ -58,7 +58,7 @@
   transform: translateY(-2px) scale(1.015);
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(125, 211, 252, 0.18);
+    0 0 0 1px rgba(255, 106, 0, 0.22);
 }
 
 .info-page .btn:active,
@@ -68,16 +68,25 @@
 }
 
 .info-page .btn.accent,
-.info-page .btn.primary,
-.marketplace-futuristic .btn.primary {
+.info-page .btn.primary {
   box-shadow: 0 8px 22px rgba(31, 122, 240, 0.22);
 }
 
+.marketplace-futuristic .btn.primary,
+.marketplace-futuristic .btn.accent {
+  box-shadow: 0 8px 18px rgba(255, 106, 0, 0.28);
+}
+
 .info-page .btn.accent:hover,
-.info-page .btn.primary:hover,
-.marketplace-futuristic .btn.primary:hover {
+.info-page .btn.primary:hover {
   filter: saturate(1.08) brightness(1.04);
   box-shadow: 0 14px 30px rgba(31, 122, 240, 0.34);
+}
+
+.marketplace-futuristic .btn.primary:hover,
+.marketplace-futuristic .btn.accent:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 12px 24px rgba(255, 106, 0, 0.34);
 }
 
 .info-page .docs-category-tab {
@@ -117,25 +126,28 @@
 }
 
 .marketplace-futuristic .marketplace-choice {
-  transition: transform 0.35s var(--ui-motion), border-color 0.25s ease, box-shadow 0.35s var(--ui-motion);
+  transition: transform 0.28s var(--ui-motion), border-color 0.22s ease, box-shadow 0.28s var(--ui-motion);
 }
 
 .marketplace-futuristic .marketplace-choice:hover {
-  transform: translateY(-6px) scale(1.01);
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(61, 231, 255, 0.28);
+  transform: translateY(-4px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
 }
 
 .marketplace-futuristic .marketplace-choice-cta {
   display: inline-flex;
-  margin-top: 14px;
-  padding: 8px 14px;
+  margin-top: auto;
+  padding: 0 16px;
+  min-height: 40px;
+  align-items: center;
   border-radius: 999px;
-  border: 1px solid rgba(61, 231, 255, 0.4);
-  background: linear-gradient(135deg, rgba(61, 231, 255, 0.2), rgba(31, 122, 240, 0.18));
-  font-size: 0.78rem;
+  border: 0;
+  background: #fff;
+  color: #14171c;
+  font-size: 0.84rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .marketplace-hub-tabs {

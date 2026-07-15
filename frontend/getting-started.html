@@ -29,8 +29,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css?v=20260715-gs-agent-br" />
+  <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
   <link rel="stylesheet" href="/getting-started-hero.css?v=20260715-gs-hero-banner5" />
-  <link rel="stylesheet" href="/docs-agent.css?v=20260715-docs-sticky-toc" />
+  <link rel="stylesheet" href="/docs-agent.css?v=20260715-gs-agent-br" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
 </head>
 <body class="info-page gs-body">
@@ -82,14 +83,28 @@
             <div class="gs-hero-visual" aria-hidden="true">
               <div class="gs-hero-robot-wrap">
                 <div class="gs-hero-robot welcome-robot">
-                  <span class="welcome-robot-base"></span>
-                  <span class="welcome-robot-joint welcome-robot-joint--base"></span>
-                  <span class="welcome-robot-arm welcome-robot-arm--lower"></span>
-                  <span class="welcome-robot-joint welcome-robot-joint--elbow"></span>
-                  <span class="welcome-robot-arm welcome-robot-arm--upper"></span>
-                  <span class="welcome-robot-joint welcome-robot-joint--wrist"></span>
-                  <span class="welcome-robot-claw welcome-robot-claw--top"></span>
-                  <span class="welcome-robot-claw welcome-robot-claw--bottom"></span>
+                  <div class="welcome-robot-base-unit">
+                    <span class="welcome-robot-plate"></span>
+                    <span class="welcome-robot-pedestal"></span>
+                    <span class="welcome-robot-column"></span>
+                  </div>
+                  <div class="welcome-robot-shoulder">
+                    <span class="welcome-robot-pivot"></span>
+                    <div class="welcome-robot-boom">
+                      <span class="welcome-robot-link welcome-robot-link--a"></span>
+                      <span class="welcome-robot-elbow"></span>
+                      <span class="welcome-robot-link welcome-robot-link--b"></span>
+                      <div class="welcome-robot-hand">
+                        <span class="welcome-robot-wrist"></span>
+                        <span class="welcome-robot-grip">
+                          <span class="welcome-robot-jaw welcome-robot-jaw--a"></span>
+                          <span class="welcome-robot-jaw welcome-robot-jaw--b"></span>
+                        </span>
+                        <span class="welcome-robot-held"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="welcome-robot-placed"></span>
                 </div>
               </div>
             </div>
@@ -226,6 +241,6 @@
   </div>
 
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
-  <script type="module" src="/getting-started.js?v=20260715-gs-agent-br"></script>
+  <script type="module" src="/getting-started.js?v=20260715-chat-fab-fallback"></script>
 </body>
 </html>

@@ -8,11 +8,15 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-modern-model-store" />
-  <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-mkt-payments" />
-  <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-appstore" />
+  <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-appstore" />
+  <link rel="stylesheet" href="/marketplace-fx.css?v=20260715-appstore" />
 </head>
 <body class="info-page marketplace-futuristic marketplace-store-page">
+  <div class="marketplace-fx" aria-hidden="true">
+    <div class="marketplace-grid-bg"></div>
+  </div>
+
   <div id="app" class="app-info">
     <header class="toolbar">
       <div class="brand">
@@ -42,13 +46,12 @@
         <header class="info-hero model-store-hero">
           <div class="model-store-hero-copy">
             <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · 3D Models</p>
-            <h2>Find CAD you can actually open, remix, and build</h2>
+            <h2>3D Model Store</h2>
             <p class="info-lead">
-              Browse free public robot arms, architecture kits, fixtures, toolheads, and creator products with
-              clear rights, files, thumbnails, licensing, and download controls.
+              MakerWorld-style catalog of robot arms, fixtures, toolheads, and creator CAD — cover cards, Get buttons, clear rights and formats.
             </p>
             <div class="gs-hero-actions">
-              <a class="btn accent" href="#model-store-list">Browse free models</a>
+              <a class="btn accent" href="#model-store-list">Browse models</a>
               <a class="btn secondary" href="#model-listing-form">Publish a model</a>
             </div>
           </div>
@@ -187,7 +190,7 @@
       </article>
     </main>
   </div>
-  <script type="module" src="/model-store.js?v=20260715-modern-model-store"></script>
+  <script type="module" src="/model-store.js?v=20260715-appstore"></script>
   <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
 </body>
 </html>

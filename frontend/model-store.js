@@ -146,16 +146,18 @@ function productCard(item, { compact = false } = {}) {
       </div>`
     : "";
   const paid = isPaidListing(item);
-  const buyBtn = paid
-    ? `<button type="button" class="btn primary btn-compact" data-buy="${escapeAttr(item.id || item.slug)}">Buy ${escapeHtml(priceLabel(item))}</button>`
-    : "";
+  const getBtn = paid
+    ? `<button type="button" class="btn primary btn-compact" data-buy="${escapeAttr(item.id || item.slug)}">Get · ${escapeHtml(priceLabel(item))}</button>`
+    : item.can_download && item.files?.length
+      ? `<button type="button" class="btn primary btn-compact" data-preview-model="${escapeAttr(item.slug)}">Get</button>`
+      : `<button type="button" class="btn primary btn-compact" disabled>View</button>`;
   const mine = getToken() && item.created_by;
   const fileTags = (item.files || []).slice(0, compact ? 3 : 5).map((file) => `<span>${escapeHtml(fileExt(file.name))}</span>`).join("");
   return `<article class="agent-product-card marketplace-product-card model-product-card${compact ? " agent-product-card-compact model-product-card--compact" : ""}">
     ${media}
     <div class="agent-product-top">
-      <div class="agent-app-price">${escapeHtml(priceLabel(item))}</div>
       <span class="model-product-owner">${escapeHtml(ownerLabel(item))}</span>
+      <div class="agent-app-price">${escapeHtml(priceLabel(item))}</div>
     </div>
     <h4>${escapeHtml(item.name)}</h4>
     <p class="agent-product-slug mono muted small">@model:${escapeHtml(item.slug)}</p>
@@ -164,8 +166,8 @@ function productCard(item, { compact = false } = {}) {
     ${compact ? "" : `<div class="marketplace-body muted small">${simpleMarkdown((item.body_md || item.description || "").slice(0, 480))}</div>`}
     ${fileTags ? `<div class="model-file-tags">${fileTags}</div>` : ""}
     <div class="agent-app-actions">
-      ${buyBtn}
-      ${item.can_download && item.files?.length && !paid ? `<button type="button" class="btn secondary btn-compact" data-preview-model="${escapeAttr(item.slug)}">Preview files</button><span class="muted small">${item.files.length} file${item.files.length === 1 ? "" : "s"}</span>` : !paid ? `<span class="muted small">Preview</span>` : ""}
+      ${getBtn}
+      ${!paid && item.files?.length ? `<span class="muted small">${item.files.length} file${item.files.length === 1 ? "" : "s"}</span>` : ""}
       ${mine ? `<button type="button" class="btn secondary btn-compact" data-boost="${escapeAttr(item.slug)}">Apply boost</button>` : ""}
     </div>
     ${adminControls}
@@ -211,7 +213,7 @@ function renderCategories() {
     .map((category) => {
       const count =
         category === "All"
-          ? listings.length
+          ? listings.filter((item) => !isKnowledgeListing(item)).length
           : listings.filter((item) => {
               const prev = activeCategory;
               activeCategory = category;

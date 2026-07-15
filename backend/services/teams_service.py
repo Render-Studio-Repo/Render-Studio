@@ -70,9 +70,10 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
                 "INSERT INTO users (id, email, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
                 (user_id, email, display_name, hash_password(password), now),
             )
+            first_name = display_name.split()[0] if display_name.split() else display_name
             conn.execute(
                 "INSERT INTO teams (id, name, created_by, created_at) VALUES (?, ?, ?, ?)",
-                (team_id, f"{display_name}'s Team", user_id, now),
+                (team_id, f"{first_name}'s Workspace", user_id, now),
             )
             conn.execute(
                 "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
@@ -104,13 +105,17 @@ def list_teams(user_id: str) -> list[dict[str, Any]]:
             """
             SELECT t.id, t.name, t.created_by, t.created_at, tm.role,
                    t.render_folder_provider, t.render_folder_ref,
-                   t.render_folder_label, t.render_folder_connected_at
+                   t.render_folder_label, t.render_folder_connected_at,
+                   (SELECT COUNT(*) FROM team_members tm2 WHERE tm2.team_id = t.id) AS member_count
             FROM teams t
             JOIN team_members tm ON tm.team_id = t.id
             WHERE tm.user_id = ?
-            ORDER BY t.name
+            ORDER BY
+              CASE WHEN t.created_by = ? AND tm.role IN ('owner', 'admin') THEN 0 ELSE 1 END,
+              t.created_at,
+              lower(t.name)
             """,
-            (user_id,),
+            (user_id, user_id),
         ).fetchall()
     out = []
     for row in rows:
@@ -509,13 +514,18 @@ def update_team(team_id: str, name: str, user_id: str) -> dict[str, Any]:
         conn.execute("UPDATE teams SET name = ? WHERE id = ?", (clean, team_id))
         conn.commit()
         row = conn.execute(
-            "SELECT t.id, t.name, t.created_by, t.created_at, tm.role FROM teams t "
+            "SELECT t.id, t.name, t.created_by, t.created_at, tm.role, "
+            "t.render_folder_provider, t.render_folder_ref, t.render_folder_label, t.render_folder_connected_at, "
+            "(SELECT COUNT(*) FROM team_members tm2 WHERE tm2.team_id = t.id) AS member_count FROM teams t "
             "JOIN team_members tm ON tm.team_id = t.id AND tm.user_id = ? WHERE t.id = ?",
             (user_id, team_id),
         ).fetchone()
     if not row:
         raise ValueError("Workspace not found")
-    return dict(row)
+    item = dict(row)
+    item["role"] = normalize_role(item.get("role"))
+    item["role_label"] = display_role(item["role"])
+    return item
 
 
 def create_team(name: str, user_id: str) -> dict[str, Any]:
@@ -537,6 +547,8 @@ def create_team(name: str, user_id: str) -> dict[str, Any]:
         "created_by": user_id,
         "created_at": now,
         "role": "owner",
+        "role_label": display_role("owner"),
+        "member_count": 1,
         "render_folder_provider": "render3d",
         "render_folder_ref": None,
         "render_folder_label": None,

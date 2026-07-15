@@ -10,7 +10,10 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-realistic-boot-robot" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-navbar-visible-actions" />
+  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-v3" />
+  <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
+  <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-3d-spice" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <script type="importmap">
   {
@@ -27,7 +30,7 @@
     <div class="studio-boot-card">
       <div class="studio-boot-stage" aria-hidden="true">
         <div class="studio-boot-grid"></div>
-        <div class="studio-boot-printer">
+        <div class="studio-boot-printer studio-boot-printer--simple">
           <span class="studio-boot-printer-head"></span>
           <span class="studio-boot-print-beam"></span>
           <span class="studio-boot-build-plate"></span>
@@ -35,17 +38,30 @@
           <span class="studio-boot-part studio-boot-part--arm"></span>
           <span class="studio-boot-part studio-boot-part--cap"></span>
         </div>
-        <div class="studio-boot-robot">
-          <span class="studio-boot-robot-body"></span>
-          <span class="studio-boot-robot-head"></span>
-          <span class="studio-boot-robot-eye studio-boot-robot-eye--left"></span>
-          <span class="studio-boot-robot-eye studio-boot-robot-eye--right"></span>
-          <span class="studio-boot-robot-arm studio-boot-robot-arm--left"></span>
-          <span class="studio-boot-robot-arm studio-boot-robot-arm--right"></span>
-          <span class="studio-boot-robot-claw"></span>
+        <div class="studio-boot-arm" id="studio-boot-arm">
+          <div class="studio-boot-arm-base">
+            <span class="studio-boot-arm-base-plate"></span>
+            <span class="studio-boot-arm-pedestal"></span>
+            <span class="studio-boot-arm-column"></span>
+          </div>
+          <div class="studio-boot-arm-shoulder">
+            <span class="studio-boot-arm-joint studio-boot-arm-joint--shoulder"></span>
+            <div class="studio-boot-arm-boom">
+              <span class="studio-boot-arm-link studio-boot-arm-link--upper"></span>
+              <span class="studio-boot-arm-joint studio-boot-arm-joint--elbow"></span>
+              <span class="studio-boot-arm-link studio-boot-arm-link--fore"></span>
+              <div class="studio-boot-arm-wrist">
+                <span class="studio-boot-arm-joint studio-boot-arm-joint--wrist"></span>
+                <span class="studio-boot-arm-gripper">
+                  <span class="studio-boot-arm-jaw studio-boot-arm-jaw--l"></span>
+                  <span class="studio-boot-arm-jaw studio-boot-arm-jaw--r"></span>
+                </span>
+                <span class="studio-boot-arm-payload"></span>
+              </div>
+            </div>
+          </div>
+          <span class="studio-boot-arm-ground-part"></span>
         </div>
-        <span class="studio-boot-drop-zone"></span>
-        <span class="studio-boot-transfer-part"></span>
         <div class="studio-boot-energy">
           <span class="studio-boot-energy-fill"></span>
           <span class="studio-boot-spark studio-boot-spark--a"></span>
@@ -80,8 +96,10 @@
       </div>
       <p class="studio-boot-progress-copy"><span id="studio-boot-percent">8%</span> assembled</p>
       <div class="studio-boot-logo" aria-hidden="true">
+        <span class="studio-boot-gear-loader" aria-hidden="true"></span>
         <img src="/render3d-logo.png?v=20260715-new-logo" alt="" width="34" height="34" />
-        <span>Render3D</span>
+        <span class="studio-boot-logo-word">Render3D</span>
+        <span id="studio-boot-logo-percent" class="studio-boot-logo-percent">8%</span>
       </div>
     </div>
   </div>
@@ -90,6 +108,7 @@
     var WALKTHROUGH_KEY = "render3d:bootWalkthroughQueued:v1";
     var boot = document.getElementById("studio-boot-screen");
     var pctEl = document.getElementById("studio-boot-percent");
+    var logoPctEl = document.getElementById("studio-boot-logo-percent");
     var subEl = document.getElementById("studio-boot-sub");
     var tipEl = document.getElementById("studio-boot-tip-text");
     var learnBtn = document.getElementById("studio-boot-learn-more");
@@ -148,6 +167,7 @@
       boot.style.setProperty("--boot-progress", shown);
       boot.style.setProperty("--boot-progress-pct", shown + "%");
       if (pctEl) pctEl.textContent = shown + "%";
+      if (logoPctEl) logoPctEl.textContent = shown + "%";
       if (shown >= 100 && timer) {
         clearInterval(timer);
         timer = null;
@@ -587,7 +607,7 @@
               <div id="rigging-adjust-sliders" class="cad-param-list rigging-adjust-sliders"></div>
             </div>
           </aside>
-          <footer id="rigging-anim-panel" class="rigging-anim-panel"></footer>
+          <footer id="rigging-anim-panel" class="rigging-anim-panel hidden"></footer>
         </div>
         <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
           <header class="sketch-top-bar">
@@ -631,11 +651,30 @@
           title="Someone is generating with AI"
           aria-label="Someone is generating with AI"
         ></button>
-        <div class="viewport-view-bar" aria-label="Viewport display">
-          <button type="button" id="btn-grid-viewport" class="viewport-view-btn active" data-toggle-grid title="Toggle grid (Shift+G)" aria-pressed="true">Grid</button>
-          <button type="button" id="btn-color-viewport" class="viewport-view-btn" title="Color selected object or picked faces">Color</button>
-          <button type="button" id="btn-transparent-viewport" class="viewport-view-btn" title="Click objects to make them transparent" aria-pressed="false">Transparent</button>
+        <div class="viewport-tool-stack" aria-label="Viewport quick tools">
           <button type="button" id="btn-rig-robot-viewport" class="viewport-view-btn viewport-view-btn--rig" title="Set up robot rigging, URDF/SRDF, and MoveIt2 motion">Rig Robot</button>
+          <button type="button" id="btn-color-viewport" class="viewport-view-btn viewport-view-btn--paint" title="Color selected object or picked faces">🎨 Color</button>
+        </div>
+        <div class="viewport-view-bar" aria-label="Viewport display">
+          <div class="viewport-shot-control">
+            <button type="button" id="btn-screenshot-viewport" class="viewport-view-btn viewport-view-btn--shot" title="Download a screenshot using saved screenshot settings">Screenshot</button>
+            <button type="button" id="btn-screenshot-options" class="viewport-view-btn viewport-shot-options" aria-haspopup="menu" aria-expanded="false" aria-controls="viewport-shot-menu" title="Screenshot options">▾</button>
+            <div id="viewport-shot-menu" class="viewport-shot-menu hidden" role="menu" aria-label="Screenshot options">
+              <button type="button" data-shot-mode="viewport" role="menuitem">
+                <strong>Viewport window</strong>
+                <span>Capture the full 3D viewport.</span>
+              </button>
+              <button type="button" data-shot-mode="crop" role="menuitem">
+                <strong>Saved crop</strong>
+                <span>Drag a crop once, then reuse it.</span>
+              </button>
+              <button type="button" data-shot-mode="ask" role="menuitem">
+                <strong>Ask each time</strong>
+                <span>Show choices before capturing.</span>
+              </button>
+            </div>
+          </div>
+          <button type="button" id="btn-transparent-viewport" class="viewport-view-btn" title="Click objects to make them transparent" aria-pressed="false">Transparent</button>
         </div>
         <div id="viewport-measure-readout" class="viewport-measure-readout hidden" aria-live="polite">
           <div class="viewport-measure-value" data-measure-value>—</div>
@@ -652,7 +691,6 @@
           <button type="button" id="btn-mobile-models" class="mobile-showcase-btn">Models</button>
           <button type="button" id="btn-mobile-fit" class="mobile-showcase-btn">Home</button>
           <button type="button" id="btn-mobile-top" class="mobile-showcase-btn">Top</button>
-          <button type="button" id="btn-mobile-grid" class="mobile-showcase-btn">Grid</button>
         </div>
         <button type="button" id="mobile-tools-fab" class="mobile-tools-fab" aria-expanded="false" aria-controls="mobile-tools-popup" aria-label="Viewport tools" title="Tools">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -661,9 +699,9 @@
           </svg>
         </button>
         <div id="mobile-tools-popup" class="mobile-tools-popup hidden" role="dialog" aria-label="Viewport tools">
-          <button type="button" data-mobile-tool="grid">Grid</button>
+          <button type="button" data-mobile-tool="screenshot">Screenshot</button>
           <button type="button" data-mobile-tool="transparent">Transparent</button>
-          <button type="button" data-mobile-tool="color">Color</button>
+          <button type="button" data-mobile-tool="color">🎨 Color</button>
           <button type="button" data-mobile-tool="fit">Home</button>
           <button type="button" data-mobile-tool="top">Top</button>
           <button type="button" data-mobile-tool="models">Models</button>
@@ -1262,7 +1300,16 @@
                     aria-describedby="prompt-spice-tip"
                   >
                     <input type="checkbox" id="prompt-spice" />
-                    <span>Improve prompt with AI</span>
+                    <span class="prompt-spice-check" aria-hidden="true"></span>
+                    <span class="prompt-spice-label">
+                      <span class="prompt-spice-ai-mark" aria-hidden="true">
+                        <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <path d="M6 1.2l.85 2.55L9.4 4.6 6.85 6.05 6 8.8l-.85-2.75L2.6 4.6l2.55-.85L6 1.2z" fill="currentColor" opacity="0.95"/>
+                          <path d="M9.6 7.1l.4 1.2 1.2.4-1.2.4-.4 1.2-.4-1.2-1.2-.4 1.2-.4.4-1.2z" fill="currentColor" opacity="0.7"/>
+                        </svg>
+                      </span>
+                      Improve prompt with AI
+                    </span>
                   </label>
                   <button
                     type="button"
@@ -1289,7 +1336,7 @@
                     Rewrites your text into a clearer CAD brief — sizes, features, and intent — so generation lands closer to what you meant.
                   </p>
                   <ul class="prompt-spice-tip-list">
-                    <li>Off by default — sends your exact wording</li>
+                    <li>On by default — rewrites rough ideas into clearer CAD specs</li>
                     <li>Turn on to rewrite into a clearer CAD brief</li>
                     <li>Eye icon compares original vs improved</li>
                   </ul>
@@ -1659,7 +1706,7 @@
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-fit">Fit view</button>
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-gizmo">Gizmo</button>
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-wireframe">Wireframe</button>
-          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-grid">Grid</button>
+          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-screenshot-viewport">Screenshot</button>
         </div>
       </section>
       <section class="mobile-tool-section">
@@ -1884,14 +1931,28 @@
           </button>
         </div>
         <div class="welcome-robot" aria-hidden="true">
-          <span class="welcome-robot-base"></span>
-          <span class="welcome-robot-joint welcome-robot-joint--base"></span>
-          <span class="welcome-robot-arm welcome-robot-arm--lower"></span>
-          <span class="welcome-robot-joint welcome-robot-joint--elbow"></span>
-          <span class="welcome-robot-arm welcome-robot-arm--upper"></span>
-          <span class="welcome-robot-joint welcome-robot-joint--wrist"></span>
-          <span class="welcome-robot-claw welcome-robot-claw--top"></span>
-          <span class="welcome-robot-claw welcome-robot-claw--bottom"></span>
+          <div class="welcome-robot-base-unit">
+            <span class="welcome-robot-plate"></span>
+            <span class="welcome-robot-pedestal"></span>
+            <span class="welcome-robot-column"></span>
+          </div>
+          <div class="welcome-robot-shoulder">
+            <span class="welcome-robot-pivot"></span>
+            <div class="welcome-robot-boom">
+              <span class="welcome-robot-link welcome-robot-link--a"></span>
+              <span class="welcome-robot-elbow"></span>
+              <span class="welcome-robot-link welcome-robot-link--b"></span>
+              <div class="welcome-robot-hand">
+                <span class="welcome-robot-wrist"></span>
+                <span class="welcome-robot-grip">
+                  <span class="welcome-robot-jaw welcome-robot-jaw--a"></span>
+                  <span class="welcome-robot-jaw welcome-robot-jaw--b"></span>
+                </span>
+                <span class="welcome-robot-held"></span>
+              </div>
+            </div>
+          </div>
+          <span class="welcome-robot-placed"></span>
         </div>
       </div>
       <div class="welcome-copy">
@@ -2260,11 +2321,11 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/toolbar-nav.js?v=20260715-mobile-app"></script>
+  <script type="module" src="/toolbar-nav.js?v=20260715-navbar-visible-actions"></script>
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-at-scene-refs"></script>
+  <script type="module" src="/app.js?v=20260715-render-project-badge"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

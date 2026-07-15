@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ship a product update: append shipped.json → sync milestones → Discord announce.
+"""Ship a product update: append shipped.json → sync milestones → Discord + LinkedIn announce.
 
 Example:
   python scripts/ship-update.py \\
@@ -39,7 +39,8 @@ def main() -> int:
     ap.add_argument("--href", default="/updates.html")
     ap.add_argument("--visual", default="")
     ap.add_argument("--date", default=date.today().isoformat())
-    ap.add_argument("--skip-discord", action="store_true")
+    ap.add_argument("--skip-discord", action="store_true", help="Skip Discord + LinkedIn announce")
+    ap.add_argument("--skip-social", action="store_true", help="Alias for --skip-discord")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -85,26 +86,32 @@ def main() -> int:
         print("scan-milestones failed", file=sys.stderr)
         return scan.returncode
 
-    if args.skip_discord:
+    if args.skip_discord or args.skip_social:
         return 0
 
-    from backend.services import discord_updates_service as discord
+    from backend.services import social_updates_service as social
 
-    if not discord.configured():
-        print("Discord not configured — skipped")
+    cfg = social.configured()
+    if not cfg.get("any"):
+        print("Social announce not configured (Discord / LinkedIn) — skipped")
         return 0
     try:
-        result = discord.announce_update(row)
+        result = social.announce_update(row)
         print(json.dumps(result, indent=2))
         if not result.get("ok"):
-            st = discord.connection_status()
-            if st.get("invite_url"):
-                print(f"Invite bot: {st['invite_url']}")
+            st = social.connection_status()
+            disc = st.get("discord") or {}
+            if disc.get("invite_url") and not disc.get("channel_ok"):
+                print(f"Invite Discord bot: {disc['invite_url']}")
+            li = st.get("linkedin") or {}
+            if li.get("error"):
+                print(f"LinkedIn: {li['error']}")
             return 1
     except Exception as err:
-        print(f"Discord announce failed: {err}", file=sys.stderr)
-        st = discord.connection_status()
-        print(f"Invite bot: {st.get('invite_url')}", file=sys.stderr)
+        print(f"Social announce failed: {err}", file=sys.stderr)
+        st = social.connection_status()
+        disc = st.get("discord") or {}
+        print(f"Invite Discord bot: {disc.get('invite_url')}", file=sys.stderr)
         return 1
     return 0
 

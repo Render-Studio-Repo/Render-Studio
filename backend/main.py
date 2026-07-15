@@ -13314,9 +13314,12 @@ def _scene_render_prompt(user_prompt: str, project_name: str | None, base_filena
         context += f" ({base_filename})"
     return (
         "Create a photorealistic product/environment render using the provided viewport image as the exact 3D model reference. "
-        "Preserve the model's geometry, proportions, color/material intent, and visible orientation. "
+        "Preserve the model's geometry, proportions, and visible orientation. "
         "Do not redesign the model. Place it naturally in the requested real-life environment with realistic lighting, shadows, "
-        "camera perspective, contact with surfaces, and plausible scale.\n\n"
+        "camera perspective, contact with surfaces, and plausible scale. "
+        "Improve the visual material treatment to make the model feel real: choose plausible base colors, subtle roughness/metal/plastic/wood cues, "
+        "edge wear, seams, decals, or contrast panels only when they fit the object. Keep these recolor and texture decisions believable, "
+        "manufacturable, and compatible with the existing CAD surfaces so they can be used as a reference for recoloring the model later.\n\n"
         f"{context}\n"
         f"User environment/render direction: {user_prompt}"
     )
@@ -14350,6 +14353,7 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
         "prompt_mode": "render",
         "file_kind": "image",
         "section": "renders",
+        "base_filename": body.base_filename,
     }
 
 

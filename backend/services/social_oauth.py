@@ -295,9 +295,10 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
                     (user_id, safe_email, display_name, "", picture_url, now),
                 )
                 team_id = str(uuid.uuid4())[:8]
+                first_name = display_name.split()[0] if display_name.split() else display_name
                 conn.execute(
                     "INSERT INTO teams (id, name, created_by, created_at) VALUES (?, ?, ?, ?)",
-                    (team_id, f"{display_name}'s Team", user_id, now),
+                    (team_id, f"{first_name}'s Workspace", user_id, now),
                 )
                 conn.execute(
                     "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",

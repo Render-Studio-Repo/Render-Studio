@@ -9,6 +9,57 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "rigging-animation-banner",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Rigging animation banner",
+    summary:
+      "Rigging animation controls now appear as a collapsible top-center banner only when a playable animation or motion source is available.",
+    visual: "/docs/media/picks.gif?v=20260715-real",
+    href: "/",
+  },
+  {
+    id: "saved-screenshot-options",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Saved screenshot options",
+    summary:
+      "The viewport Screenshot button can now ask for a capture mode, save a full-window or crop preference, and reuse that setting on the next click.",
+    visual: "/docs/media/picks.gif?v=20260715-real",
+    href: "/",
+  },
+  {
+    id: "rendered-texture-apply",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Rendered texture apply prompt",
+    summary:
+      "Photoreal Render now asks the image model for realistic material and recolor cues, then offers to attach the render as a reference for recoloring the original CAD model.",
+    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    href: "/",
+  },
+  {
+    id: "first-project-prompt-onboarding",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "First-project AI prompt walkthrough",
+    summary:
+      "New users now get a guided prompt tour covering Improve Prompt, Speed vs Quality, project references, object selection, mic dictation, Draw, 2.0, Codex, and Knowledge Base.",
+    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    href: "/?showMe=prompt-onboarding",
+    keywords: ["onboarding", "prompt", "improve", "speed", "quality", "codex", "knowledge base", "first project"],
+  },
+  {
+    id: "personal-shared-workspace-destinations",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Personal and shared project destinations",
+    summary:
+      "Project Explorer now labels your personal files by name, highlights shared workspaces with member counts, and can ask where to create new projects when you are working in a shared workspace.",
+    visual: "/docs/media/workspaces.gif?v=20260715-real",
+    href: "/",
+  },
+  {
     id: "visual-skills-library",
     date: "2026-07-15",
     kind: "feature",

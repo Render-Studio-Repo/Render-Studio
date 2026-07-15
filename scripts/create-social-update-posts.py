@@ -194,70 +194,64 @@ def post_to_discord(posts: list[dict], *, limit: int = 0) -> dict:
     if st.get("error") or not st.get("channel_ok"):
         return {"ok": False, "status": st, "posted": []}
 
-    # Extend service inline via multipart upload helper in this script.
-    import json as _json
-    import mimetypes
-    import uuid
-    import urllib.request
-
-    token = discord._token()
-    channel = discord._channel_id()
     posted = []
     selected = posts[: limit or None]
     for p in selected:
         gif_path = GIF_DIR / p["gif"]
-        payload = {
-            "content": p["discord"][:2000],
-            "allowed_mentions": {"parse": []},
-        }
         if gif_path.is_file():
-            boundary = f"----Render3D{uuid.uuid4().hex}"
-            body = bytearray()
-            body.extend(f"--{boundary}\r\n".encode())
-            body.extend(b'Content-Disposition: form-data; name="payload_json"\r\n')
-            body.extend(b"Content-Type: application/json\r\n\r\n")
-            body.extend(_json.dumps(payload).encode())
-            body.extend(b"\r\n")
-            mime = mimetypes.guess_type(str(gif_path))[0] or "image/gif"
-            body.extend(f"--{boundary}\r\n".encode())
-            body.extend(
-                f'Content-Disposition: form-data; name="files[0]"; filename="{gif_path.name}"\r\n'.encode()
-            )
-            body.extend(f"Content-Type: {mime}\r\n\r\n".encode())
-            body.extend(gif_path.read_bytes())
-            body.extend(b"\r\n")
-            body.extend(f"--{boundary}--\r\n".encode())
-            req = urllib.request.Request(
-                f"https://discord.com/api/v10/channels/{channel}/messages",
-                data=bytes(body),
-                method="POST",
-                headers={
-                    "Authorization": f"Bot {token}",
-                    "Content-Type": f"multipart/form-data; boundary={boundary}",
-                    "User-Agent": "Render3DUpdatesBot (https://render3d.app, 1.0)",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                msg = _json.loads(resp.read().decode())
+            msg = discord.send_channel_message_with_file(p["discord"][:2000], gif_path)
         else:
             msg = discord.announce_text(p["discord"])
             msg = {"id": msg.get("message_id")}
-        # Mark id as posted for dedupe (do not send a second embed).
         try:
             posted_ids = discord._load_posted()
-            if p.get("id"):
-                posted_ids.add(p["id"])
-                discord._save_posted(posted_ids)
+            posted_ids.add(p["id"])
+            discord._save_posted(posted_ids)
         except Exception:
             pass
-        posted.append({"id": p["id"], "message_id": msg.get("id"), "gif": p.get("gif")})
+        posted.append({"id": p["id"], "message_id": msg.get("id")})
     return {"ok": True, "posted": posted, "status": st}
+
+
+def post_to_linkedin(posts: list[dict], *, limit: int = 0) -> dict:
+    from backend.services import linkedin_updates_service as linkedin
+
+    st = linkedin.connection_status()
+    if not linkedin.configured():
+        return {"ok": False, "status": st, "posted": [], "reason": "not_configured"}
+
+    posted = []
+    selected = posts[: limit or None]
+    for p in selected:
+        gif_path = GIF_DIR / p["gif"]
+        row = {
+            "id": p["id"],
+            "title": p["title"],
+            "linkedin": p["linkedin"],
+            "href": p.get("href") or "/updates.html",
+            "media": str(gif_path) if gif_path.is_file() else None,
+        }
+        try:
+            result = linkedin.announce_update(row, force=False)
+            posted.append({"id": p["id"], **result})
+        except Exception as err:
+            posted.append({"id": p["id"], "ok": False, "error": str(err)})
+    failed = sum(1 for r in posted if not r.get("ok") and not r.get("skipped"))
+    return {
+        "ok": failed == 0,
+        "posted": posted,
+        "status": st,
+        "failed": failed,
+    }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--post-discord", action="store_true")
+    ap.add_argument("--post-linkedin", action="store_true")
+    ap.add_argument("--post-all", action="store_true", help="Post to Discord + LinkedIn")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--wait-discord", type=int, default=0, help="Seconds to wait for Discord bot invite")
     args = ap.parse_args()
 
     posts = UPDATES
@@ -267,16 +261,44 @@ def main() -> int:
     for p in posts:
         print(f"  - {p['id']}: discord={len(p['discord'])} linkedin={len(p['linkedin'])} gif={p['gif']}")
 
-    if args.post_discord:
+    do_discord = args.post_discord or args.post_all
+    do_linkedin = args.post_linkedin or args.post_all
+    exit_code = 0
+
+    if do_discord and args.wait_discord > 0:
+        import time
+
+        deadline = time.time() + args.wait_discord
+        while time.time() < deadline:
+            st = discord.connection_status()
+            if st.get("channel_ok"):
+                print("Discord ready.")
+                break
+            print("Waiting for Discord bot invite…", st.get("error") or st.get("invite_url"))
+            time.sleep(8)
+        else:
+            print("Timed out waiting for Discord.")
+            exit_code = 1
+
+    if do_discord:
         result = post_to_discord(posts, limit=args.limit)
-        print(json.dumps({k: v for k, v in result.items() if k != "status"}, indent=2))
+        print("Discord:", json.dumps({k: v for k, v in result.items() if k != "status"}, indent=2))
         if not result.get("ok"):
             st = result.get("status") or {}
             print("Discord not ready:", st.get("error") or st)
             if st.get("invite_url"):
                 print("Invite:", st["invite_url"])
-            return 1
-    return 0
+            exit_code = 1
+
+    if do_linkedin:
+        result = post_to_linkedin(posts, limit=args.limit)
+        print("LinkedIn:", json.dumps({k: v for k, v in result.items() if k != "status"}, indent=2))
+        if not result.get("ok"):
+            st = result.get("status") or {}
+            print("LinkedIn not ready:", st.get("error") or result.get("reason") or st)
+            exit_code = 1
+
+    return exit_code
 
 
 if __name__ == "__main__":

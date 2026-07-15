@@ -5,6 +5,8 @@ _Each post ≤ 2800 chars. Upload the matching branded GIF as media._
 Media: `docs/media/social/render-agent.social.gif`
 
 ```
+**Feature**
+
 New in Render3D for CAD developers and makers:
 
 Render Agent → Do it for me
@@ -13,32 +15,36 @@ Describe the outcome. The agent collects task + project + object context, explai
 Built for faster onboarding inside a real AI CAD studio — not a slide deck.
 
 Click here to try it: https://render3d.app/getting-started.html#render-agent
-Changelog: https://render3d.app/updates.html
+Updates: https://render3d.app/updates.html
 
 #CAD #AI #3DPrinting #Robotics #Render3D #Developers
 ```
-Chars: 479
+Chars: 490
 
 ## 2. Mode 2.0 selected-face edits
 Media: `docs/media/social/picks.social.gif`
 
 ```
+**Feature**
+
 Shipping a precision upgrade in Render3D Mode 2.0:
 
 Selected-face length edits
 Face/component refs now keep generative edit mode on the live viewport object, so “make this 20mm longer” revises the part you picked — not a stale baseline.
 
 Click here to try it: https://render3d.app/getting-started.html#picks
-More updates: https://render3d.app/updates.html
+Updates: https://render3d.app/updates.html
 
 #GenerativeDesign #CAD #AI #Manufacturing #Render3D
 ```
-Chars: 408
+Chars: 416
 
 ## 3. App-like mobile studio
 Media: `docs/media/social/select-object.social.gif`
 
 ```
+**Feature**
+
 Render3D mobile just got a true app shell:
 
 • Central ☰ menu grid for studio actions
@@ -48,16 +54,18 @@ Render3D mobile just got a true app shell:
 • Explorer model select auto-opens the part
 
 Click here to try it: https://render3d.app/
-Changelog: https://render3d.app/updates.html
+Updates: https://render3d.app/updates.html
 
 #MobileCAD #AI #3D #ProductDesign #Render3D
 ```
-Chars: 408
+Chars: 419
 
 ## 4. Metallic gen loader + ready banner
 Media: `docs/media/social/ai-generate.social.gif`
 
 ```
+**Improve**
+
 A small UX detail that changes how AI CAD feels in Render3D:
 
 Generation HUD (bottom-right)
@@ -73,12 +81,14 @@ Updates: https://render3d.app/updates.html
 
 #UX #AI #CAD #Render3D #DeveloperExperience
 ```
-Chars: 491
+Chars: 504
 
 ## 5. Realtime editor viewport popup
 Media: `docs/media/social/workspaces.social.gif`
 
 ```
+**Feature**
+
 Render3D realtime collaboration got a cleaner viewport flow:
 
 Realtime editor popup
@@ -89,4 +99,4 @@ Updates: https://render3d.app/updates.html
 
 #Collaboration #CAD #Realtime #Render3D
 ```
-Chars: 380
+Chars: 393
