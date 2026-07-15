@@ -7493,6 +7493,7 @@ def get_workspace_realtime_editor(team_id: str, user: dict[str, Any] = Depends(g
                     "wiring": (summary.get("browser") or {}).get("wiring") or [],
                     "drawings": (summary.get("browser") or {}).get("drawings") or [],
                     "references": (summary.get("browser") or {}).get("references") or [],
+                    "renders": (summary.get("browser") or {}).get("renders") or [],
                 },
                 "fusion_source": meta.get("autodesk_source"),
                 "fusion_mirrors": [
@@ -9512,7 +9513,7 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
     try:
         browser = cad_service.list_browser_tree(project_path)
     except Exception:
-        browser = {"components": [], "sketches": [], "wiring": [], "drawings": [], "references": []}
+        browser = {"components": [], "sketches": [], "wiring": [], "drawings": [], "references": [], "renders": []}
     robot = _robot_artifact_summary(project_path)
     robot_artifacts = [
         {
