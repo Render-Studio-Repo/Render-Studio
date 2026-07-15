@@ -1,8 +1,8 @@
 /** Project collaboration chat — popup over the viewport. */
 
 import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
-import { matchGettingStartedGuides } from "./getting-started-guides.js?v=20260715-link-prompt";
-import { startShowMe } from "./show-me-tour.js?v=20260715-chat-show-me";
+import { matchGettingStartedGuides } from "./getting-started-guides.js?v=20260715-chat-show-me-actions";
+import { startShowMe } from "./show-me-tour.js?v=20260715-chat-show-me-actions";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀"];
 const LS_UNREAD = "render3d:projectChatUnread:v1";
@@ -223,6 +223,10 @@ export function createProjectChatUI({
   let workspaceRole = null;
   let activeThreadMeta = null;
   let imageBlobUrls = [];
+  let inboxView = "inbox";
+  let groupPickerOpen = false;
+  let clickRippleBroadcast = false;
+  let remoteAssistActive = false;
 
   function revokeImageBlobs() {
     for (const url of imageBlobUrls) {
@@ -310,6 +314,7 @@ export function createProjectChatUI({
             <span id="pc-subtitle" class="pc-subtitle muted">Collaborate on this model</span>
           </div>
           <div class="pc-head-actions">
+            <button type="button" class="pc-icon-btn" id="pc-new-group" title="New group">Group</button>
             <button type="button" class="pc-icon-btn" id="pc-new-thread" title="New thread">＋</button>
             <button type="button" class="pc-icon-btn" id="pc-close" title="Close chat" aria-label="Close">✕</button>
           </div>
@@ -318,6 +323,7 @@ export function createProjectChatUI({
           <aside class="pc-threads" id="pc-threads" aria-label="Threads"></aside>
           <section class="pc-main">
             <div id="pc-thread-invite" class="pc-thread-invite hidden"></div>
+            <div id="pc-collab-bar" class="pc-collab-bar hidden"></div>
             <div class="pc-messages" id="pc-messages" aria-live="polite"></div>
             <div id="pc-reply-bar" class="pc-reply-bar hidden"></div>
             <div id="pc-drop-hint" class="pc-drop-hint hidden">Drop images to attach</div>
@@ -345,6 +351,7 @@ export function createProjectChatUI({
             </div>
           </section>
         </div>
+        <div id="pc-group-modal" class="pc-group-modal hidden" role="dialog" aria-modal="false" aria-label="Create chat group"></div>
       </div>
     `;
     document.body.appendChild(overlay);
@@ -355,6 +362,7 @@ export function createProjectChatUI({
     overlay.querySelector("#pc-close")?.addEventListener("click", close);
     overlay.querySelector("#pc-send")?.addEventListener("click", () => void sendMessage());
     overlay.querySelector("#pc-new-thread")?.addEventListener("click", () => void createThread());
+    overlay.querySelector("#pc-new-group")?.addEventListener("click", () => openGroupPicker());
     overlay.querySelector("#pc-file-input")?.addEventListener("change", (ev) => {
       addFiles([...ev.target.files || []]);
       ev.target.value = "";
@@ -511,27 +519,191 @@ export function createProjectChatUI({
     });
   }
 
+  function inviteableUsers() {
+    return (candidates || []).filter((c) => c.type === "user" && c.id);
+  }
+
+  function openGroupPicker() {
+    groupPickerOpen = true;
+    renderGroupPicker();
+  }
+
+  function closeGroupPicker() {
+    groupPickerOpen = false;
+    const modal = overlay?.querySelector("#pc-group-modal");
+    modal?.classList.add("hidden");
+  }
+
+  function renderGroupPicker() {
+    const modal = overlay?.querySelector("#pc-group-modal");
+    if (!modal) return;
+    if (!groupPickerOpen) {
+      modal.classList.add("hidden");
+      modal.innerHTML = "";
+      return;
+    }
+    const people = inviteableUsers();
+    modal.classList.remove("hidden");
+    modal.innerHTML = `
+      <div class="pc-group-card">
+        <div class="pc-group-head">
+          <strong>Create group chat</strong>
+          <button type="button" class="pc-icon-btn" data-pc-group-close>Close</button>
+        </div>
+        <label class="pc-group-label">Group name
+          <input id="pc-group-title" type="text" maxlength="80" placeholder="Design help, wiring review, onboarding..." />
+        </label>
+        <div class="pc-group-people">
+          ${people.length ? people.map((person) => `
+            <label class="pc-group-person">
+              <input type="checkbox" value="${esc(person.id)}" />
+              <span>${esc(person.display_name || person.email || "Teammate")}</span>
+              <small>${esc(person.email || person.handle || "")}</small>
+            </label>
+          `).join("") : `<p class="muted small">No workspace teammates available yet.</p>`}
+        </div>
+        <div class="pc-group-actions">
+          <button type="button" class="btn secondary" data-pc-group-close>Cancel</button>
+          <button type="button" class="btn accent" id="pc-create-group">Create group</button>
+        </div>
+      </div>
+    `;
+    modal.querySelectorAll("[data-pc-group-close]").forEach((btn) => btn.addEventListener("click", closeGroupPicker));
+    modal.querySelector("#pc-create-group")?.addEventListener("click", () => void createGroupThread());
+  }
+
+  async function createGroupThread() {
+    const projectId = getProjectId?.();
+    const title = overlay?.querySelector("#pc-group-title")?.value?.trim() || "Group chat";
+    const inviteIds = [...(overlay?.querySelectorAll(".pc-group-person input:checked") || [])].map((input) => input.value);
+    if (!projectId || !title) return;
+    try {
+      const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, visibility: "private", kind: "group", invite_user_ids: inviteIds }),
+      });
+      closeGroupPicker();
+      await loadThreads();
+      if (data.thread?.id) await selectThread(data.thread.id);
+      onStatus?.("ok", "Group chat created");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not create group");
+    }
+  }
+
+  async function sendAssist(action, extra = {}) {
+    const projectId = getProjectId?.();
+    if (!projectId || !activeThreadId) return null;
+    return api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(activeThreadId)}/assist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...extra }),
+    });
+  }
+
+  function showClickRipple(x, y, label = "") {
+    const ripple = document.createElement("span");
+    ripple.className = "pc-click-ripple";
+    ripple.style.left = `${Math.max(0, Math.min(1, Number(x || 0))) * 100}%`;
+    ripple.style.top = `${Math.max(0, Math.min(1, Number(y || 0))) * 100}%`;
+    ripple.textContent = label ? "Click" : "";
+    document.body.appendChild(ripple);
+    window.setTimeout(() => ripple.remove(), 1150);
+  }
+
+  function handleDocumentAssistClick(ev) {
+    if (!clickRippleBroadcast || !activeThreadId || ev.target.closest("#project-chat-overlay")) return;
+    const x = ev.clientX / Math.max(1, window.innerWidth);
+    const y = ev.clientY / Math.max(1, window.innerHeight);
+    showClickRipple(x, y, "local");
+    void sendAssist("click_ripple", { x, y, note: "helper-click" }).catch(() => {});
+  }
+
+  function setClickRippleBroadcast(enabled) {
+    clickRippleBroadcast = !!enabled;
+    document.removeEventListener("pointerdown", handleDocumentAssistClick, true);
+    if (clickRippleBroadcast) document.addEventListener("pointerdown", handleDocumentAssistClick, true);
+    renderCollabBar();
+  }
+
   function renderThreads() {
     const host = overlay?.querySelector("#pc-threads");
     if (!host) return;
-    host.innerHTML = threads
+    const filtered = threads.filter((thread) => {
+      if (inboxView === "groups") return thread.kind === "group" || Number(thread.member_count || 0) > 1;
+      if (inboxView === "mentions") return thread.last_message?.mentions?.length || false;
+      if (inboxView === "private") return thread.visibility === "private";
+      return true;
+    });
+    host.innerHTML = `
+      <div class="pc-inbox-head">
+        <strong>Inbox</strong>
+        <div class="pc-inbox-tabs">
+          ${["inbox", "groups", "private"].map((view) => `
+            <button type="button" class="${inboxView === view ? "active" : ""}" data-pc-inbox="${view}">${view === "inbox" ? "All" : view}</button>
+          `).join("")}
+        </div>
+      </div>
+      ${filtered.length ? filtered
       .map((thread) => {
         const active = thread.id === activeThreadId ? " active" : "";
         const preview = thread.last_message?.body || "No messages yet";
         const badge =
-          thread.visibility === "private"
-            ? `<em class="pc-thread-badge">Private</em>`
-            : thread.slug === "general"
+          thread.kind === "group"
+            ? `<em class="pc-thread-badge pc-thread-badge--group">Group</em>`
+            : thread.visibility === "private"
+              ? `<em class="pc-thread-badge">Private</em>`
+              : thread.slug === "general"
               ? `<em class="pc-thread-badge pc-thread-badge--shared">Render Studio</em>`
               : `<em class="pc-thread-badge pc-thread-badge--shared">Shared</em>`;
         return `<button type="button" class="pc-thread-item${active}" data-thread-id="${esc(thread.id)}">
           <strong>${esc(thread.title || "Thread")} ${badge}</strong>
           <span>${esc(preview.slice(0, 72))}</span>
+          <small>${Number(thread.member_count || 1)} people · ${Number(thread.message_count || 0)} messages</small>
         </button>`;
       })
-      .join("");
+      .join("") : `<p class="pc-empty muted">No ${esc(inboxView)} threads yet.</p>`}
+    `;
+    host.querySelectorAll("[data-pc-inbox]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        inboxView = btn.dataset.pcInbox || "inbox";
+        renderThreads();
+      });
+    });
     host.querySelectorAll("[data-thread-id]").forEach((btn) => {
       btn.addEventListener("click", () => void selectThread(btn.dataset.threadId));
+    });
+  }
+
+  function renderCollabBar() {
+    const bar = overlay?.querySelector("#pc-collab-bar");
+    if (!bar) return;
+    if (!activeThreadMeta) {
+      bar.classList.add("hidden");
+      bar.innerHTML = "";
+      return;
+    }
+    bar.classList.remove("hidden");
+    bar.innerHTML = `
+      <div class="pc-collab-actions">
+        <button type="button" class="btn btn-compact secondary" data-pc-assist="facetime">FaceTime</button>
+        <button type="button" class="btn btn-compact secondary" data-pc-assist="screen_share">Share screen</button>
+        <button type="button" class="btn btn-compact secondary${remoteAssistActive ? " active" : ""}" data-pc-assist="remote_assist">Remote assist</button>
+        <button type="button" class="btn btn-compact secondary${clickRippleBroadcast ? " active" : ""}" data-pc-ripple-toggle>
+          ${clickRippleBroadcast ? "Stop ripples" : "Show clicks"}
+        </button>
+      </div>
+      <span class="pc-collab-status">${remoteAssistActive ? "Assist mode on: helpers can show clicks with ripples." : "Start a call, share screen, or request guided help."}</span>
+    `;
+    bar.querySelectorAll("[data-pc-assist]").forEach((btn) => {
+      btn.addEventListener("click", () => void handleAssistAction(btn.dataset.pcAssist));
+    });
+    bar.querySelector("[data-pc-ripple-toggle]")?.addEventListener("click", () => {
+      setClickRippleBroadcast(!clickRippleBroadcast);
+      void sendAssist(clickRippleBroadcast ? "remote_control_grant" : "remote_control_end", {
+        note: clickRippleBroadcast ? "Click ripple guide enabled" : "Click ripple guide stopped",
+      }).catch(() => {});
     });
   }
 
@@ -589,6 +761,39 @@ export function createProjectChatUI({
       onStatus?.("ok", "Teammate invited to thread");
     } catch (err) {
       onStatus?.("error", err.message || "Could not invite");
+    }
+  }
+
+  async function handleAssistAction(action) {
+    try {
+      if (action === "screen_share") {
+        if (navigator.mediaDevices?.getDisplayMedia) {
+          const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          stream.getTracks().forEach((track) => {
+            track.addEventListener("ended", () => {
+              void sendAssist("assist_end", { note: "Screen share stopped" }).catch(() => {});
+            });
+          });
+        }
+        await sendAssist("screen_share", { note: "Started screen share" });
+        onStatus?.("ok", "Screen share started for this thread");
+        return;
+      }
+      if (action === "facetime") {
+        await sendAssist("facetime", { note: "Started a FaceTime call" });
+        onStatus?.("ok", "FaceTime invite posted to this thread");
+        return;
+      }
+      if (action === "remote_assist") {
+        remoteAssistActive = !remoteAssistActive;
+        await sendAssist(remoteAssistActive ? "remote_assist" : "assist_end", {
+          note: remoteAssistActive ? "Remote assist requested" : "Remote assist ended",
+        });
+        renderCollabBar();
+        onStatus?.("ok", remoteAssistActive ? "Remote assist requested" : "Remote assist ended");
+      }
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not start collaboration");
     }
   }
 
@@ -764,6 +969,7 @@ export function createProjectChatUI({
     messages = data.thread?.messages || [];
     activeThreadMeta = data.thread || threads.find((t) => t.id === threadId) || null;
     renderInviteBar();
+    renderCollabBar();
     renderMessages();
     await api(`/api/projects/${encodeURIComponent(projectId)}/chat/read`, {
       method: "POST",
@@ -950,6 +1156,23 @@ export function createProjectChatUI({
     if (msg.type === "project.chat.reaction" && msg.message && open) {
       messages = messages.map((m) => (m.id === msg.message.id ? msg.message : m));
       renderMessages();
+    }
+    if (msg.type === "project.chat.assist") {
+      if (msg.action === "click_ripple" && msg.by_user_id !== getStoredUser()?.id) {
+        showClickRipple(msg.x, msg.y, msg.by_user_name || "Helper");
+      }
+      if (msg.action === "remote_assist" || msg.action === "remote_control_grant") {
+        remoteAssistActive = true;
+        if (open) renderCollabBar();
+        onStatus?.("ok", `${msg.by_user_name || "Someone"} started remote assist`);
+      }
+      if (msg.action === "assist_end" || msg.action === "remote_control_end") {
+        remoteAssistActive = false;
+        if (open) renderCollabBar();
+      }
+      if (msg.action === "screen_share" || msg.action === "facetime") {
+        onStatus?.("ok", `${msg.by_user_name || "Someone"} started ${msg.action === "facetime" ? "FaceTime" : "screen share"}`);
+      }
     }
   }
 

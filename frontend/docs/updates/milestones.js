@@ -9,6 +9,16 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "discord-authorized-app-linking",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Discord authorized app linking",
+    summary:
+      "Users can now link Discord from Preferences so Render bot alerts can DM them when teammates tag them in project chat.",
+    visual: "/docs/media/share-folder.gif?v=20260715-real",
+    href: "/",
+  },
+  {
     id: "ai-setup-intro",
     date: "2026-07-15",
     kind: "feature",

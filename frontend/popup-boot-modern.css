@@ -143,7 +143,8 @@ label.new-project-workspace-remember {
   color: #e6edf3;
 }
 
-.studio-boot-logo img {
+.studio-boot-logo > .studio-boot-brand-mark,
+.studio-boot-logo > img.studio-boot-brand-mark {
   width: 72px;
   height: 72px;
   object-fit: cover;
@@ -155,37 +156,129 @@ label.new-project-workspace-remember {
   animation: studio-logo-charge 1.6s ease-in-out infinite;
 }
 
+/* Brushed chrome wordmark (matches futuristic gear metal) */
 .studio-boot-logo-word {
   font-size: clamp(1.2rem, 2vw, 1.7rem);
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: #f3f6fa;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  color: transparent;
+  background-image: linear-gradient(
+    118deg,
+    #5c6570 0%,
+    #a8b0ba 14%,
+    #f8fafc 28%,
+    #8b949e 42%,
+    #e5e7eb 55%,
+    #6b7280 70%,
+    #ffffff 84%,
+    #9ca3af 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.65))
+    drop-shadow(0 0 10px rgba(148, 163, 184, 0.28));
+  animation: studio-metal-sheen 3.4s ease-in-out infinite;
 }
 
-/* Real spinning gear; percent stays upright in the hub */
+@keyframes studio-metal-sheen {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Real spinning metal gear; percent stays upright in the hub */
 .studio-boot-logo-gear {
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   flex: 0 0 auto;
   margin-left: 2px;
   border-radius: 50%;
   background: transparent;
   box-shadow: none;
-  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.45))
-          drop-shadow(0 0 8px rgba(249, 115, 22, 0.28));
+  filter:
+    drop-shadow(0 0 12px rgba(34, 211, 238, 0.55))
+    drop-shadow(0 0 18px rgba(56, 189, 248, 0.28));
 }
 
-.studio-boot-logo-gear-svg {
+.studio-boot-logo-gear-spin {
   position: absolute;
   inset: 0;
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   animation: studio-gear-spin 1.6s linear infinite;
   transform-origin: 50% 50%;
+}
+
+.studio-boot-logo-gear-img {
+  position: absolute;
+  inset: 0;
+  width: 72px !important;
+  height: 72px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  /* Knock out the PNG's solid black square on the dark boot screen */
+  mix-blend-mode: screen;
+  filter:
+    drop-shadow(0 0 8px rgba(34, 211, 238, 0.35))
+    contrast(1.08)
+    brightness(1.05);
+  animation: none !important;
+}
+
+.studio-boot-logo-gear-electric {
+  position: absolute;
+  inset: 0;
+  width: 72px;
+  height: 72px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.studio-boot-elec-path {
+  stroke-dasharray: 10 28;
+  animation: studio-elec-flow 0.85s linear infinite;
+  opacity: 0.92;
+}
+
+.studio-boot-elec-path--b { animation-delay: -0.14s; }
+.studio-boot-elec-path--c { animation-delay: -0.28s; }
+.studio-boot-elec-path--d { animation-delay: -0.42s; }
+.studio-boot-elec-path--e { animation-delay: -0.56s; }
+.studio-boot-elec-path--f { animation-delay: -0.7s; }
+
+.studio-boot-elec-node {
+  animation: studio-elec-node 0.7s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.studio-boot-elec-node:nth-child(odd) { animation-delay: -0.25s; }
+.studio-boot-elec-node:nth-child(3n) { animation-delay: -0.45s; }
+
+@keyframes studio-elec-flow {
+  to { stroke-dashoffset: -38; }
+}
+
+@keyframes studio-elec-node {
+  0%, 100% {
+    opacity: 0.35;
+    filter: drop-shadow(0 0 1px rgba(103, 232, 249, 0.4));
+  }
+  40% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(165, 243, 252, 0.95));
+  }
+  70% {
+    opacity: 0.55;
+  }
 }
 
 .studio-boot-logo-gear::before,
@@ -200,16 +293,18 @@ label.new-project-workspace-remember {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: 28px !important;
-  height: 28px !important;
+  width: 30px !important;
+  height: 30px !important;
   min-width: 0 !important;
   margin: 0 !important;
   margin-left: 0 !important;
   padding: 0 !important;
   border: 0 !important;
   border-radius: 50% !important;
-  background: radial-gradient(circle at 40% 32%, #152033, #050914 72%) !important;
-  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.28) !important;
+  background: radial-gradient(circle at 40% 32%, rgba(21, 32, 51, 0.92), rgba(5, 9, 20, 0.94) 72%) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(125, 211, 252, 0.35) !important,
+    0 0 12px rgba(34, 211, 238, 0.35) !important;
   color: #e8f4ff !important;
   font-size: 0.72rem !important;
   font-weight: 800;
@@ -226,8 +321,11 @@ label.new-project-workspace-remember {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .studio-boot-logo-gear-svg,
-  .studio-boot-logo img {
+  .studio-boot-logo-gear-spin,
+  .studio-boot-logo > .studio-boot-brand-mark,
+  .studio-boot-logo-word,
+  .studio-boot-elec-path,
+  .studio-boot-elec-node {
     animation: none !important;
   }
 

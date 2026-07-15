@@ -22274,9 +22274,29 @@ window.addEventListener("keydown", (e) => {
   const designTabParam = new URLSearchParams(window.location.search).get("designTab");
   const showMeParam = new URLSearchParams(window.location.search).get("showMe");
   const projectParam = new URLSearchParams(window.location.search).get("project");
+  const discordLinkParam = new URLSearchParams(window.location.search).get("discord_link");
+  const discordErrorParam = new URLSearchParams(window.location.search).get("discord_error");
   if (askAgentParam) {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl || "/");
+  }
+  if (discordLinkParam) {
+    preferencesAdvancedOpen = true;
+    preferencesAdvancedTab = "authorized";
+    window.setTimeout(() => {
+      openPreferencesModal();
+      setEditStatus(
+        discordLinkParam === "connected" ? "ok" : "error",
+        discordLinkParam === "connected"
+          ? "Discord linked. Render bot alerts can now target this account."
+          : `Discord link failed${discordErrorParam ? `: ${discordErrorParam}` : "."}`,
+      );
+    }, 500);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("discord_link");
+    params.delete("discord_error");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
   }
   if (projectParam) {
     try {
@@ -23648,17 +23668,31 @@ window.addEventListener("keydown", (e) => {
     const host = panel?.querySelector("#pref-authorized-apps-list");
     if (!host) return;
     if (!currentUser) {
-      host.innerHTML = `<p class="muted small">Sign in to connect marketplace payout accounts.</p>`;
+      host.innerHTML = `<p class="muted small">Sign in to connect marketplace payout accounts and app integrations.</p>`;
       return;
     }
     try {
       const payments = await import("./marketplace-payments.js?v=20260715-payout-sso");
-      const seller = await payments.loadSellerStatus();
+      const [seller, discord] = await Promise.all([
+        payments.loadSellerStatus(),
+        api("/api/integrations/discord/status").catch((err) => ({ error: err.message || "Could not load Discord status." })),
+      ]);
       const details = seller?.payout_details || {};
       const short = (value = "") => {
         const text = String(value || "");
         return text.length > 14 ? `${text.slice(0, 6)}...${text.slice(-5)}` : text;
       };
+      const discordAccount = discord?.account || {};
+      const discordReady = !!discord?.connected;
+      const discordConfigured = !!discord?.configured;
+      const discordHandle = discordAccount?.handle || discordAccount?.display_name || "";
+      const discordDetail = discord?.error
+        ? discord.error
+        : discordReady
+          ? `Alerts can DM ${discordHandle ? `@${discordHandle}` : "this Discord account"}`
+          : discordConfigured
+            ? "Get bot alerts for Render messages and tags"
+            : "Needs Discord OAuth client settings";
       const rows = [
         {
           key: "stripe",
@@ -23687,6 +23721,16 @@ window.addEventListener("keydown", (e) => {
           action: "connect-phantom",
           cta: details.phantom?.wallet_address ? "Reconnect" : "Connect",
         },
+        {
+          key: "discord",
+          label: "Discord",
+          icon: "Discord",
+          detail: discordDetail,
+          connected: discordReady,
+          action: discordReady ? "unlink-discord" : "connect-discord",
+          cta: discordReady ? "Unlink" : discordConfigured ? "Link" : "Setup needed",
+          disabled: !!discord?.error || (!discordReady && !discordConfigured),
+        },
       ];
       host.innerHTML = rows.map((row) => `
         <article class="authorized-app-row authorized-app-row--${appEscapeHtml(row.key)}">
@@ -23696,7 +23740,7 @@ window.addEventListener("keydown", (e) => {
             <small>${appEscapeHtml(row.detail)}</small>
           </span>
           <span class="authorized-app-state ${row.connected ? "is-connected" : ""}">${row.connected ? "Connected" : "Not connected"}</span>
-          <button type="button" class="btn secondary btn-compact" data-authorized-app-action="${appEscapeHtml(row.action)}">${appEscapeHtml(row.cta)}</button>
+          <button type="button" class="btn secondary btn-compact" data-authorized-app-action="${appEscapeHtml(row.action)}" ${row.disabled ? "disabled" : ""}>${appEscapeHtml(row.cta)}</button>
         </article>
       `).join("");
     } catch (err) {
@@ -23851,7 +23895,7 @@ window.addEventListener("keydown", (e) => {
                   <b>CAD & files</b><small>Fusion, edits, workspace defaults</small>
                 </button>
                 <button type="button" data-preferences-advanced-tab="authorized" class="${preferencesAdvancedTab === "authorized" ? "active" : ""}">
-                  <b>Authorized apps</b><small>Stripe, PayPal, Phantom</small>
+                  <b>Authorized apps</b><small>Stripe, PayPal, Phantom, Discord</small>
                 </button>
                 <button type="button" data-preferences-advanced-tab="store" class="${preferencesAdvancedTab === "store" ? "active" : ""}">
                   <b>Store</b><small>Public shop, pricing, publish models</small>
@@ -23948,7 +23992,7 @@ window.addEventListener("keydown", (e) => {
               </article>
               <article class="profile-preferences-category profile-preferences-category--authorized ${preferencesAdvancedTab === "authorized" ? "" : "hidden"}" data-preferences-advanced-panel="authorized">
                 <h3>Authorized apps</h3>
-                <p class="muted small profile-preferences-note">Connected payout providers and marketplace account links.</p>
+                <p class="muted small profile-preferences-note">Connected payout providers, marketplace account links, and notification integrations.</p>
                 <div id="pref-authorized-apps-list" class="authorized-apps-list">
                   <p class="muted small">Loading authorized apps...</p>
                 </div>
@@ -24135,6 +24179,19 @@ window.addEventListener("keydown", (e) => {
       void (async () => {
         try {
           appAction.disabled = true;
+          if (action === "connect-discord") {
+            setEditStatus("ok", "Opening Discord authorization...");
+            const data = await api("/api/integrations/discord/link-url", { method: "POST" });
+            if (!data?.url) throw new Error("Discord authorization URL was not returned.");
+            window.location.href = data.url;
+            return;
+          }
+          if (action === "unlink-discord") {
+            await api("/api/integrations/discord/link", { method: "DELETE" });
+            setEditStatus("ok", "Discord unlinked.");
+            await hydrateAuthorizedApps(panel);
+            return;
+          }
           const payments = await import("./marketplace-payments.js?v=20260715-payout-sso");
           if (action === "connect-stripe") {
             setEditStatus("ok", "Opening Stripe Express...");

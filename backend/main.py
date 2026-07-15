@@ -876,6 +876,8 @@ class RenderAgentSuggestRequest(BaseModel):
 class ProjectChatThreadCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=80)
     visibility: str | None = Field(default=None, max_length=16)
+    kind: str | None = Field(default=None, max_length=20)
+    invite_user_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
 class ProjectChatThreadInviteRequest(BaseModel):
@@ -899,6 +901,13 @@ class ProjectChatReactionRequest(BaseModel):
 class ProjectChatReadRequest(BaseModel):
     thread_id: str | None = Field(default=None, max_length=64)
     message_id: str | None = Field(default=None, max_length=64)
+
+
+class ProjectChatAssistRequest(BaseModel):
+    action: str = Field(..., max_length=40)
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
+    note: str | None = Field(default=None, max_length=300)
 
 
 class GettingStartedGenerateRequest(BaseModel):
@@ -4146,6 +4155,25 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
     return RedirectResponse(f"/?social_token={token}&social_provider={safe_provider}{new_flag}", status_code=302)
 
 
+async def _handle_discord_link_callback(code: str | None, state: str | None, error: str | None = None) -> RedirectResponse:
+    from backend.services.discord_link_service import upsert_link
+    from backend.services.social_oauth import consume_oauth_state
+
+    if error:
+        return RedirectResponse(f"/?discord_link=error&discord_error={urllib.parse.quote(str(error)[:160])}", status_code=302)
+    if not code or not state:
+        return RedirectResponse("/?discord_link=error&discord_error=missing_params", status_code=302)
+    user_id = consume_oauth_state(state)
+    if not user_id:
+        return RedirectResponse("/?discord_link=error&discord_error=invalid_state", status_code=302)
+    try:
+        upsert_link(str(user_id), code)
+    except Exception as exc:
+        logger.warning("Discord link callback failed user_id=%s: %s", user_id, exc)
+        return RedirectResponse(f"/?discord_link=error&discord_error={urllib.parse.quote(str(exc)[:160])}", status_code=302)
+    return RedirectResponse("/?discord_link=connected", status_code=302)
+
+
 @app.get("/oauth/{provider}/callback")
 async def social_oauth_callback(
     request: Request,
@@ -4155,21 +4183,31 @@ async def social_oauth_callback(
     error: str | None = None,
     error_description: str | None = None,
 ):
-    if provider.strip().lower() == "autodesk":
+    provider_key = provider.strip().lower()
+    if provider_key == "autodesk":
         return autodesk_oauth_callback(request, code=code, state=state, error=error, error_description=error_description)
+    if provider_key == "discord":
+        return await _handle_discord_link_callback(code, state, error)
     return await _handle_social_callback(provider, code, state, error)
 
 
 @app.post("/oauth/{provider}/callback")
 async def social_oauth_callback_post(provider: str, request: Request):
     form = await request.form()
-    if provider.strip().lower() == "autodesk":
+    provider_key = provider.strip().lower()
+    if provider_key == "autodesk":
         return autodesk_oauth_callback(
             request,
             code=str(form.get("code") or "") or None,
             state=str(form.get("state") or "") or None,
             error=str(form.get("error") or "") or None,
             error_description=str(form.get("error_description") or "") or None,
+        )
+    if provider_key == "discord":
+        return await _handle_discord_link_callback(
+            str(form.get("code") or "") or None,
+            str(form.get("state") or "") or None,
+            str(form.get("error") or "") or None,
         )
     return await _handle_social_callback(
         provider,
@@ -4182,6 +4220,31 @@ async def social_oauth_callback_post(provider: str, request: Request):
 @app.get("/api/auth/me")
 def auth_me(user: dict[str, Any] = Depends(get_current_user)):
     return {"user": user, "teams": teams_service.list_teams(user["id"]), "ai": _ai_status_for_user(user)}
+
+
+@app.get("/api/integrations/discord/status")
+def discord_link_status(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import discord_link_service
+
+    return discord_link_service.status(user)
+
+
+@app.post("/api/integrations/discord/link-url")
+def discord_link_url(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import discord_link_service
+
+    try:
+        return {"url": discord_link_service.link_url(user["id"])}
+    except Exception as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.delete("/api/integrations/discord/link")
+def discord_unlink(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import discord_link_service
+
+    discord_link_service.unlink(user["id"])
+    return {"ok": True}
 
 
 RENDER_AGENT_SYSTEM_PROMPT = """You are Render Agent, the in-app support assistant for Render3D.
@@ -10142,6 +10205,7 @@ def _notify_chat_message(project_id: str, thread: dict[str, Any], message: dict[
     for uid in mentioned_ids:
         if uid == user.get("id"):
             continue
+        _notify_discord_chat_mention(uid, project_id, thread, message, user)
         _notify_user(
             uid,
             {
@@ -10150,6 +10214,49 @@ def _notify_chat_message(project_id: str, thread: dict[str, Any], message: dict[
                 "mention": True,
             },
         )
+
+
+def _notify_discord_chat_mention(
+    user_id: str,
+    project_id: str,
+    thread: dict[str, Any],
+    message: dict[str, Any],
+    sender: dict[str, Any],
+) -> None:
+    def _run() -> None:
+        try:
+            from backend.services import discord_link_service
+
+            account = discord_link_service.linked_account(user_id)
+            discord_user_id = account.get("discord_user_id") if account else None
+            if not discord_user_id:
+                return
+            project_name = project_id
+            try:
+                project_path = PROJECTS / project_id
+                if project_path.is_dir():
+                    project_name = project_store.project_list_summary(project_path).get("name") or project_id
+            except Exception:
+                project_name = project_id
+            body = str(message.get("body") or "").strip()
+            if len(body) > 240:
+                body = body[:237] + "..."
+            thread_title = thread.get("title") or "Project chat"
+            sender_name = sender.get("display_name") or sender.get("email") or "A teammate"
+            url = f"{(settings.public_base_url or 'https://render3d.app').rstrip('/')}/?project={urllib.parse.quote(project_id)}"
+            discord_link_service.send_dm(
+                str(discord_user_id),
+                (
+                    f"{sender_name} tagged you in Render3D on **{project_name}** ({thread_title}).\n"
+                    f"> {body or 'Open Render3D to view the message.'}\n"
+                    f"Open it here: {url}\n\n"
+                    "Reply support through Discord requires the Render bot Gateway listener to be running."
+                ),
+            )
+        except Exception:
+            logger.debug("Could not send Discord mention DM user_id=%s project_id=%s", user_id, project_id, exc_info=True)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _maybe_reply_as_render_agent(
@@ -10249,12 +10356,16 @@ def create_project_chat_thread(
 
     path = _require_project(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
+    allowed_ids = {str(m.get("id")) for m in _project_chat_members(project_id) if m.get("id")}
+    invite_ids = [str(uid) for uid in (body.invite_user_ids or []) if str(uid) in allowed_ids]
     thread = project_chat_service.create_thread(
         path,
         title=body.title,
         user=user,
         visibility=body.visibility,
         workspace_role=role,
+        kind=body.kind,
+        invite_user_ids=invite_ids,
     )
     return {"thread": thread}
 
@@ -10421,6 +10532,51 @@ def mark_project_chat_read(
         path, user_id=user["id"], thread_id=body.thread_id, message_id=body.message_id
     )
     return {"ok": True, "read_cursor": cursor, "unread": project_chat_service.unread_summary(path, user["id"])}
+
+
+@app.post("/api/projects/{project_id}/chat/threads/{thread_id}/assist")
+def project_chat_assist_event(
+    project_id: str,
+    thread_id: str,
+    body: ProjectChatAssistRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    role = _project_workspace_role(project_id, user.get("id"))
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    action = str(body.action or "").strip().lower().replace("-", "_")
+    allowed = {
+        "facetime",
+        "screen_share",
+        "remote_assist",
+        "remote_control_request",
+        "remote_control_grant",
+        "remote_control_end",
+        "click_ripple",
+        "assist_end",
+    }
+    if action not in allowed:
+        raise HTTPException(400, "Unsupported assist action")
+    payload = {
+        "type": "project.chat.assist",
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "thread_title": thread.get("title"),
+        "action": action,
+        "x": body.x,
+        "y": body.y,
+        "note": body.note,
+        "by_user_id": user.get("id"),
+        "by_user_name": user.get("display_name") or user.get("email") or "User",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    hub.notify(project_id, payload)
+    _notify_project_workspace(project_id, payload)
+    return {"ok": True, "event": payload}
 
 
 @app.get("/api/projects/{project_id}/chat/media/{filename}")

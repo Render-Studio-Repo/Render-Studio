@@ -82,6 +82,15 @@ function renderProfile(profile) {
           : `<p class="user-profile-empty">No public projects yet.</p>`
       }
     </section>
+    ${
+      profile.store?.store_enabled && profile.store?.show_on_profile !== false
+        ? `<section class="user-profile-section">
+        <h3>Store</h3>
+        <p class="user-profile-bio"><strong>${esc(profile.store.store_title || "Shop")}</strong><br/>${esc(profile.store.store_tagline || "")}</p>
+        <a class="btn secondary btn-compact" href="/model-store.html?seller=${esc(profile.handle || profile.id)}">Browse their models</a>
+      </section>`
+        : ""
+    }
     <section class="user-profile-section">
       <h3>Public posts (${esc(profile.stats?.posts ?? posts.length)})</h3>
       ${

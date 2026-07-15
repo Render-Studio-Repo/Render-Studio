@@ -193,6 +193,8 @@ def _thread_summary(thread: dict[str, Any]) -> dict[str, Any]:
         "created_at": thread.get("created_at"),
         "created_by": thread.get("created_by"),
         "visibility": thread.get("visibility") or "shared",
+        "kind": thread.get("kind") or ("group" if len(_thread_member_ids(thread)) > 1 else "thread"),
+        "assist_session": thread.get("assist_session") or None,
         "members": list(thread.get("members") or []),
         "member_count": len(_thread_member_ids(thread)),
         "message_count": len(messages),
@@ -256,6 +258,8 @@ def get_thread(
         "created_at": thread.get("created_at"),
         "created_by": thread.get("created_by"),
         "visibility": thread.get("visibility") or "shared",
+        "kind": thread.get("kind") or ("group" if len(_thread_member_ids(thread)) > 1 else "thread"),
+        "assist_session": thread.get("assist_session") or None,
         "members": list(thread.get("members") or []),
         "messages": list(thread.get("messages") or []),
     }
@@ -268,6 +272,8 @@ def create_thread(
     user: dict[str, Any],
     visibility: str | None = None,
     workspace_role: str | None = None,
+    kind: str | None = None,
+    invite_user_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     data = _load(project_path)
     _ensure_general_thread(data, user)
@@ -285,6 +291,22 @@ def create_thread(
         "role": "owner",
         "joined_at": _now(),
     }
+    members = [creator_member]
+    for target_user_id in invite_user_ids or []:
+        if not target_user_id or str(target_user_id) == str(user.get("id") or ""):
+            continue
+        profile = _profile(str(target_user_id))
+        if not profile or any(str(m.get("id")) == str(profile["id"]) for m in members):
+            continue
+        members.append(
+            {
+                "id": profile["id"],
+                "display_name": profile.get("display_name") or profile.get("email") or "User",
+                "avatar_url": profile.get("avatar_url"),
+                "role": "member",
+                "joined_at": _now(),
+            }
+        )
     thread = {
         "id": str(uuid.uuid4())[:10],
         "slug": re.sub(r"[^a-z0-9]+", "-", clean.lower()).strip("-")[:40] or "thread",
@@ -292,7 +314,8 @@ def create_thread(
         "created_at": _now(),
         "created_by": user.get("id"),
         "visibility": wanted,
-        "members": [creator_member],
+        "kind": "group" if (kind == "group" or len(members) > 1) else "thread",
+        "members": members,
         "messages": [],
     }
     data["threads"].append(thread)
