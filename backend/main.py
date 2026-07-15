@@ -35,6 +35,7 @@ from backend.services import share_preview
 from backend.services.ai_service import AIService
 from backend.services import (
     agent_marketplace_service,
+    model_marketplace_service,
     folders_service,
     generation_service,
     history_service,
@@ -667,6 +668,7 @@ class AgentAppSubmitRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     tagline: str = Field(..., min_length=1, max_length=180)
     description: str = Field(..., min_length=1, max_length=4000)
+    body_md: str = Field(default="", max_length=20000)
     category: str = Field(default="agent", max_length=80)
     app_type: str = Field(default="skill", max_length=40)
     manifest: dict[str, Any] = Field(default_factory=dict)
@@ -675,9 +677,44 @@ class AgentAppSubmitRequest(BaseModel):
     price_cents: int = Field(default=0, ge=0, le=1_000_000)
     currency: str = Field(default="USD", min_length=3, max_length=8)
     premium: bool = False
+    license: str = Field(default="proprietary", max_length=40)
+    access_mode: str = Field(default="free", max_length=20)
+    download_enabled: bool = True
+    members: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AgentAppReviewRequest(BaseModel):
+    status: str = Field(..., description="pending | approved | rejected | archived")
+    featured: bool | None = None
+
+
+class MarketplaceBoostRequest(BaseModel):
+    message: str = Field(default="", max_length=2000)
+
+
+class MarketplaceBoostReviewRequest(BaseModel):
+    status: str = Field(..., description="approved | rejected")
+    days: int = Field(default=14, ge=1, le=90)
+
+
+class ModelListingSubmitRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    tagline: str = Field(..., min_length=1, max_length=180)
+    description: str = Field(..., min_length=1, max_length=4000)
+    body_md: str = Field(default="", max_length=20000)
+    category: str = Field(default="models", max_length=80)
+    license: str = Field(default="proprietary", max_length=40)
+    access_mode: str = Field(default="free", max_length=20)
+    download_enabled: bool = True
+    price_cents: int = Field(default=0, ge=0, le=1_000_000)
+    currency: str = Field(default="USD", min_length=3, max_length=8)
+    thumbnail: dict[str, Any] | None = None
+    gallery: list[dict[str, Any]] = Field(default_factory=list)
+    files: list[dict[str, Any]] = Field(default_factory=list)
+    members: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ModelListingReviewRequest(BaseModel):
     status: str = Field(..., description="pending | approved | rejected | archived")
     featured: bool | None = None
 
@@ -3658,6 +3695,119 @@ def review_agent_app(
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     return {"app": app_listing}
+
+
+@app.post("/api/agent-apps/{app_id_or_slug}/boost")
+def boost_agent_app(
+    app_id_or_slug: str,
+    body: MarketplaceBoostRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return {"boost": agent_marketplace_service.apply_boost(user["id"], app_id_or_slug, body.message)}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+# ── 3D Model Marketplace ─────────────────────────────────────────────────────
+
+@app.get("/api/model-listings")
+def list_model_listings(
+    mine: bool = False,
+    include_pending: bool = False,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    is_admin = _is_a1projects_admin(user)
+    listings = model_marketplace_service.list_listings(
+        user_id=(user or {}).get("id"),
+        include_pending=bool(include_pending and is_admin),
+        mine_only=bool(mine and user),
+    )
+    return {"listings": listings, "admin": is_admin}
+
+
+@app.get("/api/model-listings/{listing_id_or_slug}")
+def get_model_listing(
+    listing_id_or_slug: str,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    listing = model_marketplace_service.get_listing(
+        listing_id_or_slug,
+        user_id=(user or {}).get("id"),
+        include_pending=_is_a1projects_admin(user),
+    )
+    if not listing:
+        raise HTTPException(404, "Model listing not found")
+    return {"listing": listing}
+
+
+@app.post("/api/model-listings")
+def submit_model_listing(body: ModelListingSubmitRequest, user: dict[str, Any] = Depends(get_current_user)):
+    try:
+        listing = model_marketplace_service.create_listing(user["id"], body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"listing": listing, "message": "Submitted for review."}
+
+
+@app.patch("/api/model-listings/{listing_id_or_slug}/review")
+def review_model_listing(
+    listing_id_or_slug: str,
+    body: ModelListingReviewRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    if not _is_a1projects_admin(user):
+        raise HTTPException(403, "Only admins can review marketplace models.")
+    try:
+        listing = model_marketplace_service.review_listing(
+            listing_id_or_slug,
+            status=body.status,
+            featured=body.featured,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"listing": listing}
+
+
+@app.post("/api/model-listings/{listing_id_or_slug}/boost")
+def boost_model_listing(
+    listing_id_or_slug: str,
+    body: MarketplaceBoostRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return {"boost": model_marketplace_service.apply_boost(user["id"], listing_id_or_slug, body.message)}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/marketplace/boosts")
+def list_marketplace_boosts(
+    kind: str | None = None,
+    status: str = "pending",
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    if not _is_a1projects_admin(user):
+        raise HTTPException(403, "Only admins can list boost applications.")
+    return {"boosts": model_marketplace_service.list_boost_apps(kind=kind, status=status)}
+
+
+@app.patch("/api/marketplace/boosts/{boost_id}")
+def review_marketplace_boost(
+    boost_id: str,
+    body: MarketplaceBoostReviewRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    if not _is_a1projects_admin(user):
+        raise HTTPException(403, "Only admins can review boost applications.")
+    try:
+        return {"boost": model_marketplace_service.review_boost(boost_id, status=body.status, days=body.days)}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.post("/api/auth/register")

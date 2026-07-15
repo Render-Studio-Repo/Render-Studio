@@ -1,6 +1,6 @@
 /** Knowledge bases: folders of docs/CAD for AI prompts + skill attachment. */
 
-import { authHeaders, getToken } from "./auth.js?v=20260709-admin-matt";
+import { authHeaders, getToken } from "./auth.js?v=20260715-auth-connect-social";
 import { fetchSkillsCatalog } from "./skills-library.js?v=20260706-ui-fix";
 
 const KB_SELECTED_KEY = "render3d:knowledge:selected:v1";

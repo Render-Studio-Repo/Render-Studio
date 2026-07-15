@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marketplace — Render3D</title>
+  <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
+  <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-marketplace" />
+</head>
+<body class="info-page marketplace-hub-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
+          <h1>Render3D</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab active" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+          <a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content marketplace-hub">
+        <header class="info-hero marketplace-hub-hero">
+          <p class="info-eyebrow">Render3D Marketplace</p>
+          <h2>Choose a marketplace</h2>
+          <p class="info-lead">Browse agent apps or publish and discover 3D model products with licensing, downloads, and boost options.</p>
+        </header>
+
+        <div class="marketplace-choice-grid">
+          <a class="marketplace-choice marketplace-choice--agents" href="/agent-store.html">
+            <span class="marketplace-choice-kicker">Agents</span>
+            <strong>Agent Marketplace</strong>
+            <p>Install skills, workflows, connectors, and tools. Submit apps, set licensing, free/paid/view-only access, and apply for a boost.</p>
+            <span class="marketplace-choice-cta">Open agent store →</span>
+          </a>
+          <a class="marketplace-choice marketplace-choice--models" href="/model-store.html">
+            <span class="marketplace-choice-kicker">3D Models</span>
+            <strong>Product Marketplace</strong>
+            <p>Upload models, write product posts, add members, toggle downloads, choose licenses, price them, filter the catalog, and request boosts.</p>
+            <span class="marketplace-choice-cta">Open model store →</span>
+          </a>
+        </div>
+      </article>
+    </main>
+  </div>
+  <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+</body>
+</html>

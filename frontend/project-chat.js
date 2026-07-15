@@ -1,6 +1,6 @@
 /** Project collaboration chat — popup over the viewport. */
 
-import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
+import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀"];
 const LS_UNREAD = "render3d:projectChatUnread:v1";

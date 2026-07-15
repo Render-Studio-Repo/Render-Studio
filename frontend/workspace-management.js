@@ -1,6 +1,6 @@
 /** Workspace management panel — overview + role assignment for workspace admins. */
 
-import { authHeaders, getStoredUser, isAdminUser } from "./auth.js?v=20260709-admin-matt";
+import { authHeaders, getStoredUser, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
 
 function esc(value) {
   return String(value ?? "")

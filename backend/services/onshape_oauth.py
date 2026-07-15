@@ -125,8 +125,11 @@ def get_onshape_user(access_token: str) -> dict[str, Any]:
 # Persist tokens & upsert local user
 # ---------------------------------------------------------------------------
 
-def upsert_user_tokens(token_data: dict[str, Any]) -> dict[str, Any]:
+def upsert_user_tokens(token_data: dict[str, Any], link_user_id: str | None = None) -> dict[str, Any]:
     """Store Onshape tokens and return (or create) the local user record.
+
+    When ``link_user_id`` is set (connect-after-login), tokens are attached to
+    that Render3D account instead of creating a separate Onshape-only user.
 
     Returns a dict with 'user_id' so the caller can issue our own JWT.
     """
@@ -144,11 +147,16 @@ def upsert_user_tokens(token_data: dict[str, Any]) -> dict[str, Any]:
     onshape_email = (profile.get("email") or "").strip().lower()
     display_name  = profile.get("name") or profile.get("firstName", "Onshape User")
     now = datetime.now(timezone.utc).isoformat()
+    preferred_user_id = str(link_user_id or "").strip() or None
 
     with get_conn() as conn:
-        # Look up existing user by Onshape user_id or email
+        # Prefer explicit link (connect flow), then existing Onshape/email match.
         row = None
-        if onshape_uid:
+        if preferred_user_id:
+            exists = conn.execute("SELECT id FROM users WHERE id = ?", (preferred_user_id,)).fetchone()
+            if exists:
+                row = {"user_id": preferred_user_id}
+        if not row and onshape_uid:
             row = conn.execute(
                 "SELECT user_id FROM onshape_tokens WHERE onshape_user_id = ?",
                 (onshape_uid,),

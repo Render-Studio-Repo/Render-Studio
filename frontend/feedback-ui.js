@@ -1,6 +1,6 @@
 /** Modern bug / suggestion feedback UI with page-wide image drop. */
 
-import { authHeaders, getStoredUser, isAdminUser } from "./auth.js?v=20260709-admin-matt";
+import { authHeaders, getStoredUser, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
 
 const MAX_SHOTS = 5;
 const ACCEPT = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);

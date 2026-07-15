@@ -17231,6 +17231,72 @@ body.theme-light .cloud-connection-icon--fusion {
   background: var(--border, #333);
 }
 
+.auth-social-btns {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-social-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #111827;
+  font-weight: 700;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.auth-social-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(88, 166, 255, 0.65);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+}
+
+.auth-social-btn--apple {
+  background: #050505;
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.auth-social-btn--disabled,
+.auth-social-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.auth-social-btn.is-loading .auth-social-icon {
+  opacity: 0.4;
+}
+
+.auth-social-btn.is-loading::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid rgba(88, 166, 255, 0.28);
+  border-top-color: #58a6ff;
+  animation: auth-social-spin 0.8s linear infinite;
+}
+
+.auth-social-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+@keyframes auth-social-spin {
+  to { transform: rotate(360deg); }
+}
+
 .auth-onshape-btn {
   width: 100%;
   display: flex;
@@ -17273,6 +17339,110 @@ body.theme-light .cloud-connection-icon--fusion {
   border-radius: 6px;
   display: block;
   object-fit: contain;
+}
+
+.auth-connect-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 4px;
+  padding: 12px;
+  border: 1px solid var(--border, #333);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.auth-connect-heading {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted, #9aa4b2);
+}
+
+.auth-connect-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text, #eee);
+  cursor: pointer;
+}
+
+.auth-connect-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent, #5b8af5);
+  flex: 0 0 auto;
+}
+
+.auth-connect-check .auth-onshape-logo,
+.auth-connect-check .auth-autodesk-logo {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.auth-connect-hint {
+  margin: 2px 0 0;
+  line-height: 1.35;
+}
+
+.auth-social-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-social-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border, #444);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text, #eee);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.auth-social-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--accent, #5b8af5);
+}
+
+.auth-social-btn:disabled,
+.auth-social-btn.auth-social-btn--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.auth-social-btn.is-loading {
+  opacity: 0.7;
+}
+
+.auth-social-btn--apple {
+  background: #111;
+  border-color: #2a2a2a;
+  color: #f5f5f5;
+}
+
+.auth-social-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.auth-social-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 .auth-autodesk-logo-lg {

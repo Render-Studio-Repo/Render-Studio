@@ -170,8 +170,25 @@ def build_authorization_url(provider: str) -> str:
 
 def exchange_code_for_profile(provider: str, code: str) -> dict[str, Any]:
     cfg = _provider(provider)
-    if not cfg.client_id or not cfg.client_secret:
+    providers = {item["provider"]: item for item in configured_providers()}
+    if not providers.get(cfg.key, {}).get("configured"):
         raise RuntimeError(f"{cfg.label} sign-in is not configured.")
+    # Apple may mint client_secret from the private key at request time.
+    if cfg.key == "apple" and not cfg.client_secret:
+        cfg = ProviderConfig(
+            key=cfg.key,
+            label=cfg.label,
+            auth_url=cfg.auth_url,
+            token_url=cfg.token_url,
+            client_id=cfg.client_id,
+            client_secret=_apple_client_secret(),
+            redirect_uri=cfg.redirect_uri,
+            scope=cfg.scope,
+            userinfo_url=cfg.userinfo_url,
+            issuer=cfg.issuer,
+            jwks_url=cfg.jwks_url,
+            response_mode=cfg.response_mode,
+        )
     token = _exchange_code(cfg, code)
     if cfg.key == "apple":
         return _apple_profile(cfg, token)

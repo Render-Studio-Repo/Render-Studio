@@ -50,6 +50,17 @@ function userInitial(user) {
   return name.charAt(0).toUpperCase();
 }
 
+async function fetchSocialProviders() {
+  try {
+    const res = await fetch("/api/auth/social/providers", { headers: authHeaders() });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.providers) ? data.providers : [];
+  } catch {
+    return [];
+  }
+}
+
 export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   const modal = document.getElementById("auth-modal");
   const formLogin = document.getElementById("auth-form-login");
@@ -91,8 +102,9 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   function showModal(show) {
     modal?.classList.toggle("hidden", !show);
     if (show) {
-      authError.textContent = "";
+      if (authError) authError.textContent = "";
       document.getElementById("login-email")?.focus();
+      void refreshSocialProviders();
     }
   }
 
@@ -162,8 +174,137 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     modal?.querySelectorAll(".auth-tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     formLogin?.classList.toggle("hidden", tab !== "login");
     formRegister?.classList.toggle("hidden", tab !== "register");
-    authError.textContent = "";
-    document.getElementById("auth-title").textContent = tab === "register" ? "Create account" : "Welcome back";
+    if (authError) authError.textContent = "";
+    const title = document.getElementById("auth-title");
+    if (title) title.textContent = tab === "register" ? "Create account" : "Welcome back";
+  }
+
+  async function refreshSocialProviders() {
+    const buttons = [...document.querySelectorAll("[data-social-login]")];
+    if (!buttons.length) return;
+    buttons.forEach((btn) => {
+      btn.disabled = true;
+      btn.classList.add("is-loading");
+      btn.title = "Checking sign-in provider...";
+    });
+    const providers = await fetchSocialProviders();
+    const byProvider = new Map(providers.map((item) => [String(item.provider || "").toLowerCase(), item]));
+    buttons.forEach((btn) => {
+      const provider = String(btn.dataset.socialLogin || "").toLowerCase();
+      const info = byProvider.get(provider);
+      const configured = info?.configured === true;
+      btn.disabled = !configured;
+      btn.classList.remove("is-loading");
+      btn.classList.toggle("auth-social-btn--disabled", !configured);
+      btn.title = configured
+        ? `Sign in with ${btn.dataset.socialLabel || info?.label || provider}`
+        : `${btn.dataset.socialLabel || info?.label || provider} sign-in is not configured yet.`;
+    });
+  }
+
+  function connectionPrefs() {
+    return {
+      onshape: !!document.getElementById("auth-connect-onshape")?.checked,
+      fusion: !!document.getElementById("auth-connect-fusion")?.checked,
+    };
+  }
+
+  function clearConnectionPrefs() {
+    const onshape = document.getElementById("auth-connect-onshape");
+    const fusion = document.getElementById("auth-connect-fusion");
+    if (onshape) onshape.checked = false;
+    if (fusion) fusion.checked = false;
+  }
+
+  function openOAuthPopup(url, name) {
+    const width = 560;
+    const height = 720;
+    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+    const features = `popup=yes,width=${width},height=${height},left=${left},top=${top}`;
+    const popup = window.open(url, name, features);
+    if (!popup) {
+      window.location.href = url;
+      return null;
+    }
+    return popup;
+  }
+
+  function watchOAuthPopup(popup) {
+    if (!popup) return;
+    const timer = window.setInterval(() => {
+      if (!popup.closed) return;
+      window.clearInterval(timer);
+      void refreshCloudBadges();
+    }, 800);
+    window.setTimeout(() => window.clearInterval(timer), 10 * 60 * 1000);
+  }
+
+  async function refreshCloudBadges() {
+    try {
+      const os = await api("/api/onshape/status");
+      setOnshapeBadge(os.linked === true);
+    } catch { /* non-critical */ }
+    try {
+      const fs = await api("/api/autodesk/status");
+      setFusionBadge(fs.linked === true, fs);
+      if (fs.linked === true) {
+        window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
+      }
+    } catch { /* non-critical */ }
+  }
+
+  async function openCheckedConnections(prefs) {
+    const wantOnshape = !!prefs?.onshape;
+    const wantFusion = !!prefs?.fusion;
+    if (!wantOnshape && !wantFusion) return;
+
+    if (wantOnshape) {
+      try {
+        const oauth = await api("/api/onshape/oauth-url", { method: "POST" });
+        watchOAuthPopup(openOAuthPopup(oauth?.url || "/oauth/start", "render3d-onshape-connect"));
+      } catch (err) {
+        if (authError) authError.textContent = err.message || "Could not start Onshape connection.";
+        watchOAuthPopup(openOAuthPopup("/oauth/start", "render3d-onshape-connect"));
+      }
+    }
+
+    if (wantFusion) {
+      try {
+        const oauth = await api("/api/autodesk/oauth-url", { method: "POST" });
+        if (!oauth?.url) throw new Error("Fusion OAuth URL missing");
+        watchOAuthPopup(openOAuthPopup(oauth.url, "render3d-fusion-connect"));
+      } catch (err) {
+        if (authError) authError.textContent = err.message || "Could not start Fusion connection.";
+      }
+    }
+  }
+
+  function notifyOpenerAndClose(provider, ok, detail = "") {
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(
+          { type: "render3d:oauth-done", provider, ok: !!ok, detail: String(detail || "") },
+          window.location.origin,
+        );
+      }
+    } catch { /* ignore */ }
+    try {
+      window.close();
+    } catch { /* ignore */ }
+  }
+
+  async function finishAuthSuccess(data, { connectPrefs = null } = {}) {
+    setSession(data.token, data.user);
+    setUserUI(data.user);
+    showModal(false);
+    clearConnectionPrefs();
+    onReady?.(data);
+    if (connectPrefs && (connectPrefs.onshape || connectPrefs.fusion)) {
+      window.setTimeout(() => {
+        void openCheckedConnections(connectPrefs);
+      }, 150);
+    }
   }
 
   modal?.querySelectorAll(".auth-tab").forEach((btn) => {
@@ -191,25 +332,22 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   });
 
   document.addEventListener("click", () => closeUserMenu());
-
   userMenu?.addEventListener("click", (e) => e.stopPropagation());
 
   formLogin?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = document.getElementById("login-email").value.trim();
     const password = document.getElementById("login-password").value;
+    const prefs = connectionPrefs();
     try {
       const data = await api("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      setSession(data.token, data.user);
-      setUserUI(data.user);
-      showModal(false);
-      onReady?.(data);
+      await finishAuthSuccess(data, { connectPrefs: prefs });
     } catch (err) {
-      authError.textContent = err.message;
+      if (authError) authError.textContent = err.message;
     }
   });
 
@@ -218,18 +356,16 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     const email = document.getElementById("register-email").value.trim();
     const password = document.getElementById("register-password").value;
     const display_name = document.getElementById("register-name").value.trim();
+    const prefs = connectionPrefs();
     try {
       const data = await api("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, display_name }),
       });
-      setSession(data.token, data.user);
-      setUserUI(data.user);
-      showModal(false);
-      onReady?.(data);
+      await finishAuthSuccess(data, { connectPrefs: prefs });
     } catch (err) {
-      authError.textContent = err.message;
+      if (authError) authError.textContent = err.message;
     }
   });
 
@@ -241,38 +377,77 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     window.location.reload();
   });
 
-  // "Sign in with Onshape" buttons (one inside the modal, one can be anywhere)
   document.querySelectorAll("[data-onshape-login]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      window.location.href = "/oauth/start";
+    btn.addEventListener("click", async () => {
+      if (!loggedInUser) {
+        showModal(true);
+        switchTab("login");
+        const box = document.getElementById("auth-connect-onshape");
+        if (box) box.checked = true;
+        return;
+      }
+      try {
+        const oauth = await api("/api/onshape/oauth-url", { method: "POST" });
+        watchOAuthPopup(openOAuthPopup(oauth?.url || "/oauth/start", "render3d-onshape-connect"));
+      } catch {
+        watchOAuthPopup(openOAuthPopup("/oauth/start", "render3d-onshape-connect"));
+      }
     });
   });
 
   document.querySelectorAll("[data-autodesk-login]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      window.location.href = "/oauth/autodesk/start";
+      if (!loggedInUser) {
+        showModal(true);
+        switchTab("login");
+        const box = document.getElementById("auth-connect-fusion");
+        if (box) box.checked = true;
+        return;
+      }
+      void startAutodeskConnect({ promptForCredentials: true });
     });
   });
 
-  // Cloud connection buttons in user menu
+  document.querySelectorAll("[data-social-login]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const provider = String(btn.dataset.socialLogin || "").trim().toLowerCase();
+      if (!provider) return;
+      if (btn.disabled) {
+        const label = btn.dataset.socialLabel || provider;
+        if (authError) authError.textContent = `${label} sign-in is not configured yet.`;
+        return;
+      }
+      btn.classList.add("is-loading");
+      window.location.href = `/oauth/${encodeURIComponent(provider)}/start`;
+    });
+  });
+
   document.getElementById("btn-onshape-connect")?.addEventListener("click", () => {
     closeUserMenu();
     if (onshapeBadge && !onshapeBadge.classList.contains("hidden")) {
-      // Already connected — show status/disconnect option via onshape panel
       document.getElementById("btn-onshape-panel")?.click();
-    } else {
-      window.location.href = "/oauth/start";
+      return;
     }
+    void (async () => {
+      try {
+        const oauth = await api("/api/onshape/oauth-url", { method: "POST" });
+        watchOAuthPopup(openOAuthPopup(oauth?.url || "/oauth/start", "render3d-onshape-connect"));
+      } catch {
+        watchOAuthPopup(openOAuthPopup("/oauth/start", "render3d-onshape-connect"));
+      }
+    })();
   });
 
-function openFusionLibraryPanel() {
-  window.dispatchEvent(new CustomEvent("render3d:open-fusion-library"));
-}
+  function openFusionLibraryPanel() {
+    window.dispatchEvent(new CustomEvent("render3d:open-fusion-library"));
+  }
 
   async function startAutodeskConnect({ promptForCredentials = true } = {}) {
     if (!loggedInUser) {
       showModal(true);
       switchTab("login");
+      const box = document.getElementById("auth-connect-fusion");
+      if (box) box.checked = true;
       throw new Error("Sign in to Render3D first, then connect Autodesk Fusion 360.");
     }
     try {
@@ -288,16 +463,16 @@ function openFusionLibraryPanel() {
     try {
       const oauth = await api("/api/autodesk/oauth-url", { method: "POST" });
       if (oauth?.url) {
-        window.location.href = oauth.url;
+        watchOAuthPopup(openOAuthPopup(oauth.url, "render3d-fusion-connect"));
         return { linked: false, redirecting: true };
       }
     } catch (err) {
       if (promptForCredentials && /not configured|AUTODESK_CLIENT/i.test(err.message || "")) {
         throw err;
       }
+      if (authError) authError.textContent = err.message || "Could not start Fusion connection.";
     }
-    window.location.href = "/oauth/autodesk/start";
-    return { linked: false, redirecting: true };
+    return { linked: false, redirecting: false };
   }
 
   document.getElementById("btn-fusion-connect")?.addEventListener("click", () => {
@@ -316,12 +491,19 @@ function openFusionLibraryPanel() {
   window.addEventListener("render3d:autodesk-linked", async () => {
     try {
       const fs = await api("/api/autodesk/status");
-      setFusionBadge(fs.linked === true, fs);
+      setFusionBadge(true, fs);
     } catch {
       setFusionBadge(true);
     }
   });
 
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (!event.data || event.data.type !== "render3d:oauth-done") return;
+    void refreshCloudBadges();
+  });
+
+  void refreshSocialProviders();
   setLoggedOutUI();
 
   return {
@@ -335,17 +517,55 @@ function openFusionLibraryPanel() {
     },
     startAutodeskConnect,
     async bootstrap() {
-      // Handle redirect back from Onshape: /oauth/callback → /?onshape_token=JWT
       const params = new URLSearchParams(window.location.search);
       const oauthToken = params.get("onshape_token");
       const oauthError = params.get("onshape_error");
       const autodeskLinked = params.get("autodesk_linked");
       const autodeskError = params.get("autodesk_error");
       const renderToken = params.get("render3d_token");
+      const socialToken = params.get("social_token");
+      const socialProvider = params.get("social_provider") || "social";
+      const socialError = params.get("social_error");
+      const inOAuthPopup = !!(window.opener && !window.opener.closed);
+
+      if (socialError) {
+        history.replaceState({}, "", window.location.pathname);
+        const providerLabel = socialProvider.charAt(0).toUpperCase() + socialProvider.slice(1);
+        if (authError) authError.textContent = `${providerLabel} login failed: ${decodeURIComponent(socialError)}`;
+        if (inOAuthPopup) {
+          notifyOpenerAndClose(socialProvider, false, socialError);
+          return null;
+        }
+        showModal(true);
+        return null;
+      }
+
+      if (socialToken) {
+        history.replaceState({}, "", window.location.pathname);
+        try {
+          localStorage.setItem(TOKEN_KEY, socialToken);
+          const data = await api("/api/auth/me");
+          setSession(socialToken, data.user);
+          setUserUI(data.user);
+          showModal(false);
+          onReady?.(data);
+          if (inOAuthPopup) notifyOpenerAndClose(socialProvider, true);
+          return data;
+        } catch {
+          clearSession();
+          setLoggedOutUI();
+          if (inOAuthPopup) notifyOpenerAndClose(socialProvider, false, "session_failed");
+          return null;
+        }
+      }
 
       if (autodeskError) {
         history.replaceState({}, "", window.location.pathname);
         if (authError) authError.textContent = `Fusion login failed: ${decodeURIComponent(autodeskError)}`;
+        if (inOAuthPopup) {
+          notifyOpenerAndClose("fusion", false, autodeskError);
+          return null;
+        }
         showModal(true);
         return null;
       }
@@ -366,24 +586,28 @@ function openFusionLibraryPanel() {
             setFusionBadge(true);
           }
           window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
+          if (inOAuthPopup) notifyOpenerAndClose("fusion", true);
           return data;
         } catch {
           clearSession();
           setLoggedOutUI();
+          if (inOAuthPopup) notifyOpenerAndClose("fusion", false, "session_failed");
           return null;
         }
       }
 
       if (oauthError) {
-        // Clean URL, show error
         history.replaceState({}, "", window.location.pathname);
         if (authError) authError.textContent = `Onshape login failed: ${oauthError}`;
+        if (inOAuthPopup) {
+          notifyOpenerAndClose("onshape", false, oauthError);
+          return null;
+        }
         showModal(true);
         return null;
       }
 
       if (oauthToken) {
-        // Store the token, then fetch user info
         history.replaceState({}, "", window.location.pathname);
         try {
           localStorage.setItem(TOKEN_KEY, oauthToken);
@@ -392,10 +616,12 @@ function openFusionLibraryPanel() {
           setUserUI(data.user);
           setOnshapeBadge(true);
           showModal(false);
+          if (inOAuthPopup) notifyOpenerAndClose("onshape", true);
           return data;
         } catch {
           clearSession();
           setLoggedOutUI();
+          if (inOAuthPopup) notifyOpenerAndClose("onshape", false, "session_failed");
           return null;
         }
       }
@@ -410,18 +636,7 @@ function openFusionLibraryPanel() {
         setSession(token, data.user);
         setUserUI(data.user);
         showModal(false);
-        // Check Onshape + Fusion connection status
-        try {
-          const os = await api("/api/onshape/status");
-          setOnshapeBadge(os.linked === true);
-        } catch { /* non-critical */ }
-        try {
-          const fs = await api("/api/autodesk/status");
-          setFusionBadge(fs.linked === true, fs);
-          if (fs.linked === true) {
-            window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
-          }
-        } catch { /* non-critical */ }
+        await refreshCloudBadges();
         return data;
       } catch {
         clearSession();

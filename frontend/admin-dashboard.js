@@ -1,4 +1,4 @@
-import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260709-admin-matt";
+import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
 import { createMiniViewer } from "./mini-viewer.js?v=20260715-admin-zup";
 import { mountActivityCharts, mountNetworkBrain } from "./admin-charts.js?v=20260715-admin-charts";
 
