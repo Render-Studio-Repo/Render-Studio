@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
@@ -8711,100 +8711,12 @@ def get_share_file(token: str, filename: str, step_mode: str | None = Query(None
 
 @app.get("/share/{token}", include_in_schema=False)
 def share_preview_page(token: str):
+    """Public share viewer — validates the token, then serves the mobile-friendly preview page."""
     _share_metadata(token)
-    token_json = json.dumps(token)
-    return Response(
-        media_type="text/html",
-        content=f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Render3D Share Preview</title>
-  <script type="importmap">{{"imports":{{"three":"https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"}}}}</script>
-  <style>
-    :root {{ color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    body {{ margin:0; min-height:100vh; display:grid; grid-template-rows:auto 1fr; background:#070b12; color:#e6edf3; }}
-    header {{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 20px; border-bottom:1px solid #21262d; background:rgba(13,17,23,.92); }}
-    h1 {{ margin:0; font-size:1rem; }} p {{ margin:.25rem 0 0; color:#8b949e; font-size:.82rem; }}
-    #viewer {{ position:relative; min-height:0; }} canvas {{ display:block; width:100%; height:100%; }}
-    .downloads {{ display:flex; flex-wrap:wrap; gap:8px; }}
-    .downloads a, .downloads button {{ border:1px solid #30363d; border-radius:999px; background:#161b22; color:#c9d1d9; padding:8px 12px; text-decoration:none; font-weight:700; cursor:pointer; }}
-    .downloads a:hover, .downloads button:hover {{ border-color:#58a6ff; color:#79c0ff; }}
-    .status {{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); color:#8b949e; }}
-    .brand {{ color:#79c0ff; font-weight:900; letter-spacing:.02em; }}
-  </style>
-</head>
-<body>
-  <header>
-    <div><div class="brand">Render3D</div><h1 id="title">Loading shared model...</h1><p id="subtitle">Rotate preview loads automatically. Pick a format to download.</p></div>
-    <div class="downloads" id="downloads"></div>
-  </header>
-  <main id="viewer"><div class="status" id="status">Loading preview...</div></main>
-  <script type="module">
-    import * as THREE from "three";
-    import {{ GLTFLoader }} from "three/addons/loaders/GLTFLoader.js";
-    import {{ OrbitControls }} from "three/addons/controls/OrbitControls.js";
-    const token = {token_json};
-    const fmtLabel = {{ glb:"GLB", stl:"STL", step:"STEP", "3mf":"3MF", obj:"OBJ" }};
-    const meta = await fetch(`/api/share/${{encodeURIComponent(token)}}`).then(r => r.ok ? r.json() : Promise.reject(new Error("Share link not found")));
-    document.title = `${{meta.project_name || "Render3D"}} · Share`;
-    document.getElementById("title").textContent = meta.project_name || meta.filename;
-    document.getElementById("subtitle").textContent = meta.filename;
-    const dl = document.getElementById("downloads");
-    for (const item of meta.exports || []) {{
-      const a = document.createElement("a");
-      a.href = item.url;
-      a.textContent = fmtLabel[item.format] || String(item.format || "Download").toUpperCase();
-      a.download = item.name;
-      dl.appendChild(a);
-    }}
-    const viewer = document.getElementById("viewer");
-    const status = document.getElementById("status");
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x070b12);
-    const camera = new THREE.PerspectiveCamera(45, viewer.clientWidth / viewer.clientHeight, 0.01, 10000);
-    const renderer = new THREE.WebGLRenderer({{ antialias:true }});
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(viewer.clientWidth, viewer.clientHeight);
-    viewer.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    camera.up.set(0, 0, 1);
-    controls.object.up.copy(camera.up);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x7890a8, 2.2));
-    const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, -4, 5); scene.add(key);
-    const fill = new THREE.DirectionalLight(0xffffff, 1.2); fill.position.set(-3, 4, -2); scene.add(fill);
-    const root = new THREE.Group(); scene.add(root);
-    if (!/\\.glb$/i.test(meta.viewer_filename || "")) {{
-      status.textContent = "Preview unavailable for this format. Downloads are ready.";
-    }} else {{
-      new GLTFLoader().load(meta.viewer_url, (gltf) => {{
-        root.add(gltf.scene);
-        const box = new THREE.Box3().setFromObject(root);
-        const center = box.getCenter(new THREE.Vector3());
-        const sizeVec = box.getSize(new THREE.Vector3());
-        const size = sizeVec.length() || 1;
-        root.position.set(-center.x, -center.y, -box.min.z);
-        const targetZ = Math.max(sizeVec.z * 0.5, size * 0.08);
-        camera.position.set(size * 0.95, -size * 1.35, targetZ + size * 0.55);
-        camera.near = Math.max(size / 1000, 0.001); camera.far = size * 20; camera.updateProjectionMatrix();
-        controls.target.set(0, 0, targetZ);
-        controls.update();
-        status.remove();
-      }}, undefined, () => {{ status.textContent = "Could not load preview. Downloads are ready."; }});
-    }}
-    function resize() {{
-      const w = viewer.clientWidth || innerWidth; const h = viewer.clientHeight || innerHeight - 80;
-      camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h);
-    }}
-    addEventListener("resize", resize); resize();
-    function tick() {{ requestAnimationFrame(tick); root.rotation.z += 0.0025; controls.update(); renderer.render(scene, camera); }}
-    tick();
-  </script>
-</body>
-</html>""",
-    )
+    page = FRONTEND / "share.html"
+    if not page.is_file():
+        raise HTTPException(500, "Share viewer is missing")
+    return FileResponse(page, media_type="text/html")
 
 
 @app.get("/api/projects/{project_id}/files/{filename}/exports")

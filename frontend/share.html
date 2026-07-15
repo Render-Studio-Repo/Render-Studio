@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#070b12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Render3D Share Preview</title>
+  <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b12;
+      --panel: rgba(13, 17, 23, 0.94);
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-soft: rgba(56, 139, 253, 0.18);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100dvh;
+      min-height: 100vh;
+    }
+    header.share-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: calc(10px + var(--safe-top)) 14px 10px;
+      border-bottom: 1px solid #21262d;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      z-index: 5;
+    }
+    .share-brand {
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .share-top h1 {
+      margin: 2px 0 0;
+      font-size: 1.05rem;
+      line-height: 1.25;
+      max-width: min(70vw, 520px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .share-top p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 0.75rem;
+      max-width: min(70vw, 520px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .share-top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+    .share-tool {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      min-height: 36px;
+    }
+    .share-tool.active,
+    .share-tool[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #79c0ff;
+    }
+    #share-viewer {
+      position: relative;
+      min-height: 0;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(56, 139, 253, 0.12), transparent 35%),
+        radial-gradient(circle at 80% 90%, rgba(35, 134, 54, 0.08), transparent 40%),
+        var(--bg);
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #share-viewer canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #share-status {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--muted);
+      font-size: 0.92rem;
+      text-align: center;
+      padding: 12px 16px;
+      max-width: 80vw;
+      pointer-events: none;
+      z-index: 2;
+    }
+    #share-status.hidden { display: none; }
+    .share-bottom {
+      border-top: 1px solid #21262d;
+      background: var(--panel);
+      padding: 10px 14px calc(12px + var(--safe-bottom));
+      z-index: 5;
+    }
+    .share-downloads-label {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+    #share-downloads,
+    #share-download-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .share-dl-btn {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 84px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.72rem;
+    }
+    .share-dl-btn strong {
+      font-size: 0.85rem;
+      color: #79c0ff;
+    }
+    .share-dl-btn span { color: var(--muted); }
+    .share-dl-btn:hover { border-color: var(--accent); }
+    #share-section-panel {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 4;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.94);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+    #share-section-panel.hidden { display: none; }
+    .sv-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .sv-top strong { font-size: 0.9rem; }
+    .sv-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .sv-row label {
+      width: 58px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+    }
+    .sv-axes { display: inline-flex; gap: 6px; }
+    .sv-axes button,
+    .sv-actions button,
+    .sv-top button {
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-weight: 700;
+      font-size: 0.78rem;
+      cursor: pointer;
+      min-height: 34px;
+    }
+    .sv-axes button.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #79c0ff;
+    }
+    #share-section-slider {
+      flex: 1;
+      min-width: 0;
+      accent-color: var(--accent);
+    }
+    #share-section-pct {
+      width: 42px;
+      text-align: right;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .sv-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sv-hint {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+    #share-download-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      align-items: end;
+      background: rgba(0, 0, 0, 0.45);
+    }
+    #share-download-sheet.hidden { display: none; }
+    .share-sheet-card {
+      background: #0d1117;
+      border-radius: 18px 18px 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      padding: 14px 14px calc(16px + var(--safe-bottom));
+      max-height: 70vh;
+      overflow: auto;
+    }
+    .share-sheet-card header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .muted { color: var(--muted); }
+    @media (max-width: 720px) {
+      header.share-top {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .share-top-actions {
+        justify-content: stretch;
+      }
+      .share-tool {
+        flex: 1 1 calc(50% - 6px);
+        text-align: center;
+      }
+      .share-bottom { display: none; }
+      #share-section-panel {
+        bottom: calc(12px + var(--safe-bottom));
+      }
+    }
+    @media (min-width: 721px) {
+      #btn-share-download { display: none; }
+      #share-download-sheet { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="share-top">
+    <div>
+      <div class="share-brand">Render3D</div>
+      <h1 id="share-title">Loading shared model…</h1>
+      <p id="share-subtitle">Rotate · section · download</p>
+    </div>
+    <div class="share-top-actions">
+      <button type="button" class="share-tool active" id="btn-share-rotate" aria-pressed="true">Rotate</button>
+      <button type="button" class="share-tool" id="btn-share-section" aria-pressed="false">Section</button>
+      <button type="button" class="share-tool" id="btn-share-fit">Fit</button>
+      <button type="button" class="share-tool" id="btn-share-download">Download</button>
+    </div>
+  </header>
+
+  <main id="share-viewer">
+    <div id="share-status">Loading preview…</div>
+    <div id="share-section-panel" class="hidden" aria-label="Section analysis">
+      <div class="sv-top">
+        <strong>Section analysis</strong>
+        <button type="button" id="btn-share-section-close" aria-label="Close section">Close</button>
+      </div>
+      <div class="sv-row">
+        <label>Axis</label>
+        <div class="sv-axes">
+          <button type="button" data-axis="X">X</button>
+          <button type="button" data-axis="Y" class="active">Y</button>
+          <button type="button" data-axis="Z">Z</button>
+        </div>
+      </div>
+      <div class="sv-row">
+        <label>Cut</label>
+        <input id="share-section-slider" type="range" min="0" max="100" value="50" step="1" aria-label="Section position" />
+        <span id="share-section-pct">50%</span>
+      </div>
+      <div class="sv-row sv-actions">
+        <button type="button" id="btn-share-section-flip">Flip side</button>
+      </div>
+      <p class="sv-hint">Drag to rotate · pinch to zoom · slide to cut through the model</p>
+    </div>
+  </main>
+
+  <footer class="share-bottom">
+    <p class="share-downloads-label">Download</p>
+    <div id="share-downloads"></div>
+  </footer>
+
+  <div id="share-download-sheet" class="hidden" role="dialog" aria-modal="true" aria-label="Download formats">
+    <div class="share-sheet-card">
+      <header>
+        <strong>Download</strong>
+        <button type="button" class="share-tool" data-close-downloads>Close</button>
+      </header>
+      <div id="share-download-list"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/share-viewer.js?v=20260715-share-viewer"></script>
+</body>
+</html>

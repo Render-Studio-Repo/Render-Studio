@@ -68,7 +68,7 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-step-stats";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-improved-prompt-details";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
@@ -228,9 +228,22 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
     if (generationWatchPid === projectId && generationWatchOverlay) {
       inactiveOverlay?.setGenerating(false);
       const liveGen = allProjects.find((p) => p.id === projectId)?.generation;
+      const watchProgress = generationWatchOverlay.progress || null;
+      const liveProgress = liveGen?.progress || null;
+      const mergedProgress = liveProgress || watchProgress
+        ? {
+            ...(watchProgress || {}),
+            ...(liveProgress || {}),
+            improved_prompt:
+              liveProgress?.improved_prompt
+              ?? liveProgress?.prompt_preview
+              ?? watchProgress?.improved_prompt
+              ?? watchProgress?.prompt_preview,
+          }
+        : null;
       activeOverlay.setGenerating(true, generationWatchOverlay.message, {
         ...generationWatchOverlay,
-        progress: liveGen?.progress || generationWatchOverlay.progress,
+        progress: mergedProgress,
       });
       syncViewportGenerationUserBadge(liveGen?.status === "running" ? liveGen : generationWatchOverlay);
     } else if (viewportOverlayPid === projectId && viewportOverlayState) {
@@ -888,7 +901,15 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           Object.assign(generationWatchOverlay, {
             promptMode: liveMode,
             pendingStart: false,
-            progress: gen.progress,
+            progress: {
+              ...(generationWatchOverlay.progress || {}),
+              ...(gen.progress || {}),
+              improved_prompt:
+                gen.progress?.improved_prompt
+                ?? gen.progress?.prompt_preview
+                ?? generationWatchOverlay.progress?.improved_prompt
+                ?? generationWatchOverlay.progress?.prompt_preview,
+            },
             ...promptGenerationOverlayOpts(liveMode),
           });
         }
@@ -3225,6 +3246,30 @@ function initPromptSpiceToggle() {
   });
 }
 
+function pushSpiceOverlayProgress(progress = {}) {
+  if (generationWatchOverlay) {
+    generationWatchOverlay.progress = {
+      ...(generationWatchOverlay.progress || {}),
+      ...progress,
+      improved_prompt:
+        progress.improved_prompt
+        ?? progress.prompt_preview
+        ?? generationWatchOverlay.progress?.improved_prompt,
+    };
+    if (progress.label) {
+      generationWatchOverlay.message = progress.label;
+    }
+  }
+  const overlay = generationWatchOverlay?.kind === "wiring"
+    ? (wiringOverlay || viewerOverlay)
+    : viewerOverlay;
+  overlay?.updateProgress?.(progress);
+  if (!overlay?.isGenerating?.()) {
+    syncViewportGenerationOverlay();
+    overlay?.updateProgress?.(progress);
+  }
+}
+
 async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
   const original = String(promptText || "").trim();
   if (!original || !isSpiceEnabled()) return original;
@@ -3232,6 +3277,15 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
     statusEl.className = "status loading";
     statusEl.textContent = "Improving prompt with AI…";
   }
+  pushSpiceOverlayProgress({
+    pct: 4,
+    stage: "analyze",
+    label: "Improving prompt with AI…",
+    thinking: "Rewriting your prompt for clearer CAD geometry…",
+    activity: [
+      { text: "Improving prompt with AI…", stage: "analyze" },
+    ],
+  });
   try {
     const data = await api("/api/prompt/improve", {
       method: "POST",
@@ -3246,7 +3300,18 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
       }),
     }, 90000);
     const improved = String(data?.improved_prompt || "").trim();
-    if (!improved || improved === original) return original;
+    if (!improved || improved === original) {
+      pushSpiceOverlayProgress({
+        pct: 6,
+        stage: "analyze",
+        label: "Using original prompt…",
+        thinking: "Prompt already clear — starting generation…",
+        activity: [
+          { text: "Prompt unchanged — starting generation…", stage: "analyze" },
+        ],
+      });
+      return original;
+    }
     try {
       composer?.setPromptText?.(improved);
     } catch {
@@ -3256,12 +3321,32 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
       statusEl.className = "status ok";
       statusEl.textContent = "Prompt improved — generating…";
     }
+    pushSpiceOverlayProgress({
+      pct: 8,
+      stage: "analyze",
+      label: "Prompt improved — generating…",
+      thinking: "Using the improved prompt for CAD generation…",
+      improved_prompt: improved,
+      activity: [
+        { text: "Prompt improved with AI", stage: "analyze" },
+        { text: "Starting CAD generation…", stage: "analyze" },
+      ],
+    });
     return improved;
   } catch (err) {
     if (statusEl) {
       statusEl.className = "status error";
       statusEl.textContent = `Improve prompt with AI failed (${formatUserError(err)}). Generating with original prompt…`;
     }
+    pushSpiceOverlayProgress({
+      pct: 6,
+      stage: "analyze",
+      label: "Using original prompt…",
+      thinking: "Improve prompt failed — generating with your original text…",
+      activity: [
+        { text: "Improve prompt failed — using original", stage: "analyze" },
+      ],
+    });
     return original;
   }
 }
@@ -10010,8 +10095,33 @@ function primaryViewportComponent(comps = [], latestFile = null) {
 }
 
 function componentsAlreadyLoaded(comps = [], latestFile = null) {
-  const primary = primaryViewportComponent(comps, latestFile);
-  return primary ? projectAssembly.has(primary.name) : false;
+  const visible = (comps || []).filter((c) => !isBrowserComponentHidden(c));
+  if (!visible.length) return false;
+  if (latestFile) {
+    const latest =
+      visible.find((c) => c.name === latestFile || c.viewer_filename === latestFile) || null;
+    if (latest && !projectAssembly.has(latest.name)) return false;
+    // Latest file is on disk but not yet a browser component — still needs a load.
+    if (!latest && /\.(glb|gltf|stl|obj|ply|off)$/i.test(String(latestFile))) return false;
+  }
+  const auto = visible.filter((c) => c.auto_load === true);
+  const required = auto.length
+    ? auto
+    : [primaryViewportComponent(visible, latestFile)].filter(Boolean);
+  if (!required.length) return false;
+  return required.every((c) => projectAssembly.has(c.name));
+}
+
+function assemblyCatalogMatchingStem(filename) {
+  const raw = String(filename || "").trim();
+  if (!raw) return null;
+  if (projectAssembly.has(raw)) return raw;
+  const stem = fileStem(raw).replace(/_edited(?:_\d+)?$/i, "");
+  for (const [name] of projectAssembly.list()) {
+    const other = fileStem(name).replace(/_edited(?:_\d+)?$/i, "");
+    if (other === stem) return name;
+  }
+  return null;
 }
 
 function modelMatchesSelection(viewFilename, catalogName) {

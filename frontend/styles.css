@@ -7035,11 +7035,37 @@ body.mobile-sheet-open {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: min(42vh, 340px);
+  max-height: min(52vh, 420px);
   overflow: auto;
   padding: 8px 2px 2px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   pointer-events: auto;
+}
+
+.viewport-agent-prompt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.viewport-agent-prompt-wrap.hidden {
+  display: none;
+}
+
+.viewport-agent-prompt-text {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: min(22vh, 180px);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
 }
 
 .viewport-spinner-details.hidden {

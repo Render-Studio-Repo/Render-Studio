@@ -128,6 +128,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       isGenerating() {
         return false;
       },
+      updateProgress() {},
       setStopVisible() {},
       showError() {},
       clearError() {},
@@ -177,6 +178,10 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
           <div class="viewport-agent-thinking-label">Current step</div>
           <p class="viewport-agent-thinking-text">Waiting for AI…</p>
         </div>
+        <div class="viewport-agent-prompt-wrap hidden" hidden>
+          <div class="viewport-agent-section-title">Improved prompt</div>
+          <pre class="viewport-agent-prompt-text"></pre>
+        </div>
         <div class="viewport-agent-checklist-wrap">
           <div class="viewport-agent-section-title">Pipeline</div>
           <ul class="viewport-agent-checklist"></ul>
@@ -197,6 +202,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const expandBtn = spinner.querySelector(".viewport-spinner-expand");
   const detailsEl = spinner.querySelector(".viewport-spinner-details");
   const thinkingText = spinner.querySelector(".viewport-agent-thinking-text");
+  const promptWrap = spinner.querySelector(".viewport-agent-prompt-wrap");
+  const promptTextEl = spinner.querySelector(".viewport-agent-prompt-text");
   const checklistEl = spinner.querySelector(".viewport-agent-checklist");
   const activityEl = spinner.querySelector(".viewport-agent-activity");
 
@@ -225,6 +232,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   let traceProgress = 0;
   let progressLabel = "Generating…";
   let thinkingLabel = "Waiting for AI…";
+  let improvedPromptText = "";
   let checklist = DEFAULT_CHECKLIST.map((item) => ({ ...item }));
   let activity = [];
   let progressStart = 0;
@@ -318,6 +326,15 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }).join("");
   }
 
+  function renderImprovedPrompt() {
+    if (!promptWrap || !promptTextEl) return;
+    const text = String(improvedPromptText || "").trim();
+    const show = Boolean(text);
+    promptWrap.classList.toggle("hidden", !show);
+    promptWrap.hidden = !show;
+    promptTextEl.textContent = text;
+  }
+
   function renderDetails() {
     const stats = stepStats(checklist);
     const nowText = humanizeProgressText(
@@ -327,6 +344,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     if (thinkingText) {
       thinkingText.textContent = `${stats.current}/${stats.total} · ${nowText}`;
     }
+    renderImprovedPrompt();
     renderChecklist();
     renderActivity();
   }
@@ -352,6 +370,10 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
         if (pct > traceProgress) traceProgress = pct;
         if (pct > progressValue) progressValue = pct;
       }
+    }
+    const nextImproved = progress.improved_prompt ?? progress.prompt_preview ?? progress.improvedPrompt;
+    if (typeof nextImproved === "string" && nextImproved.trim()) {
+      improvedPromptText = nextImproved.trim();
     }
     if (progress.label) {
       progressLabel = humanizeProgressText(progress.label, "Generating…");
@@ -541,8 +563,15 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     if (stopBtn) stopBtn.classList.add("hidden");
     progressValue = 0;
     traceProgress = 0;
+    improvedPromptText = "";
     checklist = DEFAULT_CHECKLIST.map((item) => ({ ...item }));
     activity = [];
+    renderProgress();
+  }
+
+  function updateProgress(progress = {}) {
+    if (!generating) return;
+    applyProgressPayload(progress);
     renderProgress();
   }
 
@@ -691,5 +720,5 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }
   });
 
-  return { setGenerating, isGenerating, setStopVisible, showError, clearError, dismiss };
+  return { setGenerating, isGenerating, updateProgress, setStopVisible, showError, clearError, dismiss };
 }
