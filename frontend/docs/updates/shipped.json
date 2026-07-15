@@ -1,6 +1,15 @@
 {
   "items": [
     {
+      "id": "render-agent-do-it-for-me",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Render Agent Do it for me",
+      "summary": "Render Agent now has a guided Do it for me flow that collects the desired task, project, and optional object, then explains each setup step with sticky notes before sending the request.",
+      "visual": "/docs/media/render-agent.gif?v=20260715-real",
+      "href": "/getting-started.html#render-agent"
+    },
+    {
       "id": "loading-tips-walkthrough",
       "date": "2026-07-15",
       "kind": "feature",

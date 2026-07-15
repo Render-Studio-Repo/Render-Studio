@@ -64,7 +64,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-auth-connect-social";
-import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-feedback-drop-card";
+import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-hide-shot-on-viewport";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-roles";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-do-it-for-me";
@@ -94,7 +94,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-no-iphone-banner";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-markup-tools";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-region-key-toggle";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -5041,6 +5041,65 @@ const projectChat = createProjectChatUI({
   },
   onStatus: (kind, message) => setEditStatus(kind, message),
 });
+
+function renderAgentObjectChoices() {
+  const choices = [];
+  const seen = new Set();
+  const push = (choice) => {
+    const id = String(choice?.id || choice?.filename || "");
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    choices.push(choice);
+  };
+  const selected = objectTools?.getSelection?.();
+  if (selected?.catalogName || selected?.root || selected?.mesh) {
+    const filename = selected.catalogName || catalogNameForMesh(selected.mesh) || selectedFile || "";
+    push({
+      id: selected.bodyIndex != null ? `${filename}::body:${selected.bodyIndex}` : filename,
+      filename,
+      label: selected.label || (selected.bodyIndex != null ? `Selected body ${selected.bodyIndex + 1}` : "Selected object"),
+      kind: selected.bodyIndex != null ? "selected body" : "selected object",
+      bodyIndex: selected.bodyIndex,
+    });
+  }
+  for (const [filename, obj] of projectAssembly.list()) {
+    if (!filename || obj?.visible === false) continue;
+    push({
+      id: filename,
+      filename,
+      label: formatComponentDisplayLabel(filename),
+      kind: "loaded object",
+    });
+  }
+  if (selectedFile) {
+    push({
+      id: selectedFile,
+      filename: selectedFile,
+      label: formatComponentDisplayLabel(selectedFile),
+      kind: "current file",
+    });
+  }
+  return choices;
+}
+
+async function selectRenderAgentObjectChoice(choice = {}) {
+  const filename = choice.filename || choice.id;
+  if (!filename) return false;
+  if (choice.bodyIndex != null) {
+    return selectBrowserBody({ name: filename }, Number(choice.bodyIndex));
+  }
+  if (projectAssembly.has(filename)) {
+    selectAssemblyComponent(filename, { fitView: true, autoGizmo: true });
+    return true;
+  }
+  const comp = lastProjectFiles.find((file) => file.name === filename || file.viewer_filename === filename);
+  if (comp) {
+    await openBrowserComponent(comp);
+    return true;
+  }
+  return false;
+}
+
 const workspaceManagement = createWorkspaceManagementUI({
   menuButtonEl: document.getElementById("btn-workspace-mgmt-menu"),
   panelEl: document.getElementById("profile-workspace-mgmt-panel"),
@@ -10825,6 +10884,9 @@ function showViewportDropOverlay() {
   viewport.classList.add("viewport-drag-over");
   workspaceAppEl?.classList.add("workspace-drag-over");
   viewportDropOverlay?.classList.remove("hidden");
+  // Don't keep the bug-report screenshot banner up while importing into the viewport.
+  document.getElementById("feedback-page-drop")?.classList.add("hidden");
+  document.body.classList.remove("feedback-page-dragging");
 }
 
 async function importDroppedCadFiles(files) {
@@ -14069,6 +14131,38 @@ const referenceFilesViewer = createReferenceFilesViewer({
   rawFetch,
   getProjectId: () => projectId,
   getAiKeyBodyFields: () => getPromptAiKeyBodyFields(),
+  getAiKeyPickerState: () => {
+    const personal = (aiStatus?.keys || []).map((k) => ({
+      value: promptKeyOptionValue("personal", k.id),
+      label: `${k.name || "Key"} · ${formatModelLabel(k.model || k.effective_model || "", k.provider || "") || k.provider || "OpenAI"}`,
+    }));
+    const team = (aiStatus?.team_keys || [])
+      .filter((k) => k.enabled !== false && aiKeyAllowedForCurrentProject(k))
+      .map((k) => ({
+        value: promptKeyOptionValue("team", k.id),
+        label: `${k.name || "Shared key"} · ${formatModelLabel(k.model || k.effective_model || "", k.provider || "") || k.provider || "OpenAI"}`,
+      }));
+    const selected = document.getElementById("prompt-ai-key-select")?.value || "";
+    return { options: [...personal, ...team], selected };
+  },
+  setAiKeyPickerValue: (value) => {
+    const sel = document.getElementById("prompt-ai-key-select");
+    if (!sel || !value) return;
+    if (![...sel.options].some((o) => o.value === value)) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      sel.appendChild(opt);
+    }
+    sel.value = value;
+    try {
+      localStorage.setItem(LS_PROMPT_AI_KEY, value);
+      if (projectId) storeProjectPromptAiKeyValue(value, projectId);
+    } catch {
+      /* ignore */
+    }
+    syncPromptKeyPill(aiStatus);
+  },
   onStatus: (kind, text) => {
     if (text) setEditStatus(kind || "ok", text);
   },
@@ -21119,11 +21213,17 @@ window.addEventListener("keydown", (e) => {
   renderAgentUi = createRenderAgent({
     api,
     getProjectId: () => projectId,
+    getProjects: () => allProjects,
+    getProjectName: () => allProjects.find((p) => p.id === projectId)?.name || projectId || "",
     getSelectedFile: () => selectedFile,
+    getObjectChoices: renderAgentObjectChoices,
     getCurrentUser: () => currentUser,
     getTeams: () => allTeams,
     getSelectedWorkspaceId,
     getSelectedAiKey: getPromptAiKeyBodyFields,
+    onOpenProject: (id) => openProjectById(id),
+    onCreateProject: () => createNewProject(),
+    onSelectObject: (choice) => selectRenderAgentObjectChoice(choice),
     onRequireLogin: () => authUi?.openModal?.(),
     onStatus: (kind, message) => setEditStatus(kind, message),
   });

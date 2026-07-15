@@ -4444,6 +4444,64 @@ def admin_review_pending_guide(
     return {"ok": True, "item": item}
 
 
+
+@app.get("/api/admin/discord/status")
+def admin_discord_status(user: dict[str, Any] = Depends(get_current_user)):
+    """Check Discord updates bot connectivity."""
+    _require_a1projects_admin(user)
+    from backend.services import discord_updates_service as discord
+
+    return discord.connection_status()
+
+
+class DiscordAnnounceRequest(BaseModel):
+    id: str | None = None
+    title: str
+    summary: str = ""
+    kind: str = "feature"
+    href: str = "/updates.html"
+    visual: str = ""
+    force: bool = False
+    text: str | None = None
+
+
+@app.post("/api/admin/discord/announce")
+def admin_discord_announce(
+    body: DiscordAnnounceRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Push a product update (or plain text) to the Discord updates channel."""
+    _require_a1projects_admin(user)
+    from backend.services import discord_updates_service as discord
+
+    if not discord.configured():
+        raise HTTPException(503, "Discord bot is not configured")
+    try:
+        if body.text:
+            return discord.announce_text(body.text)
+        return discord.announce_update(
+            {
+                "id": body.id or "",
+                "title": body.title,
+                "summary": body.summary or body.title,
+                "kind": body.kind,
+                "href": body.href,
+                "visual": body.visual,
+            },
+            force=bool(body.force),
+        )
+    except Exception as err:
+        st = discord.connection_status()
+        raise HTTPException(
+            502,
+            detail={
+                "message": str(err),
+                "invite_url": st.get("invite_url"),
+                "guild_count": st.get("guild_count"),
+            },
+        )
+
+
 def _feedback_context_snapshot(
     *,
     user: dict[str, Any],

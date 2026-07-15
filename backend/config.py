@@ -85,5 +85,10 @@ class Settings(BaseSettings):
     marketplace_platform_fee_bps: int = 1000  # 10%
     public_base_url: str = "https://render3d.app"
 
+    # Discord product-update announcements
+    discord_bot_token: str = ""
+    discord_updates_channel_id: str = ""
+    discord_application_id: str = ""
+
 
 settings = Settings()

@@ -171,6 +171,8 @@ export function createReferenceFilesViewer(options = {}) {
     onBeforeOpen,
     onSendToPrompt,
     getAiKeyBodyFields,
+    getAiKeyPickerState,
+    setAiKeyPickerValue,
     onRenderEdited,
   } = options;
 
@@ -196,6 +198,18 @@ export function createReferenceFilesViewer(options = {}) {
 
   const MARKUP_COLORS = ["#f0883e", "#58a6ff", "#3fb950", "#f85149", "#d2a8ff", "#ffffff", "#0d1117"];
   const RENDER_EDIT_PREF_KEY = "render3d:renderEditSaveMode:v1";
+  let imageEditSaveMode = (() => {
+    const pref = (() => {
+      try {
+        const v = localStorage.getItem(RENDER_EDIT_PREF_KEY);
+        if (v === "new" || v === "replace" || v === "ask") return v;
+      } catch {
+        /* ignore */
+      }
+      return "ask";
+    })();
+    return pref === "replace" ? "replace" : "new";
+  })();
 
   function readRenderEditPref() {
     try {
@@ -212,6 +226,22 @@ export function createReferenceFilesViewer(options = {}) {
       localStorage.setItem(RENDER_EDIT_PREF_KEY, mode);
     } catch {
       /* ignore */
+    }
+    if (mode === "new" || mode === "replace") imageEditSaveMode = mode;
+  }
+
+  function setImageEditSaveMode(mode, { persist = false } = {}) {
+    imageEditSaveMode = mode === "replace" ? "replace" : "new";
+    if (persist) writeRenderEditPref(imageEditSaveMode);
+    viewerEl?.querySelectorAll("[data-ref-save-mode]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.refSaveMode === imageEditSaveMode);
+      btn.setAttribute("aria-pressed", String(btn.dataset.refSaveMode === imageEditSaveMode));
+    });
+    const modalToggle = document.querySelector("#ref-region-edit-modal [data-region-save-mode]");
+    if (modalToggle) {
+      modalToggle.querySelectorAll("[data-save-mode]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.saveMode === imageEditSaveMode);
+      });
     }
   }
 
@@ -479,8 +509,15 @@ export function createReferenceFilesViewer(options = {}) {
               ${toolBtn("arrow", "Arrow", "Arrow")}
               ${toolBtn("text", "Text", "Add text label")}
               ${toolBtn("eraser", "Eraser", "Erase marks")}
-              ${kindIsImage ? toolBtn("region", "AI Edit", "Drag-select a region and prompt an image edit") : ""}
+              ${kindIsImage ? toolBtn("region", "AI Edit", "Drag-select a window on the image and prompt an edit of that region") : ""}
             </div>
+            ${kindIsImage ? `
+            <div class="ref-tool-group ref-tool-group--save-mode" role="group" aria-label="AI edit save mode">
+              <span class="ref-tool-group-label">AI result</span>
+              <button type="button" class="dxf-viewer-btn ${imageEditSaveMode === "new" ? "active" : ""}" data-ref-save-mode="new" aria-pressed="${imageEditSaveMode === "new" ? "true" : "false"}" title="Always save AI edits as a new image">New</button>
+              <button type="button" class="dxf-viewer-btn ${imageEditSaveMode === "replace" ? "active" : ""}" data-ref-save-mode="replace" aria-pressed="${imageEditSaveMode === "replace" ? "true" : "false"}" title="Replace the current image with the AI edit">Replace</button>
+            </div>
+            ` : ""}
             <div class="ref-tool-group ref-tool-group--style">
               <label class="ref-color-picker" title="Stroke color">
                 <span>Color</span>
@@ -1187,6 +1224,17 @@ export function createReferenceFilesViewer(options = {}) {
     });
   }
 
+  function buildAiKeySelectHtml() {
+    const state = getAiKeyPickerState?.() || { options: [], selected: "" };
+    const options = Array.isArray(state.options) ? state.options : [];
+    if (!options.length) {
+      return `<select data-region-ai-key disabled><option value="">Default OpenAI key</option></select>`;
+    }
+    return `<select data-region-ai-key aria-label="AI key">
+      ${options.map((opt) => `<option value="${escapeHtml(opt.value)}"${opt.value === state.selected ? " selected" : ""}>${escapeHtml(opt.label)}</option>`).join("")}
+    </select>`;
+  }
+
   async function openRegionEditModal(tab, region) {
     if (!tab?.blobUrl || !region) return;
     const x0 = Math.min(region.start[0], region.end[0]);
@@ -1216,9 +1264,24 @@ export function createReferenceFilesViewer(options = {}) {
       <div class="ref-region-edit-card" role="dialog" aria-modal="true" aria-labelledby="ref-region-edit-title">
         <button type="button" class="ref-region-edit-close" data-region-close aria-label="Close">×</button>
         <h3 id="ref-region-edit-title">Edit selected region</h3>
-        <p class="muted small">Describe the change for this crop. AI will update that area of the render.</p>
+        <p class="muted small">Prompt an edit for this crop. The rest of the image stays the same.</p>
         <div class="ref-region-edit-preview"><img src="${cropUrl}" alt="Selected region" /></div>
-        <textarea data-region-prompt rows="3" placeholder="e.g. Make the table marble, add warmer kitchen lighting…"></textarea>
+        <label class="ref-region-field">
+          <span>Prompt</span>
+          <textarea data-region-prompt rows="3" placeholder="e.g. Change the background to a marble counter, keep lighting…"></textarea>
+        </label>
+        <label class="ref-region-field">
+          <span>AI key</span>
+          ${buildAiKeySelectHtml()}
+        </label>
+        <div class="ref-region-field" data-region-save-mode>
+          <span>Save result as</span>
+          <div class="ref-save-mode-toggle" role="group" aria-label="Save mode">
+            <button type="button" class="dxf-viewer-btn ${imageEditSaveMode === "new" ? "active" : ""}" data-save-mode="new">New image</button>
+            <button type="button" class="dxf-viewer-btn ${imageEditSaveMode === "replace" ? "active" : ""}" data-save-mode="replace">Replace current</button>
+          </div>
+          <small class="muted">Also available on the image toolbar. Change the default later in Preferences.</small>
+        </div>
         <div class="ref-region-edit-actions">
           <button type="button" class="btn secondary" data-region-close>Cancel</button>
           <button type="button" class="btn primary" data-region-generate>Generate edit</button>
@@ -1229,7 +1292,20 @@ export function createReferenceFilesViewer(options = {}) {
     document.body.appendChild(modal);
     const promptEl = modal.querySelector("[data-region-prompt]");
     const statusEl = modal.querySelector("[data-region-status]");
+    const keySelect = modal.querySelector("[data-region-ai-key]");
     promptEl?.focus();
+
+    modal.querySelectorAll("[data-save-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setImageEditSaveMode(btn.dataset.saveMode, { persist: false });
+        modal.querySelectorAll("[data-save-mode]").forEach((el) => {
+          el.classList.toggle("active", el.dataset.saveMode === imageEditSaveMode);
+        });
+      });
+    });
+    keySelect?.addEventListener("change", () => {
+      if (keySelect.value) setAiKeyPickerValue?.(keySelect.value);
+    });
 
     const close = () => modal.remove();
     modal.addEventListener("click", (ev) => {
@@ -1243,8 +1319,12 @@ export function createReferenceFilesViewer(options = {}) {
       }
       const genBtn = modal.querySelector("[data-region-generate]");
       if (genBtn) genBtn.disabled = true;
-      statusEl.textContent = "Generating region edit…";
+      const saveMode = imageEditSaveMode === "replace" ? "replace" : "new";
+      statusEl.textContent = saveMode === "replace"
+        ? "Generating edit and replacing current image…"
+        : "Generating edit as a new image…";
       try {
+        if (keySelect?.value) setAiKeyPickerValue?.(keySelect.value);
         const fullDataUrl = await compositeMarkedImage(tab);
         let sourceImage = fullDataUrl;
         if (!sourceImage) {
@@ -1255,14 +1335,19 @@ export function createReferenceFilesViewer(options = {}) {
           c.getContext("2d").drawImage(img, 0, 0);
           sourceImage = c.toDataURL("image/png");
         }
-        const saveMode = await askReplaceOrNew("When the edit finishes, how should we save it?");
+        let keyFields = getAiKeyBodyFields?.() || {};
+        if (keySelect?.value && keySelect.value.includes(":")) {
+          const [source, ...rest] = keySelect.value.split(":");
+          const keyId = rest.join(":");
+          if (source && keyId) keyFields = { ai_key_id: keyId, ai_key_source: source };
+        }
         const body = {
           prompt,
           source_image: sourceImage,
           source_filename: tab.filename,
           region: { x: Math.round(x0), y: Math.round(y0), w, h },
-          save_mode: saveMode === "replace" ? "replace" : "new",
-          ...(getAiKeyBodyFields?.() || {}),
+          save_mode: saveMode,
+          ...keyFields,
         };
         const data = await api(`/api/projects/${encodeURIComponent(tab.projectId)}/render-region-edit`, {
           method: "POST",
@@ -1275,41 +1360,6 @@ export function createReferenceFilesViewer(options = {}) {
         statusEl.textContent = err.message || "Region edit failed.";
         if (genBtn) genBtn.disabled = false;
       }
-    });
-  }
-
-  async function askReplaceOrNew(defaultHint = "") {
-    const pref = readRenderEditPref();
-    if (pref === "replace" || pref === "new") return pref;
-
-    return new Promise((resolve) => {
-      document.getElementById("ref-render-save-modal")?.remove();
-      const modal = document.createElement("div");
-      modal.id = "ref-render-save-modal";
-      modal.className = "ref-region-edit-modal";
-      modal.innerHTML = `
-        <div class="ref-region-edit-card" role="dialog" aria-modal="true">
-          <h3>Save edited render</h3>
-          <p class="muted small">${escapeHtml(defaultHint || "Replace the current image, or save a new one?")}</p>
-          <label class="ref-dont-ask">
-            <input type="checkbox" data-dont-ask />
-            <span>Don’t ask again — you can change this later in Preferences</span>
-          </label>
-          <div class="ref-region-edit-actions">
-            <button type="button" class="btn secondary" data-choice="new">Save as new image</button>
-            <button type="button" class="btn primary" data-choice="replace">Replace current</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      modal.addEventListener("click", (ev) => {
-        const choice = ev.target.closest("[data-choice]")?.dataset.choice;
-        if (!choice) return;
-        const dontAsk = !!modal.querySelector("[data-dont-ask]")?.checked;
-        if (dontAsk) writeRenderEditPref(choice);
-        modal.remove();
-        resolve(choice);
-      });
     });
   }
 
@@ -1326,7 +1376,7 @@ export function createReferenceFilesViewer(options = {}) {
       revokeBlob(tab);
       await openTab(filename, {
         projectId: pid,
-        label: String(filename).replace(/\.[^.]+$/, "") || "Render",
+        label: String(filename).replace(/\.[^.]+$/, "") || "Image",
         kind: "image",
         forceReload: true,
       });
@@ -1334,12 +1384,23 @@ export function createReferenceFilesViewer(options = {}) {
     onStatus?.(
       "ok",
       choice === "replace"
-        ? "Replaced current render. Change this later in Preferences → Render edits."
-        : "Saved as a new render. Change this later in Preferences → Render edits.",
+        ? "Replaced current image. Toggle New/Replace on the toolbar anytime."
+        : "Saved as a new image. Toggle New/Replace on the toolbar anytime.",
     );
   }
 
   viewerEl?.addEventListener("click", (e) => {
+    const saveModeBtn = e.target.closest("[data-ref-save-mode]");
+    if (saveModeBtn) {
+      setImageEditSaveMode(saveModeBtn.dataset.refSaveMode, { persist: true });
+      onStatus?.(
+        "ok",
+        imageEditSaveMode === "replace"
+          ? "AI edits will replace the current image."
+          : "AI edits will save as a new image.",
+      );
+      return;
+    }
     const tool = e.target.closest("[data-ref-tool]")?.dataset.refTool;
     if (tool) {
       setMarkupTool(tool);

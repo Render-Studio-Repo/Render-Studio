@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 import json
 import re
 import subprocess
@@ -368,6 +369,30 @@ def main() -> None:
     bump_cache()
     if not args.quiet:
         print(f"Updated {MILESTONES.relative_to(ROOT)}")
+
+    # Push new milestones to Discord (best-effort; never fail the scan).
+    try:
+        sys.path.insert(0, str(ROOT))
+        from backend.services import discord_updates_service as discord
+
+        if discord.configured():
+            result = discord.announce_updates(missing)
+            if not args.quiet:
+                print(
+                    f"Discord: posted={result.get('posted')} "
+                    f"skipped={result.get('skipped')} failed={result.get('failed')}"
+                )
+                if result.get("failed"):
+                    st = discord.connection_status()
+                    if st.get("error"):
+                        print(f"Discord note: {st['error']}")
+                    if st.get("invite_url") and st.get("guild_count", 0) == 0:
+                        print(f"Invite bot: {st['invite_url']}")
+        elif not args.quiet:
+            print("Discord: not configured — skipped announce")
+    except Exception as err:
+        if not args.quiet:
+            print(f"Discord announce skipped: {err}")
 
 
 if __name__ == "__main__":
