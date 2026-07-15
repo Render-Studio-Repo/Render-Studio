@@ -525,6 +525,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       const renderToken = params.get("render3d_token");
       const socialToken = params.get("social_token");
       const socialProvider = params.get("social_provider") || "social";
+      const socialNew = params.get("social_new") === "1";
       const socialError = params.get("social_error");
       const inOAuthPopup = !!(window.opener && !window.opener.closed);
 
@@ -545,6 +546,8 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
         try {
           localStorage.setItem(TOKEN_KEY, socialToken);
           const data = await api("/api/auth/me");
+          data.social_provider = socialProvider;
+          data.social_new = socialNew;
           setSession(socialToken, data.user);
           setUserUI(data.user);
           showModal(false);

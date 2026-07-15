@@ -308,8 +308,13 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
 
         if picture_url:
             conn.execute(
-                "UPDATE users SET avatar_url = COALESCE(avatar_url, ?) WHERE id = ?",
+                "UPDATE users SET avatar_url = ? WHERE id = ?",
                 (picture_url, user_id),
+            )
+        if display_name:
+            conn.execute(
+                "UPDATE users SET display_name = ? WHERE id = ?",
+                (display_name, user_id),
             )
         conn.execute(
             """INSERT INTO social_accounts

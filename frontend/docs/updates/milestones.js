@@ -9,6 +9,16 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "google-new-user-robot-walkthrough",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Google new-user robot walkthrough",
+    summary:
+      "New Google sign-ins now pull the Google profile name and photo, then launch a Robot Arm walkthrough that introduces Generate, selection, references, Knowledge Base, Agent, and screenshots.",
+    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    href: "/",
+  },
+  {
     id: "skills-square-media-cards",
     date: "2026-07-15",
     kind: "feature",

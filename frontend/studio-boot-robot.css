@@ -1,4 +1,4 @@
-/* Boot-stage robot: SVG arm, fixed base, single shoulder swing */
+/* Boot-stage robot: SVG arm, fixed base, shoulder + elbow */
 
 .studio-boot-robot,
 .studio-boot-drop-zone,
@@ -8,7 +8,6 @@
   animation: none !important;
 }
 
-/* Small printed brick on the bed — not robot-shaped */
 .studio-boot-print-part {
   position: absolute;
   left: 58px;
@@ -21,7 +20,7 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 45%),
     linear-gradient(135deg, #7dd3fc, #0284c7);
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
-  animation: studio-boot-print-grow 6.5s ease-in-out infinite;
+  animation: studio-boot-print-grow 7s ease-in-out infinite;
   transform-origin: center bottom;
 }
 

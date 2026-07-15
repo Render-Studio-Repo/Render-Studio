@@ -4027,7 +4027,8 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
     try:
         profile = exchange_code_for_profile(provider, code)
         user = upsert_social_user(profile)
-        if user.pop("_created_new_user", False):
+        created_new_user = bool(user.pop("_created_new_user", False))
+        if created_new_user:
             try:
                 new_user_alert_service.add_new_user(user, source=provider)
             except Exception:
@@ -4038,7 +4039,8 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
         logger.warning("Social OAuth callback failed for %s: %s", provider, exc)
         return _social_redirect_error(provider, str(exc))
     safe_provider = urllib.parse.quote((provider or "social").strip().lower()[:40])
-    return RedirectResponse(f"/?social_token={token}&social_provider={safe_provider}", status_code=302)
+    new_flag = "&social_new=1" if created_new_user else ""
+    return RedirectResponse(f"/?social_token={token}&social_provider={safe_provider}{new_flag}", status_code=302)
 
 
 @app.get("/oauth/{provider}/callback")

@@ -4,7 +4,7 @@ import {
   isPaidListing,
   mountSellerPanel,
   startCheckout,
-} from "./marketplace-payments.js?v=20260715-mkt-payments";
+} from "./marketplace-payments.js?v=20260715-payout-sso";
 
 const listEl = document.getElementById("kb-store-list");
 const statusEl = document.getElementById("kb-store-status");

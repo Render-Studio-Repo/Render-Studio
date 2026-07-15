@@ -16,12 +16,17 @@ const SHOW_ME_TOURS = {
     ],
   },
   "prompt-onboarding": {
-    title: "Prompt controls walkthrough",
+    title: "Welcome to Render3D",
     example: "Create a 90 mm robot wrist bracket that mounts to the selected arm link, with 4 bolt holes and rounded edges.",
     studioPath: "/?showMe=prompt-onboarding",
     gif: "/docs/media/ai-generate.gif?v=20260715-real",
     needsRobotArm: true,
     steps: [
+      {
+        selector: "#viewport, .viewport-shell, .studio-viewport",
+        label: "We'll use a private Robot Arm demo so you can learn Generate, selection, references, and editing on a real model.",
+        click: false,
+      },
       {
         selector: "#prompt-spice-toggle, #prompt-spice-wrap",
         label: "Improve prompt with AI is on by default. It rewrites rough text into a clearer CAD brief before Generate.",
@@ -46,6 +51,12 @@ const SHOW_ME_TOURS = {
         reveal: "mobile-ai",
       },
       {
+        selector: "#btn-prompt, #prompt-generate, #btn-generate",
+        label: "Generate sends your prompt to Render AI. Use it for new parts, revisions, and edits to selected robot-arm pieces.",
+        click: false,
+        reveal: "mobile-ai",
+      },
+      {
         selector: "#btn-pick-object, .mobile-tool-btn[data-pick='object'], button[data-mode='object']",
         label: "Select object mode lets you pick a model in the viewport before prompting.",
         click: true,
@@ -56,6 +67,12 @@ const SHOW_ME_TOURS = {
         label: "Click the demo robot arm object. Future prompts can keep targeting the selected object.",
         click: true,
         fraction: [0.52, 0.42],
+      },
+      {
+        selector: "#btn-pick-face, .mobile-tool-btn[data-pick='face'], button[data-pick='face']",
+        label: "Face pick is for precise edits. Pick a robot-arm face, then ask for holes, fillets, brackets, or mounting changes.",
+        click: true,
+        reveal: "mobile-tools",
       },
       {
         selector: ".prompt-mic-btn[data-mic-target='prompt-input'], .prompt-skills-trail .prompt-mic-btn",
@@ -90,6 +107,16 @@ const SHOW_ME_TOURS = {
       {
         selector: "#knowledge-base-modal, .kb-modal-card, #prompt-kb-picker-list",
         label: "Inside Knowledge Base, select collections, upload files/folders, and choose which references should be attached to AI.",
+        click: false,
+      },
+      {
+        selector: "#btn-render-agent, #render-agent-fab, .render-agent-fab",
+        label: "Render Agent can answer questions or guide actions when you are not sure what button to use next.",
+        click: false,
+      },
+      {
+        selector: "#btn-screenshot-viewport, #btn-screenshot-toolbar",
+        label: "Screenshot saves the current viewport so you can share progress or attach an image back into the AI prompt.",
         click: false,
       },
     ],

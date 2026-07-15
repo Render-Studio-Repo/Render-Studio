@@ -1,4 +1,4 @@
-/* Shared realistic SVG robot arm — fixed base, one shoulder swing (SMIL), place on ground */
+/* Shared SVG robot arm — SMIL animates shoulder + elbow; base stays fixed */
 
 .welcome-robot,
 .gs-hero-robot.welcome-robot {
@@ -30,23 +30,13 @@
   filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.35));
 }
 
-/* Kill leftover CSS-piece markup if any still exists */
 .welcome-robot > .welcome-robot-base,
-.welcome-robot > .welcome-robot-base-unit,
 .welcome-robot > .welcome-robot-joint,
 .welcome-robot > .welcome-robot-arm,
 .welcome-robot > .welcome-robot-claw,
-.welcome-robot > .welcome-robot-shoulder,
-.welcome-robot > .welcome-robot-placed,
-.welcome-robot > .welcome-robot-plate,
-.welcome-robot > .welcome-robot-pedestal,
-.welcome-robot > .welcome-robot-column,
 .studio-boot-part,
-.studio-boot-robot,
-.studio-boot-drop-zone,
-.studio-boot-transfer-part {
+.studio-boot-robot {
   display: none !important;
-  animation: none !important;
 }
 
 @media (max-width: 900px) {
@@ -54,14 +44,5 @@
     left: 16px;
     width: 260px;
     height: 148px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .welcome-robot-svg animate,
-  .welcome-robot-svg animateTransform,
-  .studio-boot-arm-svg animate,
-  .studio-boot-arm-svg animateTransform {
-    display: none !important;
   }
 }

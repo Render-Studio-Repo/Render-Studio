@@ -644,20 +644,27 @@ const SOLID_CATALOG = CATALOG;
 
 /** Fusion-style rigging environment ribbon (visible when RIGGING workspace tab is active). */
 const RIGGING_CATALOG = {
-  Create: [
+  Control: [
     {
-      id: "rig_add_bone",
-      label: "Add Bone",
-      icon: "●",
-      desc: "Click the model to place a new bone",
-      rigAction: "add",
+      id: "rig_keyframe",
+      label: "Keyframe",
+      icon: "◆",
+      desc: "Insert keyframe at current time (K)",
+      rigAction: "keyframe",
     },
     {
-      id: "rig_auto",
-      label: "Auto Rig",
-      icon: "🦴",
-      desc: "Generate a kinematic chain from model bounds",
-      rigAction: "auto",
+      id: "rig_play",
+      label: "Play / Pause",
+      icon: "▶",
+      desc: "Play animation timeline (Space)",
+      rigAction: "play",
+    },
+    {
+      id: "rig_stop",
+      label: "Stop",
+      icon: "■",
+      desc: "Stop and rewind animation",
+      rigAction: "stop",
     },
   ],
   Hierarchy: [
@@ -704,29 +711,6 @@ const RIGGING_CATALOG = {
       icon: "↻",
       desc: "Drag to rotate selected joint",
       rigTool: "rotate",
-    },
-  ],
-  Animation: [
-    {
-      id: "rig_keyframe",
-      label: "Keyframe",
-      icon: "◆",
-      desc: "Insert keyframe at current time (K)",
-      rigAction: "keyframe",
-    },
-    {
-      id: "rig_play",
-      label: "Play / Pause",
-      icon: "▶",
-      desc: "Play animation timeline (Space)",
-      rigAction: "play",
-    },
-    {
-      id: "rig_stop",
-      label: "Stop",
-      icon: "■",
-      desc: "Stop and rewind animation",
-      rigAction: "stop",
     },
   ],
   Export: [

@@ -63,14 +63,14 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt-purple";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-auth-connect-social";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-profile-onboarding";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-hide-shot-on-viewport";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-open-empty";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-chat-fab-fallback";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
-import { createRibbon } from "./ribbon.js?v=20260715-viewport-shot-tools";
+import { createRibbon } from "./ribbon.js?v=20260715-rigging-control-tab";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-rigging-status";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
@@ -128,6 +128,7 @@ const LS_NEW_PROJECT_WORKSPACE_DEFAULT = "render3d:newProjectWorkspaceDefault:v1
 const LS_WORKSPACE_REALTIME_COLLAPSED = "render3d:workspaceRealtimeCollapsed:v1";
 const LS_WORKSPACE_FUSION_SECTION_OPEN = "render3d:workspaceFusionSectionOpen:v1";
 const LS_FIRST_PROJECT_PROMPT_ONBOARDING = "render3d:firstProjectPromptOnboarding:v1";
+const LS_GOOGLE_NEW_USER_WALKTHROUGH = "render3d:googleNewUserWalkthrough:v1";
 
 let projectId = null;
 const wiringLoadCache = { projectId: null, promise: null, data: null };
@@ -178,6 +179,7 @@ let authUi = null;
 let renderAgentUi = null;
 let selectedFile = null;
 let currentMesh = null;
+let pendingGoogleNewUserWalkthrough = false;
 let meshCenterOffset = new THREE.Vector3();
 let timelineData = null;
 let aiStatus = null;
@@ -13628,8 +13630,13 @@ function firstProjectPromptOnboardingKey(user = currentUser) {
   return user?.id ? `${LS_FIRST_PROJECT_PROMPT_ONBOARDING}:${user.id}` : LS_FIRST_PROJECT_PROMPT_ONBOARDING;
 }
 
+function googleNewUserWalkthroughKey(user = currentUser) {
+  return user?.id ? `${LS_GOOGLE_NEW_USER_WALKTHROUGH}:${user.id}` : LS_GOOGLE_NEW_USER_WALKTHROUGH;
+}
+
 function maybeStartFirstProjectPromptOnboarding() {
   if (!currentUser || !projectId) return;
+  if (pendingGoogleNewUserWalkthrough) return;
   if (window.__render3dShowMeFromQuery) return;
   if (new URLSearchParams(window.location.search).has("showMe")) return;
   if ((allProjects || []).length > 1) return;
@@ -13641,10 +13648,30 @@ function maybeStartFirstProjectPromptOnboarding() {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-prompt-onboarding").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-google-new-user").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1200);
+}
+
+function maybeStartGoogleNewUserWalkthrough(data = {}) {
+  if (!currentUser || data?.social_new !== true || String(data?.social_provider || "").toLowerCase() !== "google") return;
+  if (window.__render3dShowMeFromQuery) return;
+  if (new URLSearchParams(window.location.search).has("showMe")) return;
+  const key = googleNewUserWalkthroughKey();
+  try {
+    if (localStorage.getItem(key) === "1") return;
+    localStorage.setItem(key, "1");
+    localStorage.setItem(firstProjectPromptOnboardingKey(), "1");
+  } catch {
+    return;
+  }
+  window.setTimeout(() => {
+    void import("./show-me-tour.js?v=20260715-google-new-user").then((mod) => {
+      mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
+    });
+  }, 1400);
+  pendingGoogleNewUserWalkthrough = false;
 }
 
 function captureSessionSnapshot() {
@@ -22141,7 +22168,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (showMeParam) {
     window.__render3dShowMeFromQuery = true;
-    void import("./show-me-tour.js?v=20260715-prompt-onboarding").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-google-new-user").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }
@@ -22299,12 +22326,16 @@ window.addEventListener("keydown", (e) => {
     },
     onReady: async (data) => {
       currentUser = data.user;
+      pendingGoogleNewUserWalkthrough = data?.social_new === true
+        && String(data?.social_provider || "").toLowerCase() === "google";
       renderAgentUi?.setUser?.(data.user);
       allTeams = data.teams || [];
       aiKeyUi.render(data.ai);
       connectUserRealtime();
       renderTeams();
       await startApp();
+      maybeStartGoogleNewUserWalkthrough(data);
+      pendingGoogleNewUserWalkthrough = false;
       if (askAgentParam) {
         setTimeout(() => renderAgentUi?.openWithQuestion?.(askAgentParam), 250);
       }
@@ -23420,6 +23451,7 @@ window.addEventListener("keydown", (e) => {
   });
 
   let preferencesAdvancedOpen = false;
+  let preferencesAdvancedTab = "generation";
 
   function readRenderEditSaveMode() {
     try {
@@ -23478,6 +23510,66 @@ window.addEventListener("keydown", (e) => {
     if (spiceToggle) spiceToggle.checked = isSpicePreferenceEnabled();
     const codexToggle = panel.querySelector("#pref-advanced-codex-agent");
     if (codexToggle) codexToggle.checked = isCodexPreferenceEnabled();
+  }
+
+  async function hydrateAuthorizedApps(panel = document.getElementById("profile-preferences-panel")) {
+    const host = panel?.querySelector("#pref-authorized-apps-list");
+    if (!host) return;
+    if (!currentUser) {
+      host.innerHTML = `<p class="muted small">Sign in to connect marketplace payout accounts.</p>`;
+      return;
+    }
+    try {
+      const payments = await import("./marketplace-payments.js?v=20260715-payout-sso");
+      const seller = await payments.loadSellerStatus();
+      const details = seller?.payout_details || {};
+      const short = (value = "") => {
+        const text = String(value || "");
+        return text.length > 14 ? `${text.slice(0, 6)}...${text.slice(-5)}` : text;
+      };
+      const rows = [
+        {
+          key: "stripe",
+          label: "Stripe",
+          icon: "stripe",
+          detail: seller?.stripe_ready ? "Bank payouts connected" : seller?.stripe_account_id ? "Finish Express onboarding" : "Bank payouts via Express",
+          connected: !!seller?.stripe_ready,
+          action: "connect-stripe",
+          cta: seller?.stripe_account_id && !seller?.stripe_ready ? "Finish setup" : seller?.stripe_ready ? "Manage" : "Connect",
+        },
+        {
+          key: "paypal",
+          label: "PayPal",
+          icon: "PayPal",
+          detail: seller?.paypal_email || "Payout email",
+          connected: !!seller?.paypal_email,
+          action: "connect-paypal",
+          cta: seller?.paypal_email ? "Update" : "Connect",
+        },
+        {
+          key: "phantom",
+          label: "Phantom",
+          icon: "◇",
+          detail: details.phantom?.wallet_address ? `${short(details.phantom.wallet_address)} · Solana` : "Crypto wallet payouts",
+          connected: !!details.phantom?.wallet_address,
+          action: "connect-phantom",
+          cta: details.phantom?.wallet_address ? "Reconnect" : "Connect",
+        },
+      ];
+      host.innerHTML = rows.map((row) => `
+        <article class="authorized-app-row authorized-app-row--${appEscapeHtml(row.key)}">
+          <span class="authorized-app-icon">${appEscapeHtml(row.icon)}</span>
+          <span class="authorized-app-copy">
+            <b>${appEscapeHtml(row.label)}</b>
+            <small>${appEscapeHtml(row.detail)}</small>
+          </span>
+          <span class="authorized-app-state ${row.connected ? "is-connected" : ""}">${row.connected ? "Connected" : "Not connected"}</span>
+          <button type="button" class="btn secondary btn-compact" data-authorized-app-action="${appEscapeHtml(row.action)}">${appEscapeHtml(row.cta)}</button>
+        </article>
+      `).join("");
+    } catch (err) {
+      host.innerHTML = `<p class="muted small">Could not load authorized apps: ${appEscapeHtml(err.message || "error")}</p>`;
+    }
   }
 
   function renderPreferencesMenuPanel() {
@@ -23582,10 +23674,30 @@ window.addEventListener("keydown", (e) => {
             </p>
           </section>
           <section id="profile-preferences-advanced" class="profile-preferences-section profile-preferences-section--wide profile-preferences-advanced ${preferencesAdvancedOpen ? "" : "hidden"}">
-            <strong>Advanced settings</strong>
-            <p class="muted small profile-preferences-note">Feature controls grouped by where they affect the studio.</p>
-            <div class="profile-preferences-category-grid">
-              <article class="profile-preferences-category">
+            <div class="profile-preferences-advanced-head">
+              <div>
+                <strong>Advanced control center</strong>
+                <p class="muted small profile-preferences-note">Fine-tune the feature flags, integrations, motion workflows, marketplace connections, and controls we have built.</p>
+              </div>
+              <span class="profile-preferences-premium-chip">Pro controls</span>
+            </div>
+            <div class="profile-preferences-advanced-shell">
+              <nav class="profile-preferences-advanced-nav" aria-label="Advanced preferences sections">
+                <button type="button" data-preferences-advanced-tab="generation" class="${preferencesAdvancedTab === "generation" ? "active" : ""}">
+                  <b>Generation</b><small>AI, speed, motion, agents</small>
+                </button>
+                <button type="button" data-preferences-advanced-tab="cad" class="${preferencesAdvancedTab === "cad" ? "active" : ""}">
+                  <b>CAD & files</b><small>Fusion, edits, workspace defaults</small>
+                </button>
+                <button type="button" data-preferences-advanced-tab="authorized" class="${preferencesAdvancedTab === "authorized" ? "active" : ""}">
+                  <b>Authorized apps</b><small>Stripe, PayPal, Phantom</small>
+                </button>
+                <button type="button" data-preferences-advanced-tab="viewport" class="${preferencesAdvancedTab === "viewport" ? "active" : ""}">
+                  <b>Viewport</b><small>Theme, mouse, navigation</small>
+                </button>
+              </nav>
+              <div class="profile-preferences-advanced-panels">
+              <article class="profile-preferences-category ${preferencesAdvancedTab === "generation" ? "" : "hidden"}" data-preferences-advanced-panel="generation">
                 <h3>Generation</h3>
                 <label class="profile-preference-field">
                   <span>
@@ -23635,7 +23747,7 @@ window.addEventListener("keydown", (e) => {
                   <input id="pref-advanced-codex-agent" type="checkbox" />
                 </label>
               </article>
-              <article class="profile-preferences-category">
+              <article class="profile-preferences-category ${preferencesAdvancedTab === "cad" ? "" : "hidden"}" data-preferences-advanced-panel="cad">
                 <h3>CAD and files</h3>
                 <label class="profile-preference-field">
                   <span>
@@ -23670,7 +23782,14 @@ window.addEventListener("keydown", (e) => {
                   </select>
                 </label>
               </article>
-              <article class="profile-preferences-category">
+              <article class="profile-preferences-category profile-preferences-category--authorized ${preferencesAdvancedTab === "authorized" ? "" : "hidden"}" data-preferences-advanced-panel="authorized">
+                <h3>Authorized apps</h3>
+                <p class="muted small profile-preferences-note">Connected payout providers and marketplace account links.</p>
+                <div id="pref-authorized-apps-list" class="authorized-apps-list">
+                  <p class="muted small">Loading authorized apps...</p>
+                </div>
+              </article>
+              <article class="profile-preferences-category ${preferencesAdvancedTab === "viewport" ? "" : "hidden"}" data-preferences-advanced-panel="viewport">
                 <h3>Viewport and controls</h3>
                 <label class="profile-preference-field">
                   <span>
@@ -23694,12 +23813,14 @@ window.addEventListener("keydown", (e) => {
                   Viewport lighting remains in the ribbon Light button so changes can be previewed directly on the model.
                 </p>
               </article>
+              </div>
             </div>
           </section>
         </div>
       </div>
     `;
     syncPreferencesMenuControls(panel);
+    void hydrateAuthorizedApps(panel);
   }
 
   function closePreferencesModal() {
@@ -23724,17 +23845,19 @@ window.addEventListener("keydown", (e) => {
   });
 
   document.getElementById("profile-preferences-panel")?.addEventListener("change", (e) => {
-    const mouseSelect = e.target.closest("#pref-mouse-preset");
+    const mouseSelect = e.target.closest("#pref-mouse-preset, #pref-advanced-mouse-preset");
     if (mouseSelect) {
       setMouseControlPreset(mouseSelect.value, { announce: true });
+      syncPreferencesMenuControls();
       return;
     }
-    const themeSelect = e.target.closest("#pref-app-theme");
+    const themeSelect = e.target.closest("#pref-app-theme, #pref-advanced-app-theme");
     if (themeSelect) {
       setAppTheme(themeSelect.value, { persist: true, announce: true });
+      syncPreferencesMenuControls();
       return;
     }
-    const renderEditSelect = e.target.closest("#pref-render-edit-mode");
+    const renderEditSelect = e.target.closest("#pref-render-edit-mode, #pref-advanced-render-edit-mode");
     if (renderEditSelect) {
       const mode = ["ask", "replace", "new"].includes(renderEditSelect.value) ? renderEditSelect.value : "ask";
       try {
@@ -23747,9 +23870,10 @@ window.addEventListener("keydown", (e) => {
         : mode === "replace"
           ? "Render edits will always replace the current image."
           : "Render edits will always save as a new image.");
+      syncPreferencesMenuControls();
       return;
     }
-    const newProjectWorkspaceSelect = e.target.closest("#pref-new-project-workspace");
+    const newProjectWorkspaceSelect = e.target.closest("#pref-new-project-workspace, #pref-advanced-new-project-workspace");
     if (newProjectWorkspaceSelect) {
       const value = writeNewProjectWorkspaceDefault(newProjectWorkspaceSelect.value || "ask");
       setEditStatus("ok", value === "ask"
@@ -23757,6 +23881,49 @@ window.addEventListener("keydown", (e) => {
         : value === "personal"
           ? "New projects will default to your personal workspace."
           : "New projects will default to the current shared workspace.");
+      syncPreferencesMenuControls();
+      return;
+    }
+    const promptSpeedSelect = e.target.closest("#pref-advanced-prompt-speed");
+    if (promptSpeedSelect) {
+      setPromptGenerationSpeed(promptSpeedSelect.value);
+      setEditStatus("ok", `Prompt generation set to ${promptSpeedSelect.value === "quality" ? "Quality" : "Speed"}.`);
+      syncPreferencesMenuControls();
+      return;
+    }
+    const wiringSpeedSelect = e.target.closest("#pref-advanced-wiring-speed");
+    if (wiringSpeedSelect) {
+      setWiringGenerationSpeed(wiringSpeedSelect.value);
+      setEditStatus("ok", `Wiring generation set to ${wiringSpeedSelect.value === "quality" ? "Quality" : "Speed"}.`);
+      syncPreferencesMenuControls();
+      return;
+    }
+    const simMotionSelect = e.target.closest("#pref-advanced-sim-motion");
+    if (simMotionSelect) {
+      setSimMotionAfterGenPref(simMotionSelect.value, { announce: true });
+      syncPreferencesMenuControls();
+      return;
+    }
+    const fusionTargetSelect = e.target.closest("#pref-advanced-fusion-target");
+    if (fusionTargetSelect) {
+      setFusionTarget(fusionTargetSelect.value);
+      setEditStatus("ok", `Fusion target set to ${fusionTargetLabel()}.`);
+      syncPreferencesMenuControls();
+      return;
+    }
+    const spiceToggle = e.target.closest("#pref-advanced-spice-prompt");
+    if (spiceToggle) {
+      setSpiceEnabled(spiceToggle.checked);
+      setEditStatus("ok", spiceToggle.checked ? "Improve prompt with AI enabled." : "Improve prompt with AI disabled.");
+      syncPreferencesMenuControls();
+      return;
+    }
+    const codexToggle = e.target.closest("#pref-advanced-codex-agent");
+    if (codexToggle) {
+      void handleCodexToggleChange(codexToggle.checked).then(() => {
+        setEditStatus("ok", isCodexEnabled() ? "Codex CAD agent enabled." : "Codex CAD agent disabled.");
+        syncPreferencesMenuControls();
+      });
       return;
     }
     const avatarInput = e.target.closest("#profile-avatar-input");
@@ -23769,6 +23936,56 @@ window.addEventListener("keydown", (e) => {
     const panel = document.getElementById("profile-preferences-panel");
     if (e.target === panel || e.target.closest("[data-preferences-close]")) {
       closePreferencesModal();
+      return;
+    }
+    const advancedToggle = e.target.closest("#pref-advanced-toggle");
+    if (advancedToggle) {
+      preferencesAdvancedOpen = !preferencesAdvancedOpen;
+      renderPreferencesMenuPanel();
+      const advanced = document.getElementById("profile-preferences-advanced");
+      if (preferencesAdvancedOpen) {
+        requestAnimationFrame(() => advanced?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
+      }
+      return;
+    }
+    const advancedTab = e.target.closest("[data-preferences-advanced-tab]");
+    if (advancedTab) {
+      preferencesAdvancedOpen = true;
+      preferencesAdvancedTab = advancedTab.getAttribute("data-preferences-advanced-tab") || "generation";
+      renderPreferencesMenuPanel();
+      return;
+    }
+    const appAction = e.target.closest("[data-authorized-app-action]");
+    if (appAction) {
+      const action = appAction.getAttribute("data-authorized-app-action") || "";
+      void (async () => {
+        try {
+          appAction.disabled = true;
+          const payments = await import("./marketplace-payments.js?v=20260715-payout-sso");
+          if (action === "connect-stripe") {
+            setEditStatus("ok", "Opening Stripe Express...");
+            await payments.startStripeConnect();
+            return;
+          }
+          if (action === "connect-paypal") {
+            const current = (await payments.loadSellerStatus().catch(() => null))?.paypal_email || "";
+            const email = await payments.openPaypalConnectModal({ initialEmail: current });
+            if (!email) return;
+            await payments.savePaypalEmail(email);
+            setEditStatus("ok", "PayPal connected for marketplace payouts.");
+          }
+          if (action === "connect-phantom") {
+            setEditStatus("ok", "Opening Phantom wallet...");
+            await payments.startPhantomConnect();
+            setEditStatus("ok", "Phantom wallet connected for marketplace payouts.");
+          }
+          await hydrateAuthorizedApps(panel);
+        } catch (err) {
+          setEditStatus("error", err.message || "Could not connect authorized app.");
+        } finally {
+          appAction.disabled = false;
+        }
+      })();
       return;
     }
     if (!e.target.closest("#profile-avatar-remove")) return;

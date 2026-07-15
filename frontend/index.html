@@ -10,10 +10,10 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-navbar-visible-actions" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-preferences-premium" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-remember-gear" />
-  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v6" />
-  <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-arm-svg-v6" />
+  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v2" />
+  <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
   <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-3d-spice" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <script type="importmap">
@@ -35,97 +35,63 @@
           <span class="studio-boot-printer-head"></span>
           <span class="studio-boot-print-beam"></span>
           <span class="studio-boot-build-plate"></span>
-          <span class="studio-boot-print-part" aria-hidden="true"></span>
+          <span class="studio-boot-part studio-boot-part--base"></span>
+          <span class="studio-boot-part studio-boot-part--arm"></span>
+          <span class="studio-boot-part studio-boot-part--cap"></span>
         </div>
         <div class="studio-boot-arm" id="studio-boot-arm" aria-hidden="true">
-          <svg class="studio-boot-arm-svg" viewBox="0 0 260 176" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <svg class="studio-boot-arm-svg" viewBox="0 0 248 168" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <linearGradient id="bootArm-metal" x1="0%" y1="0%" x2="100%" y2="100%">
+              <linearGradient id="bootArmMetal" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%" stop-color="#fdba74"/>
                 <stop offset="45%" stop-color="#f97316"/>
                 <stop offset="100%" stop-color="#9a3412"/>
               </linearGradient>
-              <linearGradient id="bootArm-dark" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#fb923c"/>
-                <stop offset="100%" stop-color="#7c2d12"/>
-              </linearGradient>
-              <linearGradient id="bootArm-steel" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#f1f5f9"/>
+              <linearGradient id="bootArmSteel" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#e2e8f0"/>
                 <stop offset="100%" stop-color="#64748b"/>
               </linearGradient>
-              <linearGradient id="bootArm-part" x1="0%" y1="0%" x2="100%" y2="100%">
+              <linearGradient id="bootArmPart" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%" stop-color="#7dd3fc"/>
                 <stop offset="100%" stop-color="#0284c7"/>
               </linearGradient>
-              <filter id="bootArm-soft" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000" flood-opacity="0.35"/>
-              </filter>
             </defs>
 
-            <!-- Ground part (placed) -->
-            <g opacity="0">
-              <rect x="72" y="148" width="32" height="16" rx="3" fill="url(#bootArm-part)" stroke="#bae6fd" stroke-width="1.2"/>
-              <rect x="76" y="151" width="24" height="3" rx="1" fill="#e0f2fe" opacity="0.5"/>
-              <animate attributeName="opacity" dur="6.5s" repeatCount="indefinite"
-                values="0;0;0;0;0;0;0;1;1;1;0.4;0" keyTimes="0;0.55;0.62;0.68;0.72;0.78;0.82;0.86;0.9;0.94;0.97;1"/>
+            <!-- Placed part on ground (appears after place) -->
+            <g class="studio-boot-arm-ground-g">
+              <rect x="104" y="142" width="28" height="14" rx="3" fill="url(#bootArmPart)" stroke="#bae6fd" stroke-width="1.2"/>
             </g>
 
             <!-- FIXED BASE -->
-            <g filter="url(#bootArm-soft)">
-              <ellipse cx="204" cy="170" rx="48" ry="5" fill="#020617" opacity="0.55"/>
-              <rect x="160" y="156" width="88" height="14" rx="4" fill="url(#bootArm-metal)" stroke="#fdba74" stroke-width="1.4"/>
-              <rect x="170" y="142" width="68" height="18" rx="5" fill="url(#bootArm-dark)" stroke="#fed7aa" stroke-width="1.1"/>
-              <!-- column -->
-              <rect x="190" y="78" width="28" height="68" rx="5" fill="url(#bootArm-metal)" stroke="#fed7aa" stroke-width="1.3"/>
-              <rect x="195" y="86" width="6" height="52" rx="2" fill="#431407" opacity="0.35"/>
-              <rect x="210" y="86" width="3" height="52" rx="1" fill="#fdba74" opacity="0.4"/>
-              <!-- shoulder housing (fixed) -->
-              <rect x="178" y="62" width="52" height="26" rx="8" fill="url(#bootArm-steel)" stroke="#cbd5e1" stroke-width="1.3"/>
-              <circle cx="204" cy="74" r="10" fill="#0f172a" opacity="0.25"/>
+            <g class="studio-boot-arm-base-g">
+              <rect x="168" y="148" width="68" height="12" rx="4" fill="url(#bootArmMetal)" stroke="#fdba74" stroke-width="1.2"/>
+              <rect x="180" y="128" width="44" height="22" rx="5" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1"/>
+              <rect x="192" y="78" width="20" height="52" rx="5" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1"/>
+              <rect x="186" y="70" width="32" height="14" rx="4" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1"/>
             </g>
 
-            <!-- SWINGING ARM — one solid boom, pivot at shoulder only -->
-            <g filter="url(#bootArm-soft)">
-              <animateTransform attributeName="transform" type="rotate"
-                values="8 204 74; 8 204 74; 42 204 74; 42 204 74; 18 204 74; -38 204 74; -38 204 74; -12 204 74; 8 204 74; 8 204 74"
-                keyTimes="0;0.12;0.26;0.36;0.44;0.58;0.70;0.82;0.92;1"
-                dur="6.5s" repeatCount="indefinite"
-                calcMode="spline"
-                keySplines="0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1"/>
-
-              <!-- ONE continuous boom from shoulder through to wrist -->
-              <rect x="48" y="64" width="156" height="20" rx="8" fill="url(#bootArm-metal)" stroke="#fed7aa" stroke-width="1.5"/>
-              <rect x="56" y="69" width="140" height="5" rx="2" fill="#fdba74" opacity="0.35"/>
-              <rect x="56" y="78" width="140" height="2" rx="1" fill="#7c2d12" opacity="0.25"/>
-
-              <!-- shoulder bolt (only real joint) -->
-              <circle cx="204" cy="74" r="13" fill="#1c1917" stroke="#fb923c" stroke-width="3.5"/>
-              <circle cx="204" cy="74" r="5.5" fill="url(#bootArm-steel)"/>
-              <circle cx="204" cy="74" r="2" fill="#0f172a"/>
-
-              <!-- wrist cuff (visual only, does not animate separately) -->
-              <rect x="42" y="60" width="14" height="28" rx="4" fill="url(#bootArm-steel)" stroke="#94a3b8" stroke-width="1.1"/>
-
+            <!-- SWINGING ARM (only shoulder rotates) — pivot at 198,78 -->
+            <g class="studio-boot-arm-swing">
+              <!-- upper link -->
+              <rect x="108" y="70" width="90" height="16" rx="4" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1.2"/>
+              <!-- elbow joint (visual only) -->
+              <circle cx="112" cy="78" r="10" fill="#1c1917" stroke="#fb923c" stroke-width="3"/>
+              <circle cx="112" cy="78" r="3.5" fill="#e2e8f0"/>
+              <!-- forearm -->
+              <rect x="58" y="72" width="58" height="12" rx="3" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1.1"/>
+              <!-- wrist -->
+              <circle cx="60" cy="78" r="7" fill="#1c1917" stroke="#fb923c" stroke-width="2.5"/>
+              <circle cx="60" cy="78" r="2.5" fill="#e2e8f0"/>
               <!-- gripper jaws -->
-              <g>
-                <animateTransform attributeName="transform" type="rotate" additive="sum"
-                  values="-16 42 66; -16 42 66; -2 42 66; -2 42 66; -2 42 66; -18 42 66; -16 42 66"
-                  keyTimes="0;0.24;0.34;0.55;0.72;0.86;1" dur="6.5s" repeatCount="indefinite"/>
-                <rect x="22" y="62" width="22" height="7" rx="2.5" fill="url(#bootArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
+              <rect class="studio-boot-arm-jaw-l" x="42" y="68" width="16" height="6" rx="2" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1"/>
+              <rect class="studio-boot-arm-jaw-r" x="42" y="82" width="16" height="6" rx="2" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1"/>
+              <!-- held payload -->
+              <g class="studio-boot-arm-payload-g">
+                <rect x="36" y="72" width="18" height="12" rx="2" fill="url(#bootArmPart)" stroke="#bae6fd" stroke-width="1"/>
               </g>
-              <g>
-                <animateTransform attributeName="transform" type="rotate" additive="sum"
-                  values="16 42 82; 16 42 82; 2 42 82; 2 42 82; 2 42 82; 18 42 82; 16 42 82"
-                  keyTimes="0;0.24;0.34;0.55;0.72;0.86;1" dur="6.5s" repeatCount="indefinite"/>
-                <rect x="22" y="79" width="22" height="7" rx="2.5" fill="url(#bootArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
-              </g>
-
-              <!-- held part -->
-              <g opacity="0">
-                <rect x="18" y="68" width="16" height="12" rx="2" fill="url(#bootArm-part)" stroke="#bae6fd" stroke-width="1"/>
-                <animate attributeName="opacity" dur="6.5s" repeatCount="indefinite"
-                  values="0;0;0;1;1;1;0;0" keyTimes="0;0.3;0.34;0.38;0.55;0.72;0.8;1"/>
-              </g>
+              <!-- shoulder pivot (on top of column) -->
+              <circle cx="198" cy="78" r="12" fill="#1c1917" stroke="#fb923c" stroke-width="3.5"/>
+              <circle cx="198" cy="78" r="4" fill="#e2e8f0"/>
             </g>
           </svg>
         </div>
@@ -165,7 +131,22 @@
       <div class="studio-boot-logo" aria-hidden="true">
         <img src="/render3d-logo.png?v=20260715-new-logo" alt="" width="34" height="34" />
         <span class="studio-boot-logo-word">Render3D</span>
-        <span class="studio-boot-logo-gear">
+        <span class="studio-boot-logo-gear" aria-hidden="true">
+          <svg class="studio-boot-logo-gear-svg" viewBox="0 0 64 64" width="64" height="64">
+            <defs>
+              <linearGradient id="bootGearMetal" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#bae6fd"/>
+                <stop offset="45%" stop-color="#38bdf8"/>
+                <stop offset="100%" stop-color="#fb923c"/>
+              </linearGradient>
+            </defs>
+            <!-- 12-tooth gear -->
+            <path fill="url(#bootGearMetal)" stroke="#7dd3fc" stroke-width="1.2" d="
+              M32 4 L35.2 4.4 L36.6 10.2 L41.2 8.4 L43.8 13.6 L49.2 13.6 L49.8 19.2 L54.8 21.2 L53.6 26.6 L57.6 30 L53.6 33.4 L54.8 38.8 L49.8 40.8 L49.2 46.4 L43.8 46.4 L41.2 51.6 L36.6 49.8 L35.2 55.6 L32 56
+              L28.8 55.6 L27.4 49.8 L22.8 51.6 L20.2 46.4 L14.8 46.4 L14.2 40.8 L9.2 38.8 L10.4 33.4 L6.4 30 L10.4 26.6 L9.2 21.2 L14.2 19.2 L14.8 13.6 L20.2 13.6 L22.8 8.4 L27.4 10.2 L28.8 4.4 Z"/>
+            <circle cx="32" cy="32" r="14" fill="#050914" stroke="#38bdf8" stroke-width="2"/>
+            <circle cx="32" cy="32" r="5.5" fill="#0b1220" stroke="#fb923c" stroke-width="1.6"/>
+          </svg>
           <span id="studio-boot-logo-percent" class="studio-boot-logo-percent">8%</span>
         </span>
       </div>
@@ -2000,97 +1981,30 @@
           </button>
         </div>
         <div class="welcome-robot" aria-hidden="true">
-          <svg class="welcome-robot-svg" viewBox="0 0 260 176" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <defs>
-              <linearGradient id="welcomeArm-metal" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#fdba74"/>
-                <stop offset="45%" stop-color="#f97316"/>
-                <stop offset="100%" stop-color="#9a3412"/>
-              </linearGradient>
-              <linearGradient id="welcomeArm-dark" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#fb923c"/>
-                <stop offset="100%" stop-color="#7c2d12"/>
-              </linearGradient>
-              <linearGradient id="welcomeArm-steel" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#f1f5f9"/>
-                <stop offset="100%" stop-color="#64748b"/>
-              </linearGradient>
-              <linearGradient id="welcomeArm-part" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#7dd3fc"/>
-                <stop offset="100%" stop-color="#0284c7"/>
-              </linearGradient>
-              <filter id="welcomeArm-soft" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000" flood-opacity="0.35"/>
-              </filter>
-            </defs>
-
-            <!-- Ground part (placed) -->
-            <g opacity="0">
-              <rect x="72" y="148" width="32" height="16" rx="3" fill="url(#welcomeArm-part)" stroke="#bae6fd" stroke-width="1.2"/>
-              <rect x="76" y="151" width="24" height="3" rx="1" fill="#e0f2fe" opacity="0.5"/>
-              <animate attributeName="opacity" dur="6.5s" repeatCount="indefinite"
-                values="0;0;0;0;0;0;0;1;1;1;0.4;0" keyTimes="0;0.55;0.62;0.68;0.72;0.78;0.82;0.86;0.9;0.94;0.97;1"/>
-            </g>
-
-            <!-- FIXED BASE -->
-            <g filter="url(#welcomeArm-soft)">
-              <ellipse cx="204" cy="170" rx="48" ry="5" fill="#020617" opacity="0.55"/>
-              <rect x="160" y="156" width="88" height="14" rx="4" fill="url(#welcomeArm-metal)" stroke="#fdba74" stroke-width="1.4"/>
-              <rect x="170" y="142" width="68" height="18" rx="5" fill="url(#welcomeArm-dark)" stroke="#fed7aa" stroke-width="1.1"/>
-              <!-- column -->
-              <rect x="190" y="78" width="28" height="68" rx="5" fill="url(#welcomeArm-metal)" stroke="#fed7aa" stroke-width="1.3"/>
-              <rect x="195" y="86" width="6" height="52" rx="2" fill="#431407" opacity="0.35"/>
-              <rect x="210" y="86" width="3" height="52" rx="1" fill="#fdba74" opacity="0.4"/>
-              <!-- shoulder housing (fixed) -->
-              <rect x="178" y="62" width="52" height="26" rx="8" fill="url(#welcomeArm-steel)" stroke="#cbd5e1" stroke-width="1.3"/>
-              <circle cx="204" cy="74" r="10" fill="#0f172a" opacity="0.25"/>
-            </g>
-
-            <!-- SWINGING ARM — one solid boom, pivot at shoulder only -->
-            <g filter="url(#welcomeArm-soft)">
-              <animateTransform attributeName="transform" type="rotate"
-                values="8 204 74; 8 204 74; 42 204 74; 42 204 74; 18 204 74; -38 204 74; -38 204 74; -12 204 74; 8 204 74; 8 204 74"
-                keyTimes="0;0.12;0.26;0.36;0.44;0.58;0.70;0.82;0.92;1"
-                dur="6.5s" repeatCount="indefinite"
-                calcMode="spline"
-                keySplines="0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1; 0.45 0.05 0.25 1"/>
-
-              <!-- ONE continuous boom from shoulder through to wrist -->
-              <rect x="48" y="64" width="156" height="20" rx="8" fill="url(#welcomeArm-metal)" stroke="#fed7aa" stroke-width="1.5"/>
-              <rect x="56" y="69" width="140" height="5" rx="2" fill="#fdba74" opacity="0.35"/>
-              <rect x="56" y="78" width="140" height="2" rx="1" fill="#7c2d12" opacity="0.25"/>
-
-              <!-- shoulder bolt (only real joint) -->
-              <circle cx="204" cy="74" r="13" fill="#1c1917" stroke="#fb923c" stroke-width="3.5"/>
-              <circle cx="204" cy="74" r="5.5" fill="url(#welcomeArm-steel)"/>
-              <circle cx="204" cy="74" r="2" fill="#0f172a"/>
-
-              <!-- wrist cuff (visual only, does not animate separately) -->
-              <rect x="42" y="60" width="14" height="28" rx="4" fill="url(#welcomeArm-steel)" stroke="#94a3b8" stroke-width="1.1"/>
-
-              <!-- gripper jaws -->
-              <g>
-                <animateTransform attributeName="transform" type="rotate" additive="sum"
-                  values="-16 42 66; -16 42 66; -2 42 66; -2 42 66; -2 42 66; -18 42 66; -16 42 66"
-                  keyTimes="0;0.24;0.34;0.55;0.72;0.86;1" dur="6.5s" repeatCount="indefinite"/>
-                <rect x="22" y="62" width="22" height="7" rx="2.5" fill="url(#welcomeArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
-              </g>
-              <g>
-                <animateTransform attributeName="transform" type="rotate" additive="sum"
-                  values="16 42 82; 16 42 82; 2 42 82; 2 42 82; 2 42 82; 18 42 82; 16 42 82"
-                  keyTimes="0;0.24;0.34;0.55;0.72;0.86;1" dur="6.5s" repeatCount="indefinite"/>
-                <rect x="22" y="79" width="22" height="7" rx="2.5" fill="url(#welcomeArm-steel)" stroke="#cbd5e1" stroke-width="1"/>
-              </g>
-
-              <!-- held part -->
-              <g opacity="0">
-                <rect x="18" y="68" width="16" height="12" rx="2" fill="url(#welcomeArm-part)" stroke="#bae6fd" stroke-width="1"/>
-                <animate attributeName="opacity" dur="6.5s" repeatCount="indefinite"
-                  values="0;0;0;1;1;1;0;0" keyTimes="0;0.3;0.34;0.38;0.55;0.72;0.8;1"/>
-              </g>
-            </g>
-          </svg>
+          <div class="welcome-robot-base-unit">
+            <span class="welcome-robot-plate"></span>
+            <span class="welcome-robot-pedestal"></span>
+            <span class="welcome-robot-column"></span>
+          </div>
+          <div class="welcome-robot-shoulder">
+            <span class="welcome-robot-pivot"></span>
+            <div class="welcome-robot-boom">
+              <span class="welcome-robot-link welcome-robot-link--a"></span>
+              <span class="welcome-robot-elbow"></span>
+              <span class="welcome-robot-link welcome-robot-link--b"></span>
+              <div class="welcome-robot-hand">
+                <span class="welcome-robot-wrist"></span>
+                <span class="welcome-robot-grip">
+                  <span class="welcome-robot-jaw welcome-robot-jaw--a"></span>
+                  <span class="welcome-robot-jaw welcome-robot-jaw--b"></span>
+                </span>
+                <span class="welcome-robot-held"></span>
+              </div>
+            </div>
+          </div>
+          <span class="welcome-robot-placed"></span>
         </div>
+      </div>
       <div class="welcome-copy">
         <p class="info-eyebrow">Welcome to Render3D</p>
         <h2 id="welcome-title">AI CAD software for turning ideas into 3D models</h2>
@@ -2461,7 +2375,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-render-project-badge"></script>
+  <script type="module" src="/app.js?v=20260715-rigging-control-tab"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
