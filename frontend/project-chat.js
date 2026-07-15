@@ -383,11 +383,12 @@ export function createProjectChatUI({
     document.body.appendChild(overlay);
 
     overlay.addEventListener("click", (ev) => {
+      if (!ev.target.closest?.("#pc-thread-context-menu")) closeThreadContextMenu();
       if (ev.target === overlay) close();
     });
     overlay.querySelector("#pc-close")?.addEventListener("click", close);
     overlay.querySelector("#pc-send")?.addEventListener("click", () => void sendMessage());
-    overlay.querySelector("#pc-new-thread")?.addEventListener("click", () => void createThread());
+    overlay.querySelector("#pc-new-thread")?.addEventListener("click", () => openThreadCreateModal());
     overlay.querySelector("#pc-new-group")?.addEventListener("click", () => openGroupPicker());
     overlay.querySelector("#pc-file-input")?.addEventListener("change", (ev) => {
       addFiles([...ev.target.files || []]);
@@ -625,6 +626,121 @@ export function createProjectChatUI({
     modal.querySelector("#pc-create-group")?.addEventListener("click", () => void createGroupThread());
   }
 
+  function renderThreadCreateModal() {
+    const modal = overlay?.querySelector("#pc-thread-modal");
+    if (!modal) return;
+    if (!threadCreateOpen) {
+      modal.classList.add("hidden");
+      modal.innerHTML = "";
+      return;
+    }
+    const isManager = ["owner", "manager", "admin"].includes(String(workspaceRole || "").toLowerCase());
+    modal.classList.remove("hidden");
+    modal.innerHTML = `
+      <div class="pc-group-card pc-thread-settings-card">
+        <div class="pc-group-head">
+          <div>
+            <strong>Ask a question or start a thread</strong>
+            <p class="muted small">Choose whether this chat is shared with the workspace or private by invite.</p>
+          </div>
+          <button type="button" class="pc-icon-btn" data-pc-thread-close>Close</button>
+        </div>
+        <label class="pc-group-label">Question or thread title
+          <input id="pc-thread-title" type="text" maxlength="80" placeholder="${isManager ? "Design notes, render feedback, help with texture..." : "My question, private help..."}" />
+        </label>
+        <div class="pc-visibility-choice" role="radiogroup" aria-label="Thread visibility">
+          <label class="pc-visibility-card">
+            <input type="radio" name="pc-thread-visibility" value="shared" ${isManager ? "checked" : ""} ${isManager ? "" : "disabled"} />
+            <span>
+              <strong>Shared workspace thread</strong>
+              <small>Visible to everyone with access to this project.</small>
+            </span>
+          </label>
+          <label class="pc-visibility-card">
+            <input type="radio" name="pc-thread-visibility" value="private" ${isManager ? "" : "checked"} />
+            <span>
+              <strong>Private invite-only thread</strong>
+              <small>Only invited people and workspace managers can read it.</small>
+            </span>
+          </label>
+        </div>
+        <div class="pc-group-actions">
+          <button type="button" class="btn secondary" data-pc-thread-close>Cancel</button>
+          <button type="button" class="btn accent" id="pc-create-thread-confirm">Create thread</button>
+        </div>
+      </div>
+    `;
+    modal.querySelectorAll("[data-pc-thread-close]").forEach((btn) => btn.addEventListener("click", closeThreadModal));
+    modal.querySelector("#pc-create-thread-confirm")?.addEventListener("click", () => void createThreadFromModal());
+    modal.querySelector("#pc-thread-title")?.focus();
+  }
+
+  function renderThreadSettingsModal(thread = activeThreadMeta) {
+    const modal = overlay?.querySelector("#pc-thread-modal");
+    if (!modal || !thread) return;
+    threadSettingsOpen = true;
+    threadCreateOpen = false;
+    const manageable = canManageThread(thread);
+    const memberIds = new Set((thread.members || []).map((m) => String(m.id)).concat(String(thread.created_by || "")));
+    const invitees = inviteableUsers().filter((person) => !memberIds.has(String(person.id)));
+    modal.classList.remove("hidden");
+    modal.innerHTML = `
+      <div class="pc-group-card pc-thread-settings-card">
+        <div class="pc-group-head">
+          <div>
+            <strong>Thread settings</strong>
+            <p class="muted small">Share settings, workspace invites, permissions, and moderation.</p>
+          </div>
+          <button type="button" class="pc-icon-btn" data-pc-thread-close>Close</button>
+        </div>
+        <label class="pc-group-label">Thread name
+          <input id="pc-settings-title" type="text" maxlength="80" value="${esc(thread.title || "Thread")}" ${manageable ? "" : "disabled"} />
+        </label>
+        <div class="pc-visibility-choice" role="radiogroup" aria-label="Thread visibility">
+          <label class="pc-visibility-card">
+            <input type="radio" name="pc-settings-visibility" value="shared" ${thread.visibility !== "private" ? "checked" : ""} ${manageable && thread.slug !== "general" ? "" : "disabled"} />
+            <span><strong>Shared with workspace</strong><small>Everyone in this project workspace can join.</small></span>
+          </label>
+          <label class="pc-visibility-card">
+            <input type="radio" name="pc-settings-visibility" value="private" ${thread.visibility === "private" ? "checked" : ""} ${manageable && thread.slug !== "general" ? "" : "disabled"} />
+            <span><strong>Private invite-only</strong><small>Use this for focused reviews or DMs.</small></span>
+          </label>
+        </div>
+        <div class="pc-settings-section">
+          <strong>Invite people from this workspace</strong>
+          <div class="pc-thread-invite-row">
+            <select id="pc-settings-invite-pick" ${manageable ? "" : "disabled"}>
+              <option value="">Select teammate or group member...</option>
+              ${invitees.map((p) => `<option value="${esc(p.id)}">${esc(p.display_name || p.email || "User")}</option>`).join("")}
+            </select>
+            <button type="button" class="btn btn-compact secondary" id="pc-settings-invite-btn" ${manageable ? "" : "disabled"}>Invite</button>
+          </div>
+        </div>
+        <div class="pc-settings-section">
+          <strong>People and permissions</strong>
+          <div class="pc-member-list">
+            ${(thread.members || []).map((m) => `
+              <div class="pc-member-row">
+                <span>${esc(m.display_name || "User")}<small>${esc(m.role || (String(m.id) === String(thread.created_by) ? "owner" : "member"))}</small></span>
+                ${manageable && String(m.id) !== String(thread.created_by) ? `<button type="button" class="btn btn-compact secondary" data-pc-remove-member="${esc(m.id)}">Remove</button>` : ""}
+              </div>
+            `).join("") || `<p class="muted small">No explicit members yet.</p>`}
+          </div>
+        </div>
+        <div class="pc-group-actions">
+          <button type="button" class="btn secondary" data-pc-thread-close>Close</button>
+          <button type="button" class="btn accent" id="pc-save-thread-settings" ${manageable ? "" : "disabled"}>Save settings</button>
+        </div>
+      </div>
+    `;
+    modal.querySelectorAll("[data-pc-thread-close]").forEach((btn) => btn.addEventListener("click", closeThreadModal));
+    modal.querySelector("#pc-save-thread-settings")?.addEventListener("click", () => void saveThreadSettings(thread.id));
+    modal.querySelector("#pc-settings-invite-btn")?.addEventListener("click", () => void inviteMemberFromSettings(thread.id));
+    modal.querySelectorAll("[data-pc-remove-member]").forEach((btn) => {
+      btn.addEventListener("click", () => void removeThreadMember(thread.id, btn.dataset.pcRemoveMember));
+    });
+  }
+
   async function createGroupThread() {
     const projectId = getProjectId?.();
     const title = overlay?.querySelector("#pc-group-title")?.value?.trim() || "Group chat";
@@ -642,6 +758,96 @@ export function createProjectChatUI({
       onStatus?.("ok", "Group chat created");
     } catch (err) {
       onStatus?.("error", err.message || "Could not create group");
+    }
+  }
+
+  async function createThreadFromModal() {
+    const projectId = getProjectId?.();
+    const title = overlay?.querySelector("#pc-thread-title")?.value?.trim();
+    const visibility = overlay?.querySelector('input[name="pc-thread-visibility"]:checked')?.value || "private";
+    if (!projectId || !title) return;
+    try {
+      const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, visibility }),
+      });
+      closeThreadModal();
+      await loadThreads();
+      if (data.thread?.id) await selectThread(data.thread.id);
+      onStatus?.("ok", visibility === "shared" ? "Shared workspace thread created" : "Private thread created");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not create thread");
+    }
+  }
+
+  async function saveThreadSettings(threadId) {
+    const projectId = getProjectId?.();
+    if (!projectId || !threadId) return;
+    const title = overlay?.querySelector("#pc-settings-title")?.value?.trim();
+    const visibility = overlay?.querySelector('input[name="pc-settings-visibility"]:checked')?.value || "private";
+    try {
+      const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(threadId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, visibility }),
+      });
+      if (data.thread) {
+        activeThreadMeta = { ...activeThreadMeta, ...data.thread };
+        threads = threads.map((t) => (t.id === data.thread.id ? { ...t, ...data.thread } : t));
+        renderThreads();
+      }
+      onStatus?.("ok", "Thread settings saved");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not save thread settings");
+    }
+  }
+
+  async function inviteMemberFromSettings(threadId) {
+    const projectId = getProjectId?.();
+    const pick = overlay?.querySelector("#pc-settings-invite-pick");
+    const userId = pick?.value;
+    if (!projectId || !threadId || !userId) return;
+    try {
+      const data = await api(
+        `/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(threadId)}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+        }
+      );
+      if (data.thread) {
+        activeThreadMeta = { ...activeThreadMeta, ...data.thread };
+        threads = threads.map((t) => (t.id === data.thread.id ? { ...t, ...data.thread } : t));
+        renderThreads();
+        renderInviteBar();
+        renderThreadSettingsModal(activeThreadMeta);
+      }
+      onStatus?.("ok", "Person invited to thread");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not invite");
+    }
+  }
+
+  async function removeThreadMember(threadId, userId) {
+    const projectId = getProjectId?.();
+    if (!projectId || !threadId || !userId) return;
+    try {
+      const data = await api(
+        `/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(threadId)}/members/${encodeURIComponent(userId)}`,
+        { method: "DELETE" }
+      );
+      if (data.thread) {
+        activeThreadMeta = { ...activeThreadMeta, ...data.thread };
+        threads = threads.map((t) => (t.id === data.thread.id ? { ...t, ...data.thread } : t));
+        renderThreads();
+        renderInviteBar();
+        renderThreadSettingsModal(activeThreadMeta);
+      }
+      onStatus?.("ok", "Member removed from thread");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not remove member");
     }
   }
 
@@ -678,6 +884,68 @@ export function createProjectChatUI({
     document.removeEventListener("pointerdown", handleDocumentAssistClick, true);
     if (clickRippleBroadcast) document.addEventListener("pointerdown", handleDocumentAssistClick, true);
     renderCollabBar();
+  }
+
+  function showThreadContextMenu(event, threadId) {
+    const thread = threads.find((t) => String(t.id) === String(threadId)) || activeThreadMeta;
+    if (!thread) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeThreadContextMenu();
+    threadContextOpen = true;
+    contextThreadId = thread.id;
+    const manageable = canManageThread(thread);
+    const menu = document.createElement("div");
+    menu.id = "pc-thread-context-menu";
+    menu.className = "pc-thread-context-menu";
+    menu.style.left = `${Math.min(event.clientX, window.innerWidth - 260)}px`;
+    menu.style.top = `${Math.min(event.clientY, window.innerHeight - 260)}px`;
+    menu.innerHTML = `
+      <button type="button" data-pc-thread-action="open">Open thread</button>
+      <button type="button" data-pc-thread-action="settings">Share, invite, permissions...</button>
+      <button type="button" data-pc-thread-action="shared" ${manageable && thread.slug !== "general" ? "" : "disabled"}>Make shared workspace thread</button>
+      <button type="button" data-pc-thread-action="private" ${manageable && thread.slug !== "general" ? "" : "disabled"}>Make private invite-only</button>
+      <button type="button" data-pc-thread-action="invite" ${manageable ? "" : "disabled"}>Invite people...</button>
+      <button type="button" data-pc-thread-action="moderate" ${manageable ? "" : "disabled"}>Moderate members...</button>
+    `;
+    overlay?.appendChild(menu);
+    menu.addEventListener("click", (e) => {
+      const action = e.target.closest("[data-pc-thread-action]")?.dataset.pcThreadAction;
+      if (!action) return;
+      closeThreadContextMenu();
+      if (action === "open") {
+        void selectThread(thread.id);
+        return;
+      }
+      if (["settings", "invite", "moderate"].includes(action)) {
+        void selectThread(thread.id).then(() => renderThreadSettingsModal(activeThreadMeta || thread));
+        return;
+      }
+      if (action === "shared" || action === "private") {
+        void updateThreadVisibility(thread.id, action);
+      }
+    });
+  }
+
+  async function updateThreadVisibility(threadId, visibility) {
+    const projectId = getProjectId?.();
+    if (!projectId || !threadId) return;
+    try {
+      const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(threadId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility }),
+      });
+      if (data.thread) {
+        activeThreadMeta = activeThreadMeta?.id === data.thread.id ? { ...activeThreadMeta, ...data.thread } : activeThreadMeta;
+        threads = threads.map((t) => (t.id === data.thread.id ? { ...t, ...data.thread } : t));
+        renderThreads();
+        renderInviteBar();
+      }
+      onStatus?.("ok", visibility === "shared" ? "Thread shared with workspace" : "Thread set to private invite-only");
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not update thread sharing");
+    }
   }
 
   function renderThreads() {
@@ -726,6 +994,7 @@ export function createProjectChatUI({
     });
     host.querySelectorAll("[data-thread-id]").forEach((btn) => {
       btn.addEventListener("click", () => void selectThread(btn.dataset.threadId));
+      btn.addEventListener("contextmenu", (ev) => showThreadContextMenu(ev, btn.dataset.threadId));
     });
   }
 
@@ -1035,23 +1304,7 @@ export function createProjectChatUI({
   }
 
   async function createThread() {
-    const projectId = getProjectId?.();
-    if (!projectId) return;
-    const isManager = ["owner", "manager"].includes(String(workspaceRole || ""));
-    const title = window.prompt("Thread title", isManager ? "Design notes" : "My notes");
-    if (!title?.trim()) return;
-    let visibility = isManager ? "shared" : "private";
-    if (isManager) {
-      const shared = window.confirm("Create as a shared workspace thread?\n\nOK = shared with everyone\nCancel = private (invite only)");
-      visibility = shared ? "shared" : "private";
-    }
-    const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim(), visibility }),
-    });
-    await loadThreads();
-    if (data.thread?.id) await selectThread(data.thread.id);
+    openThreadCreateModal();
   }
 
   async function sendMessage() {

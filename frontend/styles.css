@@ -2506,6 +2506,18 @@ body:not(.info-page) {
   cursor: pointer;
 }
 
+.pc-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.pc-people-plus-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .pc-body {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
@@ -2823,6 +2835,10 @@ body:not(.info-page) {
   padding: 12px;
 }
 
+.pc-thread-settings-card {
+  width: min(500px, calc(100vw - 72px));
+}
+
 .pc-group-head,
 .pc-group-actions {
   display: flex;
@@ -2845,6 +2861,113 @@ body:not(.info-page) {
   background: #010409;
   color: #e6edf3;
   padding: 9px 10px;
+}
+
+.pc-visibility-choice {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.pc-visibility-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 12px;
+  background: rgba(22, 27, 34, 0.72);
+  cursor: pointer;
+}
+
+.pc-visibility-card:has(input:checked) {
+  border-color: rgba(126, 231, 135, 0.5);
+  background: rgba(46, 160, 67, 0.12);
+}
+
+.pc-visibility-card input {
+  margin-top: 3px;
+}
+
+.pc-visibility-card span {
+  display: grid;
+  gap: 2px;
+}
+
+.pc-visibility-card small,
+.pc-group-head p {
+  color: #8b949e;
+}
+
+.pc-settings-section {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.pc-member-list {
+  display: grid;
+  gap: 6px;
+  max-height: 170px;
+  overflow: auto;
+}
+
+.pc-member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(139, 148, 158, 0.18);
+  border-radius: 10px;
+  background: rgba(1, 4, 9, 0.42);
+}
+
+.pc-member-row span {
+  display: grid;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.pc-member-row small {
+  color: #8b949e;
+  font-size: 0.66rem;
+}
+
+.pc-thread-context-menu {
+  position: fixed;
+  z-index: 10050;
+  display: grid;
+  min-width: 238px;
+  padding: 6px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.98);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.52);
+}
+
+.pc-thread-context-menu button {
+  appearance: none;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #c9d1d9;
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.pc-thread-context-menu button:hover:not(:disabled) {
+  background: rgba(56, 139, 253, 0.16);
+}
+
+.pc-thread-context-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .pc-group-people {
@@ -3698,6 +3821,97 @@ body.canvas-design-tab .main-column {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.canvas-tag-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+}
+
+.canvas-tag-badge {
+  position: absolute;
+  pointer-events: auto;
+  max-width: 128px;
+  min-height: 24px;
+  padding: 4px 9px;
+  border: 1px solid rgba(88, 166, 255, 0.58);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.2), transparent 52%),
+    rgba(13, 17, 23, 0.92);
+  color: #a5d6ff;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.34), 0 0 0 2px rgba(88, 166, 255, 0.08);
+}
+
+.canvas-tag-badge::before {
+  content: "#";
+  color: #58a6ff;
+  margin-right: 3px;
+}
+
+.canvas-tag-menu {
+  position: fixed;
+  z-index: 15020;
+  width: 210px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(88, 166, 255, 0.36);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98));
+  color: #e6edf3;
+  box-shadow: 0 18px 48px rgba(1, 4, 9, 0.52);
+}
+
+.canvas-tag-menu strong,
+.canvas-tag-menu span {
+  display: block;
+}
+
+.canvas-tag-menu strong {
+  font-size: 0.86rem;
+}
+
+.canvas-tag-menu > span {
+  color: #8b949e;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.canvas-tag-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.canvas-tag-options button {
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #c9d1d9;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.canvas-tag-options button:hover {
+  border-color: rgba(88, 166, 255, 0.58);
+  background: rgba(56, 139, 253, 0.14);
+  color: #f0f6fc;
 }
 
 .canvas-toolbar-popup {

@@ -173,3 +173,20 @@
   font-weight: 700;
   margin-right: 2px;
 }
+
+.user-profile-status {
+  margin: -4px 0 12px;
+  color: #7dd3fc;
+  font-size: 0.85rem;
+}
+
+.user-profile-meeting select,
+.user-profile-meeting input[type="datetime-local"] {
+  width: 100%;
+  margin-bottom: 8px;
+  background: #0d1117;
+  border: 1px solid rgba(48, 54, 61, 0.95);
+  border-radius: 8px;
+  color: #e6edf3;
+  padding: 8px;
+}

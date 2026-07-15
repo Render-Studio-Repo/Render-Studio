@@ -65,7 +65,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-social-fusion-connect";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
-import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-inbox-collab";
+import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-thread-settings";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
@@ -102,7 +102,7 @@ import { createProjectAssembly, filesToBrowserComponents } from "./project-assem
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-elec-none";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
-import { createCanvasMode } from "./canvas-mode.js?v=20260619-canvas-sketch-fix";
+import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
@@ -5186,6 +5186,7 @@ createFeedbackUI({
   },
 });
 
+let userProfileUi = null;
 const projectChat = createProjectChatUI({
   buttonEl: document.getElementById("btn-project-chat"),
   getProjectId: () => projectId,
@@ -5194,9 +5195,23 @@ const projectChat = createProjectChatUI({
     document.getElementById("btn-render-agent")?.click();
   },
   onStatus: (kind, message) => setEditStatus(kind, message),
+  getOnlineUserIds: () => {
+    try {
+      return collab?.getOnlineUserIds?.() || [];
+    } catch {
+      return [];
+    }
+  },
+  onOpenUserProfile: (userId, opts = {}) => {
+    try {
+      userProfileUi?.open?.({ userId, openMeeting: !!opts.openMeeting });
+    } catch {
+      /* optional */
+    }
+  },
 });
 
-const userProfileUi = createUserProfileUI({
+userProfileUi = createUserProfileUI({
   api,
   getProjectId: () => projectId,
   onOpenChat: () => {
@@ -24329,6 +24344,11 @@ window.addEventListener("keydown", (e) => {
     document.getElementById("user-menu")?.classList.add("hidden");
     renderPreferencesMenuPanel();
     panel.classList.remove("hidden");
+    try {
+      void loadSocialCalendarPrefs?.();
+    } catch {
+      /* optional until panel re-rendered */
+    }
     requestAnimationFrame(() => panel.querySelector("#pref-mouse-preset")?.focus?.({ preventScroll: true }));
   }
 
