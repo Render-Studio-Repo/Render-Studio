@@ -1,6 +1,6 @@
 /** Getting Started feature guides for Docs. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-gs-guides";
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-real-gifs";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
 import { createRenderAgent } from "./render-agent.js?v=20260715-gs-sticky";
 

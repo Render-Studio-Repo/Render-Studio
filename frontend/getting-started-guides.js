@@ -5,7 +5,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "ai-generate",
     title: "Generate CAD with AI",
     demo: "generate",
-    gif: "/docs/media/ai-generate.gif",
+    gif: "/docs/media/ai-generate.gif?v=20260715-real",
     summary: "Describe a part in the prompt panel and Generate creates geometry in your project.",
     steps: [
       "Open a project (or create one) in the left explorer.",
@@ -24,7 +24,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "workspaces",
     title: "Workspaces & teammates",
     demo: "workspaces",
-    gif: "/docs/media/workspaces.gif",
+    gif: "/docs/media/workspaces.gif?v=20260715-real",
     summary: "Shared workspaces keep projects, folders, and invites in one place for your team.",
     steps: [
       "Open the account / workspace menu and pick or create a workspace.",
@@ -42,7 +42,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "share-folders",
     title: "Share a private folder",
     demo: "share",
-    gif: "/docs/media/share-folder.gif",
+    gif: "/docs/media/share-folder.gif?v=20260715-real",
     summary: "Keep folders private, then share with specific teammates so they appear instantly in their explorer.",
     steps: [
       "Right-click a folder → Share.",
@@ -59,7 +59,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "reference-markup",
     title: "Reference files, pen markup & Send to AI",
     demo: "markup",
-    gif: "/docs/media/reference-markup.gif",
+    gif: "/docs/media/reference-markup.gif?v=20260715-real",
     summary: "Drop PDFs or images into a project, draw on them, add notes, then send markups into the AI prompt.",
     steps: [
       "Drag a PDF or image into the project (or upload under Reference Files).",
@@ -78,7 +78,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "canvas",
     title: "Canvas sketch mode",
     demo: "canvas",
-    gif: "/docs/media/canvas.gif",
+    gif: "/docs/media/canvas.gif?v=20260715-real",
     summary: "Sketch freely on the Canvas design tab, then attach the sketch to your AI prompt.",
     steps: [
       "In Design, switch to the CANVAS tab.",
@@ -93,7 +93,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "picks",
     title: "Pick faces, edges & paths",
     demo: "picks",
-    gif: "/docs/media/picks.gif",
+    gif: "/docs/media/picks.gif?v=20260715-real",
     summary: "Click geometry into the prompt as @face / @edge / @path so edits land on the right feature.",
     steps: [
       "Select a pick mode (face, edge, line path, etc.) in the toolbar.",
@@ -108,7 +108,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "wiring",
     title: "Wiring Simulator",
     demo: "wiring",
-    gif: "/docs/media/wiring.gif",
+    gif: "/docs/media/wiring.gif?v=20260715-real",
     summary: "Switch to Wiring mode to breadboard circuits, drag parts, and validate drivers.",
     steps: [
       "Change workspace mode to Wiring Simulator.",
@@ -123,7 +123,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "cloud-sync",
     title: "Fusion 360 & Onshape sync",
     demo: "cloud",
-    gif: "/docs/media/cloud-sync.gif",
+    gif: "/docs/media/cloud-sync.gif?v=20260715-real",
     summary: "Connect cloud CAD libraries so you can import and push models without leaving Studio.",
     steps: [
       "Open the Fusion or Onshape library panel in the left sidebar.",
@@ -138,7 +138,7 @@ export const GETTING_STARTED_GUIDES = [
     id: "render-agent",
     title: "Render Agent help chat",
     demo: "agent",
-    gif: "/docs/media/render-agent.gif",
+    gif: "/docs/media/render-agent.gif?v=20260715-real",
     summary: "The ribbon Agent button opens a chat for tooling, workflows, and project questions — separate from CAD Generate.",
     steps: [
       "Click Agent in the ribbon (or use Ask Render Agent from Getting Started).",

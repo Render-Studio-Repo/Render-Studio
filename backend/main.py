@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from collections import Counter
+import html
 import json
 import logging
 import math
@@ -20,7 +21,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
@@ -8905,6 +8906,53 @@ def _resolve_share_token(token: str) -> tuple[str, Path, dict[str, Any]]:
     raise HTTPException(404, "Share link not found")
 
 
+def _share_snapshot_filename(project_path: Path, filename: str) -> str | None:
+    """Best matching CAD snapshot PNG for social / text-message previews."""
+    stem = Path(filename).stem
+    roots = [stem]
+    for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body", "_section"):
+        if stem.endswith(suffix):
+            roots.append(stem[: -len(suffix)])
+    try:
+        viewer = cad_service.resolve_viewport_filename(project_path, Path(filename).name)
+        if viewer:
+            viewer_stem = Path(viewer).stem
+            if viewer_stem not in roots:
+                roots.insert(0, viewer_stem)
+    except Exception:
+        pass
+
+    def _collect(patterns: list[str], *, prefer_root: str | None = None) -> list[Path]:
+        found: list[Path] = []
+        for pattern in patterns:
+            found.extend(
+                p
+                for p in project_path.glob(pattern)
+                if p.is_file() and "opposite" not in p.name.lower()
+            )
+        if prefer_root:
+            preferred = [p for p in found if p.name.startswith(f"{prefer_root}_snapshot")]
+            if preferred:
+                return preferred
+        return found
+
+    candidates: list[Path] = []
+    for root in roots:
+        candidates = _collect(
+            [f"{root}_snapshot_iso_*.png", f"{root}_snapshot_iso*.png", f"{root}_snapshot_*.png"],
+            prefer_root=root,
+        )
+        if candidates:
+            break
+    if not candidates:
+        candidates = _collect(["*_snapshot_iso_*.png", "*_snapshot_iso*.png"])
+    if not candidates:
+        candidates = _collect(["*_snapshot_*.png"])
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime).name
+
+
 def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
     safe = Path(filename).name
     allowed = {safe}
@@ -8922,10 +8970,13 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
         name = item.get("name")
         if name:
             allowed.add(Path(name).name)
+    preview = _share_snapshot_filename(project_path, safe)
+    if preview:
+        allowed.add(preview)
     return allowed
 
 
-def _share_metadata(token: str) -> dict[str, Any]:
+def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any]:
     project_id, project_path, share = _resolve_share_token(token)
     filename = Path(str(share.get("filename") or "")).name
     if not filename:
@@ -8943,15 +8994,82 @@ def _share_metadata(token: str) -> dict[str, Any]:
     if viewer_filename not in allowed and (project_path / viewer_filename).is_file():
         allowed.add(viewer_filename)
     meta = project_store.load_meta(project_path)
+    project_name = str(meta.get("name") or project_id)
+    preview_file = _share_snapshot_filename(project_path, filename)
+    preview_url = (
+        f"/api/share/{token}/files/{urllib.parse.quote(preview_file)}"
+        if preview_file
+        else None
+    )
+    origin = _request_origin(request) if request is not None else ""
+    absolute_preview = f"{origin}{preview_url}" if origin and preview_url else preview_url
+    absolute_icon = f"{origin}/favicon-180.png?v=20260715-new-logo" if origin else "/favicon-180.png?v=20260715-new-logo"
     return {
         "token": token,
         "project_id": project_id,
-        "project_name": meta.get("name") or project_id,
+        "project_name": project_name,
         "filename": filename,
         "viewer_filename": viewer_filename,
         "viewer_url": f"/api/share/{token}/files/{urllib.parse.quote(viewer_filename)}",
         "exports": exports,
+        "preview_file": preview_file,
+        "preview_url": preview_url,
+        "preview_image_url": absolute_preview or absolute_icon,
+        "share_title": f"{project_name} · with Render3D",
+        "share_description": f"3D model preview of {filename} — shared with Render3D",
     }
+
+
+def _share_page_html(token: str, request: Request) -> str:
+    meta = _share_metadata(token, request)
+    page = FRONTEND / "share.html"
+    if not page.is_file():
+        raise HTTPException(500, "Share viewer is missing")
+    raw = page.read_text(encoding="utf-8")
+    origin = _request_origin(request)
+    title = html.escape(meta["share_title"], quote=True)
+    description = html.escape(meta["share_description"], quote=True)
+    image = html.escape(str(meta.get("preview_image_url") or f"{origin}/favicon-180.png?v=20260715-new-logo"), quote=True)
+    url = html.escape(f"{origin}/share/{token}", quote=True)
+    icon = html.escape(f"{origin}/favicon-180.png?v=20260715-new-logo", quote=True)
+    favicon = html.escape(f"{origin}/favicon.ico?v=20260715-new-logo", quote=True)
+    logo = html.escape(f"{origin}/render3d-logo.png?v=20260715-new-logo", quote=True)
+    project_name = html.escape(str(meta.get("project_name") or "Shared model"))
+    filename = html.escape(str(meta.get("filename") or ""))
+    og_block = f"""
+  <title>{title}</title>
+  <meta name="description" content="{description}" />
+  <link rel="icon" type="image/png" href="{logo}" sizes="any" />
+  <link rel="shortcut icon" href="{favicon}" />
+  <link rel="icon" type="image/png" href="{html.escape(f'{origin}/favicon-32.png?v=20260715-new-logo', quote=True)}" sizes="32x32" />
+  <link rel="apple-touch-icon" href="{icon}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Render3D" />
+  <meta property="og:title" content="{title}" />
+  <meta property="og:description" content="{description}" />
+  <meta property="og:url" content="{url}" />
+  <meta property="og:image" content="{image}" />
+  <meta property="og:image:alt" content="{title}" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{title}" />
+  <meta name="twitter:description" content="{description}" />
+  <meta name="twitter:image" content="{image}" />
+  <meta name="render3d:project" content="{html.escape(str(meta.get('project_name') or ''), quote=True)}" />
+  <!-- SHARE_BOOTSTRAP
+  {json.dumps({"project_name": meta.get("project_name"), "filename": meta.get("filename"), "preview_url": meta.get("preview_url")}, ensure_ascii=True)}
+  -->
+"""
+    if "<!-- SHARE_META -->" in raw:
+        raw = raw.replace("<!-- SHARE_META -->", og_block, 1)
+    else:
+        raw = raw.replace("</head>", og_block + "\n</head>", 1)
+    # Prefill visible title for non-JS crawlers / first paint
+    raw = raw.replace(">Loading shared model…<", f">{project_name}<", 1)
+    if filename:
+        raw = raw.replace(">Rotate · section · download<", f">with Render3D · {filename}<", 1)
+    else:
+        raw = raw.replace(">Rotate · section · download<", ">with Render3D<", 1)
+    return raw
 
 
 @app.post("/api/projects/{project_id}/files/{filename}/share")
@@ -8973,13 +9091,13 @@ def create_file_share(project_id: str, filename: str, request: Request, user: di
             "created_by": user["id"],
         }
         project_store.save_meta(project_path, meta)
-    base = str(request.base_url).rstrip("/")
+    base = _request_origin(request)
     return {"token": token, "share_url": f"{base}/share/{token}"}
 
 
 @app.get("/api/share/{token}")
-def get_share_metadata(token: str):
-    return _share_metadata(token)
+def get_share_metadata(token: str, request: Request):
+    return _share_metadata(token, request)
 
 
 @app.get("/api/share/{token}/files/{filename}")
@@ -8995,14 +9113,13 @@ def get_share_file(token: str, filename: str, step_mode: str | None = Query(None
 
 
 @app.get("/share/{token}", include_in_schema=False)
-def share_preview_page(token: str):
+def share_preview_page(token: str, request: Request):
     """Public share viewer — validates the token, then serves the mobile-friendly preview page."""
-    _share_metadata(token)
-    page = FRONTEND / "share.html"
-    if not page.is_file():
-        raise HTTPException(500, "Share viewer is missing")
-    return FileResponse(page, media_type="text/html")
-
+    return HTMLResponse(
+        _share_page_html(token, request),
+        media_type="text/html",
+        headers={"Cache-Control": "public, max-age=60"},
+    )
 
 @app.get("/api/projects/{project_id}/files/{filename}/exports")
 def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Depends(get_current_user)):

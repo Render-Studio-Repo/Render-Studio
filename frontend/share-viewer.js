@@ -147,9 +147,11 @@ async function main() {
     return;
   }
 
-  document.title = `${meta.project_name || "Render3D"} · Shared model`;
+  document.title = meta.share_title || `${meta.project_name || "Render3D"} · with Render3D`;
   titleEl.textContent = meta.project_name || meta.filename || "Shared model";
-  subEl.textContent = meta.filename || "";
+  subEl.textContent = meta.filename
+    ? `with Render3D · ${meta.filename}`
+    : "with Render3D";
 
   const exportItems = Array.isArray(meta.exports) ? [...meta.exports] : [];
   const seen = new Set(exportItems.map((e) => e.name));

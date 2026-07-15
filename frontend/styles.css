@@ -5162,26 +5162,96 @@ body.canvas-design-tab .main-column {
     display: block;
   }
 
+  /* Clear the 4 corner launchers — no overlap with cube / tools / spinner */
+  .mobile-corner-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 15px;
+    font-size: 0.88rem;
+    font-weight: 800;
+    border-color: rgba(139, 148, 158, 0.42);
+    background: rgba(13, 17, 23, 0.78);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    letter-spacing: 0.01em;
+  }
+
+  .mobile-corner-btn--tl {
+    top: max(10px, env(safe-area-inset-top, 0px));
+    left: max(10px, env(safe-area-inset-left, 0px));
+  }
+
+  .mobile-corner-btn--tr {
+    top: max(10px, env(safe-area-inset-top, 0px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+  }
+
+  .mobile-corner-btn--br {
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-corner-btn--bl {
+    left: max(10px, env(safe-area-inset-left, 0px));
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+
   .view-cube {
-    top: 58px;
-    right: 12px;
-    transform: scale(0.82);
+    top: calc(max(10px, env(safe-area-inset-top, 0px)) + 46px + 10px);
+    right: max(8px, env(safe-area-inset-right, 0px));
+    width: 92px;
+    height: 104px;
+    transform: scale(0.78);
     transform-origin: top right;
+    z-index: 18;
+  }
+
+  .viewport-corner-tools {
+    top: calc(max(10px, env(safe-area-inset-top, 0px)) + 46px + 10px + 108px);
+    right: max(8px, env(safe-area-inset-right, 0px));
+    z-index: 18;
+  }
+
+  .viewport-corner-btn {
+    padding: 5px 8px;
+    font-size: 0.68rem;
+    border-radius: 8px;
+    background: rgba(13, 17, 23, 0.78);
   }
 
   .viewport-spinner {
-    right: 12px;
-    bottom: 72px;
+    left: max(10px, env(safe-area-inset-left, 0px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: calc(max(12px, env(safe-area-inset-bottom, 0px)) + 46px + 10px);
+    width: auto;
+    max-width: none;
   }
 
   .viewport-generation-user {
-    left: 12px;
-    top: 86px;
+    left: max(10px, env(safe-area-inset-left, 0px));
+    top: calc(max(10px, env(safe-area-inset-top, 0px)) + 46px + 10px);
+    max-width: calc(100% - 130px);
+    padding: 6px 9px;
+    border-radius: 14px;
   }
 
   .viewport-error-banner {
-    width: calc(100vw - 28px);
-    bottom: 78px;
+    left: max(10px, env(safe-area-inset-left, 0px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+    width: auto;
+    bottom: calc(max(12px, env(safe-area-inset-bottom, 0px)) + 46px + 10px);
+  }
+
+  #viewport {
+    overflow: hidden;
+  }
+
+  #viewport canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    touch-action: none;
   }
 }
 
@@ -6545,16 +6615,28 @@ body.mobile-sheet-open {
 .mobile-corner-btn {
   pointer-events: auto;
   position: absolute;
-  width: 64px;
-  height: 64px;
-  border: 1px solid rgba(139, 148, 158, 0.65);
-  border-radius: 20px;
-  background: rgba(13, 17, 23, 0.9);
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(139, 148, 158, 0.45);
+  border-radius: 15px;
+  background: rgba(13, 17, 23, 0.82);
   color: var(--text);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(12px);
-  font-weight: 900;
-  font-size: 1.05rem;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-weight: 800;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-corner-btn:active {
+  transform: scale(0.94);
+  background: rgba(22, 27, 34, 0.95);
+  border-color: rgba(88, 166, 255, 0.55);
 }
 
 .mobile-corner-btn--tl { top: 14px; left: 14px; }
