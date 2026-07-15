@@ -9478,22 +9478,34 @@ def open_share_in_project(
         raise HTTPException(400, "No workspace available")
     sharer_user = get_user_by_id(str(share.get("created_by") or "")) if share.get("created_by") else None
     wants_share_back = bool(body.get("share_with_sharer")) and sharer_user and sharer_user.get("id") != user["id"]
+    target_project_id = re.sub(r"[^A-Za-z0-9_\-]", "", str(body.get("target_project_id") or ""))[:80]
     team_id = teams[0]["id"]
     collaboration_team = None
-    if wants_share_back:
-        try:
-            label = Path(shared_filename).stem.replace("_", " ").strip() or "Shared Remix"
-            collaboration_team = teams_service.create_team(user["id"], f"{label} Remix")
-            team_id = collaboration_team["id"]
-        except Exception as exc:
-            wants_share_back = False
-            logger.warning("Could not create collaboration workspace for share remix: %s", exc)
-    project_id = str(uuid.uuid4())[:8]
-    dest_path = cad_service.project_dir(PROJECTS, project_id)
-    source_meta = project_store.load_meta(source_path)
-    project_name = f"{source_meta.get('name') or Path(shared_filename).stem} (shared copy)"
-    meta = project_store.touch_project(dest_path, name=project_name, name_source="user")
-    teams_service.register_project_access(project_id, team_id, user["id"])
+    if target_project_id:
+        dest_path = _require_project(user, target_project_id)
+        project_id = target_project_id
+        access = teams_service.user_project_access(user["id"])
+        team_id = next((row["team_id"] for row in access if row.get("project_id") == project_id), team_id)
+        meta = project_store.load_meta(dest_path)
+        project_name = meta.get("name") or project_id
+        # Sharing an existing project back can expose unrelated user work, so
+        # collaboration sharing only applies to new remix projects.
+        wants_share_back = False
+    else:
+        if wants_share_back:
+            try:
+                label = Path(shared_filename).stem.replace("_", " ").strip() or "Shared Remix"
+                collaboration_team = teams_service.create_team(user["id"], f"{label} Remix")
+                team_id = collaboration_team["id"]
+            except Exception as exc:
+                wants_share_back = False
+                logger.warning("Could not create collaboration workspace for share remix: %s", exc)
+        project_id = str(uuid.uuid4())[:8]
+        dest_path = cad_service.project_dir(PROJECTS, project_id)
+        source_meta = project_store.load_meta(source_path)
+        project_name = f"{source_meta.get('name') or Path(shared_filename).stem} (shared copy)"
+        meta = project_store.touch_project(dest_path, name=project_name, name_source="user")
+        teams_service.register_project_access(project_id, team_id, user["id"])
 
     copied: list[str] = []
     for name in sorted(_share_allowed_filenames(source_path, shared_filename)):
@@ -9527,6 +9539,7 @@ def open_share_in_project(
             "source_project_id": source_project_id,
             "share_token": token,
             "copied_files": copied,
+            "imported_into_existing_project": bool(target_project_id),
             "shared_with_original_sharer": shared_with_sharer,
             "collaboration_team_id": collaboration_team.get("id") if collaboration_team else None,
             **({"share_back_error": share_back_error} if share_back_error else {}),
@@ -9534,25 +9547,39 @@ def open_share_in_project(
         user=user,
     )
     project_store.touch_project(dest_path, name=project_name, name_source="user")
-    _notify_workspace(
-        team_id,
-        {
-            "type": "project.created",
-            "project_id": project_id,
-            "team_id": team_id,
-            "name": meta.get("name"),
-            "meta": meta,
-            "by": user["display_name"],
-            "by_user_id": user["id"],
-            "by_user_name": user["display_name"],
-            "owner_user_id": user["id"],
-        },
-    )
+    if target_project_id:
+        _notify_project(
+            project_id,
+            {
+                "type": "project.updated",
+                "project_id": project_id,
+                "filename": shared_filename,
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "by_user_name": user["display_name"],
+            },
+        )
+    else:
+        _notify_workspace(
+            team_id,
+            {
+                "type": "project.created",
+                "project_id": project_id,
+                "team_id": team_id,
+                "name": meta.get("name"),
+                "meta": meta,
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "by_user_name": user["display_name"],
+                "owner_user_id": user["id"],
+            },
+        )
     return {
         "project_id": project_id,
         "team_id": team_id,
         "filename": shared_filename,
         "copied_files": copied,
+        "imported_into_existing_project": bool(target_project_id),
         "shared_with_sharer": shared_with_sharer,
         "share_back_error": share_back_error,
         "shared_by": (

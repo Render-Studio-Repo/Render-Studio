@@ -293,7 +293,7 @@
       right: 12px;
       top: 12px;
       z-index: 4;
-      width: min(330px, calc(100vw - 24px));
+      width: min(390px, calc(100vw - 24px));
       max-height: min(520px, calc(100% - 24px));
       overflow: auto;
       padding: 12px;
@@ -363,27 +363,97 @@
       gap: 6px;
       margin-top: 8px;
     }
+    .sv-tree-node {
+      position: relative;
+      padding-left: calc(var(--depth, 0) * 14px);
+    }
+    .sv-tree-node::before {
+      content: "";
+      position: absolute;
+      left: calc((var(--depth, 0) * 14px) + 10px);
+      top: -6px;
+      bottom: 14px;
+      width: 1px;
+      background: rgba(88, 166, 255, 0.16);
+      display: none;
+    }
+    .sv-tree-node[style*="--depth:1"]::before,
+    .sv-tree-node[style*="--depth:2"]::before,
+    .sv-tree-node[style*="--depth:3"]::before,
+    .sv-tree-node[style*="--depth:4"]::before,
+    .sv-tree-node[style*="--depth:5"]::before {
+      display: block;
+    }
     .sv-tree-btn {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
       width: 100%;
-      border: 1px solid rgba(48, 54, 61, 0.78);
-      background: rgba(22, 27, 34, 0.88);
+      border: 1px solid rgba(48, 54, 61, 0.82);
+      background:
+        linear-gradient(135deg, rgba(22, 27, 34, 0.94), rgba(13, 17, 23, 0.88)),
+        radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.12), transparent 34%);
       color: var(--text);
-      border-radius: 10px;
-      padding: 8px 10px;
+      border-radius: 13px;
+      padding: 9px 10px;
       text-align: left;
       cursor: pointer;
       font-size: 0.78rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    .sv-tree-btn:hover {
+      border-color: rgba(88, 166, 255, 0.42);
+      background:
+        linear-gradient(135deg, rgba(24, 32, 43, 0.98), rgba(13, 17, 23, 0.92)),
+        radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.18), transparent 38%);
+    }
+    .sv-tree-node.is-transparent .sv-tree-btn {
+      border-color: rgba(121, 192, 255, 0.62);
+      background:
+        linear-gradient(135deg, rgba(22, 27, 34, 0.72), rgba(13, 17, 23, 0.64)),
+        radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.2), transparent 42%);
+    }
+    .sv-tree-glyph {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 26px;
+      height: 26px;
+      border-radius: 9px;
+      background: rgba(88, 166, 255, 0.14);
+      color: #79c0ff;
+      font-size: 0.68rem;
+      font-weight: 900;
+      border: 1px solid rgba(88, 166, 255, 0.22);
+    }
+    .sv-tree-main {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .sv-tree-main strong,
+    .sv-tree-main em {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sv-tree-main strong {
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+    .sv-tree-main em {
+      font-style: normal;
+      font-size: 0.66rem;
+      color: var(--muted);
     }
     .sv-tree-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 5px;
-      margin-top: -2px;
-      margin-bottom: 6px;
+      margin: 5px 0 8px;
+      padding-left: calc((var(--depth, 0) * 14px) + 36px);
     }
     .sv-mini-btn {
       border: 1px solid rgba(48, 54, 61, 0.86);
@@ -403,6 +473,7 @@
     .sv-tree-btn small {
       color: var(--muted);
       font-size: 0.68rem;
+      flex: 0 0 auto;
     }
     .sv-motion-card {
       margin-top: 12px;
@@ -475,6 +546,128 @@
       justify-content: space-between;
       margin-bottom: 10px;
     }
+    #share-remix-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at 50% 10%, rgba(88, 166, 255, 0.18), transparent 34%),
+        rgba(0, 0, 0, 0.62);
+      backdrop-filter: blur(8px);
+    }
+    #share-remix-modal.hidden { display: none; }
+    .share-remix-card {
+      width: min(520px, 100%);
+      border: 1px solid rgba(88, 166, 255, 0.32);
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98)),
+        radial-gradient(circle at 15% 0%, rgba(88, 166, 255, 0.16), transparent 38%);
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.62);
+      overflow: hidden;
+    }
+    .share-remix-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 18px 18px 12px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.8);
+    }
+    .share-remix-head h2 {
+      margin: 0;
+      font-size: 1.18rem;
+      letter-spacing: -0.02em;
+    }
+    .share-remix-head p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+    .share-remix-close {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #161b22;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+    .share-remix-body {
+      display: grid;
+      gap: 12px;
+      padding: 16px 18px 18px;
+    }
+    .share-remix-option {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      padding: 13px;
+      border: 1px solid rgba(48, 54, 61, 0.88);
+      border-radius: 16px;
+      background: rgba(13, 17, 23, 0.78);
+      cursor: pointer;
+    }
+    .share-remix-option:has(input:checked) {
+      border-color: rgba(88, 166, 255, 0.72);
+      background: rgba(88, 166, 255, 0.12);
+    }
+    .share-remix-option input {
+      margin-top: 3px;
+      accent-color: var(--accent);
+    }
+    .share-remix-option strong {
+      display: block;
+      font-size: 0.9rem;
+    }
+    .share-remix-option span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    .share-remix-project-select {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+    }
+    .share-remix-collab.hidden { display: none; }
+    .share-remix-collab {
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+      padding: 2px 4px;
+    }
+    .share-remix-collab input {
+      margin-top: 2px;
+      accent-color: var(--accent);
+    }
+    .share-remix-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 4px;
+    }
+    .share-remix-status {
+      min-height: 1.2em;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .share-remix-status.error { color: #ff7b72; }
     .muted { color: var(--muted); }
     @media (max-width: 720px) {
       header.share-top {
@@ -518,7 +711,7 @@
     <div class="share-top-actions">
       <button type="button" class="share-tool active" id="btn-share-rotate" aria-pressed="true">Rotate</button>
       <button type="button" class="share-tool" id="btn-share-section" aria-pressed="false">Section</button>
-      <button type="button" class="share-tool" id="btn-share-inspector" aria-pressed="false">Components</button>
+      <button type="button" class="share-tool" id="btn-share-inspector" aria-pressed="false">Part Tree</button>
       <button type="button" class="share-tool" id="btn-share-history" aria-pressed="false">History</button>
       <button type="button" class="share-tool" id="btn-share-wireframe" aria-pressed="false">Wireframe</button>
       <button type="button" class="share-tool" id="btn-share-transparent" aria-pressed="false">Transparent</button>
@@ -560,14 +753,14 @@
     </div>
     <div id="share-inspector-panel" class="hidden" aria-label="Component and motion inspector">
       <div class="sv-top">
-        <strong id="share-inspector-title">Model details</strong>
-        <button type="button" id="btn-share-inspector-close" aria-label="Close model details">Close</button>
+        <strong id="share-inspector-title">Part Tree</strong>
+        <button type="button" id="btn-share-inspector-close" aria-label="Close part tree">Close</button>
       </div>
       <div id="share-source-details" class="sv-list"></div>
       <p class="sv-section-title">Prompt history</p>
       <div id="share-prompt-history" class="sv-list"></div>
-      <p class="sv-section-title">Components</p>
-      <p class="sv-hint">View parts individually, isolate one component, or make selected parts transparent.</p>
+      <p class="sv-section-title">Part Tree</p>
+      <p class="sv-hint">Explore assemblies, parent/child relationships, isolate one part, or make selected parts transparent.</p>
       <div id="share-component-list" class="sv-list"></div>
       <div id="share-motion-card" class="sv-motion-card hidden">
         <div class="sv-top">
@@ -594,12 +787,52 @@
     </div>
   </div>
 
+  <div id="share-remix-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="share-remix-title">
+    <div class="share-remix-card">
+      <header class="share-remix-head">
+        <div>
+          <h2 id="share-remix-title">Remix shared model</h2>
+          <p id="share-remix-subtitle">Import this model into an editable Render3D project.</p>
+        </div>
+        <button type="button" class="share-remix-close" data-remix-close aria-label="Close remix options">&times;</button>
+      </header>
+      <div class="share-remix-body">
+        <label class="share-remix-option">
+          <input type="radio" name="share-remix-target" value="new" checked />
+          <span>
+            <strong>Create a new project</strong>
+            <span>Copies the shared model and all preview/download files into a fresh editable project.</span>
+          </span>
+        </label>
+        <label class="share-remix-option">
+          <input type="radio" name="share-remix-target" value="existing" />
+          <span>
+            <strong>Import into an existing project</strong>
+            <span>Adds these shared files to a project you already own or can edit.</span>
+            <select id="share-remix-project-select" class="share-remix-project-select" disabled>
+              <option value="">Loading projects…</option>
+            </select>
+          </span>
+        </label>
+        <label id="share-remix-collab" class="share-remix-collab hidden">
+          <input type="checkbox" id="share-remix-share-back" />
+          <span id="share-remix-collab-label">Create a collaboration workspace with the original sharer for this new remix.</span>
+        </label>
+        <p id="share-remix-status" class="share-remix-status"></p>
+        <div class="share-remix-actions">
+          <button type="button" class="share-tool" data-remix-close>Cancel</button>
+          <button type="button" class="share-tool share-tool--primary" id="btn-share-remix-confirm">Remix model</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     if (new URLSearchParams(location.search).get("embed") === "1") {
       document.documentElement.classList.add("share-embed");
       document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
     }
   </script>
-  <script type="module" src="/share-viewer.js?v=20260715-share-embed"></script>
+  <script type="module" src="/share-viewer.js?v=20260715-remix-modal"></script>
 </body>
 </html>

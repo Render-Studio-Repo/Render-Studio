@@ -445,44 +445,51 @@ function referenceLabelText(id) {
 }
 
 function addFaceLabel(localPoint, normal, scale, refId, meshRoot, { removable = false } = {}) {
+  const pixelScale = 2;
+  const logicalW = removable ? 340 : 280;
+  const logicalH = 104;
   const canvas = document.createElement("canvas");
-  canvas.width = removable ? 320 : 256;
-  canvas.height = 96;
+  canvas.width = logicalW * pixelScale;
+  canvas.height = logicalH * pixelScale;
   const ctx = canvas.getContext("2d");
   const label = referenceLabelText(refId);
   if (ctx) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(pixelScale, pixelScale);
+    ctx.clearRect(0, 0, logicalW, logicalH);
     ctx.fillStyle = "rgba(13, 17, 23, 0.88)";
-    roundedRect(ctx, 12, 16, canvas.width - 24, 64, 14);
+    roundedRect(ctx, 10, 14, logicalW - 20, 72, 16);
     ctx.fill();
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(88, 166, 255, 0.95)";
     ctx.stroke();
-    ctx.font = "bold 34px system-ui, -apple-system, Segoe UI, sans-serif";
+    ctx.font = "800 40px system-ui, -apple-system, Segoe UI, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#e6edf3";
-    ctx.fillText(label, removable ? 118 : 128, 49);
+    ctx.fillText(label, removable ? 126 : logicalW / 2, 52);
     if (removable) {
       ctx.beginPath();
-      ctx.arc(268, 48, 22, 0, Math.PI * 2);
+      ctx.arc(286, 52, 23, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(248, 81, 73, 0.94)";
       ctx.fill();
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 3;
       ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
       ctx.stroke();
       ctx.lineWidth = 5;
       ctx.lineCap = "round";
       ctx.strokeStyle = "#ffffff";
       ctx.beginPath();
-      ctx.moveTo(259, 39);
-      ctx.lineTo(277, 57);
-      ctx.moveTo(277, 39);
-      ctx.lineTo(259, 57);
+      ctx.moveTo(276, 42);
+      ctx.lineTo(296, 62);
+      ctx.moveTo(296, 42);
+      ctx.lineTo(276, 62);
       ctx.stroke();
     }
   }
   const texture = new THREE.CanvasTexture(canvas);
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
   const material = new THREE.SpriteMaterial({
     map: texture,
     depthTest: false,
@@ -493,7 +500,7 @@ function addFaceLabel(localPoint, normal, scale, refId, meshRoot, { removable = 
   sprite.renderOrder = 1004;
   sprite.userData.refId = refId;
   if (removable) sprite.userData.removeRefId = refId;
-  sprite.scale.set(removable ? scale * 12.5 : scale * 10, scale * 3.75, 1);
+  sprite.scale.set(removable ? scale * 13.25 : scale * 10.9, scale * 4.05, 1);
   const world = localPoint.clone();
   if (meshRoot) meshRoot.localToWorld(world);
   const lift = normal?.clone?.().normalize?.() || new THREE.Vector3(0, 1, 0);
@@ -1570,30 +1577,36 @@ function _clearGroup(g) {
 }
 
 function _makeDimLabelSprite(text, scale) {
-  const W = 256, H = 72;
+  const W = 320, H = 96;
+  const pixelScale = 2;
   const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
+  canvas.width = W * pixelScale;
+  canvas.height = H * pixelScale;
   const ctx = canvas.getContext("2d");
   if (ctx) {
+    ctx.scale(pixelScale, pixelScale);
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = "rgba(10, 14, 22, 0.88)";
-    roundedRect(ctx, 4, 4, W - 8, H - 8, 10);
+    roundedRect(ctx, 5, 5, W - 10, H - 10, 14);
     ctx.fill();
     ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3;
     ctx.stroke();
     ctx.fillStyle = "#ffd700";
-    ctx.font = "bold 26px 'Segoe UI', system-ui, sans-serif";
+    ctx.font = "800 34px 'Segoe UI', system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, W / 2, H / 2);
   }
   const tex = new THREE.CanvasTexture(canvas);
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
   const sprite = new THREE.Sprite(mat);
   // Scale sprite to sit nicely in model space; bias slightly above the midpoint
-  const sw = (W / 1024) * scale * 32;
-  const sh = (H / 1024) * scale * 32;
+  const sw = (W / 1024) * scale * 34;
+  const sh = (H / 1024) * scale * 34;
   sprite.scale.set(sw, sh, 1);
   sprite.renderOrder = 1003;
   return sprite;

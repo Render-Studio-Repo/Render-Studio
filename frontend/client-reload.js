@@ -7,7 +7,9 @@ to refresh.
 const LS_CLIENT_VERSION = "render3d:client-version";
 const LS_SESSION_SNAPSHOT = "render3d:session-snapshot";
 const LS_PENDING_RESTORE = "render3d:pending-restore";
+const LS_REFRESHED_AT = "render3d:client-refreshed-at";
 const POLL_MS = 20000;
+const POST_REFRESH_SUPPRESS_MS = 30000;
 
 function readJson(key) {
   try {
@@ -79,6 +81,23 @@ function ensureUpdateBanner(onReloadNow, onDismiss) {
   return banner;
 }
 
+function writeClientVersion(version) {
+  try {
+    sessionStorage.setItem(LS_CLIENT_VERSION, String(version));
+  } catch {
+    /* ignore */
+  }
+}
+
+function postRefreshSuppressing() {
+  try {
+    const refreshedAt = Number(sessionStorage.getItem(LS_REFRESHED_AT) || 0);
+    return Number.isFinite(refreshedAt) && Date.now() - refreshedAt < POST_REFRESH_SUPPRESS_MS;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Watch for client asset updates.
  * Always shows a click-to-refresh banner — never auto-reloads the page.
@@ -95,6 +114,7 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
     try {
       // Persist BEFORE reload so the next boot does not loop on a stale value.
       sessionStorage.setItem(LS_CLIENT_VERSION, String(nextVersion));
+      sessionStorage.setItem(LS_REFRESHED_AT, String(Date.now()));
     } catch {
       /* ignore */
     }
@@ -141,20 +161,20 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
       const nextVersion = String(data.client_version || "dev");
       if (!currentVersion) {
         currentVersion = nextVersion;
-        try {
-          sessionStorage.setItem(LS_CLIENT_VERSION, nextVersion);
-        } catch {
-          /* ignore */
-        }
+        writeClientVersion(nextVersion);
         return;
       }
       if (nextVersion !== currentVersion) {
-        currentVersion = nextVersion;
-        try {
-          sessionStorage.setItem(LS_CLIENT_VERSION, nextVersion);
-        } catch {
-          /* ignore */
+        if (postRefreshSuppressing()) {
+          currentVersion = nextVersion;
+          pendingVersion = null;
+          dismissedVersion = null;
+          writeClientVersion(nextVersion);
+          document.getElementById("client-update-banner")?.classList.add("hidden");
+          return;
         }
+        currentVersion = nextVersion;
+        writeClientVersion(nextVersion);
         showUpdateAvailable(nextVersion);
       }
     } catch {

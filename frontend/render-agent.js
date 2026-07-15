@@ -96,7 +96,15 @@ export function createRenderAgent({
   let inviteOpen = false;
   let inviteQuery = "";
   let selectedInviteUserId = "";
-  let agentKeyMode = "sam";
+  let agentKeyMode = (() => {
+    try {
+      const stored = localStorage.getItem("render3d:renderAgentKeyMode:v1");
+      // Default for all users: Sam's gpt-4o-mini unless they explicitly chose their key.
+      return stored === "selected" ? "selected" : "sam";
+    } catch {
+      return "sam";
+    }
+  })();
   let threadSearch = "";
   let busy = false;
   let invitePicker = null;
@@ -128,6 +136,15 @@ export function createRenderAgent({
     return `<span class="${className} ${className}--image render-agent-logo-avatar" style="background-image:url('${RENDER3D_LOGO_URL}')" title="Render Agent"></span>`;
   }
 
+  function isDesktopViewport() {
+    // Match Studio mobile interaction breakpoint — auto-open is desktop-only.
+    try {
+      return !window.matchMedia("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)").matches;
+    } catch {
+      return window.innerWidth > 820;
+    }
+  }
+
   function onboardingKey() {
     return `${ONBOARDING_KEY_PREFIX}${currentUserId() || "anonymous"}`;
   }
@@ -149,6 +166,28 @@ export function createRenderAgent({
     }
   }
 
+  function showWelcomeTip() {
+    if (!messagesEl) return;
+    const hasMessages = Boolean(activeThread?.messages?.length);
+    if (hasMessages) {
+      // Keep tip compact above existing history.
+      renderMessages();
+      return;
+    }
+    messagesEl.innerHTML = `
+      <div class="render-agent-empty">
+        <strong>Ask me anything about Render3D.</strong>
+        ${renderAgentTipCard()}
+        <p class="muted small" style="margin-top:10px">
+          New here? Read the
+          <a href="/getting-started.html">Getting Started docs</a>
+          for demos and walkthroughs.
+        </p>
+      </div>
+    `;
+    bindTipActions(messagesEl);
+  }
+
   function open({ onboarding: showOnboarding = false, question = "" } = {}) {
     const docsPanel = panel.classList.contains("render-agent-panel--docs");
     if (!currentUserId() && !docsPanel) {
@@ -165,19 +204,23 @@ export function createRenderAgent({
     restoreStickyLayout();
     if (showOnboarding && onboarding) {
       onboarding.classList.remove("hidden");
+      showWelcomeTip();
       markOnboardingSeen();
     }
     if (question && input) {
       input.value = String(question);
     }
     if (currentUserId()) {
-      void refreshThreads();
+      void refreshThreads().then(() => {
+        if (showOnboarding) showWelcomeTip();
+      });
       void refreshTeamMembers();
     } else if (messagesEl && !(messagesEl.childElementCount)) {
       messagesEl.innerHTML = `
         <div class="render-agent-empty">
           <strong>Ask me anything about Render3D.</strong>
           <p class="muted small">Sign in to send a question — demos from Getting Started appear in replies.</p>
+          <p class="muted small"><a href="/getting-started.html">Getting Started docs</a></p>
         </div>
       `;
     }
@@ -486,6 +529,11 @@ export function createRenderAgent({
     `;
     agentSourceRow.querySelector("select")?.addEventListener("change", (event) => {
       agentKeyMode = event.target.value === "selected" ? "selected" : "sam";
+      try {
+        localStorage.setItem("render3d:renderAgentKeyMode:v1", agentKeyMode);
+      } catch {
+        /* ignore */
+      }
       renderAgentSource();
     });
   }
@@ -1054,13 +1102,22 @@ export function createRenderAgent({
     copyShareLink,
     enterPresentationDeck,
     setUser(user) {
-      const desktop = window.matchMedia?.("(min-width: 901px)").matches !== false
-        && !window.matchMedia?.("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)")?.matches;
-      if (user && shouldShowOnboarding() && desktop) {
-        open({ onboarding: true });
-        // Ensure tip is visible for first-time desktop users.
-        renderMessages();
+      if (!user) return;
+      // Desktop only: first visit auto-opens Render Agent with tip + Getting Started link.
+      if (!isDesktopViewport()) return;
+      if (!shouldShowOnboarding()) return;
+      // Ensure Sam's gpt-4o-mini is the default agent for new users.
+      if (agentKeyMode !== "selected") {
+        agentKeyMode = "sam";
+        try {
+          localStorage.setItem("render3d:renderAgentKeyMode:v1", "sam");
+        } catch {
+          /* ignore */
+        }
       }
+      open({ onboarding: true });
+      renderAgentSource();
+      showWelcomeTip();
     },
   };
 }

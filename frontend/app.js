@@ -38,7 +38,7 @@ import {
   clearSavedMeasureAnnotations,
   updateMeasureLivePreview,
   clearMeasureLivePreview,
-} from "./picking.js?v=20260714-measure-units";
+} from "./picking.js?v=20260715-sharp-labels";
 import {
   FUSION,
   setupSceneLighting,
@@ -63,8 +63,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realti
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
-import { createRenderAgent } from "./render-agent.js?v=20260715-gs-deck";
-import { maybeAutoStartShowMeFromQuery } from "./show-me-tour.js?v=20260715-gs-deck";
+import { createRenderAgent } from "./render-agent.js?v=20260715-agent-gifs";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
@@ -1754,7 +1753,7 @@ function isRobotArtifactFilename(name = "") {
 
 function normalizeBrowser(data) {
   const browser = data?.browser || {};
-  let components = (browser.components || []).filter((entry) => !isInternalCadSidecar(entry?.name) && !isInternalCadSidecar(entry?.viewer_filename));
+  let components = (browser.components || []).filter((entry) => !isInternalCadSidecar(entry?.name));
   if (!components.length && data?.files?.length) {
     components = filesToBrowserComponents(
       (data.files || []).filter((file) => !isDxfDrawingFilename(file?.name) && !isRobotArtifactFilename(file?.name)),
@@ -12653,7 +12652,7 @@ async function fetchAllProjects() {
 
 async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false } = {}) {
   if (!comps?.length) return false;
-  comps = comps.filter((entry) => !isInternalCadSidecar(entry?.name) && !isInternalCadSidecar(entry?.viewer_filename));
+  comps = comps.filter((entry) => !isInternalCadSidecar(entry?.name));
   if (!comps.length) return false;
   prepareViewportForModels();
   const visibleComps = comps.filter((c) => !isBrowserComponentHidden(c));
@@ -19542,7 +19541,6 @@ window.addEventListener("keydown", (e) => {
       connectUserRealtime();
       renderTeams();
       await startApp();
-      maybeAutoStartShowMeFromQuery();
       if (askAgentParam) {
         setTimeout(() => renderAgentUi?.openWithQuestion?.(askAgentParam), 250);
       }

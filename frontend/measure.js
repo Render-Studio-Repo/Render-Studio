@@ -23,19 +23,23 @@ function formatAngle(deg) {
 }
 
 function makeTextSprite(text, color = "#e6edf3", bg = "rgba(13, 17, 23, 0.9)") {
+  const pixelScale = 2;
+  const W = 640;
+  const H = 160;
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 128;
+  canvas.width = W * pixelScale;
+  canvas.height = H * pixelScale;
   const ctx = canvas.getContext("2d");
   if (ctx) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = "bold 42px system-ui, -apple-system, Segoe UI, sans-serif";
-    const w = Math.min(480, ctx.measureText(text).width + 48);
+    ctx.scale(pixelScale, pixelScale);
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = "800 54px system-ui, -apple-system, Segoe UI, sans-serif";
+    const w = Math.min(W - 36, ctx.measureText(text).width + 66);
     ctx.fillStyle = bg;
-    const x = (512 - w) / 2;
+    const x = (W - w) / 2;
     const y = 24;
-    const h = 80;
-    const r = 16;
+    const h = 104;
+    const r = 20;
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -50,9 +54,12 @@ function makeTextSprite(text, color = "#e6edf3", bg = "rgba(13, 17, 23, 0.9)") {
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, 256, 64);
+    ctx.fillText(text, W / 2, y + h / 2 + 1);
   }
   const texture = new THREE.CanvasTexture(canvas);
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
   const material = new THREE.SpriteMaterial({
     map: texture,
     depthTest: false,
@@ -316,14 +323,14 @@ export function createMeasureTool({
       const mid = w1.clone().add(w2).multiplyScalar(0.5);
       const mm = nativeToMm(a.distanceTo(b), unitScale);
       const sprite = makeTextSprite(formatMeasureLength(mm));
-      sprite.scale.set(scale * 14, scale * 3.5, 1);
+      sprite.scale.set(scale * 15.5, scale * 4.15, 1);
       sprite.position.copy(mid);
       overlayGroup.add(sprite);
     } else if (selections.length === 1 && selections[0].type === "edge" && selections[0].edge) {
       const len = nativeToMm(selections[0].edge.length, unitScale);
       const mid = modelToWorld(meshRoot, selections[0].edge.start.clone().add(selections[0].edge.end).multiplyScalar(0.5));
       const sprite = makeTextSprite(formatMeasureLength(len));
-      sprite.scale.set(scale * 14, scale * 3.5, 1);
+      sprite.scale.set(scale * 15.5, scale * 4.15, 1);
       sprite.position.copy(mid);
       overlayGroup.add(sprite);
     }

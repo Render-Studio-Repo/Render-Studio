@@ -3,7 +3,7 @@
  */
 
 import * as THREE from "three";
-import { pickObject } from "./picking.js?v=20260611-object-select";
+import { pickObject } from "./picking.js?v=20260715-sharp-labels";
 
 function listSelectableMeshes(root) {
   if (!root) return [];

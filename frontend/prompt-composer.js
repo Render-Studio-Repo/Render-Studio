@@ -1,6 +1,6 @@
 /** Cursor-style @reference chips + in-prompt @mentions for the AI prompt */
 
-import { removeReferenceMarker } from "./picking.js?v=20260618-path-remove-x";
+import { removeReferenceMarker } from "./picking.js?v=20260715-sharp-labels";
 
 export function createPromptComposer({
   textarea,

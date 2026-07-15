@@ -168,6 +168,13 @@ async function main() {
   const btnOpen = $("btn-share-open");
   const btnDownloadMenu = $("btn-share-download");
   const downloadSheet = $("share-download-sheet");
+  const remixModal = $("share-remix-modal");
+  const remixProjectSelect = $("share-remix-project-select");
+  const remixShareBack = $("share-remix-share-back");
+  const remixCollab = $("share-remix-collab");
+  const remixCollabLabel = $("share-remix-collab-label");
+  const remixStatus = $("share-remix-status");
+  const btnRemixConfirm = $("btn-share-remix-confirm");
   const inspectorPanel = $("share-inspector-panel");
   const inspectorTitle = $("share-inspector-title");
   const sourceDetailsEl = $("share-source-details");
@@ -293,6 +300,8 @@ async function main() {
   const materialBaseState = new WeakMap();
   let wireframeEnabled = false;
   let transparentPickEnabled = false;
+  let remixProjectsLoaded = false;
+  let remixProjectsLoading = false;
 
   const section = createSectionController({
     renderer,
@@ -742,36 +751,115 @@ async function main() {
   });
   btnTransparentTipClose?.addEventListener("click", () => setTransparentTipVisible(false));
 
-  btnOpen?.addEventListener("click", async () => {
+  function setRemixStatus(message = "", cls = "") {
+    if (!remixStatus) return;
+    remixStatus.textContent = message;
+    remixStatus.className = `share-remix-status${cls ? ` ${cls}` : ""}`;
+  }
+
+  function selectedRemixTarget() {
+    return remixModal?.querySelector('input[name="share-remix-target"]:checked')?.value || "new";
+  }
+
+  function syncRemixTargetUi() {
+    const existing = selectedRemixTarget() === "existing";
+    if (remixProjectSelect) remixProjectSelect.disabled = !existing;
+    remixCollab?.classList.toggle("hidden", existing || !meta.shared_by?.id);
+    if (existing && remixShareBack) remixShareBack.checked = false;
+  }
+
+  async function loadRemixProjects() {
+    if (remixProjectsLoaded || remixProjectsLoading || !remixProjectSelect) return;
+    remixProjectsLoading = true;
+    remixProjectSelect.innerHTML = `<option value="">Loading projects…</option>`;
+    try {
+      const res = await fetch("/api/projects", { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Could not load projects");
+      const projects = (Array.isArray(data.projects) ? data.projects : [])
+        .filter((p) => p?.id && p.folder_id !== "__public__");
+      remixProjectSelect.innerHTML = projects.length
+        ? `<option value="">Choose a project…</option>${projects.map((p) => `
+          <option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}${p.folder_name ? ` · ${escapeHtml(p.folder_name)}` : ""}</option>
+        `).join("")}`
+        : `<option value="">No editable projects found</option>`;
+      remixProjectsLoaded = true;
+    } catch (err) {
+      remixProjectSelect.innerHTML = `<option value="">Could not load projects</option>`;
+      setRemixStatus(err?.message || "Could not load projects.", "error");
+    } finally {
+      remixProjectsLoading = false;
+    }
+  }
+
+  function openRemixModal() {
     if (!getToken()) {
       location.href = `/?open_share=${encodeURIComponent(token)}`;
       return;
     }
     const sharer = meta.shared_by;
-    const shareBack = !!(
-      sharer?.id
-      && window.confirm(`Remix this model into your editable Render3D project?\n\nAlso create a collaboration workspace with ${sharer.display_name || sharer.email || "the original sharer"} for this remix?`)
-    );
-    if (!shareBack && sharer?.id) {
-      const proceed = window.confirm("Remix this model without inviting the original sharer?");
-      if (!proceed) return;
+    if (remixCollabLabel && sharer?.id) {
+      remixCollabLabel.textContent = `Create a collaboration workspace with ${sharer.display_name || sharer.email || "the original sharer"} for this new remix.`;
     }
-    const originalText = btnOpen.textContent;
-    btnOpen.disabled = true;
-    btnOpen.textContent = "Remixing…";
+    setRemixStatus("");
+    remixModal?.classList.remove("hidden");
+    syncRemixTargetUi();
+    void loadRemixProjects();
+  }
+
+  function closeRemixModal() {
+    remixModal?.classList.add("hidden");
+    setRemixStatus("");
+  }
+
+  remixModal?.querySelectorAll('input[name="share-remix-target"]').forEach((input) => {
+    input.addEventListener("change", syncRemixTargetUi);
+  });
+  remixModal?.querySelectorAll("[data-remix-close]").forEach((btn) => {
+    btn.addEventListener("click", closeRemixModal);
+  });
+  remixModal?.addEventListener("click", (event) => {
+    if (event.target === remixModal) closeRemixModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !remixModal?.classList.contains("hidden")) {
+      closeRemixModal();
+    }
+  });
+
+  btnOpen?.addEventListener("click", openRemixModal);
+
+  btnRemixConfirm?.addEventListener("click", async () => {
+    if (!getToken()) {
+      location.href = `/?open_share=${encodeURIComponent(token)}`;
+      return;
+    }
+    const targetMode = selectedRemixTarget();
+    const targetProjectId = targetMode === "existing" ? (remixProjectSelect?.value || "") : "";
+    if (targetMode === "existing" && !targetProjectId) {
+      setRemixStatus("Choose a project to import into.", "error");
+      return;
+    }
+    const originalText = btnRemixConfirm.textContent;
+    btnRemixConfirm.disabled = true;
+    btnRemixConfirm.textContent = "Remixing…";
+    setRemixStatus(targetMode === "existing" ? "Importing shared files into project…" : "Creating editable remix project…");
     try {
       const res = await fetch(`/api/share/${encodeURIComponent(token)}/open-in-project`, {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ share_with_sharer: shareBack }),
+        body: JSON.stringify({
+          share_with_sharer: targetMode === "new" && !!remixShareBack?.checked,
+          target_project_id: targetProjectId || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || "Could not remix project");
       location.href = data.url || `/?project=${encodeURIComponent(data.project_id)}`;
     } catch (err) {
-      setStatus(err?.message || "Could not remix this share into a project.");
-      btnOpen.disabled = false;
-      btnOpen.textContent = originalText;
+      setRemixStatus(err?.message || "Could not remix this share into a project.", "error");
+      btnRemixConfirm.disabled = false;
+      btnRemixConfirm.textContent = originalText;
     }
   });
 
@@ -781,7 +869,7 @@ async function main() {
     btnHistory?.classList.toggle("active", on && focus === "history");
     btnHistory?.setAttribute("aria-pressed", String(on && focus === "history"));
     inspectorPanel?.classList.toggle("hidden", !on);
-    if (inspectorTitle) inspectorTitle.textContent = focus === "history" ? "Prompt history" : "Model details";
+    if (inspectorTitle) inspectorTitle.textContent = focus === "history" ? "Prompt history" : "Part Tree";
     if (on) {
       renderShareDetails();
       renderComponentTree();

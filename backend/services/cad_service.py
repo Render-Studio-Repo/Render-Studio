@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import re
+import struct
 import uuid
 import zipfile
 from pathlib import Path
@@ -854,6 +855,64 @@ def _match_glb_scale_to_step(step_path: Path, glb_path: Path) -> None:
         logger.debug("Could not verify STEP preview scale for %s: %s", glb_path.name, exc)
 
 
+def _read_glb_json_chunk(path: Path) -> dict[str, Any] | None:
+    """Best-effort glTF JSON chunk from a GLB (no full mesh decode)."""
+    try:
+        data = path.read_bytes()
+        if len(data) < 20 or data[:4] != b"glTF":
+            return None
+        json_len = struct.unpack_from("<I", data, 12)[0]
+        start = 20
+        end = start + json_len
+        if json_len <= 0 or end > len(data):
+            return None
+        return json.loads(data[start:end])
+    except Exception:
+        return None
+
+
+def _glb_preview_stats(path: Path) -> tuple[int, int, int]:
+    """Return ``(mesh_count, material_count, color0_primitive_count)``."""
+    gltf = _read_glb_json_chunk(path)
+    if not gltf:
+        return (0, 0, 0)
+    meshes = gltf.get("meshes") or []
+    materials = gltf.get("materials") or []
+    color0 = 0
+    for mesh in meshes:
+        for prim in mesh.get("primitives") or []:
+            attrs = prim.get("attributes") or {}
+            if "COLOR_0" in attrs:
+                color0 += 1
+    return (len(meshes), len(materials), color0)
+
+
+def jake_viewport_glb_for_stem(project_path: Path, stem: str) -> Path | None:
+    """Return Jake CADJS ``.{stem}.step.glb`` when present."""
+    jake = project_path / f".{stem}.step.glb"
+    return jake if jake.is_file() else None
+
+
+def prefer_jake_viewport_glb(solid_glb: Path, jake_glb: Path) -> bool:
+    """True when the Jake sidecar keeps multi-part materials the shell GLB flattened away.
+
+    Share/preview often points at ``.Model.step.glb`` (per-body STEP materials). The
+    product-shell ``Model.glb`` is frequently a single merged mesh with washed vertex
+    tints — which makes assemblies look one colour in the main viewport.
+    """
+    if not jake_glb.is_file():
+        return False
+    if not solid_glb.is_file():
+        return True
+    j_meshes, j_mats, _j_c0 = _glb_preview_stats(jake_glb)
+    s_meshes, s_mats, _s_c0 = _glb_preview_stats(solid_glb)
+    if j_mats >= 2 and s_mats <= 1 and s_meshes <= 2:
+        return True
+    if j_meshes >= 3 and j_mats >= 2 and s_meshes == 1:
+        return True
+    return False
+
+
 def viewer_filename_for_model(filename: str, project_path: Path) -> str:
     """Pick the file the Three.js viewer should load for a browser tree entry."""
     safe = Path(filename).name
@@ -861,13 +920,18 @@ def viewer_filename_for_model(filename: str, project_path: Path) -> str:
     stem = Path(safe).stem
 
     if suffix in STEP_SUFFIXES:
-        # Prefer solid preview GLB over face-dumped OCC mesh.
+        # Prefer Jake multi-body materials, then solid preview, then face-dumped OCC mesh.
         solid_glb = project_path / f"{stem}.glb"
         faceted_glb = project_path / f"{stem}__faceted.glb"
+        jake_glb = jake_viewport_glb_for_stem(project_path, stem)
+        if jake_glb is not None and prefer_jake_viewport_glb(solid_glb, jake_glb):
+            return jake_glb.name
         if solid_glb.is_file():
             return solid_glb.name
         if faceted_glb.is_file():
             return faceted_glb.name
+        if jake_glb is not None:
+            return jake_glb.name
     if suffix in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
         # If someone points at *__faceted.glb, prefer the solid sibling when present.
         if "__faceted" in stem.lower():
@@ -875,6 +939,11 @@ def viewer_filename_for_model(filename: str, project_path: Path) -> str:
             solid = project_path / f"{solid_stem}{suffix}"
             if solid.is_file():
                 return solid.name
+            return safe
+        solid = project_path / safe
+        jake_glb = jake_viewport_glb_for_stem(project_path, stem)
+        if jake_glb is not None and prefer_jake_viewport_glb(solid, jake_glb):
+            return jake_glb.name
         return safe
     return safe
 
