@@ -9,6 +9,16 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "send-to-bambu-studio",
+    date: "2026-07-15",
+    kind: "feature",
+    title: "Send to Bambu Studio",
+    summary:
+      "Export now includes Send to Bambu Studio: prepares a plate-ready 3MF and opens it in your local Bambu Studio so the part lands on the build plate. Alternate open link and 3MF download are available if the app does not launch.",
+    visual: "/docs/media/picks.gif?v=20260715-real",
+    href: "/",
+  },
+  {
     id: "viewport-transparent-tool",
     date: "2026-07-15",
     kind: "tool",

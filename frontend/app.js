@@ -50,7 +50,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260715-transparent-edges";
+} from "./scene-style.js?v=20260715-transparent-solid";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-collab-avatars";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-compact-ref-chips";
@@ -112,7 +112,7 @@ import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtim
 import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./planetary-gear-runtime.js?v=20260710-step-module";
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260629-section-outline-shell";
-import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-realtime-focus";
+import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6h client ceiling — Sol/CAD 2.0 must not abort at 8 min
@@ -8093,8 +8093,10 @@ function setTransparentPickEnabled(on) {
     directModeling.reset?.();
     activatePickMode("off");
     setEditStatus("ok", "Transparent: click an object to toggle see-through. Click again to restore.");
-  } else if (btn) {
-    setEditStatus("ok", "Transparent tool off.");
+  } else {
+    // Leaving the tool must put every ghosted body back to solid.
+    clearViewportTransparent();
+    if (btn) setEditStatus("ok", "Transparent tool off — objects restored to solid.");
   }
 }
 
@@ -15009,14 +15011,26 @@ async function generateRobotArtifacts(kind = "both") {
   }
   if (status) {
     status.className = "status loading";
-    status.textContent = `Generating ${kind.toUpperCase()} robot artifacts…`;
+    status.textContent = `Generating ${kind.toUpperCase()} robot artifacts… safe to refresh or switch projects.`;
   }
+  beginGenerationWatch(projectId, { kind: "rigging", mode: "rigging", pendingStart: true });
   try {
     const data = await api(`/api/projects/${projectId}/rigging/generate-artifacts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, kind }),
     });
+    if (data?.accepted || data?.status === "running") {
+      const liveGen = data.generation || { status: "running", kind: "rigging", trace_id: data.trace_id };
+      const proj = allProjects.find((p) => p.id === projectId);
+      if (proj) proj.generation = liveGen;
+      renderProjectList();
+      if (status) {
+        status.className = "status loading";
+        status.textContent = "Generating robot artifacts in background… safe to refresh.";
+      }
+      return;
+    }
     robotArtifactData = data;
     await refreshFiles();
     renderRobotArtifacts();
@@ -15222,12 +15236,25 @@ async function authorJakeRobotDescription({ source: requestedSource = "", kind =
     status.textContent = `Authoring ${kind.toUpperCase()} robot motion artifacts (Jake)…`;
   }
   setEditStatus("loading", "Authoring URDF/SRDF robot motion with AI…");
+  beginGenerationWatch(projectId, { kind: "rigging", mode: "rigging", pendingStart: true });
   try {
     const data = await api(`/api/projects/${projectId}/rigging/author-robot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, kind }),
     }, 300000);
+    if (data?.accepted || data?.status === "running") {
+      const liveGen = data.generation || { status: "running", kind: "rigging", trace_id: data.trace_id };
+      const proj = allProjects.find((p) => p.id === projectId);
+      if (proj) proj.generation = liveGen;
+      renderProjectList();
+      setRiggingWorkspaceMode("urdf");
+      if (status) {
+        status.className = "status loading";
+        status.textContent = "Authoring robot artifacts in background… safe to refresh.";
+      }
+      return;
+    }
     robotArtifactData = data;
     await refreshFiles();
     await refreshRobotArtifacts({ quiet: true });
@@ -16726,6 +16753,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
     updateWorkspaceFusionAutoSync(null);
     folderEl.innerHTML = "Select one workspace to use the realtime editor.";
     projectsEl.innerHTML = "";
+    window.applyRealtimeBrowserControls?.();
     return;
   }
   const folder = data.render_folder || {};
@@ -16754,6 +16782,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
       <strong>Fusion projects</strong>
       <span>No Fusion mirror folders linked yet. Open a Render3D project, then use Fusion Library → Link mirror on each teammate's own Fusion folder.</span>
     `;
+    window.applyRealtimeBrowserControls?.();
     return;
   }
   projectsEl.innerHTML = `
@@ -17016,6 +17045,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
     });
   });
   bindFusionBrowserSectionPersistence(projectsEl);
+  window.applyRealtimeBrowserControls?.();
 }
 
 function renderWorkspaceFusionComponents(project) {
@@ -17241,6 +17271,8 @@ function renderFusionLatestVersionLink(mirror, items = []) {
 }
 
 function renderFusionBrowserItem({ projectId, filename, name, badge, icon = "□", child = false, disabled = false }) {
+  const displayName = name || filename || "Untitled";
+  const previewLabel = String(displayName).trim().charAt(0).toUpperCase() || "M";
   const stem = String(name || filename || "fusion_item")
     .replace(/\.[^.]+$/, "")
     .replace(/[:\s]+/g, "_")
@@ -17255,8 +17287,9 @@ function renderFusionBrowserItem({ projectId, filename, name, badge, icon = "□
     : openAttrs;
   return `
     <button type="button" class="workspace-fusion-browser-row${child ? " workspace-fusion-browser-row-child" : ""}" ${attrs} ${disabled ? "" : "draggable=\"true\" data-fusion-drag-row"} data-drag-project-id="${appEscapeHtml(projectId)}" data-drag-filename="${appEscapeHtml(filename)}" data-drag-name="${appEscapeHtml(name || filename || "Untitled")}" data-drag-stem="${appEscapeHtml(stem)}" data-drag-format="${appEscapeHtml(badge || "fusion")}">
+      <span class="workspace-fusion-preview" aria-hidden="true"><span>${appEscapeHtml(previewLabel)}</span></span>
       <span class="workspace-fusion-browser-icon">${appEscapeHtml(icon)}</span>
-      <span class="workspace-fusion-browser-name">${appEscapeHtml(name || filename || "Untitled")}</span>
+      <span class="workspace-fusion-browser-name">${appEscapeHtml(displayName)}</span>
       <small>${appEscapeHtml(badge || filename || "")}</small>
     </button>
   `;
@@ -17303,6 +17336,7 @@ function renderFusionMirrorFolderRow(project, mirror, folder) {
       data-folder-id="${appEscapeHtml(folder.id || "")}"
       data-folder-label="${appEscapeHtml(folder.name || "Folder")}"
       title="Browse this Fusion folder">
+      <span class="workspace-fusion-preview workspace-fusion-preview--folder" aria-hidden="true"><span>F</span></span>
       <span class="workspace-fusion-browser-icon">▣</span>
       <span class="workspace-fusion-browser-name">${appEscapeHtml(folder.name || "Folder")}</span>
       <small>Folder</small>
@@ -17331,6 +17365,7 @@ function renderFusionMirrorFileRow(project, mirror, item) {
     <div class="workspace-fusion-file-entry">
       <button type="button" class="workspace-fusion-browser-row workspace-fusion-file-row" data-fusion-file-open ${commonAttrs}
         title="Open in Render3D to view and edit">
+        <span class="workspace-fusion-preview workspace-fusion-preview--file" aria-hidden="true"><span>${appEscapeHtml(String(name).trim().charAt(0).toUpperCase() || "F")}</span></span>
         <span class="workspace-fusion-browser-icon">□</span>
         <span class="workspace-fusion-browser-name">${appEscapeHtml(name)}</span>
         <small>${localMatch ? "Local" : "Open"}</small>
@@ -17884,14 +17919,18 @@ async function refreshWorkspaceRealtimeEditor() {
   if (!teamId) {
     renderWorkspaceRealtimeEditor(null);
     connectWorkspaceRealtime(null);
+    window.setRealtimeConnectionState?.("idle", "Select a workspace to connect Fusion.");
     return;
   }
   connectWorkspaceRealtime(teamId);
+  window.setRealtimeConnectionState?.("loading", "Connecting to Fusion and linked folders…");
   try {
     const data = await api(`/api/teams/${teamId}/realtime-editor`);
     renderWorkspaceRealtimeEditor(data);
+    window.setRealtimeConnectionState?.("ready", "Fusion connection ready · linked folders loaded");
   } catch {
     renderWorkspaceRealtimeEditor(null);
+    window.setRealtimeConnectionState?.("error", "Could not connect to Fusion right now.");
   }
 }
 

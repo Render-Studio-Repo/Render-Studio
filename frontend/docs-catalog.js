@@ -1,6 +1,7 @@
 /** Render complete categorized feature documentation on /docs.html */
 
 import { DOC_CATEGORIES, DOC_FEATURES, featuresByCategory } from "./docs-features.js?v=20260715-agent-store-docs";
+import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 function esc(value) {
   return String(value ?? "")
@@ -117,6 +118,7 @@ function mountCatalog() {
       }
     });
   });
+  enhanceDocsGifs(host);
 
   const input = host.querySelector("#docs-feature-filter");
   input?.addEventListener("input", () => {

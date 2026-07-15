@@ -1,7 +1,8 @@
 /** Recent Updates page — milestone features & tools. */
 
-import { listMilestones } from "./docs/updates/milestones.js?v=20260715-transparent-tool";
+import { listMilestones } from "./docs/updates/milestones.js?v=20260715-bambu-studio";
 import { authHeaders, createAuthUI } from "./auth.js?v=20260709-admin-matt";
+import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 function esc(value) {
   return String(value ?? "")
@@ -62,6 +63,7 @@ function mountList(kind = "all") {
       img.remove();
     });
   });
+  enhanceDocsGifs(host);
 }
 
 function mountFilters() {

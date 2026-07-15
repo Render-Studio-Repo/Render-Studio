@@ -735,8 +735,12 @@ function applyTransparentSurface(mat, transparentOn, { wireframe = false } = {})
     mat.opacity = TRANSPARENT_SURFACE_OPACITY;
     mat.depthWrite = false;
   } else {
-    mat.transparent = !!base.transparent;
-    mat.opacity = base.opacity ?? 1;
+    // Prefer stored solid base; if base was captured after ghosting, force solid.
+    const restoreOpacity = Number.isFinite(base.opacity) && base.opacity > TRANSPARENT_SURFACE_OPACITY + 0.05
+      ? base.opacity
+      : 1;
+    mat.opacity = restoreOpacity;
+    mat.transparent = restoreOpacity < 0.999;
     mat.depthWrite = base.depthWrite !== false;
   }
   mat.needsUpdate = true;

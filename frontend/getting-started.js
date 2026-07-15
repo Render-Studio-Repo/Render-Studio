@@ -5,6 +5,7 @@ import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-tips-
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260709-admin-matt";
 import { createRenderAgent } from "./render-agent.js?v=20260715-docs-no-close-fab";
 import { startShowMe } from "./show-me-tour.js?v=20260715-show-me-circle4";
+import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 const FEATURES = GETTING_STARTED_GUIDES;
 
@@ -215,6 +216,7 @@ function mountFeatures() {
       img.closest(".gs-demo")?.classList.add("has-gif");
     }
   });
+  enhanceDocsGifs(host);
 }
 
 function mountTips() {
