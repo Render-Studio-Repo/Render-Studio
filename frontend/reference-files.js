@@ -10,9 +10,9 @@ function escapeHtml(value) {
 
 function kindFromName(filename = "") {
   const lower = String(filename).toLowerCase();
-  if (/\.(png|jpe?g|webp|gif)$/i.test(lower)) return "image";
+  if (/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(lower)) return "image";
   if (/\.pdf$/i.test(lower)) return "pdf";
-  if (/\.(txt|md|csv|tsv|log|json|ya?ml)$/i.test(lower)) return "text";
+  if (/\.(txt|md|csv|tsv|log|json|ya?ml|html?|rtf)$/i.test(lower)) return "text";
   return "file";
 }
 
@@ -151,6 +151,8 @@ export function createReferenceFilesViewer(options = {}) {
           ? "Edit text · notes & markup save with Save"
           : kind === "image"
             ? "Pan · scroll zoom · Pen to markup · notes on the right"
+            : kind === "file"
+              ? "Download or notes on the right"
             : "Notes & markup on the right · scroll PDF inside the frame";
 
     let bodyHtml = "";
@@ -176,7 +178,10 @@ export function createReferenceFilesViewer(options = {}) {
           <iframe class="ref-pdf-iframe" title="${escapeHtml(tab.label || tab.filename)}" src="${escapeHtml(tab.blobUrl || "")}"></iframe>
         </div>`;
     } else {
-      bodyHtml = `<div class="ref-viewer-empty">Open this file from Reference Files.</div>`;
+      bodyHtml = `<div class="ref-viewer-empty">
+        <p>Preview isn’t available for this file type.</p>
+        ${tab.blobUrl ? `<p><a class="ref-download-link" href="${escapeHtml(tab.blobUrl)}" download="${escapeHtml(tab.filename)}">Download ${escapeHtml(tab.filename)}</a></p>` : ""}
+      </div>`;
     }
 
     viewerEl.innerHTML = `
@@ -542,5 +547,5 @@ export function createReferenceFilesViewer(options = {}) {
 }
 
 export function isReferenceFilename(name = "") {
-  return /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|png|jpe?g|webp|gif)$/i.test(String(name || ""));
+  return /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|html?|rtf|docx?|xlsx?|pptx?|png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(String(name || ""));
 }

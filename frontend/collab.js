@@ -421,7 +421,14 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
         handlers.onTimeline?.(msg);
       } else if (msg.type === "project.history") {
         handlers.onProjectHistory?.(msg);
-      } else if (msg.type === "workspace.updated") {
+      } else if (
+        msg.type === "workspace.updated"
+        || msg.type === "folder.shared"
+        || msg.type === "folder.unshared"
+        || msg.type === "folder.renamed"
+        || msg.type === "folder.created"
+        || msg.type === "folder.deleted"
+      ) {
         handlers.onWorkspaceUpdated?.(msg);
       } else if (
         msg.type === "project.created" ||

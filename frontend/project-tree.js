@@ -1,4 +1,4 @@
-/** Fusion 360-style project browser tree (components, sketches, wiring, drawings, references). */
+/** Fusion 360-style project browser tree (components, sketches, wiring, reference files). */
 
 import { recognizePart } from "./part-catalog.js?v=20260715-elec-none";
 import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
@@ -6,11 +6,18 @@ import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 const SECTIONS = [
   { id: "components", label: "Components", icon: "cube" },
   { id: "robots", label: "Robots (URDF / SRDF)", icon: "robot" },
-  { id: "drawings", label: "DXF Drawings", icon: "drawing" },
   { id: "references", label: "Reference Files", icon: "file" },
   { id: "sketches", label: "Sketches", icon: "sketch" },
   { id: "wiring", label: "Wiring", icon: "wire" },
 ];
+
+function isDxfEntry(entry) {
+  return entry?.format === "dxf" || /\.dxf$/i.test(String(entry?.name || ""));
+}
+
+function referenceSectionItems(browser = {}) {
+  return [...(browser.drawings || []), ...(browser.references || [])];
+}
 
 function iconSvg(type) {
   if (type === "cube") {
@@ -85,7 +92,7 @@ export function createProjectTree(options = {}) {
   /** @type {Map<string, { entry: object, sectionId: string }>} */
   const browserEntryCache = new Map();
   let loading = false;
-  let expanded = { components: true, robots: true, drawings: true, references: true, sketches: true, wiring: true };
+  let expanded = { components: true, robots: true, references: true, sketches: true, wiring: true };
   const childGroupsExpanded = new Set();
   const childGroupsInitialized = new Set();
   let suppressBrowserClick = false;
@@ -124,7 +131,7 @@ export function createProjectTree(options = {}) {
     container.appendChild(header);
 
     for (const section of SECTIONS) {
-      const items = browser[section.id] || [];
+      const items = section.id === "references" ? referenceSectionItems(browser) : browser[section.id] || [];
       const sectionEl = document.createElement("div");
       sectionEl.className = "browser-section";
       sectionEl.dataset.section = section.id;
@@ -156,10 +163,8 @@ export function createProjectTree(options = {}) {
               ? "Drop STEP or mesh files in the viewport"
               : section.id === "robots"
                 ? "No URDF/SRDF yet — generate from Rigging or drop robot files"
-              : section.id === "drawings"
-                ? "Drop DXF files in the viewport"
                 : section.id === "references"
-                  ? "Drop PDF, TXT, or images in the viewport"
+                  ? "Drop PDF, DXF, text, or images in the viewport"
                 : section.id === "sketches"
                   ? "No sketches — Finish Sketch to save one"
                   : "Open Wiring Simulator to design a circuit";
@@ -292,7 +297,8 @@ export function createProjectTree(options = {}) {
     const li = document.createElement("li");
     li.className = "browser-item";
     if (child) li.classList.add("browser-item--child");
-    if (sectionId === "drawings") li.classList.add("browser-item--drawing");
+    if (sectionId === "references" && isDxfEntry(entry)) li.classList.add("browser-item--drawing");
+    if (sectionId === "references" && !isDxfEntry(entry)) li.classList.add("browser-item--reference");
     const selectionKey = browserSelectionKey(sectionId, entry);
     browserEntryCache.set(selectionKey, { entry, sectionId });
     if (entry.name === selectedName || entry.id === selectedName) {
@@ -378,8 +384,10 @@ export function createProjectTree(options = {}) {
       }
       if (sectionId === "components") onOpenComponent?.(entry);
       else if (sectionId === "robots") onOpenRobot?.(entry);
-      else if (sectionId === "drawings") onOpenDrawing?.(entry);
-      else if (sectionId === "references") onOpenReference?.(entry);
+      else if (sectionId === "references") {
+        if (isDxfEntry(entry)) onOpenDrawing?.(entry);
+        else onOpenReference?.(entry);
+      }
       else if (sectionId === "sketches") onOpenSketch?.(entry);
       else onOpenWiring?.(entry);
       render();
@@ -439,7 +447,7 @@ export function createProjectTree(options = {}) {
         });
         actions.append(prof, exp, ren, del);
       }
-    } else if (sectionId === "drawings" || sectionId === "references" || sectionId === "robots") {
+    } else if (sectionId === "references" || sectionId === "robots") {
       const ren = document.createElement("button");
       ren.type = "button";
       ren.className = "browser-action-btn";
@@ -459,7 +467,7 @@ export function createProjectTree(options = {}) {
       actions.append(ren, del);
     }
 
-    if (sectionId === "drawings" || sectionId === "references" || sectionId === "robots") {
+    if (sectionId === "references" || sectionId === "robots") {
       li.append(body, actions);
     } else {
       li.append(vis, body, actions);

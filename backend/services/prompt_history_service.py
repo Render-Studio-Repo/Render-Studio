@@ -119,6 +119,8 @@ def append_entry(
     shared_key_name: str | None = None,
     shared_by_name: str | None = None,
     prompt_mode: str | None = None,
+    original_prompt: str | None = None,
+    prompt_improved: bool | None = None,
 ) -> dict[str, Any]:
     data = load(project_path)
     entries: list[dict[str, Any]] = data.get("entries", [])
@@ -175,6 +177,14 @@ def append_entry(
         entry["shared_key_name"] = shared_key_name
     if shared_by_name:
         entry["shared_by_name"] = shared_by_name
+    original = str(original_prompt or "").strip()
+    if original and original != str(prompt or "").strip():
+        entry["original_prompt"] = original
+        entry["prompt_improved"] = True
+    elif prompt_improved:
+        entry["prompt_improved"] = True
+        if original:
+            entry["original_prompt"] = original
     entries.append(entry)
     data["entries"] = entries[-MAX_ENTRIES:]
     save(project_path, data)
@@ -401,17 +411,26 @@ def _backfill_from_generation(project_path: Path) -> None:
         return
     success = status == "complete" or bool(recovered_filename and status is None)
 
+    request_body = gen.get("request_body") if isinstance(gen.get("request_body"), dict) else {}
+    recovered_prompt = str(
+        request_body.get("prompt")
+        or gen.get("prompt")
+        or ""
+    )
+    recovered_speed = str(gen.get("speed") or request_body.get("speed") or "fast").lower()
+    if recovered_speed not in {"fast", "quality"}:
+        recovered_speed = "fast"
     row: dict[str, Any] = {
         "id": str(gen.get("prompt_id") or str(uuid.uuid4())[:10]),
-        "prompt": gen.get("prompt") or "",
+        "prompt": recovered_prompt,
         "success": bool(success),
         "message": gen.get("message"),
         "filename": recovered_filename if success else filename,
-        "base_filename": gen.get("base_filename"),
-        "speed": gen.get("speed", "fast"),
+        "base_filename": gen.get("base_filename") or request_body.get("base_filename"),
+        "speed": recovered_speed,
         "error": None if success else gen.get("error"),
-        "reference_count": int(gen.get("reference_count") or 0),
-        "image_count": int(gen.get("image_count") or 0),
+        "reference_count": int(gen.get("reference_count") or len(request_body.get("references") or []) or 0),
+        "image_count": int(gen.get("image_count") or len(request_body.get("images") or []) or 0),
         "images": gen.get("images") or [],
         "trace_id": trace_id,
         "user_id": gen.get("by_user_id"),
@@ -420,12 +439,25 @@ def _backfill_from_generation(project_path: Path) -> None:
         "created_at": gen.get("started_at") or datetime.now(timezone.utc).isoformat(),
         "recovered": True,
     }
-    if gen.get("mode"):
-        row["prompt_mode"] = str(gen.get("mode")).lower()
+    mode = gen.get("mode") or request_body.get("mode")
+    if mode:
+        row["prompt_mode"] = str(mode).lower()
     if gen.get("usage"):
         row["usage"] = gen["usage"]
     if gen.get("cost_usd") is not None:
         row["cost_usd"] = gen.get("cost_usd")
+    if gen.get("model"):
+        row["model"] = gen.get("model")
+    if gen.get("provider"):
+        row["provider"] = gen.get("provider")
+    original = str(request_body.get("original_prompt") or "").strip()
+    if original and original != recovered_prompt.strip():
+        row["original_prompt"] = original
+        row["prompt_improved"] = True
+    elif request_body.get("prompt_improved"):
+        row["prompt_improved"] = True
+        if original:
+            row["original_prompt"] = original
     entries.append(row)
     data["entries"] = entries[-MAX_ENTRIES:]
     save(project_path, data)
@@ -458,20 +490,47 @@ def _enrich_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
 
 
 def _fill_prompt_mode_from_generation(project_path: Path, entries: list[dict[str, Any]]) -> bool:
-    """Backfill prompt_mode on history rows from generation.json when trace matches."""
+    """Backfill prompt_mode / speed / improve metadata from generation.json when trace matches."""
     from backend.services import generation_service
 
     gen = generation_service.load(project_path) or {}
     gen_trace = str(gen.get("trace_id") or "")
-    gen_mode = gen.get("mode")
-    if not gen_trace or not gen_mode:
+    request_body = gen.get("request_body") if isinstance(gen.get("request_body"), dict) else {}
+    gen_mode = gen.get("mode") or request_body.get("mode")
+    gen_speed = gen.get("speed") or request_body.get("speed")
+    if not gen_trace:
         return False
     changed = False
     for row in entries:
-        if row.get("prompt_mode"):
+        if str(row.get("trace_id") or "") != gen_trace:
             continue
-        if str(row.get("trace_id") or "") == gen_trace:
+        if not row.get("prompt_mode") and gen_mode:
             row["prompt_mode"] = str(gen_mode).lower()
+            changed = True
+        if not row.get("speed") and gen_speed:
+            speed = str(gen_speed).lower()
+            if speed in {"fast", "quality"}:
+                row["speed"] = speed
+                changed = True
+        original = str(request_body.get("original_prompt") or "").strip()
+        if original and not row.get("original_prompt"):
+            row["original_prompt"] = original
+            changed = True
+        if request_body.get("prompt_improved") and not row.get("prompt_improved"):
+            row["prompt_improved"] = True
+            changed = True
+        elif original and original != str(row.get("prompt") or "").strip() and not row.get("prompt_improved"):
+            row["prompt_improved"] = True
+            changed = True
+        full_prompt = str(request_body.get("prompt") or "").strip()
+        if full_prompt and len(full_prompt) > len(str(row.get("prompt") or "")):
+            row["prompt"] = full_prompt
+            changed = True
+        if not row.get("model") and gen.get("model"):
+            row["model"] = gen.get("model")
+            changed = True
+        if not row.get("provider") and gen.get("provider"):
+            row["provider"] = gen.get("provider")
             changed = True
     return changed
 

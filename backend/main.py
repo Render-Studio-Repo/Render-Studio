@@ -278,6 +278,15 @@ class PromptRequest(BaseModel):
         default=False,
         description="When true and images are attached, run vision→DXF drawing + enriched prompt before CAD.",
     )
+    original_prompt: str | None = Field(
+        default=None,
+        max_length=8000,
+        description="User's original prompt before Improve with AI, when prompt was rewritten.",
+    )
+    prompt_improved: bool = Field(
+        default=False,
+        description="True when Improve with AI rewrote the prompt before generation.",
+    )
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = Field(default=None, description="personal or team")
     jake_codex_agent: bool = Field(
@@ -7258,6 +7267,45 @@ def list_workspace_folders(team_id: str, user: dict[str, Any] = Depends(get_curr
     return {"folders": folders}
 
 
+def _notify_folder_realtime(
+    folder: dict[str, Any],
+    *,
+    event_type: str,
+    user: dict[str, Any],
+    target_user_id: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Push a dedicated folder.* event so teammates see shares/renames without a page refresh."""
+    team_id = folder.get("team_id")
+    if not team_id:
+        return
+    payload: dict[str, Any] = {
+        "type": event_type,
+        "team_id": team_id,
+        "folder_id": folder.get("id"),
+        "folder": {
+            "id": folder.get("id"),
+            "team_id": team_id,
+            "parent_id": folder.get("parent_id"),
+            "name": folder.get("name"),
+            "sort_order": folder.get("sort_order", 0),
+            "visibility": folder.get("visibility", "workspace"),
+            "created_by": folder.get("created_by"),
+            "created_at": folder.get("created_at"),
+            "project_count": folder.get("project_count", 0),
+            "share_count": folder.get("share_count", 0),
+        },
+        "by": user.get("display_name"),
+        "by_user_id": user.get("id"),
+    }
+    if extra:
+        payload.update(extra)
+    _notify_workspace(team_id, payload)
+    if target_user_id:
+        # Recipient may be on another workspace tab; user socket still delivers it.
+        _notify_user(target_user_id, payload)
+
+
 @app.post("/api/teams/{team_id}/folders")
 def create_workspace_folder(
     team_id: str,
@@ -7279,6 +7327,7 @@ def create_workspace_folder(
         user=user,
         meta={"folder_id": folder["id"], "folder_name": folder["name"]},
     )
+    _notify_folder_realtime(folder, event_type="folder.created", user=user)
     return {"folder": folder}
 
 
@@ -7301,8 +7350,9 @@ def rename_workspace_folder(
         kind="folder_renamed",
         label=f'Renamed folder to "{folder["name"]}"',
         user=user,
-        meta={"folder_id": folder_id},
+        meta={"folder_id": folder_id, "folder_name": folder["name"]},
     )
+    _notify_folder_realtime(folder, event_type="folder.renamed", user=user)
     return {"folder": folder}
 
 
@@ -7324,8 +7374,9 @@ def delete_workspace_folder(
         kind="folder_deleted",
         label=f'Deleted folder "{folder["name"]}"',
         user=user,
-        meta={"folder_id": folder_id},
+        meta={"folder_id": folder_id, "folder_name": folder.get("name")},
     )
+    _notify_folder_realtime(folder, event_type="folder.deleted", user=user)
     return {"deleted": folder_id}
 
 
@@ -7364,25 +7415,29 @@ def share_workspace_folder(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     folder = folders_service._get_folder(folder_id)
+    target_user = result.get("user") or {}
+    target_user_id = target_user.get("id")
     _log_workspace(
         folder["team_id"],
         kind="folder_shared",
         label=f'Shared folder "{folder["name"]}" with {body.email}',
         user=user,
-        meta={"folder_id": folder_id, "email": body.email},
+        meta={
+            "folder_id": folder_id,
+            "folder_name": folder.get("name"),
+            "email": body.email,
+            "shared_with_user_id": target_user_id,
+        },
     )
-    _notify_workspace(
-        folder["team_id"],
-        {
-            "type": "workspace.updated",
-            "entry": {
-                "kind": "folder_shared",
-                "label": f'{user["display_name"]} shared folder "{folder["name"]}"',
-                "user_name": user["display_name"],
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-            "by": user["display_name"],
-            "by_user_id": user["id"],
+    _notify_folder_realtime(
+        folder,
+        event_type="folder.shared",
+        user=user,
+        target_user_id=target_user_id,
+        extra={
+            "shared_with_user_id": target_user_id,
+            "shared_with_email": (body.email or "").strip().lower(),
+            "shared_with_name": target_user.get("display_name"),
         },
     )
     return result
@@ -7397,11 +7452,31 @@ def remove_folder_share(
 ):
     del team_id
     try:
-        return folders_service.remove_folder_share(folder_id, target_user_id, user["id"])
+        result = folders_service.remove_folder_share(folder_id, target_user_id, user["id"])
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+    folder = folders_service._get_folder(folder_id)
+    _log_workspace(
+        folder["team_id"],
+        kind="folder_unshared",
+        label=f'Removed folder share on "{folder["name"]}"',
+        user=user,
+        meta={
+            "folder_id": folder_id,
+            "folder_name": folder.get("name"),
+            "target_user_id": target_user_id,
+        },
+    )
+    _notify_folder_realtime(
+        folder,
+        event_type="folder.unshared",
+        user=user,
+        target_user_id=target_user_id,
+        extra={"target_user_id": target_user_id},
+    )
+    return result
 
 
 @app.patch("/api/projects/{project_id}/folder")
@@ -10685,6 +10760,8 @@ def _save_prompt_history(
             user_name=user["display_name"] if user else None,
             user_avatar_url=_avatar_url_for_user_id(user["id"]) if user else None,
             prompt_mode=(getattr(body, "mode", None) or "standard").lower(),
+            original_prompt=getattr(body, "original_prompt", None),
+            prompt_improved=bool(getattr(body, "prompt_improved", False)),
             **usage_meta,
             **key_meta,
         )
@@ -11309,7 +11386,7 @@ def prompt_cad(
             raise HTTPException(
                 422,
                 "DXF reference content was not attached and the DXF file is not saved in this project. "
-                "Drop the DXF into the AI prompt or upload it to DXF Drawings, then retry. "
+                "Drop the DXF into the AI prompt or upload it to Reference Files, then retry. "
                 f"Missing DXF content for: {', '.join(missing_dxf_content[:3])}",
             )
         resolved_skills = [*resolved_skills, "dxf"] if "dxf" not in {s.lower() for s in resolved_skills} else resolved_skills

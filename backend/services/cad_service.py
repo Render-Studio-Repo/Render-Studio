@@ -86,14 +86,27 @@ SUPPORTED_REFERENCE = {
     ".json",
     ".yaml",
     ".yml",
+    ".html",
+    ".htm",
+    ".rtf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
     ".png",
     ".jpg",
     ".jpeg",
     ".webp",
     ".gif",
+    ".bmp",
+    ".svg",
+    ".tif",
+    ".tiff",
 }
-REFERENCE_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml"}
-REFERENCE_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+REFERENCE_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".html", ".htm", ".rtf"}
+REFERENCE_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".tif", ".tiff"}
 REFERENCE_DIRNAME = "references"
 
 DEFAULT_APPEARANCE_PALETTE = np.array(

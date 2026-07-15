@@ -59,13 +59,13 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260629-avatars";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-folder-menu-only";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-realtime-sync";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createRenderAgent } from "./render-agent.js?v=20260715-agent-tips-refresh";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
-import { createCollab } from "./collab.js?v=20260629-live-object-transform";
+import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-kb-ribbon";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-improved-prompt-details";
@@ -82,7 +82,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260707-body-selection-fix";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260715-elec-none";
+import { createProjectTree } from "./project-tree.js?v=20260715-ref-files";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -90,7 +90,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-auto-reload-idle";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260714-doc-tabs";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-ref-files";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-component-bodies";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
@@ -535,7 +535,7 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   }
   if (isDxfDrawingFilename(msg.filename)) {
     await refreshFiles();
-    setEditStatus("ok", `Added DXF drawing ${msg.filename}. Open it from DXF Drawings when needed.`);
+    setEditStatus("ok", `Added DXF drawing ${msg.filename}. Open it from Reference Files when needed.`);
     return;
   }
   const reloadMode = generationPromptMode(
@@ -2908,11 +2908,17 @@ function handleWorkspaceRealtimeEvent(msg = {}) {
     || msg.type === "workspace.updated"
     || msg.type === "project.created"
     || msg.type === "project.deleted"
+    || msg.type === "project.renamed"
+    || msg.type === "folder.shared"
+    || msg.type === "folder.unshared"
+    || msg.type === "folder.renamed"
+    || msg.type === "folder.created"
+    || msg.type === "folder.deleted"
     || msg.type === "fusion.mirror.updated"
   ) {
     if (msg.type === "fusion.mirror.updated") {
       scheduleLiveFusionMirrorRefresh(msg);
-    } else {
+    } else if (isStructuralWorkspaceEvent(msg) || msg.type === "workspace.render_folder.updated") {
       void refreshWorkspaceRealtimeEditor();
     }
   }
@@ -3476,7 +3482,9 @@ function pushSpiceOverlayProgress(progress = {}) {
 
 async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
   const original = String(promptText || "").trim();
-  if (!original || !isSpiceEnabled()) return original;
+  if (!original || !isSpiceEnabled()) {
+    return { prompt: original, originalPrompt: original, promptImproved: false };
+  }
   if (statusEl) {
     statusEl.className = "status loading";
     statusEl.textContent = "Improving prompt with AI…";
@@ -3520,7 +3528,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
           { text: "Prompt unchanged — starting generation…", stage: "analyze" },
         ],
       });
-      return original;
+      return { prompt: original, originalPrompt: original, promptImproved: false };
     }
     saveSpicePromptCompare({
       original,
@@ -3548,7 +3556,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
         { text: "Starting CAD generation…", stage: "analyze" },
       ],
     });
-    return improved;
+    return { prompt: improved, originalPrompt: original, promptImproved: true };
   } catch (err) {
     if (statusEl) {
       statusEl.className = "status error";
@@ -3563,7 +3571,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
         { text: "Improve prompt failed — using original", stage: "analyze" },
       ],
     });
-    return original;
+    return { prompt: original, originalPrompt: original, promptImproved: false };
   }
 }
 
@@ -9580,7 +9588,7 @@ resize();
 
 const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp|iges|igs|brep|brp|f3z|zip)$/i;
 const DXF_ACCEPT = /\.dxf$/i;
-const REFERENCE_ACCEPT = /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|png|jpe?g|webp|gif)$/i;
+const REFERENCE_ACCEPT = /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|html?|rtf|docx?|xlsx?|pptx?|png|jpe?g|webp|gif|bmp|svg|tiff?)$/i;
 
 function isViewportImportFile(name = "") {
   return IMPORT_ACCEPT.test(name) || DXF_ACCEPT.test(name) || REFERENCE_ACCEPT.test(name);
@@ -9600,7 +9608,7 @@ function isCadFileDrag(e) {
     const file = item.getAsFile?.();
     if (file?.name) return isViewportImportFile(file.name);
     if (!item.type || item.type === "application/octet-stream") return true;
-    return /model|mesh|octet|zip|step|stl|gltf|glb|3mf|dxf|sla|wavefront|ply|pdf|text|image|png|jpe?g|webp|gif/i.test(item.type);
+    return /model|mesh|octet|zip|step|stl|gltf|glb|3mf|dxf|sla|wavefront|ply|pdf|text|image|png|jpe?g|webp|gif|bmp|svg|tiff?|html|msword|officedocument/i.test(item.type);
   });
 }
 
@@ -9655,7 +9663,7 @@ function showViewportDropOverlay() {
 async function importDroppedCadFiles(files) {
   const cadFiles = [...(files || [])].filter((f) => isViewportImportFile(f.name));
   if (!cadFiles.length) {
-    setEditStatus("error", "Drop STL, STEP, GLB, 3MF, OBJ, PLY, OFF, DXF, PDF, TXT, or image files.");
+    setEditStatus("error", "Drop STL, STEP, GLB, 3MF, OBJ, PLY, OFF, DXF, PDF, text, image, or similar reference files.");
     return;
   }
   // Fast path: drop straight into the open workspace project.
@@ -12317,8 +12325,12 @@ async function openHierarchyItem(project, entry, sectionId) {
     await openBrowserComponent(entry);
     return;
   }
-  if (sectionId === "drawings") {
-    await openDxfDrawing(entry);
+  if (sectionId === "drawings" || sectionId === "references") {
+    if (entry.format === "dxf" || isDxfDrawingFilename(entry.name)) {
+      await openDxfDrawing(entry);
+    } else {
+      await openReferenceFile(entry);
+    }
     showAiComposePanel();
     return;
   }
@@ -14293,14 +14305,19 @@ async function openProjectById(id) {
 
 window.__openProject = openProjectById;
 
-async function refreshProjectShell({ refreshInvites = false, refreshMembers = false } = {}) {
+async function refreshProjectShell({
+  refreshInvites = false,
+  refreshMembers = false,
+  forceExplorer = false,
+} = {}) {
   try {
-    // Skip the full project list reload while a generation is actively running so the
-    // active project is not displaced from the sidebar by an incoming WS event.
-    if (!isGenerationUiActive(projectId)) {
+    // Structural cloud edits (share/rename/move) must update the explorer even while
+    // a generation is running. Non-forced activity updates still skip to avoid thrash.
+    if (forceExplorer || !isGenerationUiActive(projectId)) {
+      const activeId = projectId;
       await fetchAllProjects();
+      if (activeId) await ensureActiveProjectListed(activeId);
       renderProjectList();
-      workspaceBrowser.refresh();
     }
   } catch (err) {
     console.warn("Realtime project refresh failed", err);
@@ -14310,6 +14327,80 @@ async function refreshProjectShell({ refreshInvites = false, refreshMembers = fa
   const workspacePanel = document.getElementById("profile-workspace-panel");
   if (workspacePanel && !workspacePanel.classList.contains("hidden")) {
     refreshWorkspacePanelRealtime();
+  }
+}
+
+const STRUCTURAL_WORKSPACE_KINDS = new Set([
+  "folder_created",
+  "folder_renamed",
+  "folder_deleted",
+  "folder_shared",
+  "folder_unshared",
+  "project_moved",
+  "project_created",
+  "project_deleted",
+  "autodesk_import",
+  "onshape_import",
+]);
+
+function isStructuralWorkspaceEvent(msg = {}) {
+  const type = msg.type || "";
+  if (
+    type === "folder.shared"
+    || type === "folder.unshared"
+    || type === "folder.renamed"
+    || type === "folder.created"
+    || type === "folder.deleted"
+    || type === "project.created"
+    || type === "project.deleted"
+    || type === "project.renamed"
+    || type === "project.moved"
+    || type === "project.meta"
+  ) {
+    return true;
+  }
+  if (type === "workspace.updated") {
+    const kind = msg.entry?.kind || msg.meta?.kind || "";
+    return STRUCTURAL_WORKSPACE_KINDS.has(kind);
+  }
+  return false;
+}
+
+function applyFolderRealtimeEvent(msg = {}) {
+  const folder = msg.folder;
+  const folderId = msg.folder_id || folder?.id;
+  const selectedTeam = getSelectedWorkspaceId?.() || null;
+  const eventTeam = msg.team_id || folder?.team_id || null;
+  const teamOk = !selectedTeam || !eventTeam || selectedTeam === eventTeam;
+
+  if (msg.type === "folder.deleted" || msg.type === "folder.unshared") {
+    const removedForMe =
+      msg.type === "folder.deleted"
+      || (msg.type === "folder.unshared" && msg.target_user_id && msg.target_user_id === currentUser?.id);
+    if (removedForMe && folderId && teamOk) {
+      workspaceBrowser.removeFolder?.(folderId);
+      if (msg.type === "folder.unshared") {
+        allProjects = allProjects.filter((p) => p.folder_id !== folderId);
+        renderProjectList();
+      }
+    }
+    return;
+  }
+
+  if (folder && teamOk && (msg.type === "folder.shared" || msg.type === "folder.renamed" || msg.type === "folder.created")) {
+    const forMe =
+      msg.type !== "folder.shared"
+      || !msg.shared_with_user_id
+      || msg.shared_with_user_id === currentUser?.id
+      || folder.created_by === currentUser?.id
+      || folder.visibility === "workspace";
+    if (forMe) {
+      const patch = { ...folder };
+      if (msg.type === "folder.shared" && msg.shared_with_user_id === currentUser?.id) {
+        patch.shared_with_me = true;
+      }
+      workspaceBrowser.upsertFolder?.(patch);
+    }
   }
 }
 
@@ -14386,6 +14477,30 @@ function handleRealtimeEvent(msg = {}) {
 
   if (msg.type === "project.meta" || msg.type === "project.renamed") {
     updateProjectNameLocal(msg.project_id || projectId, msg.name, msg.meta);
+    if (msg.type === "project.renamed") {
+      void refreshProjectShell({ forceExplorer: true });
+    }
+    return;
+  }
+
+  if (
+    msg.type === "folder.shared"
+    || msg.type === "folder.unshared"
+    || msg.type === "folder.renamed"
+    || msg.type === "folder.created"
+    || msg.type === "folder.deleted"
+  ) {
+    applyFolderRealtimeEvent(msg);
+    if (
+      msg.type === "folder.shared"
+      && msg.shared_with_user_id
+      && msg.shared_with_user_id === currentUser?.id
+      && msg.by_user_id !== currentUser?.id
+    ) {
+      const folderName = msg.folder?.name || "a folder";
+      setEditStatus("ok", `${msg.by || "Someone"} shared “${folderName}” with you`);
+    }
+    void refreshProjectShell({ forceExplorer: true });
     return;
   }
 
@@ -14404,7 +14519,7 @@ function handleRealtimeEvent(msg = {}) {
   if (msg.type === "drawing.added") {
     if ((msg.project_id || projectId) === projectId) {
       void refreshFiles();
-      setEditStatus("ok", `Added DXF drawing ${msg.filename}. Open it from DXF Drawings when needed.`);
+      setEditStatus("ok", `Added DXF drawing ${msg.filename}. Open it from Reference Files when needed.`);
     }
     return;
   }
@@ -14450,7 +14565,45 @@ function handleRealtimeEvent(msg = {}) {
       upsertProjectInList(summary);
       renderProjectList();
     }
-    refreshProjectShell({ refreshInvites: true, refreshMembers: true });
+    const structural = isStructuralWorkspaceEvent(msg);
+    if (structural) {
+      applyFolderRealtimeEvent({
+        type:
+          msg.entry?.kind === "folder_shared"
+            ? "folder.shared"
+            : msg.entry?.kind === "folder_unshared"
+              ? "folder.unshared"
+              : msg.entry?.kind === "folder_renamed"
+                ? "folder.renamed"
+                : msg.entry?.kind === "folder_created"
+                  ? "folder.created"
+                  : msg.entry?.kind === "folder_deleted"
+                    ? "folder.deleted"
+                    : msg.type,
+        team_id: msg.team_id,
+        folder_id: msg.entry?.meta?.folder_id || msg.meta?.folder_id,
+        folder: msg.folder || (msg.entry?.meta?.folder_name
+          ? {
+              id: msg.entry?.meta?.folder_id,
+              name: msg.entry?.meta?.folder_name,
+              team_id: msg.team_id,
+            }
+          : null),
+        shared_with_user_id: msg.entry?.meta?.shared_with_user_id,
+        target_user_id: msg.entry?.meta?.target_user_id,
+        by: msg.by,
+        by_user_id: msg.by_user_id,
+      });
+    }
+    // Only full-refresh the explorer for structural cloud edits (share/rename/move).
+    // Prompt/render activity still lands in the activity feed via prependEntry above.
+    if (structural || msg.type === "workspace.invite.updated" || msg.type === "workspace.member.updated") {
+      refreshProjectShell({
+        refreshInvites: true,
+        refreshMembers: true,
+        forceExplorer: structural,
+      });
+    }
   }
   if (msg.type === "workspace.render_folder.updated" || msg.type === "fusion.mirror.updated") {
     if (msg.team) {
@@ -18143,6 +18296,19 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
 
     prompt = await maybeSpiceUpPrompt(prompt, { statusEl: status });
+    const spiceMeta = (prompt && typeof prompt === "object" && "prompt" in prompt)
+      ? prompt
+      : { prompt: String(prompt || ""), originalPrompt: String(prompt || ""), promptImproved: false };
+    prompt = String(spiceMeta.prompt || "").trim();
+    if (!prompt) {
+      promptSubmitInFlight = false;
+      stopGenerationWatch();
+      if (status) {
+        status.className = "status error";
+        status.textContent = "Prompt is empty.";
+      }
+      return;
+    }
     if (status) {
       status.className = "status loading";
       status.textContent = convertImagesToDrawing
@@ -18178,6 +18344,12 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
           ? { codex_agent: true }
           : {}),
         ...getKnowledgePromptFields(),
+        ...(spiceMeta.promptImproved
+          ? {
+              prompt_improved: true,
+              original_prompt: String(spiceMeta.originalPrompt || "").trim() || undefined,
+            }
+          : {}),
       };
       lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
       const data = await api(
