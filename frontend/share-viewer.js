@@ -186,18 +186,33 @@ async function main() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070b12);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
+  // CAD / share meshes are Z-up — match the main studio.
+  camera.up.set(0, 0, 1);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.style.width = "100%";
+  renderer.domElement.style.height = "100%";
+  renderer.domElement.style.display = "block";
+  renderer.domElement.style.touchAction = "none";
   viewerEl.appendChild(renderer.domElement);
 
+  // Z-up Orbit with full polar range = true 360° tumble (no horizon clip, no trackball roll).
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.rotateSpeed = 0.85;
+  controls.zoomSpeed = 1.05;
+  controls.panSpeed = 0.75;
   controls.enablePan = true;
-  camera.up.set(0, 0, 1);
-  controls.object.up.copy(camera.up);
+  controls.minPolarAngle = 0.001;
+  controls.maxPolarAngle = Math.PI - 0.001;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 1.35;
+  controls.touches = {
+    ONE: THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_PAN,
+  };
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x6b7c8f, 1.6));
   const key = new THREE.DirectionalLight(0xffffff, 2.1);
@@ -212,8 +227,8 @@ async function main() {
 
   const root = new THREE.Group();
   scene.add(root);
-  let autoRotate = true;
   let modelBox = new THREE.Box3();
+  let orbitRadius = 2;
 
   const section = createSectionController({
     renderer,
@@ -221,25 +236,38 @@ async function main() {
     getBounds: () => modelBox.clone(),
   });
 
+  function syncCameraClip() {
+    const dist = camera.position.distanceTo(controls.target);
+    // Keep near plane relative to distance so underside views don't eat the mesh.
+    camera.near = Math.max(Math.min(dist / 100, dist * 0.015), 0.01);
+    camera.far = Math.max(dist * 40, orbitRadius * 50, 200);
+    camera.updateProjectionMatrix();
+  }
+
   function fitCamera() {
     root.position.set(0, 0, 0);
     modelBox.setFromObject(root);
     if (modelBox.isEmpty()) return;
     const center = modelBox.getCenter(new THREE.Vector3());
-    const sizeVec = modelBox.getSize(new THREE.Vector3());
-    const size = Math.max(sizeVec.length(), 1e-3);
-    root.position.set(-center.x, -center.y, -modelBox.min.z);
+    // Center on origin so orbiting under the model stays stable.
+    root.position.set(-center.x, -center.y, -center.z);
     modelBox.setFromObject(root);
     const fitted = modelBox.getSize(new THREE.Vector3());
-    const span = Math.max(fitted.length(), 1e-3);
-    const targetZ = Math.max(fitted.z * 0.45, span * 0.08);
-    camera.position.set(span * 0.95, -span * 1.25, targetZ + span * 0.5);
-    camera.near = Math.max(span / 2000, 0.001);
-    camera.far = span * 40;
-    camera.updateProjectionMatrix();
-    controls.target.set(0, 0, targetZ);
-    controls.minDistance = span * 0.15;
-    controls.maxDistance = span * 12;
+    const span = Math.max(fitted.x, fitted.y, fitted.z, fitted.length() * 0.5, 1e-3);
+    const sphere = modelBox.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(sphere.radius, span * 0.5, 1e-3);
+    orbitRadius = Math.max(radius * 1.75, 0.5);
+    const yaw = Math.PI * 0.22;
+    camera.up.set(0, 0, 1);
+    camera.position.set(
+      orbitRadius * Math.cos(yaw),
+      -orbitRadius * Math.sin(yaw),
+      orbitRadius * 0.32,
+    );
+    controls.target.set(0, 0, 0);
+    controls.minDistance = Math.max(radius * 1.05, 0.1);
+    controls.maxDistance = Math.max(orbitRadius * 12, 8);
+    syncCameraClip();
     controls.update();
     section.refresh();
   }
@@ -291,12 +319,16 @@ async function main() {
     });
   }
 
+  function setAutoRotate(on) {
+    controls.autoRotate = Boolean(on);
+    btnRotate?.classList.toggle("active", controls.autoRotate);
+    btnRotate?.setAttribute("aria-pressed", String(controls.autoRotate));
+  }
+
   btnRotate?.addEventListener("click", () => {
-    autoRotate = !autoRotate;
-    btnRotate.classList.toggle("active", autoRotate);
-    btnRotate.setAttribute("aria-pressed", String(autoRotate));
+    setAutoRotate(!controls.autoRotate);
   });
-  btnRotate?.classList.toggle("active", autoRotate);
+  setAutoRotate(true);
 
   btnFit?.addEventListener("click", () => {
     fitCamera();
@@ -348,19 +380,23 @@ async function main() {
     btnDownloadMenu?.classList.remove("active");
   });
 
-  controls.addEventListener("start", () => {
-    autoRotate = false;
-    btnRotate?.classList.remove("active");
-    btnRotate?.setAttribute("aria-pressed", "false");
-  });
+  controls.addEventListener("start", () => setAutoRotate(false));
+  // Block browser gestures that steal the drag (scroll / pinch-zoom page).
+  renderer.domElement.addEventListener(
+    "touchmove",
+    (e) => {
+      if (e.cancelable) e.preventDefault();
+    },
+    { passive: false },
+  );
 
   window.addEventListener("resize", resize);
   resize();
 
   function tick() {
     requestAnimationFrame(tick);
-    if (autoRotate && root.children.length) root.rotation.z += 0.003;
     controls.update();
+    syncCameraClip();
     renderer.render(scene, camera);
   }
   tick();
