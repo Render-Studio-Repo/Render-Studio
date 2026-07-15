@@ -1140,6 +1140,18 @@ class AIService:
             if readable:
                 system += f'- Project DXF to import: "{readable}".\n'
 
+        cad_files = (project_context or {}).get("cad_files") if isinstance(project_context, dict) else None
+        if cad_files:
+            system += (
+                "\n\nAttached 3D CAD reference files:\n"
+                "- Project context.cad_files lists STEP/STL/3MF/GLB/OBJ/etc the user attached as AI references.\n"
+                "- Use them as dimensional / mating / geometry references. Prefer build123d import_step() for .step/.stp "
+                "files that exist in the project cwd (reference by bare filename).\n"
+                "- Mesh-only formats (.stl/.obj/.glb/.3mf) may not import as BREP; use their measured size_mm / bbox from "
+                "component_specs or cad_files as design constraints instead of inventing unrelated sizes.\n"
+                "- Do not ignore attached CAD refs when the prompt says to match, fit, mate, or recreate from them.\n"
+            )
+
         parts: list[str] = []
         if cad_brief:
             parts.append(f"CAD brief:\n{cad_brief.strip()}\n")

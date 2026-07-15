@@ -2084,6 +2084,81 @@ def _reference_edit_guidance(prompt: str, refs: list[dict[str, Any]]) -> str | N
     )
 
 
+_CAD_REF_EXTS = {".step", ".stp", ".stl", ".3mf", ".glb", ".gltf", ".obj", ".ply", ".off"}
+
+
+def _build_cad_reference_entries(
+    project_path: Path,
+    references: list[Any],
+    component_specs: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Summarize attached 3D CAD files for text-to-cad prompts."""
+    specs_by_stem = {
+        str(spec.get("stem") or "").lower(): spec
+        for spec in (component_specs or [])
+        if isinstance(spec, dict) and spec.get("stem")
+    }
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for ref in references or []:
+        filename = ""
+        stem = ""
+        fmt = ""
+        viewer_filename = ""
+        label = ""
+        if hasattr(ref, "filename"):
+            filename = str(getattr(ref, "filename", None) or "")
+            stem = str(getattr(ref, "stem", None) or "")
+            fmt = str(getattr(ref, "format", None) or "")
+            viewer_filename = str(getattr(ref, "viewer_filename", None) or "")
+            label = str(getattr(ref, "label", None) or "")
+            ref_type = str(getattr(ref, "type", None) or "").lower()
+        elif isinstance(ref, dict):
+            filename = str(ref.get("filename") or "")
+            stem = str(ref.get("stem") or "")
+            fmt = str(ref.get("format") or "")
+            viewer_filename = str(ref.get("viewer_filename") or "")
+            label = str(ref.get("label") or "")
+            ref_type = str(ref.get("type") or "").lower()
+        else:
+            continue
+        if ref_type not in {"component", "cad", ""}:
+            continue
+        name = Path(filename).name.strip()
+        if not name:
+            continue
+        ext = Path(name).suffix.lower()
+        if ext not in _CAD_REF_EXTS and (fmt or "").lower() not in {
+            "step", "stp", "stl", "3mf", "glb", "gltf", "obj", "ply", "off"
+        }:
+            # Still allow if a matching CAD file exists on disk for this stem.
+            if not any((project_path / f"{Path(name).stem}{e}").is_file() for e in _CAD_REF_EXTS):
+                continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        entry: dict[str, Any] = {
+            "filename": name,
+            "stem": stem or Path(name).stem,
+            "format": (fmt or ext.lstrip(".")).lower() or None,
+            "label": label or stem or Path(name).stem,
+        }
+        if viewer_filename:
+            entry["viewer_filename"] = Path(viewer_filename).name
+        path = project_path / name
+        if path.is_file():
+            entry["exists"] = True
+            entry["size_bytes"] = path.stat().st_size
+        spec = specs_by_stem.get(str(entry["stem"]).lower())
+        if spec:
+            for key_name in ("size_mm", "bbox_mm", "volume_mm3", "kind"):
+                if spec.get(key_name) is not None:
+                    entry[key_name] = spec.get(key_name)
+        out.append(entry)
+    return out[:20]
+
+
 def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Summarize project DXF files for text-to-cad prompts."""
     from backend.skills.dxf.scripts.dxf.render_payload import build_dxf_render_payload
@@ -2219,9 +2294,20 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
     is_plain_v2 = (body.mode or "standard").lower() == "v2"
     referenced_components = []
     for r in body.references:
-        if is_plain_v2 or r.type != "component":
+        if r.type != "component":
             continue
-        comp: dict[str, Any] = {"filename": r.filename, "stem": r.stem, "label": r.label}
+        # Always honor explicit component/CAD @refs (including in 2.0).
+        # Plain v2 previously skipped these so generative prompts wouldn't treat
+        # every project part as a fixture — explicit attach still counts.
+        if not r.filename and is_plain_v2:
+            continue
+        comp: dict[str, Any] = {
+            "filename": r.filename,
+            "stem": r.stem,
+            "label": r.label,
+            "format": r.format,
+            "viewer_filename": r.viewer_filename,
+        }
         if r.projectId and r.projectId != project_id:
             comp["source_project_id"] = r.projectId
         referenced_components.append(comp)
@@ -2242,6 +2328,7 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
                 trace_id=getattr(body, "trace_id", None),
             )
     component_specs = [] if sketch_structural else _component_specs(project_path, referenced_components)
+    cad_files = _build_cad_reference_entries(project_path, body.references, component_specs)
     context = {
         "project_id": project_id,
         "file_count": len(files),
@@ -2256,6 +2343,8 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
         ],
         "reference_edit_guidance": _reference_edit_guidance(body.prompt, refs),
     }
+    if cad_files:
+        context["cad_files"] = cad_files
     dxf_files = _build_dxf_context_entries(project_path, body.prompt, refs)
     if dxf_files:
         context["dxf_files"] = dxf_files

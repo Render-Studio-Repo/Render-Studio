@@ -63,11 +63,11 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260709-admin-matt";
 import { createRenderAgent } from "./render-agent.js?v=20260630-logo-avatar";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260701-claude-fable-5";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-codex-openai-key";
 import { createCollab } from "./collab.js?v=20260629-live-object-transform";
 import { createRibbon } from "./ribbon.js?v=20260714-measure-btn";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260714-agent-details";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-step-stats";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260611-viewcube-top";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260714-fusion-upload-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260617-onshape-filter";
@@ -2156,9 +2156,15 @@ promptImageDrop?.addEventListener("keydown", (e) => {
 });
 promptImageInput?.addEventListener("change", async (e) => {
   const selected = [...(e.target.files || [])];
-  const dxfFiles = selected.filter((file) => /\.dxf$/i.test(file.name));
-  const docFiles = selected.filter((file) => !/\.dxf$/i.test(file.name) && isPromptDocumentFile(file));
-  const imageFiles = selected.filter((file) => !/\.dxf$/i.test(file.name) && !isPromptDocumentFile(file));
+  const cadFiles = selected.filter((file) => isPromptCadFile(file));
+  const dxfFiles = selected.filter((file) => /\.dxf$/i.test(file.name) && !isPromptCadFile(file));
+  const docFiles = selected.filter(
+    (file) => !/\.dxf$/i.test(file.name) && !isPromptCadFile(file) && isPromptDocumentFile(file)
+  );
+  const imageFiles = selected.filter(
+    (file) => !/\.dxf$/i.test(file.name) && !isPromptCadFile(file) && !isPromptDocumentFile(file)
+  );
+  if (cadFiles.length) await addPromptCadFiles(cadFiles);
   if (dxfFiles.length) await addPromptDxfFiles(dxfFiles);
   if (docFiles.length) await addPromptDocumentFiles(docFiles);
   if (imageFiles.length) await addPromptImages(imageFiles);
@@ -2188,6 +2194,18 @@ function droppedDxfFiles(e) {
   );
 }
 
+const PROMPT_CAD_EXT_RE = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp)$/i;
+
+function isPromptCadFile(file) {
+  const name = String(file?.name || "");
+  if (!name) return false;
+  return PROMPT_CAD_EXT_RE.test(name);
+}
+
+function droppedCadFiles(e) {
+  return [...(e.dataTransfer?.files || [])].filter((file) => isPromptCadFile(file));
+}
+
 const PROMPT_DOC_EXT_RE = /\.(txt|md|csv|tsv|json|ya?ml|log)$/i;
 
 function isPromptDocumentFile(file) {
@@ -2200,7 +2218,11 @@ function isPromptDocumentFile(file) {
 
 function droppedDocumentFiles(e) {
   return [...(e.dataTransfer?.files || [])].filter(
-    (file) => isPromptDocumentFile(file) && !/\.dxf$/i.test(file.name) && !file.type?.startsWith?.("image/")
+    (file) =>
+      isPromptDocumentFile(file) &&
+      !/\.dxf$/i.test(file.name) &&
+      !isPromptCadFile(file) &&
+      !file.type?.startsWith?.("image/")
   );
 }
 
@@ -2216,7 +2238,9 @@ function isExplorerComponentDrag(e) {
 
 function isPromptImageDrag(e) {
   if (droppedImageFiles(e).length) return true;
+  if (droppedCadFiles(e).length) return true;
   if (droppedDxfFiles(e).length) return true;
+  if (droppedDocumentFiles(e).length) return true;
   const types = e.dataTransfer?.types;
   return types && [...types].includes("Files");
 }
@@ -2251,6 +2275,88 @@ function setPromptAttachBusy(busy, message = "") {
     }
   }
   if (busy && message) setEditStatus("loading", message);
+}
+
+async function addPromptCadFiles(files) {
+  const list = [...files].filter((file) => isPromptCadFile(file));
+  if (!list.length) return;
+  let added = 0;
+  const total = list.length;
+  showAiComposePanel();
+  setPromptAttachBusy(
+    true,
+    total === 1 ? `Uploading CAD ${list[0].name}…` : `Uploading ${total} CAD files…`
+  );
+  try {
+    await ensureProject();
+    for (let i = 0; i < list.length; i += 1) {
+      const file = list[i];
+      const progress = total > 1 ? ` (${i + 1}/${total})` : "";
+      if (file.size > 80 * 1024 * 1024) {
+        viewerOverlay?.showError?.(`${file.name} is too large for a CAD reference (max 80 MB).`);
+        continue;
+      }
+      setPromptAttachBusy(true, `Uploading CAD${progress}: ${file.name}…`);
+      try {
+        const form = new FormData();
+        form.append("file", file, file.name);
+        const uploaded = await api(`/api/projects/${projectId}/upload`, {
+          method: "POST",
+          body: form,
+        });
+        const filename = uploaded?.filename || file.name;
+        const viewerFilename = uploaded?.viewer_filename || filename;
+        const stem = String(filename).replace(/\.[^.]+$/, "");
+        const formatMatch = String(filename).match(/\.([^.]+)$/);
+        const format = (formatMatch?.[1] || "").toLowerCase() || undefined;
+        const attached = addComponentPromptReference({
+          filename,
+          stem,
+          format,
+          viewer_filename: viewerFilename,
+          label: stem,
+          projectId,
+          type: "component",
+        });
+        if (attached) added += 1;
+        setPromptAttachBusy(true, `Loading CAD${progress}: ${filename}…`);
+        await refreshFiles();
+        try {
+          const hadComponents = projectAssembly.count() > 0;
+          await loadModel(uploaded?.url || `/api/projects/${projectId}/files/${encodeURIComponent(viewerFilename)}`, viewerFilename, {
+            projectId,
+            append: hadComponents,
+            catalogFilename: filename,
+            autoGizmo: false,
+            fitView: true,
+          });
+          projectTree.setSelected(filename);
+        } catch (err) {
+          console.warn("Could not load CAD into viewport after prompt attach", err);
+        }
+        setEditStatus("ok", `Attached CAD reference ${filename}.`);
+      } catch (err) {
+        console.warn("CAD prompt upload failed", err);
+        viewerOverlay?.showError?.(err?.message || `Could not attach ${file.name}.`);
+      }
+    }
+    if (added > 0) {
+      setSkillEnabled("cad", true);
+      skillsPromptUI?.render?.();
+      skillsPromptUI?.updatePlan?.();
+      const status = document.getElementById("prompt-status");
+      if (status) {
+        status.className = "status ok";
+        status.textContent =
+          added === 1
+            ? "Attached CAD file as an AI reference (@chip)."
+            : `Attached ${added} CAD files as AI references.`;
+      }
+    }
+  } finally {
+    setPromptAttachBusy(false);
+  }
+  if (!restoringModelPromptState) saveActiveModelPromptState();
 }
 
 async function addPromptDxfFiles(files) {
@@ -2409,6 +2515,19 @@ async function handlePromptComposeDrop(e) {
     }
     return;
   }
+  const cadFiles = droppedCadFiles(e);
+  if (cadFiles.length) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptPaneCompose?.classList.remove("dragging-image");
+    promptImageDrop?.classList.remove("dragging");
+    setPromptAttachBusy(
+      true,
+      cadFiles.length === 1 ? `Uploading CAD ${cadFiles[0].name}…` : `Uploading ${cadFiles.length} CAD files…`
+    );
+    await addPromptCadFiles(cadFiles);
+    return;
+  }
   const dxfFiles = droppedDxfFiles(e);
   if (dxfFiles.length) {
     e.preventDefault();
@@ -2483,6 +2602,18 @@ promptImageDrop?.addEventListener("dragleave", () => promptImageDrop.classList.r
 promptImageDrop?.addEventListener("drop", async (e) => {
   if (isExplorerComponentDrag(e) && droppedExplorerRefs(e).length) {
     await handlePromptComposeDrop(e);
+    return;
+  }
+  const cadFiles = droppedCadFiles(e);
+  if (cadFiles.length) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptImageDrop.classList.remove("dragging");
+    setPromptAttachBusy(
+      true,
+      cadFiles.length === 1 ? `Uploading CAD ${cadFiles[0].name}…` : `Uploading ${cadFiles.length} CAD files…`
+    );
+    await addPromptCadFiles(cadFiles);
     return;
   }
   const dxfFiles = droppedDxfFiles(e);
@@ -2685,19 +2816,178 @@ const PROMPT_SPEED_KEY = "render3d:prompt-speed:v1";
 const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
 const CODEX_KEY = "render3d:codex:v1";
 const CODEX_KEY_LEGACY = "render3d:jake-codex:v1";
+const CODEX_OPENAI_KEY = "render3d:codexOpenAiKey:v1";
 
 function isCodexEnabled() {
   return Boolean(document.getElementById("prompt-codex")?.checked);
 }
 
-function setCodexEnabled(enabled) {
-  const input = document.getElementById("prompt-codex");
-  if (input) input.checked = Boolean(enabled);
+function listOpenAiKeysForCodex(status = aiStatus) {
+  const isOpenAi = (key) => String(key?.provider || "openai").toLowerCase() === "openai";
+  const personal = (status?.keys || [])
+    .filter(isOpenAi)
+    .map((key) => ({ ...key, source: "personal" }));
+  const team = (status?.team_keys || [])
+    .filter((key) => key.enabled !== false && aiKeyAllowedForCurrentProject(key) && isOpenAi(key))
+    .map((key) => ({ ...key, source: "team" }));
+  return [...personal, ...team];
+}
+
+function getStoredCodexOpenAiKeyValue() {
   try {
-    localStorage.setItem(CODEX_KEY, enabled ? "1" : "0");
-    localStorage.removeItem(CODEX_KEY_LEGACY);
+    return localStorage.getItem(CODEX_OPENAI_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function storeCodexOpenAiKeyValue(value) {
+  try {
+    if (value) localStorage.setItem(CODEX_OPENAI_KEY, value);
+    else localStorage.removeItem(CODEX_OPENAI_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+function selectPromptAiKeyValue(value) {
+  const sel = document.getElementById("prompt-ai-key-select");
+  if (!sel || !value) return false;
+  if (![...sel.options].some((opt) => opt.value === value)) return false;
+  sel.value = value;
+  storePromptAiKeyValue(value);
+  storeCodexOpenAiKeyValue(value);
+  syncPromptKeyPill(aiStatus);
+  if (promptKeyPopupOpen) renderPromptKeyPopup(aiStatus);
+  return true;
+}
+
+function applyCodexOpenAiKey(key) {
+  if (!key?.id) return false;
+  const value = promptKeyOptionValue(key.source || "personal", key.id);
+  return selectPromptAiKeyValue(value);
+}
+
+function askCodexOpenAiKey(keys) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("codex-openai-key-modal");
+    const list = document.getElementById("codex-openai-key-list");
+    const confirmBtn = document.getElementById("codex-openai-key-confirm");
+    if (!modal || !list || !keys.length) {
+      resolve(null);
+      return;
+    }
+    const preferred = getStoredCodexOpenAiKeyValue()
+      || getStoredProjectPromptAiKeyValue()
+      || getStoredPromptAiKeyValue()
+      || "";
+    list.innerHTML = keys.map((key, index) => {
+      const value = promptKeyOptionValue(key.source || "personal", key.id);
+      const checked = preferred === value || (!preferred && index === 0);
+      const model = key.model || key.effective_model || "";
+      const sourceLabel = key.source === "team" ? "Shared" : "Personal";
+      const name = key.name || "OpenAI key";
+      return `
+        <label class="codex-openai-key-option">
+          <input type="radio" name="codex-openai-key" value="${appEscapeHtml(value)}" ${checked ? "checked" : ""} />
+          <span class="codex-openai-key-option-body">
+            <strong>${appEscapeHtml(name)}</strong>
+            <span class="muted small">${appEscapeHtml(sourceLabel)}${model ? ` · ${appEscapeHtml(formatModelLabel(model, "openai") || model)}` : ""}</span>
+          </span>
+        </label>
+      `;
+    }).join("");
+
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", onKey);
+      confirmBtn?.removeEventListener("click", onConfirm);
+      closeEls.forEach((el) => el.removeEventListener("click", onCancel));
+      modal.classList.add("hidden");
+      resolve(value);
+    };
+    const onConfirm = () => {
+      const picked = list.querySelector('input[name="codex-openai-key"]:checked')?.value || "";
+      if (!picked) return;
+      const key = keys.find((row) => promptKeyOptionValue(row.source || "personal", row.id) === picked);
+      finish(key || null);
+    };
+    const onCancel = () => finish(null);
+    const onKey = (e) => {
+      if (e.key === "Escape") finish(null);
+    };
+    const closeEls = [...modal.querySelectorAll("[data-codex-key-close]")];
+    confirmBtn?.addEventListener("click", onConfirm);
+    closeEls.forEach((el) => el.addEventListener("click", onCancel));
+    document.addEventListener("keydown", onKey);
+    modal.classList.remove("hidden");
+  });
+}
+
+async function ensureCodexOpenAiKey({ interactive = true } = {}) {
+  const keys = listOpenAiKeysForCodex();
+  if (!keys.length) {
+    if (interactive) {
+      const status = document.getElementById("prompt-status");
+      if (status) {
+        status.className = "status error";
+        status.textContent = "Codex needs an OpenAI API key. Add one to continue.";
+      }
+      aiKeyUi?.openRequired?.({
+        preferProvider: "openai",
+        message: "Codex requires an OpenAI API key. Add one below (Claude keys won't work for Codex).",
+        openAdd: true,
+      });
+    }
+    return null;
+  }
+  if (keys.length === 1) {
+    applyCodexOpenAiKey(keys[0]);
+    return keys[0];
+  }
+
+  const preferredValue = getStoredCodexOpenAiKeyValue()
+    || (() => {
+      const picked = getSelectedPromptAiKey();
+      const match = keys.find((key) => key.id === picked?.keyId && key.source === picked?.source);
+      return match ? promptKeyOptionValue(match.source, match.id) : "";
+    })()
+    || "";
+  // Enabling with multiple keys: always ask which OpenAI key to use.
+  if (!interactive) {
+    const current = getSelectedPromptAiKey();
+    const match = keys.find((key) => key.id === current?.keyId && key.source === current?.source);
+    if (match) {
+      storeCodexOpenAiKeyValue(promptKeyOptionValue(match.source, match.id));
+      return match;
+    }
+    const stored = keys.find((key) => promptKeyOptionValue(key.source, key.id) === preferredValue);
+    if (stored) {
+      applyCodexOpenAiKey(stored);
+      return stored;
+    }
+    applyCodexOpenAiKey(keys[0]);
+    return keys[0];
+  }
+
+  const picked = await askCodexOpenAiKey(keys);
+  if (!picked) return null;
+  applyCodexOpenAiKey(picked);
+  return picked;
+}
+
+function setCodexEnabled(enabled, { persist = true } = {}) {
+  const input = document.getElementById("prompt-codex");
+  if (input) input.checked = Boolean(enabled);
+  if (persist) {
+    try {
+      localStorage.setItem(CODEX_KEY, enabled ? "1" : "0");
+      localStorage.removeItem(CODEX_KEY_LEGACY);
+    } catch {
+      /* ignore */
+    }
   }
   syncCodexToggleVisibility();
 }
@@ -2707,6 +2997,42 @@ function syncCodexToggleVisibility(mode = promptMode) {
   if (!wrap) return;
   const show = ["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase());
   wrap.classList.toggle("hidden", !show);
+}
+
+async function handleCodexToggleChange(wantEnabled) {
+  if (!wantEnabled) {
+    setCodexEnabled(false);
+    return;
+  }
+  // Optimistic UI: keep checked while we validate; revert on failure/cancel.
+  setCodexEnabled(true, { persist: false });
+  const key = await ensureCodexOpenAiKey({ interactive: true });
+  if (!key) {
+    setCodexEnabled(false);
+    return;
+  }
+  setCodexEnabled(true);
+}
+
+function reconcileCodexToggleWithKeys() {
+  if (!isCodexEnabled()) return;
+  const keys = listOpenAiKeysForCodex();
+  if (!keys.length) {
+    setCodexEnabled(false);
+    return;
+  }
+  if (keys.length === 1) {
+    applyCodexOpenAiKey(keys[0]);
+    return;
+  }
+  const current = getSelectedPromptAiKey();
+  const match = keys.find((key) => key.id === current?.keyId && key.source === current?.source);
+  if (match) {
+    storeCodexOpenAiKeyValue(promptKeyOptionValue(match.source, match.id));
+    return;
+  }
+  const stored = keys.find((key) => promptKeyOptionValue(key.source, key.id) === getStoredCodexOpenAiKeyValue());
+  if (stored) applyCodexOpenAiKey(stored);
 }
 
 (() => {
@@ -2720,7 +3046,9 @@ function syncCodexToggleVisibility(mode = promptMode) {
   const input = document.getElementById("prompt-codex");
   if (input) {
     input.checked = enabled;
-    input.addEventListener("change", () => setCodexEnabled(input.checked));
+    input.addEventListener("change", () => {
+      void handleCodexToggleChange(input.checked);
+    });
   }
   syncCodexToggleVisibility();
 })();
@@ -10935,6 +11263,7 @@ function initPromptKeyPopup() {
 function renderAIStatus(status) {
   aiStatus = status || null;
   renderPromptAiKeySelect(aiStatus);
+  reconcileCodexToggleWithKeys();
   const el = document.getElementById("prompt-status");
   if (!el || !aiStatus) return;
   if (aiStatus.ai_ready) {
@@ -16941,6 +17270,35 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     viewerOverlay.showError(status.textContent);
     aiKeyUi?.openRequired();
     return;
+  }
+  if (["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()) {
+    const openAiKeys = listOpenAiKeysForCodex();
+    if (!openAiKeys.length) {
+      setCodexEnabled(false);
+      const status = document.getElementById("prompt-status");
+      status.className = "status error";
+      status.textContent = "Codex needs an OpenAI API key. Add one to continue.";
+      viewerOverlay.showError(status.textContent);
+      aiKeyUi?.openRequired?.({
+        preferProvider: "openai",
+        message: "Codex requires an OpenAI API key. Add one below (Claude keys won't work for Codex).",
+        openAdd: true,
+      });
+      return;
+    }
+    const selected = getSelectedPromptAiKey();
+    const selectedIsOpenAi = openAiKeys.some(
+      (key) => key.id === selected?.keyId && key.source === selected?.source,
+    );
+    if (!selectedIsOpenAi) {
+      if (openAiKeys.length === 1) {
+        applyCodexOpenAiKey(openAiKeys[0]);
+      } else {
+        const picked = await askCodexOpenAiKey(openAiKeys);
+        if (!picked) return;
+        applyCodexOpenAiKey(picked);
+      }
+    }
   }
 
   let convertImagesToDrawing = false;

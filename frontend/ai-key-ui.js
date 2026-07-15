@@ -521,18 +521,27 @@ export function createAIKeyUI({ api, onStatusChange }) {
     return data.ai;
   }
 
-  function showModal(show, { required = false } = {}) {
+  function showModal(show, { required = false, message = "", preferProvider = "openai", openAdd = false } = {}) {
     if (!modal) return;
     modal.classList.toggle("hidden", !show);
     if (show) {
       modal.dataset.required = required ? "1" : "";
-      setError(required ? "Add a key before using the AI prompt." : "");
-      providerInput.value = "openai";
-      renderModelOptions("openai");
+      const provider = preferProvider === "anthropic" ? "anthropic" : "openai";
+      setError(
+        message
+          || (required
+            ? (provider === "openai"
+              ? "Add an OpenAI API key before using Codex / AI generate."
+              : "Add a key before using the AI prompt.")
+            : ""),
+      );
+      if (providerInput) providerInput.value = provider;
+      renderModelOptions(provider);
       if (keyInput) keyInput.value = "";
       if (nameInput) nameInput.value = "";
       if (sharedInput) sharedInput.checked = false;
       updateSharedAddUI();
+      if (openAdd && addSection) addSection.open = true;
       refreshTeams();
       refresh();
     }
@@ -936,8 +945,13 @@ export function createAIKeyUI({ api, onStatusChange }) {
   return {
     render,
     refresh,
-    openRequired() {
-      showModal(true, { required: true });
+    openRequired(opts = {}) {
+      showModal(true, {
+        required: true,
+        preferProvider: opts.preferProvider || "openai",
+        message: opts.message || "",
+        openAdd: opts.openAdd !== false,
+      });
     },
   };
 }

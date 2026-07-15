@@ -287,13 +287,16 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     const rows = [...activity]
       .map((row) => {
         const text = typeof row === "string" ? row : (row?.text || "");
-        const cleaned = humanizeProgressText(text, "");
-        if (!cleaned || isRawToolLog(text) && cleaned === "Running CAD tools…") {
-          // Keep only meaningful stage updates, drop raw tool spam.
-          if (isRawToolLog(text) && !/snapshot|inspect|brief|source|STEP|GLB|review|finalize|analyz/i.test(cleaned)) {
-            return null;
-          }
+        if (isRawToolLog(text)) {
+          const cleaned = humanizeProgressText(text, "");
+          // Skip generic tool noise; keep only mapped stage phrases.
+          if (!cleaned || cleaned === "Running CAD tools…") return null;
+          return {
+            text: cleaned,
+            stage: typeof row === "object" ? row?.stage : "",
+          };
         }
+        const cleaned = humanizeProgressText(text, "");
         if (!cleaned) return null;
         return {
           text: cleaned,
@@ -369,21 +372,31 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     if (Array.isArray(progress.activity)) {
       activity = progress.activity
         .map((row) => {
-          if (typeof row === "string") {
-            return { ts: new Date().toISOString(), text: humanizeProgressText(row, ""), stage: progress.stage };
+          const raw = typeof row === "string" ? row : (row?.text || "");
+          if (isRawToolLog(raw)) {
+            const cleaned = humanizeProgressText(raw, "");
+            if (!cleaned || cleaned === "Running CAD tools…") return null;
+            if (typeof row === "string") {
+              return { ts: new Date().toISOString(), text: cleaned, stage: progress.stage };
+            }
+            return { ...row, text: cleaned };
           }
-          return {
-            ...row,
-            text: humanizeProgressText(row?.text || "", ""),
-          };
+          const cleaned = humanizeProgressText(raw, "");
+          if (!cleaned) return null;
+          if (typeof row === "string") {
+            return { ts: new Date().toISOString(), text: cleaned, stage: progress.stage };
+          }
+          return { ...row, text: cleaned };
         })
-        .filter((row) => row.text);
+        .filter(Boolean);
     } else if (progress.label) {
       const cleaned = humanizeProgressText(progress.label, "");
-      const last = activity.length ? activity[activity.length - 1] : null;
-      const lastText = typeof last === "string" ? last : last?.text;
-      if (cleaned && lastText !== cleaned) {
-        activity = [...activity, { ts: new Date().toISOString(), text: cleaned, stage: progress.stage }].slice(-40);
+      if (cleaned && cleaned !== "Running CAD tools…") {
+        const last = activity.length ? activity[activity.length - 1] : null;
+        const lastText = typeof last === "string" ? last : last?.text;
+        if (lastText !== cleaned) {
+          activity = [...activity, { ts: new Date().toISOString(), text: cleaned, stage: progress.stage }].slice(-40);
+        }
       }
     }
   }
@@ -393,12 +406,15 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     if (pct > traceProgress) traceProgress = pct;
     if (pct > progressValue) progressValue = pct;
     if (label) {
-      progressLabel = label;
-      thinkingLabel = label;
-      const last = activity.length ? activity[activity.length - 1] : null;
-      const lastText = typeof last === "string" ? last : last?.text;
-      if (lastText !== label) {
-        activity = [...activity, { ts: new Date().toISOString(), text: label }].slice(-40);
+      const cleaned = humanizeProgressText(label, "Generating…");
+      progressLabel = cleaned;
+      thinkingLabel = cleaned;
+      if (cleaned && cleaned !== "Running CAD tools…") {
+        const last = activity.length ? activity[activity.length - 1] : null;
+        const lastText = typeof last === "string" ? last : last?.text;
+        if (lastText !== cleaned) {
+          activity = [...activity, { ts: new Date().toISOString(), text: cleaned }].slice(-40);
+        }
       }
     }
     renderProgress();
@@ -476,12 +492,31 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     generating = true;
     progressValue = 0;
     traceProgress = 0;
-    progressLabel = message;
-    thinkingLabel = opts.progress?.thinking || opts.progress?.label || message;
+    progressLabel = humanizeProgressText(message, "Generating…");
+    thinkingLabel = humanizeProgressText(
+      opts.progress?.thinking || opts.progress?.label || message,
+      progressLabel,
+    );
     checklist = Array.isArray(opts.progress?.checklist) && opts.progress.checklist.length
-      ? opts.progress.checklist
+      ? opts.progress.checklist.map((item) => ({
+          id: item.id || item.label,
+          label: item.label || item.id || "Step",
+          status: item.status || "pending",
+          detail: humanizeProgressText(item.detail || "", ""),
+        }))
       : DEFAULT_CHECKLIST.map((item) => ({ ...item }));
-    activity = Array.isArray(opts.progress?.activity) ? opts.progress.activity : [];
+    activity = Array.isArray(opts.progress?.activity)
+      ? opts.progress.activity
+          .map((row) => {
+            const raw = typeof row === "string" ? row : (row?.text || "");
+            const cleaned = humanizeProgressText(raw, "");
+            if (!cleaned || (isRawToolLog(raw) && cleaned === "Running CAD tools…")) return null;
+            return typeof row === "string"
+              ? { text: cleaned }
+              : { ...row, text: cleaned };
+          })
+          .filter(Boolean)
+      : [];
     progressStart = Date.now();
     estimateMs = opts.estimateMs || (opts.mode === "build" ? 90000 : isV2Overlay(opts) ? 900000 : 360000);
     applySpinnerVariant(opts);

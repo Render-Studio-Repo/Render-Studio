@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260706-render-logo" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260706-render-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260706-render-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-fusion-live" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-prompt-cad-refs" />
   <script type="importmap">
   {
     "imports": {
@@ -1008,7 +1008,7 @@
               <label
                 id="prompt-codex-toggle"
                 class="prompt-codex-toggle hidden"
-                title="Uses this server's Codex / ChatGPT login with the cad@text-to-cad plugin. Off by default — everyone else uses their own OpenAI/Claude key."
+                title="Run 2.0 with the Codex CAD agent. Requires an OpenAI API key."
               >
                 <input type="checkbox" id="prompt-codex" />
                 <span>Codex</span>
@@ -1045,10 +1045,10 @@
           <div id="prompt-inline-ref-chips" class="prompt-inline-ref-chips hidden" aria-label="Prompt references"></div>
           <textarea id="prompt-input" rows="6" placeholder="Describe what to make or edit. Drag parts/faces here to add @ reference chips…"></textarea>
           <div id="prompt-image-drop" class="prompt-image-drop" role="button" tabindex="0">
-            <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp,.dxf,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log" multiple hidden />
+            <input id="prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp,.dxf,.step,.stp,.stl,.3mf,.glb,.gltf,.obj,.ply,.off,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.log" multiple hidden />
             <div>
-              <strong>Add image, DXF, or document references</strong>
-              <span>Drop images, .dxf, or text docs (.txt/.md/.csv/.json), paste screenshots, or drag components from the browser. Up to 4 images; DXFs upload into DXF Drawings.</span>
+              <strong>Add image, CAD, DXF, or document references</strong>
+              <span>Drop images, 3D CAD (.step/.stl/.3mf/.glb/.obj…), .dxf, or text docs; paste screenshots; or drag components from the browser. Up to 4 images. CAD files upload into the project and attach as @refs for the AI.</span>
             </div>
           </div>
           <div id="prompt-image-list" class="prompt-image-list"></div>
@@ -1670,6 +1670,20 @@
       </div>
     </div>
   </div>
+
+  <div id="codex-openai-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="codex-openai-key-title">
+    <div class="auth-backdrop" data-codex-key-close></div>
+    <div class="auth-card app-dialog-card">
+      <button type="button" class="auth-close" data-codex-key-close aria-label="Close">&times;</button>
+      <h2 id="codex-openai-key-title" class="app-dialog-title">Choose an OpenAI key for Codex</h2>
+      <p class="muted">Codex requires an OpenAI API key. Pick which key to use for this session.</p>
+      <div id="codex-openai-key-list" class="codex-openai-key-list" role="radiogroup" aria-label="OpenAI API keys"></div>
+      <div class="app-dialog-actions" style="flex-wrap: wrap; gap: 0.5rem;">
+        <button type="button" class="btn accent" id="codex-openai-key-confirm">Use this key</button>
+        <button type="button" class="btn secondary" data-codex-key-close>Cancel</button>
+      </div>
+    </div>
+  </div>
   <section id="render-agent-panel" class="render-agent-panel hidden" aria-label="Render Agent assistant">
     <header class="render-agent-head">
       <button type="button" id="render-agent-thread-menu" class="render-agent-menu-btn" aria-label="Open Render Agent threads" aria-expanded="false">
@@ -1729,7 +1743,7 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/app.js?v=20260715-fusion-live"></script>
+  <script type="module" src="/app.js?v=20260715-prompt-cad-refs"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
