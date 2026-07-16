@@ -729,18 +729,9 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
             if max(rgba.size) > max_edge:
                 rgba.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
 
-            # Workbench ISO snapshots are clay grey; prefer coloured part GLBs when available.
+            # Keep share generation cheap and predictable: brand the existing
+            # snapshot/viewport thumbnail instead of re-rendering large GLBs.
             model_layer = rgba
-            if _rgba_image_is_clay_grey(rgba):
-                colored = _render_colored_model_rgba(
-                    project_path,
-                    src.name,
-                    size=(max(800, rgba.size[0]), max(600, rgba.size[1])),
-                )
-                if colored is not None:
-                    if colored.size != rgba.size:
-                        colored = colored.resize(rgba.size, Image.Resampling.LANCZOS)
-                    model_layer = colored
 
             # Messengers often composite transparent PNGs onto white — bake black.
             canvas = Image.new("RGBA", model_layer.size, (*SHARE_OG_BACKGROUND_RGB, 255))
@@ -799,9 +790,6 @@ def _has_exact_snapshot(project_path: Path, filename: str) -> bool:
 
 
 def share_preview_filename(project_path: Path, filename: str, *, resolve_viewport=None) -> str | None:
-    direct_og = None if _has_exact_snapshot(project_path, filename) else make_share_og_png_from_model(project_path, filename)
-    if direct_og:
-        return direct_og[0]
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
     if not snapshot:
         return None
@@ -812,15 +800,6 @@ def share_preview_filename(project_path: Path, filename: str, *, resolve_viewpor
 
 
 def share_preview_image_meta(project_path: Path, filename: str, *, resolve_viewport=None) -> dict[str, Any]:
-    direct_og = None if _has_exact_snapshot(project_path, filename) else make_share_og_png_from_model(project_path, filename)
-    if direct_og:
-        name, width, height = direct_og
-        return {
-            "preview_file": name,
-            "preview_width": width,
-            "preview_height": height,
-            "preview_type": "image/png",
-        }
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
     if not snapshot:
         return {}
