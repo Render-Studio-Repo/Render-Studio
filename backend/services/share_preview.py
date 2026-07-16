@@ -270,9 +270,9 @@ def _render_colored_model_rgba(
     C = np.vstack(colors)
     V = V - V.mean(axis=0)
 
-    # Match CAD snapshot iso, with a 90deg plan rotation for direct GLB share cards
-    # so edited objects do not appear sideways-left in link thumbnails.
-    az = math.radians(90.0)
+    # Match the model's authored orientation. A forced plan rotation made long
+    # assemblies appear sideways-left in share thumbnails.
+    az = math.radians(0.0)
     ax = math.radians(35.264)
     ay = math.radians(-45.0)
     Rz = np.array(
@@ -309,20 +309,20 @@ def _render_colored_model_rgba(
     order = np.argsort(depth)
 
     width, height = size
-    pad_x = max(80.0, width * 0.08)
-    top_pad = max(54.0, height * 0.055)
-    bottom_reserved = max(190.0, height * 0.19)
+    pad_x = max(120.0, width * 0.12)
+    top_pad = max(90.0, height * 0.09)
+    bottom_reserved = max(240.0, height * 0.24)
     mins = Vp.min(axis=0)
     maxs = Vp.max(axis=0)
     span_x = max(float(maxs[0] - mins[0]), 1e-6)
     span_y = max(float(maxs[1] - mins[1]), 1e-6)
     safe_w = max(1.0, width - pad_x * 2.0)
     safe_h = max(1.0, height - top_pad - bottom_reserved)
-    scale = min(safe_w / span_x, safe_h / span_y)
+    scale = min(safe_w / span_x, safe_h / span_y) * 0.92
     x_mid = (mins[0] + maxs[0]) * 0.5
     y_mid = (mins[1] + maxs[1]) * 0.5
-    cx = width * 0.47
-    cy = top_pad + safe_h * 0.52
+    cx = width * 0.48
+    cy = top_pad + safe_h * 0.50
     xs = cx + (Vp[:, 0] - x_mid) * scale
     ys = cy - (Vp[:, 1] - y_mid) * scale
     shade = 0.34 + 0.66 * np.clip(normals @ light, 0.0, 1.0)
