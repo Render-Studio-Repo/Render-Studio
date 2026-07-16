@@ -76,7 +76,7 @@ import { createRibbon } from "./ribbon.js?v=20260715-rigging-control-tab";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-robot-place-part";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260715-fusion-picker";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260716-visible-share-thumb";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -354,6 +354,42 @@ function generationRunningJobs(gen, watchOverlay = null) {
     }];
   }
   return [];
+}
+
+async function keepRiggingGenerationOpenIfRunning(pid = projectId, status = null) {
+  if (!pid) return false;
+  try {
+    const gen = await api(`/api/projects/${pid}/generation`);
+    const runningJobs = generationRunningJobs(gen);
+    const riggingRunning = gen?.status === "running" && (
+      isRiggingGeneration(gen)
+      || runningJobs.some((job) => isRiggingGeneration(job))
+    );
+    if (!riggingRunning) return false;
+    const proj = allProjects.find((p) => p.id === pid);
+    if (proj) proj.generation = gen;
+    if (generationWatchPid !== pid || !generationPollTimer) {
+      beginGenerationWatch(pid, { kind: "rigging", mode: "rigging", pendingStart: false });
+    } else if (generationWatchOverlay) {
+      Object.assign(generationWatchOverlay, {
+        kind: "rigging",
+        promptMode: "rigging",
+        pendingStart: false,
+        ...promptGenerationOverlayOpts("rigging"),
+      });
+    }
+    renderProjectList();
+    syncViewportGenerationOverlay();
+    syncStopButtonVisibility();
+    if (status) {
+      status.className = "status loading";
+      status.textContent = "Robot artifact generation is running… safe to refresh or switch projects.";
+    }
+    setEditStatus("loading", "Robot artifact generation is running…");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function activeCadGenerationCount(pid = projectId) {
@@ -1097,7 +1133,7 @@ function promptGenerationOverlayOpts(mode = "standard") {
   const normalized = (mode || "standard").toLowerCase();
   if (normalized === "rigging") {
     return {
-      message: "Generating rigging for this robot… (safe to refresh)",
+      message: "Authoring and generating robot artifacts… (safe to refresh)",
       mode: "rigging",
       estimateMs: 180000,
     };
@@ -1234,6 +1270,11 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       promptMode: "rigging",
       startedAt: Date.now(),
       pendingStart: !!pendingStart,
+      progress: {
+        pct: 2,
+        label: "Starting robot artifact generation…",
+        thinking: "Preparing the URDF/SRDF authoring job.",
+      },
       ...promptGenerationOverlayOpts("rigging"),
     };
   } else {
@@ -1356,6 +1397,21 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         (!gen.status || gen.status === "idle") &&
         (generationWatchOverlay?.pendingStart || watchAgeMs < 20_000)
       ) {
+        syncStopButtonVisibility();
+        syncCanvasGenerationUi();
+        return;
+      }
+      if (
+        generationWatchOverlay?.pendingStart
+        && generationWatchOverlay?.kind === "rigging"
+        && watchAgeMs < 20_000
+      ) {
+        const statusEl = document.getElementById("rigging-prompt-status");
+        if (statusEl && pid === projectId) {
+          statusEl.className = "status loading";
+          statusEl.textContent = "Starting robot artifact generation…";
+        }
+        syncViewportGenerationOverlay();
         syncStopButtonVisibility();
         syncCanvasGenerationUi();
         return;
@@ -14527,7 +14583,7 @@ const workspaceBrowser = createWorkspaceBrowser({
   onRenameHierarchyItem: (project, entry) => renameHierarchyComponent(project, entry),
   onDeleteHierarchyItem: (project, entry) => deleteHierarchyComponent(project, entry),
   onExportHierarchyItem: (project, entry) => {
-    openFileExportMenu({ api, projectId: project.id, filename: entry.name, anchorEl: document.body }).catch((err) => {
+    openFileExportMenu({ api, projectId: project.id, filename: entry.name, anchorEl: document.body, shareContext: currentVisibleShareContext }).catch((err) => {
       alert(err.message || "Could not load exports");
     });
   },
@@ -15212,6 +15268,7 @@ async function handleReferenceImageAction(payload = {}) {
       projectId: pid,
       filename: payload.includeModel ? (currentModelFilenameForRenderTexture() || payload.filename) : payload.filename,
       anchorEl: document.body,
+      shareContext: currentVisibleShareContext,
     });
     setEditStatus("ok", payload.includeModel ? "Opened share/export menu with model included." : "Opened share/export menu for render image.");
     return;
@@ -15319,7 +15376,7 @@ const projectTree = createProjectTree({
       alert("Show this component before exporting it.");
       return;
     }
-    openFileExportMenu({ api, projectId, filename: entry.name, anchorEl }).catch((err) => {
+    openFileExportMenu({ api, projectId, filename: entry.name, anchorEl, shareContext: currentVisibleShareContext }).catch((err) => {
       alert(err.message || "Could not load exports");
     });
   },
@@ -16507,6 +16564,7 @@ async function generateRobotArtifacts(kind = "both") {
       status.textContent = msg;
     }
   } catch (err) {
+    if (await keepRiggingGenerationOpenIfRunning(projectId, status)) return;
     await refreshRobotArtifacts({ quiet: true });
     const msg = err?.message || "Robot artifact generation failed.";
     if (/missing\s+gen_urdf|missing\s+gen_srdf|does not define callable gen_(?:urdf|srdf)/i.test(msg)) {
@@ -16767,6 +16825,7 @@ async function authorJakeRobotDescription({ source: requestedSource = "", kind =
         : msg;
     }
   } catch (err) {
+    if (await keepRiggingGenerationOpenIfRunning(projectId, status)) return;
     const msg = err?.message || "Could not author URDF/SRDF.";
     setEditStatus("error", msg);
     if (status) {
@@ -16919,6 +16978,32 @@ function syncExportButton() {
   exportBtn.disabled = !(projectId && (hasVisibleBrowser || hasVisibleLoaded || (selectedFile && !isComponentHidden(selectedFile))));
 }
 
+function currentVisibleShareContext() {
+  const loadedVisible = projectAssembly
+    .list()
+    .filter(([name, obj]) => obj?.visible !== false && !isComponentHidden(name))
+    .map(([name]) => name)
+    .filter(Boolean);
+  const browserVisible = (projectTree.getComponents?.() || [])
+    .filter((entry) => !isBrowserComponentHidden(entry))
+    .map((entry) => entry.name || entry.viewer_filename)
+    .filter(Boolean);
+  const visible = [...new Set([...(browserVisible.length ? browserVisible : loadedVisible), ...loadedVisible])];
+  let viewportImage = "";
+  try {
+    renderer.render(scene, camera);
+    viewportImage = renderer.domElement.toDataURL("image/png");
+  } catch {
+    viewportImage = "";
+  }
+  return {
+    viewport_image: viewportImage,
+    visible_filenames: visible,
+    hidden_filenames: [...new Set(projectTree.getHidden?.() || loadHiddenComponentState())],
+    captured_at: new Date().toISOString(),
+  };
+}
+
 async function exportCurrentModel(anchorEl) {
   if (!projectId) {
     alert("Open a project first.");
@@ -16947,6 +17032,7 @@ async function exportCurrentModel(anchorEl) {
       title: `Export visible assembly`,
       hint: `Choose regular STEP for one selected part, or assembly STEP for all ${visibleFiles.length} visible components.`,
       allowOnshape: false,
+      shareContext: currentVisibleShareContext,
       extraExports: regularStepName ? [{
         name: regularStepName,
         format: "step",
@@ -16971,7 +17057,7 @@ async function exportCurrentModel(anchorEl) {
     alert("No visible component to export. Show at least one component first.");
     return;
   }
-  await openFileExportMenu({ api, projectId, filename: file, anchorEl: anchor });
+  await openFileExportMenu({ api, projectId, filename: file, anchorEl: anchor, shareContext: currentVisibleShareContext });
 }
 
 function openRenameDialog({
@@ -20033,7 +20119,7 @@ function renderFileList(files = []) {
         alert("Show this component before exporting it.");
         return;
       }
-      openFileExportMenu({ api, projectId, filename: f.name, anchorEl: exp }).catch((err) => {
+      openFileExportMenu({ api, projectId, filename: f.name, anchorEl: exp, shareContext: currentVisibleShareContext }).catch((err) => {
         alert(err.message || "Could not load exports");
       });
     });

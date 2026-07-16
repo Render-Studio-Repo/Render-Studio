@@ -11937,6 +11937,26 @@ def _resolve_share_token(token: str) -> tuple[str, Path, dict[str, Any]]:
     raise HTTPException(404, "Share link not found")
 
 
+def _resolve_shared_filename(project_path: Path, share: dict[str, Any]) -> str | None:
+    """Resolve legacy shares whose stored preview filename was later regenerated away."""
+    safe = Path(str(share.get("filename") or "")).name
+    if safe and (project_path / safe).is_file():
+        return safe
+    stem = Path(safe).stem if safe else ""
+    if not stem:
+        return None
+    # Prefer editable CAD source, then already-generated viewer meshes/print exports.
+    for ext in (".step", ".stp", ".glb", ".gltf", ".3mf", ".stl", ".obj", ".ply", ".off"):
+        candidate = project_path / f"{stem}{ext}"
+        if candidate.is_file():
+            return candidate.name
+    # Some pipelines leave only faceted STEP with the original stem.
+    for candidate in sorted(project_path.glob(f"{stem}*")):
+        if candidate.is_file() and candidate.suffix.lower() in {".step", ".stp", ".glb", ".gltf", ".3mf", ".stl"}:
+            return candidate.name
+    return None
+
+
 def _share_snapshot_filename(project_path: Path, filename: str) -> str | None:
     return share_preview.share_snapshot_filename(
         project_path,
@@ -12017,10 +12037,8 @@ def _share_prompt_history(project_path: Path, filename: str, *, limit: int = 40)
 
 def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any]:
     project_id, project_path, share = _resolve_share_token(token)
-    filename = Path(str(share.get("filename") or "")).name
+    filename = _resolve_shared_filename(project_path, share) or ""
     if not filename:
-        raise HTTPException(404, "Shared file not found")
-    if not (project_path / filename).is_file():
         raise HTTPException(404, "Shared file not found")
     allowed = _share_allowed_filenames(project_path, filename)
     viewer_filename = cad_service.resolve_viewport_filename(project_path, filename) or filename
@@ -12039,6 +12057,15 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         filename,
         resolve_viewport=cad_service.resolve_viewport_filename,
     )
+    share_preview_file = Path(str(share.get("preview_file") or "")).name
+    if share_preview_file and (project_path / share_preview_file).is_file():
+        allowed.add(share_preview_file)
+        preview_meta = {
+            "preview_file": share_preview_file,
+            "preview_type": "image/png" if share_preview_file.lower().endswith(".png") else "image/jpeg",
+            "preview_width": preview_meta.get("preview_width"),
+            "preview_height": preview_meta.get("preview_height"),
+        }
     preview_file = preview_meta.get("preview_file") or share_preview.share_preview_filename(
         project_path,
         filename,
@@ -12206,7 +12233,13 @@ def _share_page_html(token: str, request: Request) -> str:
 
 
 @app.post("/api/projects/{project_id}/files/{filename}/share")
-def create_file_share(project_id: str, filename: str, request: Request, user: dict[str, Any] = Depends(get_current_user)):
+def create_file_share(
+    project_id: str,
+    filename: str,
+    request: Request,
+    body: dict[str, Any] = Body(default={}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
     project_path = _require_project_read(user, project_id)
     safe = Path(filename).name
     if not (project_path / safe).is_file():
@@ -12223,7 +12256,27 @@ def create_file_share(project_id: str, filename: str, request: Request, user: di
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by": user["id"],
         }
-        project_store.save_meta(project_path, meta)
+    share = shares[token]
+    if isinstance(body, dict):
+        viewport_image = str(body.get("viewport_image") or "")
+        if viewport_image.startswith("data:image/"):
+            try:
+                image_bytes, ext = _decode_data_url_image(viewport_image)
+                if len(image_bytes) <= 8_000_000:
+                    preview_name = f"{Path(safe).stem}_share_view_{token[:8]}.{ext if ext != 'jpg' else 'jpg'}"
+                    (project_path / preview_name).write_bytes(image_bytes)
+                    share["preview_file"] = preview_name
+                    share["preview_captured_at"] = datetime.now(timezone.utc).isoformat()
+            except Exception as exc:
+                logger.warning("Could not save viewport share preview for %s/%s: %s", project_id, safe, exc)
+        visible = [Path(str(item)).name for item in (body.get("visible_filenames") or []) if str(item).strip()]
+        hidden = [Path(str(item)).name for item in (body.get("hidden_filenames") or []) if str(item).strip()]
+        if visible:
+            share["visible_filenames"] = visible[:200]
+        if hidden:
+            share["hidden_filenames"] = hidden[:200]
+        share["updated_at"] = datetime.now(timezone.utc).isoformat()
+    project_store.save_meta(project_path, meta)
     base = _request_origin(request)
     return {"token": token, "share_url": f"{base}/share/{token}"}
 
@@ -12369,11 +12422,15 @@ def open_share_in_project(
 @app.api_route("/api/share/{token}/files/{filename}", methods=["GET", "HEAD"])
 def get_share_file(token: str, filename: str, step_mode: str | None = Query(None)):
     project_id, project_path, share = _resolve_share_token(token)
-    shared_filename = Path(str(share.get("filename") or "")).name
+    shared_filename = _resolve_shared_filename(project_path, share) or ""
     if not shared_filename:
         raise HTTPException(404, "Shared file not found")
     safe = Path(filename).name
-    if safe not in _share_allowed_filenames(project_path, shared_filename):
+    allowed = _share_allowed_filenames(project_path, shared_filename)
+    preview_file = Path(str(share.get("preview_file") or "")).name
+    if preview_file:
+        allowed.add(preview_file)
+    if safe not in allowed:
         raise HTTPException(404, "File not found")
     response = _file_response(project_path, project_id, safe, step_mode=step_mode)
     # Link-preview crawlers (iMessage especially) probe with HEAD first.

@@ -667,6 +667,22 @@ async function main() {
     statusEl.textContent = msg;
   }
 
+  function syncSectionAvailability() {
+    const available = Boolean(loadedScene);
+    if (btnSection) {
+      btnSection.disabled = !available;
+      btnSection.title = available
+        ? "Cut through the loaded 3D preview"
+        : "Section analysis is available after a GLB preview loads.";
+      btnSection.classList.toggle("disabled", !available);
+    }
+    if (!available && section.isActive()) {
+      section.deactivate();
+      syncSectionUi(false);
+    }
+  }
+  syncSectionAvailability();
+
   function setTransparentTipVisible(on) {
     transparentTip?.classList.toggle("hidden", !on);
   }
@@ -899,6 +915,7 @@ async function main() {
 
   if (!canPreview) {
     setStatus("3D preview needs a GLB. Use Download for available formats.");
+    syncSectionAvailability();
   } else {
     setStatus("Loading model…");
     await new Promise((resolve) => {
@@ -912,12 +929,14 @@ async function main() {
           fitCamera();
           renderComponentTree();
           loadSharedRobot();
+          syncSectionAvailability();
           setStatus("");
           resolve();
         },
         undefined,
         () => {
           setStatus("Could not load preview. Downloads still work below.");
+          syncSectionAvailability();
           resolve();
         },
       );
@@ -1192,6 +1211,11 @@ async function main() {
   }
 
   btnSection?.addEventListener("click", () => {
+    if (!loadedScene) {
+      setStatus("Section analysis is only available after a 3D GLB preview loads.");
+      syncSectionAvailability();
+      return;
+    }
     if (section.isActive()) {
       section.deactivate();
       syncSectionUi(false);

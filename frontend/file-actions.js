@@ -185,10 +185,22 @@ function showExportSuccess(menu, message) {
   keepMenuInViewport(menu);
 }
 
-async function createShareUrl(projectId, filename) {
+async function createShareUrl(projectId, filename, shareContext = null) {
+  let body = null;
+  if (typeof shareContext === "function") {
+    try {
+      body = await shareContext();
+    } catch {
+      body = null;
+    }
+  }
   const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/share`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: {
+      ...authHeaders(),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -348,6 +360,7 @@ export async function openFileExportMenu({
   allowFusion = true,
   cloudFilename = null,
   autoAction = null,
+  shareContext = null,
 }) {
   closeExportMenu();
 
@@ -477,7 +490,7 @@ export async function openFileExportMenu({
     shareBtn.classList.add("is-loading");
     shareBtn.textContent = "Creating share link...";
     try {
-      preparedShareUrl = await createShareUrl(projectId, shareFilename);
+      preparedShareUrl = await createShareUrl(projectId, shareFilename, shareContext);
       shareBtn.textContent = "Copy share link";
       shareBtn.disabled = false;
     } catch (err) {
