@@ -1877,10 +1877,16 @@ def _seat_meshes_on_build_plate(items: list[tuple[str, trimesh.Trimesh]]) -> lis
 
 
 def _meshes_from_scene(scene: trimesh.Scene) -> list[tuple[str, trimesh.Trimesh]]:
-    """Extract world-space meshes from a scene graph (preserves assembly transforms)."""
+    """Extract world-space meshes from a scene graph (preserves assembly transforms).
+
+    Trimesh's GLB loader reports ``nodes_geometry`` in reverse of the glTF scene
+    children order that Three.js uses — reverse here so body indices match the viewer.
+    """
     items: list[tuple[str, trimesh.Trimesh]] = []
     try:
-        for node_name in scene.graph.nodes_geometry:
+        node_names = list(scene.graph.nodes_geometry)
+        # Match Three.js / glTF children order (Pillar, Floor, …) not trimesh's reverse.
+        for node_name in reversed(node_names):
             transform, geom_name = scene.graph.get(node_name)
             geom = scene.geometry.get(geom_name)
             if not isinstance(geom, trimesh.Trimesh):
@@ -2581,8 +2587,16 @@ def _compose_pivot_matrix(transform: dict[str, Any], center: np.ndarray) -> np.n
     return matrix
 
 
+def _normalize_body_key(value: str | None) -> str:
+    return re.sub(r"[\s_]+", " ", str(value or "").strip().lower())
+
+
 def _scene_geometry_entries(scene: trimesh.Scene) -> list[tuple[str, str, Any, np.ndarray]]:
-    """Return ``(node_name, geom_name, geom, world_transform)`` in scene-graph order."""
+    """Return ``(node_name, geom_name, geom, world_transform)`` in Three.js / glTF order.
+
+    Trimesh lists ``nodes_geometry`` reversed relative to the glTF scene children
+    array, so Fusion body indices would otherwise target the wrong solid.
+    """
     entries: list[tuple[str, str, Any, np.ndarray]] = []
     for node_name in scene.graph.nodes_geometry:
         transform, geom_name = scene.graph.get(node_name)
@@ -2591,6 +2605,7 @@ def _scene_geometry_entries(scene: trimesh.Scene) -> list[tuple[str, str, Any, n
             continue
         world = np.asarray(transform, dtype=float) if transform is not None else np.eye(4)
         entries.append((str(node_name), str(geom_name), geom, world))
+    entries.reverse()
     return entries
 
 
@@ -2600,13 +2615,14 @@ def _resolve_scene_body_entry(
     body_name: str | None = None,
 ) -> tuple[int, tuple[str, str, Any, np.ndarray]]:
     if body_name:
-        want = str(body_name).strip().lower()
+        want = _normalize_body_key(body_name)
+        # Exact / normalized name match only — never fall through to a wrong index
+        # when the client sent a real body name (Fusion multi-body).
         for i, entry in enumerate(entries):
             node_name, geom_name, _geom, _world = entry
-            if node_name.lower() == want or geom_name.lower() == want:
+            if _normalize_body_key(node_name) == want or _normalize_body_key(geom_name) == want:
                 return i, entry
-            if node_name.lower().replace("_", " ") == want.replace("_", " "):
-                return i, entry
+        raise ValueError(f"body_name not found: {body_name}")
     idx = int(body_index)
     if idx < 0 or idx >= len(entries):
         raise ValueError(f"body_index out of range: {idx}")
@@ -2616,12 +2632,13 @@ def _resolve_scene_body_entry(
 def _export_scene_entries(entries: list[tuple[str, str, Any, np.ndarray]], path: Path) -> Path:
     """Write a multi-mesh GLB from geometry entries, preserving materials.
 
-    Trimesh's GLB round-trip reverses ``nodes_geometry`` order, so we add meshes
-    in reverse here so the reloaded scene (and Three.js body indices) stay stable.
+    Entries are expected in Three.js / glTF children order. We write in that same
+    order so the viewer keeps stable body indices; ``_scene_geometry_entries``
+    compensates for trimesh's reversed load order on the next read.
     """
     rebuilt = trimesh.Scene()
     used_geom: set[str] = set()
-    for node_name, geom_name, geom, world in reversed(list(entries)):
+    for node_name, geom_name, geom, world in entries:
         gname = geom_name or node_name or "part"
         if gname in used_geom:
             gname = f"{gname}_{len(used_geom)}"

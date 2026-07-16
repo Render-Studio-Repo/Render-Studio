@@ -5,12 +5,14 @@ from __future__ import annotations
 import base64
 from collections import Counter, deque
 import html
+import ipaddress
 import json
 import logging
 import math
 import re
 import secrets
 import shutil
+import socket
 import struct
 import threading
 import time
@@ -77,6 +79,10 @@ _ai_usage_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
 _ai_usage_cache_lock = threading.Lock()
 _AI_USAGE_CACHE_TTL = 30.0
 _AI_USAGE_CACHE_MAX = 128
+_link_preview_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+_link_preview_cache_lock = threading.Lock()
+_LINK_PREVIEW_CACHE_TTL = 3600.0
+_LINK_PREVIEW_CACHE_MAX = 256
 
 PROJECTS = ROOT / settings.projects_dir
 FRONTEND = ROOT / "frontend"
@@ -931,6 +937,10 @@ class ProjectChatReactionRequest(BaseModel):
 class ProjectChatReadRequest(BaseModel):
     thread_id: str | None = Field(default=None, max_length=64)
     message_id: str | None = Field(default=None, max_length=64)
+
+
+class ProjectChatLinkPreviewRequest(BaseModel):
+    url: str = Field(..., min_length=8, max_length=2048)
 
 
 class ProjectChatAssistRequest(BaseModel):
@@ -5242,10 +5252,7 @@ def admin_message_feedback_user(
     if project_id:
         try:
             project_path = _require_project_read(user, project_id)
-            workspace_id = _project_workspace_id(project_id)
-            thread = project_chat_service.get_thread(
-                project_path, "general", user=user, workspace_role="admin", workspace_id=workspace_id
-            )
+            thread = project_chat_service.get_thread(project_path, "general", user=user, workspace_role="admin")
             if not thread:
                 raise ValueError("Could not open project chat.")
             mention_name = (
@@ -5279,7 +5286,6 @@ def admin_message_feedback_user(
                 user=user,
                 mention_candidates_list=candidates,
                 workspace_role="admin",
-                workspace_id=workspace_id,
             )
             _notify_chat_message(project_id, thread, chat_message, user)
         except HTTPException:
@@ -5574,8 +5580,7 @@ def request_meeting_with_user(
         try:
             path = _require_project_read(user, body.project_id)
             members = _project_chat_members(body.project_id)
-            workspace_id = _project_workspace_id(body.project_id)
-            threads = project_chat_service.list_threads(path, user, workspace_id=workspace_id)
+            threads = project_chat_service.list_threads(path, user)
             studio = next(
                 (
                     t
@@ -5593,7 +5598,6 @@ def request_meeting_with_user(
                     body=result["chat_body"],
                     user=user,
                     mention_candidates_list=candidates,
-                    workspace_id=workspace_id,
                 )
                 try:
                     _notify_chat_message(body.project_id, studio, chat_posted, user)
@@ -10997,13 +11001,6 @@ def _project_workspace_role(project_id: str, user_id: str | None) -> str | None:
     return teams_service.get_member_role(team_id, user_id)
 
 
-def _project_workspace_id(project_id: str) -> str | None:
-    try:
-        return teams_service.project_team_id(project_id)
-    except Exception:
-        return None
-
-
 def _chat_image_public_url(project_id: str, image: dict[str, Any]) -> dict[str, Any]:
     stored = Path(str(image.get("stored_name") or image.get("url") or "")).name
     return {
@@ -11016,6 +11013,120 @@ def _decorate_chat_message(project_id: str, message: dict[str, Any]) -> dict[str
     row = dict(message)
     row["images"] = [_chat_image_public_url(project_id, img) for img in (row.get("images") or [])]
     return row
+
+
+def _is_blocked_preview_host(hostname: str | None) -> bool:
+    host = (hostname or "").strip().strip("[]").lower()
+    if not host:
+        return True
+    if host in {"localhost", "metadata.google.internal"} or host.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except Exception:
+        return True
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except Exception:
+            return True
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            return True
+    return False
+
+
+def _clean_link_preview_value(value: Any, limit: int = 240) -> str:
+    text = html.unescape(str(value or "")).strip()
+    text = re.sub(r"\s+", " ", text)
+    return text[:limit]
+
+
+def _html_meta_value(source: str, key: str) -> str:
+    pattern = re.compile(
+        r"<meta\b(?=[^>]*(?:property|name)\s*=\s*['\"]"
+        + re.escape(key)
+        + r"['\"])(?=[^>]*content\s*=\s*(['\"])(.*?)\1)[^>]*>",
+        re.IGNORECASE | re.DOTALL,
+    )
+    match = pattern.search(source)
+    return _clean_link_preview_value(match.group(2), 500) if match else ""
+
+
+def _html_title_value(source: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", source, re.IGNORECASE | re.DOTALL)
+    return _clean_link_preview_value(match.group(1), 180) if match else ""
+
+
+async def _fetch_link_preview(url: str) -> dict[str, Any] | None:
+    parsed = urllib.parse.urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"} or _is_blocked_preview_host(parsed.hostname):
+        return None
+    normalized = urllib.parse.urlunparse(parsed._replace(fragment=""))
+    now = time.time()
+    with _link_preview_cache_lock:
+        cached = _link_preview_cache.get(normalized)
+        if cached and now - cached[0] < _LINK_PREVIEW_CACHE_TTL:
+            return cached[1]
+
+    import httpx
+
+    headers = {
+        "User-Agent": "Render3D-LinkPreview/1.0 (+https://render3d.app)",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(4.0, connect=2.0), follow_redirects=True, max_redirects=3) as client:
+            async with client.stream("GET", normalized, headers=headers) as resp:
+                final = urllib.parse.urlparse(str(resp.url))
+                if final.scheme not in {"http", "https"} or _is_blocked_preview_host(final.hostname):
+                    return None
+                content_type = (resp.headers.get("content-type") or "").lower()
+                if resp.status_code >= 400 or ("text/html" not in content_type and "application/xhtml" not in content_type):
+                    return None
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    if not chunk:
+                        continue
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= 256_000:
+                        break
+        raw = b"".join(chunks)
+        source = raw.decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    title = _html_meta_value(source, "og:title") or _html_meta_value(source, "twitter:title") or _html_title_value(source)
+    description = _html_meta_value(source, "og:description") or _html_meta_value(source, "twitter:description") or _html_meta_value(source, "description")
+    image = _html_meta_value(source, "og:image") or _html_meta_value(source, "twitter:image")
+    if image:
+        image = urllib.parse.urljoin(str(final.geturl()), image)
+        image_parsed = urllib.parse.urlparse(image)
+        if image_parsed.scheme not in {"http", "https"} or _is_blocked_preview_host(image_parsed.hostname):
+            image = ""
+    if not title and not description and not image:
+        preview = None
+    else:
+        preview = {
+            "url": normalized,
+            "final_url": str(final.geturl()),
+            "site": final.netloc,
+            "title": title,
+            "description": description,
+            "image": image,
+        }
+    with _link_preview_cache_lock:
+        _link_preview_cache[normalized] = (now, preview)
+        if len(_link_preview_cache) > _LINK_PREVIEW_CACHE_MAX:
+            for key in list(_link_preview_cache.keys())[: len(_link_preview_cache) - _LINK_PREVIEW_CACHE_MAX]:
+                _link_preview_cache.pop(key, None)
+    return preview
 
 
 def _notify_chat_message(project_id: str, thread: dict[str, Any], message: dict[str, Any], user: dict[str, Any]) -> None:
@@ -11155,7 +11266,6 @@ def _maybe_reply_as_render_agent(
                 user=user,
                 parent_id=message.get("id"),
                 as_agent=True,
-                workspace_id=_project_workspace_id(project_id),
             )
             _notify_chat_message(
                 project_id,
@@ -11175,10 +11285,9 @@ def list_project_chat_threads(project_id: str, user: dict[str, Any] = Depends(ge
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    workspace_id = _project_workspace_id(project_id)
-    threads = project_chat_service.list_threads(path, user, workspace_role=role, workspace_id=workspace_id)
-    unread = project_chat_service.unread_summary(path, user["id"], workspace_id=workspace_id)
-    return {"threads": threads, "unread": unread, "workspace_role": role, "workspace_id": workspace_id}
+    threads = project_chat_service.list_threads(path, user, workspace_role=role)
+    unread = project_chat_service.unread_summary(path, user["id"])
+    return {"threads": threads, "unread": unread, "workspace_role": role}
 
 
 @app.post("/api/projects/{project_id}/chat/threads")
@@ -11201,7 +11310,6 @@ def create_project_chat_thread(
         workspace_role=role,
         kind=body.kind,
         invite_user_ids=invite_ids,
-        workspace_id=_project_workspace_id(project_id),
     )
     return {"thread": thread}
 
@@ -11216,17 +11324,11 @@ def get_project_chat_thread(
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    workspace_id = _project_workspace_id(project_id)
-    thread = project_chat_service.get_thread(
-        path, thread_id, user=user, workspace_role=role, workspace_id=workspace_id
-    )
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
     if not thread:
         raise HTTPException(404, "Thread not found")
     thread["messages"] = [_decorate_chat_message(project_id, m) for m in thread.get("messages") or []]
-    return {
-        "thread": thread,
-        "unread": project_chat_service.unread_summary(path, user["id"], workspace_id=workspace_id),
-    }
+    return {"thread": thread, "unread": project_chat_service.unread_summary(path, user["id"])}
 
 
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/members")
@@ -11332,9 +11434,17 @@ def get_project_chat_unread(project_id: str, user: dict[str, Any] = Depends(get_
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    return project_chat_service.unread_summary(
-        path, user["id"], workspace_id=_project_workspace_id(project_id)
-    )
+    return project_chat_service.unread_summary(path, user["id"])
+
+
+@app.post("/api/projects/{project_id}/chat/link-preview")
+async def get_project_chat_link_preview(
+    project_id: str,
+    body: ProjectChatLinkPreviewRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_project_read(user, project_id)
+    return {"preview": await _fetch_link_preview(body.url)}
 
 
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/messages")
@@ -11351,20 +11461,14 @@ async def post_project_chat_message(
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    workspace_id = _project_workspace_id(project_id)
-    thread = project_chat_service.get_thread(
-        path, thread_id, user=user, workspace_role=role, workspace_id=workspace_id
-    )
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
     if not thread:
         raise HTTPException(404, "Thread not found")
     saved_images: list[dict[str, Any]] = []
     message_id = str(uuid.uuid4())[:10]
-    media_root = path
-    if workspace_id and str(thread.get("scope") or "") == "workspace":
-        media_root = project_chat_service.workspace_chat_root(workspace_id) or path
     for index, upload in enumerate((images or [])[:6]):
         try:
-            saved = project_chat_service.save_chat_image(media_root, upload, message_id=message_id, index=index)
+            saved = project_chat_service.save_chat_image(path, upload, message_id=message_id, index=index)
         except Exception:
             saved = None
         if saved:
@@ -11382,7 +11486,6 @@ async def post_project_chat_message(
             mention_candidates_list=candidates,
             message_id=message_id,
             workspace_role=role,
-            workspace_id=workspace_id,
         )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
@@ -11395,7 +11498,7 @@ async def post_project_chat_message(
     decorated = _decorate_chat_message(project_id, message)
     _notify_chat_message(project_id, thread, message, user)
     _maybe_reply_as_render_agent(path, project_id, thread, message, user, background_tasks)
-    return {"message": decorated, "unread": project_chat_service.unread_summary(path, user["id"], workspace_id=workspace_id)}
+    return {"message": decorated, "unread": project_chat_service.unread_summary(path, user["id"])}
 
 
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/messages/{message_id}/reactions")
@@ -11411,12 +11514,7 @@ def react_project_chat_message(
     path = _require_project_read(user, project_id)
     try:
         message = project_chat_service.toggle_reaction(
-            path,
-            thread_id=thread_id,
-            message_id=message_id,
-            emoji=body.emoji,
-            user=user,
-            workspace_id=_project_workspace_id(project_id),
+            path, thread_id=thread_id, message_id=message_id, emoji=body.emoji, user=user
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -11441,19 +11539,10 @@ def mark_project_chat_read(
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    workspace_id = _project_workspace_id(project_id)
     cursor = project_chat_service.mark_read(
-        path,
-        user_id=user["id"],
-        thread_id=body.thread_id,
-        message_id=body.message_id,
-        workspace_id=workspace_id,
+        path, user_id=user["id"], thread_id=body.thread_id, message_id=body.message_id
     )
-    return {
-        "ok": True,
-        "read_cursor": cursor,
-        "unread": project_chat_service.unread_summary(path, user["id"], workspace_id=workspace_id),
-    }
+    return {"ok": True, "read_cursor": cursor, "unread": project_chat_service.unread_summary(path, user["id"])}
 
 
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/assist")
@@ -11467,10 +11556,7 @@ def project_chat_assist_event(
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    workspace_id = _project_workspace_id(project_id)
-    thread = project_chat_service.get_thread(
-        path, thread_id, user=user, workspace_role=role, workspace_id=workspace_id
-    )
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
     if not thread:
         raise HTTPException(404, "Thread not found")
     action = str(body.action or "").strip().lower().replace("-", "_")
@@ -11513,7 +11599,7 @@ def get_project_chat_media(
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    media = project_chat_service.resolve_media_path(path, filename, workspace_id=_project_workspace_id(project_id))
+    media = project_chat_service.resolve_media_path(path, filename)
     if not media:
         raise HTTPException(404, "Media not found")
     return FileResponse(media)

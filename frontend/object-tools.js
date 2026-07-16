@@ -115,15 +115,36 @@ export function createObjectTools({
 
   function meshLabel(mesh, root, bodyIndex) {
     const meshes = listSelectableMeshes(root);
+    // Prefer the GLTF/Three.js mesh name — bodyInfo names can be index-misaligned
+    // with the viewer when trimesh reports nodes in a different order.
+    const meshName = String(mesh?.name || "").trim();
+    if (meshes.length > 1 && meshName) return meshName;
     if (bodyInfo?.count > 1) {
       const safe = Math.max(0, Math.min(Number(bodyIndex) || 0, (bodyInfo.count || 1) - 1));
-      return bodyInfo.body_names?.[safe] || `Body ${safe + 1}`;
+      return bodyInfo.body_names?.[safe] || meshName || `Body ${safe + 1}`;
     }
     if (meshes.length > 1) {
       const idx = meshes.indexOf(mesh);
-      return mesh.name?.trim() || `Object ${idx + 1}`;
+      return meshName || `Object ${idx + 1}`;
     }
-    return mesh.name?.trim() || root?.name?.trim() || "Component";
+    return meshName || root?.name?.trim() || "Component";
+  }
+
+  function resolveBodyIndexForMesh(mesh, root, faceIndex = null) {
+    const meshes = listSelectableMeshes(root);
+    if (meshes.length > 1) {
+      const idx = meshes.indexOf(mesh);
+      if (idx >= 0) return idx;
+    }
+    const meshName = String(mesh?.name || "").trim().toLowerCase().replace(/[_]+/g, " ");
+    const names = bodyInfo?.body_names || [];
+    if (meshName && names.length) {
+      const byName = names.findIndex(
+        (n) => String(n || "").trim().toLowerCase().replace(/[_]+/g, " ") === meshName,
+      );
+      if (byName >= 0) return byName;
+    }
+    return bodyIndexForFace(faceIndex);
   }
 
   function faceCount(mesh) {
@@ -238,27 +259,31 @@ export function createObjectTools({
     const resolvedCatalog = catalogName || root.userData?.catalogFilename || null;
     const hasMatchingBodyInfo =
       !resolvedCatalog || !bodyInfoFilename || String(bodyInfoFilename) === String(resolvedCatalog);
-    const activeBodyCount = hasMatchingBodyInfo ? Math.max(1, Number(bodyInfo?.count) || 1) : 1;
+    const activeBodyCount = Math.max(
+      hasMatchingBodyInfo ? Number(bodyInfo?.count) || 1 : 1,
+      meshes.length > 1 ? meshes.length : 1,
+    );
     const selectWhole = wholeModel || (!partLevel && isRootOverride !== false);
-    const candidateBody = Number.isInteger(bodyIndex) ? bodyIndex : bodyIndexForFace(faceIndex);
+    const candidateBody = Number.isInteger(bodyIndex)
+      ? bodyIndex
+      : resolveBodyIndexForMesh(mesh, root, faceIndex);
     const resolvedBody = selectWhole
       ? 0
-      : activeBodyCount > 1
-        ? Math.max(0, Math.min(candidateBody, activeBodyCount - 1))
+      : activeBodyCount > 1 || meshes.length > 1
+        ? Math.max(0, Math.min(candidateBody, Math.max(activeBodyCount, meshes.length) - 1))
         : Math.max(0, meshes.indexOf(mesh));
     const attachMesh = selectWhole ? root : (meshes[resolvedBody] || mesh);
     const isRoot =
       isRootOverride != null
         ? !!isRootOverride
         : selectWhole || (attachMesh === root && meshes.length <= 1 && !(partLevel && activeBodyCount > 1));
-    const bodyNames = hasMatchingBodyInfo ? bodyInfo?.body_names : null;
+    const meshName = String(attachMesh?.name || "").trim();
     const wholeLabel = resolvedCatalog
       ? resolvedCatalog.replace(/\.[^.]+$/, "")
       : root?.name?.trim() || "Model";
-    const partLabel =
-      activeBodyCount > 1
-        ? bodyNames?.[resolvedBody] || meshLabel(attachMesh, root, resolvedBody)
-        : meshLabel(attachMesh, root, resolvedBody);
+    const partLabel = selectWhole
+      ? wholeLabel
+      : meshName || meshLabel(attachMesh, root, resolvedBody);
     selected = {
       mesh: attachMesh,
       root,

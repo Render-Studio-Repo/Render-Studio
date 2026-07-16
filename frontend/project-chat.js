@@ -6,6 +6,7 @@ import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀"];
 const LS_UNREAD = "render3d:projectChatUnread:v1";
+const URL_RE = /https?:\/\/[^\s<>"']+/gi;
 
 function esc(value) {
   return String(value ?? "")
@@ -14,6 +15,40 @@ function esc(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function displayUrl(url = "") {
+  try {
+    const parsed = new URL(url);
+    const path = `${parsed.pathname || ""}${parsed.search || ""}`.replace(/\/$/, "");
+    return `${parsed.hostname}${path && path !== "/" ? path : ""}`.slice(0, 80);
+  } catch {
+    return String(url || "").slice(0, 80);
+  }
+}
+
+function extractUrls(text = "") {
+  URL_RE.lastIndex = 0;
+  const seen = new Set();
+  const urls = [];
+  for (const match of String(text || "").matchAll(URL_RE)) {
+    let url = match[0].replace(/[),.;:!?]+$/g, "");
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+    if (urls.length >= 4) break;
+  }
+  return urls;
+}
+
+function linkifyEscapedHtml(html = "") {
+  URL_RE.lastIndex = 0;
+  return String(html || "").replace(URL_RE, (raw) => {
+    const trailing = raw.match(/[),.;:!?]+$/)?.[0] || "";
+    const url = trailing ? raw.slice(0, -trailing.length) : raw;
+    if (!url) return raw;
+    return `<a class="pc-message-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(displayUrl(url))}</a>${trailing}`;
+  });
 }
 
 function formatWhen(value) {
@@ -30,6 +65,7 @@ function simpleMarkdown(text) {
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/(^|[^\*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
+  html = linkifyEscapedHtml(html);
   html = html.replace(
     /@\[([^\]]+)\]\((user|agent):([^)]+)\)/g,
     '<span class="pc-mention pc-mention--$2" data-mention-kind="$2" data-mention-id="$3"><span class="pc-mention-label">@$1</span></span>'
@@ -241,6 +277,7 @@ export function createProjectChatUI({
   let onlineCount = 0;
   let stories = [];
   let statusIcons = ["🟢", "🟡", "🔴", "🟣", "🔵", "💼", "🏠", "🎧", "☕", "🛠️"];
+  const linkPreviewCache = new Map();
 
   function ensureSocialStyles() {
     if (document.getElementById("chat-social-css")) return;
@@ -1167,6 +1204,69 @@ export function createProjectChatUI({
     return `<div class="pc-reactions">${chips}${picker}</div>`;
   }
 
+  function linkPreviewPlaceholders(body = "") {
+    const urls = extractUrls(body);
+    if (!urls.length) return "";
+    return `<div class="pc-link-previews">${urls.map((url) => `
+      <a class="pc-link-preview pc-link-preview--loading" href="${esc(url)}" target="_blank" rel="noopener noreferrer" data-preview-url="${esc(url)}">
+        <span class="pc-link-preview-body">
+          <strong>${esc(displayUrl(url))}</strong>
+          <small>Loading preview…</small>
+        </span>
+      </a>
+    `).join("")}</div>`;
+  }
+
+  function previewCardHtml(url, preview) {
+    const title = preview?.title || displayUrl(url);
+    const description = preview?.description || "";
+    const site = preview?.site || (() => {
+      try { return new URL(preview?.final_url || url).hostname; } catch { return ""; }
+    })();
+    const href = preview?.final_url || url;
+    return `
+      ${preview?.image ? `<span class="pc-link-preview-thumb" style="background-image:url('${esc(preview.image)}')"></span>` : ""}
+      <span class="pc-link-preview-body">
+        ${site ? `<small>${esc(site)}</small>` : ""}
+        <strong>${esc(title)}</strong>
+        ${description ? `<span>${esc(description)}</span>` : ""}
+      </span>
+    `.trim();
+  }
+
+  async function hydrateLinkPreviews(host) {
+    const projectId = getProjectId?.();
+    const cards = [...(host?.querySelectorAll("[data-preview-url]") || [])];
+    if (!projectId || !cards.length) return;
+    await Promise.all(cards.map(async (card) => {
+      const url = card.getAttribute("data-preview-url") || "";
+      if (!url) return;
+      try {
+        let preview;
+        if (linkPreviewCache.has(url)) {
+          preview = linkPreviewCache.get(url);
+        } else {
+          const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/link-preview`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url }),
+          });
+          preview = data?.preview || null;
+          linkPreviewCache.set(url, preview);
+        }
+        if (!preview) {
+          card.remove();
+          return;
+        }
+        card.classList.remove("pc-link-preview--loading");
+        card.href = preview.final_url || url;
+        card.innerHTML = previewCardHtml(url, preview);
+      } catch {
+        card.remove();
+      }
+    }));
+  }
+
   function renderChatError(message) {
     const host = overlay?.querySelector("#pc-messages");
     if (!host) return;
@@ -1216,6 +1316,7 @@ export function createProjectChatUI({
           <button type="button" class="pc-reply-btn" data-reply-to="${esc(msg.id)}" data-reply-name="${esc(msg.user_name || "message")}">Reply</button>
         </div>
         <div class="pc-message-body">${simpleMarkdown(msg.body || "")}</div>
+        ${linkPreviewPlaceholders(msg.body || "")}
         ${guideActions}
         ${images ? `<div class="pc-message-images">${images}</div>` : ""}
         ${reactionHtml(msg)}
@@ -1245,6 +1346,7 @@ export function createProjectChatUI({
       });
     });
     void hydrateAuthImages(host);
+    void hydrateLinkPreviews(host);
     host.scrollTop = host.scrollHeight;
   }
 
