@@ -2163,6 +2163,7 @@ function isInternalCadSidecar(name = "") {
   return (
     lower.startsWith("_active_")
     || lower.startsWith("_export_")
+    || lower.startsWith(".autodesk_source_")
     || lower.endsWith(".ezdxf.dxf")
     || (lower.startsWith(".") && lower.endsWith(".step.glb"))
     // Face-dumped OCC / mesh-derived STEP exports — never browser components.

@@ -1401,6 +1401,11 @@ def _body_children_from_part_sidecars(
     return children
 
 
+def _is_autodesk_source_stem(stem: str) -> bool:
+    """Hidden Autodesk/Fusion conversion sidecars: ``.autodesk_source_<name>``."""
+    return str(stem or "").startswith(".autodesk_source_")
+
+
 def _is_jake_topology_sidecar_stem(stem: str) -> bool:
     """Jake cadpy topology sidecar: ``.part.step.glb`` → stem ``.part.step``."""
     return stem.startswith(".") and (stem.endswith(".step") or stem.endswith(".stp"))
@@ -1454,6 +1459,10 @@ def _viewport_component_stems(project_path: Path, stems: set[str]) -> set[str]:
 
     for stem in list(visible):
         if _is_faceted_export_stem(stem):
+            visible.discard(stem)
+
+    for stem in list(visible):
+        if _is_autodesk_source_stem(stem):
             visible.discard(stem)
 
     canonical = _canonical_assembly_stem(project_path)
