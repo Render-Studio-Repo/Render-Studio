@@ -2373,6 +2373,11 @@
       }, minDelay);
     }
     window.__dismissStudioBoot = window.__dismissStudioBoot || dismissBoot;
+    // Fail open: if a later module stalls or a browser extension blocks startup,
+    // do not leave visitors trapped behind the boot animation.
+    setTimeout(function () {
+      dismissBoot();
+    }, 9000);
     function show(html) {
       var b = document.getElementById("project-browser");
       if (b && !window.__appProjectListReady) b.innerHTML = html;
@@ -2622,7 +2627,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260716-tool-resize-sync"></script>
+  <script type="module" src="/app.js?v=20260716-model-only-textures"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

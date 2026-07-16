@@ -80,7 +80,7 @@ import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=202
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
-import { createGizmoPanel } from "./gizmo-panel.js?v=20260715-transform-undo";
+import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-transform-shortcuts";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
 import { createDirectModeling } from "./direct-modeling.js?v=20260714-extrude-face-drag";
@@ -5643,20 +5643,7 @@ function undoViewportAction() {
       undoTimeline();
       return true;
     }
-    const wantName = action.filename || null;
-    let mesh =
-      (action.liveTarget === "transform-controls" && transformControls.object) ||
-      (wantName && projectAssembly.get(wantName)) ||
-      transformControls.object ||
-      currentMesh;
-    if (!mesh && wantName) {
-      for (const [name, obj] of projectAssembly.list() || []) {
-        if (name === wantName) {
-          mesh = obj;
-          break;
-        }
-      }
-    }
+    const mesh = resolveViewportTransformTarget(action);
     if (mesh && action.before) {
       mesh.position.fromArray(action.before.position);
       mesh.quaternion.fromArray(action.before.quaternion);
@@ -5701,9 +5688,54 @@ function undoViewportAction() {
   return false;
 }
 
+function resolveViewportTransformTarget(action = {}) {
+  const wantName = action.filename || null;
+  if (action.liveTarget === "transform-controls" && transformControls.object) {
+    return transformControls.object;
+  }
+  if (wantName && projectAssembly.get(wantName)) return projectAssembly.get(wantName);
+  if (transformControls.object) return transformControls.object;
+  if (currentMesh) return currentMesh;
+  if (wantName) {
+    for (const [name, obj] of projectAssembly.list() || []) {
+      if (name === wantName) return obj;
+    }
+  }
+  return null;
+}
+
 function redoViewportAction() {
   const action = viewportRedoStack.pop();
   if (!action) return false;
+  if (action.type === "transform") {
+    const entries = timelineData?.entries || [];
+    const cur = timelineCurrentIndex();
+    const next = cur + 1 < entries.length ? entries[cur + 1] : null;
+    const nextKind = String(next?.kind || next?.action || next?.type || "").toLowerCase();
+    if (action.committed && next && (nextKind === "transform" || nextKind.includes("transform"))) {
+      viewportUndoStack.push(action);
+      redoTimeline();
+      return true;
+    }
+    const mesh = resolveViewportTransformTarget(action);
+    if (mesh && action.after) {
+      mesh.position.fromArray(action.after.position);
+      mesh.quaternion.fromArray(action.after.quaternion);
+      mesh.scale.fromArray(action.after.scale);
+      mesh.updateMatrixWorld(true);
+      gizmoPanel.resetDragBaseline?.();
+      gizmoPanel.refresh?.();
+      setEditStatus("ok", "Redid move/rotate.");
+      viewportUndoStack.push(action);
+      return true;
+    }
+    if (next) {
+      redoTimeline();
+      return true;
+    }
+    setEditStatus("error", "Nothing to redo.");
+    return true;
+  }
   return false;
 }
 
@@ -6017,6 +6049,7 @@ const gizmoPanel = createGizmoPanel({
     pushViewportUndoAction({
       type: "transform",
       filename: stroke.filename || selectedFile || null,
+      liveTarget: stroke.liveTarget || null,
       before: stroke.before,
       after: stroke.after || null,
       committed: false,
@@ -22262,15 +22295,20 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function renderedImageUrlToTexture(url) {
-  const blob = await fetchRenderedImageBlob(url);
-  const dataUrl = await blobToDataUrl(blob);
-  const image = await new Promise((resolve, reject) => {
+function loadImageElement(src, errorMessage = "Could not load image.") {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Could not load rendered image as a texture."));
-    img.src = dataUrl;
+    img.onerror = () => reject(new Error(errorMessage));
+    img.src = src;
   });
+}
+
+async function renderedImageUrlToTexture(url) {
+  const dataUrl = String(url || "").startsWith("data:")
+    ? String(url)
+    : await fetchRenderedImageBlob(url).then(blobToDataUrl);
+  const image = await loadImageElement(dataUrl, "Could not load rendered image as a texture.");
   const texture = new THREE.Texture(image);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
@@ -22278,6 +22316,149 @@ async function renderedImageUrlToTexture(url) {
   texture.flipY = false;
   texture.needsUpdate = true;
   return texture;
+}
+
+function disposeObjectTree(object) {
+  const geometries = new Set();
+  const materials = new Set();
+  object?.traverse?.((child) => {
+    if (child.geometry) geometries.add(child.geometry);
+    const mats = Array.isArray(child.material) ? child.material : child.material ? [child.material] : [];
+    mats.forEach((mat) => mat && materials.add(mat));
+  });
+  geometries.forEach((geo) => geo.dispose?.());
+  materials.forEach((mat) => mat.dispose?.());
+}
+
+function captureModelMaskDataUrl(targetFilename = "") {
+  const catalogName = resolveTextureTargetFilename(targetFilename);
+  const target = catalogName ? projectAssembly.get(catalogName) : (projectAssembly.getRoot?.() || currentMesh);
+  if (!target || !renderer?.domElement) return null;
+  const sourceCanvas = renderer.domElement;
+  const width = Math.max(2, sourceCanvas.width || sourceCanvas.clientWidth || 1024);
+  const height = Math.max(2, sourceCanvas.height || sourceCanvas.clientHeight || 1024);
+  const maskRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, preserveDrawingBuffer: true });
+  maskRenderer.setPixelRatio(1);
+  maskRenderer.setSize(width, height, false);
+  maskRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  const maskScene = new THREE.Scene();
+  maskScene.background = new THREE.Color(0x000000);
+  const clone = target.clone(true);
+  clone.traverse((child) => {
+    if (child.userData?.isEdge || child.userData?.isSilhouette || child.userData?.isObjectHighlight) {
+      child.visible = false;
+      return;
+    }
+    if (!child.isMesh) return;
+    child.material = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      depthTest: true,
+      depthWrite: true,
+    });
+  });
+  maskScene.add(clone);
+  const maskCamera = (sketchEditor?.getRenderCamera?.() || camera).clone();
+  maskCamera.aspect = width / Math.max(height, 1);
+  maskCamera.updateProjectionMatrix?.();
+  maskRenderer.render(maskScene, maskCamera);
+  const dataUrl = maskRenderer.domElement.toDataURL("image/png");
+  disposeObjectTree(clone);
+  maskRenderer.dispose();
+  maskRenderer.forceContextLoss?.();
+  return dataUrl;
+}
+
+async function extractModelOnlyTextureDataUrl(renderUrl, targetFilename = "") {
+  const renderDataUrl = String(renderUrl || "").startsWith("data:")
+    ? String(renderUrl)
+    : await fetchRenderedImageBlob(renderUrl).then(blobToDataUrl);
+  const maskDataUrl = captureModelMaskDataUrl(targetFilename);
+  if (!maskDataUrl) return renderDataUrl;
+  const [renderImg, maskImg] = await Promise.all([
+    loadImageElement(renderDataUrl, "Could not load rendered texture image."),
+    loadImageElement(maskDataUrl, "Could not load model mask image."),
+  ]);
+  const width = renderImg.naturalWidth || renderImg.width || 1024;
+  const height = renderImg.naturalHeight || renderImg.height || 1024;
+  const renderCanvas = document.createElement("canvas");
+  renderCanvas.width = width;
+  renderCanvas.height = height;
+  const renderCtx = renderCanvas.getContext("2d", { willReadFrequently: true });
+  if (!renderCtx) return renderDataUrl;
+  renderCtx.drawImage(renderImg, 0, 0, width, height);
+  const renderPixels = renderCtx.getImageData(0, 0, width, height);
+
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+  if (!maskCtx) return renderDataUrl;
+  maskCtx.drawImage(maskImg, 0, 0, width, height);
+  const maskPixels = maskCtx.getImageData(0, 0, width, height);
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  let count = 0;
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  for (let i = 0; i < maskPixels.data.length; i += 4) {
+    const m = maskPixels.data[i] + maskPixels.data[i + 1] + maskPixels.data[i + 2];
+    if (m < 90) continue;
+    const px = (i / 4) % width;
+    const py = Math.floor((i / 4) / width);
+    minX = Math.min(minX, px);
+    minY = Math.min(minY, py);
+    maxX = Math.max(maxX, px);
+    maxY = Math.max(maxY, py);
+    sumR += renderPixels.data[i];
+    sumG += renderPixels.data[i + 1];
+    sumB += renderPixels.data[i + 2];
+    count += 1;
+  }
+  if (!count || maxX <= minX || maxY <= minY) return renderDataUrl;
+  const pad = Math.max(6, Math.round(Math.max(maxX - minX, maxY - minY) * 0.035));
+  minX = Math.max(0, minX - pad);
+  minY = Math.max(0, minY - pad);
+  maxX = Math.min(width - 1, maxX + pad);
+  maxY = Math.min(height - 1, maxY + pad);
+  const outW = Math.max(2, maxX - minX + 1);
+  const outH = Math.max(2, maxY - minY + 1);
+  const avg = [
+    Math.round(sumR / count),
+    Math.round(sumG / count),
+    Math.round(sumB / count),
+  ];
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = outW;
+  outCanvas.height = outH;
+  const outCtx = outCanvas.getContext("2d", { willReadFrequently: true });
+  if (!outCtx) return renderDataUrl;
+  const out = outCtx.createImageData(outW, outH);
+  for (let y = 0; y < outH; y += 1) {
+    for (let x = 0; x < outW; x += 1) {
+      const srcX = minX + x;
+      const srcY = minY + y;
+      const srcIdx = (srcY * width + srcX) * 4;
+      const dstIdx = (y * outW + x) * 4;
+      const m = maskPixels.data[srcIdx] + maskPixels.data[srcIdx + 1] + maskPixels.data[srcIdx + 2];
+      if (m >= 90) {
+        out.data[dstIdx] = renderPixels.data[srcIdx];
+        out.data[dstIdx + 1] = renderPixels.data[srcIdx + 1];
+        out.data[dstIdx + 2] = renderPixels.data[srcIdx + 2];
+      } else {
+        out.data[dstIdx] = avg[0];
+        out.data[dstIdx + 1] = avg[1];
+        out.data[dstIdx + 2] = avg[2];
+      }
+      out.data[dstIdx + 3] = 255;
+    }
+  }
+  outCtx.putImageData(out, 0, 0);
+  return outCanvas.toDataURL("image/png");
 }
 
 function firstTextureDataUrlFromObject(object) {
@@ -22623,7 +22804,8 @@ async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFi
     const sourceObject = catalogName ? projectAssembly.get(catalogName) : null;
     if (!sourceObject) throw new Error("Load the target model in the viewport before applying the rendered texture.");
 
-    const texture = await renderedImageUrlToTexture(renderUrl);
+    const textureDataUrl = await extractModelOnlyTextureDataUrl(renderUrl, resolvedBase);
+    const texture = await renderedImageUrlToTexture(textureDataUrl);
     const texturedObject = applyTextureToModelClone(sourceObject, texture);
     const glbBuffer = await exportObjectToGlb(texturedObject);
     const filename = renderedTextureOutputFilename(resolvedBase || renderFilename);
@@ -22675,8 +22857,8 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         <p class="render-texture-eyebrow">Texture ready</p>
         <h2 id="render-texture-title">Apply this rendered look to your model?</h2>
         <p>
-          Render3D will use this image file as a texture map and wrap it directly around
-          the selected model. No AI prompt is used for this wrap step.
+          Render3D extracts the model pixels from this render, removes the surrounding
+          scene/background, and wraps that texture sheet around the selected model.
         </p>
         <label class="render-texture-target">
           <span>Apply to model</span>
@@ -22698,6 +22880,17 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
     const targetFilename = modal.querySelector("#render-texture-target")?.value || resolvedBase;
     void applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename: resolvedBase, targetFilename, renderPrompt });
   });
+  modal.querySelector("#render-texture-target")?.addEventListener("change", (event) => {
+    const targetFilename = event.currentTarget?.value || resolvedBase;
+    void extractModelOnlyTextureDataUrl(renderUrl, targetFilename)
+      .then((dataUrl) => {
+        const img = modal.querySelector("[data-render-texture-img]");
+        if (img) img.src = dataUrl;
+      })
+      .catch(() => {
+        modal.querySelector(".render-texture-preview")?.classList.add("is-unavailable");
+      });
+  });
   modal.querySelector("#render-texture-save")?.addEventListener("click", () => {
     void (async () => {
       const btn = modal.querySelector("#render-texture-save");
@@ -22706,15 +22899,16 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         btn.textContent = "Saving…";
       }
       try {
-        const dataUrl = await fetchRenderedImageBlob(renderUrl).then(blobToDataUrl);
+        const targetFilename = modal.querySelector("#render-texture-target")?.value || resolvedBase;
+        const dataUrl = await extractModelOnlyTextureDataUrl(renderUrl, targetFilename);
         await texturePanel?.saveFromRender?.({
           sourceDataUrl: dataUrl,
           name: (renderFilename || "Rendered texture").replace(/\.[^.]+$/, "") || "Rendered texture",
-          sourceLabel: resolvedBase ? `From render · ${resolvedBase}` : "From render",
+          sourceLabel: targetFilename ? `Model texture · ${targetFilename}` : "Model texture from render",
           projectId: projectId,
           favorite: false,
         });
-        setEditStatus("ok", "Saved to Texture library. Open TEXTURE to favorite or apply it.");
+        setEditStatus("ok", "Saved model-only texture to Texture library. Open TEXTURE to favorite or apply it.");
         if (btn) btn.textContent = "Saved";
       } catch (err) {
         setEditStatus("error", err.message || "Could not save texture.");
@@ -22725,8 +22919,7 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
       }
     })();
   });
-  void fetchRenderedImageBlob(renderUrl)
-    .then(blobToDataUrl)
+  void extractModelOnlyTextureDataUrl(renderUrl, resolvedBase)
     .then((dataUrl) => {
       const img = modal.querySelector("[data-render-texture-img]");
       if (img) img.src = dataUrl;
@@ -23567,6 +23760,7 @@ window.addEventListener("keydown", (e) => {
     if ((mod && key === "y") || (mod && key === "z" && e.shiftKey) || (e.shiftKey && !mod && key === "z")) {
       e.preventDefault();
       e.target?.blur?.();
+      if (redoViewportAction()) return;
       redoTimeline();
       return;
     }
@@ -23612,6 +23806,7 @@ window.addEventListener("keydown", (e) => {
   }
   if ((mod && key === "y") || (mod && key === "z" && e.shiftKey) || (e.shiftKey && !mod && key === "z")) {
     e.preventDefault();
+    if (redoViewportAction()) return;
     redoTimeline();
     return;
   }

@@ -367,6 +367,11 @@ export function createGizmoPanel({
     panel.querySelectorAll("[data-gz-axis]").forEach((input) => {
       input.addEventListener("input", applyTypedToObject);
       input.addEventListener("keydown", (e) => {
+        const key = String(e.key || "").toLowerCase();
+        const isUndoRedoShortcut =
+          (e.metaKey || e.ctrlKey) &&
+          (key === "z" || key === "y");
+        if (isUndoRedoShortcut) return;
         if (e.key === "Enter") {
           e.preventDefault();
           apply(false);
