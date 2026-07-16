@@ -6297,8 +6297,7 @@ def _cached_autodesk_listing(key: tuple[Any, ...], loader: Any, ttl: float) -> A
         cached = _autodesk_listing_cache.get(key)
         if cached and cached[0] > now:
             return cached[1]
-    value = loader()
-    with _autodesk_listing_cache_lock:
+        value = loader()
         _autodesk_listing_cache[key] = (now + ttl, value)
         if len(_autodesk_listing_cache) > _AUTODESK_LISTING_CACHE_MAX:
             for drop_key in list(_autodesk_listing_cache.keys())[: len(_autodesk_listing_cache) // 2]:
@@ -6593,19 +6592,20 @@ def _fusion_mirror_summary(row: dict[str, Any], *, include_contents: bool = Fals
         return mirror
     mirror["contents"] = {"folders": [], "items": [], "error": None, "needs_relink": False}
     try:
-        from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token, list_folder_contents
+        from backend.services.autodesk_oauth import get_valid_access_token, list_folder_contents
 
         token = get_valid_access_token(str(mirror["user_id"]))
         if not token:
             mirror["contents"]["error"] = "Autodesk account not linked."
             mirror["contents"]["needs_relink"] = True
             return mirror
-        access_issue = fusion_mirror_access_issue(token, mirror)
-        if access_issue:
-            mirror["contents"]["error"] = access_issue
-            mirror["contents"]["needs_relink"] = True
-            return mirror
-        contents = list_folder_contents(token, str(mirror["aps_project_id"]), str(mirror["folder_id"]))
+        aps_project_id = str(mirror["aps_project_id"])
+        folder_id = str(mirror["folder_id"])
+        contents = _cached_autodesk_listing(
+            ("mirror-contents", mirror["user_id"], aps_project_id, folder_id),
+            lambda: list_folder_contents(token, aps_project_id, folder_id),
+            ttl=12.0,
+        )
         mirror["contents"] = {
             "folders": (contents.get("folders") or [])[:30],
             "items": (contents.get("items") or [])[:50],
