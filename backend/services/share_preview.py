@@ -309,20 +309,20 @@ def _render_colored_model_rgba(
     order = np.argsort(depth)
 
     width, height = size
-    pad_x = max(120.0, width * 0.12)
-    top_pad = max(90.0, height * 0.09)
-    bottom_reserved = max(240.0, height * 0.24)
+    pad_x = max(96.0, width * 0.10)
+    top_pad = max(76.0, height * 0.075)
+    bottom_reserved = max(210.0, height * 0.21)
     mins = Vp.min(axis=0)
     maxs = Vp.max(axis=0)
     span_x = max(float(maxs[0] - mins[0]), 1e-6)
     span_y = max(float(maxs[1] - mins[1]), 1e-6)
     safe_w = max(1.0, width - pad_x * 2.0)
     safe_h = max(1.0, height - top_pad - bottom_reserved)
-    scale = min(safe_w / span_x, safe_h / span_y) * 0.92
+    scale = min(safe_w / span_x, safe_h / span_y) * 0.99
     x_mid = (mins[0] + maxs[0]) * 0.5
     y_mid = (mins[1] + maxs[1]) * 0.5
-    cx = width * 0.48
-    cy = top_pad + safe_h * 0.50
+    cx = width * 0.50
+    cy = top_pad + safe_h * 0.53
     xs = cx + (Vp[:, 0] - x_mid) * scale
     ys = cy - (Vp[:, 1] - y_mid) * scale
     shade = 0.34 + 0.66 * np.clip(normals @ light, 0.0, 1.0)
