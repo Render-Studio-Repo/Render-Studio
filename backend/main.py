@@ -12046,6 +12046,20 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
     for path_ in project_path.iterdir():
         if path_.is_file() and path_.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf", ".stl", ".glb", ".gltf", ".3mf"}:
             allowed.add(path_.name)
+    model_stems = {Path(safe).stem}
+    try:
+        viewer = cad_service.resolve_viewport_filename(project_path, safe)
+        if viewer:
+            model_stems.add(Path(viewer).stem)
+    except Exception:
+        pass
+    for stem in list(model_stems):
+        for preview_path in project_path.glob(f"{stem}*_share_og*.png"):
+            if preview_path.is_file():
+                allowed.add(preview_path.name)
+        for preview_path in project_path.glob(f"{stem}*_share_transparent.png"):
+            if preview_path.is_file():
+                allowed.add(preview_path.name)
     snapshot = _share_snapshot_filename(project_path, safe)
     if snapshot:
         allowed.add(snapshot)
@@ -12076,16 +12090,42 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         allowed.add(viewer_filename)
     meta = project_store.load_meta(project_path)
     project_name = str(meta.get("name") or project_id)
-    preview_meta = {}
+    preview_meta = _share_preview_image_meta(project_path, filename)
     share_preview_file = Path(str(share.get("preview_file") or "")).name
     if share_preview_file and (project_path / share_preview_file).is_file():
-        allowed.add(share_preview_file)
-        preview_meta = {
-            "preview_file": share_preview_file,
-            "preview_type": "image/png" if share_preview_file.lower().endswith(".png") else "image/jpeg",
-            "preview_width": preview_meta.get("preview_width"),
-            "preview_height": preview_meta.get("preview_height"),
-        }
+        share_preview_path = project_path / share_preview_file
+        if "_share_view_" in share_preview_file and "_brand" not in Path(share_preview_file).stem:
+            branded_name = f"{Path(share_preview_file).stem}_brand.png"
+            branded = share_preview.make_branded_viewport_share_preview(
+                project_path,
+                share_preview_path.read_bytes(),
+                branded_name,
+            )
+            if branded:
+                share_preview_file = branded[0]
+                share_preview_path = project_path / share_preview_file
+                share["preview_file"] = share_preview_file
+                share["preview_width"] = branded[1]
+                share["preview_height"] = branded[2]
+                try:
+                    project_store.save_meta(project_path, meta)
+                except Exception:
+                    logger.debug("Could not persist branded viewport preview for share %s", token, exc_info=True)
+        generated_preview = Path(str(preview_meta.get("preview_file") or "")).name
+        generated_path = project_path / generated_preview if generated_preview else None
+        # Prefer the fresh branded preview when available; keep explicit viewport captures
+        # only when they are newer than the generated card.
+        if not generated_path or share_preview_path.stat().st_mtime_ns >= generated_path.stat().st_mtime_ns:
+            allowed.add(share_preview_file)
+            preview_meta = {
+                "preview_file": share_preview_file,
+                "preview_type": "image/png" if share_preview_file.lower().endswith(".png") else "image/jpeg",
+                "preview_width": share.get("preview_width") or preview_meta.get("preview_width"),
+                "preview_height": share.get("preview_height") or preview_meta.get("preview_height"),
+            }
+    generated_preview_file = Path(str(preview_meta.get("preview_file") or "")).name
+    if generated_preview_file:
+        allowed.add(generated_preview_file)
     if not preview_meta:
         snapshot = _share_snapshot_filename(project_path, filename)
         if snapshot:
@@ -12294,9 +12334,16 @@ def create_file_share(
             try:
                 image_bytes, ext = _decode_data_url_image(viewport_image)
                 if len(image_bytes) <= 8_000_000:
-                    preview_name = f"{Path(safe).stem}_share_view_{token[:8]}.{ext if ext != 'jpg' else 'jpg'}"
-                    (project_path / preview_name).write_bytes(image_bytes)
-                    share["preview_file"] = preview_name
+                    preview_name = f"{Path(safe).stem}_share_view_{token[:8]}_brand.png"
+                    branded = share_preview.make_branded_viewport_share_preview(project_path, image_bytes, preview_name)
+                    if branded:
+                        share["preview_file"] = branded[0]
+                        share["preview_width"] = branded[1]
+                        share["preview_height"] = branded[2]
+                    else:
+                        fallback_name = f"{Path(safe).stem}_share_view_{token[:8]}.{ext if ext != 'jpg' else 'jpg'}"
+                        (project_path / fallback_name).write_bytes(image_bytes)
+                        share["preview_file"] = fallback_name
                     share["preview_captured_at"] = datetime.now(timezone.utc).isoformat()
             except Exception as exc:
                 logger.warning("Could not save viewport share preview for %s/%s: %s", project_id, safe, exc)

@@ -13,6 +13,7 @@ import logging
 import struct
 import zlib
 from collections import deque
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -671,6 +672,35 @@ def _draw_render3d_badge(image: Any) -> None:
         fill=(255, 255, 255, 80),
         width=max(1, int(word_h * 0.018)),
     )
+
+
+def make_branded_viewport_share_preview(
+    project_path: Path,
+    image_bytes: bytes,
+    output_name: str,
+) -> tuple[str, int, int] | None:
+    """Brand a live viewport screenshot for share previews.
+
+    The viewport capture is the authoritative current visible/hidden model view;
+    this function only bakes it onto black and stamps the Render3D brand.
+    """
+    out = project_path / Path(output_name).with_suffix(".png").name
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(image_bytes)) as img:
+            rgba = img.convert("RGBA")
+            max_edge = 1600
+            if max(rgba.size) > max_edge:
+                rgba.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+            canvas = Image.new("RGBA", rgba.size, (*SHARE_OG_BACKGROUND_RGB, 255))
+            canvas.alpha_composite(rgba)
+            _draw_render3d_badge(canvas)
+            canvas.save(out, format="PNG", optimize=True)
+            return out.name, int(canvas.size[0]), int(canvas.size[1])
+    except Exception as exc:
+        logger.warning("Could not brand live viewport share preview %s: %s", out.name, exc)
+        return None
 
 
 def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
