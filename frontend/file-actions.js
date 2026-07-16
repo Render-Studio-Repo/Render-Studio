@@ -49,6 +49,16 @@ function renderExportPlaceholders(listEl) {
   }
 }
 
+function withTimeout(promise, ms, message) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) window.clearTimeout(timer);
+  });
+}
+
 function setExportActionsPreparing(menu, preparing) {
   if (!menu) return;
   const selectors = [
@@ -443,9 +453,17 @@ export async function openFileExportMenu({
   let fetchError = null;
   try {
     if (exportsRequest) {
-      data = await api(exportsRequest.path, exportsRequest.options || {});
+      data = await withTimeout(
+        api(exportsRequest.path, exportsRequest.options || {}),
+        18000,
+        "Export preparation is taking too long. Showing available download formats.",
+      );
     } else {
-      data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/exports`);
+      data = await withTimeout(
+        api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/exports`),
+        18000,
+        "Export preparation is taking too long. Showing available download formats.",
+      );
     }
   } catch (err) {
     fetchError = err;

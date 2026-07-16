@@ -12515,14 +12515,18 @@ def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Dep
             safe = fallback.name
         else:
             raise HTTPException(404, "File not found")
-    try:
-        cad_service.ensure_mesh_exports(path, safe, missing_only=True)
-    except Exception as exc:
-        logger.warning("Could not refresh exports for %s: %s", safe, exc)
     if not (path / safe).is_file():
         raise HTTPException(404, "File not found")
-    # Refresh lightweight sibling exports before listing so edited variants still expose STEP/STL/3MF.
     exports = cad_service.list_exports_for_model(path, safe)
+    # Do not block the export menu if usable downloads already exist. Some mesh
+    # export regeneration paths can be slow for large edited GLBs; returning the
+    # existing GLB/STL/3MF immediately is better than leaving the UI spinning.
+    if not exports:
+        try:
+            cad_service.ensure_mesh_exports(path, safe, missing_only=True)
+        except Exception as exc:
+            logger.warning("Could not refresh exports for %s: %s", safe, exc)
+        exports = cad_service.list_exports_for_model(path, safe)
     return {
         "filename": safe,
         "exports": exports,

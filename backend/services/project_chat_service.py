@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import threading
@@ -23,6 +24,11 @@ RENDER_AGENT_ID = "render-agent"
 RENDER_AGENT_NAME = "Render Agent"
 _LOCKS_GUARD = threading.Lock()
 _PROJECT_LOCKS: dict[str, threading.RLock] = {}
+logger = logging.getLogger(__name__)
+
+
+class ChatStorageError(RuntimeError):
+    """Raised when chat history exists but cannot be safely loaded."""
 
 
 def _now() -> str:
@@ -31,6 +37,30 @@ def _now() -> str:
 
 def _path(project_path: Path) -> Path:
     return project_path / CHAT_FILE
+
+
+def _empty_chat() -> dict[str, Any]:
+    return {"threads": [], "read_cursors": {}}
+
+
+def _backup_path(path: Path) -> Path:
+    return path.with_name(f"{path.name}.bak")
+
+
+def _corrupt_path(path: Path) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return path.with_name(f"{path.name}.corrupt-{stamp}")
+
+
+def _read_chat_json(path: Path) -> dict[str, Any]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Chat data must be a JSON object")
+    if not isinstance(data.get("threads"), list):
+        raise ValueError("Chat data has invalid threads")
+    if not isinstance(data.get("read_cursors"), dict):
+        data["read_cursors"] = {}
+    return data
 
 
 def _lock_for(project_path: Path) -> threading.RLock:
@@ -52,25 +82,41 @@ def _media_dir(project_path: Path) -> Path:
 def _load(project_path: Path) -> dict[str, Any]:
     path = _path(project_path)
     if not path.is_file():
-        return {"threads": [], "read_cursors": {}}
+        return _empty_chat()
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {"threads": [], "read_cursors": {}}
-    if not isinstance(data.get("threads"), list):
-        data["threads"] = []
-    if not isinstance(data.get("read_cursors"), dict):
-        data["read_cursors"] = {}
-    return data
+        return _read_chat_json(path)
+    except Exception as exc:
+        backup = _backup_path(path)
+        if backup.is_file():
+            try:
+                logger.warning("Recovering project chat from backup path=%s backup=%s", path, backup)
+                data = _read_chat_json(backup)
+                data["_recovered_from_backup"] = True
+                return data
+            except Exception:
+                logger.exception("Project chat backup is also unreadable path=%s backup=%s", path, backup)
+        try:
+            corrupt = _corrupt_path(path)
+            shutil.copy2(path, corrupt)
+            logger.error("Preserved unreadable project chat at %s", corrupt)
+        except Exception:
+            logger.exception("Could not preserve unreadable project chat path=%s", path)
+        raise ChatStorageError("Project chat history is unreadable; refusing to overwrite it.") from exc
 
 
 def _save(project_path: Path, data: dict[str, Any]) -> None:
+    recovered_from_backup = bool(data.pop("_recovered_from_backup", False))
     data["threads"] = list(data.get("threads") or [])[-MAX_THREADS:]
     for thread in data["threads"]:
         msgs = list(thread.get("messages") or [])
         thread["messages"] = msgs[-MAX_MESSAGES:]
     path = _path(project_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if not recovered_from_backup and path.is_file() and path.stat().st_size > 0:
+        try:
+            shutil.copy2(path, _backup_path(path))
+        except Exception:
+            logger.warning("Could not back up chat history before save path=%s", path, exc_info=True)
     tmp = path.with_suffix(f"{path.suffix}.tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp.replace(path)
