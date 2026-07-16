@@ -12111,18 +12111,16 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
                     project_store.save_meta(project_path, meta)
                 except Exception:
                     logger.debug("Could not persist branded viewport preview for share %s", token, exc_info=True)
-        generated_preview = Path(str(preview_meta.get("preview_file") or "")).name
-        generated_path = project_path / generated_preview if generated_preview else None
-        # Prefer the fresh branded preview when available; keep explicit viewport captures
-        # only when they are newer than the generated card.
-        if not generated_path or share_preview_path.stat().st_mtime_ns >= generated_path.stat().st_mtime_ns:
-            allowed.add(share_preview_file)
-            preview_meta = {
-                "preview_file": share_preview_file,
-                "preview_type": "image/png" if share_preview_file.lower().endswith(".png") else "image/jpeg",
-                "preview_width": share.get("preview_width") or preview_meta.get("preview_width"),
-                "preview_height": share.get("preview_height") or preview_meta.get("preview_height"),
-            }
+        # Explicit viewport captures represent the live hidden/unhidden state, so
+        # they must win over regenerated model cards even when the generated file
+        # is newer.
+        allowed.add(share_preview_file)
+        preview_meta = {
+            "preview_file": share_preview_file,
+            "preview_type": "image/png" if share_preview_file.lower().endswith(".png") else "image/jpeg",
+            "preview_width": share.get("preview_width") or preview_meta.get("preview_width"),
+            "preview_height": share.get("preview_height") or preview_meta.get("preview_height"),
+        }
     generated_preview_file = Path(str(preview_meta.get("preview_file") or "")).name
     if generated_preview_file:
         allowed.add(generated_preview_file)
