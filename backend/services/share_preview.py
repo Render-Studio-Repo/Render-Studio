@@ -514,16 +514,16 @@ def _draw_render3d_badge(image: Any) -> None:
     from PIL import Image, ImageDraw, ImageFont
 
     width, height = image.size
-    margin = max(28, int(min(width, height) * 0.045))
-    # Large brand mark — readable in iMessage / Slack unfurl cards.
-    mark_h = max(120, min(220, int(height * 0.22)))
+    margin = max(20, int(min(width, height) * 0.03))
+    # Compact top-right brand mark — readable in unfurls without covering the model.
+    mark_h = max(56, min(96, int(height * 0.09)))
     icon_size = mark_h
-    gap = max(16, int(mark_h * 0.16))
+    gap = max(10, int(mark_h * 0.14))
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(48, int(mark_h * 0.58)))
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(28, int(mark_h * 0.52)))
     except Exception:
         try:
-            font = ImageFont.truetype("DejaVuSans.ttf", max(48, int(mark_h * 0.58)))
+            font = ImageFont.truetype("DejaVuSans.ttf", max(28, int(mark_h * 0.52)))
         except Exception:
             font = ImageFont.load_default()
 
