@@ -1876,30 +1876,30 @@ def _seat_meshes_on_build_plate(items: list[tuple[str, trimesh.Trimesh]]) -> lis
     return seated
 
 
-def _meshes_from_scene(scene: trimesh.Scene) -> list[tuple[str, trimesh.Trimesh]]:
+def _meshes_from_scene(
+    scene: trimesh.Scene,
+    *,
+    source_path: Path | None = None,
+) -> list[tuple[str, trimesh.Trimesh]]:
     """Extract world-space meshes from a scene graph (preserves assembly transforms).
 
-    Trimesh's GLB loader reports ``nodes_geometry`` in reverse of the glTF scene
-    children order that Three.js uses — reverse here so body indices match the viewer.
+    Order matches Three.js / glTF scene children when ``source_path`` is a GLB.
     """
     items: list[tuple[str, trimesh.Trimesh]] = []
     try:
-        node_names = list(scene.graph.nodes_geometry)
-        # Match Three.js / glTF children order (Pillar, Floor, …) not trimesh's reverse.
-        for node_name in reversed(node_names):
-            transform, geom_name = scene.graph.get(node_name)
-            geom = scene.geometry.get(geom_name)
+        entries = _scene_geometry_entries(scene, source_path=source_path)
+        for node_name, geom_name, geom, world in entries:
             if not isinstance(geom, trimesh.Trimesh):
                 continue
             mesh = geom.copy()
-            if transform is not None:
-                mesh.apply_transform(np.asarray(transform, dtype=float))
+            if world is not None and not np.allclose(world, np.eye(4)):
+                mesh.apply_transform(np.asarray(world, dtype=float))
             label = _safe_object_name(node_name or geom_name, f"part_{len(items) + 1}")
             mesh.metadata["node"] = label
             mesh.metadata["name"] = label
             items.append((label, mesh))
     except Exception as exc:
-        logger.debug("scene graph 3MF extraction failed, falling back to dump: %s", exc)
+        logger.debug("scene graph extraction failed, falling back to dump: %s", exc)
     if items:
         return items
     for idx, raw in enumerate(scene.dump(concatenate=False)):
@@ -2587,16 +2587,93 @@ def _compose_pivot_matrix(transform: dict[str, Any], center: np.ndarray) -> np.n
     return matrix
 
 
-def _normalize_body_key(value: str | None) -> str:
-    return re.sub(r"[\s_]+", " ", str(value or "").strip().lower())
+def _glb_scene_mesh_order(path: Path) -> list[str]:
+    """Return mesh node names in glTF scene-children order (same as Three.js)."""
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return []
+    if len(data) < 20 or data[:4] != b"glTF":
+        return []
+    try:
+        offset = 12
+        payload = None
+        while offset + 8 <= len(data):
+            length, ctype = struct.unpack_from("<I4s", data, offset)
+            offset += 8
+            chunk = data[offset : offset + length]
+            offset += length
+            if ctype == b"JSON":
+                payload = json.loads(chunk.decode("utf-8"))
+                break
+        if not isinstance(payload, dict):
+            return []
+        nodes = payload.get("nodes") or []
+        scenes = payload.get("scenes") or []
+        if not nodes or not scenes:
+            return []
+        scene_index = int(payload.get("scene") or 0)
+        scene = scenes[scene_index] if 0 <= scene_index < len(scenes) else scenes[0]
+        order: list[str] = []
+
+        def walk(idx: int) -> None:
+            if idx is None or idx < 0 or idx >= len(nodes):
+                return
+            node = nodes[idx] or {}
+            if "mesh" in node:
+                order.append(str(node.get("name") or f"node_{idx}"))
+            for child in node.get("children") or []:
+                try:
+                    walk(int(child))
+                except (TypeError, ValueError):
+                    continue
+
+        for root in scene.get("nodes") or []:
+            try:
+                walk(int(root))
+            except (TypeError, ValueError):
+                continue
+        return order
+    except Exception:
+        logger.debug("Could not parse glTF mesh order from %s", path, exc_info=True)
+        return []
 
 
-def _scene_geometry_entries(scene: trimesh.Scene) -> list[tuple[str, str, Any, np.ndarray]]:
-    """Return ``(node_name, geom_name, geom, world_transform)`` in Three.js / glTF order.
+def _order_entries_like_gltf(
+    entries: list[tuple[str, str, Any, np.ndarray]],
+    gltf_order: list[str],
+) -> list[tuple[str, str, Any, np.ndarray]]:
+    if not entries:
+        return entries
+    if not gltf_order:
+        # Fall back: trimesh often reverses glTF children — flip to match Three.js.
+        return list(reversed(entries))
+    by_key: dict[str, list[tuple[str, str, Any, np.ndarray]]] = {}
+    for entry in entries:
+        key = _normalize_body_key(entry[0]) or _normalize_body_key(entry[1])
+        by_key.setdefault(key, []).append(entry)
+    ordered: list[tuple[str, str, Any, np.ndarray]] = []
+    used: set[int] = set()
+    for name in gltf_order:
+        key = _normalize_body_key(name)
+        bucket = by_key.get(key) or []
+        while bucket:
+            entry = bucket.pop(0)
+            ordered.append(entry)
+            used.add(id(entry))
+            break
+    for entry in entries:
+        if id(entry) not in used:
+            ordered.append(entry)
+    return ordered
 
-    Trimesh lists ``nodes_geometry`` reversed relative to the glTF scene children
-    array, so Fusion body indices would otherwise target the wrong solid.
-    """
+
+def _scene_geometry_entries(
+    scene: trimesh.Scene,
+    *,
+    source_path: Path | None = None,
+) -> list[tuple[str, str, Any, np.ndarray]]:
+    """Return ``(node_name, geom_name, geom, world_transform)`` in Three.js order."""
     entries: list[tuple[str, str, Any, np.ndarray]] = []
     for node_name in scene.graph.nodes_geometry:
         transform, geom_name = scene.graph.get(node_name)
@@ -2605,8 +2682,8 @@ def _scene_geometry_entries(scene: trimesh.Scene) -> list[tuple[str, str, Any, n
             continue
         world = np.asarray(transform, dtype=float) if transform is not None else np.eye(4)
         entries.append((str(node_name), str(geom_name), geom, world))
-    entries.reverse()
-    return entries
+    gltf_order = _glb_scene_mesh_order(source_path) if source_path else []
+    return _order_entries_like_gltf(entries, gltf_order)
 
 
 def _resolve_scene_body_entry(
@@ -2661,7 +2738,7 @@ def apply_transform_preserving_parts(
     path = Path(path)
     dest = Path(out_path) if out_path is not None else path
     scene = load_scene(path)
-    entries = _scene_geometry_entries(scene)
+    entries = _scene_geometry_entries(scene, source_path=path)
     if len(entries) <= 1:
         mesh = load_mesh(path)
         export_mesh(apply_transform(mesh, transform), dest)
@@ -2698,7 +2775,7 @@ def transform_scene_body(
     path = Path(path)
     dest = Path(out_path) if out_path is not None else path
     scene = load_scene(path)
-    entries = _scene_geometry_entries(scene)
+    entries = _scene_geometry_entries(scene, source_path=path)
     if len(entries) <= 1:
         mesh = load_mesh(path)
         export_mesh(transform_mesh_body(mesh, int(body_index), transform), dest)
@@ -2742,7 +2819,7 @@ def face_pull_scene_body(
     path = Path(path)
     dest = Path(out_path) if out_path is not None else path
     scene = load_scene(path)
-    entries = _scene_geometry_entries(scene)
+    entries = _scene_geometry_entries(scene, source_path=path)
     if len(entries) <= 1:
         mesh = load_mesh(path)
         result = face_pull_many(
@@ -5131,7 +5208,7 @@ def scene_body_info(path: Path) -> dict[str, Any]:
     path = Path(path)
     try:
         scene = load_scene(path)
-        parts = _meshes_from_scene(scene)
+        parts = _meshes_from_scene(scene, source_path=path)
     except Exception:
         parts = []
     if len(parts) > 1:
