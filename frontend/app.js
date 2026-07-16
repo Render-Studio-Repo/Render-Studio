@@ -20870,7 +20870,7 @@ function selectFromViewportMarquee(drag, e) {
     ? selectedFile
     : (projectAssembly.count() === 1 ? projectAssembly.list()[0]?.[0] : null);
   const activeBodyRoot = activeBodyCatalog ? projectAssembly.get(activeBodyCatalog) : null;
-  if (activeBodyRoot && (bodyInfo?.count || 0) > 1) {
+  if (e.altKey && activeBodyRoot && (bodyInfo?.count || 0) > 1) {
     const mesh = listObjectMeshes(activeBodyRoot)[0];
     if (mesh) {
       for (let bodyIndex = 0; bodyIndex < bodyInfo.count; bodyIndex += 1) {
@@ -20916,6 +20916,8 @@ function selectFromViewportMarquee(drag, e) {
     catalogName,
     bodyIndex: 0,
     label: catalogName.replace(/\.[^.]+$/, ""),
+    wholeModel: true,
+    isRoot: true,
   })));
   selectedFile = candidates[0].catalogName;
   projectTree.setSelectedMany?.(candidates.map((item) => item.catalogName));

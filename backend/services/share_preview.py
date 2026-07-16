@@ -269,9 +269,15 @@ def _render_colored_model_rgba(
     C = np.vstack(colors)
     V = V - V.mean(axis=0)
 
-    # Match CAD snapshot iso: yaw then pitch (true isometric).
+    # Match CAD snapshot iso, with a 90deg plan rotation for direct GLB share cards
+    # so edited objects do not appear sideways-left in link thumbnails.
+    az = math.radians(90.0)
     ax = math.radians(35.264)
     ay = math.radians(-45.0)
+    Rz = np.array(
+        [[math.cos(az), -math.sin(az), 0.0], [math.sin(az), math.cos(az), 0.0], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
     Rx = np.array(
         [[1.0, 0.0, 0.0], [0.0, math.cos(ax), -math.sin(ax)], [0.0, math.sin(ax), math.cos(ax)]],
         dtype=np.float64,
@@ -280,7 +286,7 @@ def _render_colored_model_rgba(
         [[math.cos(ay), 0.0, math.sin(ay)], [0.0, 1.0, 0.0], [-math.sin(ay), 0.0, math.cos(ay)]],
         dtype=np.float64,
     )
-    Vp = (V @ Ry.T) @ Rx.T
+    Vp = ((V @ Rz.T) @ Ry.T) @ Rx.T
     light = np.array([0.45, 0.78, 0.52], dtype=np.float64)
     light /= float(np.linalg.norm(light))
 
@@ -302,14 +308,22 @@ def _render_colored_model_rgba(
     order = np.argsort(depth)
 
     width, height = size
-    pad = 0.12
+    pad_x = max(80.0, width * 0.08)
+    top_pad = max(54.0, height * 0.055)
+    bottom_reserved = max(190.0, height * 0.19)
     mins = Vp.min(axis=0)
     maxs = Vp.max(axis=0)
-    span = max(float(maxs[0] - mins[0]), float(maxs[1] - mins[1]), 1e-6)
-    scale = (1.0 - 2.0 * pad) * min(width, height) / span
-    cx, cy = width / 2.0, height / 2.0
-    xs = cx + Vp[:, 0] * scale
-    ys = cy - Vp[:, 1] * scale
+    span_x = max(float(maxs[0] - mins[0]), 1e-6)
+    span_y = max(float(maxs[1] - mins[1]), 1e-6)
+    safe_w = max(1.0, width - pad_x * 2.0)
+    safe_h = max(1.0, height - top_pad - bottom_reserved)
+    scale = min(safe_w / span_x, safe_h / span_y)
+    x_mid = (mins[0] + maxs[0]) * 0.5
+    y_mid = (mins[1] + maxs[1]) * 0.5
+    cx = width * 0.47
+    cy = top_pad + safe_h * 0.52
+    xs = cx + (Vp[:, 0] - x_mid) * scale
+    ys = cy - (Vp[:, 1] - y_mid) * scale
     shade = 0.34 + 0.66 * np.clip(normals @ light, 0.0, 1.0)
 
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -598,12 +612,12 @@ def _draw_render3d_badge(image: Any) -> None:
     bbox = draw.textbbox((0, 0), text, font=font, stroke_width=max(1, int(word_h * 0.025)))
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
-    text_x = max(margin, width - text_w - margin)
-    text_y = max(margin, height - text_h - margin)
+    stroke = max(2, int(word_h * 0.035))
+    text_x = max(margin, width - text_w - margin - stroke * 3 - 10)
+    text_y = max(margin, height - text_h - margin - stroke * 3 - 10)
 
     shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
     shadow_draw = ImageDraw.Draw(shadow, "RGBA")
-    stroke = max(2, int(word_h * 0.035))
     shadow_draw.text(
         (text_x + 6, text_y + 6),
         text,

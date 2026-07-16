@@ -29,6 +29,8 @@ export function createObjectTools({
   let highlights = [];
   let bodyInfo = null;
   let bodyInfoFilename = null;
+  let multiTransformGroup = null;
+  let multiTransformItems = [];
 
   function setStatus(kind, text) {
     onStatus?.(kind, text);
@@ -44,7 +46,56 @@ export function createObjectTools({
     highlights = [];
   }
 
+  function clearMultiTransformGroup() {
+    if (!multiTransformGroup) return;
+    const items = [...multiTransformItems];
+    for (const item of items) {
+      if (!item?.object || !item.originalParent) continue;
+      try {
+        item.originalParent.attach(item.object);
+      } catch {
+        item.originalParent.add(item.object);
+      }
+    }
+    scene.remove(multiTransformGroup);
+    multiTransformGroup = null;
+    multiTransformItems = [];
+  }
+
+  function createMultiTransformGroup(items = []) {
+    clearMultiTransformGroup();
+    const objects = [];
+    const seen = new Set();
+    for (const item of items) {
+      const object = item.root || item.mesh;
+      if (!object || seen.has(object)) continue;
+      seen.add(object);
+      objects.push(object);
+    }
+    if (objects.length < 2) return objects[0] || null;
+    const box = new THREE.Box3();
+    objects.forEach((obj) => {
+      obj.updateMatrixWorld?.(true);
+      box.union(new THREE.Box3().setFromObject(obj));
+    });
+    const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+    multiTransformGroup = new THREE.Group();
+    multiTransformGroup.name = "Render3D multi-selection transform";
+    multiTransformGroup.userData.isMultiSelectionTransform = true;
+    multiTransformGroup.position.copy(center);
+    scene.add(multiTransformGroup);
+    multiTransformItems = objects.map((object) => ({
+      object,
+      originalParent: object.parent,
+    }));
+    for (const object of objects) {
+      multiTransformGroup.attach(object);
+    }
+    return multiTransformGroup;
+  }
+
   function clearSelection({ detachGizmo = true } = {}) {
+    clearMultiTransformGroup();
     selected = null;
     removeHighlight();
     if (detachGizmo && transformControls?.object) {
@@ -186,6 +237,7 @@ export function createObjectTools({
     isRoot: isRootOverride = null,
   } = {}) {
     if (!mesh || !root) return;
+    clearMultiTransformGroup();
     const meshes = listSelectableMeshes(root);
     const resolvedCatalog = catalogName || root.userData?.catalogFilename || null;
     const hasMatchingBodyInfo =
@@ -261,7 +313,7 @@ export function createObjectTools({
       bodyIndex: first.bodyIndex ?? 0,
       faceIndex: first.faceIndex ?? null,
       label,
-      isRoot: false,
+      isRoot: normalized.every((item) => item.wholeModel || item.isRoot),
       meshCount: normalized.length,
       bodyCount: bodyInfo?.count || 1,
       catalogName: resolvedCatalog,
@@ -271,12 +323,16 @@ export function createObjectTools({
         bodyCount: item.bodyCount ?? 1,
         catalogName: item.catalogName || item.root.userData?.catalogFilename || null,
         label: item.label || meshLabel(item.mesh, item.root, item.bodyIndex || 0),
+        isRoot: item.isRoot ?? item.wholeModel ?? false,
+        wholeModel: item.wholeModel ?? item.isRoot ?? false,
       })),
     };
     removeHighlight();
     selected.selections.forEach(addSelectionHighlight);
-    transformControls?.detach?.();
-    setStatus("ok", `Selected ${label} · Delete / Backspace / X to delete · Split bodies separates them into files`);
+    const groupTarget = createMultiTransformGroup(selected.selections);
+    if (groupTarget) transformControls?.attach?.(groupTarget);
+    else transformControls?.detach?.();
+    setStatus("ok", `Selected ${label} · drag the gizmo to move/rotate together · Delete / Backspace / X to delete`);
     window.dispatchEvent(new CustomEvent("render3d:object-selection-changed", { detail: { selected } }));
     return true;
   }
