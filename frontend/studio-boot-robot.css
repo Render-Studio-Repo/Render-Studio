@@ -1,4 +1,4 @@
-/* Boot-stage robot: SVG arm, fixed base, shoulder + elbow */
+/* Boot-stage robot: SVG arm (SMIL pick cycle in index.html) */
 
 .studio-boot-robot,
 .studio-boot-drop-zone,
@@ -61,5 +61,30 @@
     animation: none !important;
     transform: none;
     opacity: 1;
+  }
+
+  .studio-boot-arm-svg animate,
+  .studio-boot-arm-svg animateTransform {
+    display: none !important;
+  }
+
+  .studio-boot-arm-swing {
+    transform: rotate(-46deg);
+    transform-origin: 198px 78px;
+    transform-box: view-box;
+  }
+
+  .studio-boot-arm-elbow {
+    transform: rotate(-34deg);
+    transform-origin: 112px 78px;
+    transform-box: view-box;
+  }
+
+  .studio-boot-arm-payload-g {
+    opacity: 1 !important;
+  }
+
+  .studio-boot-arm-ground-g {
+    opacity: 0 !important;
   }
 }

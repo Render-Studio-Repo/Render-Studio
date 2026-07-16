@@ -157,7 +157,8 @@ label.new-project-workspace-remember {
 }
 
 /* Brushed chrome wordmark (matches futuristic gear metal) */
-.studio-boot-logo-word {
+.studio-boot-logo-word,
+.studio-boot-title-metal {
   font-size: clamp(1.2rem, 2vw, 1.7rem);
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -190,6 +191,16 @@ label.new-project-workspace-remember {
     drop-shadow(0 2px 2px rgba(0, 0, 0, 0.75))
     drop-shadow(0 0 12px rgba(148, 163, 184, 0.35));
   animation: studio-metal-sheen 3.4s ease-in-out infinite;
+}
+
+.studio-boot-title {
+  color: #c5d0dc;
+}
+
+.studio-boot-title-metal {
+  font-size: inherit;
+  font-weight: 850;
+  letter-spacing: inherit;
 }
 
 @keyframes studio-metal-sheen {

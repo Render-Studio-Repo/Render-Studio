@@ -11,10 +11,10 @@
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
   <link rel="stylesheet" href="/styles.css?v=20260715-pin-hover-tooltip" />
-  <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-remember-gear" />
-  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v2" />
+  <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
+  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-pick" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
-  <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-3d-spice" />
+  <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-toggle-btn" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <link rel="stylesheet" href="/user-profile.css?v=20260715-user-profile" />
   <link rel="stylesheet" href="/store-preferences.css?v=20260715-store-prefs" />
@@ -59,9 +59,16 @@
               </linearGradient>
             </defs>
 
-            <!-- Placed part on ground (appears after place) -->
-            <g class="studio-boot-arm-ground-g">
-              <rect x="104" y="142" width="28" height="14" rx="3" fill="url(#bootArmPart)" stroke="#bae6fd" stroke-width="1.2"/>
+            <!-- Target part on the floor -->
+            <g class="studio-boot-arm-ground-g" opacity="0">
+              <rect x="96" y="144" width="28" height="14" rx="3" fill="url(#bootArmPart)" stroke="#bae6fd" stroke-width="1.2"/>
+              <animate
+                attributeName="opacity"
+                values="0; 0; 0; 0; 1; 1; 0; 0"
+                keyTimes="0; 0.22; 0.38; 0.52; 0.66; 0.78; 0.92; 1"
+                dur="5.6s"
+                repeatCount="indefinite"
+              />
             </g>
 
             <!-- FIXED BASE -->
@@ -72,26 +79,66 @@
               <rect x="186" y="70" width="32" height="14" rx="4" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1"/>
             </g>
 
-            <!-- SWINGING ARM (only shoulder rotates) — pivot at 198,78 -->
-            <g class="studio-boot-arm-swing">
-              <!-- upper link -->
+            <!-- Shoulder + elbow bent down toward the floor box -->
+            <g class="studio-boot-arm-swing" transform="rotate(-46 198 78)">
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                values="-46 198 78; -46 198 78; -46 198 78; -28 198 78; -10 198 78; -10 198 78; -46 198 78; -46 198 78"
+                keyTimes="0; 0.22; 0.38; 0.52; 0.66; 0.78; 0.92; 1"
+                dur="5.6s"
+                repeatCount="indefinite"
+                calcMode="spline"
+                keySplines="0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1"
+              />
               <rect x="108" y="70" width="90" height="16" rx="4" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1.2"/>
-              <!-- elbow joint (visual only) -->
-              <circle cx="112" cy="78" r="10" fill="#1c1917" stroke="#fb923c" stroke-width="3"/>
-              <circle cx="112" cy="78" r="3.5" fill="#e2e8f0"/>
-              <!-- forearm -->
-              <rect x="58" y="72" width="58" height="12" rx="3" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1.1"/>
-              <!-- wrist -->
-              <circle cx="60" cy="78" r="7" fill="#1c1917" stroke="#fb923c" stroke-width="2.5"/>
-              <circle cx="60" cy="78" r="2.5" fill="#e2e8f0"/>
-              <!-- gripper jaws -->
-              <rect class="studio-boot-arm-jaw-l" x="42" y="68" width="16" height="6" rx="2" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1"/>
-              <rect class="studio-boot-arm-jaw-r" x="42" y="82" width="16" height="6" rx="2" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1"/>
-              <!-- held payload -->
-              <g class="studio-boot-arm-payload-g">
-                <rect x="36" y="72" width="18" height="12" rx="2" fill="url(#bootArmPart)" stroke="#bae6fd" stroke-width="1"/>
+              <g class="studio-boot-arm-elbow" transform="rotate(-34 112 78)">
+                <animateTransform
+                  attributeName="transform"
+                  type="rotate"
+                  values="-34 112 78; -34 112 78; -34 112 78; -18 112 78; -8 112 78; -8 112 78; -34 112 78; -34 112 78"
+                  keyTimes="0; 0.22; 0.38; 0.52; 0.66; 0.78; 0.92; 1"
+                  dur="5.6s"
+                  repeatCount="indefinite"
+                  calcMode="spline"
+                  keySplines="0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1"
+                />
+                <circle cx="112" cy="78" r="10" fill="#1c1917" stroke="#fb923c" stroke-width="3"/>
+                <circle cx="112" cy="78" r="3.5" fill="#e2e8f0"/>
+                <rect x="58" y="72" width="58" height="12" rx="3" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1.1"/>
+                <circle cx="60" cy="78" r="7" fill="#1c1917" stroke="#fb923c" stroke-width="2.5"/>
+                <circle cx="60" cy="78" r="2.5" fill="#e2e8f0"/>
+                <rect class="studio-boot-arm-jaw-l" x="42" y="66" width="16" height="6" rx="2" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1">
+                  <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    values="-4 58 78; -4 58 78; -4 58 78; -4 58 78; -18 58 78; -18 58 78; -4 58 78; -4 58 78"
+                    keyTimes="0; 0.22; 0.38; 0.52; 0.66; 0.78; 0.92; 1"
+                    dur="5.6s"
+                    repeatCount="indefinite"
+                  />
+                </rect>
+                <rect class="studio-boot-arm-jaw-r" x="42" y="84" width="16" height="6" rx="2" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1">
+                  <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    values="4 58 78; 4 58 78; 4 58 78; 4 58 78; 18 58 78; 18 58 78; 4 58 78; 4 58 78"
+                    keyTimes="0; 0.22; 0.38; 0.52; 0.66; 0.78; 0.92; 1"
+                    dur="5.6s"
+                    repeatCount="indefinite"
+                  />
+                </rect>
+                <g class="studio-boot-arm-payload-g" opacity="1">
+                  <animate
+                    attributeName="opacity"
+                    values="1; 1; 1; 1; 0; 0; 1; 1"
+                    keyTimes="0; 0.22; 0.38; 0.52; 0.66; 0.78; 0.92; 1"
+                    dur="5.6s"
+                    repeatCount="indefinite"
+                  />
+                  <rect x="36" y="72" width="18" height="12" rx="2" fill="url(#bootArmPart)" stroke="#bae6fd" stroke-width="1"/>
+                </g>
               </g>
-              <!-- shoulder pivot (on top of column) -->
               <circle cx="198" cy="78" r="12" fill="#1c1917" stroke="#fb923c" stroke-width="3.5"/>
               <circle cx="198" cy="78" r="4" fill="#e2e8f0"/>
             </g>
@@ -104,7 +151,7 @@
           <span class="studio-boot-spark studio-boot-spark--c"></span>
         </div>
       </div>
-      <p class="studio-boot-title">Loading Render3D Studio</p>
+      <p class="studio-boot-title">Loading <span class="studio-boot-title-metal">Render3D Studio</span></p>
       <p id="studio-boot-sub" class="studio-boot-sub">Preparing projects and editor...</p>
       <div class="studio-boot-tip" aria-live="polite">
         <span class="studio-boot-tip-kicker">Studio tip</span>
@@ -172,6 +219,7 @@
     var WALKTHROUGH_KEY = "render3d:bootWalkthroughQueued:v1";
     var WALKTHROUGH_ID_KEY = "render3d:bootWalkthroughId:v1";
     var SKIP_BOOT_KEY = "render3d:skipStudioBootOnce:v1";
+    var LOGOUT_RELOAD_KEY = "render3d:logoutReload:v1";
     var boot = document.getElementById("studio-boot-screen");
     var pctEl = document.getElementById("studio-boot-percent");
     var logoPctEl = document.getElementById("studio-boot-logo-percent");
@@ -183,6 +231,14 @@
     var target = 88;
     var timer = null;
     var tipIndex = 0;
+    try {
+      var navEntry = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+      var logoutReload = sessionStorage.getItem(LOGOUT_RELOAD_KEY) === "1";
+      sessionStorage.removeItem(LOGOUT_RELOAD_KEY);
+      if (navEntry && navEntry.type === "reload" && !logoutReload) {
+        window.__studioBootMinUntil = Date.now() + 5000;
+      }
+    } catch (e) {}
     var randomWalkthroughs = [
       { id: "ai-generate", kicker: "AI Generate", label: "Build CAD from text" },
       { id: "wiring", kicker: "Wiring simulator", label: "Arduino stepper demo" },
@@ -331,7 +387,7 @@
       try { localStorage.setItem("render3d:welcomeSeen:v1", "1"); } catch (e) {}
       document.getElementById("welcome-modal")?.classList.add("hidden");
       window.setTimeout(function () {
-        import("./show-me-tour.js?v=20260715-intro-suggestions")
+        import("./show-me-tour.js?v=20260715-stepper-bench-remix")
           .then(function (mod) {
             if (!mod.startShowMe?.(guideId, { onDocsPage: false })) {
               window.location.href = "/?showMe=" + encodeURIComponent(guideId);
@@ -1431,40 +1487,25 @@
                 </div>
               </div>
               <div class="prompt-spice-wrap" id="prompt-spice-wrap">
-                <div class="prompt-spice-group" id="prompt-spice-group">
-                  <label
-                    id="prompt-spice-toggle"
-                    class="prompt-spice-toggle"
-                    aria-describedby="prompt-spice-tip"
-                  >
-                    <input type="checkbox" id="prompt-spice" />
-                    <span class="prompt-spice-check" aria-hidden="true"></span>
-                    <span class="prompt-spice-label">
-                      <span class="prompt-spice-ai-mark" aria-hidden="true">
-                        <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M6 1.2l.85 2.55L9.4 4.6 6.85 6.05 6 8.8l-.85-2.75L2.6 4.6l2.55-.85L6 1.2z" fill="currentColor" opacity="0.95"/>
-                          <path d="M9.6 7.1l.4 1.2 1.2.4-1.2.4-.4 1.2-.4-1.2-1.2-.4 1.2-.4.4-1.2z" fill="currentColor" opacity="0.7"/>
-                        </svg>
-                      </span>
-                      Improve prompt with AI
-                    </span>
-                  </label>
-                  <button
-                    type="button"
-                    id="prompt-spice-view-btn"
-                    class="prompt-spice-view-btn"
-                    disabled
-                    aria-haspopup="dialog"
-                    aria-controls="prompt-spice-compare-modal"
-                    title="View original vs improved prompt"
-                    aria-label="View original vs improved prompt"
-                  >
-                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/>
-                      <circle cx="8" cy="8" r="2" />
+                <button
+                  type="button"
+                  id="prompt-spice"
+                  class="prompt-spice-btn"
+                  aria-pressed="true"
+                  aria-describedby="prompt-spice-tip"
+                  title="Improve prompt with AI"
+                >
+                  <span class="prompt-spice-ai-mark" aria-hidden="true">
+                    <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M6 1.2l.85 2.55L9.4 4.6 6.85 6.05 6 8.8l-.85-2.75L2.6 4.6l2.55-.85L6 1.2z" fill="currentColor" opacity="0.95"/>
+                      <path d="M9.6 7.1l.4 1.2 1.2.4-1.2.4-.4 1.2-.4-1.2-1.2-.4 1.2-.4.4-1.2z" fill="currentColor" opacity="0.7"/>
                     </svg>
-                  </button>
-                </div>
+                  </span>
+                  <span class="prompt-spice-btn-label">Improve</span>
+                  <span class="prompt-spice-btn-switch" aria-hidden="true">
+                    <span class="prompt-spice-btn-knob"></span>
+                  </span>
+                </button>
                 <div id="prompt-spice-tip" class="prompt-spice-tip" role="tooltip">
                   <div class="prompt-spice-tip-top">
                     <span class="prompt-spice-tip-badge">Before generate</span>
@@ -1477,7 +1518,7 @@
                   <ul class="prompt-spice-tip-list">
                     <li>On by default — polish the prompt for the active mode</li>
                     <li>Render ≠ 2.0 — visual presentation vs feature-tree specs</li>
-                    <li>Eye icon compares original vs improved</li>
+                    <li>Tap to turn improve on or off</li>
                   </ul>
                 </div>
               </div>
@@ -2281,14 +2322,18 @@
     function dismissBoot() {
       document.body.classList.remove("studio-booting");
       var el = document.getElementById("studio-boot-screen");
-      if (!el || el.classList.contains("is-done")) return;
-      if (window.__setStudioBootProgress) window.__setStudioBootProgress(100, "Studio ready.");
-      el.classList.add("is-done");
-      el.setAttribute("aria-busy", "false");
+      var minDelay = Math.max(0, Number(window.__studioBootMinUntil || 0) - Date.now());
+      if (!el || el.classList.contains("is-done") || el.dataset.dismissScheduled === "1") return;
+      el.dataset.dismissScheduled = "1";
       setTimeout(function () {
-        el.remove();
-        window.__maybeStartStudioBootWalkthrough?.();
-      }, 520);
+        if (window.__setStudioBootProgress) window.__setStudioBootProgress(100, "Studio ready.");
+        el.classList.add("is-done");
+        el.setAttribute("aria-busy", "false");
+        setTimeout(function () {
+          el.remove();
+          window.__maybeStartStudioBootWalkthrough?.();
+        }, 160);
+      }, minDelay);
     }
     window.__dismissStudioBoot = window.__dismissStudioBoot || dismissBoot;
     function show(html) {
@@ -2338,7 +2383,7 @@
       });
   })();
   </script>
-  <script type="module" src="/early-boot.js?v=20260715-boot-tips-tour"></script>
+  <script type="module" src="/early-boot.js?v=20260715-refresh-5s-boot"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="prompt-target-popup" class="prompt-target-popup hidden" role="dialog" aria-modal="false" aria-label="Select object to edit"></div>
   <div id="fusion-capability-modal" class="fusion-capability-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title">
@@ -2540,7 +2585,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-driver-jumpers"></script>
+  <script type="module" src="/app.js?v=20260715-logout-no-boot-delay"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

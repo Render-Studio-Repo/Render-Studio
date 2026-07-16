@@ -13949,6 +13949,17 @@ def wiring_demo(
 ):
     """Seed a demo wiring schematic (Pi button→motor, Pi servo, or Arduino blink LED)."""
     path = _require_project(user, project_id)
+    normalized_example = str(example or "").strip().lower()
+    schematic: dict[str, Any] | None = None
+    if normalized_example in {"stepper", "arduino-stepper", "stepper-motor"}:
+        stepper_bench_path = PROJECTS / "20069e9d" / "wiring.json"
+        if stepper_bench_path.is_file():
+            schematic = json.loads(stepper_bench_path.read_text(encoding="utf-8"))
+            schematic.setdefault("name", "Arduino Stepper Test Bench")
+            schematic.setdefault(
+                "description",
+                "Arduino-compatible board, DRV8825 driver, breadboard rails, and NEMA 17 stepper wiring from the Arduino Stepper Test Bench project.",
+            )
     filename = {
         "pi-button-motor": "raspberry-pi-button-motor.json",
         "button-motor": "raspberry-pi-button-motor.json",
@@ -13961,11 +13972,12 @@ def wiring_demo(
         "stepper": "arduino-stepper.json",
         "arduino-stepper": "arduino-stepper.json",
         "stepper-motor": "arduino-stepper.json",
-    }.get(example, "raspberry-pi-button-motor.json")
-    example_path = FRONTEND / "wiring-examples" / filename
-    if not example_path.is_file():
-        raise HTTPException(404, "Demo schematic not found")
-    schematic = json.loads(example_path.read_text(encoding="utf-8"))
+    }.get(normalized_example, "raspberry-pi-button-motor.json")
+    if schematic is None:
+        example_path = FRONTEND / "wiring-examples" / filename
+        if not example_path.is_file():
+            raise HTTPException(404, "Demo schematic not found")
+        schematic = json.loads(example_path.read_text(encoding="utf-8"))
     wiring_path = path / "wiring.json"
     wiring_path.write_text(json.dumps(schematic, indent=2), encoding="utf-8")
     project_store.touch_project(path)

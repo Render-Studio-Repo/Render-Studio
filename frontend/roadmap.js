@@ -1,4 +1,4 @@
-import { getShowMeTour, startShowMe } from "./show-me-tour.js?v=20260715-summary-popup";
+import { getShowMeTour, startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
 
 function initRoadmapShowMe() {
   document.querySelectorAll("[data-show-me], [data-doc-link]").forEach((btn) => {

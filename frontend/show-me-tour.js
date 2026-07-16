@@ -90,7 +90,7 @@ const SHOW_ME_TOURS = {
         click: false,
       },
       {
-        selector: "#prompt-spice-toggle, #prompt-spice-wrap",
+        selector: "#prompt-spice, #prompt-spice-wrap",
         label: "Improve prompt with AI is on by default. Think of it as a quick CAD brief writer: it keeps your idea, adds missing dimensions/constraints when it can, and makes the request easier for the model to build correctly.",
         click: false,
         reveal: "mobile-ai",
@@ -318,11 +318,11 @@ const SHOW_ME_TOURS = {
   },
   wiring: {
     title: "Wiring Simulator",
-    example: "Arduino Uno drives a 28BYJ-48 stepper through a ULN2003 driver",
+    example: "Arduino-compatible board drives a NEMA 17 stepper through a DRV8825 driver",
     studioPath: "/?designTab=WIRING&showMe=wiring",
     gif: "/docs/media/wiring.gif?v=20260715-real",
     remixAction: "wiring-stepper",
-    remixLabel: "Remix Arduino stepper into my folder",
+    remixLabel: "Remix Arduino Stepper Test Bench",
     steps: [
       { selector: "#workspace-mode-btn", label: "Open workspace modes. Wiring lives beside CAD, Sketch, Canvas, and Architect so electronics can stay attached to the same project.", click: true },
       {
@@ -332,7 +332,7 @@ const SHOW_ME_TOURS = {
         click: true,
         ensureMenu: true,
       },
-      { selector: "#btn-wiring-toolbelt-demo-stepper", label: "Load the Arduino to Stepper example. Demos are safe starting points for learning wiring before building your own robot circuit.", click: true },
+      { selector: "#btn-wiring-toolbelt-demo-stepper", label: "Load the Arduino Stepper Test Bench example. Demos are safe starting points for learning wiring before building your own robot circuit.", click: true },
       { selector: "#wiring-viewport, #wiring-workspace, .wiring-canvas", label: "The board shows components and connections. Drag parts to lay out the circuit, then use the schematic run tools to validate the loop.", click: false },
       { selector: "#btn-wiring-code", label: "Code & Simulate generates or opens the control sketch. Use it when the wiring is mostly right and you want firmware logic to match the circuit.", click: false },
       { selector: "#btn-wiring-run-schematic", label: "Run schematic animates and validates the circuit. It is the quick check before sending wiring back to AI or exporting build notes.", click: false },
@@ -831,7 +831,7 @@ async function runRemixAction() {
     if (stepEl) stepEl.textContent = "Creating a remix project in your folder...";
     if (activeTour.remixAction === "wiring-stepper" && typeof window.__remixWiringStepperExample === "function") {
       await window.__remixWiringStepperExample();
-      if (stepEl) stepEl.textContent = "Remixed. The Arduino stepper project is open in your folder.";
+      if (stepEl) stepEl.textContent = "Remixed. The Arduino Stepper Test Bench project is open in your folder.";
       setTimeout(stopShowMe, 900);
       return;
     }

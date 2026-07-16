@@ -67,14 +67,18 @@ function bootSpinner(message = "Loading Render3D Studio…") {
 function dismissStudioBoot() {
   document.body.classList.remove("studio-booting");
   const el = document.getElementById("studio-boot-screen");
-  if (!el || el.classList.contains("is-done")) return;
-  window.__setStudioBootProgress?.(100, "Studio ready.");
-  el.classList.add("is-done");
-  el.setAttribute("aria-busy", "false");
+  const minDelay = Math.max(0, Number(window.__studioBootMinUntil || 0) - Date.now());
+  if (!el || el.classList.contains("is-done") || el.dataset.dismissScheduled === "1") return;
+  el.dataset.dismissScheduled = "1";
   window.setTimeout(() => {
-    el.remove();
-    window.__maybeStartStudioBootWalkthrough?.();
-  }, 520);
+    window.__setStudioBootProgress?.(100, "Studio ready.");
+    el.classList.add("is-done");
+    el.setAttribute("aria-busy", "false");
+    window.setTimeout(() => {
+      el.remove();
+      window.__maybeStartStudioBootWalkthrough?.();
+    }, 160);
+  }, minDelay);
 }
 
 window.__dismissStudioBoot = dismissStudioBoot;

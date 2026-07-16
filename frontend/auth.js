@@ -3,6 +3,7 @@
 const TOKEN_KEY = "render3d:token";
 const USER_KEY = "render3d:user";
 const PENDING_CONNECTION_PREFS_KEY = "render3d:pendingConnectionPrefs:v1";
+const LOGOUT_RELOAD_KEY = "render3d:logoutReload:v1";
 
 const ADMIN_EMAILS = new Set([
   "a1projects@protonmail.com",
@@ -409,6 +410,11 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   });
 
   btnLogout?.addEventListener("click", () => {
+    try {
+      sessionStorage.setItem(LOGOUT_RELOAD_KEY, "1");
+    } catch {
+      /* optional */
+    }
     clearSession();
     setLoggedOutUI();
     closeUserMenu();

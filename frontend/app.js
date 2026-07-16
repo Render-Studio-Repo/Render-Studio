@@ -132,6 +132,7 @@ const LS_WORKSPACE_FUSION_SECTION_OPEN = "render3d:workspaceFusionSectionOpen:v1
 const LS_FIRST_PROJECT_PROMPT_ONBOARDING = "render3d:firstProjectPromptOnboarding:v1";
 const LS_GOOGLE_NEW_USER_WALKTHROUGH = "render3d:googleNewUserWalkthrough:v1";
 const LS_AI_SETUP_INTRO_DISMISSED = "render3d:aiSetupIntroDismissed:v1";
+const SS_AI_SETUP_INTRO_OFFERED = "render3d:aiSetupIntroOffered:v1";
 
 let projectId = null;
 const wiringLoadCache = { projectId: null, promise: null, data: null };
@@ -590,20 +591,46 @@ function generationAppliedKey(pid) {
   return `render3d:gen-applied:${pid}`;
 }
 
+function generationAppliedSet(pid) {
+  if (!pid) return new Set();
+  try {
+    const raw = localStorage.getItem(generationAppliedKey(pid));
+    if (!raw) return new Set();
+    if (raw.trim().startsWith("[")) {
+      const parsed = JSON.parse(raw);
+      return new Set(Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []);
+    }
+    return new Set([raw]);
+  } catch {
+    return new Set();
+  }
+}
+
 function wasGenerationApplied(pid, traceId) {
   if (!pid || !traceId) return false;
-  try {
-    return localStorage.getItem(generationAppliedKey(pid)) === traceId;
-  } catch {
-    return false;
-  }
+  return generationAppliedSet(pid).has(String(traceId));
 }
 
 function markGenerationApplied(pid, traceId) {
   if (!pid || !traceId) return;
   try {
-    localStorage.setItem(generationAppliedKey(pid), traceId);
+    const traces = generationAppliedSet(pid);
+    traces.add(String(traceId));
+    localStorage.setItem(generationAppliedKey(pid), JSON.stringify([...traces].slice(-40)));
   } catch (_) {}
+}
+
+function jobFinishedDuringCurrentWatch(job = {}) {
+  if (!generationWatchOverlay?.startedAt) return true;
+  const watchStarted = Number(generationWatchOverlay.startedAt) || 0;
+  const slackMs = 5000;
+  for (const key of ["finished_at", "updated_at", "started_at"]) {
+    const value = job?.[key];
+    if (!value) continue;
+    const ts = new Date(value).getTime();
+    if (Number.isFinite(ts) && ts >= watchStarted - slackMs) return true;
+  }
+  return false;
 }
 
 async function applyGenerationComplete(gen, pid = projectId) {
@@ -1255,6 +1282,10 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         }
         // Apply any sibling jobs that finished while others still run.
         for (const job of gen.jobs || []) {
+          if (job.status === "complete" && !jobFinishedDuringCurrentWatch(job)) {
+            markGenerationApplied(pid, job.trace_id);
+            continue;
+          }
           if (job.status === "complete" && job.kind === "rigging" && !wasGenerationApplied(pid, job.trace_id)) {
             try {
               await applyRiggingGenerationComplete(job, pid);
@@ -4139,15 +4170,22 @@ const SPICE_COMPARE_KEY = "render3d:spice-prompt-compare:v1";
 let lastSpicePromptCompare = null;
 
 function isSpiceEnabled() {
-  return Boolean(document.getElementById("prompt-spice")?.checked);
+  const btn = document.getElementById("prompt-spice");
+  if (!btn) return true;
+  return btn.getAttribute("aria-pressed") === "true";
 }
 
 function setSpiceEnabled(enabled, { persist = true } = {}) {
-  const input = document.getElementById("prompt-spice");
-  if (input) input.checked = Boolean(enabled);
+  const btn = document.getElementById("prompt-spice");
+  const on = Boolean(enabled);
+  if (btn) {
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.classList.toggle("is-on", on);
+    btn.title = on ? "Improve prompt with AI — on" : "Improve prompt with AI — off";
+  }
   if (persist) {
     try {
-      localStorage.setItem(SPICE_KEY, enabled ? "1" : "0");
+      localStorage.setItem(SPICE_KEY, on ? "1" : "0");
     } catch {
       /* ignore */
     }
@@ -4189,23 +4227,13 @@ function saveSpicePromptCompare(compare) {
 }
 
 function syncSpiceCompareViewButton() {
-  const btn = document.getElementById("prompt-spice-view-btn");
-  const group = document.getElementById("prompt-spice-group");
-  const ready = Boolean(lastSpicePromptCompare?.original && lastSpicePromptCompare?.improved);
-  if (btn) {
-    btn.disabled = !ready;
-    btn.title = ready
-      ? "View original vs improved prompt"
-      : "View original vs improved prompt (available after Improve runs)";
-  }
-  group?.classList.toggle("prompt-spice-group--ready", ready);
+  /* Compare opens from history; toolbar eye control removed. */
 }
 
 function closeSpiceCompareModal() {
   const modal = document.getElementById("prompt-spice-compare-modal");
   if (!modal) return;
   modal.classList.add("hidden");
-  document.getElementById("prompt-spice-view-btn")?.setAttribute("aria-expanded", "false");
 }
 
 function openSpiceCompareModal(compareOverride = null) {
@@ -4231,7 +4259,6 @@ function openSpiceCompareModal(compareOverride = null) {
     }
   }
   modal.classList.remove("hidden");
-  document.getElementById("prompt-spice-view-btn")?.setAttribute("aria-expanded", "true");
 }
 
 function initPromptSpiceToggle() {
@@ -4244,22 +4271,15 @@ function initPromptSpiceToggle() {
   } catch {
     enabled = true;
   }
-  const input = document.getElementById("prompt-spice");
-  if (!input) return;
-  input.checked = enabled;
-  input.addEventListener("change", () => {
-    setSpiceEnabled(input.checked);
+  const btn = document.getElementById("prompt-spice");
+  if (!btn) return;
+  setSpiceEnabled(enabled, { persist: false });
+  btn.addEventListener("click", () => {
+    setSpiceEnabled(!isSpiceEnabled());
   });
 
   lastSpicePromptCompare = loadSpicePromptCompare();
   syncSpiceCompareViewButton();
-
-  const viewBtn = document.getElementById("prompt-spice-view-btn");
-  viewBtn?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openSpiceCompareModal();
-  });
 
   initPromptSpiceHoverTip();
 
@@ -13746,6 +13766,10 @@ function aiSetupIntroKey(user = currentUser) {
   return user?.id ? `${LS_AI_SETUP_INTRO_DISMISSED}:${user.id}` : LS_AI_SETUP_INTRO_DISMISSED;
 }
 
+function aiSetupIntroOfferedKey(user = currentUser) {
+  return user?.id ? `${SS_AI_SETUP_INTRO_OFFERED}:${user.id}` : SS_AI_SETUP_INTRO_OFFERED;
+}
+
 function closeAISetupIntro({ remember = true } = {}) {
   const modal = document.getElementById("ai-setup-intro-modal");
   modal?.classList.add("hidden");
@@ -13757,20 +13781,28 @@ function closeAISetupIntro({ remember = true } = {}) {
   }
 }
 
-function shouldShowAISetupIntro() {
+function shouldShowAISetupIntro({ ignoreSessionOffer = false } = {}) {
   if (!currentUser || !aiStatus || aiStatus.ai_ready) return;
   if (window.__render3dShowMeFromQuery) return false;
   if (new URLSearchParams(window.location.search).has("showMe")) return false;
   try {
     if (localStorage.getItem(aiSetupIntroKey()) === "1") return false;
+    if (!ignoreSessionOffer && sessionStorage.getItem(aiSetupIntroOfferedKey()) === "1") return false;
   } catch (_) {}
   return true;
 }
 
+let aiSetupIntroTimer = null;
+
 function maybeOfferSharedKeyCredits() {
   if (!shouldShowAISetupIntro()) return;
-  window.setTimeout(() => {
-    if (!shouldShowAISetupIntro()) return;
+  if (aiSetupIntroTimer) return;
+  try {
+    sessionStorage.setItem(aiSetupIntroOfferedKey(), "1");
+  } catch (_) {}
+  aiSetupIntroTimer = window.setTimeout(() => {
+    aiSetupIntroTimer = null;
+    if (!shouldShowAISetupIntro({ ignoreSessionOffer: true })) return;
     const modal = document.getElementById("ai-setup-intro-modal");
     if (!modal) return;
     modal.classList.remove("hidden");
@@ -13804,7 +13836,7 @@ function initAISetupIntroModal() {
       return;
     }
     if (action === "tutorial") {
-      void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
+      void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
         mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
       });
     }
@@ -13845,7 +13877,7 @@ function maybeStartFirstProjectPromptOnboarding() {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1200);
@@ -13864,7 +13896,7 @@ function maybeStartGoogleNewUserWalkthrough(data = {}) {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1400);
@@ -17780,7 +17812,7 @@ async function remixWiringStepperExampleIntoFolder({ folderId = null } = {}) {
   if (teamSelect && [...teamSelect.options].some((opt) => opt.value === teamId)) {
     teamSelect.value = teamId;
   }
-  const qs = `?team_id=${encodeURIComponent(teamId)}&name=${encodeURIComponent("Arduino Stepper Wiring Example")}`;
+  const qs = `?team_id=${encodeURIComponent(teamId)}&name=${encodeURIComponent("Arduino Stepper Test Bench")}`;
   const { project_id, meta } = await api(`/api/projects${qs}`, { method: "POST" });
   if (targetFolderId) {
     await api(`/api/projects/${project_id}/folder`, {
@@ -17791,7 +17823,7 @@ async function remixWiringStepperExampleIntoFolder({ folderId = null } = {}) {
   }
   upsertProjectInList({
     id: project_id,
-    name: meta?.name || "Arduino Stepper Wiring Example",
+    name: meta?.name || "Arduino Stepper Test Bench",
     created_at: meta?.created_at,
     updated_at: meta?.updated_at,
     file_count: 0,
@@ -17804,7 +17836,7 @@ async function remixWiringStepperExampleIntoFolder({ folderId = null } = {}) {
   workspaceModes?.setDesignTab?.("WIRING");
   setRightTab("wiring");
   await loadWiringDemo("stepper");
-  setEditStatus("ok", "Arduino stepper example remixed into your folder.");
+  setEditStatus("ok", "Arduino Stepper Test Bench remixed into your folder.");
   return { project_id, folder_id: targetFolderId || null };
 }
 
@@ -23096,7 +23128,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (showMeParam) {
     window.__render3dShowMeFromQuery = true;
-    void import("./show-me-tour.js?v=20260715-intro-suggestions").then((mod) => {
+    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }
@@ -23441,10 +23473,10 @@ window.addEventListener("keydown", (e) => {
       renderProjectList();
       return;
     }
-    await refreshWorkspaceHistory();
-    await refreshWorkspaceRealtimeEditor();
-    await refreshWorkspaceAiUsage();
     renderProjectList();
+    void refreshWorkspaceHistory();
+    void refreshWorkspaceRealtimeEditor();
+    void refreshWorkspaceAiUsage();
     if (projectId && !allProjects.some((p) => p.id === projectId)) {
       const stillThere = await ensureActiveProjectListed(projectId);
       renderProjectList();
@@ -24525,8 +24557,8 @@ window.addEventListener("keydown", (e) => {
   }
 
   function isSpicePreferenceEnabled() {
-    const input = document.getElementById("prompt-spice");
-    if (input) return Boolean(input.checked);
+    const btn = document.getElementById("prompt-spice");
+    if (btn) return btn.getAttribute("aria-pressed") === "true";
     try {
       const saved = localStorage.getItem(SPICE_KEY);
       return saved !== "0";

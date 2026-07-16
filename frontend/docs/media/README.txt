@@ -14,7 +14,8 @@ Files (served at /docs/media/*.gif):
   select-object.gif     — Select tool: click whole arm, double-click a body
   wiring.gif            — Wiring tab + circuit prompt
   cloud-sync.gif        — Fusion / Onshape connect & libraries
-  render-agent.gif      — Agent button + ask a tooling question
+  timeline-render-history.png — timeline: 2.0 yellow / Render purple + cost
+  management-feedback-dms.png — admin feedback follow-up → realtime DM
 
 Re-record:
   PYTHONUNBUFFERED=1 /home/ubuntu/.venv/bin/python -u \

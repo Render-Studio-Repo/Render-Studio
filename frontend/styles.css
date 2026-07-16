@@ -1525,7 +1525,7 @@ body:not(.info-page) {
   font-size: clamp(1.65rem, 4vw, 2.6rem);
   font-weight: 850;
   letter-spacing: -0.05em;
-  color: #f0f6fc;
+  color: #c5d0dc;
 }
 
 .studio-boot-sub {
@@ -25144,92 +25144,6 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
   color: #fbbf24;
   background: rgba(245, 158, 11, 0.16);
   border-color: rgba(245, 158, 11, 0.35);
-}
-
-.prompt-spice-wrap {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
-  z-index: 5;
-}
-
-.prompt-spice-group {
-  display: inline-flex;
-  align-items: stretch;
-  flex-shrink: 0;
-  border: 1px solid rgba(88, 166, 255, 0.35);
-  border-radius: 999px;
-  background: rgba(13, 17, 23, 0.72);
-  overflow: hidden;
-}
-
-.prompt-spice-group:has(#prompt-spice:checked) {
-  border-color: rgba(88, 166, 255, 0.75);
-  background: rgba(56, 139, 253, 0.14);
-}
-
-.prompt-spice-group:has(#prompt-spice:checked) .prompt-spice-toggle,
-.prompt-spice-group:has(#prompt-spice:checked) .prompt-spice-view-btn:not(:disabled) {
-  color: #79c0ff;
-}
-
-.prompt-spice-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px 4px 10px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.prompt-spice-toggle input {
-  margin: 0;
-  accent-color: #58a6ff;
-  cursor: pointer;
-}
-
-.prompt-spice-view-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  min-width: 28px;
-  padding: 0;
-  margin: 0;
-  border: none;
-  border-left: 1px solid rgba(88, 166, 255, 0.28);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  opacity: 0.45;
-}
-
-.prompt-spice-view-btn:disabled {
-  cursor: default;
-  opacity: 0.28;
-}
-
-.prompt-spice-view-btn:not(:disabled):hover {
-  opacity: 1;
-  background: rgba(56, 139, 253, 0.18);
-  color: #79c0ff;
-}
-
-.prompt-spice-view-btn:not(:disabled):focus-visible {
-  outline: 2px solid rgba(88, 166, 255, 0.7);
-  outline-offset: -2px;
-  opacity: 1;
-}
-
-.prompt-spice-group--ready .prompt-spice-view-btn:not(:disabled) {
-  opacity: 0.9;
 }
 
 .prompt-spice-tip {

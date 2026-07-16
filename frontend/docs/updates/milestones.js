@@ -15,7 +15,7 @@ export const MILESTONE_UPDATES = [
     title: "Render history in timeline",
     summary:
       "The project timeline now colors 2.0 prompts yellow, renders purple, and shows prompt text plus tracked render cost metadata directly in history.",
-    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    visual: "/docs/media/timeline-render-history.png?v=20260715-card",
     href: "/",
   },
   {
@@ -25,7 +25,7 @@ export const MILESTONE_UPDATES = [
     title: "Management feedback DMs",
     summary:
       "Admins can now ask follow-up questions from suggestion and bug reports, sending realtime chat notifications to users without refreshing the dashboard.",
-    visual: "/docs/media/share-folder.gif?v=20260715-real",
+    visual: "/docs/media/management-feedback-dms.png?v=20260715-card",
     href: "/admin-dashboard.html",
   },
   {
@@ -35,7 +35,7 @@ export const MILESTONE_UPDATES = [
     title: "Shared workspaces folder",
     summary:
       "Shared workspaces now live under a dedicated Shared workspaces group with a compact folder menu for choosing which ones appear in the project browser.",
-    visual: "/docs/media/share-folder.gif?v=20260715-real",
+    visual: "/docs/media/workspaces.gif?v=20260715-real",
     href: "/",
   },
   {
@@ -45,7 +45,6 @@ export const MILESTONE_UPDATES = [
     title: "Discord authorized app linking",
     summary:
       "Users can now link Discord from Preferences so Render bot alerts can DM them when teammates tag them in project chat.",
-    visual: "/docs/media/share-folder.gif?v=20260715-real",
     href: "/",
   },
   {
@@ -65,7 +64,6 @@ export const MILESTONE_UPDATES = [
     title: "Discord public model announcements",
     summary:
       "When a project is pushed to Public, Render3D can now post a Discord bot announcement with the project title, creator, description, thumbnail, and public view link.",
-    visual: "/docs/media/share-folder.gif?v=20260715-real",
     href: "/",
   },
   {
@@ -75,7 +73,7 @@ export const MILESTONE_UPDATES = [
     title: "Google new-user robot walkthrough",
     summary:
       "New Google sign-ins now pull the Google profile name and photo, then launch a Robot Arm walkthrough that introduces Generate, selection, references, Knowledge Base, Agent, and screenshots.",
-    visual: "/docs/media/ai-generate.gif?v=20260715-real",
+    visual: "/docs/media/select-object.gif?v=20260715-robot-arm",
     href: "/",
   },
   {
@@ -85,7 +83,6 @@ export const MILESTONE_UPDATES = [
     title: "Skills media cards",
     summary:
       "Skills Library cards are now a tighter square grid with animated previews, richer More Info explanations, and local GIF or short clip previews per skill.",
-    visual: "/docs/media/render-agent.gif?v=20260715-real",
     href: "/skills.html",
   },
   {
@@ -95,7 +92,6 @@ export const MILESTONE_UPDATES = [
     title: "Rigging animation banner",
     summary:
       "Rigging animation controls now appear as a collapsible top-center banner only when a playable animation or motion source is available.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
     href: "/",
   },
   {
@@ -105,7 +101,6 @@ export const MILESTONE_UPDATES = [
     title: "Saved screenshot options",
     summary:
       "The viewport Screenshot button can now ask for a capture mode, save a full-window or crop preference, and reuse that setting on the next click.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
     href: "/",
   },
   {
@@ -146,7 +141,6 @@ export const MILESTONE_UPDATES = [
     title: "Visual Skills Library",
     summary:
       "Skills Library now has a visual browser with grid, list, and compact views, sortable cards, searchable previews, expanded skill details, and store links.",
-    visual: "/docs/media/render-agent.gif?v=20260715-real",
     href: "/skills.html",
   },
   {
@@ -196,7 +190,7 @@ export const MILESTONE_UPDATES = [
     title: "Mode 2.0 selected-face length edit",
     summary:
       "Face and component refs keep edit mode on the viewport object so lengthen/extend revises the selected part instead of regenerating from an older baseline.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
+    visual: "/docs/media/picks.gif?v=20260715-robot-arm",
     href: "/getting-started.html#picks",
   },
   {
@@ -206,7 +200,6 @@ export const MILESTONE_UPDATES = [
     title: "Sticky docs topic legend",
     summary:
       "The left topic legend on Getting Started and Full Documentation stays with you while scrolling so you can jump between sections anytime.",
-    visual: "/docs/media/render-agent.gif?v=20260715-real",
     href: "/docs.html#complete-docs",
   },
   {
@@ -226,7 +219,7 @@ export const MILESTONE_UPDATES = [
     title: "Link project items to the prompt",
     summary:
       "Shift-select files in the Project browser and drag them into the AI prompt as @component references.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
+    visual: "/docs/media/picks.gif?v=20260715-robot-arm",
     href: "/getting-started.html#link-to-prompt",
   },
   {
@@ -236,7 +229,7 @@ export const MILESTONE_UPDATES = [
     title: "Solid modeling tools",
     summary:
       "Ribbon Create/Modify/Pattern plus direct tools: Press-Pull, fillet, transform, color, measure.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
+    visual: "/docs/media/select-object.gif?v=20260715-robot-arm",
     href: "/getting-started.html#solid-tools",
   },
   {
@@ -256,7 +249,6 @@ export const MILESTONE_UPDATES = [
     title: "URDF / SRDF & Motion",
     summary:
       "GLB shows shape; URDF/SRDF drive simulation. Author Jake gen_urdf()/gen_srdf(), then open Motion.",
-    visual: "/docs/media/ai-generate.gif?v=20260715-real",
     href: "/getting-started.html#rigging-urdf",
   },
   {
@@ -276,7 +268,6 @@ export const MILESTONE_UPDATES = [
     title: "Tips and tricks",
     summary:
       "Shift-select files, drag refs into the prompt, keep prompts focused, share context.",
-    visual: "/docs/media/ai-generate.gif?v=20260715-real",
     href: "/getting-started.html#tips-tricks",
   },
   {
@@ -286,7 +277,6 @@ export const MILESTONE_UPDATES = [
     title: "Send to Bambu Studio",
     summary:
       "Export now includes Send to Bambu Studio: prepares a plate-ready 3MF and opens it in your local Bambu Studio so the part lands on the build plate. Alternate open link and 3MF download are available if the app does not launch.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
     href: "/",
   },
   {
@@ -296,7 +286,6 @@ export const MILESTONE_UPDATES = [
     title: "Transparent viewport tool",
     summary:
       "Click Transparent next to Grid/Color, then click any object to see through it. Crease edges stay crisp in Studio and share preview so internals remain readable.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
     href: "/",
   },
   {
@@ -366,7 +355,7 @@ export const MILESTONE_UPDATES = [
     title: "Geometry picks in prompts",
     summary:
       "Pick faces, edges, and paths on the model so @face / @edge / @path chips appear in the prompt and edits land on the right feature.",
-    visual: "/docs/media/picks.gif?v=20260715-real",
+    visual: "/docs/media/picks.gif?v=20260715-robot-arm",
     href: "/getting-started.html#picks",
   },
   {

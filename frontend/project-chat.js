@@ -2,7 +2,7 @@
 
 import { authHeaders, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
 import { matchGettingStartedGuides } from "./getting-started-guides.js?v=20260715-chat-show-me-actions";
-import { startShowMe } from "./show-me-tour.js?v=20260715-chat-show-me-actions";
+import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀"];
 const LS_UNREAD = "render3d:projectChatUnread:v1";
