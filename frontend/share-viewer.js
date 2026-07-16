@@ -745,9 +745,19 @@ async function main() {
   }
 
   function setMobileToolsOpen(open) {
+    if (open && !document.body.classList.contains("share-viewer-expanded")) {
+      document.body.classList.add("share-viewer-expanded");
+      syncMobileFullscreenLabel();
+    }
     document.body.classList.toggle("share-mobile-tools-open", !!open);
     btnMobileTools?.setAttribute("aria-expanded", String(!!open));
     btnMobileTools?.classList.toggle("active", !!open);
+    for (const delay of [0, 80, 220]) {
+      window.setTimeout(() => {
+        resize();
+        controls.update();
+      }, delay);
+    }
   }
 
   function syncMobileFullscreenLabel() {
@@ -761,10 +771,12 @@ async function main() {
     document.body.classList.toggle("share-viewer-expanded", !!expanded);
     if (expanded) setMobileToolsOpen(false);
     syncMobileFullscreenLabel();
-    requestAnimationFrame(() => {
-      resize();
-      fitCamera();
-    });
+    for (const delay of [0, 80, 220]) {
+      window.setTimeout(() => {
+        resize();
+        fitCamera();
+      }, delay);
+    }
   }
 
   function syncSectionAvailability() {

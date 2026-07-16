@@ -966,12 +966,17 @@ body.theme-light .gizmo-panel .muted {
   display: grid;
   gap: 4px;
 }
-.texture-profile-name input {
+.texture-profile-name input,
+.texture-profile-target select {
   background: #0d1117;
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
+}
+.texture-profile-target {
+  display: grid;
+  gap: 4px;
 }
 .texture-profile-actions {
   flex-wrap: wrap;
@@ -34018,6 +34023,25 @@ body.docs-gif-lightbox-open {
   line-height: 1.55;
 }
 
+.render-texture-target {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.render-texture-target select {
+  width: 100%;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.94);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+}
+
 .render-texture-actions {
   display: flex;
   justify-content: flex-end;
@@ -34068,7 +34092,7 @@ body.docs-gif-lightbox-open {
   top: auto;
   bottom: 24px;
   left: auto;
-  width: min(420px, calc(100vw - 24px));
+  width: min(340px, calc(100vw - 24px));
   height: min(460px, calc(100vh - 120px));
   max-height: none;
   border-radius: 16px;

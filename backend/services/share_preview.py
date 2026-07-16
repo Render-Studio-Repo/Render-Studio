@@ -50,6 +50,12 @@ def _cad_stem_from_snapshot(snapshot_name: str) -> str:
     return base[:idx] if idx > 0 else base
 
 
+def _share_og_output_stem(snapshot_name: str) -> str:
+    """Human-facing OG filenames should not expose internal ISO snapshot labels."""
+    stem = _snapshot_base_stem(snapshot_name)
+    return stem.replace("_snapshot_iso_", "_snapshot_").replace("_snapshot_iso", "_snapshot")
+
+
 def _is_share_preview_background_pixel(r: int, g: int, b: int, a: int) -> bool:
     if a == 0:
         return True
@@ -659,7 +665,7 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
     if not src.is_file():
         return None
     # Filename busts messenger caches that still hold grey clay / bottom-right logo OGs.
-    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og_color.png"
+    out = project_path / f"{_share_og_output_stem(src.name)}_share_og_color.png"
     try:
         from PIL import Image
 

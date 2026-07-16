@@ -172,6 +172,9 @@
       background: linear-gradient(135deg, #238636, #2ea043);
       color: #fff;
     }
+    body.share-viewer-expanded header.share-top > div:first-child {
+      display: none !important;
+    }
     #share-viewer {
       position: relative;
       min-height: 0;
@@ -1323,6 +1326,6 @@
       document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
     }
   </script>
-  <script type="module" src="/share-viewer.js?v=20260716-share-mobile-tools"></script>
+  <script type="module" src="/share-viewer.js?v=20260716-tools-fullscreen-title"></script>
 </body>
 </html>

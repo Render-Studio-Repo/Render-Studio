@@ -9,6 +9,7 @@ import { authHeaders, getToken } from "./auth.js?v=20260715-auth-connect-social"
 export function createTexturePanel({
   api,
   getProjectId = () => null,
+  getTargets = () => [],
   onStatus = null,
   onApply = null,
   onSaveRequest = null,
@@ -52,6 +53,10 @@ export function createTexturePanel({
             <span class="muted small">Name</span>
             <input type="text" maxlength="80" data-texture-name />
           </label>
+          <label class="texture-profile-target">
+            <span class="muted small">Apply to model</span>
+            <select data-texture-target></select>
+          </label>
           <p class="muted small" data-texture-meta></p>
           <div class="texture-profile-actions">
             <button type="button" class="btn secondary btn-compact" data-texture-favorite>Favorite</button>
@@ -74,6 +79,7 @@ export function createTexturePanel({
   let textures = [];
   let filter = "all";
   let selectedId = null;
+  let selectedTarget = "";
   let authBlobUrls = [];
 
   function setStatus(text, kind = "") {
@@ -130,6 +136,7 @@ export function createTexturePanel({
       meta.textContent = bits.join(" · ");
     }
     if (favBtn) favBtn.textContent = texture.favorite ? "Unfavorite" : "Favorite";
+    renderTargetSelect();
     try {
       const sphereUrl = await authImageUrl(texture.sphere_url || texture.source_url);
       const sourceUrl = await authImageUrl(texture.source_url);
@@ -140,6 +147,26 @@ export function createTexturePanel({
     } catch {
       /* keep previous images */
     }
+  }
+
+  function renderTargetSelect() {
+    const select = profileEl.querySelector("[data-texture-target]");
+    if (!select) return;
+    const targets = (getTargets?.() || []).filter((target) => target?.filename);
+    if (!targets.length) {
+      select.innerHTML = `<option value="">No loaded models</option>`;
+      select.disabled = true;
+      selectedTarget = "";
+      return;
+    }
+    const current = selectedTarget && targets.some((target) => target.filename === selectedTarget)
+      ? selectedTarget
+      : targets[0].filename;
+    selectedTarget = current;
+    select.disabled = false;
+    select.innerHTML = targets.map((target) => (
+      `<option value="${escapeHtml(target.filename)}"${target.filename === current ? " selected" : ""}>${escapeHtml(target.label || target.filename)}</option>`
+    )).join("");
   }
 
   function renderGrid() {
@@ -285,8 +312,9 @@ export function createTexturePanel({
       return;
     }
     try {
+      const target = profileEl.querySelector("[data-texture-target]")?.value || selectedTarget || "";
       setStatus(`Applying texture to ${scope}…`);
-      await onApply?.(texture, scope);
+      await onApply?.(texture, scope, { targetFilename: target });
       setStatus(`Applied “${texture.name}” to ${scope}.`, "ok");
     } catch (err) {
       setStatus(err.message || "Could not apply texture.", "error");
@@ -349,6 +377,9 @@ export function createTexturePanel({
     if (texture) void toggleFavorite(texture.id, !texture.favorite);
   });
   profileEl.querySelector("[data-texture-name]")?.addEventListener("change", () => void renameSelected());
+  profileEl.querySelector("[data-texture-target]")?.addEventListener("change", (event) => {
+    selectedTarget = event.currentTarget?.value || "";
+  });
   profileEl.querySelector("[data-texture-delete]")?.addEventListener("click", () => void deleteSelected());
   profileEl.querySelector("[data-texture-apply-part]")?.addEventListener("click", () => void applySelected("part"));
   profileEl.querySelector("[data-texture-apply-faces]")?.addEventListener("click", () => void applySelected("faces"));

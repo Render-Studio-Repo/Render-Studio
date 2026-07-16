@@ -107,7 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-lib";
+import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-targets";
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
@@ -11093,6 +11093,8 @@ function openGenerativeEdits() {
 }
 
 function launchViewportTool(toolId) {
+  closeMobilePanels();
+  syncViewportForToolActivation();
   if (toolId === "generative_edits") {
     return openGenerativeEdits();
   }
@@ -11295,6 +11297,19 @@ function resize() {
   renderer.setSize(w, h);
   sketchEditor.resize?.();
   collab?.resizeLabels();
+}
+
+function syncViewportForToolActivation({ fit = false } = {}) {
+  renderer.domElement?.setAttribute?.("tabindex", "0");
+  renderer.domElement?.focus?.({ preventScroll: true });
+  for (const delay of [0, 80, 220]) {
+    window.setTimeout(() => {
+      resize();
+      controls.update();
+      viewCube.update?.();
+      if (fit && currentMesh) fitCamera();
+    }, delay);
+  }
 }
 
 function refreshViewportAfterLayoutChange({ fit = false } = {}) {
@@ -14909,11 +14924,12 @@ const catalogPanel = createCatalogPanel({
 const texturePanel = createTexturePanel({
   api,
   getProjectId: () => projectId,
+  getTargets: () => textureTargetEntries(),
   onStatus: (kind, text) => {
     if (text) setEditStatus(kind || "ok", text);
   },
-  onApply: async (texture, scope) => {
-    await applyLibraryTexture(texture, scope);
+  onApply: async (texture, scope, options = {}) => {
+    await applyLibraryTexture(texture, scope, options);
   },
 });
 
@@ -20497,6 +20513,7 @@ const PICK_HINTS = {
 };
 
 function activatePickMode(mode) {
+  syncViewportForToolActivation();
   if (mode !== "line") cancelLinePath();
   setPickMode(mode);
   document.querySelectorAll(".pick-btn").forEach((btn) => {
@@ -22449,9 +22466,35 @@ async function authTextureUrlToDataUrl(url) {
   return blobToDataUrl(blob);
 }
 
-async function applyLibraryTexture(texture, scope = "object") {
+function textureTargetEntries() {
+  const seen = new Set();
+  const entries = [];
+  const add = (filename, label = "") => {
+    if (!filename || seen.has(filename) || !projectAssembly.has(filename)) return;
+    seen.add(filename);
+    entries.push({
+      filename,
+      label: label || formatComponentDisplayLabel(filename),
+    });
+  };
+  if (selectedFile && projectAssembly.has(selectedFile)) add(selectedFile, `${formatComponentDisplayLabel(selectedFile)} (selected)`);
+  for (const entry of visiblePromptTargetEntries()) add(entry.name, promptTargetEntryLabel(entry));
+  for (const [name] of projectAssembly.list()) add(name, formatComponentDisplayLabel(name));
+  return entries;
+}
+
+function resolveTextureTargetFilename(preferredFilename = "") {
+  const preferred = String(preferredFilename || "").trim();
+  if (preferred && projectAssembly.has(preferred)) return preferred;
+  const matched = assemblyCatalogMatchingStem(preferred);
+  if (matched) return matched;
+  if (selectedFile && projectAssembly.has(selectedFile)) return selectedFile;
+  return textureTargetEntries()[0]?.filename || null;
+}
+
+async function applyLibraryTexture(texture, scope = "object", { targetFilename = "" } = {}) {
   if (!projectId) throw new Error("Open a project first");
-  const filename = selectedColorFilename();
+  const filename = resolveTextureTargetFilename(targetFilename || selectedColorFilename());
   if (!filename) {
     throw new Error(scope === "faces" ? "Open a model and pick faces first." : "Select a part or object first.");
   }
@@ -22568,24 +22611,25 @@ function renderedTextureOutputFilename(baseFilename) {
   return `${stem}_edited_${stamp}.glb`;
 }
 
-async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename }) {
-  if (!projectId || !baseFilename) {
+async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename, targetFilename = "" }) {
+  const resolvedBase = resolveTextureTargetFilename(targetFilename || baseFilename);
+  if (!projectId || !resolvedBase) {
     setEditStatus("error", "Open a model before applying a rendered texture.");
     return;
   }
   closeRenderedTexturePrompt();
   try {
-    setEditStatus("loading", `Wrapping rendered texture onto ${baseFilename}...`);
-    const catalogName = projectAssembly.has(baseFilename)
-      ? baseFilename
-      : assemblyCatalogMatchingStem(baseFilename);
+    setEditStatus("loading", `Wrapping rendered texture onto ${resolvedBase}...`);
+    const catalogName = projectAssembly.has(resolvedBase)
+      ? resolvedBase
+      : assemblyCatalogMatchingStem(resolvedBase);
     const sourceObject = catalogName ? projectAssembly.get(catalogName) : null;
     if (!sourceObject) throw new Error("Load the target model in the viewport before applying the rendered texture.");
 
     const texture = await renderedImageUrlToTexture(renderUrl);
     const texturedObject = applyTextureToModelClone(sourceObject, texture);
     const glbBuffer = await exportObjectToGlb(texturedObject);
-    const filename = renderedTextureOutputFilename(baseFilename || renderFilename);
+    const filename = renderedTextureOutputFilename(resolvedBase || renderFilename);
     const form = new FormData();
     form.append("file", new File([new Blob([glbBuffer], { type: "model/gltf-binary" })], filename, { type: "model/gltf-binary" }), filename);
     const uploaded = await api(`/api/projects/${projectId}/upload`, {
@@ -22596,11 +22640,11 @@ async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFi
     await afterModelEdit({
       filename: viewerFile,
       url: uploaded?.url || `/api/projects/${projectId}/files/${encodeURIComponent(viewerFile)}`,
-      replaceCatalog: catalogName || baseFilename,
+      replaceCatalog: catalogName || resolvedBase,
       action: "texture_wrap",
       label: "Applied rendered texture",
     });
-    setEditStatus("ok", `Wrapped rendered texture onto ${baseFilename}.`);
+    setEditStatus("ok", `Wrapped rendered texture onto ${resolvedBase}.`);
     viewerOverlay.clearError();
   } catch (err) {
     setEditStatus("error", err.message || "Could not apply rendered texture.");
@@ -22609,8 +22653,13 @@ async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFi
 }
 
 function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilename, renderPrompt }) {
-  if (!renderUrl || !baseFilename) return;
+  const resolvedBase = resolveTextureTargetFilename(baseFilename);
+  if (!renderUrl || !resolvedBase) return;
   closeRenderedTexturePrompt();
+  const targets = textureTargetEntries();
+  const targetOptions = targets.length
+    ? targets.map((target) => `<option value="${appEscapeHtml(target.filename)}"${target.filename === resolvedBase ? " selected" : ""}>${appEscapeHtml(target.label || target.filename)}</option>`).join("")
+    : `<option value="${appEscapeHtml(resolvedBase)}">${appEscapeHtml(resolvedBase)}</option>`;
   const modal = document.createElement("div");
   modal.id = "render-texture-modal";
   modal.className = "render-texture-modal";
@@ -22630,8 +22679,12 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         <h2 id="render-texture-title">Apply this rendered look to your model?</h2>
         <p>
           Render3D will use this image file as a texture map and wrap it directly around
-          <strong>${appEscapeHtml(baseFilename)}</strong>. No AI prompt is used for this wrap step.
+          the selected model. No AI prompt is used for this wrap step.
         </p>
+        <label class="render-texture-target">
+          <span>Apply to model</span>
+          <select id="render-texture-target">${targetOptions}</select>
+        </label>
         <div class="render-texture-actions">
           <button type="button" class="btn secondary" data-render-texture-close>Not now</button>
           <button type="button" class="btn secondary" id="render-texture-save">Save to Textures</button>
@@ -22645,7 +22698,8 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
     el.addEventListener("click", closeRenderedTexturePrompt);
   });
   modal.querySelector("#render-texture-apply")?.addEventListener("click", () => {
-    void applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename, renderPrompt });
+    const targetFilename = modal.querySelector("#render-texture-target")?.value || resolvedBase;
+    void applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename: resolvedBase, targetFilename, renderPrompt });
   });
   modal.querySelector("#render-texture-save")?.addEventListener("click", () => {
     void (async () => {
@@ -22659,7 +22713,7 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         await texturePanel?.saveFromRender?.({
           sourceDataUrl: dataUrl,
           name: (renderFilename || "Rendered texture").replace(/\.[^.]+$/, "") || "Rendered texture",
-          sourceLabel: baseFilename ? `From render · ${baseFilename}` : "From render",
+          sourceLabel: resolvedBase ? `From render · ${resolvedBase}` : "From render",
           projectId: projectId,
           favorite: false,
         });
