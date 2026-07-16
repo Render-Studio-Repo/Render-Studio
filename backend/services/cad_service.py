@@ -483,6 +483,44 @@ def is_editable_brep_step(path: Path | str) -> bool:
     return classify_step_file_kind(path) == "editable_brep"
 
 
+def _native_brep_parent_stems(stem: str) -> list[str]:
+    """Candidate source stems for edited/timestamped mesh variants."""
+    raw = str(stem or "").strip()
+    if not raw:
+        return []
+    variants: list[str] = []
+
+    def add(value: str) -> None:
+        value = value.strip("_-.")
+        if value and value not in variants:
+            variants.append(value)
+
+    add(raw)
+    current = raw
+    changed = True
+    while changed:
+        changed = False
+        before = current
+        current = re.sub(r"__faceted$", "", current, flags=re.I)
+        current = re.sub(r"_(edited|pulled|clean|mirrored|extruded|body)(?:_\d{8,}(?:_\d+)?)?$", "", current, flags=re.I)
+        current = re.sub(r"_(?:\d{8,})(?:_\d+)?$", "", current, flags=re.I)
+        current = re.sub(r"_v\d+$", "", current, flags=re.I)
+        if current != before:
+            add(current)
+            changed = True
+
+    # Also handle variants with an edit marker in the middle:
+    # foo_202607..._2_edited_202607... -> foo_202607..._2 -> foo
+    for marker in ("_edited_", "_pulled_", "_mirrored_", "_extruded_", "_body_"):
+        idx = raw.lower().rfind(marker)
+        if idx > 0:
+            prefix = raw[:idx]
+            add(prefix)
+            stripped = re.sub(r"_(?:\d{8,})(?:_\d+)?$", "", prefix, flags=re.I)
+            add(stripped)
+    return variants
+
+
 def _has_native_step_provenance(project_path: Path, stem: str) -> bool:
     """True when a generative source likely owns `{stem}.step` as real B-rep."""
     project_path = Path(project_path)
@@ -493,12 +531,12 @@ def _has_native_step_provenance(project_path: Path, stem: str) -> bool:
     if (project_path / f".{stem}.step.js").is_file():
         return True
     # Edited/pulled meshes still point back to the generative base.
-    base = re.sub(r"(__faceted|_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
-    if base and base != stem:
-        if (project_path / f"{base}.py").is_file():
-            return True
-        if (project_path / f"{base}.step").is_file() and is_editable_brep_step(project_path / f"{base}.step"):
-            return True
+    for base in _native_brep_parent_stems(stem):
+        if base and base != stem:
+            if (project_path / f"{base}.py").is_file():
+                return True
+            if (project_path / f"{base}.step").is_file() and is_editable_brep_step(project_path / f"{base}.step"):
+                return True
     return False
 
 
@@ -512,10 +550,10 @@ def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
         candidates.append(project_path / safe)
     for suffix in (".step", ".stp"):
         candidates.append(project_path / f"{stem}{suffix}")
-    base = re.sub(r"(__faceted|_edited|_pulled|_clean|_mirrored|_v\d+)+$", "", stem, flags=re.I)
-    base_variants = [base]
-    if base.startswith("."):
-        base_variants.append(base[1:])
+    base_variants = _native_brep_parent_stems(stem)
+    for base in list(base_variants):
+        if base.startswith("."):
+            base_variants.append(base[1:])
     for variant in list(base_variants):
         if variant.lower().endswith((".step", ".stp")):
             base_variants.append(Path(variant).stem)
