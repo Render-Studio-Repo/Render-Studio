@@ -1223,6 +1223,14 @@ function applyPromptModeUI(mode = promptMode) {
   syncCodexToggleVisibility(promptMode);
 }
 
+function preservePromptModeAfterAttach(modeBeforeAttach = promptMode) {
+  const mode = String(modeBeforeAttach || "render").toLowerCase();
+  if (!["render", "draw", "v2", "fusion", "architect"].includes(mode)) return;
+  if (promptMode !== mode || !document.querySelector(`[data-prompt-mode="${mode}"]`)?.classList.contains("active")) {
+    applyPromptModeUI(mode);
+  }
+}
+
 function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standard", pendingStart = false } = {}) {
   if (!pid) return;
   if (generationPollTimer) {
@@ -3384,6 +3392,7 @@ function setPromptAttachBusy(busy, message = "") {
 async function addPromptCadFiles(files) {
   const list = [...files].filter((file) => isPromptCadFile(file));
   if (!list.length) return;
+  const modeBeforeAttach = promptMode;
   let added = 0;
   const total = list.length;
   showAiComposePanel();
@@ -3493,6 +3502,7 @@ async function addPromptCadFiles(files) {
     }
   } finally {
     setPromptAttachBusy(false);
+    preservePromptModeAfterAttach(modeBeforeAttach);
   }
   if (!restoringModelPromptState) saveActiveModelPromptState();
 }
@@ -3501,6 +3511,7 @@ async function addPromptDxfFiles(files) {
   const MAX_DXF_CHARS = 400_000;
   const list = [...files];
   if (!list.length) return;
+  const modeBeforeAttach = promptMode;
   let added = 0;
   const total = list.length;
   showAiComposePanel();
@@ -3578,6 +3589,7 @@ async function addPromptDxfFiles(files) {
     }
   } finally {
     setPromptAttachBusy(false);
+    preservePromptModeAfterAttach(modeBeforeAttach);
   }
   if (!restoringModelPromptState) saveActiveModelPromptState();
 }
@@ -3635,6 +3647,7 @@ function handlePromptComposeDragleave(e) {
 }
 
 async function handlePromptComposeDrop(e) {
+  const modeBeforeAttach = promptMode;
   const componentRefs = droppedExplorerRefs(e);
   if (componentRefs.length) {
     e.preventDefault();
@@ -3644,6 +3657,7 @@ async function handlePromptComposeDrop(e) {
     const added = addComponentPromptReferences(componentRefs);
     if (added > 0) {
       const componentCount = composer.getReferences().filter((r) => r.type === "component").length;
+      preservePromptModeAfterAttach(modeBeforeAttach);
       setEditStatus(
         "ok",
         added === 1
@@ -3664,6 +3678,7 @@ async function handlePromptComposeDrop(e) {
       cadFiles.length === 1 ? `Uploading CAD ${cadFiles[0].name}…` : `Uploading ${cadFiles.length} CAD files…`
     );
     await addPromptCadFiles(cadFiles);
+    preservePromptModeAfterAttach(modeBeforeAttach);
     return;
   }
   const dxfFiles = droppedDxfFiles(e);
@@ -3674,6 +3689,7 @@ async function handlePromptComposeDrop(e) {
     promptImageDrop?.classList.remove("dragging");
     setPromptAttachBusy(true, dxfFiles.length === 1 ? `Loading DXF ${dxfFiles[0].name}…` : `Loading ${dxfFiles.length} DXF files…`);
     await addPromptDxfFiles(dxfFiles);
+    preservePromptModeAfterAttach(modeBeforeAttach);
     return;
   }
   const docFiles = droppedDocumentFiles(e);
@@ -3683,6 +3699,7 @@ async function handlePromptComposeDrop(e) {
     promptPaneCompose?.classList.remove("dragging-image");
     promptImageDrop?.classList.remove("dragging");
     await addPromptDocumentFiles(docFiles);
+    preservePromptModeAfterAttach(modeBeforeAttach);
     return;
   }
   const files = droppedImageFiles(e);
@@ -4012,7 +4029,7 @@ const promptHistory = createPromptHistoryUI({
   },
 });
 
-let promptMode = "v2";
+let promptMode = "render";
 const PROMPT_SPEED_KEY = "render3d:prompt-speed:v1";
 const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
 const CODEX_KEY = "render3d:codex:v1";
@@ -4697,6 +4714,10 @@ document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
     applyPromptModeUI(btn.dataset.promptMode || "render");
   });
 });
+
+applyPromptModeUI(
+  document.querySelector("[data-prompt-mode].active")?.dataset?.promptMode || "render",
+);
 
 function setFusionTarget(target) {
   fusionTarget = target === "fusion360" ? "fusion360" : "in_app";

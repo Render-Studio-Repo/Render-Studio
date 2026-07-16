@@ -15368,19 +15368,19 @@ Rules for improved_prompt:
 
 IMPROVE_RENDER_PROMPT_SYSTEM = """You rewrite user prompts into stronger Render-mode prompts for Render3D.
 
-Render mode generates a model meant to look right when shown / rendered in the viewport — clear shape, proportions, materials, and presentation — not a Mode 2.0 parametric feature tree.
+Render mode generates a photoreal image from the current viewport/model reference. It should describe scene, environment, lighting, camera, materials, and mood, not Mode 2.0 CAD geometry or a parametric feature tree.
 
 Return JSON only:
 {"improved_prompt":"..."}
 
 Rules for improved_prompt:
 - Keep the user's intent and subject. Do not invent a totally different object.
-- Optimize for how the object should LOOK when rendered: silhouette, proportions, major volumes, surface finish, color/material, and grounding on a flat floor.
-- Call out visual details that help rendering: matte vs glossy, metal/plastic/wood, soft edges vs sharp, open vs solid, thin walls vs chunky, symmetry.
-- Include a sensible size envelope in mm when the user gave no scale (overall length × width × height).
+- Optimize for the image render: environment, lighting, camera angle, surface finish, color/material, shadows, reflections, and grounding/contact with the scene.
+- Preserve the current model geometry as the subject. Do not ask to add, remove, redesign, or reshape parts unless the user explicitly asks.
+- Include scale cues only when they help the scene (for example tabletop, kitchen counter, outdoor pavement, hand-scale product shot).
 - Prefer concrete visual nouns over CAD jargon (avoid “extrude, loft, pocket, pad, feature tree”).
-- State orientation clearly so it sits upright on the ground (e.g. wheels on floor, wings level, base down).
-- For edits, describe the visible change to make (what should look different in the render).
+- State orientation and placement clearly so the current model appears naturally in the scene.
+- For edits, describe the visible render change only (material, lighting, background, camera), not CAD feature edits.
 - Put the entire rewrite inside the improved_prompt string. Escape newlines as \\n inside the JSON string.
 - Do not mention that you are an AI or that you rewrote the prompt.
 - Keep under 1200 characters when possible; hard max 4000.
@@ -15414,11 +15414,11 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         "architect": "Modular architecture / room kit parts with separate named bodies and snap interfaces.",
         "draw": "Direct modeling edit of selected faces/edges. Be specific about which features change.",
         "render": (
-            "Render mode — improve for how the object should look when rendered in the viewport "
-            "(shape, proportions, materials, finish, upright orientation). Not Mode 2.0 parametric instructions."
+            "Render mode: improve for a photoreal image render using the current viewport/model as the subject "
+            "(environment, lighting, camera, material finish). Do not convert it into Mode 2.0 CAD instructions."
         ),
         "standard": (
-            "Render / standard generation — improve for clear visual geometry and presentation, "
+            "Render / standard generation: improve for a clear photoreal image render, "
             "not Mode 2.0 feature-tree wording."
         ),
     }.get(mode, "General generation. Include shape, size, and how it should look when rendered.")
