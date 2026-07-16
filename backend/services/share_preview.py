@@ -510,33 +510,12 @@ def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> st
 
 
 def _draw_render3d_badge(image: Any) -> None:
-    """Stamp a large Render3D wordmark (logo + text, no pill) in the top-right."""
-    from PIL import Image, ImageDraw, ImageFont
+    """Stamp icon in the top-right and a metallic Render3D wordmark bottom-right."""
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
     width, height = image.size
-    margin = max(20, int(min(width, height) * 0.03))
-    # Compact top-right brand mark — readable in unfurls without covering the model.
-    mark_h = max(56, min(96, int(height * 0.09)))
-    icon_size = mark_h
-    gap = max(10, int(mark_h * 0.14))
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(28, int(mark_h * 0.52)))
-    except Exception:
-        try:
-            font = ImageFont.truetype("DejaVuSans.ttf", max(28, int(mark_h * 0.52)))
-        except Exception:
-            font = ImageFont.load_default()
-
-    text = "Render3D"
-    draw = ImageDraw.Draw(image, "RGBA")
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
-    total_w = icon_size + gap + text_w
-    x0 = max(margin, width - total_w - margin)
-    y0 = margin
-    icon_y = y0 + max(0, (mark_h - icon_size) // 2)
-    text_y = y0 + max(0, (mark_h - text_h) // 2) - 2
+    margin = max(18, int(min(width, height) * 0.028))
+    icon_size = max(72, min(112, int(height * 0.095)))
 
     logo_paths = [
         Path(__file__).resolve().parents[2] / "frontend" / "render3d-logo.png",
@@ -552,23 +531,85 @@ def _draw_render3d_badge(image: Any) -> None:
                 logo = None
     if logo is not None:
         logo = logo.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
-        image.alpha_composite(logo, (x0, icon_y))
+        image.alpha_composite(logo, (width - icon_size - margin, margin))
     else:
         # Fallback drawn mark if logo assets are missing.
-        draw.ellipse([x0, icon_y, x0 + icon_size, icon_y + icon_size], fill=(88, 166, 255, 255))
+        draw = ImageDraw.Draw(image, "RGBA")
+        x0 = width - icon_size - margin
+        y0 = margin
+        draw.ellipse([x0, y0, x0 + icon_size, y0 + icon_size], fill=(88, 166, 255, 255))
         draw.polygon(
             [
-                (x0 + icon_size * 0.30, icon_y + icon_size * 0.24),
-                (x0 + icon_size * 0.78, icon_y + icon_size * 0.50),
-                (x0 + icon_size * 0.30, icon_y + icon_size * 0.76),
+                (x0 + icon_size * 0.30, y0 + icon_size * 0.24),
+                (x0 + icon_size * 0.78, y0 + icon_size * 0.50),
+                (x0 + icon_size * 0.30, y0 + icon_size * 0.76),
             ],
             fill=(230, 237, 243, 255),
         )
 
-    text_x = x0 + icon_size + gap
-    # Soft shadow so white text stays readable on bright model surfaces too.
-    draw.text((text_x + 2, text_y + 2), text, font=font, fill=(0, 0, 0, 160))
-    draw.text((text_x, text_y), text, font=font, fill=(245, 248, 252, 255))
+    text = "Render3D"
+    word_h = max(84, min(150, int(height * 0.13)))
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(48, int(word_h * 0.72)))
+    except Exception:
+        try:
+            font = ImageFont.truetype("DejaVuSans.ttf", max(48, int(word_h * 0.72)))
+        except Exception:
+            font = ImageFont.load_default()
+
+    draw = ImageDraw.Draw(image, "RGBA")
+    bbox = draw.textbbox((0, 0), text, font=font, stroke_width=max(1, int(word_h * 0.025)))
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    text_x = max(margin, width - text_w - margin)
+    text_y = max(margin, height - text_h - margin)
+
+    shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow, "RGBA")
+    stroke = max(2, int(word_h * 0.035))
+    shadow_draw.text(
+        (text_x + 5, text_y + 5),
+        text,
+        font=font,
+        fill=(0, 0, 0, 190),
+        stroke_width=stroke,
+        stroke_fill=(0, 0, 0, 210),
+    )
+    image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=max(1, int(word_h * 0.02)))))
+
+    mask = Image.new("L", image.size, 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.text((text_x, text_y), text, font=font, fill=255, stroke_width=stroke, stroke_fill=255)
+
+    metal = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    metal_px = metal.load()
+    top = max(0, text_y)
+    bottom = min(height - 1, text_y + text_h + stroke * 2)
+    span = max(1, bottom - top)
+    bands = [
+        (238, 246, 255),
+        (142, 155, 172),
+        (255, 255, 255),
+        (92, 104, 121),
+        (221, 229, 239),
+    ]
+    for y in range(top, bottom + 1):
+        t = (y - top) / span
+        pos = t * (len(bands) - 1)
+        idx = min(len(bands) - 2, int(pos))
+        frac = pos - idx
+        c0, c1 = bands[idx], bands[idx + 1]
+        color = tuple(int(c0[i] + (c1[i] - c0[i]) * frac) for i in range(3))
+        for x in range(max(0, text_x - stroke), min(width, text_x + text_w + stroke * 2)):
+            metal_px[x, y] = (*color, 255)
+    image.paste(metal, (0, 0), mask)
+
+    highlight = ImageDraw.Draw(image, "RGBA")
+    highlight.line(
+        [(text_x + stroke, text_y + max(4, int(text_h * 0.22))), (text_x + text_w - stroke, text_y + max(4, int(text_h * 0.22)))],
+        fill=(255, 255, 255, 80),
+        width=max(1, int(word_h * 0.018)),
+    )
 
 
 def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:

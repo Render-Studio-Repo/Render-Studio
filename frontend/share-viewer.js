@@ -508,27 +508,25 @@ async function main() {
         }
       }
     }
-    let near = Math.max(dist * 0.0002, 0.00005);
+    let near = Math.max(radius * 0.002, dist * 0.002, 0.001);
     if (Number.isFinite(minDepth) && minDepth > 1e-4) {
-      near = Math.min(near, minDepth * 0.35);
+      near = Math.min(near, minDepth * 0.45);
     } else {
       near = Math.min(near, Math.max(dist * 0.00005, 0.00005));
     }
     let far = Math.max(
-      Number.isFinite(maxDepth) ? maxDepth + radius * 2 : 0,
-      dist + radius * 8,
-      dist * 250,
-      orbitRadius * 120,
+      Number.isFinite(maxDepth) ? maxDepth + radius * 2.5 : 0,
+      dist + radius * 4,
+      orbitRadius * 8,
       200,
     );
-    const maxRatio = 1e6;
+    const maxRatio = 2e5;
     if (far / Math.max(near, 1e-8) > maxRatio) {
       const cappedNear = far / maxRatio;
       if (Number.isFinite(minDepth) && minDepth > 1e-4) {
-        near = Math.min(cappedNear, minDepth * 0.35);
-        far = Math.max(far, near * Math.min(maxRatio, 5e5));
+        near = Math.min(Math.max(near, cappedNear), minDepth * 0.45);
       } else {
-        near = Math.min(near, cappedNear);
+        near = Math.max(near, cappedNear);
       }
     }
     camera.near = near;
