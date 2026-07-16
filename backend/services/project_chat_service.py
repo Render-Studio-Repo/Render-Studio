@@ -298,11 +298,11 @@ def create_thread(
         data = _load(project_path)
         _ensure_general_thread(data, user)
         clean = (title or "New thread").strip()[:80] or "New thread"
-        role = str(workspace_role or "").lower()
-        # Managers/admins can create shared workspace threads; users get private invite threads.
+        # Normal project questions should be visible to everyone with project access.
+        # Group/invite threads remain private unless the caller explicitly shares them.
         wanted = str(visibility or "").strip().lower()
         if wanted not in {"shared", "private"}:
-            wanted = "shared" if role in {"owner", "manager", "admin"} else "private"
+            wanted = "private" if (kind == "group" or invite_user_ids) else "shared"
         profile = _profile(user.get("id")) or {}
         creator_member = {
             "id": user.get("id"),

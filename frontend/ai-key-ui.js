@@ -18,6 +18,7 @@ const MODEL_OPTIONS = {
     { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ],
   anthropic: [
+    { value: "claude-fable-5", label: "Claude Fable 5" },
     { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
     { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
     { value: "claude-4.6-sonnet", label: "Claude Sonnet 4.6" },

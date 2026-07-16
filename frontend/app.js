@@ -65,12 +65,12 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
-import { createProjectChatUI } from "./project-chat.js?v=20260716-chat-save-guard";
+import { createProjectChatUI } from "./project-chat.js?v=20260716-chat-shared-default";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-chat-show-me-actions";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260715-ai-credit-billing";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260716-fable-shared-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260715-rigging-control-tab";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";

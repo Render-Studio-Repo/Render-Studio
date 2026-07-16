@@ -654,30 +654,29 @@ export function createProjectChatUI({
       modal.innerHTML = "";
       return;
     }
-    const isManager = ["owner", "manager", "admin"].includes(String(workspaceRole || "").toLowerCase());
     modal.classList.remove("hidden");
     modal.innerHTML = `
       <div class="pc-group-card pc-thread-settings-card">
         <div class="pc-group-head">
           <div>
             <strong>Ask a question or start a thread</strong>
-            <p class="muted small">Choose whether this chat is shared with the workspace or private by invite.</p>
+            <p class="muted small">Project questions are shared with everyone who can access this project. Use private for focused invite-only chats.</p>
           </div>
           <button type="button" class="pc-icon-btn" data-pc-thread-close>Close</button>
         </div>
         <label class="pc-group-label">Question or thread title
-          <input id="pc-thread-title" type="text" maxlength="80" placeholder="${isManager ? "Design notes, render feedback, help with texture..." : "My question, private help..."}" />
+          <input id="pc-thread-title" type="text" maxlength="80" placeholder="Design notes, render feedback, help with texture..." />
         </label>
         <div class="pc-visibility-choice" role="radiogroup" aria-label="Thread visibility">
           <label class="pc-visibility-card">
-            <input type="radio" name="pc-thread-visibility" value="shared" ${isManager ? "checked" : ""} ${isManager ? "" : "disabled"} />
+            <input type="radio" name="pc-thread-visibility" value="shared" checked />
             <span>
               <strong>Shared workspace thread</strong>
               <small>Visible to everyone with access to this project.</small>
             </span>
           </label>
           <label class="pc-visibility-card">
-            <input type="radio" name="pc-thread-visibility" value="private" ${isManager ? "" : "checked"} />
+            <input type="radio" name="pc-thread-visibility" value="private" />
             <span>
               <strong>Private invite-only thread</strong>
               <small>Only invited people and workspace managers can read it.</small>
