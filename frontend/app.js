@@ -837,6 +837,8 @@ function syncStopButtonVisibility() {
 }
 
 let promptSubmitInFlight = false;
+let wiringPromptSubmitInFlight = false;
+let promptClickInFlight = false;
 
 function stopGenerationWatch() {
   if (generationPollTimer) {
@@ -847,6 +849,8 @@ function stopGenerationWatch() {
   generationWatchPid = null;
   generationWatchOverlay = null;
   promptSubmitInFlight = false;
+  wiringPromptSubmitInFlight = false;
+  promptClickInFlight = false;
   if (pid) setProjectLoading(pid, false);
   clearCanvasGenerationPending(pid);
   syncViewportGenerationOverlay({ complete: true });
@@ -2533,6 +2537,7 @@ function toggleGrid() {
 }
 
 rebuildGrid();
+syncGridToggleButtons();
 
 function applyAppTheme({ persist = false, rebuild = true, announce = false } = {}) {
   appTheme = normalizedAppTheme(appTheme);
@@ -7683,6 +7688,7 @@ function enterArchitectMode() {
   } catch (_) {}
   activatePickMode("off");
   // Bay lattice is the only grid that matters in Architect Build.
+  if (gridVisibleBeforeArchitect == null) gridVisibleBeforeArchitect = gridVisible;
   setGridVisible(false);
   // Tuck Design CAD away so the plan lattice is the stage.
   const designRoot = projectAssembly?.getRoot?.() || currentMesh;
@@ -7705,6 +7711,12 @@ function exitArchitectMode() {
   if (designRoot && Object.prototype.hasOwnProperty.call(designRoot.userData || {}, "_architectHidden")) {
     designRoot.visible = designRoot.userData._architectHidden !== false;
     delete designRoot.userData._architectHidden;
+  }
+  if (Object.prototype.hasOwnProperty.call(window, "__render3dGridBeforeArchitect")) {
+    setGridVisible(!!window.__render3dGridBeforeArchitect);
+    delete window.__render3dGridBeforeArchitect;
+  } else {
+    setGridVisible(true);
   }
   applyLeftDragMouseButtons();
 }
@@ -16021,6 +16033,13 @@ async function runWiringPrompt() {
   const status = document.getElementById("wiring-prompt-status");
   const prompt = input?.value?.trim();
   const driverLink = driverLinkInput?.value?.trim();
+  if (wiringPromptSubmitInFlight) {
+    if (status) {
+      status.className = "status loading";
+      status.textContent = "Wiring generation is already starting…";
+    }
+    return;
+  }
   if (!prompt) {
     if (status) {
       status.className = "status error";
@@ -16032,6 +16051,8 @@ async function runWiringPrompt() {
     status.className = "status loading";
     status.textContent = "Generating schematic…";
   }
+  wiringPromptSubmitInFlight = true;
+  userCancelRequested = false;
   lastPromptCopyContext = {
     projectId,
     filename: selectedFile,
@@ -16091,6 +16112,8 @@ async function runWiringPrompt() {
       status.className = wasCanceled ? "status" : "status error";
       status.textContent = wasCanceled ? "Generation canceled." : (err.message || "Wiring prompt failed.");
     }
+  } finally {
+    wiringPromptSubmitInFlight = false;
   }
 }
 
@@ -22281,8 +22304,16 @@ async function applyLibraryTexture(texture, scope = "object") {
         else if (ref.face_index != null) faceIndices.push(ref.face_index);
       }
       faceIndices = [...new Set(faceIndices.map((n) => Number(n)).filter((n) => n >= 0))];
+    } else {
+      targetMesh = objectTools.getSelection?.()?.mesh || null;
+      if (!targetMesh) {
+        sourceObject.traverse((child) => {
+          if (!targetMesh && child.isMesh && child.geometry) targetMesh = child;
+        });
+      }
     }
     if (!faceIndices.length) throw new Error("No valid face indices to texture.");
+    if (!targetMesh) throw new Error("Could not resolve which mesh the picked faces belong to.");
   }
 
   const sourceUrl = texture.source_url || texture.sphere_url;
@@ -22699,16 +22730,29 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   if (canvasAttached) prompt = augmentPromptForCanvasSketch(prompt);
   if (canvasAttached && prompt !== composer.getPromptText()) composer.setPromptText(prompt);
   if (!prompt) return;
-  if (promptSubmitInFlight) return;
+  if (promptClickInFlight || promptSubmitInFlight) {
+    const status = document.getElementById("prompt-status");
+    if (status) {
+      status.className = "status loading";
+      status.textContent = "Generation is already starting…";
+    }
+    syncStopButtonVisibility();
+    return;
+  }
+  promptClickInFlight = true;
+  window.setTimeout(() => {
+    promptClickInFlight = false;
+  }, 1500);
   if (!suppressAiComposePanelSwitch) showAiComposePanel();
   suppressAiComposePanelSwitch = false;
   // Always clear a stale timeout/error banner when the user explicitly clicks Generate.
   viewerOverlay.clearError();
   const promptStatusEl = document.getElementById("prompt-status");
-  if (promptStatusEl?.classList.contains("error")) {
-    promptStatusEl.className = "status";
-    promptStatusEl.textContent = "";
+  if (promptStatusEl) {
+    promptStatusEl.className = "status loading";
+    promptStatusEl.textContent = "Preparing generation…";
   }
+  userCancelRequested = false;
   if (workspaceModes?.isWiring?.()) {
     const wiringInput = document.getElementById("wiring-prompt-input");
     const wiringStatus = document.getElementById("wiring-prompt-status");
@@ -22785,6 +22829,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   }
   if (promptMode === "render") {
     promptSubmitInFlight = true;
+    promptClickInFlight = false;
     userCancelRequested = false;
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
     try {
@@ -22808,6 +22853,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       if (/openai key/i.test(msg)) aiKeyUi?.openRequired?.();
     } finally {
       promptSubmitInFlight = false;
+      promptClickInFlight = false;
       userCancelRequested = false;
     }
     return;
@@ -22861,6 +22907,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     : []
   ).some((ref) => String(ref?.type || "").toLowerCase() === "dxf");
   promptSubmitInFlight = true;
+  promptClickInFlight = false;
   try {
     if (hasPromptImages && !alreadyHasDxfRef) {
       const choice = await askConvertImageToDrawing();
@@ -23096,6 +23143,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   } finally {
     // Always clear submit lock so another part can be queued while jobs run.
     promptSubmitInFlight = false;
+    promptClickInFlight = false;
   }
 });
 
