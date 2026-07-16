@@ -1056,11 +1056,13 @@ async function main() {
 
   btnRotate?.addEventListener("click", () => {
     setAutoRotate(!controls.autoRotate);
+    setMobileToolsOpen(false);
   });
   setAutoRotate(true);
 
   btnFit?.addEventListener("click", () => {
     fitCamera();
+    setMobileToolsOpen(false);
   });
   btnMobileFit?.addEventListener("click", () => {
     fitCamera();
@@ -1095,6 +1097,7 @@ async function main() {
   btnWireframe?.addEventListener("click", () => {
     wireframeEnabled = !wireframeEnabled;
     syncWireframe();
+    setMobileToolsOpen(false);
   });
 
   btnTransparent?.addEventListener("click", () => {
@@ -1105,6 +1108,7 @@ async function main() {
     btnTransparent.classList.toggle("active", transparentPickEnabled);
     btnTransparent.setAttribute("aria-pressed", String(transparentPickEnabled));
     setTransparentTipVisible(transparentPickEnabled);
+    setMobileToolsOpen(false);
   });
   btnTransparentTipClose?.addEventListener("click", () => setTransparentTipVisible(false));
 
@@ -1184,7 +1188,10 @@ async function main() {
     }
   });
 
-  btnOpen?.addEventListener("click", openRemixModal);
+  btnOpen?.addEventListener("click", () => {
+    setMobileToolsOpen(false);
+    openRemixModal();
+  });
 
   btnRemixConfirm?.addEventListener("click", async () => {
     if (!getToken()) {

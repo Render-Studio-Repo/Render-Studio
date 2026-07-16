@@ -1084,7 +1084,17 @@
         border-radius: 14px;
         font-size: 0.74rem;
       }
-      body.share-viewer-expanded header.share-top,
+      body.share-viewer-expanded header.share-top {
+        position: static;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+      body.share-viewer-expanded header.share-top > div:first-child {
+        display: none;
+      }
       body.share-viewer-expanded .share-bottom {
         display: none;
       }
@@ -1313,6 +1323,6 @@
       document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
     }
   </script>
-  <script type="module" src="/share-viewer.js?v=20260716-share-depth-fighting"></script>
+  <script type="module" src="/share-viewer.js?v=20260716-share-mobile-tools"></script>
 </body>
 </html>
