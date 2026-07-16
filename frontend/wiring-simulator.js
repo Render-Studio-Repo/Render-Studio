@@ -414,6 +414,10 @@ export function createWiringSimulator(options = {}) {
   const hint = canvas.querySelector(".wiring-drop-hint");
   const notesEl = canvas.querySelector(".wiring-notes");
   const wireEditorEl = canvas.querySelector(".wiring-wire-editor");
+  const pinTooltipEl = document.createElement("div");
+  pinTooltipEl.className = "wiring-pin-tooltip hidden";
+  pinTooltipEl.setAttribute("role", "tooltip");
+  document.body.appendChild(pinTooltipEl);
   let schematicMeta = { name: "", description: "", notes: [] };
   let notesCollapsed = true;
   notesEl?.addEventListener("pointerdown", (e) => {
@@ -1514,6 +1518,45 @@ export function createWiringSimulator(options = {}) {
     return String(pin.displayLabel || pin.label || pin.id || "").trim();
   }
 
+  function pinHoverText(component, pin) {
+    const partLabel = component?.label || component?.type || "Component";
+    const pinName = String(pin?.title || pin?.label || pin?.id || "pin").trim();
+    const id = String(pin?.id || "").trim();
+    const idSuffix = id && id !== pinName ? ` · ${id}` : "";
+    return `${partLabel}: ${pinName || "pin"}${idSuffix}`;
+  }
+
+  function placePinTooltip(clientX, clientY) {
+    if (!pinTooltipEl || pinTooltipEl.classList.contains("hidden")) return;
+    const pad = 10;
+    const gap = 14;
+    const rect = pinTooltipEl.getBoundingClientRect();
+    let left = clientX + gap;
+    let top = clientY - rect.height - gap;
+    if (left + rect.width + pad > window.innerWidth) left = clientX - rect.width - gap;
+    if (top < pad) top = clientY + gap;
+    left = clamp(left, pad, Math.max(pad, window.innerWidth - rect.width - pad));
+    top = clamp(top, pad, Math.max(pad, window.innerHeight - rect.height - pad));
+    pinTooltipEl.style.left = `${Math.round(left)}px`;
+    pinTooltipEl.style.top = `${Math.round(top)}px`;
+  }
+
+  function showPinTooltip(text, eventOrElement) {
+    if (!pinTooltipEl || !text) return;
+    pinTooltipEl.textContent = text;
+    pinTooltipEl.classList.remove("hidden");
+    if (eventOrElement?.clientX != null) {
+      placePinTooltip(eventOrElement.clientX, eventOrElement.clientY);
+      return;
+    }
+    const rect = eventOrElement?.getBoundingClientRect?.();
+    if (rect) placePinTooltip(rect.right, rect.top);
+  }
+
+  function hidePinTooltip() {
+    pinTooltipEl?.classList.add("hidden");
+  }
+
   function applyPinLabelClasses(el, pin) {
     const text = pinLabelText(pin);
     if (!text) return;
@@ -1539,10 +1582,15 @@ export function createWiringSimulator(options = {}) {
     if (pin.rail === "minus") p.classList.add("wiring-pin-rail", "wiring-pin-ground");
     p.dataset.componentId = c.id;
     p.dataset.pinId = pin.id;
-    if (pin.title) p.title = pin.title;
-    else if (!p.classList.contains("wiring-pin--labeled")) p.title = pin.label || pin.id;
+    p.dataset.pinTooltip = pinHoverText(c, pin);
+    p.setAttribute("aria-label", p.dataset.pinTooltip);
     p.style.left = `${c.x + c.w * pin.x}px`;
     p.style.top = `${c.y + c.h * pin.y}px`;
+    p.addEventListener("pointerenter", (e) => showPinTooltip(p.dataset.pinTooltip, e));
+    p.addEventListener("pointermove", (e) => placePinTooltip(e.clientX, e.clientY));
+    p.addEventListener("pointerleave", hidePinTooltip);
+    p.addEventListener("focus", () => showPinTooltip(p.dataset.pinTooltip, p));
+    p.addEventListener("blur", hidePinTooltip);
     p.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       e.preventDefault();

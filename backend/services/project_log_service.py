@@ -164,7 +164,7 @@ def _sync_missing_prompt_history(project_path: Path) -> bool:
         return False
 
     try:
-        prompt_entries = prompt_history_service.list_entries(project_path, limit=200, kind="cad")
+        prompt_entries = prompt_history_service.list_entries(project_path, limit=200)
     except Exception:
         return False
     if not prompt_entries:
@@ -176,7 +176,7 @@ def _sync_missing_prompt_history(project_path: Path) -> bool:
     existing_prompt_keys = set()
     existing_text_keys = set()
     for e in entries:
-        if e.get("kind") != "prompt":
+        if e.get("kind") not in {"prompt", "render"}:
             continue
         meta = e.get("meta") or {}
         key = _prompt_log_key(
@@ -210,10 +210,14 @@ def _sync_missing_prompt_history(project_path: Path) -> bool:
         if text_key and text_key in existing_text_keys:
             continue
         label_src = prompt_text[:48] + ("…" if len(prompt_text) > 48 else "")
+        history_kind = str(pe.get("kind") or "cad").lower()
+        prompt_mode = str(pe.get("prompt_mode") or "").lower()
+        timeline_kind = "render" if history_kind == "render" or prompt_mode == "render" else "prompt"
+        prefix = "Render" if timeline_kind == "render" else "AI"
         entry = {
             "id": pid or str(uuid.uuid4())[:10],
-            "kind": "prompt",
-            "label": f"AI: {label_src}",
+            "kind": timeline_kind,
+            "label": f"{prefix}: {label_src}",
             "summary": (prompt_text[:160] + "…") if len(prompt_text) > 160 else prompt_text,
             "user_id": pe.get("user_id"),
             "user_name": pe.get("user_name"),
@@ -230,6 +234,9 @@ def _sync_missing_prompt_history(project_path: Path) -> bool:
                 "prompt_mode": pe.get("prompt_mode"),
                 "speed": pe.get("speed"),
                 "success": pe.get("success"),
+                "usage": pe.get("usage"),
+                "cost_usd": pe.get("cost_usd"),
+                "ai_calls": pe.get("ai_calls"),
                 "source": "prompt_history",
             },
         }

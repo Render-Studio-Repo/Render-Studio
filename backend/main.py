@@ -14928,9 +14928,13 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     original = (body.prompt or "").strip()
     if not original:
         raise HTTPException(400, "Prompt is required")
+    # Prompt improvement is only a rewrite/preflight step. Keep it on the fast
+    # model path so Quality CAD generation does not appear to cancel while
+    # waiting on a slow pro-model rewrite.
+    improve_speed = "fast"
     ai = _get_ai_for_user(
         user,
-        body.speed or "fast",
+        improve_speed,
         key_id=body.ai_key_id,
         key_source=body.ai_key_source,
         project_id=body.project_id,
@@ -14968,8 +14972,9 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
         f"User prompt to improve:\n{original}"
     )
-    # Prefer fast, non-reasoning improve when the model allows it. Pro only supports medium+.
-    improve_effort = "none" if (body.speed or "fast") == "fast" else "medium"
+    # Prefer fast, non-reasoning improve; the generated model still honors the
+    # user's selected quality/speed when /api/projects/{id}/prompt starts.
+    improve_effort = "none"
     call_trace: dict[str, Any] = {}
     improved = ""
     try:
@@ -15474,6 +15479,9 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
             prompt=prompt,
             size="1024x1024",
         )
+        from backend.services.ai_cost import usage_from_openai_response
+
+        render_usage = usage_from_openai_response(response)
         b64 = _extract_openai_image_b64(response)
         if not b64:
             raise RuntimeError("Image API returned no image data")
@@ -15523,6 +15531,7 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
         kind="render",
         model="gpt-image-1",
         provider="openai",
+        usage=render_usage or None,
     )
     owner = _project_owner(project_id) or {}
     if owner.get("team_id"):
@@ -15544,6 +15553,8 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
         "model": "gpt-image-1",
         "provider": "openai",
         "prompt_mode": "render",
+        "cost_usd": hist_entry.get("cost_usd") if hist_entry else None,
+        "usage": hist_entry.get("usage") if hist_entry else None,
         "file_kind": "image",
         "section": "renders",
         "base_filename": body.base_filename,
@@ -15606,6 +15617,9 @@ def render_region_edit(project_id: str, body: RenderRegionEditRequest, request: 
             prompt=edit_prompt,
             size="1024x1024",
         )
+        from backend.services.ai_cost import usage_from_openai_response
+
+        render_usage = usage_from_openai_response(response)
         b64 = _extract_openai_image_b64(response)
         if not b64:
             raise RuntimeError("Image API returned no image data")
@@ -15663,6 +15677,7 @@ def render_region_edit(project_id: str, body: RenderRegionEditRequest, request: 
         kind="render_region_edit",
         model="gpt-image-1",
         provider="openai",
+        usage=render_usage or None,
     )
     return {
         "kind": "render_region_edit",
@@ -15674,6 +15689,8 @@ def render_region_edit(project_id: str, body: RenderRegionEditRequest, request: 
         "model": "gpt-image-1",
         "provider": "openai",
         "prompt_mode": "render",
+        "cost_usd": hist_entry.get("cost_usd") if hist_entry else None,
+        "usage": hist_entry.get("usage") if hist_entry else None,
         "file_kind": "image",
         "section": "renders",
         "save_mode": save_mode,
@@ -15732,18 +15749,24 @@ def transform_file(
     src = project_path / safe
     if not src.is_file():
         raise HTTPException(404, "File not found")
-    mesh = cad_service.load_mesh(src)
+    # Transform the mesh the viewport is actually showing. After paint/texture,
+    # a STEP-backed catalog can be represented by a painted sibling GLB; using
+    # the original STEP here would reload an untextured, differently scaled twin.
+    viewer_name = cad_service.viewer_filename_for_model(safe, project_path)
+    viewer_path = project_path / viewer_name
+    transform_src = viewer_path if viewer_path.is_file() else src
+    mesh = cad_service.load_mesh(transform_src)
     transform = body.model_dump(exclude_none=True, exclude={"mode", "copy"})
     mesh = cad_service.apply_transform(mesh, transform)
     if body.copy:
-        base = src.stem.replace("_edited", "")
+        base = transform_src.stem.replace("_edited", "")
         stem = f"{base}_copy"
         i = 2
         while (project_path / f"{stem}.glb").exists():
             stem = f"{base}_copy{i}"
             i += 1
     else:
-        stem = src.stem.replace("_edited", "") + "_edited"
+        stem = transform_src.stem.replace("_edited", "") + "_edited"
     out = project_path / f"{stem}.glb"
     cad_service.export_mesh(mesh, out)
     entry = _record_history(
@@ -15754,8 +15777,8 @@ def transform_file(
         meta=transform,
         user=user,
     )
-    _append_mesh_edit(project_path, filename, {"op": "transform", "parent": filename, "child": out.name, **transform, "copy": body.copy})
-    _append_mesh_edit(project_path, safe, {"op": "transform", "parent": safe, "child": out.name, **transform, "copy": body.copy})
+    _append_mesh_edit(project_path, filename, {"op": "transform", "parent": filename, "source_mesh": transform_src.name, "child": out.name, **transform, "copy": body.copy})
+    _append_mesh_edit(project_path, safe, {"op": "transform", "parent": safe, "source_mesh": transform_src.name, "child": out.name, **transform, "copy": body.copy})
     project_store.touch_project(project_path)
     _notify_project(
         project_id,

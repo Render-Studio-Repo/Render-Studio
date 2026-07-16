@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-realtime-workspaces" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-pin-hover-tooltip" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-remember-gear" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-svg-v2" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -171,6 +171,7 @@
   (function () {
     var WALKTHROUGH_KEY = "render3d:bootWalkthroughQueued:v1";
     var WALKTHROUGH_ID_KEY = "render3d:bootWalkthroughId:v1";
+    var SKIP_BOOT_KEY = "render3d:skipStudioBootOnce:v1";
     var boot = document.getElementById("studio-boot-screen");
     var pctEl = document.getElementById("studio-boot-percent");
     var logoPctEl = document.getElementById("studio-boot-logo-percent");
@@ -194,6 +195,30 @@
       { id: "render-agent", kicker: "Render Agent", label: "Ask for help in-app" },
       { id: "cloud-sync", kicker: "Fusion / Onshape", label: "Cloud CAD sync" }
     ];
+    function shouldSkipBoot() {
+      var skip = false;
+      try {
+        skip = sessionStorage.getItem(SKIP_BOOT_KEY) === "1";
+        sessionStorage.removeItem(SKIP_BOOT_KEY);
+      } catch (e) {}
+      try {
+        var nav = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+        var ref = document.referrer ? new URL(document.referrer) : null;
+        var infoPage = ref && ref.origin === window.location.origin && /\.(?:html)$/i.test(ref.pathname) && !/\/(?:share|agent-chat)\.html$/i.test(ref.pathname);
+        skip = skip || (nav && nav.type === "back_forward" && infoPage);
+      } catch (e) {}
+      return skip;
+    }
+    if (shouldSkipBoot()) {
+      document.body.classList.remove("studio-booting");
+      if (boot) {
+        boot.classList.add("is-done");
+        boot.setAttribute("aria-busy", "false");
+        boot.remove();
+      }
+      window.__dismissStudioBoot = window.__dismissStudioBoot || function () {};
+      return;
+    }
     var tips = [
       "Type <strong>@</strong> in the AI prompt to link imported files, objects, or selected faces.",
       "Use <strong>Face</strong> pick to create @face references before asking AI to edit a surface.",
@@ -2515,7 +2540,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-realtime-workspaces"></script>
+  <script type="module" src="/app.js?v=20260715-pin-hover-tooltip"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

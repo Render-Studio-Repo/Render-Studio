@@ -1,6 +1,15 @@
 {
   "items": [
     {
+      "id": "timeline-render-history-costs",
+      "date": "2026-07-15",
+      "kind": "feature",
+      "title": "Render history in timeline",
+      "summary": "The project timeline now colors 2.0 prompts yellow, renders purple, and shows prompt text plus tracked render cost metadata directly in history.",
+      "visual": "/docs/media/ai-generate.gif?v=20260715-real",
+      "href": "/"
+    },
+    {
       "id": "management-feedback-dms",
       "date": "2026-07-15",
       "kind": "feature",

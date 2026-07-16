@@ -52,7 +52,7 @@ import {
   setObjectTransparent,
 } from "./scene-style.js?v=20260715-cad-color-restore";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
-import { createTimelineUI } from "./timeline.js?v=20260715-prompt-purple";
+import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-scene-refs";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-skills";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
@@ -100,7 +100,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-elec-none";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-pin-hover-tooltip";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260619-debug-panel-fix";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
@@ -4407,11 +4407,13 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
         prompt: original,
         mode: promptMode === "draw" ? "draw" : promptMode || "render",
         target_mode: getPromptTargetMode?.() || "new",
-        speed: getPromptGenerationSpeed(),
+        // Keep prompt rewriting quick/reliable. The actual CAD generation still
+        // uses the selected Speed/Quality value when the prompt is submitted.
+        speed: "fast",
         project_id: projectId || null,
         ...getPromptAiKeyBodyFields(),
       }),
-    }, 90000);
+    }, 120000);
     const improved = String(data?.improved_prompt || "").trim();
     if (!improved || improved === original) {
       saveSpicePromptCompare({
@@ -4998,7 +5000,7 @@ async function refreshPromptHistory() {
 }
 
 const timeline = createTimelineUI(document.getElementById("timeline-panel"), {
-  onSelect: (index) => restoreTimeline(index),
+  onSelect: (index, entry) => restoreTimeline(index, entry),
   onRestoreLatest: (index) => restoreTimelineAsLatest(index),
   onRemove: (index, entry) => removeTimelineEntry(index, entry),
 });
@@ -16926,6 +16928,7 @@ function setProjectUrl(id, { replace = false } = {}) {
   url.searchParams.set("project", String(id));
   const next = `${url.pathname}${url.search}${url.hash}`;
   window.history[replace ? "replaceState" : "pushState"]({ projectId: id }, "", next || "/");
+  rememberStudioReturnUrl();
 }
 
 function removeProjectUrlParam({ replace = true } = {}) {
@@ -16935,6 +16938,44 @@ function removeProjectUrlParam({ replace = true } = {}) {
   url.searchParams.delete("project");
   const next = `${url.pathname}${url.search}${url.hash}`;
   window.history[replace ? "replaceState" : "pushState"]({}, "", next || "/");
+  rememberStudioReturnUrl();
+}
+
+const STUDIO_RETURN_URL_KEY = "render3d:lastStudioUrl:v1";
+const SKIP_STUDIO_BOOT_KEY = "render3d:skipStudioBootOnce:v1";
+const STUDIO_INFO_PAGE_RE = /^\/(?:docs|getting-started|updates|privacy|roadmap|skills|marketplace|model-store|agent-store|knowledge-store)\.html$/;
+
+function rememberStudioReturnUrl() {
+  try {
+    const url = new URL(window.location.href);
+    if (url.origin !== window.location.origin || url.pathname !== "/") return;
+    const next = `${url.pathname}${url.search}${url.hash}` || "/";
+    sessionStorage.setItem(STUDIO_RETURN_URL_KEY, next);
+  } catch {
+    /* optional */
+  }
+}
+
+function markSkipStudioBootOnReturn() {
+  try {
+    rememberStudioReturnUrl();
+    sessionStorage.setItem(SKIP_STUDIO_BOOT_KEY, "1");
+  } catch {
+    /* optional */
+  }
+}
+
+function infoPageUrlFromSameOriginLink(anchor) {
+  if (!anchor?.href || anchor.download) return null;
+  const target = (anchor.getAttribute("target") || "").trim().toLowerCase();
+  if (target && target !== "_self") return null;
+  try {
+    const url = new URL(anchor.href, window.location.href);
+    if (url.origin !== window.location.origin) return null;
+    return STUDIO_INFO_PAGE_RE.test(url.pathname) ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 function projectIdFromSameOriginLink(anchor) {
@@ -16972,9 +17013,14 @@ async function openProjectById(id, { updateUrl = true, replaceUrl = false, throw
 }
 
 window.__openProject = openProjectById;
+rememberStudioReturnUrl();
 document.addEventListener("click", (event) => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   const anchor = event.target?.closest?.("a[href]");
+  if (infoPageUrlFromSameOriginLink(anchor)) {
+    markSkipStudioBootOnReturn();
+    return;
+  }
   const id = projectIdFromSameOriginLink(anchor);
   if (!id) return;
   event.preventDefault();
@@ -17837,16 +17883,20 @@ function isPromptLikeGenerationKind(kind) {
 }
 
 function pendingPromptTimelineEntry({ kind = "prompt", mode = "standard" } = {}) {
+  const normalizedMode = String(mode || "").toLowerCase();
   const label =
-    String(mode || "").toLowerCase() === "fusion"
-      ? "Rendering Fusion prompt…"
-      : String(mode || "").toLowerCase() === "v2"
-        ? "Rendering 2.0 prompt…"
-        : "Rendering prompt…";
+    normalizedMode === "fusion"
+      ? "Generating Fusion prompt…"
+      : normalizedMode === "v2"
+        ? "Generating 2.0 prompt…"
+        : normalizedMode === "render"
+          ? "Rendering prompt…"
+          : "Generating prompt…";
   return {
     id: "__pending_prompt__",
     kind: kind === "build" ? "build" : "prompt",
     label,
+    mode: normalizedMode || "standard",
     pending: true,
     user_id: currentUser?.id || null,
     user_name: currentUser?.display_name || null,
@@ -18257,6 +18307,63 @@ function renderWorkspaceRealtimeEditor(data = null) {
     renderRealtimeFocusMirrorPanel(data);
   }
   if (!folderEl || !projectsEl) return;
+  if (data?.workspaces) {
+    const connectedCount = data.workspaces.filter((workspace) => workspace.connected).length;
+    folderEl.innerHTML = `
+      <strong>All workspaces</strong>
+      <span>${connectedCount} Fusion-connected workspace${connectedCount === 1 ? "" : "s"} · ${data.workspaces.length} total</span>
+    `;
+    projectsEl.innerHTML = renderAllWorkspaceRealtimeOverview(data);
+    projectsEl.querySelectorAll("[data-realtime-team]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const teamId = btn.getAttribute("data-realtime-team") || "";
+        const sel = document.getElementById("team-select");
+        if (!teamId || !sel) return;
+        const hidden = hiddenWorkspaceIds();
+        if (hidden.has(teamId)) {
+          setWorkspaceVisible(teamId, true);
+          renderTeams();
+        }
+        sel.value = teamId;
+        writeSavedWorkspaceId(teamId);
+        await onWorkspaceChange({ deferProjectPick: true });
+        await refreshWorkspaceRealtimeEditor();
+      });
+    });
+    projectsEl.querySelectorAll("[data-workspace-open-component]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const pid = btn.dataset.projectId;
+        const filename = btn.dataset.filename;
+        if (!pid) return;
+        await openProjectById(pid);
+        if (filename) {
+          try {
+            const data = await api(`/api/projects/${encodeURIComponent(pid)}`);
+            const browserComponents = normalizeBrowser(data).components || [];
+            const compCandidates = [
+              ...browserComponents,
+              ...browserComponents.flatMap((entry) => entry.children || []),
+            ];
+            const comp = compCandidates.find((entry) =>
+              entry.name === filename || entry.viewer_filename === filename || entry.filename === filename
+            );
+            if (comp) await openBrowserComponent(comp);
+            enterRealtimeProjectFocus({
+              projectId: pid,
+              projectName: data?.name || "",
+              label: comp?.label || comp?.name || filename,
+              filename,
+            });
+          } catch {
+            enterRealtimeProjectFocus({ projectId: pid, label: filename, filename });
+          }
+        }
+      });
+    });
+    bindFusionBrowserSectionPersistence(projectsEl);
+    window.applyRealtimeBrowserControls?.();
+    return;
+  }
   if (!data) {
     updateWorkspaceFusionAutoSync(null);
     const teams = allTeams.length ? allTeams : [];
@@ -18657,6 +18764,96 @@ function renderWorkspaceFusionComponents(project) {
       ${renderFusionBrowserSection("Components", componentEntries.length, componentRows || renderFusionEmptyRow("No visible Fusion components yet."), { key: `components:${project.id}`, defaultOpen: false })}
       ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), { key: `bodies:${project.id}`, defaultOpen: false })}
       ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render3D project yet."), { key: `sketches:${project.id}`, defaultOpen: false })}
+    </div>
+  `;
+}
+
+function projectFileTreeRows(project, entries = [], { icon = "□", badge = "file", disabled = false } = {}) {
+  return (entries || []).map((entry) => {
+    const filename = entry.name || entry.viewer_filename || entry.filename || "";
+    const label = entry.label || entry.component_name || entry.stem || filename || entry.name || "Untitled";
+    return renderFusionBrowserItem({
+      projectId: project.id,
+      filename,
+      name: label,
+      badge: entry.format || badge,
+      icon,
+      disabled: disabled || !filename,
+    });
+  }).join("");
+}
+
+function renderWorkspaceProjectFileTree(project, { workspaceId = "" } = {}) {
+  const browser = project.browser || {};
+  const components = (browser.components || []).filter((entry) => entry?.name || entry?.viewer_filename || entry?.filename);
+  const bodies = components.flatMap((entry) => (entry.children || []).map((child) => ({ ...child, parent: entry })));
+  const sketches = browser.sketches || [];
+  const drawings = browser.drawings || [];
+  const references = browser.references || [];
+  const renders = browser.renders || [];
+  const wiring = browser.wiring || [];
+  const keyPrefix = `${workspaceId || "workspace"}:${project.id}`;
+  const componentRows = projectFileTreeRows(project, components, { icon: "▣", badge: "component" });
+  const bodyRows = bodies.map((entry) => renderFusionBrowserItem({
+    projectId: project.id,
+    filename: entry.name || entry.viewer_filename || entry.filename || "",
+    name: entry.label || entry.component_name || entry.stem || entry.name || "Body",
+    badge: entry.parent?.label || entry.parent?.stem || entry.parent?.name || "body",
+    icon: "◦",
+    child: true,
+    disabled: !(entry.name || entry.viewer_filename || entry.filename),
+  })).join("");
+  return `
+    <div class="workspace-fusion-browser workspace-realtime-file-tree">
+      ${renderFusionBrowserSection("Components", components.length, componentRows || renderFusionEmptyRow("No components yet."), { key: `all:${keyPrefix}:components`, defaultOpen: components.length > 0 })}
+      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No split bodies yet."), { key: `all:${keyPrefix}:bodies`, defaultOpen: false })}
+      ${renderFusionBrowserSection("Sketches", sketches.length, projectFileTreeRows(project, sketches, { icon: "⌁", badge: "sketch", disabled: true }) || renderFusionEmptyRow("No sketches."), { key: `all:${keyPrefix}:sketches`, defaultOpen: false })}
+      ${renderFusionBrowserSection("Drawings", drawings.length, projectFileTreeRows(project, drawings, { icon: "⌗", badge: "drawing", disabled: true }) || renderFusionEmptyRow("No drawings."), { key: `all:${keyPrefix}:drawings`, defaultOpen: false })}
+      ${renderFusionBrowserSection("References", references.length, projectFileTreeRows(project, references, { icon: "◇", badge: "reference", disabled: true }) || renderFusionEmptyRow("No reference files."), { key: `all:${keyPrefix}:references`, defaultOpen: false })}
+      ${renderFusionBrowserSection("Renders", renders.length, projectFileTreeRows(project, renders, { icon: "▧", badge: "render", disabled: true }) || renderFusionEmptyRow("No renders."), { key: `all:${keyPrefix}:renders`, defaultOpen: false })}
+      ${renderFusionBrowserSection("Wiring", wiring.length, projectFileTreeRows(project, wiring, { icon: "⎇", badge: "wiring", disabled: true }) || renderFusionEmptyRow("No wiring files."), { key: `all:${keyPrefix}:wiring`, defaultOpen: false })}
+    </div>
+  `;
+}
+
+function renderAllWorkspaceRealtimeOverview(data = {}) {
+  const workspaces = data.workspaces || [];
+  if (!workspaces.length) {
+    return `<span>No workspaces loaded yet. Sign in or refresh your workspace list, then reopen Realtime editor.</span>`;
+  }
+  const sorted = [...workspaces].sort((a, b) => Number(b.connected) - Number(a.connected));
+  return `
+    <strong>Connected workspaces and file trees</strong>
+    <p class="muted small">Fusion-connected workspaces appear first. Expand any project to browse its Render3D file tree.</p>
+    <div class="workspace-realtime-workspace-list">
+      ${sorted.map((workspace) => {
+        const team = workspace.team || {};
+        const projects = workspace.projects || [];
+        const connected = !!workspace.connected;
+        return `
+          <article class="workspace-realtime-workspace-card${connected ? " is-connected" : ""}">
+            <div class="workspace-realtime-workspace-head">
+              <div>
+                <strong>${appEscapeHtml(team.name || "Workspace")}</strong>
+                <small>${connected ? "Fusion connected" : "Render3D workspace"} · ${projects.length} project${projects.length === 1 ? "" : "s"}</small>
+              </div>
+              <button type="button" class="btn btn-compact secondary" data-realtime-team="${appEscapeHtml(team.id || "")}">Use workspace</button>
+            </div>
+            <div class="workspace-realtime-project-tree-list">
+              ${projects.length ? projects.map((project) => `
+                <details class="workspace-fusion-project-card workspace-realtime-tree-project" open>
+                  <summary class="workspace-realtime-tree-project-summary">
+                    <span>${appEscapeHtml(project.name || project.id)}</span>
+                    <small>${Number(project.file_count || 0)} files${project.fusion_mirrors?.length ? ` · ${project.fusion_mirrors.length} mirror${project.fusion_mirrors.length === 1 ? "" : "s"}` : ""}</small>
+                  </summary>
+                  ${renderWorkspaceProjectFileTree(project, { workspaceId: team.id || "" })}
+                  ${project.fusion_mirrors?.length ? renderWorkspaceFusionMirrors(project) : ""}
+                </details>
+              `).join("") : `<p class="muted small">No projects in this workspace yet.</p>`}
+            </div>
+          </article>
+        `;
+      }).join("")}
     </div>
   `;
 }
@@ -19461,9 +19658,46 @@ async function linkActiveWorkspaceToFusion() {
 async function refreshWorkspaceRealtimeEditor() {
   const teamId = getSelectedWorkspaceId();
   if (!teamId) {
-    renderWorkspaceRealtimeEditor(null);
     connectWorkspaceRealtime(null);
-    window.setRealtimeConnectionState?.("idle", "Select a workspace to connect Fusion.");
+    window.setRealtimeConnectionState?.("loading", "Loading connected workspaces and file trees…");
+    const teams = allTeams.length ? allTeams : [];
+    if (!teams.length) {
+      renderWorkspaceRealtimeEditor(null);
+      window.setRealtimeConnectionState?.("idle", "No workspaces loaded yet.");
+      return;
+    }
+    try {
+      const results = await Promise.allSettled(
+        teams.map((team) => api(`/api/teams/${encodeURIComponent(team.id)}/realtime-editor`))
+      );
+      const workspaces = results.map((result, index) => {
+        const fallbackTeam = teams[index] || {};
+        if (result.status !== "fulfilled") {
+          return {
+            team: fallbackTeam,
+            render_folder: fallbackTeam,
+            projects: [],
+            connected: false,
+            error: result.reason?.message || "Could not load workspace.",
+          };
+        }
+        const data = result.value || {};
+        const projects = data.projects || [];
+        const connected = (data.render_folder?.provider || fallbackTeam.render_folder_provider) === "fusion"
+          || projects.some((project) => project.fusion_source || (project.fusion_mirrors || []).length);
+        return {
+          ...data,
+          team: data.team || fallbackTeam,
+          projects,
+          connected,
+        };
+      });
+      renderWorkspaceRealtimeEditor({ workspaces });
+      window.setRealtimeConnectionState?.("ready", "All connected workspaces and file trees loaded");
+    } catch {
+      renderWorkspaceRealtimeEditor(null);
+      window.setRealtimeConnectionState?.("error", "Could not load workspace file trees.");
+    }
     return;
   }
   connectWorkspaceRealtime(teamId);
@@ -19741,8 +19975,15 @@ async function redoTimeline() {
   setEditStatus("ok", `Redo: ${nextEntry?.label || "next step"}`);
 }
 
-async function restoreTimeline(index) {
+async function restoreTimeline(index, entry = null) {
   if (restoringTimeline) return;
+  const targetEntry = entry || timelineData?.entries?.[index] || null;
+  if (targetEntry?.restorable === false) {
+    const cost = targetEntry.cost_usd ?? targetEntry.meta?.cost_usd;
+    const detail = cost != null ? ` · $${Number(cost).toFixed(4)}` : "";
+    setEditStatus("ok", `${targetEntry.label || "History entry"}${detail}`);
+    return;
+  }
   restoringTimeline = true;
   try {
     const data = await api(`/api/projects/${projectId}/timeline/${index}`, { method: "POST" });

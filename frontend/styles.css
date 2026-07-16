@@ -7022,6 +7022,29 @@ body.canvas-design-tab .main-column {
   box-shadow: 0 0 8px #58a6ff;
 }
 
+.wiring-pin-tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border: 1px solid rgba(88, 166, 255, 0.7);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.96);
+  color: #f0f6fc;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  white-space: normal;
+  pointer-events: none;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  backdrop-filter: blur(10px);
+}
+
+.wiring-pin-tooltip.hidden {
+  display: none;
+}
+
 .wiring-selection-box {
   position: absolute;
   z-index: 10;
@@ -8748,6 +8771,74 @@ body.canvas-design-tab .main-column {
 .workspace-realtime-team-option small {
   color: var(--muted);
   white-space: nowrap;
+}
+
+.workspace-realtime-workspace-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.workspace-realtime-workspace-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 14px;
+  background: rgba(13, 17, 23, 0.68);
+}
+
+.workspace-realtime-workspace-card.is-connected {
+  border-color: rgba(63, 185, 80, 0.34);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(63, 185, 80, 0.12), transparent 32%),
+    rgba(13, 17, 23, 0.74);
+}
+
+.workspace-realtime-workspace-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-realtime-workspace-head div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workspace-realtime-workspace-head small {
+  color: var(--muted);
+}
+
+.workspace-realtime-project-tree-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-realtime-tree-project {
+  padding: 10px;
+}
+
+.workspace-realtime-tree-project-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.workspace-realtime-tree-project-summary span {
+  font-weight: 750;
+}
+
+.workspace-realtime-tree-project-summary small {
+  color: var(--muted);
+}
+
+.workspace-realtime-file-tree {
+  margin-top: 10px;
 }
 
 .ref-tool-group--style {
@@ -12233,6 +12324,10 @@ body.panel-resizing-row * {
   color: #d2a8ff;
 }
 
+.timeline-step--history-only {
+  opacity: 0.92;
+}
+
 .timeline-step--v2 {
   border-color: rgba(210, 153, 34, 0.58);
   background: rgba(210, 153, 34, 0.1);
@@ -12318,6 +12413,16 @@ body.panel-resizing-row * {
 
 .timeline-step .step-label {
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-step .step-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.62rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

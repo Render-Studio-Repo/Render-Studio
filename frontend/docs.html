@@ -451,6 +451,22 @@ python run.py</code></pre>
     </main>
   </div>
 <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script>
+    (function () {
+      var RETURN_KEY = "render3d:lastStudioUrl:v1";
+      var SKIP_BOOT_KEY = "render3d:skipStudioBootOnce:v1";
+      var studioUrl = "/";
+      try {
+        studioUrl = sessionStorage.getItem(RETURN_KEY) || "/";
+      } catch (e) {}
+      document.querySelectorAll('a[href="/"]').forEach(function (link) {
+        link.setAttribute("href", studioUrl);
+        link.addEventListener("click", function () {
+          try { sessionStorage.setItem(SKIP_BOOT_KEY, "1"); } catch (e) {}
+        });
+      });
+    })();
+  </script>
   <script type="module" src="/docs-catalog.js?v=20260715-docs-search-streak"></script>
   <script type="module" src="/docs-agent.js?v=20260715-chat-fab-fallback"></script>
 </body>

@@ -46,6 +46,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     if (k === "delete_object") return "×";
     if (k === "remove_body") return "−";
     if (k === "restore") return "↺";
+    if (k === "render" || k === "scene_render") return "◉";
     if (k.includes("sketch")) return "✎";
     if (k === "fusion_sync" || k === "autodesk_import") return "↻";
     return "▣";
@@ -61,6 +62,38 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
       meta.source ||
       ""
     ).toLowerCase();
+  }
+
+  function entryIsRestorable(entry = {}) {
+    return entry.restorable !== false;
+  }
+
+  function costLabel(value) {
+    const cost = Number(value);
+    if (!Number.isFinite(cost) || cost <= 0) return "";
+    return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
+  }
+
+  function tokenCount(entry = {}) {
+    const usage = entry.usage || entry.meta?.usage || {};
+    if (!usage || typeof usage !== "object") return 0;
+    return Number(
+      usage.total_tokens ||
+      usage.tokens ||
+      ((Number(usage.input_tokens || usage.prompt_tokens) || 0) + (Number(usage.output_tokens || usage.completion_tokens) || 0))
+    ) || 0;
+  }
+
+  function entryMetaLabel(entry = {}) {
+    const meta = entry.meta || {};
+    const bits = [];
+    const cost = costLabel(entry.cost_usd ?? meta.cost_usd);
+    if (cost) bits.push(cost);
+    const tokens = tokenCount(entry);
+    if (tokens > 0) bits.push(`${tokens.toLocaleString()} tokens`);
+    const prompt = String(meta.prompt || entry.summary || "").trim();
+    if (prompt) bits.push(prompt.length > 62 ? `${prompt.slice(0, 62)}…` : prompt);
+    return bits.join(" · ");
   }
 
   function userAvatar(entry) {
@@ -106,7 +139,8 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     const entry = entries[idx];
     if (entry) {
       const who = entry.user_name ? ` · ${entry.user_name}` : "";
-      labelEl.textContent = `${entryLabel(entry)}${who} (preview — release to restore)`;
+      const suffix = entryIsRestorable(entry) ? " (preview — release to restore)" : " (history)";
+      labelEl.textContent = `${entryLabel(entry)}${who}${suffix}`;
       highlightStep(stepsEl, idx);
       onScrub?.(idx, entry);
     }
@@ -163,7 +197,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         <span class="timeline-step-icon">${escapeHtml(iconForKind(entry.kind))}</span>
         <strong>${escapeHtml(entry.label)}</strong>
       </div>
-      <button type="button" data-action="restore">Restore to this step</button>
+      <button type="button" data-action="restore" ${entryIsRestorable(entry) ? "" : "disabled"}>Restore to this step</button>
       <button type="button" data-action="copy-id">Copy timeline ID</button>
       <button type="button" data-action="remove">Remove timeline node</button>
     `;
@@ -213,21 +247,30 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         if (kind === "prompt" || kind === "build") btn.classList.add("timeline-step--prompt");
         if (promptMode === "v2" || promptMode === "2.0") btn.classList.add("timeline-step--v2");
         if (kind === "render" || kind === "scene_render" || promptMode === "render") btn.classList.add("timeline-step--render");
+        if (!entryIsRestorable(e)) btn.classList.add("timeline-step--history-only");
         if (e.pending || e.id === "__pending_prompt__") btn.classList.add("timeline-step--pending");
         if (e.user_id) btn.classList.add("timeline-step--collab");
         const label = entryLabel(e);
         const who = e.user_name || "";
-        btn.title = who ? `${label} · ${who}` : label;
+        const detail = entryMetaLabel(e);
+        btn.title = [label, detail, who].filter(Boolean).join(" · ");
         const showAvatar = !!(e.user_name || e.user_id || e.user_avatar_url);
         const pending = !!(e.pending || e.id === "__pending_prompt__");
+        const pendingKind =
+          pending && (promptMode === "render" || kind === "render" || kind === "scene_render")
+            ? "rendering"
+            : pending
+              ? "generating"
+              : (e.kind || "change");
         btn.disabled = pending;
         btn.innerHTML = `
           <span class="step-topline">
             <span class="timeline-step-icon" aria-hidden="true">${escapeHtml(iconForKind(e.kind))}</span>
-            <span class="step-kind">${escapeHtml(pending ? "rendering" : (e.kind || "change"))}</span>
+            <span class="step-kind">${escapeHtml(pendingKind)}</span>
             ${showAvatar ? userAvatar(e) : ""}
           </span>
           <span class="step-label">${escapeHtml(label)}</span>
+          ${detail ? `<span class="step-meta">${escapeHtml(detail)}</span>` : ""}
           ${who ? `<span class="step-user">${escapeHtml(who)}</span>` : ""}
         `;
         if (!pending) {

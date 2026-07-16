@@ -535,7 +535,7 @@ def _restore_snapshot_to_file(project_path: Path, entry: dict[str, Any]) -> None
 def _entry_summary(entry: dict[str, Any]) -> str | None:
     kind = entry.get("kind")
     meta = entry.get("meta") or {}
-    if kind == "prompt":
+    if kind in {"prompt", "render", "scene_render"}:
         p = meta.get("prompt") or ""
         if not p and entry.get("label", "").startswith("AI: "):
             p = entry["label"][4:].rstrip("…")
@@ -567,6 +567,7 @@ def _entry_summary(entry: dict[str, Any]) -> str | None:
 
 
 def _entry_public(e: dict[str, Any]) -> dict[str, Any]:
+    meta = e.get("meta") or {}
     return {
         "index": e["index"],
         "id": e["id"],
@@ -578,11 +579,161 @@ def _entry_public(e: dict[str, Any]) -> dict[str, Any]:
         "user_name": e.get("user_name"),
         "user_avatar_url": e.get("user_avatar_url"),
         "summary": _entry_summary(e),
-        "meta": e.get("meta") or {},
+        "meta": meta,
+        "prompt_mode": e.get("prompt_mode") or meta.get("prompt_mode"),
+        "cost_usd": e.get("cost_usd") if e.get("cost_usd") is not None else meta.get("cost_usd"),
+        "usage": e.get("usage") or meta.get("usage"),
+        "model": e.get("model") or meta.get("model"),
+        "provider": e.get("provider") or meta.get("provider"),
+        "restorable": bool(e.get("snapshot") or e.get("snapshot_files")),
     }
 
 
+def _prompt_history_text_key(entry: dict[str, Any]) -> str | None:
+    prompt = " ".join(str(entry.get("prompt") or entry.get("original_prompt") or "").split()).strip().lower()
+    if not prompt:
+        return None
+    filename = Path(str(entry.get("filename") or entry.get("base_filename") or "")).stem.lstrip(".").lower()
+    return f"{filename}:{prompt[:160]}"
+
+
+def _timeline_text_key(entry: dict[str, Any]) -> str | None:
+    meta = entry.get("meta") or {}
+    prompt = " ".join(str(meta.get("prompt") or entry.get("summary") or entry.get("label") or "").split()).strip().lower()
+    for prefix in ("ai: ", "render: ", "edit: "):
+        if prompt.startswith(prefix):
+            prompt = prompt[len(prefix):].strip()
+            break
+    if not prompt:
+        return None
+    filename = Path(str(entry.get("filename") or meta.get("base_filename") or "")).stem.lstrip(".").lower()
+    return f"{filename}:{prompt[:160]}"
+
+
+def _prompt_history_timeline_meta(entry: dict[str, Any]) -> dict[str, Any]:
+    meta = {
+        "prompt": entry.get("prompt") or entry.get("original_prompt"),
+        "prompt_id": entry.get("id"),
+        "prompt_mode": entry.get("prompt_mode") or ("render" if (entry.get("kind") or "") == "render" else "standard"),
+        "speed": entry.get("speed"),
+        "success": entry.get("success"),
+        "model": entry.get("model"),
+        "provider": entry.get("provider"),
+        "trace_id": entry.get("trace_id"),
+        "base_filename": entry.get("base_filename"),
+        "source": "prompt_history",
+    }
+    for key in ("usage", "cost_usd", "ai_calls"):
+        if entry.get(key) is not None:
+            meta[key] = entry.get(key)
+    return {k: v for k, v in meta.items() if v is not None}
+
+
+def _sync_prompt_history_into_timeline(project_path: Path) -> None:
+    """Backfill AI prompt/render rows into the scrubber timeline and enrich costs."""
+    try:
+        from backend.services import prompt_history_service
+    except Exception:
+        return
+
+    data = load_timeline(project_path)
+    entries: list[dict[str, Any]] = data.get("entries", [])
+    original_entry_count = len(entries)
+    current_index = data.get("current_index", -1)
+    current_id = None
+    if 0 <= int(current_index or -1) < len(entries):
+        current_id = entries[int(current_index)].get("id")
+
+    try:
+        prompt_entries = list(reversed(prompt_history_service.list_entries(project_path, limit=300)))
+    except Exception:
+        return
+
+    by_trace = {
+        str((e.get("meta") or {}).get("trace_id")): e
+        for e in entries
+        if (e.get("meta") or {}).get("trace_id")
+    }
+    by_prompt_id = {
+        str((e.get("meta") or {}).get("prompt_id")): e
+        for e in entries
+        if (e.get("meta") or {}).get("prompt_id")
+    }
+    by_text = {key: e for e in entries if (key := _timeline_text_key(e))}
+    changed = False
+    appended = False
+
+    for pe in prompt_entries:
+        prompt_text = str(pe.get("prompt") or pe.get("original_prompt") or "").strip()
+        if not prompt_text:
+            continue
+        meta = _prompt_history_timeline_meta(pe)
+        trace_id = str(pe.get("trace_id") or "")
+        prompt_id = str(pe.get("id") or "")
+        target = by_trace.get(trace_id) if trace_id else None
+        if target is None and prompt_id:
+            target = by_prompt_id.get(prompt_id)
+        if target is None:
+            text_key = _prompt_history_text_key(pe)
+            target = by_text.get(text_key) if text_key else None
+
+        if target is not None:
+            target_meta = target.setdefault("meta", {})
+            for key, value in meta.items():
+                if value is not None and target_meta.get(key) != value:
+                    target_meta[key] = value
+                    changed = True
+            continue
+
+        history_kind = str(pe.get("kind") or "cad").lower()
+        prompt_mode = str(pe.get("prompt_mode") or "").lower()
+        timeline_kind = "render" if history_kind == "render" or prompt_mode == "render" else "prompt"
+        prefix = "Render" if timeline_kind == "render" else "AI"
+        label_src = prompt_text[:48] + ("…" if len(prompt_text) > 48 else "")
+        item = {
+            "index": len(entries),
+            "id": prompt_id or str(uuid.uuid4())[:10],
+            "kind": timeline_kind,
+            "label": f"{prefix}: {label_src}",
+            "filename": pe.get("base_filename") or pe.get("filename") or "",
+            "snapshot": None,
+            "snapshot_files": [],
+            "created_at": pe.get("created_at") or datetime.now(timezone.utc).isoformat(),
+            "meta": meta,
+            "user_id": pe.get("user_id"),
+            "user_name": pe.get("user_name"),
+            "user_avatar_url": pe.get("user_avatar_url"),
+        }
+        entries.append(item)
+        appended = True
+        changed = True
+        if trace_id:
+            by_trace[trace_id] = item
+        if prompt_id:
+            by_prompt_id[prompt_id] = item
+        text_key = _prompt_history_text_key(pe)
+        if text_key:
+            by_text[text_key] = item
+
+    if not changed:
+        return
+
+    was_at_end = current_index is not None and int(current_index or -1) >= original_entry_count - 1
+    entries.sort(key=lambda e: str(e.get("created_at") or ""))
+    for idx, entry in enumerate(entries):
+        entry["index"] = idx
+    data["entries"] = entries
+    if appended and was_at_end:
+        data["current_index"] = len(entries) - 1
+    elif current_id:
+        data["current_index"] = next((i for i, e in enumerate(entries) if e.get("id") == current_id), len(entries) - 1)
+    else:
+        data["current_index"] = min(max(int(current_index or -1), -1), len(entries) - 1)
+    save_timeline(project_path, data)
+
+
 def timeline_summary(project_path: Path) -> dict[str, Any]:
+    _sync_prompt_history_into_timeline(project_path)
     data = load_timeline(project_path)
     return {
         "current_index": data.get("current_index", -1),
