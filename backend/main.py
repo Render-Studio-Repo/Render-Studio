@@ -12246,7 +12246,15 @@ def create_file_share(
         raise HTTPException(404, "File not found")
     meta = project_store.load_meta(project_path)
     shares = meta.setdefault("file_shares", {})
-    token = next((tok for tok, share in shares.items() if isinstance(share, dict) and share.get("filename") == safe), None)
+    has_live_share_context = bool(
+        isinstance(body, dict)
+        and (
+            str(body.get("viewport_image") or "").startswith("data:image/")
+            or body.get("visible_filenames")
+            or body.get("hidden_filenames")
+        )
+    )
+    token = None if has_live_share_context else next((tok for tok, share in shares.items() if isinstance(share, dict) and share.get("filename") == safe), None)
     if not token:
         token = secrets.token_urlsafe(18)
         while token in shares:

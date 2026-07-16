@@ -200,6 +200,41 @@ def _render_colored_model_rgba(
     if not meshes:
         return None
 
+    def _face_rgb_for_geom(geom: Any, face_count: int) -> Any:
+        fallback = np.tile(np.array([196, 196, 196], dtype=np.uint8), (face_count, 1))
+        visual = getattr(geom, "visual", None)
+        fc = getattr(visual, "face_colors", None)
+        if fc is not None and len(fc) == face_count:
+            return np.asarray(fc, dtype=np.uint8)[:, :3]
+        try:
+            color_visual = visual.to_color()
+            fc = getattr(color_visual, "face_colors", None)
+            if fc is not None and len(fc) == face_count:
+                return np.asarray(fc, dtype=np.uint8)[:, :3]
+        except Exception:
+            pass
+        try:
+            uv = np.asarray(getattr(visual, "uv", None), dtype=np.float64)
+            faces_idx = np.asarray(geom.faces, dtype=np.int32)
+            texture = getattr(getattr(visual, "material", None), "baseColorTexture", None)
+            if texture is not None and uv.shape[0] >= len(geom.vertices):
+                tex = np.asarray(texture.convert("RGB"), dtype=np.uint8)
+                th, tw = tex.shape[:2]
+                face_uv = uv[faces_idx].mean(axis=1)
+                xs = np.clip((face_uv[:, 0] % 1.0) * (tw - 1), 0, tw - 1).astype(np.int32)
+                ys = np.clip((1.0 - (face_uv[:, 1] % 1.0)) * (th - 1), 0, th - 1).astype(np.int32)
+                return tex[ys, xs, :3]
+        except Exception:
+            pass
+        try:
+            main = getattr(getattr(visual, "material", None), "main_color", None)
+            if main is not None and len(main) >= 3:
+                rgb = np.asarray(main[:3], dtype=np.uint8)
+                return np.tile(rgb, (face_count, 1))
+        except Exception:
+            pass
+        return fallback
+
     verts: list[Any] = []
     faces: list[Any] = []
     colors: list[Any] = []
@@ -209,12 +244,8 @@ def _render_colored_model_rgba(
         try:
             v = np.asarray(geom.vertices, dtype=np.float64)
             f = np.asarray(geom.faces, dtype=np.int32) + voff
-            fc = getattr(getattr(geom, "visual", None), "face_colors", None)
-            if fc is None or len(fc) != len(f):
-                fc = np.tile(np.array([196, 196, 196, 255], dtype=np.uint8), (len(f), 1))
-            else:
-                fc = np.asarray(fc, dtype=np.uint8)
-            rgb = fc[:, :3].astype(np.float64)
+            fc = _face_rgb_for_geom(geom, len(f))
+            rgb = fc.astype(np.float64)
             chroma = rgb.max(axis=1) - rgb.min(axis=1)
             if float(chroma.mean()) > 12.0 or float(abs(rgb.mean(axis=0).max() - rgb.mean(axis=0).min())) > 18.0:
                 colourful += 1
@@ -672,12 +703,55 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
         return None
 
 
+def make_share_og_png_from_model(project_path: Path, filename: str) -> tuple[str, int, int] | None:
+    """Black-background PNG thumbnail rendered directly from a coloured GLB/model file."""
+    src = project_path / Path(filename).name
+    if not src.is_file():
+        return None
+    out = project_path / f"{Path(src.name).stem}_share_og_color.png"
+    try:
+        from PIL import Image
+
+        if (
+            out.is_file()
+            and out.stat().st_mtime_ns >= src.stat().st_mtime_ns
+            and not _legacy_share_og_needs_rebuild(out)
+        ):
+            with Image.open(out) as existing:
+                return out.name, int(existing.size[0]), int(existing.size[1])
+
+        model_layer = _render_colored_model_rgba(project_path, src.name, size=(1600, 1200))
+        if model_layer is None:
+            return None
+        canvas = Image.new("RGBA", model_layer.size, (*SHARE_OG_BACKGROUND_RGB, 255))
+        canvas.alpha_composite(model_layer)
+        _draw_render3d_badge(canvas)
+        canvas.save(out, format="PNG", optimize=True)
+        return out.name, int(canvas.size[0]), int(canvas.size[1])
+    except Exception as exc:
+        logger.warning("Could not create model share OG preview for %s: %s", src.name, exc)
+        return None
+
+
 def make_share_og_jpeg(project_path: Path, snapshot_name: str) -> tuple[str, int, int] | None:
     """Backward-compatible wrapper; share previews are black-background PNGs."""
     return make_share_og_png(project_path, snapshot_name)
 
 
+def _has_exact_snapshot(project_path: Path, filename: str) -> bool:
+    stem = Path(filename).stem.lstrip(".")
+    if not stem:
+        return False
+    for pattern in (f"{stem}_snapshot_iso*.png", f"{stem}_snapshot_*.png"):
+        if any(p.is_file() and "_share_" not in p.name.lower() and "opposite" not in p.name.lower() for p in project_path.glob(pattern)):
+            return True
+    return False
+
+
 def share_preview_filename(project_path: Path, filename: str, *, resolve_viewport=None) -> str | None:
+    direct_og = None if _has_exact_snapshot(project_path, filename) else make_share_og_png_from_model(project_path, filename)
+    if direct_og:
+        return direct_og[0]
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
     if not snapshot:
         return None
@@ -688,6 +762,15 @@ def share_preview_filename(project_path: Path, filename: str, *, resolve_viewpor
 
 
 def share_preview_image_meta(project_path: Path, filename: str, *, resolve_viewport=None) -> dict[str, Any]:
+    direct_og = None if _has_exact_snapshot(project_path, filename) else make_share_og_png_from_model(project_path, filename)
+    if direct_og:
+        name, width, height = direct_og
+        return {
+            "preview_file": name,
+            "preview_width": width,
+            "preview_height": height,
+            "preview_type": "image/png",
+        }
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
     if not snapshot:
         return {}
