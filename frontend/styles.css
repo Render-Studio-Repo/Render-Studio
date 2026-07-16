@@ -3639,6 +3639,11 @@ body:not(.info-page) {
   grid-template-columns: var(--left-panel-width) 6px 1fr 6px var(--right-panel-width);
 }
 
+#app.wiring-mode .auth-widget,
+body.wiring-mode .auth-widget {
+  margin-left: auto;
+}
+
 #app.wiring-mode.right-panel-hidden {
   grid-template-columns: var(--left-panel-width) 6px 1fr 0px 0px;
 }

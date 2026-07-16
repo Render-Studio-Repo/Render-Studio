@@ -47,6 +47,7 @@ from backend.services import (
     onboarding_email_service,
     workspace_log_service,
     ai_credit_service,
+    wiring_debug_job_service,
 )
 from backend.services import kernel_bridge
 from backend.services.design_service import is_custom_sketch_structural_request
@@ -13740,37 +13741,36 @@ def wiring_prompt(
     )
 
 
-@app.post("/api/projects/{project_id}/wiring/diagnose-photo")
-def wiring_diagnose_photo(
+def _run_wiring_photo_diagnosis(
     project_id: str,
-    body: WiringDiagnoseRequest,
-    request: Request,
-    user: dict[str, Any] = Depends(get_current_user),
-):
-    """Analyse a photo of a physical circuit and return a structured fault diagnosis."""
+    body_data: dict[str, Any],
+    trace_id: str,
+    user: dict[str, Any],
+) -> None:
     from backend.services import wiring_service
 
-    trace_id = getattr(request.state, "trace_id", new_trace_id())
-    path = _require_project(user, project_id)
-
-    ai = _get_ai_for_diagnose(user, body, project_id=project_id)
-
-    current_schematic: dict[str, Any] | None = None
-    if body.include_schematic:
-        wiring_path = path / "wiring.json"
-        if wiring_path.is_file():
-            try:
-                current_schematic = json.loads(wiring_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                current_schematic = None
-
-    trace_add(
-        "info",
-        "Circuit photo diagnosis started",
-        trace_id=trace_id,
-        data={"image_count": len(body.images), "has_description": bool(body.description)},
-    )
+    path = PROJECTS / project_id
     try:
+        if not path.is_dir():
+            raise FileNotFoundError("Project not found.")
+        body = WiringDiagnoseRequest.model_validate(body_data)
+        ai = _get_ai_for_diagnose(user, body, project_id=project_id)
+
+        current_schematic: dict[str, Any] | None = None
+        if body.include_schematic:
+            wiring_path = path / "wiring.json"
+            if wiring_path.is_file():
+                try:
+                    current_schematic = json.loads(wiring_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    current_schematic = None
+
+        trace_add(
+            "info",
+            "Circuit photo diagnosis started",
+            trace_id=trace_id,
+            data={"image_count": len(body.images), "has_description": bool(body.description)},
+        )
         diagnosis, ai_trace = wiring_service.diagnose_circuit_photo(
             ai,
             [img.model_dump() for img in body.images],
@@ -13778,23 +13778,86 @@ def wiring_diagnose_photo(
             current_schematic=current_schematic,
             trace_id=trace_id,
         )
+        trace_add(
+            "info",
+            f"Circuit diagnosis done -> {len(diagnosis.get('issues') or [])} issues",
+            trace_id=trace_id,
+        )
+        wiring_debug_job_service.complete(
+            path,
+            {
+                "diagnosis": diagnosis,
+                "trace_id": trace_id,
+                "trace": {"ai": ai_trace},
+            },
+        )
     except (RuntimeError, ValueError) as exc:
-        trace_add("error", f"Circuit diagnosis failed: {exc}", trace_id=trace_id)
-        raise HTTPException(502, str(exc)) from exc
+        detail = str(exc) or "Diagnosis failed."
+        trace_add("error", f"Circuit diagnosis failed: {detail}", trace_id=trace_id)
+        wiring_debug_job_service.fail(path, detail, trace_id=trace_id)
     except Exception as exc:
         logger.exception("Circuit diagnosis crashed project=%s trace=%s", project_id, trace_id)
-        raise HTTPException(502, "Diagnosis failed — please try again.") from exc
+        detail = str(exc) or "Diagnosis failed - please try again."
+        wiring_debug_job_service.fail(path, detail, trace_id=trace_id)
 
-    trace_add(
-        "info",
-        f"Circuit diagnosis done → {len(diagnosis.get('issues') or [])} issues",
-        trace_id=trace_id,
+
+@app.post("/api/projects/{project_id}/wiring/diagnose-photo")
+def wiring_diagnose_photo(
+    project_id: str,
+    body: WiringDiagnoseRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Start a background photo diagnosis and let clients poll for the result."""
+    trace_id = getattr(request.state, "trace_id", new_trace_id())
+    path = _require_project(user, project_id)
+    try:
+        wiring_debug_job_service.start(path, trace_id=trace_id, user=user)
+    except wiring_debug_job_service.DebugJobInProgress as exc:
+        return JSONResponse(
+            status_code=202,
+            content={
+                "accepted": True,
+                "status": "running",
+                "trace_id": exc.current.get("trace_id"),
+                "job": wiring_debug_job_service.public_summary(path),
+            },
+        )
+    background_tasks.add_task(
+        _run_wiring_photo_diagnosis,
+        project_id,
+        body.model_dump(mode="json"),
+        trace_id,
+        dict(user),
     )
-    return {
-        "diagnosis": diagnosis,
-        "trace_id": trace_id,
-        "trace": {"ai": ai_trace},
-    }
+    return JSONResponse(
+        status_code=202,
+        content={
+            "accepted": True,
+            "status": "running",
+            "trace_id": trace_id,
+            "job": wiring_debug_job_service.public_summary(path),
+        },
+    )
+
+
+@app.get("/api/projects/{project_id}/wiring/diagnose-photo/status")
+def wiring_diagnose_photo_status(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project_read(user, project_id)
+    return wiring_debug_job_service.public_summary(path)
+
+
+@app.post("/api/projects/{project_id}/wiring/diagnose-photo/cancel")
+def wiring_diagnose_photo_cancel(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project_read(user, project_id)
+    return wiring_debug_job_service.request_cancel(path)
 
 
 @app.post("/api/projects/{project_id}/design/demo/gear-train")

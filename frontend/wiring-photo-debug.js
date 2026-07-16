@@ -641,7 +641,14 @@ export function createWiringDebugPanel({ getProjectId, getSchematic, getAiKeyBod
         120000,
       );
 
+      if (start?.diagnosis) {
+        _applyDiagnoseResult(start);
+        return;
+      }
       const traceId = start.trace_id || start.job?.trace_id;
+      if (!traceId) {
+        throw new Error(start?.error || "Diagnosis did not start. Please try again.");
+      }
       pendingTraceId = traceId;
       setTimeout(() => _persistHistory(), 0);
 
