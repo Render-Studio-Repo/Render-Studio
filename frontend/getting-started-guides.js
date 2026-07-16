@@ -183,7 +183,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "projects",
     "title": "Reference files, pen markup & Send to AI",
     "demo": "markup",
-    "gif": "/docs/media/reference-markup.gif?v=20260715-real",
+    "gif": "/docs/media/reference-markup.gif?v=20260716-pdf-tab",
     "summary": "Open PDFs/images in tabs, mark them up, and push callouts into the CAD prompt.",
     "steps": [
       "Drop a PDF or image into the project.",
@@ -392,28 +392,6 @@ export const GETTING_STARTED_GUIDES = [
       "simulated motion"
     ],
     "where": "Account \u2192 Preferences"
-  },
-  {
-    "id": "tips-tricks",
-    "category": "help",
-    "title": "Tips and tricks",
-    "demo": "tips",
-    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
-    "summary": "Shift-select files, drag refs into the prompt, keep prompts focused, share context.",
-    "steps": [
-      "Shift-click in the Project browser to select a file range.",
-      "Drag files into the AI prompt as references.",
-      "Prefer @face/@edge/@path chips over vague locations.",
-      "Generate the main object first, then revise selected results."
-    ],
-    "ask": "Give me practical Render3D tips and tricks.",
-    "keywords": [
-      "tips",
-      "tricks",
-      "shift select",
-      "best practices"
-    ],
-    "where": "Getting Started \u00b7 Tips library"
   }
 ];
 

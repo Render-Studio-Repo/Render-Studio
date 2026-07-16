@@ -617,6 +617,8 @@ def _prompt_history_timeline_meta(entry: dict[str, Any]) -> dict[str, Any]:
         "prompt_mode": entry.get("prompt_mode") or ("render" if (entry.get("kind") or "") == "render" else "standard"),
         "speed": entry.get("speed"),
         "success": entry.get("success"),
+        "status": entry.get("status"),
+        "error": entry.get("error"),
         "model": entry.get("model"),
         "provider": entry.get("provider"),
         "trace_id": entry.get("trace_id"),
@@ -688,7 +690,10 @@ def _sync_prompt_history_into_timeline(project_path: Path) -> None:
         history_kind = str(pe.get("kind") or "cad").lower()
         prompt_mode = str(pe.get("prompt_mode") or "").lower()
         timeline_kind = "render" if history_kind == "render" or prompt_mode == "render" else "prompt"
-        prefix = "Render" if timeline_kind == "render" else "AI"
+        status = str(pe.get("status") or "").lower()
+        error = str(pe.get("error") or "").lower()
+        is_stopped = status == "stopped" or "stopped" in error or "canceled" in error or "cancelled" in error
+        prefix = "Stopped" if is_stopped else ("Render" if timeline_kind == "render" else "AI")
         label_src = prompt_text[:48] + ("…" if len(prompt_text) > 48 else "")
         item = {
             "index": len(entries),

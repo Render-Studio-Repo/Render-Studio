@@ -10,9 +10,9 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-pin-hover-tooltip" />
+  <link rel="stylesheet" href="/styles.css?v=20260715-toast-above-loader" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
-  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-pick" />
+  <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-90-hinge" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
   <link rel="stylesheet" href="/prompt-spice-control.css?v=20260715-toggle-btn" />
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
@@ -79,7 +79,7 @@
               <rect x="186" y="70" width="32" height="14" rx="4" fill="url(#bootArmSteel)" stroke="#cbd5e1" stroke-width="1"/>
             </g>
 
-            <!-- Shoulder + elbow bent down toward the floor box -->
+            <!-- Shoulder + elbow bent down with a 90-degree hinge -->
             <g class="studio-boot-arm-swing" transform="rotate(-46 198 78)">
               <animateTransform
                 attributeName="transform"
@@ -92,11 +92,11 @@
                 keySplines="0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1"
               />
               <rect x="108" y="70" width="90" height="16" rx="4" fill="url(#bootArmMetal)" stroke="#fed7aa" stroke-width="1.2"/>
-              <g class="studio-boot-arm-elbow" transform="rotate(-34 112 78)">
+              <g class="studio-boot-arm-elbow" transform="rotate(-90 112 78)">
                 <animateTransform
                   attributeName="transform"
                   type="rotate"
-                  values="-34 112 78; -34 112 78; -34 112 78; -18 112 78; -8 112 78; -8 112 78; -34 112 78; -34 112 78"
+                  values="-90 112 78; -90 112 78; -90 112 78; -90 112 78; -90 112 78; -90 112 78; -90 112 78; -90 112 78"
                   keyTimes="0; 0.22; 0.38; 0.52; 0.66; 0.78; 0.92; 1"
                   dur="5.6s"
                   repeatCount="indefinite"
@@ -2585,7 +2585,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-logout-no-boot-delay"></script>
+  <script type="module" src="/app.js?v=20260715-render-stop-overlay"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

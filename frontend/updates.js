@@ -1,6 +1,6 @@
 /** Recent Updates page — milestone features & tools. */
 
-import { listMilestones } from "./docs/updates/milestones.js?v=20260715-feature-cards";
+import { listMilestones } from "./docs/updates/milestones.js?v=20260716-no-tips-tricks";
 import { authHeaders, createAuthUI } from "./auth.js?v=20260715-auth-connect-social";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 

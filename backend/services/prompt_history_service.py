@@ -126,6 +126,7 @@ def append_entry(
     codex_agent: bool | None = None,
     skills: list[str] | None = None,
     entry_id: str | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
     data = load(project_path)
     entries: list[dict[str, Any]] = data.get("entries", [])
@@ -182,6 +183,9 @@ def append_entry(
         "kind": kind,
         "created_at": keep_created,
     }
+    normalized_status = str(status or "").strip().lower()
+    if normalized_status:
+        entry["status"] = normalized_status
     safe_refs = _safe_history_references(references)
     if safe_refs:
         entry["references"] = safe_refs

@@ -137,6 +137,9 @@ localStorage.setItem('render3d:lastProjectId', {json.dumps(pid)});
 localStorage.setItem('render3d:demoRobotArmProjectId', {json.dumps(pid)});
 localStorage.setItem('render3d:renderAgentSeen:anonymous', '1');
 localStorage.setItem('render3d:renderAgentSeen:{USER_ID}', '1');
+localStorage.setItem('render3d:skipStudioBootOnce:v1', '1');
+localStorage.setItem('render3d:aiSetupIntroDismissed:v1', '1');
+localStorage.setItem('render3d:aiSetupIntroDismissed:v1:{USER_ID}', '1');
 {CURSOR_JS}
 """
 
@@ -183,6 +186,19 @@ async def ready_studio(page: Page, *, open_project: bool = True):
     )
     await page.evaluate(CURSOR_JS)
     await force_close_agent(page)
+    # Dismiss boot + AI setup intro so demos aren't blocked by modals.
+    await page.evaluate(
+        """() => {
+          document.getElementById('studio-boot-screen')?.remove();
+          document.body.classList.remove('studio-booting');
+          document.getElementById('ai-setup-intro-modal')?.classList.add('hidden');
+          document.getElementById('welcome-modal')?.classList.add('hidden');
+          try {
+            localStorage.setItem('render3d:aiSetupIntroDismissed:v1', '1');
+            localStorage.setItem('render3d:aiSetupIntroDismissed:v1:4d950fbd-b44', '1');
+          } catch (_) {}
+        }"""
+    )
     if open_project:
         await open_robot_arm(page)
         # Also try legacy Getting Started Demo name
@@ -240,7 +256,7 @@ async def record_demo(browser: Browser, name: str, runner):
             await page.evaluate(CURSOR_JS)
         await rec.start()
         await page.mouse.move(600, 380, steps=10)
-        await asyncio.wait_for(runner(page), timeout=55)
+        await asyncio.wait_for(runner(page), timeout=90)
         await page.wait_for_timeout(400)
     except Exception as exc:
         print(f"  WARN {name}: {exc}", flush=True)
@@ -603,42 +619,124 @@ async def demo_share_folders(page: Page):
 
 
 async def demo_reference_markup(page: Page):
+    """Upload a PDF → Docs-style tab opens → Pen markup → notes → Send to AI."""
     await force_close_agent(page)
-    uploaded = False
-    for sel in ["#prompt-image-input", "#prompt-kb-drop-input"]:
-        loc = page.locator(sel).first
-        if await loc.count():
-            try:
-                await loc.set_input_files(str(BLUEPRINT))
-                uploaded = True
-                await page.wait_for_timeout(2000)
-                break
-            except Exception:
-                continue
-    if not uploaded:
-        print("  (upload skipped)", flush=True)
-    pen = page.locator("[data-ref-action='pen'], button:has-text('Pen')").first
+    # Boot overlay can steal the first paint — clear it for this demo.
+    await page.evaluate(
+        """() => {
+          const boot = document.getElementById('studio-boot-screen');
+          if (boot) {
+            boot.remove();
+            document.body.classList.remove('studio-booting');
+          }
+        }"""
+    )
+    pdf_path = Path("/home/ubuntu/scripts/gif-demos/demo-drawing.pdf")
+    if not pdf_path.exists():
+        pdf_path = BLUEPRINT
+
+    # Upload via project file input (accepts PDF) so uploadReferenceProjectFile opens the tab.
+    upload_input = page.locator("#file-upload").first
+    if await upload_input.count():
+        upload_btn = page.locator("#btn-upload, button:has-text('Upload CAD')").first
+        if await upload_btn.count() and await upload_btn.is_visible():
+            box = await upload_btn.bounding_box()
+            if box:
+                await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=22)
+                await page.wait_for_timeout(250)
+        await upload_input.set_input_files(str(pdf_path))
+        await page.wait_for_timeout(700)
+    else:
+        print("  (#file-upload missing)", flush=True)
+
+    # Confirm visible "Add to current project" (there can be duplicate modal nodes in DOM).
+    dest = page.locator("#drop-destination-modal:not(.hidden) #drop-destination-current").first
+    if await dest.count():
+        try:
+            await dest.wait_for(state="visible", timeout=4000)
+            box = await dest.bounding_box()
+            if box:
+                await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=18)
+                await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        except Exception as exc:
+            print(f"  dest modal: {exc}", flush=True)
+            await page.evaluate(
+                """() => {
+                  const btn = document.querySelector('#drop-destination-modal:not(.hidden) #drop-destination-current');
+                  btn?.click();
+                }"""
+            )
+    await page.wait_for_timeout(1600)
+
+    # If upload didn't auto-open the Docs tab, open the PDF from Reference Files.
+    has_tab = await page.locator(".ref-viewer-toolbar, .ref-pdf-page, .dxf-tab.active").count()
+    if not has_tab:
+        await page.evaluate(
+            """() => {
+              const li = document.querySelector('.browser-item[data-filename$=".pdf"], .browser-item[data-filename*="demo-drawing"]');
+              if (!li) return false;
+              li.scrollIntoView({ block: 'center' });
+              const btn = li.querySelector('button.browser-item-body');
+              (btn || li).click();
+              return true;
+            }"""
+        )
+        await page.wait_for_timeout(1800)
+
+    try:
+        await page.wait_for_selector(".ref-viewer-toolbar, .ref-pdf-page", timeout=10000)
+    except Exception as exc:
+        print(f"  PDF tab wait: {exc}", flush=True)
+
+    # Linger on the open PDF Docs tab.
+    await page.wait_for_timeout(500)
+    pdf_page = page.locator(".ref-pdf-page, .ref-viewer-stage").first
+    if await pdf_page.count():
+        box = await pdf_page.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] * 0.45, box["y"] + box["height"] * 0.4, steps=14)
+            await page.wait_for_timeout(200)
+
+    # Pen tool (data-ref-tool, not data-ref-action).
+    pen = page.locator("[data-ref-tool='pen']").first
     if await pen.count() and await pen.is_visible():
-        await click_sel(page, "[data-ref-action='pen'], button:has-text('Pen')")
-        stage = page.locator(".ref-image-stack, .ref-viewer-main img, .ref-viewer-stage").first
+        box = await pen.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=12)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=100)
+        await page.wait_for_timeout(180)
+
+        stage = page.locator(".ref-pdf-page, [data-ref-image-stack], .ref-viewer-stage").first
         if await stage.count():
             box = await stage.bounding_box()
             if box:
-                await move_to(page, box["x"] + 90, box["y"] + 90, steps=24)
+                x0 = box["x"] + box["width"] * 0.28
+                y0 = box["y"] + box["height"] * 0.35
+                x1 = box["x"] + box["width"] * 0.62
+                y1 = box["y"] + box["height"] * 0.58
+                await move_to(page, x0, y0, steps=10)
                 await page.mouse.down()
-                await move_to(page, box["x"] + 210, box["y"] + 160, steps=16)
+                await move_to(page, x1, y0 + 18, steps=8)
+                await move_to(page, x1, y1, steps=8)
+                await move_to(page, x0, y1, steps=6)
                 await page.mouse.up()
-        send = page.locator("[data-ref-action='send-ai'], button:has-text('Send to AI')").first
-        if await send.count() and await send.is_visible():
-            x, y = await box_center(page, "[data-ref-action='send-ai'], button:has-text('Send to AI')")
-            await move_to(page, x, y, steps=26)
-            await click_xy(page, x, y)
-            await page.wait_for_timeout(700)
-            return
-    await focus_prompt(page)
-    await type_text(page, "Use the uploaded blueprint — 3 mm walls, circle the mounting hole.")
-    x, y = await box_center(page, "#btn-prompt")
-    await move_to(page, x, y, steps=28)
+                await page.wait_for_timeout(200)
+
+    notes = page.locator("#ref-notes-input, [data-ref-notes]").first
+    if await notes.count() and await notes.is_visible():
+        await notes.click(timeout=2000)
+        await notes.fill("Circle the M6 holes — keep 3 mm walls.")
+        await page.wait_for_timeout(200)
+
+    for sel in ["[data-ref-action='save']", "[data-ref-action='send-ai']"]:
+        btn = page.locator(sel).first
+        if await btn.count() and await btn.is_visible():
+            box = await btn.bounding_box()
+            if box:
+                await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=12)
+                await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=100)
+                await page.wait_for_timeout(400)
+
     await page.wait_for_timeout(600)
 
 
@@ -848,6 +946,145 @@ async def demo_agent(page: Page):
             await page.wait_for_timeout(1200)
 
 
+async def demo_preferences(page: Page):
+    """Open Preferences from the account menu and show theme / mouse / simulated motion."""
+    await force_close_agent(page)
+    await page.evaluate(
+        """() => {
+          document.getElementById('ai-setup-intro-modal')?.classList.add('hidden');
+          document.getElementById('welcome-modal')?.classList.add('hidden');
+          document.getElementById('studio-boot-screen')?.remove();
+          document.body.classList.remove('studio-booting');
+        }"""
+    )
+
+    # Account menu → Preferences
+    auth = page.locator("#btn-auth").first
+    if await auth.count() and await auth.is_visible():
+        box = await auth.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=18)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=120)
+    await page.wait_for_timeout(450)
+
+    pref_btn = page.locator("#btn-preferences-menu, button:has-text('Preferences')").first
+    if await pref_btn.count():
+        try:
+            await pref_btn.wait_for(state="visible", timeout=4000)
+            box = await pref_btn.bounding_box()
+            if box:
+                await move_to(page, box["x"] + 40, box["y"] + box["height"] / 2, steps=16)
+                await click_xy(page, box["x"] + 40, box["y"] + box["height"] / 2, hold_ms=120)
+        except Exception:
+            await page.evaluate(
+                """() => {
+                  document.getElementById('btn-preferences-menu')?.click();
+                }"""
+            )
+    else:
+        await page.evaluate(
+            """() => {
+              document.getElementById('btn-preferences-menu')?.click();
+            }"""
+        )
+
+    # Ensure Preferences panel is open and visible
+    await page.evaluate(
+        """() => {
+          const panel = document.getElementById('profile-preferences-panel');
+          if (panel) panel.classList.remove('hidden');
+        }"""
+    )
+    try:
+        await page.wait_for_selector(
+            "#profile-preferences-panel:not(.hidden) #profile-preferences-title, #profile-preferences-panel:not(.hidden) .profile-preferences-card",
+            timeout=8000,
+        )
+    except Exception as exc:
+        print(f"  preferences panel wait: {exc}", flush=True)
+
+    await page.wait_for_timeout(700)
+
+    # Mouse controls
+    mouse = page.locator("#pref-mouse-preset").first
+    if await mouse.count() and await mouse.is_visible():
+        box = await mouse.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] * 0.6, box["y"] + box["height"] / 2, steps=14)
+            await click_xy(page, box["x"] + box["width"] * 0.6, box["y"] + box["height"] / 2, hold_ms=100)
+        try:
+            await mouse.select_option(index=1)
+        except Exception:
+            pass
+        await page.wait_for_timeout(450)
+
+    # Appearance / theme
+    theme = page.locator("#pref-app-theme").first
+    if await theme.count() and await theme.is_visible():
+        await theme.scroll_into_view_if_needed()
+        box = await theme.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, steps=14)
+            await click_xy(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, hold_ms=100)
+        try:
+            options = await theme.locator("option").all_text_contents()
+            # Toggle to a different theme if available
+            current = await theme.input_value()
+            for i, _ in enumerate(options):
+                val = await theme.locator("option").nth(i).get_attribute("value")
+                if val and val != current:
+                    await theme.select_option(val)
+                    break
+        except Exception:
+            pass
+        await page.wait_for_timeout(500)
+
+    # Advanced → Simulated motion
+    adv = page.locator("#pref-advanced-toggle").first
+    if await adv.count() and await adv.is_visible():
+        box = await adv.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=14)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=100)
+        await page.wait_for_timeout(400)
+
+    gen_tab = page.locator("[data-preferences-advanced-tab='generation']").first
+    if await gen_tab.count() and await gen_tab.is_visible():
+        box = await gen_tab.bounding_box()
+        if box:
+            await move_to(page, box["x"] + 30, box["y"] + box["height"] / 2, steps=12)
+            await click_xy(page, box["x"] + 30, box["y"] + box["height"] / 2, hold_ms=100)
+        await page.wait_for_timeout(350)
+
+    motion = page.locator("#pref-advanced-sim-motion").first
+    if await motion.count():
+        try:
+            await motion.scroll_into_view_if_needed()
+        except Exception:
+            pass
+        if await motion.is_visible():
+            box = await motion.bounding_box()
+            if box:
+                await move_to(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, steps=14)
+                await click_xy(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, hold_ms=100)
+            try:
+                await motion.select_option("both")
+            except Exception:
+                try:
+                    await motion.select_option(index=2)
+                except Exception:
+                    pass
+            await page.wait_for_timeout(700)
+
+    # Hold on open Preferences so the GIF reads clearly
+    title = page.locator("#profile-preferences-title").first
+    if await title.count() and await title.is_visible():
+        box = await title.bounding_box()
+        if box:
+            await move_to(page, box["x"] + 40, box["y"] + 8, steps=12)
+    await page.wait_for_timeout(900)
+
+
 DEMOS = {
     "ai-generate": demo_ai_generate,
     "workspaces": demo_workspaces,
@@ -859,6 +1096,7 @@ DEMOS = {
     "wiring": demo_wiring,
     "cloud-sync": demo_cloud,
     "render-agent": demo_agent,
+    "preferences": demo_preferences,
 }
 
 

@@ -4,6 +4,7 @@ const TOKEN_KEY = "render3d:token";
 const USER_KEY = "render3d:user";
 const PENDING_CONNECTION_PREFS_KEY = "render3d:pendingConnectionPrefs:v1";
 const LOGOUT_RELOAD_KEY = "render3d:logoutReload:v1";
+const FUSION_LINKED_CACHE_PREFIX = "render3d:fusionLinked:";
 
 const ADMIN_EMAILS = new Set([
   "a1projects@protonmail.com",
@@ -112,6 +113,41 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     );
   }
 
+  function fusionCacheKey(user = loggedInUser) {
+    const id = String(user?.id || user?.email || "").trim();
+    return id ? `${FUSION_LINKED_CACHE_PREFIX}${id}` : "";
+  }
+
+  function readCachedFusionAccount(user = loggedInUser) {
+    const key = fusionCacheKey(user);
+    if (!key) return null;
+    try {
+      const data = JSON.parse(localStorage.getItem(key) || "null");
+      return data?.linked ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function cacheFusionAccount(linked, account = null, user = loggedInUser) {
+    const key = fusionCacheKey(user);
+    if (!key) return;
+    try {
+      if (!linked) {
+        localStorage.removeItem(key);
+        return;
+      }
+      localStorage.setItem(key, JSON.stringify({
+        linked: true,
+        autodesk_email: account?.autodesk_email || "",
+        autodesk_name: account?.autodesk_name || "",
+        cached_at: Date.now(),
+      }));
+    } catch {
+      /* local storage is best-effort */
+    }
+  }
+
   function showModal(show) {
     modal?.classList.toggle("hidden", !show);
     if (show) {
@@ -170,6 +206,9 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     document.body.classList.toggle("is-admin", isAdmin);
     adminDashboardLink?.classList.toggle("hidden", !isAdmin);
     adminDashboardToolbar?.classList.toggle("hidden", !isAdmin);
+    const cachedFusion = readCachedFusionAccount(user);
+    if (cachedFusion) setFusionBadge(true, cachedFusion);
+    else setFusionBadge(false);
   }
 
   function closeUserMenu() {
@@ -287,6 +326,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     } catch { /* non-critical */ }
     try {
       const fs = await api("/api/autodesk/status");
+      cacheFusionAccount(fs.linked === true, fs);
       setFusionBadge(fs.linked === true, fs);
       if (fs.linked === true) {
         window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));
@@ -499,6 +539,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     try {
       const status = await api("/api/autodesk/status");
       if (status?.linked) {
+        cacheFusionAccount(true, status);
         setFusionBadge(true, status);
         openFusionLibraryPanel();
         return status;
@@ -533,14 +574,17 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   });
 
   window.addEventListener("render3d:autodesk-unlinked", () => {
+    cacheFusionAccount(false);
     setFusionBadge(false);
   });
 
   window.addEventListener("render3d:autodesk-linked", async () => {
     try {
       const fs = await api("/api/autodesk/status");
+      cacheFusionAccount(true, fs);
       setFusionBadge(true, fs);
     } catch {
+      cacheFusionAccount(true);
       setFusionBadge(true);
     }
   });
@@ -638,8 +682,10 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
           showModal(false);
           try {
             const fs = await api("/api/autodesk/status");
+            cacheFusionAccount(true, fs, data.user);
             setFusionBadge(true, fs);
           } catch {
+            cacheFusionAccount(true, null, data.user);
             setFusionBadge(true);
           }
           window.dispatchEvent(new CustomEvent("render3d:autodesk-linked"));

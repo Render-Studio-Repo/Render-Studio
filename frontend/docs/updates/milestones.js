@@ -262,15 +262,6 @@ export const MILESTONE_UPDATES = [
     href: "/getting-started.html#cloud-sync",
   },
   {
-    id: "tips-tricks",
-    date: "2026-07-15",
-    kind: "feature",
-    title: "Tips and tricks",
-    summary:
-      "Shift-select files, drag refs into the prompt, keep prompts focused, share context.",
-    href: "/getting-started.html#tips-tricks",
-  },
-  {
     id: "send-to-bambu-studio",
     date: "2026-07-15",
     kind: "feature",
@@ -305,7 +296,7 @@ export const MILESTONE_UPDATES = [
     title: "Reference markup & Send to AI",
     summary:
       "Open PDFs and images in a Docs-style tab, draw pen callouts, add notes, then Send to AI so the marked image and notes land in the CAD prompt.",
-    visual: "/docs/media/reference-markup.gif?v=20260715-real",
+    visual: "/docs/media/reference-markup.gif?v=20260716-pdf-tab",
     href: "/getting-started.html#reference-markup",
   },
   {

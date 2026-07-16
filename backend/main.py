@@ -14397,6 +14397,7 @@ def _save_prompt_history(
     filename: str | None = None,
     error: str | None = None,
     ai_traces: list[dict[str, Any]] | dict[str, Any] | None = None,
+    status: str | None = None,
 ) -> dict[str, Any] | None:
     try:
         key_meta: dict[str, Any] = {}
@@ -14481,6 +14482,7 @@ def _save_prompt_history(
             ),
             skills=list(getattr(body, "skills", None) or []),
             entry_id=str(getattr(body, "prompt_id", None) or "").strip() or None,
+            status=status,
             **usage_meta,
             **key_meta,
         )
@@ -14760,6 +14762,44 @@ class CancelGenerationRequest(BaseModel):
     )
 
 
+def _save_stopped_prompt_history_for_jobs(
+    project_path: Path,
+    jobs: list[dict[str, Any]],
+    *,
+    trace_id: str | None = None,
+) -> None:
+    for job in jobs:
+        if str(job.get("kind") or "prompt").lower() != "prompt":
+            continue
+        job_trace_id = str(job.get("trace_id") or job.get("id") or "").strip()
+        if trace_id and job_trace_id != trace_id:
+            continue
+        body_data = job.get("request_body")
+        if not isinstance(body_data, dict):
+            continue
+        try:
+            body = PromptRequest.model_validate(body_data)
+            existing = prompt_history_service.list_entries(project_path, limit=500)
+            already_saved = any(str(e.get("trace_id") or "") == job_trace_id for e in existing)
+            if already_saved:
+                continue
+            job_user = get_user_by_id(str(job.get("by_user_id") or "")) if job.get("by_user_id") else None
+            _save_prompt_history(
+                project_path,
+                prompt=body.prompt,
+                success=False,
+                body=body,
+                refs_list=[r.model_dump() for r in body.references],
+                trace_id=job_trace_id or trace_id,
+                user=job_user,
+                message="Stopped before completion.",
+                error="Stopped by user.",
+                status="stopped",
+            )
+        except Exception as exc:
+            logger.debug("Could not save stopped prompt history for %s trace=%s: %s", project_path.name, job_trace_id, exc)
+
+
 @app.post("/api/projects/{project_id}/generation/cancel")
 def cancel_generation(
     project_id: str,
@@ -14771,6 +14811,7 @@ def cancel_generation(
     if not generation_service.is_running(path):
         return generation_service.public_summary(path)
     trace_id = str(body.trace_id or "").strip() or None
+    _save_stopped_prompt_history_for_jobs(path, generation_service.list_running_jobs(path), trace_id=trace_id)
     return generation_service.request_cancel(path, trace_id=trace_id)
 
 

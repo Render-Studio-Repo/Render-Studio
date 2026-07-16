@@ -63,7 +63,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt-purple";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-social-fusion-connect";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-fusion-auto-connect";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
 import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-thread-settings";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
@@ -860,6 +860,25 @@ async function cancelActiveGeneration(opts = {}) {
     || projectId;
   if (!pid || !isGenerationUiActive(pid)) return;
 
+  if (
+    viewportOverlayPid === pid
+    && viewportOverlayState?.kind === "scene_render"
+    && generationWatchPid !== pid
+  ) {
+    userCancelRequested = true;
+    activePromptGenerationId++;
+    activePromptAbort?.abort();
+    activePromptAbort = null;
+    const statusEl = document.getElementById("prompt-status");
+    if (statusEl && pid === projectId) {
+      statusEl.className = "status";
+      statusEl.textContent = "Stopping render…";
+    }
+    hideViewportOverlay(pid);
+    syncStopButtonVisibility();
+    return;
+  }
+
   let gen = allProjects.find((p) => p.id === pid)?.generation;
   try {
     gen = await api(`/api/projects/${pid}/generation`);
@@ -952,6 +971,10 @@ async function cancelActiveGeneration(opts = {}) {
           statusEl.className = "status";
           statusEl.textContent = nextGen.error || "Generation canceled.";
         }
+        await refreshTimeline();
+        if (nextGen.kind === "wiring") await refreshWiringPromptHistory();
+        else if (nextGen.kind === "rigging") await refreshRiggingPromptHistory();
+        else await refreshPromptHistory();
       }
     }
   } catch (err) {
@@ -1082,6 +1105,13 @@ function promptGenerationOverlayOpts(mode = "standard") {
       message: "Generating with 2.0 in background... refresh anytime; model loads when ready.",
       mode: "ai",
       estimateMs: 900000,
+    };
+  }
+  if (normalized === "render") {
+    return {
+      message: "Rendering photoreal scene…",
+      mode: "render",
+      estimateMs: 240000,
     };
   }
   return {
@@ -22118,13 +22148,25 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
     },
   });
   renderProjectList();
+  showViewportOverlay(renderProjectId, "Rendering photoreal scene…", {
+    kind: "scene_render",
+    promptMode: "render",
+    mode: "render",
+    prompt,
+    estimateMs: 240000,
+    progress: { pct: 8, label: "Rendering photoreal scene…" },
+  });
+  syncStopButtonVisibility();
   let data = null;
+  const renderAbort = new AbortController();
+  activePromptAbort = renderAbort;
   try {
     data = await api(
       `/api/projects/${renderProjectId}/scene-render`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: renderAbort.signal,
         body: JSON.stringify({
           prompt,
           viewport_image,
@@ -22135,12 +22177,21 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
       },
       240000,
     );
+  } catch (err) {
+    if (err?.name === "AbortError" || renderAbort.signal.aborted) {
+      const canceled = new Error("Render canceled.");
+      canceled.name = "AbortError";
+      throw canceled;
+    }
+    throw err;
   } finally {
+    if (activePromptAbort === renderAbort) activePromptAbort = null;
     const current = allProjects.find((p) => p.id === renderProjectId);
     if (current?.generation?.trace_id === renderGenerationId) {
       upsertProjectInList({ id: renderProjectId, generation: previousGeneration });
       renderProjectList();
     }
+    hideViewportOverlay(renderProjectId, { complete: !renderAbort.signal.aborted });
   }
   lastPromptCopyContext = {
     ...lastPromptCopyContext,
@@ -22385,12 +22436,21 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   }
   if (promptMode === "render") {
     promptSubmitInFlight = true;
+    userCancelRequested = false;
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
     try {
       await runSceneRenderPrompt(prompt, promptReferencesForSubmit());
     } catch (err) {
       const status = document.getElementById("prompt-status");
       const msg = formatUserError(err);
+      if (err?.name === "AbortError" || userCancelRequested) {
+        if (status) {
+          status.className = "status";
+          status.textContent = "Render canceled.";
+        }
+        viewerOverlay.clearError();
+        return;
+      }
       if (status) {
         status.className = "status error";
         status.textContent = msg;
@@ -22399,6 +22459,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       if (/openai key/i.test(msg)) aiKeyUi?.openRequired?.();
     } finally {
       promptSubmitInFlight = false;
+      userCancelRequested = false;
     }
     return;
   }

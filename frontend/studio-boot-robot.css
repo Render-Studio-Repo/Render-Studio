@@ -75,7 +75,7 @@
   }
 
   .studio-boot-arm-elbow {
-    transform: rotate(-34deg);
+    transform: rotate(-90deg);
     transform-origin: 112px 78px;
     transform-box: view-box;
   }

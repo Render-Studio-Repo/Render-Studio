@@ -3376,10 +3376,19 @@ def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
                 candidates.append((score, angle, trial))
             candidates.sort(key=lambda item: item[0], reverse=True)
             _best_score, _angle, mesh = candidates[0]
+            scene.apply_transform(trimesh.transformations.rotation_matrix(_angle, [1, 0, 0]))
 
-        _ensure_base_footprint_on_min_z(mesh)
-        _seat_mesh_on_xy_floor(mesh)
-        mesh.export(glb_path, file_type="glb")
+        if _ensure_base_footprint_on_min_z(mesh):
+            scene.apply_transform(trimesh.transformations.rotation_matrix(math.pi, [1, 0, 0]))
+        bounds = mesh.bounds
+        translation = [
+            -(bounds[0, 0] + bounds[1, 0]) / 2.0,
+            -(bounds[0, 1] + bounds[1, 1]) / 2.0,
+            -bounds[0, 2],
+        ]
+        mesh.apply_translation(translation)
+        scene.apply_transform(trimesh.transformations.translation_matrix(translation))
+        scene.export(glb_path, file_type="glb")
     except Exception as exc:
         logger.warning("Could not convert text-to-cad GLB to Z-up (%s): %s", glb_path.name, exc)
 

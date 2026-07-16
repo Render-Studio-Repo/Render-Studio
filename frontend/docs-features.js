@@ -16,7 +16,7 @@ const G = {
   ai: "/docs/media/ai-generate.gif?v=20260715-real",
   workspaces: "/docs/media/workspaces.gif?v=20260715-real",
   share: "/docs/media/share-folder.gif?v=20260715-real",
-  markup: "/docs/media/reference-markup.gif?v=20260715-real",
+  markup: "/docs/media/reference-markup.gif?v=20260716-pdf-tab",
   canvas: "/docs/media/canvas.gif?v=20260715-real",
   picks: "/docs/media/picks.gif?v=20260715-real",
   wiring: "/docs/media/wiring.gif?v=20260715-real",
@@ -503,22 +503,6 @@ export const DOC_FEATURES = [
     ],
     ask: "How do AI keys and cost analytics work?",
     keywords: ["api key", "costs", "spend limit", "tokens"],
-  },
-  {
-    id: "tips-tricks",
-    category: "help",
-    title: "Tips and tricks",
-    summary: "Shift-select files, drag refs into the prompt, keep prompts focused, share context.",
-    where: "Getting Started · Tips library",
-    gif: G.ai,
-    steps: [
-      "Shift-click in the Project browser to select a file range.",
-      "Drag files into the AI prompt as references.",
-      "Prefer @face/@edge/@path chips over vague locations.",
-      "Generate the main object first, then revise selected results.",
-    ],
-    ask: "Give me practical Render3D tips and tricks.",
-    keywords: ["tips", "tricks", "shift select", "best practices"],
   },
 ];
 

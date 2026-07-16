@@ -243,7 +243,7 @@ const SHOW_ME_TOURS = {
     title: "Reference markup",
     example: "",
     studioPath: "/?showMe=reference-markup",
-    gif: "/docs/media/reference-markup.gif?v=20260715-real",
+    gif: "/docs/media/reference-markup.gif?v=20260716-pdf-tab",
     steps: [
       { selector: "#project-browser, .browser-section", label: "Open a PDF/image from Project files", click: false },
     ],
@@ -403,15 +403,6 @@ const SHOW_ME_TOURS = {
     gif: "/docs/media/render-agent.gif?v=20260715-real",
     steps: [
       { selector: "#btn-render-agent, #render-agent-fab, .render-agent-fab", label: "Click Agent", click: true },
-    ],
-  },
-  "tips-tricks": {
-    title: "Tips & tricks",
-    example: "",
-    studioPath: "/getting-started.html#tips-library",
-    gif: null,
-    steps: [
-      { selector: "#tips-library, .gs-tips-section", label: "Tips & tricks library", click: false },
     ],
   },
   "link-to-prompt": {

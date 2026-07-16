@@ -1,7 +1,7 @@
 /** Getting Started feature guides for Docs. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-robot-arm";
-import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260715-robot-arm";
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260716-no-tips-tricks";
+import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260716-no-tips-tricks";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
 import { createRenderAgent } from "./render-agent.js?v=20260715-chat-fab-fallback";
 import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
