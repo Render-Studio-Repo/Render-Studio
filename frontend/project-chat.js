@@ -226,6 +226,7 @@ export function createProjectChatUI({
   let socialTimer = null;
   let workspaceRole = null;
   let activeThreadMeta = null;
+  let activeProjectId = null;
   let imageBlobUrls = [];
   let inboxView = "inbox";
   let pendingWorkspaceInvite = null;
@@ -292,6 +293,22 @@ export function createProjectChatUI({
       badge.classList.add("hidden");
       badge.classList.remove("pc-btn-badge--mention");
     }
+  }
+
+  function resetProjectChatState(nextProjectId) {
+    if (activeProjectId === nextProjectId) return;
+    activeProjectId = nextProjectId || null;
+    threads = [];
+    activeThreadId = null;
+    activeThreadMeta = null;
+    messages = [];
+    replyTo = null;
+    pendingFiles = [];
+    mentionIndex = -1;
+    renderThreads();
+    renderMessages();
+    renderReplyBar();
+    renderPending();
   }
 
   function persistUnreadHint(projectId, summary) {
@@ -1144,6 +1161,17 @@ export function createProjectChatUI({
     return `<div class="pc-reactions">${chips}${picker}</div>`;
   }
 
+  function renderChatError(message) {
+    const host = overlay?.querySelector("#pc-messages");
+    if (!host) return;
+    const text = esc(message || "Could not save message.");
+    host.insertAdjacentHTML(
+      "beforeend",
+      `<div class="pc-empty pc-error"><strong>Chat was not saved.</strong><span class="muted">${text}</span></div>`,
+    );
+    host.scrollTop = host.scrollHeight;
+  }
+
   function renderMessages() {
     const host = overlay?.querySelector("#pc-messages");
     if (!host) return;
@@ -1274,6 +1302,7 @@ export function createProjectChatUI({
   async function loadThreads() {
     const projectId = getProjectId?.();
     if (!projectId) return;
+    resetProjectChatState(projectId);
     const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads`);
     threads = data.threads || [];
     workspaceRole = data.workspace_role || null;
@@ -1288,6 +1317,7 @@ export function createProjectChatUI({
   async function selectThread(threadId) {
     const projectId = getProjectId?.();
     if (!projectId || !threadId) return;
+    resetProjectChatState(projectId);
     activeThreadId = threadId;
     renderThreads();
     const data = await api(`/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(threadId)}`);
@@ -1314,6 +1344,9 @@ export function createProjectChatUI({
     const projectId = getProjectId?.();
     const input = overlay?.querySelector("#pc-input");
     if (!projectId || !activeThreadId || !input) return;
+    resetProjectChatState(projectId);
+    const sendProjectId = projectId;
+    const sendThreadId = activeThreadId;
     const body = serializeComposer(input);
     if (!body && !pendingFiles.length) return;
     const form = new FormData();
@@ -1325,9 +1358,13 @@ export function createProjectChatUI({
     const taggedAgent = /@\[[^\]]+\]\(agent:[^)]+\)/i.test(body) || /@render\s*agent\b/i.test(body);
     try {
       const data = await api(
-        `/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(activeThreadId)}/messages`,
+        `/api/projects/${encodeURIComponent(sendProjectId)}/chat/threads/${encodeURIComponent(sendThreadId)}/messages`,
         { method: "POST", body: form }
       );
+      if (getProjectId?.() !== sendProjectId || activeThreadId !== sendThreadId) {
+        onStatus?.("ok", "Message saved to the project chat you sent it from.");
+        return;
+      }
       clearComposer(input);
       pendingFiles = [];
       replyTo = null;
@@ -1337,15 +1374,20 @@ export function createProjectChatUI({
         messages = [...messages.filter((m) => m.id !== data.message.id), data.message];
         renderMessages();
         // Reload so agent replies (parent_id) show up shortly after send.
-        await selectThread(activeThreadId);
+        await selectThread(sendThreadId);
         if (taggedAgent) {
-          setTimeout(() => void selectThread(activeThreadId), 1200);
-          setTimeout(() => void selectThread(activeThreadId), 3200);
+          setTimeout(() => {
+            if (getProjectId?.() === sendProjectId) void selectThread(sendThreadId);
+          }, 1200);
+          setTimeout(() => {
+            if (getProjectId?.() === sendProjectId) void selectThread(sendThreadId);
+          }, 3200);
         }
       }
       onStatus?.("ok", taggedAgent ? "Message sent — Render Agent is replying…" : "Message sent");
       input.focus();
     } catch (err) {
+      renderChatError(err.message || "Could not send message");
       onStatus?.("error", err.message || "Could not send message");
     } finally {
       if (sendBtn) sendBtn.disabled = false;
