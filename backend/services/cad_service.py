@@ -2443,6 +2443,7 @@ def split_step_solids_to_glbs(
     if shell_glb_path is not None and kept:
         try:
             rebuild_shell_glb_from_parts(Path(shell_glb_path), kept)
+            colorize_assembly_glb_parts(Path(shell_glb_path))
         except Exception as exc:
             logger.warning("Could not rebuild shell GLB %s from STEP solids: %s", Path(shell_glb_path).name, exc)
     return outputs
@@ -2526,9 +2527,31 @@ def split_scene_components_to_glbs(
     if kept and len(kept) > 1:
         try:
             rebuild_shell_glb_from_parts(viewer_path, kept)
+            colorize_assembly_glb_parts(viewer_path)
         except Exception as exc:
             logger.debug("Could not rebuild shell after scene split for %s: %s", viewer_path.name, exc)
     return outputs
+
+
+def _compose_pivot_matrix(transform: dict[str, Any], center: np.ndarray) -> np.ndarray:
+    """Build a 4x4 matrix matching ``apply_transform`` (scale/rotate about center, then translate)."""
+    center = np.asarray(center, dtype=float).reshape(3)
+    matrix = np.eye(4, dtype=float)
+    has_scale = "scale" in transform
+    has_rot = "rotation_deg" in transform
+    if has_scale or has_rot:
+        to_origin = trimesh.transformations.translation_matrix(-center)
+        back = trimesh.transformations.translation_matrix(center)
+        local = np.eye(4, dtype=float)
+        if has_scale:
+            local = trimesh.transformations.scale_matrix(float(transform["scale"])) @ local
+        if has_rot:
+            r = np.radians(transform["rotation_deg"])
+            local = trimesh.transformations.euler_matrix(r[0], r[1], r[2], axes="sxyz") @ local
+        matrix = back @ local @ to_origin
+    if "translation" in transform:
+        matrix = trimesh.transformations.translation_matrix(np.asarray(transform["translation"], dtype=float)) @ matrix
+    return matrix
 
 
 def apply_transform_preserving_parts(
@@ -2537,19 +2560,22 @@ def apply_transform_preserving_parts(
     *,
     out_path: Path | None = None,
 ) -> Path:
-    """Apply a transform while keeping multi-mesh GLB scene components separate."""
+    """Apply a transform while keeping multi-mesh GLB materials and scene nodes intact.
+
+    Remeshing through ``mesh_copy``/``export_mesh`` collapses PBR/part colours to one
+    solid tint. Prefer ``Scene.apply_transform`` so Fusion assemblies keep their look.
+    """
     path = Path(path)
     dest = Path(out_path) if out_path is not None else path
     scene = load_scene(path)
-    parts = _meshes_from_scene(scene)
-    if len(parts) <= 1:
-        mesh = parts[0][1] if parts else load_mesh(path)
+    nodes = list(scene.graph.nodes_geometry)
+    if len(nodes) <= 1:
+        mesh = load_mesh(path)
         export_mesh(apply_transform(mesh, transform), dest)
         return dest
-    rebuilt = trimesh.Scene()
-    for label, mesh in parts:
-        rebuilt.add_geometry(apply_transform(mesh, transform), geom_name=label, node_name=label)
-    export_scene(rebuilt, dest)
+    center = np.asarray(scene.bounds, dtype=float).mean(axis=0) if scene.bounds is not None else np.zeros(3)
+    scene.apply_transform(_compose_pivot_matrix(transform, center))
+    export_scene(scene, dest)
     return dest
 
 
@@ -2560,22 +2586,35 @@ def transform_scene_body(
     *,
     out_path: Path | None = None,
 ) -> Path:
-    """Transform one body without collapsing a multi-mesh assembly to a single mesh."""
+    """Transform one body via its scene-graph node so materials stay intact."""
     path = Path(path)
     dest = Path(out_path) if out_path is not None else path
     scene = load_scene(path)
-    parts = _meshes_from_scene(scene)
+    nodes = list(scene.graph.nodes_geometry)
     idx = int(body_index)
-    if len(parts) > 1:
-        if idx < 0 or idx >= len(parts):
+    if len(nodes) > 1:
+        if idx < 0 or idx >= len(nodes):
             raise ValueError(f"body_index out of range: {idx}")
-        rebuilt = trimesh.Scene()
-        for i, (label, mesh) in enumerate(parts):
-            use = apply_transform(mesh, transform) if i == idx else mesh
-            rebuilt.add_geometry(use, geom_name=label, node_name=label)
-        export_scene(rebuilt, dest)
+        node = nodes[idx]
+        xform, geom_name = scene.graph.get(node)
+        geom = scene.geometry.get(geom_name)
+        if geom is None:
+            raise ValueError(f"Missing geometry for body_index {idx}")
+        # World-space center of this part (bounds already include node transform when dumped).
+        try:
+            world = np.asarray(xform, dtype=float) if xform is not None else np.eye(4)
+            local_bounds = np.asarray(geom.bounds, dtype=float)
+            local_center = local_bounds.mean(axis=0)
+            center_h = np.array([local_center[0], local_center[1], local_center[2], 1.0], dtype=float)
+            center = (world @ center_h)[:3]
+        except Exception:
+            center = np.zeros(3, dtype=float)
+        matrix = _compose_pivot_matrix(transform, center)
+        current = np.asarray(xform, dtype=float) if xform is not None else np.eye(4)
+        scene.graph.update(frame_to=node, matrix=matrix @ current)
+        export_scene(scene, dest)
         return dest
-    mesh = parts[0][1] if parts else load_mesh(path)
+    mesh = load_mesh(path)
     export_mesh(transform_mesh_body(mesh, idx, transform), dest)
     return dest
 

@@ -5666,6 +5666,17 @@ async function afterModelEdit(data) {
     timelineData = data.timeline;
     timeline.setTimeline(data.timeline, { scroll: true, scrollAlign: "end" });
   }
+  // Baked transforms reload geometry — mark the live drag undo as committed so
+  // Cmd+Z/Y use the timeline instead of poking a disposed mesh pose.
+  if (isBakedTransform) {
+    for (let i = viewportUndoStack.length - 1; i >= 0; i -= 1) {
+      const entry = viewportUndoStack[i];
+      if (entry?.type === "transform" && !entry.committed) {
+        entry.committed = true;
+        break;
+      }
+    }
+  }
   await refreshTimeline();
   await refreshPromptHistory();
 }
@@ -5697,13 +5708,14 @@ function undoViewportAction() {
     const cur = timelineCurrentIndex();
     const tip = cur >= 0 ? entries[cur] : null;
     const tipKind = String(tip?.kind || tip?.action || tip?.type || "").toLowerCase();
-    if (action.committed && tip && (tipKind === "transform" || tipKind.includes("transform"))) {
+    const tipIsTransform = !!(tip && (tipKind === "transform" || tipKind.includes("transform")));
+    if (action.committed && tipIsTransform) {
       viewportRedoStack.push(action);
-      undoTimeline();
+      void undoTimeline();
       return true;
     }
     const mesh = resolveViewportTransformTarget(action);
-    if (mesh && action.before) {
+    if (mesh && action.before && !action.committed) {
       mesh.position.fromArray(action.before.position);
       mesh.quaternion.fromArray(action.before.quaternion);
       mesh.scale.fromArray(action.before.scale);
@@ -5714,9 +5726,14 @@ function undoViewportAction() {
       viewportRedoStack.push(action);
       return true;
     }
-    // If live mesh is gone (reload mid-apply), try timeline.
+    // Reloaded mesh / missed committed flag — fall back to timeline.
+    if (cur > 0 && tipIsTransform) {
+      viewportRedoStack.push(action);
+      void undoTimeline();
+      return true;
+    }
     if (cur > 0) {
-      undoTimeline();
+      void undoTimeline();
       return true;
     }
     setEditStatus("error", "Nothing to undo.");
@@ -5771,13 +5788,14 @@ function redoViewportAction() {
     const cur = timelineCurrentIndex();
     const next = cur + 1 < entries.length ? entries[cur + 1] : null;
     const nextKind = String(next?.kind || next?.action || next?.type || "").toLowerCase();
-    if (action.committed && next && (nextKind === "transform" || nextKind.includes("transform"))) {
+    const nextIsTransform = !!(next && (nextKind === "transform" || nextKind.includes("transform")));
+    if (action.committed && nextIsTransform) {
       viewportUndoStack.push(action);
-      redoTimeline();
+      void redoTimeline();
       return true;
     }
     const mesh = resolveViewportTransformTarget(action);
-    if (mesh && action.after) {
+    if (mesh && action.after && !action.committed) {
       mesh.position.fromArray(action.after.position);
       mesh.quaternion.fromArray(action.after.quaternion);
       mesh.scale.fromArray(action.after.scale);
@@ -5788,8 +5806,13 @@ function redoViewportAction() {
       viewportUndoStack.push(action);
       return true;
     }
-    if (next) {
-      redoTimeline();
+    if (nextIsTransform) {
+      viewportUndoStack.push(action);
+      void redoTimeline();
+      return true;
+    }
+    if (cur >= 0 && cur < entries.length - 1) {
+      void redoTimeline();
       return true;
     }
     setEditStatus("error", "Nothing to redo.");
