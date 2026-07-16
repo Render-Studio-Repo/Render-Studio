@@ -183,6 +183,9 @@ async function main() {
   const btnTransparent = $("btn-share-transparent");
   const btnOpen = $("btn-share-open");
   const btnDownloadMenu = $("btn-share-download");
+  const btnMobileFullscreen = $("btn-share-mobile-fullscreen");
+  const btnMobileTools = $("btn-share-mobile-tools");
+  const btnMobileFit = $("btn-share-mobile-fit");
   const downloadSheet = $("share-download-sheet");
   const remixModal = $("share-remix-modal");
   const remixProjectSelect = $("share-remix-project-select");
@@ -423,6 +426,7 @@ async function main() {
     antialias: true,
     alpha: false,
     powerPreference: "high-performance",
+    logarithmicDepthBuffer: true,
   });
   if (heroEmbedActive) {
     renderer.setClearColor(0x0d1117, 1);
@@ -508,23 +512,32 @@ async function main() {
         }
       }
     }
-    let near = Math.max(radius * 0.002, dist * 0.002, 0.001);
+    const margin = Math.max(radius * 0.08, 0.002);
+    let near = Math.max(radius * 0.001, 0.0005);
     if (Number.isFinite(minDepth) && minDepth > 1e-4) {
-      near = Math.min(near, minDepth * 0.45);
+      // Keep the near plane close to the nearest model surface when zoomed out.
+      // A tiny near value plus a very distant far plane causes CAD colors and
+      // overlays to z-fight, which looks like faces clipping through each other.
+      if (minDepth > margin * 1.5) {
+        near = Math.max(near, Math.min(minDepth * 0.9, minDepth - margin));
+      } else {
+        near = Math.min(near, minDepth * 0.35);
+      }
     } else {
       near = Math.min(near, Math.max(dist * 0.00005, 0.00005));
     }
     let far = Math.max(
-      Number.isFinite(maxDepth) ? maxDepth + radius * 2.5 : 0,
-      dist + radius * 4,
-      orbitRadius * 8,
-      200,
+      Number.isFinite(maxDepth) ? maxDepth + margin * 4 : 0,
+      Number.isFinite(minDepth) && minDepth > 1e-4 ? near + radius * 3 : 0,
+      orbitRadius * 3,
+      radius * 8,
+      20,
     );
-    const maxRatio = 2e5;
+    const maxRatio = 5e4;
     if (far / Math.max(near, 1e-8) > maxRatio) {
       const cappedNear = far / maxRatio;
       if (Number.isFinite(minDepth) && minDepth > 1e-4) {
-        near = Math.min(Math.max(near, cappedNear), minDepth * 0.45);
+        near = Math.min(Math.max(near, cappedNear), minDepth * 0.95);
       } else {
         near = Math.max(near, cappedNear);
       }
@@ -532,6 +545,35 @@ async function main() {
     camera.near = near;
     camera.far = far;
     camera.updateProjectionMatrix();
+  }
+
+  function hardenShareDepthLayers(object) {
+    object?.traverse?.((child) => {
+      if (!child?.material) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      if (child.userData?.isSilhouette) {
+        child.renderOrder = 0;
+        materials.forEach((mat) => {
+          if (!mat) return;
+          mat.depthTest = true;
+          mat.depthWrite = false;
+          mat.polygonOffset = true;
+          mat.polygonOffsetFactor = 1;
+          mat.polygonOffsetUnits = 1;
+          mat.needsUpdate = true;
+        });
+        return;
+      }
+      if (child.userData?.isEdge) {
+        child.renderOrder = 4;
+        materials.forEach((mat) => {
+          if (!mat) return;
+          mat.depthTest = true;
+          mat.depthWrite = false;
+          mat.needsUpdate = true;
+        });
+      }
+    });
   }
 
   function frameBox(box, { pad = 1.32 } = {}) {
@@ -700,6 +742,29 @@ async function main() {
     }
     statusEl.classList.remove("hidden");
     statusEl.textContent = msg;
+  }
+
+  function setMobileToolsOpen(open) {
+    document.body.classList.toggle("share-mobile-tools-open", !!open);
+    btnMobileTools?.setAttribute("aria-expanded", String(!!open));
+    btnMobileTools?.classList.toggle("active", !!open);
+  }
+
+  function syncMobileFullscreenLabel() {
+    const expanded = document.body.classList.contains("share-viewer-expanded");
+    btnMobileFullscreen?.setAttribute("aria-pressed", String(expanded));
+    btnMobileFullscreen?.classList.toggle("active", expanded);
+    if (btnMobileFullscreen) btnMobileFullscreen.textContent = expanded ? "Exit full screen" : "Full screen";
+  }
+
+  function setShareViewerExpanded(expanded) {
+    document.body.classList.toggle("share-viewer-expanded", !!expanded);
+    if (expanded) setMobileToolsOpen(false);
+    syncMobileFullscreenLabel();
+    requestAnimationFrame(() => {
+      resize();
+      fitCamera();
+    });
   }
 
   function syncSectionAvailability() {
@@ -961,6 +1026,7 @@ async function main() {
           loadedScene = gltf.scene;
           root.add(loadedScene);
           applyCadStyle(root);
+          hardenShareDepthLayers(root);
           fitCamera();
           renderComponentTree();
           loadSharedRobot();
@@ -996,6 +1062,35 @@ async function main() {
   btnFit?.addEventListener("click", () => {
     fitCamera();
   });
+  btnMobileFit?.addEventListener("click", () => {
+    fitCamera();
+  });
+  btnMobileTools?.addEventListener("click", () => {
+    setMobileToolsOpen(!document.body.classList.contains("share-mobile-tools-open"));
+  });
+  btnMobileFullscreen?.addEventListener("click", async () => {
+    const nextExpanded = !document.body.classList.contains("share-viewer-expanded");
+    setShareViewerExpanded(nextExpanded);
+    if (nextExpanded && viewerEl.requestFullscreen && !document.fullscreenElement) {
+      try {
+        await viewerEl.requestFullscreen();
+      } catch (_) {
+        // Browser fullscreen is optional; the CSS viewport expansion still applies.
+      }
+    } else if (!nextExpanded && document.fullscreenElement && document.exitFullscreen) {
+      try {
+        await document.exitFullscreen();
+      } catch (_) {
+        // Ignore browsers that reject programmatic fullscreen exits.
+      }
+    }
+  });
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement && document.body.classList.contains("share-viewer-expanded")) {
+      setShareViewerExpanded(false);
+    }
+  });
+  syncMobileFullscreenLabel();
 
   btnWireframe?.addEventListener("click", () => {
     wireframeEnabled = !wireframeEnabled;
@@ -1126,6 +1221,7 @@ async function main() {
   });
 
   function syncInspectorUi(on, focus = "components") {
+    if (on) setMobileToolsOpen(false);
     btnInspector?.classList.toggle("active", on && focus === "components");
     btnInspector?.setAttribute("aria-pressed", String(on && focus === "components"));
     btnHistory?.classList.toggle("active", on && focus === "history");
@@ -1240,6 +1336,7 @@ async function main() {
   viewerEl.addEventListener("pointercancel", clearTransparentPointer, true);
 
   function syncSectionUi(on) {
+    if (on) setMobileToolsOpen(false);
     btnSection?.classList.toggle("active", on);
     btnSection?.setAttribute("aria-pressed", String(on));
     sectionPanel?.classList.toggle("hidden", !on);
@@ -1284,6 +1381,7 @@ async function main() {
   btnDownloadMenu?.addEventListener("click", () => {
     renderDownloadMenu($("share-download-list"));
     downloadSheet?.classList.toggle("hidden");
+    if (!downloadSheet?.classList.contains("hidden")) setMobileToolsOpen(false);
     btnDownloadMenu.classList.toggle("active", !downloadSheet?.classList.contains("hidden"));
   });
   downloadSheet?.querySelector("[data-close-downloads]")?.addEventListener("click", () => {

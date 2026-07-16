@@ -514,7 +514,7 @@ def _draw_render3d_badge(image: Any) -> None:
     from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
     width, height = image.size
-    margin = max(18, int(min(width, height) * 0.028))
+    margin = max(10, int(min(width, height) * 0.018))
     icon_size = max(216, min(336, int(height * 0.285)))
 
     logo_paths = [

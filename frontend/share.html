@@ -67,6 +67,7 @@
     body.share-embed .share-status,
     body.share-embed #share-status,
     body.share-embed .share-bottom,
+    body.share-embed .share-mobile-controls,
     body.share-embed footer,
     body.share-embed #share-section-panel,
     body.share-embed #share-inspector-panel,
@@ -185,6 +186,9 @@
       display: block;
       width: 100%;
       height: 100%;
+    }
+    .share-mobile-controls {
+      display: none;
     }
     #share-status {
       position: absolute;
@@ -996,21 +1000,102 @@
     .share-remix-status.error { color: #ff7b72; }
     .muted { color: var(--muted); }
     @media (max-width: 720px) {
+      body {
+        display: block;
+      }
       header.share-top {
-        flex-direction: column;
-        align-items: stretch;
+        position: fixed;
+        top: max(8px, var(--safe-top));
+        left: 8px;
+        right: 8px;
+        z-index: 12;
+        align-items: center;
+        padding: 8px 10px;
+        border: 1px solid rgba(48, 54, 61, 0.78);
+        border-radius: 16px;
+        background: rgba(13, 17, 23, 0.74);
+      }
+      .share-brand-row { gap: 6px; }
+      .share-brand-row img {
+        width: 18px;
+        height: 18px;
+      }
+      .share-brand { font-size: 0.66rem; }
+      .share-top h1 {
+        max-width: calc(100vw - 138px);
+        font-size: 0.84rem;
+      }
+      .share-top p {
+        max-width: calc(100vw - 138px);
+        font-size: 0.66rem;
       }
       .share-top-actions {
-        justify-content: stretch;
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        z-index: 18;
+        display: none;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid rgba(88, 166, 255, 0.24);
+        border-radius: 18px;
+        background: rgba(13, 17, 23, 0.94);
+        box-shadow: 0 -18px 54px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(16px);
+      }
+      body.share-mobile-tools-open .share-top-actions {
+        display: grid;
       }
       .share-tool {
-        flex: 1 1 calc(50% - 6px);
+        min-height: 42px;
+        padding: 9px 10px;
         text-align: center;
       }
+      .share-top-actions .share-tool {
+        border-radius: 14px;
+        font-size: 0.72rem;
+      }
+      #share-viewer {
+        position: fixed;
+        inset: 0;
+        min-height: 100dvh;
+        min-height: 100vh;
+      }
+      .share-mobile-controls {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: calc(8px + var(--safe-bottom));
+        z-index: 19;
+        display: grid;
+        grid-template-columns: 1.1fr 1fr 1fr;
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid rgba(48, 54, 61, 0.78);
+        border-radius: 18px;
+        background: rgba(13, 17, 23, 0.88);
+        box-shadow: 0 -14px 44px rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(16px);
+      }
+      .share-mobile-controls .share-tool {
+        min-height: 44px;
+        border-radius: 14px;
+        font-size: 0.74rem;
+      }
+      body.share-viewer-expanded header.share-top,
+      body.share-viewer-expanded .share-bottom {
+        display: none;
+      }
+      body.share-viewer-expanded .share-mobile-controls {
+        grid-template-columns: 1fr 1fr;
+      }
+      body.share-viewer-expanded #btn-share-mobile-fit {
+        display: none;
+      }
       .share-bottom {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
+        display: none;
       }
       .share-download-wrap {
         width: 100%;
@@ -1026,13 +1111,42 @@
         width: auto;
       }
       #share-section-panel {
-        bottom: calc(12px + var(--safe-bottom));
+        position: fixed;
+        top: auto;
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        z-index: 17;
+        max-height: min(42dvh, 360px);
+        overflow: auto;
       }
       #share-inspector-panel {
+        position: fixed;
         top: auto;
-        right: 12px;
-        bottom: calc(12px + var(--safe-bottom));
-        max-height: 48vh;
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        z-index: 17;
+        width: auto;
+        max-height: min(48dvh, 420px);
+      }
+      #share-download-sheet {
+        z-index: 21;
+      }
+      .share-sheet-card {
+        max-height: min(52dvh, 460px);
+        padding-bottom: calc(16px + var(--safe-bottom));
+      }
+      #share-transparent-tip {
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        width: auto;
+      }
+      body.share-mobile-tools-open #share-section-panel,
+      body.share-mobile-tools-open #share-inspector-panel,
+      body.share-mobile-tools-open #share-transparent-tip {
+        bottom: calc(166px + var(--safe-bottom));
       }
     }
     @media (min-width: 721px) {
@@ -1066,6 +1180,11 @@
 
   <main id="share-viewer">
     <div id="share-status">Loading preview…</div>
+    <div class="share-mobile-controls" aria-label="Mobile viewer controls">
+      <button type="button" class="share-tool share-tool--primary" id="btn-share-mobile-fullscreen" aria-pressed="false">Full screen</button>
+      <button type="button" class="share-tool" id="btn-share-mobile-tools" aria-expanded="false">Tools</button>
+      <button type="button" class="share-tool" id="btn-share-mobile-fit">Fit</button>
+    </div>
     <div id="share-transparent-tip" class="hidden" role="status" aria-live="polite">
       <strong>Transparent tool on</strong>
       <span>Click a part to toggle transparency. Dragging is paused while this tool is active.</span>
@@ -1194,6 +1313,6 @@
       document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
     }
   </script>
-  <script type="module" src="/share-viewer.js?v=20260716-share-depth-precision"></script>
+  <script type="module" src="/share-viewer.js?v=20260716-share-depth-fighting"></script>
 </body>
 </html>
