@@ -1732,6 +1732,7 @@ try {
     antialias: true,
     powerPreference: "high-performance",
     preserveDrawingBuffer: true,
+    logarithmicDepthBuffer: true,
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
   setupRenderer(renderer);
@@ -11670,6 +11671,7 @@ function updateCameraClipPlanes() {
   const bounds = sceneBounds();
   const contentRadius = Math.max(sceneRadius() || 1, 0.05);
   const gridExtent = niceGridSize(contentRadius) * 0.75;
+  const sceneExtent = Math.max(contentRadius, gridExtent, 1);
   const viewDir = camera.getWorldDirection(new THREE.Vector3()).normalize();
   let minDepth = Infinity;
   let maxDepth = -Infinity;
@@ -11685,35 +11687,37 @@ function updateCameraClipPlanes() {
     }
   }
 
-  // Prefer a very small near plane, then cap it by the real distance to the
-  // closest model bounds. This avoids slicing large/offset meshes when orbiting.
-  let near = Math.max(orbitDist * 0.0002, 0.00005);
+  const margin = Math.max(contentRadius * 0.1, 0.002);
+  // Keep near close, but not so close that a zoomed-out far plane destroys depth precision.
+  let near = Math.max(Math.min(orbitDist * 0.0005, sceneExtent * 0.01), 0.0005);
   if (Number.isFinite(minDepth) && minDepth > 1e-4) {
-    near = Math.min(near, minDepth * 0.35);
+    if (minDepth > margin * 1.5) {
+      near = Math.min(Math.max(near, minDepth * 0.02), minDepth - margin);
+    } else {
+      near = Math.min(near, minDepth * 0.35);
+    }
   } else {
     // Camera is inside/near the bounds (tight zoom or huge part) — keep near tiny.
     near = Math.min(near, Math.max(orbitDist * 0.00005, 0.00005));
   }
 
-  // Far must enclose the mesh and grid regardless of zoom level.
+  // Far must enclose visible content, but should not explode with zoom distance.
   let far = Math.max(
-    Number.isFinite(maxDepth) ? maxDepth + contentRadius * 2 : 0,
-    orbitDist + Math.max(contentRadius, gridExtent) * 6,
-    orbitDist * 250,
-    contentRadius * 120,
-    gridExtent * 2.5,
+    Number.isFinite(maxDepth) ? maxDepth + margin * 8 : 0,
+    orbitDist + sceneExtent * 8,
+    sceneExtent * 24,
     100,
   );
 
-  // Keep depth precision usable on a 24-bit depth buffer.
-  const maxRatio = 1e6;
+  // Keep depth precision usable. Log depth helps, but sane planes still prevent
+  // dark shimmer/clipping on large CAD assemblies.
+  const maxRatio = 2e5;
   if (far / Math.max(near, 1e-8) > maxRatio) {
     const cappedNear = far / maxRatio;
     if (Number.isFinite(minDepth) && minDepth > 1e-4) {
-      near = Math.min(cappedNear, minDepth * 0.35);
-      far = Math.max(far, near * Math.min(maxRatio, 5e5));
+      near = Math.min(Math.max(near, cappedNear), Math.max(minDepth * 0.5, 0.0005));
     } else {
-      near = Math.min(near, cappedNear);
+      near = Math.max(near, cappedNear);
     }
   }
 
@@ -14076,22 +14080,47 @@ function initPromptKeyPopup() {
     const keyId = modelSel.dataset.keyId;
     const source = modelSel.dataset.source;
     const newModel = modelSel.value;
-    const endpoint = source === "team"
-      ? null // team key model changes go through the key manager for now
-      : `/api/user/ai-keys/${keyId}`;
-    if (!endpoint) return;
+    const selectedValue = promptKeyOptionValue(source, keyId);
+    const hiddenSelect = document.getElementById("prompt-ai-key-select");
+    if (hiddenSelect) {
+      hiddenSelect.value = selectedValue;
+      storePromptAiKeyValue(selectedValue);
+    }
     try {
-      const data = await api(endpoint, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: newModel }),
-      });
-      // Update aiStatus and re-render
+      const teamKey = source === "team"
+        ? (aiStatus?.team_keys || []).find((key) => key.id === keyId)
+        : null;
+      if (source === "team" && !teamKey?.team_id) {
+        throw new Error("Could not find the shared key team for this model change.");
+      }
+      const data = source === "team"
+        ? await api(`/api/teams/${teamKey?.team_id}/ai-keys/${keyId}/toggle`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ use_key: true, model: newModel }),
+          })
+        : await api(`/api/user/ai-keys/${keyId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: newModel }),
+          });
       const updatedAi = { ...(data.ai || {}), keys: data.ai?.keys || [] };
       aiKeyUi?.render(updatedAi);
-      // aiKeyUi.render will call renderAIStatus via onStatusChange -> re-renders pill
+      renderAIStatus(updatedAi);
+      const sel = document.getElementById("prompt-ai-key-select");
+      if (sel && [...sel.options].some((opt) => opt.value === selectedValue)) {
+        sel.value = selectedValue;
+        storePromptAiKeyValue(selectedValue);
+        syncPromptKeyPill(aiStatus);
+      }
+      renderPromptKeyPopup(aiStatus);
     } catch (err) {
       console.error("Could not update model:", err);
+      const status = document.getElementById("prompt-status");
+      if (status) {
+        status.className = "status error";
+        status.textContent = err.message || "Could not update selected AI model.";
+      }
     }
   });
 }
