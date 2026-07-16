@@ -99,7 +99,7 @@ import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-image-menu";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260716-texture-tab";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-wire-prompt-refs";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
@@ -107,6 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
+import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-lib";
 import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
@@ -7669,6 +7670,7 @@ function enterArchitectMode() {
   exitRiggingMode();
   exitCanvasTab();
   catalogPanel?.close?.();
+  texturePanel?.close?.();
   setRightTab("architect");
   setArchitectPhase("build");
   setSkillEnabled("cad", true);
@@ -7860,6 +7862,7 @@ function bindRiggingViewportOverlayUi() {
 
 function enterCanvasTab() {
   catalogPanel?.close?.();
+  texturePanel?.close?.();
   exitRiggingMode();
   document.getElementById("canvas-workspace")?.classList.remove("hidden");
   document.getElementById("app")?.classList.add("canvas-design-tab");
@@ -7910,9 +7913,17 @@ function handleDesignTabChange(tab) {
   } else if (tab === "CATALOG") {
     exitCanvasTab();
     exitSketchMode();
+    texturePanel?.close?.();
     catalogPanel?.open?.();
     setRightTab("prompt");
     setEditStatus("ok", "Catalog — search STEP models, compare supplier prices, and import parts.");
+  } else if (tab === "TEXTURE") {
+    exitCanvasTab();
+    exitSketchMode();
+    catalogPanel?.close?.();
+    texturePanel?.open?.();
+    setRightTab("prompt");
+    setEditStatus("ok", "Textures — save rendered looks, favorite them, and apply to parts or faces.");
   } else if (tab === "CANVAS") {
     exitSketchMode();
     enterCanvasTab();
@@ -14730,6 +14741,17 @@ const catalogPanel = createCatalogPanel({
   },
 });
 
+const texturePanel = createTexturePanel({
+  api,
+  getProjectId: () => projectId,
+  onStatus: (kind, text) => {
+    if (text) setEditStatus(kind || "ok", text);
+  },
+  onApply: async (texture, scope) => {
+    await applyLibraryTexture(texture, scope);
+  },
+});
+
 const docTabs = createDocumentTabBar({
   tabBarEl: document.getElementById("doc-tab-bar"),
   mainColumnEl: document.querySelector(".main-column"),
@@ -15508,6 +15530,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Upload CAD", hint: "Import STEP, STL, GLB, OBJ, 3MF", run: triggerMobileUpload },
         { label: "Export model", hint: "Download visible part/assembly", run: () => document.getElementById("btn-export-model")?.click() },
         { label: "Catalog", hint: "Search STEP models, suppliers, datasheets", run: () => openMobileDesignTab("CATALOG") },
+        { label: "Textures", hint: "Saved textures, favorites, apply to parts/faces", run: () => openMobileDesignTab("TEXTURE") },
         { label: "Canvas", hint: "2D grid sketch pad with pen tools", run: () => openMobileDesignTab("CANVAS") },
       ]);
       return;
@@ -16708,11 +16731,22 @@ function handleWiringTabChange(tab) {
     exitCanvasTab();
     exitSketchMode();
     exitRiggingMode();
+    texturePanel?.close?.();
     catalogPanel?.open?.();
     setEditStatus("ok", "Catalog — search STEP models, compare supplier prices, and import parts into your wiring project.");
     return;
   }
+  if (tab === "TEXTURE") {
+    exitCanvasTab();
+    exitSketchMode();
+    exitRiggingMode();
+    catalogPanel?.close?.();
+    texturePanel?.open?.();
+    setEditStatus("ok", "Textures — save rendered looks and apply them to parts or faces.");
+    return;
+  }
   catalogPanel?.close?.();
+  texturePanel?.close?.();
   setRightTab("wiring");
   wiringPromptHistory.setTab("compose");
   setEditStatus("ok", "Wiring Simulator — build and debug circuits.");
@@ -16736,6 +16770,7 @@ function applyWorkspaceMode(mode) {
     window.dispatchEvent(new Event("resize"));
   } else {
     catalogPanel?.close?.();
+    texturePanel?.close?.();
     wiringWorkspace?.classList.add("hidden");
     clearWiringPrompts();
     wiringSim.hide();
@@ -22113,27 +22148,167 @@ function stripViewportHelperObjects(root) {
   helpers.forEach((child) => child.parent?.remove(child));
 }
 
-function applyTextureToModelClone(object, texture) {
+function meshChildPath(root, mesh) {
+  const path = [];
+  let node = mesh;
+  while (node && node !== root) {
+    const parent = node.parent;
+    if (!parent) return null;
+    path.unshift(parent.children.indexOf(node));
+    node = parent;
+  }
+  return path;
+}
+
+function meshAtChildPath(root, path) {
+  if (!root || !path) return null;
+  let node = root;
+  for (const index of path) {
+    node = node?.children?.[index];
+    if (!node) return null;
+  }
+  return node;
+}
+
+function findMeshByUuid(root, uuid) {
+  let found = null;
+  root?.traverse?.((child) => {
+    if (!found && child.uuid === uuid) found = child;
+  });
+  return found;
+}
+
+function makeTexturedMaterial(texture) {
+  return new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: texture,
+    metalness: 0.04,
+    roughness: 0.58,
+    side: THREE.DoubleSide,
+    envMapIntensity: 0.35,
+  });
+}
+
+function applyTextureToModelClone(object, texture, { targetMesh = null, faceIndices = null } = {}) {
+  const targetPath = targetMesh ? meshChildPath(object, targetMesh) : null;
+  const faceSet = faceIndices?.length ? new Set(faceIndices.map((n) => Number(n)).filter((n) => n >= 0)) : null;
   const clone = object.clone(true);
   clone.position.set(0, 0, 0);
   clone.quaternion.set(0, 0, 0, 1);
   clone.scale.set(1, 1, 1);
   stripViewportHelperObjects(clone);
+  const cloneTarget = targetPath ? meshAtChildPath(clone, targetPath) : null;
   clone.traverse((child) => {
     if (!child.isMesh || !child.geometry) return;
+    if (cloneTarget && child !== cloneTarget) return;
+    if (!cloneTarget && targetMesh) return;
     child.geometry = applyBoxProjectionUvs(child.geometry);
-    child.material = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      map: texture,
-      metalness: 0.04,
-      roughness: 0.58,
-      side: THREE.DoubleSide,
-      envMapIntensity: 0.35,
-    });
+    if (faceSet && faceSet.size) {
+      const geom = child.geometry;
+      const faceCount = geom.index
+        ? Math.floor(geom.index.count / 3)
+        : Math.floor((geom.attributes.position?.count || 0) / 3);
+      const originalMat = Array.isArray(child.material) ? child.material[0] : child.material;
+      const keepMat = originalMat?.clone?.() || new THREE.MeshStandardMaterial({ color: 0xc4c4c4 });
+      const texMat = makeTexturedMaterial(texture);
+      geom.clearGroups();
+      for (let i = 0; i < faceCount; i += 1) {
+        geom.addGroup(i * 3, 3, faceSet.has(i) ? 1 : 0);
+      }
+      child.material = [keepMat, texMat];
+    } else {
+      child.material = makeTexturedMaterial(texture);
+    }
     child.castShadow = true;
     child.receiveShadow = true;
   });
   return clone;
+}
+
+async function authTextureUrlToDataUrl(url) {
+  if (!url) throw new Error("Texture URL missing");
+  if (String(url).startsWith("data:")) return String(url);
+  const blob = await fetchRenderedImageBlob(url);
+  return blobToDataUrl(blob);
+}
+
+async function applyLibraryTexture(texture, scope = "object") {
+  if (!projectId) throw new Error("Open a project first");
+  const filename = selectedColorFilename();
+  if (!filename) {
+    throw new Error(scope === "faces" ? "Open a model and pick faces first." : "Select a part or object first.");
+  }
+  const catalogName = projectAssembly.has(filename)
+    ? filename
+    : assemblyCatalogMatchingStem(filename);
+  const sourceObject = catalogName ? projectAssembly.get(catalogName) : null;
+  if (!sourceObject) throw new Error("Load the target model in the viewport before applying a texture.");
+
+  let targetMesh = null;
+  let faceIndices = null;
+  if (scope === "part") {
+    const selection = objectTools.getSelection?.();
+    targetMesh = selection?.mesh || null;
+    if (!targetMesh || selection?.catalogName && selection.catalogName !== catalogName) {
+      activatePickMode("object");
+      throw new Error("Select a part (double-click) or object first, then apply.");
+    }
+  } else if (scope === "faces") {
+    const refs = composer.getReferences?.() || [];
+    const faceRefs = refs.filter((r) => r.type === "face" || r.face_index != null || r.face_indices?.length);
+    if (!faceRefs.length) {
+      activatePickMode("face");
+      throw new Error("Pick one or more faces first, then apply the texture.");
+    }
+    faceIndices = [];
+    const meshUuids = new Set();
+    for (const ref of faceRefs) {
+      if (ref.mesh_uuid) meshUuids.add(ref.mesh_uuid);
+      if (ref.face_indices?.length) faceIndices.push(...ref.face_indices);
+      else if (ref.face_index != null) faceIndices.push(ref.face_index);
+    }
+    faceIndices = [...new Set(faceIndices.map((n) => Number(n)).filter((n) => n >= 0))];
+    if (meshUuids.size === 1) {
+      targetMesh = findMeshByUuid(sourceObject, [...meshUuids][0]);
+    } else if (meshUuids.size > 1) {
+      // Prefer the currently selected mesh when faces span multiple meshes.
+      targetMesh = objectTools.getSelection?.()?.mesh || findMeshByUuid(sourceObject, [...meshUuids][0]);
+      const keepUuid = targetMesh?.uuid;
+      faceIndices = [];
+      for (const ref of faceRefs) {
+        if (keepUuid && ref.mesh_uuid && ref.mesh_uuid !== keepUuid) continue;
+        if (ref.face_indices?.length) faceIndices.push(...ref.face_indices);
+        else if (ref.face_index != null) faceIndices.push(ref.face_index);
+      }
+      faceIndices = [...new Set(faceIndices.map((n) => Number(n)).filter((n) => n >= 0))];
+    }
+    if (!faceIndices.length) throw new Error("No valid face indices to texture.");
+  }
+
+  const sourceUrl = texture.source_url || texture.sphere_url;
+  if (!sourceUrl) throw new Error("Texture has no source image");
+  const dataUrl = await authTextureUrlToDataUrl(sourceUrl);
+  const map = await renderedImageUrlToTexture(dataUrl);
+  const texturedObject = applyTextureToModelClone(sourceObject, map, {
+    targetMesh: scope === "object" ? null : targetMesh,
+    faceIndices: scope === "faces" ? faceIndices : null,
+  });
+  const glbBuffer = await exportObjectToGlb(texturedObject);
+  const outName = renderedTextureOutputFilename(filename);
+  const form = new FormData();
+  form.append("file", new File([new Blob([glbBuffer], { type: "model/gltf-binary" })], outName, { type: "model/gltf-binary" }), outName);
+  const uploaded = await api(`/api/projects/${projectId}/upload`, {
+    method: "POST",
+    body: form,
+  });
+  const viewerFile = uploaded?.viewer_filename || uploaded?.filename || outName;
+  await afterModelEdit({
+    filename: viewerFile,
+    url: uploaded?.url || `/api/projects/${projectId}/files/${encodeURIComponent(viewerFile)}`,
+    replaceCatalog: catalogName || filename,
+    action: "texture_library_apply",
+    label: `Applied texture (${scope})`,
+  });
 }
 
 async function exportObjectToGlb(object) {
@@ -22234,6 +22409,7 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         </p>
         <div class="render-texture-actions">
           <button type="button" class="btn secondary" data-render-texture-close>Not now</button>
+          <button type="button" class="btn secondary" id="render-texture-save">Save to Textures</button>
           <button type="button" class="btn accent" id="render-texture-apply">Apply rendered texture</button>
         </div>
       </div>
@@ -22245,6 +22421,33 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
   });
   modal.querySelector("#render-texture-apply")?.addEventListener("click", () => {
     void applyRenderedTextureReference({ renderFilename, renderUrl, baseFilename, renderPrompt });
+  });
+  modal.querySelector("#render-texture-save")?.addEventListener("click", () => {
+    void (async () => {
+      const btn = modal.querySelector("#render-texture-save");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Saving…";
+      }
+      try {
+        const dataUrl = await fetchRenderedImageBlob(renderUrl).then(blobToDataUrl);
+        await texturePanel?.saveFromRender?.({
+          sourceDataUrl: dataUrl,
+          name: (renderFilename || "Rendered texture").replace(/\.[^.]+$/, "") || "Rendered texture",
+          sourceLabel: baseFilename ? `From render · ${baseFilename}` : "From render",
+          projectId: projectId,
+          favorite: false,
+        });
+        setEditStatus("ok", "Saved to Texture library. Open TEXTURE to favorite or apply it.");
+        if (btn) btn.textContent = "Saved";
+      } catch (err) {
+        setEditStatus("error", err.message || "Could not save texture.");
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Save to Textures";
+        }
+      }
+    })();
   });
   void fetchRenderedImageBlob(renderUrl)
     .then(blobToDataUrl)
@@ -23327,7 +23530,7 @@ window.addEventListener("keydown", (e) => {
     try {
       if (tab === "WIRING") {
         workspaceModes.setMode("wiring");
-      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "CATALOG"].includes(tab)) {
+      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "CATALOG", "TEXTURE"].includes(tab)) {
         workspaceModes.setDesignTab(tab);
         ribbon?.setDesignTab?.(tab);
       }

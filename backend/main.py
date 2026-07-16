@@ -3573,6 +3573,22 @@ class KnowledgeShareRequest(BaseModel):
     target_id: str = Field(..., min_length=1, max_length=64)
 
 
+class TextureLibraryCreateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=80)
+    source_data_url: str = Field(..., min_length=32)
+    sphere_data_url: str | None = Field(default=None)
+    source_label: str | None = Field(default=None, max_length=200)
+    project_id: str | None = Field(default=None, max_length=64)
+    favorite: bool = False
+
+
+class TextureLibraryUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=80)
+    favorite: bool | None = None
+    source_label: str | None = Field(default=None, max_length=200)
+    sphere_data_url: str | None = None
+
+
 @app.get("/api/knowledge-bases")
 def list_knowledge_bases(user: dict[str, Any] = Depends(get_current_user)):
     from backend.services import knowledge_service
@@ -3820,6 +3836,128 @@ def get_skill_reference(skill_id: str, ref_name: str):
     if not ref:
         raise HTTPException(404, f"Reference '{ref_name}' not found for skill '{skill_id}'")
     return ref
+
+
+@app.get("/api/users/me/textures")
+def list_my_textures(
+    favorites: bool = Query(False),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import texture_library_service
+
+    return {"textures": texture_library_service.list_textures(user["id"], favorites_only=favorites)}
+
+
+@app.post("/api/users/me/textures")
+def create_my_texture(body: TextureLibraryCreateRequest, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import texture_library_service
+
+    try:
+        texture = texture_library_service.create_texture(
+            user["id"],
+            name=body.name,
+            source_data_url=body.source_data_url,
+            sphere_data_url=body.sphere_data_url,
+            source_label=body.source_label,
+            project_id=body.project_id,
+            favorite=body.favorite,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"texture": texture}
+
+
+@app.post("/api/users/me/textures/upload")
+async def upload_my_texture(
+    file: UploadFile = File(...),
+    name: str | None = Form(None),
+    source_label: str | None = Form(None),
+    project_id: str | None = Form(None),
+    favorite: bool = Form(False),
+    sphere_data_url: str | None = Form(None),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import texture_library_service
+
+    data = await file.read()
+    try:
+        texture = texture_library_service.create_texture(
+            user["id"],
+            name=name,
+            source_bytes=data,
+            source_filename=file.filename or "texture.png",
+            sphere_data_url=sphere_data_url,
+            source_label=source_label,
+            project_id=project_id,
+            favorite=favorite,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"texture": texture}
+
+
+@app.get("/api/users/me/textures/{texture_id}")
+def get_my_texture(texture_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import texture_library_service
+
+    try:
+        return {"texture": texture_library_service.get_texture(user["id"], texture_id)}
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.patch("/api/users/me/textures/{texture_id}")
+def update_my_texture(
+    texture_id: str,
+    body: TextureLibraryUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import texture_library_service
+
+    try:
+        texture = texture_library_service.update_texture(
+            user["id"],
+            texture_id,
+            name=body.name,
+            favorite=body.favorite,
+            source_label=body.source_label,
+            sphere_data_url=body.sphere_data_url,
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"texture": texture}
+
+
+@app.delete("/api/users/me/textures/{texture_id}")
+def delete_my_texture(texture_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import texture_library_service
+
+    try:
+        return texture_library_service.delete_texture(user["id"], texture_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/users/me/textures/{texture_id}/source")
+def get_my_texture_source(texture_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import texture_library_service
+
+    try:
+        path = texture_library_service.resolve_texture_file(user["id"], texture_id, "source")
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(path)
+
+
+@app.get("/api/users/me/textures/{texture_id}/sphere")
+def get_my_texture_sphere(texture_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import texture_library_service
+
+    try:
+        path = texture_library_service.resolve_texture_file(user["id"], texture_id, "sphere")
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(path)
 
 
 @app.get("/api/skills/{skill_id}/tools")

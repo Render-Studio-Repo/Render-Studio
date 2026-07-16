@@ -782,6 +782,210 @@ body.theme-light .gizmo-panel .muted {
   padding: 24px;
 }
 
+.texture-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.texture-panel {
+  width: min(1080px, 96vw);
+  max-height: min(820px, 92vh);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.45);
+  padding: 16px;
+}
+
+.texture-panel-head,
+.texture-panel-toolbar,
+.texture-panel-actions,
+.texture-profile-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.texture-panel-head { justify-content: space-between; }
+.texture-panel-head > div { display: flex; flex-direction: column; gap: 3px; }
+.texture-panel-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  cursor: pointer;
+}
+.texture-panel-toolbar { justify-content: space-between; flex-wrap: wrap; }
+.texture-panel-tabs {
+  display: flex;
+  gap: 6px;
+}
+.texture-panel-tabs button {
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 999px;
+  background: rgba(13, 17, 23, 0.8);
+  color: #8b949e;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.texture-panel-tabs button.active {
+  border-color: rgba(88, 166, 255, 0.55);
+  color: #79c0ff;
+  background: rgba(56, 139, 253, 0.14);
+}
+.texture-upload-btn { cursor: pointer; }
+.texture-panel-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.9fr);
+  gap: 14px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.texture-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
+  align-content: start;
+}
+.texture-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  place-items: start;
+  padding: 28px 12px;
+}
+.texture-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid rgba(48, 54, 61, 0.95);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.72);
+  padding: 8px;
+  color: inherit;
+  cursor: pointer;
+}
+.texture-card.active,
+.texture-card:hover {
+  border-color: rgba(88, 166, 255, 0.55);
+  background: rgba(56, 139, 253, 0.1);
+}
+.texture-card-previews {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 6px;
+  min-height: 92px;
+}
+.texture-card-sphere,
+.texture-card-source {
+  display: block;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #010409;
+  border: 1px solid rgba(48, 54, 61, 0.8);
+  min-height: 92px;
+}
+.texture-card-sphere img,
+.texture-card-source img,
+.texture-profile-sphere img,
+.texture-profile-source img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.texture-card-meta {
+  display: grid;
+  gap: 2px;
+  padding: 0 2px 2px;
+}
+.texture-card-meta strong {
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+.texture-card-star {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(1, 4, 9, 0.72);
+  color: #d2a8ff;
+  font-size: 0.95rem;
+}
+.texture-card.is-favorite .texture-card-star { color: #ffd166; }
+.texture-panel-profile {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(13, 17, 23, 0.55);
+  overflow: auto;
+}
+.texture-panel-profile.hidden { display: none; }
+.texture-profile-sphere {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(88, 166, 255, 0.18), transparent 42%),
+    #010409;
+}
+.texture-profile-source {
+  display: grid;
+  gap: 4px;
+}
+.texture-profile-source img {
+  height: 96px;
+  border-radius: 8px;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  object-fit: cover;
+}
+.texture-profile-name {
+  display: grid;
+  gap: 4px;
+}
+.texture-profile-name input {
+  background: #0d1117;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.texture-profile-actions {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 860px) {
+  .texture-panel-body {
+    grid-template-columns: 1fr;
+  }
+  .texture-panel-profile {
+    max-height: 46vh;
+  }
+}
+
 .catalog-panel {
   width: min(960px, 94vw);
   max-height: min(760px, 90vh);
