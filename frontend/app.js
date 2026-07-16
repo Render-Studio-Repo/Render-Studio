@@ -38,7 +38,7 @@ import {
   clearSavedMeasureAnnotations,
   updateMeasureLivePreview,
   clearMeasureLivePreview,
-} from "./picking.js?v=20260715-sharp-labels";
+} from "./picking.js?v=20260715-fusion-edge-measure";
 import {
   FUSION,
   setupSceneLighting,
@@ -63,9 +63,9 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt-purple";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-fusion-auto-connect";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
-import { createProjectChatUI } from "./project-chat.js?v=20260715-chat-thread-settings";
+import { createProjectChatUI } from "./project-chat.js?v=20260716-workspace-invite";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
@@ -100,7 +100,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-motor-right-lane";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-jumpers-power-panel";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
@@ -4774,8 +4774,18 @@ const wiringPromptHistory = createPromptHistoryUI({
   onReuse: (entry) => {
     const ta = document.getElementById("wiring-prompt-input");
     if (ta) {
-      ta.value = entry.prompt;
+      ta.value = entry.prompt || "";
       ta.focus();
+    }
+    wiringPromptRefs = wiringPromptReferencesForReuse(entry);
+    renderWiringPromptRefs();
+    const refCount = wiringPromptRefs.length;
+    const status = document.getElementById("wiring-prompt-status");
+    if (status) {
+      status.className = "status ok";
+      status.textContent = refCount
+        ? `Reused wiring prompt with ${refCount} linked reference${refCount === 1 ? "" : "s"}.`
+        : "Reused wiring prompt.";
     }
   },
 });
@@ -5243,6 +5253,12 @@ createFeedbackUI({
 });
 
 let userProfileUi = null;
+const shownWorkspaceInviteIds = new Set();
+let activeWorkspaceInvite = null;
+let presentWorkspaceInvite = (_invite, _opts) => {};
+let resolveWorkspaceInvite = async (_inviteId, _action, _opts) => {};
+let hideWorkspaceInvitePopup = () => {};
+
 const projectChat = createProjectChatUI({
   buttonEl: document.getElementById("btn-project-chat"),
   getProjectId: () => projectId,
@@ -5264,6 +5280,9 @@ const projectChat = createProjectChatUI({
     } catch {
       /* optional */
     }
+  },
+  onWorkspaceInviteResolve: async (invite, action) => {
+    await resolveWorkspaceInvite(invite?.id || invite?.invite_id, action, { fromChat: true });
   },
 });
 
@@ -15551,6 +15570,18 @@ const wiringSim = createWiringSimulator({
     updateWiringToolbelt(state);
     wiringBottomPanel.setHistory(state);
   },
+  onAttachWireRefs: (refs = []) => {
+    const added = refs.map(addWiringPromptRef).filter(Boolean);
+    if (!added.length) return;
+    wiringPromptHistory.setTab("compose");
+    openMobileRightPanel?.("wiring");
+    document.getElementById("wiring-prompt-input")?.focus();
+    const status = document.getElementById("wiring-prompt-status");
+    if (status) {
+      status.className = "status ok";
+      status.textContent = `Linked ${added.length} selected wire${added.length === 1 ? "" : "s"} to the wiring prompt.`;
+    }
+  },
   onStatus: (kind, text) => {
     const el = document.getElementById("wiring-prompt-status");
     if (el && text) {
@@ -15840,6 +15871,25 @@ const wiringPromptInput = document.getElementById("wiring-prompt-input");
 const wiringInlineRefs = document.getElementById("wiring-inline-ref-chips");
 let wiringPromptRefs = [];
 
+function normalizeWiringPromptRef(ref = {}) {
+  if (!ref?.id) return null;
+  const type = ref.type || (ref.filename ? "component" : "wire");
+  const label = ref.label || ref.stem || ref.filename || ref.id;
+  return {
+    ...ref,
+    type,
+    label,
+    token: ref.token || (type === "wire" ? `@wire-${String(ref.id).replace(/[^a-zA-Z0-9_-]+/g, "-")}` : compactComponentToken(label)),
+    projectId: ref.projectId || projectId || null,
+  };
+}
+
+function wiringPromptReferencesForReuse(entry = {}) {
+  return (Array.isArray(entry.references) ? entry.references : [])
+    .map(normalizeWiringPromptRef)
+    .filter(Boolean);
+}
+
 function renderWiringPromptRefs() {
   if (!wiringInlineRefs) return;
   wiringInlineRefs.innerHTML = "";
@@ -15861,14 +15911,25 @@ function addWiringPromptComponentRef(payload) {
   if (!payload?.filename && !payload?.name) return null;
   const filename = payload.filename || payload.name;
   const stem = payload.stem || filename.replace(/\.[^.]+$/, "");
-  const ref = {
+  const ref = normalizeWiringPromptRef({
     id: `component:${filename}`,
+    type: "component",
     token: compactComponentToken(stem),
     label: payload.label || stem,
     stem,
     filename,
     kind: payload.part?.kind || payload.profile?.kind || payload.wiringType || "",
-  };
+  });
+  if (!wiringPromptRefs.some((r) => r.id === ref.id)) {
+    wiringPromptRefs.push(ref);
+    renderWiringPromptRefs();
+  }
+  return ref;
+}
+
+function addWiringPromptRef(refLike) {
+  const ref = normalizeWiringPromptRef(refLike);
+  if (!ref) return null;
   if (!wiringPromptRefs.some((r) => r.id === ref.id)) {
     wiringPromptRefs.push(ref);
     renderWiringPromptRefs();
@@ -15879,7 +15940,15 @@ function addWiringPromptComponentRef(payload) {
 function wiringPromptTextWithRefs(prompt) {
   if (!wiringPromptRefs.length) return prompt;
   const refs = wiringPromptRefs
-    .map((r) => `- ${r.token}: "${r.label}"${r.kind ? ` (${r.kind})` : ""} from file ${r.filename}.`)
+    .map((r) => {
+      if (r.type === "wire") {
+        const from = r.endpoints?.from || r.from_label || "";
+        const to = r.endpoints?.to || r.to_label || "";
+        const detail = [from, to].filter(Boolean).join(" -> ");
+        return `- ${r.token}: selected wire "${r.label}"${detail ? ` (${detail})` : ""}.`;
+      }
+      return `- ${r.token}: "${r.label}"${r.kind ? ` (${r.kind})` : ""}${r.filename ? ` from file ${r.filename}` : ""}.`;
+    })
     .join("\n");
   return `${prompt}\n\nReferenced components:\n${refs}`;
 }
@@ -15952,7 +16021,7 @@ async function runWiringPrompt() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt: wiringPromptTextWithRefs(prompt),
+        prompt,
         images: wiringPromptImages.map(({ id, name, media_type, data_url }) => ({
           id,
           name,
@@ -15960,6 +16029,7 @@ async function runWiringPrompt() {
           data_url,
         })),
         driver_links: driverLink ? [driverLink] : [],
+        references: wiringPromptRefs,
         speed: getWiringGenerationSpeed(),
         ...getPromptAiKeyBodyFields(),
       }),
@@ -17380,6 +17450,15 @@ function handleRealtimeEvent(msg = {}) {
   }
 
   if (msg.type === "team.invite.created" || msg.type === "team.invites.changed") {
+    if (msg.type === "team.invite.created" && (msg.invite_id || msg.id)) {
+      presentWorkspaceInvite({
+        id: msg.invite_id || msg.id,
+        team_id: msg.team_id,
+        team_name: msg.team_name,
+        inviter_name: msg.inviter_name || msg.by,
+        by: msg.by,
+      }, { openChat: true, showPopup: true });
+    }
     refreshProjectShell({ refreshInvites: true });
     return;
   }
@@ -25751,7 +25830,107 @@ window.addEventListener("keydown", (e) => {
     }
   });
 
-  async function refreshTeamInvites() {
+  const shownWorkspaceInviteIdsLocal = shownWorkspaceInviteIds;
+  let activeWorkspaceInviteLocal = null;
+
+  function normalizeWorkspaceInvite(invite = {}) {
+    const id = invite.id || invite.invite_id;
+    if (!id) return null;
+    return {
+      id,
+      team_id: invite.team_id,
+      team_name: invite.team_name || "workspace",
+      inviter_name: invite.inviter_name || invite.by || "A teammate",
+      by: invite.by || invite.inviter_name,
+    };
+  }
+
+  hideWorkspaceInvitePopup = function hideWorkspaceInvitePopupImpl() {
+    const modal = document.getElementById("workspace-invite-modal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    const err = document.getElementById("workspace-invite-error");
+    if (err) {
+      err.textContent = "";
+      err.classList.add("hidden");
+    }
+  };
+
+  function showWorkspaceInvitePopup(invite) {
+    const normalized = normalizeWorkspaceInvite(invite);
+    const modal = document.getElementById("workspace-invite-modal");
+    if (!normalized || !modal) return;
+    activeWorkspaceInvite = normalized;
+    activeWorkspaceInviteLocal = normalized;
+    const copy = document.getElementById("workspace-invite-copy");
+    if (copy) {
+      copy.innerHTML = `<strong>${appEscapeHtml(normalized.inviter_name)}</strong> invited you to join <strong>${appEscapeHtml(normalized.team_name)}</strong>. Accept to get access to that workspace.`;
+    }
+    const err = document.getElementById("workspace-invite-error");
+    if (err) {
+      err.textContent = "";
+      err.classList.add("hidden");
+    }
+    modal.classList.remove("hidden");
+  }
+
+  presentWorkspaceInvite = function presentWorkspaceInviteImpl(invite, { openChat = true, showPopup = true } = {}) {
+    const normalized = normalizeWorkspaceInvite(invite);
+    if (!normalized) return;
+    if (!shownWorkspaceInviteIdsLocal.has(normalized.id)) {
+      shownWorkspaceInviteIdsLocal.add(normalized.id);
+    }
+    if (showPopup) showWorkspaceInvitePopup(normalized);
+    if (openChat) void projectChat?.showWorkspaceInvite?.(normalized, { open: true });
+  };
+
+  resolveWorkspaceInvite = async function resolveWorkspaceInviteImpl(inviteId, action, { fromChat = false } = {}) {
+    const id = inviteId || activeWorkspaceInvite?.id || activeWorkspaceInviteLocal?.id;
+    if (!id) return;
+    const err = document.getElementById("workspace-invite-error");
+    try {
+      await api(`/api/teams/invites/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+      shownWorkspaceInviteIdsLocal.delete(id);
+      if (activeWorkspaceInvite?.id === id) activeWorkspaceInvite = null;
+      if (activeWorkspaceInviteLocal?.id === id) activeWorkspaceInviteLocal = null;
+      hideWorkspaceInvitePopup();
+      projectChat?.clearWorkspaceInvite?.(id);
+      if (action === "accept") {
+        const teamsData = await api("/api/teams");
+        allTeams = teamsData.teams || [];
+        renderTeams();
+        await onWorkspaceChange();
+        setEditStatus("ok", "Joined workspace");
+      } else {
+        setEditStatus("ok", "Invite declined");
+      }
+      await refreshTeamInvites({ presentNew: false });
+    } catch (error) {
+      const message = error.message || `Could not ${action} invite`;
+      if (!fromChat && err) {
+        err.textContent = message;
+        err.classList.remove("hidden");
+      }
+      throw error;
+    }
+  };
+
+  (() => {
+    const modal = document.getElementById("workspace-invite-modal");
+    if (!modal || modal.dataset.bound === "1") return;
+    modal.dataset.bound = "1";
+    modal.querySelectorAll("[data-ws-invite-close]").forEach((el) => {
+      el.addEventListener("click", () => hideWorkspaceInvitePopup());
+    });
+    document.getElementById("btn-workspace-invite-accept")?.addEventListener("click", () => {
+      void resolveWorkspaceInvite(activeWorkspaceInvite?.id, "accept").catch(() => {});
+    });
+    document.getElementById("btn-workspace-invite-decline")?.addEventListener("click", () => {
+      void resolveWorkspaceInvite(activeWorkspaceInvite?.id, "decline").catch(() => {});
+    });
+  })();
+
+  async function refreshTeamInvites({ presentNew = true } = {}) {
     const container = document.getElementById("team-invites-alert");
     if (!container || !currentUser) return;
     try {
@@ -25780,11 +25959,7 @@ window.addEventListener("keydown", (e) => {
           const id = btn.closest(".team-invite-banner")?.dataset.inviteId;
           if (!id) return;
           try {
-            await api(`/api/teams/invites/${id}/accept`, { method: "POST" });
-            const teamsData = await api("/api/teams");
-            allTeams = teamsData.teams || [];
-            renderTeams();
-            await onWorkspaceChange();
+            await resolveWorkspaceInvite(id, "accept");
           } catch (err) {
             alert(err.message || "Could not accept invite");
           }
@@ -25795,13 +25970,18 @@ window.addEventListener("keydown", (e) => {
           const id = btn.closest(".team-invite-banner")?.dataset.inviteId;
           if (!id) return;
           try {
-            await api(`/api/teams/invites/${id}/decline`, { method: "POST" });
-            await refreshTeamInvites();
+            await resolveWorkspaceInvite(id, "decline");
           } catch (err) {
             alert(err.message || "Could not decline invite");
           }
         });
       });
+      if (presentNew) {
+        const newest = invites[0];
+        if (newest && !shownWorkspaceInviteIds.has(newest.id)) {
+          presentWorkspaceInvite(newest, { openChat: true, showPopup: true });
+        }
+      }
     } catch {
       container.classList.add("hidden");
       container.innerHTML = "";

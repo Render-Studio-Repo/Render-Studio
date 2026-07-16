@@ -843,6 +843,7 @@ class WiringPromptRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
     images: list[PromptImage] = Field(default_factory=list, max_length=4)
     driver_links: list[str] = Field(default_factory=list, max_length=3)
+    references: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
     speed: str = "fast"
     ai_key_id: str | None = None
     ai_key_source: str | None = None
@@ -4251,6 +4252,7 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
         profile = exchange_code_for_profile(provider, code)
         user = upsert_social_user(profile)
         created_new_user = bool(user.pop("_created_new_user", False))
+        accepted_invites = user.pop("_accepted_invites", [])
         if created_new_user:
             try:
                 new_user_alert_service.add_new_user(user, source=provider)
@@ -4262,6 +4264,19 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
     except Exception as exc:
         logger.warning("Social OAuth callback failed for %s: %s", provider, exc)
         return _social_redirect_error(provider, str(exc))
+    for invite in accepted_invites or []:
+        team_id = invite.get("team_id")
+        if team_id:
+            _notify_workspace(
+                team_id,
+                {
+                    "type": "team.invite.accepted",
+                    "team_id": team_id,
+                    "by": user.get("display_name"),
+                    "by_user_id": user.get("id"),
+                },
+            )
+            _notify_user(user["id"], {"type": "team.invites.changed", "team_id": team_id})
     safe_provider = urllib.parse.quote((provider or "social").strip().lower()[:40])
     new_flag = "&social_new=1" if created_new_user else ""
     return RedirectResponse(f"/?social_token={token}&social_provider={safe_provider}{new_flag}", status_code=302)
@@ -9132,15 +9147,28 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, request: Request, user
             result["invite_url"] = invite_url
         except Exception:
             logger.warning("Could not send workspace invite email team_id=%s email=%s", team_id, body.email, exc_info=True)
+    team_name = "Render3D workspace"
+    try:
+        with get_conn() as conn:
+            team_row = conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)).fetchone()
+            if team_row and team_row["name"]:
+                team_name = str(team_row["name"])
+    except Exception:
+        logger.debug("Could not resolve team name for invite notify team_id=%s", team_id, exc_info=True)
+    inviter_name = user.get("display_name") or user.get("email") or "A teammate"
     _notify_user_by_email(
         body.email,
         {
             "type": "team.invite.created",
             "team_id": team_id,
+            "team_name": team_name,
             "invite_id": result.get("invite_id"),
             "email": body.email.strip().lower(),
-            "by": user["display_name"],
+            "by": inviter_name,
+            "inviter_name": inviter_name,
             "by_user_id": user["id"],
+            "open_chat": True,
+            "ping": True,
         },
     )
     return result
@@ -12747,9 +12775,6 @@ def get_wiring(project_id: str, user: dict[str, Any] = Depends(get_current_user)
     except json.JSONDecodeError as exc:
         raise HTTPException(400, f"Invalid wiring.json: {exc}") from exc
     repaired, repairs = wiring_service.validate_and_repair_schematic(schematic)
-    if repairs:
-        wiring_path.write_text(json.dumps(repaired, indent=2), encoding="utf-8")
-        project_store.touch_project(path)
     return repaired
 
 
@@ -13652,6 +13677,35 @@ def sketch_prompt(
     }
 
 
+def _wiring_prompt_with_references(prompt: str, references: list[dict[str, Any]] | None) -> str:
+    refs = [r for r in (references or []) if isinstance(r, dict)][:20]
+    if not refs:
+        return prompt
+    lines: list[str] = []
+    for ref in refs:
+        rtype = str(ref.get("type") or "").strip().lower()
+        token = str(ref.get("token") or ref.get("id") or "").strip()
+        label = str(ref.get("label") or ref.get("stem") or ref.get("filename") or ref.get("id") or "").strip()
+        if rtype == "wire":
+            endpoints = ref.get("endpoints") if isinstance(ref.get("endpoints"), dict) else {}
+            from_label = str(endpoints.get("from") or ref.get("from_label") or "").strip()
+            to_label = str(endpoints.get("to") or ref.get("to_label") or "").strip()
+            detail = f"{from_label} -> {to_label}".strip(" ->")
+            lines.append(f"- {token or '@wire'}: selected wire \"{label}\"{f' ({detail})' if detail else ''}.")
+        elif rtype == "component":
+            filename = str(ref.get("filename") or "").strip()
+            kind = str(ref.get("kind") or "").strip()
+            lines.append(
+                f"- {token or '@component'}: component \"{label}\""
+                f"{f' ({kind})' if kind else ''}{f' from file {filename}' if filename else ''}."
+            )
+        else:
+            lines.append(f"- {token or '@ref'}: {label or rtype or 'reference'}.")
+    if not lines:
+        return prompt
+    return f"{prompt}\n\nReferenced wiring context:\n" + "\n".join(lines)
+
+
 def _background_wiring_prompt(
     project_id: str,
     body_data: dict[str, Any],
@@ -13676,6 +13730,8 @@ def _background_wiring_prompt(
         except json.JSONDecodeError:
             current = None
 
+    ai_prompt = _wiring_prompt_with_references(body.prompt, body.references)
+
     trace_add(
         "info",
         "Wiring prompt started",
@@ -13684,12 +13740,13 @@ def _background_wiring_prompt(
             "prompt": body.prompt[:300],
             "image_count": len(body.images),
             "driver_link_count": len(body.driver_links),
+            "reference_count": len(body.references),
         },
     )
     try:
         schematic, ai_trace, message = wiring_service.generate_wiring_schematic(
             ai,
-            body.prompt,
+            ai_prompt,
             current=current,
             images=[img.model_dump() for img in body.images],
             driver_links=body.driver_links,
@@ -13704,6 +13761,7 @@ def _background_wiring_prompt(
             success=False,
             speed=body.speed,
             images=body.images,
+            references=body.references,
             trace_id=trace_id,
             user=user,
             error=str(exc),
@@ -13719,6 +13777,7 @@ def _background_wiring_prompt(
             success=False,
             speed=body.speed,
             images=body.images,
+            references=body.references,
             trace_id=trace_id,
             user=user,
             error=str(exc),
@@ -13735,6 +13794,7 @@ def _background_wiring_prompt(
         success=True,
         speed=body.speed,
         images=body.images,
+        references=body.references,
         trace_id=trace_id,
         user=user,
         message=message,
@@ -14375,6 +14435,7 @@ def _save_wiring_prompt_history(
     success: bool,
     speed: str = "fast",
     images: list[Any] | None = None,
+    references: list[dict[str, Any]] | None = None,
     trace_id: str | None,
     user: dict[str, Any] | None = None,
     message: str | None = None,
@@ -14394,6 +14455,7 @@ def _save_wiring_prompt_history(
                 img.model_dump(exclude={"data_url"}) if hasattr(img, "model_dump") else img
                 for img in img_list[:4]
             ],
+            references=references or [],
             trace_id=trace_id,
             user_id=user["id"] if user else None,
             user_name=user["display_name"] if user else None,

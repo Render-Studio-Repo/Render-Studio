@@ -2,6 +2,7 @@
 
 const TOKEN_KEY = "render3d:token";
 const USER_KEY = "render3d:user";
+const SESSION_CACHE_KEY = "render3d:session:v1";
 const PENDING_CONNECTION_PREFS_KEY = "render3d:pendingConnectionPrefs:v1";
 const LOGOUT_RELOAD_KEY = "render3d:logoutReload:v1";
 const FUSION_LINKED_CACHE_PREFIX = "render3d:fusionLinked:";
@@ -41,6 +42,7 @@ export function setSession(token, user) {
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(SESSION_CACHE_KEY);
 }
 
 export function authHeaders(extra = {}) {
@@ -53,14 +55,53 @@ function userInitial(user) {
   return name.charAt(0).toUpperCase();
 }
 
+function cacheSessionData(token, data = {}) {
+  if (!token || !data?.user) return;
+  try {
+    localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify({
+      token,
+      user: data.user,
+      teams: Array.isArray(data.teams) ? data.teams : [],
+      ai: data.ai || null,
+      cached_at: Date.now(),
+    }));
+  } catch {
+    /* cache is best-effort */
+  }
+}
+
+function getCachedSession(token) {
+  try {
+    const data = JSON.parse(localStorage.getItem(SESSION_CACHE_KEY) || "null");
+    if (!data || data.token !== token || !data.user) return null;
+    return {
+      user: data.user,
+      teams: Array.isArray(data.teams) ? data.teams : [],
+      ai: data.ai || null,
+      cached: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isInvalidSessionError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return /not authenticated|invalid or expired token|user not found|unauthorized|\b401\b/.test(msg);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function fetchSocialProviders() {
   try {
     const res = await fetch("/api/auth/social/providers", { headers: authHeaders() });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const data = await res.json();
     return Array.isArray(data.providers) ? data.providers : [];
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -240,6 +281,15 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       btn.title = "Checking sign-in provider...";
     });
     const providers = await fetchSocialProviders();
+    if (!providers) {
+      buttons.forEach((btn) => {
+        const label = btn.dataset.socialLabel || btn.dataset.socialLogin || "provider";
+        btn.disabled = false;
+        btn.classList.remove("is-loading", "auth-social-btn--disabled");
+        btn.title = `Sign in with ${label}`;
+      });
+      return;
+    }
     const byProvider = new Map(providers.map((item) => [String(item.provider || "").toLowerCase(), item]));
     buttons.forEach((btn) => {
       const provider = String(btn.dataset.socialLogin || "").toLowerCase();
@@ -376,6 +426,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
 
   async function finishAuthSuccess(data, { connectPrefs = null } = {}) {
     setSession(data.token, data.user);
+    cacheSessionData(data.token, data);
     setUserUI(data.user);
     showModal(false);
     clearConnectionPrefs();
@@ -385,6 +436,20 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
         void openCheckedConnections(connectPrefs);
       }, 150);
     }
+  }
+
+  async function fetchCurrentSessionWithRetry() {
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await api("/api/auth/me");
+      } catch (err) {
+        lastError = err;
+        if (isInvalidSessionError(err) || attempt === 2) break;
+        await delay(450 * (attempt + 1));
+      }
+    }
+    throw lastError || new Error("Could not validate session");
   }
 
   modal?.querySelectorAll(".auth-tab").forEach((btn) => {
@@ -642,6 +707,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
           data.social_provider = socialProvider;
           data.social_new = socialNew;
           setSession(socialToken, data.user);
+          cacheSessionData(socialToken, data);
           setUserUI(data.user);
           showModal(false);
           onReady?.(data);
@@ -677,6 +743,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
           localStorage.setItem(TOKEN_KEY, renderToken);
           const data = await api("/api/auth/me");
           setSession(renderToken, data.user);
+          cacheSessionData(renderToken, data);
           setUserUI(data.user);
           setFusionBadge(true);
           showModal(false);
@@ -716,6 +783,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
           localStorage.setItem(TOKEN_KEY, oauthToken);
           const data = await api("/api/auth/me");
           setSession(oauthToken, data.user);
+          cacheSessionData(oauthToken, data);
           setUserUI(data.user);
           setOnshapeBadge(true);
           showModal(false);
@@ -734,16 +802,32 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
         setLoggedOutUI();
         return null;
       }
+      const cachedSession = getCachedSession(token);
+      const storedUser = getStoredUser();
+      const fallbackSession = cachedSession || (storedUser ? { user: storedUser, teams: [], ai: null, cached: true } : null);
+      if (fallbackSession?.user) {
+        setUserUI(fallbackSession.user);
+        showModal(false);
+      }
       try {
-        const data = await api("/api/auth/me");
+        const data = await fetchCurrentSessionWithRetry();
         setSession(token, data.user);
+        cacheSessionData(token, data);
         setUserUI(data.user);
         showModal(false);
         await refreshCloudBadges();
         return data;
-      } catch {
-        clearSession();
-        setLoggedOutUI();
+      } catch (err) {
+        if (isInvalidSessionError(err)) {
+          clearSession();
+          setLoggedOutUI();
+          return null;
+        }
+        if (fallbackSession?.user) {
+          setUserUI(fallbackSession.user);
+          showModal(false);
+          return fallbackSession;
+        }
         return null;
       }
     },

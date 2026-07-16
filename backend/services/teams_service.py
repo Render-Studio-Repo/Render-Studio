@@ -694,6 +694,46 @@ def accept_team_invite(invite_id: str, user_id: str, email: str) -> dict[str, An
     return {"status": "accepted", "team": dict(team)}
 
 
+def accept_pending_invites_for_user(user_id: str, email: str) -> list[dict[str, Any]]:
+    """Auto-claim pending workspace invites for a newly verified social-login email."""
+    email = email.strip().lower()
+    if not user_id or not email:
+        return []
+    accepted: list[dict[str, Any]] = []
+    with get_conn() as conn:
+        _ensure_invite_token_column(conn)
+        rows = conn.execute(
+            """
+            SELECT i.id, i.team_id, i.email, t.name AS team_name
+            FROM team_invites i
+            JOIN teams t ON t.id = i.team_id
+            WHERE lower(i.email) = lower(?) AND i.status = 'pending'
+            ORDER BY i.created_at
+            """,
+            (email,),
+        ).fetchall()
+        for invite in rows:
+            existing = conn.execute(
+                "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
+                (invite["team_id"], user_id),
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+                    (invite["team_id"], user_id, "user", _now()),
+                )
+            conn.execute("UPDATE team_invites SET status = 'accepted' WHERE id = ?", (invite["id"],))
+            accepted.append({"id": invite["id"], "team_id": invite["team_id"], "team_name": invite["team_name"]})
+        if accepted:
+            conn.commit()
+    if accepted:
+        from backend.services import folders_service
+
+        for invite in accepted:
+            folders_service.grant_pending_folder_shares(user_id, email, invite["team_id"])
+    return accepted
+
+
 def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
     token = str(token or "").strip()
     if not token:

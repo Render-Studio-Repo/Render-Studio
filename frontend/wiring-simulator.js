@@ -354,7 +354,7 @@ function findBreadboard() {
 let componentsRef = [];
 
 export function createWiringSimulator(options = {}) {
-  const { root, paletteEl, api, getProjectId, getWiringPrefetch, onChange, onHistoryChange } = options;
+  const { root, paletteEl, api, getProjectId, getWiringPrefetch, onChange, onHistoryChange, onAttachWireRefs } = options;
 
   let components = [];
   componentsRef = components;
@@ -406,8 +406,10 @@ export function createWiringSimulator(options = {}) {
     <svg class="wiring-wire-preview" aria-hidden="true"></svg>
     <div class="wiring-pins-layer"></div>
     <div class="wiring-selection-box hidden"></div>
+    <aside class="wiring-requirements collapsed" aria-label="Circuit requirements"></aside>
     <div class="wiring-notes hidden"></div>
     <div class="wiring-wire-editor hidden" role="dialog" aria-label="Wire label editor"></div>
+    <div class="wiring-wire-context-menu hidden" role="menu" aria-label="Wire actions"></div>
   `;
   root?.appendChild(canvas);
 
@@ -417,8 +419,10 @@ export function createWiringSimulator(options = {}) {
   const previewSvg = canvas.querySelector(".wiring-wire-preview");
   const selectionBox = canvas.querySelector(".wiring-selection-box");
   const hint = canvas.querySelector(".wiring-drop-hint");
+  const requirementsEl = canvas.querySelector(".wiring-requirements");
   const notesEl = canvas.querySelector(".wiring-notes");
   const wireEditorEl = canvas.querySelector(".wiring-wire-editor");
+  const wireContextMenuEl = canvas.querySelector(".wiring-wire-context-menu");
   const pinTooltipEl = document.createElement("div");
   pinTooltipEl.className = "wiring-pin-tooltip hidden";
   pinTooltipEl.setAttribute("role", "tooltip");
@@ -433,6 +437,17 @@ export function createWiringSimulator(options = {}) {
     if (e.target.closest(".wiring-notes-toggle")) {
       notesCollapsed = !notesCollapsed;
       renderNotes();
+    }
+  });
+  let requirementsCollapsed = false;
+  requirementsEl?.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+  });
+  requirementsEl?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (e.target.closest(".wiring-requirements-toggle")) {
+      requirementsCollapsed = !requirementsCollapsed;
+      renderRequirements();
     }
   });
 
@@ -463,6 +478,48 @@ export function createWiringSimulator(options = {}) {
       return { driver: toComp, actuator: fromComp, driverEnd: wire.to, actuatorEnd: wire.from };
     }
     return null;
+  }
+
+  function hasWireBetween(aComp, aPin, bComp, bPin) {
+    return wires.some((wire) => {
+      const from = wire.from || {};
+      const to = wire.to || {};
+      return (
+        (from.componentId === aComp && from.pinId === aPin && to.componentId === bComp && to.pinId === bPin)
+        || (from.componentId === bComp && from.pinId === bPin && to.componentId === aComp && to.pinId === aPin)
+      );
+    });
+  }
+
+  function ensureStepDirDriverJumpers() {
+    let added = false;
+    for (const driver of components.filter((c) => c.type === "motor-driver" && isStepDirShield(c))) {
+      if (!hasWireBetween(driver.id, "in3", driver.id, "dir_g")) {
+        wires.push({
+          id: uid(),
+          from: { componentId: driver.id, pinId: "in3" },
+          to: { componentId: driver.id, pinId: "dir_g" },
+          color: "#6e7681",
+          label: "EN S->DIR G",
+          manual: false,
+          control: null,
+        });
+        added = true;
+      }
+      if (!hasWireBetween(driver.id, "vcc", driver.id, "en_v")) {
+        wires.push({
+          id: uid(),
+          from: { componentId: driver.id, pinId: "vcc" },
+          to: { componentId: driver.id, pinId: "en_v" },
+          color: "#f85149",
+          label: "5V->EN V",
+          manual: false,
+          control: null,
+        });
+        added = true;
+      }
+    }
+    return added;
   }
 
   function normalizeMotorDriverLayout() {
@@ -694,6 +751,63 @@ export function createWiringSimulator(options = {}) {
       componentLabel: comp?.label || comp?.type || "Unknown component",
       pinLabel: pin?.label || ref?.pinId || "pin",
     };
+  }
+
+  function wirePromptRef(wire) {
+    const from = pinInfo(wire?.from);
+    const to = pinInfo(wire?.to);
+    const label = wire?.label || `${from.componentLabel} ${from.pinLabel} to ${to.componentLabel} ${to.pinLabel}`;
+    return {
+      id: `wire:${wire.id}`,
+      type: "wire",
+      token: `@wire-${String(wire.id || "").replace(/[^a-zA-Z0-9_-]+/g, "-")}`,
+      label,
+      wire_id: wire.id,
+      endpoints: {
+        from: `${from.componentLabel}.${from.pinLabel}`,
+        to: `${to.componentLabel}.${to.pinLabel}`,
+      },
+      from: wire.from ? { ...wire.from } : null,
+      to: wire.to ? { ...wire.to } : null,
+      color: wire.color || "",
+    };
+  }
+
+  function selectedWireRefs(fallbackWire = null) {
+    const ids = new Set(selectedWireIds);
+    if (selectedWireId) ids.add(selectedWireId);
+    if (!ids.size && fallbackWire?.id) ids.add(fallbackWire.id);
+    return wires.filter((wire) => ids.has(wire.id)).map(wirePromptRef);
+  }
+
+  function closeWireContextMenu() {
+    wireContextMenuEl?.classList.add("hidden");
+    if (wireContextMenuEl) wireContextMenuEl.innerHTML = "";
+  }
+
+  function openWireContextMenu(wire, event) {
+    if (!wire || !wireContextMenuEl) return;
+    if (!selectedWireIds.has(wire.id)) selectWire(wire.id, event.shiftKey || event.metaKey || event.ctrlKey);
+    renderWires();
+    renderSelectedParts();
+    const refs = selectedWireRefs(wire);
+    const count = refs.length || 1;
+    const pt = clientToCanvas(event.clientX, event.clientY);
+    wireContextMenuEl.style.left = `${clamp(pt.x + 8, 8, Math.max(8, canvas.clientWidth - 260))}px`;
+    wireContextMenuEl.style.top = `${clamp(pt.y + 8, 8, Math.max(8, canvas.clientHeight - 132))}px`;
+    wireContextMenuEl.innerHTML = `
+      <button type="button" data-wire-action="attach">Add ${count} selected wire${count === 1 ? "" : "s"} to AI prompt</button>
+      <button type="button" data-wire-action="edit">Edit wire label/color</button>
+    `;
+    wireContextMenuEl.classList.remove("hidden");
+    wireContextMenuEl.querySelector("[data-wire-action='attach']")?.addEventListener("click", () => {
+      onAttachWireRefs?.(refs);
+      closeWireContextMenu();
+    });
+    wireContextMenuEl.querySelector("[data-wire-action='edit']")?.addEventListener("click", () => {
+      openWireEditor(wire.id, wireHandleFor(wire));
+      closeWireContextMenu();
+    });
   }
 
   function closeWireEditor() {
@@ -1110,6 +1224,107 @@ export function createWiringSimulator(options = {}) {
       <div class="wiring-notes-body">${desc}${list}</div>`;
   }
 
+  function componentHasLabel(comp, re) {
+    return re.test(String(comp?.label || comp?.type || ""));
+  }
+
+  function circuitRequirementItems() {
+    const items = [];
+    const drivers = components.filter((c) => c.type === "motor-driver");
+    const steppers = components.filter((c) => c.type === "stepper");
+    const motors = components.filter((c) => c.type === "motor");
+    const servos = components.filter((c) => c.type === "servo-motor");
+    const leds = components.filter((c) => c.type === "led");
+    const resistors = components.filter((c) => c.type === "resistor");
+    const hasStepDir = drivers.some((d) => ["drv8825", "a4988", "tb6600"].includes(driverFlavor(d)));
+    const hasUln = drivers.some((d) => componentHasLabel(d, /uln\s*2003/i));
+    const hasHBridge = drivers.some((d) => componentHasLabel(d, /l298|h-bridge/i));
+
+    if (hasStepDir || steppers.some((s) => componentHasLabel(s, /nema|bipolar/i))) {
+      items.push({
+        level: "warn",
+        title: "Stepper motor supply",
+        body: "NEMA/bipolar steppers need an external VMOT supply, commonly 12-24V, sized around 1-2A per phase. Do not power motor coils from Arduino 5V.",
+      });
+      items.push({
+        level: "info",
+        title: "Current limit",
+        body: "Set the DRV8825/A4988 current limit before connecting the motor. Keep controller GND, driver GND, and motor supply GND common.",
+      });
+    }
+    if (hasUln) {
+      items.push({
+        level: "info",
+        title: "ULN2003 / 28BYJ-48",
+        body: "28BYJ-48 motors usually use 5V and roughly 150-300mA while stepping. The motor harness plugs into the ULN2003 socket; do not jumper OUT pins to the motor.",
+      });
+    }
+    if (hasHBridge || motors.length) {
+      items.push({
+        level: "warn",
+        title: "DC motor current",
+        body: "Use a motor driver or transistor/MOSFET path with a flyback diode. Size the supply for stall current, not just running current.",
+      });
+    }
+    if (servos.length) {
+      items.push({
+        level: "warn",
+        title: "Servo power",
+        body: "Small servos commonly need 5-6V and 500mA-2A peak. Use a separate 5V supply for multiple servos and share ground with the controller.",
+      });
+    }
+    if (leds.length) {
+      items.push({
+        level: resistors.length ? "ok" : "warn",
+        title: "LED resistor",
+        body: resistors.length
+          ? "Resistor parts are present. Typical LED current limiting is 220-470Ω on 5V GPIO circuits."
+          : "Add a 220-470Ω current-limiting resistor in series with each LED before powering it.",
+      });
+    }
+    if (resistors.length && !leds.length) {
+      items.push({
+        level: "ok",
+        title: "Resistor support",
+        body: "The simulator supports resistor components with two terminals (`a` and `b`) for LED current limiting, pull-ups/pull-downs, and transistor base resistors.",
+      });
+    }
+    if (!items.length) {
+      items.push({
+        level: "info",
+        title: "Power check",
+        body: "Add components or generate a schematic to see voltage, current, resistor, and driver requirements here.",
+      });
+    }
+    return items;
+  }
+
+  function renderRequirements() {
+    if (!requirementsEl) return;
+    requirementsEl.classList.toggle("collapsed", requirementsCollapsed);
+    const items = circuitRequirementItems();
+    const badges = [
+      `${components.length} part${components.length === 1 ? "" : "s"}`,
+      `${wires.length} wire${wires.length === 1 ? "" : "s"}`,
+      components.some((c) => c.type === "resistor") ? "resistors supported" : "add resistors as needed",
+    ];
+    requirementsEl.innerHTML = `
+      <button type="button" class="wiring-requirements-toggle" aria-expanded="${requirementsCollapsed ? "false" : "true"}">
+        <span class="wiring-req-tab">Power</span>
+        <strong>Circuit requirements</strong>
+        <span aria-hidden="true">${requirementsCollapsed ? "◂" : "▸"}</span>
+      </button>
+      <div class="wiring-requirements-body">
+        <div class="wiring-req-badges">${badges.map((b) => `<span>${escapeHtml(b)}</span>`).join("")}</div>
+        ${items.map((item) => `
+          <section class="wiring-req-item wiring-req-item--${escapeHtml(item.level)}">
+            <h4>${escapeHtml(item.title)}</h4>
+            <p>${escapeHtml(item.body)}</p>
+          </section>
+        `).join("")}
+      </div>`;
+  }
+
   function normalizeEndpointLabel(label) {
     return String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   }
@@ -1260,6 +1475,7 @@ export function createWiringSimulator(options = {}) {
       status: w.status,
       needs_fix: Boolean(w.needs_fix),
     }));
+    const addedRequiredJumpers = ensureStepDirDriverJumpers();
     normalizeMotorDriverLayout();
     wireStart = null;
     wireCreateDrag = null;
@@ -1279,6 +1495,7 @@ export function createWiringSimulator(options = {}) {
     schematicProjectId = getProjectId?.() || schematicProjectId;
     renderParts();
     renderNotes();
+    renderRequirements();
     const paintWires = () => {
       renderWires();
       if (highlightFocusPath) requestAnimationFrame(fitView);
@@ -1288,7 +1505,7 @@ export function createWiringSimulator(options = {}) {
     } else {
       paintWires();
     }
-    if (save) scheduleSave();
+    if (save || addedRequiredJumpers) scheduleSave();
     notifyHistoryChange();
   }
 
@@ -1396,6 +1613,7 @@ export function createWiringSimulator(options = {}) {
 
   function renderAll() {
     renderParts();
+    renderRequirements();
     renderWires();
   }
 
@@ -1881,6 +2099,17 @@ export function createWiringSimulator(options = {}) {
       e.preventDefault();
       openWireEditor(wire.id, wireHandleFor(wire));
     });
+
+    wiresSvg.addEventListener("contextmenu", (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const g = wireGroupFromEvent(e);
+      if (!g || !target) return;
+      const wire = wireById(g.dataset.wireId);
+      if (!wire) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openWireContextMenu(wire, e);
+    });
   }
   bindWireEvents();
 
@@ -2327,6 +2556,7 @@ export function createWiringSimulator(options = {}) {
 
   document.addEventListener("keydown", (e) => {
     if (!wiringWorkspaceVisible()) return;
+    if (e.key === "Escape") closeWireContextMenu();
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     const key = e.key.toLowerCase();
     const mod = e.metaKey || e.ctrlKey;
@@ -2486,6 +2716,8 @@ export function createWiringSimulator(options = {}) {
       schematicMeta = { name: "", description: "", notes: [] };
       schematicProjectId = null;
       notesCollapsed = true;
+      requirementsCollapsed = false;
+      renderRequirements();
       clearPinCaches();
       clearHistory();
       renderAll();

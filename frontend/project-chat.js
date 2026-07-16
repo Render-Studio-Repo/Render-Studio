@@ -210,6 +210,7 @@ export function createProjectChatUI({
   onStatus = null,
   onOpenUserProfile = null,
   getOnlineUserIds = null,
+  onWorkspaceInviteResolve = null,
 } = {}) {
   let open = false;
   let overlay = null;
@@ -227,6 +228,7 @@ export function createProjectChatUI({
   let activeThreadMeta = null;
   let imageBlobUrls = [];
   let inboxView = "inbox";
+  let pendingWorkspaceInvite = null;
   let groupPickerOpen = false;
   let threadCreateOpen = false;
   let threadSettingsOpen = false;
@@ -347,6 +349,7 @@ export function createProjectChatUI({
         <div class="pc-body">
           <aside class="pc-threads" id="pc-threads" aria-label="Threads"></aside>
           <section class="pc-main">
+            <div id="pc-workspace-invite" class="pc-workspace-invite hidden"></div>
             <div id="pc-thread-invite" class="pc-thread-invite hidden"></div>
             <div id="pc-collab-bar" class="pc-collab-bar hidden"></div>
             <div class="pc-messages" id="pc-messages" aria-live="polite"></div>
@@ -1370,6 +1373,101 @@ export function createProjectChatUI({
     }
   }
 
+  function renderWorkspaceInviteBanner() {
+    const host = overlay?.querySelector("#pc-workspace-invite");
+    if (!host) return;
+    const invite = pendingWorkspaceInvite;
+    if (!invite?.id) {
+      host.classList.add("hidden");
+      host.innerHTML = "";
+      return;
+    }
+    const inviter = invite.inviter_name || invite.by || "A teammate";
+    const teamName = invite.team_name || "a workspace";
+    host.classList.remove("hidden");
+    host.innerHTML = `
+      <p class="pc-workspace-invite-eyebrow">Workspace invite</p>
+      <p><strong>${esc(inviter)}</strong> invited you to join <strong>${esc(teamName)}</strong>.</p>
+      <div class="pc-workspace-invite-actions">
+        <button type="button" class="btn btn-compact secondary" data-pc-invite-decline>Decline</button>
+        <button type="button" class="btn btn-compact accent" data-pc-invite-accept>Accept invite</button>
+      </div>
+    `;
+    host.querySelector("[data-pc-invite-accept]")?.addEventListener("click", () => {
+      void resolveWorkspaceInvite("accept");
+    });
+    host.querySelector("[data-pc-invite-decline]")?.addEventListener("click", () => {
+      void resolveWorkspaceInvite("decline");
+    });
+  }
+
+  async function resolveWorkspaceInvite(action) {
+    const invite = pendingWorkspaceInvite;
+    if (!invite?.id) return;
+    try {
+      if (typeof onWorkspaceInviteResolve === "function") {
+        await onWorkspaceInviteResolve(invite, action);
+      } else {
+        await api(`/api/teams/invites/${encodeURIComponent(invite.id)}/${action}`, { method: "POST" });
+      }
+      pendingWorkspaceInvite = null;
+      renderWorkspaceInviteBanner();
+      onStatus?.("ok", action === "accept" ? "Joined workspace" : "Invite declined");
+    } catch (err) {
+      onStatus?.("error", err.message || `Could not ${action} invite`);
+    }
+  }
+
+  async function showWorkspaceInvite(invite = {}, { open: shouldOpen = true } = {}) {
+    if (!invite?.id) return;
+    pendingWorkspaceInvite = {
+      id: invite.id || invite.invite_id,
+      team_id: invite.team_id,
+      team_name: invite.team_name || "workspace",
+      inviter_name: invite.inviter_name || invite.by || "A teammate",
+      by: invite.by,
+    };
+    unread = {
+      unread_count: Number(unread.unread_count || 0) + 1,
+      mention_count: Number(unread.mention_count || 0) + 1,
+      latest_mention: {
+        body: `${pendingWorkspaceInvite.inviter_name} invited you to ${pendingWorkspaceInvite.team_name}`,
+      },
+    };
+    setBadge();
+    if (shouldOpen) {
+      ensureOverlay();
+      overlay.classList.remove("hidden");
+      open = true;
+      document.body.classList.add("project-chat-open");
+      const title = overlay.querySelector("#pc-title");
+      const subtitle = overlay.querySelector("#pc-subtitle");
+      if (title) title.textContent = "Project chat";
+      if (subtitle) subtitle.textContent = "Workspace invite";
+      renderWorkspaceInviteBanner();
+      const projectId = getProjectId?.();
+      if (projectId) {
+        await loadCandidates();
+        await loadThreads();
+        if (activeThreadId) await selectThread(activeThreadId);
+      } else {
+        const messagesEl = overlay.querySelector("#pc-messages");
+        if (messagesEl && !messages.length) {
+          messagesEl.innerHTML = `<div class="pc-empty"><strong>You've been invited to a workspace.</strong><span class="muted">Accept above to join, then open a project to keep chatting with the team.</span></div>`;
+        }
+      }
+      return;
+    }
+    ensureOverlay();
+    renderWorkspaceInviteBanner();
+  }
+
+  function clearWorkspaceInvite(inviteId = null) {
+    if (inviteId && pendingWorkspaceInvite?.id && pendingWorkspaceInvite.id !== inviteId) return;
+    pendingWorkspaceInvite = null;
+    renderWorkspaceInviteBanner();
+  }
+
   async function openChat() {
     if (!getToken()) {
       ensureOverlay();
@@ -1412,6 +1510,7 @@ export function createProjectChatUI({
     const subtitle = overlay.querySelector("#pc-subtitle");
     if (title) title.textContent = "Project chat";
     if (subtitle) subtitle.textContent = getProjectName?.() || projectId;
+    renderWorkspaceInviteBanner();
     await loadCandidates();
     await loadThreads();
     if (activeThreadId) await selectThread(activeThreadId);
@@ -1430,6 +1529,22 @@ export function createProjectChatUI({
   }
 
   function handleRealtime(msg = {}) {
+    if (msg.type === "team.invite.created" && (msg.invite_id || msg.id)) {
+      void showWorkspaceInvite({
+        id: msg.invite_id || msg.id,
+        team_id: msg.team_id,
+        team_name: msg.team_name,
+        inviter_name: msg.inviter_name || msg.by,
+        by: msg.by,
+      }, { open: msg.open_chat !== false });
+      return;
+    }
+    if (msg.type === "team.invites.changed") {
+      if (pendingWorkspaceInvite?.id) {
+        // Keep banner until accept/decline response clears it.
+      }
+      return;
+    }
     const projectId = getProjectId?.();
     if (!projectId || msg.project_id !== projectId) {
       if (msg.type === "project.chat.mention") {
@@ -1506,6 +1621,8 @@ export function createProjectChatUI({
     refreshUnread,
     handleRealtime,
     prefillMention,
+    showWorkspaceInvite,
+    clearWorkspaceInvite,
     destroy() {
       if (pollTimer) window.clearInterval(pollTimer);
       overlay?.remove();

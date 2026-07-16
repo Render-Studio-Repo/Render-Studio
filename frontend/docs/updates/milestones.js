@@ -340,6 +340,16 @@ export const MILESTONE_UPDATES = [
     href: "/getting-started.html#wiring",
   },
   {
+    id: "source-parts",
+    date: "2026-07-16",
+    kind: "feature",
+    title: "Source parts with ⓘ into Wiring AI",
+    summary:
+      "Click ⓘ on a component to search and link a catalog part, then drag the sourced component into the Wiring Simulator AI prompt for pin-aware circuits.",
+    visual: "/docs/media/source-parts.gif?v=20260716-source",
+    href: "/getting-started.html#source-parts",
+  },
+  {
     id: "canvas-sketch-mode",
     date: "2026-07-08",
     kind: "tool",

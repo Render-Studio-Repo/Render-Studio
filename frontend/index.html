@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260715-toast-above-loader" />
+  <link rel="stylesheet" href="/styles.css?v=20260716-workspace-invite" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -1961,6 +1961,21 @@
     </div>
   </div>
 
+  <div id="workspace-invite-modal" class="auth-modal workspace-invite-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-invite-title">
+    <div class="auth-backdrop" data-ws-invite-close></div>
+    <div class="auth-card app-dialog-card workspace-invite-card">
+      <button type="button" class="auth-close" data-ws-invite-close aria-label="Close">&times;</button>
+      <p class="workspace-invite-eyebrow">Workspace invite</p>
+      <h2 id="workspace-invite-title" class="app-dialog-title">Join this workspace?</h2>
+      <p id="workspace-invite-copy" class="workspace-invite-copy">Someone invited you to a workspace.</p>
+      <p id="workspace-invite-error" class="auth-error hidden"></p>
+      <div class="app-dialog-actions workspace-invite-actions">
+        <button type="button" id="btn-workspace-invite-decline" class="btn secondary">Decline</button>
+        <button type="button" id="btn-workspace-invite-accept" class="btn accent">Accept</button>
+      </div>
+    </div>
+  </div>
+
   <div id="api-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="api-key-title">
     <div class="auth-backdrop" data-api-key-close></div>
     <div class="auth-card app-dialog-card">
@@ -2585,7 +2600,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260715-texture-viewer-fix"></script>
+  <script type="module" src="/app.js?v=20260716-workspace-invite"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

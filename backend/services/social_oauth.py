@@ -334,5 +334,15 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
             (user_id,),
         ).fetchone()
     out = dict(user)
+    if email and email_verified:
+        try:
+            from backend.services import teams_service
+
+            accepted_invites = teams_service.accept_pending_invites_for_user(user_id, email)
+            if accepted_invites:
+                out["_accepted_invites"] = accepted_invites
+        except Exception:
+            # Social login must not fail just because invite cleanup had an issue.
+            pass
     out["_created_new_user"] = created_new_user
     return out

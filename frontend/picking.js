@@ -400,6 +400,7 @@ function nearestEdge(hit, meshRoot, offset) {
         edge_start: start,
         edge_end: end,
         edge_length: start.distanceTo(end),
+        edge_key: edgeKey(start, end),
         pick_distance: d,
       };
     }
@@ -407,9 +408,37 @@ function nearestEdge(hit, meshRoot, offset) {
   return best;
 }
 
+function edgeKey(a, b) {
+  if (!a || !b) return "";
+  const ak = quantKey(a);
+  const bk = quantKey(b);
+  return ak < bk ? `${ak}|${bk}` : `${bk}|${ak}`;
+}
+
+function edgeRefKey(ref) {
+  if (ref?.edge_key) return String(ref.edge_key);
+  if (Array.isArray(ref?.edge_start) && Array.isArray(ref?.edge_end)) {
+    return edgeKey(new THREE.Vector3(...ref.edge_start), new THREE.Vector3(...ref.edge_end));
+  }
+  return "";
+}
+
 function scaleForMesh(meshRoot) {
   const box = new THREE.Box3().setFromObject(meshRoot);
   return Math.max(box.getSize(new THREE.Vector3()).length() * 0.012, 0.003);
+}
+
+function mmPerModelUnitForMesh(meshRoot) {
+  const box = new THREE.Box3().setFromObject(meshRoot);
+  const extent = box.getSize(new THREE.Vector3()).length();
+  return Number.isFinite(extent) && extent >= 1 ? 1 : 1000;
+}
+
+function formatEdgeLengthMm(modelLength, meshRoot) {
+  const mm = Number(modelLength) * mmPerModelUnitForMesh(meshRoot);
+  if (!Number.isFinite(mm)) return "";
+  const decimals = mm >= 100 ? 1 : mm >= 10 ? 2 : 3;
+  return `${parseFloat(mm.toFixed(decimals))} mm`;
 }
 
 function addMarker(localPoint, color, scale, shape = "sphere", refId = null, meshRoot = null) {
@@ -507,6 +536,125 @@ function addFaceLabel(localPoint, normal, scale, refId, meshRoot, { removable = 
   world.add(lift.multiplyScalar(scale * 2.5));
   sprite.position.copy(world);
   return sprite;
+}
+
+function makeEdgeLabelSprite(text, scale) {
+  const pixelScale = 2;
+  const W = 360;
+  const H = 112;
+  const canvas = document.createElement("canvas");
+  canvas.width = W * pixelScale;
+  canvas.height = H * pixelScale;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.scale(pixelScale, pixelScale);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(9, 18, 32, 0.92)";
+    roundedRect(ctx, 8, 12, W - 16, H - 24, 18);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(88, 166, 255, 0.96)";
+    ctx.stroke();
+    ctx.font = "800 38px system-ui, -apple-system, Segoe UI, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#dbeafe";
+    ctx.fillText(text, W / 2, H / 2 + 1);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.renderOrder = 1004;
+  sprite.scale.set(scale * 9.8, scale * 3.05, 1);
+  return sprite;
+}
+
+function modelPointToWorld(point, meshRoot, offset) {
+  const local = modelToLocal(point, meshRoot, offset);
+  meshRoot.localToWorld(local);
+  return local;
+}
+
+function makeEdgeTube(startWorld, endWorld, scale, color = 0x58a6ff, opacity = 0.98) {
+  const delta = endWorld.clone().sub(startWorld);
+  const len = delta.length();
+  if (!Number.isFinite(len) || len <= 1e-9) return null;
+  const radius = Math.max(scale * 0.045, len * 0.004);
+  const geo = new THREE.CylinderGeometry(radius, radius, len, 10, 1, true);
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(startWorld).add(endWorld).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+  mesh.renderOrder = 1002;
+  return mesh;
+}
+
+function addEdgeMarker(edgeOrRef, scale, meshRoot, offset, refId = null, { label = true, opacity = 0.98, target = markersGroup } = {}) {
+  const start = edgeOrRef.edge_start?.isVector3
+    ? edgeOrRef.edge_start
+    : Array.isArray(edgeOrRef.edge_start)
+      ? new THREE.Vector3(...edgeOrRef.edge_start)
+      : null;
+  const end = edgeOrRef.edge_end?.isVector3
+    ? edgeOrRef.edge_end
+    : Array.isArray(edgeOrRef.edge_end)
+      ? new THREE.Vector3(...edgeOrRef.edge_end)
+      : null;
+  if (!start || !end) return null;
+  const group = new THREE.Group();
+  if (refId) group.userData.refId = refId;
+  const startWorld = modelPointToWorld(start, meshRoot, offset);
+  const endWorld = modelPointToWorld(end, meshRoot, offset);
+  const tube = makeEdgeTube(startWorld, endWorld, scale, 0x58a6ff, opacity);
+  if (tube) {
+    if (refId) tube.userData.refId = refId;
+    group.add(tube);
+  }
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([startWorld, endWorld]),
+    new THREE.LineBasicMaterial({
+      color: 0xa5d6ff,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.98,
+    })
+  );
+  line.renderOrder = 1003;
+  if (refId) line.userData.refId = refId;
+  group.add(line);
+  if (label) {
+    const len = Number.isFinite(edgeOrRef.edge_length) ? edgeOrRef.edge_length : start.distanceTo(end);
+    const text = formatEdgeLengthMm(len, meshRoot);
+    if (text) {
+      const sprite = makeEdgeLabelSprite(text, scale);
+      if (refId) sprite.userData.refId = refId;
+      const mid = startWorld.clone().lerp(endWorld, 0.5);
+      const dir = endWorld.clone().sub(startWorld).normalize();
+      const up = new THREE.Vector3(0, 1, 0);
+      const side = new THREE.Vector3().crossVectors(dir, up);
+      if (side.lengthSq() < 0.001) side.set(1, 0, 0);
+      sprite.position.copy(mid).addScaledVector(side.normalize(), scale * 2.2).add(new THREE.Vector3(0, scale * 0.9, 0));
+      group.add(sprite);
+    }
+  }
+  target.add(group);
+  if (refId) markerByRefId.set(refId, group);
+  return group;
 }
 
 function addRemoveButton(localPoint, normal, scale, refId, meshRoot) {
@@ -643,6 +791,11 @@ function findMatchingReference(references, hit, mode, meshRoot, offset) {
   if (mode === "edge") {
     const edge = nearestEdge(hit, meshRoot, offset);
     if (!edge) return null;
+    const pickedKey = edge.edge_key || edgeKey(edge.edge_start, edge.edge_end);
+    if (pickedKey) {
+      const matched = references.find((r) => r.type === "edge" && edgeRefKey(r) === pickedKey);
+      if (matched) return matched;
+    }
     const picked = [edge.position.x, edge.position.y, edge.position.z];
     return references.find((r) => r.type === "edge" && positionsClose(r.position, picked, tol)) || null;
   }
@@ -714,11 +867,14 @@ function showHoverCorner(localPoint, scale) {
   hoverCorner = m;
 }
 
-function showHoverEdge(localPoint, scale) {
+function showHoverEdge(edge, scale, meshRoot, offset) {
   disposeGroup(hoverGroup);
-  const m = addMarker(localPoint, 0xd29922, scale * 1.2, "sphere");
-  hoverGroup.add(m);
-  hoverEdge = m;
+  const marker = addEdgeMarker(edge, scale, meshRoot, offset, null, {
+    label: true,
+    opacity: 0.72,
+    target: hoverGroup,
+  });
+  hoverEdge = marker;
 }
 
 function screenPoint(event) {
@@ -1263,9 +1419,12 @@ export function restoreReferenceMarkers(refs = [], { meshRoot, meshCenterOffset 
       markerByRefId.set(ref.id, group);
       continue;
     }
+    if (ref.type === "edge") {
+      if (addEdgeMarker(ref, scale, meshRoot, offset, ref.id, { label: true })) continue;
+    }
     addMarker(
       localPoint,
-      ref.type === "edge" ? 0xd29922 : 0xff7b72,
+      ref.type === "edge" ? 0x58a6ff : 0xff7b72,
       scale,
       ref.type === "corner" ? "box" : "sphere",
       ref.id,
@@ -1298,7 +1457,7 @@ export function updateHover(event, { camera, domElement, meshRoot, meshCenterOff
     showHoverCorner(local, scale);
   } else if (pickMode === "edge") {
     const edge = nearestEdge(hit, meshRoot, offset);
-    if (edge) showHoverEdge(edge.localPoint, scale);
+    if (edge) showHoverEdge(edge, scale, meshRoot, offset);
   }
 }
 
@@ -1372,6 +1531,7 @@ export function pickGeometry(event, { camera, domElement, meshRoot, meshCenterOf
     edge_end: pickMode === "edge" && edgePick?.edge_end
       ? [edgePick.edge_end.x, edgePick.edge_end.y, edgePick.edge_end.z]
       : null,
+    edge_key: pickMode === "edge" && edgePick ? edgePick.edge_key : null,
     label: formatRefLabel(type, [position.x, position.y, position.z]),
     token: `@${id}`,
     localPoint,
@@ -1389,10 +1549,12 @@ export function pickGeometry(event, { camera, domElement, meshRoot, meshCenterOf
       markersGroup.add(markerGroup);
       markerByRefId.set(id, markerGroup);
     }
+  } else if (pickMode === "edge" && edgePick) {
+    addEdgeMarker(edgePick, scale, meshRoot, offset, id, { label: true });
   } else {
     addMarker(
       localPoint,
-      type === "edge" ? 0xd29922 : 0xff7b72,
+      type === "edge" ? 0x58a6ff : 0xff7b72,
       scale,
       type === "corner" ? "box" : "sphere",
       id,
@@ -1530,7 +1692,11 @@ export function updateMeasureHover(event, { camera, domElement, meshRoot, meshCe
   const local = modelToLocal(entity.position, meshRoot, offset);
 
   if (entity.type === "edge" && entity.edge) {
-    showHoverEdge(local, scale);
+    showHoverEdge({
+      edge_start: entity.edge.start,
+      edge_end: entity.edge.end,
+      edge_length: entity.edge.length,
+    }, scale, meshRoot, offset);
   } else if (entity.type === "vertex") {
     showHoverCorner(local, scale);
   } else if (entity.type === "face" && entity.hit) {
@@ -1586,13 +1752,13 @@ function _makeDimLabelSprite(text, scale) {
   if (ctx) {
     ctx.scale(pixelScale, pixelScale);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "rgba(10, 14, 22, 0.88)";
+    ctx.fillStyle = "rgba(9, 18, 32, 0.92)";
     roundedRect(ctx, 5, 5, W - 10, H - 10, 14);
     ctx.fill();
-    ctx.strokeStyle = "#ffd700";
+    ctx.strokeStyle = "rgba(88, 166, 255, 0.96)";
     ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.fillStyle = "#ffd700";
+    ctx.fillStyle = "#dbeafe";
     ctx.font = "800 34px 'Segoe UI', system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -1612,16 +1778,16 @@ function _makeDimLabelSprite(text, scale) {
   return sprite;
 }
 
-function _makeEndcap(pos, scale) {
+function _makeEndcap(pos, scale, color = 0x58a6ff) {
   const geo = new THREE.SphereGeometry(scale * 0.35, 8, 8);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, depthTest: false });
+  const mat = new THREE.MeshBasicMaterial({ color, depthTest: false });
   const m = new THREE.Mesh(geo, mat);
   m.renderOrder = 1001;
   m.position.copy(pos);
   return m;
 }
 
-function _addDimSegment(group, a, b, label, scale, color = 0xffd700) {
+function _addDimSegment(group, a, b, label, scale, color = 0x58a6ff) {
   const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
   const mat = new THREE.LineDashedMaterial({
     color,
@@ -1635,8 +1801,6 @@ function _addDimSegment(group, a, b, label, scale, color = 0xffd700) {
   line.computeLineDistances();
   line.renderOrder = 999;
   group.add(line);
-  group.add(_makeEndcap(a, scale));
-  group.add(_makeEndcap(b, scale));
   const mid = a.clone().lerp(b, 0.5);
   const up = new THREE.Vector3(0, 1, 0);
   const perp = new THREE.Vector3().crossVectors(b.clone().sub(a), up).normalize();
@@ -1669,7 +1833,7 @@ export function setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn, forma
   const scale = scaleForMesh(meshRoot);
   const fmt = formatFn || ((mm) => `${mm.toFixed(2)} mm`);
   const fmtArea = formatAreaFn || ((mm2) => `${mm2.toFixed(2)} mm²`);
-  const color = opts.color ?? 0xffd700;
+  const color = opts.color ?? 0x58a6ff;
 
   if (refs.length === 1) {
     const r = refs[0];
@@ -1699,7 +1863,7 @@ export function setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn, forma
       const n = Array.isArray(r.normal) ? new THREE.Vector3(...r.normal).normalize() : new THREE.Vector3(0, 0, 1);
       sprite.position.copy(p).addScaledVector(n, scale * 4);
       target.add(sprite);
-      target.add(_makeEndcap(p, scale));
+      target.add(_makeEndcap(p, scale, color));
       return;
     }
     if (r.type === "corner" || r.type === "vertex") {
@@ -1709,7 +1873,7 @@ export function setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn, forma
       const sprite = _makeDimLabelSprite(label, scale * 1.15);
       sprite.position.copy(p).add(new THREE.Vector3(0, 0, scale * 4));
       target.add(sprite);
-      target.add(_makeEndcap(p, scale));
+      target.add(_makeEndcap(p, scale, color));
     }
     return;
   }
@@ -1719,7 +1883,7 @@ export function setMeasureAnnotations(refs, mmPerUnit, meshRoot, formatFn, forma
       const ends = _edgeEndpoints(r);
       if (!ends) continue;
       const lenModel = Number.isFinite(r.edge_length) ? r.edge_length : ends.start.distanceTo(ends.end);
-      _addDimSegment(target, ends.start, ends.end, fmt(lenModel * mmPerUnit), scale, 0xd29922);
+      _addDimSegment(target, ends.start, ends.end, fmt(lenModel * mmPerUnit), scale, 0x58a6ff);
     }
     const a = _refVec(refs[0]);
     const b = _refVec(refs[1]);
