@@ -590,6 +590,18 @@ def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, 
         if item["format"] == "step":
             item["step_kind"] = classify_step_file_kind(f)
         exports.append(item)
+    native_step = resolve_native_brep_step(project_path, filename)
+    if native_step is not None and not any(item.get("name") == native_step.name for item in exports):
+        exports.append(
+            {
+                "name": native_step.name,
+                "format": "step",
+                "size": native_step.stat().st_size,
+                "step_kind": "editable_brep",
+                "base": True,
+                "label": "STEP (editable B-rep source)",
+            }
+        )
     return exports
 
 

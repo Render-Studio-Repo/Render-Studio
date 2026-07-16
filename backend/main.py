@@ -12030,10 +12030,6 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
             allowed.add(Path(viewer).name)
     except Exception:
         pass
-    try:
-        cad_service.ensure_mesh_exports(project_path, safe, missing_only=True)
-    except Exception as exc:
-        logger.warning("Could not refresh share exports for %s: %s", safe, exc)
     for item in cad_service.list_exports_for_model(project_path, safe):
         name = item.get("name")
         if name:
@@ -12050,10 +12046,6 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
     for path_ in project_path.iterdir():
         if path_.is_file() and path_.suffix.lower() in {".urdf", ".srdf", ".sdf", ".mjcf", ".stl", ".glb", ".gltf", ".3mf"}:
             allowed.add(path_.name)
-    preview_meta = _share_preview_image_meta(project_path, safe)
-    preview = preview_meta.get("preview_file")
-    if preview:
-        allowed.add(str(preview))
     snapshot = _share_snapshot_filename(project_path, safe)
     if snapshot:
         allowed.add(snapshot)
@@ -12084,11 +12076,7 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         allowed.add(viewer_filename)
     meta = project_store.load_meta(project_path)
     project_name = str(meta.get("name") or project_id)
-    preview_meta = share_preview.share_preview_image_meta(
-        project_path,
-        filename,
-        resolve_viewport=cad_service.resolve_viewport_filename,
-    )
+    preview_meta = {}
     share_preview_file = Path(str(share.get("preview_file") or "")).name
     if share_preview_file and (project_path / share_preview_file).is_file():
         allowed.add(share_preview_file)
@@ -12098,11 +12086,14 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
             "preview_width": preview_meta.get("preview_width"),
             "preview_height": preview_meta.get("preview_height"),
         }
-    preview_file = preview_meta.get("preview_file") or share_preview.share_preview_filename(
-        project_path,
-        filename,
-        resolve_viewport=cad_service.resolve_viewport_filename,
-    )
+    if not preview_meta:
+        snapshot = _share_snapshot_filename(project_path, filename)
+        if snapshot:
+            preview_meta = {
+                "preview_file": snapshot,
+                "preview_type": "image/png",
+            }
+    preview_file = preview_meta.get("preview_file")
     preview_url = None
     if preview_file:
         preview_url = f"/api/share/{token}/files/{urllib.parse.quote(str(preview_file))}"
