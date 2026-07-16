@@ -100,7 +100,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-pin-hover-tooltip";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-driver-jumpers";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";

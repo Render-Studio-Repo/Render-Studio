@@ -1284,6 +1284,19 @@ export function createWiringSimulator(options = {}) {
         handle: wire.control,
       };
     }
+    if (wire.from?.componentId && wire.from.componentId === wire.to?.componentId) {
+      const span = Math.hypot(a.x - b.x, a.y - b.y);
+      const lift = clamp(span * 0.45, 16, 42);
+      const control = {
+        x: (a.x + b.x) / 2,
+        y: Math.min(a.y, b.y) - lift,
+      };
+      return {
+        d: wirePathQuadratic(a, b, control),
+        handle: control,
+        internal: true,
+      };
+    }
     const liftY = routingLiftY(wireIndex, a, b);
     return {
       d: wirePathOrthogonal(a, b, liftY),

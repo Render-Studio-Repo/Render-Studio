@@ -52,6 +52,7 @@ Pin IDs:
 - Arduino: 5v, gnd, d13, d12, d11, a0, a1
 - Servo motor: signal, vcc, gnd
 - Motor driver (ULN2003 / L298N / A4988): in1, in2, in3, in4 (controller-side inputs), out1, out2, out3, out4 (motor-side outputs), vcc, gnd
+- DRV8825/A4988 expansion shield extra header pin IDs: dir_v, dir_g, en_v, en_g. The simulator can draw short jumper wires whose from/to endpoints use the SAME driver componentId.
 - Stepper motor (28BYJ-48): in1, in2, in3, in4 (coil wires — connect to driver out1–out4, or omit entirely for ULN2003 board with built-in white connector)
 - DC motor: plus, minus (aliases a, b)
 - Transistor (NPN): base, collector, emitter
@@ -107,6 +108,8 @@ Stepper motor (REQUIRED pattern — controller → driver → motor):
 - A4988 / DRV8825 + NEMA-17 (label driver "A4988"):
     Use STEP and DIR pins only: controller d2 → driver in1 (STEP), controller d3 → driver in2 (DIR).
     Motor coil pairs connect to out1/out2 (1A/1B) and out3/out4 (2A/2B).
+    Shield/header jumpers are drawable: use same-component wires on the driver, e.g. driver in3 (EN S) → driver dir_g (DIR G) to hold enable low, and route 5V logic to driver en_v (EN V) when the expansion shield's V row is physically used.
+    Do NOT omit these tiny jumpers just because both ends are on the same driver; same-component jumper wires are valid and render as short internal cables.
 - L298N + DC or bipolar stepper (label driver "L298N"):
     Four controller pins → in1–in4; motor terminals → out1/out2 and out3/out4.
 - The simulator generates a Stepper-library sketch and animates the rotor. Do NOT duplicate that code in notes.
@@ -141,6 +144,10 @@ COMMON_DRIVER_PROFILES: dict[str, dict[str, Any]] = {
             "in1": "STEP",
             "in2": "DIR",
             "in3": "EN/SLEEP/RESET optional enable control",
+            "dir_v": "DIR header 5V jumper point",
+            "dir_g": "DIR header ground jumper point",
+            "en_v": "EN header 5V jumper point",
+            "en_g": "EN header ground jumper point",
             "vcc": "logic VDD (3.3V/5V from controller)",
             "gnd": "common ground shared by controller and motor supply",
             "out1": "A1 / 1A coil",
@@ -154,6 +161,7 @@ COMMON_DRIVER_PROFILES: dict[str, dict[str, Any]] = {
             "Wire controller d3 (or a GPIO output) to driver in2 as DIR.",
             "Connect controller GND to driver GND and the motor power supply GND.",
             "Connect logic VDD from the controller 3.3V/5V rail to driver VCC/VDD.",
+            "For the DAOKI/Arduino expansion shield style header, draw same-driver jumper wires: EN S (in3) to DIR G (dir_g), and 5V logic to EN V (en_v) when that is the physical V jumper point.",
             "Connect the bipolar stepper coil pairs to out1/out2 and out3/out4.",
             "Do not power a NEMA stepper from Arduino 5V. Use an external VMOT supply and set the current limit before powering the motor.",
         ],
@@ -167,6 +175,10 @@ COMMON_DRIVER_PROFILES: dict[str, dict[str, Any]] = {
             "in1": "STEP",
             "in2": "DIR",
             "in3": "EN optional enable control",
+            "dir_v": "DIR header 5V jumper point",
+            "dir_g": "DIR header ground jumper point",
+            "en_v": "EN header 5V jumper point",
+            "en_g": "EN header ground jumper point",
             "vcc": "logic VDD",
             "gnd": "common ground",
             "out1": "1A coil",
@@ -177,6 +189,7 @@ COMMON_DRIVER_PROFILES: dict[str, dict[str, Any]] = {
         "wiring_guidance": [
             "Use STEP and DIR control lines; do not wire four phase inputs like ULN2003.",
             "Use an external motor supply for VMOT and common ground with the controller.",
+            "For shield-style 3-pin S/V/G headers, draw same-component jumper wires when needed, including EN S (in3) to DIR G (dir_g) and 5V logic to EN V (en_v).",
             "Connect coil pairs to out1/out2 and out3/out4.",
         ],
     },
@@ -545,6 +558,37 @@ def _apply_step_dir_driver_metadata(components: list[dict[str, Any]], wires: lis
     return repairs
 
 
+def _ensure_step_dir_driver_jumpers(wires: list[dict[str, Any]], driver: dict[str, Any]) -> list[str]:
+    """Add shield-style same-component jumpers for DRV8825/A4988 headers."""
+    repairs: list[str] = []
+    driver_id = str(driver.get("id") or "")
+    if not driver_id:
+        return repairs
+    if not _has_wire(wires, driver_id, "in3", driver_id, "dir_g"):
+        _add_wire(
+            wires,
+            from_comp=driver_id,
+            from_pin="in3",
+            to_comp=driver_id,
+            to_pin="dir_g",
+            color=WIRE_COLORS["gnd"],
+            label="EN S->DIR G",
+        )
+        repairs.append("Added DRV8825/A4988 shield jumper: EN S to DIR G.")
+    if not _has_wire(wires, driver_id, "vcc", driver_id, "en_v"):
+        _add_wire(
+            wires,
+            from_comp=driver_id,
+            from_pin="vcc",
+            to_comp=driver_id,
+            to_pin="en_v",
+            color=WIRE_COLORS["power"],
+            label="5V->EN V",
+        )
+        repairs.append("Added DRV8825/A4988 shield jumper: STEP V/5V to EN V.")
+    return repairs
+
+
 def _looks_like_28byj(comp: dict[str, Any]) -> bool:
     if not _is_stepper(comp):
         return False
@@ -746,6 +790,8 @@ def validate_and_repair_schematic(schematic: dict[str, Any]) -> tuple[dict[str, 
 
     drivers = [c for c in components if _is_driver(c)]
     repairs.extend(_apply_step_dir_driver_metadata(components, wires))
+    for driver in [d for d in drivers if _is_step_dir_driver(d)]:
+        repairs.extend(_ensure_step_dir_driver_jumpers(wires, driver))
     uln_drivers = [d for d in drivers if _is_uln2003(d)]
     # Treat unlabeled drivers paired with 28BYJ-style steppers as ULN2003 boards.
     if not uln_drivers and steppers and any(_looks_like_28byj(s) for s in steppers):
