@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import shutil
 import uuid
 from contextlib import contextmanager
@@ -12,6 +13,8 @@ from pathlib import Path
 from typing import Any, Iterator, Literal
 
 from backend.services import cad_service
+
+logger = logging.getLogger(__name__)
 
 _SNAPSHOT_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf", ".step", ".stp"}
 _MAX_SNAPSHOT_ENTRIES = 8
@@ -45,7 +48,17 @@ def load_timeline(project_path: Path) -> dict[str, Any]:
     path = _timeline_path(project_path)
     if not path.is_file():
         return {"current_index": -1, "entries": []}
-    return json.loads(path.read_text())
+    try:
+        raw = path.read_text()
+        if not raw.strip():
+            return {"current_index": -1, "entries": []}
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return {"current_index": -1, "entries": []}
+        return data
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Ignoring unreadable timeline %s: %s", path, exc)
+        return {"current_index": -1, "entries": []}
 
 
 def save_timeline(project_path: Path, data: dict[str, Any]) -> None:

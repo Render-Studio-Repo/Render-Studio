@@ -73,6 +73,10 @@ _BODIES_INFO_CACHE_MAX = 256
 _autodesk_listing_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
 _autodesk_listing_cache_lock = threading.Lock()
 _AUTODESK_LISTING_CACHE_MAX = 256
+_ai_usage_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
+_ai_usage_cache_lock = threading.Lock()
+_AI_USAGE_CACHE_TTL = 30.0
+_AI_USAGE_CACHE_MAX = 128
 
 PROJECTS = ROOT / settings.projects_dir
 FRONTEND = ROOT / "frontend"
@@ -10519,11 +10523,24 @@ def get_workspace_ai_usage(
         teams = teams_service.list_teams(user["id"])
         if team_id not in {t["id"] for t in teams}:
             raise HTTPException(403, "Not a member of that workspace")
+    cache_key = (user["id"], team_id or "", kind or "", year, mon)
+    now = time.monotonic()
+    with _ai_usage_cache_lock:
+        cached = _ai_usage_cache.get(cache_key)
+        if cached and cached[0] > now:
+            return cached[1]
+
     access = teams_service.user_project_access(user["id"], team_id)
     paths = [PROJECTS / row["project_id"] for row in access if (PROJECTS / row["project_id"]).is_dir()]
-    return prompt_history_service.workspace_usage_summary(
+    summary = prompt_history_service.workspace_usage_summary(
         paths, kind=kind, year=year, month=mon, user_id=user["id"]
     )
+    with _ai_usage_cache_lock:
+        _ai_usage_cache[cache_key] = (time.monotonic() + _AI_USAGE_CACHE_TTL, summary)
+        if len(_ai_usage_cache) > _AI_USAGE_CACHE_MAX:
+            for drop_key in list(_ai_usage_cache.keys())[: len(_ai_usage_cache) // 2]:
+                _ai_usage_cache.pop(drop_key, None)
+    return summary
 
 
 @app.get("/api/user/ai-costs")
