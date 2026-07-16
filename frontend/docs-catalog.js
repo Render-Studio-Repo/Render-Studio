@@ -1,6 +1,6 @@
 /** Render complete categorized feature documentation on /docs.html */
 
-import { DOC_CATEGORIES, DOC_FEATURES, featuresByCategory } from "./docs-features.js?v=20260716-no-tips-tricks";
+import { DOC_CATEGORIES, DOC_FEATURES, featuresByCategory } from "./docs-features.js?v=20260716-source-parts";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 function esc(value) {

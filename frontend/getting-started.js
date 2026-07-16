@@ -1,7 +1,7 @@
 /** Getting Started feature guides for Docs. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260716-no-tips-tricks";
-import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260716-no-tips-tricks";
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260716-source-parts";
+import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260716-source-parts";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
 import { createRenderAgent } from "./render-agent.js?v=20260715-chat-fab-fallback";
 import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
@@ -18,10 +18,12 @@ const TOC_LABELS = {
   picks: "Geometry picks",
   "select-object": "Select object & body",
   wiring: "Wiring",
+  "source-parts": "Source parts",
   "cloud-sync": "Fusion / Onshape",
   "render-agent": "Render Agent",
   "link-to-prompt": "Link to prompt",
   "tips-library": "Tips & tricks",
+  preferences: "Preferences",
 };
 
 const TOC_SECTIONS = [
@@ -43,7 +45,7 @@ const TOC_SECTIONS = [
   },
   {
     title: "Tools & Integrations",
-    ids: ["wiring", "cloud-sync", "render-agent"],
+    ids: ["wiring", "source-parts", "cloud-sync", "render-agent"],
   },
 ];
 

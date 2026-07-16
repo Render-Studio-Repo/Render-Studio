@@ -22,6 +22,8 @@ const G = {
   wiring: "/docs/media/wiring.gif?v=20260715-real",
   cloud: "/docs/media/cloud-sync.gif?v=20260715-real",
   agent: "/docs/media/render-agent.gif?v=20260715-real",
+  preferences: "/docs/media/preferences.gif?v=20260716-prefs",
+  sourceParts: "/docs/media/source-parts.gif?v=20260716-source",
 };
 
 /** @typedef {{ id: string, category: string, title: string, summary: string, where: string, steps: string[], gif?: string, ask?: string, keywords?: string[] }} DocFeature */
@@ -359,6 +361,23 @@ export const DOC_FEATURES = [
     ask: "How do I use the Wiring Simulator?",
     keywords: ["wiring", "breadboard", "circuit", "gpio"],
   },
+  {
+    id: "source-parts",
+    category: "wiring",
+    title: "Source parts with ⓘ and drag into Wiring AI",
+    summary:
+      "Click ⓘ on a component to identify and source it online, then drag the sourced part into the Wiring Simulator AI prompt for pin-aware circuits.",
+    where: "Project browser ⓘ · Wiring Simulator AI prompt",
+    gif: G.sourceParts,
+    steps: [
+      "In the Project browser, click the ⓘ button on a component.",
+      "Search the catalog (e.g. NEMA 17 stepper) and click Use this to link the part.",
+      "Save the profile so pins and specs stay with the component.",
+      "Open Wiring Simulator and drag the sourced part into the Wiring AI prompt.",
+    ],
+    ask: "How do I source a part with the i button and use it in Wiring?",
+    keywords: ["source parts", "part profile", "step.parts", "wiring", "drag to prompt", "info button"],
+  },
 
   // ── Cloud ────────────────────────────────────────────────
   {
@@ -480,7 +499,7 @@ export const DOC_FEATURES = [
     title: "Preferences, theme & mouse",
     summary: "Avatar, mouse presets, dark/light theme, and simulated-motion after generate.",
     where: "Account → Preferences",
-    gif: G.agent,
+    gif: G.preferences,
     steps: [
       "Open Preferences from the account menu.",
       "Set mouse controls and appearance.",

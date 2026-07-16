@@ -8,6 +8,7 @@ Files (served at /docs/media/*.gif):
   ai-generate.gif       — type a CAD prompt + hover Generate
   workspaces.gif        — team select / invite / workspace menu
   share-folder.gif      — folder menu → Share → email
+  preferences.gif         — account menu → Preferences (mouse / theme / Advanced)
   reference-markup.gif    — upload PDF → Docs tab opens → Pen + notes → Send to AI
   canvas.gif            — CANVAS tab sketch + attach
   picks.gif             — Face pick on Robot Arm + @face prompt

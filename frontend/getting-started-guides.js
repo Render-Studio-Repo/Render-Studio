@@ -333,6 +333,30 @@ export const GETTING_STARTED_GUIDES = [
     "where": "Workspace \u2192 Wiring Simulator"
   },
   {
+    "id": "source-parts",
+    "category": "wiring",
+    "title": "Source parts with \u24d8 and drag into Wiring AI",
+    "demo": "source-parts",
+    "gif": "/docs/media/source-parts.gif?v=20260716-source",
+    "summary": "Click \u24d8 on a component to identify and source it online, then drag the sourced part into the Wiring Simulator AI prompt for pin-aware circuits.",
+    "steps": [
+      "In the Project browser, click the \u24d8 button on a component.",
+      "Search the catalog (e.g. NEMA 17 stepper) and click Use this to link the part.",
+      "Save the profile so pins and specs stay with the component.",
+      "Open Wiring Simulator and drag the sourced part into the Wiring AI prompt."
+    ],
+    "ask": "How do I source a part with the i button and use it in Wiring?",
+    "keywords": [
+      "source parts",
+      "part profile",
+      "step.parts",
+      "wiring",
+      "drag to prompt",
+      "info button"
+    ],
+    "where": "Project browser \u24d8 \u00b7 Wiring Simulator AI prompt"
+  },
+  {
     "id": "cloud-sync",
     "category": "cloud",
     "title": "Fusion 360 & Onshape sync",
@@ -376,8 +400,8 @@ export const GETTING_STARTED_GUIDES = [
     "id": "preferences",
     "category": "help",
     "title": "Preferences, theme & mouse",
-    "demo": "agent",
-    "gif": "/docs/media/render-agent.gif?v=20260715-real",
+    "demo": "preferences",
+    "gif": "/docs/media/preferences.gif?v=20260716-prefs",
     "summary": "Avatar, mouse presets, dark/light theme, and simulated-motion after generate.",
     "steps": [
       "Open Preferences from the account menu.",

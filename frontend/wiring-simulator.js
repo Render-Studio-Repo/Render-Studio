@@ -138,11 +138,12 @@ function pinLayout(componentOrType) {
     ];
   }
   if (type === "stepper") {
+    const explicitLabels = typeof componentOrType === "string" ? null : componentOrType?.pin_labels;
     return [
-      { id: "in1", x: 0.2, y: 0.96, label: "1" },
-      { id: "in2", x: 0.4, y: 0.96, label: "2" },
-      { id: "in3", x: 0.6, y: 0.96, label: "3" },
-      { id: "in4", x: 0.8, y: 0.96, label: "4" },
+      { id: "in1", x: 0.04, y: 0.22, label: explicitLabels?.in1 || "1" },
+      { id: "in2", x: 0.04, y: 0.4, label: explicitLabels?.in2 || "2" },
+      { id: "in3", x: 0.04, y: 0.58, label: explicitLabels?.in3 || "3" },
+      { id: "in4", x: 0.04, y: 0.76, label: explicitLabels?.in4 || "4" },
     ];
   }
   if (type === "motor-driver") {
@@ -328,6 +329,10 @@ function wirePathOrthogonal(a, b, liftY) {
   return `M ${a.x} ${a.y} L ${a.x} ${liftY} L ${b.x} ${liftY} L ${b.x} ${b.y}`;
 }
 
+function wirePathElbow(a, b, midX) {
+  return `M ${a.x} ${a.y} L ${midX} ${a.y} L ${midX} ${b.y} L ${b.x} ${b.y}`;
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -433,6 +438,59 @@ export function createWiringSimulator(options = {}) {
 
   function syncComponentsRef() {
     componentsRef = components;
+  }
+
+  function componentById(id) {
+    return components.find((c) => c.id === id) || null;
+  }
+
+  function isDriverOutputPin(pinId) {
+    return /^(out[1-4]|mot_[ab])$/i.test(String(pinId || ""));
+  }
+
+  function isMotorActuatorType(type) {
+    return type === "stepper" || type === "motor";
+  }
+
+  function driverMotorWireInfo(wire) {
+    const fromComp = componentById(wire?.from?.componentId);
+    const toComp = componentById(wire?.to?.componentId);
+    if (!fromComp || !toComp) return null;
+    if (fromComp.type === "motor-driver" && isDriverOutputPin(wire.from.pinId) && isMotorActuatorType(toComp.type)) {
+      return { driver: fromComp, actuator: toComp, driverEnd: wire.from, actuatorEnd: wire.to };
+    }
+    if (toComp.type === "motor-driver" && isDriverOutputPin(wire.to.pinId) && isMotorActuatorType(fromComp.type)) {
+      return { driver: toComp, actuator: fromComp, driverEnd: wire.to, actuatorEnd: wire.from };
+    }
+    return null;
+  }
+
+  function normalizeMotorDriverLayout() {
+    const pairs = new Map();
+    for (const wire of wires) {
+      const info = driverMotorWireInfo(wire);
+      if (!info) continue;
+      if (!pairs.has(info.actuator.id)) pairs.set(info.actuator.id, info.driver);
+    }
+    let lane = 0;
+    for (const [actuatorId, driver] of pairs.entries()) {
+      const actuator = componentById(actuatorId);
+      if (!actuator || !driver) continue;
+      const minGap = isStepDirShield(driver) ? 230 : 150;
+      const targetX = driver.x + driver.w + minGap;
+      if (actuator.x < targetX) actuator.x = targetX;
+      const targetY = driver.y + Math.max(0, (driver.h - actuator.h) / 2) + lane * (actuator.h + 42);
+      if (Math.abs(actuator.y - targetY) > 36) actuator.y = Math.max(20, targetY);
+      if (actuator.type === "stepper") {
+        const flavor = driverFlavor(driver);
+        actuator.pin_labels = ["drv8825", "a4988", "tb6600"].includes(flavor)
+          ? { in1: "A1", in2: "A2", in3: "B1", in4: "B2" }
+          : /uln2003/i.test(driver.label || "")
+            ? { in1: "IN1", in2: "IN2", in3: "IN3", in4: "IN4" }
+            : actuator.pin_labels;
+      }
+      lane += 1;
+    }
   }
 
   /* ── simulation animation ─────────────────────────────────────────────── */
@@ -1202,6 +1260,7 @@ export function createWiringSimulator(options = {}) {
       status: w.status,
       needs_fix: Boolean(w.needs_fix),
     }));
+    normalizeMotorDriverLayout();
     wireStart = null;
     wireCreateDrag = null;
     selectedWireId = null;
@@ -1295,6 +1354,17 @@ export function createWiringSimulator(options = {}) {
         d: wirePathQuadratic(a, b, control),
         handle: control,
         internal: true,
+      };
+    }
+    const motorInfo = driverMotorWireInfo(wire);
+    if (motorInfo && motorInfo.actuator.x >= motorInfo.driver.x + motorInfo.driver.w) {
+      const gapStart = motorInfo.driver.x + motorInfo.driver.w;
+      const gapEnd = motorInfo.actuator.x;
+      const midX = gapStart + Math.max(34, (gapEnd - gapStart) * 0.48);
+      return {
+        d: wirePathElbow(a, b, midX),
+        handle: { x: midX, y: (a.y + b.y) / 2 },
+        motorOutput: true,
       };
     }
     const liftY = routingLiftY(wireIndex, a, b);

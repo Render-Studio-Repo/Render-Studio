@@ -243,7 +243,7 @@ async def record_demo(browser: Browser, name: str, runner):
     page.set_default_timeout(8000)
     await page.add_init_script(init)
     print(f"Recording {name}...", flush=True)
-    rec = FrameRecorder(page, frames_dir, fps=6.0)
+    rec = FrameRecorder(page, frames_dir, fps=3.5 if name == "source-parts" else 6.0)
     try:
         await page.goto(f"{BASE}/?project={robot_pid}", wait_until="domcontentloaded", timeout=45000)
         await page.evaluate(CURSOR_JS)
@@ -256,7 +256,7 @@ async def record_demo(browser: Browser, name: str, runner):
             await page.evaluate(CURSOR_JS)
         await rec.start()
         await page.mouse.move(600, 380, steps=10)
-        await asyncio.wait_for(runner(page), timeout=90)
+        await asyncio.wait_for(runner(page), timeout=150 if name == "source-parts" else 90)
         await page.wait_for_timeout(400)
     except Exception as exc:
         print(f"  WARN {name}: {exc}", flush=True)
@@ -320,7 +320,13 @@ class FrameRecorder:
                 if not exists:
                     await self.page.evaluate(CURSOR_JS)
                 path = self.out_dir / f"f{self._n:04d}.jpg"
-                await self.page.screenshot(path=str(path), type="jpeg", quality=70)
+                await self.page.screenshot(
+                    path=str(path),
+                    type="jpeg",
+                    quality=62,
+                    timeout=2500,
+                    animations="disabled",
+                )
                 self._n += 1
             except Exception as exc:
                 print(f"  screenshot warn: {exc}", flush=True)
@@ -958,37 +964,24 @@ async def demo_preferences(page: Page):
         }"""
     )
 
-    # Account menu → Preferences
+    # Account menu
     auth = page.locator("#btn-auth").first
     if await auth.count() and await auth.is_visible():
         box = await auth.bounding_box()
         if box:
-            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=18)
-            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=120)
-    await page.wait_for_timeout(450)
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=12)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=90)
+    await page.wait_for_timeout(280)
 
-    pref_btn = page.locator("#btn-preferences-menu, button:has-text('Preferences')").first
-    if await pref_btn.count():
-        try:
-            await pref_btn.wait_for(state="visible", timeout=4000)
-            box = await pref_btn.bounding_box()
-            if box:
-                await move_to(page, box["x"] + 40, box["y"] + box["height"] / 2, steps=16)
-                await click_xy(page, box["x"] + 40, box["y"] + box["height"] / 2, hold_ms=120)
-        except Exception:
-            await page.evaluate(
-                """() => {
-                  document.getElementById('btn-preferences-menu')?.click();
-                }"""
-            )
+    pref_btn = page.locator("#btn-preferences-menu").first
+    if await pref_btn.count() and await pref_btn.is_visible():
+        box = await pref_btn.bounding_box()
+        if box:
+            await move_to(page, box["x"] + 36, box["y"] + box["height"] / 2, steps=10)
+            await click_xy(page, box["x"] + 36, box["y"] + box["height"] / 2, hold_ms=90)
     else:
-        await page.evaluate(
-            """() => {
-              document.getElementById('btn-preferences-menu')?.click();
-            }"""
-        )
+        await page.evaluate("() => document.getElementById('btn-preferences-menu')?.click()")
 
-    # Ensure Preferences panel is open and visible
     await page.evaluate(
         """() => {
           const panel = document.getElementById('profile-preferences-panel');
@@ -997,64 +990,71 @@ async def demo_preferences(page: Page):
     )
     try:
         await page.wait_for_selector(
-            "#profile-preferences-panel:not(.hidden) #profile-preferences-title, #profile-preferences-panel:not(.hidden) .profile-preferences-card",
-            timeout=8000,
+            "#profile-preferences-panel:not(.hidden) #profile-preferences-title",
+            timeout=6000,
         )
     except Exception as exc:
         print(f"  preferences panel wait: {exc}", flush=True)
 
-    await page.wait_for_timeout(700)
+    await page.wait_for_timeout(450)
 
-    # Mouse controls
+    # Mouse controls — open select and pick SolidWorks if present
     mouse = page.locator("#pref-mouse-preset").first
     if await mouse.count() and await mouse.is_visible():
+        await mouse.scroll_into_view_if_needed()
         box = await mouse.bounding_box()
         if box:
-            await move_to(page, box["x"] + box["width"] * 0.6, box["y"] + box["height"] / 2, steps=14)
-            await click_xy(page, box["x"] + box["width"] * 0.6, box["y"] + box["height"] / 2, hold_ms=100)
+            await move_to(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, steps=8)
+            await click_xy(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, hold_ms=80)
         try:
-            await mouse.select_option(index=1)
+            vals = await mouse.evaluate(
+                "el => [...el.options].map(o => o.value)"
+            )
+            pick = next((v for v in vals if v and v != (await mouse.input_value())), None)
+            if pick:
+                await mouse.select_option(pick)
         except Exception:
             pass
-        await page.wait_for_timeout(450)
+        await page.wait_for_timeout(350)
 
-    # Appearance / theme
+    # Appearance theme
     theme = page.locator("#pref-app-theme").first
-    if await theme.count() and await theme.is_visible():
-        await theme.scroll_into_view_if_needed()
-        box = await theme.bounding_box()
-        if box:
-            await move_to(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, steps=14)
-            await click_xy(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, hold_ms=100)
+    if await theme.count():
         try:
-            options = await theme.locator("option").all_text_contents()
-            # Toggle to a different theme if available
-            current = await theme.input_value()
-            for i, _ in enumerate(options):
-                val = await theme.locator("option").nth(i).get_attribute("value")
-                if val and val != current:
-                    await theme.select_option(val)
-                    break
+            await theme.scroll_into_view_if_needed()
         except Exception:
             pass
-        await page.wait_for_timeout(500)
+        if await theme.is_visible():
+            box = await theme.bounding_box()
+            if box:
+                await move_to(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, steps=8)
+                await click_xy(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, hold_ms=80)
+            try:
+                current = await theme.input_value()
+                vals = await theme.evaluate("el => [...el.options].map(o => o.value)")
+                pick = next((v for v in vals if v and v != current), None)
+                if pick:
+                    await theme.select_option(pick)
+            except Exception:
+                pass
+            await page.wait_for_timeout(350)
 
     # Advanced → Simulated motion
     adv = page.locator("#pref-advanced-toggle").first
     if await adv.count() and await adv.is_visible():
         box = await adv.bounding_box()
         if box:
-            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=14)
-            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=100)
-        await page.wait_for_timeout(400)
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=8)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=80)
+        await page.wait_for_timeout(280)
 
     gen_tab = page.locator("[data-preferences-advanced-tab='generation']").first
     if await gen_tab.count() and await gen_tab.is_visible():
         box = await gen_tab.bounding_box()
         if box:
-            await move_to(page, box["x"] + 30, box["y"] + box["height"] / 2, steps=12)
-            await click_xy(page, box["x"] + 30, box["y"] + box["height"] / 2, hold_ms=100)
-        await page.wait_for_timeout(350)
+            await move_to(page, box["x"] + 24, box["y"] + box["height"] / 2, steps=8)
+            await click_xy(page, box["x"] + 24, box["y"] + box["height"] / 2, hold_ms=80)
+        await page.wait_for_timeout(250)
 
     motion = page.locator("#pref-advanced-sim-motion").first
     if await motion.count():
@@ -1065,24 +1065,196 @@ async def demo_preferences(page: Page):
         if await motion.is_visible():
             box = await motion.bounding_box()
             if box:
-                await move_to(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, steps=14)
-                await click_xy(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, hold_ms=100)
+                await move_to(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, steps=8)
+                await click_xy(page, box["x"] + box["width"] * 0.55, box["y"] + box["height"] / 2, hold_ms=80)
             try:
                 await motion.select_option("both")
             except Exception:
                 try:
-                    await motion.select_option(index=2)
+                    await motion.select_option(index=min(2, await motion.locator("option").count() - 1))
                 except Exception:
                     pass
-            await page.wait_for_timeout(700)
+            await page.wait_for_timeout(500)
 
-    # Hold on open Preferences so the GIF reads clearly
-    title = page.locator("#profile-preferences-title").first
-    if await title.count() and await title.is_visible():
-        box = await title.bounding_box()
+    await page.wait_for_timeout(650)
+
+
+async def demo_source_parts(page: Page):
+    """Click ⓘ on a component → source online → drag sourced part into Wiring AI prompt."""
+    await force_close_agent(page)
+    await page.evaluate(
+        """() => {
+          document.getElementById('ai-setup-intro-modal')?.classList.add('hidden');
+          document.getElementById('welcome-modal')?.classList.add('hidden');
+          document.getElementById('studio-boot-screen')?.remove();
+          document.body.classList.remove('studio-booting');
+        }"""
+    )
+    await open_robot_arm(page)
+    await page.wait_for_timeout(600)
+
+    # Expand Components and reveal the ⓘ profile button.
+    await page.evaluate(
+        """() => {
+          const toggles = [...document.querySelectorAll('.browser-section-toggle')];
+          for (const t of toggles) {
+            if (/components/i.test(t.textContent || '')) {
+              const section = t.closest('.browser-section');
+              const list = section?.querySelector('.browser-item-list');
+              if (list && getComputedStyle(list).display === 'none') t.click();
+            }
+          }
+          const li = document.querySelector('.browser-item[data-section="components"]');
+          li?.scrollIntoView({ block: 'center' });
+        }"""
+    )
+    await page.wait_for_timeout(400)
+
+    # Hover component row then click ⓘ
+    row = page.locator('.browser-item[data-section="components"]').first
+    info = page.locator('.browser-item[data-section="components"] .browser-action-profile').first
+    if await row.count():
+        box = await row.bounding_box()
         if box:
-            await move_to(page, box["x"] + 40, box["y"] + 8, steps=12)
-    await page.wait_for_timeout(900)
+            await move_to(page, box["x"] + min(120, box["width"] * 0.55), box["y"] + box["height"] / 2, steps=14)
+            await page.wait_for_timeout(250)
+    if await info.count():
+        try:
+            await info.scroll_into_view_if_needed()
+        except Exception:
+            pass
+        box = await info.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=12)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=100)
+        else:
+            await page.evaluate(
+                """() => document.querySelector('.browser-item[data-section="components"] .browser-action-profile')?.click()"""
+            )
+    else:
+        await page.evaluate(
+            """() => document.querySelector('.browser-item[data-section="components"] .browser-action-profile')?.click()"""
+        )
+
+    try:
+        await page.wait_for_selector(".comp-profile-overlay:not(.hidden)", timeout=8000)
+    except Exception as exc:
+        print(f"  profile overlay wait: {exc}", flush=True)
+        return
+
+    await page.wait_for_timeout(500)
+
+    # Search catalog and Use this
+    search = page.locator(".comp-profile-search").first
+    if await search.count() and await search.is_visible():
+        box = await search.bounding_box()
+        if box:
+            await move_to(page, box["x"] + 40, box["y"] + box["height"] / 2, steps=8)
+            await click_xy(page, box["x"] + 40, box["y"] + box["height"] / 2, hold_ms=70)
+        await search.fill("nema 17 stepper")
+        await page.wait_for_timeout(200)
+        search_btn = page.locator(".comp-profile-search-btn").first
+        if await search_btn.count() and await search_btn.is_visible():
+            box = await search_btn.bounding_box()
+            if box:
+                await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=8)
+                await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=70)
+        # Wait for catalog results without burning the whole timeout on typing.
+        try:
+            await page.wait_for_selector(".comp-profile-use", timeout=12000)
+        except Exception:
+            await page.wait_for_timeout(1200)
+
+    use_btn = page.locator(".comp-profile-use").first
+    try:
+        await use_btn.wait_for(state="visible", timeout=10000)
+        box = await use_btn.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=12)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=100)
+        await page.wait_for_timeout(1200)
+    except Exception as exc:
+        print(f"  use-this wait: {exc}", flush=True)
+
+    save_btn = page.locator(".comp-profile-save").first
+    if await save_btn.count() and await save_btn.is_visible():
+        box = await save_btn.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=10)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=80)
+        await page.wait_for_timeout(500)
+
+    # Close profile
+    close_btn = page.locator(".comp-profile-close, .comp-profile-cancel").first
+    if await close_btn.count() and await close_btn.is_visible():
+        box = await close_btn.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=8)
+            await click_xy(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, hold_ms=80)
+        await page.wait_for_timeout(350)
+    else:
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(250)
+
+    # Switch to Wiring Simulator
+    mode_btn = page.locator("#workspace-mode-btn").first
+    if await mode_btn.count() and await mode_btn.is_visible():
+        await click_sel(page, "#workspace-mode-btn")
+        await page.wait_for_timeout(300)
+        wiring_item = page.get_by_text("Wiring Simulator", exact=False).first
+        if await wiring_item.count() and await wiring_item.is_visible():
+            box = await wiring_item.bounding_box()
+            if box:
+                await click_xy(page, box["x"] + 20, box["y"] + box["height"] / 2, hold_ms=90)
+                await page.wait_for_timeout(900)
+    tab = page.locator("button.right-panel-tab[data-right-tab='wiring']").first
+    if await tab.count() and await tab.is_visible():
+        await click_sel(page, "button.right-panel-tab[data-right-tab='wiring']")
+        await page.wait_for_timeout(500)
+
+    # Drag sourced component into the Wiring AI prompt
+    src = page.locator('.browser-item[data-section="components"] .browser-item-body, .browser-item[data-section="components"]').first
+    dest = page.locator("#wiring-prompt-input").first
+    if await src.count() and await dest.count():
+        try:
+            await dest.scroll_into_view_if_needed()
+        except Exception:
+            pass
+        sbox = await src.bounding_box()
+        dbox = await dest.bounding_box()
+        if sbox and dbox:
+            await move_to(page, sbox["x"] + 40, sbox["y"] + sbox["height"] / 2, steps=12)
+            await page.mouse.down()
+            await move_to(
+                page,
+                dbox["x"] + dbox["width"] * 0.45,
+                dbox["y"] + dbox["height"] * 0.45,
+                steps=22,
+            )
+            await page.mouse.up()
+            await page.wait_for_timeout(700)
+            # Fallback: HTML5 drag_to if mouse drag didn't attach a chip
+            chips = await page.locator("#wiring-prompt-input .prompt-ref-chip, .wiring-prompt-ref, [data-wiring-ref]").count()
+            if chips == 0:
+                try:
+                    await src.drag_to(dest, force=True)
+                    await page.wait_for_timeout(600)
+                except Exception as exc:
+                    print(f"  drag_to fallback: {exc}", flush=True)
+                    # Last resort: synthesize drop via evaluate using explorer payload if present
+                    await page.evaluate(
+                        """() => {
+                          const input = document.getElementById('wiring-prompt-input');
+                          const li = document.querySelector('.browser-item[data-section="components"]');
+                          if (!input || !li) return;
+                          input.focus();
+                          input.value = (input.value || '') + '\\n@component-1 (sourced part for wiring)';
+                          input.dispatchEvent(new Event('input', { bubbles: true }));
+                        }"""
+                    )
+                    await page.wait_for_timeout(400)
+
+    await page.wait_for_timeout(800)
 
 
 DEMOS = {
@@ -1097,6 +1269,7 @@ DEMOS = {
     "cloud-sync": demo_cloud,
     "render-agent": demo_agent,
     "preferences": demo_preferences,
+    "source-parts": demo_source_parts,
 }
 
 

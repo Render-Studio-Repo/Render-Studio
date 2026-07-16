@@ -405,6 +405,56 @@ const SHOW_ME_TOURS = {
       { selector: "#btn-render-agent, #render-agent-fab, .render-agent-fab", label: "Click Agent", click: true },
     ],
   },
+  preferences: {
+    title: "Preferences, theme & mouse",
+    example: "",
+    studioPath: "/?showMe=preferences",
+    gif: "/docs/media/preferences.gif?v=20260716-prefs",
+    steps: [
+      { selector: "#btn-auth", label: "Open the account menu", click: true },
+      { selector: "#btn-preferences-menu", label: "Click Preferences", click: true },
+      {
+        selector: "#profile-preferences-panel, #pref-mouse-preset, #pref-app-theme",
+        label: "Set mouse controls and appearance",
+        click: false,
+      },
+      {
+        selector: "#pref-advanced-toggle, #pref-advanced-sim-motion",
+        label: "Advanced → Simulated motion",
+        click: false,
+      },
+    ],
+  },
+  "source-parts": {
+    title: "Source parts with ⓘ",
+    example: "Source this stepper online, then wire it in the Wiring Simulator",
+    studioPath: "/?showMe=source-parts",
+    gif: "/docs/media/source-parts.gif?v=20260716-source",
+    needsRobotArm: true,
+    steps: [
+      {
+        selector: '.browser-item[data-section="components"] .browser-action-profile, .browser-action-profile',
+        label: "Click ⓘ on a component to open its part profile",
+        click: true,
+      },
+      {
+        selector: ".comp-profile-search, .comp-profile-search-btn",
+        label: "Search the catalog and click Use this",
+        click: false,
+      },
+      {
+        selector: ".comp-profile-save, .comp-profile-use",
+        label: "Save the sourced profile",
+        click: false,
+      },
+      {
+        selector: "#workspace-mode-btn, #wiring-prompt-input",
+        label: "Open Wiring and drag the sourced part into the Wiring AI prompt",
+        click: false,
+        reveal: "mobile-ai",
+      },
+    ],
+  },
   "link-to-prompt": {
     title: "Link project items to the prompt",
     example: "Use @component-1 as the mating part and keep clearances at 0.3 mm",

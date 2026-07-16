@@ -100,7 +100,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-driver-jumpers";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-motor-right-lane";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
@@ -646,6 +646,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
       generationWatchOverlay?.promptMode || (document.body.classList.contains("architect-design-tab") ? "architect" : "")
     );
     saveActiveModelPromptState();
+    const preservedTexture = captureTextureForGeneratedReplacement(gen.filename);
     selectedFile = gen.filename;
     const hiddenAfterReveal = setStoredComponentHidden(pid, gen.filename, false);
     projectTree.setHidden?.([...hiddenAfterReveal]);
@@ -664,6 +665,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
     await refreshPromptHistory();
     showAiComposePanel();
     clearPromptComposeResult();
+    await maybeReapplyCapturedTexture(preservedTexture, gen.filename);
     const statusEl = document.getElementById("prompt-status");
     if (statusEl) {
       const ref = gen.prompt_id
@@ -709,6 +711,7 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
     generationWatchOverlay?.promptMode || (document.body.classList.contains("architect-design-tab") ? "architect" : "")
   );
   saveActiveModelPromptState();
+  const preservedTexture = captureTextureForGeneratedReplacement(msg.filename);
   selectedFile = msg.filename;
   const hiddenAfterReveal = setStoredComponentHidden(pid, msg.filename, false);
   projectTree.setHidden?.([...hiddenAfterReveal]);
@@ -726,6 +729,7 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   await refreshTimeline();
   await refreshPromptHistory();
   showAiComposePanel();
+  await maybeReapplyCapturedTexture(preservedTexture, msg.filename);
   pendingPromptSelectionContext = null;
 }
 
@@ -13076,6 +13080,18 @@ async function fetchModelBlob(path, { retries = 2 } = {}) {
   throw lastError || new Error(`Could not fetch model "${API}${path}".`);
 }
 
+function hardenLoadedCadMaterials(root) {
+  root?.traverse?.((child) => {
+    if (!child?.isMesh || !child.material) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const mat of materials) {
+      if (!mat) continue;
+      mat.side = THREE.DoubleSide;
+      mat.needsUpdate = true;
+    }
+  });
+}
+
 async function loadModel(url, filename, opts = {}) {
   const expectedProjectId = opts.projectId ?? projectId;
   if (isDxfDrawingFilename(filename)) {
@@ -13105,6 +13121,7 @@ async function loadModel(url, filename, opts = {}) {
       object = new OBJLoader().parse(await blob.text());
     } else if (viewExt === "glb" || viewExt === "gltf") {
       object = (await new GLTFLoader().loadAsync(blobUrl)).scene;
+      hardenLoadedCadMaterials(object);
   } else {
       throw new Error(`Unsupported format: ${viewExt}`);
     }
@@ -21918,6 +21935,56 @@ async function renderedImageUrlToTexture(url) {
   return texture;
 }
 
+function firstTextureDataUrlFromObject(object) {
+  let image = null;
+  object?.traverse?.((child) => {
+    if (image || !child?.isMesh || !child.material) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    const mapped = materials.find((mat) => mat?.map?.image);
+    image = mapped?.map?.image || null;
+  });
+  if (!image) return null;
+  const width = image.naturalWidth || image.videoWidth || image.width || 0;
+  const height = image.naturalHeight || image.videoHeight || image.height || 0;
+  if (!width || !height) return null;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL("image/png");
+  } catch (_) {
+    return null;
+  }
+}
+
+function captureTextureForGeneratedReplacement(replacementFilename) {
+  const replacementStem = fileStem(replacementFilename).replace(/_edited(?:_\d+)?$/i, "");
+  const sourceCatalog = selectedFile && projectAssembly.has(selectedFile)
+    ? selectedFile
+    : assemblyCatalogMatchingStem(selectedFile || replacementFilename);
+  const sourceObject = sourceCatalog ? projectAssembly.get(sourceCatalog) : null;
+  const sourceStem = sourceCatalog ? fileStem(sourceCatalog).replace(/_edited(?:_\d+)?$/i, "") : "";
+  if (!sourceObject || sourceStem !== replacementStem) return null;
+  const dataUrl = firstTextureDataUrlFromObject(sourceObject);
+  return dataUrl ? { dataUrl, sourceCatalog, replacementFilename } : null;
+}
+
+async function maybeReapplyCapturedTexture(capture, replacementFilename) {
+  if (!capture?.dataUrl || !replacementFilename) return;
+  try {
+    await applyRenderedTextureReference({
+      renderFilename: "preserved-render-texture.png",
+      renderUrl: capture.dataUrl,
+      baseFilename: replacementFilename,
+    });
+  } catch (err) {
+    console.warn("Could not reapply preserved render texture", err);
+  }
+}
+
 function applyBoxProjectionUvs(geometry) {
   if (!geometry?.attributes?.position) return geometry;
   const geom = geometry.index ? geometry.toNonIndexed() : geometry.clone();
@@ -21981,7 +22048,7 @@ function applyTextureToModelClone(object, texture) {
       map: texture,
       metalness: 0.04,
       roughness: 0.58,
-      side: child.material?.side ?? THREE.FrontSide,
+      side: THREE.DoubleSide,
       envMapIntensity: 0.35,
     });
     child.castShadow = true;
@@ -22665,6 +22732,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       stopGenerationWatch();
       window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...data, projectId } }));
       saveActiveModelPromptState();
+      const preservedTexture = captureTextureForGeneratedReplacement(data.filename);
       selectedFile = data.filename;
       await refreshFiles();
       const placedFiles = (data.placed_parts || []).map((part) => part.filename).filter(Boolean);
@@ -22683,6 +22751,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       void refreshWorkspaceAiUsage();
       showAiComposePanel();
       clearPromptComposeResult();
+      await maybeReapplyCapturedTexture(preservedTexture, data.filename);
       setEditStatus("ok", data.message || "Model ready.");
     } catch (err) {
       if (genId !== activePromptGenerationId || userCancelRequested) {

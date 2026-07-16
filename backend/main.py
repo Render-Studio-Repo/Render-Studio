@@ -83,6 +83,8 @@ OTHER_USER_RENDERS_FOLDER_ID = "__other_user_renders__"
 OTHER_USER_RENDERS_FOLDER_NAME = "New renders from other users"
 PUBLIC_FOLDER_ID = "__public__"
 PUBLIC_FOLDER_NAME = "Public"
+PRIVATE_FOLDER_ID = "__private__"
+PRIVATE_FOLDER_NAME = "Private"
 VIEWPORT_WORKSPACE_ACTIVITY_KINDS = {
     "upload",
     "delete_object",
@@ -1166,6 +1168,82 @@ def _public_folder_summary(projects: list[dict[str, Any]] | None = None, team_id
         "virtual": True,
         "public": True,
     }
+
+
+def _personal_workspace_id(user: dict[str, Any]) -> str | None:
+    user_id = str(user.get("id") or "")
+    if not user_id:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT t.id
+            FROM teams t
+            JOIN team_members tm ON tm.team_id = t.id
+            WHERE tm.user_id = ?
+            ORDER BY
+              CASE WHEN t.created_by = ? AND tm.role IN ('owner', 'admin') THEN 0 ELSE 1 END,
+              t.created_at,
+              lower(t.name)
+            LIMIT 1
+            """,
+            (user_id, user_id),
+        ).fetchone()
+    return str(row["id"]) if row else None
+
+
+def _private_folder_summary(projects: list[dict[str, Any]], team_id: str | None) -> dict[str, Any]:
+    return {
+        "id": PRIVATE_FOLDER_ID,
+        "team_id": team_id,
+        "parent_id": None,
+        "name": PRIVATE_FOLDER_NAME,
+        "sort_order": -300,
+        "visibility": "private",
+        "created_by": None,
+        "created_at": None,
+        "project_count": len(projects),
+        "share_count": 0,
+        "can_manage": False,
+        "is_owner": False,
+        "shared_with_me": False,
+        "read_only": True,
+        "virtual": True,
+        "private": True,
+    }
+
+
+def _private_project_summaries(user: dict[str, Any], active_team_id: str | None) -> list[dict[str, Any]]:
+    personal_team_id = _personal_workspace_id(user)
+    if not active_team_id or not personal_team_id or personal_team_id == active_team_id:
+        return []
+    out: list[dict[str, Any]] = []
+    for row in teams_service.user_project_access(user["id"], personal_team_id):
+        project_id = row["project_id"]
+        project_path = PROJECTS / project_id
+        if not project_path.is_dir():
+            continue
+        fid = row.get("folder_id")
+        if fid and not folders_service.user_can_access_folder(fid, user["id"]):
+            continue
+        summary = project_store.project_list_summary(project_path)
+        out.append(
+            {
+                **summary,
+                "team_id": row["team_id"],
+                "original_folder_id": fid,
+                "folder_id": PRIVATE_FOLDER_ID,
+                "folder_name": PRIVATE_FOLDER_NAME,
+                "sort_order": int(row.get("sort_order") or 0),
+                "owner_user_id": row.get("created_by"),
+                "owner_email": row.get("owner_email"),
+                "owner_name": row.get("owner_name") or (summary.get("generation") or {}).get("by_user_name"),
+                "private_project": True,
+            }
+        )
+    out.sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
+    out.sort(key=lambda p: int(p.get("sort_order") or 0))
+    return out
 
 
 def _is_other_user_render_project(project_id: str, user: dict[str, Any]) -> bool:
@@ -9370,6 +9448,9 @@ def list_workspace_folders(team_id: str, user: dict[str, Any] = Depends(get_curr
         folders = folders_service.list_folders(team_id, user["id"])
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+    private_projects = _private_project_summaries(user, team_id)
+    if private_projects:
+        folders.append(_private_folder_summary(private_projects, team_id))
     public_projects = _public_project_summaries(viewer_user=user)
     folders.append(_public_folder_summary(public_projects, team_id))
     if _is_a1projects_admin(user):
@@ -9697,6 +9778,11 @@ def list_projects(
     # Stable sort: newest first within the same sort_order, then ascending sort_order.
     projects.sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
     projects.sort(key=lambda p: int(p.get("sort_order") or 0))
+    private_projects = _private_project_summaries(user, team_id)
+    private_ids = {p["id"] for p in private_projects}
+    if private_ids:
+        projects = [p for p in projects if p.get("id") not in private_ids]
+        projects.extend(private_projects)
     projects.extend(_other_user_render_summaries(user, team_id))
     # Public is a virtual folder. Always attach public projects with folder_id=__public__,
     # and remove any earlier copies so they don't also appear under root / other folders.
@@ -12657,9 +12743,14 @@ def get_wiring(project_id: str, user: dict[str, Any] = Depends(get_current_user)
     if not wiring_path.is_file():
         return {"components": [], "wires": []}
     try:
-        return json.loads(wiring_path.read_text(encoding="utf-8"))
+        schematic = json.loads(wiring_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise HTTPException(400, f"Invalid wiring.json: {exc}") from exc
+    repaired, repairs = wiring_service.validate_and_repair_schematic(schematic)
+    if repairs:
+        wiring_path.write_text(json.dumps(repaired, indent=2), encoding="utf-8")
+        project_store.touch_project(path)
+    return repaired
 
 
 @app.put("/api/projects/{project_id}/wiring")
@@ -12679,6 +12770,7 @@ def save_wiring(
         payload["description"] = body.description
     if body.reference_image:
         payload["reference_image"] = body.reference_image
+    payload, _repairs = wiring_service.validate_and_repair_schematic(payload)
     wiring_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     _notify_project(
         project_id,
@@ -13648,6 +13740,7 @@ def _background_wiring_prompt(
         message=message,
         ai_traces=ai_trace,
     )
+    schematic, _repairs = wiring_service.validate_and_repair_schematic(schematic)
     wiring_path.write_text(json.dumps(schematic, indent=2), encoding="utf-8")
     generation_service.complete(
         path,

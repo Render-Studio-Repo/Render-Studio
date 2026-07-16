@@ -74,6 +74,7 @@ Layout rules (left → center → right signal flow):
 - Microcontroller/board on the LEFT (~x 32–80): Raspberry Pi or Arduino.
 - Breadboard in the CENTER (~x 260–320, w 340, h 200) as the wiring hub.
 - Actuators/sensors on the RIGHT (~x 640–720): servo, LED, motor, sensor.
+- For any motor-driver → motor/stepper connection, put the motor/stepper clearly to the RIGHT of the driver with at least 180 px of horizontal air gap; do not stack the motor above the driver or close enough that coil wires cross over the driver or motor labels.
 - Route power: board 5V/GND → breadboard rails → peripheral power pins.
 - Route signals: board GPIO/PWM → breadboard row → peripheral signal pin.
 - Space parts so wire paths are readable; y between 96–280 on a ~900px canvas.
@@ -784,14 +785,31 @@ def validate_and_repair_schematic(schematic: dict[str, Any]) -> tuple[dict[str, 
     repairs: list[str] = []
 
     controller = _controller_for_schematic(components)
-    steppers = [c for c in components if _is_stepper(c)]
-    if not steppers:
-        return schematic, repairs
-
     drivers = [c for c in components if _is_driver(c)]
     repairs.extend(_apply_step_dir_driver_metadata(components, wires))
     for driver in [d for d in drivers if _is_step_dir_driver(d)]:
         repairs.extend(_ensure_step_dir_driver_jumpers(wires, driver))
+
+    steppers = [c for c in components if _is_stepper(c)]
+    if not steppers:
+        if repairs:
+            deduped: list[str] = []
+            seen: set[str] = set()
+            for r in repairs:
+                if r not in seen:
+                    seen.add(r)
+                    deduped.append(r)
+            for r in deduped:
+                note = f"[Auto-repair] {r}"
+                if note not in notes:
+                    notes.append(note)
+            return {
+                **schematic,
+                "components": components,
+                "wires": wires,
+                "notes": notes,
+            }, repairs
+        return schematic, repairs
     uln_drivers = [d for d in drivers if _is_uln2003(d)]
     # Treat unlabeled drivers paired with 28BYJ-style steppers as ULN2003 boards.
     if not uln_drivers and steppers and any(_looks_like_28byj(s) for s in steppers):

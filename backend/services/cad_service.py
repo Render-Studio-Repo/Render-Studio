@@ -995,6 +995,34 @@ def prefer_jake_viewport_glb(solid_glb: Path, jake_glb: Path) -> bool:
     return False
 
 
+def latest_edited_viewer_variant(project_path: Path, stem: str, *, newer_than: Path | None = None) -> Path | None:
+    """Return the newest baked paint/texture/edit GLB for a model stem."""
+    try:
+        timeline = json.loads((project_path / "timeline.json").read_text(encoding="utf-8"))
+        entries = timeline.get("entries") or []
+        current_index = int(timeline.get("current_index") or 0)
+        current = next((e for e in entries if int(e.get("index") or -1) == current_index), None)
+        current_filename = Path(str((current or {}).get("filename") or "")).name
+        current_path = project_path / current_filename
+        if current_path.is_file() and current_path.suffix.lower() == ".glb":
+            current_root, current_depth = _edit_variant_depth(current_path.stem)
+            if current_depth > 0 and current_root == stem:
+                return current_path
+    except Exception:
+        pass
+    candidates = [
+        p
+        for p in project_path.glob(f"{stem}_edited*.glb")
+        if p.is_file() and not p.name.startswith(".")
+    ]
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+    if newer_than is not None and newer_than.is_file() and latest.stat().st_mtime < newer_than.stat().st_mtime:
+        return None
+    return latest
+
+
 def viewer_filename_for_model(filename: str, project_path: Path) -> str:
     """Pick the file the Three.js viewer should load for a browser tree entry."""
     safe = Path(filename).name
@@ -1005,6 +1033,9 @@ def viewer_filename_for_model(filename: str, project_path: Path) -> str:
         # Prefer Jake multi-body materials, then solid preview, then face-dumped OCC mesh.
         solid_glb = project_path / f"{stem}.glb"
         faceted_glb = project_path / f"{stem}__faceted.glb"
+        edited_glb = latest_edited_viewer_variant(project_path, stem, newer_than=solid_glb)
+        if edited_glb is not None:
+            return edited_glb.name
         jake_glb = jake_viewport_glb_for_stem(project_path, stem)
         if jake_glb is not None and prefer_jake_viewport_glb(solid_glb, jake_glb):
             return jake_glb.name
@@ -1023,6 +1054,9 @@ def viewer_filename_for_model(filename: str, project_path: Path) -> str:
                 return solid.name
             return safe
         solid = project_path / safe
+        edited_glb = latest_edited_viewer_variant(project_path, stem, newer_than=solid)
+        if edited_glb is not None:
+            return edited_glb.name
         jake_glb = jake_viewport_glb_for_stem(project_path, stem)
         if jake_glb is not None and prefer_jake_viewport_glb(solid, jake_glb):
             return jake_glb.name
