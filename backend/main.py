@@ -506,6 +506,11 @@ class TransformRequest(BaseModel):
 
 class BodyTransformRequest(TransformRequest):
     body_index: int = Field(..., ge=0)
+    body_name: str | None = Field(
+        default=None,
+        max_length=120,
+        description="Preferred body identity when GLB node order drifts (Fusion multi-body)",
+    )
     copy: bool = Field(default=False, description="Body transforms are saved in-place; copy is ignored")
 
 
@@ -532,6 +537,12 @@ class FacePullRequest(BaseModel):
 
     face_index: int | None = Field(default=None, ge=0)
     face_indices: list[int] | None = None
+    body_index: int | None = Field(default=None, ge=0, description="Body index for multi-mesh assemblies")
+    body_name: str | None = Field(
+        default=None,
+        max_length=120,
+        description="Body/node name for multi-mesh assemblies (preferred over index)",
+    )
     distance: float = Field(..., description="Signed pull distance in model units")
     normal: list[float] | None = Field(
         default=None,
@@ -16403,14 +16414,25 @@ def transform_body_file(
     src = project_path / safe
     if not src.is_file():
         raise HTTPException(404, "File not found")
-    transform = body.model_dump(exclude_none=True, exclude={"mode", "copy", "body_index"})
+    transform = body.model_dump(exclude_none=True, exclude={"mode", "copy", "body_index", "body_name"})
     try:
         # Keep multi-mesh assemblies intact; only fall back to concatenated-body
         # edits when the GLB is already a single mesh with disconnected shells.
-        cad_service.transform_scene_body(src, body.body_index, transform, out_path=src)
+        cad_service.transform_scene_body(
+            src,
+            body.body_index,
+            transform,
+            out_path=src,
+            body_name=body.body_name,
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    meta = {**transform, "body_index": body.body_index, "parent": safe}
+    meta = {
+        **transform,
+        "body_index": body.body_index,
+        "body_name": body.body_name,
+        "parent": safe,
+    }
     body_label = (
         f"Resize body {body.body_index + 1}"
         if (transform.get("scale") is not None and transform.get("translation") is None and transform.get("rotation_deg") is None)
@@ -17198,46 +17220,34 @@ def face_pull_file(
     if not face_indices:
         raise HTTPException(400, "Pick one or more faces before applying Press-Pull.")
 
-    mesh = cad_service.load_mesh(src)
     operation_src = src
+    viewer_name = cad_service.viewer_filename_for_model(src.name, project_path)
+    viewer_src = project_path / viewer_name
+    pull_kwargs = dict(
+        distance=body.distance,
+        op=body.op,
+        direction=body.direction,
+        distance2=body.distance2,
+        taper_deg=body.taper_deg,
+        through=body.through_all,
+        normal=body.normal,
+        body_index=body.body_index,
+        body_name=body.body_name,
+    )
+    suffix = "_body" if body.op == "new_body" else "_pulled"
+    out = _edited_output(project_path, operation_src, suffix)
     try:
-        result = cad_service.face_pull_many(
-            mesh,
-            face_indices,
-            distance=body.distance,
-            op=body.op,
-            direction=body.direction,
-            distance2=body.distance2,
-            taper_deg=body.taper_deg,
-            through=body.through_all,
-            normal=body.normal,
-        )
+        cad_service.face_pull_scene_body(src, face_indices, out_path=out, **pull_kwargs)
     except ValueError as exc:
         message = str(exc)
-        viewer_name = cad_service.viewer_filename_for_model(src.name, project_path)
-        viewer_src = project_path / viewer_name
         if "face_index out of range" not in message or viewer_src == src or not viewer_src.is_file():
             raise HTTPException(422, message) from exc
         try:
-            mesh = cad_service.load_mesh(viewer_src)
-            result = cad_service.face_pull_many(
-                mesh,
-                face_indices,
-                distance=body.distance,
-                op=body.op,
-                direction=body.direction,
-                distance2=body.distance2,
-                taper_deg=body.taper_deg,
-                through=body.through_all,
-                normal=body.normal,
-            )
+            out = _edited_output(project_path, viewer_src, suffix)
+            cad_service.face_pull_scene_body(viewer_src, face_indices, out_path=out, **pull_kwargs)
             operation_src = viewer_src
         except ValueError as retry_exc:
             raise HTTPException(422, str(retry_exc)) from retry_exc
-
-    suffix = "_body" if body.op == "new_body" else "_pulled"
-    out = _edited_output(project_path, operation_src, suffix)
-    cad_service.export_mesh(result, out)
     op_label = body.op if body.op != "auto" else ("cut" if body.distance < 0 else "join")
     meta = body.model_dump()
     meta["face_indices"] = face_indices

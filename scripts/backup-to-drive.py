@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path("/home/ubuntu")
 LOCAL_BACKUP_ROOT = ROOT / "backups" / "drive-daily"
 RETENTION_DAYS = 7
+PROTECTED_BACKUP_PREFIXES = ("golden-",)
 
 # Google Drive destination folder (Render3D daily backups)
 PARENT_FOLDER_ID = os.getenv(
@@ -213,6 +214,11 @@ def parse_backup_date(name: str) -> date | None:
     return None
 
 
+def is_protected_backup_name(name: str) -> bool:
+    lowered = str(name or "").strip().lower()
+    return any(lowered.startswith(prefix) for prefix in PROTECTED_BACKUP_PREFIXES)
+
+
 def create_archive(day: date, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     folder = backup_folder_name(day)
@@ -345,6 +351,9 @@ def prune_local(cutoff: date) -> None:
     for entry in LOCAL_BACKUP_ROOT.iterdir():
         if not entry.is_dir():
             continue
+        if is_protected_backup_name(entry.name):
+            LOG.info("Keeping protected local backup folder %s", entry)
+            continue
         day = parse_backup_date(entry.name)
         if day is None or day >= cutoff:
             continue
@@ -376,14 +385,18 @@ def prune_drive(service, cutoff: date) -> None:
         except HttpError as exc:
             raise RuntimeError(f"Google Drive list failed during prune: {exc}") from exc
         for item in resp.get("files") or []:
-            day = parse_backup_date(item.get("name") or "")
+            name = item.get("name") or ""
+            if is_protected_backup_name(name):
+                LOG.info("Keeping protected Drive backup folder %s (%s)", name, item["id"])
+                continue
+            day = parse_backup_date(name)
             if day is None or day >= cutoff:
                 continue
-            LOG.info("Pruning Drive backup folder %s (%s)", item["name"], item["id"])
+            LOG.info("Pruning Drive backup folder %s (%s)", name, item["id"])
             try:
                 service.files().delete(fileId=item["id"]).execute()
             except HttpError as exc:
-                LOG.warning("Could not delete Drive folder %s: %s", item["name"], exc)
+                LOG.warning("Could not delete Drive folder %s: %s", name, exc)
         page_token = resp.get("nextPageToken")
         if not page_token:
             break

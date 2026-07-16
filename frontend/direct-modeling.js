@@ -232,6 +232,7 @@ export function createDirectModeling({
   getMesh,
   getModelInfo, // () => ({ projectId, filename })
   getFilenameForMesh,
+  getRootForMesh,
   onSelectFilename,
   api,
   onApplied, // async (data) => {}
@@ -568,6 +569,9 @@ export function createDirectModeling({
     pp = {
       mesh: meta.mesh || null,
       faceIndex: meta.faceIndex ?? null,
+      faceIndices: Array.isArray(meta.faceIndices) ? meta.faceIndices : null,
+      bodyIndex: meta.bodyIndex ?? null,
+      bodyName: meta.bodyName || null,
       sketchMode: !!meta.sketchMode,
       profile: meta.profile || null,
       plane: meta.plane || null,
@@ -620,10 +624,36 @@ export function createDirectModeling({
     requestAnimationFrame(() => positionHud(data.centroid));
   }
 
+  function bodyMetaForMesh(mesh) {
+    const root = getRootForMesh?.(mesh) || getMesh?.();
+    const meshes = [];
+    root?.traverse?.((obj) => {
+      if (!obj?.isMesh || !obj.geometry) return;
+      if (obj.userData?.isEdge || obj.userData?.isSilhouette || obj.userData?.isObjectHighlight) return;
+      meshes.push(obj);
+    });
+    const bodyIndex = mesh && meshes.length ? Math.max(0, meshes.indexOf(mesh)) : null;
+    const bodyName = String(mesh?.name || "").trim() || null;
+    const filename = getFilenameForMesh?.(mesh) || getModelInfo?.()?.filename || null;
+    return {
+      bodyIndex: bodyIndex != null && bodyIndex >= 0 ? bodyIndex : null,
+      bodyName,
+      filename,
+      bodyCount: meshes.length || 1,
+    };
+  }
+
   function lockPressPull(hit) {
     const region = growRegion(hit.object.geometry, hit.faceIndex);
     const data = regionWorldData(hit.object, region, hit, camera);
-    lockPressPullFromData(data, { mesh: hit.object, faceIndex: hit.faceIndex });
+    const bodyMeta = bodyMetaForMesh(hit.object);
+    lockPressPullFromData(data, {
+      mesh: hit.object,
+      faceIndex: hit.faceIndex,
+      faceIndices: region.faces,
+      bodyIndex: bodyMeta.bodyIndex,
+      bodyName: bodyMeta.bodyName,
+    });
   }
 
   function findMeshByUuid(root, uuid) {
@@ -799,7 +829,9 @@ export function createDirectModeling({
       return;
     }
 
-    const { projectId, filename } = getModelInfo();
+    const bodyMeta = bodyMetaForMesh(pp.mesh);
+    const filename = bodyMeta.filename || getModelInfo()?.filename;
+    const { projectId } = getModelInfo();
     if (!projectId || !filename) {
       onStatus?.("error", "Select a model file first.");
       return;
@@ -817,19 +849,30 @@ export function createDirectModeling({
       } else if (Math.abs(distance) < 1e-12) {
         distance = -1e-6;
       }
+      const faceIndices = Array.isArray(pp.faceIndices) && pp.faceIndices.length
+        ? pp.faceIndices
+        : pp.faceIndex != null
+          ? [pp.faceIndex]
+          : [];
+      const payload = {
+        face_index: faceIndices[0] ?? pp.faceIndex,
+        face_indices: faceIndices,
+        distance,
+        normal: [localNormal.x, localNormal.y, localNormal.z],
+        op: opts.op,
+        direction: opts.direction === "two" ? "two" : opts.direction,
+        distance2: Math.abs(opts.distance2),
+        taper_deg: opts.taper_deg,
+        through_all: opts.through_all,
+      };
+      if (bodyMeta.bodyCount > 1) {
+        if (bodyMeta.bodyIndex != null) payload.body_index = bodyMeta.bodyIndex;
+        if (bodyMeta.bodyName || pp.bodyName) payload.body_name = bodyMeta.bodyName || pp.bodyName;
+      }
       const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/face-pull`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          face_index: pp.faceIndex,
-          distance,
-          normal: [localNormal.x, localNormal.y, localNormal.z],
-          op: opts.op,
-          direction: opts.direction === "two" ? "two" : opts.direction,
-          distance2: Math.abs(opts.distance2),
-          taper_deg: opts.taper_deg,
-          through_all: opts.through_all,
-        }),
+        body: JSON.stringify(payload),
       });
       onStatus?.("ok", `Saved ${data.filename}`);
       setTool(null);

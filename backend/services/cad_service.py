@@ -2581,29 +2581,92 @@ def _compose_pivot_matrix(transform: dict[str, Any], center: np.ndarray) -> np.n
     return matrix
 
 
+def _scene_geometry_entries(scene: trimesh.Scene) -> list[tuple[str, str, Any, np.ndarray]]:
+    """Return ``(node_name, geom_name, geom, world_transform)`` in scene-graph order."""
+    entries: list[tuple[str, str, Any, np.ndarray]] = []
+    for node_name in scene.graph.nodes_geometry:
+        transform, geom_name = scene.graph.get(node_name)
+        geom = scene.geometry.get(geom_name)
+        if geom is None:
+            continue
+        world = np.asarray(transform, dtype=float) if transform is not None else np.eye(4)
+        entries.append((str(node_name), str(geom_name), geom, world))
+    return entries
+
+
+def _resolve_scene_body_entry(
+    entries: list[tuple[str, str, Any, np.ndarray]],
+    body_index: int,
+    body_name: str | None = None,
+) -> tuple[int, tuple[str, str, Any, np.ndarray]]:
+    if body_name:
+        want = str(body_name).strip().lower()
+        for i, entry in enumerate(entries):
+            node_name, geom_name, _geom, _world = entry
+            if node_name.lower() == want or geom_name.lower() == want:
+                return i, entry
+            if node_name.lower().replace("_", " ") == want.replace("_", " "):
+                return i, entry
+    idx = int(body_index)
+    if idx < 0 or idx >= len(entries):
+        raise ValueError(f"body_index out of range: {idx}")
+    return idx, entries[idx]
+
+
+def _export_scene_entries(entries: list[tuple[str, str, Any, np.ndarray]], path: Path) -> Path:
+    """Write a multi-mesh GLB from geometry entries, preserving materials.
+
+    Trimesh's GLB round-trip reverses ``nodes_geometry`` order, so we add meshes
+    in reverse here so the reloaded scene (and Three.js body indices) stay stable.
+    """
+    rebuilt = trimesh.Scene()
+    used_geom: set[str] = set()
+    for node_name, geom_name, geom, world in reversed(list(entries)):
+        gname = geom_name or node_name or "part"
+        if gname in used_geom:
+            gname = f"{gname}_{len(used_geom)}"
+        used_geom.add(gname)
+        cloned = geom.copy()
+        # Bake any non-identity node transform into vertices so reload order is irrelevant.
+        if world is not None and not np.allclose(world, np.eye(4)):
+            cloned.apply_transform(world)
+        rebuilt.add_geometry(cloned, geom_name=gname, node_name=node_name or gname)
+    return export_scene(rebuilt, path)
+
+
 def apply_transform_preserving_parts(
     path: Path,
     transform: dict[str, Any],
     *,
     out_path: Path | None = None,
 ) -> Path:
-    """Apply a transform while keeping multi-mesh GLB materials and scene nodes intact.
-
-    Remeshing through ``mesh_copy``/``export_mesh`` collapses PBR/part colours to one
-    solid tint. Prefer ``Scene.apply_transform`` so Fusion assemblies keep their look.
-    """
+    """Apply a transform while keeping multi-mesh GLB materials and parts intact."""
     path = Path(path)
     dest = Path(out_path) if out_path is not None else path
     scene = load_scene(path)
-    nodes = list(scene.graph.nodes_geometry)
-    if len(nodes) <= 1:
+    entries = _scene_geometry_entries(scene)
+    if len(entries) <= 1:
         mesh = load_mesh(path)
         export_mesh(apply_transform(mesh, transform), dest)
         return dest
-    center = np.asarray(scene.bounds, dtype=float).mean(axis=0) if scene.bounds is not None else np.zeros(3)
-    scene.apply_transform(_compose_pivot_matrix(transform, center))
-    export_scene(scene, dest)
-    return dest
+    centers = []
+    for _node, _gname, geom, world in entries:
+        try:
+            bounds = np.asarray(geom.bounds, dtype=float)
+            local_center = bounds.mean(axis=0)
+            center_h = np.array([local_center[0], local_center[1], local_center[2], 1.0], dtype=float)
+            centers.append((world @ center_h)[:3])
+        except Exception:
+            centers.append(np.zeros(3, dtype=float))
+    center = np.mean(np.asarray(centers, dtype=float), axis=0) if centers else np.zeros(3)
+    matrix = _compose_pivot_matrix(transform, center)
+    updated: list[tuple[str, str, Any, np.ndarray]] = []
+    for node_name, geom_name, geom, world in entries:
+        cloned = geom.copy()
+        # world' = matrix @ world, bake into vertices with identity node xform
+        cloned.apply_transform(matrix @ world)
+        updated.append((node_name, geom_name, cloned, np.eye(4)))
+    return _export_scene_entries(updated, dest)
 
 
 def transform_scene_body(
@@ -2612,38 +2675,140 @@ def transform_scene_body(
     transform: dict[str, Any],
     *,
     out_path: Path | None = None,
+    body_name: str | None = None,
 ) -> Path:
-    """Transform one body via its scene-graph node so materials stay intact."""
+    """Transform one body in-place on its mesh so other parts and materials stay put."""
     path = Path(path)
     dest = Path(out_path) if out_path is not None else path
     scene = load_scene(path)
-    nodes = list(scene.graph.nodes_geometry)
-    idx = int(body_index)
-    if len(nodes) > 1:
-        if idx < 0 or idx >= len(nodes):
-            raise ValueError(f"body_index out of range: {idx}")
-        node = nodes[idx]
-        xform, geom_name = scene.graph.get(node)
-        geom = scene.geometry.get(geom_name)
-        if geom is None:
-            raise ValueError(f"Missing geometry for body_index {idx}")
-        # World-space center of this part (bounds already include node transform when dumped).
-        try:
-            world = np.asarray(xform, dtype=float) if xform is not None else np.eye(4)
-            local_bounds = np.asarray(geom.bounds, dtype=float)
-            local_center = local_bounds.mean(axis=0)
-            center_h = np.array([local_center[0], local_center[1], local_center[2], 1.0], dtype=float)
-            center = (world @ center_h)[:3]
-        except Exception:
-            center = np.zeros(3, dtype=float)
-        matrix = _compose_pivot_matrix(transform, center)
-        current = np.asarray(xform, dtype=float) if xform is not None else np.eye(4)
-        scene.graph.update(frame_to=node, matrix=matrix @ current)
-        export_scene(scene, dest)
+    entries = _scene_geometry_entries(scene)
+    if len(entries) <= 1:
+        mesh = load_mesh(path)
+        export_mesh(transform_mesh_body(mesh, int(body_index), transform), dest)
         return dest
-    mesh = load_mesh(path)
-    export_mesh(transform_mesh_body(mesh, idx, transform), dest)
-    return dest
+    _idx, (node_name, geom_name, geom, world) = _resolve_scene_body_entry(entries, body_index, body_name)
+    try:
+        bounds = np.asarray(geom.bounds, dtype=float)
+        local_center = bounds.mean(axis=0)
+        center_h = np.array([local_center[0], local_center[1], local_center[2], 1.0], dtype=float)
+        center = (world @ center_h)[:3]
+    except Exception:
+        center = np.zeros(3, dtype=float)
+    matrix = _compose_pivot_matrix(transform, center)
+    updated: list[tuple[str, str, Any, np.ndarray]] = []
+    for n_name, g_name, g_geom, g_world in entries:
+        cloned = g_geom.copy()
+        if n_name == node_name and g_name == geom_name:
+            cloned.apply_transform(matrix @ g_world)
+        elif not np.allclose(g_world, np.eye(4)):
+            cloned.apply_transform(g_world)
+        updated.append((n_name, g_name, cloned, np.eye(4)))
+    return _export_scene_entries(updated, dest)
+
+
+def face_pull_scene_body(
+    path: Path,
+    face_indices: list[int],
+    *,
+    body_index: int | None = None,
+    body_name: str | None = None,
+    distance: float,
+    op: str = "auto",
+    direction: str = "one",
+    distance2: float = 0.0,
+    taper_deg: float = 0.0,
+    through: bool = False,
+    normal: list[float] | None = None,
+    out_path: Path | None = None,
+) -> Path:
+    """Press-pull one body inside a multi-mesh assembly without flattening the rest."""
+    path = Path(path)
+    dest = Path(out_path) if out_path is not None else path
+    scene = load_scene(path)
+    entries = _scene_geometry_entries(scene)
+    if len(entries) <= 1:
+        mesh = load_mesh(path)
+        result = face_pull_many(
+            mesh,
+            face_indices,
+            distance=distance,
+            op=op,
+            direction=direction,
+            distance2=distance2,
+            taper_deg=taper_deg,
+            through=through,
+            normal=normal,
+        )
+        export_mesh(result, dest)
+        return dest
+
+    # Local face indices on the named/indexed body (Fusion multi-body shells).
+    if body_name is not None or body_index is not None:
+        idx, (node_name, geom_name, geom, world) = _resolve_scene_body_entry(
+            entries,
+            int(body_index or 0),
+            body_name,
+        )
+        local_faces = sorted({int(i) for i in face_indices if int(i) >= 0})
+        working = geom.copy()
+        if not np.allclose(world, np.eye(4)):
+            working.apply_transform(world)
+        pulled = face_pull_many(
+            working,
+            local_faces,
+            distance=distance,
+            op=op,
+            direction=direction,
+            distance2=distance2,
+            taper_deg=taper_deg,
+            through=through,
+            normal=normal,
+        )
+        updated: list[tuple[str, str, Any, np.ndarray]] = []
+        for i, (n_name, g_name, g_geom, g_world) in enumerate(entries):
+            if i == idx:
+                updated.append((node_name, geom_name, pulled, np.eye(4)))
+                continue
+            cloned = g_geom.copy()
+            if not np.allclose(g_world, np.eye(4)):
+                cloned.apply_transform(g_world)
+            updated.append((n_name, g_name, cloned, np.eye(4)))
+        return _export_scene_entries(updated, dest)
+
+    # Legacy global face indices across concatenated bodies.
+    offsets: list[int] = []
+    off = 0
+    for _n, _g, geom, _w in entries:
+        offsets.append(off)
+        off += int(len(np.asarray(geom.faces)))
+    by_body: dict[int, list[int]] = {}
+    for fi in face_indices:
+        fi = int(fi)
+        body_i = 0
+        for i in range(len(offsets) - 1, -1, -1):
+            if fi >= offsets[i]:
+                body_i = i
+                break
+        by_body.setdefault(body_i, []).append(fi - offsets[body_i])
+    updated = []
+    for i, (n_name, g_name, g_geom, g_world) in enumerate(entries):
+        cloned = g_geom.copy()
+        if not np.allclose(g_world, np.eye(4)):
+            cloned.apply_transform(g_world)
+        if i in by_body:
+            cloned = face_pull_many(
+                cloned,
+                by_body[i],
+                distance=distance,
+                op=op,
+                direction=direction,
+                distance2=distance2,
+                taper_deg=taper_deg,
+                through=through,
+                normal=normal,
+            )
+        updated.append((n_name, g_name, cloned, np.eye(4)))
+    return _export_scene_entries(updated, dest)
 
 
 def export_mesh_step(mesh: trimesh.Trimesh, path: Path) -> Path:

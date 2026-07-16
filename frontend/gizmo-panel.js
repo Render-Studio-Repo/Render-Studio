@@ -261,7 +261,7 @@ export function createGizmoPanel({
   async function apply(copy = false) {
     if (applying) return;
     const mesh = targetObject();
-    const { projectId, filename, bodyIndex = null, bodyCount = 1, isRoot = true } = getModelInfo();
+    const { projectId, filename, bodyIndex = null, bodyName = null, bodyCount = 1, isRoot = true } = getModelInfo();
     const d = deltas();
     if (!d) return;
     const body = { mode: "delta", copy };
@@ -291,7 +291,10 @@ export function createGizmoPanel({
     setStatus("loading", copy ? "Copying + transforming…" : "Applying transform…");
     try {
       const useBodyTransform = !copy && bodyIndex != null && bodyCount > 1 && !isRoot;
-      if (useBodyTransform) body.body_index = bodyIndex;
+      if (useBodyTransform) {
+        body.body_index = bodyIndex;
+        if (bodyName) body.body_name = bodyName;
+      }
       const endpoint = useBodyTransform ? "transform-body" : "transform";
       const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/${endpoint}`, {
         method: "POST",

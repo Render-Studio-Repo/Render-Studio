@@ -80,10 +80,10 @@ import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=202
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
-import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-move-save";
+import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-xform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
-import { createDirectModeling } from "./direct-modeling.js?v=20260714-extrude-face-drag";
+import { createDirectModeling } from "./direct-modeling.js?v=20260716-body-face-pull";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-fusion-body-click";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
@@ -6123,6 +6123,7 @@ async function persistMultiSelectionMove(stroke = {}) {
       object,
       filename,
       bodyIndex: item.bodyIndex ?? null,
+      bodyName: String(item.label || item.mesh?.name || "").trim() || null,
       bodyCount: item.bodyCount ?? 1,
       isRoot: item.isRoot ?? item.wholeModel ?? true,
       baseline: {
@@ -6149,7 +6150,12 @@ async function persistMultiSelectionMove(stroke = {}) {
       const body = {
         mode: "delta",
         translation: target.translation,
-        ...(useBodyTransform ? { body_index: target.bodyIndex } : {}),
+        ...(useBodyTransform
+          ? {
+              body_index: target.bodyIndex,
+              ...(target.bodyName ? { body_name: target.bodyName } : {}),
+            }
+          : {}),
       };
       const endpoint = useBodyTransform ? "transform-body" : "transform";
       const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/${endpoint}`, {
@@ -6184,10 +6190,15 @@ const gizmoPanel = createGizmoPanel({
       Number(selection?.bodyCount) || 1,
       partLevel ? Number(selection?.meshCount) || 1 : 1,
     );
+    const meshName = String(selection?.mesh?.name || "").trim();
+    const bodyName = partLevel
+      ? (String(selection?.label || "").trim() || meshName || null)
+      : null;
     return {
       projectId,
       filename: selection?.catalogName || catalogNameForMesh(transformControls.object) || selectedFile,
       bodyIndex: selection?.bodyIndex ?? null,
+      bodyName,
       bodyCount,
       // Whole-model selection must stay isRoot so transforms bake the full file.
       // Part selection must NOT be root so body transforms apply and Cmd+Z undoes the part move.
@@ -9407,7 +9418,7 @@ function clearPickedFaceReferences() {
     }
   }
   for (const id of getMarkerRefIds()) {
-    if (/^(path|lasso)-/.test(id)) {
+    if (/^(path|lasso|face)-/.test(id)) {
       removeReferenceMarker(id);
       cleared = true;
     }
@@ -12194,7 +12205,11 @@ function bindObjectSizeControls(pop, filename) {
         ? `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform-body`
         : `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform`;
       const body = target.bodyCount > 1 && target.bodyIndex != null
-        ? { body_index: target.bodyIndex, scale }
+        ? {
+            body_index: target.bodyIndex,
+            ...(target.label ? { body_name: String(target.label).trim() } : {}),
+            scale,
+          }
         : { scale };
       const data = await api(endpoint, {
         method: "POST",
@@ -23994,7 +24009,7 @@ window.addEventListener("keydown", (e) => {
       finishActiveSketch();
       return;
     }
-  if (e.key === "Escape") {
+    if (e.key === "Escape") {
       e.preventDefault();
       sketchEditor.cancelCurrentAction?.();
       return;
@@ -24164,7 +24179,9 @@ window.addEventListener("keydown", (e) => {
     lassoPointerActive = false;
     clearHover();
 
-    if (clearPickedFaceReferences()) {
+    const wasFacePick = getPickMode() === "face";
+    const clearedFaces = clearPickedFaceReferences();
+    if (clearedFaces || wasFacePick) {
       activatePickMode("off");
       controls.enabled = true;
       setEditStatus("", "");
