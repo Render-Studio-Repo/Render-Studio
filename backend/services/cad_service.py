@@ -2639,6 +2639,10 @@ def _glb_scene_mesh_order(path: Path) -> list[str]:
         return []
 
 
+def _normalize_body_key(value: str | None) -> str:
+    return re.sub(r"[\s_]+", " ", str(value or "").strip().lower())
+
+
 def _order_entries_like_gltf(
     entries: list[tuple[str, str, Any, np.ndarray]],
     gltf_order: list[str],
