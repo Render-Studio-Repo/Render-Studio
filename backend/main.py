@@ -67,6 +67,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # mtime-keyed cache for /files/.../bodies (trimesh split is expensive).
 _bodies_info_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _BODIES_INFO_CACHE_MAX = 256
+# Short-lived cache for Autodesk listing endpoints. The frontend may refresh
+# several panels at once; caching keeps those external calls from saturating the
+# only two API workers while preserving near-live Fusion browsing.
+_autodesk_listing_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
+_autodesk_listing_cache_lock = threading.Lock()
+_AUTODESK_LISTING_CACHE_MAX = 256
 
 PROJECTS = ROOT / settings.projects_dir
 FRONTEND = ROOT / "frontend"
@@ -6233,7 +6239,8 @@ def autodesk_hubs(user: dict[str, Any] = Depends(get_current_user)):
     if not token:
         raise HTTPException(401, "Autodesk account not linked.")
     try:
-        return {"hubs": list_hubs(token)}
+        hubs = _cached_autodesk_listing(("hubs", user["id"]), lambda: list_hubs(token), ttl=30.0)
+        return {"hubs": hubs}
     except Exception as exc:
         raise HTTPException(502, f"Autodesk library error: {exc}") from exc
 
@@ -6245,7 +6252,8 @@ def autodesk_projects(hub_id: str, user: dict[str, Any] = Depends(get_current_us
     if not token:
         raise HTTPException(401, "Autodesk account not linked.")
     try:
-        return {"projects": list_projects(token, hub_id)}
+        projects = _cached_autodesk_listing(("projects", user["id"], hub_id), lambda: list_projects(token, hub_id), ttl=30.0)
+        return {"projects": projects}
     except Exception as exc:
         raise HTTPException(502, f"Autodesk projects error: {exc}") from exc
 
@@ -6257,7 +6265,12 @@ def autodesk_top_folders(hub_id: str, aps_project_id: str, user: dict[str, Any] 
     if not token:
         raise HTTPException(401, "Autodesk account not linked.")
     try:
-        return {"folders": list_top_folders(token, hub_id, aps_project_id)}
+        folders = _cached_autodesk_listing(
+            ("top-folders", user["id"], hub_id, aps_project_id),
+            lambda: list_top_folders(token, hub_id, aps_project_id),
+            ttl=8.0,
+        )
+        return {"folders": folders}
     except Exception as exc:
         raise HTTPException(502, f"Autodesk folders error: {exc}") from exc
 
@@ -6269,9 +6282,28 @@ def autodesk_folder_contents(aps_project_id: str, folder_id: str, user: dict[str
     if not token:
         raise HTTPException(401, "Autodesk account not linked.")
     try:
-        return list_folder_contents(token, aps_project_id, folder_id)
+        return _cached_autodesk_listing(
+            ("contents", user["id"], aps_project_id, folder_id),
+            lambda: list_folder_contents(token, aps_project_id, folder_id),
+            ttl=8.0,
+        )
     except Exception as exc:
         raise HTTPException(502, f"Autodesk folder contents error: {exc}") from exc
+
+
+def _cached_autodesk_listing(key: tuple[Any, ...], loader: Any, ttl: float) -> Any:
+    now = time.monotonic()
+    with _autodesk_listing_cache_lock:
+        cached = _autodesk_listing_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
+    value = loader()
+    with _autodesk_listing_cache_lock:
+        _autodesk_listing_cache[key] = (now + ttl, value)
+        if len(_autodesk_listing_cache) > _AUTODESK_LISTING_CACHE_MAX:
+            for drop_key in list(_autodesk_listing_cache.keys())[: len(_autodesk_listing_cache) // 2]:
+                _autodesk_listing_cache.pop(drop_key, None)
+    return value
 
 
 def _safe_model_stem(name: str, fallback: str) -> str:
