@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Daily Render3D backup: code + models -> local dated folder -> Google Drive.
-# Keeps 30 days locally and on Drive. Excludes .venv, myenv, node_modules, etc.
+# Keeps 7 days locally and on Drive. Excludes .venv, myenv, node_modules, etc.
 set -euo pipefail
 
 ROOT="/home/ubuntu"

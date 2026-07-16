@@ -26,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path("/home/ubuntu")
 LOCAL_BACKUP_ROOT = ROOT / "backups" / "drive-daily"
-RETENTION_DAYS = 30
+RETENTION_DAYS = 7
 
 # Google Drive destination folder (Render3D daily backups)
 PARENT_FOLDER_ID = os.getenv(
