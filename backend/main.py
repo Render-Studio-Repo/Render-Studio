@@ -12077,12 +12077,21 @@ def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
         for preview_path in project_path.glob(f"{stem}*_share_transparent.png"):
             if preview_path.is_file():
                 allowed.add(preview_path.name)
+        for preview_path in project_path.glob(f"{stem}*_share_view*.png"):
+            if preview_path.is_file():
+                allowed.add(preview_path.name)
+    for preview_path in project_path.glob("*_share_og*.png"):
+        if preview_path.is_file():
+            allowed.add(preview_path.name)
+    for preview_path in project_path.glob("*_share_transparent.png"):
+        if preview_path.is_file():
+            allowed.add(preview_path.name)
+    for preview_path in project_path.glob("*_share_view*.png"):
+        if preview_path.is_file():
+            allowed.add(preview_path.name)
     snapshot = _share_snapshot_filename(project_path, safe)
     if snapshot:
         allowed.add(snapshot)
-        transparent_preview = _make_share_preview_transparent(project_path, snapshot)
-        if transparent_preview:
-            allowed.add(transparent_preview)
     return allowed
 
 
