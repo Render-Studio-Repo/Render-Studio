@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260716-tools-docs-agent" />
+  <link rel="stylesheet" href="/styles.css?v=20260716-pending-history" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -1467,9 +1467,9 @@
               </div>
             </div>
             <div class="prompt-mode-row" role="group" aria-label="Prompt mode">
-              <button type="button" class="prompt-mode-btn active" data-prompt-mode="render">Render</button>
+              <button type="button" class="prompt-mode-btn" data-prompt-mode="render">Render</button>
               <button type="button" class="prompt-mode-btn" data-prompt-mode="draw">Draw</button>
-              <button type="button" class="prompt-mode-btn prompt-mode-btn--v2" data-prompt-mode="v2">2.0</button>
+              <button type="button" class="prompt-mode-btn prompt-mode-btn--v2 active" data-prompt-mode="v2">2.0</button>
               <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
               <label class="prompt-speed-toggle" title="Speed uses a faster model; Quality uses the Pro/deeper path when selected.">
                 <span>Mode</span>
@@ -1540,7 +1540,7 @@
                   </ul>
                 </div>
               </div>
-              <span class="muted small" id="prompt-mode-hint">Render creates photoreal image renders. Draw edits selected faces/objects directly.</span>
+              <span class="muted small" id="prompt-mode-hint">2.0 builds CAD geometry by default. Render creates photoreal images; Draw edits selected faces/objects directly.</span>
             </div>
             <label class="prompt-target-row">
               <span class="prompt-target-label">Target</span>
@@ -2627,7 +2627,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260716-model-only-textures"></script>
+  <script type="module" src="/app.js?v=20260716-pending-history"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

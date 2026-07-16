@@ -294,9 +294,13 @@ export function createPromptHistoryUI({
     listEl.innerHTML = entries
       .map((e) => {
         const when = formatWhen(e.created_at);
-        const status = e.success
-          ? `<span class="ph-status ok">OK</span>`
-          : `<span class="ph-status err">Failed</span>`;
+        const normalizedStatus = String(e.status || "").toLowerCase();
+        const isPending = ["accepted", "pending", "queued", "running", "starting"].includes(normalizedStatus);
+        const status = isPending
+          ? `<span class="ph-status pending">Generating</span>`
+          : e.success
+            ? `<span class="ph-status ok">OK</span>`
+            : `<span class="ph-status err">Failed</span>`;
         const who = e.user_name
           ? `<span class="ph-user-chip" role="button" tabindex="0" data-user-key="${escapeHtml(userKey(e))}" title="Copy latest prompt and show recent prompts">${avatarHtml(e)}${escapeHtml(e.user_name)}</span>`
           : null;

@@ -539,14 +539,15 @@ export function applyCadStyle(object3d) {
 
   // One shared material for face dumps — identical colour + less z-fighting churn.
   let sharedFaceMaterial = null;
+  let sharedFaceBodyColor = null;
   if (faceFragmented && !preserveFragmentColors) {
-    const bodyColor = CAD_PART_PALETTE[0].clone();
-    const emissive = bodyColor.clone().multiplyScalar(0.18);
+    sharedFaceBodyColor = CAD_PART_PALETTE[0].clone();
+    const emissive = sharedFaceBodyColor.clone().multiplyScalar(0.18);
     emissive.r = Math.min(emissive.r, 0.16);
     emissive.g = Math.min(emissive.g, 0.16);
     emissive.b = Math.min(emissive.b, 0.18);
     sharedFaceMaterial = new THREE.MeshStandardMaterial({
-      color: bodyColor,
+      color: sharedFaceBodyColor,
       metalness: FUSION.bodyMetalness,
       roughness: FUSION.bodyRoughness,
       emissive,
@@ -559,7 +560,7 @@ export function applyCadStyle(object3d) {
       envMapIntensity: 0.28,
       depthWrite: true,
     });
-    sharedFaceMaterial.userData.render3dCadColorHex = `#${bodyColor.getHexString()}`;
+    sharedFaceMaterial.userData.render3dCadColorHex = `#${sharedFaceBodyColor.getHexString()}`;
   }
 
   meshInfos.forEach(({ mesh: child, info }, index) => {
@@ -585,7 +586,7 @@ export function applyCadStyle(object3d) {
 
     if (faceFragmented && sharedFaceMaterial) {
       child.material = sharedFaceMaterial;
-      _rememberCadColor(child, child.material, bodyColor);
+      _rememberCadColor(child, child.material, sharedFaceBodyColor);
       // No per-face edges/silhouettes — they cause severe clipping on OCC dumps.
       return;
     }

@@ -15824,6 +15824,7 @@ def prompt_cad(
                 "accepted": True,
                 "status": "running",
                 "trace_id": trace_id,
+                "prompt_id": prompt_id,
                 "generation": generation_service.public_summary(project_path),
             },
         )

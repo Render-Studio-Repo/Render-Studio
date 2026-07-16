@@ -50,11 +50,11 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260715-cad-color-restore";
+} from "./scene-style.js?v=20260716-bodycolor-init";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260716-prompt-save-loop";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-skills";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260716-pending-history";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
@@ -98,7 +98,7 @@ import {
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
-import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
+import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260716-texture-tab";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-wire-prompt-refs";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
@@ -108,7 +108,7 @@ import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
 import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-targets";
-import { createMiniViewer } from "./mini-viewer.js?v=20260628-baked-normals";
+import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260715-rigging-viewport";
@@ -134,6 +134,7 @@ const LS_FIRST_PROJECT_PROMPT_ONBOARDING = "render3d:firstProjectPromptOnboardin
 const LS_GOOGLE_NEW_USER_WALKTHROUGH = "render3d:googleNewUserWalkthrough:v1";
 const LS_AI_SETUP_INTRO_DISMISSED = "render3d:aiSetupIntroDismissed:v1";
 const SS_AI_SETUP_INTRO_OFFERED = "render3d:aiSetupIntroOffered:v1";
+const DEFAULT_PROMPT_MODE = "v2";
 
 let projectId = null;
 const wiringLoadCache = { projectId: null, promise: null, data: null };
@@ -224,6 +225,7 @@ let activePromptGenerationId = 0;
 let userCancelRequested = false;
 let lastPromptCopyContext = null;
 let latestPromptHistoryEntries = [];
+const pendingPromptHistoryEntries = new Map();
 let viewportPromptDropdown = null;
 let userRealtimeSocket = null;
 let userRealtimeReconnectTimer = null;
@@ -1206,9 +1208,9 @@ function generationPromptMode(generation = {}, fallback = "standard") {
 }
 
 function applyPromptModeUI(mode = promptMode) {
-  promptMode = mode || "render";
+  promptMode = mode || DEFAULT_PROMPT_MODE;
   document.querySelectorAll("[data-prompt-mode]").forEach((b) => {
-    b.classList.toggle("active", (b.dataset.promptMode || "render") === promptMode);
+    b.classList.toggle("active", (b.dataset.promptMode || DEFAULT_PROMPT_MODE) === promptMode);
   });
   const promptBtn = document.getElementById("btn-prompt");
   if (promptBtn) {
@@ -1232,7 +1234,7 @@ function applyPromptModeUI(mode = promptMode) {
 }
 
 function preservePromptModeAfterAttach(modeBeforeAttach = promptMode) {
-  const mode = String(modeBeforeAttach || "render").toLowerCase();
+  const mode = String(modeBeforeAttach || DEFAULT_PROMPT_MODE).toLowerCase();
   if (!["render", "draw", "v2", "fusion", "architect"].includes(mode)) return;
   if (promptMode !== mode || !document.querySelector(`[data-prompt-mode="${mode}"]`)?.classList.contains("active")) {
     applyPromptModeUI(mode);
@@ -4046,7 +4048,7 @@ const promptHistory = createPromptHistoryUI({
   },
 });
 
-let promptMode = "render";
+let promptMode = DEFAULT_PROMPT_MODE;
 const PROMPT_SPEED_KEY = "render3d:prompt-speed:v1";
 const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
 const CODEX_KEY = "render3d:codex:v1";
@@ -4555,7 +4557,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: original,
-        mode: promptMode === "draw" ? "draw" : promptMode || "render",
+        mode: promptMode === "draw" ? "draw" : promptMode || DEFAULT_PROMPT_MODE,
         target_mode: getPromptTargetMode?.() || "new",
         // Keep prompt rewriting quick/reliable. The actual CAD generation still
         // uses the selected Speed/Quality value when the prompt is submitted.
@@ -4690,7 +4692,7 @@ function fusionTargetLabel(target = fusionTarget) {
 }
 
 function promptModeForRef(mode = promptMode) {
-  const normalized = (mode || "render").toLowerCase();
+  const normalized = (mode || DEFAULT_PROMPT_MODE).toLowerCase();
   if (normalized === "fusion") return "fusion";
   if (normalized === "architect") return "architect";
   if (normalized === "v2") return "v2";
@@ -4724,16 +4726,16 @@ function clearPromptComposeResult() {
 document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if ((btn.dataset.promptMode || "render") === "fusion") {
+    if ((btn.dataset.promptMode || DEFAULT_PROMPT_MODE) === "fusion") {
       openFusionCapabilityModal();
       return;
     }
-    applyPromptModeUI(btn.dataset.promptMode || "render");
+    applyPromptModeUI(btn.dataset.promptMode || DEFAULT_PROMPT_MODE);
   });
 });
 
 applyPromptModeUI(
-  document.querySelector("[data-prompt-mode].active")?.dataset?.promptMode || "render",
+  document.querySelector("[data-prompt-mode].active")?.dataset?.promptMode || DEFAULT_PROMPT_MODE,
 );
 
 function setFusionTarget(target) {
@@ -5121,6 +5123,67 @@ function promptHistoryReferencesForReuse(entry = {}) {
   });
 }
 
+function newPromptHistoryId() {
+  try {
+    const uuid = crypto?.randomUUID?.();
+    if (uuid) return uuid.replace(/-/g, "").slice(0, 12);
+  } catch {
+    /* fall through */
+  }
+  return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function promptHistorySortNewestFirst(entries = []) {
+  return [...entries].sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+  );
+}
+
+function pendingPromptHistoryForProject(pid = projectId) {
+  if (!pid) return [];
+  return [...pendingPromptHistoryEntries.values()].filter((entry) => entry.project_id === pid);
+}
+
+function mergePendingPromptHistory(entries = [], pid = projectId) {
+  const serverIds = new Set((entries || []).map((entry) => String(entry?.id || "")).filter(Boolean));
+  for (const id of serverIds) {
+    if (pendingPromptHistoryEntries.has(id)) pendingPromptHistoryEntries.delete(id);
+  }
+  const pending = pendingPromptHistoryForProject(pid)
+    .filter((entry) => !serverIds.has(String(entry.id || "")));
+  return promptHistorySortNewestFirst([...pending, ...(entries || [])]);
+}
+
+function renderPromptHistoryEntries(entries = [], summary = null) {
+  const mergedEntries = mergePendingPromptHistory(entries, projectId);
+  latestPromptHistoryEntries = mergedEntries;
+  promptHistory.render(mergedEntries, summary);
+  promptHistory.setCountBadge(mergedEntries.length);
+  renderProjectCostThumb(mergedEntries, summary);
+  return mergedEntries;
+}
+
+function addPendingPromptHistoryEntry(entry = {}) {
+  if (!entry.id || !entry.project_id) return;
+  pendingPromptHistoryEntries.set(entry.id, entry);
+  renderPromptHistoryEntries(
+    latestPromptHistoryEntries,
+    allProjects.find((p) => p.id === entry.project_id)?.usage_summary || null,
+  );
+}
+
+function updatePendingPromptHistoryEntry(id, patch = {}) {
+  if (!id || !pendingPromptHistoryEntries.has(id)) return;
+  pendingPromptHistoryEntries.set(id, {
+    ...pendingPromptHistoryEntries.get(id),
+    ...patch,
+  });
+  renderPromptHistoryEntries(
+    latestPromptHistoryEntries,
+    allProjects.find((p) => p.id === projectId)?.usage_summary || null,
+  );
+}
+
 async function refreshPromptHistory() {
   if (!projectId) {
     promptHistory.render([], null);
@@ -5131,11 +5194,8 @@ async function refreshPromptHistory() {
   try {
     const data = await api(`${projectHistoryApiPath(projectId, "prompt-history")}?kind=cad`);
     const entries = data.entries || [];
-    latestPromptHistoryEntries = entries;
     try {
-      promptHistory.render(entries, data.usage_summary);
-      promptHistory.setCountBadge(entries.length);
-      renderProjectCostThumb(entries, data.usage_summary);
+      renderPromptHistoryEntries(entries, data.usage_summary);
     } catch (renderErr) {
       console.error("prompt history render failed:", renderErr);
     }
@@ -5154,12 +5214,9 @@ async function refreshPromptHistory() {
       }
       workspaceBrowser?.render?.();
     }
-    return entries;
+    return latestPromptHistoryEntries;
   } catch {
-    latestPromptHistoryEntries = [];
-    promptHistory.render([], null);
-    promptHistory.setCountBadge(0);
-    renderProjectCostThumb([], null);
+    renderPromptHistoryEntries([], null);
     return [];
   }
 }
@@ -15871,6 +15928,13 @@ document.getElementById("btn-wiring-photo-debug")?.addEventListener("click", () 
     if (activeBtn) { activeBtn.classList.remove("mic-active"); activeBtn.title = "Dictate prompt (click to start/stop)"; activeBtn = null; }
   }
 
+  function writeMicTranscript(textarea, text) {
+    textarea.value = text;
+    // The main CAD prompt is mirrored by PromptComposer. Dispatching input keeps
+    // the visible contenteditable editor, draft saving, and prompt state in sync.
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
   document.querySelectorAll(".prompt-mic-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const targetId = btn.dataset.micTarget;
@@ -15898,7 +15962,7 @@ document.getElementById("btn-wiring-photo-debug")?.addEventListener("click", () 
           else interim += r[0].transcript;
         }
         committed = finals;
-        textarea.value = finals + (interim ? " " + interim : "");
+        writeMicTranscript(textarea, finals + (interim ? " " + interim : ""));
         // Move cursor to end
         textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
       };
@@ -15908,7 +15972,7 @@ document.getElementById("btn-wiring-photo-debug")?.addEventListener("click", () 
       };
 
       rec.onend = () => {
-        textarea.value = committed;
+        writeMicTranscript(textarea, committed);
         if (activeRec === rec) stopActive();
       };
 
@@ -23361,6 +23425,36 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     const status = document.getElementById("prompt-status");
     const reply = document.getElementById("prompt-reply");
     const genMode = promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : promptMode === "v2" ? "v2" : "standard";
+    const promptHistoryId = newPromptHistoryId();
+    const selectedModelInfo = getSelectedPromptModelInfo();
+    addPendingPromptHistoryEntry({
+      id: promptHistoryId,
+      project_id: projectId,
+      prompt,
+      success: false,
+      status: "running",
+      created_at: new Date().toISOString(),
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.display_name || currentUser?.email || "You",
+      user_avatar_url: currentUser?.avatar_url || null,
+      kind: "cad",
+      prompt_mode: promptModeForRef(genMode),
+      speed: getPromptGenerationSpeed(),
+      target_mode: targetMode === "edit" ? "edit" : "new",
+      base_filename: targetBaseFilename,
+      reference_count: promptReferences.length,
+      image_count: promptImages.length,
+      images: promptImages.slice(0, 4).map((img) => ({
+        id: img.id,
+        name: img.name,
+        media_type: img.media_type,
+      })),
+      references: promptReferences,
+      model: selectedModelInfo.model,
+      provider: selectedModelInfo.provider,
+      codex_agent: ["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled(),
+      skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
+    });
 
     // Show the generation banner immediately so convert/spice waits don't look stuck.
     if (canvasAttached) markCanvasGenerationPending(projectId);
@@ -23383,6 +23477,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       : { prompt: String(prompt || ""), originalPrompt: String(prompt || ""), promptImproved: false };
     prompt = String(spiceMeta.prompt || "").trim();
     if (!prompt) {
+      updatePendingPromptHistoryEntry(promptHistoryId, {
+        status: "failed",
+        error: "Prompt is empty.",
+      });
       promptSubmitInFlight = false;
       stopGenerationWatch();
       if (status) {
@@ -23390,6 +23488,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         status.textContent = "Prompt is empty.";
       }
       return;
+    }
+    if (spiceMeta.promptImproved) {
+      updatePendingPromptHistoryEntry(promptHistoryId, {
+        prompt,
+        original_prompt: String(spiceMeta.originalPrompt || "").trim() || undefined,
+        prompt_improved: true,
+      });
     }
     if (status) {
       status.className = "status loading";
@@ -23411,6 +23516,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     let promptFailed = false;
     try {
       const body = {
+        prompt_id: promptHistoryId,
         prompt,
         base_filename: targetBaseFilename,
         references: promptReferences,
@@ -23469,6 +23575,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         return;
       }
       if (data.accepted || data.status === "running") {
+        updatePendingPromptHistoryEntry(promptHistoryId, {
+          trace_id: data.trace_id,
+          filename: data.filename,
+          status: "running",
+        });
         if (!generationWatchOverlay || generationWatchPid !== projectId) {
           beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
         }
@@ -23554,6 +23665,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         }
       }
       promptFailed = true;
+      updatePendingPromptHistoryEntry(promptHistoryId, {
+        status: "failed",
+        error: formatUserError(err),
+      });
       pendingPromptSelectionContext = null;
       stopGenerationWatch();
       if (status) {
