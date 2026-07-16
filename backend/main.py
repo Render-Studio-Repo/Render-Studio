@@ -6424,19 +6424,28 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
                 if viewer_path.name != assembled_viewer_path.name:
                     assembled_viewer_path.write_bytes(viewer_path.read_bytes())
                 viewer_path = assembled_viewer_path
-                if body.get("import_bodies", False) is True:
-                    try:
-                        cad_service.split_scene_components_to_glbs(
-                            viewer_path,
-                            proj_path,
-                            base_stem=viewer_path.stem,
-                        )
-                    except Exception as split_exc:
-                        logger.warning(
-                            "Autodesk import body split failed for %s: %s",
+            # Default on: Fusion assemblies should land as separate browser parts.
+            # Accept truthy JSON values so cached clients that omit the flag still split.
+            import_bodies = body.get("import_bodies", True)
+            if import_bodies is not False and str(import_bodies).strip().lower() not in {"0", "false", "no", "off"}:
+                try:
+                    split_names = cad_service.split_scene_components_to_glbs(
+                        viewer_path,
+                        proj_path,
+                        base_stem=viewer_path.stem,
+                    )
+                    if split_names:
+                        logger.info(
+                            "Autodesk import split %s into %d body GLBs",
                             viewer_path.name,
-                            split_exc,
+                            len(split_names),
                         )
+                except Exception as split_exc:
+                    logger.warning(
+                        "Autodesk import body split failed for %s: %s",
+                        viewer_path.name,
+                        split_exc,
+                    )
     except Exception as exc:
         raise HTTPException(422, f"Could not convert Autodesk file for preview: {exc}") from exc
 
@@ -16330,9 +16339,7 @@ def transform_file(
     viewer_name = cad_service.viewer_filename_for_model(safe, project_path)
     viewer_path = project_path / viewer_name
     transform_src = viewer_path if viewer_path.is_file() else src
-    mesh = cad_service.load_mesh(transform_src)
     transform = body.model_dump(exclude_none=True, exclude={"mode", "copy"})
-    mesh = cad_service.apply_transform(mesh, transform)
     if body.copy:
         base = transform_src.stem.replace("_edited", "")
         stem = f"{base}_copy"
@@ -16343,7 +16350,8 @@ def transform_file(
     else:
         stem = transform_src.stem.replace("_edited", "") + "_edited"
     out = project_path / f"{stem}.glb"
-    cad_service.export_mesh(mesh, out)
+    # Preserve multi-mesh Fusion assemblies — load_mesh+export_mesh collapses them.
+    cad_service.apply_transform_preserving_parts(transform_src, transform, out_path=out)
     entry = _record_history(
         project_path,
         "transform",
@@ -16393,13 +16401,13 @@ def transform_body_file(
     src = project_path / safe
     if not src.is_file():
         raise HTTPException(404, "File not found")
-    mesh = cad_service.load_mesh(src)
     transform = body.model_dump(exclude_none=True, exclude={"mode", "copy", "body_index"})
     try:
-        mesh = cad_service.transform_mesh_body(mesh, body.body_index, transform)
+        # Keep multi-mesh assemblies intact; only fall back to concatenated-body
+        # edits when the GLB is already a single mesh with disconnected shells.
+        cad_service.transform_scene_body(src, body.body_index, transform, out_path=src)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    cad_service.export_mesh(mesh, src)
     meta = {**transform, "body_index": body.body_index, "parent": safe}
     body_label = (
         f"Resize body {body.body_index + 1}"

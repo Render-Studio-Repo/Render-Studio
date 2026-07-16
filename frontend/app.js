@@ -72,7 +72,7 @@ import { createWorkspaceManagementUI } from "./workspace-management.js?v=2026071
 import { createRenderAgent } from "./render-agent.js?v=20260715-chat-show-me-actions";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260716-fable-shared-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
-import { createRibbon } from "./ribbon.js?v=20260715-rigging-control-tab";
+import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-robot-place-part";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
@@ -80,7 +80,7 @@ import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=202
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
-import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-transform-shortcuts";
+import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-move-save";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
 import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
 import { createDirectModeling } from "./direct-modeling.js?v=20260714-extrude-face-drag";
@@ -6064,6 +6064,80 @@ function handlePendingSnapTarget(event) {
   return true;
 }
 
+let multiSelectionMoveSaveInFlight = false;
+
+async function persistMultiSelectionMove(stroke = {}) {
+  if (multiSelectionMoveSaveInFlight || !projectId) return;
+  const delta = Array.isArray(stroke.delta?.translation)
+    ? new THREE.Vector3(...stroke.delta.translation)
+    : null;
+  if (!delta || delta.length() <= 1e-12) return;
+  const selection = objectTools?.getSelection?.();
+  const selections = (selection?.selections || []).filter((item) => item?.mesh || item?.root);
+  if (selections.length < 2) return;
+
+  const targets = [];
+  const seen = new Set();
+  for (const item of selections) {
+    const object = item.root || item.mesh;
+    const filename = item.catalogName || object?.userData?.catalogFilename || catalogNameForMesh(object);
+    if (!object || !filename || seen.has(filename)) continue;
+    if (object.userData?.localOnly || object.userData?.architectInstance) continue;
+    const parentDelta = worldDeltaToParentDelta(object, delta);
+    targets.push({
+      object,
+      filename,
+      bodyIndex: item.bodyIndex ?? null,
+      bodyCount: item.bodyCount ?? 1,
+      isRoot: item.isRoot ?? item.wholeModel ?? true,
+      baseline: {
+        position: object.position.clone().sub(parentDelta),
+        quaternion: object.quaternion.clone(),
+        scale: object.scale.clone(),
+      },
+      translation: parentDelta.toArray(),
+    });
+    seen.add(filename);
+  }
+  if (!targets.length) return;
+
+  multiSelectionMoveSaveInFlight = true;
+  objectTools.clearSelection?.({ detachGizmo: true });
+  gizmoPanel.hide?.();
+  transformControls.detach();
+  document.getElementById("btn-gizmo")?.classList.remove("active");
+  setEditStatus("loading", `Saving moved placement for ${targets.length} object${targets.length === 1 ? "" : "s"}…`);
+  try {
+    let saved = 0;
+    for (const target of targets) {
+      const useBodyTransform = target.bodyIndex != null && target.bodyCount > 1 && !target.isRoot;
+      const body = {
+        mode: "delta",
+        translation: target.translation,
+        ...(useBodyTransform ? { body_index: target.bodyIndex } : {}),
+      };
+      const endpoint = useBodyTransform ? "transform-body" : "transform";
+      const data = await api(`/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await afterModelEdit({
+        ...data,
+        replaceCatalog: target.filename,
+        placementBaseline: target.baseline,
+      });
+      saved += 1;
+    }
+    setEditStatus("ok", `Saved moved placement for ${saved} object${saved === 1 ? "" : "s"}.`);
+  } catch (err) {
+    setEditStatus("error", err.message || "Could not save moved placement.");
+    viewerOverlay.showError(err.message || "Could not save moved placement.");
+  } finally {
+    multiSelectionMoveSaveInFlight = false;
+  }
+}
+
 const gizmoPanel = createGizmoPanel({
   viewport,
   transformControls,
@@ -6112,6 +6186,9 @@ const gizmoPanel = createGizmoPanel({
       after: stroke.after || null,
       committed: false,
     });
+    if (stroke.skipAutoApply && stroke.mode === "translate") {
+      void persistMultiSelectionMove(stroke);
+    }
   },
 });
 
@@ -18619,7 +18696,7 @@ async function runWorkspaceFusionAutoSync({ force = false } = {}) {
         const result = await api(`/api/projects/${encodeURIComponent(target.projectId)}/fusion-mirror/sync-from-fusion`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ import_bodies: false }),
+          body: JSON.stringify({ import_bodies: true }),
         });
         if (result.busy) continue;
         if (result.changed || result.pushed_mirrors?.length || result.push_errors?.length) {
@@ -18786,7 +18863,7 @@ function renderRealtimeFocusMirrorPanel(data = lastWorkspaceRealtimeData) {
         const result = await api(`/api/projects/${encodeURIComponent(syncPid)}/fusion-mirror/sync-from-fusion`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ import_bodies: false }),
+          body: JSON.stringify({ import_bodies: true }),
         });
         btn.textContent = result.changed ? "Synced ✓" : "Latest";
         setEditStatus("ok", result.message || (result.changed ? "Fusion update synced." : "Already latest."));
@@ -19109,7 +19186,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
         const result = await api(`/api/projects/${encodeURIComponent(pid)}/fusion-mirror/sync-from-fusion`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ import_bodies: false }),
+          body: JSON.stringify({ import_bodies: true }),
         });
         btn.textContent = result.changed ? "Synced ✓" : "Latest";
         const extra = result.teammate_files_pushed
@@ -23964,7 +24041,11 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     toggleGrid();
   }
-  if (key === "g" || key === "t") openTransformMode("translate");
+  if (key === "g" || key === "t" || key === "m") {
+    e.preventDefault();
+    openTransformMode("translate");
+    return;
+  }
   if (key === "r") openTransformMode("rotate");
   if (key === "s") openTransformMode("scale");
   if (key === "i") {

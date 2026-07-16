@@ -1350,7 +1350,7 @@ function _buildRibbonDOM() {
   viewControls.className = "ribbon-view-controls";
 
   const viewBtns = [
-    { id: "btn-gizmo",     label: "Gizmo",   title: "Move/rotate part in viewer (G)",                    svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor"><path d="M10 2l1.5 3h-3L10 2zm0 16l-1.5-3h3L10 18zM2 10l3-1.5v3L2 10zm16 0l-3 1.5v-3L18 10zm-8-3a3 3 0 100 6 3 3 0 000-6z"/></svg>` },
+    { id: "btn-gizmo",     label: "Gizmo",   title: "Move/rotate part in viewer (G / T / M)",             svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor"><path d="M10 2l1.5 3h-3L10 2zm0 16l-1.5-3h3L10 18zM2 10l3-1.5v3L2 10zm16 0l-3 1.5v-3L18 10zm-8-3a3 3 0 100 6 3 3 0 000-6z"/></svg>` },
     { id: "btn-measure",   label: "Measure", title: "Measure faces, edges, and distances (I)",           svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17L17 3"/><path d="M5 17h4M11 11h4M3 15v2M17 3v2"/></svg>` },
     { id: "btn-fit",       label: "Fit",     title: "Fit all in view (F)",                               svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor"><path d="M3 3h5v2H5v3H3V3zm9 0h5v5h-2V5h-3V3zM3 12h2v3h3v2H3v-5zm12 3h-3v2h5v-5h-2v3z"/></svg>` },
     { id: "btn-wireframe", label: "Wire",    title: "Toggle wireframe (W)",                              svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="6" width="14" height="10" rx="1"/><path d="M3 6l4-3h6l4 3"/><path d="M17 6l-4 3H7L3 6"/><path d="M7 9v7m6-7v7"/></svg>` },

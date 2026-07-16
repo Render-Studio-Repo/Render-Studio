@@ -415,8 +415,16 @@ export function createGizmoPanel({
       onTransformStrokeEnd?.({
         type: "transform",
         filename: info.filename || null,
+        mode: transformControls.getMode?.() || "translate",
         liveTarget: mesh?.userData?.isMultiSelectionTransform ? "transform-controls" : null,
         skipAutoApply: !!mesh?.userData?.isMultiSelectionTransform,
+        delta: d
+          ? {
+              translation: d.translation.toArray(),
+              rotation: d.rotation,
+              scale: d.scale,
+            }
+          : null,
         before: beforePose,
         after: mesh
           ? {

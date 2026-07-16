@@ -968,6 +968,10 @@ def _match_glb_scale_to_step(step_path: Path, glb_path: Path) -> None:
     STEP is millimetres. The app's CAD workspace uses millimetres, so compare
     the GLB bounds to the STEP tessellation and bake a scale correction when the
     ratio is clearly unit-related.
+
+    Scales each scene geometry in place and re-exports the scene graph so
+    multi-body Fusion assemblies stay separate meshes (``__part_*.glb`` split
+    depends on that).
     """
     try:
         scene = load_scene(glb_path)
@@ -980,8 +984,17 @@ def _match_glb_scale_to_step(step_path: Path, glb_path: Path) -> None:
             return
         ratio = step_extent / glb_extent
         if 100.0 <= ratio <= 10000.0:
-            scene.apply_scale(ratio)
-            export_scene(scene, glb_path)
+            parts = _meshes_from_scene(scene)
+            if len(parts) > 1:
+                rebuilt = trimesh.Scene()
+                for label, mesh in parts:
+                    scaled = mesh_copy(mesh)
+                    scaled.apply_scale(ratio)
+                    rebuilt.add_geometry(scaled, geom_name=label, node_name=label)
+                export_scene(rebuilt, glb_path)
+            else:
+                scene.apply_scale(ratio)
+                export_scene(scene, glb_path)
             logger.info("Scaled STEP preview GLB %s by %.6g to match source units", glb_path.name, ratio)
     except Exception as exc:  # pragma: no cover - preview scale fix is best-effort
         logger.debug("Could not verify STEP preview scale for %s: %s", glb_path.name, exc)
@@ -2246,12 +2259,16 @@ def split_scene_components_to_glbs(
     project_path: Path,
     *,
     base_stem: str | None = None,
-    max_parts: int = 64,
+    max_parts: int = 256,
 ) -> list[str]:
     """Export each named GLB scene component as ``{base}__part_NN_slug.glb``.
 
     Used by Fusion / Autodesk import when ``import_bodies`` is requested. Returns
     an empty list when the viewer has only one body (nothing useful to split).
+
+    When the shell GLB was flattened to a single mesh (common after mesh-only
+    edits), fall back to splitting disconnected watertight shells so Fusion
+    assemblies still land as separate browser parts.
     """
     viewer_path = Path(viewer_path)
     project_path = Path(project_path)
@@ -2264,7 +2281,11 @@ def split_scene_components_to_glbs(
     scene = load_scene(viewer_path)
     parts = _meshes_from_scene(scene)
     if len(parts) <= 1:
-        return []
+        mesh = parts[0][1] if parts else load_mesh(viewer_path)
+        bodies = _mesh_bodies(mesh)
+        if len(bodies) <= 1:
+            return []
+        parts = [(f"body_{i:02d}", body) for i, body in enumerate(bodies, start=1)]
 
     for old in project_path.glob(f"{base}__part_*.glb"):
         try:
@@ -2283,6 +2304,55 @@ def split_scene_components_to_glbs(
         export_mesh(mesh, project_path / out_name)
         outputs.append(out_name)
     return outputs
+
+
+def apply_transform_preserving_parts(
+    path: Path,
+    transform: dict[str, Any],
+    *,
+    out_path: Path | None = None,
+) -> Path:
+    """Apply a transform while keeping multi-mesh GLB scene components separate."""
+    path = Path(path)
+    dest = Path(out_path) if out_path is not None else path
+    scene = load_scene(path)
+    parts = _meshes_from_scene(scene)
+    if len(parts) <= 1:
+        mesh = parts[0][1] if parts else load_mesh(path)
+        export_mesh(apply_transform(mesh, transform), dest)
+        return dest
+    rebuilt = trimesh.Scene()
+    for label, mesh in parts:
+        rebuilt.add_geometry(apply_transform(mesh, transform), geom_name=label, node_name=label)
+    export_scene(rebuilt, dest)
+    return dest
+
+
+def transform_scene_body(
+    path: Path,
+    body_index: int,
+    transform: dict[str, Any],
+    *,
+    out_path: Path | None = None,
+) -> Path:
+    """Transform one body without collapsing a multi-mesh assembly to a single mesh."""
+    path = Path(path)
+    dest = Path(out_path) if out_path is not None else path
+    scene = load_scene(path)
+    parts = _meshes_from_scene(scene)
+    idx = int(body_index)
+    if len(parts) > 1:
+        if idx < 0 or idx >= len(parts):
+            raise ValueError(f"body_index out of range: {idx}")
+        rebuilt = trimesh.Scene()
+        for i, (label, mesh) in enumerate(parts):
+            use = apply_transform(mesh, transform) if i == idx else mesh
+            rebuilt.add_geometry(use, geom_name=label, node_name=label)
+        export_scene(rebuilt, dest)
+        return dest
+    mesh = parts[0][1] if parts else load_mesh(path)
+    export_mesh(transform_mesh_body(mesh, idx, transform), dest)
+    return dest
 
 
 def export_mesh_step(mesh: trimesh.Trimesh, path: Path) -> Path:
