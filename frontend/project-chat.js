@@ -971,7 +971,14 @@ export function createProjectChatUI({
     const host = overlay?.querySelector("#pc-threads");
     if (!host) return;
     const filtered = threads.filter((thread) => {
-      if (inboxView === "groups") return thread.kind === "group" || Number(thread.member_count || 0) > 1;
+      if (inboxView === "groups") {
+        return (
+          thread.slug === "general" ||
+          thread.scope === "workspace" ||
+          thread.kind === "group" ||
+          Number(thread.member_count || 0) > 1
+        );
+      }
       if (inboxView === "mentions") return thread.last_message?.mentions?.length || false;
       if (inboxView === "private") return thread.visibility === "private";
       return true;
@@ -1549,8 +1556,15 @@ export function createProjectChatUI({
     document.body.classList.add("project-chat-open");
     const title = overlay.querySelector("#pc-title");
     const subtitle = overlay.querySelector("#pc-subtitle");
-    if (title) title.textContent = "Project chat";
-    if (subtitle) subtitle.textContent = getProjectName?.() || projectId;
+    if (title) title.textContent = "Render3D chat";
+    if (subtitle) {
+      const active = threads.find((t) => t.id === activeThreadId);
+      if (active?.slug === "general" || active?.scope === "workspace") {
+        subtitle.textContent = "Render Studio · shared across this workspace";
+      } else {
+        subtitle.textContent = getProjectName?.() || projectId;
+      }
+    }
     renderWorkspaceInviteBanner();
     await loadCandidates();
     await loadThreads();

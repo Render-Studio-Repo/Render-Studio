@@ -1,4 +1,8 @@
-"""Project collaboration chat: threads, replies, mentions, reactions, images."""
+"""Project collaboration chat: threads, replies, mentions, reactions, images.
+
+Render Studio (slug ``general``) is stored per workspace so the public group
+chat survives project switches. Other threads stay project-scoped.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from backend.config import settings
 from backend.database import get_conn
 
 CHAT_FILE = "chat.json"
@@ -79,6 +84,24 @@ def _media_dir(project_path: Path) -> Path:
     return path
 
 
+def workspace_chat_root(workspace_id: str | None) -> Path | None:
+    """Directory that stores the workspace-wide Render Studio channel."""
+    if not workspace_id:
+        return None
+    safe = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(workspace_id).strip())[:80].strip("-")
+    if not safe:
+        return None
+    return (Path(settings.data_dir) / "workspace_chats" / safe).resolve()
+
+
+def _is_general_thread(thread: dict[str, Any] | None) -> bool:
+    if not thread:
+        return False
+    slug = str(thread.get("slug") or "").lower()
+    title = str(thread.get("title") or "").lower()
+    return slug in {"general", "render-studio"} or title in {"general", "render studio"}
+
+
 def _load(project_path: Path) -> dict[str, Any]:
     path = _path(project_path)
     if not path.is_file():
@@ -104,9 +127,17 @@ def _load(project_path: Path) -> dict[str, Any]:
         raise ChatStorageError("Project chat history is unreadable; refusing to overwrite it.") from exc
 
 
+def _prune_threads(threads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep Render Studio pinned; prune only non-general threads to MAX_THREADS."""
+    pinned = [t for t in threads if _is_general_thread(t)][:1]
+    rest = [t for t in threads if not _is_general_thread(t)]
+    budget = max(0, MAX_THREADS - len(pinned))
+    return pinned + rest[-budget:]
+
+
 def _save(project_path: Path, data: dict[str, Any]) -> None:
     recovered_from_backup = bool(data.pop("_recovered_from_backup", False))
-    data["threads"] = list(data.get("threads") or [])[-MAX_THREADS:]
+    data["threads"] = _prune_threads(list(data.get("threads") or []))
     for thread in data["threads"]:
         msgs = list(thread.get("messages") or [])
         thread["messages"] = msgs[-MAX_MESSAGES:]
@@ -159,26 +190,25 @@ def _sender(user: dict[str, Any] | None, *, as_agent: bool = False) -> dict[str,
 def _ensure_general_thread(data: dict[str, Any], user: dict[str, Any] | None = None) -> dict[str, Any]:
     threads = data.setdefault("threads", [])
     for thread in threads:
-        slug = str(thread.get("slug") or "").lower()
-        title = str(thread.get("title") or "").lower()
-        if slug in {"general", "render-studio"} or title in {"general", "render studio"}:
-            thread["slug"] = "general"
-            thread["title"] = "Render Studio"
-            thread.setdefault("visibility", "shared")
-            thread.setdefault("members", [])
-            # Keep every project member on the default channel
-            if user and user.get("id"):
-                members = thread.setdefault("members", [])
-                if not any(str(m.get("id")) == str(user["id"]) for m in members):
-                    members.append(
-                        {
-                            "id": user["id"],
-                            "display_name": user.get("display_name"),
-                            "handle": user.get("handle"),
-                            "avatar_url": user.get("avatar_url"),
-                        }
-                    )
-            return thread
+        if not _is_general_thread(thread):
+            continue
+        thread["slug"] = "general"
+        thread["title"] = "Render Studio"
+        thread.setdefault("visibility", "shared")
+        thread.setdefault("kind", "group")
+        thread.setdefault("members", [])
+        if user and user.get("id"):
+            members = thread.setdefault("members", [])
+            if not any(str(m.get("id")) == str(user["id"]) for m in members):
+                members.append(
+                    {
+                        "id": user["id"],
+                        "display_name": user.get("display_name"),
+                        "handle": user.get("handle"),
+                        "avatar_url": user.get("avatar_url"),
+                    }
+                )
+        return thread
     thread = {
         "id": str(uuid.uuid4())[:10],
         "slug": "general",
@@ -186,6 +216,7 @@ def _ensure_general_thread(data: dict[str, Any], user: dict[str, Any] | None = N
         "created_at": _now(),
         "created_by": (user or {}).get("id"),
         "visibility": "shared",
+        "kind": "group",
         "members": (
             [
                 {
@@ -202,6 +233,118 @@ def _ensure_general_thread(data: dict[str, Any], user: dict[str, Any] | None = N
     }
     threads.insert(0, thread)
     return thread
+
+
+def _merge_messages_into_thread(dest: dict[str, Any], source_messages: list[dict[str, Any]]) -> int:
+    existing = {str(m.get("id")) for m in (dest.get("messages") or []) if m.get("id")}
+    added = 0
+    msgs = list(dest.get("messages") or [])
+    for msg in source_messages or []:
+        mid = str(msg.get("id") or "")
+        if not mid or mid in existing:
+            continue
+        msgs.append(msg)
+        existing.add(mid)
+        added += 1
+    msgs.sort(key=lambda m: str(m.get("created_at") or ""))
+    dest["messages"] = msgs[-MAX_MESSAGES:]
+    return added
+
+
+def _absorb_project_general(project_path: Path, workspace_thread: dict[str, Any], migrated: list[str]) -> None:
+    """Copy a project's Render Studio history into the workspace channel, then drop the local copy."""
+    key = str(Path(project_path).resolve())
+    if key in migrated:
+        return
+    with _lock_for(project_path):
+        pdata = _load(project_path)
+        src = next((t for t in (pdata.get("threads") or []) if _is_general_thread(t)), None)
+        if src:
+            _merge_messages_into_thread(workspace_thread, list(src.get("messages") or []))
+            members = workspace_thread.setdefault("members", [])
+            for m in src.get("members") or []:
+                if m.get("id") and not any(str(x.get("id")) == str(m.get("id")) for x in members):
+                    members.append(m)
+            pdata["threads"] = [t for t in (pdata.get("threads") or []) if not _is_general_thread(t)]
+            _save(project_path, pdata)
+        migrated.append(key)
+
+
+def _team_project_paths(workspace_id: str) -> list[Path]:
+    try:
+        from backend.services import teams_service
+
+        ids = teams_service.team_project_ids(workspace_id) or []
+    except Exception:
+        ids = []
+    root = Path(settings.projects_dir)
+    return [root / str(pid) for pid in ids if (root / str(pid)).is_dir()]
+
+
+def ensure_workspace_general(
+    workspace_id: str,
+    user: dict[str, Any] | None = None,
+    *,
+    seed_project_path: Path | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    """Load/create the workspace Render Studio channel and migrate project history into it."""
+    root = workspace_chat_root(workspace_id)
+    if root is None:
+        raise ValueError("workspace_id required")
+    with _lock_for(root):
+        data = _load(root)
+        thread = _ensure_general_thread(data, user)
+        thread["slug"] = "general"
+        thread["title"] = "Render Studio"
+        thread["visibility"] = "shared"
+        thread["kind"] = "group"
+        thread["scope"] = "workspace"
+        migrated = list(data.get("migrated_projects") or [])
+        if seed_project_path is not None:
+            _absorb_project_general(Path(seed_project_path), thread, migrated)
+        if not data.get("full_team_migrated"):
+            for project_path in _team_project_paths(workspace_id):
+                try:
+                    _absorb_project_general(project_path, thread, migrated)
+                except Exception:
+                    logger.exception("Could not migrate Render Studio history from %s", project_path)
+            data["full_team_migrated"] = True
+        data["migrated_projects"] = migrated
+        data["threads"] = [t for t in (data.get("threads") or []) if _is_general_thread(t)][:1] or [thread]
+        _save(root, data)
+        return root, data["threads"][0]
+
+
+def chat_storage_for_thread(
+    project_path: Path,
+    thread_id: str,
+    *,
+    workspace_id: str | None = None,
+    user: dict[str, Any] | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    """Return ``(storage_root, thread)`` for a thread id, preferring workspace Render Studio."""
+    ws_root = workspace_chat_root(workspace_id) if workspace_id else None
+    if ws_root is not None:
+        _root, general = ensure_workspace_general(workspace_id, user, seed_project_path=project_path)
+        if thread_id in {"general", "default", general.get("id")}:
+            return _root, general
+    with _lock_for(project_path):
+        data = _load(project_path)
+        if not workspace_id:
+            _ensure_general_thread(data, user)
+            _save(project_path, data)
+        thread = _find_thread(data, thread_id)
+        if thread and _is_general_thread(thread) and ws_root is not None:
+            return ensure_workspace_general(workspace_id, user, seed_project_path=project_path)
+        if not thread and thread_id in {"general", "default"}:
+            if ws_root is not None:
+                return ensure_workspace_general(workspace_id, user, seed_project_path=project_path)
+            thread = _ensure_general_thread(data, user)
+            _save(project_path, data)
+            return project_path, thread
+        if not thread:
+            raise KeyError("Thread not found")
+        return project_path, thread
 
 
 def _find_thread(data: dict[str, Any], thread_id: str) -> dict[str, Any] | None:
@@ -256,7 +399,13 @@ def _thread_summary(thread: dict[str, Any]) -> dict[str, Any]:
         "created_at": thread.get("created_at"),
         "created_by": thread.get("created_by"),
         "visibility": thread.get("visibility") or "shared",
-        "kind": thread.get("kind") or ("group" if len(_thread_member_ids(thread)) > 1 else "thread"),
+        "kind": thread.get("kind")
+        or (
+            "group"
+            if _is_general_thread(thread) or len(_thread_member_ids(thread)) > 1
+            else "thread"
+        ),
+        "scope": thread.get("scope") or ("workspace" if _is_general_thread(thread) else "project"),
         "assist_session": thread.get("assist_session") or None,
         "members": list(thread.get("members") or []),
         "member_count": len(_thread_member_ids(thread)),
@@ -279,16 +428,41 @@ def list_threads(
     user: dict[str, Any] | None = None,
     *,
     workspace_role: str | None = None,
+    workspace_id: str | None = None,
 ) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if workspace_id:
+        _root, general = ensure_workspace_general(workspace_id, user, seed_project_path=project_path)
+        if user_can_access_thread(general, user, workspace_role=workspace_role):
+            out.append(_thread_summary(general))
+        with _lock_for(project_path):
+            data = _load(project_path)
+            changed = False
+            kept = []
+            for thread in data.get("threads") or []:
+                if _is_general_thread(thread):
+                    changed = True
+                    continue
+                kept.append(thread)
+            if changed:
+                data["threads"] = kept
+                _save(project_path, data)
+            for thread in kept:
+                if "visibility" not in thread:
+                    thread["visibility"] = "shared"
+                thread.setdefault("members", [])
+                if not user_can_access_thread(thread, user, workspace_role=workspace_role):
+                    continue
+                out.append(_thread_summary(thread))
+        return out
+
     with _lock_for(project_path):
         data = _load(project_path)
         _ensure_general_thread(data, user)
         _save(project_path, data)
-        out = []
         for thread in data["threads"]:
-            # Existing threads without a visibility flag stay shared so current chats don't disappear.
             if "visibility" not in thread:
-                thread["visibility"] = "shared" if thread.get("slug") == "general" else "shared"
+                thread["visibility"] = "shared"
             thread.setdefault("members", [])
             if not user_can_access_thread(thread, user, workspace_role=workspace_role):
                 continue
@@ -302,32 +476,39 @@ def get_thread(
     *,
     user: dict[str, Any] | None = None,
     workspace_role: str | None = None,
+    workspace_id: str | None = None,
 ) -> dict[str, Any] | None:
-    with _lock_for(project_path):
-        data = _load(project_path)
-        _ensure_general_thread(data, user)
-        thread = _find_thread(data, thread_id)
-        if not thread and thread_id in {"general", "default"}:
-            thread = _ensure_general_thread(data, user)
-        if not thread:
-            return None
-        thread.setdefault("visibility", "shared")
-        thread.setdefault("members", [])
-        if not user_can_access_thread(thread, user, workspace_role=workspace_role):
-            return None
-        _save(project_path, data)
-        return {
-            "id": thread.get("id"),
-            "slug": thread.get("slug"),
-            "title": thread.get("title"),
-            "created_at": thread.get("created_at"),
-            "created_by": thread.get("created_by"),
-            "visibility": thread.get("visibility") or "shared",
-            "kind": thread.get("kind") or ("group" if len(_thread_member_ids(thread)) > 1 else "thread"),
-            "assist_session": thread.get("assist_session") or None,
-            "members": list(thread.get("members") or []),
-            "messages": list(thread.get("messages") or []),
-        }
+    try:
+        _root, thread = chat_storage_for_thread(
+            project_path,
+            thread_id,
+            workspace_id=workspace_id,
+            user=user,
+        )
+    except KeyError:
+        return None
+    thread.setdefault("visibility", "shared")
+    thread.setdefault("members", [])
+    if _is_general_thread(thread):
+        thread["kind"] = "group"
+        if workspace_id:
+            thread["scope"] = "workspace"
+    if not user_can_access_thread(thread, user, workspace_role=workspace_role):
+        return None
+    return {
+        "id": thread.get("id"),
+        "slug": thread.get("slug"),
+        "title": thread.get("title"),
+        "created_at": thread.get("created_at"),
+        "created_by": thread.get("created_by"),
+        "visibility": thread.get("visibility") or "shared",
+        "kind": thread.get("kind")
+        or ("group" if _is_general_thread(thread) or len(_thread_member_ids(thread)) > 1 else "thread"),
+        "scope": thread.get("scope") or ("workspace" if _is_general_thread(thread) and workspace_id else "project"),
+        "assist_session": thread.get("assist_session") or None,
+        "members": list(thread.get("members") or []),
+        "messages": list(thread.get("messages") or []),
+    }
 
 
 def create_thread(
@@ -339,10 +520,16 @@ def create_thread(
     workspace_role: str | None = None,
     kind: str | None = None,
     invite_user_ids: list[str] | None = None,
+    workspace_id: str | None = None,
 ) -> dict[str, Any]:
+    if workspace_id:
+        ensure_workspace_general(workspace_id, user, seed_project_path=project_path)
     with _lock_for(project_path):
         data = _load(project_path)
-        _ensure_general_thread(data, user)
+        if workspace_id:
+            data["threads"] = [t for t in (data.get("threads") or []) if not _is_general_thread(t)]
+        else:
+            _ensure_general_thread(data, user)
         clean = (title or "New thread").strip()[:80] or "New thread"
         # Normal project questions should be visible to everyone with project access.
         # Group/invite threads remain private unless the caller explicitly shares them.
@@ -632,18 +819,29 @@ def post_message(
     as_agent: bool = False,
     message_id: str | None = None,
     workspace_role: str | None = None,
+    workspace_id: str | None = None,
 ) -> dict[str, Any]:
-    with _lock_for(project_path):
-        text = (body or "").strip()
-        if not text and not images:
-            raise ValueError("Message body required")
-        if len(text) > 8000:
-            raise ValueError("Message too long")
-        data = _load(project_path)
-        _ensure_general_thread(data, user)
-        thread = _find_thread(data, thread_id)
-        if not thread:
-            raise KeyError("Thread not found")
+    text_body = (body or "").strip()
+    if not text_body and not images:
+        raise ValueError("Message body required")
+    if len(text_body) > 8000:
+        raise ValueError("Message too long")
+    storage_root, thread = chat_storage_for_thread(
+        project_path,
+        thread_id,
+        workspace_id=workspace_id,
+        user=user,
+    )
+    with _lock_for(storage_root):
+        data = _load(storage_root)
+        if workspace_id and (_is_general_thread(thread) or thread_id in {"general", "default", thread.get("id")}):
+            thread = _ensure_general_thread(data, user)
+            thread["kind"] = "group"
+            thread["scope"] = "workspace"
+        else:
+            thread = _find_thread(data, thread.get("id") or thread_id)
+            if not thread:
+                raise KeyError("Thread not found")
         if not as_agent and not user_can_access_thread(thread, user, workspace_role=workspace_role):
             raise PermissionError("Thread not found")
         parent = None
@@ -652,12 +850,12 @@ def post_message(
             if not parent:
                 raise KeyError("Parent message not found")
         sender = _sender(user, as_agent=as_agent)
-        mentions = parse_mentions(text, mention_candidates_list)
+        mentions = parse_mentions(text_body, mention_candidates_list)
         msg = {
             "id": message_id or str(uuid.uuid4())[:10],
             "thread_id": thread["id"],
             "parent_id": parent_id,
-            "body": text,
+            "body": text_body,
             "user_id": sender.get("id"),
             "user_name": sender.get("display_name"),
             "user_avatar_url": sender.get("avatar_url"),
@@ -672,14 +870,13 @@ def post_message(
         thread.setdefault("messages", []).append(msg)
         if parent is not None:
             parent["reply_count"] = int(parent.get("reply_count") or 0) + 1
-        # Mark poster as caught up.
         if user.get("id"):
             data.setdefault("read_cursors", {})[user["id"]] = {
                 "at": msg["created_at"],
                 "message_id": msg["id"],
                 "thread_id": thread["id"],
             }
-        _save(project_path, data)
+        _save(storage_root, data)
         return msg
 
 
@@ -690,12 +887,16 @@ def toggle_reaction(
     message_id: str,
     emoji: str,
     user: dict[str, Any],
+    workspace_id: str | None = None,
 ) -> dict[str, Any]:
-    with _lock_for(project_path):
+    storage_root, seed = chat_storage_for_thread(
+        project_path, thread_id, workspace_id=workspace_id, user=user
+    )
+    with _lock_for(storage_root):
         if emoji not in ALLOWED_REACTIONS:
             raise ValueError("Unsupported reaction")
-        data = _load(project_path)
-        thread = _find_thread(data, thread_id)
+        data = _load(storage_root)
+        thread = _find_thread(data, seed.get("id") or thread_id)
         if not thread:
             raise KeyError("Thread not found")
         msg = _find_message(thread, message_id)
@@ -712,27 +913,63 @@ def toggle_reaction(
             reactions[emoji] = users
         else:
             reactions.pop(emoji, None)
-        _save(project_path, data)
+        _save(storage_root, data)
         return msg
 
 
-def mark_read(project_path: Path, *, user_id: str, thread_id: str | None = None, message_id: str | None = None) -> dict[str, Any]:
-    with _lock_for(project_path):
-        data = _load(project_path)
+def mark_read(
+    project_path: Path,
+    *,
+    user_id: str,
+    thread_id: str | None = None,
+    message_id: str | None = None,
+    workspace_id: str | None = None,
+) -> dict[str, Any]:
+    storage_root = project_path
+    if workspace_id and thread_id:
+        try:
+            storage_root, _thread = chat_storage_for_thread(
+                project_path,
+                thread_id,
+                workspace_id=workspace_id,
+                user={"id": user_id},
+            )
+        except KeyError:
+            storage_root = project_path
+    with _lock_for(storage_root):
+        data = _load(storage_root)
         cursor = {"at": _now(), "thread_id": thread_id, "message_id": message_id}
         data.setdefault("read_cursors", {})[user_id] = cursor
-        _save(project_path, data)
+        _save(storage_root, data)
         return cursor
 
 
-def unread_summary(project_path: Path, user_id: str) -> dict[str, Any]:
-    data = _load(project_path)
-    cursor = (data.get("read_cursors") or {}).get(user_id) or {}
+def unread_summary(
+    project_path: Path,
+    user_id: str,
+    *,
+    workspace_id: str | None = None,
+) -> dict[str, Any]:
+    threads: list[dict[str, Any]] = []
+    cursors: dict[str, Any] = {}
+    if workspace_id:
+        root, general = ensure_workspace_general(workspace_id, None, seed_project_path=project_path)
+        ws_data = _load(root)
+        cursors.update(ws_data.get("read_cursors") or {})
+        threads.append(general)
+        pdata = _load(project_path)
+        cursors.update(pdata.get("read_cursors") or {})
+        threads.extend([t for t in (pdata.get("threads") or []) if not _is_general_thread(t)])
+    else:
+        data = _load(project_path)
+        cursors = dict(data.get("read_cursors") or {})
+        threads = list(data.get("threads") or [])
+    cursor = cursors.get(user_id) or {}
     cursor_at = str(cursor.get("at") or "")
     total = 0
     mention_count = 0
     latest_mention = None
-    for thread in data.get("threads") or []:
+    for thread in threads:
         for msg in thread.get("messages") or []:
             created = str(msg.get("created_at") or "")
             if cursor_at and created <= cursor_at:
@@ -758,9 +995,21 @@ def unread_summary(project_path: Path, user_id: str) -> dict[str, Any]:
     }
 
 
-def resolve_media_path(project_path: Path, stored_name: str) -> Path | None:
+def resolve_media_path(
+    project_path: Path,
+    stored_name: str,
+    *,
+    workspace_id: str | None = None,
+) -> Path | None:
     safe = Path(stored_name or "").name
     if not safe or ".." in safe:
         return None
     path = _media_dir(project_path) / safe
-    return path if path.is_file() else None
+    if path.is_file():
+        return path
+    ws = workspace_chat_root(workspace_id) if workspace_id else None
+    if ws is not None:
+        alt = _media_dir(ws) / safe
+        if alt.is_file():
+            return alt
+    return None
