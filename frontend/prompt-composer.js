@@ -426,12 +426,14 @@ export function createPromptComposer({
     return serializeFromNode(editor);
   }
 
-  function syncTextareaFromEditor() {
+  function syncTextareaFromEditor({ emitInput = true } = {}) {
     if (!textarea) return;
     syncingEditor = true;
     const text = serializeEditor();
-    if (textarea.value !== text) textarea.value = text;
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    const changed = textarea.value !== text;
+    if (changed) textarea.value = text;
+    // Reading the prompt must not re-fire input (that loops into save → getRawPromptText → sync).
+    if (changed && emitInput) textarea.dispatchEvent(new Event("input", { bubbles: true }));
     syncingEditor = false;
     editor.classList.toggle("is-empty", !text.trim());
   }
@@ -697,12 +699,12 @@ export function createPromptComposer({
   }
 
   function getPromptText() {
-    syncTextareaFromEditor();
+    syncTextareaFromEditor({ emitInput: false });
     return (textarea?.value || serializeEditor()).trim();
   }
 
   function getRawPromptText() {
-    syncTextareaFromEditor();
+    syncTextareaFromEditor({ emitInput: false });
     return textarea?.value || serializeEditor();
   }
 

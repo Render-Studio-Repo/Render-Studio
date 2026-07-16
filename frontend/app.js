@@ -53,7 +53,7 @@ import {
 } from "./scene-style.js?v=20260715-cad-color-restore";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
-import { createPromptComposer } from "./prompt-composer.js?v=20260715-at-scene-refs";
+import { createPromptComposer } from "./prompt-composer.js?v=20260716-prompt-save-loop";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260715-history-skills";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -2619,7 +2619,7 @@ function currentComposeSnapshot() {
 }
 
 function saveActiveModelPromptState() {
-  if (!composer) return;
+  if (!composer || restoringModelPromptState) return;
   const snapshot = currentComposeSnapshot();
   writeGlobalComposeDraft(snapshot);
   if (!projectId) return;
@@ -4879,7 +4879,8 @@ const knowledgePromptUI = createKnowledgePromptUI({
   statusEl: document.getElementById("prompt-kb-status"),
   modal: document.getElementById("knowledge-base-modal"),
 });
-safeRestoreActiveModelPromptState();
+// Defer draft restore until objectTools / collab helpers exist (avoids TDZ + save loops during boot).
+queueMicrotask(() => safeRestoreActiveModelPromptState());
 
 async function refreshWorkspaceAiUsage() {
   try {
@@ -16850,7 +16851,6 @@ function setProjectLoading(id, loading) {
 function renderProjectList() {
   window.__appProjectListReady = true;
   window.__dismissStudioBoot?.();
-  document.body.classList.remove("studio-booting");
   workspaceBrowser.render();
 }
 
@@ -26432,7 +26432,6 @@ window.addEventListener("keydown", (e) => {
       }
       window.__appProjectListReady = true;
       window.__dismissStudioBoot?.();
-      document.body.classList.remove("studio-booting");
       auth.openModal?.();
     }
     document.getElementById("prompt-status").className = "status";
@@ -26442,7 +26441,6 @@ window.addEventListener("keydown", (e) => {
   console.error("Editor startup failed:", err);
   window.__appProjectListReady = true;
   window.__dismissStudioBoot?.();
-  document.body.classList.remove("studio-booting");
   const browser = document.getElementById("project-browser");
   if (browser) {
     browser.innerHTML = `<p class="status error browser-empty">Editor failed to start: ${appEscapeHtml(err?.message || "Unknown error")}</p>`;

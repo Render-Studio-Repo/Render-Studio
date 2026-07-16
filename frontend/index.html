@@ -231,14 +231,19 @@
     var target = 88;
     var timer = null;
     var tipIndex = 0;
+    var BOOT_MIN_MS = 5000;
     try {
       var navEntry = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
       var logoutReload = sessionStorage.getItem(LOGOUT_RELOAD_KEY) === "1";
       sessionStorage.removeItem(LOGOUT_RELOAD_KEY);
-      if (navEntry && navEntry.type === "reload" && !logoutReload) {
-        window.__studioBootMinUntil = Date.now() + 5000;
+      // Always hold the studio boot screen for ~5s so the load animation can play,
+      // except when we intentionally skip boot (logout hop / back from docs).
+      if (!logoutReload) {
+        window.__studioBootMinUntil = Date.now() + BOOT_MIN_MS;
       }
-    } catch (e) {}
+    } catch (e) {
+      window.__studioBootMinUntil = Date.now() + BOOT_MIN_MS;
+    }
     var randomWalkthroughs = [
       { id: "ai-generate", kicker: "AI Generate", label: "Build CAD from text" },
       { id: "wiring", kicker: "Wiring simulator", label: "Arduino stepper demo" },
@@ -2337,7 +2342,6 @@
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
     function dismissBoot() {
-      document.body.classList.remove("studio-booting");
       var el = document.getElementById("studio-boot-screen");
       var minDelay = Math.max(0, Number(window.__studioBootMinUntil || 0) - Date.now());
       if (!el || el.classList.contains("is-done") || el.dataset.dismissScheduled === "1") return;
@@ -2346,6 +2350,7 @@
         if (window.__setStudioBootProgress) window.__setStudioBootProgress(100, "Studio ready.");
         el.classList.add("is-done");
         el.setAttribute("aria-busy", "false");
+        document.body.classList.remove("studio-booting");
         setTimeout(function () {
           el.remove();
           window.__maybeStartStudioBootWalkthrough?.();
@@ -2400,7 +2405,7 @@
       });
   })();
   </script>
-  <script type="module" src="/early-boot.js?v=20260715-refresh-5s-boot"></script>
+  <script type="module" src="/early-boot.js?v=20260716-boot-5s"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="prompt-target-popup" class="prompt-target-popup hidden" role="dialog" aria-modal="false" aria-label="Select object to edit"></div>
   <div id="fusion-capability-modal" class="fusion-capability-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title">
@@ -2602,7 +2607,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260716-generate-loading-state"></script>
+  <script type="module" src="/app.js?v=20260716-boot-5s"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

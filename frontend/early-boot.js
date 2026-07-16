@@ -65,7 +65,6 @@ function bootSpinner(message = "Loading Render3D Studio…") {
 }
 
 function dismissStudioBoot() {
-  document.body.classList.remove("studio-booting");
   const el = document.getElementById("studio-boot-screen");
   const minDelay = Math.max(0, Number(window.__studioBootMinUntil || 0) - Date.now());
   if (!el || el.classList.contains("is-done") || el.dataset.dismissScheduled === "1") return;
@@ -74,6 +73,7 @@ function dismissStudioBoot() {
     window.__setStudioBootProgress?.(100, "Studio ready.");
     el.classList.add("is-done");
     el.setAttribute("aria-busy", "false");
+    document.body.classList.remove("studio-booting");
     window.setTimeout(() => {
       el.remove();
       window.__maybeStartStudioBootWalkthrough?.();
