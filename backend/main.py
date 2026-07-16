@@ -12090,7 +12090,7 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         allowed.add(viewer_filename)
     meta = project_store.load_meta(project_path)
     project_name = str(meta.get("name") or project_id)
-    preview_meta = _share_preview_image_meta(project_path, filename)
+    preview_meta: dict[str, Any] = {}
     share_preview_file = Path(str(share.get("preview_file") or "")).name
     if share_preview_file and (project_path / share_preview_file).is_file():
         share_preview_path = project_path / share_preview_file
@@ -12118,9 +12118,11 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         preview_meta = {
             "preview_file": share_preview_file,
             "preview_type": "image/png" if share_preview_file.lower().endswith(".png") else "image/jpeg",
-            "preview_width": share.get("preview_width") or preview_meta.get("preview_width"),
-            "preview_height": share.get("preview_height") or preview_meta.get("preview_height"),
+            "preview_width": share.get("preview_width"),
+            "preview_height": share.get("preview_height"),
         }
+    if not preview_meta:
+        preview_meta = _share_preview_image_meta(project_path, filename)
     generated_preview_file = Path(str(preview_meta.get("preview_file") or "")).name
     if generated_preview_file:
         allowed.add(generated_preview_file)
