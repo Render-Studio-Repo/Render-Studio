@@ -515,7 +515,7 @@ def _draw_render3d_badge(image: Any) -> None:
 
     width, height = image.size
     margin = max(18, int(min(width, height) * 0.028))
-    icon_size = max(72, min(112, int(height * 0.095)))
+    icon_size = max(216, min(336, int(height * 0.285)))
 
     logo_paths = [
         Path(__file__).resolve().parents[2] / "frontend" / "render3d-logo.png",
@@ -568,14 +568,14 @@ def _draw_render3d_badge(image: Any) -> None:
     shadow_draw = ImageDraw.Draw(shadow, "RGBA")
     stroke = max(2, int(word_h * 0.035))
     shadow_draw.text(
-        (text_x + 5, text_y + 5),
+        (text_x + 6, text_y + 6),
         text,
         font=font,
-        fill=(0, 0, 0, 190),
-        stroke_width=stroke,
-        stroke_fill=(0, 0, 0, 210),
+        fill=(0, 0, 0, 220),
+        stroke_width=stroke + 2,
+        stroke_fill=(0, 0, 0, 235),
     )
-    image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=max(1, int(word_h * 0.02)))))
+    image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=max(1, int(word_h * 0.024)))))
 
     mask = Image.new("L", image.size, 0)
     mask_draw = ImageDraw.Draw(mask)
@@ -587,11 +587,11 @@ def _draw_render3d_badge(image: Any) -> None:
     bottom = min(height - 1, text_y + text_h + stroke * 2)
     span = max(1, bottom - top)
     bands = [
-        (238, 246, 255),
-        (142, 155, 172),
         (255, 255, 255),
-        (92, 104, 121),
-        (221, 229, 239),
+        (218, 228, 240),
+        (255, 255, 255),
+        (172, 186, 204),
+        (246, 251, 255),
     ]
     for y in range(top, bottom + 1):
         t = (y - top) / span
@@ -602,6 +602,16 @@ def _draw_render3d_badge(image: Any) -> None:
         color = tuple(int(c0[i] + (c1[i] - c0[i]) * frac) for i in range(3))
         for x in range(max(0, text_x - stroke), min(width, text_x + text_w + stroke * 2)):
             metal_px[x, y] = (*color, 255)
+
+    outline = ImageDraw.Draw(image, "RGBA")
+    outline.text(
+        (text_x, text_y),
+        text,
+        font=font,
+        fill=(0, 0, 0, 0),
+        stroke_width=max(stroke + 2, int(word_h * 0.055)),
+        stroke_fill=(8, 12, 18, 185),
+    )
     image.paste(metal, (0, 0), mask)
 
     highlight = ImageDraw.Draw(image, "RGBA")

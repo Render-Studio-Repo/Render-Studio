@@ -690,11 +690,15 @@ async function applyGenerationComplete(gen, pid = projectId) {
     bumpModelCacheEpoch();
     await refreshFiles();
     const placedFiles = (gen.placed_parts || []).map((part) => part.filename).filter(Boolean);
+    const orientationMode = completionMode === "v2" && String(gen.target_mode || "").toLowerCase() !== "edit"
+      ? "v2-upright"
+      : null;
     await reloadViewportFromProject({
       fitView: true,
       latestFile: gen.filename,
       placedFiles,
       loadAll: completionMode === "architect" || placedFiles.length > 0,
+      orientationMode,
     });
     restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: gen.filename });
     viewerOverlay.clearError();
@@ -755,11 +759,15 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   bumpModelCacheEpoch();
   await refreshFiles();
   const placedFiles = (msg.placed_parts || []).map((part) => part.filename).filter(Boolean);
+  const orientationMode = reloadMode === "v2" && String(msg.target_mode || "").toLowerCase() !== "edit"
+    ? "v2-upright"
+    : null;
   await reloadViewportFromProject({
     fitView: true,
     latestFile: msg.filename,
     placedFiles,
     loadAll: reloadMode === "architect" || placedFiles.length > 0,
+    orientationMode,
   });
   restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: msg.filename });
   viewerOverlay.clearError();
@@ -9457,7 +9465,7 @@ async function answerDimensionPrompt(prompt) {
   return data;
 }
 
-async function reloadViewportFromProject({ fitView = false, latestFile = null, placedFiles = [], loadAll = false } = {}) {
+async function reloadViewportFromProject({ fitView = false, latestFile = null, placedFiles = [], loadAll = false, orientationMode = null } = {}) {
   if (!projectId) return;
   const data = await api(`/api/projects/${projectId}`);
   const modelLatestFile = isDxfDrawingFilename(latestFile) ? null : latestFile;
@@ -9557,6 +9565,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
         fitView: fitView !== false,
         autoGizmo: false,
         cacheBust: true,
+        orientationMode,
       });
       if (ok || projectAssembly.has(selectedFile)) {
         projectTree.setSelected(selectedFile);
@@ -9587,6 +9596,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
         fitView: fitView !== false,
         autoGizmo: false,
         cacheBust: true,
+        orientationMode,
       });
       if (ok || projectAssembly.has(selectedFile)) {
         await ensureMissingBrowserComponentsLoaded({ keepGizmoOn: selectedFile, fitView: false });
@@ -9610,6 +9620,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
       latestFile: modelLatestFile || serverLatestFile,
       fitView,
       loadAll: loadAll || assemblyCount > 0 || placed.length > 0,
+      orientationMode,
     });
   } else {
     selectedFile = null;
@@ -13036,8 +13047,13 @@ function footprintPrefersFlip180(object3d) {
   return maxArea > minArea * 1.05 && maxArea > 1e-8;
 }
 
-function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true } = {}) {
-  if (orient) ensureModelZUp(object3d, filename);
+function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true, orientationMode = null } = {}) {
+  if (orientationMode === "v2-upright") {
+    object3d.rotateX(-Math.PI / 2);
+    object3d.userData.render3dForcedUpright = "v2-upright";
+    object3d.updateMatrixWorld(true);
+  }
+  if (orient && orientationMode !== "v2-upright") ensureModelZUp(object3d, filename);
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
   meshCenterOffset = box.getCenter(new THREE.Vector3());
@@ -13331,6 +13347,7 @@ async function loadModel(url, filename, opts = {}) {
         normalizePivot: shouldNormalizePivot,
         filename: viewFilename,
         orient: false,
+        orientationMode: opts.orientationMode,
       });
       object.position.copy(saved.position);
       object.quaternion.copy(saved.quaternion);
@@ -13338,11 +13355,11 @@ async function loadModel(url, filename, opts = {}) {
     } else {
       // Fallback: re-center (floor-align + X/Y center) so the model
       // sits in the same visual area rather than jumping to raw origin.
-      materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename });
+      materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename, orientationMode: opts.orientationMode });
     }
     object.updateMatrixWorld(true);
   } else {
-    materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename });
+    materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename, orientationMode: opts.orientationMode });
   }
   if (opts.resetTransform) {
     object.position.set(0, 0, 0);
@@ -14379,7 +14396,7 @@ async function fetchAllProjects() {
   return allProjects;
 }
 
-async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false } = {}) {
+async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false, orientationMode = null } = {}) {
   if (!comps?.length) return false;
   comps = comps.filter((entry) => !isInternalCadSidecar(entry?.name));
   if (!comps.length) return false;
@@ -14431,6 +14448,7 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
           center: !hasBakedPlacement(entry),
           fitView: false,
           autoGizmo: false,
+          orientationMode: (orientationMode && (entry.name === latestFile || entry.viewer_filename === latestFile)) ? orientationMode : null,
         },
       );
       if (loadGen != null && loadGen !== loadProjectGeneration) return false;
@@ -23247,6 +23265,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         latestFile: data.filename,
         placedFiles,
         loadAll: promptMode === "architect" || placedFiles.length > 0,
+        orientationMode: genMode === "v2" && targetMode !== "edit" ? "v2-upright" : null,
       });
       restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: data.filename });
       pendingPromptSelectionContext = null;
