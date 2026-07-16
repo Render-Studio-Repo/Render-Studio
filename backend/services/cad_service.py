@@ -1373,7 +1373,8 @@ def _body_children_from_part_sidecars(
             match = detailed.match(stem)
             if match:
                 num = int(match.group(1))
-                label = re.sub(r"_+", " ", match.group(2)).strip() or f"Body {num}"
+                raw = re.sub(r"_+", " ", match.group(2)).strip() or f"Body {num}"
+                label = " ".join(part.capitalize() for part in raw.split())
                 prev = best.get(num)
                 if prev is None or 0 >= prev[0]:
                     best[num] = (0, path, label[:96])
