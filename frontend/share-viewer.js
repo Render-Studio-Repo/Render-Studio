@@ -493,9 +493,46 @@ async function main() {
 
   function syncCameraClip() {
     const dist = camera.position.distanceTo(controls.target);
-    // Keep near plane relative to distance so underside views don't eat the mesh.
-    camera.near = Math.max(Math.min(dist / 100, dist * 0.015), 0.01);
-    camera.far = Math.max(dist * 40, orbitRadius * 50, 200);
+    const radius = Math.max(modelBox?.getSize?.(new THREE.Vector3()).length() * 0.5 || orbitRadius || 1, 0.05);
+    const viewDir = camera.getWorldDirection(new THREE.Vector3()).normalize();
+    let minDepth = Infinity;
+    let maxDepth = -Infinity;
+    if (modelBox && !modelBox.isEmpty()) {
+      for (const x of [modelBox.min.x, modelBox.max.x]) {
+        for (const y of [modelBox.min.y, modelBox.max.y]) {
+          for (const z of [modelBox.min.z, modelBox.max.z]) {
+            const depth = new THREE.Vector3(x, y, z).sub(camera.position).dot(viewDir);
+            minDepth = Math.min(minDepth, depth);
+            maxDepth = Math.max(maxDepth, depth);
+          }
+        }
+      }
+    }
+    let near = Math.max(dist * 0.0002, 0.00005);
+    if (Number.isFinite(minDepth) && minDepth > 1e-4) {
+      near = Math.min(near, minDepth * 0.35);
+    } else {
+      near = Math.min(near, Math.max(dist * 0.00005, 0.00005));
+    }
+    let far = Math.max(
+      Number.isFinite(maxDepth) ? maxDepth + radius * 2 : 0,
+      dist + radius * 8,
+      dist * 250,
+      orbitRadius * 120,
+      200,
+    );
+    const maxRatio = 1e6;
+    if (far / Math.max(near, 1e-8) > maxRatio) {
+      const cappedNear = far / maxRatio;
+      if (Number.isFinite(minDepth) && minDepth > 1e-4) {
+        near = Math.min(cappedNear, minDepth * 0.35);
+        far = Math.max(far, near * Math.min(maxRatio, 5e5));
+      } else {
+        near = Math.min(near, cappedNear);
+      }
+    }
+    camera.near = near;
+    camera.far = far;
     camera.updateProjectionMatrix();
   }
 

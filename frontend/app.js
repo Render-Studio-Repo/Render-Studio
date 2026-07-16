@@ -2098,6 +2098,10 @@ function sceneRadius() {
   return Math.max(box.getSize(new THREE.Vector3()).length() * 0.5, 0.1);
 }
 
+function sceneBounds() {
+  return projectAssembly.boundingBox() || (currentMesh ? new THREE.Box3().setFromObject(currentMesh) : null);
+}
+
 function isRobotArtifactFilename(name = "") {
   return /\.(urdf|srdf)$/i.test(String(name || ""));
 }
@@ -11541,16 +11545,29 @@ function updateCameraClipPlanes() {
   const orbitDist = camera.position.distanceTo(controls.target);
   if (!(orbitDist > 0) || !Number.isFinite(orbitDist)) return;
 
+  const bounds = sceneBounds();
   const contentRadius = Math.max(sceneRadius() || 1, 0.05);
   const gridExtent = niceGridSize(contentRadius) * 0.75;
-  // Distance from camera to the near side of a sphere around the orbit target.
-  const gapToContent = orbitDist - contentRadius;
+  const viewDir = camera.getWorldDirection(new THREE.Vector3()).normalize();
+  let minDepth = Infinity;
+  let maxDepth = -Infinity;
+  if (bounds && !bounds.isEmpty()) {
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const depth = new THREE.Vector3(x, y, z).sub(camera.position).dot(viewDir);
+          minDepth = Math.min(minDepth, depth);
+          maxDepth = Math.max(maxDepth, depth);
+        }
+      }
+    }
+  }
 
-  // Prefer a small near plane so zooming out never clips the front of the model.
-  // Cap it by the actual gap to content when the camera is outside the mesh.
+  // Prefer a very small near plane, then cap it by the real distance to the
+  // closest model bounds. This avoids slicing large/offset meshes when orbiting.
   let near = Math.max(orbitDist * 0.0002, 0.00005);
-  if (gapToContent > 1e-4) {
-    near = Math.min(near, gapToContent * 0.35);
+  if (Number.isFinite(minDepth) && minDepth > 1e-4) {
+    near = Math.min(near, minDepth * 0.35);
   } else {
     // Camera is inside/near the bounds (tight zoom or huge part) — keep near tiny.
     near = Math.min(near, Math.max(orbitDist * 0.00005, 0.00005));
@@ -11558,6 +11575,7 @@ function updateCameraClipPlanes() {
 
   // Far must enclose the mesh and grid regardless of zoom level.
   let far = Math.max(
+    Number.isFinite(maxDepth) ? maxDepth + contentRadius * 2 : 0,
     orbitDist + Math.max(contentRadius, gridExtent) * 6,
     orbitDist * 250,
     contentRadius * 120,
@@ -11569,8 +11587,8 @@ function updateCameraClipPlanes() {
   const maxRatio = 1e6;
   if (far / Math.max(near, 1e-8) > maxRatio) {
     const cappedNear = far / maxRatio;
-    if (gapToContent > 1e-4) {
-      near = Math.min(cappedNear, gapToContent * 0.35);
+    if (Number.isFinite(minDepth) && minDepth > 1e-4) {
+      near = Math.min(cappedNear, minDepth * 0.35);
       far = Math.max(far, near * Math.min(maxRatio, 5e5));
     } else {
       near = Math.min(near, cappedNear);

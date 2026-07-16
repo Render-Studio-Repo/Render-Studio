@@ -29,6 +29,9 @@ def _snapshot_base_stem(snapshot_name: str) -> str:
         if lowered.endswith("_share_transparent"):
             stem = stem[: -len("_share_transparent")]
             continue
+        if lowered.endswith("_share_og_color"):
+            stem = stem[: -len("_share_og_color")]
+            continue
         if lowered.endswith("_share_og_brand"):
             stem = stem[: -len("_share_og_brand")]
             continue
@@ -37,6 +40,14 @@ def _snapshot_base_stem(snapshot_name: str) -> str:
             continue
         break
     return stem
+
+
+def _cad_stem_from_snapshot(snapshot_name: str) -> str:
+    """`Foo_snapshot_iso_20260715T063427Z` → `Foo`."""
+    base = _snapshot_base_stem(snapshot_name)
+    lower = base.lower()
+    idx = lower.find("_snapshot")
+    return base[:idx] if idx > 0 else base
 
 
 def _is_share_preview_background_pixel(r: int, g: int, b: int, a: int) -> bool:
@@ -53,7 +64,7 @@ def _is_share_preview_background_pixel(r: int, g: int, b: int, a: int) -> bool:
 
 
 def _legacy_share_og_needs_rebuild(og_path: Path) -> bool:
-    """True when an existing OG still has transparent/light corners or old pill badge."""
+    """True when an existing OG still has transparent/light corners, old pill, or bottom-right logo."""
     try:
         from PIL import Image
 
@@ -68,6 +79,9 @@ def _legacy_share_og_needs_rebuild(og_path: Path) -> bool:
             ]
             # Old pill badge sat near bottom-right with a dark rounded fill.
             badge_probe = rgba.getpixel((max(0, width - 40), max(0, height - 40)))
+            # Previous wordmark sat in the bottom-right; logo now belongs top-right.
+            bottom_brand = rgba.getpixel((max(0, width - 80), max(0, height - 80)))
+            top_brand = rgba.getpixel((max(0, width - 80), min(height - 1, 80)))
         for r, g, b, a in samples:
             if a < 250:
                 return True
@@ -77,9 +91,200 @@ def _legacy_share_og_needs_rebuild(og_path: Path) -> bool:
         br, bg, bb, ba = badge_probe
         if ba > 200 and max(br, bg, bb) <= 40 and min(br, bg, bb) <= 18:
             return True
+        # Bright/white-ish mark near bottom-right but not top-right → old logo placement.
+        bbr, bbg, bbb, bba = bottom_brand
+        tbr, tbg, tbb, tba = top_brand
+        bottom_lit = bba > 180 and max(bbr, bbg, bbb) >= 180
+        top_lit = tba > 180 and max(tbr, tbg, tbb) >= 180
+        if bottom_lit and not top_lit:
+            return True
         return False
     except Exception:
         return True
+
+
+def _rgba_image_is_clay_grey(image: Any) -> bool:
+    """True when the opaque model is workbench clay (near-monochrome blue-grey)."""
+    try:
+        import numpy as np
+
+        arr = np.asarray(image.convert("RGBA"), dtype=np.uint8)
+        opaque = arr[:, :, 3] > 200
+        if int(opaque.sum()) < 200:
+            return False
+        rgb = arr[opaque][:, :3].astype(np.float64)
+        # Ignore near-white ISO / UI badges baked into CAD snapshots.
+        rgb = rgb[rgb.mean(axis=1) < 235]
+        if len(rgb) < 200:
+            return False
+        chroma = rgb.max(axis=1) - rgb.min(axis=1)
+        mean = rgb.mean(axis=0)
+        # Workbench clay (#b6c4ce) stays low-chroma even with soft shading.
+        greyish = float(chroma.mean()) < 42.0 and float(mean.max() - mean.min()) < 42.0
+        mid = 95.0 <= float(mean.mean()) <= 205.0
+        return greyish and mid
+    except Exception:
+        return False
+
+
+def _collect_colored_preview_meshes(project_path: Path, cad_stem: str) -> list[Any]:
+    """Load per-part GLBs (preferred) or a single coloured assembly GLB."""
+    try:
+        import trimesh
+    except Exception:
+        return []
+
+    def _face_count(geom: Any) -> int:
+        try:
+            faces = getattr(geom, "faces", None)
+            return int(len(faces)) if faces is not None else 0
+        except Exception:
+            return 0
+
+    meshes: list[Any] = []
+    part_paths = sorted(project_path.glob(f"{cad_stem}__part_*.glb"))
+    for path in part_paths:
+        try:
+            geom = trimesh.load(path, force="mesh")
+        except Exception:
+            continue
+        if geom is None or _face_count(geom) == 0:
+            continue
+        meshes.append(geom)
+    if meshes:
+        return meshes
+
+    candidates = [
+        project_path / f".{cad_stem}.step.glb",
+        project_path / f"{cad_stem}.glb",
+        project_path / f"{cad_stem}__faceted.glb",
+    ]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            loaded = trimesh.load(path, force="scene")
+        except Exception:
+            try:
+                loaded = trimesh.load(path, force="mesh")
+            except Exception:
+                continue
+        if hasattr(loaded, "geometry"):
+            for geom in loaded.geometry.values():
+                if geom is not None and _face_count(geom) > 0:
+                    meshes.append(geom)
+        elif loaded is not None and _face_count(loaded) > 0:
+            meshes.append(loaded)
+        if meshes:
+            break
+    return meshes
+
+
+def _render_colored_model_rgba(
+    project_path: Path,
+    snapshot_name: str,
+    *,
+    size: tuple[int, int] = (1200, 900),
+) -> Any | None:
+    """CPU isometric preview from coloured part GLBs (share OG when CAD iso is clay grey)."""
+    import math
+
+    try:
+        import numpy as np
+        from PIL import Image, ImageDraw
+    except Exception:
+        return None
+
+    cad_stem = _cad_stem_from_snapshot(snapshot_name)
+    meshes = _collect_colored_preview_meshes(project_path, cad_stem)
+    if not meshes:
+        return None
+
+    verts: list[Any] = []
+    faces: list[Any] = []
+    colors: list[Any] = []
+    voff = 0
+    colourful = 0
+    for geom in meshes:
+        try:
+            v = np.asarray(geom.vertices, dtype=np.float64)
+            f = np.asarray(geom.faces, dtype=np.int32) + voff
+            fc = getattr(getattr(geom, "visual", None), "face_colors", None)
+            if fc is None or len(fc) != len(f):
+                fc = np.tile(np.array([196, 196, 196, 255], dtype=np.uint8), (len(f), 1))
+            else:
+                fc = np.asarray(fc, dtype=np.uint8)
+            rgb = fc[:, :3].astype(np.float64)
+            chroma = rgb.max(axis=1) - rgb.min(axis=1)
+            if float(chroma.mean()) > 12.0 or float(abs(rgb.mean(axis=0).max() - rgb.mean(axis=0).min())) > 18.0:
+                colourful += 1
+            verts.append(v)
+            faces.append(f)
+            colors.append(fc[:, :3])
+            voff += len(v)
+        except Exception:
+            continue
+    if not verts or colourful == 0:
+        return None
+
+    V = np.vstack(verts)
+    F = np.vstack(faces)
+    C = np.vstack(colors)
+    V = V - V.mean(axis=0)
+
+    # Match CAD snapshot iso: yaw then pitch (true isometric).
+    ax = math.radians(35.264)
+    ay = math.radians(-45.0)
+    Rx = np.array(
+        [[1.0, 0.0, 0.0], [0.0, math.cos(ax), -math.sin(ax)], [0.0, math.sin(ax), math.cos(ax)]],
+        dtype=np.float64,
+    )
+    Ry = np.array(
+        [[math.cos(ay), 0.0, math.sin(ay)], [0.0, 1.0, 0.0], [-math.sin(ay), 0.0, math.cos(ay)]],
+        dtype=np.float64,
+    )
+    Vp = (V @ Ry.T) @ Rx.T
+    light = np.array([0.45, 0.78, 0.52], dtype=np.float64)
+    light /= float(np.linalg.norm(light))
+
+    tri = Vp[F]
+    e1 = tri[:, 1] - tri[:, 0]
+    e2 = tri[:, 2] - tri[:, 0]
+    normals = np.cross(e1, e2)
+    nn = np.linalg.norm(normals, axis=1, keepdims=True)
+    nn = np.maximum(nn, 1e-12)
+    normals = normals / nn
+    front = normals[:, 2] > 0.02
+    if not np.any(front):
+        return None
+    F = F[front]
+    C = C[front]
+    normals = normals[front]
+    tri = Vp[F]
+    depth = tri[:, :, 2].mean(axis=1)
+    order = np.argsort(depth)
+
+    width, height = size
+    pad = 0.12
+    mins = Vp.min(axis=0)
+    maxs = Vp.max(axis=0)
+    span = max(float(maxs[0] - mins[0]), float(maxs[1] - mins[1]), 1e-6)
+    scale = (1.0 - 2.0 * pad) * min(width, height) / span
+    cx, cy = width / 2.0, height / 2.0
+    xs = cx + Vp[:, 0] * scale
+    ys = cy - Vp[:, 1] * scale
+    shade = 0.34 + 0.66 * np.clip(normals @ light, 0.0, 1.0)
+
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img, "RGBA")
+    for idx in order:
+        i0, i1, i2 = F[idx]
+        col = (C[idx].astype(np.float64) * float(shade[idx])).clip(0, 255).astype(np.uint8)
+        draw.polygon(
+            [(float(xs[i0]), float(ys[i0])), (float(xs[i1]), float(ys[i1])), (float(xs[i2]), float(ys[i2]))],
+            fill=(int(col[0]), int(col[1]), int(col[2]), 255),
+        )
+    return img
 
 
 def share_snapshot_filename(project_path: Path, filename: str, *, resolve_viewport=None) -> str | None:
@@ -305,7 +510,7 @@ def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> st
 
 
 def _draw_render3d_badge(image: Any) -> None:
-    """Stamp a large Render3D wordmark (logo + text, no pill) in the bottom-right."""
+    """Stamp a large Render3D wordmark (logo + text, no pill) in the top-right."""
     from PIL import Image, ImageDraw, ImageFont
 
     width, height = image.size
@@ -329,7 +534,7 @@ def _draw_render3d_badge(image: Any) -> None:
     text_h = bbox[3] - bbox[1]
     total_w = icon_size + gap + text_w
     x0 = max(margin, width - total_w - margin)
-    y0 = max(margin, height - mark_h - margin)
+    y0 = margin
     icon_y = y0 + max(0, (mark_h - icon_size) // 2)
     text_y = y0 + max(0, (mark_h - text_h) // 2) - 2
 
@@ -371,8 +576,8 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
     src = project_path / Path(snapshot_name).name
     if not src.is_file():
         return None
-    # New filename busts messenger caches that still hold the old white/pill OG.
-    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og_brand.png"
+    # Filename busts messenger caches that still hold grey clay / bottom-right logo OGs.
+    out = project_path / f"{_snapshot_base_stem(src.name)}_share_og_color.png"
     try:
         from PIL import Image
 
@@ -391,9 +596,23 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
             max_edge = 1600
             if max(rgba.size) > max_edge:
                 rgba.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+
+            # Workbench ISO snapshots are clay grey; prefer coloured part GLBs when available.
+            model_layer = rgba
+            if _rgba_image_is_clay_grey(rgba):
+                colored = _render_colored_model_rgba(
+                    project_path,
+                    src.name,
+                    size=(max(800, rgba.size[0]), max(600, rgba.size[1])),
+                )
+                if colored is not None:
+                    if colored.size != rgba.size:
+                        colored = colored.resize(rgba.size, Image.Resampling.LANCZOS)
+                    model_layer = colored
+
             # Messengers often composite transparent PNGs onto white — bake black.
-            canvas = Image.new("RGBA", rgba.size, (*SHARE_OG_BACKGROUND_RGB, 255))
-            canvas.alpha_composite(rgba)
+            canvas = Image.new("RGBA", model_layer.size, (*SHARE_OG_BACKGROUND_RGB, 255))
+            canvas.alpha_composite(model_layer)
             _draw_render3d_badge(canvas)
             canvas.save(out, format="PNG", optimize=True)
             return out.name, int(canvas.size[0]), int(canvas.size[1])
