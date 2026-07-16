@@ -2368,7 +2368,8 @@ export function createWiringSimulator(options = {}) {
       suppressNextCanvasClick = false;
       return;
     }
-    if (e.target.closest(".wiring-part, .wiring-pin, .wiring-wire-path, .wiring-wire-handle, .wiring-wire-editor")) return;
+    if (e.target.closest(".wiring-part, .wiring-pin, .wiring-wire-path, .wiring-wire-handle, .wiring-wire-editor, .wiring-wire-context-menu")) return;
+    closeWireContextMenu();
     closeWireEditor();
     clearSelection();
     wireStart = null;

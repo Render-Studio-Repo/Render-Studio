@@ -100,7 +100,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260706-design-tabs";
-import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-jumpers-power-panel";
+import { createWiringSimulator } from "./wiring-simulator.js?v=20260715-wire-prompt-refs";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
@@ -15950,7 +15950,7 @@ function wiringPromptTextWithRefs(prompt) {
       return `- ${r.token}: "${r.label}"${r.kind ? ` (${r.kind})` : ""}${r.filename ? ` from file ${r.filename}` : ""}.`;
     })
     .join("\n");
-  return `${prompt}\n\nReferenced components:\n${refs}`;
+  return `${prompt}\n\nReferenced wiring context:\n${refs}`;
 }
 
 wiringPromptInput?.addEventListener("dragover", (e) => {

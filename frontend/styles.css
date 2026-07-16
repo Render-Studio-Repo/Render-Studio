@@ -6676,6 +6676,40 @@ body.canvas-design-tab .main-column {
   line-height: 1.35;
 }
 
+.wiring-wire-context-menu {
+  position: absolute;
+  z-index: 12;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(14px);
+}
+
+.wiring-wire-context-menu.hidden {
+  display: none;
+}
+
+.wiring-wire-context-menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.wiring-wire-context-menu button:hover {
+  background: rgba(88, 166, 255, 0.16);
+}
+
 .wiring-prompt-section .btn.full + .btn.full {
   margin-top: 8px;
 }

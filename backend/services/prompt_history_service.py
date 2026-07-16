@@ -59,6 +59,12 @@ def _safe_history_references(references: list[dict[str, Any]] | None) -> list[di
             "component_name",
             "source_filename",
             "parent_filename",
+            "kind",
+            "wire_id",
+            "endpoints",
+            "from",
+            "to",
+            "color",
         ):
             value = ref.get(key)
             if value is not None:
