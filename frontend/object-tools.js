@@ -216,12 +216,8 @@ export function createObjectTools({
       h.material.linewidth = 2;
     }
     h.renderOrder = 1002;
-    const tinted = [];
-    if (partLevel && item.mesh?.isMesh) {
-      const tint = tintPartMesh(item.mesh, 0xff8a1f);
-      if (tint) tinted.push(tint);
-    }
-    h.userData.tintedMeshes = tinted;
+    // Keep authored CAD colors intact; the outline communicates part selection.
+    h.userData.tintedMeshes = [];
     scene.add(h);
     highlights.push(h);
   }

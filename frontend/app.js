@@ -20981,17 +20981,6 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
       hit,
       marquee: false,
     };
-    if (hit?.mesh) {
-      const beforeSelection = objectTools.getSelection?.();
-      const target = selectionTargetFromMesh(hit.mesh);
-      const wasAlreadySelected = beforeSelection?.mesh === target.mesh || beforeSelection?.root === target.root;
-      selectObjectHit(hit);
-      suppressNextObjectClick = true;
-      if (!wasAlreadySelected) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-      }
-    }
   }
   if (getPickMode() === "lasso" && currentMesh) {
     if (e.button !== 0) return;
