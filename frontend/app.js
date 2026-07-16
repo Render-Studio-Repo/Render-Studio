@@ -2327,8 +2327,10 @@ function browserBodySelectionName(catalogName, bodyIndex) {
   return child?.name || catalogName;
 }
 
-/** Single-click: select the whole model/component. Double-click uses partLevel: true. */
-function selectObjectHit(hit, { showGizmo = true, partLevel = false } = {}) {
+/** Single-click selects a body when the model has multiple Fusion/scene parts.
+ *  Double-click (or clicking the parent in the browser) selects the whole model.
+ */
+function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel = false } = {}) {
   if (!hit?.mesh) return null;
   const target = selectionTargetFromMesh(hit.mesh);
   const wholeLocalModule = target.catalogName && isLocalAssemblyObject(target.catalogName, target.root);
@@ -2337,7 +2339,14 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false } = {}) {
     syncPromptTargetUI();
     featureEditor.setModel(projectId, target.catalogName);
   }
-  if (partLevel && !wholeLocalModule) {
+  const meshes = listObjectMeshes(target.root || target.mesh);
+  const bodyInfo = objectTools.getBodyInfo?.();
+  const bodyCount = Math.max(
+    meshes.length,
+    Number(bodyInfo?.count) || 1,
+  );
+  const preferPart = !wholeModel && !wholeLocalModule && (partLevel || bodyCount > 1);
+  if (preferPart) {
     const bodyIndex = bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
     if (target.catalogName) {
       projectTree.setSelected(browserBodySelectionName(target.catalogName, bodyIndex));
@@ -2354,7 +2363,8 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false } = {}) {
       if (showGizmo) {
         showObjectGizmo(objectTools.getSelection()?.mesh || target.mesh, "translate", { switchTab: false });
       }
-      setEditStatus("ok", "Part selected · highlighted · drag to move this part · Cmd+Z to undo");
+      const label = objectTools.getSelection()?.label || `Body ${bodyIndex + 1}`;
+      setEditStatus("ok", `Selected ${label} · drag to move this part · double-click for whole model · Cmd+Z to undo`);
     };
     const pending = objectTools.refreshBodyInfo?.(target.catalogName);
     if (pending?.then) pending.finally(applyPartSelect);
@@ -2370,6 +2380,7 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false } = {}) {
       isRoot: true,
     });
     if (showGizmo) showObjectGizmo(target.root || target.mesh, "translate", { switchTab: false });
+    setEditStatus("ok", "Selected whole model · click a part to select just that body · Cmd+Z to undo");
   }
   renderer.domElement.focus({ preventScroll: true });
   syncExportButton();
@@ -21364,8 +21375,8 @@ renderer.domElement.addEventListener("dblclick", (e) => {
     meshRoot: currentMesh,
   });
   if (!hit?.mesh) return;
-  // Double-click drills into a specific part/body and highlights it.
-  selectObjectHit(hit, { showGizmo: true, partLevel: true });
+  // Double-click selects the whole model (single-click already picks the body).
+  selectObjectHit(hit, { showGizmo: true, wholeModel: true });
   e.preventDefault();
 });
 
@@ -21542,8 +21553,8 @@ renderer.domElement.addEventListener("click", (e) => {
       e.preventDefault();
       return;
     }
-    // Single click selects the whole model. Double-click selects a part.
-    selectObjectHit(hit, { showGizmo: true, partLevel: false });
+    // Multi-body Fusion imports: single-click selects the clicked body.
+    selectObjectHit(hit, { showGizmo: true });
     e.preventDefault();
     return;
   }

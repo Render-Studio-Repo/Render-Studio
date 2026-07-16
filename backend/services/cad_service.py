@@ -2272,6 +2272,19 @@ def export_mesh(mesh: trimesh.Trimesh, path: Path) -> Path:
     return path
 
 
+def _step_manifold_solid_names(step_path: Path) -> list[str]:
+    """Fusion body names from ``MANIFOLD_SOLID_BREP('Pillar', ...)`` entities."""
+    try:
+        text = Path(step_path).read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return []
+    names: list[str] = []
+    for raw in re.findall(r"MANIFOLD_SOLID_BREP\('([^']*)'", text):
+        label = " ".join(str(raw or "").split()).strip()
+        names.append(label or f"Body {len(names) + 1}")
+    return names
+
+
 def _tessellate_shape_to_mesh(shape, *, linear_deflection: float = 0.1, angular_deflection: float = 0.5) -> trimesh.Trimesh:
     """Tessellate one OpenCascade shape to a repaired triangle mesh."""
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
@@ -2372,6 +2385,15 @@ def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -
         if solid_i == 0:
             solids.append((step_path.stem, shape))
 
+    # Prefer Fusion body names embedded in the STEP (Pillar, Floor, …).
+    named = _step_manifold_solid_names(step_path)
+    if named and len(named) == len(solids):
+        solids = [(named[i] or label, shape) for i, (label, shape) in enumerate(solids)]
+    elif named and len(named) > 1 and len(solids) > 1:
+        for i in range(min(len(named), len(solids))):
+            if named[i]:
+                solids[i] = (named[i], solids[i][1])
+
     meshes: list[tuple[str, trimesh.Trimesh]] = []
     for label, shape in solids:
         try:
@@ -2395,11 +2417,15 @@ def rebuild_shell_glb_from_parts(
     scene = trimesh.Scene()
     used: set[str] = set()
     for idx, (label, mesh) in enumerate(parts, start=1):
-        geom = re.sub(r"[^\w\-]+", "_", str(label or "").strip()).strip("_")[:64] or f"body_{idx:02d}"
+        display = " ".join(str(label or "").split()).strip()[:64] or f"Body {idx}"
+        geom = re.sub(r"[^\w\-]+", "_", display).strip("_") or f"body_{idx:02d}"
         if geom in used:
             geom = f"{geom}_{idx:02d}"
         used.add(geom)
-        scene.add_geometry(mesh_copy(mesh), geom_name=geom, node_name=geom)
+        copied = mesh_copy(mesh)
+        copied.metadata["name"] = display
+        # Keep Fusion body names on the scene node so single-click selection labels match.
+        scene.add_geometry(copied, geom_name=geom, node_name=display)
     return export_scene(scene, shell_path)
 
 
@@ -4901,7 +4927,12 @@ def mesh_body_info(mesh: trimesh.Trimesh) -> dict[str, Any]:
     names: list[str] = []
     for i, body in enumerate(bodies):
         offsets.append(off)
-        names.append(f"Body {i + 1}")
+        meta_name = ""
+        try:
+            meta_name = str((body.metadata or {}).get("name") or "").strip()
+        except Exception:
+            meta_name = ""
+        names.append(meta_name or f"Body {i + 1}")
         off += len(body.faces)
     return {
         "count": len(bodies),
@@ -4910,6 +4941,35 @@ def mesh_body_info(mesh: trimesh.Trimesh) -> dict[str, Any]:
         "can_split": len(bodies) > 1,
         "faces": int(len(mesh.faces)),
     }
+
+
+def scene_body_info(path: Path) -> dict[str, Any]:
+    """Body info preferring named GLB scene meshes (Fusion solids) over mesh islands."""
+    path = Path(path)
+    try:
+        scene = load_scene(path)
+        parts = _meshes_from_scene(scene)
+    except Exception:
+        parts = []
+    if len(parts) > 1:
+        offsets: list[int] = []
+        names: list[str] = []
+        off = 0
+        total_faces = 0
+        for label, mesh in parts:
+            offsets.append(off)
+            names.append(str(label or "").strip() or f"Body {len(names) + 1}")
+            nfaces = int(len(np.asarray(getattr(mesh, "faces", []), dtype=int)))
+            off += nfaces
+            total_faces += nfaces
+        return {
+            "count": len(parts),
+            "face_offsets": offsets,
+            "body_names": names,
+            "can_split": True,
+            "faces": total_faces,
+        }
+    return mesh_body_info(load_mesh(path))
 
 
 def split_mesh_bodies(mesh: trimesh.Trimesh) -> list[trimesh.Trimesh]:

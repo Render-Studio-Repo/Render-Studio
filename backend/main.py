@@ -17674,6 +17674,11 @@ def mesh_bodies_info(
         return cached[1]
     mesh = cad_service.load_mesh(mesh_src)
     info = cad_service.mesh_body_info(mesh)
+    if mesh_src.suffix.lower() in {".glb", ".gltf"}:
+        try:
+            info = cad_service.scene_body_info(mesh_src)
+        except Exception:
+            pass
     _bodies_info_cache[cache_key] = (mtime, info)
     if len(_bodies_info_cache) > _BODIES_INFO_CACHE_MAX:
         # Drop oldest half (insertion order).
