@@ -1016,6 +1016,10 @@ export function createReferenceFilesViewer(options = {}) {
     menu.style.left = `${Math.min(event.clientX, window.innerWidth - 260)}px`;
     menu.style.top = `${Math.min(event.clientY, window.innerHeight - 250)}px`;
     menu.innerHTML = `
+      <div class="ref-image-context-menu-title">
+        <strong>Share render</strong>
+        <button type="button" data-ref-context-close aria-label="Close share menu">×</button>
+      </div>
       <button type="button" data-ref-context="copy">Copy render image + debug tag</button>
       <button type="button" data-ref-context="share-link">Share link...</button>
       <button type="button" data-ref-context="share-chat">Share to project chat...</button>
@@ -1025,6 +1029,10 @@ export function createReferenceFilesViewer(options = {}) {
     `;
     document.body.appendChild(menu);
     menu.addEventListener("click", (e) => {
+      if (e.target.closest("[data-ref-context-close]")) {
+        closeReferenceContextMenu();
+        return;
+      }
       const action = e.target.closest("[data-ref-context]")?.dataset.refContext;
       if (!action) return;
       if (action === "copy") {

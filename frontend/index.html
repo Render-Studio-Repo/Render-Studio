@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260716-texture-lib" />
+  <link rel="stylesheet" href="/styles.css?v=20260716-mobile-layout-tools" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -907,9 +907,21 @@
           <button type="button" data-mobile-tool="orbit">Orbit</button>
           <button type="button" data-mobile-tool="select">Select</button>
           <button type="button" data-mobile-tool="face">Face</button>
+          <button type="button" data-mobile-tool="edge">Edge</button>
+          <button type="button" data-mobile-tool="line">Line</button>
+          <button type="button" data-mobile-tool="lasso">Lasso</button>
+          <button type="button" data-mobile-tool="section">Section</button>
           <button type="button" data-mobile-tool="measure">Measure</button>
           <button type="button" data-mobile-tool="rig">Rig Robot</button>
           <button type="button" data-mobile-tool="ai">AI</button>
+        </div>
+        <div class="mobile-pick-tray" aria-label="Mobile selection tools">
+          <button type="button" class="btn pick-btn mobile-pick-btn active" data-mode="off">Orbit</button>
+          <button type="button" class="btn pick-btn mobile-pick-btn" data-mode="object">Select</button>
+          <button type="button" class="btn pick-btn mobile-pick-btn" data-mode="face">Face</button>
+          <button type="button" class="btn pick-btn mobile-pick-btn" data-mode="edge">Edge</button>
+          <button type="button" class="btn pick-btn mobile-pick-btn" data-mode="line">Line</button>
+          <button type="button" class="btn pick-btn mobile-pick-btn" data-mode="lasso">Lasso</button>
         </div>
         <div class="mobile-corner-launchers" aria-label="Mobile windows" hidden>
           <button type="button" class="mobile-corner-btn mobile-corner-btn--tl" data-mobile-corner="workspace" aria-label="Open Explorer or Tools">☰</button>
@@ -1880,10 +1892,13 @@
       <section class="mobile-tool-section">
         <h3 class="mobile-tool-heading">Pick on model</h3>
         <div class="mobile-tool-row">
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="corner">Corner</button>
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="face">Face</button>
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="edge">Edge</button>
-          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="off">Orbit</button>
+          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="object" data-mode="object">Select</button>
+          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="corner" data-mode="corner">Corner</button>
+          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="face" data-mode="face">Face</button>
+          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="edge" data-mode="edge">Edge</button>
+          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="line" data-mode="line">Line</button>
+          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="lasso" data-mode="lasso">Lasso</button>
+          <button type="button" class="btn pick-btn mobile-tool-btn" data-pick="off" data-mode="off">Orbit</button>
         </div>
       </section>
       <section class="mobile-tool-section">
@@ -2607,7 +2622,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260716-boot-5s"></script>
+  <script type="module" src="/app.js?v=20260716-zoom-clip-fix"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

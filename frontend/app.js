@@ -96,7 +96,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-no-iphone-banner";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260715-render-image-menu";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260715-stem-dedupe";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260716-texture-tab";
@@ -11448,22 +11448,10 @@ function animate() {
     controls._eye?.subVectors(camera.position, controls.target);
   }
 
-  // Dynamically adjust clip planes so the camera never clips at any zoom level.
-  // near = 0.05% of orbit radius keeps depth-buffer precision while preventing
-  // near-plane pop; far = 4000× ensures the grid/far objects stay visible.
-  const orbitDist = camera.position.distanceTo(controls.target);
-  if (orbitDist > 0) {
-    const desiredNear = Math.max(0.0001, orbitDist * 0.0005);
-    const desiredFar  = orbitDist * 4000;
-    if (
-      Math.abs(camera.near - desiredNear) > desiredNear * 0.15 ||
-      Math.abs(camera.far  - desiredFar)  > desiredFar  * 0.15
-    ) {
-      camera.near = desiredNear;
-      camera.far  = desiredFar;
-      camera.updateProjectionMatrix();
-    }
-  }
+  // Dynamically adjust clip planes so zooming in/out never slices the mesh.
+  // Near tracks the gap to the model (not a raw fraction of orbit distance), and
+  // far always covers the model + floor grid even when tightly framed.
+  updateCameraClipPlanes();
 
   const renderCam = sketchEditor.getRenderCamera?.() || camera;
   renderer.render(scene, renderCam);
@@ -11471,6 +11459,56 @@ function animate() {
   collab?.renderLabels(renderCam);
 }
 animate();
+
+function updateCameraClipPlanes() {
+  const orbitDist = camera.position.distanceTo(controls.target);
+  if (!(orbitDist > 0) || !Number.isFinite(orbitDist)) return;
+
+  const contentRadius = Math.max(sceneRadius() || 1, 0.05);
+  const gridExtent = niceGridSize(contentRadius) * 0.75;
+  // Distance from camera to the near side of a sphere around the orbit target.
+  const gapToContent = orbitDist - contentRadius;
+
+  // Prefer a small near plane so zooming out never clips the front of the model.
+  // Cap it by the actual gap to content when the camera is outside the mesh.
+  let near = Math.max(orbitDist * 0.0002, 0.00005);
+  if (gapToContent > 1e-4) {
+    near = Math.min(near, gapToContent * 0.35);
+  } else {
+    // Camera is inside/near the bounds (tight zoom or huge part) — keep near tiny.
+    near = Math.min(near, Math.max(orbitDist * 0.00005, 0.00005));
+  }
+
+  // Far must enclose the mesh and grid regardless of zoom level.
+  let far = Math.max(
+    orbitDist + Math.max(contentRadius, gridExtent) * 6,
+    orbitDist * 250,
+    contentRadius * 120,
+    gridExtent * 2.5,
+    100,
+  );
+
+  // Keep depth precision usable on a 24-bit depth buffer.
+  const maxRatio = 1e6;
+  if (far / Math.max(near, 1e-8) > maxRatio) {
+    const cappedNear = far / maxRatio;
+    if (gapToContent > 1e-4) {
+      near = Math.min(cappedNear, gapToContent * 0.35);
+      far = Math.max(far, near * Math.min(maxRatio, 5e5));
+    } else {
+      near = Math.min(near, cappedNear);
+    }
+  }
+
+  if (
+    Math.abs(camera.near - near) > Math.max(near * 0.08, 1e-7)
+    || Math.abs(camera.far - far) > Math.max(far * 0.08, 0.5)
+  ) {
+    camera.near = near;
+    camera.far = far;
+    camera.updateProjectionMatrix();
+  }
+}
 
 function clearModelContents() {
   cancelLasso();
@@ -12985,6 +13023,7 @@ function frameCameraToBox(box) {
   controls._eye?.subVectors(camera.position, controls.target);
   controls._lastAngle = 0;
   controls.update();
+  updateCameraClipPlanes();
   viewCube.update();
 }
 
@@ -21573,6 +21612,14 @@ document.addEventListener("click", async (e) => {
 
   if (e.target.closest("#btn-grid")) { toggleGrid(); return; }
 
+  if (e.target.closest("#mobile-tools-fab")) {
+    const popup = document.getElementById("mobile-tools-popup");
+    const willOpen = popup?.classList.contains("hidden");
+    closeMobilePanels();
+    window.Render3DMobileChrome?.setMobileToolsPopupOpen?.(Boolean(willOpen));
+    return;
+  }
+
   const mobileTool = e.target.closest("[data-mobile-tool]");
   if (mobileTool) {
     const tool = mobileTool.dataset.mobileTool;
@@ -21583,9 +21630,13 @@ document.addEventListener("click", async (e) => {
     if (tool === "fit") fitCamera();
     if (tool === "top") viewCube.snapTo?.("top");
     if (tool === "models") openMobileModelPicker();
-    if (tool === "orbit") { setLeftDragMode("rotate"); activatePickMode("off"); }
-    if (tool === "select") { openMobileRightPanel("tools"); activatePickMode("object"); }
-    if (tool === "face") { openMobileRightPanel("tools"); activatePickMode("face"); }
+    if (tool === "orbit") { closeMobilePanels(); setLeftDragMode("rotate"); activatePickMode("off"); }
+    if (tool === "select") { closeMobilePanels(); activatePickMode("object"); }
+    if (tool === "face") { closeMobilePanels(); activatePickMode("face"); }
+    if (tool === "edge") { closeMobilePanels(); activatePickMode("edge"); }
+    if (tool === "line") { closeMobilePanels(); activatePickMode("line"); }
+    if (tool === "lasso") { closeMobilePanels(); activatePickMode("lasso"); }
+    if (tool === "section") { closeMobilePanels(); document.getElementById("btn-section")?.click(); }
     if (tool === "measure") document.getElementById("btn-measure")?.click();
     if (tool === "rig") void setupRobotMotionWorkflow();
     if (tool === "ai") { showAiComposePanel(); openMobileRightPanel(workspaceModes?.isWiring?.() ? "wiring" : "prompt"); }
