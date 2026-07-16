@@ -1346,28 +1346,37 @@ def _body_children_from_part_sidecars(
     parent_name: str,
     parent_viewer: str,
 ) -> list[dict[str, Any]]:
-    """Nest ``_partNN`` / ``__part_NN_`` sidecars as Bodies under the parent component."""
-    compact = re.compile(rf"^{re.escape(parent_stem)}_part(\d+)(?:_(\d+))?$", re.I)
-    detailed = re.compile(rf"^{re.escape(parent_stem)}__part_(\d+)_(.+)$", re.I)
+    """Nest ``_partNN`` / ``__part_NN_`` sidecars as Bodies under the parent component.
+
+    Matches against the logical root stem so ``foo_edited`` still finds ``foo__part_*``.
+    """
+    roots = []
+    for candidate in (parent_stem, _logical_component_root(parent_stem)):
+        text = str(candidate or "").strip()
+        if text and text not in roots:
+            roots.append(text)
     best: dict[int, tuple[int, Path, str]] = {}
-    for path in project_path.glob("*.glb"):
-        stem = path.stem
-        match = compact.match(stem)
-        if match:
-            num = int(match.group(1))
-            rev = int(match.group(2) or 0)
-            label = f"Body {num}"
-            prev = best.get(num)
-            if prev is None or rev >= prev[0]:
-                best[num] = (rev, path, label)
-            continue
-        match = detailed.match(stem)
-        if match:
-            num = int(match.group(1))
-            label = re.sub(r"_+", " ", match.group(2)).strip() or f"Body {num}"
-            prev = best.get(num)
-            if prev is None or 0 >= prev[0]:
-                best[num] = (0, path, label[:96])
+    for root in roots:
+        compact = re.compile(rf"^{re.escape(root)}_part(\d+)(?:_(\d+))?$", re.I)
+        detailed = re.compile(rf"^{re.escape(root)}__part_(\d+)_(.+)$", re.I)
+        for path in project_path.glob("*.glb"):
+            stem = path.stem
+            match = compact.match(stem)
+            if match:
+                num = int(match.group(1))
+                rev = int(match.group(2) or 0)
+                label = f"Body {num}"
+                prev = best.get(num)
+                if prev is None or rev >= prev[0]:
+                    best[num] = (rev, path, label)
+                continue
+            match = detailed.match(stem)
+            if match:
+                num = int(match.group(1))
+                label = re.sub(r"_+", " ", match.group(2)).strip() or f"Body {num}"
+                prev = best.get(num)
+                if prev is None or 0 >= prev[0]:
+                    best[num] = (0, path, label[:96])
     if len(best) <= 1:
         return []
     children: list[dict[str, Any]] = []
@@ -2254,35 +2263,235 @@ def export_mesh(mesh: trimesh.Trimesh, path: Path) -> Path:
     return path
 
 
+def _tessellate_shape_to_mesh(shape, *, linear_deflection: float = 0.1, angular_deflection: float = 0.5) -> trimesh.Trimesh:
+    """Tessellate one OpenCascade shape to a repaired triangle mesh."""
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.StlAPI import StlAPI_Writer
+    import tempfile
+
+    if shape is None or shape.IsNull():
+        raise ValueError("Cannot tessellate an empty shape")
+    BRepMesh_IncrementalMesh(shape, float(linear_deflection), False, float(angular_deflection), True)
+    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        writer = StlAPI_Writer()
+        if not writer.Write(shape, str(tmp_path)):
+            raise ValueError("Could not tessellate CAD shape")
+        return repair_mesh(load_mesh(tmp_path))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -> list[tuple[str, trimesh.Trimesh]]:
+    """Return ``(label, mesh)`` for each solid body in a STEP file.
+
+    Fusion designs often export as one free shape containing several solids. The
+    XCAF→GLB writer then fragments those into dozens of mesh nodes; splitting the
+    GLB scene over-counts parts. Solid-level split matches what users can select
+    in Fusion.
+    """
+    from OCP.IFSelect import IFSelect_ReturnStatus
+    from OCP.STEPCAFControl import STEPCAFControl_Reader
+    from OCP.STEPControl import STEPControl_Reader
+    from OCP.TCollection import TCollection_ExtendedString
+    from OCP.TDataStd import TDataStd_Name
+    from OCP.TDocStd import TDocStd_Document
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.XCAFApp import XCAFApp_Application
+    from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
+    from OCP.TDF import TDF_LabelSequence
+
+    step_path = Path(step_path)
+    solids: list[tuple[str, Any]] = []
+
+    def _label_name(lab) -> str:
+        attr = TDataStd_Name()
+        if lab.FindAttribute(TDataStd_Name.GetID_s(), attr):
+            text = str(attr.Get().ToExtString() or "").strip()
+            if text:
+                return text
+        return ""
+
+    try:
+        app = XCAFApp_Application.GetApplication_s()
+        fmt = TCollection_ExtendedString("BinXCAF")
+        doc = TDocStd_Document(fmt)
+        app.NewDocument(fmt, doc)
+        reader = STEPCAFControl_Reader()
+        reader.SetColorMode(True)
+        reader.SetNameMode(True)
+        status = reader.ReadFile(str(step_path))
+        if status != IFSelect_ReturnStatus.IFSelect_RetDone:
+            raise ValueError(f"STEPCAFControl_Reader failed on {step_path.name}")
+        reader.Transfer(doc)
+        shape_tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
+        labels = TDF_LabelSequence()
+        shape_tool.GetFreeShapes(labels)
+        for i in range(1, labels.Size() + 1):
+            lab = labels.Value(i)
+            root_name = _label_name(lab) or step_path.stem
+            shape = XCAFDoc_ShapeTool.GetShape_s(lab)
+            if shape.IsNull():
+                continue
+            exp = TopExp_Explorer(shape, TopAbs_SOLID)
+            solid_i = 0
+            while exp.More():
+                solid_i += 1
+                solids.append((f"{root_name} body {solid_i}", exp.Current()))
+                exp.Next()
+            if solid_i == 0:
+                solids.append((root_name, shape))
+    except Exception as exc:
+        logger.debug("XCAF solid listing failed for %s (%s); using STEPControl", step_path.name, exc)
+        solids = []
+        reader = STEPControl_Reader()
+        status = reader.ReadFile(str(step_path))
+        if status != IFSelect_ReturnStatus.IFSelect_RetDone:
+            raise ValueError(f"Could not read STEP file: {step_path.name}") from exc
+        reader.TransferRoots()
+        shape = reader.OneShape()
+        if shape.IsNull():
+            raise ValueError(f"STEP file has no geometry: {step_path.name}") from exc
+        exp = TopExp_Explorer(shape, TopAbs_SOLID)
+        solid_i = 0
+        while exp.More():
+            solid_i += 1
+            solids.append((f"{step_path.stem} body {solid_i}", exp.Current()))
+            exp.Next()
+        if solid_i == 0:
+            solids.append((step_path.stem, shape))
+
+    meshes: list[tuple[str, trimesh.Trimesh]] = []
+    for label, shape in solids:
+        try:
+            mesh = _tessellate_shape_to_mesh(shape, linear_deflection=linear_deflection)
+        except Exception as exc:
+            logger.warning("Skipping STEP solid %s in %s: %s", label, step_path.name, exc)
+            continue
+        if mesh is None or mesh.is_empty or len(mesh.faces) < 1:
+            continue
+        mesh.metadata["name"] = label
+        meshes.append((label, mesh))
+    return meshes
+
+
+def rebuild_shell_glb_from_parts(
+    shell_path: Path,
+    parts: list[tuple[str, trimesh.Trimesh]],
+) -> Path:
+    """Write a multi-mesh shell GLB so viewport body selection matches Fusion solids."""
+    shell_path = Path(shell_path)
+    scene = trimesh.Scene()
+    used: set[str] = set()
+    for idx, (label, mesh) in enumerate(parts, start=1):
+        geom = re.sub(r"[^\w\-]+", "_", str(label or "").strip()).strip("_")[:64] or f"body_{idx:02d}"
+        if geom in used:
+            geom = f"{geom}_{idx:02d}"
+        used.add(geom)
+        scene.add_geometry(mesh_copy(mesh), geom_name=geom, node_name=geom)
+    return export_scene(scene, shell_path)
+
+
+def split_step_solids_to_glbs(
+    step_path: Path,
+    project_path: Path,
+    *,
+    base_stem: str | None = None,
+    shell_glb_path: Path | None = None,
+    max_parts: int = 256,
+) -> list[str]:
+    """Split a STEP file into one ``__part_*.glb`` per solid and rebuild the shell."""
+    step_path = Path(step_path)
+    project_path = Path(project_path)
+    raw_base = str(base_stem or step_path.stem or "component")
+    base = re.sub(r"[^\w\-]+", "_", raw_base).strip("_") or "component"
+    base = base[:80]
+    parts = list_step_solid_meshes(step_path)
+    if len(parts) <= 1:
+        return []
+
+    for old in project_path.glob(f"{base}__part_*.glb"):
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    outputs: list[str] = []
+    used: set[str] = set()
+    kept: list[tuple[str, trimesh.Trimesh]] = []
+    for idx, (label, mesh) in enumerate(parts[: max(1, int(max_parts))], start=1):
+        slug = re.sub(r"[^\w\-]+", "_", str(label or "").lower()).strip("_")[:48] or f"part_{idx:02d}"
+        if slug in used:
+            slug = f"{slug}_{idx:02d}"
+        used.add(slug)
+        out_name = f"{base}__part_{idx:02d}_{slug}.glb"
+        export_mesh(mesh, project_path / out_name)
+        outputs.append(out_name)
+        kept.append((label, mesh))
+
+    if shell_glb_path is not None and kept:
+        try:
+            rebuild_shell_glb_from_parts(Path(shell_glb_path), kept)
+        except Exception as exc:
+            logger.warning("Could not rebuild shell GLB %s from STEP solids: %s", Path(shell_glb_path).name, exc)
+    return outputs
+
+
 def split_scene_components_to_glbs(
     viewer_path: Path,
     project_path: Path,
     *,
     base_stem: str | None = None,
     max_parts: int = 256,
+    step_path: Path | None = None,
 ) -> list[str]:
     """Export each named GLB scene component as ``{base}__part_NN_slug.glb``.
 
     Used by Fusion / Autodesk import when ``import_bodies`` is requested. Returns
     an empty list when the viewer has only one body (nothing useful to split).
 
-    When the shell GLB was flattened to a single mesh (common after mesh-only
-    edits), fall back to splitting disconnected watertight shells so Fusion
-    assemblies still land as separate browser parts.
+    Prefer STEP solid split when a source STEP is available — Fusion bodies map to
+    solids, while XCAF GLB nodes are often over-fragmented face pieces.
     """
     viewer_path = Path(viewer_path)
     project_path = Path(project_path)
     raw_base = str(base_stem or viewer_path.stem or "component")
     base = re.sub(r"[^\w\-]+", "_", raw_base).strip("_") or "component"
     base = base[:80]
+
+    if step_path is not None and Path(step_path).is_file():
+        try:
+            step_parts = split_step_solids_to_glbs(
+                Path(step_path),
+                project_path,
+                base_stem=base,
+                shell_glb_path=viewer_path,
+                max_parts=max_parts,
+            )
+            if len(step_parts) > 1:
+                return step_parts
+        except Exception as exc:
+            logger.warning("STEP solid split failed for %s: %s", Path(step_path).name, exc)
+
     if not viewer_path.is_file():
         raise FileNotFoundError(f"Viewer GLB missing: {viewer_path.name}")
 
     scene = load_scene(viewer_path)
     parts = _meshes_from_scene(scene)
+    # Drop degenerate OCC face shards (2-triangle walls that aren't selectable Fusion bodies).
+    meaningful = [
+        (label, mesh)
+        for label, mesh in parts
+        if mesh is not None and not mesh.is_empty and len(getattr(mesh, "faces", [])) >= 8
+    ]
+    if len(meaningful) > 1:
+        parts = meaningful
     if len(parts) <= 1:
         mesh = parts[0][1] if parts else load_mesh(viewer_path)
         bodies = _mesh_bodies(mesh)
+        bodies = [b for b in bodies if b is not None and not b.is_empty and len(b.faces) >= 8]
         if len(bodies) <= 1:
             return []
         parts = [(f"body_{i:02d}", body) for i, body in enumerate(bodies, start=1)]
@@ -2295,6 +2504,7 @@ def split_scene_components_to_glbs(
 
     outputs: list[str] = []
     used: set[str] = set()
+    kept: list[tuple[str, trimesh.Trimesh]] = []
     for idx, (label, mesh) in enumerate(parts[: max(1, int(max_parts))], start=1):
         slug = re.sub(r"[^\w\-]+", "_", str(label or "").lower()).strip("_")[:48] or f"part_{idx:02d}"
         if slug in used:
@@ -2303,6 +2513,12 @@ def split_scene_components_to_glbs(
         out_name = f"{base}__part_{idx:02d}_{slug}.glb"
         export_mesh(mesh, project_path / out_name)
         outputs.append(out_name)
+        kept.append((label, mesh))
+    if kept and len(kept) > 1:
+        try:
+            rebuild_shell_glb_from_parts(viewer_path, kept)
+        except Exception as exc:
+            logger.debug("Could not rebuild shell after scene split for %s: %s", viewer_path.name, exc)
     return outputs
 
 

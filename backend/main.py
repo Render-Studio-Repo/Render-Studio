@@ -6433,6 +6433,7 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
                         viewer_path,
                         proj_path,
                         base_stem=viewer_path.stem,
+                        step_path=src_path if suffix in cad_service.STEP_SUFFIXES else None,
                     )
                     if split_names:
                         logger.info(
@@ -7427,6 +7428,7 @@ def _import_fusion_item_into_existing_project(
                     viewer_path,
                     project_path,
                     base_stem=safe_stem,
+                    step_path=src_path,
                 )
             except Exception as exc:
                 logger.warning("Fusion sync body split failed for %s: %s", safe_name, exc)
