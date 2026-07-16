@@ -2256,13 +2256,18 @@ function componentRootForMesh(mesh) {
   if (!mesh) return null;
   const catalogName = catalogNameForMesh(mesh);
   if (catalogName) return projectAssembly.get(catalogName) || mesh;
+  if (projectAssembly.count() === 1) return projectAssembly.list()[0]?.[1] || mesh;
+  if (currentMesh && mesh !== currentMesh) return currentMesh;
   return mesh;
 }
 
 function selectionTargetFromMesh(hitMesh) {
   const catalogName = catalogNameForMesh(hitMesh);
   const comp = catalogName ? projectAssembly.get(catalogName) : null;
-  const root = comp || componentRootForMesh(hitMesh) || currentMesh;
+  const fallbackRoot = projectAssembly.count() === 1
+    ? projectAssembly.list()[0]?.[1]
+    : (projectAssembly.getRoot() || currentMesh);
+  const root = comp || componentRootForMesh(hitMesh) || fallbackRoot || currentMesh;
   const mesh = comp && isLocalAssemblyObject(catalogName, comp) ? comp : (hitMesh || comp);
   return { mesh, root, catalogName };
 }
@@ -5640,6 +5645,7 @@ function undoViewportAction() {
     }
     const wantName = action.filename || null;
     let mesh =
+      (action.liveTarget === "transform-controls" && transformControls.object) ||
       (wantName && projectAssembly.get(wantName)) ||
       transformControls.object ||
       currentMesh;

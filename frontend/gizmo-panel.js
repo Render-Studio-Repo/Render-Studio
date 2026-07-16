@@ -410,6 +410,8 @@ export function createGizmoPanel({
       onTransformStrokeEnd?.({
         type: "transform",
         filename: info.filename || null,
+        liveTarget: mesh?.userData?.isMultiSelectionTransform ? "transform-controls" : null,
+        skipAutoApply: !!mesh?.userData?.isMultiSelectionTransform,
         before: beforePose,
         after: mesh
           ? {
@@ -419,7 +421,13 @@ export function createGizmoPanel({
             }
           : null,
       });
-      void apply(false);
+      if (mesh?.userData?.isMultiSelectionTransform) {
+        captureStart();
+        updateFields();
+        setStatus("ok", "Moved selected objects together. Cmd+Z to undo this live move.");
+      } else {
+        void apply(false);
+      }
     });
     onUnitsChanged(() => {
       refreshSnapSelect();
