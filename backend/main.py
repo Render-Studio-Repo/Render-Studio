@@ -13475,7 +13475,10 @@ def generate_rigging_artifacts(
         "operation": "robot-artifacts:generate",
         "source": source,
         "kind": kind,
-        "author": needs_authoring,
+        # Never auto-author here — authoring can rewrite CAD sources. Use
+        # /rigging/author-robot when generators are intentionally missing.
+        "author": False,
+        "needs_authoring": needs_authoring,
     }
     try:
         generation_service.start(
@@ -13595,6 +13598,47 @@ def author_robot_description(
     )
 
 
+def _module_scope_numeric_constants(source: str) -> dict[str, float]:
+    """Collect module-scope numeric assignments used by gen_step CAD params."""
+    import ast
+
+    out: dict[str, float] = {}
+    try:
+        tree = ast.parse(source or "")
+    except SyntaxError:
+        return out
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except Exception:
+            continue
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            out[target.id] = float(value)
+    return out
+
+
+def _cad_constants_scaled_to_meters(before: dict[str, float], after: dict[str, float]) -> list[str]:
+    """Detect URDF authoring that rewrote mm CAD constants into meters."""
+    scaled: list[str] = []
+    for name, old in before.items():
+        if abs(old) < 1.0:
+            continue
+        new = after.get(name)
+        if new is None:
+            continue
+        # Typical mm→m rewrite: 600.0 → 0.6, 48.0 → 0.048
+        if abs(old) >= 5.0 and abs(new) > 0 and 800.0 <= abs(old / new) <= 1200.0:
+            scaled.append(f"{name}: {old:g} → {new:g}")
+    return scaled
+
+
 def _run_rigging_artifact_pipeline(
     project_id: str,
     body_data: dict[str, Any],
@@ -13617,7 +13661,11 @@ def _run_rigging_artifact_pipeline(
     text = source_path.read_text(encoding="utf-8")
     needs_urdf = kind in {"urdf", "both"} and "def gen_urdf" not in text
     needs_srdf = kind in {"srdf", "both"} and "def gen_srdf" not in text
-    should_author = bool(body_data.get("author")) or needs_urdf or needs_srdf
+    # Only author when explicitly requested via /rigging/author-robot.
+    # Auto-author on generate was rewriting CAD mm constants into meters.
+    explicit_author = bool(body_data.get("author"))
+    force_author = bool(body_data.get("force_author"))
+    should_author = explicit_author and (needs_urdf or needs_srdf or force_author)
     authored = False
     if should_author:
         generation_service.update_progress(
@@ -13632,22 +13680,28 @@ def _run_rigging_artifact_pipeline(
         )
         ai = _sam_ai_service()
         prompt = (
-            "You are editing a build123d / Jake text-to-cad Python CAD source for a robot.\n"
-            "Add Jake-compatible top-level zero-arg functions without removing gen_step()/existing CAD.\n"
-            "Requirements:\n"
-            "- Keep all existing CAD code working.\n"
-            "- Add `def gen_urdf():` returning xml.etree.ElementTree robot Element (or XML string).\n"
-            "- Add `def gen_srdf():` returning SRDF envelope dict with keys `xml` and `urdf`, with a planning group for the arm.\n"
-            "- Units in URDF must be meters/radians. Convert from mm constants in the source.\n"
-            "- Model a kinematic chain from base_link through the joints already defined (J1..Jn or similar).\n"
-            "- Prefer revolute joints with explicit axis + limits.\n"
+            "You are editing a build123d / Jake text-to-cad Python CAD source.\n"
+            "APPEND Jake-compatible top-level zero-arg robot generators. Do NOT redesign the CAD.\n"
+            "HARD RULES (must obey):\n"
+            "- Keep `gen_step()` and ALL existing CAD code byte-for-byte identical in behavior.\n"
+            "- Do NOT change module-scope numeric constants. CAD units stay millimeters.\n"
+            "- Do NOT divide/scale CAD parameters by 1000. Do NOT rewrite values like 600.0 → 0.6.\n"
+            "- Only ADD `def gen_urdf():` and `def gen_srdf():` (plus imports they need).\n"
+            "- Inside gen_urdf ONLY, convert mm→meters locally (value / 1000.0) for link sizes/origins.\n"
+            "- gen_urdf returns xml.etree.ElementTree Element or XML string.\n"
+            "- gen_srdf returns dict with keys `xml` and `urdf` and a planning group.\n"
+            "- If this model is a static assembly/fixture (no arm joints), use fixed joints only — "
+            "do not invent revolute joints on structural pillars/frames.\n"
+            "- Prefer fixed joints linking named bodies; only use revolute/prismatic when the source "
+            "already implies actuated robot joints.\n"
             "- Visual/collision mesh filenames may reference the sibling STL if present, else omit meshes.\n"
             "- Return ONLY the full updated Python source file contents.\n\n"
             f"SOURCE FILE NAME: {source}\n\n"
             f"CURRENT SOURCE:\n{text[:120000]}"
         )
+        before_consts = _module_scope_numeric_constants(text)
         patched, _trace = ai._call_model(
-            "You author Jake text-to-cad robot generators. Output only valid Python source.",
+            "You author Jake text-to-cad robot generators. Never rescale CAD millimeters. Output only valid Python source.",
             prompt,
             max_tokens=12000,
             json_response=False,
@@ -13660,6 +13714,16 @@ def _run_rigging_artifact_pipeline(
             raise RuntimeError("AI patch did not include gen_urdf(); refused to overwrite source.")
         if kind in {"srdf", "both"} and "def gen_srdf" not in patched_text:
             raise RuntimeError("AI patch did not include gen_srdf(); refused to overwrite source.")
+        if "def gen_step" in text and "def gen_step" not in patched_text:
+            raise RuntimeError("AI patch removed gen_step(); refused to overwrite source.")
+        after_consts = _module_scope_numeric_constants(patched_text)
+        scaled = _cad_constants_scaled_to_meters(before_consts, after_consts)
+        if scaled:
+            raise RuntimeError(
+                "AI URDF authoring tried to convert CAD millimeters to meters "
+                f"({', '.join(scaled[:8])}). Refused to overwrite source — "
+                "gen_step must stay in mm; convert only inside gen_urdf."
+            )
         backup = source_path.with_suffix(source_path.suffix + ".bak-before-urdf")
         if not backup.is_file():
             backup.write_text(text, encoding="utf-8")
