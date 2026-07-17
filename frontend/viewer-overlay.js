@@ -577,7 +577,9 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       if (Number.isFinite(pct)) {
         if (pct > traceProgress) traceProgress = pct;
         if (pct > progressValue) progressValue = pct;
-        if (pct >= 5) pendingHoldUntil = 0;
+        // Do not clear the submit hold during the Improve-prompt step.
+        // That race hid the spinner before /api/prompt/improve finished.
+        if (pct >= 5 && !progress.spiceHold) pendingHoldUntil = 0;
       }
     }
     const nextImproved = progress.improved_prompt ?? progress.prompt_preview ?? progress.improvedPrompt;
@@ -771,6 +773,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       : [];
     progressStart = Date.now();
     estimateMs = opts.estimateMs || (opts.mode === "build" ? 90000 : isV2Overlay(opts) ? 900000 : 360000);
+    // Preserve improved prompt when the spinner restarts after the Improve step.
+    const seedImproved = opts.progress?.improved_prompt ?? opts.progress?.prompt_preview ?? opts.progress?.improvedPrompt;
+    if (typeof seedImproved === "string" && seedImproved.trim()) {
+      improvedPromptText = seedImproved.trim();
+    }
     applySpinnerVariant(opts);
     spinner.classList.remove("hidden");
     clearError();

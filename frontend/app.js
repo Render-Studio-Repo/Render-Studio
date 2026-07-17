@@ -74,7 +74,7 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260716-fable-shared-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260715-robot-place-part";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260717-spice-hold";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260716-export-timeout";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
@@ -4536,15 +4536,35 @@ function pushSpiceOverlayProgress(progress = {}) {
     if (progress.label) {
       generationWatchOverlay.message = progress.label;
     }
+    // Keep the submit-hold alive through the whole improve step so the spinner
+    // cannot tear down mid-rewrite (pct>=5 used to clear pendingHoldUntil).
+    if (generationWatchOverlay.pendingStart || progress.spiceHold) {
+      generationWatchOverlay.pendingStart = true;
+    }
   }
   const overlay = generationWatchOverlay?.kind === "wiring"
     ? (wiringOverlay || viewerOverlay)
     : viewerOverlay;
-  overlay?.updateProgress?.(progress);
+  // Ensure the viewport spinner is up before applying improve progress.
   if (!overlay?.isGenerating?.()) {
-    syncViewportGenerationOverlay();
-    overlay?.updateProgress?.(progress);
+    showViewportOverlay(projectId, progress.label || "Improving prompt with AI…", {
+      kind: "prompt",
+      promptMode: promptModeForRef(),
+      mode: promptModeForRef(),
+      pendingStart: true,
+      progress: {
+        pct: Number(progress.pct) || 3,
+        label: progress.label || "Improving prompt with AI…",
+        thinking: progress.thinking,
+        activity: progress.activity,
+        improved_prompt: progress.improved_prompt,
+        spiceHold: true,
+      },
+    });
   }
+  overlay?.updateProgress?.({ ...progress, spiceHold: true });
+  syncViewportGenerationOverlay();
+  overlay?.updateProgress?.({ ...progress, spiceHold: true });
 }
 
 function looksLikeSceneRenderIntent(text) {
@@ -4564,8 +4584,9 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
   if (!original || !isSpiceEnabled()) {
     return { prompt: original, originalPrompt: original, promptImproved: false };
   }
+  // Explicit forceMode (e.g. scene-render path). Otherwise honor the active UI
+  // mode so Mode 2.0 always gets CAD improve — never silently rewrite as Render.
   const improveMode = forceMode
-    || (looksLikeSceneRenderIntent(original) ? "render" : null)
     || (promptMode === "draw" ? "draw" : promptMode || DEFAULT_PROMPT_MODE);
   if (statusEl) {
     statusEl.className = "status loading";
@@ -23785,21 +23806,27 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
     });
 
-    // Show the generation banner immediately so convert/spice waits don't look stuck.
-    if (canvasAttached) markCanvasGenerationPending(projectId);
-    viewerOverlay.clearError();
-    beginGenerationWatch(projectId, {
-      kind: "prompt",
-      mode: genMode,
-      pendingStart: true,
-    });
+    // Improve with AI FIRST (before the Mode 2.0 generation banner), then start CAD.
     if (status) {
       status.className = "status loading";
       status.textContent = convertImagesToDrawing
-        ? "Converting image to drawing, then generating…"
-        : "Preparing generation…";
+        ? "Converting image to drawing, then improving prompt…"
+        : "Improving prompt with AI…";
     }
-
+    showViewportOverlay(projectId, "Improving prompt with AI…", {
+      kind: "prompt",
+      promptMode: promptModeForRef(genMode),
+      mode: genMode,
+      pendingStart: true,
+      estimateMs: 90000,
+      progress: {
+        pct: 3,
+        label: "Improving prompt with AI…",
+        thinking: "Rewriting your prompt for clearer parametric CAD…",
+        activity: [{ text: "Improving prompt with AI…", stage: "analyze" }],
+        spiceHold: true,
+      },
+    });
     prompt = await maybeSpiceUpPrompt(prompt, { statusEl: status });
     const spiceMeta = (prompt && typeof prompt === "object" && "prompt" in prompt)
       ? prompt
@@ -23811,6 +23838,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         error: "Prompt is empty.",
       });
       promptSubmitInFlight = false;
+      hideViewportOverlay(projectId, { complete: false, force: true });
       stopGenerationWatch();
       if (status) {
         status.className = "status error";
@@ -23825,6 +23853,36 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         prompt_improved: true,
       });
     }
+
+    // Show the generation banner after improve so convert/spice waits don't look stuck.
+    if (canvasAttached) markCanvasGenerationPending(projectId);
+    viewerOverlay.clearError();
+    beginGenerationWatch(projectId, {
+      kind: "prompt",
+      mode: genMode,
+      pendingStart: true,
+    });
+    if (generationWatchOverlay) {
+      generationWatchOverlay.progress = {
+        ...(generationWatchOverlay.progress || {}),
+        pct: spiceMeta.promptImproved ? 10 : 8,
+        label: spiceMeta.promptImproved ? "Prompt improved — starting CAD…" : "Starting CAD generation…",
+        thinking: spiceMeta.promptImproved
+          ? "Using the improved prompt for CAD generation…"
+          : "Starting CAD generation…",
+        improved_prompt: spiceMeta.promptImproved ? prompt : generationWatchOverlay.progress?.improved_prompt,
+        activity: spiceMeta.promptImproved
+          ? [
+              { text: "Prompt improved with AI", stage: "analyze" },
+              { text: "Starting CAD generation…", stage: "analyze" },
+            ]
+          : [{ text: "Starting CAD generation…", stage: "analyze" }],
+      };
+      if (spiceMeta.promptImproved) {
+        generationWatchOverlay.message = "Prompt improved — generating…";
+      }
+    }
+    syncViewportGenerationOverlay();
     if (status) {
       status.className = "status loading";
       status.textContent = convertImagesToDrawing

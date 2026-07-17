@@ -15695,11 +15695,9 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     )
     mode = (body.mode or "standard").strip().lower()
     target = (body.target_mode or "new").strip().lower()
-    render_intent = mode == "render" or _looks_like_scene_render_intent(original)
-    # Even if the UI is on Mode 2.0 / Fusion, photoreal "create a render…" prompts
-    # must use the render improver — never rewrite them into a CAD feature brief.
-    use_render_improve = render_intent or mode in {"standard", ""}
-    effective_mode = "render" if render_intent else mode
+    # Honor the explicit mode from the client. Photoreal scene-render submits
+    # send mode="render"; Mode 2.0 / Fusion / Architect must keep CAD improve.
+    use_render_improve = mode in {"render", "standard", ""}
     mode_hint = {
         "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
         "fusion": "Fusion 360 parametric CAD. Prefer feature-friendly dimensions and clear solids.",
@@ -15714,7 +15712,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
             "Render / standard generation: improve for a clear photoreal image render, "
             "not Mode 2.0 feature-tree wording."
         ),
-    }.get(effective_mode, "General generation. Include shape, size, and how it should look when rendered.")
+    }.get(mode, "General generation. Include shape, size, and how it should look when rendered.")
     target_hint = (
         "This is an EDIT of an existing selected object — preserve overall identity and only change what the user asked."
         if target == "edit"
@@ -15728,7 +15726,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         else "Rewrite this into a stronger parametric CAD / Mode 2.0 prompt. Return only the improved prompt text."
     )
     user_content = (
-        f"Mode: {effective_mode}\n{mode_hint}\n{target_hint}\n\n"
+        f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
         f"User prompt to improve:\n{original}"
     )
     # Prefer fast, non-reasoning improve; the generated model still honors the
@@ -15771,9 +15769,8 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     return {
         "prompt": original,
         "improved_prompt": improved,
-        "mode": effective_mode,
+        "mode": mode,
         "improve_style": "render" if use_render_improve else "cad",
-        "render_intent": bool(render_intent),
         "trace": {
             "model": call_trace.get("model"),
             "provider": call_trace.get("provider"),
