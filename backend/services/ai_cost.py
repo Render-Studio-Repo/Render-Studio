@@ -43,7 +43,7 @@ OPENAI_PRICING: dict[str, dict[str, float]] = {
 }
 
 ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
-    "claude-fable-5": {"input": 3.0, "output": 15.0},
+    "claude-fable-5": {"input": 0.3, "output": 1.5},
     "claude-opus-4-8": {"input": 5.0, "output": 25.0},
     "claude-opus-4-7": {"input": 5.0, "output": 25.0},
     "claude-4.6-opus": {"input": 5.0, "output": 25.0},

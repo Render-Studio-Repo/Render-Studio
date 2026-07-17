@@ -678,8 +678,16 @@ function jobFinishedDuringCurrentWatch(job = {}) {
   return false;
 }
 
+function schedulePromptHistoryFollowupRefresh(pid = projectId, delayMs = 1600) {
+  if (!pid || pid !== projectId) return;
+  window.setTimeout(() => {
+    if (projectId === pid) void refreshPromptHistory();
+  }, delayMs);
+}
+
 async function applyGenerationComplete(gen, pid = projectId) {
   if (!gen?.filename || !pid) return;
+  syncPendingPromptHistoryFromGeneration(gen, pid);
   window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...gen, projectId: pid } }));
   // Always mark the project as having a new model — badge shows in the explorer
   // for every completion and is cleared when the user clicks on the project.
@@ -712,6 +720,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
     viewerOverlay.clearError();
     await refreshTimeline();
     await refreshPromptHistory();
+    schedulePromptHistoryFollowupRefresh(pid);
     showAiComposePanel();
     clearPromptComposeResult();
     await maybeReapplyCapturedTexture(preservedTexture, gen.filename);
@@ -744,6 +753,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
 
 async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId) {
   if (!msg?.filename || !pid) return;
+  syncPendingPromptHistoryFromGeneration(msg, pid);
   window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...msg, projectId: pid } }));
   if (pid !== projectId) {
     newlyCompletedProjects.add(pid);
@@ -781,6 +791,7 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   viewerOverlay.clearError();
   await refreshTimeline();
   await refreshPromptHistory();
+  schedulePromptHistoryFollowupRefresh(pid);
   showAiComposePanel();
   await maybeReapplyCapturedTexture(preservedTexture, msg.filename);
   pendingPromptSelectionContext = null;
@@ -1360,6 +1371,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
   const poll = async () => {
     try {
       const gen = await api(`/api/projects/${pid}/generation`);
+      syncPendingPromptHistoryFromGeneration(gen, pid);
       const proj = allProjects.find((p) => p.id === pid);
       if (proj) proj.generation = gen;
       const runningJobs = generationRunningJobs(gen, generationWatchOverlay);
@@ -4927,6 +4939,7 @@ document.getElementById("fusion-capability-modal")?.addEventListener("click", (e
 document.getElementById("prompt-target-mode")?.addEventListener("change", () => {
   if (getPromptTargetMode() !== "edit") promptTargetSelectedBody = null;
   syncPromptTargetUI();
+  syncSelectedObjectPromptReference(objectTools?.getSelection?.() || null);
 });
 
 document.getElementById("prompt-target-object")?.addEventListener("change", (e) => {
@@ -5298,6 +5311,62 @@ function updatePendingPromptHistoryEntry(id, patch = {}) {
     latestPromptHistoryEntries,
     allProjects.find((p) => p.id === projectId)?.usage_summary || null,
   );
+}
+
+function promptHistoryPatchFromGenerationStatus(job = {}) {
+  const patch = {};
+  for (const key of [
+    "trace_id",
+    "filename",
+    "model",
+    "provider",
+    "speed",
+    "target_mode",
+    "message",
+    "error",
+    "usage",
+    "cost_usd",
+    "ai_calls",
+  ]) {
+    if (job[key] !== undefined && job[key] !== null && job[key] !== "") {
+      patch[key] = job[key];
+    }
+  }
+  if (job.prompt) patch.prompt = job.prompt;
+  if (job.mode || job.prompt_mode) {
+    patch.prompt_mode = promptModeForRef(job.mode || job.prompt_mode);
+  }
+  if (job.codex_agent || job.jake_codex_agent) {
+    patch.codex_agent = true;
+  }
+  const status = String(job.status || "").toLowerCase();
+  if (["accepted", "pending", "queued", "running", "starting"].includes(status)) {
+    patch.status = "running";
+    patch.success = false;
+  } else if (status === "complete") {
+    patch.status = "complete";
+    patch.success = true;
+  } else if (["failed", "canceled", "stopped"].includes(status)) {
+    patch.status = status;
+    patch.success = false;
+  }
+  return patch;
+}
+
+function syncPendingPromptHistoryFromGeneration(gen = {}, pid = projectId) {
+  if (!gen || !pid) return;
+  const candidates = [];
+  if (gen.prompt_id) candidates.push(gen);
+  if (Array.isArray(gen.jobs)) candidates.push(...gen.jobs);
+  const seen = new Set();
+  for (const job of candidates) {
+    const id = String(job?.prompt_id || "").trim();
+    if (!id || seen.has(id) || !pendingPromptHistoryEntries.has(id)) continue;
+    seen.add(id);
+    const pending = pendingPromptHistoryEntries.get(id);
+    if (pending?.project_id && pending.project_id !== pid) continue;
+    updatePendingPromptHistoryEntry(id, promptHistoryPatchFromGenerationStatus(job));
+  }
 }
 
 async function refreshPromptHistory() {
@@ -12797,7 +12866,12 @@ function selectedPromptTargetObjectRef() {
 }
 
 function promptReferencesForSubmit() {
-  const refs = composer.getReferences();
+  let refs = composer.getReferences();
+  if (getPromptTargetMode() !== "edit") {
+    const staleAutoRefs = refs.filter(isAutoSelectedObjectReference);
+    for (const ref of staleAutoRefs) composer.removeReference(ref.id);
+    refs = refs.filter((ref) => !isAutoSelectedObjectReference(ref));
+  }
   const bodyRef = selectedPromptTargetBodyRef();
   const objectRef = selectedPromptTargetObjectRef();
   const additions = [objectRef, bodyRef].filter(Boolean);
@@ -24078,6 +24152,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
           traceId: data.trace_id,
         };
         if (data.generation) {
+          syncPendingPromptHistoryFromGeneration(data.generation, projectId);
           const proj = allProjects.find((p) => p.id === projectId);
           if (proj) proj.generation = data.generation;
         }
