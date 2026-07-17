@@ -5252,7 +5252,14 @@ def admin_message_feedback_user(
     if project_id:
         try:
             project_path = _require_project_read(user, project_id)
-            thread = project_chat_service.get_thread(project_path, "general", user=user, workspace_role="admin")
+            public_scope = _public_chat_scope_id(project_id)
+            thread = project_chat_service.get_thread(
+                project_path,
+                "general",
+                user=user,
+                workspace_role="admin",
+                workspace_id=public_scope,
+            )
             if not thread:
                 raise ValueError("Could not open project chat.")
             mention_name = (
@@ -5286,6 +5293,7 @@ def admin_message_feedback_user(
                 user=user,
                 mention_candidates_list=candidates,
                 workspace_role="admin",
+                workspace_id=public_scope,
             )
             _notify_chat_message(project_id, thread, chat_message, user)
         except HTTPException:
@@ -5580,7 +5588,8 @@ def request_meeting_with_user(
         try:
             path = _require_project_read(user, body.project_id)
             members = _project_chat_members(body.project_id)
-            threads = project_chat_service.list_threads(path, user)
+            public_scope = _public_chat_scope_id(body.project_id)
+            threads = project_chat_service.list_threads(path, user, workspace_id=public_scope)
             studio = next(
                 (
                     t
@@ -5598,6 +5607,7 @@ def request_meeting_with_user(
                     body=result["chat_body"],
                     user=user,
                     mention_candidates_list=candidates,
+                    workspace_id=public_scope,
                 )
                 try:
                     _notify_chat_message(body.project_id, studio, chat_posted, user)
@@ -11001,6 +11011,18 @@ def _project_workspace_role(project_id: str, user_id: str | None) -> str | None:
     return teams_service.get_member_role(team_id, user_id)
 
 
+PUBLIC_CHAT_SCOPE_ID = "render3d-public"
+
+
+def _public_chat_scope_id(project_id: str | None = None) -> str:
+    """Stable storage scope for the public Render Studio room.
+
+    Project/private threads remain project-scoped, but the general public chat
+    must survive project and workspace switches.
+    """
+    return PUBLIC_CHAT_SCOPE_ID
+
+
 def _chat_image_public_url(project_id: str, image: dict[str, Any]) -> dict[str, Any]:
     stored = Path(str(image.get("stored_name") or image.get("url") or "")).name
     return {
@@ -11210,6 +11232,7 @@ def _maybe_reply_as_render_agent(
     message: dict[str, Any],
     user: dict[str, Any],
     background_tasks: BackgroundTasks,
+    workspace_id: str | None = None,
 ) -> None:
     mentions = message.get("mentions") or []
     if not any(m.get("type") == "agent" for m in mentions):
@@ -11266,6 +11289,7 @@ def _maybe_reply_as_render_agent(
                 user=user,
                 parent_id=message.get("id"),
                 as_agent=True,
+                workspace_id=workspace_id,
             )
             _notify_chat_message(
                 project_id,
@@ -11285,8 +11309,9 @@ def list_project_chat_threads(project_id: str, user: dict[str, Any] = Depends(ge
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    threads = project_chat_service.list_threads(path, user, workspace_role=role)
-    unread = project_chat_service.unread_summary(path, user["id"])
+    public_scope = _public_chat_scope_id(project_id)
+    threads = project_chat_service.list_threads(path, user, workspace_role=role, workspace_id=public_scope)
+    unread = project_chat_service.unread_summary(path, user["id"], workspace_id=public_scope)
     return {"threads": threads, "unread": unread, "workspace_role": role}
 
 
@@ -11310,6 +11335,7 @@ def create_project_chat_thread(
         workspace_role=role,
         kind=body.kind,
         invite_user_ids=invite_ids,
+        workspace_id=_public_chat_scope_id(project_id),
     )
     return {"thread": thread}
 
@@ -11324,11 +11350,12 @@ def get_project_chat_thread(
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
+    public_scope = _public_chat_scope_id(project_id)
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role, workspace_id=public_scope)
     if not thread:
         raise HTTPException(404, "Thread not found")
     thread["messages"] = [_decorate_chat_message(project_id, m) for m in thread.get("messages") or []]
-    return {"thread": thread, "unread": project_chat_service.unread_summary(path, user["id"])}
+    return {"thread": thread, "unread": project_chat_service.unread_summary(path, user["id"], workspace_id=public_scope)}
 
 
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/members")
@@ -11434,7 +11461,7 @@ def get_project_chat_unread(project_id: str, user: dict[str, Any] = Depends(get_
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    return project_chat_service.unread_summary(path, user["id"])
+    return project_chat_service.unread_summary(path, user["id"], workspace_id=_public_chat_scope_id(project_id))
 
 
 @app.post("/api/projects/{project_id}/chat/link-preview")
@@ -11461,14 +11488,18 @@ async def post_project_chat_message(
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
+    public_scope = _public_chat_scope_id(project_id)
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role, workspace_id=public_scope)
     if not thread:
         raise HTTPException(404, "Thread not found")
     saved_images: list[dict[str, Any]] = []
     message_id = str(uuid.uuid4())[:10]
+    image_root = path
+    if thread.get("slug") == "general" or thread.get("scope") == "workspace":
+        image_root = project_chat_service.workspace_chat_root(public_scope) or path
     for index, upload in enumerate((images or [])[:6]):
         try:
-            saved = project_chat_service.save_chat_image(path, upload, message_id=message_id, index=index)
+            saved = project_chat_service.save_chat_image(image_root, upload, message_id=message_id, index=index)
         except Exception:
             saved = None
         if saved:
@@ -11486,6 +11517,7 @@ async def post_project_chat_message(
             mention_candidates_list=candidates,
             message_id=message_id,
             workspace_role=role,
+            workspace_id=public_scope,
         )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
@@ -11497,8 +11529,8 @@ async def post_project_chat_message(
     # post_message assigns its own id; that's fine.
     decorated = _decorate_chat_message(project_id, message)
     _notify_chat_message(project_id, thread, message, user)
-    _maybe_reply_as_render_agent(path, project_id, thread, message, user, background_tasks)
-    return {"message": decorated, "unread": project_chat_service.unread_summary(path, user["id"])}
+    _maybe_reply_as_render_agent(path, project_id, thread, message, user, background_tasks, workspace_id=public_scope)
+    return {"message": decorated, "unread": project_chat_service.unread_summary(path, user["id"], workspace_id=public_scope)}
 
 
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/messages/{message_id}/reactions")
@@ -11512,9 +11544,10 @@ def react_project_chat_message(
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
+    public_scope = _public_chat_scope_id(project_id)
     try:
         message = project_chat_service.toggle_reaction(
-            path, thread_id=thread_id, message_id=message_id, emoji=body.emoji, user=user
+            path, thread_id=thread_id, message_id=message_id, emoji=body.emoji, user=user, workspace_id=public_scope
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -11539,10 +11572,11 @@ def mark_project_chat_read(
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
+    public_scope = _public_chat_scope_id(project_id)
     cursor = project_chat_service.mark_read(
-        path, user_id=user["id"], thread_id=body.thread_id, message_id=body.message_id
+        path, user_id=user["id"], thread_id=body.thread_id, message_id=body.message_id, workspace_id=public_scope
     )
-    return {"ok": True, "read_cursor": cursor, "unread": project_chat_service.unread_summary(path, user["id"])}
+    return {"ok": True, "read_cursor": cursor, "unread": project_chat_service.unread_summary(path, user["id"], workspace_id=public_scope)}
 
 
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/assist")
@@ -11556,7 +11590,8 @@ def project_chat_assist_event(
 
     path = _require_project_read(user, project_id)
     role = _project_workspace_role(project_id, user.get("id"))
-    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role)
+    public_scope = _public_chat_scope_id(project_id)
+    thread = project_chat_service.get_thread(path, thread_id, user=user, workspace_role=role, workspace_id=public_scope)
     if not thread:
         raise HTTPException(404, "Thread not found")
     action = str(body.action or "").strip().lower().replace("-", "_")
@@ -11599,7 +11634,7 @@ def get_project_chat_media(
     from backend.services import project_chat_service
 
     path = _require_project_read(user, project_id)
-    media = project_chat_service.resolve_media_path(path, filename)
+    media = project_chat_service.resolve_media_path(path, filename, workspace_id=_public_chat_scope_id(project_id))
     if not media:
         raise HTTPException(404, "Media not found")
     return FileResponse(media)

@@ -27,6 +27,7 @@ MAX_IMAGE_BYTES = 8_000_000
 ALLOWED_REACTIONS = ("👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀")
 RENDER_AGENT_ID = "render-agent"
 RENDER_AGENT_NAME = "Render Agent"
+GLOBAL_PUBLIC_CHAT_IDS = {"render3d-public", "public", "global-public"}
 _LOCKS_GUARD = threading.Lock()
 _PROJECT_LOCKS: dict[str, threading.RLock] = {}
 logger = logging.getLogger(__name__)
@@ -271,13 +272,18 @@ def _absorb_project_general(project_path: Path, workspace_thread: dict[str, Any]
 
 
 def _team_project_paths(workspace_id: str) -> list[Path]:
+    root = Path(settings.projects_dir)
+    if str(workspace_id or "").strip().lower() in GLOBAL_PUBLIC_CHAT_IDS:
+        try:
+            return [p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
+        except OSError:
+            return []
     try:
         from backend.services import teams_service
 
         ids = teams_service.team_project_ids(workspace_id) or []
     except Exception:
         ids = []
-    root = Path(settings.projects_dir)
     return [root / str(pid) for pid in ids if (root / str(pid)).is_dir()]
 
 
