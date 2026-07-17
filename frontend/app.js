@@ -4541,11 +4541,26 @@ function pushSpiceOverlayProgress(progress = {}) {
   }
 }
 
-async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
+function looksLikeSceneRenderIntent(text) {
+  const t = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  if (/\b(photoreal(?:istic)?|photo[\s-]?real|product shot|lifestyle shot)\b/.test(t)) return true;
+  if (/\b(create|make|generate|do|give me|i want)\s+(a\s+|an\s+)?(photoreal(?:istic)?\s+)?render\b/.test(t)) return true;
+  if (/\brender\s+(of|this|the|my|it|from)\b/.test(t)) return true;
+  if (/\brender\b/.test(t) && /\b(table|desk|counter|outside|outdoors|kitchen|studio|environment|scene|living room|on a)\b/.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {}) {
   const original = String(promptText || "").trim();
   if (!original || !isSpiceEnabled()) {
     return { prompt: original, originalPrompt: original, promptImproved: false };
   }
+  const improveMode = forceMode
+    || (looksLikeSceneRenderIntent(original) ? "render" : null)
+    || (promptMode === "draw" ? "draw" : promptMode || DEFAULT_PROMPT_MODE);
   if (statusEl) {
     statusEl.className = "status loading";
     statusEl.textContent = "Improving prompt with AI…";
@@ -4555,9 +4570,11 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
     stage: "analyze",
     label: "Improving prompt with AI…",
     thinking:
-      promptMode === "v2" || promptMode === "fusion" || promptMode === "architect"
+      improveMode === "render"
+        ? "Rewriting your prompt for a clearer photoreal scene…"
+        : improveMode === "v2" || improveMode === "fusion" || improveMode === "architect"
         ? "Rewriting your prompt for clearer parametric CAD…"
-        : promptMode === "draw"
+        : improveMode === "draw"
           ? "Rewriting your prompt for a clearer direct edit…"
           : "Rewriting your prompt for a clearer rendered look…",
     activity: [
@@ -4570,7 +4587,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl } = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: original,
-        mode: promptMode === "draw" ? "draw" : promptMode || DEFAULT_PROMPT_MODE,
+        mode: improveMode,
         target_mode: getPromptTargetMode?.() || "new",
         // Keep prompt rewriting quick/reliable. The actual CAD generation still
         // uses the selected Speed/Quality value when the prompt is submitted.
@@ -22227,6 +22244,81 @@ function captureViewportPng() {
   return dataUrl;
 }
 
+/** Clean geometry-locked viewport capture for photoreal scene renders. */
+function captureSceneRenderReferencePng(targetFilename = null) {
+  if (!webglAvailable || !renderer?.domElement) {
+    throw new Error("3D viewport is not available for rendering.");
+  }
+  if (!currentMesh && !(projectAssembly?.count?.() > 0)) {
+    throw new Error("Load or generate a model first, then describe the environment (e.g. “in a kitchen”).");
+  }
+
+  const helper = transformControls?.getHelper?.();
+  const saved = {
+    gridVisible,
+    helperVisible: helper ? helper.visible : null,
+    bgHex: scene.background?.getHex?.() ?? null,
+    visibility: [],
+    overlayVisibility: [],
+  };
+
+  try {
+    setGridVisible(false);
+    if (helper) helper.visible = false;
+
+    // Hide crease/silhouette/selection overlays so the AI sees true solid geometry.
+    scene.traverse((child) => {
+      if (
+        child.userData?.isEdge
+        || child.userData?.isSilhouette
+        || child.userData?.isObjectHighlight
+        || child.userData?.isFaceHighlight
+      ) {
+        saved.overlayVisibility.push([child, child.visible]);
+        child.visible = false;
+      }
+    });
+
+    // Isolate the linked STEP/GLB target so other parts don't confuse the silhouette.
+    const assemblyList = typeof projectAssembly?.list === "function" ? projectAssembly.list() : [];
+    if (targetFilename && assemblyList.length) {
+      for (const [name, obj] of assemblyList) {
+        if (!name || !obj) continue;
+        saved.visibility.push([name, obj.visible !== false]);
+        const keep = name === targetFilename || fileStem(name) === fileStem(targetFilename);
+        projectAssembly.setVisible(name, keep);
+      }
+    }
+
+    if (targetFilename) {
+      fitCameraToComponent(targetFilename);
+      controls?.update?.();
+    }
+
+    // Neutral studio backdrop — clear silhouette, no theme chrome.
+    scene.background?.setHex?.(0x1b1f27);
+
+    const renderCam = sketchEditor?.getRenderCamera?.() || camera;
+    renderer.render(scene, renderCam);
+    const dataUrl = renderer.domElement.toDataURL("image/png");
+    if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+      throw new Error("Could not capture the viewport. Try again after the model finishes loading.");
+    }
+    return dataUrl;
+  } finally {
+    setGridVisible(saved.gridVisible);
+    if (helper && saved.helperVisible != null) helper.visible = saved.helperVisible;
+    if (saved.bgHex != null) scene.background?.setHex?.(saved.bgHex);
+    for (const [child, vis] of saved.overlayVisibility) {
+      if (child) child.visible = vis;
+    }
+    for (const [name, vis] of saved.visibility) {
+      projectAssembly.setVisible?.(name, vis);
+    }
+    renderer.render(scene, sketchEditor?.getRenderCamera?.() || camera);
+  }
+}
+
 const SCREENSHOT_PREF_KEY = "render3d:screenshotPreference:v1";
 const SCREENSHOT_PREF_DEFAULT = { mode: "ask", crop: null };
 const SCREENSHOT_MODES = new Set(["ask", "viewport", "crop"]);
@@ -23153,22 +23245,12 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
   await ensureProject();
   const status = document.getElementById("prompt-status");
   const reply = document.getElementById("prompt-reply");
-  const renderTarget = prepareLinkedGeometryForRender(promptReferences);
-  const renderBaseFilename = renderTarget.filename || selectedFile || null;
-  if (status) {
-    status.className = "status loading";
-    status.textContent = renderTarget.ref
-      ? `Rendering photoreal scene from linked geometry: ${renderBaseFilename}…`
-      : "Rendering photoreal scene… this can take a moment.";
-  }
-  if (reply) reply.textContent = "";
-  lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
-  const viewport_image = captureViewportPng();
-  const speed = document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
-  const renderGenerationId = `render:${Date.now()}`;
   const renderProjectId = projectId;
+  const renderGenerationId = `render:${Date.now()}`;
   const projectEntry = allProjects.find((p) => p.id === renderProjectId);
   const previousGeneration = projectEntry?.generation || null;
+
+  // Sticky loading banner first so spice/capture never looks like a no-op.
   upsertProjectInList({
     id: renderProjectId,
     generation: {
@@ -23182,7 +23264,7 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
       by_user_name: currentUser?.display_name || currentUser?.email || "You",
       by_avatar_url: currentUser?.avatar_url || null,
       trace_id: renderGenerationId,
-      progress: { pct: 8, label: "Rendering photoreal scene…" },
+      progress: { pct: 4, label: "Preparing photoreal render…" },
     },
   });
   renderProjectList();
@@ -23191,13 +23273,64 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
     promptMode: "render",
     mode: "render",
     prompt,
+    pendingStart: true,
     estimateMs: 240000,
-    progress: { pct: 8, label: "Rendering photoreal scene…" },
+    progress: { pct: 4, label: "Preparing photoreal render from CAD geometry…" },
   });
   syncStopButtonVisibility();
+
+  const renderTarget = prepareLinkedGeometryForRender(promptReferences);
+  const renderBaseFilename = renderTarget.filename || selectedFile || null;
+  if (status) {
+    status.className = "status loading";
+    status.textContent = renderTarget.ref
+      ? `Rendering photoreal scene from linked geometry: ${renderBaseFilename}…`
+      : "Rendering photoreal scene… this can take a moment.";
+  }
+  if (reply) reply.textContent = "";
+  lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
+
+  showViewportOverlay(renderProjectId, "Capturing CAD geometry…", {
+    kind: "scene_render",
+    promptMode: "render",
+    mode: "render",
+    prompt,
+    pendingStart: true,
+    estimateMs: 240000,
+    progress: { pct: 12, label: "Capturing STEP/viewport geometry…" },
+  });
+  // Yield so the overlay paints before the synchronous capture/fit.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  let viewport_image;
+  let speed;
+  try {
+    viewport_image = captureSceneRenderReferencePng(renderBaseFilename);
+    speed = document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
+  } catch (err) {
+    hideViewportOverlay(renderProjectId, { complete: false, force: true });
+    const current = allProjects.find((p) => p.id === renderProjectId);
+    if (current?.generation?.trace_id === renderGenerationId) {
+      upsertProjectInList({ id: renderProjectId, generation: previousGeneration });
+      renderProjectList();
+    }
+    throw err;
+  }
+
+  showViewportOverlay(renderProjectId, "Rendering photoreal scene…", {
+    kind: "scene_render",
+    promptMode: "render",
+    mode: "render",
+    prompt,
+    pendingStart: true,
+    estimateMs: 240000,
+    progress: { pct: 22, label: "Generating photoreal image from CAD silhouette…" },
+  });
+
   let data = null;
   const renderAbort = new AbortController();
   activePromptAbort = renderAbort;
+  let renderFailed = false;
   try {
     data = await api(
       `/api/projects/${renderProjectId}/scene-render`,
@@ -23216,6 +23349,8 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
       240000,
     );
   } catch (err) {
+    renderFailed = true;
+    hideViewportOverlay(renderProjectId, { complete: false, force: true });
     if (err?.name === "AbortError" || renderAbort.signal.aborted) {
       const canceled = new Error("Render canceled.");
       canceled.name = "AbortError";
@@ -23229,8 +23364,16 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
       upsertProjectInList({ id: renderProjectId, generation: previousGeneration });
       renderProjectList();
     }
-    hideViewportOverlay(renderProjectId, { complete: !renderAbort.signal.aborted });
   }
+
+  showViewportOverlay(renderProjectId, "Opening render…", {
+    kind: "scene_render",
+    promptMode: "render",
+    mode: "render",
+    prompt,
+    progress: { pct: 92, label: "Opening photoreal render…" },
+  });
+
   lastPromptCopyContext = {
     ...lastPromptCopyContext,
     promptId: data?.prompt_id,
@@ -23249,6 +23392,7 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
       kind: data.file_kind || "image",
     });
   }
+  hideViewportOverlay(renderProjectId, { complete: !renderFailed && !renderAbort.signal.aborted });
   if (status) {
     status.className = "status ok";
     status.textContent = data?.message || `Rendered scene saved as ${filename || "PNG"}.`;
@@ -23485,15 +23629,38 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
     return;
   }
-  if (promptMode === "render") {
+  if (promptMode === "render" || looksLikeSceneRenderIntent(prompt)) {
     promptSubmitInFlight = true;
     promptClickInFlight = false;
     userCancelRequested = false;
+    const status = document.getElementById("prompt-status");
     lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: "render" });
     try {
-      await runSceneRenderPrompt(prompt, promptReferencesForSubmit());
+      // Show sticky render banner immediately (even before spice) — never Mode 2.0.
+      showViewportOverlay(projectId, "Rendering photoreal scene…", {
+        kind: "scene_render",
+        promptMode: "render",
+        mode: "render",
+        prompt,
+        pendingStart: true,
+        estimateMs: 240000,
+        progress: { pct: 3, label: "Preparing photoreal render…" },
+      });
+      let renderPrompt = prompt;
+      if (isSpiceEnabled()) {
+        if (status) {
+          status.className = "status loading";
+          status.textContent = "Improving render prompt…";
+        }
+        const spiceMeta = await maybeSpiceUpPrompt(prompt, { statusEl: status, forceMode: "render" });
+        const next = (spiceMeta && typeof spiceMeta === "object" && "prompt" in spiceMeta)
+          ? spiceMeta
+          : { prompt: String(spiceMeta || prompt), originalPrompt: prompt, promptImproved: false };
+        renderPrompt = String(next.prompt || prompt).trim() || prompt;
+      }
+      await runSceneRenderPrompt(renderPrompt, promptReferencesForSubmit());
     } catch (err) {
-      const status = document.getElementById("prompt-status");
+      hideViewportOverlay(projectId, { complete: false, force: true });
       const msg = formatUserError(err);
       if (err?.name === "AbortError" || userCancelRequested) {
         if (status) {

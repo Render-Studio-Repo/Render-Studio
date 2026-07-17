@@ -15154,19 +15154,43 @@ def _write_scene_render(project_path: Path, image_bytes: bytes) -> str:
     return filename
 
 
+def _looks_like_scene_render_intent(text: str) -> bool:
+    """Detect photoreal scene-render requests even when UI mode is CAD (e.g. Mode 2.0)."""
+    t = " ".join(str(text or "").lower().split())
+    if not t:
+        return False
+    if "render3d" in t and "render" not in t.replace("render3d", ""):
+        return False
+    if any(k in t for k in ("photoreal", "photo-real", "photo real", "product shot", "lifestyle shot")):
+        return True
+    if re.search(r"\b(create|make|generate|do|give me|i want)\s+(a\s+|an\s+)?(photoreal(?:istic)?\s+)?render\b", t):
+        return True
+    if re.search(r"\brender\s+(of|this|the|my|it|from)\b", t):
+        return True
+    if re.search(r"\brender\b", t) and re.search(
+        r"\b(table|desk|counter|outside|outdoors|kitchen|studio|environment|scene|living room|on a)\b",
+        t,
+    ):
+        return True
+    return False
+
+
 def _scene_render_prompt(user_prompt: str, project_name: str | None, base_filename: str | None) -> str:
     context = f"Model/project: {project_name or 'Render3D model'}"
     if base_filename:
         context += f" ({base_filename})"
     return (
-        "Create a photorealistic product/environment render using the provided viewport image as the exact 3D model reference. "
-        "The viewport image is generated from the actual linked CAD geometry; treat its silhouette, topology, proportions, parts, holes, "
-        "openings, joints, and visible orientation as authoritative. "
-        "Do not redesign, simplify, add, remove, or reshape model geometry. Place it naturally in the requested real-life environment with realistic lighting, shadows, "
-        "camera perspective, contact with surfaces, and plausible scale. "
-        "Improve the visual material treatment to make the model feel real: choose plausible base colors, subtle roughness/metal/plastic/wood cues, "
-        "edge wear, seams, decals, or contrast panels only when they fit the object. Keep these recolor and texture decisions believable, "
-        "manufacturable, and compatible with the existing CAD surfaces so they can be used as a reference for recoloring the model later.\n\n"
+        "IMAGE-TO-IMAGE EDIT: photorealize the exact CAD model shown in the attached viewport image. "
+        "The viewport is a faithful capture of linked STEP/GLB geometry — it is the geometry source of truth.\n"
+        "HARD CONSTRAINTS (do not violate):\n"
+        "- Preserve the exact silhouette, part count, topology, proportions, hole locations, fastener positions, "
+        "cable/rope routing, crank/handle side, plate orientation, and camera-relative pose from the viewport.\n"
+        "- Do NOT invent a different winch/machine layout, swap left/right, flatten a vertical plate into a base, "
+        "or restyle the product into a generic catalog winch.\n"
+        "- Do NOT add, remove, merge, or reshape structural parts. Environment/materials only.\n"
+        "- Keep the same viewing angle and object orientation; only change lighting, materials, and surroundings.\n"
+        "Allowed changes: realistic materials/colors/finish, environment and lighting from the user brief, "
+        "contact shadows, depth of field, and natural scale cues.\n\n"
         f"{context}\n"
         f"User environment/render direction: {user_prompt}"
     )
@@ -15671,7 +15695,11 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     )
     mode = (body.mode or "standard").strip().lower()
     target = (body.target_mode or "new").strip().lower()
-    use_render_improve = mode in {"render", "standard", ""}
+    render_intent = mode == "render" or _looks_like_scene_render_intent(original)
+    # Even if the UI is on Mode 2.0 / Fusion, photoreal "create a render…" prompts
+    # must use the render improver — never rewrite them into a CAD feature brief.
+    use_render_improve = render_intent or mode in {"standard", ""}
+    effective_mode = "render" if render_intent else mode
     mode_hint = {
         "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
         "fusion": "Fusion 360 parametric CAD. Prefer feature-friendly dimensions and clear solids.",
@@ -15679,13 +15707,14 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         "draw": "Direct modeling edit of selected faces/edges. Be specific about which features change.",
         "render": (
             "Render mode: improve for a photoreal image render using the current viewport/model as the subject "
-            "(environment, lighting, camera, material finish). Do not convert it into Mode 2.0 CAD instructions."
+            "(environment, lighting, camera, material finish). Do not convert it into Mode 2.0 CAD instructions. "
+            "Preserve existing CAD geometry; only describe scene/materials."
         ),
         "standard": (
             "Render / standard generation: improve for a clear photoreal image render, "
             "not Mode 2.0 feature-tree wording."
         ),
-    }.get(mode, "General generation. Include shape, size, and how it should look when rendered.")
+    }.get(effective_mode, "General generation. Include shape, size, and how it should look when rendered.")
     target_hint = (
         "This is an EDIT of an existing selected object — preserve overall identity and only change what the user asked."
         if target == "edit"
@@ -15699,7 +15728,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         else "Rewrite this into a stronger parametric CAD / Mode 2.0 prompt. Return only the improved prompt text."
     )
     user_content = (
-        f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
+        f"Mode: {effective_mode}\n{mode_hint}\n{target_hint}\n\n"
         f"User prompt to improve:\n{original}"
     )
     # Prefer fast, non-reasoning improve; the generated model still honors the
@@ -15742,8 +15771,9 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     return {
         "prompt": original,
         "improved_prompt": improved,
-        "mode": mode,
+        "mode": effective_mode,
         "improve_style": "render" if use_render_improve else "cad",
+        "render_intent": bool(render_intent),
         "trace": {
             "model": call_trace.get("model"),
             "provider": call_trace.get("provider"),
@@ -16204,12 +16234,39 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
 
         image_file = io.BytesIO(viewport_bytes)
         image_file.name = "viewport.png"
-        response = ai.client.images.edit(
-            model="gpt-image-1",
-            image=image_file,
-            prompt=prompt,
-            size="1024x1024",
-        )
+        # High input fidelity keeps STEP/viewport silhouette locked; quality follows speed.
+        render_quality = "high" if str(body.speed or "").lower() == "quality" else "medium"
+        edit_kwargs: dict[str, Any] = {
+            "model": "gpt-image-1",
+            "image": image_file,
+            "prompt": prompt,
+            "size": "1024x1024",
+            "input_fidelity": "high",
+            "quality": render_quality,
+            "output_format": "png",
+        }
+        try:
+            response = ai.client.images.edit(**edit_kwargs)
+        except TypeError:
+            # Older SDK / model combo without fidelity knobs — fall back.
+            response = ai.client.images.edit(
+                model="gpt-image-1",
+                image=image_file,
+                prompt=prompt,
+                size="1024x1024",
+            )
+        except Exception as fidelity_exc:
+            # Some accounts reject quality/fidelity; retry with the classic call.
+            if "input_fidelity" in str(fidelity_exc).lower() or "quality" in str(fidelity_exc).lower():
+                image_file.seek(0)
+                response = ai.client.images.edit(
+                    model="gpt-image-1",
+                    image=image_file,
+                    prompt=prompt,
+                    size="1024x1024",
+                )
+            else:
+                raise
         from backend.services.ai_cost import usage_from_openai_response
 
         render_usage = usage_from_openai_response(response)
