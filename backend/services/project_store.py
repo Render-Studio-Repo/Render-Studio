@@ -193,15 +193,34 @@ def latest_model_file(project_path: Path) -> str | None:
     timeline = history_service.load_timeline(project_path)
     entries = timeline.get("entries", [])
     idx = timeline.get("current_index", -1)
+
+    def _usable(entry: dict[str, Any] | None) -> str | None:
+        if not entry:
+            return None
+        meta = entry.get("meta") or {}
+        status = str(meta.get("status") or entry.get("status") or "").lower()
+        label = str(entry.get("label") or "").lower()
+        # Skip canceled/failed timeline rows — they often point at the edit target
+        # (base_filename) rather than a new artifact.
+        if status in {"stopped", "canceled", "cancelled", "failed"} or label.startswith("stopped"):
+            if meta.get("success") is not True:
+                return None
+        if meta.get("success") is False:
+            return None
+        fn = entry.get("filename")
+        if fn and Path(str(fn)).suffix.lower() != ".dxf" and (project_path / fn).is_file():
+            return str(fn)
+        return None
+
     candidate: str | None = None
     if 0 <= idx < len(entries):
-        fn = entries[idx].get("filename")
-        if fn and Path(str(fn)).suffix.lower() != ".dxf" and (project_path / fn).is_file():
-            candidate = fn
-    elif entries:
-        fn = entries[-1].get("filename")
-        if fn and Path(str(fn)).suffix.lower() != ".dxf" and (project_path / fn).is_file():
-            candidate = fn
+        candidate = _usable(entries[idx])
+    if not candidate:
+        # Walk backward for the newest successful model artifact.
+        for entry in reversed(entries):
+            candidate = _usable(entry)
+            if candidate:
+                break
     if candidate:
         return cad_service.resolve_viewport_filename(project_path, candidate)
     files = [

@@ -708,12 +708,19 @@ def _sync_prompt_history_into_timeline(project_path: Path) -> None:
         is_stopped = status == "stopped" or "stopped" in error or "canceled" in error or "cancelled" in error
         prefix = "Stopped" if is_stopped else ("Render" if timeline_kind == "render" else "AI")
         label_src = prompt_text[:48] + ("…" if len(prompt_text) > 48 else "")
+        # Stopped/canceled prompts must NOT inherit base_filename — that made the
+        # edit target (e.g. house_framing.glb) become latest_model after cancel.
+        artifact_name = ""
+        if not is_stopped:
+            artifact_name = pe.get("filename") or ""
+            if not artifact_name and pe.get("success"):
+                artifact_name = pe.get("base_filename") or ""
         item = {
             "index": len(entries),
             "id": prompt_id or str(uuid.uuid4())[:10],
             "kind": timeline_kind,
             "label": f"{prefix}: {label_src}",
-            "filename": pe.get("base_filename") or pe.get("filename") or "",
+            "filename": artifact_name,
             "snapshot": None,
             "snapshot_files": [],
             "created_at": pe.get("created_at") or datetime.now(timezone.utc).isoformat(),
@@ -723,8 +730,10 @@ def _sync_prompt_history_into_timeline(project_path: Path) -> None:
             "user_avatar_url": pe.get("user_avatar_url"),
         }
         entries.append(item)
-        appended = True
         changed = True
+        # Only advance the scrubber for successful artifacts — never to Stopped rows.
+        if not is_stopped:
+            appended = True
         if trace_id:
             by_trace[trace_id] = item
         if prompt_id:

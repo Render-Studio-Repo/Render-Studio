@@ -23702,7 +23702,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
     return;
   }
-  if (promptMode === "render" || looksLikeSceneRenderIntent(prompt)) {
+  // Photoreal render only when the user explicitly chose Render mode.
+  // Do NOT auto-hijack Mode 2.0 / Fusion / Architect CAD prompts that merely
+  // mention "render" / "on a table" — that broke Improve Prompt + CAD generate.
+  if (promptMode === "render") {
     promptSubmitInFlight = true;
     promptClickInFlight = false;
     userCancelRequested = false;
