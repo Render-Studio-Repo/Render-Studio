@@ -302,8 +302,14 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
     );
     return;
   }
-  viewerOverlay.setGenerating(false, null, { complete: completeOpts.complete ?? false });
-  wiringOverlay?.setGenerating(false, null, { complete: completeOpts.complete ?? false });
+  viewerOverlay.setGenerating(false, null, {
+    complete: completeOpts.complete ?? false,
+    force: !!completeOpts.force,
+  });
+  wiringOverlay?.setGenerating(false, null, {
+    complete: completeOpts.complete ?? false,
+    force: !!completeOpts.force,
+  });
   syncViewportGenerationUserBadge(null);
   syncStopButtonVisibility();
 }
