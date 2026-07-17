@@ -450,7 +450,8 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
             "name": r["name"],
             "provider": r["provider"],
             "provider_label": "Claude" if r["provider"] == "anthropic" else "OpenAI",
-            "model": r["model"],
+            "model": r["member_model"] or r["model"],
+            "key_model": r["model"],
             "enabled": bool(r["enabled"]),
             "shared_by": r["shared_by"],
             "shared_by_name": r["shared_by_name"],
@@ -625,13 +626,24 @@ def delete_team_shared_key(team_id: str, key_id: str, user_id: str) -> None:
 
 
 def toggle_team_key(user_id: str, key_id: str, use_key: bool, model: str | None = None) -> None:
-    """Per-user opt in/out of a shared team key."""
+    """Per-user opt in/out of a shared team key.
+
+    Enabling a key is exclusive: other shared keys for this user are turned off so
+    picking Claude Fable/Opus cannot silently fall back to an older OpenAI shared key.
+    """
     with get_conn() as conn:
         key = conn.execute("SELECT model FROM team_shared_ai_keys WHERE id=?", (key_id,)).fetchone()
         chosen_model = (model or "").strip() or (key["model"] if key else None)
+        if use_key:
+            # Only one shared key can be the active default at a time.
+            conn.execute(
+                "UPDATE user_team_key_opts SET use_key=0 WHERE user_id=? AND key_id!=?",
+                (user_id, key_id),
+            )
         conn.execute(
             "INSERT INTO user_team_key_opts (user_id,key_id,use_key,model) VALUES (?,?,?,?) "
-            "ON CONFLICT(user_id,key_id) DO UPDATE SET use_key=excluded.use_key, model=COALESCE(excluded.model, user_team_key_opts.model)",
+            "ON CONFLICT(user_id,key_id) DO UPDATE SET use_key=excluded.use_key, "
+            "model=COALESCE(excluded.model, user_team_key_opts.model)",
             (user_id, key_id, 1 if use_key else 0, chosen_model),
         )
         conn.commit()
@@ -657,7 +669,7 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
                  AND opt.use_key = 1
                  AND k.enabled = 1
                  AND COALESCE(g.granted, 1) = 1
-               ORDER BY k.created_at LIMIT 1""",
+               ORDER BY k.created_at DESC LIMIT 1""",
             (user_id,),
         ).fetchone()
         if row and _team_key_scope_allows(conn, row, project_id):

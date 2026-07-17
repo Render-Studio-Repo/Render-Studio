@@ -13934,13 +13934,17 @@ function getSelectedPromptAiKeyLabel() {
   return found?.name || "Selected key";
 }
 
+function teamKeyDisplayModel(key) {
+  return key?.effective_model || key?.model || "";
+}
+
 function getSelectedPromptModelInfo() {
   const parsed = parsePromptKeyOptionValue(document.getElementById("prompt-ai-key-select")?.value);
   const allKeys = [...(aiStatus?.keys || []), ...(aiStatus?.team_keys || [])];
   const found = parsed ? allKeys.find((k) => k.id === parsed.keyId) : null;
   if (found) {
     return {
-      model: found.model || found.effective_model || "",
+      model: teamKeyDisplayModel(found) || found.model || "",
       provider: found.provider || "",
     };
   }
@@ -13966,7 +13970,7 @@ function syncPromptKeyPill(status) {
   let keyName, modelName, providerName;
   if (found) {
     keyName = "";
-    modelName = found.model || found.effective_model || "";
+    modelName = teamKeyDisplayModel(found) || found.model || "";
     providerName = found.provider || "";
   } else if (status?.ai_ready) {
     const eff = status.effective;
@@ -14079,12 +14083,10 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
 
   sel.disabled = false;
   const projectStored = getStoredProjectPromptAiKeyValue();
-  const defaultChanged = defaultValue && defaultValue !== lastPromptDefaultKeyValue;
-  const candidates = (
-    defaultChanged
-      ? [defaultValue, prev, projectStored, getStoredPromptAiKeyValue()]
-      : [prev, projectStored, getStoredPromptAiKeyValue(), defaultValue]
-  ).filter(Boolean);
+  // Prefer the user's explicit selection (prev / stored). Do not let the server
+  // "effective" key steal focus when multiple shared keys are opted-in — that
+  // was flipping Claude Fable/Opus picks back to an older OpenAI shared key.
+  const candidates = [prev, projectStored, getStoredPromptAiKeyValue(), defaultValue].filter(Boolean);
   for (const value of candidates) {
     if ([...sel.options].some((opt) => opt.value === value)) {
       sel.value = value;
@@ -14138,7 +14140,7 @@ function renderPromptKeyPopup(status) {
           data-key-id="${key.id}"
           data-source="${source}"
           title="Model for this key">
-          ${buildModelOptionsHTML(key.provider, key.model || key.effective_model || "")}
+          ${buildModelOptionsHTML(key.provider, source === "team" ? teamKeyDisplayModel(key) : (key.model || ""))}
         </select>
       </div>
     </div>`;
@@ -14249,14 +14251,42 @@ function initPromptKeyPopup() {
     if (row && !e.target.closest("select")) {
       const source = row.dataset.source;
       const keyId = row.dataset.keyId;
+      const selectedValue = promptKeyOptionValue(source, keyId);
       const sel = document.getElementById("prompt-ai-key-select");
       if (sel) {
-        sel.value = promptKeyOptionValue(source, keyId);
+        sel.value = selectedValue;
         storePromptAiKeyValue(sel.value);
       }
       syncPromptKeyPill(aiStatus);
-      renderPromptKeyPopup(aiStatus);
       closePromptKeyPopup();
+      // Make the chosen shared key the exclusive active default so generate
+      // doesn't fall back to another opted-in OpenAI shared key.
+      if (source === "team") {
+        const teamKey = (aiStatus?.team_keys || []).find((key) => key.id === keyId);
+        if (teamKey?.team_id) {
+          try {
+            const data = await api(`/api/teams/${teamKey.team_id}/ai-keys/${keyId}/toggle`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                use_key: true,
+                model: teamKeyDisplayModel(teamKey) || teamKey.model || undefined,
+              }),
+            });
+            const updatedAi = { ...(data.ai || {}), keys: data.ai?.keys || [] };
+            aiKeyUi?.render(updatedAi);
+            renderAIStatus(updatedAi);
+            const hidden = document.getElementById("prompt-ai-key-select");
+            if (hidden && [...hidden.options].some((opt) => opt.value === selectedValue)) {
+              hidden.value = selectedValue;
+              storePromptAiKeyValue(selectedValue);
+              syncPromptKeyPill(aiStatus);
+            }
+          } catch (err) {
+            console.error("Could not activate shared key:", err);
+          }
+        }
+      }
     }
   });
 
