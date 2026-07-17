@@ -3828,8 +3828,23 @@ function selectedWholeObjectPromptReference(selection = null) {
   };
 }
 
+function isAutoSelectedObjectReference(ref) {
+  return (
+    String(ref?.id || "").startsWith("selection-whole:")
+    || String(ref?.token || "") === "@selected-object"
+  );
+}
+
 function syncSelectedObjectPromptReference(selection = null) {
   const nextRef = selectedWholeObjectPromptReference(selection);
+  if (getPromptTargetMode() !== "edit") {
+    const refs = composer.getReferences?.() || [];
+    for (const ref of refs) {
+      if (isAutoSelectedObjectReference(ref)) composer.removeReference(ref.id);
+    }
+    autoSelectedObjectRefId = null;
+    return;
+  }
   if (autoSelectedObjectRefId && (!nextRef || autoSelectedObjectRefId !== nextRef.id)) {
     composer.removeReference(autoSelectedObjectRefId);
     autoSelectedObjectRefId = null;
