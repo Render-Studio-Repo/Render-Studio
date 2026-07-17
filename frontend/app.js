@@ -70,7 +70,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260715-chat-show-me-actions";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260716-fable-shared-key";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260717-fable-activate";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -3096,6 +3096,12 @@ function modelLooksLikeSimMotionCandidate(gen = {}) {
   if (mode === "architect" || mode === "wiring") return false;
   const text = simMotionHintText(gen);
   if (!text.trim()) return false;
+  // Manufacturing notes like "robot-assemblable / FANUC fixture" are CAD, not URDF robots.
+  // Those used to auto-trigger URDF authoring and rewrite mm CAD constants into meters.
+  const manufacturingOnly =
+    /\b(robot[-\s]?assembl(?:able|y)|assembled\s+by\s+(?:a\s+)?(?:fanuc\s+)?robot|for\s+robotic\s+assembly|fanuc)\b/i.test(text)
+    && !/\b(urdf|srdf|\bdof\b|end[-\s]?effector|manipulator|base_link|joint\s+limits|kinematic\s+chain|moveit)\b/i.test(text);
+  if (manufacturingOnly) return false;
   return SIM_MOTION_HINT_RE.test(text);
 }
 
@@ -13948,6 +13954,8 @@ function getSelectedPromptModelInfo() {
   return { model: "", provider: "" };
 }
 
+let lastPromptDefaultKeyValue = "";
+
 // Update the pill button text to reflect current selection
 function syncPromptKeyPill(status) {
   const sel = document.getElementById("prompt-ai-key-select");
@@ -14040,6 +14048,7 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
   const sel = document.getElementById("prompt-ai-key-select");
   if (!sel) return;
   const prev = preserveSelection ? sel.value : "";
+  const defaultValue = defaultPromptKeyValue(status);
   sel.innerHTML = "";
 
   const personalKeys = status?.keys || [];
@@ -14070,17 +14079,24 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
 
   sel.disabled = false;
   const projectStored = getStoredProjectPromptAiKeyValue();
-  const candidates = [prev, projectStored, getStoredPromptAiKeyValue(), defaultPromptKeyValue(status)].filter(Boolean);
+  const defaultChanged = defaultValue && defaultValue !== lastPromptDefaultKeyValue;
+  const candidates = (
+    defaultChanged
+      ? [defaultValue, prev, projectStored, getStoredPromptAiKeyValue()]
+      : [prev, projectStored, getStoredPromptAiKeyValue(), defaultValue]
+  ).filter(Boolean);
   for (const value of candidates) {
     if ([...sel.options].some((opt) => opt.value === value)) {
       sel.value = value;
       storePromptAiKeyValue(sel.value);
+      lastPromptDefaultKeyValue = defaultValue || sel.value || "";
       syncPromptKeyPill(status);
       return;
     }
   }
-  sel.value = defaultPromptKeyValue(status) || sel.options[0]?.value || "";
+  sel.value = defaultValue || sel.options[0]?.value || "";
   if (sel.value) storePromptAiKeyValue(sel.value);
+  lastPromptDefaultKeyValue = defaultValue || sel.value || "";
   syncPromptKeyPill(status);
 
   // Refresh popup if open

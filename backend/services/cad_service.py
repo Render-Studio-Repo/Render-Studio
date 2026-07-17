@@ -962,12 +962,12 @@ def _scene_extent(scene: trimesh.Scene) -> float:
 
 
 def _match_glb_scale_to_step(step_path: Path, glb_path: Path) -> None:
-    """Keep OCC-written GLB previews in the same units as the source STEP.
+    """Keep OCC/Jake-written GLB previews in the same units as the source STEP.
 
-    Some STEP→GLB writers follow glTF's metre convention even when the source
-    STEP is millimetres. The app's CAD workspace uses millimetres, so compare
-    the GLB bounds to the STEP tessellation and bake a scale correction when the
-    ratio is clearly unit-related.
+    Jake/cadpy and some STEP→GLB writers follow glTF's metre convention even when
+    the source STEP is millimetres. Render3D's CAD workspace uses millimetres, so
+    compare GLB bounds to the STEP tessellation and bake a scale correction when
+    the ratio is clearly unit-related (~1000×).
 
     Scales each scene geometry in place and re-exports the scene graph so
     multi-body Fusion assemblies stay separate meshes (``__part_*.glb`` split
@@ -976,14 +976,15 @@ def _match_glb_scale_to_step(step_path: Path, glb_path: Path) -> None:
     try:
         scene = load_scene(glb_path)
         glb_extent = _scene_extent(scene)
-        if glb_extent <= 0 or glb_extent >= 1.0:
+        if glb_extent <= 0:
             return
         step_mesh = import_step_mesh(step_path)
         step_extent = float(np.max(step_mesh.extents))
         if step_extent <= 0:
             return
         ratio = step_extent / glb_extent
-        if 100.0 <= ratio <= 10000.0:
+        # Unit mismatch only — ignore tiny numeric noise / already-matched files.
+        if 50.0 <= ratio <= 20000.0:
             parts = _meshes_from_scene(scene)
             if len(parts) > 1:
                 rebuilt = trimesh.Scene()

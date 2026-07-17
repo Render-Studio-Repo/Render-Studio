@@ -1995,6 +1995,14 @@ def _wire_jake_artifacts_to_product_shell(
             shell_glb.write_bytes(jake_glb.read_bytes())
         elif shell_glb.is_file() and not jake_glb.is_file():
             jake_glb.write_bytes(shell_glb.read_bytes())
+        # Jake/cadpy GLBs are often metres (glTF). Render3D viewport is mm —
+        # bake the STEP unit match into both shell + sidecar so models aren't tiny.
+        for preview in (shell_glb, jake_glb):
+            if preview.is_file():
+                try:
+                    cad_service._match_glb_scale_to_step(step_path, preview)
+                except Exception as exc:
+                    logger.debug("Could not unit-match %s to STEP: %s", preview.name, exc)
         if jake_glb.is_file():
             wired["jake_glb"] = jake_glb.name
     # Optional parameter module Jake may emit.
@@ -3744,6 +3752,14 @@ def _run_text_to_cad_v2(
             )
             if (project_path / glb_name).is_file():
                 _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
+                # Z-up re-export must not leave metre-scale Jake previews tiny —
+                # re-apply STEP unit match after orientation bake.
+                step_path = project_path / step_name
+                if step_path.is_file():
+                    try:
+                        cad_service._match_glb_scale_to_step(step_path, project_path / glb_name)
+                    except Exception as exc:
+                        logger.debug("Post Z-up unit match failed for %s: %s", glb_name, exc)
                 cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
 
             # Best-effort inspect/snapshot metadata for the result payload.
@@ -4320,6 +4336,12 @@ def _run_text_to_cad_v2(
             jake_glb = project_path / jake_hidden_glb_name(step_name)
             if glb_name in missing and jake_glb.is_file():
                 (project_path / glb_name).write_bytes(jake_glb.read_bytes())
+                step_path = project_path / step_name
+                if step_path.is_file():
+                    try:
+                        cad_service._match_glb_scale_to_step(step_path, project_path / glb_name)
+                    except Exception as exc:
+                        logger.debug("Fallback Jake GLB unit match failed: %s", exc)
                 missing = [name for name in (step_name, glb_name) if not (project_path / name).is_file()]
             if missing:
                 last_error = f"text-to-cad did not produce required artifact(s): {', '.join(missing)}"

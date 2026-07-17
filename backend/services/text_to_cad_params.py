@@ -271,8 +271,14 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
         raise RuntimeError(detail[:2000] or "scripts/step failed")
     glb_path = project_path / glb_name
     if glb_path.is_file():
-        # scripts/step writes native Y-up meter GLBs; Render3D viewport is Z-up mm.
+        # scripts/step writes native Y-up metre GLBs; Render3D viewport is Z-up mm.
         _convert_regenerated_glb_to_z_up(glb_path)
+        step_path = project_path / step_name
+        if step_path.is_file():
+            try:
+                cad_service._match_glb_scale_to_step(step_path, glb_path)
+            except Exception:
+                pass
         try:
             cad_service.colorize_assembly_glb_parts(glb_path)
         except Exception:

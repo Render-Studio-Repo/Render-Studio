@@ -678,11 +678,12 @@ export function createAIKeyUI({ api, onStatusChange }) {
     const newModel = sel.value;
     setError("");
     try {
-      const data = await api(`/api/user/ai-keys/${keyId}`, {
+      await api(`/api/user/ai-keys/${keyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: newModel }),
       });
+      const data = await api(`/api/user/ai-keys/${keyId}/activate`, { method: "PUT" });
       render({ ...(data.ai || {}), keys: data.ai?.keys || [] });
     } catch (err) {
       setError(err.message || "Could not update model");
