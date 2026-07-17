@@ -4127,7 +4127,8 @@ function selectPromptAiKeyValue(value) {
 function applyCodexOpenAiKey(key) {
   if (!key?.id) return false;
   const value = promptKeyOptionValue(key.source || "personal", key.id);
-  return selectPromptAiKeyValue(value);
+  storeCodexOpenAiKeyValue(value);
+  return true;
 }
 
 function askCodexOpenAiKey(keys) {
@@ -4254,17 +4255,69 @@ function setCodexEnabled(enabled, { persist = true } = {}) {
   syncCodexToggleVisibility();
 }
 
+function selectedPromptSupportsCodex(mode = promptMode) {
+  if (!["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase())) return false;
+  const { provider } = getSelectedPromptModelInfo();
+  return String(provider || "").toLowerCase() === "openai";
+}
+
+function selectedPromptShouldAutoCodex(mode = promptMode) {
+  if (!selectedPromptSupportsCodex(mode)) return false;
+  const { model } = getSelectedPromptModelInfo();
+  return String(model || "").trim().toLowerCase() === "gpt-5.5-pro";
+}
+
+function rememberSelectedOpenAiKeyForCodex() {
+  const picked = getSelectedPromptAiKey();
+  if (!picked?.keyId) return false;
+  const keys = listOpenAiKeysForCodex();
+  const match = keys.find((key) => key.id === picked.keyId && key.source === picked.source);
+  if (!match) return false;
+  storeCodexOpenAiKeyValue(promptKeyOptionValue(match.source, match.id));
+  return true;
+}
+
 function syncCodexToggleVisibility(mode = promptMode) {
   const wrap = document.getElementById("prompt-codex-wrap")
     || document.getElementById("prompt-codex-toggle");
   if (!wrap) return;
-  const show = ["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase());
+  const input = document.getElementById("prompt-codex");
+  const show = selectedPromptSupportsCodex(mode);
   wrap.classList.toggle("hidden", !show);
+  if (!show) {
+    if (input) input.checked = false;
+    try {
+      localStorage.removeItem(CODEX_KEY);
+      localStorage.removeItem(CODEX_KEY_LEGACY);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  if (selectedPromptShouldAutoCodex(mode)) {
+    if (input) input.checked = true;
+    rememberSelectedOpenAiKeyForCodex();
+    try {
+      localStorage.setItem(CODEX_KEY, "1");
+      localStorage.removeItem(CODEX_KEY_LEGACY);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 async function handleCodexToggleChange(wantEnabled) {
   if (!wantEnabled) {
     setCodexEnabled(false);
+    return;
+  }
+  if (!selectedPromptSupportsCodex()) {
+    setCodexEnabled(false);
+    const status = document.getElementById("prompt-status");
+    if (status) {
+      status.className = "status error";
+      status.textContent = "Codex is only available with an OpenAI prompt key. Claude/Fable runs directly through Anthropic.";
+    }
     return;
   }
   // Optimistic UI: keep checked while we validate; revert on failure/cancel.
@@ -13998,6 +14051,7 @@ function syncPromptKeyPill(status) {
     }
     if (modelEl) modelEl.textContent = modelLabel;
   }
+  syncCodexToggleVisibility();
 }
 
 // Keep old name as alias so renderAIStatus still works
@@ -23786,11 +23840,9 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       });
       return;
     }
-    const selected = getSelectedPromptAiKey();
-    const selectedIsOpenAi = openAiKeys.some(
-      (key) => key.id === selected?.keyId && key.source === selected?.source,
-    );
-    if (!selectedIsOpenAi) {
+    const storedCodexValue = getStoredCodexOpenAiKeyValue();
+    const storedCodexKey = openAiKeys.find((key) => promptKeyOptionValue(key.source, key.id) === storedCodexValue);
+    if (!storedCodexKey) {
       if (openAiKeys.length === 1) {
         applyCodexOpenAiKey(openAiKeys[0]);
       } else {
