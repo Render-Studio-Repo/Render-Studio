@@ -26824,6 +26824,22 @@ window.addEventListener("keydown", (e) => {
     openPreferencesModal();
   });
 
+  document.getElementById("btn-studio-walkthrough")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.getElementById("user-menu")?.classList.add("hidden");
+    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
+      mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
+    });
+  });
+
+  document.getElementById("btn-quest-book")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.getElementById("user-menu")?.classList.add("hidden");
+    void import("./quest-book.js?v=20260719-quest-book").then((mod) => {
+      mod.openQuestBook?.();
+    });
+  });
+
   document.getElementById("profile-preferences-panel")?.addEventListener("change", (e) => {
     const mouseSelect = e.target.closest("#pref-mouse-preset, #pref-advanced-mouse-preset");
     if (mouseSelect) {

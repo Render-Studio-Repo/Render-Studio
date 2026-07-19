@@ -500,6 +500,25 @@
             <strong id="user-menu-ai-cost-value" class="user-menu-ai-cost-value">—</strong>
             <span id="user-menu-ai-cost-hint" class="muted small">All providers · input + output tokens · all keys</span>
           </div>
+          <div class="user-menu-section">
+            <div class="user-menu-section-head">
+              <span>Learn</span>
+              <small>Tours, tips, and progression</small>
+            </div>
+            <button type="button" id="btn-quest-book" class="user-menu-item user-menu-item--quest">
+              <span class="quest-book-btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2l2.5 6.3L21 9.1l-5 4.4 1.5 6.6L12 16.6 6.5 20.1 8 13.5 3 9.1l6.5-.8L12 2z"/></svg>
+              </span>
+              <span class="quest-book-btn-text">
+                <span>Quest Book</span>
+                <small>Level up your Studio skills, quest by quest</small>
+              </span>
+            </button>
+            <button type="button" id="btn-studio-walkthrough" class="user-menu-item">
+              <span>Studio walkthrough</span>
+              <small>Replay the guided tour of the Studio basics</small>
+            </button>
+          </div>
           <!-- Cloud connections: Onshape + Fusion 360 -->
           <div id="cloud-connections-card" class="cloud-connections-card">
             <div class="cloud-connections-head">
@@ -525,35 +544,53 @@
               </div>
             </button>
           </div>
-          <button type="button" id="btn-ai-key-menu" class="user-menu-item">
-            <span id="ai-key-menu-label">Add AI API key</span>
-            <small id="ai-key-menu-hint">Required for prompts</small>
-          </button>
-          <button type="button" id="btn-costs-menu" class="user-menu-item">
-            <span>Costs</span>
-            <small>Total, shared users, and trend</small>
-          </button>
-          <div id="profile-costs-panel" class="profile-costs-panel hidden"></div>
-          <!-- Admin dashboard — shown only for admin users by auth.js -->
-          <a href="/admin-dashboard.html" id="btn-admin-dashboard" class="user-menu-item hidden">
-            <span>Management dashboard</span>
-            <small>Users, projects, prompt history, and site stats</small>
-          </a>
-          <button type="button" id="btn-workspace-mgmt-menu" class="user-menu-item hidden">
-            <span>Workspace management</span>
-            <small>Overview data and user roles for workspaces you admin</small>
-          </button>
-          <div id="profile-workspace-mgmt-panel" class="profile-workspace-mgmt-panel hidden"></div>
-          <button type="button" id="btn-preferences-menu" class="user-menu-item">
-            <span>Preferences</span>
-            <small>General settings and viewport controls</small>
-          </button>
-          <div id="profile-preferences-panel" class="profile-preferences-panel hidden"></div>
-          <button type="button" id="btn-workspace-menu" class="user-menu-item">
-            <span>Team workspaces</span>
-            <small>Members, invites, visibility, leave</small>
-          </button>
-          <div id="profile-workspace-panel" class="profile-workspace-panel hidden"></div>
+          <div class="user-menu-section">
+            <div class="user-menu-section-head">
+              <span>AI &amp; billing</span>
+              <small>Keys, credits, and spend</small>
+            </div>
+            <button type="button" id="btn-ai-key-menu" class="user-menu-item">
+              <span id="ai-key-menu-label">Add AI API key</span>
+              <small id="ai-key-menu-hint">Required for prompts</small>
+            </button>
+            <button type="button" id="btn-costs-menu" class="user-menu-item">
+              <span>Costs</span>
+              <small>Total, shared users, and trend</small>
+            </button>
+            <div id="profile-costs-panel" class="profile-costs-panel hidden"></div>
+          </div>
+          <div class="user-menu-section">
+            <div class="user-menu-section-head">
+              <span>Manage</span>
+              <small>Workspaces, members, and roles</small>
+            </div>
+            <!-- Admin dashboard — shown only for admin users by auth.js -->
+            <a href="/admin-dashboard.html" id="btn-admin-dashboard" class="user-menu-item hidden">
+              <span>Management dashboard</span>
+              <small>Users, projects, prompt history, and site stats</small>
+            </a>
+            <button type="button" id="btn-workspace-mgmt-menu" class="user-menu-item hidden">
+              <span>Workspace management</span>
+              <small>Overview data and user roles for workspaces you admin</small>
+            </button>
+            <div id="profile-workspace-mgmt-panel" class="profile-workspace-mgmt-panel hidden"></div>
+            <button type="button" id="btn-workspace-menu" class="user-menu-item">
+              <span>Team workspaces</span>
+              <small>Members, invites, visibility, leave</small>
+            </button>
+            <div id="profile-workspace-panel" class="profile-workspace-panel hidden"></div>
+          </div>
+          <div class="user-menu-section">
+            <div class="user-menu-section-head">
+              <span>Settings</span>
+              <small>General and viewport preferences</small>
+            </div>
+            <button type="button" id="btn-preferences-menu" class="user-menu-item">
+              <span>Preferences</span>
+              <small>General settings and viewport controls</small>
+            </button>
+            <div id="profile-preferences-panel" class="profile-preferences-panel hidden"></div>
+          </div>
           <button type="button" id="btn-logout" class="btn secondary btn-compact user-menu-logout">Log out</button>
         </div>
       </div>
