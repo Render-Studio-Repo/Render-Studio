@@ -10,6 +10,9 @@ const FUSION_LINKED_CACHE_PREFIX = "render3d:fusionLinked:";
 const ADMIN_EMAILS = new Set([
   "a1projects@protonmail.com",
   "a1projects.usa@gmail.com",
+  "sam@render3d.app",
+  "sam@smartcallusa.com",
+  "samwins.stead@gmail.com",
   "mtgraytech@gmail.com",
 ]);
 

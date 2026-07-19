@@ -93,6 +93,9 @@ AVATARS.mkdir(parents=True, exist_ok=True)
 A1PROJECTS_ADMIN_EMAILS = {
     "a1projects@protonmail.com",
     "a1projects.usa@gmail.com",
+    "sam@render3d.app",
+    "sam@smartcallusa.com",
+    "samwins.stead@gmail.com",
     "mtgraytech@gmail.com",
 }
 OTHER_USER_RENDERS_FOLDER_ID = "__other_user_renders__"

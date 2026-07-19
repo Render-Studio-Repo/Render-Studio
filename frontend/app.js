@@ -179,6 +179,9 @@ let currentUser = null;
 const A1PROJECTS_ADMIN_EMAILS = new Set([
   "a1projects@protonmail.com",
   "a1projects.usa@gmail.com",
+  "sam@render3d.app",
+  "sam@smartcallusa.com",
+  "samwins.stead@gmail.com",
   "mtgraytech@gmail.com",
 ]);
 let authUi = null;
@@ -13715,6 +13718,90 @@ async function fetchModelBlob(path, { retries = 2 } = {}) {
   throw lastError || new Error(`Could not fetch model "${API}${path}".`);
 }
 
+function sanitizeGltfNodeCycles(gltf) {
+  if (!gltf || typeof gltf !== "object" || !Array.isArray(gltf.nodes)) {
+    return { gltf, changed: false };
+  }
+  const nodes = gltf.nodes;
+  let changed = false;
+  const sceneRoots = (gltf.scenes || [])
+    .flatMap((scene) => Array.isArray(scene?.nodes) ? scene.nodes : [])
+    .filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < nodes.length);
+  const roots = sceneRoots.length ? sceneRoots : nodes.map((_, idx) => idx);
+
+  function cleanNode(idx, stack = new Set()) {
+    const node = nodes[idx];
+    if (!node || !Array.isArray(node.children)) return;
+    stack.add(idx);
+    const children = [];
+    for (const childIdx of node.children) {
+      if (!Number.isInteger(childIdx) || childIdx < 0 || childIdx >= nodes.length || stack.has(childIdx)) {
+        changed = true;
+        continue;
+      }
+      children.push(childIdx);
+      cleanNode(childIdx, new Set(stack));
+    }
+    if (children.length !== node.children.length) {
+      if (children.length) node.children = children;
+      else delete node.children;
+      changed = true;
+    }
+  }
+
+  roots.forEach((idx) => cleanNode(idx));
+  return { gltf, changed };
+}
+
+async function sanitizeGltfBlobForLoader(blob, ext = "") {
+  const kind = String(ext || "").toLowerCase();
+  try {
+    if (kind === "gltf") {
+      const parsed = JSON.parse(await blob.text());
+      const { gltf, changed } = sanitizeGltfNodeCycles(parsed);
+      return changed
+        ? new Blob([JSON.stringify(gltf)], { type: blob.type || "model/gltf+json" })
+        : blob;
+    }
+    if (kind !== "glb") return blob;
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const view = new DataView(buffer);
+    if (bytes.length < 20 || bytes[0] !== 0x67 || bytes[1] !== 0x6c || bytes[2] !== 0x54 || bytes[3] !== 0x46) return blob;
+
+    let offset = 12;
+    let jsonChunkStart = -1;
+    let jsonChunkLen = 0;
+    while (offset + 8 <= bytes.length) {
+      const chunkLen = view.getUint32(offset, true);
+      const chunkType = view.getUint32(offset + 4, true);
+      offset += 8;
+      if (chunkType === 0x4e4f534a) {
+        jsonChunkStart = offset;
+        jsonChunkLen = chunkLen;
+        break;
+      }
+      offset += chunkLen;
+    }
+    if (jsonChunkStart < 0 || jsonChunkLen <= 0 || jsonChunkStart + jsonChunkLen > bytes.length) return blob;
+
+    const text = new TextDecoder().decode(bytes.slice(jsonChunkStart, jsonChunkStart + jsonChunkLen)).trim();
+    const parsed = JSON.parse(text);
+    const { gltf, changed } = sanitizeGltfNodeCycles(parsed);
+    if (!changed) return blob;
+
+    const encoded = new TextEncoder().encode(JSON.stringify(gltf));
+    if (encoded.length > jsonChunkLen) return blob;
+    const out = new Uint8Array(buffer.slice(0));
+    out.fill(0x20, jsonChunkStart, jsonChunkStart + jsonChunkLen);
+    out.set(encoded, jsonChunkStart);
+    return new Blob([out], { type: blob.type || "model/gltf-binary" });
+  } catch (err) {
+    console.warn("Could not sanitize glTF before load", err);
+    return blob;
+  }
+}
+
 function hardenLoadedCadMaterials(root) {
   root?.traverse?.((child) => {
     if (!child?.isMesh || !child.material) return;
@@ -13744,24 +13831,24 @@ async function loadModel(url, filename, opts = {}) {
   const viewExt = viewFilename.split(".").pop().toLowerCase();
   const path = _cacheBustModelPath(_apiPath(viewUrl), { force: !!opts.cacheBust });
   const blob = await fetchModelBlob(path);
-  const blobUrl = URL.createObjectURL(blob);
-
   let object;
-  try {
-    if (viewExt === "stl") {
-      const geo = new STLLoader().parse(await blob.arrayBuffer());
-      geo.computeVertexNormals();
-      object = new THREE.Mesh(geo);
-    } else if (viewExt === "obj") {
-      object = new OBJLoader().parse(await blob.text());
-    } else if (viewExt === "glb" || viewExt === "gltf") {
+  if (viewExt === "stl") {
+    const geo = new STLLoader().parse(await blob.arrayBuffer());
+    geo.computeVertexNormals();
+    object = new THREE.Mesh(geo);
+  } else if (viewExt === "obj") {
+    object = new OBJLoader().parse(await blob.text());
+  } else if (viewExt === "glb" || viewExt === "gltf") {
+    const safeBlob = await sanitizeGltfBlobForLoader(blob, viewExt);
+    const blobUrl = URL.createObjectURL(safeBlob);
+    try {
       object = (await new GLTFLoader().loadAsync(blobUrl)).scene;
-      hardenLoadedCadMaterials(object);
-  } else {
-      throw new Error(`Unsupported format: ${viewExt}`);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
     }
-  } finally {
-    URL.revokeObjectURL(blobUrl);
+    hardenLoadedCadMaterials(object);
+  } else {
+    throw new Error(`Unsupported format: ${viewExt}`);
   }
 
   if (gen !== loadModelGeneration || expectedProjectId !== projectId) {
