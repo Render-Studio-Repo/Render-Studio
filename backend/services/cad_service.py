@@ -3055,6 +3055,87 @@ def face_pull_scene_body(
     return _export_scene_entries(updated, dest)
 
 
+def export_step_as_single_part(step_path: Path, dest_path: Path | None = None) -> Path:
+    """Rewrite a multi-component assembly STEP as one Fusion Part document.
+
+    Fusion treats product/assembly hierarchies (NEXT_ASSEMBLY_USAGE) as assemblies.
+    This loads the geometry, packs solids under one shape label (no assembly tree),
+    and writes a single-product STEP so Fusion opens a Part — optionally with
+    multiple Bodies if solids do not fuse cleanly.
+    """
+    from OCP.BRep import BRep_Builder
+    from OCP.IFSelect import IFSelect_ReturnStatus
+    from OCP.STEPControl import STEPControl_Reader, STEPControl_StepModelType
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS_Compound
+
+    step_path = Path(step_path)
+    dest = Path(dest_path) if dest_path else step_path.with_name(f"{step_path.stem}.part{step_path.suffix}")
+    reader = STEPControl_Reader()
+    status = reader.ReadFile(str(step_path))
+    if status != IFSelect_ReturnStatus.IFSelect_RetDone:
+        raise ValueError(f"Could not read STEP file: {step_path.name}")
+    reader.TransferRoots()
+    shape = reader.OneShape()
+    if shape.IsNull():
+        raise ValueError(f"STEP file has no geometry: {step_path.name}")
+
+    solids = []
+    exp = TopExp_Explorer(shape, TopAbs_SOLID)
+    while exp.More():
+        solids.append(exp.Current())
+        exp.Next()
+
+    if len(solids) <= 1:
+        out_shape = solids[0] if solids else shape
+    else:
+        # Pack solids into one compound — Fusion opens this as one Part with Bodies,
+        # not an assembly of components. (Geometric fuse is optional and often fails
+        # on interlocking mechanism parts.)
+        builder = BRep_Builder()
+        compound = TopoDS_Compound()
+        builder.MakeCompound(compound)
+        for solid in solids:
+            builder.Add(compound, solid)
+        out_shape = compound
+
+    from OCP.STEPCAFControl import STEPCAFControl_Writer
+    from OCP.TCollection import TCollection_ExtendedString
+    from OCP.TDataStd import TDataStd_Name
+    from OCP.TDocStd import TDocStd_Document
+    from OCP.XCAFApp import XCAFApp_Application
+    from OCP.XCAFDoc import XCAFDoc_DocumentTool
+
+    app = XCAFApp_Application.GetApplication()
+    doc = TDocStd_Document(TCollection_ExtendedString("XmlOcaf"))
+    app.NewDocument(TCollection_ExtendedString("MDTV-XCAF"), doc)
+    shape_tool = XCAFDoc_DocumentTool.ShapeTool(doc.Main())
+    # makeAssembly=False keeps one free shape / one product — Fusion Part, not Assembly.
+    label = shape_tool.AddShape(out_shape, False)
+    try:
+        TDataStd_Name.Set(label, TCollection_ExtendedString((step_path.stem or "Part")[:120]))
+    except Exception:
+        pass
+    writer = STEPCAFControl_Writer()
+    try:
+        writer.SetNameMode(True)
+    except Exception:
+        pass
+    writer.Transfer(doc, STEPControl_StepModelType.STEPControl_AsIs)
+    write_status = writer.Write(str(dest))
+    if write_status != IFSelect_ReturnStatus.IFSelect_RetDone:
+        # Plain writer fallback (still better than the original assembly STEP).
+        from OCP.STEPControl import STEPControl_Writer
+
+        plain = STEPControl_Writer()
+        plain.Transfer(out_shape, STEPControl_StepModelType.STEPControl_AsIs)
+        write_status = plain.Write(str(dest))
+        if write_status != IFSelect_ReturnStatus.IFSelect_RetDone:
+            raise ValueError(f"Could not write part STEP: {dest.name}")
+    return dest
+
+
 def export_mesh_step(mesh: trimesh.Trimesh, path: Path) -> Path:
     """Write a faceted (mesh-derived) STEP — Fusion solid cuts will NOT work reliably.
 

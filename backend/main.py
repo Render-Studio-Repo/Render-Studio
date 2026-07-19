@@ -8001,7 +8001,14 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     safe = Path(filename).name
     stem = safe[: safe.rfind(".")] if "." in safe else safe
     step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
-    upload_stem = step_path.stem
+    step_mode = str(body.get("step_mode") or body.get("export_mode") or "assembly").strip().lower()
+    if step_mode in {"regular", "part", "single"}:
+        part_path = path / f"{step_path.stem}.part{step_path.suffix.lower()}"
+        try:
+            step_path = cad_service.export_step_as_single_part(step_path, part_path)
+        except Exception as exc:
+            raise HTTPException(422, f"Could not create part STEP for Fusion: {exc}") from exc
+    upload_stem = step_path.stem.replace(".part", "") if step_path.stem.endswith(".part") else step_path.stem
     source_path = path / f"{upload_stem}.py"
     if not source_path.is_file():
         try:
@@ -8013,7 +8020,8 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
         except Exception:
             pass
 
-    upload_name = Path(str(body.get("name") or f"{upload_stem}.step")).name
+    default_name = f"{upload_stem}.part.step" if step_mode in {"regular", "part", "single"} else f"{upload_stem}.step"
+    upload_name = Path(str(body.get("name") or default_name)).name
     if not upload_name.lower().endswith((".step", ".stp")):
         upload_name = f"{Path(upload_name).stem}.step"
 
@@ -12132,6 +12140,15 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
         except Exception as exc:
             logger.warning("Faceted STEP export failed for %s: %s", safe, exc)
             raise HTTPException(422, f"Could not create faceted STEP: {exc}") from exc
+    if file_path.suffix.lower() in {".step", ".stp"} and step_mode_normalized in {"regular", "part", "single"}:
+        part_path = project_path / f"{file_path.stem}.part{file_path.suffix.lower()}"
+        try:
+            cad_service.export_step_as_single_part(file_path, part_path)
+            file_path = part_path
+            safe = part_path.name
+        except Exception as exc:
+            logger.warning("Part STEP export failed for %s: %s", safe, exc)
+            raise HTTPException(422, f"Could not create part STEP: {exc}") from exc
     if file_path.suffix.lower() == ".3mf":
         stem = file_path.stem
         for suffix in (".step", ".stp", ".glb", ".gltf", ".stl", ".obj", ".ply", ".off"):

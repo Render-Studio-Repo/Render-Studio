@@ -656,7 +656,34 @@ export async function openFileExportMenu({
     )
   );
 
-  async function pushToOriginalFusion(btn) {
+  function showFusionStepModeChooser(onChoose, anchorEl = null) {
+    menu.querySelector(".file-export-fusion-step-chooser")?.remove();
+    const chooser = document.createElement("div");
+    chooser.className = "file-export-step-chooser file-export-fusion-step-chooser";
+    chooser.innerHTML = `
+      <div class="file-export-step-title">Export to Fusion as part or assembly?</div>
+      <button type="button" class="file-export-step-choice" data-fusion-step-mode="part">
+        <strong>Part</strong>
+        <span>Single Fusion design — solids fused into one part (not an assembly)</span>
+      </button>
+      <button type="button" class="file-export-step-choice" data-fusion-step-mode="assembly">
+        <strong>Assembly</strong>
+        <span>Keep separate bodies/components so Fusion opens it as an assembly</span>
+      </button>
+    `;
+    chooser.addEventListener("click", (ev) => {
+      const choiceBtn = ev.target.closest("[data-fusion-step-mode]");
+      if (!choiceBtn) return;
+      chooser.remove();
+      onChoose(choiceBtn.dataset.fusionStepMode || "assembly");
+    });
+    if (anchorEl?.parentNode) anchorEl.insertAdjacentElement("afterend", chooser);
+    else menu.appendChild(chooser);
+    chooser.scrollIntoView({ block: "nearest" });
+    keepMenuInViewport(menu);
+  }
+
+  async function pushToOriginalFusion(btn, stepMode = "assembly") {
     btn.disabled = true;
     const original = btn.innerHTML;
     btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Pushing…`;
@@ -664,7 +691,11 @@ export async function openFileExportMenu({
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: resolvedCloudFilename, allow_faceted_step: resolvedCloudStepIsFaceted }),
+        body: JSON.stringify({
+          filename: resolvedCloudFilename,
+          allow_faceted_step: resolvedCloudStepIsFaceted,
+          step_mode: stepMode,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -680,18 +711,19 @@ export async function openFileExportMenu({
         : mirrorCount
           ? ` Also pushed to ${mirrorCount} teammate mirror${mirrorCount === 1 ? "" : "s"}.`
           : "";
-      showExportSuccess(menu, `Pushed ${data.name || resolvedCloudFilename} to Fusion.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
+      const modeNote = stepMode === "part" ? " as a Part" : " as an Assembly";
+      showExportSuccess(menu, `Pushed ${data.name || resolvedCloudFilename} to Fusion${modeNote}.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = original;
       showExportError(menu, err, {
         title: "Fusion push failed",
-        onRetry: () => pushToOriginalFusion(btn),
+        onRetry: () => pushToOriginalFusion(btn, stepMode),
       });
     }
   }
 
-  async function openSharedFusionExport(btn) {
+  async function openSharedFusionExport(btn, stepMode = "assembly") {
     btn.disabled = true;
     const original = btn.innerHTML;
     btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Loading Fusion…`;
@@ -700,11 +732,12 @@ export async function openFileExportMenu({
         projectId,
         filename: resolvedCloudFilename,
         allowFacetedStep: resolvedCloudStepIsFaceted,
+        stepMode,
       });
     } catch (err) {
       showExportError(menu, err, {
         title: "Could not open Fusion export picker",
-        onRetry: () => openSharedFusionExport(btn),
+        onRetry: () => openSharedFusionExport(btn, stepMode),
       });
     } finally {
       btn.disabled = false;
@@ -713,14 +746,17 @@ export async function openFileExportMenu({
   }
 
   fusionActionBtn?.addEventListener("click", async () => {
-    if (autodeskSource) {
-      showFusionActionChooser(menu, (choice) => {
-        if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
-        else void openSharedFusionExport(fusionActionBtn);
-      }, fusionActionBtn);
-      return;
-    }
-    await openSharedFusionExport(fusionActionBtn);
+    const startFusionExport = (stepMode) => {
+      if (autodeskSource) {
+        showFusionActionChooser(menu, (choice) => {
+          if (choice === "push") void pushToOriginalFusion(fusionActionBtn, stepMode);
+          else void openSharedFusionExport(fusionActionBtn, stepMode);
+        }, fusionActionBtn);
+        return;
+      }
+      void openSharedFusionExport(fusionActionBtn, stepMode);
+    };
+    showFusionStepModeChooser(startFusionExport, fusionActionBtn);
   });
 
   bambuBtn?.addEventListener("click", async () => {
@@ -931,12 +967,13 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
   keepMenuInViewport(menu);
 }
 
-async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, allowFacetedStep = false }) {
+async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, allowFacetedStep = false, stepMode = "assembly" }) {
   menu.querySelector(".file-export-fusion-picker")?.remove();
   const picker = document.createElement("div");
   picker.className = "file-export-fusion-picker";
+  const modeLabel = stepMode === "part" ? "Part" : "Assembly";
   picker.innerHTML = `
-    <div class="file-export-fusion-title">Export to Fusion 360</div>
+    <div class="file-export-fusion-title">Export to Fusion 360 · ${modeLabel}</div>
     <p class="muted small">Pick a hub and project, then a folder. The most recently updated folder is selected automatically.</p>
     ${allowFacetedStep ? '<p class="status error small">Only faceted mesh STEP is available for this model. Export will work, but Fusion boolean Cut may be limited.</p>' : ""}
     <label class="file-export-cloud-field">
@@ -961,7 +998,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
         <p class="muted small">Select a project first.</p>
       </div>
     </div>
-    <button type="button" class="btn primary file-export-fusion-submit" disabled>Upload STEP to Fusion</button>
+    <button type="button" class="btn primary file-export-fusion-submit" disabled>Upload ${modeLabel} STEP to Fusion</button>
     <div class="file-export-fusion-status muted small"></div>
   `;
   anchorBtn.insertAdjacentElement("afterend", picker);
@@ -1222,7 +1259,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       return;
     }
     submit.disabled = true;
-    setStatus("Uploading STEP to Fusion...");
+    setStatus(stepMode === "part" ? "Preparing part STEP and uploading to Fusion..." : "Uploading assembly STEP to Fusion...");
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
         method: "POST",
@@ -1236,6 +1273,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
           folder_label: selectedFolderName,
           filename,
           allow_faceted_step: allowFacetedStep,
+          step_mode: stepMode,
         }),
       });
       if (!res.ok) {

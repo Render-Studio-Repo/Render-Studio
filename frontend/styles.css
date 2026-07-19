@@ -11597,6 +11597,8 @@ body.mobile-sheet-open {
   left: auto;
   top: auto;
   width: min(300px, calc(100% - 28px));
+  max-width: calc(100% - 28px);
+  min-width: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: row;
@@ -11812,8 +11814,11 @@ body.mobile-sheet-open {
   grid-template-columns: 1fr;
   gap: 6px;
   margin-top: 4px;
+  min-width: 0;
+  max-width: 100%;
   max-height: 180px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   pointer-events: auto;
 }
 
@@ -11825,6 +11830,8 @@ body.mobile-sheet-open {
   display: grid;
   gap: 3px;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 6px 8px;
   box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -11847,11 +11854,15 @@ body.mobile-sheet-open {
   justify-content: space-between;
   gap: 8px;
   align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .viewport-gen-job-focus {
   min-width: 0;
+  max-width: 100%;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   border: 0;
   padding: 0;
@@ -11905,6 +11916,7 @@ body.mobile-sheet-open {
 .viewport-gen-job-label {
   min-width: 0;
   max-width: 100%;
+  flex: 1 1 auto;
   font-size: 0.64rem;
   color: #8b949e;
   overflow: hidden;
@@ -11956,12 +11968,15 @@ body.mobile-sheet-open {
   padding: 0;
   display: grid;
   gap: 4px;
+  min-width: 0;
   max-height: 96px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .viewport-gen-job-log {
   display: grid;
+  min-width: 0;
   gap: 1px;
   padding-top: 4px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -11970,12 +11985,22 @@ body.mobile-sheet-open {
   color: #c9d1d9;
 }
 
+.viewport-gen-job-log > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
 .viewport-gen-job-log.muted {
   border-top: 0;
   color: #8b949e;
 }
 
 .viewport-gen-job-log-stage {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.55rem;
   font-weight: 800;
   letter-spacing: 0.05em;
@@ -11992,12 +12017,14 @@ body.mobile-sheet-open {
 }
 
 .viewport-spinner--multi {
-  min-width: min(340px, calc(100vw - 28px));
-  max-width: min(640px, calc(100vw - 20px));
+  width: min(360px, calc(100vw - 28px));
+  min-width: 0;
+  max-width: min(360px, calc(100vw - 28px));
 }
 
 .viewport-spinner--multi.viewport-spinner--expanded {
-  width: min(640px, calc(100% - 28px));
+  width: min(460px, calc(100% - 28px));
+  max-width: min(460px, calc(100vw - 28px));
 }
 
 .viewport-spinner--multi.viewport-spinner--expanded .viewport-stop-btn {
