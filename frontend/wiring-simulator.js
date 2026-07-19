@@ -1139,16 +1139,22 @@ export function createWiringSimulator(options = {}) {
     });
   }
 
+  function schematicHasRenderableContent(data) {
+    return !!((data?.components || []).length || (data?.wires || []).length);
+  }
+
   async function fetchWiringData(projectId) {
     const prefetch = getWiringPrefetch?.();
-    if (prefetch?.projectId === projectId && prefetch.data) {
+    if (prefetch?.projectId === projectId && prefetch.data && schematicHasRenderableContent(prefetch.data)) {
       return prefetch.data;
     }
     if (prefetch?.projectId === projectId && prefetch.promise) {
       try {
-        return await prefetch.promise;
+        const data = await prefetch.promise;
+        if (schematicHasRenderableContent(data)) return data;
       } catch {
-        return { components: [], wires: [], notes: [] };
+        // Fall through to the direct fetch. Empty prefetches are often stale
+        // after a project repair or server restart.
       }
     }
     try {
@@ -1170,7 +1176,7 @@ export function createWiringSimulator(options = {}) {
       const prefetch = getWiringPrefetch?.();
       const cached = prefetch?.projectId === projectId ? prefetch.data : null;
 
-      if (!needsSave && cached) {
+      if (!needsSave && cached && schematicHasRenderableContent(cached)) {
         if (generation !== loadGeneration || getProjectId?.() !== projectId) return;
         clearHistory();
         applySchematic(cached, { save: false, skipHistory: true, deferWires: true });
