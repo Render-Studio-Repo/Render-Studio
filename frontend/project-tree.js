@@ -378,7 +378,8 @@ export function createProjectTree(options = {}) {
     const body = document.createElement("button");
     body.type = "button";
     body.className = "browser-item-body";
-    body.innerHTML = `<span class="browser-item-name">${displayName(entry)}</span>`;
+    const bodyIcon = (child && entry.virtual_body) ? '<span class="browser-body-icon" aria-hidden="true">◆</span>' : '';
+    body.innerHTML = `${bodyIcon}<span class="browser-item-name">${displayName(entry)}</span>`;
     body.title = sectionId === "sketches" ? `${entry.name} — double-click to edit` : entry.name;
     body.addEventListener("click", (e) => {
       if (suppressBrowserClick) return;

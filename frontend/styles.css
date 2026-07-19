@@ -4593,6 +4593,17 @@ body.canvas-design-tab .main-column {
   padding-left: 18px;
 }
 
+.browser-body-icon {
+  font-size: 0.55rem;
+  color: #8b949e;
+  margin-right: 4px;
+}
+
+.browser-item--child .browser-item-name {
+  font-size: 0.72rem;
+  color: #c9d1d9;
+}
+
 .browser-item {
   display: grid;
   grid-template-columns: 26px 1fr auto;

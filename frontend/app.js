@@ -88,7 +88,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260715-renders-section";
+import { createProjectTree } from "./project-tree.js?v=20260719-bodies-dropdown";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -20944,6 +20944,7 @@ async function refreshFiles() {
   renderFileList(data.files || []);
   const browser = normalizeBrowser(data);
   renderProjectBrowser(browser);
+  void hydrateBrowserBodyChildren(browser, { priorityNames: selectedFile ? [selectedFile] : [] });
   await sketchEditor.loadProjectSketches?.(projectId, api, browser.sketches);
   syncSketchVisibilityFromTree(browser);
   if (selectedFile) projectTree.setSelected(selectedFile);
