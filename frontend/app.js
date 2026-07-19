@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260715-prompt-purple";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260719-bodies-hierarchy";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
@@ -16172,7 +16172,7 @@ async function hydrateBrowserBodyChildren(browser, { priorityNames = [], onlyNam
       // Prefer the viewport mesh (.glb) — STEP often reports 100+ solids for the
       // same assembly the viewer already shows as one model.
       const bodySource = entry.viewer_filename || entry.name;
-      const info = await api(`/api/projects/${projectId}/files/${encodeURIComponent(bodySource)}/bodies`);
+      const info = await api(`${projectApiPath(projectId)}/files/${encodeURIComponent(bodySource)}/bodies`);
       if (run !== browserBodyHydrationRun) return;
       const count = Number(info?.count || 0);
       if (count > MAX_BROWSER_BODY_CHILDREN) {
@@ -16201,12 +16201,16 @@ async function hydrateBrowserBodyChildren(browser, { priorityNames = [], onlyNam
     if (changed && run === browserBodyHydrationRun) {
       projectTree.render(browser);
       projectTree.setHidden?.(loadHiddenComponentState());
+      upsertProjectInList({ id: projectId, browser });
+      workspaceBrowser?.render?.();
       changed = false;
     }
   }
   if (changed && run === browserBodyHydrationRun) {
     projectTree.render(browser);
     projectTree.setHidden?.(loadHiddenComponentState());
+    upsertProjectInList({ id: projectId, browser });
+    workspaceBrowser?.render?.();
   }
 }
 

@@ -15469,6 +15469,49 @@ section h2 {
   padding: 0 0 2px 12px;
 }
 
+.proj-hierarchy-bodies {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.proj-hierarchy-bodies-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 10px);
+  margin: 2px 0 2px 18px;
+  padding: 3px 6px;
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  font-size: 0.7rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.proj-hierarchy-bodies-toggle:hover {
+  background: rgba(33, 38, 45, 0.85);
+  color: #c9d1d9;
+}
+
+.proj-hierarchy-list--bodies {
+  padding-left: 22px;
+}
+
+.proj-hierarchy-item--body {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.proj-hierarchy-body-icon {
+  font-size: 0.55rem;
+  color: #8b949e;
+  flex: 0 0 auto;
+}
+
 .proj-hierarchy-item-btn {
   display: flex;
   align-items: center;

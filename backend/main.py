@@ -18061,7 +18061,7 @@ def mesh_bodies_info(
     user: dict[str, Any] = Depends(get_current_user),
 ):
     """Report disconnected body count for split/delete object tools."""
-    project_path = _require_project(user, project_id)
+    project_path = _require_project_read(user, project_id)
     src = project_path / filename
     if not src.is_file():
         raise HTTPException(404, "File not found")

@@ -1403,6 +1403,78 @@ def _body_children_from_part_sidecars(
     return children
 
 
+_SCENE_BODY_CHILDREN_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_SCENE_BODY_CHILDREN_CACHE_MAX = 128
+_MAX_BROWSER_SCENE_BODIES = 256
+
+
+def _body_children_from_viewer_scene(
+    project_path: Path,
+    *,
+    parent_stem: str,
+    parent_name: str,
+    parent_viewer: str,
+) -> list[dict[str, Any]]:
+    """Nest named GLB scene meshes as Bodies under the parent component."""
+    viewer = str(parent_viewer or parent_name or "").strip()
+    if not viewer:
+        return []
+    path = project_path / viewer
+    if not path.is_file() or path.suffix.lower() not in {".glb", ".gltf"}:
+        # Fall back to a sibling .glb for STEP parents.
+        stem = Path(parent_name or parent_stem).stem
+        for ext in (".glb", ".gltf"):
+            candidate = project_path / f"{stem}{ext}"
+            if candidate.is_file():
+                path = candidate
+                viewer = candidate.name
+                break
+        else:
+            return []
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    cache_key = str(path.resolve())
+    cached = _SCENE_BODY_CHILDREN_CACHE.get(cache_key)
+    if cached and cached[0] == mtime:
+        return [dict(child) for child in cached[1]]
+    try:
+        info = scene_body_info(path)
+    except Exception:
+        info = {"count": 0, "body_names": []}
+    count = int(info.get("count") or 0)
+    if count <= 1 or count > _MAX_BROWSER_SCENE_BODIES:
+        _SCENE_BODY_CHILDREN_CACHE[cache_key] = (mtime, [])
+        return []
+    names = list(info.get("body_names") or [])
+    children: list[dict[str, Any]] = []
+    for idx in range(count):
+        label = str(names[idx] if idx < len(names) else "").strip() or f"Body {idx + 1}"
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_").lower() or f"body_{idx + 1}"
+        children.append(
+            {
+                "id": f"{parent_stem or Path(parent_name).stem}:body:{slug}",
+                "name": f"{parent_name}#body:{idx + 1}",
+                "filename": parent_name,
+                "stem": slug,
+                "label": label,
+                "format": "body",
+                "viewer_filename": viewer,
+                "source_filename": parent_name,
+                "parent_filename": parent_name,
+                "body_index": idx,
+                "body_name": label,
+                "virtual_body": True,
+            }
+        )
+    _SCENE_BODY_CHILDREN_CACHE[cache_key] = (mtime, children)
+    if len(_SCENE_BODY_CHILDREN_CACHE) > _SCENE_BODY_CHILDREN_CACHE_MAX:
+        for drop_key in list(_SCENE_BODY_CHILDREN_CACHE.keys())[: len(_SCENE_BODY_CHILDREN_CACHE) // 2]:
+            _SCENE_BODY_CHILDREN_CACHE.pop(drop_key, None)
+    return [dict(child) for child in children]
+
+
 def _is_autodesk_source_stem(stem: str) -> bool:
     """Hidden Autodesk/Fusion conversion sidecars: ``.autodesk_source_<name>``."""
     return str(stem or "").startswith(".autodesk_source_")
@@ -1652,7 +1724,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         newest["primary"] = True
         newest["auto_load"] = True
 
-    # Nest exploded body sidecars under their parent component as Bodies.
+    # Nest exploded body sidecars / named GLB scene meshes under each component.
     for comp in components:
         children = _body_children_from_part_sidecars(
             project_path,
@@ -1660,6 +1732,13 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
             parent_name=str(comp.get("name") or ""),
             parent_viewer=str(comp.get("viewer_filename") or comp.get("name") or ""),
         )
+        if not children:
+            children = _body_children_from_viewer_scene(
+                project_path,
+                parent_stem=str(comp.get("stem") or ""),
+                parent_name=str(comp.get("name") or ""),
+                parent_viewer=str(comp.get("viewer_filename") or comp.get("name") or ""),
+            )
         if children:
             comp["children_label"] = "Bodies"
             comp["children"] = children
@@ -5224,8 +5303,12 @@ def scene_body_info(path: Path) -> dict[str, Any]:
         stem = path.stem.replace("_", " ").strip()
         for label, mesh in parts:
             raw = str(label or "").strip()
-            # Replace generic scene node IDs (o11, mesh_0, etc.) with numbered names.
-            if not raw or (len(raw) < 5 and raw.startswith("o") and raw[1:].isdigit()) or raw.startswith("mesh_"):
+            # Replace generic scene node IDs (o11, o1.1, mesh_0, etc.) with numbered names.
+            if (
+                not raw
+                or re.fullmatch(r"o\d+(?:\.\d+)?", raw, flags=re.I)
+                or raw.startswith("mesh_")
+            ):
                 raw = f"Part {len(names) + 1}"
             offsets.append(off)
             names.append(raw)

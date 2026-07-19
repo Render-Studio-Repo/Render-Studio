@@ -173,6 +173,7 @@ export function createWorkspaceBrowser({
   let expandedProjects = loadIdSet(PROJECT_EXPAND_KEY);
   const forceCollapsedProjects = new Set();
   const expandedSections = new Map();
+  const collapsedHierarchyBodies = new Set();
   const selectedHierarchyKeys = new Set();
   /** @type {Map<string, { project: object, sectionId: string, entry: object }>} */
   const hierarchyEntryCache = new Map();
@@ -1621,6 +1622,78 @@ export function createWorkspaceBrowser({
             }
 
             list.appendChild(item);
+            if (isComponent && Array.isArray(entry.children) && entry.children.length) {
+              const bodiesGroup = document.createElement("li");
+              bodiesGroup.className = "proj-hierarchy-bodies";
+              const bodiesKey = `${project.id}:${entry.name}:bodies`;
+              const bodiesOpen = !collapsedHierarchyBodies.has(bodiesKey);
+              const bodiesToggle = document.createElement("button");
+              bodiesToggle.type = "button";
+              bodiesToggle.className = "proj-hierarchy-bodies-toggle";
+              bodiesToggle.setAttribute("aria-expanded", bodiesOpen ? "true" : "false");
+              bodiesToggle.innerHTML = `
+                <span class="browser-chevron">${bodiesOpen ? "▾" : "▸"}</span>
+                <span class="proj-hierarchy-section-label">${escapeHtml(entry.children_label || "Bodies")}</span>
+                <span class="proj-hierarchy-section-count">${entry.children.length}</span>
+              `;
+              bodiesToggle.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (collapsedHierarchyBodies.has(bodiesKey)) collapsedHierarchyBodies.delete(bodiesKey);
+                else collapsedHierarchyBodies.add(bodiesKey);
+                render();
+              });
+              bodiesGroup.appendChild(bodiesToggle);
+              if (bodiesOpen) {
+                const nested = document.createElement("ul");
+                nested.className = "proj-hierarchy-list proj-hierarchy-list--bodies";
+                for (const child of entry.children) {
+                  const childItem = document.createElement("li");
+                  childItem.className = "proj-hierarchy-item proj-hierarchy-item--body";
+                  const childHidden = child.__hidden ?? !!isHierarchyItemHidden?.(project, child, section.id);
+                  if (childHidden) childItem.classList.add("proj-hierarchy-item--hidden");
+                  const childSelectionKey = hierarchySelectionKey(project, section.id, child);
+                  hierarchyEntryCache.set(childSelectionKey, { project, sectionId: section.id, entry: child });
+                  if (selectedHierarchyKeys.has(childSelectionKey)) {
+                    childItem.classList.add("proj-hierarchy-item--selected");
+                  }
+
+                  const childVis = document.createElement("button");
+                  childVis.type = "button";
+                  childVis.className = "proj-hierarchy-vis-btn";
+                  childVis.classList.toggle("is-hidden", childHidden);
+                  childVis.title = childHidden ? "Show body" : "Hide body";
+                  childVis.setAttribute("aria-label", childHidden ? "Show body" : "Hide body");
+                  childVis.setAttribute("aria-pressed", childHidden ? "true" : "false");
+                  childVis.innerHTML = hierarchyEyeSvg(childHidden);
+                  childVis.addEventListener("click", async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const nextVisible = childHidden;
+                    child.__hidden = !nextVisible;
+                    await onToggleHierarchyVisibility?.(project, child, nextVisible, section.id);
+                    render();
+                  });
+
+                  const childBtn = document.createElement("button");
+                  childBtn.type = "button";
+                  childBtn.className = "proj-hierarchy-item-btn";
+                  childBtn.innerHTML = `<span class="proj-hierarchy-body-icon" aria-hidden="true">◆</span><span class="proj-hierarchy-item-name">${escapeHtml(hierarchyDisplayName(child))}</span>`;
+                  childBtn.title = `${child.body_name || child.label || child.name} — click to select this body`;
+                  childBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    selectedHierarchyKeys.clear();
+                    selectedHierarchyKeys.add(childSelectionKey);
+                    if (!childHidden) onOpenHierarchyItem?.(project, child, section.id);
+                    render();
+                  });
+
+                  childItem.append(childVis, childBtn);
+                  nested.appendChild(childItem);
+                }
+                bodiesGroup.appendChild(nested);
+              }
+              list.appendChild(bodiesGroup);
+            }
           }
           const more = buildShowMoreControl({
             total: section.items.length,
