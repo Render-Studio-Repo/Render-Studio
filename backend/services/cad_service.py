@@ -5221,9 +5221,14 @@ def scene_body_info(path: Path) -> dict[str, Any]:
         names: list[str] = []
         off = 0
         total_faces = 0
+        stem = path.stem.replace("_", " ").strip()
         for label, mesh in parts:
+            raw = str(label or "").strip()
+            # Replace generic scene node IDs (o11, mesh_0, etc.) with numbered names.
+            if not raw or (len(raw) < 5 and raw.startswith("o") and raw[1:].isdigit()) or raw.startswith("mesh_"):
+                raw = f"Part {len(names) + 1}"
             offsets.append(off)
-            names.append(str(label or "").strip() or f"Body {len(names) + 1}")
+            names.append(raw)
             nfaces = int(len(np.asarray(getattr(mesh, "faces", []), dtype=int)))
             off += nfaces
             total_faces += nfaces
