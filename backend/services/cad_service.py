@@ -3107,7 +3107,7 @@ def export_step_as_single_part(step_path: Path, dest_path: Path | None = None) -
     from OCP.XCAFApp import XCAFApp_Application
     from OCP.XCAFDoc import XCAFDoc_DocumentTool
 
-    app = XCAFApp_Application.GetApplication()
+    app = XCAFApp_Application.GetApplication_s()
     doc = TDocStd_Document(TCollection_ExtendedString("XmlOcaf"))
     app.NewDocument(TCollection_ExtendedString("MDTV-XCAF"), doc)
     shape_tool = XCAFDoc_DocumentTool.ShapeTool(doc.Main())
