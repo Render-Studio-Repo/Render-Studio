@@ -43,7 +43,7 @@ OPENAI_PRICING: dict[str, dict[str, float]] = {
 }
 
 ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
-    "claude-fable-5": {"input": 0.3, "output": 1.5},
+    "claude-fable-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0},
     "claude-opus-4-8": {"input": 5.0, "output": 25.0},
     "claude-opus-4-7": {"input": 5.0, "output": 25.0},
     "claude-4.6-opus": {"input": 5.0, "output": 25.0},
@@ -256,18 +256,23 @@ def filter_entries_for_month(entries: list[dict[str, Any]], year: int, month: in
 
 def entry_effective_cost(entry: dict[str, Any]) -> float | None:
     """Best-effort USD cost for one prompt history row."""
+    usage = entry.get("usage")
+    model = entry.get("model")
+    provider = entry.get("provider") or "openai"
+    if usage and str(model or "").lower().startswith("claude-fable-5"):
+        # Early Fable 5 rows were recorded with placeholder Haiku-like pricing.
+        return estimate_cost_usd(model, usage, provider=provider)
     if entry.get("cost_usd") is not None:
         try:
             return float(entry["cost_usd"])
         except (TypeError, ValueError):
             pass
-    usage = entry.get("usage")
     if not usage:
         return None
     return estimate_cost_usd(
-        entry.get("model"),
+        model,
         usage,
-        provider=entry.get("provider") or "openai",
+        provider=provider,
     )
 
 
