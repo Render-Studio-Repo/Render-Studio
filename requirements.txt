@@ -5,6 +5,7 @@ openai>=1.60.0
 pydantic>=2.10.0
 pydantic-settings>=2.6.0
 trimesh>=4.5.0
+cascadio>=0.0.17
 networkx>=3.0.0
 lxml>=5.0.0
 numpy>=2.0.0
