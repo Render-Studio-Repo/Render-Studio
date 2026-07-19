@@ -18070,11 +18070,20 @@ def mesh_bodies_info(
     # mesh is already a single assembly shell.
     mesh_src = src
     suffix = src.suffix.lower()
+    step_src: Path | None = None
     if suffix in {".step", ".stp"}:
+        step_src = src
         viewer = cad_service.viewer_filename_for_model(src.name, project_path)
         viewer_path = project_path / viewer if viewer else None
         if viewer_path is not None and viewer_path.is_file() and viewer_path.suffix.lower() in {".glb", ".gltf"}:
             mesh_src = viewer_path
+    elif suffix in {".glb", ".gltf"}:
+        stem = src.stem
+        for ext in (".step", ".stp"):
+            candidate = project_path / (stem + ext)
+            if candidate.is_file():
+                step_src = candidate
+                break
     try:
         mtime = mesh_src.stat().st_mtime
     except OSError:
@@ -18088,6 +18097,15 @@ def mesh_bodies_info(
     if mesh_src.suffix.lower() in {".glb", ".gltf"}:
         try:
             info = cad_service.scene_body_info(mesh_src)
+        except Exception:
+            pass
+    # If GLB only shows 1 body but a STEP source exists with multiple solids,
+    # use the STEP body info so users can see/toggle individual parts.
+    if info.get("count", 0) <= 1 and step_src and step_src.is_file():
+        try:
+            step_info = cad_service.step_body_info(step_src)
+            if step_info.get("count", 0) > 1:
+                info = step_info
         except Exception:
             pass
     _bodies_info_cache[cache_key] = (mtime, info)

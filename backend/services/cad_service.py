@@ -5237,6 +5237,45 @@ def scene_body_info(path: Path) -> dict[str, Any]:
     return mesh_body_info(load_mesh(path))
 
 
+def step_body_info(path: Path) -> dict[str, Any]:
+    """Body info from STEP solid topology — gives proper part names from Fusion/cadpy."""
+    path = Path(path)
+    names = _step_manifold_solid_names(path)
+    if len(names) > 1:
+        return {
+            "count": len(names),
+            "face_offsets": list(range(len(names))),
+            "body_names": names,
+            "can_split": True,
+            "faces": 0,
+            "source": "step_manifold",
+        }
+    try:
+        parts = list_step_solid_meshes(path)
+    except Exception:
+        parts = []
+    if len(parts) > 1:
+        offsets: list[int] = []
+        body_names: list[str] = []
+        off = 0
+        total_faces = 0
+        for label, mesh in parts:
+            offsets.append(off)
+            body_names.append(str(label or "").strip() or f"Body {len(body_names) + 1}")
+            nfaces = int(len(np.asarray(getattr(mesh, "faces", []), dtype=int)))
+            off += nfaces
+            total_faces += nfaces
+        return {
+            "count": len(parts),
+            "face_offsets": offsets,
+            "body_names": body_names,
+            "can_split": True,
+            "faces": total_faces,
+            "source": "step_solids",
+        }
+    return {"count": 1, "face_offsets": [0], "body_names": ["Body 1"], "can_split": False, "faces": 0}
+
+
 def split_mesh_bodies(mesh: trimesh.Trimesh) -> list[trimesh.Trimesh]:
     """Split a mesh into separate disconnected bodies."""
     bodies = _mesh_bodies(mesh)
