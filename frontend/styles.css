@@ -20087,6 +20087,552 @@ body.theme-light .quest-book-btn-text small {
   color: rgba(146, 64, 14, 0.8);
 }
 
+/* ── Quest Book modal — FTB-Quests-style learning map ─────────────────────
+   Deliberately darker and more game-y than the rest of the app, with gold
+   quest-reward accents. Stays dark in the light theme on purpose. */
+.quest-book-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 940;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+.quest-book-overlay.hidden {
+  display: none;
+}
+
+.quest-book-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.quest-book {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100%);
+  height: min(780px, 100%);
+  border: 1px solid rgba(240, 185, 60, 0.35);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(1100px 420px at 18% -10%, rgba(240, 185, 60, 0.07), transparent 60%),
+    #0b0e14;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 26px rgba(240, 185, 60, 0.1);
+  color: #e6edf3;
+}
+
+.quest-book-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(240, 185, 60, 0.22);
+  background: linear-gradient(180deg, rgba(240, 185, 60, 0.08), rgba(240, 185, 60, 0.02));
+}
+
+.quest-book-head-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: #2a1c04;
+  background: linear-gradient(160deg, #ffe9a3, #f5b93c 55%, #c47f17);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.quest-book-head-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.quest-book-head-titles strong {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #ffe9a3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.quest-book-head-titles span {
+  font-size: 0.72rem;
+  color: rgba(230, 237, 243, 0.55);
+}
+
+.quest-book-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 130px;
+}
+
+.quest-book-progress-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255, 233, 163, 0.85);
+}
+
+.quest-book-progress-track {
+  width: 130px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.quest-book-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #c47f17, #f5b93c, #ffe9a3);
+  box-shadow: 0 0 8px rgba(240, 185, 60, 0.55);
+  transition: width 0.4s ease;
+}
+
+.quest-book-close {
+  margin-left: 12px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(230, 237, 243, 0.7);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.quest-book-close:hover {
+  border-color: rgba(240, 185, 60, 0.6);
+  color: #ffe9a3;
+  background: rgba(240, 185, 60, 0.1);
+}
+
+.quest-book-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Chapter tabs — book-spine sidebar */
+.quest-book-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 254px;
+  flex-shrink: 0;
+  padding: 10px 8px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(240, 185, 60, 0.16);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.quest-book-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(230, 237, 243, 0.72);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.quest-book-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e6edf3;
+}
+
+.quest-book-tab.active {
+  border-color: rgba(240, 185, 60, 0.5);
+  background: linear-gradient(180deg, rgba(240, 185, 60, 0.14), rgba(240, 185, 60, 0.05));
+  color: #ffe9a3;
+  box-shadow: inset 0 1px 0 rgba(255, 226, 130, 0.18);
+}
+
+.quest-book-tab-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.quest-book-tab.active .quest-book-tab-icon {
+  background: rgba(240, 185, 60, 0.18);
+}
+
+.quest-book-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.quest-book-tab-count {
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(230, 237, 243, 0.6);
+}
+
+.quest-book-tab.active .quest-book-tab-count {
+  background: rgba(240, 185, 60, 0.2);
+  color: #ffe9a3;
+}
+
+/* Main panel — chapter head + node-graph canvas + detail footer */
+.quest-book-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.quest-book-chapter-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.quest-book-chapter-head strong {
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #e6edf3;
+}
+
+.quest-chapter-blurb {
+  font-size: 0.74rem;
+  color: rgba(230, 237, 243, 0.5);
+}
+
+.quest-book-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background:
+    radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+.quest-graph {
+  position: relative;
+}
+
+.quest-graph-links {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.quest-link {
+  stroke: rgba(240, 185, 60, 0.3);
+  stroke-width: 3;
+  stroke-dasharray: 7 6;
+  stroke-linecap: round;
+}
+
+/* Quest nodes — positioned at their center coordinates */
+.quest-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.1), transparent 55%),
+    #171c26;
+  color: rgba(230, 237, 243, 0.75);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quest-node:hover,
+.quest-node:focus-visible {
+  transform: translate(-50%, -50%) scale(1.08);
+  z-index: 3;
+}
+
+.quest-node.is-selected {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.25), 0 0 14px rgba(88, 166, 255, 0.35);
+  z-index: 3;
+}
+
+.quest-node--completed {
+  border-color: rgba(240, 185, 60, 0.85);
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 236, 170, 0.28), transparent 60%),
+    linear-gradient(160deg, rgba(240, 185, 60, 0.28), rgba(140, 90, 15, 0.3)),
+    #1d1810;
+  color: #ffe9a3;
+  box-shadow: 0 0 12px rgba(240, 185, 60, 0.35);
+}
+
+.quest-node--available {
+  border-color: rgba(88, 166, 255, 0.7);
+  color: #cfe6ff;
+  box-shadow: 0 0 10px rgba(88, 166, 255, 0.25);
+  animation: quest-node-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes quest-node-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(88, 166, 255, 0.2); }
+  50% { box-shadow: 0 0 16px rgba(88, 166, 255, 0.45); }
+}
+
+.quest-node--locked {
+  border-color: rgba(255, 255, 255, 0.09);
+  color: rgba(230, 237, 243, 0.28);
+  background: #12151d;
+}
+
+.quest-node-check {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #0b0e14;
+  background: linear-gradient(160deg, #ffe9a3, #f5b93c 60%, #c47f17);
+  color: #2a1c04;
+}
+
+/* Hover tooltip */
+.quest-node-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 230px;
+  padding: 8px 10px;
+  border: 1px solid rgba(240, 185, 60, 0.35);
+  border-radius: 8px;
+  background: rgba(9, 11, 17, 0.96);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+
+.quest-node:hover .quest-node-tip,
+.quest-node:focus-visible .quest-node-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.quest-node-tip strong {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #ffe9a3;
+}
+
+.quest-node-tip span {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: rgba(230, 237, 243, 0.75);
+  white-space: normal;
+}
+
+.quest-node-tip em {
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(240, 185, 60, 0.8);
+}
+
+/* Detail footer */
+.quest-book-detail {
+  flex-shrink: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(240, 185, 60, 0.18);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.quest-detail-empty {
+  margin: 0;
+  font-size: 0.76rem;
+  color: rgba(230, 237, 243, 0.45);
+}
+
+.quest-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.quest-detail-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.quest-detail-head strong {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #e6edf3;
+}
+
+.quest-detail-where {
+  font-size: 0.68rem;
+  color: rgba(230, 237, 243, 0.5);
+}
+
+.quest-detail-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(230, 237, 243, 0.7);
+}
+
+.quest-detail-icon--completed {
+  border-color: rgba(240, 185, 60, 0.6);
+  background: rgba(240, 185, 60, 0.14);
+  color: #ffe9a3;
+}
+
+.quest-detail-icon--available {
+  border-color: rgba(88, 166, 255, 0.5);
+  background: rgba(88, 166, 255, 0.1);
+  color: #cfe6ff;
+}
+
+.quest-detail-state {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 99px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(230, 237, 243, 0.5);
+}
+
+.quest-detail-state--completed {
+  border-color: rgba(240, 185, 60, 0.6);
+  background: rgba(240, 185, 60, 0.12);
+  color: #ffe9a3;
+}
+
+.quest-detail-state--available {
+  border-color: rgba(88, 166, 255, 0.55);
+  background: rgba(88, 166, 255, 0.1);
+  color: #cfe6ff;
+}
+
+.quest-detail-summary {
+  margin: 8px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: rgba(230, 237, 243, 0.78);
+}
+
+.quest-detail-steps {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.quest-detail-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: rgba(230, 237, 243, 0.7);
+}
+
+.quest-step-box {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border-radius: 3px;
+  border: 1px solid rgba(240, 185, 60, 0.5);
+  background: rgba(240, 185, 60, 0.06);
+}
+
+@media (max-width: 860px) {
+  .quest-book-overlay {
+    padding: 10px;
+  }
+
+  .quest-book-tabs {
+    width: 64px;
+  }
+
+  .quest-book-tab-title,
+  .quest-book-tab-count {
+    display: none;
+  }
+
+  .quest-book-tab {
+    justify-content: center;
+  }
+}
+
 .cloud-connections-card {
   margin: 0;
   padding: 10px;

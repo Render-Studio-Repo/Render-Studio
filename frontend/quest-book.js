@@ -106,6 +106,7 @@ function wobble(str, span) {
 function layoutChapter(chapter) {
   const NODE = 58;
   const X_STEP = 148;
+  const X_START = 150; /* room for the hover tooltip on the first node */
   const Y_MID = 210;
   const nodes = [];
   let spineIndex = 0;
@@ -123,7 +124,7 @@ function layoutChapter(chapter) {
       });
       return;
     }
-    const x = 80 + spineIndex * X_STEP;
+    const x = X_START + spineIndex * X_STEP;
     const y = Y_MID + (spineIndex % 2 ? -58 : 46) + wobble(quest.id, 44);
     nodes.push({ quest, parentIndex: lastSpine, x, y });
     lastSpine = nodes.length - 1;

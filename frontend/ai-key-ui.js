@@ -242,7 +242,6 @@ export function createAIKeyUI({ api, onStatusChange }) {
             <option value="1000">$10 credits</option>
             <option value="2000" selected>$20 credits</option>
             <option value="5000">$50 credits</option>
-            <option value="10000">$100 credits</option>
           </select>
           <button type="button" class="btn ai-credit-pay-btn" data-action="buy-credits" data-provider="stripe">Stripe</button>
           <button type="button" class="btn ai-credit-pay-btn" data-action="buy-credits" data-provider="paypal">PayPal</button>
@@ -251,7 +250,7 @@ export function createAIKeyUI({ api, onStatusChange }) {
           <input type="checkbox" data-action="auto-refill" ${credits.auto_refill_enabled ? "checked" : ""} />
           <span>Auto refill ${formatCents(credits.auto_refill_amount_cents || 2000)} when credits drop below ${formatCents(credits.auto_refill_threshold_cents || 500)}</span>
         </label>
-        <p class="ai-credit-note">${credits.payment_methods?.paypal ? "Stripe and PayPal checkout are available." : "Stripe checkout is live. PayPal is shown here and will enable once PayPal checkout credentials are configured."}</p>
+        <p class="ai-credit-note">${credits.payment_methods?.stripe_payment_link ? "Stripe Payment Link checkout is live. Paid dollars become shared AI credits; model usage deducts cost plus markup." : credits.payment_methods?.paypal ? "Stripe and PayPal checkout are available." : "Stripe checkout is live. PayPal is shown here and will enable once PayPal checkout credentials are configured."}</p>
       </div>
     `;
   }

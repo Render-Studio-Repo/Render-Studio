@@ -7,6 +7,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 
 from backend.config import settings
 from backend.database import get_conn
@@ -15,6 +16,7 @@ MARKUP_PERCENT = 15
 MIN_CHECKOUT_CENTS = 500
 DEFAULT_REFILL_CENTS = 2000
 DEFAULT_REFILL_THRESHOLD_CENTS = 500
+MAX_PAYMENT_LINK_CENTS = 100_000
 
 
 def _now() -> str:
@@ -31,6 +33,41 @@ def _stripe():
         return None
     stripe.api_key = key
     return stripe
+
+
+def _payment_link_url() -> str:
+    return (getattr(settings, "stripe_ai_credits_payment_link_url", None) or "").strip()
+
+
+def _payment_link_id() -> str:
+    return (getattr(settings, "stripe_ai_credits_payment_link_id", None) or "").strip()
+
+
+def _with_query(url: str, params: dict[str, Any]) -> str:
+    parsed = urlparse(url)
+    existing = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in params.items():
+        if value is not None and str(value).strip():
+            existing[key] = str(value).strip()
+    return urlunparse(parsed._replace(query=urlencode(existing)))
+
+
+def _user_for_checkout_session(session: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = session.get("metadata") or {}
+    user_id = str(session.get("client_reference_id") or metadata.get("user_id") or "").strip()
+    email = (
+        (session.get("customer_details") or {}).get("email")
+        or session.get("customer_email")
+        or metadata.get("email")
+        or ""
+    )
+    with get_conn() as conn:
+        row = None
+        if user_id:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row and email:
+            row = conn.execute("SELECT * FROM users WHERE email = ?", (str(email).strip().lower(),)).fetchone()
+    return dict(row) if row else None
 
 
 def platform_models() -> list[dict[str, str]]:
@@ -89,7 +126,7 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
         "last_purchase_cents": last_amount,
         "last_purchase_percent_left": percent_left,
         "models": platform_models(),
-        "payment_methods": {"stripe": True, "paypal": False},
+        "payment_methods": {"stripe": True, "stripe_payment_link": bool(_payment_link_url()), "paypal": False},
     }
 
 
@@ -212,6 +249,19 @@ def create_checkout_session(
     provider = str(provider or "stripe").strip().lower()
     if provider == "paypal":
         raise ValueError("PayPal credit checkout is not configured yet. Use Stripe for now.")
+    link_url = _payment_link_url()
+    if link_url:
+        return {
+            "url": _with_query(
+                link_url,
+                {
+                    "client_reference_id": user["id"],
+                    "prefilled_email": user.get("email") or None,
+                    "amount_cents": amount,
+                },
+            ),
+            "payment_link": True,
+        }
     stripe = _stripe()
     if not stripe:
         add_credits(user["id"], amount, provider="demo", meta={"demo": True})
@@ -261,7 +311,10 @@ def handle_success_session(session_id: str) -> bool:
     balance = int(account.get("balance_cents") or 0) + amount
     now = _now()
     with get_conn() as conn:
-        conn.execute("UPDATE ai_credit_accounts SET balance_cents = ?, updated_at = ? WHERE user_id = ?", (balance, now, user_id))
+        conn.execute(
+            "UPDATE ai_credit_accounts SET balance_cents = ?, use_platform_key = 1, updated_at = ? WHERE user_id = ?",
+            (balance, now, user_id),
+        )
         conn.execute(
             """
             INSERT INTO ai_credit_transactions (
@@ -270,6 +323,71 @@ def handle_success_session(session_id: str) -> bool:
             ) VALUES (?, ?, 'purchase', ?, ?, 'stripe', ?, ?, ?)
             """,
             (str(uuid.uuid4()), user_id, amount, balance, session_id, json.dumps({"stripe": True}), now),
+        )
+    return True
+
+
+def handle_payment_link_session(session: dict[str, Any]) -> bool:
+    """Credit AI balance for a completed Stripe Payment Link checkout.
+
+    App-created sessions carry metadata and are handled by handle_success_session().
+    A static Payment Link cannot reliably carry our metadata, so we recognize the
+    configured Payment Link and map the paid checkout back to a Render3D user.
+    """
+    if not isinstance(session, dict):
+        return False
+    session_id = str(session.get("id") or "").strip()
+    if not session_id or session.get("payment_status") != "paid":
+        return False
+    metadata = session.get("metadata") or {}
+    if metadata.get("kind"):
+        return False
+
+    configured_link_id = _payment_link_id()
+    session_link_id = str(session.get("payment_link") or "").strip()
+    if configured_link_id and session_link_id != configured_link_id:
+        return False
+    if not configured_link_id and not (_payment_link_url() and session_link_id):
+        return False
+
+    amount = int(session.get("amount_total") or 0)
+    currency = str(session.get("currency") or "usd").lower()
+    if currency != "usd" or amount < MIN_CHECKOUT_CENTS or amount > MAX_PAYMENT_LINK_CENTS:
+        return False
+
+    user = _user_for_checkout_session(session)
+    if not user:
+        return False
+
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT 1 FROM ai_credit_transactions WHERE stripe_session_id = ? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+    if existing:
+        return True
+
+    account = ensure_account(user["id"])
+    balance = int(account.get("balance_cents") or 0) + amount
+    now = _now()
+    meta = {
+        "stripe": True,
+        "payment_link": session_link_id,
+        "checkout_email": (session.get("customer_details") or {}).get("email") or session.get("customer_email"),
+    }
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE ai_credit_accounts SET balance_cents = ?, use_platform_key = 1, updated_at = ? WHERE user_id = ?",
+            (balance, now, user["id"]),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_credit_transactions (
+              id, user_id, kind, amount_cents, balance_after_cents, provider,
+              stripe_session_id, meta_json, created_at
+            ) VALUES (?, ?, 'purchase', ?, ?, 'stripe_payment_link', ?, ?, ?)
+            """,
+            (str(uuid.uuid4()), user["id"], amount, balance, session_id, json.dumps(meta), now),
         )
     return True
 

@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_ai_credits_payment_link_url: str = "https://buy.stripe.com/3cIaEWcKV6Vs0W95JC3wQ00"
+    stripe_ai_credits_payment_link_id: str = ""
     marketplace_platform_fee_bps: int = 1000  # 10%
     public_base_url: str = "https://render3d.app"
 

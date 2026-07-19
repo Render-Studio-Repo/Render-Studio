@@ -70,7 +70,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260719-google-onboarding-suppress";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260717-fable-activate";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260719-credit-payment-link";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -26835,7 +26835,7 @@ window.addEventListener("keydown", (e) => {
   document.getElementById("btn-quest-book")?.addEventListener("click", (e) => {
     e.stopPropagation();
     document.getElementById("user-menu")?.classList.add("hidden");
-    void import("./quest-book.js?v=20260719-quest-book").then((mod) => {
+    void import("./quest-book.js?v=20260719-quest-book-2").then((mod) => {
       mod.openQuestBook?.();
     });
   });

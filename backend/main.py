@@ -4351,6 +4351,18 @@ async def marketplace_stripe_webhook(request: Request):
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.post("/api/user/ai-credits/stripe/webhook")
+async def ai_credits_stripe_webhook(request: Request):
+    from backend.services import marketplace_payments_service as payments
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature")
+    try:
+        return payments.handle_stripe_webhook(payload, sig)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 def _send_welcome_email_background(user: dict[str, Any]) -> None:
     try:
         result = onboarding_email_service.send_welcome_email(user)
