@@ -259,6 +259,61 @@ def project_summary(project_path: Path) -> dict[str, Any]:
     }
 
 
+def project_wiring_summary(project_path: Path) -> dict[str, Any]:
+    """Fast project payload for Wiring mode without heavy CAD browser hydration."""
+    files = cad_service.list_project_files(project_path)
+    if not meta_path(project_path).is_file() and files:
+        touch_project(project_path)
+    meta = load_meta(project_path)
+    timeline = history_service.timeline_summary(project_path)
+    touch = meta.get("updated_at")
+    if not touch and files:
+        touch = datetime.fromtimestamp(
+            (project_path / files[0]["name"]).stat().st_mtime, tz=timezone.utc
+        ).isoformat()
+
+    wiring_items: list[dict[str, Any]] = []
+    wiring_path = project_path / "wiring.json"
+    if wiring_path.is_file():
+        try:
+            data = json.loads(wiring_path.read_text(encoding="utf-8"))
+            count = len(data.get("components") or [])
+        except Exception:
+            count = 0
+        wiring_items.append(
+            {
+                "id": "wiring",
+                "name": "Circuit layout",
+                "format": "wiring",
+                "component_count": count,
+                "size": wiring_path.stat().st_size,
+            }
+        )
+
+    return {
+        "id": project_path.name,
+        "name": meta.get("name") or project_path.name,
+        "created_at": meta.get("created_at"),
+        "updated_at": touch or meta.get("updated_at"),
+        "file_count": len(files),
+        "files": files,
+        "browser": {
+            "components": [],
+            "sketches": [],
+            "wiring": wiring_items,
+            "drawings": [],
+            "references": [],
+            "renders": [],
+            "rigging": [],
+            "robots": [],
+        },
+        "timeline": timeline,
+        "latest_file": latest_model_file(project_path),
+        "usage_summary": prompt_history_service.project_usage_summary(project_path),
+        "generation": generation_service.public_summary(project_path),
+    }
+
+
 def project_list_summary(project_path: Path) -> dict[str, Any]:
     """Fast sidebar summary; full browser/timeline data loads when opening a project."""
     meta = load_meta(project_path)

@@ -3108,15 +3108,19 @@ def export_step_as_single_part(step_path: Path, dest_path: Path | None = None) -
     from OCP.XCAFDoc import XCAFDoc_DocumentTool
 
     app = XCAFApp_Application.GetApplication_s()
-    doc = TDocStd_Document(TCollection_ExtendedString("XmlOcaf"))
-    app.NewDocument(TCollection_ExtendedString("MDTV-XCAF"), doc)
-    shape_tool = XCAFDoc_DocumentTool.ShapeTool(doc.Main())
+    fmt = TCollection_ExtendedString("BinXCAF")
+    doc = TDocStd_Document(fmt)
+    app.NewDocument(fmt, doc)
+    shape_tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
     # makeAssembly=False keeps one free shape / one product — Fusion Part, not Assembly.
     label = shape_tool.AddShape(out_shape, False)
     try:
-        TDataStd_Name.Set(label, TCollection_ExtendedString((step_path.stem or "Part")[:120]))
+        TDataStd_Name.Set_s(label, TCollection_ExtendedString((step_path.stem or "Part")[:120]))
     except Exception:
-        pass
+        try:
+            TDataStd_Name.Set(label, TCollection_ExtendedString((step_path.stem or "Part")[:120]))
+        except Exception:
+            pass
     writer = STEPCAFControl_Writer()
     try:
         writer.SetNameMode(True)

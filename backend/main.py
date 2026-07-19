@@ -10464,9 +10464,17 @@ def seed_robot_arm_demo_project(
 
 
 @app.get("/api/projects/{project_id}")
-def get_project(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+def get_project(
+    project_id: str,
+    view: str | None = Query(None, max_length=40),
+    user: dict[str, Any] = Depends(get_current_user),
+):
     path = _require_project_read(user, project_id)
-    summary = project_store.project_summary(path)
+    summary = (
+        project_store.project_wiring_summary(path)
+        if str(view or "").lower() == "wiring"
+        else project_store.project_summary(path)
+    )
     if _is_other_user_render_project(project_id, user) or _is_public_project(project_id):
         owner = _project_owner(project_id) or {}
         can_manage = teams_service.can_access_project(user["id"], project_id)

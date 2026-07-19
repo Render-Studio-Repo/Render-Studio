@@ -15165,6 +15165,10 @@ async function openProgramForEdit(entry) {
 
 async function openHierarchyItem(project, entry, sectionId) {
   if (!project?.id || !entry) return;
+  if (sectionId === "wiring") {
+    workspaceModes.setMode("wiring");
+    applyWorkspaceMode("wiring");
+  }
   if (project.id !== projectId) {
     await loadProject(project.id);
   }
@@ -15195,6 +15199,8 @@ async function openHierarchyItem(project, entry, sectionId) {
   }
   workspaceModes.setMode("wiring");
   applyWorkspaceMode("wiring");
+  await wiringSim.load?.();
+  await refreshWiringPromptHistory();
 }
 
 async function deleteHierarchyComponent(project, entry) {
@@ -18569,7 +18575,7 @@ async function loadProject(id) {
         onWorkspaceUpdated: (msg) => handleRealtimeEvent(msg),
       });
     }
-  const data = await api(projectApiPath(id));
+  const data = await api(wiringMode ? `${projectApiPath(id)}?view=wiring` : projectApiPath(id));
     if (loadGen !== loadProjectGeneration) return;
 
   setProjectHeader(data.name, id);
