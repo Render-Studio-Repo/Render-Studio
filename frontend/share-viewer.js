@@ -234,12 +234,18 @@ async function main() {
   }
 
   function bambuStudioOpenUrls(fileUrl) {
+    // Encoded file= URLs are what Bambu imports on first open.
     const encoded = encodeURIComponent(fileUrl);
     return {
-      windows: `bambustudio://open?file=${fileUrl}`,
+      windows: `bambustudio://open?file=${encoded}`,
       windowsEncoded: `bambustudio://open?file=${encoded}`,
-      linux: `bambustudio://open?file=${fileUrl}`,
-      macos: `bambustudioopen://${fileUrl}`,
+      windowsPlain: `bambustudio://open?file=${fileUrl}`,
+      linux: `bambustudio://open?file=${encoded}`,
+      linuxEncoded: `bambustudio://open?file=${encoded}`,
+      linuxPlain: `bambustudio://open?file=${fileUrl}`,
+      macos: `bambustudioopen://${encoded}`,
+      macosEncoded: `bambustudioopen://${encoded}`,
+      macosPlain: `bambustudioopen://${fileUrl}`,
     };
   }
 

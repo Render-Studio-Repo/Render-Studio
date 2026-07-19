@@ -755,17 +755,20 @@ function detectClientOs() {
 }
 
 function bambuStudioOpenUrls(fileUrl) {
-  // MakerWorld-style unencoded HTTPS works best with Bambu's protocol parser.
-  // Encoded variants are kept as fallbacks for picky browsers/OS handlers.
+  // URI-encoded HTTPS in the protocol query is what Bambu Studio actually
+  // imports on first open. Plain URLs often only focus an empty plate.
   const encoded = encodeURIComponent(fileUrl);
   return {
-    windows: `bambustudio://open?file=${fileUrl}`,
+    windows: `bambustudio://open?file=${encoded}`,
     windowsEncoded: `bambustudio://open?file=${encoded}`,
-    linux: `bambustudio://open?file=${fileUrl}`,
+    windowsPlain: `bambustudio://open?file=${fileUrl}`,
+    linux: `bambustudio://open?file=${encoded}`,
     linuxEncoded: `bambustudio://open?file=${encoded}`,
+    linuxPlain: `bambustudio://open?file=${fileUrl}`,
     // macOS registers a different scheme than Windows/Linux.
-    macos: `bambustudioopen://${fileUrl}`,
+    macos: `bambustudioopen://${encoded}`,
     macosEncoded: `bambustudioopen://${encoded}`,
+    macosPlain: `bambustudioopen://${fileUrl}`,
   };
 }
 
@@ -893,8 +896,8 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
   const panel = document.createElement("div");
   panel.className = "file-export-bambu-followup";
   const alt = os === "macos"
-    ? (urls.windowsEncoded || urls.windows)
-    : (urls.macos || urls.macosEncoded);
+    ? (urls.windowsPlain || urls.windows)
+    : (urls.macosPlain || urls.macos);
   const encodedPrimary = os === "macos" ? urls.macosEncoded : (urls[`${os}Encoded`] || urls.windowsEncoded);
   panel.innerHTML = `
     <p><strong>${escText(threeMfName)}</strong> was prepared as a plate-ready 3MF.</p>
@@ -905,8 +908,8 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
       <li>Open the downloaded <strong>${escText(threeMfName)}</strong> from your Downloads folder (File → Import)</li>
     </ul>
     <div class="file-export-bambu-followup-actions">
+      <button type="button" class="btn secondary btn-compact" data-bambu-encoded>Open again</button>
       <button type="button" class="btn secondary btn-compact" data-bambu-alt>Try alternate open link</button>
-      <button type="button" class="btn secondary btn-compact" data-bambu-encoded>Try encoded link</button>
       <button type="button" class="btn secondary btn-compact" data-bambu-download>Download 3MF again</button>
     </div>
   `;
@@ -914,7 +917,7 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
     launchBambuProtocol(alt);
   });
   panel.querySelector("[data-bambu-encoded]")?.addEventListener("click", () => {
-    launchBambuProtocol(encodedPrimary || alt);
+    launchBambuProtocol(encodedPrimary || urls[os] || urls.windows);
   });
   panel.querySelector("[data-bambu-download]")?.addEventListener("click", async () => {
     try {
