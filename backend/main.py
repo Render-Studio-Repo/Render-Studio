@@ -13465,6 +13465,8 @@ async def save_architect_building(
 
 @app.get("/api/projects/{project_id}/wiring")
 def get_wiring(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import wiring_service
+
     path = _require_project_read(user, project_id)
     wiring_path = path / "wiring.json"
     if not wiring_path.is_file():
@@ -13473,7 +13475,7 @@ def get_wiring(project_id: str, user: dict[str, Any] = Depends(get_current_user)
         schematic = json.loads(wiring_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise HTTPException(400, f"Invalid wiring.json: {exc}") from exc
-    repaired, repairs = wiring_service.validate_and_repair_schematic(schematic)
+    repaired, _repairs = wiring_service.validate_and_repair_schematic(schematic)
     return repaired
 
 
@@ -13483,6 +13485,8 @@ def save_wiring(
     body: WiringSaveRequest,
     user: dict[str, Any] = Depends(get_current_user),
 ):
+    from backend.services import wiring_service
+
     path = _require_project(user, project_id)
     wiring_path = path / "wiring.json"
     payload = {"components": body.components, "wires": body.wires}
