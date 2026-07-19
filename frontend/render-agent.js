@@ -10,8 +10,8 @@ import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
 
 
 const ONBOARDING_KEY_PREFIX = "render3d:renderAgentSeen:";
-const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v1";
-const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v8";
+const PANEL_LAYOUT_KEY = "render3d:renderAgentPanel:v2";
+const DOCS_PANEL_LAYOUT_KEY = "render3d:renderAgentPanelDocs:v9";
 const RENDER3D_LOGO_URL = "/render3d-logo.png?v=20260715-new-logo";
 
 function esc(value = "") {
@@ -465,7 +465,9 @@ export function createRenderAgent({
       panel.classList.remove("render-agent-panel--deck");
     }
     const saved = readStickyLayout();
-    const defaultW = Math.min(isDocs ? 420 : 400, Math.max(260, window.innerWidth - 32));
+    const maxPanelW = Math.min(isDocs ? 340 : 360, Math.max(260, window.innerWidth - 32));
+    const minPanelW = Math.min(isDocs ? 300 : 280, maxPanelW);
+    const defaultW = maxPanelW;
     // Docs panel: bottom-right, shorter so docs can fill the column beside it.
     const defaultH = Math.min(
       isDocs ? 460 : 640,
@@ -489,7 +491,7 @@ export function createRenderAgent({
       }
       return;
     }
-    if (saved.width) panel.style.width = `${Math.max(isDocs ? 320 : 260, saved.width)}px`;
+    if (saved.width) panel.style.width = `${Math.min(maxPanelW, Math.max(minPanelW, saved.width))}px`;
     else panel.style.width = `${defaultW}px`;
     if (saved.height) panel.style.height = `${Math.max(isDocs ? 360 : 260, saved.height)}px`;
     else panel.style.height = `${defaultH}px`;
@@ -1565,9 +1567,10 @@ export function createRenderAgent({
     copyShareLink,
     showDoItWizard,
     enterPresentationDeck,
-    setUser(user) {
+    setUser(user, { suppressOnboarding = false } = {}) {
       if (!user) return;
       // Desktop only: first visit auto-opens Render Agent with tip + Getting Started link.
+      if (suppressOnboarding) return;
       if (!isDesktopViewport()) return;
       if (!shouldShowOnboarding()) return;
       // Ensure Sam's gpt-4o-mini is the default agent for new users.

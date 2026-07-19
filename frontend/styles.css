@@ -31729,7 +31729,7 @@ body.feedback-page-dragging {
   right: 14px;
   top: 52px;
   z-index: 10120;
-  width: min(420px, calc(100% - 28px));
+  width: min(360px, calc(100% - 28px));
   max-height: min(680px, calc(100% - 76px));
   display: flex;
   flex-direction: column;
@@ -34173,7 +34173,7 @@ body.docs-gif-lightbox-open {
   top: auto;
   bottom: 24px;
   left: auto;
-  width: min(340px, calc(100vw - 24px));
+  width: min(320px, calc(100vw - 24px));
   height: min(460px, calc(100vh - 120px));
   max-height: none;
   border-radius: 16px;

@@ -69,7 +69,7 @@ import { createProjectChatUI } from "./project-chat.js?v=20260716-chat-link-prev
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
-import { createRenderAgent } from "./render-agent.js?v=20260715-chat-show-me-actions";
+import { createRenderAgent } from "./render-agent.js?v=20260719-google-onboarding-suppress";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260717-fable-activate";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
@@ -1807,10 +1807,18 @@ function showViewportStatusToast(kind = "", text = "", { duration = null } = {})
   if (!message) return;
   const normalizedKind = String(kind || "").replace(/\s+/g, " ").trim().split(" ").find(Boolean) || "info";
   viewportStatusToastStack.classList.toggle("is-generating", Boolean(viewerOverlay?.isGenerating?.()));
+  const duplicate = [...viewportStatusToastStack.children].find((child) => {
+    return child?.dataset?.toastMessage === message
+      && child?.dataset?.toastKind === normalizedKind
+      && !child.classList.contains("is-leaving");
+  });
+  if (duplicate) return;
   const toast = document.createElement("div");
   const id = `viewport-status-toast-${++viewportStatusToastSeq}`;
   toast.className = `viewport-status-toast viewport-status-toast--${normalizedKind}`;
   toast.dataset.toastId = id;
+  toast.dataset.toastKind = normalizedKind;
+  toast.dataset.toastMessage = message;
   toast.innerHTML = `
     <span class="viewport-status-toast-dot" aria-hidden="true"></span>
     <span class="viewport-status-toast-text"></span>
@@ -14626,8 +14634,6 @@ function maybeStartFirstProjectPromptOnboarding() {
 
 function maybeStartGoogleNewUserWalkthrough(data = {}) {
   if (!currentUser || data?.social_new !== true || String(data?.social_provider || "").toLowerCase() !== "google") return;
-  if (window.__render3dShowMeFromQuery) return;
-  if (new URLSearchParams(window.location.search).has("showMe")) return;
   const key = googleNewUserWalkthroughKey();
   try {
     if (localStorage.getItem(key) === "1") return;
@@ -14636,11 +14642,6 @@ function maybeStartGoogleNewUserWalkthrough(data = {}) {
   } catch {
     return;
   }
-  window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
-      mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
-    });
-  }, 1400);
   pendingGoogleNewUserWalkthrough = false;
 }
 
@@ -24888,7 +24889,7 @@ window.addEventListener("keydown", (e) => {
       currentUser = data.user;
       pendingGoogleNewUserWalkthrough = data?.social_new === true
         && String(data?.social_provider || "").toLowerCase() === "google";
-      renderAgentUi?.setUser?.(data.user);
+      renderAgentUi?.setUser?.(data.user, { suppressOnboarding: pendingGoogleNewUserWalkthrough });
       allTeams = data.teams || [];
       aiKeyUi.render(data.ai);
       connectUserRealtime();

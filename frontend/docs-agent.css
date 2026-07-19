@@ -8,7 +8,7 @@
   top: auto;
   bottom: 24px;
   left: auto;
-  width: min(340px, calc(100vw - 24px));
+  width: min(320px, calc(100vw - 24px));
   height: min(460px, calc(100vh - 120px));
   max-height: none !important;
   border-radius: 16px;
