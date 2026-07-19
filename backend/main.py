@@ -8093,7 +8093,7 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             filename=upload_name,
                 data=step_path.read_bytes(),
             )
-        if body.get("upload_source", True) and source_path.is_file():
+        if body.get("upload_source") is True and source_path.is_file():
             try:
                 source_name = f"{source_path.stem}.build123d.py"
                 result["source_upload"] = upload_step_to_folder(
@@ -8146,12 +8146,18 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
         except Exception:
             pass
 
-    teammate = _push_file_to_fusion_mirrors(
-        project_id,
-        path,
-        safe,
-        skip_user_ids={str(user["id"])} if mirror else set(),
-    )
+    # Explicit Fusion export UI uploads (hub/folder picked) should land as one file
+    # in that folder. Teammate mirror fan-out is for background sync only.
+    explicit_export = bool(body.get("hub_id") or body.get("folder_id"))
+    if explicit_export:
+        teammate = {"pushed_mirrors": [], "push_errors": []}
+    else:
+        teammate = _push_file_to_fusion_mirrors(
+            project_id,
+            path,
+            safe,
+            skip_user_ids={str(user["id"])} if mirror else set(),
+        )
     result = {
         **result,
         "name": upload_name,
