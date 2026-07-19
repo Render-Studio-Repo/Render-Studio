@@ -15488,6 +15488,13 @@ section h2 {
   font-size: 0.7rem;
   cursor: pointer;
   text-align: left;
+  border-radius: 4px;
+}
+
+.proj-hierarchy-bodies-toggle .browser-chevron {
+  width: 10px;
+  flex: 0 0 auto;
+  opacity: 0.9;
 }
 
 .proj-hierarchy-bodies-toggle:hover {
@@ -15496,7 +15503,8 @@ section h2 {
 }
 
 .proj-hierarchy-list--bodies {
-  padding-left: 22px;
+  padding-left: 10px;
+  margin: 0;
 }
 
 .proj-hierarchy-item--body {
@@ -15504,12 +15512,27 @@ section h2 {
   align-items: center;
   gap: 4px;
   min-width: 0;
+  padding-left: 4px;
+}
+
+.proj-hierarchy-item--body .proj-hierarchy-item-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-left: 2px;
+}
+
+.proj-hierarchy-item--body .proj-hierarchy-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
 }
 
 .proj-hierarchy-body-icon {
-  font-size: 0.55rem;
+  font-size: 0.5rem;
   color: #8b949e;
   flex: 0 0 auto;
+  margin-right: 2px;
 }
 
 .proj-hierarchy-item-btn {

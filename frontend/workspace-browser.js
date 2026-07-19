@@ -83,10 +83,18 @@ function projectPromptCostMeta(p) {
 }
 
 function hierarchyDisplayName(entry) {
+  if (entry?.format === "body" || entry?.virtual_body) {
+    const label = String(entry.label || entry.body_name || "").trim();
+    if (label) {
+      const short = label.includes("|") ? label.split("|", 1)[0].trim() : label;
+      return short || label;
+    }
+  }
   if (entry.format === "program") {
     return entry.stem || entry.name.replace(/\.program\.json$/i, "");
   }
   if (entry.format === "wiring") return entry.name;
+  if (entry.label) return entry.label;
   return entry.stem || entry.name.replace(/\.[^.]+$/, "");
 }
 
@@ -173,7 +181,7 @@ export function createWorkspaceBrowser({
   let expandedProjects = loadIdSet(PROJECT_EXPAND_KEY);
   const forceCollapsedProjects = new Set();
   const expandedSections = new Map();
-  const collapsedHierarchyBodies = new Set();
+  const expandedHierarchyBodies = new Set();
   const selectedHierarchyKeys = new Set();
   /** @type {Map<string, { project: object, sectionId: string, entry: object }>} */
   const hierarchyEntryCache = new Map();
@@ -1626,7 +1634,7 @@ export function createWorkspaceBrowser({
               const bodiesGroup = document.createElement("li");
               bodiesGroup.className = "proj-hierarchy-bodies";
               const bodiesKey = `${project.id}:${entry.name}:bodies`;
-              const bodiesOpen = !collapsedHierarchyBodies.has(bodiesKey);
+              const bodiesOpen = expandedHierarchyBodies.has(bodiesKey);
               const bodiesToggle = document.createElement("button");
               bodiesToggle.type = "button";
               bodiesToggle.className = "proj-hierarchy-bodies-toggle";
@@ -1638,8 +1646,8 @@ export function createWorkspaceBrowser({
               `;
               bodiesToggle.addEventListener("click", (e) => {
                 e.stopPropagation();
-                if (collapsedHierarchyBodies.has(bodiesKey)) collapsedHierarchyBodies.delete(bodiesKey);
-                else collapsedHierarchyBodies.add(bodiesKey);
+                if (expandedHierarchyBodies.has(bodiesKey)) expandedHierarchyBodies.delete(bodiesKey);
+                else expandedHierarchyBodies.add(bodiesKey);
                 render();
               });
               bodiesGroup.appendChild(bodiesToggle);

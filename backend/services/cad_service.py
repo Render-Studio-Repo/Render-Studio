@@ -1408,6 +1408,56 @@ _SCENE_BODY_CHILDREN_CACHE_MAX = 128
 _MAX_BROWSER_SCENE_BODIES = 256
 
 
+def _logical_body_name_key(name: str) -> str:
+    """Collapse Jake fragment names that differ only by a trailing hash."""
+    text = str(name or "").strip().lower()
+    if not text:
+        return ""
+    # Prefer the primary body token before face/feature annotations.
+    if "|" in text:
+        text = text.split("|", 1)[0].strip()
+    text = re.sub(r"_[0-9a-f]{5,10}$", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _scene_names_are_single_logical_body(names: list[str]) -> bool:
+    """True when GLB scene nodes are mesh fragments of one part, not distinct bodies."""
+    keys = {key for name in names if (key := _logical_body_name_key(name))}
+    return len(keys) <= 1
+
+
+def _sibling_step_solid_count(project_path: Path, glb_path: Path, parent_name: str) -> int | None:
+    """Return STEP solid count when a sibling STEP exists; None if unknown."""
+    candidates: list[Path] = []
+    stem = glb_path.stem
+    parent = Path(parent_name or "")
+    if parent.suffix.lower() in {".step", ".stp"}:
+        candidates.append(project_path / parent.name)
+    for ext in (".step", ".stp"):
+        candidates.append(project_path / f"{stem}{ext}")
+    seen: set[str] = set()
+    for step_path in candidates:
+        key = str(step_path)
+        if key in seen or not step_path.is_file():
+            continue
+        seen.add(key)
+        try:
+            names = _step_manifold_solid_names(step_path)
+            if names:
+                return len(names)
+        except Exception:
+            pass
+        try:
+            info = step_body_info(step_path)
+            count = int(info.get("count") or 0)
+            if count > 0:
+                return count
+        except Exception:
+            pass
+    return None
+
+
 def _body_children_from_viewer_scene(
     project_path: Path,
     *,
@@ -1415,7 +1465,11 @@ def _body_children_from_viewer_scene(
     parent_name: str,
     parent_viewer: str,
 ) -> list[dict[str, Any]]:
-    """Nest named GLB scene meshes as Bodies under the parent component."""
+    """Nest named GLB scene meshes as Bodies under the parent component.
+
+    Skips Jake/cadpy mesh fragments of a single STEP solid — those look like
+    many bodies in the GLB but are one part (hide/show would all affect the same plate).
+    """
     viewer = str(parent_viewer or parent_name or "").strip()
     if not viewer:
         return []
@@ -1435,26 +1489,38 @@ def _body_children_from_viewer_scene(
         mtime = path.stat().st_mtime
     except OSError:
         return []
-    cache_key = str(path.resolve())
+    cache_key = f"v2:{path.resolve()}"
     cached = _SCENE_BODY_CHILDREN_CACHE.get(cache_key)
     if cached and cached[0] == mtime:
         return [dict(child) for child in cached[1]]
+
+    # STEP with a single solid wins — do not expose GLB tessellation fragments.
+    step_count = _sibling_step_solid_count(project_path, path, parent_name)
+    if step_count is not None and step_count <= 1:
+        _SCENE_BODY_CHILDREN_CACHE[cache_key] = (mtime, [])
+        return []
+
     try:
         info = scene_body_info(path)
     except Exception:
         info = {"count": 0, "body_names": []}
     count = int(info.get("count") or 0)
-    if count <= 1 or count > _MAX_BROWSER_SCENE_BODIES:
+    names = [str(n or "").strip() for n in (info.get("body_names") or [])]
+    if count <= 1 or count > _MAX_BROWSER_SCENE_BODIES or _scene_names_are_single_logical_body(names):
         _SCENE_BODY_CHILDREN_CACHE[cache_key] = (mtime, [])
         return []
-    names = list(info.get("body_names") or [])
+
     children: list[dict[str, Any]] = []
     for idx in range(count):
-        label = str(names[idx] if idx < len(names) else "").strip() or f"Body {idx + 1}"
+        label = names[idx] if idx < len(names) else ""
+        label = str(label or "").strip() or f"Body {idx + 1}"
+        # Shorten Jake-style annotated names for the tree.
+        if "|" in label:
+            label = label.split("|", 1)[0].strip() or label
         slug = re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_").lower() or f"body_{idx + 1}"
         children.append(
             {
-                "id": f"{parent_stem or Path(parent_name).stem}:body:{slug}",
+                "id": f"{parent_stem or Path(parent_name).stem}:body:{slug}:{idx + 1}",
                 "name": f"{parent_name}#body:{idx + 1}",
                 "filename": parent_name,
                 "stem": slug,

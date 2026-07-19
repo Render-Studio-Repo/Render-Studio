@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260719-bodies-hierarchy";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260719-bodies-fix";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
@@ -88,7 +88,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
-import { createProjectTree } from "./project-tree.js?v=20260719-bodies-dropdown";
+import { createProjectTree } from "./project-tree.js?v=20260719-bodies-fix";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -15377,6 +15377,35 @@ function componentVisibilityCandidates(entry = {}) {
 }
 
 function setAssemblyComponentVisible(entry, visible) {
+  // Virtual bodies must toggle the indexed mesh under the parent — stem matching
+  // incorrectly hides the whole component or the wrong fragment.
+  if (entry?.virtual_body && Number.isInteger(entry.body_index)) {
+    const parentName = entry.source_filename || entry.parent_filename || entry.filename || entry.name;
+    const root =
+      projectAssembly.get(parentName)
+      || projectAssembly.get(entry.viewer_filename)
+      || (selectedFile ? projectAssembly.get(selectedFile) : null);
+    if (root) {
+      const meshes = listObjectMeshes(root);
+      const mesh = meshes[entry.body_index];
+      if (mesh) {
+        mesh.visible = visible;
+        mesh.traverse?.((child) => {
+          child.visible = visible;
+        });
+        if (!visible) {
+          const selected = objectTools.getSelection?.();
+          if (selected?.mesh === mesh || selected?.bodyIndex === entry.body_index) {
+            objectTools.clearSelection?.();
+            transformControls.detach();
+            gizmoPanel.hide();
+            document.getElementById("btn-gizmo")?.classList.remove("active");
+          }
+        }
+        return true;
+      }
+    }
+  }
   let changed = false;
   for (const name of componentVisibilityCandidates(entry)) {
     const didChange = projectAssembly.setVisible(name, visible);
@@ -16121,11 +16150,24 @@ function bodyChildrenFromInfo(entry, info) {
   const count = Number(info?.count || 0);
   if (count <= 1) return [];
   const names = Array.isArray(info.body_names) ? info.body_names : [];
+  // Skip Jake mesh fragments of one logical part (same base name + hash suffixes).
+  const logicalKeys = new Set(
+    names
+      .map((name) => {
+        let text = String(name || "").trim().toLowerCase();
+        if (!text) return "";
+        if (text.includes("|")) text = text.split("|", 1)[0].trim();
+        return text.replace(/_[0-9a-f]{5,10}$/i, "").trim();
+      })
+      .filter(Boolean),
+  );
+  if (logicalKeys.size <= 1) return [];
   return Array.from({ length: count }, (_, idx) => {
-    const label = names[idx] || `Body ${idx + 1}`;
+    let label = names[idx] || `Body ${idx + 1}`;
+    if (String(label).includes("|")) label = String(label).split("|", 1)[0].trim() || label;
     const slug = bodyChildSlug(label, `body_${idx + 1}`);
     return {
-      id: `${entry.stem || fileStem(entry.name)}:body:${slug}`,
+      id: `${entry.stem || fileStem(entry.name)}:body:${slug}:${idx + 1}`,
       name: `${entry.name}#body:${idx + 1}`,
       filename: entry.name,
       stem: slug,

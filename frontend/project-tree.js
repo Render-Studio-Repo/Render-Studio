@@ -59,6 +59,13 @@ function displayName(entry) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+  if (entry?.format === "body" || entry?.virtual_body) {
+    const label = String(entry.label || entry.body_name || "").trim();
+    if (label) {
+      const short = label.includes("|") ? label.split("|", 1)[0].trim() : label;
+      return formatLabel(short || label);
+    }
+  }
   if (entry.label) return formatLabel(entry.label);
   if (entry.format === "program") {
     return formatLabel(entry.stem || entry.name.replace(/\.program\.json$/i, ""));
@@ -272,17 +279,15 @@ export function createProjectTree(options = {}) {
     const li = document.createElement("li");
     li.className = "browser-child-group";
     const groupKey = `${sectionId}:${parentEntry.name}:children`;
-    if (!childGroupsInitialized.has(groupKey)) {
-      childGroupsInitialized.add(groupKey);
-      childGroupsExpanded.add(groupKey);
-    }
+    // Bodies stay collapsed until the user expands them.
+    childGroupsInitialized.add(groupKey);
     const isOpen = childGroupsExpanded.has(groupKey);
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "browser-child-group-toggle";
     btn.innerHTML = `
       <span class="browser-chevron">${isOpen ? "▾" : "▸"}</span>
-      <span class="browser-section-label">${parentEntry.children_label || "Parts"}</span>
+      <span class="browser-section-label">${parentEntry.children_label || "Bodies"}</span>
       <span class="browser-section-count">${parentEntry.children.length}</span>
     `;
     btn.addEventListener("click", () => {
