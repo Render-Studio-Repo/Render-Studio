@@ -9359,6 +9359,42 @@ function handleTransparentPickClick(e) {
 
 document.getElementById("btn-transparent-viewport")?.addEventListener("click", toggleTransparentPick);
 
+// --- Remix button for public / read-only projects ---
+document.getElementById("btn-remix-viewport")?.addEventListener("click", async () => {
+  const project = allProjects.find((p) => p.id === projectId);
+  if (!project) return;
+  const btn = document.getElementById("btn-remix-viewport");
+  if (btn) btn.disabled = true;
+  setEditStatus("loading", "Creating local remix of this project...");
+  try {
+    const data = await api(`/api/public/projects/${projectId}/remix`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await fetchAllProjects();
+    renderProjectList();
+    await loadProject(data.project_id);
+    setEditStatus("ok", `Remixed into your project — you can now edit freely.`);
+  } catch (err) {
+    setEditStatus("error", err?.message || "Could not remix this project.");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+function syncRemixButtonVisibility() {
+  const btn = document.getElementById("btn-remix-viewport");
+  if (!btn) return;
+  const project = allProjects.find((p) => p.id === projectId);
+  const isPublic = project?.public || project?.read_only_project;
+  const isAdmin = currentUser?.email && (
+    currentUser.email.toLowerCase() === "a1projects@protonmail.com" ||
+    currentUser.email.toLowerCase() === "a1projects.usa@gmail.com"
+  );
+  btn.classList.toggle("hidden", !(isPublic && !isAdmin));
+}
+
 document.getElementById("btn-split-bodies")?.addEventListener("click", () => {
   setRightTab("tools");
   objectTools.splitBodies();
@@ -18491,6 +18527,7 @@ async function loadProject(id) {
     if (loadGen !== loadProjectGeneration) return;
 
   setProjectHeader(data.name, id);
+    syncRemixButtonVisibility();
     timelineData = data.timeline;
   const cur = timelineData?.current_index ?? -1;
   const max = Math.max(0, (timelineData?.entries?.length || 1) - 1);

@@ -1049,7 +1049,16 @@ def _require_project(user: dict[str, Any], project_id: str) -> Path:
 
 
 def _require_project_write(user: dict[str, Any], project_id: str) -> Path:
-    """Team members or a1projects admins may mutate a project (generate, edit, etc.)."""
+    """Team members or a1projects admins may mutate a project (generate, edit, etc.).
+
+    Public folder projects are read-only for everyone except a1projects admins.
+    Non-admin users should remix (copy) the file into their own project.
+    """
+    if _is_public_project(project_id) and not _is_a1projects_admin(user):
+        raise HTTPException(
+            403,
+            "Public folder projects are read-only. Use Remix to copy this model into your own project.",
+        )
     if teams_service.can_access_project(user["id"], project_id) or _is_a1projects_admin(user):
         path = PROJECTS / project_id
         if path.is_dir():
@@ -12726,6 +12735,96 @@ def open_share_in_project(
             else None
         ),
         "url": f"/?project={project_id}",
+    }
+
+
+@app.post("/api/public/projects/{project_id}/remix")
+def remix_public_project(
+    project_id: str,
+    body: dict[str, Any] = Body(default={}),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Copy a public project's files into a new local project (remix).
+
+    Non-a1projects users cannot edit public folder projects directly,
+    but they can remix files into their own workspace.
+    """
+    if not _is_public_project(project_id):
+        raise HTTPException(404, "Public project not found")
+    source_path = PROJECTS / project_id
+    if not source_path.is_dir():
+        raise HTTPException(404, "Public project not found")
+
+    teams = teams_service.list_teams(user["id"])
+    if not teams:
+        raise HTTPException(400, "No workspace available")
+    team_id = teams[0]["id"]
+
+    target_project_id = re.sub(r"[^A-Za-z0-9_\-]", "", str(body.get("target_project_id") or ""))[:80]
+    if target_project_id:
+        dest_path = _require_project(user, target_project_id)
+        new_project_id = target_project_id
+    else:
+        new_project_id = str(uuid.uuid4())[:8]
+        dest_path = cad_service.project_dir(PROJECTS, new_project_id)
+        source_meta = project_store.load_meta(source_path)
+        project_name = f"{source_meta.get('name') or project_id} (remix)"
+        project_store.touch_project(dest_path, name=project_name, name_source="user")
+        teams_service.register_project_access(new_project_id, team_id, user["id"])
+
+    copied: list[str] = []
+    for entry in cad_service.list_project_files(source_path):
+        name = entry.get("name")
+        if not name:
+            continue
+        src = source_path / name
+        dst = dest_path / name
+        if not src.is_file():
+            continue
+        try:
+            shutil.copy2(src, dst)
+            copied.append(name)
+        except Exception as exc:
+            logger.warning("Could not copy public file %s into %s: %s", name, new_project_id, exc)
+    if not copied:
+        raise HTTPException(500, "Could not copy any files from the public project")
+
+    primary_file = copied[0] if copied else ""
+    _record_history(
+        dest_path,
+        "remix_import",
+        f"Remixed from public project {project_id}",
+        primary_file,
+        meta={
+            "source_project_id": project_id,
+            "copied_files": copied,
+            "imported_into_existing_project": bool(target_project_id),
+        },
+        user=user,
+    )
+    project_store.touch_project(dest_path)
+
+    if not target_project_id:
+        _notify_workspace(
+            team_id,
+            {
+                "type": "project.created",
+                "project_id": new_project_id,
+                "team_id": team_id,
+                "name": project_store.load_meta(dest_path).get("name"),
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "by_user_name": user["display_name"],
+                "owner_user_id": user["id"],
+            },
+        )
+
+    return {
+        "project_id": new_project_id,
+        "team_id": team_id,
+        "filename": primary_file,
+        "copied_files": copied,
+        "url": f"/?project={new_project_id}",
     }
 
 
