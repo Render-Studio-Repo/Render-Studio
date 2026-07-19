@@ -361,6 +361,7 @@ export function createWiringSimulator(options = {}) {
   let wires = [];
   let schematicProjectId = null;
   let loadInFlight = null;
+  let loadGeneration = 0;
   const pinLayoutByComponentId = new Map();
   const pinPositionMap = new Map();
   let wiresRenderScheduled = false;
@@ -1161,6 +1162,7 @@ export function createWiringSimulator(options = {}) {
     const projectId = getProjectId?.();
     if (!projectId || !api) return;
     if (loadInFlight?.projectId === projectId) return loadInFlight.promise;
+    const generation = ++loadGeneration;
 
     const run = async () => {
       const needsSave = schematicProjectId === projectId
@@ -1169,6 +1171,7 @@ export function createWiringSimulator(options = {}) {
       const cached = prefetch?.projectId === projectId ? prefetch.data : null;
 
       if (!needsSave && cached) {
+        if (generation !== loadGeneration || getProjectId?.() !== projectId) return;
         clearHistory();
         applySchematic(cached, { save: false, skipHistory: true, deferWires: true });
         schematicProjectId = projectId;
@@ -1184,6 +1187,7 @@ export function createWiringSimulator(options = {}) {
       }
       clearHistory();
       const data = cached || await fetchWiringData(projectId);
+      if (generation !== loadGeneration || getProjectId?.() !== projectId) return;
       applySchematic(data, { save: false, skipHistory: true, deferWires: true });
       schematicProjectId = projectId;
       savedVersion = localEditVersion;
@@ -2677,14 +2681,15 @@ export function createWiringSimulator(options = {}) {
     },
     show() {
       root?.classList.remove("hidden");
-      load();
-      requestAnimationFrame(() => {
+      const loadPromise = load();
+      Promise.resolve(loadPromise).finally(() => requestAnimationFrame(() => {
         fitView();
         window.dispatchEvent(new Event("resize"));
-      });
+      }));
+      return loadPromise;
     },
     hide() {
-      root?.classList.remove("hidden");
+      root?.classList.add("hidden");
     },
     getState() {
       return { components, wires };
