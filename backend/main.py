@@ -8000,8 +8000,68 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
         raise HTTPException(422, "No model file found in this project.")
     safe = Path(filename).name
     stem = safe[: safe.rfind(".")] if "." in safe else safe
-    step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
+    fmt = str(body.get("format") or "").strip().lower()
     step_mode = str(body.get("step_mode") or body.get("export_mode") or "assembly").strip().lower()
+    is_3mf = fmt == "3mf" or safe.lower().endswith(".3mf")
+
+    if is_3mf:
+        # Upload the 3MF mesh file as-is — Fusion can import 3MF from cloud folders.
+        upload_path = path / safe
+        if not upload_path.is_file():
+            # Prefer an existing sibling .3mf for the selected stem.
+            sibling = path / f"{stem}.3mf"
+            if sibling.is_file():
+                upload_path = sibling
+                safe = sibling.name
+            else:
+                try:
+                    cad_service.ensure_mesh_exports(path, safe if (path / safe).is_file() else f"{stem}.glb", missing_only=False)
+                except Exception:
+                    pass
+                sibling = path / f"{stem}.3mf"
+                if sibling.is_file():
+                    upload_path = sibling
+                    safe = sibling.name
+        if not upload_path.is_file():
+            raise HTTPException(404, f"3MF file not found: {safe}")
+        upload_name = Path(str(body.get("name") or upload_path.name)).name
+        if not upload_name.lower().endswith(".3mf"):
+            upload_name = f"{Path(upload_name).stem}.3mf"
+        try:
+            result = upload_step_to_folder(
+                token,
+                project_id=aps_project_id,
+                folder_id=folder_id,
+                filename=upload_name,
+                data=upload_path.read_bytes(),
+            )
+        except Exception as exc:
+            raise HTTPException(502, f"Fusion 3MF push failed: {exc}") from exc
+        result["format"] = "3mf"
+        now = datetime.now(timezone.utc).isoformat()
+        if mirror:
+            with get_conn() as conn:
+                conn.execute(
+                    """
+                    UPDATE project_fusion_mirrors
+                       SET last_item_id = COALESCE(?, last_item_id),
+                           last_version_id = COALESCE(?, last_version_id),
+                           last_pushed_at = ?,
+                           updated_at = ?
+                     WHERE project_id = ? AND user_id = ?
+                    """,
+                    (
+                        result.get("item_id"),
+                        result.get("version_id"),
+                        now,
+                        now,
+                        project_id,
+                        user["id"],
+                    ),
+                )
+        return result
+
+    step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
     if step_mode in {"regular", "part", "single"}:
         part_path = path / f"{step_path.stem}.part{step_path.suffix.lower()}"
         try:
