@@ -16484,6 +16484,7 @@ const mcmasterInsert = createMcMasterInsert({
     try {
       const data = await api(`/api/projects/${pid}/mcmaster-library`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filenames, source: "mcmaster" }),
       });
       return data?.entries || [];
