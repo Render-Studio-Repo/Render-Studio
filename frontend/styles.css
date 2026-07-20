@@ -23873,8 +23873,8 @@ body.theme-light .profile-preferences-advanced-nav button.active b {
 
 /* ── Multi-key manager ─────────────────────────────────────────────── */
 .ai-keys-card {
-  max-width: 500px;
-  width: 92vw;
+  max-width: 560px;
+  width: 94vw;
   max-height: calc(100vh - 48px);
 }
 
@@ -23886,99 +23886,366 @@ body.theme-light .profile-preferences-advanced-nav button.active b {
 }
 
 .ai-credit-card {
-  border: 1px solid rgba(56, 139, 253, 0.28);
-  border-radius: 16px;
-  padding: 14px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 122, 47, 0.28);
+  border-radius: 20px;
+  padding: 0;
   background:
-    radial-gradient(circle at 0% 0%, rgba(56, 139, 253, 0.18), transparent 48%),
-    rgba(13, 17, 23, 0.92);
+    radial-gradient(ellipse 80% 60% at 100% -10%, rgba(255, 140, 64, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 50% at -10% 110%, rgba(56, 189, 248, 0.14), transparent 50%),
+    linear-gradient(165deg, #14181f 0%, #0c1016 55%, #10151c 100%);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.ai-credit-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #ff8a3d 30%, #38bdf8 70%, transparent);
+  opacity: 0.9;
 }
 
 .ai-credit-card--active {
-  border-color: rgba(63, 185, 80, 0.54);
+  border-color: rgba(56, 189, 248, 0.45);
 }
 
-.ai-credit-head,
-.ai-credit-actions {
+.ai-credit-hero {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 10px;
 }
 
-.ai-credit-kicker,
-.ai-credit-note {
+.ai-credit-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ai-credit-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: #ffb07a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ai-credit-brand strong {
+  color: #f4f7fb;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.ai-credit-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ai-credit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.55);
+  color: #cbd5e1;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 3px 8px;
+}
+
+.ai-credit-pill--on {
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #7dd3fc;
+}
+
+.ai-credit-pill--off {
+  opacity: 0.55;
+}
+
+.ai-credit-balance-block {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.ai-credit-balance-label {
   display: block;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.ai-credit-head strong {
-  color: #e6edf3;
-  font-size: 1rem;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  margin-bottom: 4px;
 }
 
 .ai-credit-balance {
-  border: 1px solid rgba(63, 185, 80, 0.36);
-  border-radius: 999px;
-  color: #7ee787;
-  padding: 5px 9px;
+  display: inline-block;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 14px;
+  color: #e0f2fe;
+  padding: 8px 12px;
   font-weight: 800;
-  background: rgba(46, 160, 67, 0.1);
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+  background: linear-gradient(145deg, rgba(14, 165, 233, 0.18), rgba(255, 122, 47, 0.12));
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-credit-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin: 0 12px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.ai-credit-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 8px 6px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ai-credit-tab:hover {
+  color: #e2e8f0;
+}
+
+.ai-credit-tab--active {
+  background: linear-gradient(135deg, rgba(255, 122, 47, 0.28), rgba(56, 189, 248, 0.22));
+  color: #f8fafc;
+}
+
+.ai-credit-panel {
+  padding: 12px 16px 16px;
 }
 
 .ai-credit-copy {
-  margin: 10px 0;
-  color: #c9d1d9;
+  margin: 0 0 12px;
+  color: #cbd5e1;
   font-size: 0.82rem;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .ai-credit-meter {
-  height: 8px;
+  height: 7px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(139, 148, 158, 0.22);
-  margin-bottom: 10px;
+  background: rgba(148, 163, 184, 0.18);
+  margin-bottom: 8px;
 }
 
 .ai-credit-meter span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #7ee787, #58a6ff);
+  background: linear-gradient(90deg, #ff8a3d, #38bdf8);
 }
 
-.ai-credit-actions {
-  justify-content: flex-start;
+.ai-credit-meter-label {
+  color: #94a3b8;
+  font-size: 0.7rem;
+  margin-bottom: 12px;
+}
+
+.ai-credit-amount-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ai-credit-amount {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font: inherit;
+  font-weight: 700;
+  padding: 12px 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.ai-credit-amount:hover {
+  border-color: rgba(255, 138, 61, 0.45);
+}
+
+.ai-credit-amount--selected {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: linear-gradient(160deg, rgba(255, 122, 47, 0.18), rgba(14, 165, 233, 0.16));
+  transform: translateY(-1px);
+}
+
+.ai-credit-amount small {
+  display: block;
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.ai-credit-buy-row {
+  display: flex;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.ai-credit-actions select {
-  border: 1px solid #30363d;
-  border-radius: 10px;
-  background: #0d1117;
-  color: #c9d1d9;
-  padding: 7px 9px;
+.ai-credit-btn-primary,
+.ai-credit-btn-buy {
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 800;
+  padding: 11px 16px;
+  cursor: pointer;
 }
 
 .ai-credit-btn-primary {
-  background: linear-gradient(135deg, #238636, #2ea043);
-  color: #fff;
-  border-color: rgba(63, 185, 80, 0.5);
+  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  color: #f8fafc;
 }
 
-.ai-credit-pay-btn {
-  border-color: rgba(56, 139, 253, 0.42);
+.ai-credit-btn-buy {
+  flex: 1;
+  min-width: 160px;
+  background: linear-gradient(135deg, #ff8a3d, #f97316 45%, #0ea5e9);
+  color: #0b1220;
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.22);
 }
 
-.ai-credit-autofill {
+.ai-credit-btn-buy:disabled,
+.ai-credit-btn-primary:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.ai-credit-btn-ghost {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: transparent;
+  color: #cbd5e1;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.ai-credit-manage-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-credit-field {
+  display: grid;
+  gap: 5px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ai-credit-field select {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: #0b1220;
+  color: #e2e8f0;
+  font: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 9px 10px;
+}
+
+.ai-credit-toggle-row {
   display: flex;
   align-items: flex-start;
+  gap: 10px;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.ai-credit-toggle-row input {
+  margin-top: 2px;
+}
+
+.ai-credit-note {
+  margin: 12px 0 0;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.ai-credit-tx-list {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 10px;
-  color: #c9d1d9;
-  font-size: 0.78rem;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.ai-credit-tx {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.ai-credit-tx strong {
+  color: #e2e8f0;
+  font-size: 0.8rem;
+}
+
+.ai-credit-tx-meta {
+  grid-column: 1 / -1;
+  color: #94a3b8;
+  font-size: 0.68rem;
+}
+
+.ai-credit-tx-amt {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+
+.ai-credit-tx-amt--pos {
+  color: #7dd3fc;
+}
+
+.ai-credit-tx-amt--neg {
+  color: #fdba74;
+}
+
+.ai-credit-empty {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 18px 8px;
 }
 
 .ai-keys-empty {

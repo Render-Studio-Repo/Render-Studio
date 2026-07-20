@@ -74,6 +74,10 @@ export function createAIKeyUI({ api, onStatusChange }) {
   let status = null;
   let teams = [];
   let selectedTeamFilter = "all";
+  let creditTab = "buy";
+  let creditAmount = 2000;
+  let creditTransactions = [];
+  let creditTxLoading = false;
 
   function renderModelOptions(provider, selectedModel = "") {
     if (!modelInput) return;
@@ -217,42 +221,166 @@ export function createAIKeyUI({ api, onStatusChange }) {
   function renderCreditCard(credits = {}) {
     const balance = Number(credits.balance_cents || 0);
     const pct = credits.last_purchase_percent_left;
-    const pctLabel = pct == null ? "No purchase yet" : `${Math.max(0, Math.min(100, Number(pct))).toFixed(0)}% left from last buy`;
-    const models = (credits.models || []).map((m) => m.model).filter(Boolean).slice(0, 4).join(", ");
+    const pctValue = pct == null ? 0 : Math.max(0, Math.min(100, Number(pct)));
+    const pctLabel = pct == null ? "Buy credits to start" : `${pctValue.toFixed(0)}% left from last buy`;
+    const providers = credits.providers || {};
+    const openaiOn = !!providers.openai;
+    const claudeOn = !!providers.anthropic;
+    const models = credits.models || [];
+    const preferredProvider = credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+    const allModelsForSelect = models.length ? models : [];
+    const selectedModel = credits.platform_model || "";
+    const stripeReady = !!(credits.stripe_ready || credits.payment_methods?.stripe);
+    const amounts = [
+      { cents: 1000, label: "$10", hint: "Light use" },
+      { cents: 2000, label: "$20", hint: "Most popular" },
+      { cents: 5000, label: "$50", hint: "Power users" },
+    ];
+
+    const overviewPanel = `
+      <div class="ai-credit-panel" data-credit-panel="overview">
+        <p class="ai-credit-copy">
+          Credits unlock Render3D’s shared <strong>OpenAI</strong>${claudeOn ? " and <strong>Claude</strong>" : ""} keys.
+          Generation deducts model cost plus ${Number(credits.markup_percent || 15)}% — no personal API key required.
+        </p>
+        <div class="ai-credit-meter" title="${esc(pctLabel)}"><span style="width:${pctValue}%"></span></div>
+        <div class="ai-credit-meter-label">${esc(pctLabel)}</div>
+        <div class="ai-credit-buy-row">
+          <button type="button" class="ai-credit-btn-primary" data-action="enable-platform-key">
+            ${credits.use_platform_key ? "Shared keys on" : "Enable shared keys"}
+          </button>
+          ${credits.use_platform_key ? `<button type="button" class="ai-credit-btn-ghost" data-action="disable-platform-key">Turn off</button>` : ""}
+          <button type="button" class="ai-credit-btn-ghost" data-action="credit-tab" data-tab="buy">Buy more</button>
+        </div>
+        <p class="ai-credit-note">
+          ${openaiOn ? "OpenAI ready." : "OpenAI platform key missing."}
+          ${claudeOn ? " Claude ready." : " Add ANTHROPIC_API_KEY on the server to unlock Claude."}
+        </p>
+      </div>`;
+
+    const buyPanel = `
+      <div class="ai-credit-panel" data-credit-panel="buy">
+        <p class="ai-credit-copy">Pick a pack. You’ll pay securely with Stripe and credits appear on this account immediately.</p>
+        <div class="ai-credit-amount-grid">
+          ${amounts.map((a) => `
+            <button type="button" class="ai-credit-amount${creditAmount === a.cents ? " ai-credit-amount--selected" : ""}"
+              data-action="credit-amount" data-amount="${a.cents}">
+              ${a.label}
+              <small>${esc(a.hint)}</small>
+            </button>`).join("")}
+        </div>
+        <div class="ai-credit-buy-row">
+          <button type="button" class="ai-credit-btn-buy" data-action="buy-credits" data-provider="stripe"
+            ${stripeReady ? "" : "disabled"}>
+            ${stripeReady ? `Buy ${formatCents(creditAmount)} with Stripe` : "Stripe not configured"}
+          </button>
+        </div>
+        <p class="ai-credit-note">Live Stripe checkout. Credits enable Render3D shared keys automatically after payment.</p>
+      </div>`;
+
+    const modelOptions = allModelsForSelect.length
+      ? allModelsForSelect.map((m) => {
+          const value = `${m.provider}:${m.model}`;
+          const isSelected = selectedModel
+            ? selectedModel === m.model && preferredProvider === m.provider
+            : preferredProvider === m.provider
+              && m.model === (allModelsForSelect.find((x) => x.provider === preferredProvider)?.model);
+          const label = `${m.provider === "anthropic" ? "Claude" : "OpenAI"} · ${m.model}`;
+          return `<option value="${esc(value)}"${isSelected ? " selected" : ""}>${esc(label)}</option>`;
+        }).join("")
+      : `<option value="openai:">OpenAI (default)</option>`;
+
+    const managePanel = `
+      <div class="ai-credit-panel" data-credit-panel="manage">
+        <div class="ai-credit-manage-grid">
+          <label class="ai-credit-field">Default shared model
+            <select data-action="platform-model">
+              ${modelOptions}
+            </select>
+          </label>
+          <label class="ai-credit-toggle-row">
+            <input type="checkbox" data-action="use-platform-key" ${credits.use_platform_key ? "checked" : ""} />
+            <span>Use Render3D shared keys when I don’t have a personal key active</span>
+          </label>
+          <label class="ai-credit-toggle-row">
+            <input type="checkbox" data-action="auto-refill" ${credits.auto_refill_enabled ? "checked" : ""} />
+            <span>Auto refill ${formatCents(credits.auto_refill_amount_cents || 2000)} when balance drops below ${formatCents(credits.auto_refill_threshold_cents || 500)}</span>
+          </label>
+        </div>
+        <div class="ai-credit-buy-row" style="margin-top:12px">
+          <button type="button" class="ai-credit-btn-ghost" data-action="refresh-transactions">Refresh activity</button>
+        </div>
+        <div class="ai-credit-tx-list" data-credit-tx-list>
+          ${renderCreditTransactions()}
+        </div>
+      </div>`;
+
+    const panel = creditTab === "overview" ? overviewPanel : creditTab === "manage" ? managePanel : buyPanel;
+
     return `
       <div class="ai-credit-card${credits.use_platform_key ? " ai-credit-card--active" : ""}">
-        <div class="ai-credit-head">
-          <div>
-            <span class="ai-credit-kicker">No API key? Borrow Render3D's</span>
-            <strong>Shared AI credits</strong>
+        <div class="ai-credit-hero">
+          <div class="ai-credit-brand">
+            <span class="ai-credit-kicker">Render3D Credits</span>
+            <strong>Studio AI balance</strong>
+            <div class="ai-credit-pill-row">
+              <span class="ai-credit-pill ${openaiOn ? "ai-credit-pill--on" : "ai-credit-pill--off"}">OpenAI ${openaiOn ? "live" : "off"}</span>
+              <span class="ai-credit-pill ${claudeOn ? "ai-credit-pill--on" : "ai-credit-pill--off"}">Claude ${claudeOn ? "live" : "off"}</span>
+              <span class="ai-credit-pill ${credits.use_platform_key ? "ai-credit-pill--on" : "ai-credit-pill--off"}">${credits.use_platform_key ? "Shared on" : "Shared off"}</span>
+            </div>
           </div>
-          <span class="ai-credit-balance" title="${esc(pctLabel)}">${formatCents(balance)}</span>
+          <div class="ai-credit-balance-block">
+            <span class="ai-credit-balance-label">Available</span>
+            <span class="ai-credit-balance" title="${esc(pctLabel)}">${formatCents(balance)}</span>
+          </div>
         </div>
-        <p class="ai-credit-copy">
-          Use the platform OpenAI key, including ${esc(models || "available OpenAI models")}. Usage is billed from model cost plus ${Number(credits.markup_percent || 15)}%.
-        </p>
-        <div class="ai-credit-meter" title="${esc(pctLabel)}">
-          <span style="width:${pct == null ? 0 : Math.max(0, Math.min(100, Number(pct)))}%"></span>
+        <div class="ai-credit-tabs" role="tablist">
+          <button type="button" class="ai-credit-tab${creditTab === "overview" ? " ai-credit-tab--active" : ""}" data-action="credit-tab" data-tab="overview">View</button>
+          <button type="button" class="ai-credit-tab${creditTab === "buy" ? " ai-credit-tab--active" : ""}" data-action="credit-tab" data-tab="buy">Buy</button>
+          <button type="button" class="ai-credit-tab${creditTab === "manage" ? " ai-credit-tab--active" : ""}" data-action="credit-tab" data-tab="manage">Manage</button>
         </div>
-        <div class="ai-credit-actions">
-          <button type="button" class="btn ai-credit-btn-primary" data-action="enable-platform-key">
-            ${credits.use_platform_key ? "Using shared key" : "Use shared key"}
-          </button>
-          <select data-action="credit-amount" aria-label="Credit amount">
-            <option value="1000">$10 credits</option>
-            <option value="2000" selected>$20 credits</option>
-            <option value="5000">$50 credits</option>
-          </select>
-          <button type="button" class="btn ai-credit-pay-btn" data-action="buy-credits" data-provider="stripe">Stripe</button>
-          <button type="button" class="btn ai-credit-pay-btn" data-action="buy-credits" data-provider="paypal">PayPal</button>
-        </div>
-        <label class="ai-credit-autofill">
-          <input type="checkbox" data-action="auto-refill" ${credits.auto_refill_enabled ? "checked" : ""} />
-          <span>Auto refill ${formatCents(credits.auto_refill_amount_cents || 2000)} when credits drop below ${formatCents(credits.auto_refill_threshold_cents || 500)}</span>
-        </label>
-        <p class="ai-credit-note">${credits.payment_methods?.stripe_payment_link ? "Stripe Payment Link checkout is live. Paid dollars become shared AI credits; model usage deducts cost plus markup." : credits.payment_methods?.paypal ? "Stripe and PayPal checkout are available." : "Stripe checkout is live. PayPal is shown here and will enable once PayPal checkout credentials are configured."}</p>
+        ${panel}
       </div>
     `;
+  }
+
+  function renderCreditTransactions() {
+    if (creditTxLoading) {
+      return `<p class="ai-credit-empty">Loading activity…</p>`;
+    }
+    if (!creditTransactions.length) {
+      return `<p class="ai-credit-empty">No purchases or usage yet. Buy credits to get started.</p>`;
+    }
+    return creditTransactions.map((tx) => {
+      const amount = Number(tx.amount_cents || 0);
+      const pos = amount >= 0;
+      const kind = String(tx.kind || "usage");
+      const title = kind === "purchase" || kind === "demo_purchase"
+        ? "Credit purchase"
+        : kind === "usage"
+          ? `Usage · ${tx.model || tx.provider || "AI"}`
+          : kind;
+      const when = tx.created_at ? new Date(tx.created_at).toLocaleString() : "";
+      return `
+        <div class="ai-credit-tx">
+          <strong>${esc(title)}</strong>
+          <span class="ai-credit-tx-amt ${pos ? "ai-credit-tx-amt--pos" : "ai-credit-tx-amt--neg"}">${pos ? "+" : ""}${formatCents(amount)}</span>
+          <span class="ai-credit-tx-meta">${esc(when)}${tx.balance_after_cents != null ? ` · bal ${formatCents(tx.balance_after_cents)}` : ""}</span>
+        </div>`;
+    }).join("");
+  }
+
+  async function loadCreditTransactions() {
+    creditTxLoading = true;
+    try {
+      const data = await api("/api/user/ai-credits/transactions?limit=30");
+      creditTransactions = data.transactions || [];
+      if (data.credits && status) status.credits = data.credits;
+    } catch {
+      creditTransactions = [];
+    } finally {
+      creditTxLoading = false;
+    }
   }
 
   function renderKeysList(keys = [], activeKeyId = null, teamKeys = []) {
@@ -691,6 +819,24 @@ export function createAIKeyUI({ api, onStatusChange }) {
 
   // Delegate clicks in the keys list
   keysList?.addEventListener("click", async (e) => {
+    const creditTabBtn = e.target.closest("[data-action='credit-tab']");
+    if (creditTabBtn) {
+      creditTab = creditTabBtn.dataset.tab || "buy";
+      render(status);
+      if (creditTab === "manage") {
+        await loadCreditTransactions();
+        render(status);
+      }
+      return;
+    }
+
+    const amountBtn = e.target.closest("[data-action='credit-amount']");
+    if (amountBtn) {
+      creditAmount = Number(amountBtn.dataset.amount || 2000);
+      render(status);
+      return;
+    }
+
     const enablePlatform = e.target.closest("[data-action='enable-platform-key']");
     if (enablePlatform) {
       setError("");
@@ -707,10 +853,33 @@ export function createAIKeyUI({ api, onStatusChange }) {
       return;
     }
 
+    const disablePlatform = e.target.closest("[data-action='disable-platform-key']");
+    if (disablePlatform) {
+      setError("");
+      try {
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ use_platform_key: false }),
+        });
+        render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+      } catch (err) {
+        setError(err.message || "Could not disable shared keys");
+      }
+      return;
+    }
+
+    const refreshTx = e.target.closest("[data-action='refresh-transactions']");
+    if (refreshTx) {
+      await loadCreditTransactions();
+      render(status);
+      return;
+    }
+
     const buyCredits = e.target.closest("[data-action='buy-credits']");
     if (buyCredits) {
       const provider = buyCredits.dataset.provider || "stripe";
-      const amount = Number(keysList.querySelector("[data-action='credit-amount']")?.value || 2000);
+      const amount = creditAmount || 2000;
       setError("");
       buyCredits.disabled = true;
       try {
@@ -980,17 +1149,57 @@ export function createAIKeyUI({ api, onStatusChange }) {
 
   keysList?.addEventListener("change", async (e) => {
     const autoRefill = e.target.closest("[data-action='auto-refill']");
-    if (!autoRefill) return;
-    try {
-      const data = await api("/api/user/ai-credits", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auto_refill_enabled: autoRefill.checked }),
-      });
-      render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
-    } catch (err) {
-      setError(err.message || "Could not update auto refill");
-      autoRefill.checked = !autoRefill.checked;
+    if (autoRefill) {
+      try {
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ auto_refill_enabled: autoRefill.checked }),
+        });
+        render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+      } catch (err) {
+        setError(err.message || "Could not update auto refill");
+        autoRefill.checked = !autoRefill.checked;
+      }
+      return;
+    }
+
+    const usePlatform = e.target.closest("[data-action='use-platform-key']");
+    if (usePlatform) {
+      try {
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ use_platform_key: usePlatform.checked }),
+        });
+        render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+      } catch (err) {
+        setError(err.message || "Could not update shared key setting");
+        usePlatform.checked = !usePlatform.checked;
+      }
+      return;
+    }
+
+    const platformModel = e.target.closest("[data-action='platform-model']");
+    if (platformModel) {
+      const raw = String(platformModel.value || "");
+      const sep = raw.indexOf(":");
+      const provider = sep >= 0 ? raw.slice(0, sep) : "openai";
+      const model = sep >= 0 ? raw.slice(sep + 1) : raw;
+      try {
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            use_platform_key: true,
+            platform_provider: provider,
+            platform_model: model || null,
+          }),
+        });
+        render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+      } catch (err) {
+        setError(err.message || "Could not update shared model");
+      }
     }
   });
 
@@ -1000,6 +1209,37 @@ export function createAIKeyUI({ api, onStatusChange }) {
     selectedTeamFilter = teamFilter.value || "all";
     render(status);
   });
+
+  async function claimCreditsFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const flag = params.get("ai_credits");
+    if (flag !== "success" && flag !== "cancel") return;
+    const sessionId = params.get("session_id");
+    if (flag === "success" && sessionId) {
+      try {
+        const data = await api("/api/user/ai-credits/claim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        creditTab = "overview";
+        render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+        showModal(true, { message: "Credits added. Shared OpenAI/Claude keys are ready." });
+      } catch (err) {
+        setError(err.message || "Payment succeeded but credits are still settling. Refresh in a moment.");
+        showModal(true, { message: "Checking your credit purchase…" });
+      }
+    } else if (flag === "cancel") {
+      creditTab = "buy";
+      showModal(true, { message: "Checkout canceled. You can buy credits anytime." });
+    }
+    params.delete("ai_credits");
+    params.delete("session_id");
+    const next = `${window.location.pathname}${params.toString() ? `?${params}` : ""}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", next);
+  }
+
+  void claimCreditsFromUrl();
 
   // Add new key form submit
   form?.addEventListener("submit", async (e) => {

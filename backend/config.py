@@ -32,7 +32,9 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.5"
     openai_model_quality: str = "gpt-5.5-pro"
     openai_reasoning_effort: str = "low"
+    anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
+    anthropic_model_quality: str = "claude-opus-4-8"
     host: str = "127.0.0.1"
     port: int = 8000
     projects_dir: str = "projects"
@@ -83,7 +85,9 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
-    stripe_ai_credits_payment_link_url: str = "https://buy.stripe.com/3cIaEWcKV6Vs0W95JC3wQ00"
+    # Prefer dynamic Checkout Sessions when Stripe secret is set. Leave blank unless
+    # you intentionally use a fixed Payment Link.
+    stripe_ai_credits_payment_link_url: str = ""
     stripe_ai_credits_payment_link_id: str = ""
     marketplace_platform_fee_bps: int = 1000  # 10%
     public_base_url: str = "https://render3d.app"

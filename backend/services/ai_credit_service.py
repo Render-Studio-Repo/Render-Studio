@@ -1,4 +1,4 @@
-"""Prepaid credits for users borrowing the platform AI key."""
+"""Prepaid credits for users borrowing Render3D platform AI keys (OpenAI + Claude)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from backend.config import settings
 from backend.database import get_conn
@@ -70,24 +70,91 @@ def _user_for_checkout_session(session: dict[str, Any]) -> dict[str, Any] | None
     return dict(row) if row else None
 
 
+def platform_openai_configured() -> bool:
+    return bool((getattr(settings, "openai_api_key", None) or "").strip())
+
+
+def platform_anthropic_configured() -> bool:
+    return bool((getattr(settings, "anthropic_api_key", None) or "").strip())
+
+
 def platform_models() -> list[dict[str, str]]:
-    models = [
-        settings.openai_model,
-        settings.openai_model_quality,
-        "gpt-5.5",
-        "gpt-5.5-pro",
-        "gpt-5.3-codex",
-        "gpt-5.6-sol",
-    ]
-    seen: set[str] = set()
+    models: list[tuple[str, str]] = []
+    if platform_openai_configured():
+        models.extend(
+            [
+                ("openai", settings.openai_model),
+                ("openai", settings.openai_model_quality),
+                ("openai", "gpt-5.5"),
+                ("openai", "gpt-5.5-pro"),
+                ("openai", "gpt-5.3-codex"),
+                ("openai", "gpt-5.6-sol"),
+            ]
+        )
+    if platform_anthropic_configured():
+        models.extend(
+            [
+                ("anthropic", settings.anthropic_model),
+                ("anthropic", getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8"),
+                ("anthropic", "claude-fable-5"),
+                ("anthropic", "claude-sonnet-4-5"),
+                ("anthropic", "claude-opus-4-8"),
+                ("anthropic", "claude-4.6-sonnet"),
+                ("anthropic", "claude-4.6-opus"),
+            ]
+        )
+    seen: set[tuple[str, str]] = set()
     out: list[dict[str, str]] = []
-    for model in models:
+    for provider, model in models:
         name = str(model or "").strip()
-        if not name or name in seen:
+        if not name or (provider, name) in seen:
             continue
-        seen.add(name)
-        out.append({"provider": "openai", "model": name})
+        seen.add((provider, name))
+        out.append({"provider": provider, "model": name})
     return out
+
+
+def resolve_platform_credentials(
+    account: dict[str, Any] | None,
+    *,
+    speed: str = "fast",
+) -> dict[str, str] | None:
+    """Pick Render3D platform OpenAI/Claude credentials for a credit account."""
+    preferred = str((account or {}).get("platform_provider") or "openai").strip().lower()
+    pinned = str((account or {}).get("platform_model") or "").strip()
+    openai_ok = platform_openai_configured()
+    anthropic_ok = platform_anthropic_configured()
+    if preferred == "anthropic" and not anthropic_ok and openai_ok:
+        preferred = "openai"
+    elif preferred != "anthropic" and not openai_ok and anthropic_ok:
+        preferred = "anthropic"
+    if preferred == "anthropic" and anthropic_ok:
+        if pinned and not pinned.startswith("gpt"):
+            model = pinned
+        elif speed == "fast":
+            model = settings.anthropic_model
+        else:
+            model = getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8"
+        return {
+            "provider": "anthropic",
+            "model": model,
+            "api_key": settings.anthropic_api_key.strip(),
+            "shared_key_name": "Render3D Claude",
+        }
+    if openai_ok:
+        if pinned and pinned.startswith("gpt"):
+            model = pinned if speed != "fast" else settings.openai_model
+        elif speed == "fast":
+            model = settings.openai_model
+        else:
+            model = settings.openai_model_quality
+        return {
+            "provider": "openai",
+            "model": model,
+            "api_key": settings.openai_api_key.strip(),
+            "shared_key_name": "Render3D OpenAI",
+        }
+    return None
 
 
 def ensure_account(user_id: str) -> dict[str, Any]:
@@ -99,8 +166,9 @@ def ensure_account(user_id: str) -> dict[str, Any]:
                 """
                 INSERT INTO ai_credit_accounts (
                   user_id, balance_cents, auto_refill_enabled, auto_refill_threshold_cents,
-                  auto_refill_amount_cents, use_platform_key, created_at, updated_at
-                ) VALUES (?, 0, 0, ?, ?, 0, ?, ?)
+                  auto_refill_amount_cents, use_platform_key, platform_provider, platform_model,
+                  created_at, updated_at
+                ) VALUES (?, 0, 0, ?, ?, 0, 'openai', '', ?, ?)
                 """,
                 (user_id, DEFAULT_REFILL_THRESHOLD_CENTS, DEFAULT_REFILL_CENTS, now, now),
             )
@@ -114,9 +182,16 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
     last_purchase = _last_purchase(user["id"])
     last_amount = int((last_purchase or {}).get("amount_cents") or 0)
     percent_left = round((balance / last_amount) * 100, 1) if last_amount > 0 else None
+    providers = {
+        "openai": platform_openai_configured(),
+        "anthropic": platform_anthropic_configured(),
+    }
     return {
-        "available": bool((settings.openai_api_key or "").strip()),
+        "available": any(providers.values()),
+        "providers": providers,
         "use_platform_key": bool(account.get("use_platform_key")),
+        "platform_provider": str(account.get("platform_provider") or "openai"),
+        "platform_model": str(account.get("platform_model") or ""),
         "balance_cents": balance,
         "balance_usd": round(balance / 100, 2),
         "markup_percent": MARKUP_PERCENT,
@@ -126,7 +201,12 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
         "last_purchase_cents": last_amount,
         "last_purchase_percent_left": percent_left,
         "models": platform_models(),
-        "payment_methods": {"stripe": True, "stripe_payment_link": bool(_payment_link_url()), "paypal": False},
+        "stripe_ready": bool(_stripe()),
+        "payment_methods": {
+            "stripe": bool(_stripe()) or bool(_payment_link_url()),
+            "stripe_payment_link": bool(_payment_link_url()) and not bool(_stripe()),
+            "paypal": False,
+        },
     }
 
 
@@ -144,6 +224,35 @@ def _last_purchase(user_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def list_transactions(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
+    ensure_account(user_id)
+    lim = max(1, min(100, int(limit or 40)))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, kind, amount_cents, balance_after_cents, provider, model,
+                   project_id, stripe_session_id, meta_json, created_at
+            FROM ai_credit_transactions
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (user_id, lim),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["meta"] = json.loads(item.pop("meta_json") or "{}")
+        except Exception:
+            item["meta"] = {}
+            item.pop("meta_json", None)
+        item["amount_usd"] = round(int(item.get("amount_cents") or 0) / 100, 4)
+        item["balance_after_usd"] = round(int(item.get("balance_after_cents") or 0) / 100, 2)
+        out.append(item)
+    return out
+
+
 def update_settings(
     user_id: str,
     *,
@@ -151,6 +260,8 @@ def update_settings(
     auto_refill_enabled: bool | None = None,
     auto_refill_threshold_cents: int | None = None,
     auto_refill_amount_cents: int | None = None,
+    platform_provider: str | None = None,
+    platform_model: str | None = None,
 ) -> dict[str, Any]:
     ensure_account(user_id)
     sets: list[str] = []
@@ -167,6 +278,19 @@ def update_settings(
     if auto_refill_amount_cents is not None:
         sets.append("auto_refill_amount_cents = ?")
         vals.append(max(MIN_CHECKOUT_CENTS, int(auto_refill_amount_cents)))
+    if platform_provider is not None:
+        provider = str(platform_provider or "openai").strip().lower()
+        if provider not in {"openai", "anthropic"}:
+            raise ValueError("platform_provider must be openai or anthropic")
+        if provider == "openai" and not platform_openai_configured():
+            raise ValueError("Render3D OpenAI key is not configured yet.")
+        if provider == "anthropic" and not platform_anthropic_configured():
+            raise ValueError("Render3D Claude key is not configured yet. Add ANTHROPIC_API_KEY on the server.")
+        sets.append("platform_provider = ?")
+        vals.append(provider)
+    if platform_model is not None:
+        sets.append("platform_model = ?")
+        vals.append(str(platform_model or "").strip()[:120])
     if sets:
         sets.append("updated_at = ?")
         vals.extend([_now(), user_id])
@@ -249,6 +373,42 @@ def create_checkout_session(
     provider = str(provider or "stripe").strip().lower()
     if provider == "paypal":
         raise ValueError("PayPal credit checkout is not configured yet. Use Stripe for now.")
+
+    # Prefer live Stripe Checkout Sessions so amount + user metadata are reliable.
+    stripe = _stripe()
+    if stripe:
+        success = success_url
+        if "{CHECKOUT_SESSION_ID}" not in success:
+            sep = "&" if "?" in success else "?"
+            success = f"{success}{sep}session_id={{CHECKOUT_SESSION_ID}}"
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            success_url=success,
+            cancel_url=cancel_url,
+            customer_email=user.get("email") or None,
+            client_reference_id=user["id"],
+            line_items=[
+                {
+                    "quantity": 1,
+                    "price_data": {
+                        "currency": "usd",
+                        "unit_amount": amount,
+                        "product_data": {
+                            "name": "Render3D AI credits",
+                            "description": "Prepaid credits for Render3D shared OpenAI & Claude keys",
+                        },
+                    },
+                }
+            ],
+            metadata={
+                "kind": "ai_credits",
+                "user_id": user["id"],
+                "amount_cents": str(amount),
+                "email": user.get("email") or "",
+            },
+        )
+        return {"url": session["url"], "session_id": session["id"], "checkout": True}
+
     link_url = _payment_link_url()
     if link_url:
         return {
@@ -262,28 +422,10 @@ def create_checkout_session(
             ),
             "payment_link": True,
         }
-    stripe = _stripe()
-    if not stripe:
-        add_credits(user["id"], amount, provider="demo", meta={"demo": True})
-        return {"demo": True, "url": success_url, "credits": status(user)}
-    session = stripe.checkout.Session.create(
-        mode="payment",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        customer_email=user.get("email") or None,
-        line_items=[
-            {
-                "quantity": 1,
-                "price_data": {
-                    "currency": "usd",
-                    "unit_amount": amount,
-                    "product_data": {"name": "Render3D shared AI credits"},
-                },
-            }
-        ],
-        metadata={"kind": "ai_credits", "user_id": user["id"], "amount_cents": str(amount)},
-    )
-    return {"url": session["url"], "session_id": session["id"]}
+
+    add_credits(user["id"], amount, provider="demo", meta={"demo": True})
+    update_settings(user["id"], use_platform_key=True)
+    return {"demo": True, "url": success_url, "credits": status(user)}
 
 
 def handle_success_session(session_id: str) -> bool:
@@ -296,8 +438,8 @@ def handle_success_session(session_id: str) -> bool:
     meta = session.get("metadata") or {}
     if meta.get("kind") != "ai_credits" or session.get("payment_status") != "paid":
         return False
-    user_id = meta.get("user_id")
-    amount = int(meta.get("amount_cents") or 0)
+    user_id = meta.get("user_id") or session.get("client_reference_id")
+    amount = int(meta.get("amount_cents") or session.get("amount_total") or 0)
     if not user_id or amount <= 0:
         return False
     with get_conn() as conn:
@@ -327,13 +469,32 @@ def handle_success_session(session_id: str) -> bool:
     return True
 
 
-def handle_payment_link_session(session: dict[str, Any]) -> bool:
-    """Credit AI balance for a completed Stripe Payment Link checkout.
+def claim_checkout_session(user: dict[str, Any], session_id: str) -> dict[str, Any]:
+    """Apply a paid Stripe session to this user (webhook backup on return)."""
+    sid = str(session_id or "").strip()
+    if not sid:
+        raise ValueError("session_id is required")
+    stripe = _stripe()
+    if not stripe:
+        raise ValueError("Stripe is not configured")
+    session = stripe.checkout.Session.retrieve(sid)
+    meta = session.get("metadata") or {}
+    owner = str(meta.get("user_id") or session.get("client_reference_id") or "").strip()
+    if owner and owner != user["id"]:
+        raise ValueError("This checkout session belongs to another account.")
+    if meta.get("kind") != "ai_credits":
+        # Still try payment-link style claim for this user
+        if not handle_payment_link_session(dict(session)):
+            raise ValueError("Checkout session is not an AI credits purchase.")
+    elif not handle_success_session(sid):
+        if session.get("payment_status") != "paid":
+            raise ValueError("Payment is not complete yet.")
+        raise ValueError("Could not apply credits for this session.")
+    return status(user)
 
-    App-created sessions carry metadata and are handled by handle_success_session().
-    A static Payment Link cannot reliably carry our metadata, so we recognize the
-    configured Payment Link and map the paid checkout back to a Render3D user.
-    """
+
+def handle_payment_link_session(session: dict[str, Any]) -> bool:
+    """Credit AI balance for a completed Stripe Payment Link checkout."""
     if not isinstance(session, dict):
         return False
     session_id = str(session.get("id") or "").strip()

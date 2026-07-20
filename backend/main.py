@@ -720,6 +720,8 @@ class UserAICreditSettingsRequest(BaseModel):
     auto_refill_enabled: bool | None = None
     auto_refill_threshold_cents: int | None = Field(None, ge=0, le=100_000)
     auto_refill_amount_cents: int | None = Field(None, ge=500, le=100_000)
+    platform_provider: str | None = Field(None, max_length=20)
+    platform_model: str | None = Field(None, max_length=120)
 
 
 class UserAICreditCheckoutRequest(BaseModel):
@@ -727,6 +729,10 @@ class UserAICreditCheckoutRequest(BaseModel):
     provider: str = Field(default="stripe", max_length=20)
     success_url: str | None = Field(default=None, max_length=500)
     cancel_url: str | None = Field(default=None, max_length=500)
+
+
+class UserAICreditClaimRequest(BaseModel):
+    session_id: str = Field(..., min_length=8, max_length=200)
 
 
 class AutodeskCredentialsRequest(BaseModel):
@@ -1916,6 +1922,10 @@ def _resolve_prompt_model_meta(
     except Exception:
         effective = {}
     if not effective and ai_credit_service.status(user).get("use_platform_key"):
+        account = ai_credit_service.ensure_account(user["id"])
+        creds = ai_credit_service.resolve_platform_credentials(account, speed=resolve_speed)
+        if creds:
+            return {"model": creds["model"], "provider": creds["provider"], "speed": speed}
         provider = "openai"
         model = settings.openai_model if resolve_speed == "fast" else settings.openai_model_quality
         return {"model": model, "provider": provider, "speed": speed}
@@ -1979,9 +1989,14 @@ def _get_ai_for_user(
         if credits.get("use_platform_key") and credits.get("available"):
             if int(credits.get("balance_cents") or 0) <= 0:
                 raise HTTPException(status_code=402, detail="Buy shared-key credits to use the platform AI key.")
-            provider = "openai"
-            model = settings.openai_model if speed == "fast" else settings.openai_model_quality
-            ai = AIService(model=model, api_key=settings.openai_api_key, provider=provider)
+            account = ai_credit_service.ensure_account(user["id"])
+            creds = ai_credit_service.resolve_platform_credentials(account, speed=speed)
+            if not creds:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Render3D platform AI keys are not configured. Add OpenAI or Anthropic keys on the server.",
+                )
+            ai = AIService(model=creds["model"], api_key=creds["api_key"], provider=creds["provider"])
             setattr(ai, "billing_source", "platform")
             setattr(ai, "billing_user_id", user["id"])
             return ai
@@ -8509,15 +8524,31 @@ def get_user_ai_credits(user: dict[str, Any] = Depends(get_current_user)):
     return {"credits": ai_credit_service.status(user)}
 
 
+@app.get("/api/user/ai-credits/transactions")
+def get_user_ai_credit_transactions(
+    limit: int = 40,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    return {
+        "credits": ai_credit_service.status(user),
+        "transactions": ai_credit_service.list_transactions(user["id"], limit=limit),
+    }
+
+
 @app.patch("/api/user/ai-credits")
 def update_user_ai_credits(body: UserAICreditSettingsRequest, user: dict[str, Any] = Depends(get_current_user)):
-    ai_credit_service.update_settings(
-        user["id"],
-        use_platform_key=body.use_platform_key,
-        auto_refill_enabled=body.auto_refill_enabled,
-        auto_refill_threshold_cents=body.auto_refill_threshold_cents,
-        auto_refill_amount_cents=body.auto_refill_amount_cents,
-    )
+    try:
+        ai_credit_service.update_settings(
+            user["id"],
+            use_platform_key=body.use_platform_key,
+            auto_refill_enabled=body.auto_refill_enabled,
+            auto_refill_threshold_cents=body.auto_refill_threshold_cents,
+            auto_refill_amount_cents=body.auto_refill_amount_cents,
+            platform_provider=body.platform_provider,
+            platform_model=body.platform_model,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     return {"credits": ai_credit_service.status(user), "ai": _ai_status_for_user(user)}
 
 
@@ -8540,6 +8571,18 @@ def create_user_ai_credit_checkout(
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/user/ai-credits/claim")
+def claim_user_ai_credit_checkout(
+    body: UserAICreditClaimRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        credits = ai_credit_service.claim_checkout_session(user, body.session_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"credits": credits, "ai": _ai_status_for_user(user)}
 
 
 @app.post("/api/user/ai-credits/demo")
@@ -15554,7 +15597,10 @@ def _save_prompt_history(
             try:
                 credits = ai_credit_service.status(user)
                 if credits.get("use_platform_key"):
-                    key_meta = {"key_source": "platform", "shared_key_name": "Render3D shared API key"}
+                    key_meta = {
+                        "key_source": "platform",
+                        "shared_key_name": "Render3D shared AI key",
+                    }
                     platform_trace = {
                         "cost_usd": usage_meta.get("cost_usd"),
                         "model": usage_meta.get("model"),
