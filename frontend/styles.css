@@ -36234,7 +36234,7 @@ body.gs-agent-open .updates-page {
 .insert-panel-grid { display: grid; gap: 10px; }
 .insert-source-card {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   text-align: left;
@@ -36260,6 +36260,20 @@ body.gs-agent-open .updates-page {
   font-weight: 800;
   font-size: 0.78rem;
   letter-spacing: 0.02em;
+}
+.insert-source-icon--logo {
+  width: 118px;
+  height: 48px;
+  padding: 0 10px;
+  background: #fff;
+  border: 1px solid #30363d;
+}
+.insert-source-icon--logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 22px;
+  object-fit: contain;
 }
 .insert-source-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .insert-source-copy strong { color: #e6edf3; font-size: 0.9rem; }
@@ -36402,4 +36416,451 @@ body.mcmaster-insert-open { overflow: hidden; }
   .mcmaster-insert-chrome { flex-direction: column; align-items: stretch; }
   .mcmaster-insert-search { width: 100%; }
   .mcmaster-insert-footer { flex-direction: column; align-items: stretch; }
+}
+
+/* Simulated McMaster catalog (local — live site blocks iframes) */
+.mcmaster-sim-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(210, 153, 34, 0.4);
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.12);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mcmaster-sim-body {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 280px;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #f4f1ea;
+  color: #1b1f23;
+}
+.mcmaster-sim-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  background: #fff;
+  border-right: 1px solid #d8d3c8;
+  overflow: auto;
+}
+.mcmaster-sim-brand {
+  margin: 0 4px 10px;
+  padding: 4px 2px 10px;
+  border-bottom: 2px solid #346734;
+}
+.mcmaster-sim-brand img {
+  display: block;
+  width: min(148px, 100%);
+  height: auto;
+  max-height: 24px;
+  object-fit: contain;
+  object-position: left center;
+}
+.mcmaster-sim-cat {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #333;
+  text-align: left;
+  padding: 7px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.mcmaster-sim-cat:hover { background: #f0ebe1; }
+.mcmaster-sim-cat.active {
+  background: #c41230;
+  color: #fff;
+  font-weight: 700;
+}
+.mcmaster-sim-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid #d8d3c8;
+}
+.mcmaster-sim-results-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px 8px;
+  background: #fff;
+  border-bottom: 1px solid #e6e1d6;
+}
+.mcmaster-sim-results-head strong {
+  color: #1b1f23;
+  font-size: 0.92rem;
+}
+.mcmaster-sim-results {
+  overflow: auto;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.mcmaster-sim-empty { padding: 18px 8px; }
+.mcmaster-sim-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 10px;
+  border: 1px solid #ddd6c8;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+.mcmaster-sim-card:hover { border-color: #c41230; }
+.mcmaster-sim-card.active {
+  border-color: #c41230;
+  box-shadow: 0 0 0 2px rgba(196, 18, 48, 0.15);
+}
+.mcmaster-sim-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mcmaster-sim-card-copy em {
+  color: #c41230;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.mcmaster-sim-card-copy strong {
+  color: #1b1f23;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+.mcmaster-sim-card-copy small {
+  color: #666;
+  font-size: 0.7rem;
+}
+.mcmaster-sim-card-preview,
+.mcmaster-sim-preview {
+  display: block;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, #d0d5db 0%, #8b949e 45%, #4d5560 100%);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+  position: relative;
+  overflow: hidden;
+}
+.mcmaster-sim-preview {
+  width: 100%;
+  height: 140px;
+  margin-bottom: 10px;
+}
+.mcmaster-sim-card-preview::after,
+.mcmaster-sim-preview::after {
+  content: "";
+  position: absolute;
+  inset: 18% 30%;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f0f3f6, #6e7681);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.18);
+}
+.mcmaster-sim-card-preview[data-shape="plate"]::after,
+.mcmaster-sim-preview[data-shape="plate"]::after {
+  inset: 28% 12%;
+  border-radius: 2px;
+}
+.mcmaster-sim-card-preview[data-shape="washer"]::after,
+.mcmaster-sim-card-preview[data-shape="bearing"]::after,
+.mcmaster-sim-card-preview[data-shape="spring"]::after,
+.mcmaster-sim-preview[data-shape="washer"]::after,
+.mcmaster-sim-preview[data-shape="bearing"]::after,
+.mcmaster-sim-preview[data-shape="spring"]::after {
+  inset: 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, #f6f8fa 0 28%, #6e7681 30% 100%);
+}
+.mcmaster-sim-detail {
+  overflow: auto;
+  padding: 12px;
+  background: #fff;
+}
+.mcmaster-sim-detail-card h3 {
+  margin: 4px 0 6px;
+  color: #1b1f23;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+.mcmaster-sim-detail-card p {
+  margin: 0 0 10px;
+  color: #555;
+  font-size: 0.78rem;
+}
+.mcmaster-sim-pn {
+  color: #c41230;
+  font-weight: 800;
+  font-size: 0.78rem;
+}
+.mcmaster-sim-specs {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.mcmaster-sim-specs > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 0.74rem;
+}
+.mcmaster-sim-specs dt { color: #777; margin: 0; }
+.mcmaster-sim-specs dd { margin: 0; color: #222; font-weight: 600; }
+.mcmaster-sim-detail-card .btn.accent {
+  width: 100%;
+  justify-content: center;
+}
+.mcmaster-sim-real-link {
+  display: inline-block;
+  margin-top: 10px;
+  color: #0969da;
+  font-size: 0.72rem;
+  text-decoration: none;
+}
+.mcmaster-sim-real-link:hover { text-decoration: underline; }
+@media (max-width: 960px) {
+  .mcmaster-sim-body {
+    grid-template-columns: 140px minmax(0, 1fr);
+  }
+  .mcmaster-sim-detail {
+    grid-column: 1 / -1;
+    border-top: 1px solid #d8d3c8;
+    max-height: 240px;
+  }
+}
+@media (max-width: 640px) {
+  .mcmaster-sim-body { grid-template-columns: 1fr; }
+  .mcmaster-sim-nav { max-height: 140px; }
+}
+
+/* Live McMaster connected-window dock (Fusion-style, not iframe) */
+.mcmaster-live-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #484f58;
+  color: #8b949e;
+  background: rgba(110, 118, 129, 0.12);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.mcmaster-live-badge.is-live {
+  border-color: rgba(63, 185, 80, 0.45);
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.12);
+}
+.mcmaster-insert-shell--live {
+  width: min(1100px, 96vw);
+  height: min(780px, 92vh);
+}
+.mcmaster-live-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #0d1117;
+}
+.mcmaster-live-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  overflow: auto;
+  border-right: 1px solid #30363d;
+  background: #161b22;
+}
+.mcmaster-live-dock-brand img {
+  display: block;
+  max-width: 170px;
+  height: auto;
+  max-height: 28px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.mcmaster-live-explain {
+  margin: 0;
+  color: #c9d1d9;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.mcmaster-live-explain code {
+  font-size: 0.72rem;
+  color: #79c0ff;
+}
+.mcmaster-live-drop {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 14px;
+  border: 1px dashed rgba(88, 166, 255, 0.5);
+  border-radius: 12px;
+  background: rgba(56, 139, 253, 0.08);
+}
+.mcmaster-live-drop.is-dragover,
+.mcmaster-live-drop.is-attention {
+  border-color: #3fb950;
+  background: rgba(63, 185, 80, 0.14);
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.18);
+}
+.mcmaster-live-drop strong { color: #e6edf3; font-size: 0.88rem; }
+.mcmaster-live-drop span { color: #8b949e; font-size: 0.72rem; }
+.mcmaster-live-shortcuts { display: grid; gap: 6px; }
+.mcmaster-live-shortcut-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mcmaster-quick-block,
+.mcmaster-library-block {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #30363d;
+}
+.mcmaster-quick-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mcmaster-quick-head strong { color: #e6edf3; font-size: 0.8rem; }
+.mcmaster-quick-list {
+  display: grid;
+  gap: 6px;
+}
+.mcmaster-quick-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 8px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+  color: inherit;
+  cursor: pointer;
+}
+.mcmaster-quick-card:hover { border-color: #58a6ff; }
+.mcmaster-quick-card em {
+  display: block;
+  color: #79c0ff;
+  font-style: normal;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.mcmaster-quick-card strong {
+  display: block;
+  color: #e6edf3;
+  font-size: 0.76rem;
+}
+.mcmaster-quick-card small {
+  display: block;
+  color: #8b949e;
+  font-size: 0.68rem;
+}
+.mcmaster-library-list { display: grid; gap: 6px; }
+.mcmaster-library-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+}
+.mcmaster-library-row strong {
+  color: #e6edf3;
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcmaster-library-row small { color: #8b949e; font-size: 0.66rem; flex-shrink: 0; }
+.mcmaster-live-stage {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(88, 166, 255, 0.12), transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(63, 185, 80, 0.08), transparent 45%),
+    #0d1117;
+}
+.mcmaster-live-stage-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 22px;
+  border: 1px solid #30363d;
+  border-radius: 14px;
+  background: rgba(22, 27, 34, 0.92);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+.mcmaster-live-stage-visual {
+  height: 120px;
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, #21262d, #161b22 40%, #0d1117),
+    repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(88, 166, 255, 0.05) 8px, rgba(88, 166, 255, 0.05) 16px);
+  border: 1px solid #30363d;
+  position: relative;
+}
+.mcmaster-live-stage-visual::after {
+  content: "LIVE WINDOW";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #58a6ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.mcmaster-insert-modal.is-connected .mcmaster-live-stage-visual::after {
+  content: "CONNECTED";
+  color: #3fb950;
+}
+.mcmaster-live-stage-card h3 {
+  margin: 0;
+  color: #e6edf3;
+  font-size: 1.05rem;
+}
+.mcmaster-live-stage-card p {
+  margin: 0;
+  color: #8b949e;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.mcmaster-live-stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mcmaster-live-steps {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: #c9d1d9;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+@media (max-width: 860px) {
+  .mcmaster-live-layout { grid-template-columns: 1fr; }
+  .mcmaster-live-stage { min-height: 240px; }
 }

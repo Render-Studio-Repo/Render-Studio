@@ -110,6 +110,7 @@ REFERENCE_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yam
 REFERENCE_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".tif", ".tiff"}
 REFERENCE_DIRNAME = "references"
 RENDERS_DIRNAME = "renders"
+MCMASTER_LIBRARY_DIRNAME = "mcmaster_library"
 MARKUP_FOLDER_NAMES = frozenset({REFERENCE_DIRNAME, RENDERS_DIRNAME})
 
 DEFAULT_APPEARANCE_PALETTE = np.array(
@@ -143,6 +144,121 @@ def renders_dir(project_path: Path) -> Path:
     path = Path(project_path) / RENDERS_DIRNAME
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def mcmaster_library_dir(project_path: Path) -> Path:
+    path = Path(project_path) / MCMASTER_LIBRARY_DIRNAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def mcmaster_library_index_path(project_path: Path) -> Path:
+    return mcmaster_library_dir(project_path) / "index.json"
+
+
+def list_mcmaster_library(project_path: Path) -> list[dict[str, Any]]:
+    """Return McMaster insert library entries for a project."""
+    index_path = Path(project_path) / MCMASTER_LIBRARY_DIRNAME / "index.json"
+    entries: list[dict[str, Any]] = []
+    if index_path.is_file():
+        try:
+            raw = json.loads(index_path.read_text(encoding="utf-8"))
+            for item in raw.get("entries") or []:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or item.get("filename") or "").strip()
+                if not name:
+                    continue
+                entries.append(
+                    {
+                        "name": name,
+                        "filename": str(item.get("filename") or name),
+                        "at": item.get("at") or item.get("imported_at"),
+                        "source": item.get("source") or "mcmaster",
+                    }
+                )
+        except Exception:
+            entries = []
+    if entries:
+        return entries[:48]
+
+    # Fallback: scan folder for CAD files if index is missing.
+    from datetime import datetime, timezone
+
+    root = Path(project_path) / MCMASTER_LIBRARY_DIRNAME
+    if not root.is_dir():
+        return []
+    scanned: list[dict[str, Any]] = []
+    for f in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not f.is_file() or f.name == "index.json":
+            continue
+        if f.suffix.lower() not in SUPPORTED_IMPORT:
+            continue
+        scanned.append(
+            {
+                "name": f.name,
+                "filename": f.name,
+                "at": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
+                "source": "mcmaster",
+            }
+        )
+    return scanned[:48]
+
+
+def record_mcmaster_library_entries(
+    project_path: Path,
+    filenames: list[str],
+    *,
+    source: str = "mcmaster",
+) -> list[dict[str, Any]]:
+    """Copy imported CAD into mcmaster_library/ and append to index.json."""
+    import shutil
+    from datetime import datetime, timezone
+
+    lib = mcmaster_library_dir(project_path)
+    index_path = mcmaster_library_index_path(project_path)
+    existing = list_mcmaster_library(project_path)
+    by_name = {e["name"]: e for e in existing}
+    now = datetime.now(timezone.utc).isoformat()
+    added: list[dict[str, Any]] = []
+
+    for raw_name in filenames or []:
+        name = Path(str(raw_name or "")).name.strip()
+        if not name:
+            continue
+        src = Path(project_path) / name
+        if not src.is_file():
+            # Also accept files already under the library folder.
+            src_lib = lib / name
+            if src_lib.is_file():
+                src = src_lib
+            else:
+                continue
+        dest = lib / name
+        if src.resolve() != dest.resolve():
+            if dest.exists():
+                stem, suffix = dest.stem, dest.suffix
+                n = 2
+                while True:
+                    candidate = lib / f"{stem}_{n}{suffix}"
+                    if not candidate.exists():
+                        dest = candidate
+                        break
+                    n += 1
+            shutil.copy2(src, dest)
+        entry = {
+            "name": dest.name,
+            "filename": dest.name,
+            "at": now,
+            "source": source or "mcmaster",
+            "project_filename": name,
+        }
+        by_name[dest.name] = entry
+        added.append(entry)
+
+    ordered = sorted(by_name.values(), key=lambda e: str(e.get("at") or ""), reverse=True)[:48]
+    index_path.write_text(json.dumps({"entries": ordered}, indent=2), encoding="utf-8")
+    return added
 
 
 def is_reference_suffix(suffix: str) -> bool:

@@ -107,7 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-insert";
+import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-live";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
   suggestElectronicsForBuild,
@@ -8635,7 +8635,7 @@ function handleDesignTabChange(tab) {
     texturePanel?.close?.();
     mcmasterInsert?.open?.();
     setRightTab("prompt");
-    setEditStatus("ok", "Insert — open McMaster-Carr to browse and import parts.");
+    setEditStatus("ok", "Insert — opens live McMaster-Carr beside a drop dock (iframes are blocked).");
   } else if (tab === "TEXTURE") {
     exitCanvasTab();
     exitSketchMode();
@@ -16468,8 +16468,28 @@ async function resolveMcMasterInsertDestination(files) {
 
 const mcmasterInsert = createMcMasterInsert({
   resolveDestination: (files) => resolveMcMasterInsertDestination(files),
-  onImportFiles: async (files, choice) => {
-    await uploadProjectFiles(files, choice);
+  onImportFiles: async (files, choice) => uploadProjectFiles(files, choice),
+  onLoadLibrary: async () => {
+    if (!projectId) return [];
+    try {
+      const data = await api(`/api/projects/${projectId}/mcmaster-library`);
+      return data?.entries || [];
+    } catch {
+      return [];
+    }
+  },
+  onLibrarySave: async (filenames, choice) => {
+    const pid = choice?.projectId || projectId;
+    if (!pid || !filenames?.length) return [];
+    try {
+      const data = await api(`/api/projects/${pid}/mcmaster-library`, {
+        method: "POST",
+        body: JSON.stringify({ filenames, source: "mcmaster" }),
+      });
+      return data?.entries || [];
+    } catch {
+      return [];
+    }
   },
   onStatus: (kind, text) => {
     if (text) setEditStatus(kind || "ok", text);
@@ -18535,7 +18555,7 @@ function handleWiringTabChange(tab) {
     catalogPanel?.close?.();
     texturePanel?.close?.();
     mcmasterInsert?.open?.();
-    setEditStatus("ok", "Insert — open McMaster-Carr to browse and import parts.");
+    setEditStatus("ok", "Insert — opens live McMaster-Carr beside a drop dock (iframes are blocked).");
     return;
   }
   if (tab === "TEXTURE") {

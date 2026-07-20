@@ -14996,6 +14996,45 @@ def wiring_demo(
     }
 
 
+# ── McMaster-Carr insert library (project/mcmaster_library/) ───────────────────
+
+
+class McMasterLibraryRecordRequest(BaseModel):
+    filenames: list[str] = Field(default_factory=list)
+    source: str = "mcmaster"
+
+
+@app.get("/api/projects/{project_id}/mcmaster-library")
+def get_mcmaster_library(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    return {"entries": cad_service.list_mcmaster_library(path)}
+
+
+@app.post("/api/projects/{project_id}/mcmaster-library")
+def record_mcmaster_library(
+    project_id: str,
+    body: McMasterLibraryRecordRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    names = [Path(n).name for n in (body.filenames or []) if str(n or "").strip()]
+    if not names:
+        raise HTTPException(400, "filenames required")
+    added = cad_service.record_mcmaster_library_entries(
+        path,
+        names,
+        source=(body.source or "mcmaster").strip() or "mcmaster",
+    )
+    project_store.touch_project(path)
+    return {
+        "added": added,
+        "entries": cad_service.list_mcmaster_library(path),
+    }
+
+
 # ── Component part profiles (identity, stats, online STEP source) ──────────────
 
 
