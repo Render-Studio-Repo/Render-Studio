@@ -12249,15 +12249,7 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
                     logger.warning("Lazy export generation failed for %s from %s: %s", safe, src.name, exc)
                 break
     if not file_path.is_file() and file_path.suffix.lower() == ".glb":
-        stem = file_path.stem
-        step_src = next(
-            (
-                project_path / f"{stem}{suffix}"
-                for suffix in (".step", ".stp")
-                if (project_path / f"{stem}{suffix}").is_file()
-            ),
-            None,
-        )
+        step_src = cad_service.find_step_source(project_path, file_path.stem)
         if step_src is not None:
             try:
                 cad_service.tessellate_step_to_glb(step_src, file_path)
@@ -18449,12 +18441,7 @@ def mesh_bodies_info(
         if viewer_path is not None and viewer_path.is_file() and viewer_path.suffix.lower() in {".glb", ".gltf"}:
             mesh_src = viewer_path
     elif suffix in {".glb", ".gltf"}:
-        stem = src.stem
-        for ext in (".step", ".stp"):
-            candidate = project_path / (stem + ext)
-            if candidate.is_file():
-                step_src = candidate
-                break
+        step_src = cad_service.find_step_source(project_path, src.stem)
     try:
         mtime = mesh_src.stat().st_mtime
     except OSError:

@@ -67,6 +67,7 @@ SUPPORTED_IMPORT = {
     ".sab",
 }
 STEP_SUFFIXES = {".step", ".stp"}
+STEP_SUFFIX_VARIANTS = (".step", ".stp", ".STEP", ".STP")
 IGES_SUFFIXES = {".iges", ".igs"}
 BREP_SUFFIXES = {".brep", ".brp"}
 MESH_VIEW_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf"}
@@ -281,6 +282,32 @@ def reference_kind(filename: str) -> str:
     if suffix in REFERENCE_TEXT_SUFFIXES:
         return "text"
     return "file"
+
+
+def find_step_source(project_path: Path, stem: str) -> Path | None:
+    """Locate a STEP/STP file for a model stem on a case-sensitive filesystem."""
+    project_path = Path(project_path)
+    raw = str(stem or "").strip()
+    if not raw:
+        return None
+    clean = Path(raw).stem if Path(raw).suffix.lower() in STEP_SUFFIXES else raw
+    for suffix in STEP_SUFFIX_VARIANTS:
+        candidate = project_path / f"{clean}{suffix}"
+        if candidate.is_file():
+            return candidate
+    lower_stem = clean.lower()
+    try:
+        for path in project_path.iterdir():
+            if (
+                path.is_file()
+                and not path.name.startswith(".")
+                and path.stem.lower() == lower_stem
+                and path.suffix.lower() in STEP_SUFFIXES
+            ):
+                return path
+    except OSError:
+        pass
+    return None
 
 
 def resolve_project_file(project_path: Path, filename: str) -> Path | None:
@@ -671,8 +698,9 @@ def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
     candidates: list[Path] = []
     if Path(safe).suffix.lower() in STEP_SUFFIXES:
         candidates.append(project_path / safe)
-    for suffix in (".step", ".stp"):
-        candidates.append(project_path / f"{stem}{suffix}")
+    step_src = find_step_source(project_path, stem)
+    if step_src is not None:
+        candidates.append(step_src)
     base_variants = _native_brep_parent_stems(stem)
     for base in list(base_variants):
         if base.startswith("."):
@@ -681,8 +709,9 @@ def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
         if variant.lower().endswith((".step", ".stp")):
             base_variants.append(Path(variant).stem)
     for variant in dict.fromkeys(v for v in base_variants if v and v != stem):
-        for suffix in (".step", ".stp"):
-            candidates.append(project_path / f"{variant}{suffix}")
+        variant_step = find_step_source(project_path, variant)
+        if variant_step is not None:
+            candidates.append(variant_step)
     seen: set[str] = set()
     for path in candidates:
         key = str(path.resolve()) if path.exists() else path.name

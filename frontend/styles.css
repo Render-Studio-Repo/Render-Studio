@@ -37156,6 +37156,15 @@ body.mcmaster-insert-open { overflow: hidden; }
 .mcmaster-got-download-banner span { color: #c9d1d9; font-size: 0.74rem; line-height: 1.4; }
 .mcmaster-got-download-banner .btn { justify-self: start; }
 
+.mcmaster-bucket-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: rgba(22, 27, 34, 0.55);
+}
+
 .mcmaster-download-path-hint { margin: 0; line-height: 1.4; }
 .mcmaster-local-status.is-linked,
 [data-mcmaster-local-status].is-linked {
