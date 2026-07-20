@@ -681,8 +681,23 @@ export function createAIKeyUI({ api, onStatusChange }) {
     const usageLabel = limit == null
       ? ""
       : ` · ${formatUsd(spent)}/${formatUsd(limit)} today`;
-    if (menuLabel) menuLabel.textContent = hasKey ? `${providerLabel} API key` : "Add AI API key";
-    if (menuHint) menuHint.textContent = hasKey ? `${providerLabel} · ${status.model || ""}${usageLabel}` : "Required for prompts";
+    const credits = status.credits || {};
+    const creditBal = Number(credits.balance_cents || 0);
+    const usingCredits = !hasKey && credits.use_platform_key && creditBal > 0;
+    if (menuLabel) {
+      menuLabel.textContent = hasKey
+        ? `${providerLabel} API key`
+        : usingCredits
+          ? "Render3D credits"
+          : "AI & billing";
+    }
+    if (menuHint) {
+      menuHint.textContent = hasKey
+        ? `${providerLabel} · ${status.model || ""}${usageLabel}`
+        : usingCredits
+          ? `${formatCents(creditBal)} · shared OpenAI/Claude`
+          : "Keys, credits, and spend";
+    }
     renderSourceOptions(status.keys || []);
     applySourceSelection();
     renderKeysList(status.keys || [], status.active_key_id, status.team_keys || []);
