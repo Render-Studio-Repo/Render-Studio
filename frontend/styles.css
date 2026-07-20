@@ -37138,3 +37138,64 @@ body.mcmaster-insert-open { overflow: hidden; }
   outline: none;
   border-color: #58a6ff;
 }
+
+.mcmaster-got-download-banner {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(56, 139, 253, 0.1);
+}
+.mcmaster-got-download-banner.is-urgent {
+  border-color: #3fb950;
+  background: rgba(63, 185, 80, 0.14);
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.18);
+}
+.mcmaster-got-download-banner strong { color: #e6edf3; font-size: 0.86rem; }
+.mcmaster-got-download-banner span { color: #c9d1d9; font-size: 0.74rem; line-height: 1.4; }
+.mcmaster-got-download-banner .btn { justify-self: start; }
+
+.mcmaster-download-path-hint { margin: 0; line-height: 1.4; }
+.mcmaster-local-status.is-linked,
+[data-mcmaster-local-status].is-linked {
+  color: #3fb950 !important;
+  font-weight: 700;
+}
+.mcmaster-chrome-hint {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed #484f58;
+  border-radius: 8px;
+  background: rgba(110, 118, 129, 0.08);
+}
+.mcmaster-chrome-hint[hidden] { display: none !important; }
+.mcmaster-chrome-hint strong { color: #e6edf3; font-size: 0.78rem; }
+.mcmaster-chrome-hint ol {
+  margin: 0;
+  padding-left: 18px;
+  color: #c9d1d9;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+.mcmaster-chrome-hint code {
+  color: #79c0ff;
+  font-size: 0.7rem;
+}
+
+.mcmaster-auto-upload {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: rgba(63, 185, 80, 0.08);
+  color: #c9d1d9;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.mcmaster-auto-upload input { margin-top: 2px; }
+.mcmaster-auto-upload strong { color: #e6edf3; }

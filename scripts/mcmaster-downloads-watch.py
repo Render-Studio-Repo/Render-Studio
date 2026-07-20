@@ -51,7 +51,7 @@ PROJECT_ID = os.environ.get("RENDER3D_PROJECT_ID", "").strip()
 DOWNLOADS = Path(
     os.environ.get("RENDER3D_DOWNLOADS")
     or os.path.expanduser("~/Downloads")
-).expanduser()
+).expanduser()  # set to the same folder you chose in McMaster → Set download folder
 POLL_SEC = float(os.environ.get("RENDER3D_WATCH_POLL", "2"))
 STABLE_SEC = float(os.environ.get("RENDER3D_WATCH_STABLE", "1.5"))
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for stuck Render3D uvicorn workers and recycle them
+After=network-online.target render3d.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu
+EnvironmentFile=-/home/ubuntu/.env
+ExecStart=/home/ubuntu/.venv/bin/python /home/ubuntu/scripts/watch_stuck_render3d_workers.py guard

@@ -16,6 +16,43 @@ const RECENT_MAX = 10;
 const IDB_NAME = "render3d-mcmaster";
 const IDB_STORE = "handles";
 const CAD_NAME_RE = /\.(step|stp|stl|obj|glb|gltf|3mf|iges|igs|sat|sldprt|x_t|x_b)$/i;
+const LS_DOWNLOAD_FOLDER_NAME = "render3d:mcmasterDownloadFolderName:v1";
+const LS_AUTO_UPLOAD = "render3d:mcmasterAutoUpload:v1";
+
+function readDownloadFolderName() {
+  try {
+    return String(localStorage.getItem(LS_DOWNLOAD_FOLDER_NAME) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writeDownloadFolderName(name) {
+  try {
+    if (name) localStorage.setItem(LS_DOWNLOAD_FOLDER_NAME, String(name));
+    else localStorage.removeItem(LS_DOWNLOAD_FOLDER_NAME);
+  } catch {
+    /* ignore */
+  }
+}
+
+function readAutoUploadPref() {
+  try {
+    const raw = localStorage.getItem(LS_AUTO_UPLOAD);
+    if (raw === null) return true; // default ON
+    return raw === "1" || raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+function writeAutoUploadPref(on) {
+  try {
+    localStorage.setItem(LS_AUTO_UPLOAD, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
 
 const CATEGORIES = [
   { id: "fasteners", label: "Screws", path: "products/screws/" },
@@ -195,7 +232,11 @@ function guessMcMasterPartNumber(value) {
 function mcmasterProductUrl(partNumberOrUrl) {
   const raw = String(partNumberOrUrl || "").trim();
   if (!raw) return "";
-  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^https?:\/\//i.test(raw)) {
+    // Ignore bare homepage — not a useful product reference.
+    if (/^https?:\/\/(www\.)?mcmaster\.com\/?$/i.test(raw)) return "";
+    return raw;
+  }
   const pn = guessMcMasterPartNumber(raw);
   return pn ? `https://www.mcmaster.com/${pn}` : "";
 }
@@ -348,16 +389,37 @@ export function createMcMasterInsert({
             </div>
             <div class="mcmaster-local-block">
               <div class="mcmaster-quick-head">
-                <strong>Local Downloads</strong>
-                <span class="muted small" data-mcmaster-local-status>Not linked</span>
+                <strong>Download folder</strong>
+                <span class="muted small" data-mcmaster-local-status>Not set</span>
+              </div>
+              <p class="muted small mcmaster-download-path-hint" data-mcmaster-path-hint>
+                Set a folder here, then point Chrome’s download location to that same folder so McMaster STEP files land in it.
+              </p>
+              <div class="mcmaster-got-download-banner" data-mcmaster-got-banner>
+                <strong>After you click Download STEP on McMaster</strong>
+                <span data-mcmaster-got-copy>With auto-upload on, new files in your download folder go straight into the current workspace.</span>
+                <button type="button" class="btn accent" data-mcmaster-got-download>I downloaded the STEP — choose it now</button>
               </div>
               <div class="mcmaster-drop-actions">
-                <button type="button" class="btn accent" data-mcmaster-import>Pick downloaded file…</button>
-                <button type="button" class="btn secondary btn-compact" data-mcmaster-link-downloads>Link Downloads folder…</button>
-                <button type="button" class="btn secondary btn-compact" data-mcmaster-refresh-local>Refresh</button>
+                <button type="button" class="btn accent btn-compact" data-mcmaster-link-downloads>Set download folder…</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-change-downloads>Change folder…</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-refresh-local>Refresh folder</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-import>Pick file…</button>
+              </div>
+              <label class="mcmaster-auto-upload">
+                <input type="checkbox" data-mcmaster-auto-upload checked />
+                <span>Auto-upload new STEP/STL downloads into the <strong>current workspace</strong></span>
+              </label>
+              <div class="mcmaster-chrome-hint" data-mcmaster-chrome-hint hidden>
+                <strong>Make McMaster save here</strong>
+                <ol>
+                  <li>Chrome → Settings → Downloads</li>
+                  <li>Location → Change → choose <code data-mcmaster-folder-name>this folder</code></li>
+                  <li>Optional: turn on “Ask where to save each file before downloading”</li>
+                </ol>
               </div>
               <div class="mcmaster-local-list" data-mcmaster-local-list>
-                <p class="muted small">McMaster cannot send files into Render3D. After download, click <strong>Pick downloaded file…</strong> (or link Downloads once for auto-detect).</p>
+                <p class="muted small">Set a download folder to list recent CAD files from it.</p>
               </div>
             </div>
             <div class="mcmaster-live-drop" data-mcmaster-drop tabindex="0">
@@ -430,12 +492,52 @@ export function createMcMasterInsert({
   const localList = host?.querySelector("[data-mcmaster-local-list]");
   const localStatus = host?.querySelector("[data-mcmaster-local-status]");
   const refLinkInput = host?.querySelector("[data-mcmaster-ref-link]");
+  const gotBanner = host?.querySelector("[data-mcmaster-got-banner]");
+  const chromeHint = host?.querySelector("[data-mcmaster-chrome-hint]");
+  const folderNameEl = host?.querySelector("[data-mcmaster-folder-name]");
+  const autoUploadInput = host?.querySelector("[data-mcmaster-auto-upload]");
+  const gotCopy = host?.querySelector("[data-mcmaster-got-copy]");
 
   /** @type {FileSystemDirectoryHandle | null} */
   let downloadsDir = null;
+  let downloadFolderName = readDownloadFolderName();
+  let autoUploadEnabled = readAutoUploadPref();
   /** @type {{ name: string, file: File, at: number }[]} */
   let localFiles = [];
   let localPollTimer = null;
+  /** @type {Set<string>} */
+  let seenLocalKeys = new Set();
+  let autoUploading = false;
+  let fsObserver = null;
+
+  if (autoUploadInput) autoUploadInput.checked = autoUploadEnabled;
+
+  function setGotBannerVisible(visible) {
+    gotBanner?.classList.toggle("is-urgent", !!visible);
+  }
+
+  function syncAutoUploadCopy() {
+    if (gotCopy) {
+      gotCopy.textContent = autoUploadEnabled
+        ? "With auto-upload on, new files in your download folder go straight into the current workspace."
+        : "Files save to Chrome’s download folder. Match it to the linked folder, then choose the file or turn on auto-upload.";
+    }
+  }
+
+  function syncDownloadFolderUi() {
+    const name = downloadFolderName || downloadsDir?.name || "";
+    if (localStatus) {
+      localStatus.textContent = name ? `Saving to: ${name}` : "Not set";
+      localStatus.classList.toggle("is-linked", !!downloadsDir);
+    }
+    if (folderNameEl) folderNameEl.textContent = name || "this folder";
+    if (chromeHint) chromeHint.hidden = !downloadsDir;
+    syncAutoUploadCopy();
+  }
+
+  function localFileKey(item) {
+    return `${item.name}:${item.file?.size || 0}:${item.at || 0}`;
+  }
 
   function setStatus(kind, text) {
     onStatus?.(kind, text);
@@ -473,6 +575,10 @@ export function createMcMasterInsert({
         mcmasterWin = null;
         syncConnectionUi();
         stopWatch();
+        // Popup closed after browsing/download — prompt to pick the STEP.
+        if (awaitingDownload || returnPickerArmed) {
+          void handleReturnedFromDownload({ reason: "popup-closed" });
+        }
       }
     }, 800);
   }
@@ -498,24 +604,31 @@ export function createMcMasterInsert({
     returnPickerArmed = true;
     downloadWatchStartedAt = Date.now();
     syncConnectionUi();
+    setGotBannerVisible(true);
     dropZone?.classList.add("is-attention");
     localList?.closest(".mcmaster-local-block")?.classList.add("is-attention");
+    startLocalPoll({ fast: true });
+    setStatus(
+      "ok",
+      autoUploadEnabled && downloadsDir
+        ? "Download the STEP — it will auto-upload into the current workspace when it appears in your folder."
+        : "Download the STEP, then click “I downloaded the STEP” (or set a download folder + auto-upload).",
+    );
   }
 
   function clearAwaitingDownload() {
     awaitingDownload = false;
     returnPickerArmed = false;
     syncConnectionUi();
+    setGotBannerVisible(false);
     dropZone?.classList.remove("is-attention");
     localList?.closest(".mcmaster-local-block")?.classList.remove("is-attention");
   }
 
   function syncRefLinkInput(url = lastProductUrl) {
-    if (refLinkInput && url && !String(refLinkInput.value || "").trim()) {
-      refLinkInput.value = url;
-    } else if (refLinkInput && url) {
-      refLinkInput.value = url;
-    }
+    const clean = mcmasterProductUrl(url);
+    if (!refLinkInput || !clean) return;
+    refLinkInput.value = clean;
   }
 
   function rememberProductContext(urlOrQuery = "") {
@@ -627,6 +740,11 @@ export function createMcMasterInsert({
     renderPending();
     syncDocTab({ activate: true });
     setViewerVisible(true);
+    // Mirror into the configured download folder when possible.
+    void (async () => {
+      for (const file of files) await copyFileIntoDownloadFolder(file);
+      if (downloadsDir) void refreshLocalDownloads();
+    })();
     setStatus(
       "ok",
       files.length === 1
@@ -677,29 +795,71 @@ export function createMcMasterInsert({
     });
   }
 
+  async function ensureDirPermission(mode = "readwrite") {
+    if (!downloadsDir) return false;
+    try {
+      let perm = await downloadsDir.queryPermission?.({ mode });
+      if (perm === "granted") return true;
+      if (perm === "prompt" || perm === "denied") {
+        perm = await downloadsDir.requestPermission?.({ mode });
+      }
+      if (perm === "granted") return true;
+      // Fall back to read-only if write isn't available.
+      if (mode === "readwrite") return await ensureDirPermission("read");
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  async function copyFileIntoDownloadFolder(file) {
+    if (!downloadsDir || !file) return false;
+    const ok = await ensureDirPermission("readwrite");
+    if (!ok) return false;
+    try {
+      const safeName = String(file.name || "part.step").replace(/[\\/]/g, "_");
+      const handle = await downloadsDir.getFileHandle(safeName, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(file);
+      await writable.close();
+      return true;
+    } catch (err) {
+      console.warn("Could not copy into McMaster download folder", err);
+      return false;
+    }
+  }
+
   async function pickDownloadedCad() {
     if (pickerBusy) return;
     pickerBusy = true;
+    activateSession();
     try {
       if (typeof window.showOpenFilePicker === "function") {
         try {
-          const handles = await window.showOpenFilePicker({
+          const pickerOpts = {
             multiple: true,
+            // Prefer the linked download folder; otherwise OS Downloads.
+            startIn: downloadsDir || "downloads",
             types: [
               {
                 description: "CAD models",
                 accept: {
-                  "model/stl": [".stl"],
                   "model/step": [".step", ".stp"],
+                  "model/stl": [".stl"],
                   "model/gltf-binary": [".glb"],
                   "application/octet-stream": [".3mf", ".obj", ".gltf", ".iges", ".igs"],
                 },
               },
             ],
-          });
+          };
+          const handles = await window.showOpenFilePicker(pickerOpts);
           const files = [];
           for (const handle of handles) files.push(await handle.getFile());
           stageFiles(files);
+          // Keep a copy in the linked download folder when possible.
+          for (const file of files) await copyFileIntoDownloadFolder(file);
+          void refreshLocalDownloads();
+          setGotBannerVisible(false);
           return;
         } catch (err) {
           if (err?.name === "AbortError") return;
@@ -709,6 +869,31 @@ export function createMcMasterInsert({
     } finally {
       pickerBusy = false;
     }
+  }
+
+  async function handleReturnedFromDownload({ reason = "focus" } = {}) {
+    if (!sessionOpen) return;
+    // Keep banner urgent until they actually stage a file.
+    setGotBannerVisible(true);
+    activateSession();
+    dropZone?.classList.add("is-attention");
+    localList?.closest(".mcmaster-local-block")?.classList.add("is-attention");
+
+    if (downloadsDir) {
+      const fresh = await refreshLocalDownloads({ autoStageNew: true });
+      if (fresh?.length) {
+        returnPickerArmed = false;
+        return;
+      }
+    }
+
+    // Browsers block auto file-pickers without a click — highlight the CTA instead.
+    setStatus(
+      "ok",
+      reason === "popup-closed"
+        ? "McMaster window closed. Click “I downloaded the STEP — choose it now”."
+        : "Download done? Click “I downloaded the STEP — choose it now”.",
+    );
   }
 
   function rememberImport(names, meta = {}) {
@@ -939,17 +1124,13 @@ export function createMcMasterInsert({
 
   function renderLocalDownloads() {
     if (!localList) return;
-    if (localStatus) {
-      localStatus.textContent = downloadsDir
-        ? (localFiles.length ? `${Math.min(localFiles.length, 10)} recent CAD` : "Linked · no CAD yet")
-        : "Not linked";
-    }
+    syncDownloadFolderUi();
     if (!downloadsDir) {
-      localList.innerHTML = `<p class="muted small">Link your Downloads folder once — newest CAD files appear here for insert.</p>`;
+      localList.innerHTML = `<p class="muted small">Set a download folder to list recent CAD files from it.</p>`;
       return;
     }
     if (!localFiles.length) {
-      localList.innerHTML = `<p class="muted small">No CAD files found in the linked folder yet. Download from McMaster, then Refresh.</p>`;
+      localList.innerHTML = `<p class="muted small">No CAD files in <strong>${escapeHtml(downloadFolderName || downloadsDir.name)}</strong> yet. Download a STEP from McMaster into this folder, then Refresh.</p>`;
       return;
     }
     localList.innerHTML = localFiles.slice(0, 10).map((item) => `
@@ -980,85 +1161,229 @@ export function createMcMasterInsert({
     });
   }
 
+  async function listLocalCadFiles() {
+    if (!downloadsDir) return [];
+    const ok = await ensureDirPermission("read");
+    if (!ok) return [];
+    const found = [];
+    for await (const [name, handle] of downloadsDir.entries()) {
+      if (handle.kind !== "file") continue;
+      if (!CAD_NAME_RE.test(name)) continue;
+      // Skip in-progress browser downloads.
+      if (/\.(crdownload|part|tmp|download)$/i.test(name)) continue;
+      try {
+        const file = await handle.getFile();
+        found.push({ name, file, at: file.lastModified || Date.now() });
+      } catch {
+        /* skip */
+      }
+    }
+    found.sort((a, b) => b.at - a.at);
+    return found;
+  }
+
+  async function snapshotSeenLocalFiles() {
+    const found = await listLocalCadFiles();
+    for (const item of found) seenLocalKeys.add(localFileKey(item));
+    localFiles = found.slice(0, 10);
+    renderLocalDownloads();
+    return found;
+  }
+
+  async function waitFileStable(item, attempts = 3) {
+    let last = item.file.size;
+    for (let i = 0; i < attempts; i += 1) {
+      await new Promise((r) => window.setTimeout(r, 700));
+      try {
+        // Re-read from directory handle if possible
+        const handle = await downloadsDir.getFileHandle(item.name);
+        const fresh = await handle.getFile();
+        if (fresh.size === last && fresh.size > 0) {
+          return { name: item.name, file: fresh, at: fresh.lastModified || Date.now() };
+        }
+        last = fresh.size;
+      } catch {
+        return item;
+      }
+    }
+    return item;
+  }
+
+  async function ingestNewDownloads({ force = false } = {}) {
+    if (!downloadsDir || autoUploading) return [];
+    try {
+      const found = await listLocalCadFiles();
+      localFiles = found.slice(0, 10);
+      renderLocalDownloads();
+
+      const fresh = [];
+      for (const item of found) {
+        const key = localFileKey(item);
+        if (seenLocalKeys.has(key)) continue;
+        // Ignore old files discovered for the first time (mark seen, don't upload).
+        if (!force && downloadWatchStartedAt && item.at < downloadWatchStartedAt - 20000) {
+          seenLocalKeys.add(key);
+          continue;
+        }
+        // Only auto-ingest while awaiting a download / active session unless forced.
+        if (!force && !awaitingDownload && !sessionOpen) {
+          seenLocalKeys.add(key);
+          continue;
+        }
+        fresh.push(item);
+      }
+      if (!fresh.length) return [];
+
+      const stable = [];
+      for (const item of fresh.slice(0, 5)) {
+        const ready = await waitFileStable(item);
+        seenLocalKeys.add(localFileKey(ready));
+        // Also mark original key
+        seenLocalKeys.add(localFileKey(item));
+        stable.push(ready);
+      }
+      if (!stable.length) return [];
+
+      if (!autoUploadEnabled) {
+        stageFiles(stable.map((s) => s.file));
+        setStatus("ok", `${stable[0].name} detected — staged. Turn on auto-upload or click Insert.`);
+        return stable;
+      }
+
+      autoUploading = true;
+      try {
+        stageFiles(stable.map((s) => s.file));
+        setStatus("loading", `Auto-uploading ${stable[0].name} to current workspace…`);
+        await insertPending(null, { forceCurrent: true });
+        clearAwaitingDownload();
+        setStatus(
+          "ok",
+          stable.length === 1
+            ? `Auto-uploaded ${stable[0].name} into the current workspace.`
+            : `Auto-uploaded ${stable.length} files into the current workspace.`,
+        );
+      } finally {
+        autoUploading = false;
+      }
+      return stable;
+    } catch (err) {
+      console.warn("ingestNewDownloads failed", err);
+      return [];
+    }
+  }
+
   async function refreshLocalDownloads({ autoStageNew = false } = {}) {
     if (!downloadsDir) {
       renderLocalDownloads();
       return [];
     }
-    try {
-      const perm = await downloadsDir.queryPermission?.({ mode: "read" });
-      if (perm === "prompt") await downloadsDir.requestPermission?.({ mode: "read" });
-      const found = [];
-      for await (const [name, handle] of downloadsDir.entries()) {
-        if (handle.kind !== "file") continue;
-        if (!CAD_NAME_RE.test(name)) continue;
-        try {
-          const file = await handle.getFile();
-          found.push({ name, file, at: file.lastModified || Date.now() });
-        } catch {
-          /* skip unreadable */
-        }
-      }
-      found.sort((a, b) => b.at - a.at);
-      localFiles = found.slice(0, 10);
-      renderLocalDownloads();
-
-      if (autoStageNew && downloadWatchStartedAt) {
-        const fresh = found.filter((f) => f.at >= downloadWatchStartedAt - 5000);
-        if (fresh.length) {
-          stageFiles(fresh.slice(0, 5).map((f) => f.file));
-          setStatus("ok", `Found ${fresh[0].name} in Downloads — ready to insert.`);
-          return fresh;
-        }
-      }
-      return found;
-    } catch (err) {
-      setStatus("error", err?.message || "Could not read Downloads folder.");
-      return [];
+    if (autoStageNew || autoUploadEnabled) {
+      return ingestNewDownloads({ force: autoStageNew });
     }
+    const found = await listLocalCadFiles();
+    for (const item of found) {
+      if (!seenLocalKeys.has(localFileKey(item))) {
+        // first sighting of old files — don't auto upload
+        if (!downloadWatchStartedAt || item.at < downloadWatchStartedAt - 20000) {
+          seenLocalKeys.add(localFileKey(item));
+        }
+      }
+    }
+    localFiles = found.slice(0, 10);
+    renderLocalDownloads();
+    return found;
   }
 
   async function linkDownloadsFolder() {
     if (typeof window.showDirectoryPicker !== "function") {
-      setStatus("error", "This browser cannot link a folder — use Pick file… instead (Chrome/Edge recommended).");
+      setStatus("error", "This browser cannot set a folder — use Pick file… instead (Chrome/Edge recommended).");
       fileInput?.click();
       return;
     }
     try {
-      const handle = await window.showDirectoryPicker({ mode: "read", id: "mcmaster-downloads" });
+      const handle = await window.showDirectoryPicker({
+        mode: "readwrite",
+        id: "mcmaster-download-folder",
+      });
       downloadsDir = handle;
-      try { await idbSet("downloadsDir", handle); } catch { /* optional */ }
-      setStatus("ok", "Downloads folder linked — newest CAD files will show here.");
-      await refreshLocalDownloads();
-      startLocalPoll();
+      downloadFolderName = handle.name || "Download folder";
+      writeDownloadFolderName(downloadFolderName);
+      try {
+        await idbSet("downloadsDir", handle);
+      } catch {
+        /* optional */
+      }
+      syncDownloadFolderUi();
+      setStatus(
+        "ok",
+        `Download folder set to “${downloadFolderName}”. Point Chrome Downloads there — new STEPs auto-upload when auto-upload is on.`,
+      );
+      await snapshotSeenLocalFiles();
+      startLocalPoll({ fast: true });
+      startFolderObserver();
     } catch (err) {
       if (err?.name === "AbortError") return;
-      setStatus("error", err?.message || "Could not link Downloads folder.");
+      setStatus("error", err?.message || "Could not set download folder.");
     }
   }
 
   async function restoreDownloadsFolder() {
     try {
       const handle = await idbGet("downloadsDir");
-      if (!handle) return;
-      const perm = await handle.queryPermission?.({ mode: "read" });
-      if (perm === "granted" || (perm === "prompt" && (await handle.requestPermission?.({ mode: "read" })) === "granted")) {
-        downloadsDir = handle;
-        await refreshLocalDownloads();
-        startLocalPoll();
+      if (!handle) {
+        syncDownloadFolderUi();
+        return;
       }
+      downloadsDir = handle;
+      let ok = await ensureDirPermission("readwrite");
+      if (!ok) ok = await ensureDirPermission("read");
+      if (!ok) {
+        downloadsDir = null;
+        syncDownloadFolderUi();
+        return;
+      }
+      downloadFolderName = handle.name || readDownloadFolderName() || "Download folder";
+      writeDownloadFolderName(downloadFolderName);
+      syncDownloadFolderUi();
+      await snapshotSeenLocalFiles();
+      startLocalPoll({ fast: false });
+      startFolderObserver();
     } catch {
-      /* ignore */
+      syncDownloadFolderUi();
     }
   }
 
-  function startLocalPoll() {
+  function stopFolderObserver() {
+    try {
+      fsObserver?.disconnect?.();
+    } catch {
+      /* ignore */
+    }
+    fsObserver = null;
+  }
+
+  function startFolderObserver() {
+    stopFolderObserver();
+    if (!downloadsDir || typeof FileSystemObserver !== "function") return;
+    try {
+      fsObserver = new FileSystemObserver(() => {
+        void ingestNewDownloads();
+      });
+      fsObserver.observe(downloadsDir);
+    } catch (err) {
+      console.warn("FileSystemObserver unavailable", err);
+      fsObserver = null;
+    }
+  }
+
+  function startLocalPoll({ fast = false } = {}) {
     if (localPollTimer) window.clearInterval(localPollTimer);
+    const ms = fast || awaitingDownload ? 1200 : 4000;
     localPollTimer = window.setInterval(() => {
       if (sessionOpen && downloadsDir && !host?.classList.contains("hidden")) {
-        void refreshLocalDownloads();
+        void ingestNewDownloads();
       }
-    }, 4000);
+    }, ms);
   }
 
   function openPanel() {
@@ -1121,23 +1446,10 @@ export function createMcMasterInsert({
   }
 
   async function onReturnFromMcMaster() {
-    if (!sessionOpen || !awaitingDownload || !returnPickerArmed) return;
-    returnPickerArmed = false; // only once per McMaster browse session
-    activateSession();
-    dropZone?.classList.add("is-attention");
-    localList?.closest(".mcmaster-local-block")?.classList.add("is-attention");
-
-    // If Downloads is linked, pull any new CAD automatically.
-    if (downloadsDir) {
-      const fresh = await refreshLocalDownloads({ autoStageNew: true });
-      if (fresh?.length) return;
-    }
-
-    setStatus("ok", "Pick the file you just downloaded — McMaster saved it to your Downloads folder.");
-    // Auto-open the file picker so the download shows up without hunting for a button.
-    window.setTimeout(() => {
-      void pickDownloadedCad();
-    }, 250);
+    if (!sessionOpen) return;
+    if (!awaitingDownload && !returnPickerArmed) return;
+    returnPickerArmed = false;
+    await handleReturnedFromDownload({ reason: "focus" });
   }
 
   const clearAllRecent = () => {
@@ -1188,8 +1500,22 @@ export function createMcMasterInsert({
   refLinkInput?.addEventListener("blur", () => rememberProductContext(refLinkInput.value));
 
   host?.querySelector("[data-mcmaster-link-downloads]")?.addEventListener("click", () => void linkDownloadsFolder());
-  host?.querySelector("[data-mcmaster-refresh-local]")?.addEventListener("click", () => void refreshLocalDownloads());
+  host?.querySelector("[data-mcmaster-change-downloads]")?.addEventListener("click", () => void linkDownloadsFolder());
+  host?.querySelector("[data-mcmaster-refresh-local]")?.addEventListener("click", () => void ingestNewDownloads({ force: true }));
+  autoUploadInput?.addEventListener("change", () => {
+    autoUploadEnabled = !!autoUploadInput.checked;
+    writeAutoUploadPref(autoUploadEnabled);
+    syncAutoUploadCopy();
+    setStatus(
+      "ok",
+      autoUploadEnabled
+        ? "Auto-upload on — new STEP/STL files in the download folder go into the current workspace."
+        : "Auto-upload off — new files will only be staged.",
+    );
+  });
+  syncAutoUploadCopy();
   host?.querySelector("[data-mcmaster-import]")?.addEventListener("click", () => void pickDownloadedCad());
+  host?.querySelector("[data-mcmaster-got-download]")?.addEventListener("click", () => void pickDownloadedCad());
   host?.querySelector("[data-mcmaster-insert-current]")?.addEventListener("click", () => void insertPending(null, { forceCurrent: true }));
   host?.querySelector("[data-mcmaster-insert-all]")?.addEventListener("click", () => void insertPending());
   host?.querySelector("[data-mcmaster-clear-pending]")?.addEventListener("click", () => {
