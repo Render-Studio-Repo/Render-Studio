@@ -1,8 +1,9 @@
 /**
  * Fusion-style Insert → McMaster-Carr.
  *
- * McMaster blocks iframes (X-Frame-Options: DENY). We open the real site in a
- * top-level popup and host the import dock as a viewport document tab.
+ * McMaster blocks iframes. We open the live site in a popup and host a
+ * viewport tab where downloads are staged, then inserted into a workspace.
+ * Recent inserts show on the right.
  */
 
 const MCMASTER_HOME = "https://www.mcmaster.com/";
@@ -23,10 +24,10 @@ const CATEGORIES = [
 ];
 
 const QUICK_PARTS = [
-  { id: "91251A194", number: "91251A194", title: "Socket Head Screw", subtitle: "M5 × 16 mm", shape: "bolt", dims: { radius: 2.5, height: 16, headRadius: 4.2, headHeight: 5 }, tags: ["m5", "socket", "screw"] },
-  { id: "90592A015", number: "90592A015", title: "Hex Nut", subtitle: "M5 × 0.8 mm", shape: "nut", dims: { radius: 4.5, height: 4 }, tags: ["m5", "nut"] },
-  { id: "92141A011", number: "92141A011", title: "Flat Washer", subtitle: "For M5", shape: "washer", dims: { major: 5, minor: 1.2 }, tags: ["m5", "washer"] },
-  { id: "7804K55", number: "7804K55", title: "Ball Bearing", subtitle: "608 · 8×22 mm", shape: "bearing", dims: { major: 7.5, minor: 3.5 }, tags: ["608", "bearing"] },
+  { id: "91251A194", number: "91251A194", title: "Socket Head Screw", subtitle: "M5 × 16 mm", shape: "bolt", dims: { radius: 2.5, height: 16, headRadius: 4.2, headHeight: 5 } },
+  { id: "90592A015", number: "90592A015", title: "Hex Nut", subtitle: "M5 × 0.8 mm", shape: "nut", dims: { radius: 4.5, height: 4 } },
+  { id: "92141A011", number: "92141A011", title: "Flat Washer", subtitle: "For M5", shape: "washer", dims: { major: 5, minor: 1.2 } },
+  { id: "7804K55", number: "7804K55", title: "Ball Bearing", subtitle: "608 · 8×22 mm", shape: "bearing", dims: { major: 7.5, minor: 3.5 } },
 ];
 
 function escapeHtml(value) {
@@ -162,23 +163,11 @@ function pushRecent(entry) {
   return next;
 }
 
-/**
- * @param {{
- *   onImportFiles?: Function,
- *   onStatus?: Function,
- *   resolveDestination?: Function,
- *   onLibrarySave?: Function,
- *   onLoadLibrary?: Function,
- *   docTabs?: any,
- *   viewerEl?: HTMLElement | null,
- * }} options
- */
 export function createMcMasterInsert({
   onImportFiles,
   onStatus,
   resolveDestination,
   onLibrarySave = null,
-  onLoadLibrary = null,
   docTabs = null,
   viewerEl = null,
 } = {}) {
@@ -186,6 +175,10 @@ export function createMcMasterInsert({
   let watchTimer = null;
   let sessionOpen = false;
   let recentEntries = readRecent();
+  /** @type {{ id: string, file: File, meta?: object }[]} */
+  let pending = [];
+  let awaitingDownload = false;
+  let pickerBusy = false;
 
   const host = viewerEl || document.getElementById("mcmaster-viewer");
 
@@ -200,17 +193,15 @@ export function createMcMasterInsert({
         </div>
         <button type="button" class="insert-panel-close" aria-label="Close insert">×</button>
       </div>
-
       <button type="button" class="insert-source-card" data-insert-source="mcmaster">
         <span class="insert-source-icon insert-source-icon--logo" aria-hidden="true">
           <img src="${LOGO_SRC}" alt="" width="120" height="18" />
         </span>
         <span class="insert-source-copy">
           <strong>McMaster-Carr</strong>
-          <small>Opens live catalog · docks as a viewport tab</small>
+          <small>Live catalog · docks as a viewport tab</small>
         </span>
       </button>
-
       <section class="insert-recent-block">
         <div class="insert-recent-head">
           <strong>Recent</strong>
@@ -218,7 +209,6 @@ export function createMcMasterInsert({
         </div>
         <div class="insert-recent-list" data-insert-recent></div>
       </section>
-
       <div class="insert-panel-actions">
         <button type="button" class="btn secondary btn-compact" data-insert-import>Import CAD file…</button>
         <input type="file" class="insert-panel-file" accept="${CAD_ACCEPT}" hidden multiple />
@@ -239,48 +229,62 @@ export function createMcMasterInsert({
           </div>
           <div class="mcmaster-tab-chrome-right">
             <input type="search" class="mcmaster-insert-search" placeholder="Search McMaster…" aria-label="Search McMaster-Carr" />
-            <button type="button" class="btn accent btn-compact" data-mcmaster-open>Open site</button>
-            <button type="button" class="btn secondary btn-compact" data-mcmaster-focus>Focus</button>
-            <button type="button" class="btn secondary btn-compact" data-mcmaster-min title="Show model, keep tab">Minimize</button>
-            <button type="button" class="btn secondary btn-compact" data-mcmaster-close-tab title="Close McMaster tab">Close</button>
+            <button type="button" class="btn accent btn-compact" data-mcmaster-open>Open McMaster</button>
+            <button type="button" class="btn secondary btn-compact" data-mcmaster-focus>Focus site</button>
+            <button type="button" class="btn secondary btn-compact" data-mcmaster-min>Minimize</button>
+            <button type="button" class="btn secondary btn-compact" data-mcmaster-close-tab>Close</button>
           </div>
         </header>
-
         <div class="mcmaster-tab-body">
           <section class="mcmaster-tab-main">
+            <div class="mcmaster-stage-banner">
+              <strong>1. Download CAD on McMaster</strong>
+              <span>2. Bring the file into this tab · 3. Insert into a workspace</span>
+            </div>
             <div class="mcmaster-live-drop" data-mcmaster-drop tabindex="0">
-              <strong>Drop downloaded CAD here</strong>
-              <span>Asks current workspace or new project · STEP · STL · GLB · 3MF</span>
-              <button type="button" class="btn accent btn-compact" data-mcmaster-import>Import download…</button>
+              <strong>Bring download into this tab</strong>
+              <span>Drop the STEP / STL here, or choose it from Downloads</span>
+              <div class="mcmaster-drop-actions">
+                <button type="button" class="btn accent" data-mcmaster-import>Choose downloaded CAD…</button>
+              </div>
               <input type="file" class="mcmaster-insert-file" accept="${CAD_ACCEPT}" hidden multiple />
             </div>
+            <div class="mcmaster-pending-block">
+              <div class="mcmaster-quick-head">
+                <strong>Ready to insert</strong>
+                <span class="muted small" data-mcmaster-pending-count>No files yet</span>
+              </div>
+              <div class="mcmaster-pending-list" data-mcmaster-pending>
+                <p class="muted small">Downloaded parts appear here first. Then insert into the current workspace or a new project.</p>
+              </div>
+              <div class="mcmaster-pending-actions" data-mcmaster-pending-actions hidden>
+                <button type="button" class="btn accent" data-mcmaster-insert-all>Insert into workspace…</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-clear-pending>Clear</button>
+              </div>
+            </div>
             <div class="mcmaster-live-shortcuts">
-              <span class="muted small">Browse</span>
+              <span class="muted small">Browse McMaster</span>
               <div class="mcmaster-live-shortcut-row">
                 ${CATEGORIES.map((c) => `<button type="button" class="btn secondary btn-compact" data-mcmaster-nav="${escapeHtml(c.path)}">${escapeHtml(c.label)}</button>`).join("")}
               </div>
             </div>
-            <p class="mcmaster-tab-hint muted small" data-mcmaster-stage-copy>
-              Live McMaster opens in a separate browser window (iframes are blocked). Download CAD there, then drop it here.
-            </p>
           </section>
-
           <aside class="mcmaster-tab-side">
+            <div class="mcmaster-recent-side">
+              <div class="mcmaster-quick-head">
+                <strong>Recent inserts</strong>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-clear-recent>Clear</button>
+              </div>
+              <div class="mcmaster-recent-side-list" data-mcmaster-tab-recent>
+                <p class="muted small">Inserted screws and CAD show up here.</p>
+              </div>
+            </div>
             <div class="mcmaster-quick-block">
               <div class="mcmaster-quick-head">
-                <strong>Quick insert</strong>
+                <strong>Quick parts</strong>
                 <span class="muted small">Approx. STL</span>
               </div>
               <div class="mcmaster-quick-list" data-mcmaster-quick></div>
-            </div>
-            <div class="mcmaster-library-block">
-              <div class="mcmaster-quick-head">
-                <strong>This project</strong>
-                <span class="muted small">mcmaster_library/</span>
-              </div>
-              <div class="mcmaster-library-list" data-mcmaster-library>
-                <p class="muted small">Nothing imported yet.</p>
-              </div>
             </div>
           </aside>
         </div>
@@ -290,11 +294,14 @@ export function createMcMasterInsert({
 
   const searchInput = host?.querySelector(".mcmaster-insert-search");
   const connBadge = host?.querySelector("[data-mcmaster-conn]");
-  const stageCopy = host?.querySelector("[data-mcmaster-stage-copy]");
   const fileInput = host?.querySelector(".mcmaster-insert-file");
   const dropZone = host?.querySelector("[data-mcmaster-drop]");
+  const pendingList = host?.querySelector("[data-mcmaster-pending]");
+  const pendingCount = host?.querySelector("[data-mcmaster-pending-count]");
+  const pendingActions = host?.querySelector("[data-mcmaster-pending-actions]");
   const quickList = host?.querySelector("[data-mcmaster-quick]");
-  const libraryList = host?.querySelector("[data-mcmaster-library]");
+  const tabRecentList = host?.querySelector("[data-mcmaster-tab-recent]");
+  const clearTabRecentBtn = host?.querySelector("[data-mcmaster-clear-recent]");
   const recentList = panel.querySelector("[data-insert-recent]");
   const clearRecentBtn = panel.querySelector("[data-insert-clear-recent]");
   const panelFileInput = panel.querySelector(".insert-panel-file");
@@ -318,11 +325,7 @@ export function createMcMasterInsert({
       connBadge.classList.toggle("is-live", open);
     }
     host?.classList.toggle("is-connected", open);
-    if (stageCopy) {
-      stageCopy.textContent = open
-        ? "McMaster is open beside Render3D. Download a 3-D model, then drop the file onto this tab."
-        : "Open the live McMaster site, download CAD, then drop it here. You’ll choose current workspace or a new project.";
-    }
+    host?.classList.toggle("is-awaiting", awaitingDownload);
   }
 
   function stopWatch() {
@@ -353,10 +356,22 @@ export function createMcMasterInsert({
     if (!docTabs) return;
     docTabs.upsert({
       id: MCMASTER_TAB_ID,
-      label: "McMaster-Carr",
+      label: pending.length ? `McMaster (${pending.length})` : "McMaster-Carr",
       kind: "mcmaster",
     });
     if (activate) docTabs.setActive(MCMASTER_TAB_ID);
+  }
+
+  function markAwaitingDownload() {
+    awaitingDownload = true;
+    syncConnectionUi();
+    dropZone?.classList.add("is-attention");
+  }
+
+  function clearAwaitingDownload() {
+    awaitingDownload = false;
+    syncConnectionUi();
+    dropZone?.classList.remove("is-attention");
   }
 
   function openLiveWindow(url = MCMASTER_HOME) {
@@ -364,8 +379,11 @@ export function createMcMasterInsert({
     const h = Math.min(900, Math.max(700, window.screen.availHeight - 80));
     const left = Math.max(20, Math.round((window.screen.availWidth - w) / 2));
     const top = Math.max(20, Math.round((window.screen.availHeight - h) / 2));
-    const features = `popup=yes,noopener=no,noreferrer=no,width=${w},height=${h},left=${left},top=${top}`;
-    mcmasterWin = window.open(url, MCMASTER_WINDOW_NAME, features);
+    mcmasterWin = window.open(
+      url,
+      MCMASTER_WINDOW_NAME,
+      `popup=yes,noopener=no,noreferrer=no,width=${w},height=${h},left=${left},top=${top}`,
+    );
     if (!mcmasterWin) {
       setStatus("error", "Popup blocked — allow popups for Render3D to open McMaster.");
       syncConnectionUi();
@@ -376,9 +394,10 @@ export function createMcMasterInsert({
     } catch {
       /* ignore */
     }
+    markAwaitingDownload();
     startWatch();
     syncConnectionUi();
-    setStatus("ok", "McMaster-Carr opened — docked as a viewport tab.");
+    setStatus("ok", "Download CAD on McMaster, then choose the file in this tab.");
     return mcmasterWin;
   }
 
@@ -392,6 +411,7 @@ export function createMcMasterInsert({
     } catch {
       openLiveWindow(searchUrlFromInput());
     }
+    markAwaitingDownload();
   }
 
   function searchUrlFromInput() {
@@ -414,27 +434,109 @@ export function createMcMasterInsert({
     } catch {
       openLiveWindow(url);
     }
+    markAwaitingDownload();
   }
 
-  function normalizeLibraryEntries(raw) {
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((entry) => ({
-        name: String(entry?.name || entry?.filename || "").trim(),
-        at: entry?.at || entry?.imported_at || Date.now(),
-      }))
-      .filter((entry) => entry.name)
-      .slice(0, 48);
+  function isCadFile(file) {
+    const name = String(file?.name || "").toLowerCase();
+    return CAD_ACCEPT.split(",").some((ext) => name.endsWith(ext.trim()));
   }
 
-  async function hydrateLibrary() {
-    if (!onLoadLibrary) return;
+  function stageFiles(fileList, meta = {}) {
+    const files = [...(fileList || [])].filter((f) => f && isCadFile(f));
+    if (!files.length) {
+      setStatus("error", "Choose a CAD file (STEP, STL, GLB, 3MF, …).");
+      return;
+    }
+    for (const file of files) {
+      const id = `${file.name}:${file.size}:${file.lastModified}:${Math.random().toString(36).slice(2, 7)}`;
+      pending = [
+        { id, file, meta },
+        ...pending.filter((p) => !(p.file.name === file.name && p.file.size === file.size)),
+      ];
+    }
+    clearAwaitingDownload();
+    renderPending();
+    syncDocTab({ activate: true });
+    setViewerVisible(true);
+    setStatus(
+      "ok",
+      files.length === 1
+        ? `${files[0].name} ready in McMaster tab — click Insert.`
+        : `${files.length} files ready in McMaster tab — click Insert.`,
+    );
+  }
+
+  function renderPending() {
+    if (!pendingList) return;
+    if (pendingCount) {
+      pendingCount.textContent = pending.length
+        ? `${pending.length} file${pending.length === 1 ? "" : "s"} staged`
+        : "No files yet";
+    }
+    if (pendingActions) pendingActions.hidden = !pending.length;
+    if (!pending.length) {
+      pendingList.innerHTML = `<p class="muted small">Downloaded parts appear here first. Then insert into the current workspace or a new project.</p>`;
+      return;
+    }
+    pendingList.innerHTML = pending
+      .map(
+        (item) => `
+      <div class="mcmaster-pending-row">
+        <div class="mcmaster-pending-copy">
+          <strong title="${escapeHtml(item.file.name)}">${escapeHtml(item.file.name)}</strong>
+          <small>${Math.max(1, Math.round(item.file.size / 1024))} KB</small>
+        </div>
+        <div class="mcmaster-pending-row-actions">
+          <button type="button" class="btn accent btn-compact" data-pending-insert="${escapeHtml(item.id)}">Insert…</button>
+          <button type="button" class="btn secondary btn-compact" data-pending-remove="${escapeHtml(item.id)}">Remove</button>
+        </div>
+      </div>`,
+      )
+      .join("");
+    pendingList.querySelectorAll("[data-pending-insert]").forEach((btn) => {
+      btn.addEventListener("click", () => void insertPending([btn.dataset.pendingInsert]));
+    });
+    pendingList.querySelectorAll("[data-pending-remove]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        pending = pending.filter((p) => p.id !== btn.dataset.pendingRemove);
+        renderPending();
+        syncDocTab();
+      });
+    });
+  }
+
+  async function pickDownloadedCad() {
+    if (pickerBusy) return;
+    pickerBusy = true;
     try {
-      const entries = normalizeLibraryEntries(await onLoadLibrary());
-      libraryEntries = entries;
-      renderLibrary();
-    } catch {
-      /* optional */
+      if (typeof window.showOpenFilePicker === "function") {
+        try {
+          const handles = await window.showOpenFilePicker({
+            multiple: true,
+            types: [
+              {
+                description: "CAD models",
+                accept: {
+                  "model/stl": [".stl"],
+                  "model/step": [".step", ".stp"],
+                  "model/gltf-binary": [".glb"],
+                  "application/octet-stream": [".3mf", ".obj", ".gltf", ".iges", ".igs"],
+                },
+              },
+            ],
+          });
+          const files = [];
+          for (const handle of handles) files.push(await handle.getFile());
+          stageFiles(files);
+          return;
+        } catch (err) {
+          if (err?.name === "AbortError") return;
+        }
+      }
+      fileInput?.click();
+    } finally {
+      pickerBusy = false;
     }
   }
 
@@ -453,51 +555,86 @@ export function createMcMasterInsert({
       });
     }
     renderRecent();
+    renderTabRecent();
+  }
+
+  async function insertPending(ids = null, meta = {}) {
+    const selected = ids?.length ? pending.filter((p) => ids.includes(p.id)) : [...pending];
+    if (!selected.length) {
+      setStatus("error", "Stage a downloaded CAD file first.");
+      return;
+    }
+    const files = selected.map((p) => p.file);
+    const mergedMeta =
+      meta.quick || selected[0]?.meta?.quick ? { quick: meta.quick || selected[0]?.meta?.quick } : meta;
+    try {
+      const choice = await resolveDestination?.(files);
+      if (!choice) {
+        setStatus("ok", "Insert cancelled.");
+        return;
+      }
+      setStatus("loading", `Inserting ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
+      const results = await onImportFiles?.(files, choice);
+      const savedNames =
+        Array.isArray(results) && results.length
+          ? results.map((r) => r?.filename || r?.name).filter(Boolean)
+          : files.map((f) => f.name);
+      rememberImport(savedNames, mergedMeta);
+      const selectedIds = new Set(selected.map((p) => p.id));
+      pending = pending.filter((p) => !selectedIds.has(p.id));
+      renderPending();
+      syncDocTab();
+      try {
+        await onLibrarySave?.(savedNames, choice);
+      } catch {
+        /* optional */
+      }
+      setStatus(
+        "ok",
+        savedNames.length === 1
+          ? `Inserted ${savedNames[0]} into workspace.`
+          : `Inserted ${savedNames.length} files into workspace.`,
+      );
+    } catch (err) {
+      setStatus("error", err?.message || "Could not insert McMaster part.");
+    }
   }
 
   async function importFiles(fileList, meta = {}) {
     const files = [...(fileList || [])].filter(Boolean);
     if (!files.length) return;
-    try {
-      const choice = await resolveDestination?.(files);
-      if (!choice) {
-        setStatus("ok", "Import cancelled.");
-        return;
-      }
-      setStatus("loading", `Importing ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
-      const results = await onImportFiles?.(files, choice);
-      const savedNames = Array.isArray(results) && results.length
-        ? results.map((r) => r?.filename || r?.name).filter(Boolean)
-        : files.map((f) => f.name);
-      rememberImport(savedNames, meta);
-      for (const name of savedNames) {
-        libraryEntries = [
-          { name, at: Date.now() },
-          ...libraryEntries.filter((e) => e.name !== name),
-        ].slice(0, 48);
-      }
-      renderLibrary();
+    if (meta.quick) {
       try {
-        const saved = await onLibrarySave?.(savedNames, choice);
-        const next = normalizeLibraryEntries(saved);
-        if (next.length) {
-          libraryEntries = next;
-          renderLibrary();
+        const choice = await resolveDestination?.(files);
+        if (!choice) {
+          setStatus("ok", "Insert cancelled.");
+          return;
         }
-      } catch {
-        /* optional */
+        setStatus("loading", `Inserting ${files[0].name}…`);
+        const results = await onImportFiles?.(files, choice);
+        const savedNames =
+          Array.isArray(results) && results.length
+            ? results.map((r) => r?.filename || r?.name).filter(Boolean)
+            : files.map((f) => f.name);
+        rememberImport(savedNames, meta);
+        try {
+          await onLibrarySave?.(savedNames, choice);
+        } catch {
+          /* optional */
+        }
+        setStatus("ok", `Inserted ${savedNames[0] || files[0].name}.`);
+      } catch (err) {
+        setStatus("error", err?.message || "Could not insert part.");
       }
-      setStatus("ok", savedNames.length === 1
-        ? `Inserted ${savedNames[0]}.`
-        : `Inserted ${savedNames.length} files.`);
-    } catch (err) {
-      setStatus("error", err?.message || "Could not import McMaster part.");
+      return;
     }
+    stageFiles(files, meta);
   }
 
   function renderQuick() {
     if (!quickList) return;
-    quickList.innerHTML = QUICK_PARTS.map((part) => `
+    quickList.innerHTML = QUICK_PARTS.map(
+      (part) => `
       <button type="button" class="mcmaster-quick-card" data-quick-id="${escapeHtml(part.id)}">
         <span class="mcmaster-sim-card-preview" data-shape="${escapeHtml(part.shape)}" aria-hidden="true"></span>
         <span>
@@ -505,8 +642,8 @@ export function createMcMasterInsert({
           <strong>${escapeHtml(part.title)}</strong>
           <small>${escapeHtml(part.subtitle || "")}</small>
         </span>
-      </button>
-    `).join("");
+      </button>`,
+    ).join("");
     quickList.querySelectorAll("[data-quick-id]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const part = QUICK_PARTS.find((p) => p.id === btn.dataset.quickId);
@@ -516,42 +653,8 @@ export function createMcMasterInsert({
     });
   }
 
-  function renderLibrary() {
-    if (!libraryList) return;
-    if (!libraryEntries.length) {
-      libraryList.innerHTML = `<p class="muted small">Nothing imported yet.</p>`;
-      return;
-    }
-    libraryList.innerHTML = libraryEntries.map((entry) => `
-      <div class="mcmaster-library-row">
-        <strong title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</strong>
-        <small>${new Date(entry.at).toLocaleDateString()}</small>
-      </div>
-    `).join("");
-  }
-
-  function renderRecent() {
-    if (!recentList) return;
-    recentEntries = readRecent();
-    if (clearRecentBtn) clearRecentBtn.hidden = !recentEntries.length;
-    if (!recentEntries.length) {
-      recentList.innerHTML = `<p class="muted small insert-recent-empty">Recent screws, nuts, and imports show up here.</p>`;
-      return;
-    }
-    recentList.innerHTML = recentEntries.map((entry) => {
-      const label = entry.number || entry.title || entry.name;
-      const sub = entry.subtitle || (entry.source === "import" ? entry.name : entry.title);
-      return `
-        <button type="button" class="insert-recent-card" data-recent-id="${escapeHtml(entry.id || entry.name)}" title="${escapeHtml(entry.name || label)}">
-          <span class="mcmaster-sim-card-preview" data-shape="${escapeHtml(entry.shape || "file")}" aria-hidden="true"></span>
-          <span>
-            <strong>${escapeHtml(label)}</strong>
-            <small>${escapeHtml(sub || "")}</small>
-          </span>
-        </button>
-      `;
-    }).join("");
-    recentList.querySelectorAll("[data-recent-id]").forEach((btn) => {
+  function bindRecentButtons(target) {
+    target.querySelectorAll("[data-recent-id]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const entry = recentEntries.find((e) => (e.id || e.name) === btn.dataset.recentId);
         if (!entry) return;
@@ -562,14 +665,50 @@ export function createMcMasterInsert({
             return;
           }
         }
-        // Re-open McMaster to that part number when possible.
         closePanel();
         openSession({
-          query: entry.number || entry.name.replace(/\.[^.]+$/, ""),
+          query: entry.number || String(entry.name || "").replace(/\.[^.]+$/, ""),
           autoOpen: true,
         });
       });
     });
+  }
+
+  function renderRecentCards(target, emptyText) {
+    if (!target) return;
+    recentEntries = readRecent();
+    if (!recentEntries.length) {
+      target.innerHTML = `<p class="muted small">${escapeHtml(emptyText)}</p>`;
+      return;
+    }
+    target.innerHTML = recentEntries
+      .map((entry) => {
+        const label = entry.number || entry.title || entry.name;
+        const sub = entry.subtitle || entry.name || "";
+        return `
+        <button type="button" class="insert-recent-card" data-recent-id="${escapeHtml(entry.id || entry.name)}" title="${escapeHtml(entry.name || label)}">
+          <span class="mcmaster-sim-card-preview" data-shape="${escapeHtml(entry.shape || "file")}" aria-hidden="true"></span>
+          <span>
+            <strong>${escapeHtml(label)}</strong>
+            <small>${escapeHtml(sub)}</small>
+          </span>
+        </button>`;
+      })
+      .join("");
+    bindRecentButtons(target);
+  }
+
+  function renderRecent() {
+    recentEntries = readRecent();
+    if (clearRecentBtn) clearRecentBtn.hidden = !recentEntries.length;
+    if (clearTabRecentBtn) clearTabRecentBtn.hidden = !recentEntries.length;
+    renderRecentCards(recentList, "Recent screws, nuts, and imports show up here.");
+  }
+
+  function renderTabRecent() {
+    recentEntries = readRecent();
+    if (clearTabRecentBtn) clearTabRecentBtn.hidden = !recentEntries.length;
+    renderRecentCards(tabRecentList, "Inserted screws and CAD show up here.");
   }
 
   function openPanel() {
@@ -586,8 +725,8 @@ export function createMcMasterInsert({
     syncDocTab({ activate: true });
     setViewerVisible(true);
     renderQuick();
-    renderLibrary();
-    void hydrateLibrary();
+    renderPending();
+    renderTabRecent();
     syncConnectionUi();
   }
 
@@ -596,7 +735,6 @@ export function createMcMasterInsert({
   }
 
   function minimizeToTab() {
-    // Keep the viewport tab; return to the 3D model.
     hideViewerOnly();
     docTabs?.deactivate?.({ notify: true });
     setStatus("ok", "McMaster minimized to a tab — click it to return.");
@@ -606,6 +744,7 @@ export function createMcMasterInsert({
     sessionOpen = false;
     hideViewerOnly();
     stopWatch();
+    clearAwaitingDownload();
     if (docTabs?.has?.(MCMASTER_TAB_ID)) docTabs.remove(MCMASTER_TAB_ID);
     if (!keepWindow && isWinOpen()) {
       try {
@@ -627,8 +766,21 @@ export function createMcMasterInsert({
 
   function closeAll() {
     closePanel();
-    // Leave the McMaster tab/session alone unless caller closes the tab.
   }
+
+  function onReturnFromMcMaster() {
+    if (!sessionOpen || !awaitingDownload) return;
+    activateSession();
+    dropZone?.classList.add("is-attention");
+    setStatus("ok", "Choose the downloaded CAD file to stage it in this McMaster tab.");
+  }
+
+  const clearAllRecent = () => {
+    writeRecent([]);
+    recentEntries = [];
+    renderRecent();
+    renderTabRecent();
+  };
 
   panel.querySelector(".insert-panel-close")?.addEventListener("click", closePanel);
   panel.addEventListener("click", (event) => {
@@ -637,16 +789,13 @@ export function createMcMasterInsert({
   panel.querySelector('[data-insert-source="mcmaster"]')?.addEventListener("click", () => {
     openSession({ autoOpen: true });
   });
-  clearRecentBtn?.addEventListener("click", () => {
-    writeRecent([]);
-    recentEntries = [];
-    renderRecent();
-  });
+  clearRecentBtn?.addEventListener("click", clearAllRecent);
+  clearTabRecentBtn?.addEventListener("click", clearAllRecent);
   panel.querySelector("[data-insert-import]")?.addEventListener("click", () => panelFileInput?.click());
   panelFileInput?.addEventListener("change", () => {
     const files = [...(panelFileInput.files || [])];
     panelFileInput.value = "";
-    void importFiles(files);
+    stageFiles(files);
   });
 
   host?.querySelectorAll("[data-mcmaster-open]").forEach((btn) => {
@@ -669,11 +818,17 @@ export function createMcMasterInsert({
     }
   });
 
-  host?.querySelector("[data-mcmaster-import]")?.addEventListener("click", () => fileInput?.click());
+  host?.querySelector("[data-mcmaster-import]")?.addEventListener("click", () => void pickDownloadedCad());
+  host?.querySelector("[data-mcmaster-insert-all]")?.addEventListener("click", () => void insertPending());
+  host?.querySelector("[data-mcmaster-clear-pending]")?.addEventListener("click", () => {
+    pending = [];
+    renderPending();
+    syncDocTab();
+  });
   fileInput?.addEventListener("change", () => {
     const files = [...(fileInput.files || [])];
     fileInput.value = "";
-    void importFiles(files);
+    stageFiles(files);
   });
 
   dropZone?.addEventListener("dragover", (event) => {
@@ -684,14 +839,12 @@ export function createMcMasterInsert({
   dropZone?.addEventListener("drop", (event) => {
     event.preventDefault();
     dropZone.classList.remove("is-dragover");
-    void importFiles([...(event.dataTransfer?.files || [])]);
+    stageFiles([...(event.dataTransfer?.files || [])]);
   });
 
-  window.addEventListener("focus", () => {
-    if (sessionOpen && !host?.classList.contains("hidden") && isWinOpen()) {
-      dropZone?.classList.add("is-attention");
-      window.setTimeout(() => dropZone?.classList.remove("is-attention"), 1600);
-    }
+  window.addEventListener("focus", () => onReturnFromMcMaster());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") onReturnFromMcMaster();
   });
 
   return {
