@@ -2756,12 +2756,18 @@ def colorize_assembly_glb_parts(path: Path) -> bool:
         return False
 
 
-def export_mesh(mesh: trimesh.Trimesh, path: Path) -> Path:
+def export_mesh(mesh: trimesh.Trimesh, path: Path, *, appearance_seed: str | None = None) -> Path:
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_EXPORT:
         path = path.with_suffix(".glb")
         suffix = ".glb"
-    out = _ensure_default_appearance(mesh, seed=path.stem) if suffix in {".glb", ".gltf", ".3mf"} else mesh
+    seed = appearance_seed if appearance_seed is not None else path.stem
+    # Strip assembly__part_NN_ prefixes so semantic material matching uses the
+    # body name (bolt, rubber, …) instead of the project/assembly stem.
+    seed_match = re.search(r"__part_\d+_(.+)$", str(seed), flags=re.I)
+    if seed_match:
+        seed = seed_match.group(1) or seed
+    out = _ensure_default_appearance(mesh, seed=seed) if suffix in {".glb", ".gltf", ".3mf"} else mesh
     if suffix == ".3mf":
         scene = trimesh.Scene()
         scene.add_geometry(out, geom_name=path.stem, node_name=path.stem)
@@ -3200,21 +3206,29 @@ def split_step_solids_to_glbs(
     if len(parts) <= 1:
         return []
 
-    # Fusion STEP solids often lack ColorTool entries even when the XCAF→GLB
-    # preview still carries appearances — copy those colours onto each solid.
+    # Prefer the colour-aware Autodesk/XCAF preview GLB over the shell (the shell
+    # may already have been washed by an earlier split).
     color_sources: list[Path] = []
-    if shell_glb_path and Path(shell_glb_path).is_file():
-        color_sources.append(Path(shell_glb_path))
     autodesk_glb = project_path / f".autodesk_source_{base}.glb"
     if autodesk_glb.is_file():
         color_sources.append(autodesk_glb)
-    # Also try any .autodesk_source_*.glb next to the STEP.
-    for candidate in project_path.glob(".autodesk_source_*.glb"):
+    for candidate in sorted(project_path.glob(".autodesk_source_*.glb")):
         if candidate not in color_sources:
             color_sources.append(candidate)
+    if shell_glb_path and Path(shell_glb_path).is_file():
+        shell_p = Path(shell_glb_path)
+        if shell_p not in color_sources:
+            color_sources.append(shell_p)
     for source in color_sources:
         before = sum(1 for _, m in parts if m.metadata.get("fusion_color"))
-        parts = _paint_solids_from_glb_appearance(parts, source)
+        # Skip washed shells: need real colour variety before we trust them.
+        patches = _sample_glb_appearance_patches(source)
+        unique = {
+            (int(rgba[0]), int(rgba[1]), int(rgba[2]))
+            for _, _, rgba in patches
+        }
+        if source.name.startswith(".autodesk_source_") or len(unique) >= 2:
+            parts = _paint_solids_from_glb_appearance(parts, source)
         after = sum(1 for _, m in parts if m.metadata.get("fusion_color"))
         if after > before:
             logger.info(
@@ -3241,11 +3255,15 @@ def split_step_solids_to_glbs(
         used.add(slug)
         out_name = f"{base}__part_{idx:02d}_{slug}.glb"
         # Ensure the mesh we keep for the shell matches what we export.
+        # Use the body label (not food_robot__part_…) so semantic colours stay
+        # grounded in the part name instead of the assembly filename.
         if not _mesh_has_authored_color(mesh):
-            mesh = _ensure_default_appearance(mesh, seed=label or out_name)
+            mesh = _ensure_default_appearance(mesh, seed=label or slug)
         if _mesh_has_authored_color(mesh):
             authored_count += 1
-        export_mesh(mesh, project_path / out_name)
+        # Pass label seed into export so path stems like food_robot__part_* do
+        # not override Fusion colours with a "food" semantic match.
+        export_mesh(mesh, project_path / out_name, appearance_seed=label or slug)
         outputs.append(out_name)
         kept.append((label, mesh))
 
