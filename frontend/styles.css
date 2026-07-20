@@ -4838,6 +4838,15 @@ body.canvas-design-tab .main-column {
   display: block;
 }
 
+#rigging-chrome.solid-adjust-chrome {
+  display: block;
+}
+
+#rigging-chrome.solid-adjust-chrome .rigging-viewport-manage,
+#rigging-chrome.solid-adjust-chrome #rigging-anim-panel {
+  display: none !important;
+}
+
 #app.rigging-design-tab #viewport {
   cursor: default;
 }
@@ -28981,6 +28990,31 @@ body.kb-modal-open {
 .workspace-realtime-view-grid .workspace-fusion-file-entry {
   display: grid;
   grid-template-columns: 1fr;
+}
+
+.workspace-realtime-view-preview .workspace-fusion-browser-section--bodies .workspace-fusion-browser-list,
+.workspace-realtime-view-grid .workspace-fusion-browser-section--bodies .workspace-fusion-browser-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workspace-realtime-view-preview .workspace-fusion-browser-section--bodies .workspace-fusion-browser-row,
+.workspace-realtime-view-grid .workspace-fusion-browser-section--bodies .workspace-fusion-browser-row {
+  min-height: 34px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  padding-left: 10px;
+}
+
+.workspace-realtime-view-preview .workspace-fusion-browser-section--bodies .workspace-fusion-preview,
+.workspace-realtime-view-grid .workspace-fusion-browser-section--bodies .workspace-fusion-preview {
+  display: none;
+}
+
+.workspace-realtime-view-preview .workspace-fusion-browser-section--bodies .workspace-fusion-browser-icon,
+.workspace-realtime-view-grid .workspace-fusion-browser-section--bodies .workspace-fusion-browser-icon {
+  display: inline;
 }
 
 .workspace-fusion-preview {

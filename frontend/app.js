@@ -2333,6 +2333,7 @@ function selectAssemblyComponent(catalogName, { autoGizmo = false, fitView = fal
     showObjectGizmo(obj, "translate", { switchTab: false });
   }
   if (fitView) fitCameraToComponent(catalogName);
+  syncSolidObjectAdjustmentsForSelection();
   syncExportButton();
 }
 
@@ -2415,6 +2416,7 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel 
     setEditStatus("ok", "Selected whole model · click a part to select just that body · Cmd+Z to undo");
   }
   renderer.domElement.focus({ preventScroll: true });
+  syncSolidObjectAdjustmentsForSelection({ autoExpand: preferPart });
   syncExportButton();
   return target;
 }
@@ -2444,6 +2446,7 @@ async function selectBrowserBody(entry, { fitView = false } = {}) {
   setEditStatus("ok", `Selected ${entry.body_name || entry.label || `Body ${bodyIndex + 1}`} inside ${catalogName}.`);
   showObjectGizmo(mesh || root, "translate", { switchTab: false });
   syncPromptTargetUI();
+  syncSolidObjectAdjustmentsForSelection({ autoExpand: true });
   syncExportButton();
   return true;
 }
@@ -2470,6 +2473,7 @@ function selectBrowserVirtualComponent(entry, { fitView = false } = {}) {
   if (fitView) fitCameraToComponent(catalogName);
   setEditStatus("ok", `Selected component ${entry.label || entry.component_name || entry.stem} inside ${catalogName}.`);
   syncPromptTargetUI();
+  syncSolidObjectAdjustmentsForSelection();
   syncExportButton();
   return true;
 }
@@ -8260,6 +8264,33 @@ function setRiggingAdjustCollapsed(collapsed) {
   toggle?.setAttribute("aria-expanded", String(!collapsed));
 }
 
+function isSolidDesignTabActive() {
+  return workspaceModes?.getMode?.() === "design"
+    && (workspaceModes?.getDesignTab?.() || "SOLID") === "SOLID";
+}
+
+function syncSolidObjectAdjustmentsForSelection({ autoExpand = false } = {}) {
+  if (!isSolidDesignTabActive()) return;
+  syncObjectAdjustmentChrome("SOLID");
+  void syncRiggingAdjustSliders({ autoExpand });
+}
+
+function syncObjectAdjustmentChrome(tab = workspaceModes?.getDesignTab?.() || "SOLID") {
+  const chrome = document.getElementById("rigging-chrome");
+  if (!chrome) return;
+  const solidAdjust = tab === "SOLID";
+  chrome.classList.toggle("solid-adjust-chrome", solidAdjust);
+  if (solidAdjust) {
+    chrome.classList.remove("hidden");
+    const title = document.querySelector("#rigging-adjust-panel .rigging-adjust-head strong");
+    if (title) title.textContent = "Object & params";
+    void syncRiggingAdjustSliders({ autoExpand: false });
+  } else {
+    const title = document.querySelector("#rigging-adjust-panel .rigging-adjust-head strong");
+    if (title) title.textContent = "Pose & params";
+  }
+}
+
 function syncRiggingViewportOverlay({ status = "" } = {}) {
   const data = robotArtifactData || {};
   const joints = (data.joints || []).filter((j) => String(j.type || "").toLowerCase() !== "fixed");
@@ -8291,7 +8322,9 @@ async function syncRiggingAdjustSliders({ autoExpand = false } = {}) {
   const host = document.getElementById("rigging-adjust-sliders");
   const countEl = document.getElementById("rigging-adjust-count");
   if (!host) return 0;
-  const jointHtml = robotJointSlidersHtml(robotArtifactData?.joints || []);
+  const riggingActive = document.body.classList.contains("rigging-design-tab");
+  const robotJoints = riggingActive ? (robotArtifactData?.joints || []) : [];
+  const jointHtml = robotJointSlidersHtml(robotJoints);
   let cadHtml = "";
   let cadCount = 0;
   try {
@@ -8305,12 +8338,12 @@ async function syncRiggingAdjustSliders({ autoExpand = false } = {}) {
   } catch {
     /* optional */
   }
-  const movable = (robotArtifactData?.joints || []).filter((j) => String(j.type || "").toLowerCase() !== "fixed");
+  const movable = robotJoints.filter((j) => String(j.type || "").toLowerCase() !== "fixed");
   const total = movable.length + cadCount;
   host.innerHTML = `
     ${movable.length ? `<div class="rigging-adjust-section"><strong class="muted small">Joints</strong>${jointHtml}</div>` : ""}
     ${cadHtml ? `<div class="rigging-adjust-section">${cadHtml}</div>` : ""}
-    ${!total ? `<p class="cad-param-hint">No joint or parametric adjustments yet. Load a robot or open a Jake text-to-cad model.</p>` : ""}
+    ${!total ? `<p class="cad-param-hint">${riggingActive ? "No joint or parametric adjustments yet. Load a robot or open a Jake text-to-cad model." : "No parametric adjustments yet. Select a Jake text-to-cad model from the part tree."}</p>` : ""}
   `;
   if (countEl) countEl.textContent = String(total);
   if (cadHtml) {
@@ -8479,6 +8512,7 @@ function handleDesignTabChange(tab) {
   // Generation / snap paths key off body classes (same as Canvas).
   document.body.classList.toggle("architect-design-tab", tab === "ARCHITECT");
   document.body.classList.toggle("rigging-design-tab", tab === "RIGGING");
+  syncObjectAdjustmentChrome(tab);
 }
 
 let sketchFacePickActive = false;
@@ -19894,8 +19928,8 @@ function renderWorkspaceFusionComponents(project) {
           ${modelOptions}
         </select>
       </label>
+      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), { key: `bodies:${project.id}`, defaultOpen: bodies.length > 0, className: "workspace-fusion-browser-section--bodies" })}
       ${renderFusionBrowserSection("Components", componentEntries.length, componentRows || renderFusionEmptyRow("No visible Fusion components yet."), { key: `components:${project.id}`, defaultOpen: false })}
-      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), { key: `bodies:${project.id}`, defaultOpen: false })}
       ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render3D project yet."), { key: `sketches:${project.id}`, defaultOpen: false })}
     </div>
   `;
@@ -19938,8 +19972,8 @@ function renderWorkspaceProjectFileTree(project, { workspaceId = "" } = {}) {
   })).join("");
   return `
     <div class="workspace-fusion-browser workspace-realtime-file-tree">
+      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No split bodies yet."), { key: `all:${keyPrefix}:bodies`, defaultOpen: bodies.length > 0, className: "workspace-fusion-browser-section--bodies" })}
       ${renderFusionBrowserSection("Components", components.length, componentRows || renderFusionEmptyRow("No components yet."), { key: `all:${keyPrefix}:components`, defaultOpen: components.length > 0 })}
-      ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No split bodies yet."), { key: `all:${keyPrefix}:bodies`, defaultOpen: false })}
       ${renderFusionBrowserSection("Sketches", sketches.length, projectFileTreeRows(project, sketches, { icon: "⌁", badge: "sketch", disabled: true }) || renderFusionEmptyRow("No sketches."), { key: `all:${keyPrefix}:sketches`, defaultOpen: false })}
       ${renderFusionBrowserSection("Drawings", drawings.length, projectFileTreeRows(project, drawings, { icon: "⌗", badge: "drawing", disabled: true }) || renderFusionEmptyRow("No drawings."), { key: `all:${keyPrefix}:drawings`, defaultOpen: false })}
       ${renderFusionBrowserSection("References", references.length, projectFileTreeRows(project, references, { icon: "◇", badge: "reference", disabled: true }) || renderFusionEmptyRow("No reference files."), { key: `all:${keyPrefix}:references`, defaultOpen: false })}
@@ -20073,8 +20107,9 @@ function renderFusionBrowserSection(title, count, rows, options = {}) {
     .replace(/[^a-z0-9:_-]+/g, "-")
     .replace(/^-+|-+$/g, "") || "section";
   const open = isFusionBrowserSectionOpen(sectionKey, opts.defaultOpen === true);
+  const className = opts.className ? ` ${appEscapeHtml(String(opts.className))}` : "";
   return `
-    <details class="workspace-fusion-browser-section" data-fusion-section-key="${appEscapeHtml(sectionKey)}"${open ? " open" : ""}>
+    <details class="workspace-fusion-browser-section${className}" data-fusion-section-key="${appEscapeHtml(sectionKey)}"${open ? " open" : ""}>
       <summary class="workspace-fusion-browser-summary">
         <span class="browser-chevron">${open ? "▾" : "▸"}</span>
         <span>${appEscapeHtml(title)}</span>

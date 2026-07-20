@@ -1,0 +1,2 @@
+file '/home/ubuntu/demos/bambu-funding/out/Render3D-Bambu-Platform-Tour-partial.mp4'
+file '/home/ubuntu/demos/bambu-funding/out/outro.mp4'

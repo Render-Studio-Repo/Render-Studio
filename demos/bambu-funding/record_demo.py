@@ -124,7 +124,7 @@ async def safe_click(page, selectors: list[str], timeout: int = 2500) -> bool:
         try:
             if await loc.count() == 0:
                 continue
-            await loc.click(timeout=timeout)
+            await loc.click(timeout=timeout, force=True)
             await page.wait_for_timeout(500)
             return True
         except Exception:
@@ -132,8 +132,16 @@ async def safe_click(page, selectors: list[str], timeout: int = 2500) -> bool:
     return False
 
 
+async def soft(step_name: str, coro):
+    try:
+        await coro
+    except Exception as exc:
+        print(f"[demo] skip {step_name}: {exc}", flush=True)
+
+
 async def dismiss_overlays(page):
     for sel in [
+        "#render-agent-close",
         "#welcome-modal .welcome-close",
         "#welcome-modal button:has-text('Skip')",
         "#welcome-modal button:has-text('Close')",
@@ -150,24 +158,55 @@ async def dismiss_overlays(page):
                 await page.wait_for_timeout(300)
         except Exception:
             pass
-    # Escape any modal
+    # Force-hide sticky agent deck if it still covers the UI
+    await page.evaluate(
+        """() => {
+          const panel = document.getElementById('render-agent-panel');
+          if (panel) {
+            panel.classList.add('hidden');
+            panel.style.display = 'none';
+          }
+          document.getElementById('welcome-modal')?.classList?.add('hidden');
+        }"""
+    )
     await page.keyboard.press("Escape")
     await page.wait_for_timeout(200)
 
 
 async def open_authenticated(page, path: str, token: str):
-    await page.goto(f"{BASE}/", wait_until="domcontentloaded")
-    await page.evaluate(
-        """(token) => {
-          localStorage.setItem('render3d:token', token);
-          localStorage.setItem('render3d:welcomeSeen', '1');
-          localStorage.setItem('render3d:studioWalkthroughDone', '1');
-          localStorage.setItem('render3d:questBookSeen', '1');
-        }""",
-        token,
-    )
-    await page.goto(f"{BASE}{path}", wait_until="networkidle", timeout=120000)
-    await page.wait_for_timeout(1500)
+    # Seed auth once on about:blank-safe navigation
+    cur = page.url or ""
+    if "127.0.0.1:8001" not in cur and "localhost:8001" not in cur:
+        await page.goto(f"{BASE}/", wait_until="domcontentloaded", timeout=90000)
+        await page.evaluate(
+            """(token) => {
+              localStorage.setItem('render3d:token', token);
+              localStorage.setItem('render3d:welcomeSeen', '1');
+              localStorage.setItem('render3d:studioWalkthroughDone', '1');
+              localStorage.setItem('render3d:questBookSeen', '1');
+            }""",
+            token,
+        )
+    try:
+        await page.goto(f"{BASE}{path}", wait_until="domcontentloaded", timeout=90000)
+    except Exception as exc:
+        print(f"[demo] goto {path} failed: {exc}", flush=True)
+        # Fallback: open project in-app without full reload
+        import re
+
+        m = re.search(r"project=([a-f0-9]+)", path)
+        if m:
+            await page.evaluate(
+                """(id) => {
+                  if (window.__openProject) return window.__openProject(id);
+                  location.href = '/?project=' + id;
+                }""",
+                m.group(1),
+            )
+            await page.wait_for_timeout(4000)
+    await page.wait_for_timeout(2000)
+    await dismiss_overlays(page)
+    await page.wait_for_timeout(600)
     await dismiss_overlays(page)
 
 
@@ -200,7 +239,9 @@ async def run() -> Path:
             record_video_dir=str(video_dir),
             record_video_size=VIEWPORT,
         )
+        context.set_default_timeout(20000)
         page = await context.new_page()
+        page.set_default_navigation_timeout(90000)
 
         # ── Opening title ──
         await page.goto(f"{BASE}/", wait_until="domcontentloaded")
@@ -229,11 +270,24 @@ async def run() -> Path:
         await safe_click(page, ["#prompt-mode-select", "[data-prompt-mode]", "#prompt-mode-btn", "button:has-text('2.0')", "button:has-text('Render')"])
         await page.wait_for_timeout(800)
         # Type a short prompt for visual (don't submit expensive gen)
-        prompt = page.locator("#prompt-input, textarea#prompt-input, .prompt-input textarea").first
-        if await prompt.count():
-            await prompt.click()
-            await prompt.fill("Add a mounting bracket for the NEMA17 stepper")
-            await page.wait_for_timeout(1200)
+        await page.evaluate(
+            """() => {
+              const text = 'Add a mounting bracket for the NEMA17 stepper';
+              const editor = document.querySelector('.prompt-editor[contenteditable="true"], [aria-label="AI CAD prompt"]');
+              if (editor) {
+                editor.focus();
+                editor.textContent = text;
+                editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
+                return;
+              }
+              const el = document.querySelector('#prompt-input:not(.prompt-input--mirror)') || document.querySelector('#prompt-input');
+              if (el) {
+                el.value = text;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            }"""
+        )
+        await page.wait_for_timeout(1200)
 
         # Project tree / bodies
         await caption(page, "Project browser", "Components, bodies, drawings, and history stay organized per project", 2.2)
@@ -302,42 +356,66 @@ async def run() -> Path:
             pass
 
         # Switch to house framing for stronger architect shot
-        await open_authenticated(page, f"/?project={PROJECT_ARCH}&view=architect", token)
-        await wait_viewport(page)
-        await caption(page, "Architectural plans", "Floor plans become 3D wall meshes you can edit live", 2.4)
-        await drag_orbit(page, steps=16)
+        try:
+            await open_authenticated(page, f"/?project={PROJECT_ARCH}", token)
+            await wait_viewport(page)
+            await safe_click(
+                page,
+                [
+                    "button:has-text('Architect')",
+                    "[data-design-tab='ARCHITECT']",
+                    ".architect-mode-tab",
+                ],
+            )
+            await page.wait_for_timeout(1800)
+            await caption(page, "Architectural plans", "Floor plans become 3D wall meshes you can edit live", 2.4)
+            await drag_orbit(page, steps=16)
+        except Exception as exc:
+            print(f"[demo] architect project skip: {exc}", flush=True)
 
         # Robot / cooking workcell
-        await open_authenticated(page, f"/?project={PROJECT_ROBOT}", token)
-        await wait_viewport(page, 12000)
-        await caption(page, "Assemblies & robotics", "Multi-body assemblies, URDF/rigging, and workcell layouts", 2.5)
-        await drag_orbit(page, steps=20)
-        await safe_click(
-            page,
-            [
-                "button:has-text('Rigging')",
-                "[data-design-tab='RIGGING']",
-                "#workspace-mode-menu button:has-text('Rigging')",
-            ],
-        )
-        await page.wait_for_timeout(1500)
+        try:
+            await open_authenticated(page, f"/?project={PROJECT_ROBOT}", token)
+            await wait_viewport(page, 12000)
+            await caption(page, "Assemblies & robotics", "Multi-body assemblies, URDF/rigging, and workcell layouts", 2.5)
+            await drag_orbit(page, steps=20)
+            await safe_click(
+                page,
+                [
+                    "button:has-text('Rigging')",
+                    "[data-design-tab='RIGGING']",
+                    "#workspace-mode-menu button:has-text('Rigging')",
+                ],
+            )
+            await page.wait_for_timeout(1500)
+        except Exception as exc:
+            print(f"[demo] robot project skip: {exc}", flush=True)
 
         # Marketplace / Agent Store
-        await caption(page, "Marketplace", "Browse models, agents, and boost apps across the community", 1.8)
-        await page.goto(f"{BASE}/marketplace.html", wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(2200)
-        await page.mouse.wheel(0, 600)
-        await page.wait_for_timeout(1000)
-        await page.mouse.wheel(0, 600)
-        await page.wait_for_timeout(1000)
+        try:
+            await caption(page, "Marketplace", "Browse models, agents, and boost apps across the community", 1.8)
+            await page.goto(f"{BASE}/marketplace.html", wait_until="domcontentloaded", timeout=90000)
+            await page.wait_for_timeout(2200)
+            await page.mouse.wheel(0, 600)
+            await page.wait_for_timeout(1000)
+            await page.mouse.wheel(0, 600)
+            await page.wait_for_timeout(1000)
+        except Exception as exc:
+            print(f"[demo] marketplace skip: {exc}", flush=True)
 
         # Docs / landing flavor
-        await page.goto(f"{BASE}/docs.html", wait_until="domcontentloaded", timeout=60000)
-        await caption(page, "Docs & APIs", "Ship automations with the Render3D API and skills", 2.0)
-        await page.wait_for_timeout(800)
+        try:
+            await page.goto(f"{BASE}/docs.html", wait_until="domcontentloaded", timeout=90000)
+            await caption(page, "Docs & APIs", "Ship automations with the Render3D API and skills", 2.0)
+            await page.wait_for_timeout(800)
+        except Exception as exc:
+            print(f"[demo] docs skip: {exc}", flush=True)
 
         # Closing card
-        await page.goto(f"{BASE}/", wait_until="domcontentloaded")
+        try:
+            await page.goto(f"{BASE}/", wait_until="domcontentloaded", timeout=90000)
+        except Exception:
+            pass
         await page.evaluate(
             TITLE_CARD_JS,
             ["Build. Wire. Architect. Ship.", "Render3D — the AI workspace for hardware teams · render3d.app"],
