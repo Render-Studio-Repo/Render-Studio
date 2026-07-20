@@ -2891,6 +2891,138 @@ def _mesh_has_authored_color(mesh: trimesh.Trimesh) -> bool:
     return colors is not None and not _colors_are_default_grey(colors)
 
 
+def _rgba_u8_from_geometry(geom) -> np.ndarray | None:
+    """Extract a representative uint8 RGBA from a trimesh geometry."""
+    try:
+        mat = getattr(getattr(geom, "visual", None), "material", None)
+        factor = getattr(mat, "baseColorFactor", None) if mat is not None else None
+        if factor is not None:
+            arr = np.asarray(factor, dtype=float).reshape(-1)
+            if arr.size >= 3:
+                if arr.max() <= 1.5:
+                    arr = arr * 255.0
+                a = float(arr[3]) if arr.size > 3 else 255.0
+                if a <= 1.5:
+                    a *= 255.0
+                return np.array(
+                    [int(round(arr[0])), int(round(arr[1])), int(round(arr[2])), int(round(a))],
+                    dtype=np.uint8,
+                )
+    except Exception:
+        pass
+    try:
+        vc = getattr(getattr(geom, "visual", None), "vertex_colors", None)
+        if vc is not None and len(vc):
+            mean = np.asarray(vc, dtype=float).mean(axis=0)
+            if mean.max() <= 1.5:
+                mean = mean * 255.0
+            if mean.shape[0] == 3:
+                mean = np.append(mean, 255.0)
+            return mean[:4].astype(np.uint8)
+    except Exception:
+        pass
+    try:
+        fc = getattr(getattr(geom, "visual", None), "face_colors", None)
+        if fc is not None and len(fc):
+            mean = np.asarray(fc, dtype=float).mean(axis=0)
+            if mean.max() <= 1.5:
+                mean = mean * 255.0
+            if mean.shape[0] == 3:
+                mean = np.append(mean, 255.0)
+            return mean[:4].astype(np.uint8)
+    except Exception:
+        pass
+    return None
+
+
+def _sample_glb_appearance_patches(glb_path: Path) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Return ``(centroid, half_extents, rgba_u8)`` samples from a colour-aware GLB."""
+    path = Path(glb_path)
+    if not path.is_file():
+        return []
+    try:
+        scene = trimesh.load(path, force="scene")
+    except Exception:
+        return []
+    if not isinstance(scene, trimesh.Scene):
+        return []
+    patches: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    for name, geom in scene.geometry.items():
+        rgba = _rgba_u8_from_geometry(geom)
+        if rgba is None:
+            continue
+        rgb = rgba[:3].astype(float)
+        if float(np.max(rgb) - np.min(rgb)) < 6 and 90 <= float(rgb.mean()) <= 220:
+            continue
+        try:
+            matched = False
+            for frame in scene.graph.nodes_geometry:
+                transform, geoname = scene.graph.get(frame)
+                if geoname != name:
+                    continue
+                verts = np.asarray(geom.vertices, dtype=float)
+                if not len(verts):
+                    continue
+                ones = np.ones((len(verts), 1))
+                world = (np.asarray(transform, dtype=float) @ np.hstack([verts, ones]).T).T[:, :3]
+                centroid = world.mean(axis=0)
+                half = (world.max(axis=0) - world.min(axis=0)) * 0.5
+                patches.append((centroid, np.maximum(half, 0.5), rgba))
+                matched = True
+                break
+            if not matched:
+                verts = np.asarray(geom.vertices, dtype=float)
+                if not len(verts):
+                    continue
+                centroid = verts.mean(axis=0)
+                half = (verts.max(axis=0) - verts.min(axis=0)) * 0.5
+                patches.append((centroid, np.maximum(half, 0.5), rgba))
+        except Exception:
+            continue
+    return patches
+
+
+def _paint_solids_from_glb_appearance(
+    parts: list[tuple[str, trimesh.Trimesh]],
+    glb_path: Path | None,
+) -> list[tuple[str, trimesh.Trimesh]]:
+    """Transfer Fusion/XCAF colours from a coloured GLB onto STEP solid meshes."""
+    if not parts or not glb_path:
+        return parts
+    patches = _sample_glb_appearance_patches(Path(glb_path))
+    if not patches:
+        return parts
+    painted: list[tuple[str, trimesh.Trimesh]] = []
+    for label, mesh in parts:
+        if mesh.metadata.get("fusion_color") and _mesh_has_authored_color(mesh):
+            painted.append((label, mesh))
+            continue
+        try:
+            bounds = np.asarray(mesh.bounds, dtype=float)
+            centroid = np.asarray(mesh.centroid, dtype=float)
+        except Exception:
+            painted.append((label, mesh))
+            continue
+        votes: dict[tuple[int, int, int, int], int] = {}
+        for patch_c, half, rgba in patches:
+            lo = bounds[0] - half * 0.35
+            hi = bounds[1] + half * 0.35
+            if np.all(patch_c >= lo) and np.all(patch_c <= hi):
+                key = (int(rgba[0]), int(rgba[1]), int(rgba[2]), int(rgba[3]))
+                votes[key] = votes.get(key, 0) + 1
+        if votes:
+            best = max(votes.items(), key=lambda item: item[1])[0]
+            rgba = np.array(best, dtype=np.uint8)
+        else:
+            dists = [float(np.linalg.norm(patch_c - centroid)) for patch_c, _, _ in patches]
+            rgba = patches[int(np.argmin(dists))][2]
+        mesh2 = _paint_mesh_rgba(mesh, rgba)
+        mesh2.metadata["name"] = label
+        mesh2.metadata["fusion_color"] = [int(x) for x in rgba.tolist()]
+        painted.append((label, mesh2))
+    return painted
+
+
 def _tessellate_shape_to_mesh(shape, *, linear_deflection: float = 0.1, angular_deflection: float = 0.5) -> trimesh.Trimesh:
     """Tessellate one OpenCascade shape to a repaired triangle mesh."""
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
@@ -3068,6 +3200,30 @@ def split_step_solids_to_glbs(
     if len(parts) <= 1:
         return []
 
+    # Fusion STEP solids often lack ColorTool entries even when the XCAF→GLB
+    # preview still carries appearances — copy those colours onto each solid.
+    color_sources: list[Path] = []
+    if shell_glb_path and Path(shell_glb_path).is_file():
+        color_sources.append(Path(shell_glb_path))
+    autodesk_glb = project_path / f".autodesk_source_{base}.glb"
+    if autodesk_glb.is_file():
+        color_sources.append(autodesk_glb)
+    # Also try any .autodesk_source_*.glb next to the STEP.
+    for candidate in project_path.glob(".autodesk_source_*.glb"):
+        if candidate not in color_sources:
+            color_sources.append(candidate)
+    for source in color_sources:
+        before = sum(1 for _, m in parts if m.metadata.get("fusion_color"))
+        parts = _paint_solids_from_glb_appearance(parts, source)
+        after = sum(1 for _, m in parts if m.metadata.get("fusion_color"))
+        if after > before:
+            logger.info(
+                "Transferred %d Fusion appearance colour(s) from %s onto STEP solids",
+                after - before,
+                source.name,
+            )
+            break
+
     for old in project_path.glob(f"{base}__part_*.glb"):
         try:
             old.unlink(missing_ok=True)
@@ -3084,6 +3240,9 @@ def split_step_solids_to_glbs(
             slug = f"{slug}_{idx:02d}"
         used.add(slug)
         out_name = f"{base}__part_{idx:02d}_{slug}.glb"
+        # Ensure the mesh we keep for the shell matches what we export.
+        if not _mesh_has_authored_color(mesh):
+            mesh = _ensure_default_appearance(mesh, seed=label or out_name)
         if _mesh_has_authored_color(mesh):
             authored_count += 1
         export_mesh(mesh, project_path / out_name)
