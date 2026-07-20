@@ -1228,7 +1228,10 @@ function generationPromptMode(generation = {}, fallback = "standard") {
 }
 
 function applyPromptModeUI(mode = promptMode) {
-  promptMode = mode || DEFAULT_PROMPT_MODE;
+  promptMode = mode === "draw" ? DEFAULT_PROMPT_MODE : (mode || DEFAULT_PROMPT_MODE);
+  if (!document.querySelector(`[data-prompt-mode="${promptMode}"]`)) {
+    promptMode = DEFAULT_PROMPT_MODE;
+  }
   document.querySelectorAll("[data-prompt-mode]").forEach((b) => {
     b.classList.toggle("active", (b.dataset.promptMode || DEFAULT_PROMPT_MODE) === promptMode);
   });
@@ -1255,7 +1258,7 @@ function applyPromptModeUI(mode = promptMode) {
 
 function preservePromptModeAfterAttach(modeBeforeAttach = promptMode) {
   const mode = String(modeBeforeAttach || DEFAULT_PROMPT_MODE).toLowerCase();
-  if (!["render", "draw", "v2", "fusion", "architect"].includes(mode)) return;
+  if (!["render", "v2", "fusion", "architect"].includes(mode)) return;
   if (promptMode !== mode || !document.querySelector(`[data-prompt-mode="${mode}"]`)?.classList.contains("active")) {
     applyPromptModeUI(mode);
   }
@@ -2530,6 +2533,7 @@ transformControls.addEventListener("objectChange", () => {
 scene.add(transformControls.getHelper());
 
 let gridVisible = true;
+let gridVisibleBeforeArchitect = null;
 let gridHelper = null;
 const SKETCH_CANVAS = 0xe8e8e8;
 let savedSceneBg = null;
@@ -5146,42 +5150,45 @@ async function refreshWorkspaceAiUsage() {
 function renderUserMenuAiCost() {
   const valueEl = document.getElementById("user-menu-ai-cost-value");
   const labelEl = document.getElementById("user-menu-ai-cost-label");
-  const hintEl = document.getElementById("user-menu-ai-cost-hint");
+  const claudeEl = document.getElementById("user-menu-ai-cost-claude");
+  const openaiEl = document.getElementById("user-menu-ai-cost-openai");
+  const barClaude = document.getElementById("user-menu-ai-cost-bar-claude");
+  const barOpenai = document.getElementById("user-menu-ai-cost-bar-openai");
+  const wrap = document.getElementById("user-menu-ai-cost");
   if (!valueEl) return;
 
   const usage = workspaceAiUsage;
   if (!usage) {
     valueEl.textContent = "—";
-    if (labelEl) labelEl.textContent = "OpenAI est. · this month";
-    if (hintEl) hintEl.textContent = "Estimated from tracked prompts";
+    if (labelEl) labelEl.textContent = "This month";
+    if (claudeEl) claudeEl.textContent = "—";
+    if (openaiEl) openaiEl.textContent = "—";
+    if (barClaude) barClaude.style.flex = "0";
+    if (barOpenai) barOpenai.style.flex = "0";
+    wrap?.classList.add("is-empty");
     return;
   }
 
-  const projectCount = usage.project_count ?? 0;
   const monthLabel = usage.month_label || "This month";
-  if (labelEl) {
-    labelEl.textContent = `OpenAI est. · ${monthLabel} · ${projectCount} project${projectCount === 1 ? "" : "s"}`;
-  }
+  const openaiTotal = Number(usage.openai_cost_usd) || 0;
+  const claudeTotal = Number(usage.anthropic_cost_usd) || 0;
+  const total = Number(usage.cost_usd) || openaiTotal + claudeTotal;
+  const tracked = usage.tracked_count ?? 0;
+  const projectCount = usage.project_count ?? 0;
 
-  const openaiTotal = Number(usage.openai_cost_usd ?? usage.cost_usd) || 0;
-  valueEl.textContent = formatCostUsd(openaiTotal) ?? "$0.00";
+  if (labelEl) labelEl.textContent = monthLabel;
+  valueEl.textContent = formatCostUsd(total) ?? "$0.00";
+  if (claudeEl) claudeEl.textContent = formatCostUsd(claudeTotal) ?? "$0.00";
+  if (openaiEl) openaiEl.textContent = formatCostUsd(openaiTotal) ?? "$0.00";
 
-  if (hintEl) {
-    const tracked = usage.tracked_count ?? 0;
-    const untracked = usage.untracked_count ?? Math.max(0, (usage.prompt_count ?? 0) - tracked);
-    let hint =
-      tracked > 0
-        ? `${tracked} tracked prompt${tracked === 1 ? "" : "s"} · estimated from token usage`
-        : "No tracked prompts this month";
-    if (untracked > 0) {
-      hint += ` · ${untracked} older prompt${untracked === 1 ? "" : "s"} missing usage (not included)`;
-    }
-    const allProviders = Number(usage.cost_usd) || 0;
-    if (allProviders > openaiTotal + 0.0001) {
-      hint += ` · all providers ${formatCostUsd(allProviders)}`;
-    }
-    hintEl.textContent = hint;
-  }
+  const denom = Math.max(openaiTotal + claudeTotal, 0.0001);
+  if (barClaude) barClaude.style.flex = String(Math.max(0, claudeTotal / denom));
+  if (barOpenai) barOpenai.style.flex = String(Math.max(0, openaiTotal / denom));
+  wrap?.classList.toggle("is-empty", total <= 0 && tracked <= 0);
+  wrap?.setAttribute(
+    "title",
+    `${tracked} tracked prompt${tracked === 1 ? "" : "s"} · ${projectCount} project${projectCount === 1 ? "" : "s"} · estimated from token usage`
+  );
 }
 
 function compactTokenCount(value) {
@@ -8184,6 +8191,8 @@ function enterArchitectMode() {
   exitCanvasTab();
   catalogPanel?.close?.();
   texturePanel?.close?.();
+  document.getElementById("app")?.classList.add("architect-design-tab");
+  document.body.classList.add("architect-design-tab");
   setRightTab("architect");
   setArchitectPhase("build");
   setSkillEnabled("cad", true);
@@ -8215,14 +8224,16 @@ function exitArchitectMode() {
   architectControlsActive = false;
   architectSession?.exit?.();
   architectBayGrid?.setActive(false);
+  document.getElementById("app")?.classList.remove("architect-design-tab");
+  document.body.classList.remove("architect-design-tab");
   const designRoot = projectAssembly?.getRoot?.() || currentMesh;
   if (designRoot && Object.prototype.hasOwnProperty.call(designRoot.userData || {}, "_architectHidden")) {
     designRoot.visible = designRoot.userData._architectHidden !== false;
     delete designRoot.userData._architectHidden;
   }
-  if (Object.prototype.hasOwnProperty.call(window, "__render3dGridBeforeArchitect")) {
-    setGridVisible(!!window.__render3dGridBeforeArchitect);
-    delete window.__render3dGridBeforeArchitect;
+  if (gridVisibleBeforeArchitect != null) {
+    setGridVisible(!!gridVisibleBeforeArchitect);
+    gridVisibleBeforeArchitect = null;
   } else {
     setGridVisible(true);
   }
@@ -8460,6 +8471,9 @@ function handleDesignTabChange(tab) {
   app?.classList.toggle("rigging-design-tab", tab === "RIGGING");
   app?.classList.toggle("architect-design-tab", tab === "ARCHITECT");
   app?.classList.toggle("canvas-design-tab", tab === "CANVAS");
+  // Generation / snap paths key off body classes (same as Canvas).
+  document.body.classList.toggle("architect-design-tab", tab === "ARCHITECT");
+  document.body.classList.toggle("rigging-design-tab", tab === "RIGGING");
 }
 
 let sketchFacePickActive = false;
@@ -17656,7 +17670,6 @@ function applyWorkspaceMode(mode) {
     if (currentMesh && tab !== "CANVAS" && tab !== "ARCHITECT") fitCamera();
     if (tab === "RIGGING") enterRiggingMode();
     else exitRiggingMode();
-    if (tab === "ARCHITECT") enterArchitectMode();
   }
 }
 
