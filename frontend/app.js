@@ -108,6 +108,11 @@ import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
+import {
+  suggestElectronicsForBuild,
+  buildElectronicsReferenceMarkdown,
+  electronicsDocLinks,
+} from "./electronics-suggestions.js?v=20260720-electronics-suggest";
 import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-targets";
 import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
@@ -8588,6 +8593,7 @@ function exitCanvasTab() {
 
 function handleDesignTabChange(tab) {
   const app = document.getElementById("app");
+  if (tab !== "ELECTRONICS") closeElectronicsPopover();
   if (tab !== "SKETCH" && sketchEditor.isActive()) {
     if (!finishActiveSketch()) sketchEditor.cancel();
   }
@@ -8638,6 +8644,7 @@ function handleDesignTabChange(tab) {
     enterCanvasTab();
     setEditStatus("ok", "Canvas — sketch on the grid, describe it in the AI panel, then Generate.");
   } else {
+    closeElectronicsPopover();
     exitCanvasTab();
     exitSketchMode();
     setRightTab("prompt");
@@ -11187,11 +11194,25 @@ document.querySelectorAll("[data-right-tab]").forEach((btn) => {
   btn.addEventListener("click", () => setRightTab(btn.dataset.rightTab));
 });
 document.getElementById("btn-electronics-refresh")?.addEventListener("click", () => {
-  void renderElectronicsUsedList();
-  if (electronicsPopover) {
-    void renderElectronicsUsedList(electronicsPopover.querySelector("#electronics-popover-list"));
-  }
+  electronicsSuggestDismissedFor = null;
+  void refreshElectronicsSuggestions().then(() => renderElectronicsUsedList());
   setEditStatus("ok", "Electronics list refreshed.");
+});
+document.getElementById("btn-electronics-suggest-dismiss")?.addEventListener("click", () => {
+  electronicsSuggestDismissedFor = projectId;
+  renderElectronicsSuggestDock(null);
+});
+document.getElementById("btn-electronics-suggest-wiring")?.addEventListener("click", () => {
+  void sendAllSuggestionsToWiring().catch((err) => setEditStatus("error", err?.message || "Could not send to wiring."));
+});
+document.getElementById("btn-electronics-suggest-docs")?.addEventListener("click", () => {
+  void saveElectronicsDocsToReferences().catch((err) => setEditStatus("error", err?.message || "Could not save docs."));
+});
+document.getElementById("btn-electronics-panel-wiring")?.addEventListener("click", () => {
+  void sendAllSuggestionsToWiring().catch((err) => setEditStatus("error", err?.message || "Could not send to wiring."));
+});
+document.getElementById("btn-electronics-panel-docs")?.addEventListener("click", () => {
+  void saveElectronicsDocsToReferences().catch((err) => setEditStatus("error", err?.message || "Could not save docs."));
 });
 bindUrdfPanel();
 
@@ -12495,16 +12516,46 @@ async function collectElectronicsUsed() {
     wiring: wiringItems,
     cad: cadItems,
     total: wiringItems.reduce((n, i) => n + i.count, 0) + cadItems.length,
+    suggestions: suggestElectronicsForBuild({ wiring: wiringItems, cad: cadItems }),
   };
+}
+
+function electronicsSuggestionCardsHtml(suggestions = []) {
+  if (!suggestions.length) return "";
+  return `
+    <div class="object-iteration-history-head">Suggested for this build · ${suggestions.length}</div>
+    ${suggestions.map((item, idx) => `
+      <div class="object-iteration-node electronics-suggest-node" data-electronics-suggest-id="${appEscapeHtml(item.id)}" data-suggest-kind="${appEscapeHtml(item.kind || "")}" data-suggest-type="${appEscapeHtml(item.type || "")}" data-suggest-file="${appEscapeHtml(item.filename || "")}">
+        <span class="object-iteration-rail" aria-hidden="true"></span>
+        <div class="object-iteration-card">
+          <div class="object-iteration-main">
+            <span class="electronics-item-swatch" style="background:${appEscapeHtml(item.color || "#58a6ff")}"></span>
+            <span class="object-iteration-badge">S${idx + 1}</span>
+            <span class="object-iteration-title">${appEscapeHtml(item.label)}</span>
+            ${item.qty > 1 ? `<span class="electronics-item-count">×${item.qty}</span>` : ""}
+          </div>
+          <div class="object-iteration-meta">${appEscapeHtml(item.reason || "")}</div>
+          <span class="electronics-source-pill electronics-source-pill--suggest">Suggested</span>
+          <div class="electronics-suggest-actions">
+            ${item.kind !== "send-all-cad" ? `<button type="button" class="btn accent btn-compact" data-suggest-action="wiring">Add to wiring</button>` : `<button type="button" class="btn accent btn-compact" data-suggest-action="wiring-all">Send CAD to wiring</button>`}
+            ${item.docs?.length ? `<button type="button" class="btn secondary btn-compact" data-suggest-action="docs">Source docs</button>` : ""}
+            ${item.docs?.length ? `<button type="button" class="btn secondary btn-compact" data-suggest-action="reference">Save to references</button>` : ""}
+          </div>
+        </div>
+      </div>
+    `).join("")}
+  `;
 }
 
 function electronicsUsedListHtml(data, { emptyHint = null } = {}) {
   const wiring = data?.wiring || [];
   const cad = data?.cad || [];
-  if (!wiring.length && !cad.length) {
+  const suggestions = data?.suggestions || [];
+  if (!wiring.length && !cad.length && !suggestions.length) {
     return `<div class="object-iteration-empty">${appEscapeHtml(emptyHint || "No electronics used yet. Generate a wiring schematic or import electronic CAD parts.")}</div>`;
   }
   const sections = [];
+  if (suggestions.length) sections.push(electronicsSuggestionCardsHtml(suggestions));
   if (wiring.length) {
     sections.push(`<div class="object-iteration-history-head">Wiring schematic · ${wiring.reduce((n, i) => n + i.count, 0)}</div>`);
     sections.push(wiring.map((item, idx) => `
@@ -12519,6 +12570,9 @@ function electronicsUsedListHtml(data, { emptyHint = null } = {}) {
           </div>
           <div class="object-iteration-meta">${appEscapeHtml(item.kind)}${item.filename ? ` · ${appEscapeHtml(fileStem(item.filename))}` : ""}</div>
           <span class="electronics-source-pill electronics-source-pill--wiring">Wiring</span>
+          <div class="electronics-suggest-actions">
+            <button type="button" class="btn secondary btn-compact" data-used-action="docs" data-docs-query="${appEscapeHtml(item.datasheet || item.label)}">Source docs</button>
+          </div>
         </div>
       </div>
     `).join(""));
@@ -12536,6 +12590,11 @@ function electronicsUsedListHtml(data, { emptyHint = null } = {}) {
           </div>
           <div class="object-iteration-meta">${appEscapeHtml(item.kind)}${item.filename ? ` · ${appEscapeHtml(fileStem(item.filename))}` : ""}</div>
           <span class="electronics-source-pill electronics-source-pill--cad">CAD</span>
+          <div class="electronics-suggest-actions">
+            <button type="button" class="btn accent btn-compact" data-used-action="wiring-cad">Add to wiring</button>
+            <button type="button" class="btn secondary btn-compact" data-used-action="docs" data-docs-query="${appEscapeHtml(item.datasheet || item.label)}">Source docs</button>
+            <button type="button" class="btn secondary btn-compact" data-used-action="reference" data-docs-query="${appEscapeHtml(item.datasheet || item.label)}" data-docs-label="${appEscapeHtml(item.label)}">Save docs</button>
+          </div>
         </div>
       </div>
     `).join(""));
@@ -12543,10 +12602,153 @@ function electronicsUsedListHtml(data, { emptyHint = null } = {}) {
   return sections.join("");
 }
 
+let latestElectronicsBundle = null;
+let electronicsSuggestDismissedFor = null;
+
+function openElectronicsDocs(searchQuery, label = "") {
+  const links = electronicsDocLinks(searchQuery || label, label);
+  const primary = links[0];
+  if (primary?.url) window.open(primary.url, "_blank", "noopener");
+  // Open Digi-Key as a second source tab for purchasing/docs.
+  const digikey = links.find((l) => l.provider === "Digi-Key");
+  if (digikey?.url) {
+    window.setTimeout(() => window.open(digikey.url, "_blank", "noopener"), 120);
+  }
+  setEditStatus("ok", `Opened sourcing docs for ${label || searchQuery || "part"}.`);
+}
+
+async function saveElectronicsDocsToReferences({ used = null, suggestions = null, single = null } = {}) {
+  if (!projectId) {
+    setEditStatus("error", "Select a project first.");
+    return null;
+  }
+  const bundle = used && suggestions
+    ? { used, suggestions }
+    : latestElectronicsBundle || { used: { wiring: [], cad: [] }, suggestions: [] };
+  const projectName = allProjects?.find?.((p) => p.id === projectId)?.name || "Project";
+  let markdown;
+  if (single) {
+    const docs = single.docs || electronicsDocLinks(single.search || single.datasheet || single.label, single.label);
+    markdown = [
+      `# ${single.label || "Electronics part"}`,
+      "",
+      single.reason ? `_${single.reason}_` : "",
+      "",
+      "## Source documentation",
+      "",
+      ...docs.map((link) => `- [${link.provider}](${link.url})`),
+      "",
+      single.datasheet || single.search ? `Search hint: ${single.datasheet || single.search}` : "",
+      "",
+      "Add this part to the Wiring Simulator after sourcing.",
+    ].filter(Boolean).join("\n");
+  } else {
+    markdown = buildElectronicsReferenceMarkdown({
+      projectName,
+      used: bundle.used || bundle,
+      suggestions: bundle.suggestions || suggestions || [],
+    });
+  }
+  const safeStem = single
+    ? `electronics_${String(single.type || single.label || "part").replace(/[^\w]+/g, "_").toLowerCase()}`.slice(0, 48)
+    : "electronics_build_sourcing";
+  const file = new File([markdown], `${safeStem}.md`, { type: "text/markdown" });
+  const data = await uploadReferenceProjectFile(file, { destination: "current", projectId });
+  setEditStatus("ok", `Saved electronics docs to Reference Files (${data?.filename || file.name}).`);
+  return data;
+}
+
+async function attachElectronicsSuggestionToWiring(suggestion) {
+  if (!projectId || !suggestion) return;
+  if (suggestion.kind === "send-all-cad") {
+    await sendCadElectronicsToWiring();
+    return;
+  }
+  if (suggestion.kind === "attach-cad" && suggestion.filename) {
+    const entry = (lastProjectBrowser?.components || []).find((c) => (c.name || c.filename) === suggestion.filename) || {
+      name: suggestion.filename,
+      stem: fileStem(suggestion.filename),
+    };
+    await attachHierarchyComponentToWiring( { id: projectId }, entry, {
+      label: suggestion.label,
+      filename: suggestion.filename,
+      wiringType: suggestion.type,
+      part: {
+        kind: suggestion.label,
+        datasheet: suggestion.datasheet || suggestion.search,
+        wiring_type: suggestion.type,
+      },
+    });
+    return;
+  }
+  workspaceModes.setMode("wiring");
+  applyWorkspaceMode("wiring");
+  await wiringSim.load?.();
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  const qty = Math.max(1, Math.min(8, Number(suggestion.qty) || 1));
+  for (let i = 0; i < qty; i += 1) {
+    wiringSim.attachComponentRef?.({
+      label: qty > 1 ? `${suggestion.label} ${i + 1}` : suggestion.label,
+      wiringType: suggestion.type,
+      part: {
+        kind: suggestion.label,
+        datasheet: suggestion.datasheet || suggestion.search,
+        wiring_type: suggestion.type,
+      },
+    });
+  }
+  setEditStatus("ok", `Added ${suggestion.label}${qty > 1 ? ` ×${qty}` : ""} to Wiring Simulator.`);
+}
+
+async function sendCadElectronicsToWiring() {
+  const cad = latestElectronicsBundle?.used?.cad || [];
+  if (!cad.length) {
+    setEditStatus("error", "No recognized CAD electronics to send.");
+    return;
+  }
+  workspaceModes.setMode("wiring");
+  applyWorkspaceMode("wiring");
+  await wiringSim.load?.();
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  for (const item of cad) {
+    const entry = (lastProjectBrowser?.components || []).find((c) => (c.name || c.filename) === item.filename) || {
+      name: item.filename,
+      stem: fileStem(item.filename),
+    };
+    wiringSim.attachComponentRef?.({
+      label: item.label,
+      filename: item.filename,
+      wiringType: item.type,
+      part: {
+        kind: item.kind,
+        datasheet: item.datasheet,
+        wiring_type: item.type,
+      },
+      ...(entry || {}),
+    });
+  }
+  setEditStatus("ok", `Sent ${cad.length} CAD electronic part${cad.length === 1 ? "" : "s"} to Wiring Simulator.`);
+}
+
+async function sendAllSuggestionsToWiring() {
+  const suggestions = (latestElectronicsBundle?.suggestions || []).filter((s) => s.kind !== "send-all-cad");
+  const hasSendAll = (latestElectronicsBundle?.suggestions || []).some((s) => s.kind === "send-all-cad");
+  if (hasSendAll) await sendCadElectronicsToWiring();
+  for (const suggestion of suggestions) {
+    await attachElectronicsSuggestionToWiring(suggestion);
+  }
+  if (!suggestions.length && !hasSendAll) {
+    setEditStatus("ok", "No missing electronics to add — wiring already covers the build.");
+    return;
+  }
+  await refreshElectronicsSuggestions();
+}
+
 function bindElectronicsListActions(root) {
   root?.querySelectorAll("[data-electronics-source='cad'][data-electronics-file]")?.forEach((node) => {
-    node.style.cursor = "pointer";
-    node.addEventListener("click", async () => {
+    const title = node.querySelector(".object-iteration-title");
+    if (title) title.style.cursor = "pointer";
+    title?.addEventListener("click", async () => {
       const name = node.dataset.electronicsFile;
       if (!name || !projectId) return;
       try {
@@ -12561,27 +12763,143 @@ function bindElectronicsListActions(root) {
     });
   });
   root?.querySelectorAll("[data-electronics-source='wiring']")?.forEach((node) => {
-    node.style.cursor = "pointer";
-    node.addEventListener("click", () => {
-      if (workspaceModes?.getMode?.() !== "wiring") {
-        workspaceModes?.setMode?.("wiring");
-      }
+    node.querySelector(".object-iteration-title")?.addEventListener("click", () => {
+      if (workspaceModes?.getMode?.() !== "wiring") workspaceModes?.setMode?.("wiring");
       setRightTab("wiring");
       setEditStatus("ok", "Opened Wiring Simulator — electronics are listed from this schematic.");
     });
   });
+  root?.querySelectorAll("[data-used-action]")?.forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const action = btn.dataset.usedAction;
+      const card = btn.closest("[data-electronics-id], [data-electronics-file]");
+      if (action === "docs") {
+        openElectronicsDocs(btn.dataset.docsQuery || "", btn.dataset.docsLabel || "");
+        return;
+      }
+      if (action === "reference") {
+        await saveElectronicsDocsToReferences({
+          single: {
+            label: btn.dataset.docsLabel || btn.dataset.docsQuery || "Electronics",
+            search: btn.dataset.docsQuery,
+            datasheet: btn.dataset.docsQuery,
+            type: "part",
+          },
+        });
+        return;
+      }
+      if (action === "wiring-cad") {
+        const filename = card?.dataset?.electronicsFile;
+        const item = (latestElectronicsBundle?.used?.cad || []).find((c) => c.filename === filename);
+        if (item) {
+          await attachElectronicsSuggestionToWiring({
+            kind: "attach-cad",
+            ...item,
+            search: item.datasheet,
+          });
+          await refreshElectronicsSuggestions();
+        }
+      }
+    });
+  });
+  root?.querySelectorAll("[data-suggest-action]")?.forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const card = btn.closest("[data-electronics-suggest-id]");
+      const id = card?.dataset?.electronicsSuggestId;
+      const suggestion = (latestElectronicsBundle?.suggestions || []).find((s) => s.id === id);
+      const action = btn.dataset.suggestAction;
+      if (!suggestion && action !== "wiring-all") return;
+      try {
+        if (action === "wiring" || action === "wiring-all") {
+          await attachElectronicsSuggestionToWiring(suggestion || { kind: "send-all-cad" });
+          await refreshElectronicsSuggestions();
+        } else if (action === "docs") {
+          openElectronicsDocs(suggestion.search || suggestion.label, suggestion.label);
+        } else if (action === "reference") {
+          await saveElectronicsDocsToReferences({ single: suggestion });
+        }
+      } catch (err) {
+        setEditStatus("error", err?.message || "Could not apply electronics action.");
+      }
+    });
+  });
+}
+
+function renderElectronicsSuggestDock(bundle) {
+  const dock = document.getElementById("electronics-suggest-dock");
+  const list = document.getElementById("electronics-suggest-dock-list");
+  const meta = document.getElementById("electronics-suggest-dock-meta");
+  if (!dock || !list) return;
+  const suggestions = bundle?.suggestions || [];
+  if (!projectId || !suggestions.length || electronicsSuggestDismissedFor === projectId) {
+    dock.classList.add("hidden");
+    dock.hidden = true;
+    return;
+  }
+  // Always show when there are suggestions — even if Electronics tab is not selected.
+  dock.hidden = false;
+  dock.classList.remove("hidden");
+  if (meta) {
+    meta.textContent = `${suggestions.length} part${suggestions.length === 1 ? "" : "s"} to source / wire`;
+  }
+  list.innerHTML = suggestions.slice(0, 6).map((item) => `
+    <div class="electronics-suggest-dock-row" data-electronics-suggest-id="${appEscapeHtml(item.id)}">
+      <span class="electronics-item-swatch" style="background:${appEscapeHtml(item.color || "#58a6ff")}"></span>
+      <div class="electronics-suggest-dock-copy">
+        <strong>${appEscapeHtml(item.label)}${item.qty > 1 ? ` ×${item.qty}` : ""}</strong>
+        <small>${appEscapeHtml(item.reason || "")}</small>
+      </div>
+      <div class="electronics-suggest-dock-row-actions">
+        <button type="button" class="btn accent btn-compact" data-suggest-action="${item.kind === "send-all-cad" ? "wiring-all" : "wiring"}">Wiring</button>
+        ${item.docs?.length ? `<button type="button" class="btn secondary btn-compact" data-suggest-action="docs">Docs</button>` : ""}
+        ${item.docs?.length ? `<button type="button" class="btn secondary btn-compact" data-suggest-action="reference">Save</button>` : ""}
+      </div>
+    </div>
+  `).join("");
+  bindElectronicsListActions(list);
 }
 
 async function renderElectronicsUsedList(target = document.getElementById("electronics-used-list")) {
-  if (!target) return null;
+  if (!target && !document.getElementById("electronics-suggest-dock")) return null;
   if (!projectId) {
-    target.innerHTML = `<div class="object-iteration-empty">Select a project to list electronics.</div>`;
+    if (target) target.innerHTML = `<div class="object-iteration-empty">Select a project to list electronics.</div>`;
+    renderElectronicsSuggestDock(null);
     return null;
   }
-  target.innerHTML = `<div class="object-iteration-empty">Loading electronics…</div>`;
+  if (target) target.innerHTML = `<div class="object-iteration-empty">Loading electronics…</div>`;
   const data = await collectElectronicsUsed();
-  target.innerHTML = electronicsUsedListHtml(data);
-  bindElectronicsListActions(target);
+  latestElectronicsBundle = { used: data, suggestions: data.suggestions || [] };
+  if (target) {
+    target.innerHTML = electronicsUsedListHtml(data);
+    bindElectronicsListActions(target);
+  }
+  renderElectronicsSuggestDock(latestElectronicsBundle);
+  return data;
+}
+
+async function refreshElectronicsSuggestions() {
+  if (!projectId) {
+    latestElectronicsBundle = null;
+    renderElectronicsSuggestDock(null);
+    return null;
+  }
+  const data = await collectElectronicsUsed();
+  latestElectronicsBundle = { used: data, suggestions: data.suggestions || [] };
+  renderElectronicsSuggestDock(latestElectronicsBundle);
+  const panelList = document.getElementById("electronics-used-list");
+  if (panelList && document.querySelector('[data-right-panel="electronics"].active')) {
+    panelList.innerHTML = electronicsUsedListHtml(data);
+    bindElectronicsListActions(panelList);
+  }
+  if (electronicsPopover) {
+    const popList = electronicsPopover.querySelector("#electronics-popover-list");
+    if (popList) {
+      popList.innerHTML = electronicsUsedListHtml(data);
+      bindElectronicsListActions(popList);
+    }
+  }
   return data;
 }
 
@@ -12640,11 +12958,12 @@ async function openElectronicsPopover(anchor = document.getElementById("workspac
 }
 
 async function showElectronicsTabUi() {
+  electronicsSuggestDismissedFor = null;
   setRightTab("electronics");
   await renderElectronicsUsedList();
   const tabsEl = document.getElementById("workspace-tabs");
   await openElectronicsPopover(tabsEl, { force: true });
-  setEditStatus("ok", "Electronics — parts used in wiring and recognized CAD electronics.");
+  setEditStatus("ok", "Electronics — used parts, build suggestions, wiring + sourcing docs.");
 }
 
 function formatHistoryWhen(iso) {
@@ -16792,6 +17111,15 @@ async function hydrateBrowserBodyChildren(browser, { priorityNames = [], onlyNam
   }
 }
 
+let electronicsSuggestRefreshTimer = null;
+function scheduleElectronicsSuggestionsRefresh() {
+  if (electronicsSuggestRefreshTimer) window.clearTimeout(electronicsSuggestRefreshTimer);
+  electronicsSuggestRefreshTimer = window.setTimeout(() => {
+    electronicsSuggestRefreshTimer = null;
+    void refreshElectronicsSuggestions();
+  }, 280);
+}
+
 function renderProjectBrowser(browser) {
   lastProjectBrowser = browser || lastProjectBrowser;
   mobileBrowserComponents = browser?.components || [];
@@ -16803,6 +17131,8 @@ function renderProjectBrowser(browser) {
   for (const comp of browser?.components || []) {
     setAssemblyComponentVisible(comp, !isBrowserComponentHidden(comp));
   }
+  // Suggest electronics for the build even when Electronics tab is not open.
+  scheduleElectronicsSuggestionsRefresh();
 }
 
 function recenterMobileViewportForSection(sectionId = "components") {
@@ -19082,6 +19412,7 @@ async function loadProject(id) {
       referenceFilesViewer?.closeAll?.({ localOnly: true });
       dxfViewer?.closeAll?.({ localOnly: true });
       docTabs?.clear?.();
+      electronicsSuggestDismissedFor = null;
       showEmptyProjectViewport({ keepBrowser: true });
       window.dispatchEvent(new CustomEvent("render3d:project-changed", { detail: { projectId: id } }));
       // If Architect is open, reload that project's building.json (additive; Design path unchanged).

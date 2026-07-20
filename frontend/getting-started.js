@@ -3,7 +3,7 @@
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260716-source-parts";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260716-source-parts";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
-import { createRenderAgent } from "./render-agent.js?v=20260715-chat-fab-fallback";
+import { createRenderAgent } from "./render-agent.js?v=20260720-mobile-docs-agent";
 import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
@@ -465,19 +465,11 @@ function mountAgent() {
     onStatus: () => {},
   });
 
-  const openDefault = () => {
-    agent?.open?.({ onboarding: true });
-  };
-
-  // Compact sticky agent by default on Getting Started (drag edges to resize).
-  openDefault();
-
   const authUi = createAuthUI({
     api,
     onReady: (data) => {
       currentUser = data.user;
-      agent?.setUser?.(data.user);
-      openDefault();
+      agent?.setUser?.(data.user, { suppressOnboarding: true });
       const pending = sessionStorage.getItem("render3d:gsPendingAsk");
       if (pending) {
         sessionStorage.removeItem("render3d:gsPendingAsk");
@@ -489,9 +481,8 @@ function mountAgent() {
   void authUi.bootstrap?.().then((data) => {
     if (data?.user) {
       currentUser = data.user;
-      agent?.setUser?.(data.user);
+      agent?.setUser?.(data.user, { suppressOnboarding: true });
     }
-    openDefault();
     const pending = sessionStorage.getItem("render3d:gsPendingAsk");
     if (pending && data?.user) {
       sessionStorage.removeItem("render3d:gsPendingAsk");
@@ -573,7 +564,7 @@ function syncDocsCategoryTabs() {
   document.querySelectorAll(".toolbar-nav-menu .nav-tab").forEach((tab) => {
     const href = tab.getAttribute("href") || "";
     const isTips = href.includes("tips-library");
-    const isDocs = href.endsWith("/docs.html") || href === "/docs.html";
+    const isDocs = href.includes("getting-started.html") || href.endsWith("/docs.html") || href === "/docs.html";
     if (isTips) tab.classList.toggle("active", hash === "tips-library");
     if (isDocs) tab.classList.toggle("active", hash !== "tips-library");
   });

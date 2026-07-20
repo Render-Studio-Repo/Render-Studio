@@ -320,8 +320,47 @@ export function createRenderAgent({
     bindTipActions(messagesEl);
   }
 
+  function ensureDocsMobileBackdrop() {
+    let backdrop = document.getElementById("render-agent-backdrop");
+    if (!backdrop) {
+      backdrop = document.createElement("div");
+      backdrop.id = "render-agent-backdrop";
+      backdrop.className = "render-agent-backdrop hidden";
+      backdrop.setAttribute("aria-hidden", "true");
+      backdrop.addEventListener("click", () => close());
+      document.body.appendChild(backdrop);
+    }
+    return backdrop;
+  }
+
+  function applyDocsMobileSheetLayout() {
+    panel.classList.add("render-agent-panel--mobile-sheet");
+    panel.style.left = "0";
+    panel.style.right = "0";
+    panel.style.top = "auto";
+    panel.style.bottom = "0";
+    panel.style.width = "100%";
+    panel.style.height = `${Math.min(Math.round(window.innerHeight * 0.92), window.innerHeight - 8)}px`;
+    panel.style.maxHeight = "none";
+  }
+
+  function clearDocsMobileSheetLayout() {
+    panel.classList.remove("render-agent-panel--mobile-sheet");
+  }
+
   function syncDocsPageLayout(openPanel) {
     if (!panel.classList.contains("render-agent-panel--docs")) return;
+    const mobile = !isDesktopViewport();
+    if (mobile) {
+      document.body.classList.remove("gs-agent-open");
+      document.body.classList.toggle("gs-agent-sheet-open", !!openPanel);
+      document.body.style.overflow = openPanel ? "hidden" : "";
+      ensureDocsMobileBackdrop()?.classList.toggle("hidden", !openPanel);
+      return;
+    }
+    document.body.classList.remove("gs-agent-sheet-open");
+    document.body.style.overflow = "";
+    ensureDocsMobileBackdrop()?.classList.add("hidden");
     document.body.classList.toggle("gs-agent-open", !!openPanel);
   }
 
@@ -396,7 +435,10 @@ export function createRenderAgent({
       `;
     }
     setTimeout(() => {
-      input?.focus();
+      const skipFocus = !isDesktopViewport()
+        && docsPanel
+        && !normalizedQuestion;
+      if (!skipFocus) input?.focus();
       if (normalizedQuestion && input) {
         const len = input.value.length;
         input.setSelectionRange?.(len, len);
@@ -464,6 +506,11 @@ export function createRenderAgent({
       panel.classList.add("render-agent-panel--popup");
       panel.classList.remove("render-agent-panel--deck");
     }
+    if (isDocs && !isDesktopViewport()) {
+      applyDocsMobileSheetLayout();
+      return;
+    }
+    clearDocsMobileSheetLayout();
     const saved = readStickyLayout();
     const maxPanelW = Math.min(isDocs ? 340 : 360, Math.max(260, window.innerWidth - 32));
     const minPanelW = Math.min(isDocs ? 300 : 280, maxPanelW);
@@ -516,6 +563,11 @@ export function createRenderAgent({
 
 
   function enterPresentationDeck() {
+    if (panel.classList.contains("render-agent-panel--docs") && !isDesktopViewport()) {
+      applyDocsMobileSheetLayout();
+      return;
+    }
+    clearDocsMobileSheetLayout();
     panel.classList.add("render-agent-panel--deck");
     const w = Math.min(760, Math.max(420, window.innerWidth - 48));
     const h = Math.min(820, Math.max(480, window.innerHeight - 48));
@@ -1395,6 +1447,11 @@ export function createRenderAgent({
   closeBtn?.addEventListener("click", close);
   document.getElementById("render-agent-fab")?.addEventListener("click", () => toggle());
   syncFabState(!panel.classList.contains("hidden"));
+  window.addEventListener("resize", () => {
+    if (panel.classList.contains("hidden") || !panel.classList.contains("render-agent-panel--docs")) return;
+    restoreStickyLayout();
+    syncDocsPageLayout(true);
+  });
   threadMenuBtn?.addEventListener("click", () => {
     const openMenu = threadPopover?.classList.toggle("hidden") === false;
     threadMenuBtn.setAttribute("aria-expanded", openMenu ? "true" : "false");
@@ -1571,6 +1628,8 @@ export function createRenderAgent({
       if (!user) return;
       // Desktop only: first visit auto-opens Render Agent with tip + Getting Started link.
       if (suppressOnboarding) return;
+      // Docs pages keep the panel retracted until the user opens it.
+      if (panel.classList.contains("render-agent-panel--docs")) return;
       if (!isDesktopViewport()) return;
       if (!shouldShowOnboarding()) return;
       // Ensure Sam's gpt-4o-mini is the default agent for new users.

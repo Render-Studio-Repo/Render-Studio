@@ -27,7 +27,7 @@ def render_welcome_email(user: dict[str, Any]) -> dict[str, str]:
         "Studio": "https://render3d.app/",
         "Getting Started": "https://render3d.app/getting-started.html",
         "Tips & Tricks": "https://render3d.app/getting-started.html#tips-library",
-        "Docs": "https://render3d.app/docs.html",
+        "Docs": "https://render3d.app/getting-started.html",
         "Product Marketplace": "https://render3d.app/marketplace.html",
     }
     link_html = "".join(

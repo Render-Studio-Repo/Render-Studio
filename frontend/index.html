@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260720-electronics-tab" />
+  <link rel="stylesheet" href="/styles.css?v=20260720-electronics-suggest" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -26,7 +26,7 @@
     }
   }
   </script>
-  <link rel="stylesheet" href="/ribbon.css?v=20260720-electronics-tab" />
+  <link rel="stylesheet" href="/ribbon.css?v=20260720-electronics-suggest" />
 </head>
 <body class="theme-dark studio-booting">
   <div id="studio-boot-screen" class="studio-boot-screen" role="status" aria-live="polite" aria-busy="true" style="--boot-progress: 8; --boot-progress-pct: 8%;">
@@ -781,6 +781,20 @@
             <strong>Drop to open as a tab</strong>
             <span>DXF · PDF · TXT · images · STL · STEP…</span>
           </div>
+        </div>
+        <div id="electronics-suggest-dock" class="electronics-suggest-dock hidden" aria-live="polite" hidden>
+          <div class="electronics-suggest-dock-head">
+            <div>
+              <strong>Suggested electronics</strong>
+              <span id="electronics-suggest-dock-meta">For this build</span>
+            </div>
+            <div class="electronics-suggest-dock-actions">
+              <button type="button" class="btn secondary btn-compact" id="btn-electronics-suggest-docs" title="Save sourcing docs to Reference Files">Save docs</button>
+              <button type="button" class="btn accent btn-compact" id="btn-electronics-suggest-wiring" title="Add suggested parts to Wiring Simulator">Send to wiring</button>
+              <button type="button" class="electronics-suggest-dock-close" id="btn-electronics-suggest-dismiss" aria-label="Dismiss suggestions">✕</button>
+            </div>
+          </div>
+          <div id="electronics-suggest-dock-list" class="electronics-suggest-dock-list"></div>
         </div>
         <div id="sketch-chrome" class="sketch-chrome hidden" aria-live="polite">
           <header class="sketch-top-bar">
@@ -1753,7 +1767,11 @@
           <h2>Electronics</h2>
           <button type="button" id="btn-electronics-refresh" class="btn secondary btn-compact" title="Refresh electronics list">Refresh</button>
         </div>
-        <p class="muted small electronics-panel-lead">Parts used in this project — from the wiring schematic and recognized CAD electronics.</p>
+        <p class="muted small electronics-panel-lead">Parts used in this project, plus suggestions to finish the build — send to Wiring Simulator and save sourcing docs to Reference Files.</p>
+        <div class="electronics-panel-toolbar">
+          <button type="button" class="btn accent btn-compact" id="btn-electronics-panel-wiring">Send suggestions to wiring</button>
+          <button type="button" class="btn secondary btn-compact" id="btn-electronics-panel-docs">Save docs to references</button>
+        </div>
         <div id="electronics-used-list" class="electronics-used-list" aria-live="polite">
           <div class="object-iteration-empty">Select a project to list electronics.</div>
         </div>
@@ -2704,7 +2722,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260720-electronics-tab"></script>
+  <script type="module" src="/app.js?v=20260720-electronics-suggest"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

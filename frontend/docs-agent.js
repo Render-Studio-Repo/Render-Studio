@@ -1,7 +1,7 @@
 /** Shared Render Agent FAB + panel mount for documentation pages. */
 
 import { authHeaders, createAuthUI, getStoredUser } from "./auth.js?v=20260715-auth-connect-social";
-import { createRenderAgent } from "./render-agent.js?v=20260715-chat-fab-fallback";
+import { createRenderAgent } from "./render-agent.js?v=20260720-mobile-docs-agent";
 
 const LOGO = "/render3d-logo.png?v=20260715-new-logo";
 
@@ -181,14 +181,14 @@ export function mountDocsRenderAgent({ autoOpen = false } = {}) {
     api,
     onReady: (data) => {
       currentUser = data.user;
-      agent?.setUser?.(data.user);
+      agent?.setUser?.(data.user, { suppressOnboarding: true });
     },
   });
 
   void authUi.bootstrap?.().then((data) => {
     if (data?.user) {
       currentUser = data.user;
-      agent?.setUser?.(data.user);
+      agent?.setUser?.(data.user, { suppressOnboarding: true });
     }
   });
 

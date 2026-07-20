@@ -411,6 +411,136 @@
   background: rgba(88, 166, 255, 0.08);
 }
 
+.electronics-source-pill--suggest {
+  border-color: rgba(210, 153, 34, 0.4);
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.1);
+}
+
+.electronics-suggest-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.electronics-panel-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px 10px;
+}
+
+.electronics-suggest-dock {
+  position: absolute;
+  left: 12px;
+  bottom: 14px;
+  z-index: 40;
+  width: min(420px, calc(100% - 24px));
+  max-height: min(280px, 42vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(210, 153, 34, 0.35);
+  border-radius: 12px;
+  background: rgba(22, 27, 34, 0.96);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  color: #c9d1d9;
+  backdrop-filter: blur(8px);
+}
+
+.electronics-suggest-dock.hidden,
+.electronics-suggest-dock[hidden] {
+  display: none !important;
+}
+
+.electronics-suggest-dock-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #30363d;
+  background: linear-gradient(180deg, rgba(210, 153, 34, 0.12), transparent);
+}
+
+.electronics-suggest-dock-head strong {
+  display: block;
+  color: #e6edf3;
+  font-size: 0.82rem;
+}
+
+.electronics-suggest-dock-head span {
+  color: #8b949e;
+  font-size: 0.68rem;
+}
+
+.electronics-suggest-dock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.electronics-suggest-dock-close {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 3px 7px;
+}
+
+.electronics-suggest-dock-close:hover {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.electronics-suggest-dock-list {
+  overflow: auto;
+  padding: 8px 10px 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.electronics-suggest-dock-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: #0d1117;
+}
+
+.electronics-suggest-dock-copy {
+  min-width: 0;
+}
+
+.electronics-suggest-dock-copy strong {
+  display: block;
+  color: #e6edf3;
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.electronics-suggest-dock-copy small {
+  display: block;
+  color: #8b949e;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.electronics-suggest-dock-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
 .object-iteration-main {
   display: flex;
   align-items: center;
