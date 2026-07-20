@@ -1736,19 +1736,42 @@ export function createWorkspaceBrowser({
       || {};
   }
 
+  function generationVisualTone(gen = {}) {
+    const kind = String(gen?.kind || "").toLowerCase();
+    if (kind === "rigging") return "rigging";
+    if (kind === "wiring") return "wiring";
+    if (kind === "render" || kind === "scene_render" || kind === "render_region_edit") return "render";
+    const mode = String(gen?.mode || gen?.prompt_mode || gen?.promptMode || "").toLowerCase();
+    if (mode === "render") return "render";
+    if (["v2", "2.0", "2", "fusion", "architect", "fusion360", "fusion-360", "architecture"].includes(mode)) {
+      return "v2";
+    }
+    const searchable = String([
+      gen?.message,
+      gen?.label,
+      gen?.prompt,
+      gen?.progress?.label,
+    ].filter(Boolean).join(" "));
+    if (/\b(v2|2\.0)\b/i.test(searchable)) return "v2";
+    if (/\bfusion\b/i.test(searchable)) return "v2";
+    if (/\barchitect(?:ure)?\b/i.test(searchable)) return "v2";
+    return "standard";
+  }
+
   function generationExplorerBadge(gen = {}) {
     if (!gen || gen.status !== "running") return "";
     const name = gen.by_user_name || "Someone";
     const initial = escapeHtml(String(name).trim().charAt(0).toUpperCase() || "A");
     const avatar = gen.by_avatar_url || "";
-    const kind = String(gen.kind || "").toLowerCase();
-    const rigging = kind === "rigging";
-    const promptish = !rigging && kind !== "wiring";
+    const tone = generationVisualTone(gen);
+    const rigging = tone === "rigging";
     const toneClass = rigging
       ? " proj-gen-user--rigging"
-      : promptish
-        ? " proj-gen-user--prompt"
-        : "";
+      : tone === "v2"
+        ? " proj-gen-user--v2"
+        : tone === "render"
+          ? " proj-gen-user--render"
+          : "";
     const avatarEl = avatar
       ? `<span class="proj-gen-avatar proj-gen-avatar--image" style="background-image:url('${escapeHtml(avatar)}')" title="${escapeHtml(name)} generating"></span>`
       : `<span class="proj-gen-avatar" title="${escapeHtml(name)} generating">${initial}</span>`;
@@ -1815,21 +1838,39 @@ export function createWorkspaceBrowser({
     body.type = "button";
     body.className = "proj-row-body";
     const activeGen = activeGenerationForBadge(p);
-    const activeKind = String(activeGen?.kind || p.generation?.kind || "").toLowerCase();
+    const activeTone = generationVisualTone(activeGen);
     const genBadge = generating && activeGen?.status === "running"
       ? generationExplorerBadge(activeGen)
       : "";
-    const promptGenerating = generating && activeKind !== "rigging" && activeKind !== "wiring";
-    if (promptGenerating) li.classList.add("proj-item--prompt-gen");
+    const promptGenerating = generating && activeTone !== "rigging" && activeTone !== "wiring";
+    if (activeTone === "v2") li.classList.add("proj-item--v2-gen");
+    else if (activeTone === "render") li.classList.add("proj-item--render-gen");
+    const spinnerToneClass = activeTone === "v2"
+      ? " proj-loading-spinner--v2"
+      : activeTone === "render"
+        ? " proj-loading-spinner--render"
+        : "";
     const spinner = showSpinner && !genBadge
-      ? `<span class="proj-loading-spinner${promptGenerating ? " proj-loading-spinner--prompt" : ""}" aria-hidden="true"></span>`
+      ? `<span class="proj-loading-spinner${promptGenerating ? spinnerToneClass : ""}" aria-hidden="true"></span>`
       : "";
     const promptProgress = promptGenerating ? generationProgressPercent(activeGen, p.generation) : null;
+    const progressToneClass = activeTone === "v2"
+      ? " proj-gen-progress--v2"
+      : activeTone === "render"
+        ? " proj-gen-progress--render"
+        : "";
     const progressBadge = promptProgress != null
-      ? `<span class="proj-gen-progress" title="Prompt progress: ${promptProgress}%">${promptProgress}%</span>`
+      ? `<span class="proj-gen-progress${progressToneClass}" title="Prompt progress: ${promptProgress}%">${promptProgress}%</span>`
       : "";
+    const loadingLabelToneClass = activeTone === "rigging"
+      ? " proj-loading-label--rigging"
+      : activeTone === "v2"
+        ? " proj-loading-label--v2"
+        : activeTone === "render"
+          ? " proj-loading-label--render"
+          : "";
     const loadingLabel = generating
-      ? `<span class="proj-loading-label${activeKind === "rigging" ? " proj-loading-label--rigging" : promptGenerating ? " proj-loading-label--prompt" : ""}">${activeKind === "rigging" ? "Rigging…" : "Generating…"}</span>`
+      ? `<span class="proj-loading-label${loadingLabelToneClass}">${activeTone === "rigging" ? "Rigging…" : "Generating…"}</span>`
       : loading
         ? '<span class="proj-loading-label">Loading…</span>'
         : "";

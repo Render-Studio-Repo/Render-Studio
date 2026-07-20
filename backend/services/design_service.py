@@ -3459,8 +3459,9 @@ def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
         elif sz >= max(sx, sy) * 0.95:
             # Standing height already along Z.
             already_z_up = True
-        elif sy >= max(sx, sz) * 0.99:
-            # Classic Y-up standing model (tallest axis is Y).
+        elif sy >= max(sx, sz) * 0.99 and sy > sz * 1.15:
+            # Classic Y-up standing model (tallest axis is Y, clearly taller than Z).
+            # Require sy > sz*1.15 so long flat parts (airplanes, wings) stay Z-up.
             already_z_up = False
         else:
             already_z_up = sz >= sy * 1.05

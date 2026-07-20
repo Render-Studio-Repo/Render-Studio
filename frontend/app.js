@@ -465,17 +465,26 @@ function syncViewportGenerationUserBadge(gen) {
   if (!btn) return;
   if (!gen || gen.status !== "running" || gen.kind === "wiring") {
     btn.classList.add("hidden");
-    btn.classList.remove("viewport-generation-user--rigging", "viewport-generation-user--prompt");
+    btn.classList.remove(
+      "viewport-generation-user--rigging",
+      "viewport-generation-user--prompt",
+      "viewport-generation-user--v2",
+      "viewport-generation-user--render",
+    );
     btn.innerHTML = "";
     return;
   }
   const name = gen.by_user_name || "Someone";
   const prompt = gen.prompt || gen.label || "Generating model";
   const rigging = isRiggingGeneration(gen);
-  const promptish = !rigging && String(gen.kind || generationWatchOverlay?.kind || "prompt").toLowerCase() !== "wiring";
+  const kind = String(gen.kind || generationWatchOverlay?.kind || "prompt").toLowerCase();
+  const mode = generationPromptMode(gen);
+  const rendering = kind === "render" || kind === "scene_render" || mode === "render";
+  const v2ish = !rendering && ["v2", "fusion", "architect"].includes(mode);
   btn.classList.remove("hidden");
   btn.classList.toggle("viewport-generation-user--rigging", rigging);
-  btn.classList.toggle("viewport-generation-user--prompt", promptish);
+  btn.classList.toggle("viewport-generation-user--render", !rigging && rendering);
+  btn.classList.toggle("viewport-generation-user--v2", !rigging && v2ish);
   btn.dataset.prompt = prompt;
   btn.dataset.user = name;
   btn.dataset.userId = gen.by_user_id || "";
@@ -854,7 +863,7 @@ async function applyRiggingGenerationComplete(gen, pid = projectId) {
     await refreshRiggingPromptHistory();
     setRiggingWorkspaceMode("urdf");
     await ensureUrdfRobotScene({ quiet: true });
-    syncRiggingViewportOverlay({ status: "Rigging ready — pose joints in Adjustments." });
+    syncRiggingViewportOverlay({ status: "Rigging ready — pose joints from the rigging panel." });
     await syncRiggingAdjustSliders({ autoExpand: true });
     if (document.body.classList.contains("rigging-design-tab")) {
       setRightTab("rigging");
@@ -1208,6 +1217,7 @@ function generationPromptMode(generation = {}, fallback = "standard") {
   if (text === "fusion" || text === "fusion360" || text === "fusion-360") return "fusion";
   if (text === "architect" || text === "architecture") return "architect";
   if (text === "v2" || text === "2.0" || text === "2") return "v2";
+  if (text === "render") return "render";
   if (text === "draw") return "draw";
   if (text === "rigging" || text === "rig") return "rigging";
   const searchable = String([
@@ -1223,6 +1233,7 @@ function generationPromptMode(generation = {}, fallback = "standard") {
   if (fallbackText === "fusion" || fallbackText === "fusion360" || fallbackText === "fusion-360") return "fusion";
   if (fallbackText === "architect" || fallbackText === "architecture") return "architect";
   if (fallbackText === "v2" || fallbackText === "2.0" || fallbackText === "2") return "v2";
+  if (fallbackText === "render") return "render";
   if (fallbackText === "rigging" || fallbackText === "rig") return "rigging";
   return fallbackText === "draw" ? "draw" : "standard";
 }
@@ -8256,23 +8267,14 @@ function syncRiggingToolbelt() {
   });
 }
 
-function setRiggingAdjustCollapsed(collapsed) {
-  const dock = document.getElementById("rigging-adjust-dock");
-  const toggle = document.getElementById("btn-rigging-adjust-toggle");
-  if (!dock) return;
-  dock.classList.toggle("is-collapsed", !!collapsed);
-  toggle?.setAttribute("aria-expanded", String(!collapsed));
-}
-
 function isSolidDesignTabActive() {
   return workspaceModes?.getMode?.() === "design"
     && (workspaceModes?.getDesignTab?.() || "SOLID") === "SOLID";
 }
 
-function syncSolidObjectAdjustmentsForSelection({ autoExpand = false } = {}) {
+function syncSolidObjectAdjustmentsForSelection() {
   if (!isSolidDesignTabActive()) return;
   syncObjectAdjustmentChrome("SOLID");
-  void syncRiggingAdjustSliders({ autoExpand });
 }
 
 function syncObjectAdjustmentChrome(tab = workspaceModes?.getDesignTab?.() || "SOLID") {
@@ -8280,15 +8282,11 @@ function syncObjectAdjustmentChrome(tab = workspaceModes?.getDesignTab?.() || "S
   if (!chrome) return;
   const solidAdjust = tab === "SOLID";
   chrome.classList.toggle("solid-adjust-chrome", solidAdjust);
-  if (solidAdjust) {
-    chrome.classList.remove("hidden");
-    const title = document.querySelector("#rigging-adjust-panel .rigging-adjust-head strong");
-    if (title) title.textContent = "Object & params";
-    void syncRiggingAdjustSliders({ autoExpand: false });
-  } else {
-    const title = document.querySelector("#rigging-adjust-panel .rigging-adjust-head strong");
-    if (title) title.textContent = "Pose & params";
-  }
+  if (solidAdjust) chrome.classList.remove("hidden");
+}
+
+async function syncRiggingAdjustSliders() {
+  return 0;
 }
 
 function syncRiggingViewportOverlay({ status = "" } = {}) {
@@ -8310,55 +8308,12 @@ function syncRiggingViewportOverlay({ status = "" } = {}) {
   if (statusEl) {
     statusEl.textContent = status
       || (urdfRobotRuntime.isLoaded?.()
-        ? "Robot scene loaded — pose joints in Adjustments."
+        ? "Robot scene loaded — pose joints from the rigging panel."
         : "Load a robot or motion module to pose joints.");
   }
   if (metaEl) {
     metaEl.textContent = `${artifacts.length} artifact(s) · ${links.length} link(s) · ${joints.length} joint(s)`;
   }
-}
-
-async function syncRiggingAdjustSliders({ autoExpand = false } = {}) {
-  const host = document.getElementById("rigging-adjust-sliders");
-  const countEl = document.getElementById("rigging-adjust-count");
-  if (!host) return 0;
-  const riggingActive = document.body.classList.contains("rigging-design-tab");
-  const robotJoints = riggingActive ? (robotArtifactData?.joints || []) : [];
-  const jointHtml = robotJointSlidersHtml(robotJoints);
-  let cadHtml = "";
-  let cadCount = 0;
-  try {
-    if (projectId && selectedFile) {
-      const cadParams = await fetchCadParams(rawFetch, projectId, selectedFile);
-      if (cadParams?.params?.length) {
-        cadCount = cadParams.params.length;
-        cadHtml = cadParamControlsHtml(cadParams);
-      }
-    }
-  } catch {
-    /* optional */
-  }
-  const movable = robotJoints.filter((j) => String(j.type || "").toLowerCase() !== "fixed");
-  const total = movable.length + cadCount;
-  host.innerHTML = `
-    ${movable.length ? `<div class="rigging-adjust-section"><strong class="muted small">Joints</strong>${jointHtml}</div>` : ""}
-    ${cadHtml ? `<div class="rigging-adjust-section">${cadHtml}</div>` : ""}
-    ${!total ? `<p class="cad-param-hint">${riggingActive ? "No joint or parametric adjustments yet. Load a robot or open a Jake text-to-cad model." : "No parametric adjustments yet. Select a Jake text-to-cad model from the part tree."}</p>` : ""}
-  `;
-  if (countEl) countEl.textContent = String(total);
-  if (cadHtml) {
-    bindCadParamControls(host, {
-      projectId,
-      filename: selectedFile,
-      api,
-      rawFetch,
-      onStatus: setEditStatus,
-      getPreviewRoot: () => projectAssembly.getRoot() || currentMesh,
-    });
-  }
-  if (autoExpand && total > 0) setRiggingAdjustCollapsed(false);
-  else if (!total) setRiggingAdjustCollapsed(true);
-  return total;
 }
 
 function bindRiggingViewportOverlayUi() {
@@ -8375,13 +8330,6 @@ function bindRiggingViewportOverlayUi() {
       btn.setAttribute("aria-expanded", String(!collapsed));
     }
   });
-
-  const setCollapsed = (collapsed) => setRiggingAdjustCollapsed(collapsed);
-  document.getElementById("btn-rigging-adjust-toggle")?.addEventListener("click", () => {
-    const dock = document.getElementById("rigging-adjust-dock");
-    setCollapsed(!dock?.classList.contains("is-collapsed"));
-  });
-  document.getElementById("btn-rigging-adjust-close")?.addEventListener("click", () => setCollapsed(true));
 
   document.getElementById("rigging-show-bones")?.addEventListener("change", (e) => {
     const on = !!e.target?.checked;
@@ -8417,15 +8365,6 @@ function bindRiggingViewportOverlayUi() {
   document.getElementById("rigging-vp-artifact-source")?.addEventListener("change", (e) => {
     const panel = document.getElementById("rigging-artifact-source");
     if (panel) panel.value = e.target.value;
-  });
-
-  document.getElementById("rigging-adjust-sliders")?.addEventListener("input", (event) => {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement)) return;
-    const id = input.dataset.robotUrdfJoint || input.dataset.robotUrdfJointNumber;
-    if (!id) return;
-    const joint = (robotArtifactData?.joints || []).find((item) => item.name === id) || null;
-    applyRobotJointDisplayValue(id, input.value, joint);
   });
 }
 
@@ -8475,7 +8414,7 @@ function handleDesignTabChange(tab) {
     setEditStatus("ok", "Sketch mode — click Create Sketch to enter locked 2D edit.");
   } else if (tab === "RIGGING") {
     focusViewportForShortcuts();
-    setEditStatus("ok", "Rigging — model viewport with manage overlay, adjustments, and timeline.");
+    setEditStatus("ok", "Rigging — model viewport with manage overlay and timeline.");
   } else if (tab === "ARCHITECT") {
     focusViewportForShortcuts();
     setEditStatus("ok", "Architect — drag walls, Shift+drag rooms, right-click delete. Middle pans; Shift+middle orbits.");
@@ -13610,12 +13549,14 @@ function footprintPrefersFlip180(object3d) {
 }
 
 function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true, orientationMode = null } = {}) {
-  if (orientationMode === "v2-upright") {
-    object3d.rotateX(-Math.PI / 2);
-    object3d.userData.render3dForcedUpright = "v2-upright";
-    object3d.updateMatrixWorld(true);
+  // Mode 2.0 used to blindly rotateX(-90), which tipped already-Z-up GLBs onto their side.
+  // Always use the smart Y-up→Z-up detector (server also bakes Z-up when it can).
+  if (orient || orientationMode === "v2-upright") {
+    ensureModelZUp(object3d, filename);
+    if (orientationMode === "v2-upright") {
+      object3d.userData.render3dForcedUpright = "v2-upright";
+    }
   }
-  if (orient && orientationMode !== "v2-upright") ensureModelZUp(object3d, filename);
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
   meshCenterOffset = box.getCenter(new THREE.Vector3());
@@ -17437,10 +17378,10 @@ async function setupRobotMotionWorkflow({ autoGenerate = true, askWhenMissing = 
     } else {
       syncRiggingViewportOverlay({ status: "Robot motion ready." });
       await syncRiggingAdjustSliders({ autoExpand: true });
-      setEditStatus("ok", "Robot motion ready. Use Adjustments + timeline to pose and play.");
+      setEditStatus("ok", "Robot motion ready. Use the rigging panel + timeline to pose and play.");
       if (status) {
         status.className = "status ok";
-        status.textContent = "URDF/SRDF already exists. Use Adjustments in the viewport.";
+        status.textContent = "URDF/SRDF already exists. Use the rigging panel in the viewport.";
       }
       return;
     }
@@ -17639,7 +17580,7 @@ async function authorJakeRobotDescription({ source: requestedSource = "", kind =
     setRiggingWorkspaceMode("urdf");
     if (openMotion) {
       await ensureUrdfRobotScene({ quiet: true, force: true });
-      syncRiggingViewportOverlay({ status: "Robot authored — use Adjustments to pose joints." });
+      syncRiggingViewportOverlay({ status: "Robot authored — use the rigging panel to pose joints." });
       await syncRiggingAdjustSliders({ autoExpand: true });
     }
     const msg = data.message || "URDF/SRDF authored.";
