@@ -609,7 +609,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
         <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Push your local Render3D edits to Fusion, pull any newer Fusion versions, then update teammate mirrors.">Sync with Fusion</button>
       </div>
-      <p class="muted small fusion-folder-hint">Open a folder below to see its contents. Use <strong>Link mirror</strong> on a folder — no model picker.</p>
+      <p class="muted small fusion-folder-hint">Open a folder to read its full name and see Link / Import / Push options, then pick files inside.</p>
     `;
     controlsEl.querySelector(".btn-fusion-import-visible")?.addEventListener("click", (event) => {
       importVisibleItems(event.currentTarget);
@@ -666,10 +666,11 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     if (row) {
       const panel = row.querySelector(".onshape-doc-elements");
       const toggle = row.querySelector(".onshape-doc-toggle");
+      const body = panel?.querySelector(".fusion-folder-contents") || panel;
       if (panel && toggle) {
         const ancestors = collectFolderAncestors(row);
         setFolderExpanded(folder, panel, toggle, true, { ancestorIds: ancestors, load: false });
-        panel.dataset.loaded = "";
+        if (body) delete body.dataset.loaded;
         await loadFolder(folder, panel, ancestors);
       }
     } else {
@@ -899,7 +900,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     toggle.setAttribute("aria-expanded", String(!!open));
     toggle.style.transform = open ? "rotate(0deg)" : "rotate(-90deg)";
     if (persist) setFusionFolderOpen(folder.id, !!open);
-    if (open && load && !panel.dataset.loaded) {
+    const body = panel.querySelector(".fusion-folder-contents") || panel;
+    if (open && load && !body.dataset.loaded) {
       void loadFolder(folder, panel, ancestorIds);
     }
   }
@@ -920,14 +922,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         <button type="button" class="btn-icon onshape-doc-toggle fusion-folder-toggle" title="Show folder contents" aria-expanded="false" style="transform: rotate(-90deg)">
           <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor"><path d="M2 3l3 4 3-4H2z"/></svg>
         </button>
-        <button type="button" class="fusion-folder-name" title="Open folder and show contents">${esc(folderName)}</button>
-        <div class="fusion-row-actions">
-          <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}" title="Link this Fusion folder as the mirror for the open Render3D project">${preferred ? "Linked" : "Link"}</button>
-          <button type="button" class="btn btn-compact btn-fusion-import-folder" title="Import all supported files in this folder">Import</button>
-          <button type="button" class="btn btn-compact btn-fusion-push" title="Push the current Render3D model into this folder">Push</button>
-        </div>
+        <button type="button" class="fusion-folder-name" title="${esc(folderName)}">${esc(folderName)}</button>
       </div>
-      <div class="onshape-doc-elements fusion-folder-panel fusion-folder-panel-collapsed"></div>
+      <div class="onshape-doc-elements fusion-folder-panel fusion-folder-panel-collapsed">
+        <div class="fusion-folder-toolbar">
+          <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}" title="Link this Fusion folder as the mirror for the open Render3D project">${preferred ? "Linked mirror" : "Link mirror"}</button>
+          <button type="button" class="btn btn-compact btn-fusion-import-folder" title="Import all supported files in this folder">Import all</button>
+          <button type="button" class="btn btn-compact btn-fusion-push" title="Push the current Render3D model into this folder">Push current</button>
+        </div>
+        <div class="fusion-folder-contents"></div>
+      </div>
     `;
     const panel = item.querySelector(".onshape-doc-elements");
     const toggle = item.querySelector(".onshape-doc-toggle");
@@ -1266,30 +1270,31 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
 
   async function loadFolder(folder, panel, ancestorIds = new Set()) {
     const parents = ancestorIds instanceof Set ? ancestorIds : new Set(ancestorIds || []);
+    const body = panel?.querySelector?.(".fusion-folder-contents") || panel;
     // Only treat a true parent cycle as circular — never the folder being opened.
     if (folder?.id && parents.has(folder.id)) {
-      panel.dataset.loaded = "1";
-      panel.innerHTML = `<p class="muted small">Skipped circular Fusion folder link.</p>`;
+      body.dataset.loaded = "1";
+      body.innerHTML = `<p class="muted small">Skipped circular Fusion folder link.</p>`;
       return;
     }
-    panel.dataset.loaded = "1";
-    panel.innerHTML = `<p class="muted small loading-dots">Loading...</p>`;
+    body.dataset.loaded = "1";
+    body.innerHTML = `<p class="muted small loading-dots">Loading...</p>`;
     const chain = new Set(parents);
     if (folder.id) chain.add(folder.id);
     try {
       const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`);
-      panel.innerHTML = "";
+      body.innerHTML = "";
       for (const child of data.folders || []) {
         if (!child?.id || chain.has(child.id)) continue;
-        panel.appendChild(folderRow(child, {
+        body.appendChild(folderRow(child, {
           preferred: child.id === linkedMirrorFolderId(),
           open: isFusionFolderOpen(child.id),
           ancestorIds: chain,
         }));
       }
-      appendFolderFileRows(panel, folder, data.items || []);
-      if (!panel.children.length) {
-        panel.innerHTML = `<p class="muted small">Folder is empty.</p>`;
+      appendFolderFileRows(body, folder, data.items || []);
+      if (!body.children.length) {
+        body.innerHTML = `<p class="muted small">Folder is empty.</p>`;
       } else {
         const nFiles = (data.items || []).length;
         const nFolders = (data.folders || []).length;
@@ -1298,8 +1303,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         );
       }
     } catch (err) {
-      delete panel.dataset.loaded;
-      panel.innerHTML = `<p class="muted small error">${esc(err.message || "Failed to load folder.")}</p>`;
+      delete body.dataset.loaded;
+      body.innerHTML = `<p class="muted small error">${esc(err.message || "Failed to load folder.")}</p>`;
     }
   }
 
