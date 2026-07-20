@@ -907,36 +907,37 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   function folderRow(folder, options = {}) {
     const preferred = typeof options === "boolean" ? options : !!options.preferred;
     const startOpen = typeof options === "boolean" ? false : !!options.open;
-    const ancestorIds = options.ancestorIds instanceof Set ? new Set(options.ancestorIds) : new Set();
+    // Ancestors only — never include this folder's own id (that falsely tripped
+    // "Skipped circular Fusion folder link" and left every expanded folder blank).
+    const parentIds = options.ancestorIds instanceof Set ? new Set(options.ancestorIds) : new Set();
+    const folderName = String(folder?.name || folder?.displayName || folder?.label || "").trim() || "Untitled folder";
     const item = document.createElement("div");
     item.className = "onshape-doc-item fusion-folder-item";
     item.dataset.folderId = folder.id || "";
     item._fusionFolder = folder;
     item.innerHTML = `
-      <div class="onshape-doc-header">
-        <button type="button" class="onshape-doc-name fusion-folder-select" title="Open folder and show contents">${esc(folder.name || "Untitled")}</button>
+      <div class="onshape-doc-header fusion-folder-header">
+        <button type="button" class="btn-icon onshape-doc-toggle fusion-folder-toggle" title="Show folder contents" aria-expanded="false" style="transform: rotate(-90deg)">
+          <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor"><path d="M2 3l3 4 3-4H2z"/></svg>
+        </button>
+        <button type="button" class="fusion-folder-name" title="Open folder and show contents">${esc(folderName)}</button>
         <div class="fusion-row-actions">
-          <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}">${preferred ? "Linked mirror" : "Link mirror"}</button>
-          <button type="button" class="btn btn-compact btn-fusion-import-folder">Import all</button>
-          <button type="button" class="btn btn-compact btn-fusion-push">Push current model</button>
-          <button type="button" class="btn-icon onshape-doc-toggle" title="Show folder contents" aria-expanded="false" style="transform: rotate(-90deg)">
-            <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor"><path d="M2 3l3 4 3-4H2z"/></svg>
-          </button>
+          <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}" title="Link this Fusion folder as the mirror for the open Render3D project">${preferred ? "Linked" : "Link"}</button>
+          <button type="button" class="btn btn-compact btn-fusion-import-folder" title="Import all supported files in this folder">Import</button>
+          <button type="button" class="btn btn-compact btn-fusion-push" title="Push the current Render3D model into this folder">Push</button>
         </div>
       </div>
       <div class="onshape-doc-elements fusion-folder-panel fusion-folder-panel-collapsed"></div>
     `;
     const panel = item.querySelector(".onshape-doc-elements");
     const toggle = item.querySelector(".onshape-doc-toggle");
-    const chain = new Set(ancestorIds);
-    if (folder.id) chain.add(folder.id);
-    item.querySelector(".fusion-folder-select")?.addEventListener("click", () => {
+    item.querySelector(".fusion-folder-name")?.addEventListener("click", () => {
       // Folder name opens contents in the tree (not a model picker).
       void selectFolderForModels(folder);
     });
     toggle.addEventListener("click", () => {
       const open = panel.classList.contains("fusion-folder-panel-collapsed");
-      setFolderExpanded(folder, panel, toggle, open, { ancestorIds: chain });
+      setFolderExpanded(folder, panel, toggle, open, { ancestorIds: parentIds });
       if (open) {
         activeFolderId = folder.id;
         item.classList.add("active");
@@ -953,7 +954,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     });
     if (preferred) item.classList.add("active");
     if (startOpen) {
-      setFolderExpanded(folder, panel, toggle, true, { persist: false, ancestorIds: chain });
+      setFolderExpanded(folder, panel, toggle, true, { persist: false, ancestorIds: parentIds });
     }
     return item;
   }
@@ -1264,14 +1265,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   }
 
   async function loadFolder(folder, panel, ancestorIds = new Set()) {
-    if (ancestorIds.has(folder.id)) {
+    const parents = ancestorIds instanceof Set ? ancestorIds : new Set(ancestorIds || []);
+    // Only treat a true parent cycle as circular — never the folder being opened.
+    if (folder?.id && parents.has(folder.id)) {
       panel.dataset.loaded = "1";
       panel.innerHTML = `<p class="muted small">Skipped circular Fusion folder link.</p>`;
       return;
     }
     panel.dataset.loaded = "1";
     panel.innerHTML = `<p class="muted small loading-dots">Loading...</p>`;
-    const chain = new Set(ancestorIds);
+    const chain = new Set(parents);
     if (folder.id) chain.add(folder.id);
     try {
       const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`);

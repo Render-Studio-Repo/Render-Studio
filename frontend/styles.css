@@ -13668,6 +13668,46 @@ button.onshape-doc-name.fusion-folder-select:hover,
   color: #7dd3fc;
 }
 
+.fusion-folder-header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+}
+
+.fusion-folder-toggle {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-muted, #8b949e);
+}
+
+.fusion-folder-name {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #e6edf3 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fusion-folder-name:hover,
+.fusion-folder-item.active .fusion-folder-name {
+  color: #7dd3fc !important;
+}
+
 .onshape-doc-toggle {
   flex-shrink: 0;
   color: var(--text-muted, #888);
@@ -13709,6 +13749,11 @@ button.onshape-doc-name.fusion-folder-select:hover,
   align-items: center;
   gap: 8px;
 }
+.fusion-file-row .onshape-elem-name {
+  min-width: 0;
+  font-weight: 600;
+  color: #e6edf3;
+}
 .fusion-file-row .btn-fusion-import {
   font-weight: 700;
 }
@@ -13725,8 +13770,14 @@ button.onshape-doc-name.fusion-folder-select:hover,
 .fusion-row-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex-shrink: 0;
+}
+
+.fusion-row-actions .btn {
+  font-size: 0.66rem;
+  padding: 3px 7px;
+  white-space: nowrap;
 }
 
 .btn-fusion-push {
