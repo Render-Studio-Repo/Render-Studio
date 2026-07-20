@@ -97,7 +97,7 @@ import {
 } from "./client-reload.js?v=20260715-no-iphone-banner";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
-import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
+import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260720-mcmaster-insert";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
@@ -107,7 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-live";
+import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-stage";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
   suggestElectronicsForBuild,
@@ -8635,7 +8635,7 @@ function handleDesignTabChange(tab) {
     texturePanel?.close?.();
     mcmasterInsert?.open?.();
     setRightTab("prompt");
-    setEditStatus("ok", "Insert — opens live McMaster-Carr beside a drop dock (iframes are blocked).");
+    setEditStatus("ok", "Insert — McMaster-Carr, recent parts, or import CAD.");
   } else if (tab === "TEXTURE") {
     exitCanvasTab();
     exitSketchMode();
@@ -16449,24 +16449,30 @@ function writeMcMasterInsertDest(mode) {
 }
 
 async function resolveMcMasterInsertDestination(files) {
-  const pref = readMcMasterInsertDest();
-  if (pref === "current") {
-    if (!projectId) {
-      try {
-        await ensureProjectForUpload();
-      } catch {
-        try { await ensureProject(); } catch { /* fall through to ask */ }
-      }
-    }
-    return projectId
-      ? { destination: "current", projectId }
-      : askDropDestination(files);
-  }
-  if (pref === "new") return { destination: "new" };
+  // Always ask: current workspace vs new project.
   return askDropDestination(files);
 }
 
+const texturePanel = createTexturePanel({
+  api,
+  getProjectId: () => projectId,
+  getTargets: () => textureTargetEntries(),
+  onStatus: (kind, text) => {
+    if (text) setEditStatus(kind || "ok", text);
+  },
+  onApply: async (texture, scope, options = {}) => {
+    await applyLibraryTexture(texture, scope, options);
+  },
+});
+
+const docTabs = createDocumentTabBar({
+  tabBarEl: document.getElementById("doc-tab-bar"),
+  mainColumnEl: document.querySelector(".main-column"),
+});
+
 const mcmasterInsert = createMcMasterInsert({
+  docTabs,
+  viewerEl: document.getElementById("mcmaster-viewer"),
   resolveDestination: (files) => resolveMcMasterInsertDestination(files),
   onImportFiles: async (files, choice) => uploadProjectFiles(files, choice),
   onLoadLibrary: async () => {
@@ -16496,24 +16502,6 @@ const mcmasterInsert = createMcMasterInsert({
     if (text) setEditStatus(kind || "ok", text);
   },
 });
-
-const texturePanel = createTexturePanel({
-  api,
-  getProjectId: () => projectId,
-  getTargets: () => textureTargetEntries(),
-  onStatus: (kind, text) => {
-    if (text) setEditStatus(kind || "ok", text);
-  },
-  onApply: async (texture, scope, options = {}) => {
-    await applyLibraryTexture(texture, scope, options);
-  },
-});
-
-const docTabs = createDocumentTabBar({
-  tabBarEl: document.getElementById("doc-tab-bar"),
-  mainColumnEl: document.querySelector(".main-column"),
-});
-
 const dxfViewer = createDxfViewer({
   docTabs,
   tabBarEl: document.getElementById("doc-tab-bar"),
@@ -16939,7 +16927,19 @@ async function handleReferenceImageAction(payload = {}) {
 }
 
 docTabs.onActivate((tab) => {
-  if (!tab) return;
+  if (!tab) {
+    mcmasterInsert?.hideViewerOnly?.();
+    dxfViewer?.hideViewerOnly?.();
+    referenceFilesViewer?.hideViewerOnly?.();
+    return;
+  }
+  if (tab.kind === "mcmaster") {
+    dxfViewer.hideViewerOnly?.();
+    referenceFilesViewer.hideViewerOnly?.();
+    mcmasterInsert.activateFromShared?.();
+    return;
+  }
+  mcmasterInsert?.hideViewerOnly?.();
   if (tab.kind === "dxf") {
     referenceFilesViewer.hideViewerOnly?.();
     dxfViewer.activateFromShared?.(tab.id);
@@ -16951,7 +16951,8 @@ docTabs.onActivate((tab) => {
 
 docTabs.onClose((tab) => {
   if (!tab) return;
-  if (tab.kind === "dxf") dxfViewer.closeTab?.(tab.id);
+  if (tab.kind === "mcmaster") mcmasterInsert.closeTab?.(tab.id);
+  else if (tab.kind === "dxf") dxfViewer.closeTab?.(tab.id);
   else referenceFilesViewer.closeTab?.(tab.id);
 });
 
@@ -18556,7 +18557,7 @@ function handleWiringTabChange(tab) {
     catalogPanel?.close?.();
     texturePanel?.close?.();
     mcmasterInsert?.open?.();
-    setEditStatus("ok", "Insert — opens live McMaster-Carr beside a drop dock (iframes are blocked).");
+    setEditStatus("ok", "Insert — McMaster-Carr, recent parts, or import CAD.");
     return;
   }
   if (tab === "TEXTURE") {

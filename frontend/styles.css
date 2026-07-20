@@ -36864,3 +36864,214 @@ body.mcmaster-insert-open { overflow: hidden; }
   .mcmaster-live-layout { grid-template-columns: 1fr; }
   .mcmaster-live-stage { min-height: 240px; }
 }
+
+/* Insert panel — clean + recent */
+.insert-panel--clean {
+  width: min(440px, 94vw);
+  gap: 14px;
+}
+.insert-panel-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 2px;
+  border-top: 1px solid #30363d;
+}
+.insert-recent-block {
+  display: grid;
+  gap: 8px;
+}
+.insert-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.insert-recent-head strong {
+  color: #e6edf3;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.insert-recent-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+.insert-recent-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 2px;
+}
+.insert-recent-card {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 8px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+  color: inherit;
+  cursor: pointer;
+}
+.insert-recent-card:hover { border-color: #58a6ff; }
+.insert-recent-card strong {
+  display: block;
+  color: #e6edf3;
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insert-recent-card small {
+  display: block;
+  color: #8b949e;
+  font-size: 0.66rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* McMaster dock as viewport tab (same overlay plane as DXF/ref) */
+.mcmaster-viewer {
+  display: flex;
+  flex-direction: column;
+  background: #0d1117;
+  z-index: 5;
+}
+.mcmaster-viewer.hidden { display: none !important; }
+.mcmaster-tab-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.mcmaster-tab-chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #30363d;
+  background: #161b22;
+}
+.mcmaster-tab-chrome-left,
+.mcmaster-tab-chrome-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mcmaster-tab-logo {
+  display: block;
+  height: 18px;
+  width: auto;
+  max-width: 130px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.mcmaster-tab-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 0;
+}
+.mcmaster-tab-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  overflow: auto;
+  border-right: 1px solid #30363d;
+}
+.mcmaster-tab-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow: auto;
+  background: #161b22;
+}
+.mcmaster-tab-hint { margin: 0; line-height: 1.45; }
+.mcmaster-tab-main .mcmaster-live-drop {
+  min-height: 140px;
+  place-content: center;
+}
+@media (max-width: 860px) {
+  .mcmaster-tab-body { grid-template-columns: 1fr; }
+  .mcmaster-tab-main { border-right: 0; border-bottom: 1px solid #30363d; }
+  .insert-recent-list { grid-template-columns: 1fr; }
+}
+
+/* McMaster tab — stage downloads then insert; recent on right */
+.mcmaster-stage-banner {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: rgba(88, 166, 255, 0.08);
+}
+.mcmaster-stage-banner strong { color: #e6edf3; font-size: 0.82rem; }
+.mcmaster-stage-banner span { color: #8b949e; font-size: 0.72rem; }
+.mcmaster-drop-actions { display: flex; gap: 8px; margin-top: 4px; }
+.mcmaster-viewer.is-awaiting .mcmaster-live-drop {
+  border-color: #3fb950;
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.18);
+}
+.mcmaster-pending-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: #161b22;
+}
+.mcmaster-pending-list { display: grid; gap: 8px; }
+.mcmaster-pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+}
+.mcmaster-pending-copy { min-width: 0; }
+.mcmaster-pending-copy strong {
+  display: block;
+  color: #e6edf3;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcmaster-pending-copy small { color: #8b949e; font-size: 0.68rem; }
+.mcmaster-pending-row-actions,
+.mcmaster-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.mcmaster-recent-side {
+  display: grid;
+  gap: 8px;
+}
+.mcmaster-recent-side-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(48vh, 420px);
+  overflow: auto;
+}
+.mcmaster-recent-side-list .insert-recent-card {
+  grid-template-columns: 36px minmax(0, 1fr);
+}

@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260720-mcmaster-live" />
+  <link rel="stylesheet" href="/styles.css?v=20260720-mcmaster-stage" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -1003,6 +1003,7 @@
       </main>
       <div id="dxf-viewer" class="dxf-viewer hidden" aria-hidden="true"></div>
       <div id="ref-viewer" class="dxf-viewer ref-viewer hidden" aria-hidden="true"></div>
+      <div id="mcmaster-viewer" class="dxf-viewer mcmaster-viewer hidden" aria-hidden="true"></div>
       <div id="wiring-workspace" class="wiring-workspace hidden">
         <aside id="wiring-palette" class="wiring-palette">
           <div id="wiring-palette-list"></div>
@@ -1957,17 +1958,17 @@
     <div class="auth-backdrop" data-drop-dest-close></div>
     <div class="auth-card app-dialog-card">
       <button type="button" class="auth-close" data-drop-dest-close aria-label="Close">&times;</button>
-      <h2 id="drop-destination-title" class="app-dialog-title">Import CAD file</h2>
+      <h2 id="drop-destination-title" class="app-dialog-title">Add to workspace?</h2>
       <p id="drop-destination-file" class="drop-dest-file mono"></p>
-      <p class="muted small">Add this file to your open project or start a new one.</p>
+      <p class="muted small">Import into your current workspace or start a new project.</p>
       <div class="drop-dest-options">
         <button type="button" id="drop-destination-current" class="drop-dest-option">
-          <span class="drop-dest-option-title">Current project / workspace</span>
+          <span class="drop-dest-option-title">Current workspace</span>
           <span id="drop-destination-current-label" class="drop-dest-option-meta muted small"></span>
         </button>
         <button type="button" id="drop-destination-new" class="drop-dest-option">
           <span class="drop-dest-option-title">New project</span>
-          <span class="drop-dest-option-meta muted small">Create one fresh project for the selected upload</span>
+          <span class="drop-dest-option-meta muted small">Create a fresh project for this import</span>
         </button>
       </div>
       <div class="app-dialog-actions">

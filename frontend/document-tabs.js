@@ -43,8 +43,9 @@ export function createDocumentTabBar(options = {}) {
       syncChrome();
       return;
     }
-    if (!activeId || !tabs.has(activeId)) {
-      activeId = tabs.keys().next().value;
+    // Allow no active tab (minimized dock) while tabs remain in the strip.
+    if (activeId && !tabs.has(activeId)) {
+      activeId = null;
     }
     tabBarEl.innerHTML = [...tabs.values()]
       .map((tab) => {
@@ -60,7 +61,9 @@ export function createDocumentTabBar(options = {}) {
                 ? "TXT"
                 : tab.kind === "image"
                   ? "IMG"
-                  : "FILE";
+                  : tab.kind === "mcmaster"
+                    ? "MC"
+                    : "FILE";
         return `<button type="button" class="dxf-tab ${active ? "active" : ""}" data-doc-tab="${escapeHtml(tab.id)}" role="tab" aria-selected="${active ? "true" : "false"}">
           <span class="doc-tab-kind">${badge}</span>
           <span class="dxf-tab-label">${escapeHtml(label)}</span>
@@ -118,6 +121,16 @@ export function createDocumentTabBar(options = {}) {
       activeId = key;
       render();
       if (notify && changed) activateHandler?.(tabs.get(key));
+    },
+    /** Keep tabs open but show the 3D viewport (e.g. McMaster minimize). */
+    deactivate({ notify = false } = {}) {
+      if (!activeId) {
+        render();
+        return;
+      }
+      activeId = null;
+      render();
+      if (notify) activateHandler?.(null);
     },
     remove(id) {
       const key = String(id || "");
