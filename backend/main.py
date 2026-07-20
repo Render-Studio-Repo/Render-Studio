@@ -6434,12 +6434,22 @@ def autodesk_folder_contents(aps_project_id: str, folder_id: str, user: dict[str
 
 
 def _cached_autodesk_listing(key: tuple[Any, ...], loader: Any, ttl: float) -> Any:
+    """Cache Autodesk listing responses without holding the lock during HTTP."""
     now = time.monotonic()
     with _autodesk_listing_cache_lock:
         cached = _autodesk_listing_cache.get(key)
         if cached and cached[0] > now:
             return cached[1]
-        value = loader()
+
+    # Load outside the lock so concurrent folder/hub requests are not serialized
+    # behind a single Autodesk round-trip (that left the Fusion panel stuck on
+    # "Loading Fusion folders..." while another contents fetch held the lock).
+    value = loader()
+    now = time.monotonic()
+    with _autodesk_listing_cache_lock:
+        cached = _autodesk_listing_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
         _autodesk_listing_cache[key] = (now + ttl, value)
         if len(_autodesk_listing_cache) > _AUTODESK_LISTING_CACHE_MAX:
             for drop_key in list(_autodesk_listing_cache.keys())[: len(_autodesk_listing_cache) // 2]:

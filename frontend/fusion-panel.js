@@ -37,6 +37,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   let mirrorStaleMessage = "";
   const importedMap = new Map();
   let contextMenu = null;
+  /** Bumped to ignore stale overlapping hub/project/folder loads. */
+  let browseLoadId = 0;
 
   function loadFusionFolderOpenState() {
     try {
@@ -100,13 +102,15 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
 
   async function syncMirrorUiFromCurrentProject() {
     if (!linkedAccount || !hubs.length) return;
+    const loadId = ++browseLoadId;
     preferredMirrorTarget = await loadPreferredMirrorTarget();
+    if (loadId !== browseLoadId) return;
     updateMirrorStaleState();
     if (preferredMirrorTarget?.hub_id && hubs.some((hub) => hub.id === preferredMirrorTarget.hub_id) && !mirrorStale) {
       activeHubId = preferredMirrorTarget.hub_id;
     }
     renderControls();
-    if (activeHubId) await loadProjects();
+    if (activeHubId) await loadProjects(loadId);
   }
 
   function setStatus(message, isError = false) {
@@ -387,12 +391,15 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
 
   async function loadHubs({ skipPush = false } = {}) {
     if (!controlsEl || !listEl) return;
+    const loadId = ++browseLoadId;
     if (!skipPush) await pushLocalChangesOnAccess();
+    if (loadId !== browseLoadId) return;
     controlsEl.innerHTML = "";
-    listEl.innerHTML = "";
+    listEl.innerHTML = `<p class="muted small loading-dots">Loading Fusion library...</p>`;
     setStatus("Loading Fusion account...");
     try {
       const status = await api("/api/autodesk/status");
+      if (loadId !== browseLoadId) return;
       linkedAccount = status?.linked ? status : null;
       if (!linkedAccount) {
         renderDisconnectedControls();
@@ -401,13 +408,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       const accountLabel = linkedAccount.autodesk_email || linkedAccount.autodesk_name || "Autodesk account";
       setStatus(`Connected as ${accountLabel}. Pick a hub and project, then open a folder below.`);
       const data = await api("/api/autodesk/hubs");
+      if (loadId !== browseLoadId) return;
       hubs = data.hubs || [];
       if (!hubs.length) {
         setStatus(`Connected as ${accountLabel}, but no Fusion hubs were found.`);
         renderAccountControls();
+        listEl.innerHTML = "";
         return;
       }
       preferredMirrorTarget = await loadPreferredMirrorTarget();
+      if (loadId !== browseLoadId) return;
       updateMirrorStaleState();
       activeHubId = activeHubId && hubs.some((h) => h.id === activeHubId) ? activeHubId : hubs[0].id;
       if (preferredMirrorTarget?.hub_id && hubs.some((h) => h.id === preferredMirrorTarget.hub_id) && !mirrorStale) {
@@ -417,11 +427,13 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         setStatus(mirrorStaleMessage, true);
       }
       renderControls();
-      await loadProjects();
+      await loadProjects(loadId);
     } catch (err) {
+      if (loadId !== browseLoadId) return;
       const msg = err.message || "Could not load Fusion library.";
       setStatus(/not linked|401/i.test(msg) ? "Connect Fusion 360 to browse your documents." : msg, !/not linked|401/i.test(msg));
       if (/not linked|401/i.test(msg)) renderDisconnectedControls();
+      else if (listEl) listEl.innerHTML = `<p class="muted small error">${esc(msg)}</p>`;
     }
   }
 
@@ -790,44 +802,76 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     };
   }
 
-  async function loadProjects() {
+  async function loadProjects(existingLoadId) {
     if (!activeHubId) return;
-    listEl.innerHTML = "";
+    const loadId = existingLoadId ?? ++browseLoadId;
     setStatus("Loading Fusion projects...");
-    const data = await api(`/api/autodesk/hubs/${encodeURIComponent(activeHubId)}/projects`);
-    projects = data.projects || [];
-    activeProjectId = activeProjectId && projects.some((p) => p.id === activeProjectId) ? activeProjectId : projects[0]?.id || "";
-    if (!mirrorStale && preferredMirrorTarget?.aps_project_id && projects.some((p) => p.id === preferredMirrorTarget.aps_project_id)) {
-      activeProjectId = preferredMirrorTarget.aps_project_id;
+    if (listEl && !listEl.querySelector(".fusion-folder-item")) {
+      listEl.innerHTML = `<p class="muted small loading-dots">Loading Fusion projects...</p>`;
     }
-    renderProjectSelect();
-    renderModelSelect();
-    if (!activeProjectId) {
-      setStatus("No Fusion projects found in this hub.");
-      return;
+    try {
+      const data = await api(`/api/autodesk/hubs/${encodeURIComponent(activeHubId)}/projects`);
+      if (loadId !== browseLoadId) return;
+      projects = data.projects || [];
+      activeProjectId = activeProjectId && projects.some((p) => p.id === activeProjectId) ? activeProjectId : projects[0]?.id || "";
+      if (!mirrorStale && preferredMirrorTarget?.aps_project_id && projects.some((p) => p.id === preferredMirrorTarget.aps_project_id)) {
+        activeProjectId = preferredMirrorTarget.aps_project_id;
+      }
+      renderProjectSelect();
+      renderModelSelect();
+      if (!activeProjectId) {
+        setStatus("No Fusion projects found in this hub.");
+        if (listEl) listEl.innerHTML = `<p class="muted small">No Fusion projects found.</p>`;
+        return;
+      }
+      await loadTopFolders(loadId);
+    } catch (err) {
+      if (loadId !== browseLoadId) return;
+      const msg = err.message || "Could not load Fusion projects.";
+      setStatus(msg, true);
+      if (listEl) listEl.innerHTML = `<p class="muted small error">${esc(msg)}</p>`;
     }
-    await loadTopFolders();
   }
 
-  async function loadTopFolders() {
-    listEl.innerHTML = "";
+  async function loadTopFolders(existingLoadId) {
+    if (!activeHubId || !activeProjectId) return;
+    const loadId = existingLoadId ?? ++browseLoadId;
     setStatus("Loading Fusion folders...");
-    const data = await api(`/api/autodesk/hubs/${encodeURIComponent(activeHubId)}/projects/${encodeURIComponent(activeProjectId)}/top-folders`);
-    topFolders = data.folders || [];
-    activeFolderId = activeFolderId && topFolders.some((folder) => folder.id === activeFolderId)
-      ? activeFolderId
-      : (linkedMirrorFolderId() && topFolders.some((folder) => folder.id === linkedMirrorFolderId())
-        ? linkedMirrorFolderId()
-        : topFolders[0]?.id || "");
-    setStatus("");
-    renderFolders(topFolders, listEl, linkedMirrorFolderId());
-    if (activeFolderId) {
-      const folder = topFolders.find((entry) => entry.id === activeFolderId) || { id: activeFolderId, name: "Folder" };
-      await selectFolderForModels(folder, { highlight: true, status: true });
-    } else {
+    if (listEl) {
+      listEl.innerHTML = `<p class="muted small loading-dots">Loading Fusion folders...</p>`;
+    }
+    try {
+      const data = await api(
+        `/api/autodesk/hubs/${encodeURIComponent(activeHubId)}/projects/${encodeURIComponent(activeProjectId)}/top-folders`,
+      );
+      if (loadId !== browseLoadId) return;
+      topFolders = Array.isArray(data?.folders) ? data.folders : [];
+      const linkedId = linkedMirrorFolderId();
+      // Keep a prior selection / linked mirror, but do NOT auto-pick the first
+      // folder and block the list on its contents fetch (that left the UI stuck
+      // on "Loading Fusion folders..." under overlapping reloads).
+      activeFolderId = activeFolderId && topFolders.some((folder) => folder.id === activeFolderId)
+        ? activeFolderId
+        : (linkedId && topFolders.some((folder) => folder.id === linkedId) ? linkedId : "");
+      renderFolders(topFolders, listEl, linkedId);
       libraryItems = [];
       renderModelSelect();
-      setStatus("No folders found in this Fusion project.");
+      if (!topFolders.length) {
+        setStatus("No folders found in this Fusion project.");
+        return;
+      }
+      const n = topFolders.length;
+      setStatus(`Showing ${n} folder${n === 1 ? "" : "s"}. Open one to see files.`);
+      // Expand linked / previously-open folder in the background only.
+      if (activeFolderId && (activeFolderId === linkedId || isFusionFolderOpen(activeFolderId))) {
+        const folder = topFolders.find((entry) => entry.id === activeFolderId) || { id: activeFolderId, name: "Folder" };
+        void selectFolderForModels(folder, { highlight: true, status: true });
+      }
+    } catch (err) {
+      if (loadId !== browseLoadId) return;
+      const msg = err.message || "Could not load Fusion folders.";
+      setStatus(msg, true);
+      if (listEl) listEl.innerHTML = `<p class="muted small error">${esc(msg)}</p>`;
     }
   }
 
