@@ -1899,7 +1899,9 @@ def _prompt_wants_electronics_or_wiring(prompt: str) -> bool:
     return any(n in p for n in needles)
 
 
-def _electronics_authoring_rules(prompt: str) -> str:
+def _electronics_authoring_rules(prompt: str, *, enabled: bool = True) -> str:
+    if not enabled:
+        return ""
     if not _prompt_wants_electronics_or_wiring(prompt):
         return ""
     return (
@@ -1915,7 +1917,7 @@ def _electronics_authoring_rules(prompt: str) -> str:
     )
 
 
-def _assembly_dual_export_rules(prompt: str = "") -> str:
+def _assembly_dual_export_rules(prompt: str = "", *, model_electronics: bool = True) -> str:
     return (
         "\nASSEMBLED + EXPLODED EXPORT (required for multi-part assemblies):\n"
         "- `gen_step()` MUST return the assembled layout (flight-ready / installed positions).\n"
@@ -1925,7 +1927,7 @@ def _assembly_dual_export_rules(prompt: str = "") -> str:
         "`{stem}_exploded.step/.glb/.stl/.3mf` when `gen_exploded()` exists.\n"
         "- Do NOT make the primary generator filename end in `_exploded` unless the user only "
         "asked for an exploded view.\n"
-        f"{_electronics_authoring_rules(prompt)}"
+        f"{_electronics_authoring_rules(prompt, enabled=model_electronics)}"
     )
 
 
@@ -3640,8 +3642,15 @@ def _run_text_to_cad_v2(
                 "\n\nARCHITECT MODE NOTE:\n"
                 "This prompt is not a room/house/building request. Follow the user request directly and do not force house-specific modules.\n"
             )
-    # Always attach assembled+exploded / electronics authoring contract for Mode 2.0+.
-    workflow_note += "\n" + _assembly_dual_export_rules(prompt)
+    # Always attach assembled+exploded / optional electronics authoring contract for Mode 2.0+.
+    model_electronics = bool((context or {}).get("model_electronics", True))
+    workflow_note += "\n" + _assembly_dual_export_rules(prompt, model_electronics=model_electronics)
+    if not model_electronics:
+        workflow_note += (
+            "\n\nELECTRONICS MODELING OFF:\n"
+            "- Do not add visible motor, ESC, battery, receiver, servo, propeller, or wire-harness solids.\n"
+            "- Mechanical/airframe geometry only; pockets, channels, and clearance volumes are fine.\n"
+        )
     if progress_callback:
         brief_label = (
             f"Writing {label_prefix} revise brief (Jake edit workflow)..."
@@ -3824,6 +3833,7 @@ def _run_text_to_cad_v2(
                     cancel_check=cancel_check,
                     progress_callback=progress_callback,
                     usage_callback=usage_callback,
+                    model_electronics=bool((context or {}).get("model_electronics", True)),
                     trace_id=trace_id,
                 )
                 agent_runtime = "jake_tool_agent"

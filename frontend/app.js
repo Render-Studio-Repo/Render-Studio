@@ -74,11 +74,11 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260719-credit-payment-link";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260717-spice-hold";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260720-repair-loop";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260719-fusion-close-3mf";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
-import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
+import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-select";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-name-xform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-architect-clip";
@@ -87,7 +87,7 @@ import { createDirectModeling } from "./direct-modeling.js?v=20260716-body-face-
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
-import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-axis-preview";
+import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-bake";
 import { createProjectTree } from "./project-tree.js?v=20260719-bodies-fix";
 import {
   saveSessionSnapshot,
@@ -1289,6 +1289,137 @@ function applyPromptModeUI(mode = promptMode) {
     skillsPromptUI?.updatePlan?.();
   }
   syncCodexToggleVisibility(promptMode);
+  syncElectronicsToggleVisibility(promptMode);
+}
+
+function selectedPromptSupportsElectronics(mode = promptMode) {
+  return ["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase());
+}
+
+function isModelElectronicsEnabled() {
+  const btn = document.getElementById("prompt-electronics");
+  if (btn) return btn.getAttribute("aria-pressed") === "true";
+  try {
+    return localStorage.getItem(ELECTRONICS_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function setModelElectronicsEnabled(enabled, { persist = true } = {}) {
+  const btn = document.getElementById("prompt-electronics");
+  const on = Boolean(enabled);
+  if (btn) {
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.classList.toggle("active", on);
+    btn.title = on
+      ? "Model electronics solids — on (hover for details)"
+      : "Model electronics solids — off (hover for details)";
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(ELECTRONICS_KEY, on ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function syncElectronicsToggleVisibility(mode = promptMode) {
+  const wrap = document.getElementById("prompt-electronics-wrap");
+  if (!wrap) return;
+  const show = selectedPromptSupportsElectronics(mode);
+  wrap.classList.toggle("hidden", !show);
+}
+
+function initPromptElectronicsToggle() {
+  const btn = document.getElementById("prompt-electronics");
+  if (!btn) return;
+  let enabled = true;
+  try {
+    enabled = localStorage.getItem(ELECTRONICS_KEY) !== "0";
+  } catch {
+    enabled = true;
+  }
+  setModelElectronicsEnabled(enabled, { persist: false });
+  btn.addEventListener("click", () => {
+    setModelElectronicsEnabled(!isModelElectronicsEnabled());
+  });
+  syncElectronicsToggleVisibility(promptMode);
+  initPromptElectronicsHoverTip();
+}
+
+function initPromptElectronicsHoverTip() {
+  const wrap = document.getElementById("prompt-electronics-wrap");
+  const tip = document.getElementById("prompt-electronics-tip");
+  if (!wrap || !tip) return;
+
+  tip.hidden = false;
+  if (tip.parentElement !== document.body) {
+    document.body.appendChild(tip);
+  }
+
+  let showTimer = 0;
+  let hideTimer = 0;
+  let open = false;
+
+  const placeTip = () => {
+    const rect = wrap.getBoundingClientRect();
+    const tipWidth = Math.min(300, Math.max(240, window.innerWidth * 0.72));
+    tip.style.width = `${tipWidth}px`;
+    const gap = 10;
+    let left = rect.left + rect.width / 2 - tipWidth / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tipWidth - 8));
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.bottom = "auto";
+    tip.classList.add("prompt-spice-tip--below");
+    const wasVisible = tip.classList.contains("is-visible");
+    if (!wasVisible) tip.classList.add("prompt-spice-tip--measure");
+    const estimatedHeight = tip.offsetHeight || 160;
+    if (!wasVisible) tip.classList.remove("prompt-spice-tip--measure");
+    tip.style.top = `${Math.round(rect.bottom + gap)}px`;
+  };
+
+  const show = () => {
+    if (wrap.classList.contains("hidden")) return;
+    clearTimeout(hideTimer);
+    hideTimer = 0;
+    if (open) {
+      placeTip();
+      return;
+    }
+    clearTimeout(showTimer);
+    showTimer = window.setTimeout(() => {
+      open = true;
+      tip.classList.add("is-visible");
+      placeTip();
+    }, 50);
+  };
+
+  const hide = () => {
+    clearTimeout(showTimer);
+    showTimer = 0;
+    clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => {
+      open = false;
+      tip.classList.remove("is-visible");
+    }, 60);
+  };
+
+  wrap.addEventListener("pointerenter", show);
+  wrap.addEventListener("pointerleave", hide);
+  wrap.addEventListener("focusin", show);
+  wrap.addEventListener("focusout", (event) => {
+    if (!wrap.contains(event.relatedTarget)) hide();
+  });
+  tip.addEventListener("pointerenter", show);
+  tip.addEventListener("pointerleave", hide);
+  window.addEventListener("scroll", () => {
+    if (open) placeTip();
+  }, true);
+  window.addEventListener("resize", () => {
+    if (open) placeTip();
+  });
 }
 
 function preservePromptModeAfterAttach(modeBeforeAttach = promptMode) {
@@ -4160,6 +4291,7 @@ const WIRING_SPEED_KEY = "render3d:wiring-speed:v1";
 const CODEX_KEY = "render3d:codex:v1";
 const CODEX_KEY_LEGACY = "render3d:jake-codex:v1";
 const CODEX_OPENAI_KEY = "render3d:codexOpenAiKey:v1";
+const ELECTRONICS_KEY = "render3d:model-electronics:v1";
 
 function isCodexEnabled() {
   return Boolean(document.getElementById("prompt-codex")?.checked);
@@ -12522,8 +12654,6 @@ function bindObjectSizeControls(pop, filename) {
     const applyBtn = panel.querySelector("[data-size-apply]");
     if (applyBtn) applyBtn.disabled = true;
     setEditStatus("loading", status);
-    // Reset viewport preview so the reloaded baked mesh isn't double-scaled.
-    resetLivePreview();
     try {
       const endpoint = target.bodyCount > 1 && target.bodyIndex != null
         ? `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform-body`
@@ -12535,6 +12665,8 @@ function bindObjectSizeControls(pop, filename) {
             scale,
           }
         : { scale };
+      // Clear live preview only right before bake so a failed request doesn't snap back.
+      resetLivePreview();
       const data = await api(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -12714,6 +12846,29 @@ async function openObjectIterationTree(anchor = document.getElementById("btn-his
     getPreviewRoot: () => {
       const name = selectedObjectFilename() || filename;
       return (name && projectAssembly.get(name)) || currentMesh || null;
+    },
+    // Jake-style: bake envelope dims via /transform (or /transform-body per part).
+    bakeScale: async ({ scale }) => {
+      const target = objectResizeTarget(filename);
+      if (!target) throw new Error("Select an object or body first.");
+      const useBody = target.bodyCount > 1 && target.bodyIndex != null;
+      const endpoint = useBody
+        ? `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform-body`
+        : `/api/projects/${projectId}/files/${encodeURIComponent(target.filename)}/transform`;
+      const body = useBody
+        ? {
+            body_index: target.bodyIndex,
+            ...(target.label ? { body_name: String(target.label).trim() } : {}),
+            scale,
+          }
+        : { scale };
+      const data = await api(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await afterModelEdit({ ...data, replaceCatalog: target.filename });
+      return { ...data, _skipOnApplied: true };
     },
     onApplied: async (result) => {
       const reloadName = result?.artifacts?.glb || filename;
@@ -24267,6 +24422,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       model: selectedModelInfo.model,
       provider: selectedModelInfo.provider,
       codex_agent: ["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled(),
+      model_electronics: selectedPromptSupportsElectronics(promptMode) && isModelElectronicsEnabled(),
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
     });
 
@@ -24382,6 +24538,9 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         ...(promptMode === "v2" ? { mode: "v2" } : {}),
         ...(["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()
           ? { codex_agent: true }
+          : {}),
+        ...(selectedPromptSupportsElectronics(promptMode)
+          ? { model_electronics: isModelElectronicsEnabled() }
           : {}),
         ...getKnowledgePromptFields(),
         ...(spiceMeta.promptImproved
@@ -24920,6 +25079,7 @@ window.addEventListener("keydown", (e) => {
   initAISetupIntroModal();
   initPromptGenerationSpeed();
   initPromptSpiceToggle();
+  initPromptElectronicsToggle();
   initWiringGenerationSpeed();
 
   aiKeyUi = createAIKeyUI({

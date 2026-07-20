@@ -108,9 +108,30 @@ function stepStats(items) {
   return {
     current: activeIdx + 1,
     total,
+    activeIdx,
     label: humanizeProgressText(active.label || "Working…"),
     detail: humanizeProgressText(active.detail || "", ""),
   };
+}
+
+function isRepairLoop(checklist, peakIdx) {
+  if (peakIdx < 0) return false;
+  const stats = stepStats(checklist);
+  return stats.activeIdx < peakIdx;
+}
+
+function formatStepCounter(stats, { repair = false } = {}) {
+  const base = `${stats.current}/${stats.total}`;
+  return repair ? `↺ ${base}` : base;
+}
+
+function formatProgressHeadline(stats, detailText, { repair = false } = {}) {
+  const detail = humanizeProgressText(detailText, stats.label);
+  const step = formatStepCounter(stats, { repair });
+  if (repair) {
+    return `Repair loop · ${step} · ${detail}`;
+  }
+  return `${step} · ${detail}`;
 }
 
 function esc(value) {
@@ -239,6 +260,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const detailsEl = spinner.querySelector(".viewport-spinner-details");
   const jobsEl = spinner.querySelector(".viewport-gen-jobs");
   const thinkingText = spinner.querySelector(".viewport-agent-thinking-text");
+  const thinkingLabelEl = spinner.querySelector(".viewport-agent-thinking-label");
   const promptWrap = spinner.querySelector(".viewport-agent-prompt-wrap");
   const promptTextEl = spinner.querySelector(".viewport-agent-prompt-text");
   const checklistEl = spinner.querySelector(".viewport-agent-checklist");
@@ -290,6 +312,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   let thinkingLabel = "Waiting for AI…";
   let improvedPromptText = "";
   let checklist = DEFAULT_CHECKLIST.map((item) => ({ ...item }));
+  let peakChecklistIdx = -1;
   let activity = [];
   let progressStart = 0;
   let estimateMs = 150000;
@@ -459,9 +482,19 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }
   }
 
+  function syncPeakChecklistIdx(items = checklist) {
+    const stats = stepStats(items);
+    if (peakChecklistIdx < 0) {
+      peakChecklistIdx = stats.activeIdx;
+      return;
+    }
+    peakChecklistIdx = Math.max(peakChecklistIdx, stats.activeIdx);
+  }
+
   function renderChecklist() {
     if (!checklistEl) return;
     const items = checklist.length ? checklist : DEFAULT_CHECKLIST;
+    const repair = isRepairLoop(checklist, peakChecklistIdx);
     checklistEl.innerHTML = items.map((item, index) => {
       const status = item.status || "pending";
       const mark = status === "done" ? "✓" : status === "active" ? "●" : "○";
@@ -469,11 +502,15 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       const detail = detailRaw && detailRaw !== item.label
         ? `<span class="viewport-agent-check-detail">${esc(detailRaw)}</span>`
         : "";
+      const repairNote = status === "active" && repair
+        ? `<span class="viewport-agent-check-repair">Repair pass — revisiting this step to fix earlier output</span>`
+        : "";
       return `
         <li class="viewport-agent-check viewport-agent-check--${esc(status)}" data-status="${esc(status)}">
           <span class="viewport-agent-check-mark" aria-hidden="true">${mark}</span>
           <span class="viewport-agent-check-body">
             <span class="viewport-agent-check-label">${esc(`${index + 1}. ${item.label || item.id || "Step"}`)}</span>
+            ${repairNote}
             ${detail}
           </span>
         </li>
@@ -508,7 +545,13 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       .reverse();
     if (!rows.length) {
       const stats = stepStats(checklist);
-      activityEl.innerHTML = `<li class="viewport-agent-activity-item muted">Step ${stats.current}/${stats.total}: ${esc(stats.label)}</li>`;
+      const repair = isRepairLoop(checklist, peakChecklistIdx);
+      const headline = formatProgressHeadline(
+        stats,
+        stats.detail || stats.label,
+        { repair },
+      );
+      activityEl.innerHTML = `<li class="viewport-agent-activity-item muted">${esc(headline)}</li>`;
       return;
     }
     activityEl.innerHTML = rows.map((row) => {
@@ -528,14 +571,21 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function renderDetails() {
     const stats = stepStats(checklist);
+    const repair = isRepairLoop(checklist, peakChecklistIdx);
     const nowText = humanizeProgressText(
       thinkingLabel || progressLabel || stats.detail || stats.label,
       stats.label,
     );
+    const headline = formatProgressHeadline(stats, nowText, { repair });
+    if (thinkingLabelEl) {
+      thinkingLabelEl.textContent = repair ? "Repair loop" : "Current step";
+    }
     if (thinkingText) {
       const focused = activeJobs.length > 1 ? `Focused model · ` : "";
-      thinkingText.textContent = `${activeJobs.length > 1 ? `${activeJobs.length} models generating · ` : ""}${focused}${stats.current}/${stats.total} · ${nowText}`;
+      const multi = activeJobs.length > 1 ? `${activeJobs.length} models generating · ` : "";
+      thinkingText.textContent = `${multi}${focused}${headline}`;
     }
+    spinner.classList.toggle("viewport-spinner--repair", repair);
     renderImprovedPrompt();
     renderChecklist();
     renderActivity();
@@ -556,13 +606,14 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     }
     const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
     const stats = stepStats(checklist);
+    const repair = isRepairLoop(checklist, peakChecklistIdx);
     spinner.style.setProperty("--gen-pct", String(pct));
     if (progressFill) progressFill.style.width = `${pct}%`;
     if (progressPct) progressPct.textContent = `${pct}%`;
-    if (progressStep) progressStep.textContent = `${stats.current}/${stats.total}`;
+    if (progressStep) progressStep.textContent = formatStepCounter(stats, { repair });
     if (spinnerLabel) {
       const clean = humanizeProgressText(progressLabel || thinkingLabel || stats.label, stats.label);
-      spinnerLabel.textContent = `${stats.current}/${stats.total} · ${clean}`;
+      spinnerLabel.textContent = formatProgressHeadline(stats, clean, { repair });
     }
     if (pct >= 100 && generating) {
       spinner.classList.add("viewport-spinner--place");
@@ -602,6 +653,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     } else if (progress.stage) {
       checklist = checklistFromStage(progress.stage, progress.label || thinkingLabel);
     }
+    syncPeakChecklistIdx(checklist);
     if (Array.isArray(progress.activity)) {
       activity = progress.activity
         .map((row) => {
@@ -759,6 +811,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
           detail: humanizeProgressText(item.detail || "", ""),
         }))
       : DEFAULT_CHECKLIST.map((item) => ({ ...item }));
+    peakChecklistIdx = -1;
+    syncPeakChecklistIdx(checklist);
     activity = Array.isArray(opts.progress?.activity)
       ? opts.progress.activity
           .map((row) => {
@@ -805,6 +859,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     traceProgress = 0;
     improvedPromptText = "";
     checklist = DEFAULT_CHECKLIST.map((item) => ({ ...item }));
+    peakChecklistIdx = -1;
     activity = [];
     activeJobs = [];
     focusedJobId = null;

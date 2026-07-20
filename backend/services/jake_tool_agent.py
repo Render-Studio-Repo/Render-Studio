@@ -223,6 +223,7 @@ class JakeToolAgent:
         cancel_check: CancelCb = None,
         progress_callback: ProgressCb = None,
         usage_callback: UsageCb = None,
+        model_electronics: bool = True,
         trace_id: str | None = None,
     ) -> None:
         self.ai = ai
@@ -240,6 +241,7 @@ class JakeToolAgent:
         self.cancel_check = cancel_check
         self.progress_callback = progress_callback
         self.usage_callback = usage_callback
+        self.model_electronics = bool(model_electronics)
         self.trace_id = trace_id
         self.finished: dict[str, Any] | None = None
         self.last_step_ok = False
@@ -270,6 +272,12 @@ class JakeToolAgent:
 
     def _system_prompt(self) -> str:
         mode = "EDIT/REVISE an existing generator" if self.is_edit else "CREATE a new part"
+        electronics_rule = ""
+        if self.model_electronics:
+            electronics_rule = (
+                "- When the prompt mentions motors/servos/ESC/battery/wiring/electronics: model visible "
+                "labeled electronics solids and wire runs — not empty pockets alone.\n"
+            )
         return (
             "You are a Jake-style CAD authoring agent (earthtojake/text-to-cad skill contract).\n"
             f"Task mode: {mode}.\n"
@@ -288,8 +296,7 @@ class JakeToolAgent:
             "- Never assign bare floats to *_positions / list constants "
             "(wrong: rod_hole_positions = 10.0). Use lists of (x,y) or GridLocations.\n"
             "- Keep labels and working geometry on edits.\n"
-            "- When the prompt mentions motors/servos/ESC/battery/wiring/electronics: model visible "
-            "labeled electronics solids and wire runs — not empty pockets alone.\n"
+            f"{electronics_rule}"
             f"Target files: source={self.source_name}, step={self.step_name}, glb={self.glb_name}.\n\n"
             f"CAD skill excerpt:\n{self._skill_md}"
         )

@@ -634,7 +634,30 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   }
 
   function folderById(folderId) {
-    return topFolders.find((folder) => folder.id === folderId) || { id: folderId, name: "Folder" };
+    const top = topFolders.find((folder) => folder.id === folderId);
+    if (top) return top;
+    const nested = findFolderRow(folderId)?._fusionFolder;
+    return nested || { id: folderId, name: "Folder" };
+  }
+
+  function findFolderRow(folderId) {
+    if (!folderId || !listEl) return null;
+    for (const item of listEl.querySelectorAll(".fusion-folder-item")) {
+      if (item?._fusionFolder?.id === folderId) return item;
+    }
+    return null;
+  }
+
+  async function selectFolderForModels(folder, { highlight = true, status = true } = {}) {
+    if (!folder?.id) return;
+    activeFolderId = folder.id;
+    activeItemId = "";
+    if (highlight) {
+      listEl?.querySelectorAll(".fusion-folder-item").forEach((item) => {
+        item.classList.toggle("active", item?._fusionFolder?.id === folder.id);
+      });
+    }
+    await loadFolderLibraryItems(folder.id, { status });
   }
 
   function renderFolderSelect() {
@@ -668,7 +691,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     };
   }
 
-  async function loadFolderLibraryItems(folderId) {
+  async function loadFolderLibraryItems(folderId, { status = true } = {}) {
     if (!folderId || !activeProjectId) {
       libraryItems = [];
       renderModelSelect();
@@ -679,8 +702,12 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       libraryItems = data.items || [];
       renderModelSelect();
       const folderName = folderById(folderId).name || "folder";
+      const subfolderCount = (data.folders || []).length;
+      if (!status) return;
       if (libraryItems.length) {
         setStatus(`${libraryItems.length} model${libraryItems.length === 1 ? "" : "s"} in ${folderName}.`);
+      } else if (subfolderCount) {
+        setStatus(`No files in "${folderName}" — expand a subfolder below or click a subfolder name to load its models.`);
       } else {
         setStatus(`Folder "${folderName}" has no importable models yet.`);
       }
@@ -700,9 +727,21 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       const isMatch = folder?.id === folderId;
       item.classList.toggle("active", isMatch);
       if (isMatch && panel && toggle && folder) {
-        setFolderExpanded(folder, panel, toggle, true);
+        setFolderExpanded(folder, panel, toggle, true, { ancestorIds: collectFolderAncestors(item) });
       }
     });
+  }
+
+  function collectFolderAncestors(item) {
+    const ids = new Set();
+    let node = item?.parentElement;
+    while (node && node !== listEl) {
+      if (node.classList?.contains("fusion-folder-item") && node._fusionFolder?.id) {
+        ids.add(node._fusionFolder.id);
+      }
+      node = node.parentElement;
+    }
+    return ids;
   }
 
   async function importSelectedModel(btn) {
@@ -783,27 +822,30 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       container.appendChild(folderRow(folder, {
         preferred: folder.id === preferredFolderId,
         open: isFusionFolderOpen(folder.id),
+        ancestorIds: new Set(),
       }));
     }
   }
 
-  function setFolderExpanded(folder, panel, toggle, open, { persist = true, load = true } = {}) {
+  function setFolderExpanded(folder, panel, toggle, open, { persist = true, load = true, ancestorIds = new Set() } = {}) {
     panel.classList.toggle("hidden", !open);
     toggle.setAttribute("aria-expanded", String(!!open));
     toggle.style.transform = open ? "rotate(0deg)" : "rotate(-90deg)";
     if (persist) setFusionFolderOpen(folder.id, !!open);
-    if (open && load && !panel.dataset.loaded) loadFolder(folder, panel);
+    if (open && load && !panel.dataset.loaded) loadFolder(folder, panel, ancestorIds);
   }
 
   function folderRow(folder, options = {}) {
     const preferred = typeof options === "boolean" ? options : !!options.preferred;
     const startOpen = typeof options === "boolean" ? false : !!options.open;
+    const ancestorIds = options.ancestorIds instanceof Set ? new Set(options.ancestorIds) : new Set();
     const item = document.createElement("div");
     item.className = "onshape-doc-item fusion-folder-item";
+    item.dataset.folderId = folder.id || "";
     item._fusionFolder = folder;
     item.innerHTML = `
       <div class="onshape-doc-header">
-        <span class="onshape-doc-name">${esc(folder.name || "Untitled")}</span>
+        <button type="button" class="onshape-doc-name fusion-folder-select" title="Show models in this folder">${esc(folder.name || "Untitled")}</button>
         <div class="fusion-row-actions">
           <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}">${preferred ? "Linked mirror" : "Link mirror"}</button>
           <button type="button" class="btn btn-compact btn-fusion-import-folder">Import all</button>
@@ -817,9 +859,14 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     `;
     const panel = item.querySelector(".onshape-doc-elements");
     const toggle = item.querySelector(".onshape-doc-toggle");
+    const chain = new Set(ancestorIds);
+    if (folder.id) chain.add(folder.id);
+    item.querySelector(".fusion-folder-select")?.addEventListener("click", () => {
+      void selectFolderForModels(folder);
+    });
     toggle.addEventListener("click", () => {
       const open = panel.classList.contains("hidden");
-      setFolderExpanded(folder, panel, toggle, open);
+      setFolderExpanded(folder, panel, toggle, open, { ancestorIds: chain });
     });
     item.querySelector(".btn-fusion-push")?.addEventListener("click", (event) => {
       pushToFolder(folder, event.currentTarget);
@@ -832,7 +879,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     });
     if (preferred) item.classList.add("active");
     if (startOpen) {
-      setFolderExpanded(folder, panel, toggle, true, { persist: false });
+      setFolderExpanded(folder, panel, toggle, true, { persist: false, ancestorIds: chain });
     }
     return item;
   }
@@ -1249,16 +1296,25 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     }
   }
 
-  async function loadFolder(folder, panel) {
+  async function loadFolder(folder, panel, ancestorIds = new Set()) {
+    if (ancestorIds.has(folder.id)) {
+      panel.dataset.loaded = "1";
+      panel.innerHTML = `<p class="muted small">Skipped circular Fusion folder link.</p>`;
+      return;
+    }
     panel.dataset.loaded = "1";
     panel.innerHTML = `<p class="muted small loading-dots">Loading...</p>`;
+    const chain = new Set(ancestorIds);
+    if (folder.id) chain.add(folder.id);
     try {
       const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`);
       panel.innerHTML = "";
       for (const child of data.folders || []) {
+        if (!child?.id || chain.has(child.id)) continue;
         panel.appendChild(folderRow(child, {
           preferred: child.id === linkedMirrorFolderId(),
           open: isFusionFolderOpen(child.id),
+          ancestorIds: chain,
         }));
       }
       appendFolderFileRows(panel, folder, data.items || []);

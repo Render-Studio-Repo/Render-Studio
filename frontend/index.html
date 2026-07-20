@@ -1501,15 +1501,42 @@
               </div>
             </div>
             <div class="prompt-mode-row" role="group" aria-label="Prompt mode">
-              <span class="prompt-mode-wrap">
-                <button type="button" class="prompt-mode-btn" data-prompt-mode="render" aria-describedby="prompt-mode-render-tip">Render</button>
-                <span id="prompt-mode-render-tip" class="prompt-mode-tip" role="tooltip">Creates photoreal images from the current model, scene, lighting, materials, and camera direction.</span>
-              </span>
-              <span class="prompt-mode-wrap">
-                <button type="button" class="prompt-mode-btn prompt-mode-btn--v2 active" data-prompt-mode="v2" aria-describedby="prompt-mode-v2-tip">2.0</button>
-                <span id="prompt-mode-v2-tip" class="prompt-mode-tip" role="tooltip">Builds CAD geometry by default: parametric parts, assemblies, dimensions, and named features.</span>
-              </span>
-              <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
+              <div class="prompt-mode-group">
+                <span class="prompt-mode-wrap">
+                  <button type="button" class="prompt-mode-btn" data-prompt-mode="render" aria-describedby="prompt-mode-render-tip">Render</button>
+                  <span id="prompt-mode-render-tip" class="prompt-mode-tip" role="tooltip">Creates photoreal images from the current model, scene, lighting, materials, and camera direction.</span>
+                </span>
+                <span class="prompt-mode-wrap">
+                  <button type="button" class="prompt-mode-btn prompt-mode-btn--v2 active" data-prompt-mode="v2" aria-describedby="prompt-mode-v2-tip">2.0</button>
+                  <span id="prompt-mode-v2-tip" class="prompt-mode-tip" role="tooltip">Builds CAD geometry by default: parametric parts, assemblies, dimensions, and named features.</span>
+                </span>
+                <span class="prompt-mode-wrap">
+                  <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
+                </span>
+                <span class="prompt-mode-wrap prompt-electronics-wrap" id="prompt-electronics-wrap">
+                  <button
+                    type="button"
+                    id="prompt-electronics"
+                    class="prompt-mode-btn prompt-mode-btn--electronics active"
+                    aria-pressed="true"
+                    aria-describedby="prompt-electronics-tip"
+                  >Electronics</button>
+                </span>
+              </div>
+              <div id="prompt-electronics-tip" class="prompt-spice-tip prompt-electronics-tip" role="tooltip" hidden>
+                <div class="prompt-spice-tip-top">
+                  <span class="prompt-spice-tip-badge prompt-electronics-tip-badge">2.0 / Fusion</span>
+                  <strong class="prompt-spice-tip-title">Model electronics solids</strong>
+                </div>
+                <p class="prompt-spice-tip-body">
+                  When your prompt mentions motors, servos, ESC, battery, or wiring, the agent can add visible labeled electronics and wire runs — not just empty pockets.
+                </p>
+                <ul class="prompt-spice-tip-list">
+                  <li>On: motor, ESC, battery, servo, and harness solids</li>
+                  <li>Off: airframe/mechanical geometry only (faster builds)</li>
+                  <li>Click the button to toggle before you generate</li>
+                </ul>
+              </div>
               <label class="prompt-speed-toggle" title="Speed uses a faster model; Quality uses the Pro/deeper path when selected.">
                 <span>Mode</span>
                 <select id="prompt-speed" aria-label="Generation speed">
@@ -2665,7 +2692,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260720-param-axis-preview"></script>
+  <script type="module" src="/app.js?v=20260720-param-bake"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

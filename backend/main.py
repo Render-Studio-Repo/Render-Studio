@@ -458,6 +458,10 @@ class PromptRequest(BaseModel):
         default=False,
         description="Opt-in: run CAD 2.0 with host Codex + cad@text-to-cad plugin (uses server ChatGPT login).",
     )
+    model_electronics: bool = Field(
+        default=True,
+        description="When true, inject electronics/wiring solid modeling rules for 2.0/fusion when the prompt mentions them.",
+    )
     use_knowledge_base: bool = Field(
         default=False,
         description="When true, inject selected knowledge bases (and skill-linked KBs) into the prompt context.",
@@ -536,6 +540,8 @@ class VisibleAssemblyExportRequest(BaseModel):
 class CadParamsUpdateRequest(BaseModel):
     params: dict[str, float | int | str | bool] = Field(default_factory=dict, max_length=80)
     part: str | None = Field(default=None, max_length=120)
+    # When True, patch the .py source only — mesh was already baked via /transform.
+    sync_only: bool = False
 
 
 class ExtrudeRequest(BaseModel):
@@ -3259,6 +3265,7 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
         context["jake_codex_agent"] = use_codex  # back-compat for older clients
         # Keep BYOK tool-agent as primary (or soft fallback when Codex is on).
         context["jake_tool_agent"] = True
+        context["model_electronics"] = bool(getattr(body, "model_electronics", True))
     if (body.mode or "standard").lower() == "fusion":
         context["fusion_target"] = "fusion360" if (body.fusion_target or "").lower() == "fusion360" else "in_app"
     if (body.mode or "standard").lower() == "architect":
@@ -13113,9 +13120,29 @@ def update_cad_params(
         raise HTTPException(422, "No parameter updates provided")
     source = source_path.read_text(encoding="utf-8", errors="ignore")
     patched = text_to_cad_params.patch_parameters(source, body.params)
+    # Idempotent: values already match source — treat as success (Jake-style bake
+    # may have already applied the same numbers, or a retry posts identical params).
     if patched == source:
-        raise HTTPException(422, "Could not apply parameter updates to source")
+        return {
+            "ok": True,
+            "unchanged": True,
+            "filename": safe,
+            "source": source_name,
+            "params": text_to_cad_params.list_parameters(source, part_filter=body.part),
+            "artifacts": {"source": source_name, "glb": safe if safe.lower().endswith(".glb") else None},
+        }
     source_path.write_text(patched, encoding="utf-8")
+    # Mesh already baked via /transform — keep .py in sync without a full rebuild.
+    if body.sync_only:
+        project_store.touch_project(path)
+        return {
+            "ok": True,
+            "synced": True,
+            "filename": safe,
+            "source": source_name,
+            "params": text_to_cad_params.list_parameters(patched, part_filter=body.part),
+            "artifacts": {"source": source_name, "glb": safe if safe.lower().endswith(".glb") else None},
+        }
     try:
         artifacts = text_to_cad_params.regenerate_model(path, source_name)
     except Exception as exc:

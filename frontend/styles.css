@@ -12318,6 +12318,16 @@ body.mobile-sheet-open {
   color: #8b949e;
 }
 
+.viewport-agent-check-repair {
+  font-size: 0.64rem;
+  color: #fbbf24;
+}
+
+.viewport-spinner--repair .viewport-spinner-label,
+.viewport-spinner--repair .viewport-progress-step {
+  color: #fde68a;
+}
+
 .viewport-agent-activity-item {
   display: flex;
   flex-direction: column;
@@ -13642,6 +13652,20 @@ body.panel-resizing-row * {
   text-overflow: ellipsis;
   flex: 1;
   color: var(--text);
+}
+
+button.onshape-doc-name.fusion-folder-select {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.onshape-doc-name.fusion-folder-select:hover,
+.fusion-folder-item.active button.onshape-doc-name.fusion-folder-select {
+  color: #7dd3fc;
 }
 
 .onshape-doc-toggle {
@@ -17303,6 +17327,15 @@ label input { margin-top: 4px; }
   background: transparent;
   flex-shrink: 0;
   overflow: visible;
+}
+
+.prompt-mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 #prompt-pane-compose,
@@ -27835,6 +27868,39 @@ body.kb-modal-open {
   border-color: #0099ff;
   color: #fff;
   background: linear-gradient(135deg, rgba(0, 120, 212, 0.35), rgba(0, 180, 216, 0.25));
+}
+
+.prompt-mode-btn--electronics {
+  border-color: rgba(16, 185, 129, 0.35);
+  letter-spacing: 0.01em;
+}
+
+.prompt-mode-btn--electronics:hover:not(.active) {
+  border-color: rgba(52, 211, 153, 0.65);
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.prompt-mode-btn--electronics.active {
+  border-color: rgba(52, 211, 153, 0.75);
+  color: #ecfdf5;
+  background: rgba(16, 185, 129, 0.22);
+}
+
+.prompt-electronics-tip {
+  border-color: rgba(52, 211, 153, 0.42);
+  z-index: 12050;
+}
+
+.prompt-electronics-tip::after {
+  border-color: rgba(52, 211, 153, 0.42);
+  background: rgba(8, 24, 20, 0.98);
+}
+
+.prompt-electronics-tip-badge {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(52, 211, 153, 0.35);
 }
 
 .prompt-skills-plan {
