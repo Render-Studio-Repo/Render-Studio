@@ -53,7 +53,7 @@ import {
 } from "./scene-style.js?v=20260716-bodycolor-init";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
-import { createPromptComposer } from "./prompt-composer.js?v=20260720-mcmaster-spec";
+import { createPromptComposer } from "./prompt-composer.js?v=20260720-prompt-undo";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260716-pending-history";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -25696,6 +25696,26 @@ function isEditableShortcutTarget(target) {
   return !!target?.closest?.("textarea, input, select, [contenteditable='true'], [contenteditable='']");
 }
 
+/** AI prompt composers — keep native text undo/redo (⌘Z / ⌘⇧Z). */
+function isAiPromptShortcutTarget(target) {
+  return !!target?.closest?.(
+    [
+      "#prompt-input",
+      "#wiring-prompt-input",
+      "#rigging-prompt-input",
+      "#sketch-prompt-input",
+      "#render-agent-input",
+      "#wdbg-text-input",
+      "#pc-input",
+      "#costs-chart-prompt",
+      ".prompt-editor",
+      ".prompt-editor-wrap",
+      ".pc-input",
+      ".pc-composer",
+    ].join(", ")
+  );
+}
+
 function isUiPanelShortcutTarget(target) {
   return !!target?.closest?.(
     [
@@ -25811,7 +25831,9 @@ window.addEventListener("keydown", (e) => {
     e.target?.blur?.();
     focusViewportForShortcuts();
   } else if (inField) {
-    // Still allow undo/redo while typing in size/transform fields.
+    // AI prompts: never steal ⌘Z / ⌘⇧Z / Ctrl+Y — use native text undo/redo.
+    if (isAiPromptShortcutTarget(e.target)) return;
+    // Size/transform numeric fields: still route undo to viewport/timeline.
     if (mod && key === "z" && !e.shiftKey) {
       e.preventDefault();
       e.target?.blur?.();

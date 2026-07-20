@@ -826,11 +826,16 @@ export function createPromptComposer({
     if (imageFiles.length) return; // app.js image paste handler owns this
     e.preventDefault();
     const text = e.clipboardData?.getData("text/plain") || "";
-    const current = serializeEditor();
-    const caret = getCaretPlainOffset();
-    if (textarea) textarea.value = current.slice(0, caret) + text + current.slice(caret);
-    syncEditorFromTextarea();
-    setCaretPlainOffset(caret + text.length);
+    // Prefer insertText so the contenteditable undo stack (⌘Z / ⌘⇧Z) stays intact.
+    if (text && document.queryCommandSupported?.("insertText")) {
+      document.execCommand("insertText", false, text);
+    } else if (text) {
+      const current = serializeEditor();
+      const caret = getCaretPlainOffset();
+      if (textarea) textarea.value = current.slice(0, caret) + text + current.slice(caret);
+      syncEditorFromTextarea();
+      setCaretPlainOffset(caret + text.length);
+    }
     syncTextareaFromEditor();
     updateMentionMenuFromCaret();
   });

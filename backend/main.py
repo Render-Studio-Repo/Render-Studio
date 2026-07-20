@@ -6567,7 +6567,24 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
             n += 1
     src_path.write_bytes(data)
 
-    viewer_path = src_path
+    # For native Fusion → STEP imports, also write a visible STEP immediately so a
+    # killed/restarted tessellation cannot leave the project with only a hidden
+    # `.autodesk_source_*` sidecar (UI filters those out → blank viewport).
+    visible_step_path: Path | None = None
+    if converted_from_native and suffix in cad_service.STEP_SUFFIXES:
+        visible_step_path = proj_path / f"{safe_stem}{suffix}"
+        if into_existing and visible_step_path.exists():
+            n = 2
+            while True:
+                candidate = proj_path / f"{safe_stem}_{n}{suffix}"
+                if not candidate.exists():
+                    visible_step_path = candidate
+                    break
+                n += 1
+        if visible_step_path.resolve() != src_path.resolve():
+            visible_step_path.write_bytes(data)
+
+    viewer_path = visible_step_path or src_path
     try:
         if suffix == ".3mf":
             mesh = cad_service.load_mesh(src_path)
@@ -6611,7 +6628,17 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
                         split_exc,
                     )
     except Exception as exc:
-        raise HTTPException(422, f"Could not convert Autodesk file for preview: {exc}") from exc
+        # Keep any visible STEP we already wrote so the project is not blank.
+        if visible_step_path and visible_step_path.is_file():
+            logger.warning(
+                "Autodesk import preview convert failed for %s; visible STEP kept at %s: %s",
+                src_path.name,
+                visible_step_path.name,
+                exc,
+            )
+            viewer_path = visible_step_path
+        else:
+            raise HTTPException(422, f"Could not convert Autodesk file for preview: {exc}") from exc
 
     meta = project_store.load_meta(proj_path)
     meta["autodesk_source"] = {
