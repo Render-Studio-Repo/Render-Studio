@@ -247,29 +247,60 @@ function buildMcMasterReferenceMarkdown({
   pageUrl = "",
   cadFilename = "",
   title = "",
+  subtitle = "",
+  dims = null,
 } = {}) {
   const pn = partNumber || guessMcMasterPartNumber(cadFilename) || guessMcMasterPartNumber(pageUrl);
   const url = pageUrl || mcmasterProductUrl(pn);
   const label = title || pn || cadFilename || "McMaster-Carr part";
+  const pointer = pn ? `@mcmaster-${pn}` : "@mcmaster-part";
   const lines = [
     `# McMaster-Carr part${pn ? `: ${pn}` : ""}`,
     "",
+    "## Pointer",
+    `- Prompt chip: \`${pointer}\``,
+    `- Spec file: \`mcmaster_${(pn || "part").replace(/[^\w.-]+/g, "_")}.md\``,
+    cadFilename ? `- Linked CAD geometry: \`${cadFilename}\`` : null,
+    "",
+    "## Identity",
     `- Supplier: McMaster-Carr`,
     pn ? `- Part number: ${pn}` : null,
     label && label !== pn ? `- Title: ${label}` : null,
-    cadFilename ? `- CAD file in project: \`${cadFilename}\`` : null,
-    url ? `- Product page: ${url}` : null,
+    subtitle ? `- Size / variant: ${subtitle}` : null,
+    url ? `- Product page (authoritative): ${url}` : null,
     `- Inserted: ${new Date().toISOString()}`,
     "",
-    "## Notes for AI",
-    "This reference is tied to the imported STEP/STL CAD above.",
-    "Use the product page for authoritative dimensions, material, finish, and variants.",
-    "When the user asks about this fastener/part, prefer this McMaster listing over guessing.",
-    url ? "" : null,
-    url ? `Open listing: ${url}` : null,
+    "## How the AI should use this",
+    "When this pointer is attached (alone or with the CAD component), treat it as the supplier datasheet for the part.",
+    "Prefer this file + the McMaster product page over guessing:",
+    "- Strength / hardness / grade / class",
+    "- Material, finish, coating, and temperature limits",
+    "- Thread size, pitch, length, head style, drive",
+    "- Torque / clamping guidance when listed",
+    "- Clearance-hole and tap-drill recommendations",
+    "- Compatible nuts, washers, and variants on the same listing",
+    "The CAD file is geometry only — mechanical properties come from this McMaster listing.",
     "",
-  ].filter((line) => line !== null);
-  return `${lines.join("\n").trim()}\n`;
+    "## Design rules",
+    "- Size pockets, countersinks, and through-holes from the listing dimensions, not invented sizes.",
+    "- If strength or material is required and not copied into this file yet, open the product page above rather than inventing values.",
+    "- When the user drops this screw/part into a prompt, keep using this pointer for engineering questions about the same part.",
+    "",
+  ];
+  if (dims && typeof dims === "object") {
+    lines.push("## Known insert dimensions (mm, approximate)");
+    for (const [k, v] of Object.entries(dims)) {
+      if (v == null || v === "") continue;
+      lines.push(`- ${k}: ${v}`);
+    }
+    lines.push("");
+  }
+  if (url) {
+    lines.push("## Listing");
+    lines.push(url);
+    lines.push("");
+  }
+  return `${lines.filter((line) => line !== null).join("\n").trim()}\n`;
 }
 
 function idbOpen() {
@@ -386,12 +417,12 @@ export function createMcMasterInsert({
           <section class="mcmaster-tab-main">
             <div class="mcmaster-stage-banner">
               <strong>Push McMaster downloads into this tab</strong>
-              <span>Chrome blocks linking the real Downloads folder (system files). After Download STEP, push the file here in one click — it goes into the tab bucket, then the current workspace.</span>
+              <span>Browsers cannot silently read your Downloads folder — Chrome blocks it as system files. After Download STEP, one click pushes the file into this tab bucket and the current workspace. Each insert also saves an AI spec pointer (strength, material, listing) under Reference Files.</span>
             </div>
             <div class="mcmaster-local-block">
               <div class="mcmaster-got-download-banner is-urgent" data-mcmaster-got-banner>
                 <strong>Download finished?</strong>
-                <span data-mcmaster-got-copy>Click below to pull the STEP from Downloads into this tab’s bucket and upload it to the current workspace.</span>
+                <span data-mcmaster-got-copy>One click opens Downloads, drops the STEP into this tab’s bucket, uploads it, and stores the McMaster AI reference pointer.</span>
                 <button type="button" class="btn accent" data-mcmaster-got-download>Push download → workspace</button>
               </div>
               <div class="mcmaster-bucket-panel">
@@ -544,8 +575,8 @@ export function createMcMasterInsert({
   function syncAutoUploadCopy() {
     if (gotCopy) {
       gotCopy.textContent = autoUploadEnabled
-        ? "Click below to pull the STEP from Downloads into this tab’s bucket and upload it to the current workspace."
-        : "Click below to pull the STEP into this tab’s bucket (auto-upload is off — insert manually after).";
+        ? "One click opens Downloads, pushes the STEP into this tab bucket + workspace, and saves the AI spec pointer."
+        : "One click pulls the STEP into this tab bucket (auto-upload off — insert manually). AI spec still saves on insert.";
     }
   }
 
@@ -687,8 +718,8 @@ export function createMcMasterInsert({
   }
 
   function openLiveWindow(url = MCMASTER_HOME) {
-    const w = Math.min(1280, Math.max(960, window.screen.availWidth - 80));
-    const h = Math.min(900, Math.max(700, window.screen.availHeight - 80));
+    const w = Math.min(1080, Math.max(820, window.screen.availWidth - 220));
+    const h = Math.min(760, Math.max(600, window.screen.availHeight - 180));
     const left = Math.max(20, Math.round((window.screen.availWidth - w) / 2));
     const top = Math.max(20, Math.round((window.screen.availHeight - h) / 2));
     mcmasterWin = window.open(
@@ -959,6 +990,8 @@ export function createMcMasterInsert({
         pageUrl,
         cadFilename,
         title: quick?.title || "",
+        subtitle: quick?.subtitle || "",
+        dims: quick?.dims || null,
       });
       const stem = String(partNumber || PathStem(cadFilename) || "part")
         .replace(/[^\w.-]+/g, "_")
@@ -971,6 +1004,7 @@ export function createMcMasterInsert({
             cadFilename,
             partNumber,
             pageUrl,
+            title: quick?.title || "",
             markdown,
           },
           choice,
@@ -1018,11 +1052,18 @@ export function createMcMasterInsert({
       syncDocTab();
       try {
         const pageUrls = {};
+        const partNumbers = {};
+        const titles = {};
         for (const name of savedNames) {
           const ctx = currentProductContext(name);
+          const quick = mergedMeta.quick || QUICK_PARTS.find((p) => String(name).startsWith(p.number));
+          const pn = quick?.number || ctx.partNumber || guessMcMasterPartNumber(name);
           if (ctx.pageUrl) pageUrls[name] = ctx.pageUrl;
+          else if (pn) pageUrls[name] = mcmasterProductUrl(pn);
+          if (pn) partNumbers[name] = pn;
+          if (quick?.title) titles[name] = quick.title;
         }
-        await onLibrarySave?.(savedNames, choice, { pageUrls });
+        await onLibrarySave?.(savedNames, choice, { pageUrls, partNumbers, titles });
       } catch {
         /* optional */
       }
@@ -1060,6 +1101,8 @@ export function createMcMasterInsert({
             pageUrls: {
               [savedNames[0]]: mcmasterProductUrl(meta.quick?.number),
             },
+            partNumbers: meta.quick?.number ? { [savedNames[0]]: meta.quick.number } : {},
+            titles: meta.quick?.title ? { [savedNames[0]]: meta.quick.title } : {},
           });
         } catch {
           /* optional */

@@ -68,7 +68,7 @@ export function createPromptComposer({
     if (ref.type === "sketch") return ref.label || ref.stem || "sketch";
     if (ref.type === "wiring") return ref.label || ref.stem || "wiring";
     if (ref.type === "dxf") return ref.label || ref.filename || "DXF";
-    if (ref.type === "document") return ref.label || ref.filename || "document";
+    if (ref.type === "document" || ref.type === "spec") return ref.label || ref.filename || "document";
     if (ref.type === "image") return ref.label || ref.filename || "image";
     if (ref.type === "path") return ref.label || `${(ref.loop_points || []).length} pts`;
     return formatCoords(ref.position);
@@ -187,6 +187,7 @@ export function createPromptComposer({
         ref.type === "wiring" ||
         ref.type === "dxf" ||
         ref.type === "document" ||
+        ref.type === "spec" ||
         ref.type === "image",
     );
 
@@ -578,7 +579,7 @@ export function createPromptComposer({
     if (shouldSkipReference(ref)) return;
     references.push(ref);
     renderChips();
-    if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "image")) {
+    if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "spec" || ref.type === "image")) {
       ensureTokenInPrompt(ref);
     }
     notifyRefs();
@@ -590,7 +591,7 @@ export function createPromptComposer({
       if (shouldSkipReference(ref)) continue;
       references.push(ref);
       added += 1;
-      if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "image")) {
+      if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "spec" || ref.type === "image")) {
         ensureTokenInPrompt(ref);
       }
     }
@@ -736,6 +737,7 @@ export function createPromptComposer({
       ref.type === "wiring" ||
       ref.type === "dxf" ||
       ref.type === "document" ||
+      ref.type === "spec" ||
       ref.type === "image"
         ? `@${String(stem).replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "component"}`
         : `@${ref.id}`);

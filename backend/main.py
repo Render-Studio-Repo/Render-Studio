@@ -3134,6 +3134,60 @@ def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[
     return entries
 
 
+def _hydrate_mcmaster_spec_refs(
+    project_path: Path,
+    body: PromptRequest,
+    refs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """When a McMaster CAD component is @-referenced, attach its AI spec markdown too."""
+    existing_ids = {str(r.get("id") or "") for r in refs}
+    existing_files = {
+        Path(str(r.get("filename") or "")).name.lower()
+        for r in refs
+        if str(r.get("filename") or "").strip()
+    }
+    out = list(refs)
+    for r in body.references:
+        if str(r.type or "").lower() != "component":
+            continue
+        cad_name = Path(str(r.filename or r.viewer_filename or "")).name.strip()
+        if not cad_name:
+            continue
+        entry = cad_service.find_mcmaster_library_entry(project_path, cad_name)
+        if not entry:
+            continue
+        markdown = cad_service.load_mcmaster_reference_markdown(project_path, entry)
+        if not markdown.strip():
+            continue
+        ref_name = Path(str(entry.get("reference") or "")).name.strip()
+        if not ref_name:
+            pn = str(entry.get("part_number") or Path(cad_name).stem).strip() or "part"
+            ref_name = f"mcmaster_{pn}.md"
+        spec_id = f"mcmaster-spec:{ref_name}"
+        if spec_id in existing_ids or ref_name.lower() in existing_files:
+            continue
+        pn = str(entry.get("part_number") or "").strip()
+        token_stem = (pn or Path(ref_name).stem or "part").replace(" ", "-")
+        out.append(
+            {
+                "id": spec_id,
+                "type": "spec",
+                "filename": ref_name,
+                "stem": Path(ref_name).stem,
+                "label": f"McMaster {pn or Path(cad_name).stem} specs",
+                "format": "md",
+                "text_content": markdown[:60000],
+                "text_truncated": len(markdown) > 60000,
+                "mcmaster_part_number": pn or None,
+                "mcmaster_page_url": str(entry.get("page_url") or "").strip() or None,
+                "linked_component": cad_name,
+            }
+        )
+        existing_ids.add(spec_id)
+        existing_files.add(ref_name.lower())
+    return out
+
+
 def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> dict[str, Any]:
     files = cad_service.list_project_files(project_path)
     refs = []
@@ -3187,6 +3241,22 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
                             text_truncated = len(text_content) > 60000
                         except Exception:
                             text_content = ""
+                # McMaster / text specs saved under references/ may arrive as filename-only chips.
+                if ref_type in {"document", "text", "spec"} and not text_content.strip():
+                    safe_name = Path(str(r.filename or r.label or "")).name.strip()
+                    if safe_name:
+                        for candidate in (
+                            project_path / cad_service.REFERENCE_DIRNAME / safe_name,
+                            project_path / safe_name,
+                        ):
+                            if candidate.is_file():
+                                try:
+                                    loaded = candidate.read_text(encoding="utf-8", errors="ignore")
+                                    text_content = loaded
+                                    text_truncated = len(text_content) > 60000
+                                    break
+                                except Exception:
+                                    pass
                 if text_content:
                     ref["text_content"] = text_content[:60000]
                     ref["text_truncated"] = text_truncated
@@ -3197,6 +3267,7 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
         elif r.label:
             ref["label"] = r.label
         refs.append(ref)
+    refs = _hydrate_mcmaster_spec_refs(project_path, body, refs)
     is_plain_v2 = (body.mode or "standard").lower() == "v2"
     referenced_components = []
     for r in body.references:
@@ -14995,6 +15066,9 @@ class McMasterLibraryRecordRequest(BaseModel):
     filenames: list[str] = Field(default_factory=list)
     source: str = "mcmaster"
     page_urls: dict[str, str] = Field(default_factory=dict)
+    part_numbers: dict[str, str] = Field(default_factory=dict)
+    references: dict[str, str] = Field(default_factory=dict)
+    titles: dict[str, str] = Field(default_factory=dict)
 
 
 @app.get("/api/projects/{project_id}/mcmaster-library")
@@ -15021,6 +15095,9 @@ def record_mcmaster_library(
         names,
         source=(body.source or "mcmaster").strip() or "mcmaster",
         page_urls=body.page_urls or {},
+        part_numbers=body.part_numbers or {},
+        references=body.references or {},
+        titles=body.titles or {},
     )
     project_store.touch_project(path)
     return {

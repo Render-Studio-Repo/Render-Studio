@@ -1222,6 +1222,29 @@ class AIService:
                 "- Add explicit clearances (about 0.3–0.6 mm for snaps) instead of inventing unrelated overall sizes.\n"
             )
 
+        mcmaster_specs = []
+        for item in ((project_context or {}).get("refs") or []) if isinstance(project_context, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            rtype = str(item.get("type") or "").lower()
+            fname = str(item.get("filename") or "")
+            if rtype in {"spec", "document", "text"} and (
+                fname.lower().startswith("mcmaster_")
+                or item.get("mcmaster_part_number")
+                or "mcmaster" in str(item.get("id") or "").lower()
+            ):
+                mcmaster_specs.append(item)
+        if mcmaster_specs:
+            system += (
+                "\n\nMcMaster-Carr part specification pointers:\n"
+                "- Project context.refs may include type:\"spec\" (or document) entries named mcmaster_*.md.\n"
+                "- These are authoritative supplier pointers for strength, material, finish, thread, torque, "
+                "clearance/tap drill guidance, and product variants — prefer them over guessing fastener properties.\n"
+                "- The linked CAD file is geometry only; mechanical properties come from the McMaster listing/spec text.\n"
+                "- When designing pockets, holes, or fixtures around these parts, use the listed dimensions and "
+                "product page details from the attached McMaster spec.\n"
+            )
+
         parts: list[str] = []
         if cad_brief:
             parts.append(f"CAD brief:\n{cad_brief.strip()}\n")

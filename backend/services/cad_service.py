@@ -178,6 +178,9 @@ def list_mcmaster_library(project_path: Path) -> list[dict[str, Any]]:
                         "source": item.get("source") or "mcmaster",
                         "page_url": str(item.get("page_url") or "").strip(),
                         "reference": str(item.get("reference") or "").strip(),
+                        "part_number": str(item.get("part_number") or "").strip(),
+                        "title": str(item.get("title") or "").strip(),
+                        "project_filename": str(item.get("project_filename") or name).strip(),
                     }
                 )
         except Exception:
@@ -214,6 +217,9 @@ def record_mcmaster_library_entries(
     *,
     source: str = "mcmaster",
     page_urls: dict[str, str] | None = None,
+    part_numbers: dict[str, str] | None = None,
+    references: dict[str, str] | None = None,
+    titles: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Copy imported CAD into mcmaster_library/ and append to index.json."""
     import shutil
@@ -223,9 +229,18 @@ def record_mcmaster_library_entries(
     index_path = mcmaster_library_index_path(project_path)
     existing = list_mcmaster_library(project_path)
     by_name = {e["name"]: e for e in existing}
+    # Also index by project CAD filename for metadata updates without re-copy.
+    by_project = {
+        str(e.get("project_filename") or e.get("name") or ""): e
+        for e in existing
+        if str(e.get("project_filename") or e.get("name") or "")
+    }
     now = datetime.now(timezone.utc).isoformat()
     added: list[dict[str, Any]] = []
     urls = page_urls or {}
+    pns = part_numbers or {}
+    refs = references or {}
+    titles_map = titles or {}
 
     for raw_name in filenames or []:
         name = Path(str(raw_name or "")).name.strip()
@@ -238,6 +253,38 @@ def record_mcmaster_library_entries(
             if src_lib.is_file():
                 src = src_lib
             else:
+                # Metadata-only update for an existing library/project entry.
+                existing_entry = by_name.get(name) or by_project.get(name)
+                if not existing_entry:
+                    continue
+                dest_name = str(existing_entry.get("name") or name)
+                page_url = str(
+                    urls.get(name) or urls.get(dest_name) or existing_entry.get("page_url") or ""
+                ).strip()
+                part_number = str(
+                    pns.get(name) or pns.get(dest_name) or existing_entry.get("part_number") or ""
+                ).strip()
+                title = str(
+                    titles_map.get(name) or titles_map.get(dest_name) or existing_entry.get("title") or ""
+                ).strip()
+                reference = str(
+                    refs.get(name) or refs.get(dest_name) or existing_entry.get("reference") or ""
+                ).strip()
+                if not reference and part_number:
+                    reference = f"mcmaster_{part_number}.md"
+                elif not reference:
+                    reference = f"mcmaster_{Path(name).stem}.md"
+                entry = {
+                    **existing_entry,
+                    "at": now,
+                    "source": source or existing_entry.get("source") or "mcmaster",
+                    "page_url": page_url,
+                    "part_number": part_number,
+                    "title": title,
+                    "reference": reference,
+                }
+                by_name[dest_name] = entry
+                added.append(entry)
                 continue
         dest = lib / name
         if src.resolve() != dest.resolve():
@@ -252,6 +299,13 @@ def record_mcmaster_library_entries(
                     n += 1
             shutil.copy2(src, dest)
         page_url = str(urls.get(name) or urls.get(dest.name) or "").strip()
+        part_number = str(pns.get(name) or pns.get(dest.name) or "").strip()
+        title = str(titles_map.get(name) or titles_map.get(dest.name) or "").strip()
+        reference = str(refs.get(name) or refs.get(dest.name) or "").strip()
+        if not reference and part_number:
+            reference = f"mcmaster_{part_number}.md"
+        elif not reference:
+            reference = f"mcmaster_{Path(name).stem}.md"
         entry = {
             "name": dest.name,
             "filename": dest.name,
@@ -259,7 +313,9 @@ def record_mcmaster_library_entries(
             "source": source or "mcmaster",
             "project_filename": name,
             "page_url": page_url,
-            "reference": f"mcmaster_{Path(name).stem}.md" if name else "",
+            "part_number": part_number,
+            "title": title,
+            "reference": reference,
         }
         by_name[dest.name] = entry
         added.append(entry)
@@ -267,6 +323,50 @@ def record_mcmaster_library_entries(
     ordered = sorted(by_name.values(), key=lambda e: str(e.get("at") or ""), reverse=True)[:48]
     index_path.write_text(json.dumps({"entries": ordered}, indent=2), encoding="utf-8")
     return added
+
+
+def find_mcmaster_library_entry(project_path: Path, cad_filename: str) -> dict[str, Any] | None:
+    """Match a project CAD filename to a McMaster library entry."""
+    want = Path(str(cad_filename or "")).name.strip().lower()
+    if not want:
+        return None
+    stem = Path(want).stem.lower()
+    best = None
+    for entry in list_mcmaster_library(project_path):
+        names = {
+            str(entry.get("name") or "").strip().lower(),
+            str(entry.get("filename") or "").strip().lower(),
+            str(entry.get("project_filename") or "").strip().lower(),
+        }
+        if want in names:
+            return entry
+        if stem and Path(str(entry.get("project_filename") or entry.get("name") or "")).stem.lower() == stem:
+            best = best or entry
+        pn = str(entry.get("part_number") or "").strip().lower()
+        if pn and (stem.startswith(pn) or want.startswith(pn)):
+            best = best or entry
+    return best
+
+
+def load_mcmaster_reference_markdown(project_path: Path, entry: dict[str, Any] | None) -> str:
+    """Load the AI reference markdown for a McMaster library entry."""
+    if not entry:
+        return ""
+    ref_name = Path(str(entry.get("reference") or "")).name.strip()
+    candidates: list[Path] = []
+    if ref_name:
+        candidates.append(Path(project_path) / REFERENCE_DIRNAME / ref_name)
+        candidates.append(Path(project_path) / ref_name)
+    pn = str(entry.get("part_number") or "").strip()
+    if pn:
+        candidates.append(Path(project_path) / REFERENCE_DIRNAME / f"mcmaster_{pn}.md")
+    for path in candidates:
+        if path.is_file():
+            try:
+                return path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+    return ""
 
 
 def is_reference_suffix(suffix: str) -> bool:

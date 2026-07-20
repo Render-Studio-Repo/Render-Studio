@@ -53,7 +53,7 @@ import {
 } from "./scene-style.js?v=20260716-bodycolor-init";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
-import { createPromptComposer } from "./prompt-composer.js?v=20260716-prompt-save-loop";
+import { createPromptComposer } from "./prompt-composer.js?v=20260720-mcmaster-spec";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260716-pending-history";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -107,7 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-push";
+import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-win";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
   suggestElectronicsForBuild,
@@ -3903,14 +3903,19 @@ async function handlePromptComposeDrop(e) {
     promptPaneCompose?.classList.remove("dragging-image");
     promptImageDrop?.classList.remove("dragging");
     const added = addComponentPromptReferences(componentRefs);
+    const specs = await attachMcMasterSpecPointers(componentRefs);
     if (added > 0) {
       const componentCount = composer.getReferences().filter((r) => r.type === "component").length;
       preservePromptModeAfterAttach(modeBeforeAttach);
       setEditStatus(
         "ok",
-        added === 1
-          ? "Referenced 1 item in the AI prompt."
-          : `Referenced ${added} items in the AI prompt (${componentCount} component${componentCount === 1 ? "" : "s"} total).`
+        specs > 0
+          ? added === 1
+            ? "Referenced McMaster part + AI spec pointer (strength/material/listing)."
+            : `Referenced ${added} items + ${specs} McMaster AI spec pointer${specs === 1 ? "" : "s"}.`
+          : added === 1
+            ? "Referenced 1 item in the AI prompt."
+            : `Referenced ${added} items in the AI prompt (${componentCount} component${componentCount === 1 ? "" : "s"} total).`
       );
     }
     return;
@@ -3994,6 +3999,100 @@ function addComponentPromptReferences(payloads = []) {
   const refs = payloads.map((payload) => componentPromptReference(payload)).filter(Boolean);
   if (!refs.length) return 0;
   return composer.addReferences(refs) || 0;
+}
+
+let mcmasterLibraryCache = { projectId: null, at: 0, entries: [] };
+
+async function loadMcMasterLibraryEntries(pid = projectId) {
+  if (!pid) return [];
+  const now = Date.now();
+  if (mcmasterLibraryCache.projectId === pid && now - mcmasterLibraryCache.at < 15000) {
+    return mcmasterLibraryCache.entries;
+  }
+  try {
+    const data = await api(`/api/projects/${pid}/mcmaster-library`);
+    const entries = data?.entries || [];
+    mcmasterLibraryCache = { projectId: pid, at: now, entries };
+    return entries;
+  } catch {
+    return mcmasterLibraryCache.projectId === pid ? mcmasterLibraryCache.entries : [];
+  }
+}
+
+function matchMcMasterLibraryEntry(entries, filename) {
+  const want = String(filename || "").trim().toLowerCase();
+  if (!want) return null;
+  const stem = want.replace(/\.[^.]+$/, "");
+  let best = null;
+  for (const entry of entries || []) {
+    const names = [
+      entry.name,
+      entry.filename,
+      entry.project_filename,
+    ].map((n) => String(n || "").trim().toLowerCase()).filter(Boolean);
+    if (names.includes(want)) return entry;
+    const entryStem = String(entry.project_filename || entry.name || "").replace(/\.[^.]+$/, "").toLowerCase();
+    if (entryStem && entryStem === stem) best = best || entry;
+    const pn = String(entry.part_number || "").trim().toLowerCase();
+    if (pn && (stem.startsWith(pn) || want.startsWith(pn))) best = best || entry;
+  }
+  return best;
+}
+
+async function fetchProjectTextFile(pid, filename) {
+  if (!pid || !filename) return "";
+  try {
+    const res = await rawFetch(`/api/projects/${pid}/files/${encodeURIComponent(filename)}`);
+    if (!res.ok) return "";
+    return await res.text();
+  } catch {
+    return "";
+  }
+}
+
+/** When a McMaster CAD part is dropped into the AI prompt, also attach its spec pointer. */
+async function attachMcMasterSpecPointers(payloads = []) {
+  const pid = projectId;
+  if (!pid || !payloads?.length) return 0;
+  const entries = await loadMcMasterLibraryEntries(pid);
+  if (!entries.length) return 0;
+  let added = 0;
+  for (const payload of payloads) {
+    const filename = payload?.filename || payload?.name;
+    if (!filename) continue;
+    const entry = matchMcMasterLibraryEntry(entries, filename);
+    if (!entry) continue;
+    const pn = String(entry.part_number || "").trim();
+    const refName =
+      String(entry.reference || "").trim() ||
+      (pn ? `mcmaster_${pn}.md` : `mcmaster_${String(filename).replace(/\.[^.]+$/, "")}.md`);
+    let text = await fetchProjectTextFile(pid, refName);
+    if (!text.trim() && pn) {
+      text = await fetchProjectTextFile(pid, `mcmaster_${pn}.md`);
+    }
+    if (!text.trim()) continue;
+    const tokenStem = String(pn || fileStem(filename) || "part")
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "part";
+    const MAX_DOC_CHARS = 100_000;
+    const truncated = text.length > MAX_DOC_CHARS;
+    composer.addReference({
+      id: `mcmaster-spec:${pid}:${refName}`,
+      type: "spec",
+      token: `@mcmaster-${tokenStem}`,
+      label: `McMaster ${pn || tokenStem} specs`,
+      filename: refName,
+      stem: refName.replace(/\.[^.]+$/, ""),
+      format: "md",
+      text_content: truncated ? text.slice(0, MAX_DOC_CHARS) : text,
+      text_truncated: truncated,
+      projectId: pid,
+      mcmaster_part_number: pn || undefined,
+      linked_component: filename,
+    });
+    added += 1;
+  }
+  return added;
 }
 
 let autoSelectedObjectRefId = null;
@@ -16505,6 +16604,9 @@ const mcmasterInsert = createMcMasterInsert({
           filenames,
           source: "mcmaster",
           page_urls: meta.pageUrls || {},
+          part_numbers: meta.partNumbers || {},
+          references: meta.references || {},
+          titles: meta.titles || {},
         }),
       });
       return data?.entries || [];
@@ -16512,15 +16614,11 @@ const mcmasterInsert = createMcMasterInsert({
       return [];
     }
   },
-  onSavePartReference: async ({ file, cadFilename, partNumber, pageUrl }, choice) => {
+  onSavePartReference: async ({ file, cadFilename, partNumber, pageUrl, title }, choice) => {
     const dest = choice || { destination: "current", projectId };
     const pid = dest.projectId || projectId;
     if (!pid || !file) return null;
     try {
-      // Ensure project context for quiet reference upload.
-      if ((dest.destination || "current") === "new") {
-        /* project already created by CAD upload path */
-      }
       const targetProjectId = pid;
       const form = new FormData();
       form.append("file", file);
@@ -16533,10 +16631,29 @@ const mcmasterInsert = createMcMasterInsert({
         const detail = data.detail;
         throw new Error(typeof detail === "string" ? detail : "Reference upload failed");
       }
+      const refName = data.filename || file.name;
+      if (cadFilename && refName) {
+        try {
+          await api(`/api/projects/${targetProjectId}/mcmaster-library`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filenames: [cadFilename],
+              source: "mcmaster",
+              page_urls: pageUrl ? { [cadFilename]: pageUrl } : {},
+              part_numbers: partNumber ? { [cadFilename]: partNumber } : {},
+              titles: title ? { [cadFilename]: title } : {},
+              references: { [cadFilename]: refName },
+            }),
+          });
+        } catch {
+          /* optional index link */
+        }
+      }
       await refreshFiles();
       setEditStatus(
         "ok",
-        `Saved AI reference ${data.filename || file.name}${pageUrl ? ` → ${pageUrl}` : ""}${cadFilename ? ` (tied to ${cadFilename})` : ""}.`,
+        `Saved AI reference ${refName}${pageUrl ? ` → ${pageUrl}` : ""}${cadFilename ? ` (tied to ${cadFilename})` : ""}.`,
       );
       return data;
     } catch (err) {
