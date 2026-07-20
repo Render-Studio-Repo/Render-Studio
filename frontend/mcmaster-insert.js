@@ -11,8 +11,11 @@ const MCMASTER_WINDOW_NAME = "render3d-mcmaster-webview";
 const MCMASTER_TAB_ID = "mcmaster";
 const CAD_ACCEPT = ".step,.stp,.stl,.obj,.glb,.gltf,.3mf,.iges,.igs,.sat,.sldprt,.x_t,.x_b";
 const LOGO_SRC = "/assets/brands/mcmaster-carr-masthead.svg";
-const LS_RECENT = "render3d:mcmasterRecent:v1";
-const RECENT_MAX = 18;
+const LS_RECENT = "render3d:mcmasterRecent:v2";
+const RECENT_MAX = 10;
+const IDB_NAME = "render3d-mcmaster";
+const IDB_STORE = "handles";
+const CAD_NAME_RE = /\.(step|stp|stl|obj|glb|gltf|3mf|iges|igs|sat|sldprt|x_t|x_b)$/i;
 
 const CATEGORIES = [
   { id: "fasteners", label: "Screws", path: "products/screws/" },
@@ -128,18 +131,16 @@ function readRecent() {
     const raw = JSON.parse(localStorage.getItem(LS_RECENT) || "[]");
     if (!Array.isArray(raw)) return [];
     return raw
-      .map((e) => ({
-        id: String(e?.id || e?.number || e?.name || "").trim(),
-        number: String(e?.number || "").trim(),
-        title: String(e?.title || e?.name || "").trim(),
-        subtitle: String(e?.subtitle || "").trim(),
-        name: String(e?.name || "").trim(),
-        shape: String(e?.shape || "file").trim(),
-        source: e?.source === "quick" ? "quick" : "import",
-        at: Number(e?.at) || Date.now(),
-        quickId: e?.quickId || null,
-      }))
-      .filter((e) => e.id || e.name)
+      .map((e) => {
+        const name = String(e?.name || e?.filename || e?.title || "").trim();
+        if (!name) return null;
+        return {
+          name,
+          at: Number(e?.at) || Date.now(),
+          quickId: e?.quickId || null,
+        };
+      })
+      .filter(Boolean)
       .slice(0, RECENT_MAX);
   } catch {
     return [];
@@ -148,19 +149,117 @@ function readRecent() {
 
 function writeRecent(entries) {
   try {
-    localStorage.setItem(LS_RECENT, JSON.stringify(entries.slice(0, RECENT_MAX)));
+    const cleaned = entries.slice(0, RECENT_MAX).map((e) => ({
+      name: String(e.name || "").trim(),
+      at: Number(e.at) || Date.now(),
+      ...(e.quickId ? { quickId: e.quickId } : {}),
+    })).filter((e) => e.name);
+    localStorage.setItem(LS_RECENT, JSON.stringify(cleaned));
   } catch {
     /* ignore */
   }
 }
 
 function pushRecent(entry) {
+  const name = String(entry?.name || "").trim();
+  if (!name) return readRecent();
   const next = [
-    { ...entry, at: Date.now() },
-    ...readRecent().filter((e) => (e.id || e.name) !== (entry.id || entry.name)),
+    { name, at: Date.now(), ...(entry.quickId ? { quickId: entry.quickId } : {}) },
+    ...readRecent().filter((e) => e.name !== name),
   ].slice(0, RECENT_MAX);
   writeRecent(next);
   return next;
+}
+
+function guessMcMasterPartNumber(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  // Direct part-number-ish tokens.
+  if (/^[0-9A-Za-z]{5,12}$/.test(raw) && /\d/.test(raw) && /[A-Za-z]/.test(raw)) return raw.toUpperCase();
+  // From CAD filename stems like 91251A194_STEP or 91251A194.step
+  const stem = raw.replace(/\.[^.]+$/, "").split(/[_\s-]/)[0] || "";
+  if (/^[0-9A-Za-z]{5,12}$/.test(stem) && /\d/.test(stem) && /[A-Za-z]/.test(stem)) return stem.toUpperCase();
+  // From McMaster URL path
+  try {
+    const u = new URL(raw);
+    if (/mcmaster\.com$/i.test(u.hostname.replace(/^www\./, "")) || /\.mcmaster\.com$/i.test(u.hostname)) {
+      const seg = u.pathname.split("/").filter(Boolean)[0] || "";
+      if (/^[0-9A-Za-z]{5,12}$/.test(seg) && /\d/.test(seg) && /[A-Za-z]/.test(seg)) return seg.toUpperCase();
+    }
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
+function mcmasterProductUrl(partNumberOrUrl) {
+  const raw = String(partNumberOrUrl || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const pn = guessMcMasterPartNumber(raw);
+  return pn ? `https://www.mcmaster.com/${pn}` : "";
+}
+
+function buildMcMasterReferenceMarkdown({
+  partNumber = "",
+  pageUrl = "",
+  cadFilename = "",
+  title = "",
+} = {}) {
+  const pn = partNumber || guessMcMasterPartNumber(cadFilename) || guessMcMasterPartNumber(pageUrl);
+  const url = pageUrl || mcmasterProductUrl(pn);
+  const label = title || pn || cadFilename || "McMaster-Carr part";
+  const lines = [
+    `# McMaster-Carr part${pn ? `: ${pn}` : ""}`,
+    "",
+    `- Supplier: McMaster-Carr`,
+    pn ? `- Part number: ${pn}` : null,
+    label && label !== pn ? `- Title: ${label}` : null,
+    cadFilename ? `- CAD file in project: \`${cadFilename}\`` : null,
+    url ? `- Product page: ${url}` : null,
+    `- Inserted: ${new Date().toISOString()}`,
+    "",
+    "## Notes for AI",
+    "This reference is tied to the imported STEP/STL CAD above.",
+    "Use the product page for authoritative dimensions, material, finish, and variants.",
+    "When the user asks about this fastener/part, prefer this McMaster listing over guessing.",
+    url ? "" : null,
+    url ? `Open listing: ${url}` : null,
+    "",
+  ].filter((line) => line !== null);
+  return `${lines.join("\n").trim()}\n`;
+}
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
+  });
+}
+
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 export function createMcMasterInsert({
@@ -168,6 +267,7 @@ export function createMcMasterInsert({
   onStatus,
   resolveDestination,
   onLibrarySave = null,
+  onSavePartReference = null,
   docTabs = null,
   viewerEl = null,
 } = {}) {
@@ -179,6 +279,10 @@ export function createMcMasterInsert({
   let pending = [];
   let awaitingDownload = false;
   let pickerBusy = false;
+  let downloadWatchStartedAt = 0;
+  let returnPickerArmed = false;
+  let lastProductUrl = "";
+  let lastPartNumber = "";
 
   const host = viewerEl || document.getElementById("mcmaster-viewer");
 
@@ -205,6 +309,7 @@ export function createMcMasterInsert({
       <section class="insert-recent-block">
         <div class="insert-recent-head">
           <strong>Recent</strong>
+          <span class="muted small">Last 10</span>
           <button type="button" class="btn secondary btn-compact" data-insert-clear-recent ${recentEntries.length ? "" : "hidden"}>Clear</button>
         </div>
         <div class="insert-recent-list" data-insert-recent></div>
@@ -238,15 +343,26 @@ export function createMcMasterInsert({
         <div class="mcmaster-tab-body">
           <section class="mcmaster-tab-main">
             <div class="mcmaster-stage-banner">
-              <strong>1. Download CAD on McMaster</strong>
-              <span>2. Bring the file into this tab · 3. Insert into a workspace</span>
+              <strong>McMaster saves CAD to your local Downloads folder</strong>
+              <span>Link that folder (or pick a file), then insert into the current workspace.</span>
+            </div>
+            <div class="mcmaster-local-block">
+              <div class="mcmaster-quick-head">
+                <strong>Local Downloads</strong>
+                <span class="muted small" data-mcmaster-local-status>Not linked</span>
+              </div>
+              <div class="mcmaster-drop-actions">
+                <button type="button" class="btn accent" data-mcmaster-import>Pick downloaded file…</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-link-downloads>Link Downloads folder…</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-refresh-local>Refresh</button>
+              </div>
+              <div class="mcmaster-local-list" data-mcmaster-local-list>
+                <p class="muted small">McMaster cannot send files into Render3D. After download, click <strong>Pick downloaded file…</strong> (or link Downloads once for auto-detect).</p>
+              </div>
             </div>
             <div class="mcmaster-live-drop" data-mcmaster-drop tabindex="0">
-              <strong>Bring download into this tab</strong>
-              <span>Drop the STEP / STL here, or choose it from Downloads</span>
-              <div class="mcmaster-drop-actions">
-                <button type="button" class="btn accent" data-mcmaster-import>Choose downloaded CAD…</button>
-              </div>
+              <strong>Or drop CAD here</strong>
+              <span>STEP · STL · GLB · 3MF from Downloads</span>
               <input type="file" class="mcmaster-insert-file" accept="${CAD_ACCEPT}" hidden multiple />
             </div>
             <div class="mcmaster-pending-block">
@@ -254,11 +370,16 @@ export function createMcMasterInsert({
                 <strong>Ready to insert</strong>
                 <span class="muted small" data-mcmaster-pending-count>No files yet</span>
               </div>
+              <label class="mcmaster-ref-link-field">
+                <span class="muted small">Product link for AI reference</span>
+                <input type="url" class="mcmaster-ref-link-input" data-mcmaster-ref-link placeholder="https://www.mcmaster.com/91251A194 (auto-filled from search)" />
+              </label>
               <div class="mcmaster-pending-list" data-mcmaster-pending>
-                <p class="muted small">Downloaded parts appear here first. Then insert into the current workspace or a new project.</p>
+                <p class="muted small">After you download from McMaster, click <strong>Pick downloaded file…</strong> (or link Downloads) — the file will show up here.</p>
               </div>
               <div class="mcmaster-pending-actions" data-mcmaster-pending-actions hidden>
-                <button type="button" class="btn accent" data-mcmaster-insert-all>Insert into workspace…</button>
+                <button type="button" class="btn accent" data-mcmaster-insert-current>Insert to current workspace</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-insert-all>Ask destination…</button>
                 <button type="button" class="btn secondary btn-compact" data-mcmaster-clear-pending>Clear</button>
               </div>
             </div>
@@ -272,11 +393,12 @@ export function createMcMasterInsert({
           <aside class="mcmaster-tab-side">
             <div class="mcmaster-recent-side">
               <div class="mcmaster-quick-head">
-                <strong>Recent inserts</strong>
+                <strong>Recent</strong>
+                <span class="muted small">Last 10</span>
                 <button type="button" class="btn secondary btn-compact" data-mcmaster-clear-recent>Clear</button>
               </div>
               <div class="mcmaster-recent-side-list" data-mcmaster-tab-recent>
-                <p class="muted small">Inserted screws and CAD show up here.</p>
+                <p class="muted small">No recent inserts yet.</p>
               </div>
             </div>
             <div class="mcmaster-quick-block">
@@ -305,6 +427,15 @@ export function createMcMasterInsert({
   const recentList = panel.querySelector("[data-insert-recent]");
   const clearRecentBtn = panel.querySelector("[data-insert-clear-recent]");
   const panelFileInput = panel.querySelector(".insert-panel-file");
+  const localList = host?.querySelector("[data-mcmaster-local-list]");
+  const localStatus = host?.querySelector("[data-mcmaster-local-status]");
+  const refLinkInput = host?.querySelector("[data-mcmaster-ref-link]");
+
+  /** @type {FileSystemDirectoryHandle | null} */
+  let downloadsDir = null;
+  /** @type {{ name: string, file: File, at: number }[]} */
+  let localFiles = [];
+  let localPollTimer = null;
 
   function setStatus(kind, text) {
     onStatus?.(kind, text);
@@ -364,14 +495,49 @@ export function createMcMasterInsert({
 
   function markAwaitingDownload() {
     awaitingDownload = true;
+    returnPickerArmed = true;
+    downloadWatchStartedAt = Date.now();
     syncConnectionUi();
     dropZone?.classList.add("is-attention");
+    localList?.closest(".mcmaster-local-block")?.classList.add("is-attention");
   }
 
   function clearAwaitingDownload() {
     awaitingDownload = false;
+    returnPickerArmed = false;
     syncConnectionUi();
     dropZone?.classList.remove("is-attention");
+    localList?.closest(".mcmaster-local-block")?.classList.remove("is-attention");
+  }
+
+  function syncRefLinkInput(url = lastProductUrl) {
+    if (refLinkInput && url && !String(refLinkInput.value || "").trim()) {
+      refLinkInput.value = url;
+    } else if (refLinkInput && url) {
+      refLinkInput.value = url;
+    }
+  }
+
+  function rememberProductContext(urlOrQuery = "") {
+    const raw = String(urlOrQuery || "").trim();
+    const pn = guessMcMasterPartNumber(raw) || guessMcMasterPartNumber(searchInput?.value || "");
+    const url = mcmasterProductUrl(raw.startsWith("http") ? raw : pn);
+    if (pn) lastPartNumber = pn;
+    if (url) lastProductUrl = url;
+    syncRefLinkInput(url || lastProductUrl);
+    return { partNumber: lastPartNumber, pageUrl: lastProductUrl };
+  }
+
+  function currentProductContext(cadFilename = "") {
+    const typed = String(refLinkInput?.value || "").trim();
+    const fromTyped = typed ? rememberProductContext(typed) : null;
+    const pn =
+      fromTyped?.partNumber ||
+      lastPartNumber ||
+      guessMcMasterPartNumber(cadFilename) ||
+      guessMcMasterPartNumber(searchInput?.value || "");
+    const pageUrl = fromTyped?.pageUrl || lastProductUrl || mcmasterProductUrl(pn);
+    return { partNumber: pn, pageUrl };
   }
 
   function openLiveWindow(url = MCMASTER_HOME) {
@@ -397,6 +563,7 @@ export function createMcMasterInsert({
     markAwaitingDownload();
     startWatch();
     syncConnectionUi();
+    rememberProductContext(url);
     setStatus("ok", "Download CAD on McMaster, then choose the file in this tab.");
     return mcmasterWin;
   }
@@ -424,6 +591,7 @@ export function createMcMasterInsert({
   }
 
   function navigateLive(url) {
+    rememberProductContext(url);
     if (!isWinOpen()) {
       openLiveWindow(url);
       return;
@@ -474,9 +642,12 @@ export function createMcMasterInsert({
         ? `${pending.length} file${pending.length === 1 ? "" : "s"} staged`
         : "No files yet";
     }
-    if (pendingActions) pendingActions.hidden = !pending.length;
+    if (pendingActions) {
+      pendingActions.hidden = !pending.length;
+      pendingActions.classList.toggle("is-empty", !pending.length);
+    }
     if (!pending.length) {
-      pendingList.innerHTML = `<p class="muted small">Downloaded parts appear here first. Then insert into the current workspace or a new project.</p>`;
+      pendingList.innerHTML = `<p class="muted small">After you download from McMaster, click <strong>Pick file…</strong> (or link Downloads) — the file will show up here.</p>`;
       return;
     }
     pendingList.innerHTML = pending
@@ -542,20 +713,54 @@ export function createMcMasterInsert({
 
   function rememberImport(names, meta = {}) {
     for (const name of names) {
-      const quick = meta.quick || QUICK_PARTS.find((p) => name.startsWith(p.number));
+      const clean = String(name || "").trim();
+      if (!clean) continue;
+      const quick = meta.quick || QUICK_PARTS.find((p) => clean.startsWith(p.number));
       recentEntries = pushRecent({
-        id: quick?.id || name,
-        number: quick?.number || "",
-        title: quick?.title || name,
-        subtitle: quick?.subtitle || "",
-        name,
-        shape: quick?.shape || "file",
-        source: quick ? "quick" : "import",
+        name: clean,
         quickId: quick?.id || null,
       });
     }
     renderRecent();
     renderTabRecent();
+  }
+
+  async function savePartReferences(savedNames, meta = {}, choice = null) {
+    if (!onSavePartReference || !savedNames?.length) return;
+    for (const cadFilename of savedNames) {
+      const quick = meta.quick || QUICK_PARTS.find((p) => String(cadFilename).startsWith(p.number));
+      const ctx = currentProductContext(cadFilename);
+      const partNumber = quick?.number || ctx.partNumber || guessMcMasterPartNumber(cadFilename);
+      const pageUrl = ctx.pageUrl || mcmasterProductUrl(partNumber);
+      const markdown = buildMcMasterReferenceMarkdown({
+        partNumber,
+        pageUrl,
+        cadFilename,
+        title: quick?.title || "",
+      });
+      const stem = String(partNumber || PathStem(cadFilename) || "part")
+        .replace(/[^\w.-]+/g, "_")
+        .slice(0, 60);
+      const refFile = new File([markdown], `mcmaster_${stem}.md`, { type: "text/markdown" });
+      try {
+        await onSavePartReference(
+          {
+            file: refFile,
+            cadFilename,
+            partNumber,
+            pageUrl,
+            markdown,
+          },
+          choice,
+        );
+      } catch {
+        /* optional */
+      }
+    }
+  }
+
+  function PathStem(name) {
+    return String(name || "").replace(/\.[^.]+$/, "");
   }
 
   async function insertPending(ids = null, meta = {}) {
@@ -568,7 +773,11 @@ export function createMcMasterInsert({
     const mergedMeta =
       meta.quick || selected[0]?.meta?.quick ? { quick: meta.quick || selected[0]?.meta?.quick } : meta;
     try {
-      const choice = await resolveDestination?.(files);
+      // Infer product context from staged CAD names before insert.
+      for (const file of files) rememberProductContext(file.name);
+      const choice = meta.forceCurrent
+        ? (await resolveDestination?.(files, { forceCurrent: true }))
+        : await resolveDestination?.(files);
       if (!choice) {
         setStatus("ok", "Insert cancelled.");
         return;
@@ -585,15 +794,21 @@ export function createMcMasterInsert({
       renderPending();
       syncDocTab();
       try {
-        await onLibrarySave?.(savedNames, choice);
+        const pageUrls = {};
+        for (const name of savedNames) {
+          const ctx = currentProductContext(name);
+          if (ctx.pageUrl) pageUrls[name] = ctx.pageUrl;
+        }
+        await onLibrarySave?.(savedNames, choice, { pageUrls });
       } catch {
         /* optional */
       }
+      await savePartReferences(savedNames, mergedMeta, choice);
       setStatus(
         "ok",
         savedNames.length === 1
-          ? `Inserted ${savedNames[0]} into workspace.`
-          : `Inserted ${savedNames.length} files into workspace.`,
+          ? `Inserted ${savedNames[0]} + AI reference link.`
+          : `Inserted ${savedNames.length} files + AI reference links.`,
       );
     } catch (err) {
       setStatus("error", err?.message || "Could not insert McMaster part.");
@@ -618,11 +833,21 @@ export function createMcMasterInsert({
             : files.map((f) => f.name);
         rememberImport(savedNames, meta);
         try {
-          await onLibrarySave?.(savedNames, choice);
+          await onLibrarySave?.(savedNames, choice, {
+            pageUrls: {
+              [savedNames[0]]: mcmasterProductUrl(meta.quick?.number),
+            },
+          });
         } catch {
           /* optional */
         }
-        setStatus("ok", `Inserted ${savedNames[0] || files[0].name}.`);
+        if (meta.quick?.number) {
+          lastPartNumber = meta.quick.number;
+          lastProductUrl = mcmasterProductUrl(meta.quick.number);
+          syncRefLinkInput(lastProductUrl);
+        }
+        await savePartReferences(savedNames, meta, choice);
+        setStatus("ok", `Inserted ${savedNames[0] || files[0].name} + AI reference.`);
       } catch (err) {
         setStatus("error", err?.message || "Could not insert part.");
       }
@@ -654,20 +879,26 @@ export function createMcMasterInsert({
   }
 
   function bindRecentButtons(target) {
-    target.querySelectorAll("[data-recent-id]").forEach((btn) => {
+    target.querySelectorAll("[data-recent-name]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const entry = recentEntries.find((e) => (e.id || e.name) === btn.dataset.recentId);
+        const entry = recentEntries.find((e) => e.name === btn.dataset.recentName);
         if (!entry) return;
-        if (entry.quickId || entry.source === "quick") {
-          const part = QUICK_PARTS.find((p) => p.id === (entry.quickId || entry.id));
+        if (entry.quickId) {
+          const part = QUICK_PARTS.find((p) => p.id === entry.quickId);
           if (part) {
             await importFiles([stlFileForPart(part)], { quick: part });
             return;
           }
         }
+        // Prefer pulling the same filename from linked Downloads, else reopen McMaster search.
+        const local = localFiles.find((f) => f.name === entry.name);
+        if (local) {
+          stageFiles([local.file]);
+          return;
+        }
         closePanel();
         openSession({
-          query: entry.number || String(entry.name || "").replace(/\.[^.]+$/, ""),
+          query: String(entry.name || "").replace(/\.[^.]+$/, ""),
           autoOpen: true,
         });
       });
@@ -676,39 +907,158 @@ export function createMcMasterInsert({
 
   function renderRecentCards(target, emptyText) {
     if (!target) return;
-    recentEntries = readRecent();
+    recentEntries = readRecent().slice(0, RECENT_MAX);
     if (!recentEntries.length) {
       target.innerHTML = `<p class="muted small">${escapeHtml(emptyText)}</p>`;
       return;
     }
     target.innerHTML = recentEntries
-      .map((entry) => {
-        const label = entry.number || entry.title || entry.name;
-        const sub = entry.subtitle || entry.name || "";
-        return `
-        <button type="button" class="insert-recent-card" data-recent-id="${escapeHtml(entry.id || entry.name)}" title="${escapeHtml(entry.name || label)}">
-          <span class="mcmaster-sim-card-preview" data-shape="${escapeHtml(entry.shape || "file")}" aria-hidden="true"></span>
+      .map((entry) => `
+        <button type="button" class="insert-recent-card insert-recent-card--simple" data-recent-name="${escapeHtml(entry.name)}" title="${escapeHtml(entry.name)}">
           <span>
-            <strong>${escapeHtml(label)}</strong>
-            <small>${escapeHtml(sub)}</small>
+            <strong>${escapeHtml(entry.name)}</strong>
+            <small>${escapeHtml(formatRecentWhen(entry.at))}</small>
           </span>
-        </button>`;
-      })
+        </button>`)
       .join("");
     bindRecentButtons(target);
   }
 
   function renderRecent() {
-    recentEntries = readRecent();
+    recentEntries = readRecent().slice(0, RECENT_MAX);
     if (clearRecentBtn) clearRecentBtn.hidden = !recentEntries.length;
     if (clearTabRecentBtn) clearTabRecentBtn.hidden = !recentEntries.length;
-    renderRecentCards(recentList, "Recent screws, nuts, and imports show up here.");
+    renderRecentCards(recentList, "No recent inserts yet.");
   }
 
   function renderTabRecent() {
-    recentEntries = readRecent();
+    recentEntries = readRecent().slice(0, RECENT_MAX);
     if (clearTabRecentBtn) clearTabRecentBtn.hidden = !recentEntries.length;
-    renderRecentCards(tabRecentList, "Inserted screws and CAD show up here.");
+    renderRecentCards(tabRecentList, "No recent inserts yet.");
+  }
+
+  function renderLocalDownloads() {
+    if (!localList) return;
+    if (localStatus) {
+      localStatus.textContent = downloadsDir
+        ? (localFiles.length ? `${Math.min(localFiles.length, 10)} recent CAD` : "Linked · no CAD yet")
+        : "Not linked";
+    }
+    if (!downloadsDir) {
+      localList.innerHTML = `<p class="muted small">Link your Downloads folder once — newest CAD files appear here for insert.</p>`;
+      return;
+    }
+    if (!localFiles.length) {
+      localList.innerHTML = `<p class="muted small">No CAD files found in the linked folder yet. Download from McMaster, then Refresh.</p>`;
+      return;
+    }
+    localList.innerHTML = localFiles.slice(0, 10).map((item) => `
+      <div class="mcmaster-local-row">
+        <div class="mcmaster-pending-copy">
+          <strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
+          <small>${formatRecentWhen(item.at)} · ${Math.max(1, Math.round(item.file.size / 1024))} KB</small>
+        </div>
+        <div class="mcmaster-pending-row-actions">
+          <button type="button" class="btn accent btn-compact" data-local-stage="${escapeHtml(item.name)}">Stage</button>
+          <button type="button" class="btn secondary btn-compact" data-local-insert="${escapeHtml(item.name)}">Insert now</button>
+        </div>
+      </div>
+    `).join("");
+    localList.querySelectorAll("[data-local-stage]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const item = localFiles.find((f) => f.name === btn.dataset.localStage);
+        if (item) stageFiles([item.file]);
+      });
+    });
+    localList.querySelectorAll("[data-local-insert]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const item = localFiles.find((f) => f.name === btn.dataset.localInsert);
+        if (!item) return;
+        stageFiles([item.file]);
+        await insertPending(null, { forceCurrent: true });
+      });
+    });
+  }
+
+  async function refreshLocalDownloads({ autoStageNew = false } = {}) {
+    if (!downloadsDir) {
+      renderLocalDownloads();
+      return [];
+    }
+    try {
+      const perm = await downloadsDir.queryPermission?.({ mode: "read" });
+      if (perm === "prompt") await downloadsDir.requestPermission?.({ mode: "read" });
+      const found = [];
+      for await (const [name, handle] of downloadsDir.entries()) {
+        if (handle.kind !== "file") continue;
+        if (!CAD_NAME_RE.test(name)) continue;
+        try {
+          const file = await handle.getFile();
+          found.push({ name, file, at: file.lastModified || Date.now() });
+        } catch {
+          /* skip unreadable */
+        }
+      }
+      found.sort((a, b) => b.at - a.at);
+      localFiles = found.slice(0, 10);
+      renderLocalDownloads();
+
+      if (autoStageNew && downloadWatchStartedAt) {
+        const fresh = found.filter((f) => f.at >= downloadWatchStartedAt - 5000);
+        if (fresh.length) {
+          stageFiles(fresh.slice(0, 5).map((f) => f.file));
+          setStatus("ok", `Found ${fresh[0].name} in Downloads — ready to insert.`);
+          return fresh;
+        }
+      }
+      return found;
+    } catch (err) {
+      setStatus("error", err?.message || "Could not read Downloads folder.");
+      return [];
+    }
+  }
+
+  async function linkDownloadsFolder() {
+    if (typeof window.showDirectoryPicker !== "function") {
+      setStatus("error", "This browser cannot link a folder — use Pick file… instead (Chrome/Edge recommended).");
+      fileInput?.click();
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: "read", id: "mcmaster-downloads" });
+      downloadsDir = handle;
+      try { await idbSet("downloadsDir", handle); } catch { /* optional */ }
+      setStatus("ok", "Downloads folder linked — newest CAD files will show here.");
+      await refreshLocalDownloads();
+      startLocalPoll();
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      setStatus("error", err?.message || "Could not link Downloads folder.");
+    }
+  }
+
+  async function restoreDownloadsFolder() {
+    try {
+      const handle = await idbGet("downloadsDir");
+      if (!handle) return;
+      const perm = await handle.queryPermission?.({ mode: "read" });
+      if (perm === "granted" || (perm === "prompt" && (await handle.requestPermission?.({ mode: "read" })) === "granted")) {
+        downloadsDir = handle;
+        await refreshLocalDownloads();
+        startLocalPoll();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function startLocalPoll() {
+    if (localPollTimer) window.clearInterval(localPollTimer);
+    localPollTimer = window.setInterval(() => {
+      if (sessionOpen && downloadsDir && !host?.classList.contains("hidden")) {
+        void refreshLocalDownloads();
+      }
+    }, 4000);
   }
 
   function openPanel() {
@@ -727,6 +1077,8 @@ export function createMcMasterInsert({
     renderQuick();
     renderPending();
     renderTabRecent();
+    void restoreDownloadsFolder();
+    renderLocalDownloads();
     syncConnectionUi();
   }
 
@@ -768,11 +1120,24 @@ export function createMcMasterInsert({
     closePanel();
   }
 
-  function onReturnFromMcMaster() {
-    if (!sessionOpen || !awaitingDownload) return;
+  async function onReturnFromMcMaster() {
+    if (!sessionOpen || !awaitingDownload || !returnPickerArmed) return;
+    returnPickerArmed = false; // only once per McMaster browse session
     activateSession();
     dropZone?.classList.add("is-attention");
-    setStatus("ok", "Choose the downloaded CAD file to stage it in this McMaster tab.");
+    localList?.closest(".mcmaster-local-block")?.classList.add("is-attention");
+
+    // If Downloads is linked, pull any new CAD automatically.
+    if (downloadsDir) {
+      const fresh = await refreshLocalDownloads({ autoStageNew: true });
+      if (fresh?.length) return;
+    }
+
+    setStatus("ok", "Pick the file you just downloaded — McMaster saved it to your Downloads folder.");
+    // Auto-open the file picker so the download shows up without hunting for a button.
+    window.setTimeout(() => {
+      void pickDownloadedCad();
+    }, 250);
   }
 
   const clearAllRecent = () => {
@@ -814,11 +1179,18 @@ export function createMcMasterInsert({
   searchInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
+      rememberProductContext(searchInput.value);
       navigateLive(searchUrlFromInput());
     }
   });
+  searchInput?.addEventListener("change", () => rememberProductContext(searchInput.value));
+  refLinkInput?.addEventListener("change", () => rememberProductContext(refLinkInput.value));
+  refLinkInput?.addEventListener("blur", () => rememberProductContext(refLinkInput.value));
 
+  host?.querySelector("[data-mcmaster-link-downloads]")?.addEventListener("click", () => void linkDownloadsFolder());
+  host?.querySelector("[data-mcmaster-refresh-local]")?.addEventListener("click", () => void refreshLocalDownloads());
   host?.querySelector("[data-mcmaster-import]")?.addEventListener("click", () => void pickDownloadedCad());
+  host?.querySelector("[data-mcmaster-insert-current]")?.addEventListener("click", () => void insertPending(null, { forceCurrent: true }));
   host?.querySelector("[data-mcmaster-insert-all]")?.addEventListener("click", () => void insertPending());
   host?.querySelector("[data-mcmaster-clear-pending]")?.addEventListener("click", () => {
     pending = [];

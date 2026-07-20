@@ -15002,6 +15002,7 @@ def wiring_demo(
 class McMasterLibraryRecordRequest(BaseModel):
     filenames: list[str] = Field(default_factory=list)
     source: str = "mcmaster"
+    page_urls: dict[str, str] = Field(default_factory=dict)
 
 
 @app.get("/api/projects/{project_id}/mcmaster-library")
@@ -15027,6 +15028,7 @@ def record_mcmaster_library(
         path,
         names,
         source=(body.source or "mcmaster").strip() or "mcmaster",
+        page_urls=body.page_urls or {},
     )
     project_store.touch_project(path)
     return {

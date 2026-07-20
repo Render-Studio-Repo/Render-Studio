@@ -107,7 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-stage2";
+import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-ref";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
   suggestElectronicsForBuild,
@@ -16448,8 +16448,18 @@ function writeMcMasterInsertDest(mode) {
   return next;
 }
 
-async function resolveMcMasterInsertDestination(files) {
-  // Always ask: current workspace vs new project.
+async function resolveMcMasterInsertDestination(files, opts = {}) {
+  if (opts.forceCurrent) {
+    if (!projectId) {
+      try {
+        await ensureProjectForUpload();
+      } catch {
+        try { await ensureProject(); } catch { /* ask below */ }
+      }
+    }
+    if (projectId) return { destination: "current", projectId };
+  }
+  // Ask: current workspace vs new project.
   return askDropDestination(files);
 }
 
@@ -16473,7 +16483,7 @@ const docTabs = createDocumentTabBar({
 const mcmasterInsert = createMcMasterInsert({
   docTabs,
   viewerEl: document.getElementById("mcmaster-viewer"),
-  resolveDestination: (files) => resolveMcMasterInsertDestination(files),
+  resolveDestination: (files, opts) => resolveMcMasterInsertDestination(files, opts),
   onImportFiles: async (files, choice) => uploadProjectFiles(files, choice),
   onLoadLibrary: async () => {
     if (!projectId) return [];
@@ -16484,18 +16494,54 @@ const mcmasterInsert = createMcMasterInsert({
       return [];
     }
   },
-  onLibrarySave: async (filenames, choice) => {
+  onLibrarySave: async (filenames, choice, meta = {}) => {
     const pid = choice?.projectId || projectId;
     if (!pid || !filenames?.length) return [];
     try {
       const data = await api(`/api/projects/${pid}/mcmaster-library`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filenames, source: "mcmaster" }),
+        body: JSON.stringify({
+          filenames,
+          source: "mcmaster",
+          page_urls: meta.pageUrls || {},
+        }),
       });
       return data?.entries || [];
     } catch {
       return [];
+    }
+  },
+  onSavePartReference: async ({ file, cadFilename, partNumber, pageUrl }, choice) => {
+    const dest = choice || { destination: "current", projectId };
+    const pid = dest.projectId || projectId;
+    if (!pid || !file) return null;
+    try {
+      // Ensure project context for quiet reference upload.
+      if ((dest.destination || "current") === "new") {
+        /* project already created by CAD upload path */
+      }
+      const targetProjectId = pid;
+      const form = new FormData();
+      form.append("file", file);
+      const res = await rawFetch(`/api/projects/${targetProjectId}/upload`, {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data.detail;
+        throw new Error(typeof detail === "string" ? detail : "Reference upload failed");
+      }
+      await refreshFiles();
+      setEditStatus(
+        "ok",
+        `Saved AI reference ${data.filename || file.name}${pageUrl ? ` → ${pageUrl}` : ""}${cadFilename ? ` (tied to ${cadFilename})` : ""}.`,
+      );
+      return data;
+    } catch (err) {
+      console.warn("McMaster reference save failed", err);
+      return null;
     }
   },
   onStatus: (kind, text) => {

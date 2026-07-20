@@ -210,6 +210,7 @@ def record_mcmaster_library_entries(
     filenames: list[str],
     *,
     source: str = "mcmaster",
+    page_urls: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Copy imported CAD into mcmaster_library/ and append to index.json."""
     import shutil
@@ -221,6 +222,7 @@ def record_mcmaster_library_entries(
     by_name = {e["name"]: e for e in existing}
     now = datetime.now(timezone.utc).isoformat()
     added: list[dict[str, Any]] = []
+    urls = page_urls or {}
 
     for raw_name in filenames or []:
         name = Path(str(raw_name or "")).name.strip()
@@ -246,12 +248,15 @@ def record_mcmaster_library_entries(
                         break
                     n += 1
             shutil.copy2(src, dest)
+        page_url = str(urls.get(name) or urls.get(dest.name) or "").strip()
         entry = {
             "name": dest.name,
             "filename": dest.name,
             "at": now,
             "source": source or "mcmaster",
             "project_filename": name,
+            "page_url": page_url,
+            "reference": f"mcmaster_{Path(name).stem}.md" if name else "",
         }
         by_name[dest.name] = entry
         added.append(entry)
