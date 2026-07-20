@@ -20,7 +20,15 @@ def meta_path(project_path: Path) -> Path:
 def load_meta(project_path: Path) -> dict[str, Any]:
     path = meta_path(project_path)
     if path.is_file():
-        return json.loads(path.read_text())
+        try:
+            raw = path.read_text(encoding="utf-8")
+            if raw.strip():
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return data
+        except (json.JSONDecodeError, OSError, UnicodeError, TypeError, ValueError):
+            # Empty/corrupt project.json must not break share/export — recover below.
+            pass
     return {
         "id": project_path.name,
         "name": project_path.name,
@@ -30,7 +38,13 @@ def load_meta(project_path: Path) -> dict[str, Any]:
 
 
 def save_meta(project_path: Path, meta: dict[str, Any]) -> None:
-    meta_path(project_path).write_text(json.dumps(meta, indent=2))
+    """Atomically write project.json so a crash never leaves an empty file."""
+    path = meta_path(project_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(meta, indent=2)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(path)
 
 
 def is_default_project_name(project_path: Path, meta: dict[str, Any] | None = None) -> bool:
