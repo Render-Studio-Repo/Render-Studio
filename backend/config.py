@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     capacity_alert_smtp_user: str = ""  # e.g. info@render3d.app
     capacity_alert_smtp_password: str = ""  # Gmail App Password
     capacity_alert_from: str = "info@render3d.app"
-    capacity_alert_to: str = "sam@render3d.app"
+    capacity_alert_to: str = ""
 
     # Marketplace payments (Stripe Connect + Link)
     stripe_secret_key: str = ""

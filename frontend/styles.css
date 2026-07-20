@@ -13689,17 +13689,13 @@ button.onshape-doc-name.fusion-folder-select:hover,
   border-left: 1px solid rgba(88, 166, 255, 0.16);
 }
 
-.fusion-folder-glyph {
-  display: inline-block;
-  margin-right: 5px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(56, 189, 248, 0.12);
-  color: #7dd3fc;
-  font-size: 0.58rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+.fusion-folder-hint {
+  margin: 4px 0 0;
+  line-height: 1.35;
+}
+
+.fusion-mirror-contents-item.is-file .fusion-mirror-contents-name {
+  flex: 1;
 }
 
 .fusion-row-actions {

@@ -399,7 +399,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         return;
       }
       const accountLabel = linkedAccount.autodesk_email || linkedAccount.autodesk_name || "Autodesk account";
-      setStatus(`Connected as ${accountLabel}. Pick a hub, project, folder, and model below.`);
+      setStatus(`Connected as ${accountLabel}. Pick a hub and project, then open a folder below.`);
       const data = await api("/api/autodesk/hubs");
       hubs = data.hubs || [];
       if (!hubs.length) {
@@ -591,17 +591,13 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         <span>Project</span>
         <select id="fusion-project-select"></select>
       </label>
-      <label class="fusion-library-field">
-        <span>Model</span>
-        <select id="fusion-model-select"></select>
-      </label>
       <div class="fusion-library-actions">
-        <button type="button" class="btn btn-compact btn-fusion-import-selected" title="Import the model selected above into Render3D.">Import selected</button>
         ${preferredMirrorTarget && !mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
         ${mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Remove the stale Fusion mirror saved on this Render3D project.">Clear stale mirror</button>' : ""}
         <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
         <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Push your local Render3D edits to Fusion, pull any newer Fusion versions, then update teammate mirrors.">Sync with Fusion</button>
       </div>
+      <p class="muted small fusion-folder-hint">Open a folder below to see its contents. Use <strong>Link mirror</strong> on a folder — no model picker.</p>
     `;
     controlsEl.querySelector(".btn-fusion-import-visible")?.addEventListener("click", (event) => {
       importVisibleItems(event.currentTarget);
@@ -615,9 +611,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     controlsEl.querySelector(".btn-fusion-disconnect-account")?.addEventListener("click", (event) => {
       disconnectAutodeskAccount(event.currentTarget);
     });
-    controlsEl.querySelector(".btn-fusion-import-selected")?.addEventListener("click", (event) => {
-      importSelectedModel(event.currentTarget);
-    });
     const hubSelect = controlsEl.querySelector("#fusion-hub-select");
     hubSelect.innerHTML = hubs.map((hub) => `<option value="${esc(hub.id)}"${hub.id === activeHubId ? " selected" : ""}>${esc(hub.name || hub.id)}</option>`).join("");
     hubSelect.onchange = async () => {
@@ -630,7 +623,6 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       await loadProjects();
     };
     renderProjectSelect();
-    renderModelSelect();
   }
 
   function folderById(folderId) {
@@ -652,17 +644,31 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     if (!folder?.id) return;
     activeFolderId = folder.id;
     activeItemId = "";
+    const row = findFolderRow(folder.id);
     if (highlight) {
       listEl?.querySelectorAll(".fusion-folder-item").forEach((item) => {
         item.classList.toggle("active", item?._fusionFolder?.id === folder.id);
       });
     }
-    await loadFolderLibraryItems(folder.id, { status });
-  }
-
-  function renderFolderSelect() {
-    // Folder dropdown removed from the Hub/Project/Model selectors.
-    // activeFolderId is still set from the linked mirror or first top-level folder.
+    // Expand the folder panel and load contents in-tree (no separate model dropdown).
+    if (row) {
+      const panel = row.querySelector(".onshape-doc-elements");
+      const toggle = row.querySelector(".onshape-doc-toggle");
+      if (panel && toggle) {
+        const ancestors = collectFolderAncestors(row);
+        const alreadyOpen = !panel.classList.contains("hidden") && panel.dataset.loaded === "1";
+        setFolderExpanded(folder, panel, toggle, true, { ancestorIds: ancestors });
+        // Re-clicking an already-open folder refreshes its contents.
+        if (alreadyOpen) {
+          panel.dataset.loaded = "";
+          await loadFolder(folder, panel, ancestors);
+        }
+      }
+    }
+    if (status) {
+      const name = folder.name || "folder";
+      setStatus(`Opened “${name}” — contents listed below.`);
+    }
   }
 
   function renderModelSelect() {
@@ -747,7 +753,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   async function importSelectedModel(btn) {
     const file = libraryItems.find((item) => item.id === activeItemId);
     if (!file || !activeFolderId) {
-      setStatus("Select a project and model from the dropdowns first.", true);
+      setStatus("Open a Fusion folder below, then import a file from its contents.", true);
       return;
     }
     await importItem(folderById(activeFolderId), file, null, btn);
@@ -845,7 +851,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     item._fusionFolder = folder;
     item.innerHTML = `
       <div class="onshape-doc-header">
-        <button type="button" class="onshape-doc-name fusion-folder-select" title="Show models in this folder">${esc(folder.name || "Untitled")}</button>
+        <button type="button" class="onshape-doc-name fusion-folder-select" title="Open folder and show contents">${esc(folder.name || "Untitled")}</button>
         <div class="fusion-row-actions">
           <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}">${preferred ? "Linked mirror" : "Link mirror"}</button>
           <button type="button" class="btn btn-compact btn-fusion-import-folder">Import all</button>
@@ -862,11 +868,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     const chain = new Set(ancestorIds);
     if (folder.id) chain.add(folder.id);
     item.querySelector(".fusion-folder-select")?.addEventListener("click", () => {
+      // Folder name opens contents in the tree (not a model picker).
       void selectFolderForModels(folder);
     });
     toggle.addEventListener("click", () => {
       const open = panel.classList.contains("hidden");
       setFolderExpanded(folder, panel, toggle, open, { ancestorIds: chain });
+      if (open) {
+        activeFolderId = folder.id;
+        item.classList.add("active");
+      }
     });
     item.querySelector(".btn-fusion-push")?.addEventListener("click", (event) => {
       pushToFolder(folder, event.currentTarget);
@@ -1006,21 +1017,10 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         </section>
         <section class="fusion-mirror-link-section">
           <h3>Contents in this Fusion folder</h3>
-          <p class="muted small">Preview and pick a model, or link the whole folder as your workspace mirror.</p>
-          <div class="fusion-mirror-link-mode" role="radiogroup" aria-label="Link mode">
-            <label class="fusion-mirror-mode-option">
-              <input type="radio" name="fusion-mirror-mode" value="folder" checked />
-              <span><strong>Link whole folder</strong><small>Mirror this Fusion folder for the open Render3D project</small></span>
-            </label>
-            <label class="fusion-mirror-mode-option">
-              <input type="radio" name="fusion-mirror-mode" value="model" />
-              <span><strong>Link selected model</strong><small>Mirror the folder and import/open one model</small></span>
-            </label>
-          </div>
+          <p class="muted small">Preview what’s in the folder, then link the whole folder as your workspace mirror.</p>
           <div class="fusion-mirror-contents" data-mirror-contents>
             <p class="muted small loading-dots">Loading folder contents…</p>
           </div>
-          <div class="fusion-mirror-preview muted small" data-mirror-preview>Select a file to preview details.</div>
         </section>
         <div class="app-dialog-actions fusion-mirror-link-actions">
           <button type="button" class="btn secondary" data-mirror-cancel>Cancel</button>
@@ -1030,68 +1030,11 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     `;
     document.body.appendChild(modal);
 
-    let selectedItem = null;
     let contents = { folders: [], items: [] };
     let contentsExpanded = false;
     const peopleEl = modal.querySelector("[data-mirror-people]");
     const contentsEl = modal.querySelector("[data-mirror-contents]");
-    const previewEl = modal.querySelector("[data-mirror-preview]");
     const confirmBtn = modal.querySelector("[data-mirror-confirm]");
-    const modeInputs = [...modal.querySelectorAll('input[name="fusion-mirror-mode"]')];
-
-    function currentMode() {
-      return modeInputs.find((input) => input.checked)?.value || "folder";
-    }
-
-    function syncConfirmLabel() {
-      const mode = currentMode();
-      if (mode === "model") {
-        confirmBtn.textContent = selectedItem
-          ? `Link & open ${selectedItem.name || "model"}`
-          : "Select a model";
-        confirmBtn.disabled = !selectedItem;
-      } else {
-        confirmBtn.textContent = "Link whole folder";
-        confirmBtn.disabled = false;
-      }
-    }
-
-    function setPreview(file) {
-      if (!file) {
-        previewEl.textContent = "Select a file to preview details.";
-        return;
-      }
-      const imported = importedMap.get(file.id);
-      previewEl.innerHTML = `
-        <strong>${esc(file.name || "Untitled")}</strong>
-        <span>${imported ? `Already in Render3D as ${esc(imported.name || imported.filename)}` : "Not imported yet"}</span>
-        <div class="fusion-mirror-preview-actions">
-          ${file.web_url ? `<a class="btn btn-compact" target="_blank" rel="noopener" href="${esc(file.web_url)}">Open in Fusion</a>` : ""}
-          ${imported
-            ? `<button type="button" class="btn btn-compact" data-preview-view>View in Render3D</button>`
-            : `<button type="button" class="btn btn-compact" data-preview-import>Import preview</button>`}
-        </div>
-      `;
-      previewEl.querySelector("[data-preview-view]")?.addEventListener("click", () => {
-        onView?.(imported.projectId, imported.filename, imported.name);
-      });
-      previewEl.querySelector("[data-preview-import]")?.addEventListener("click", async (event) => {
-        const btn = event.currentTarget;
-        btn.disabled = true;
-        btn.textContent = "Importing…";
-        try {
-          const result = await importFusionFile(folder, file);
-          importedMap.set(file.id, { projectId: result.project_id, filename: result.filename, name: result.name });
-          onImported?.(result.project_id, result.filename, result.name);
-          onView?.(result.project_id, result.filename, result.name);
-          setPreview(file);
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = "Import preview";
-          setStatus(err.message || "Preview import failed.", true);
-        }
-      });
-    }
 
     function renderContentsTree() {
       const folders = contents.folders || [];
@@ -1114,16 +1057,11 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
             </li>
           `).join("")}
           ${visibleItems.map((file) => {
-            const selected = selectedItem?.id === file.id;
             const imported = importedMap.has(file.id);
             return `
-              <li class="fusion-mirror-contents-item is-file${selected ? " selected" : ""}" data-file-id="${esc(file.id)}">
-                <label class="fusion-mirror-file-select">
-                  <input type="radio" name="fusion-mirror-file" value="${esc(file.id)}"${selected ? " checked" : ""} />
-                  <span class="fusion-mirror-contents-badge">${imported ? "In R3D" : "File"}</span>
-                  <span class="fusion-mirror-contents-name">${esc(file.name || "Untitled")}</span>
-                </label>
-                <button type="button" class="btn btn-compact" data-preview-file="${esc(file.id)}">Preview</button>
+              <li class="fusion-mirror-contents-item is-file">
+                <span class="fusion-mirror-contents-badge">${imported ? "In R3D" : "File"}</span>
+                <span class="fusion-mirror-contents-name">${esc(file.name || "Untitled")}</span>
               </li>
             `;
           }).join("")}
@@ -1140,45 +1078,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         contentsExpanded = true;
         renderContentsTree();
       });
-      wireContentsInteractions();
-    }
-
-    function wireContentsInteractions() {
-      const folders = contents.folders || [];
-      const items = contents.items || [];
       contentsEl.querySelectorAll("[data-open-subfolder]").forEach((button) => {
-        button.addEventListener("click", async () => {
+        button.addEventListener("click", () => {
           const child = folders.find((entry) => entry.id === button.dataset.openSubfolder);
           if (!child) return;
           closeMirrorLinkModal();
           openMirrorLinkModal(child, triggerBtn);
         });
       });
-      contentsEl.querySelectorAll('input[name="fusion-mirror-file"]').forEach((input) => {
-        input.addEventListener("change", () => {
-          selectedItem = items.find((file) => file.id === input.value) || null;
-          if (selectedItem) {
-            modeInputs.find((entry) => entry.value === "model").checked = true;
-            setPreview(selectedItem);
-          }
-          renderContentsTree();
-          syncConfirmLabel();
-        });
-      });
-      contentsEl.querySelectorAll("[data-preview-file]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const file = items.find((entry) => entry.id === button.dataset.previewFile);
-          if (!file) return;
-          selectedItem = file;
-          modeInputs.find((entry) => entry.value === "model").checked = true;
-          setPreview(file);
-          renderContentsTree();
-          syncConfirmLabel();
-        });
-      });
     }
 
-    modeInputs.forEach((input) => input.addEventListener("change", syncConfirmLabel));
     modal.querySelector("[data-mirror-cancel]")?.addEventListener("click", closeMirrorLinkModal);
     modal.addEventListener("click", (event) => {
       if (event.target === modal) closeMirrorLinkModal();
@@ -1192,22 +1101,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     document.addEventListener("keydown", onKey);
 
     confirmBtn.addEventListener("click", async () => {
-      const mode = currentMode();
-      if (mode === "model" && !selectedItem) return;
       confirmBtn.disabled = true;
       const label = confirmBtn.textContent;
       confirmBtn.textContent = "Linking…";
       try {
-        await linkMirrorFolder(folder, confirmBtn, {
-          item: mode === "model" ? selectedItem : null,
-          importSelected: mode === "model",
-        });
+        await linkMirrorFolder(folder, confirmBtn, { item: null, importSelected: false });
         closeMirrorLinkModal();
         document.removeEventListener("keydown", onKey);
       } catch {
         confirmBtn.disabled = false;
         confirmBtn.textContent = label;
-        syncConfirmLabel();
       }
     });
 
@@ -1244,15 +1147,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       peopleEl.innerHTML = `<p class="muted small error">${esc(err.message || "Could not load collaborators.")}</p>`;
     }
 
-    // Load folder contents for preview / model pick.
+    // Load folder contents for preview.
     try {
+      if (!activeProjectId || !folder?.id) {
+        throw new Error("Pick a Fusion hub and project first, then open a folder.");
+      }
       const data = await api(`/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`);
       contents = { folders: data.folders || [], items: data.items || [] };
       renderContentsTree();
-      syncConfirmLabel();
     } catch (err) {
       contentsEl.innerHTML = `<p class="muted small error">${esc(err.message || "Could not load folder contents.")}</p>`;
-      syncConfirmLabel();
     }
   }
 
@@ -1320,6 +1224,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       appendFolderFileRows(panel, folder, data.items || []);
       if (!panel.children.length) panel.innerHTML = `<p class="muted small">Folder is empty.</p>`;
     } catch (err) {
+      delete panel.dataset.loaded;
       panel.innerHTML = `<p class="muted small error">${esc(err.message || "Failed to load folder.")}</p>`;
     }
   }
