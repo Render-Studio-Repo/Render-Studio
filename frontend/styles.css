@@ -17278,6 +17278,8 @@ label input { margin-top: 4px; }
 }
 
 .prompt-mode-row {
+  position: relative;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -17288,6 +17290,15 @@ label input { margin-top: 4px; }
   border-radius: 0;
   background: transparent;
   flex-shrink: 0;
+  overflow: visible;
+}
+
+#prompt-pane-compose,
+#prompt-pane-compose .prompt-mode-row,
+.prompt-panel:has(.prompt-mode-row),
+.right-tab-panel:has(.prompt-mode-row),
+.sidebar.right:has(.prompt-mode-row) {
+  overflow: visible;
 }
 
 .prompt-mode-btn {
@@ -17311,7 +17322,7 @@ label input { margin-top: 4px; }
   position: absolute;
   left: 50%;
   bottom: calc(100% + 8px);
-  z-index: 40;
+  z-index: 500;
   width: min(250px, 72vw);
   transform: translateX(-50%) translateY(4px);
   pointer-events: none;

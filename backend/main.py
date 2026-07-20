@@ -81,7 +81,7 @@ _AI_USAGE_CACHE_TTL = 30.0
 _AI_USAGE_CACHE_MAX = 128
 _admin_dashboard_cache: dict[tuple[int, int, int], tuple[float, dict[str, Any]]] = {}
 _admin_dashboard_cache_lock = threading.Lock()
-_ADMIN_DASHBOARD_CACHE_TTL = 60.0
+_ADMIN_DASHBOARD_CACHE_TTL = 24 * 60 * 60.0
 _link_preview_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 _link_preview_cache_lock = threading.Lock()
 _LINK_PREVIEW_CACHE_TTL = 3600.0
@@ -90,8 +90,10 @@ _LINK_PREVIEW_CACHE_MAX = 256
 PROJECTS = ROOT / settings.projects_dir
 FRONTEND = ROOT / "frontend"
 AVATARS = ROOT / "data" / "avatars"
+ADMIN_DASHBOARD_CACHE_DIR = ROOT / "data" / "cache"
 PROJECTS.mkdir(parents=True, exist_ok=True)
 AVATARS.mkdir(parents=True, exist_ok=True)
+ADMIN_DASHBOARD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 A1PROJECTS_ADMIN_EMAILS = {
     "a1projects@protonmail.com",
@@ -8535,21 +8537,62 @@ def list_users(q: str = Query(""), user: dict[str, Any] = Depends(get_current_us
     return {"users": teams_service.list_users(q)}
 
 
+def _admin_dashboard_cache_path(cache_key: tuple[int, int, int]) -> Path:
+    user_limit, project_limit, prompt_limit = cache_key
+    return ADMIN_DASHBOARD_CACHE_DIR / f"admin_dashboard_{user_limit}_{project_limit}_{prompt_limit}.json"
+
+
+def _load_admin_dashboard_cache(cache_key: tuple[int, int, int]) -> dict[str, Any] | None:
+    now = time.time()
+    with _admin_dashboard_cache_lock:
+        cached = _admin_dashboard_cache.get(cache_key)
+        if cached and now - cached[0] < _ADMIN_DASHBOARD_CACHE_TTL:
+            return cached[1]
+    path = _admin_dashboard_cache_path(cache_key)
+    if not path.is_file():
+        return None
+    try:
+        wrapper = json.loads(path.read_text(encoding="utf-8"))
+        cached_at = float(wrapper.get("cached_at") or 0)
+        data = wrapper.get("data")
+        if not isinstance(data, dict) or now - cached_at >= _ADMIN_DASHBOARD_CACHE_TTL:
+            return None
+        with _admin_dashboard_cache_lock:
+            _admin_dashboard_cache[cache_key] = (cached_at, data)
+        return data
+    except Exception:
+        return None
+
+
+def _save_admin_dashboard_cache(cache_key: tuple[int, int, int], data: dict[str, Any]) -> None:
+    cached_at = time.time()
+    with _admin_dashboard_cache_lock:
+        _admin_dashboard_cache.clear()
+        _admin_dashboard_cache[cache_key] = (cached_at, data)
+    try:
+        _admin_dashboard_cache_path(cache_key).write_text(
+            json.dumps({"cached_at": cached_at, "data": data}, separators=(",", ":")),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.debug("Could not persist admin dashboard cache: %s", exc)
+
+
 @app.get("/api/admin/dashboard")
 def admin_dashboard(
     user: dict[str, Any] = Depends(get_current_user),
     user_limit: int = Query(12, ge=1, le=50),
     project_limit: int = Query(18, ge=1, le=80),
     prompt_limit: int = Query(40, ge=1, le=160),
+    refresh: bool = Query(False, description="Force a fresh daily dashboard scan"),
 ):
     """Site-wide management overview for the a1projects account only."""
     _require_a1projects_admin(user)
     cache_key = (int(user_limit), int(project_limit), int(prompt_limit))
-    now = time.monotonic()
-    with _admin_dashboard_cache_lock:
-        cached = _admin_dashboard_cache.get(cache_key)
-        if cached and now - cached[0] < _ADMIN_DASHBOARD_CACHE_TTL:
-            return cached[1]
+    if not refresh:
+        cached = _load_admin_dashboard_cache(cache_key)
+        if cached:
+            return {**cached, "cache": {"hit": True, "ttl_seconds": int(_ADMIN_DASHBOARD_CACHE_TTL)}}
     from backend.services.ai_cost import entry_effective_cost
 
     with get_conn() as conn:
@@ -8956,9 +8999,7 @@ def admin_dashboard(
             "edges": network_edges_out,
         },
     }
-    with _admin_dashboard_cache_lock:
-        _admin_dashboard_cache.clear()
-        _admin_dashboard_cache[cache_key] = (time.monotonic(), result)
+    _save_admin_dashboard_cache(cache_key, result)
     return result
 
 
