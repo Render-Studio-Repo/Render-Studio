@@ -70,7 +70,8 @@ class Settings(BaseSettings):
     apple_key_id: str = ""
     apple_private_key: str = ""
 
-    # Capacity collapse alerts (Gmail SMTP → ops inbox)
+    # Capacity collapse alerts (Gmail SMTP → ops inbox). Disabled by default.
+    capacity_alert_enabled: bool = False
     capacity_alert_smtp_host: str = "smtp.gmail.com"
     capacity_alert_smtp_port: int = 587
     capacity_alert_smtp_user: str = ""  # e.g. info@render3d.app

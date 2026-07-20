@@ -344,9 +344,12 @@ export function createPromptHistoryUI({
         const meta = metaParts
           .map((item) => `<span class="ph-meta-part">${item}</span>`)
           .join("");
+        const verboseFailure = /design failed|anthropic api error|openai api error|bad request for url|credit balance is too low|invalid_request_error/i.test(
+          String(e.error || ""),
+        );
         const reply = e.message
           ? `<p class="ph-reply">${escapeHtml(e.message)}</p>`
-          : e.error
+          : e.error && !verboseFailure
             ? `<p class="ph-reply ph-error">${escapeHtml(e.error)}</p>`
             : "";
         const ref = formatPromptRef({

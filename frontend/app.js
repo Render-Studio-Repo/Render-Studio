@@ -1758,22 +1758,18 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             else await refreshPromptHistory();
           }
         } else {
-          if (statusEl) {
-            statusEl.className = "status error";
-            statusEl.textContent = msg;
-          }
+          setPromptPanelFailureStatus(statusEl);
           // Only popup once per failed trace — avoids re-showing old timeout banners on refresh/Generate.
           const alreadyShown = generationWatchOverlay?.shownFailureTrace === gen.trace_id;
           if (pid === projectId && !alreadyShown) {
-            if (generationWatchOverlay) generationWatchOverlay.shownFailureTrace = gen.trace_id;
             if (gen.kind === "wiring") {
               wiringOverlay?.showError(msg, copyContext);
               await refreshWiringPromptHistory();
             } else if (gen.kind === "rigging") {
-              viewerOverlay.showError(msg, copyContext);
+              showPromptGenerationFailure({ message: rawError }, copyContext, gen.trace_id);
               await refreshRiggingPromptHistory();
             } else {
-              viewerOverlay.showError(msg, copyContext);
+              showPromptGenerationFailure({ message: rawError }, copyContext, gen.trace_id);
               await refreshPromptHistory();
             }
           } else if (pid === projectId) {
@@ -5678,7 +5674,11 @@ function promptHistoryPatchFromGenerationStatus(job = {}) {
     "ai_calls",
   ]) {
     if (job[key] !== undefined && job[key] !== null && job[key] !== "") {
-      patch[key] = job[key];
+      if (key === "error" && isVerboseGenerationFailureMessage(job[key])) {
+        patch[key] = null;
+      } else {
+        patch[key] = job[key];
+      }
     }
   }
   if (job.prompt) patch.prompt = job.prompt;
@@ -14655,9 +14655,31 @@ function isBenignGenerationInterrupt(message) {
   );
 }
 
+function extractApiErrorMessage(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const jsonMatch = raw.match(/;\s*response=(\{[\s\S]+\})\s*$/);
+  if (jsonMatch) {
+    try {
+      const payload = JSON.parse(jsonMatch[1]);
+      const nested = payload?.error?.message || payload?.message;
+      if (typeof nested === "string" && nested.trim()) return nested.trim();
+    } catch {
+      /* ignore malformed JSON tail */
+    }
+  }
+  return raw
+    .replace(/^Design failed:\s*/i, "")
+    .replace(/^Anthropic API error \([^)]+\):\s*/i, "")
+    .replace(/Client error '[^']+' for url '[^']+'\s*/i, "")
+    .replace(/For more information check:[^\n]*\n?/i, "")
+    .replace(/;\s*response=\{[\s\S]*$/s, "")
+    .trim();
+}
+
 function formatUserError(err, fallback = "Something went wrong — check Prompt History or the Activity Log.") {
   if (!err) return fallback;
-  if (typeof err === "string" && err.trim()) return err.trim();
+  if (typeof err === "string" && err.trim()) return formatUserError({ message: err.trim() }, fallback);
   const name = err.name || "";
   const msg = (err.message || "").trim();
   if (name === "AbortError" || /aborted a request/i.test(msg)) {
@@ -14667,6 +14689,9 @@ function formatUserError(err, fallback = "Something went wrong — check Prompt 
   if (msg === "Failed to fetch" || /networkerror/i.test(msg)) {
     return "Connection lost during generation. The server may still be building — wait a minute, refresh, and check Prompt History before retrying.";
   }
+  if (/credit balance is too low/i.test(msg)) {
+    return "Claude API credits are exhausted. Add credits at console.anthropic.com/settings/billing, or switch to an OpenAI key in the account menu.";
+  }
   if (/overloaded|529|rate limit hit \(429\)/i.test(msg)) {
     const cleaned = msg.replace(/^Server error \d+:\s*/i, "").replace(/^\{.*"detail":\s*"([^"]+)".*\}$/s, "$1");
     return cleaned.includes("Anthropic") ? cleaned : "Anthropic's API is temporarily overloaded. Wait a minute and try again, or switch models in the account menu.";
@@ -14675,7 +14700,48 @@ function formatUserError(err, fallback = "Something went wrong — check Prompt 
     const cleaned = msg.replace(/^Server error \d+:\s*/i, "").replace(/^\{.*"detail":\s*"([^"]+)".*\}$/s, "$1");
     return cleaned.includes("Try again") ? cleaned : "The AI response was cut off before it finished. Try again or switch to a faster model in the account menu.";
   }
+  if (/^Design failed:/i.test(msg) || /Anthropic API error/i.test(msg)) {
+    const cleaned = extractApiErrorMessage(msg);
+    if (/credit balance is too low/i.test(cleaned)) {
+      return "Claude API credits are exhausted. Add credits at console.anthropic.com/settings/billing, or switch to an OpenAI key in the account menu.";
+    }
+    return cleaned || msg || fallback;
+  }
   return msg || fallback;
+}
+
+function isVerboseGenerationFailureMessage(text) {
+  const msg = String(text || "").trim();
+  if (!msg) return false;
+  return /design failed|anthropic api error|openai api error|bad request for url|credit balance is too low|invalid_request_error/i.test(msg);
+}
+
+function briefPromptFailureStatus() {
+  return "Generation failed — see viewport.";
+}
+
+function showPromptGenerationFailure(err, context = {}, dedupeKey = null) {
+  const message = formatUserError(err);
+  const key =
+    dedupeKey ||
+    context?.traceId ||
+    lastPromptCopyContext?.traceId ||
+    context?.promptId ||
+    message.slice(0, 120);
+  if (generationWatchOverlay?.shownFailureTrace && key && generationWatchOverlay.shownFailureTrace === key) {
+    return message;
+  }
+  if (generationWatchOverlay && key) {
+    generationWatchOverlay.shownFailureTrace = key;
+  }
+  viewerOverlay.showError(message, { ...lastPromptCopyContext, ...context });
+  return message;
+}
+
+function setPromptPanelFailureStatus(statusEl) {
+  if (!statusEl) return;
+  statusEl.className = "status error";
+  statusEl.textContent = briefPromptFailureStatus();
 }
 
 // Stable within a session so reopening projects can use browser HTTP cache.
@@ -25135,12 +25201,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     try {
       await runDrawPrompt(prompt);
     } catch (err) {
-      const status = document.getElementById("prompt-status");
-      if (status) {
-        status.className = "status error";
-        status.textContent = formatUserError(err);
-      }
-      viewerOverlay.showError(formatUserError(err));
+      setPromptPanelFailureStatus(document.getElementById("prompt-status"));
+      showPromptGenerationFailure(err, lastPromptCopyContext || {});
     }
     return;
   }
@@ -25150,12 +25212,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       await answerDimensionPrompt(prompt);
       viewerOverlay.clearError();
     } catch (err) {
-      const status = document.getElementById("prompt-status");
-      if (status) {
-        status.className = "status error";
-        status.textContent = formatUserError(err);
-      }
-      viewerOverlay.showError(formatUserError(err));
+      setPromptPanelFailureStatus(document.getElementById("prompt-status"));
+      showPromptGenerationFailure(err, lastPromptCopyContext || {});
     }
     return;
   }
@@ -25563,15 +25621,12 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       promptFailed = true;
       updatePendingPromptHistoryEntry(promptHistoryId, {
         status: "failed",
-        error: formatUserError(err),
+        error: isVerboseGenerationFailureMessage(formatUserError(err)) ? null : formatUserError(err),
       });
       pendingPromptSelectionContext = null;
       stopGenerationWatch();
-      if (status) {
-        status.className = "status error";
-        status.textContent = formatUserError(err);
-      }
-      viewerOverlay.showError(formatUserError(err), lastPromptCopyContext || {});
+      setPromptPanelFailureStatus(status);
+      showPromptGenerationFailure(err, lastPromptCopyContext || {}, promptHistoryId);
       await refreshPromptHistory();
       showAiComposePanel();
     } finally {
@@ -25584,12 +25639,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
   } catch (err) {
     stopGenerationWatch();
-    const status = document.getElementById("prompt-status");
-    if (status) {
-      status.className = "status error";
-      status.textContent = formatUserError(err);
-    }
-    viewerOverlay.showError(formatUserError(err), lastPromptCopyContext || {});
+    setPromptPanelFailureStatus(document.getElementById("prompt-status"));
+    showPromptGenerationFailure(err, lastPromptCopyContext || {});
   } finally {
     // Always clear submit lock so another part can be queued while jobs run.
     promptSubmitInFlight = false;

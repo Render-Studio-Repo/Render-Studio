@@ -334,6 +334,8 @@ def mark_alert_sent(snap: CapacitySnapshot) -> None:
 
 
 def smtp_configured() -> bool:
+    if not bool(getattr(settings, "capacity_alert_enabled", False)):
+        return False
     user = (settings.capacity_alert_smtp_user or "").strip()
     password = (settings.capacity_alert_smtp_password or "").strip()
     to_addr = (settings.capacity_alert_to or "").strip()
@@ -341,6 +343,8 @@ def smtp_configured() -> bool:
 
 
 def send_capacity_email(snap: CapacitySnapshot) -> None:
+    if not bool(getattr(settings, "capacity_alert_enabled", False)):
+        raise RuntimeError("Capacity alerts are disabled (CAPACITY_ALERT_ENABLED=false).")
     if not smtp_configured():
         raise RuntimeError(
             "Capacity email not configured. Set CAPACITY_ALERT_SMTP_USER, "
@@ -414,12 +418,17 @@ def send_capacity_email(snap: CapacitySnapshot) -> None:
 
 def check_and_alert(*, force: bool = False, dry_run: bool = False) -> dict[str, Any]:
     snap = collect_snapshot()
+    enabled = bool(getattr(settings, "capacity_alert_enabled", False))
     result: dict[str, Any] = {
         "snapshot": asdict(snap),
+        "enabled": enabled,
         "smtp_configured": smtp_configured(),
-        "would_alert": snap.level != "ok" and (force or should_send_alert(snap)),
+        "would_alert": enabled and snap.level != "ok" and (force or should_send_alert(snap)),
         "sent": False,
     }
+    if not enabled:
+        result["skipped"] = "capacity_alerts_disabled"
+        return result
     if dry_run or not result["would_alert"]:
         return result
     if not smtp_configured():
