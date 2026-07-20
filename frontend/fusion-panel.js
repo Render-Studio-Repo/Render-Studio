@@ -656,13 +656,28 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       const toggle = row.querySelector(".onshape-doc-toggle");
       if (panel && toggle) {
         const ancestors = collectFolderAncestors(row);
-        const alreadyOpen = !panel.classList.contains("hidden") && panel.dataset.loaded === "1";
-        setFolderExpanded(folder, panel, toggle, true, { ancestorIds: ancestors });
-        // Re-clicking an already-open folder refreshes its contents.
-        if (alreadyOpen) {
-          panel.dataset.loaded = "";
-          await loadFolder(folder, panel, ancestors);
+        setFolderExpanded(folder, panel, toggle, true, { ancestorIds: ancestors, load: false });
+        panel.dataset.loaded = "";
+        await loadFolder(folder, panel, ancestors);
+      }
+    } else {
+      // Folder row not in DOM yet — still fetch so status can report counts.
+      try {
+        const data = await api(
+          `/api/autodesk/projects/${encodeURIComponent(activeProjectId)}/folders/${encodeURIComponent(folder.id)}/contents`,
+        );
+        const nFiles = (data.items || []).length;
+        const nFolders = (data.folders || []).length;
+        if (status) {
+          setStatus(
+            nFiles || nFolders
+              ? `“${folder.name || "folder"}” has ${nFolders} folder${nFolders === 1 ? "" : "s"} and ${nFiles} file${nFiles === 1 ? "" : "s"}. Expand it in the list.`
+              : `“${folder.name || "folder"}” is empty.`,
+          );
+          return;
         }
+      } catch {
+        /* fall through */
       }
     }
     if (status) {
@@ -807,8 +822,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     setStatus("");
     renderFolders(topFolders, listEl, linkedMirrorFolderId());
     if (activeFolderId) {
-      await loadFolderLibraryItems(activeFolderId);
-      highlightFolderInTree(activeFolderId);
+      const folder = topFolders.find((entry) => entry.id === activeFolderId) || { id: activeFolderId, name: "Folder" };
+      await selectFolderForModels(folder, { highlight: true, status: true });
     } else {
       libraryItems = [];
       renderModelSelect();
@@ -834,11 +849,15 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   }
 
   function setFolderExpanded(folder, panel, toggle, open, { persist = true, load = true, ancestorIds = new Set() } = {}) {
-    panel.classList.toggle("hidden", !open);
+    // Use a Fusion-specific class — global `.hidden { display:none !important }` fights the panel.
+    panel.classList.toggle("fusion-folder-panel-collapsed", !open);
+    panel.classList.remove("hidden");
     toggle.setAttribute("aria-expanded", String(!!open));
     toggle.style.transform = open ? "rotate(0deg)" : "rotate(-90deg)";
     if (persist) setFusionFolderOpen(folder.id, !!open);
-    if (open && load && !panel.dataset.loaded) loadFolder(folder, panel, ancestorIds);
+    if (open && load && !panel.dataset.loaded) {
+      void loadFolder(folder, panel, ancestorIds);
+    }
   }
 
   function folderRow(folder, options = {}) {
@@ -861,7 +880,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
           </button>
         </div>
       </div>
-      <div class="onshape-doc-elements hidden"></div>
+      <div class="onshape-doc-elements fusion-folder-panel fusion-folder-panel-collapsed"></div>
     `;
     const panel = item.querySelector(".onshape-doc-elements");
     const toggle = item.querySelector(".onshape-doc-toggle");
@@ -872,7 +891,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       void selectFolderForModels(folder);
     });
     toggle.addEventListener("click", () => {
-      const open = panel.classList.contains("hidden");
+      const open = panel.classList.contains("fusion-folder-panel-collapsed");
       setFolderExpanded(folder, panel, toggle, open, { ancestorIds: chain });
       if (open) {
         activeFolderId = folder.id;
@@ -1222,7 +1241,15 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         }));
       }
       appendFolderFileRows(panel, folder, data.items || []);
-      if (!panel.children.length) panel.innerHTML = `<p class="muted small">Folder is empty.</p>`;
+      if (!panel.children.length) {
+        panel.innerHTML = `<p class="muted small">Folder is empty.</p>`;
+      } else {
+        const nFiles = (data.items || []).length;
+        const nFolders = (data.folders || []).length;
+        setStatus(
+          `“${folder.name || "Folder"}”: ${nFolders} subfolder${nFolders === 1 ? "" : "s"}, ${nFiles} file${nFiles === 1 ? "" : "s"} — click Import on a file.`,
+        );
+      }
     } catch (err) {
       delete panel.dataset.loaded;
       panel.innerHTML = `<p class="muted small error">${esc(err.message || "Failed to load folder.")}</p>`;
@@ -1259,15 +1286,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     row._fusionFile = file;
     const canImport = IMPORTABLE_EXTS.test(file.name || "");
     const imported = importedMap.get(file.id);
+    const isFusionDesign = /fusion360|f3d|f3z/i.test(String(file.mime_type || file.name || ""));
     row.innerHTML = `
-      <span class="onshape-elem-type-badge">File</span>
-      <span class="onshape-elem-name">${esc(file.name || "Untitled")}</span>
+      <span class="onshape-elem-type-badge">${imported ? "In R3D" : isFusionDesign ? "Fusion" : "File"}</span>
+      <span class="onshape-elem-name" title="${esc(file.name || "Untitled")}">${esc(file.name || "Untitled")}</span>
       <div class="onshape-elem-btns">
         ${imported ? `
           <button type="button" class="btn btn-compact btn-fusion-view">View</button>
           <button type="button" class="btn btn-compact btn-fusion-push-imported">Push update</button>
         ` : `
-          <button type="button" class="btn btn-compact btn-fusion-import" title="${canImport ? "Import into Render3D" : "Auto-convert this Fusion design to STEP, then import"}">Import</button>
+          <button type="button" class="btn accent btn-compact btn-fusion-import" title="${canImport ? "Import into Render3D" : "Convert Fusion design to STEP, then import"}">Import</button>
         `}
         ${file.web_url ? `<a class="btn btn-compact btn-onshape-view" target="_blank" rel="noopener" href="${esc(file.web_url)}">Open</a>` : ""}
       </div>

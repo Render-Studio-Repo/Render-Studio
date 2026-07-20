@@ -13684,9 +13684,33 @@ button.onshape-doc-name.fusion-folder-select:hover,
 }
 .onshape-doc-elements.hidden { display: none; }
 
+.fusion-folder-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  background: var(--bg, #0d1117);
+}
+.fusion-folder-panel.fusion-folder-panel-collapsed {
+  display: none !important;
+}
+
 .fusion-folder-item .onshape-doc-elements {
   margin-left: 7px;
   border-left: 1px solid rgba(88, 166, 255, 0.16);
+}
+
+.fusion-file-row {
+  padding: 6px 8px;
+  border: 1px solid rgba(88, 166, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(56, 139, 253, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fusion-file-row .btn-fusion-import {
+  font-weight: 700;
 }
 
 .fusion-folder-hint {
@@ -13717,10 +13741,6 @@ button.onshape-doc-name.fusion-folder-select:hover,
   border-color: #2ea043;
   background: rgba(46, 160, 67, 0.18);
   color: #7ee787;
-}
-
-.fusion-file-row {
-  padding-left: 2px;
 }
 
 .fusion-view-more {
