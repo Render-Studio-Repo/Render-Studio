@@ -238,6 +238,24 @@ export function createArchitectSession(opts) {
     building.loadSnapshot(snap);
   }
 
+  function getWorldBounds() {
+    if (!active) return null;
+    const meshBox = meshLayer.getWorldBounds?.();
+    const gridBox = bayGrid?.getWorldBounds?.();
+    if (meshBox && gridBox) return meshBox.clone().union(gridBox);
+    return meshBox || gridBox || null;
+  }
+
+  /** Plan content radius for camera clip planes (ignore hidden Design CAD). */
+  function getContentRadius() {
+    if (!active) return 0;
+    const box = getWorldBounds();
+    if (box && !box.isEmpty()) {
+      return Math.max(box.getSize(new THREE.Vector3()).length() * 0.5, 1);
+    }
+    return Math.max(Number(bayGrid?.getPlanExtent?.()) || 0, 12);
+  }
+
   return {
     enter,
     exit,
@@ -254,5 +272,8 @@ export function createArchitectSession(opts) {
     persist,
     syncToolbar,
     building,
+    getWorldBounds,
+    getContentRadius,
+    meshLayer,
   };
 }

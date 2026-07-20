@@ -147,6 +147,16 @@ export function createArchitectMeshLayer(opts) {
     return null;
   }
 
+  function getGroup() {
+    return group;
+  }
+
+  function getWorldBounds() {
+    if (!group) return null;
+    const box = new THREE.Box3().setFromObject(group);
+    return box.isEmpty() ? null : box;
+  }
+
   return {
     rebuild,
     clear,
@@ -156,6 +166,8 @@ export function createArchitectMeshLayer(opts) {
     getSelected,
     getHover,
     pickSegmentId,
+    getGroup,
+    getWorldBounds,
     dispose: clear,
   };
 }

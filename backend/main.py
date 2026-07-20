@@ -79,6 +79,9 @@ _ai_usage_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
 _ai_usage_cache_lock = threading.Lock()
 _AI_USAGE_CACHE_TTL = 30.0
 _AI_USAGE_CACHE_MAX = 128
+_admin_dashboard_cache: dict[tuple[int, int, int], tuple[float, dict[str, Any]]] = {}
+_admin_dashboard_cache_lock = threading.Lock()
+_ADMIN_DASHBOARD_CACHE_TTL = 60.0
 _link_preview_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 _link_preview_cache_lock = threading.Lock()
 _LINK_PREVIEW_CACHE_TTL = 3600.0
@@ -8541,6 +8544,12 @@ def admin_dashboard(
 ):
     """Site-wide management overview for the a1projects account only."""
     _require_a1projects_admin(user)
+    cache_key = (int(user_limit), int(project_limit), int(prompt_limit))
+    now = time.monotonic()
+    with _admin_dashboard_cache_lock:
+        cached = _admin_dashboard_cache.get(cache_key)
+        if cached and now - cached[0] < _ADMIN_DASHBOARD_CACHE_TTL:
+            return cached[1]
     from backend.services.ai_cost import entry_effective_cost
 
     with get_conn() as conn:
@@ -8889,7 +8898,7 @@ def admin_dashboard(
         if edge["source"] in keep_nodes and edge["target"] in keep_nodes
     ]
 
-    return {
+    result = {
         "admin": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "stats": {
@@ -8947,6 +8956,10 @@ def admin_dashboard(
             "edges": network_edges_out,
         },
     }
+    with _admin_dashboard_cache_lock:
+        _admin_dashboard_cache.clear()
+        _admin_dashboard_cache[cache_key] = (time.monotonic(), result)
+    return result
 
 
 @app.get("/api/admin/render-agent/activity")

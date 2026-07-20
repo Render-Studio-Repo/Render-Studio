@@ -7069,8 +7069,20 @@ function architectGridModelUnits() {
 const architectBayGrid = createArchitectBayGrid({
   scene,
   getMmPerModelUnit: () => sceneMmPerModelUnit(),
-  // Large field: ~100+ bays across so the plan never feels like a tiny postage stamp.
-  getExtentModel: () => Math.max(sceneRadius() * 10, architectGridModelUnits() * 64),
+  // Plan field sized for architecture, not the Design CAD bounding sphere
+  // (CAD radius can be huge and used to clip / explode the bay lattice).
+  getExtentModel: () => {
+    const step = architectGridModelUnits();
+    const bayStep = (() => {
+      try {
+        return Math.max(step, 1);
+      } catch (_) {
+        return 1;
+      }
+    })();
+    // ~64–120 bays across; ignore Design sceneRadius so walls aren't frustum-clipped.
+    return Math.max(bayStep * 96, 80);
+  },
 });
 
 /** Architect session (building + draw + mesh + camera). Created lazily after api() exists… 
@@ -12039,8 +12051,31 @@ function updateCameraClipPlanes() {
   const orbitDist = camera.position.distanceTo(controls.target);
   if (!(orbitDist > 0) || !Number.isFinite(orbitDist)) return;
 
-  const bounds = sceneBounds();
-  const contentRadius = Math.max(sceneRadius() || 1, 0.05);
+  const architectActive = !!(architectControlsActive || architectSession?.isActive?.());
+  let bounds = null;
+  let contentRadius = 1;
+  if (architectActive) {
+    bounds = architectSession?.getWorldBounds?.() || null;
+    contentRadius = Math.max(
+      Number(architectSession?.getContentRadius?.()) || 0,
+      Number(architectBayGrid?.getPlanExtent?.()) || 0,
+      12,
+    );
+    if (bounds && !bounds.isEmpty()) {
+      contentRadius = Math.max(contentRadius, bounds.getSize(new THREE.Vector3()).length() * 0.5);
+    } else {
+      // Empty plan: still cover the bay field so the lattice isn't frustum-clipped.
+      const extent = contentRadius;
+      bounds = new THREE.Box3(
+        new THREE.Vector3(-extent, -extent, -1),
+        new THREE.Vector3(extent, extent, Math.max(extent * 0.35, 8)),
+      );
+    }
+  } else {
+    bounds = sceneBounds();
+    contentRadius = Math.max(sceneRadius() || 1, 0.05);
+  }
+
   const gridExtent = niceGridSize(contentRadius) * 0.75;
   const sceneExtent = Math.max(contentRadius, gridExtent, 1);
   const viewDir = camera.getWorldDirection(new THREE.Vector3()).normalize();
@@ -12082,7 +12117,7 @@ function updateCameraClipPlanes() {
 
   // Keep depth precision usable. Log depth helps, but sane planes still prevent
   // dark shimmer/clipping on large CAD assemblies.
-  const maxRatio = 2e5;
+  const maxRatio = architectActive ? 1e6 : 2e5;
   if (far / Math.max(near, 1e-8) > maxRatio) {
     const cappedNear = far / maxRatio;
     if (Number.isFinite(minDepth) && minDepth > 1e-4) {
@@ -12090,6 +12125,11 @@ function updateCameraClipPlanes() {
     } else {
       near = Math.max(near, cappedNear);
     }
+  }
+
+  // Architect walls sit on the plan — never let a CAD-inflated near plane slice them.
+  if (architectActive) {
+    near = Math.min(near, Math.max(orbitDist * 0.0002, 0.01));
   }
 
   if (

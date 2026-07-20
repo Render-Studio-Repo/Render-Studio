@@ -134,11 +134,32 @@ export function createArchitectBayGrid(opts) {
     return SEGMENT_FT;
   }
 
+  function getGroup() {
+    return group;
+  }
+
+  function getWorldBounds() {
+    if (!group) return null;
+    const box = new THREE.Box3().setFromObject(group);
+    return box.isEmpty() ? null : box;
+  }
+
+  /** Half-extent of the bay field in model units (plan radius-ish). */
+  function getPlanExtent() {
+    const mmPer = Number(getMmPerModelUnit()) || 1;
+    const step = segmentLengthModel(mmPer);
+    if (!(step > 0)) return step || 1;
+    return Math.max(Number(getExtentModel()) || step * 80, step * 60) * 0.5;
+  }
+
   return {
     setActive,
     syncFromScene,
     isActive,
     getSegmentFt,
+    getGroup,
+    getWorldBounds,
+    getPlanExtent,
     dispose: clearGroup,
   };
 }
