@@ -25644,7 +25644,8 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 /* Prompt AI panels — fill sidebar to the bottom */
 .prompt-panel.right-tab-panel.active,
 .wiring-prompt-panel.right-tab-panel.active,
-.rigging-prompt-panel.right-tab-panel.active {
+.rigging-prompt-panel.right-tab-panel.active,
+.electronics-panel.right-tab-panel.active {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;

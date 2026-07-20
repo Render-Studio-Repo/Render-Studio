@@ -330,6 +330,87 @@
   background: #0f1b2a;
 }
 
+/* Electronics used list (Adjustments-style cards in side tab + popover) */
+.electronics-panel {
+  padding: 0 0 12px;
+  overflow: hidden;
+}
+
+.electronics-panel-head {
+  padding: 12px 14px 8px;
+}
+
+.electronics-panel-lead {
+  margin: 0 14px 10px;
+}
+
+.electronics-used-list {
+  overflow: auto;
+  padding: 0 12px 12px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.electronics-popover {
+  position: fixed;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 86px));
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  background: #161b22;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.52);
+  color: #c9d1d9;
+}
+
+.electronics-popover .object-iteration-list {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.electronics-item-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.electronics-item-count {
+  margin-left: auto;
+  color: #8b949e;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.electronics-source-pill {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.electronics-source-pill--wiring {
+  border-color: rgba(63, 185, 80, 0.35);
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.electronics-source-pill--cad {
+  border-color: rgba(88, 166, 255, 0.35);
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.08);
+}
+
 .object-iteration-main {
   display: flex;
   align-items: center;

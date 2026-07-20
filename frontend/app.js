@@ -99,7 +99,7 @@ import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260716-texture-tab";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260720-electronics-tab";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
@@ -107,6 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
+import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-targets";
 import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
 import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
@@ -8626,6 +8627,12 @@ function handleDesignTabChange(tab) {
     texturePanel?.open?.();
     setRightTab("prompt");
     setEditStatus("ok", "Textures — save rendered looks, favorite them, and apply to parts or faces.");
+  } else if (tab === "ELECTRONICS") {
+    exitCanvasTab();
+    exitSketchMode();
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    void showElectronicsTabUi();
   } else if (tab === "CANVAS") {
     exitSketchMode();
     enterCanvasTab();
@@ -10442,6 +10449,7 @@ function setRightTab(tab) {
   });
   document.getElementById("project-cost-thumb")?.classList.toggle("hidden", tab !== "prompt");
   if (tab === "rigging") refreshRobotArtifacts({ quiet: true });
+  if (tab === "electronics") void renderElectronicsUsedList();
 }
 
 async function refreshRobotArtifacts({ quiet = false } = {}) {
@@ -11177,6 +11185,13 @@ function activateArchitectPrompt(kind = "room") {
 
 document.querySelectorAll("[data-right-tab]").forEach((btn) => {
   btn.addEventListener("click", () => setRightTab(btn.dataset.rightTab));
+});
+document.getElementById("btn-electronics-refresh")?.addEventListener("click", () => {
+  void renderElectronicsUsedList();
+  if (electronicsPopover) {
+    void renderElectronicsUsedList(electronicsPopover.querySelector("#electronics-popover-list"));
+  }
+  setEditStatus("ok", "Electronics list refreshed.");
 });
 bindUrdfPanel();
 
@@ -12364,6 +12379,273 @@ function fileStem(name) {
 }
 
 let objectIterationPopover = null;
+let electronicsPopover = null;
+
+const ELECTRONICS_TYPE_LABELS = {
+  "raspberry-pi": "Raspberry Pi",
+  "arduino-uno": "Arduino Uno",
+  "arduino-mega": "Arduino Mega",
+  "servo-motor": "Servo motor",
+  stepper: "Stepper motor",
+  "motor-driver": "Motor driver",
+  motor: "DC motor",
+  led: "LED",
+  resistor: "Resistor",
+  transistor: "Transistor",
+  diode: "Diode",
+  button: "Push button",
+  sensor: "Sensor",
+  breadboard: "Breadboard",
+};
+
+function electronicsTypeLabel(type) {
+  const key = String(type || "").toLowerCase();
+  return ELECTRONICS_TYPE_LABELS[key] || prettyPartLabel(key) || key || "Part";
+}
+
+function electronicsTypeColor(type) {
+  const key = String(type || "").toLowerCase();
+  const colors = {
+    "raspberry-pi": "#c51a4a",
+    "arduino-uno": "#00979d",
+    "arduino-mega": "#008184",
+    "servo-motor": "#3fb950",
+    stepper: "#6e7681",
+    "motor-driver": "#58a6ff",
+    motor: "#2ea043",
+    led: "#e3b341",
+    resistor: "#d4a574",
+    transistor: "#8b949e",
+    diode: "#484f58",
+    button: "#8b949e",
+    sensor: "#58a6ff",
+    breadboard: "#c9d1d9",
+  };
+  return colors[key] || "#58a6ff";
+}
+
+async function loadElectronicsSchematicComponents() {
+  const fromSim = wiringSim?.getSchematic?.()?.components;
+  if (Array.isArray(fromSim) && fromSim.length) return fromSim;
+  const fromState = wiringSim?.getState?.()?.components;
+  if (Array.isArray(fromState) && fromState.length) return fromState;
+  const cached = getWiringPrefetch()?.data?.components;
+  if (Array.isArray(cached) && cached.length) return cached;
+  if (!projectId) return [];
+  try {
+    prefetchWiringForProject(projectId);
+    const data = await api(`/api/projects/${encodeURIComponent(projectId)}/wiring`);
+    return Array.isArray(data?.components) ? data.components : [];
+  } catch {
+    return [];
+  }
+}
+
+async function collectElectronicsUsed() {
+  const wiringComponents = await loadElectronicsSchematicComponents();
+  const wiringItems = [];
+  const byKey = new Map();
+  for (const comp of wiringComponents) {
+    const type = String(comp?.type || "part");
+    const label = String(comp?.label || electronicsTypeLabel(type)).trim() || electronicsTypeLabel(type);
+    const key = `wiring:${type}:${label.toLowerCase()}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    const item = {
+      id: key,
+      source: "wiring",
+      type,
+      label,
+      kind: electronicsTypeLabel(type),
+      color: comp?.color || electronicsTypeColor(type),
+      count: 1,
+      componentId: comp?.id || null,
+      filename: comp?.sourceFile || comp?.filename || null,
+    };
+    byKey.set(key, item);
+    wiringItems.push(item);
+  }
+
+  const cadItems = [];
+  const seenCad = new Set();
+  for (const entry of lastProjectBrowser?.components || []) {
+    const name = entry?.name || entry?.filename || entry?.viewer_filename || "";
+    if (!name || seenCad.has(name)) continue;
+    const recognized = recognizePart(name);
+    if (!recognized) continue;
+    seenCad.add(name);
+    cadItems.push({
+      id: `cad:${name}`,
+      source: "cad",
+      type: recognized.wiringType,
+      label: recognized.label || prettyPartLabel(name),
+      kind: recognized.kind,
+      color: electronicsTypeColor(recognized.wiringType),
+      count: 1,
+      componentId: null,
+      filename: name,
+      datasheet: recognized.datasheet || "",
+    });
+  }
+
+  return {
+    wiring: wiringItems,
+    cad: cadItems,
+    total: wiringItems.reduce((n, i) => n + i.count, 0) + cadItems.length,
+  };
+}
+
+function electronicsUsedListHtml(data, { emptyHint = null } = {}) {
+  const wiring = data?.wiring || [];
+  const cad = data?.cad || [];
+  if (!wiring.length && !cad.length) {
+    return `<div class="object-iteration-empty">${appEscapeHtml(emptyHint || "No electronics used yet. Generate a wiring schematic or import electronic CAD parts.")}</div>`;
+  }
+  const sections = [];
+  if (wiring.length) {
+    sections.push(`<div class="object-iteration-history-head">Wiring schematic · ${wiring.reduce((n, i) => n + i.count, 0)}</div>`);
+    sections.push(wiring.map((item, idx) => `
+      <div class="object-iteration-node" data-electronics-id="${appEscapeHtml(item.id)}" data-electronics-source="wiring" data-component-id="${appEscapeHtml(item.componentId || "")}">
+        <span class="object-iteration-rail" aria-hidden="true"></span>
+        <div class="object-iteration-card">
+          <div class="object-iteration-main">
+            <span class="electronics-item-swatch" style="background:${appEscapeHtml(item.color)}"></span>
+            <span class="object-iteration-badge">#${idx + 1}</span>
+            <span class="object-iteration-title">${appEscapeHtml(item.label)}</span>
+            ${item.count > 1 ? `<span class="electronics-item-count">×${item.count}</span>` : ""}
+          </div>
+          <div class="object-iteration-meta">${appEscapeHtml(item.kind)}${item.filename ? ` · ${appEscapeHtml(fileStem(item.filename))}` : ""}</div>
+          <span class="electronics-source-pill electronics-source-pill--wiring">Wiring</span>
+        </div>
+      </div>
+    `).join(""));
+  }
+  if (cad.length) {
+    sections.push(`<div class="object-iteration-history-head">CAD electronics · ${cad.length}</div>`);
+    sections.push(cad.map((item, idx) => `
+      <div class="object-iteration-node" data-electronics-id="${appEscapeHtml(item.id)}" data-electronics-source="cad" data-electronics-file="${appEscapeHtml(item.filename || "")}">
+        <span class="object-iteration-rail" aria-hidden="true"></span>
+        <div class="object-iteration-card">
+          <div class="object-iteration-main">
+            <span class="electronics-item-swatch" style="background:${appEscapeHtml(item.color)}"></span>
+            <span class="object-iteration-badge">#${idx + 1}</span>
+            <span class="object-iteration-title">${appEscapeHtml(item.label)}</span>
+          </div>
+          <div class="object-iteration-meta">${appEscapeHtml(item.kind)}${item.filename ? ` · ${appEscapeHtml(fileStem(item.filename))}` : ""}</div>
+          <span class="electronics-source-pill electronics-source-pill--cad">CAD</span>
+        </div>
+      </div>
+    `).join(""));
+  }
+  return sections.join("");
+}
+
+function bindElectronicsListActions(root) {
+  root?.querySelectorAll("[data-electronics-source='cad'][data-electronics-file]")?.forEach((node) => {
+    node.style.cursor = "pointer";
+    node.addEventListener("click", async () => {
+      const name = node.dataset.electronicsFile;
+      if (!name || !projectId) return;
+      try {
+        selectedFile = name;
+        projectTree?.setSelected?.(name);
+        const url = projectFileUrl(projectId, name);
+        await loadModel(url, name, { projectId, cacheBust: true, fitView: true });
+        setEditStatus("ok", `Selected ${fileStem(name)}.`);
+      } catch (err) {
+        setEditStatus("error", err?.message || "Could not open part.");
+      }
+    });
+  });
+  root?.querySelectorAll("[data-electronics-source='wiring']")?.forEach((node) => {
+    node.style.cursor = "pointer";
+    node.addEventListener("click", () => {
+      if (workspaceModes?.getMode?.() !== "wiring") {
+        workspaceModes?.setMode?.("wiring");
+      }
+      setRightTab("wiring");
+      setEditStatus("ok", "Opened Wiring Simulator — electronics are listed from this schematic.");
+    });
+  });
+}
+
+async function renderElectronicsUsedList(target = document.getElementById("electronics-used-list")) {
+  if (!target) return null;
+  if (!projectId) {
+    target.innerHTML = `<div class="object-iteration-empty">Select a project to list electronics.</div>`;
+    return null;
+  }
+  target.innerHTML = `<div class="object-iteration-empty">Loading electronics…</div>`;
+  const data = await collectElectronicsUsed();
+  target.innerHTML = electronicsUsedListHtml(data);
+  bindElectronicsListActions(target);
+  return data;
+}
+
+function closeElectronicsPopover() {
+  electronicsPopover?.remove();
+  electronicsPopover = null;
+}
+
+async function openElectronicsPopover(anchor = document.getElementById("workspace-tabs"), { force = false } = {}) {
+  if (electronicsPopover && !force) {
+    closeElectronicsPopover();
+    return;
+  }
+  closeElectronicsPopover();
+  closeObjectIterationTree();
+  const pop = document.createElement("div");
+  pop.className = "object-iteration-popover electronics-popover";
+  pop.innerHTML = `
+    <div class="object-iteration-header">
+      <div>
+        <strong>Electronics used</strong>
+        <span>${projectId ? "Wiring schematic + CAD parts" : "No project selected"}</span>
+      </div>
+      <button type="button" class="object-iteration-close" aria-label="Close electronics list">✕</button>
+    </div>
+    <div class="object-iteration-list" id="electronics-popover-list">
+      <div class="object-iteration-empty">Loading electronics…</div>
+    </div>
+  `;
+  document.body.appendChild(pop);
+  electronicsPopover = pop;
+  const rect = anchor?.getBoundingClientRect?.();
+  const top = rect ? rect.bottom + 8 : 72;
+  const right = rect ? Math.max(12, window.innerWidth - rect.right) : 16;
+  pop.style.top = `${top}px`;
+  pop.style.right = `${right}px`;
+  pop.querySelector(".object-iteration-close")?.addEventListener("click", closeElectronicsPopover);
+  const data = await renderElectronicsUsedList(pop.querySelector("#electronics-popover-list"));
+  const subtitle = pop.querySelector(".object-iteration-header span");
+  if (subtitle && data) {
+    subtitle.textContent = data.total
+      ? `${data.total} part${data.total === 1 ? "" : "s"} in this project`
+      : "No electronics in this project yet";
+  }
+  // Keep the side panel in sync when the tab is opened.
+  void renderElectronicsUsedList();
+  setTimeout(() => {
+    document.addEventListener("mousedown", function onDocClick(event) {
+      if (electronicsPopover && !electronicsPopover.contains(event.target) && !anchor?.contains?.(event.target)) {
+        closeElectronicsPopover();
+      } else if (electronicsPopover) {
+        document.addEventListener("mousedown", onDocClick, { once: true });
+      }
+    }, { once: true });
+  }, 0);
+}
+
+async function showElectronicsTabUi() {
+  setRightTab("electronics");
+  await renderElectronicsUsedList();
+  const tabsEl = document.getElementById("workspace-tabs");
+  await openElectronicsPopover(tabsEl, { force: true });
+  setEditStatus("ok", "Electronics — parts used in wiring and recognized CAD electronics.");
+}
 
 function formatHistoryWhen(iso) {
   if (!iso) return "";
@@ -12802,6 +13084,7 @@ async function openObjectIterationTree(anchor = document.getElementById("btn-his
     closeObjectIterationTree();
     return;
   }
+  closeElectronicsPopover();
   const filename = selectedObjectFilename();
   if (!projectId || !filename) {
     setEditStatus("error", "Select an object first to view its iteration tree.");
@@ -16624,6 +16907,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Upload CAD", hint: "Import STEP, STL, GLB, OBJ, 3MF", run: triggerMobileUpload },
         { label: "Export model", hint: "Download visible part/assembly", run: () => document.getElementById("btn-export-model")?.click() },
         { label: "Catalog", hint: "Search STEP models, suppliers, datasheets", run: () => openMobileDesignTab("CATALOG") },
+        { label: "Electronics", hint: "List wiring and CAD electronics used in this project", run: () => openMobileDesignTab("ELECTRONICS") },
         { label: "Textures", hint: "Saved textures, favorites, apply to parts/faces", run: () => openMobileDesignTab("TEXTURE") },
         { label: "Canvas", hint: "2D grid sketch pad with pen tools", run: () => openMobileDesignTab("CANVAS") },
       ]);
@@ -17859,8 +18143,15 @@ function handleWiringTabChange(tab) {
     setEditStatus("ok", "Textures — save rendered looks and apply them to parts or faces.");
     return;
   }
+  if (tab === "ELECTRONICS") {
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    void showElectronicsTabUi();
+    return;
+  }
   catalogPanel?.close?.();
   texturePanel?.close?.();
+  closeElectronicsPopover();
   setRightTab("wiring");
   wiringPromptHistory.setTab("compose");
   setEditStatus("ok", "Wiring Simulator — build and debug circuits.");
@@ -25152,7 +25443,7 @@ window.addEventListener("keydown", (e) => {
     try {
       if (tab === "WIRING") {
         workspaceModes.setMode("wiring");
-      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "CATALOG", "TEXTURE"].includes(tab)) {
+      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "ELECTRONICS", "CATALOG", "TEXTURE"].includes(tab)) {
         workspaceModes.setDesignTab(tab);
         ribbon?.setDesignTab?.(tab);
       }
