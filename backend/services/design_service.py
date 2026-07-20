@@ -1878,6 +1878,98 @@ def _backfill_known_missing_symbols(source: str, prompt: str, missing: list[str]
     return _insert_after_imports(source, "\n\n".join(injections))
 
 
+def _source_looks_like_multipart_assembly(source: str) -> bool:
+    text = source or ""
+    if re.search(r"Compound\s*\(\s*children\s*=", text):
+        return True
+    if text.count(".label") >= 3:
+        return True
+    if re.search(r"def\s+parts\s*\(", text) and "return [" in text:
+        return True
+    return False
+
+
+def _prompt_wants_electronics_or_wiring(prompt: str) -> bool:
+    p = (prompt or "").lower()
+    needles = (
+        "motor", "servo", "esc", "lipo", "battery", "receiver", "wiring", "wire channel",
+        "electronics", "brushless", "propeller", "pushrod", "arduino", "pcb", "board mount",
+        "motor mount", "servo pocket", "cable", "harness",
+    )
+    return any(n in p for n in needles)
+
+
+def _electronics_authoring_rules(prompt: str) -> str:
+    if not _prompt_wants_electronics_or_wiring(prompt):
+        return ""
+    return (
+        "\nELECTRONICS / WIRING SOLIDS (required for this prompt):\n"
+        "- Do NOT stop at empty pockets, shelves, or clearance holes.\n"
+        "- Model visible labeled solids for the claimed electronics: motor, ESC, battery/LiPo, "
+        "receiver, and each servo (or documented purchasable STEP via $step-parts).\n"
+        "- Model wiring as labeled solids too: wire bundles/tubes along channels, lead exits, "
+        "and harness runs between motor/ESC/battery/servos — not only empty tunnels.\n"
+        "- Keep printable airframe parts separate from electronics envelopes; electronics may be "
+        "non-printed space-claim bodies with clear labels (e.g. `2212_motor`, `esc_30a`, "
+        "`lipo_3s`, `aileron_servo_left`, `motor_leads`).\n"
+    )
+
+
+def _assembly_dual_export_rules(prompt: str = "") -> str:
+    return (
+        "\nASSEMBLED + EXPLODED EXPORT (required for multi-part assemblies):\n"
+        "- `gen_step()` MUST return the assembled layout (flight-ready / installed positions).\n"
+        "- Also define `gen_exploded()` that returns the same labeled children spaced apart for "
+        "BOM/assembly review (e.g. offset along Y/Z so parts do not overlap).\n"
+        "- Primary basename is the assembled model. `scripts/step` auto-exports "
+        "`{stem}_exploded.step/.glb/.stl/.3mf` when `gen_exploded()` exists.\n"
+        "- Do NOT make the primary generator filename end in `_exploded` unless the user only "
+        "asked for an exploded view.\n"
+        f"{_electronics_authoring_rules(prompt)}"
+    )
+
+
+_DEFAULT_GEN_EXPLODED = '''
+def gen_exploded():
+    """Exploded layout of labeled assembly children for BOM / assembly review."""
+    root = gen_step()
+    kids = list(getattr(root, "children", None) or [])
+    if len(kids) < 2:
+        return root
+    spaced = []
+    for i, child in enumerate(kids):
+        spaced.append(child.moved(Location((0.0, (i % 7 - 3) * 55.0, (i // 7) * 65.0))))
+    out = Compound(children=spaced)
+    label = getattr(root, "label", None) or "assembly"
+    out.label = f"{label} — exploded"
+    return out
+'''.strip()
+
+
+def _ensure_gen_exploded_in_source(source: str) -> str:
+    """Inject a default gen_exploded() for multi-part assemblies when the agent omitted it."""
+    text = source or ""
+    if "def gen_exploded" in text:
+        return text
+    if "def gen_step" not in text:
+        return text
+    if not _source_looks_like_multipart_assembly(text):
+        return text
+    # Ensure Location/Compound names exist; build123d star-imports usually provide them.
+    return text.rstrip() + "\n\n\n" + _DEFAULT_GEN_EXPLODED + "\n"
+
+
+def _collect_exploded_sidecar_files(project_path: Path, base: str) -> dict[str, str]:
+    """Pick up `{base}_exploded.*` artifacts written by scripts/step."""
+    stem = base if base.lower().endswith("_exploded") else f"{base}_exploded"
+    out: dict[str, str] = {}
+    for ext, key in ((".step", "exploded_step"), (".glb", "exploded_glb"), (".stl", "exploded_stl"), (".3mf", "exploded_3mf")):
+        path = project_path / f"{stem}{ext}"
+        if path.is_file() and path.stat().st_size > 0:
+            out[key] = path.name
+    return out
+
+
 def _finalize_text_to_cad_source_before_step(
     source_path: Path,
     *,
@@ -1900,6 +1992,9 @@ def _finalize_text_to_cad_source_before_step(
         prompt=prompt,
         jake_identical=jake_identical,
     )
+    # Always ensure multi-part assemblies expose gen_exploded() so scripts/step
+    # can emit assembled + exploded artifact pairs for future generations.
+    finalized = _ensure_gen_exploded_in_source(finalized)
     if jake_identical:
         # Jake does not invent missing dimensions. It does rewrite scalar
         # ``*_positions* = 10.0`` mistakes — those are type bugs, not missing params.
@@ -3538,6 +3633,8 @@ def _run_text_to_cad_v2(
                 "\n\nARCHITECT MODE NOTE:\n"
                 "This prompt is not a room/house/building request. Follow the user request directly and do not force house-specific modules.\n"
             )
+    # Always attach assembled+exploded / electronics authoring contract for Mode 2.0+.
+    workflow_note += "\n" + _assembly_dual_export_rules(prompt)
     if progress_callback:
         brief_label = (
             f"Writing {label_prefix} revise brief (Jake edit workflow)..."
@@ -3787,6 +3884,7 @@ def _run_text_to_cad_v2(
                 "step": step_name,
                 "glb": glb_name,
             }
+            files.update(_collect_exploded_sidecar_files(project_path, base))
             promoted_parts = [] if architect_mode else _promote_disconnected_bodies(project_path, glb_name, base=base)
             source_parts = _promote_build123d_children_from_source(
                 project_path,
@@ -4418,6 +4516,7 @@ def _run_text_to_cad_v2(
             "step": step_name,
             "glb": glb_name,
         }
+        files.update(_collect_exploded_sidecar_files(project_path, base))
         promoted_parts = [] if architect_mode else _promote_disconnected_bodies(project_path, glb_name, base=base)
         # Avoid exploding dense assemblies (stairs, gearsets) into dozens of browser
         # part GLBs — that makes balusters/pins look like floating debris beside the

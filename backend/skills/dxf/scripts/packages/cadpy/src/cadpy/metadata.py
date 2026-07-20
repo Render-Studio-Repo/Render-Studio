@@ -25,6 +25,7 @@ class GeneratorMetadata:
     display_name: str | None
     generator_names: tuple[str, ...]
     has_gen_step: bool
+    has_gen_exploded: bool
     has_gen_dxf: bool
     has_gen_urdf: bool
     has_gen_sdf: bool
@@ -104,6 +105,7 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
     display_name: str | None = None
     kind: str | None = None
     has_gen_step = False
+    has_gen_exploded = False
     has_gen_dxf = False
     has_gen_urdf = False
     has_gen_sdf = False
@@ -121,7 +123,13 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
             if target.id == "DISPLAY_NAME" and isinstance(value, ast.Constant) and isinstance(value.value, str):
                 display_name = value.value.strip()
 
-        if not isinstance(node, ast.FunctionDef) or node.name not in {"gen_step", "gen_dxf", "gen_urdf", "gen_sdf"}:
+        if not isinstance(node, ast.FunctionDef) or node.name not in {
+            "gen_step",
+            "gen_exploded",
+            "gen_dxf",
+            "gen_urdf",
+            "gen_sdf",
+        }:
             continue
         generator_names.append(node.name)
 
@@ -146,6 +154,13 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
                 function=node,
             )
             has_gen_step = True
+        elif node.name == "gen_exploded":
+            # Same STEP return contract as gen_step (shape / labeled compound).
+            _parse_step_return_metadata(
+                script_path=script_path,
+                function=node,
+            )
+            has_gen_exploded = True
         elif node.name == "gen_dxf":
             _parse_dxf_envelope_metadata(
                 script_path=script_path,
@@ -167,9 +182,9 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
 
     if not has_gen_step and not has_gen_dxf and not has_gen_urdf and not has_gen_sdf:
         return None
-    if not has_gen_step and (has_gen_urdf or has_gen_sdf):
+    if not has_gen_step and (has_gen_urdf or has_gen_sdf or has_gen_exploded):
         raise ValueError(
-            f"{_display_path(script_path)} gen_urdf() and gen_sdf() require gen_step()"
+            f"{_display_path(script_path)} gen_exploded()/gen_urdf()/gen_sdf() require gen_step()"
         )
 
     return GeneratorMetadata(
@@ -178,6 +193,7 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
         display_name=display_name,
         generator_names=tuple(generator_names),
         has_gen_step=has_gen_step,
+        has_gen_exploded=has_gen_exploded,
         has_gen_dxf=has_gen_dxf,
         has_gen_urdf=has_gen_urdf,
         has_gen_sdf=has_gen_sdf,

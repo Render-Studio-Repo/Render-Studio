@@ -1058,7 +1058,7 @@ def run_script_generator(
     skip_step_write: bool = False,
 ) -> LoadedStepScene | None:
     logger = logger or CliLogger("cad")
-    if generator_name not in {"gen_step", "gen_dxf"}:
+    if generator_name not in {"gen_step", "gen_exploded", "gen_dxf"}:
         raise RuntimeError(f"Unsupported generator: {generator_name}")
     if spec.script_path is None or spec.generator_metadata is None:
         raise ValueError(f"{spec.source_ref} is not a generated Python CAD source")
@@ -1091,7 +1091,7 @@ def _run_script_generator_inner(
     with logger.timed(f"run {generator_name} {spec.source_ref}"):
         raw_payload = generator()
 
-    if generator_name == "gen_step":
+    if generator_name in {"gen_step", "gen_exploded"}:
         envelope = _normalize_step_payload(raw_payload, script_path=spec.script_path)
         if spec.step_path is None:
             raise RuntimeError(f"{spec.source_ref} has no configured STEP output")
@@ -1127,7 +1127,7 @@ def _run_script_generator_inner(
             raise RuntimeError(f"{spec.source_ref} has no configured DXF output")
         _write_dxf_payload(envelope, output_path=spec.dxf_path, script_path=spec.script_path, logger=logger)
     if (
-        generator_name == "gen_step"
+        generator_name in {"gen_step", "gen_exploded"}
         and spec.step_path is not None
         and not skip_step_write
         and not spec.step_path.exists()
@@ -1139,7 +1139,88 @@ def _run_script_generator_inner(
         raise RuntimeError(
             f"{_display_path(spec.script_path)} did not write {_display_path(spec.dxf_path)}"
         )
-    return generated_scene if generator_name == "gen_step" else None
+    return generated_scene if generator_name in {"gen_step", "gen_exploded"} else None
+
+
+def _exploded_output_stem(step_path: Path) -> str:
+    stem = step_path.stem
+    if stem.lower().endswith("_exploded"):
+        return stem
+    return f"{stem}_exploded"
+
+
+def _exploded_entry_spec(spec: EntrySpec) -> EntrySpec | None:
+    """Build a secondary EntrySpec that writes {stem}_exploded STEP/mesh sidecars."""
+    if (
+        spec.source != "generated"
+        or spec.script_path is None
+        or spec.step_path is None
+        or spec.generator_metadata is None
+        or not getattr(spec.generator_metadata, "has_gen_exploded", False)
+    ):
+        return None
+    exploded_stem = _exploded_output_stem(spec.step_path)
+    parent = spec.step_path.parent
+    return EntrySpec(
+        source_ref=spec.source_ref,
+        cad_ref=f"{spec.cad_ref}_exploded",
+        kind=spec.kind,
+        source_path=spec.source_path,
+        display_name=f"{spec.display_name} (exploded)",
+        source=spec.source,
+        step_path=parent / f"{exploded_stem}.step",
+        script_path=spec.script_path,
+        generator_metadata=spec.generator_metadata,
+        dxf_path=None,
+        urdf_path=None,
+        stl_path=(parent / f"{exploded_stem}.stl") if spec.stl_path is not None else None,
+        three_mf_path=(parent / f"{exploded_stem}.3mf") if spec.three_mf_path is not None else None,
+        native_glb_path=(parent / f"{exploded_stem}.glb") if spec.native_glb_path is not None else None,
+        sdf_path=None,
+        mesh_tolerance=spec.mesh_tolerance,
+        mesh_angular_tolerance=spec.mesh_angular_tolerance,
+        mesh_tolerance_explicit=spec.mesh_tolerance_explicit,
+        mesh_angular_tolerance_explicit=spec.mesh_angular_tolerance_explicit,
+        color=spec.color,
+    )
+
+
+def _generate_exploded_sidecar_outputs(
+    spec: EntrySpec,
+    *,
+    entries_by_step_path: dict[Path, EntrySpec],
+    skip_step_write: bool = False,
+    force: bool = False,
+    logger: CliLogger | None = None,
+) -> GeneratedStepResult | None:
+    exploded_spec = _exploded_entry_spec(spec)
+    if exploded_spec is None or exploded_spec.step_path is None:
+        return None
+    logger = logger or CliLogger("cad")
+    logger.info(f"exporting exploded assembly: {_display_path(exploded_spec.step_path)}")
+    preloaded_scene = run_script_generator(
+        exploded_spec,
+        "gen_exploded",
+        logger=logger,
+        force=force,
+        load_current_scene=False,
+        skip_step_write=skip_step_write,
+    )
+    exploded_spec = _effective_step_spec_for_scene(exploded_spec, preloaded_scene)
+    entries = {
+        **entries_by_step_path,
+        exploded_spec.step_path.resolve(): exploded_spec,
+    }
+    output_kwargs: dict[str, object] = {
+        "entries_by_step_path": entries,
+        "preloaded_scene": preloaded_scene,
+        "force": force,
+    }
+    if skip_step_write:
+        output_kwargs["require_step_file"] = False
+    if logger is not None:
+        output_kwargs["logger"] = logger
+    return _generate_part_outputs(exploded_spec, **output_kwargs)
 
 
 def _is_git_lfs_pointer(step_path: Path) -> bool:
@@ -1867,7 +1948,20 @@ def _generate_step_outputs(
             output_kwargs["require_step_file"] = False
         if logger is not None:
             output_kwargs["logger"] = logger
-        return _generate_part_outputs(spec, **output_kwargs)
+        result = _generate_part_outputs(spec, **output_kwargs)
+        # Multi-part assemblies: also export gen_exploded() → {stem}_exploded.step/glb/…
+        try:
+            _generate_exploded_sidecar_outputs(
+                spec,
+                entries_by_step_path=entries_by_step_path,
+                skip_step_write=skip_step_write,
+                force=force,
+                logger=logger,
+            )
+        except Exception as exploded_exc:
+            if logger is not None:
+                logger.warning(f"exploded export skipped: {exploded_exc}")
+        return result
 
 
 def _generate_step_outputs_for_cli(
@@ -2098,7 +2192,7 @@ def _generated_dxf_summary(spec: EntrySpec) -> str:
 
 def _generation_outputs_for_spec(spec: EntrySpec, generator_name: str) -> tuple[GenerationOutput, ...]:
     outputs: list[GenerationOutput] = []
-    if generator_name == "gen_step" and spec.step_path is not None:
+    if generator_name in {"gen_step", "gen_exploded"} and spec.step_path is not None:
         outputs.append(GenerationOutput(spec.step_path, "step"))
         outputs.append(GenerationOutput(part_glb_path(spec.step_path), "glb"))
         if spec.stl_path is not None:

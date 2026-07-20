@@ -187,20 +187,23 @@ CAD brief:
 {cad_brief.strip()}
 {prev}
 Required workflow (do not skip):
-1. Author/edit build123d Python with `gen_step()` as `{source_name}`.
-2. Run from this workspace: `python scripts/step {source_name} --glb {glb_name} --stl {stl_name} --3mf {three_mf_name}`
-3. On failure: classify, fix the smallest responsible source section, rerun step.
-4. Validate: `python scripts/inspect refs {step_name} --facts --planes --positioning`
-5. Mandatory snapshot with the installed CLI shape (NOT a bare STEP arg):
+1. Author/edit build123d Python with `gen_step()` as `{source_name}` returning the ASSEMBLED layout.
+2. For multi-part assemblies, also define `gen_exploded()` with the same labeled children spaced apart.
+3. Run from this workspace: `python scripts/step {source_name} --glb {glb_name} --stl {stl_name} --3mf {three_mf_name}`
+   (scripts/step auto-writes `{stem}_exploded.step/.glb/.stl/.3mf` when gen_exploded exists).
+4. On failure: classify, fix the smallest responsible source section, rerun step.
+5. Validate: `python scripts/inspect refs {step_name} --facts --planes --positioning`
+6. Mandatory snapshot with the installed CLI shape (NOT a bare STEP arg):
    `python scripts/snapshot --input {step_name} --output {Path(step_name).stem}_snapshot.png --camera iso --view-labels --size-profile diagnostic`
    If snapshot deps fail after a valid STEP/GLB exists, finish anyway and report the files — Render3D owns visual review.
-6. Repair until scripts/step succeeds and inspect is acceptable. Do not loop forever on snapshot tooling.
+7. Repair until scripts/step succeeds and inspect is acceptable. Do not loop forever on snapshot tooling.
 
 Rules:
-- Millimeters. `gen_step()` returns the STEP-ready shape; do not write files inside gen_step().
+- Millimeters. `gen_step()` returns the assembled STEP-ready shape; do not write files inside gen_step().
 - Prefer surgical edits over full-file rewrites when revising; for NEW parts, a full rewrite is fine.
 - Never assign bare floats to list-like `*_positions` constants (wrong: `rod_hole_positions = 10.0`).
-- Target basenames: source={source_name}, step={step_name}, glb={glb_name}.
+- When the prompt mentions motors/servos/ESC/battery/wiring/electronics: model visible labeled electronics solids and wire runs — not empty pockets alone.
+- Target basenames: source={source_name}, step={step_name}, glb={glb_name} (assembled primary).
 - Skip `$cad-viewer` handoff — Render3D owns the product viewer. Report final file names when done.
 - Do not ask clarifying questions; proceed with explicit assumptions.
 """

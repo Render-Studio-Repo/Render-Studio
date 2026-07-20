@@ -271,18 +271,21 @@ class JakeToolAgent:
             f"Task mode: {mode}.\n"
             "Work ONLY via tools. Do not return markdown code fences as your final answer — write files with tools.\n"
             "Required workflow:\n"
-            "1) Read/create the build123d Python generator with gen_step()\n"
-            "2) run_step on that generator\n"
-            "3) On failure: classify, str_replace the smallest fix, rerun_step\n"
-            "4) run_inspect on the STEP\n"
-            "5) run_snapshot (mandatory)\n"
-            "6) finish with source/step/glb names when gates pass\n"
+            "1) Read/create the build123d Python generator with gen_step() (assembled layout)\n"
+            "2) For multi-part assemblies also define gen_exploded() (spaced BOM/layout)\n"
+            "3) run_step on that generator (auto-exports assembled + {stem}_exploded sidecars)\n"
+            "4) On failure: classify, str_replace the smallest fix, rerun_step\n"
+            "5) run_inspect on the STEP\n"
+            "6) run_snapshot (mandatory)\n"
+            "7) finish with source/step/glb names when gates pass\n"
             "Rules:\n"
-            "- Millimeters. gen_step() returns the STEP-ready shape/compound; no file writes inside gen_step().\n"
+            "- Millimeters. gen_step() returns the assembled STEP-ready shape/compound; no file writes inside gen_step().\n"
             "- Prefer str_replace over write_file for repairs.\n"
             "- Never assign bare floats to *_positions / list constants "
             "(wrong: rod_hole_positions = 10.0). Use lists of (x,y) or GridLocations.\n"
             "- Keep labels and working geometry on edits.\n"
+            "- When the prompt mentions motors/servos/ESC/battery/wiring/electronics: model visible "
+            "labeled electronics solids and wire runs — not empty pockets alone.\n"
             f"Target files: source={self.source_name}, step={self.step_name}, glb={self.glb_name}.\n\n"
             f"CAD skill excerpt:\n{self._skill_md}"
         )
@@ -393,7 +396,11 @@ class JakeToolAgent:
 
     def _run_step(self, source: str) -> str:
         from backend.services import skill_runner
-        from backend.services.design_service import _apply_jake_deterministic_repairs
+        from backend.services.design_service import (
+            _apply_jake_deterministic_repairs,
+            _ensure_gen_exploded_in_source,
+            _collect_exploded_sidecar_files,
+        )
 
         source_path = _safe_rel(self.project_path, source)
         if not source_path.is_file():
@@ -401,6 +408,7 @@ class JakeToolAgent:
         # Deterministic Jake pre-step type fixes (positions floats, etc.)
         raw = source_path.read_text(encoding="utf-8", errors="ignore")
         fixed = _apply_jake_deterministic_repairs(raw, prompt=self.prompt)
+        fixed = _ensure_gen_exploded_in_source(fixed)
         if fixed != raw:
             source_path.write_text(fixed.rstrip() + "\n", encoding="utf-8")
         stem = source_path.stem
@@ -425,6 +433,7 @@ class JakeToolAgent:
             self.last_snapshot_ok = False
         detail = _tail((out.get("stderr") or "") + "\n" + (out.get("stdout") or ""))
         classified = classify_cli_failure(detail)
+        exploded = _collect_exploded_sidecar_files(self.project_path, stem) if ok else {}
         return json.dumps(
             {
                 "ok": ok,
@@ -432,6 +441,7 @@ class JakeToolAgent:
                 "source": source_path.name,
                 "step": step if (self.project_path / step).is_file() else None,
                 "glb": glb if (self.project_path / glb).is_file() else None,
+                "exploded": exploded or None,
                 "failure_class": classified.get("class"),
                 "guidance": classified.get("guidance") if not ok else None,
                 "output_tail": detail,

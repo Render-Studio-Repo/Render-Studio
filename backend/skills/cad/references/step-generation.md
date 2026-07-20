@@ -21,8 +21,17 @@ This is the default path when designing from scratch or modifying a generated mo
 ```python
 def gen_step():
     ...
-    return step_ready_shape_or_labeled_compound
+    return assembled_shape_or_labeled_compound
+
+def gen_exploded():
+    # Required for multi-part assemblies: same labeled children, spaced apart.
+    ...
+    return exploded_shape_or_labeled_compound
 ```
+
+- `gen_step()` is the primary **assembled** layout (installed / flight-ready positions).
+- `gen_exploded()` is required for multi-part assemblies. When present, `scripts/step` also writes `{stem}_exploded.step` plus matching `.glb` / `.stl` / `.3mf` sidecars beside the assembled outputs.
+- Do not put output paths in the `gen_step()` / `gen_exploded()` return value; the CLI owns output paths.
 
 Generated Python targets infer their kind from the source metadata and `gen_step()` return value; pass the source path directly:
 
@@ -31,6 +40,7 @@ python scripts/step path/to/part.py
 python scripts/step path/to/part.py -o path/to/custom.step
 python scripts/step path/to/a.py=out/a.step path/to/b.py=out/b.step
 python scripts/step path/to/assembly.py
+# → assembly.step (+ mesh sidecars) and assembly_exploded.step when gen_exploded() exists
 ```
 
 Passing a generated assembly `.step` directly treats it as imported native STEP and loses source-level assembly composition; pass the `.py` assembly source. For generated build123d assemblies, prefer `cadpy.assembly.AssemblyHelper` in the Python source so native labels, named mate frames, and source-level relationships are preserved before STEP export (see `positioning.md`).
