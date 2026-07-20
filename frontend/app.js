@@ -99,7 +99,7 @@ import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260714-doc-tabs";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260720-electronics-tab";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260720-mcmaster-insert";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
@@ -107,6 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
+import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-insert";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
   suggestElectronicsForBuild,
@@ -8623,13 +8624,23 @@ function handleDesignTabChange(tab) {
     exitCanvasTab();
     exitSketchMode();
     texturePanel?.close?.();
+    mcmasterInsert?.close?.();
     catalogPanel?.open?.();
     setRightTab("prompt");
     setEditStatus("ok", "Catalog — search STEP models, compare supplier prices, and import parts.");
+  } else if (tab === "INSERT") {
+    exitCanvasTab();
+    exitSketchMode();
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    mcmasterInsert?.open?.();
+    setRightTab("prompt");
+    setEditStatus("ok", "Insert — open McMaster-Carr to browse and import parts.");
   } else if (tab === "TEXTURE") {
     exitCanvasTab();
     exitSketchMode();
     catalogPanel?.close?.();
+    mcmasterInsert?.close?.();
     texturePanel?.open?.();
     setRightTab("prompt");
     setEditStatus("ok", "Textures — save rendered looks, favorite them, and apply to parts or faces.");
@@ -8638,6 +8649,7 @@ function handleDesignTabChange(tab) {
     exitSketchMode();
     catalogPanel?.close?.();
     texturePanel?.close?.();
+    mcmasterInsert?.close?.();
     void showElectronicsTabUi();
   } else if (tab === "CANVAS") {
     exitSketchMode();
@@ -8645,6 +8657,7 @@ function handleDesignTabChange(tab) {
     setEditStatus("ok", "Canvas — sketch on the grid, describe it in the AI panel, then Generate.");
   } else {
     closeElectronicsPopover();
+    mcmasterInsert?.close?.();
     exitCanvasTab();
     exitSketchMode();
     setRightTab("prompt");
@@ -16414,6 +16427,55 @@ const catalogPanel = createCatalogPanel({
   },
 });
 
+const LS_MCMASTER_INSERT_DEST = "render3d:mcmasterInsertDest:v1";
+
+function readMcMasterInsertDest() {
+  try {
+    const mode = localStorage.getItem(LS_MCMASTER_INSERT_DEST) || "ask";
+    return ["ask", "current", "new"].includes(mode) ? mode : "ask";
+  } catch {
+    return "ask";
+  }
+}
+
+function writeMcMasterInsertDest(mode) {
+  const next = ["ask", "current", "new"].includes(mode) ? mode : "ask";
+  try {
+    localStorage.setItem(LS_MCMASTER_INSERT_DEST, next);
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
+async function resolveMcMasterInsertDestination(files) {
+  const pref = readMcMasterInsertDest();
+  if (pref === "current") {
+    if (!projectId) {
+      try {
+        await ensureProjectForUpload();
+      } catch {
+        try { await ensureProject(); } catch { /* fall through to ask */ }
+      }
+    }
+    return projectId
+      ? { destination: "current", projectId }
+      : askDropDestination(files);
+  }
+  if (pref === "new") return { destination: "new" };
+  return askDropDestination(files);
+}
+
+const mcmasterInsert = createMcMasterInsert({
+  resolveDestination: (files) => resolveMcMasterInsertDestination(files),
+  onImportFiles: async (files, choice) => {
+    await uploadProjectFiles(files, choice);
+  },
+  onStatus: (kind, text) => {
+    if (text) setEditStatus(kind || "ok", text);
+  },
+});
+
 const texturePanel = createTexturePanel({
   api,
   getProjectId: () => projectId,
@@ -17236,6 +17298,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "New project", hint: "Start a fresh project", run: () => document.getElementById("btn-new-project")?.click() },
         { label: "Upload CAD", hint: "Import STEP, STL, GLB, OBJ, 3MF", run: triggerMobileUpload },
         { label: "Export model", hint: "Download visible part/assembly", run: () => document.getElementById("btn-export-model")?.click() },
+        { label: "Insert", hint: "McMaster-Carr and supplier part insert", run: () => openMobileDesignTab("INSERT") },
         { label: "Catalog", hint: "Search STEP models, suppliers, datasheets", run: () => openMobileDesignTab("CATALOG") },
         { label: "Electronics", hint: "List wiring and CAD electronics used in this project", run: () => openMobileDesignTab("ELECTRONICS") },
         { label: "Textures", hint: "Saved textures, favorites, apply to parts/faces", run: () => openMobileDesignTab("TEXTURE") },
@@ -18460,8 +18523,19 @@ function handleWiringTabChange(tab) {
     exitSketchMode();
     exitRiggingMode();
     texturePanel?.close?.();
+    mcmasterInsert?.close?.();
     catalogPanel?.open?.();
     setEditStatus("ok", "Catalog — search STEP models, compare supplier prices, and import parts into your wiring project.");
+    return;
+  }
+  if (tab === "INSERT") {
+    exitCanvasTab();
+    exitSketchMode();
+    exitRiggingMode();
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    mcmasterInsert?.open?.();
+    setEditStatus("ok", "Insert — open McMaster-Carr to browse and import parts.");
     return;
   }
   if (tab === "TEXTURE") {
@@ -18469,6 +18543,7 @@ function handleWiringTabChange(tab) {
     exitSketchMode();
     exitRiggingMode();
     catalogPanel?.close?.();
+    mcmasterInsert?.close?.();
     texturePanel?.open?.();
     setEditStatus("ok", "Textures — save rendered looks and apply them to parts or faces.");
     return;
@@ -18476,11 +18551,13 @@ function handleWiringTabChange(tab) {
   if (tab === "ELECTRONICS") {
     catalogPanel?.close?.();
     texturePanel?.close?.();
+    mcmasterInsert?.close?.();
     void showElectronicsTabUi();
     return;
   }
   catalogPanel?.close?.();
   texturePanel?.close?.();
+  mcmasterInsert?.close?.();
   closeElectronicsPopover();
   setRightTab("wiring");
   wiringPromptHistory.setTab("compose");
@@ -25774,7 +25851,7 @@ window.addEventListener("keydown", (e) => {
     try {
       if (tab === "WIRING") {
         workspaceModes.setMode("wiring");
-      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "ELECTRONICS", "CATALOG", "TEXTURE"].includes(tab)) {
+      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "ELECTRONICS", "INSERT", "CATALOG", "TEXTURE"].includes(tab)) {
         workspaceModes.setDesignTab(tab);
         ribbon?.setDesignTab?.(tab);
       }
@@ -27246,6 +27323,9 @@ window.addEventListener("keydown", (e) => {
     panel.querySelectorAll("#pref-new-project-workspace, #pref-advanced-new-project-workspace").forEach((select) => {
       select.value = readNewProjectWorkspaceDefault();
     });
+    panel.querySelectorAll("#pref-mcmaster-insert-dest, #pref-advanced-mcmaster-insert-dest").forEach((select) => {
+      select.value = readMcMasterInsertDest();
+    });
     const advancedMouseSelect = panel.querySelector("#pref-advanced-mouse-preset");
     if (advancedMouseSelect) advancedMouseSelect.value = mouseControlPreset;
     const simMotionSelect = panel.querySelector("#pref-advanced-sim-motion");
@@ -27540,6 +27620,17 @@ window.addEventListener("keydown", (e) => {
             </label>
             <label class="profile-preference-field">
               <span>
+                <b>McMaster-Carr insert</b>
+                <small>When importing a downloaded McMaster part: ask each time, always use the current project, or always create a new project.</small>
+              </span>
+              <select id="pref-mcmaster-insert-dest">
+                <option value="ask">Ask each time</option>
+                <option value="current">Always current project</option>
+                <option value="new">Always new project</option>
+              </select>
+            </label>
+            <label class="profile-preference-field">
+              <span>
                 <b>New project workspace</b>
                 <small>When you are in a shared workspace, choose where new projects are created by default.</small>
               </span>
@@ -27704,6 +27795,17 @@ window.addEventListener("keydown", (e) => {
                     <option value="current">Current shared workspace</option>
                   </select>
                 </label>
+                <label class="profile-preference-field">
+                  <span>
+                    <b>McMaster-Carr insert</b>
+                    <small>Where downloaded McMaster CAD files go after Import download.</small>
+                  </span>
+                  <select id="pref-advanced-mcmaster-insert-dest">
+                    <option value="ask">Ask each time</option>
+                    <option value="current">Always current project</option>
+                    <option value="new">Always new project</option>
+                  </select>
+                </label>
               </article>
               <article class="profile-preferences-category profile-preferences-category--authorized ${preferencesAdvancedTab === "authorized" ? "" : "hidden"}" data-preferences-advanced-panel="authorized">
                 <h3>Authorized apps</h3>
@@ -27841,6 +27943,17 @@ window.addEventListener("keydown", (e) => {
         : value === "personal"
           ? "New projects will default to your personal workspace."
           : "New projects will default to the current shared workspace.");
+      syncPreferencesMenuControls();
+      return;
+    }
+    const mcmasterDestSelect = e.target.closest("#pref-mcmaster-insert-dest, #pref-advanced-mcmaster-insert-dest");
+    if (mcmasterDestSelect) {
+      const value = writeMcMasterInsertDest(mcmasterDestSelect.value || "ask");
+      setEditStatus("ok", value === "ask"
+        ? "McMaster imports will ask current project vs new project each time."
+        : value === "current"
+          ? "McMaster imports will always go to the current project."
+          : "McMaster imports will always create a new project.");
       syncPreferencesMenuControls();
       return;
     }

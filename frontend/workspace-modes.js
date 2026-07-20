@@ -15,6 +15,7 @@ const DESIGN_TABS = [
   { id: "RIGGING", label: "RIGGING", enabled: true },
   { id: "ARCHITECT", label: "ARCHITECT", enabled: true },
   { id: "ELECTRONICS", label: "ELECTRONICS", enabled: true },
+  { id: "INSERT", label: "INSERT", enabled: true },
   { id: "CATALOG", label: "CATALOG", enabled: true },
   { id: "TEXTURE", label: "TEXTURE", enabled: true },
   { id: "CANVAS", label: "CANVAS", enabled: true },
@@ -23,6 +24,7 @@ const DESIGN_TABS = [
 const WIRING_TABS = [
   { id: "WIRING", label: "WIRING", enabled: true },
   { id: "ELECTRONICS", label: "ELECTRONICS", enabled: true },
+  { id: "INSERT", label: "INSERT", enabled: true },
   { id: "CATALOG", label: "CATALOG", enabled: true },
   { id: "TEXTURE", label: "TEXTURE", enabled: true },
 ];
@@ -55,7 +57,7 @@ export function createWorkspaceModes(options = {}) {
         if (!tab.enabled) return;
         if (mode === "wiring") {
           if (wiringTab === tab.id) {
-            if (tab.id === "CATALOG" || tab.id === "TEXTURE" || tab.id === "ELECTRONICS") onWiringTabChange?.(wiringTab);
+            if (tab.id === "CATALOG" || tab.id === "TEXTURE" || tab.id === "ELECTRONICS" || tab.id === "INSERT") onWiringTabChange?.(wiringTab);
             return;
           }
           wiringTab = tab.id;
@@ -64,7 +66,7 @@ export function createWorkspaceModes(options = {}) {
           return;
         }
         if (designTab === tab.id) {
-          if (tab.id === "CATALOG" || tab.id === "TEXTURE" || tab.id === "CANVAS" || tab.id === "ELECTRONICS") onDesignTabChange?.(designTab);
+          if (tab.id === "CATALOG" || tab.id === "TEXTURE" || tab.id === "CANVAS" || tab.id === "ELECTRONICS" || tab.id === "INSERT") onDesignTabChange?.(designTab);
           return;
         }
         designTab = tab.id;
