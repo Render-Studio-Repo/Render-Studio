@@ -1,16 +1,33 @@
 /**
  * Jake-style parametric controls for text-to-cad v2 models ({base}.py + gen_step()).
  *
- * Length sliders preview live via mesh scale; discrete params rebuild on release.
+ * Primary envelope length sliders preview live on the matching axis only.
+ * Feature/detail params rebuild on release (no whole-model scale preview).
  */
 
 import { displayValue, parseLength, unitSuffix } from "./units.js?v=20260714-units-ft-m";
 
-const LENGTH_HINTS = new Set([
-  "length", "width", "height", "depth", "radius", "diameter", "thickness", "size",
-  "pitch", "offset", "gap", "spacing", "clearance", "margin", "extrude", "height_mm",
-  "orbit", "bore",
-]);
+/** Names that are overall envelope dims — safe for live axis preview. */
+const ENVELOPE_AXIS = [
+  [/^panel_w$/i, "x"],
+  [/^panel_h$/i, "z"],
+  [/^panel_t$/i, "y"],
+  [/^(width|overall_width|body_width)$/i, "x"],
+  [/^(height|overall_height|body_height)$/i, "z"],
+  [/^(depth|thickness|overall_depth|body_depth)$/i, "y"],
+  [/^(length|overall_length|body_length)$/i, "x"],
+  [/_width$/i, "x"],
+  [/_height$/i, "z"],
+  [/_depth$/i, "y"],
+  [/_thickness$/i, "y"],
+  [/_length$/i, "x"],
+  [/_w$/i, "x"],
+  [/_h$/i, "z"],
+  [/_t$/i, "y"],
+];
+
+/** Feature/detail tokens — never live-scale the whole mesh. */
+const NO_LIVE_PREVIEW = /fillet|chamfer|angle|clearance|pitch|count|tap|bore|dia|diameter|radius|ring|clip|slot|engagement|saddle|grommet|boss|thread|access_side|front_face|lead_in|internal_|ext_|bed_|wall_t|rib_|rail_|snap_|channel_|tie_|entry_|passthrough|conduit|plumbing|jbox_|m4_|m6_|shell_wall|bolt_|cell|gap|margin|offset|spacing|orbit/;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -22,7 +39,31 @@ function escapeHtml(value) {
 
 function looksLikeLength(name) {
   const norm = String(name || "").toLowerCase();
-  return [...LENGTH_HINTS].some((hint) => norm.includes(hint));
+  if (!norm) return false;
+  if (NO_LIVE_PREVIEW.test(norm) && !/^panel_[wht]$/i.test(norm)) {
+    // Still treat as length for unit display if it looks dimensional, but not for live preview.
+  }
+  return (
+    /(width|height|depth|length|thickness|radius|diameter|size|pitch|offset|gap|spacing|clearance|margin|extrude|bore|orbit)/i.test(norm)
+    || /_(w|h|t|d|len|dia|rad)$/i.test(norm)
+    || /^panel_[wht]$/i.test(norm)
+  );
+}
+
+function axisRoleForParam(name) {
+  const n = String(name || "");
+  for (const [re, axis] of ENVELOPE_AXIS) {
+    if (re.test(n)) return axis;
+  }
+  return null;
+}
+
+function canLivePreviewParam(name) {
+  const n = String(name || "");
+  if (!n) return false;
+  if (/^panel_[wht]$/i.test(n)) return true;
+  if (NO_LIVE_PREVIEW.test(n)) return false;
+  return axisRoleForParam(n) != null;
 }
 
 function candidateFilenames(filename) {
@@ -123,10 +164,15 @@ export function cadParamControlsHtml(data, { partLabel = null } = {}) {
     const base = Number.isFinite(numeric) ? numeric : 0;
     const shown = bounds.isLen ? displayValue(base) : base;
     const unit = bounds.isLen ? unitSuffix() : "";
-    return `<label class="cad-param-row" data-param-name="${escapeHtml(name)}">
+    const live = canLivePreviewParam(name) ? "1" : "0";
+    const axis = axisRoleForParam(name) || "";
+    const hint = live === "1"
+      ? ` title="Live preview scales ${axis.toUpperCase() || "model"} only; release to rebuild"`
+      : ` title="Release slider or click Rebuild to regenerate geometry"`;
+    return `<label class="cad-param-row" data-param-name="${escapeHtml(name)}"${hint}>
       <span>${escapeHtml(label)}</span>
-      <input type="range" min="${bounds.min}" max="${bounds.max}" step="${bounds.step}" value="${base}" data-cad-range="${escapeHtml(name)}" data-base="${base}" data-is-length="${bounds.isLen ? "1" : "0"}" data-is-count="${bounds.isCount ? "1" : "0"}" data-kind="${escapeHtml(kind)}" />
-      <input type="number" step="${bounds.step}" value="${shown}" data-cad-number="${escapeHtml(name)}" data-is-length="${bounds.isLen ? "1" : "0"}" data-kind="${escapeHtml(kind)}" />
+      <input type="range" min="${bounds.min}" max="${bounds.max}" step="${bounds.step}" value="${base}" data-cad-range="${escapeHtml(name)}" data-base="${base}" data-is-length="${bounds.isLen ? "1" : "0"}" data-is-count="${bounds.isCount ? "1" : "0"}" data-live-preview="${live}" data-axis-role="${escapeHtml(axis)}" data-kind="${escapeHtml(kind)}" />
+      <input type="number" step="${bounds.step}" value="${shown}" data-cad-number="${escapeHtml(name)}" data-is-length="${bounds.isLen ? "1" : "0"}" data-live-preview="${live}" data-axis-role="${escapeHtml(axis)}" data-kind="${escapeHtml(kind)}" />
       <em>${unit || (kind === "integer" || bounds.isCount ? "#" : "")}</em>
     </label>`;
   }).join("");
@@ -141,7 +187,7 @@ export function cadParamControlsHtml(data, { partLabel = null } = {}) {
     <div class="cad-param-list">${rows}</div>
     <div class="cad-param-actions">
       <button type="button" class="btn accent btn-compact" data-cad-param-apply>Rebuild model</button>
-      <small>Length sliders preview live; release or Rebuild runs scripts/step.</small>
+      <small>Panel W/H/T preview on one axis. Other params rebuild on release.</small>
     </div>
   </section>`;
 }
@@ -166,19 +212,6 @@ function readParamValues(panel) {
   return values;
 }
 
-function lengthPreviewScale(panel) {
-  const ratios = [];
-  panel.querySelectorAll("[data-cad-range][data-is-length='1']").forEach((range) => {
-    const base = Number(range.dataset.base);
-    const value = Number(range.value);
-    if (Number.isFinite(base) && base > 1e-6 && Number.isFinite(value) && value > 0) {
-      ratios.push(value / base);
-    }
-  });
-  if (!ratios.length) return 1;
-  return ratios.reduce((a, b) => a + b, 0) / ratios.length;
-}
-
 export function bindCadParamControls(panel, {
   projectId,
   filename,
@@ -198,6 +231,7 @@ export function bindCadParamControls(panel, {
   let queued = false;
   let previewRoot = null;
   let previewBaseScale = null;
+  let activePreviewName = null;
 
   const ensurePreviewTarget = () => {
     const obj = typeof getPreviewRoot === "function" ? getPreviewRoot() : null;
@@ -209,24 +243,52 @@ export function bindCadParamControls(panel, {
     return previewRoot;
   };
 
-  const applyLiveLengthPreview = () => {
+  const applyLiveLengthPreview = (activeName = activePreviewName) => {
     const obj = ensurePreviewTarget();
     if (!obj || !previewBaseScale) return;
-    const scale = lengthPreviewScale(root);
+    if (!activeName) {
+      obj.scale.copy(previewBaseScale);
+      return;
+    }
+    const range = root.querySelector(`[data-cad-range="${CSS.escape(activeName)}"]`);
+    if (!range || range.dataset.livePreview !== "1") {
+      obj.scale.copy(previewBaseScale);
+      return;
+    }
+    const base = Number(range.dataset.base);
+    const value = Number(range.value);
+    if (!(base > 1e-6) || !(value > 0) || !Number.isFinite(value)) {
+      obj.scale.copy(previewBaseScale);
+      return;
+    }
+    const ratio = value / base;
+    const axis = range.dataset.axisRole || "";
+    let sx = 1;
+    let sy = 1;
+    let sz = 1;
+    if (axis === "x") sx = ratio;
+    else if (axis === "y") sy = ratio;
+    else if (axis === "z") sz = ratio;
+    else {
+      // Unknown axis — don't invent a uniform whole-model grow.
+      obj.scale.copy(previewBaseScale);
+      return;
+    }
     obj.scale.set(
-      previewBaseScale.x * scale,
-      previewBaseScale.y * scale,
-      previewBaseScale.z * scale
+      previewBaseScale.x * sx,
+      previewBaseScale.y * sy,
+      previewBaseScale.z * sz,
     );
   };
 
   const resetLivePreview = () => {
     const obj = previewRoot;
     if (obj && previewBaseScale) obj.scale.copy(previewBaseScale);
+    activePreviewName = null;
   };
 
   const syncNumber = (name, value) => {
-    const num = root.querySelector(`[data-cad-number="${name}"]`);
+    const num = root.querySelector(`[data-cad-number="${CSS.escape(name)}"]`);
     if (!num) return;
     const isLen = num.dataset.isLength === "1";
     const kind = num.dataset.kind || "";
@@ -235,11 +297,10 @@ export function bindCadParamControls(panel, {
     num.value = isLen ? String(displayValue(shown)) : String(shown);
   };
   const syncRange = (name, value) => {
-    const range = root.querySelector(`[data-cad-range="${name}"]`);
+    const range = root.querySelector(`[data-cad-range="${CSS.escape(name)}"]`);
     if (!range) return;
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return;
-    // Expand slider bounds if the typed value is outside.
     if (numeric < Number(range.min)) range.min = String(numeric);
     if (numeric > Number(range.max)) range.max = String(numeric);
     range.value = String(numeric);
@@ -259,7 +320,6 @@ export function bindCadParamControls(panel, {
     const applyBtn = root.querySelector("[data-cad-param-apply]");
     onStatus?.("loading", statusMessage);
     if (applyBtn) applyBtn.disabled = true;
-    // Drop optimistic scale so the reloaded mesh isn't double-scaled.
     resetLivePreview();
     try {
       const res = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/cad-params`, {
@@ -267,10 +327,9 @@ export function bindCadParamControls(panel, {
         body: JSON.stringify({ params, part }),
       });
       baseline = structuredClone(res.params || []);
-      // Refresh slider bases to the newly rebuilt values.
       for (const param of baseline) {
         if (param.kind === "boolean" || param.kind === "string") continue;
-        const range = root.querySelector(`[data-cad-range="${param.name}"]`);
+        const range = root.querySelector(`[data-cad-range="${CSS.escape(param.name)}"]`);
         if (range) {
           range.dataset.base = String(param.value);
           syncRange(param.name, param.value);
@@ -284,7 +343,7 @@ export function bindCadParamControls(panel, {
       ensurePreviewTarget();
     } catch (err) {
       onStatus?.("error", err?.message || "Could not rebuild model.");
-      applyLiveLengthPreview();
+      applyLiveLengthPreview(activePreviewName);
     } finally {
       applying = false;
       if (applyBtn) applyBtn.disabled = false;
@@ -304,14 +363,16 @@ export function bindCadParamControls(panel, {
   };
 
   root.querySelectorAll("[data-cad-range]").forEach((range) => {
+    range.addEventListener("pointerdown", () => {
+      activePreviewName = range.dataset.cadRange || null;
+    });
     range.addEventListener("input", () => {
+      activePreviewName = range.dataset.cadRange || null;
       syncNumber(range.dataset.cadRange, range.value);
-      if (range.dataset.isLength === "1") {
-        applyLiveLengthPreview();
+      if (range.dataset.livePreview === "1") {
+        applyLiveLengthPreview(activePreviewName);
       }
     });
-    // Commit geometry on release so dragging stays real-time for lengths
-    // and discrete params (planet_count, teeth) rebuild once.
     range.addEventListener("change", () => scheduleRebuild(80));
     range.addEventListener("pointerup", () => scheduleRebuild(60));
   });
@@ -319,8 +380,9 @@ export function bindCadParamControls(panel, {
     num.addEventListener("input", () => {
       const raw = num.dataset.isLength === "1" ? parseLength(num.value) : Number(num.value);
       if (!Number.isFinite(raw)) return;
+      activePreviewName = num.dataset.cadNumber || null;
       syncRange(num.dataset.cadNumber, raw);
-      if (num.dataset.isLength === "1") applyLiveLengthPreview();
+      if (num.dataset.livePreview === "1") applyLiveLengthPreview(activePreviewName);
     });
     num.addEventListener("change", () => scheduleRebuild(80));
   });
@@ -335,12 +397,12 @@ export function bindCadParamControls(panel, {
   root.querySelector("[data-cad-param-reset]")?.addEventListener("click", () => {
     for (const param of baseline) {
       if (param.kind === "boolean") {
-        const input = root.querySelector(`[data-cad-param="${param.name}"]`);
+        const input = root.querySelector(`[data-cad-param="${CSS.escape(param.name)}"]`);
         if (input) input.checked = !!param.value;
         continue;
       }
       if (param.kind === "string") {
-        const input = root.querySelector(`[data-cad-param="${param.name}"]`);
+        const input = root.querySelector(`[data-cad-param="${CSS.escape(param.name)}"]`);
         if (input) input.value = String(param.value ?? "");
         continue;
       }

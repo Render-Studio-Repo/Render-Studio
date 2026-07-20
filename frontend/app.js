@@ -87,7 +87,7 @@ import { createDirectModeling } from "./direct-modeling.js?v=20260716-body-face-
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
-import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260710-live-adjust";
+import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-axis-preview";
 import { createProjectTree } from "./project-tree.js?v=20260719-bodies-fix";
 import {
   saveSessionSnapshot,
@@ -12369,7 +12369,9 @@ function objectSizeControlsHtml(filename) {
     </label>
     <div class="object-size-actions">
       <button type="button" class="btn accent btn-compact" data-size-apply>Apply size change</button>
-      <small>Drag for live preview; release to bake the size into the model.</small>
+      <small>${target.bodyCount > 1 && target.bodyIndex != null
+        ? "Selected body: release or Apply to bake (live preview disabled so the whole assembly doesn’t scale)."
+        : "Drag for live preview; release to bake the size into the model."}</small>
     </div>
   </section>`;
 }
@@ -12415,6 +12417,12 @@ function bindObjectSizeControls(pop, filename) {
   };
 
   const applyLivePreview = () => {
+    const target = objectResizeTarget(filename);
+    // Multi-body: don't scale the whole assembly while editing one body —
+    // that made every drag look like "the whole model got bigger."
+    if (target?.bodyCount > 1 && target.bodyIndex != null) {
+      return;
+    }
     const obj = ensurePreviewObj();
     if (!obj || !previewBaseScale) return;
     const values = currentSizeValues();

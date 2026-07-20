@@ -141,7 +141,8 @@ def patch_parameters(source: str, updates: dict[str, Any]) -> str:
     tree = ast.parse(source)
     lines = source.splitlines(keepends=True)
     pending: dict[int, str] = {}
-    for name, value_node, node, _scope in _collect_assignments(tree):
+    # Patch every assignment of a name (duplicate module constants like rail_width=…).
+    for name, value_node, node, _scope in _collect_assignments_all(tree):
         if name not in updates:
             continue
         old_value = _literal_value(value_node)
@@ -175,6 +176,13 @@ def patch_parameters(source: str, updates: dict[str, Any]) -> str:
     for idx, line in enumerate(lines, start=1):
         out.append(pending.get(idx, line))
     return "".join(out)
+
+
+def _collect_assignments_all(tree: ast.Module) -> list[tuple[str, ast.AST, ast.AST, str]]:
+    """Like _collect_assignments but keeps duplicate names (all write sites)."""
+    module_items = [(name, value, node, "module") for name, value, node in _iter_module_assignments(tree)]
+    step_items = [(name, value, node, "gen_step") for name, value, node in _iter_gen_step_assignments(tree)]
+    return module_items + step_items
 
 
 def _coerce_param_update(new_value: Any, old_value: Any) -> Any:
