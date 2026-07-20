@@ -16,6 +16,7 @@ const RECENT_MAX = 10;
 const IDB_NAME = "render3d-mcmaster";
 const IDB_STORE = "handles";
 const CAD_NAME_RE = /\.(step|stp|stl|obj|glb|gltf|3mf|iges|igs|sat|sldprt|x_t|x_b)$/i;
+const MCMASTER_BUCKET = "Render3D-McMaster";
 const LS_DOWNLOAD_FOLDER_NAME = "render3d:mcmasterDownloadFolderName:v1";
 const LS_AUTO_UPLOAD = "render3d:mcmasterAutoUpload:v1";
 
@@ -384,42 +385,42 @@ export function createMcMasterInsert({
         <div class="mcmaster-tab-body">
           <section class="mcmaster-tab-main">
             <div class="mcmaster-stage-banner">
-              <strong>McMaster saves CAD to your local Downloads folder</strong>
-              <span>Link that folder (or pick a file), then insert into the current workspace.</span>
+              <strong>McMaster → Render3D-McMaster bucket → current workspace</strong>
+              <span>We only watch a dedicated bucket folder (not your whole Downloads). Auto-upload takes just the file that just appeared.</span>
             </div>
             <div class="mcmaster-local-block">
               <div class="mcmaster-quick-head">
-                <strong>Download folder</strong>
+                <strong>Download bucket</strong>
                 <span class="muted small" data-mcmaster-local-status>Not set</span>
               </div>
               <p class="muted small mcmaster-download-path-hint" data-mcmaster-path-hint>
-                Set a folder here, then point Chrome’s download location to that same folder so McMaster STEP files land in it.
+                Choose a parent folder — Render3D creates <code>Render3D-McMaster/</code> inside it. Point Chrome downloads there (or “Ask where to save” → that bucket).
               </p>
               <div class="mcmaster-got-download-banner" data-mcmaster-got-banner>
                 <strong>After you click Download STEP on McMaster</strong>
-                <span data-mcmaster-got-copy>With auto-upload on, new files in your download folder go straight into the current workspace.</span>
+                <span data-mcmaster-got-copy>Save into the Render3D-McMaster bucket. Only that new file auto-uploads — nothing else in Downloads.</span>
                 <button type="button" class="btn accent" data-mcmaster-got-download>I downloaded the STEP — choose it now</button>
               </div>
               <div class="mcmaster-drop-actions">
-                <button type="button" class="btn accent btn-compact" data-mcmaster-link-downloads>Set download folder…</button>
-                <button type="button" class="btn secondary btn-compact" data-mcmaster-change-downloads>Change folder…</button>
-                <button type="button" class="btn secondary btn-compact" data-mcmaster-refresh-local>Refresh folder</button>
+                <button type="button" class="btn accent btn-compact" data-mcmaster-link-downloads>Set bucket folder…</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-change-downloads>Change…</button>
+                <button type="button" class="btn secondary btn-compact" data-mcmaster-refresh-local>Scan bucket</button>
                 <button type="button" class="btn secondary btn-compact" data-mcmaster-import>Pick file…</button>
               </div>
               <label class="mcmaster-auto-upload">
                 <input type="checkbox" data-mcmaster-auto-upload checked />
-                <span>Auto-upload new STEP/STL downloads into the <strong>current workspace</strong></span>
+                <span>Auto-upload <strong>only the latest new file</strong> in the bucket into the current workspace</span>
               </label>
               <div class="mcmaster-chrome-hint" data-mcmaster-chrome-hint hidden>
-                <strong>Make McMaster save here</strong>
+                <strong>Send McMaster STEPs into the bucket</strong>
                 <ol>
-                  <li>Chrome → Settings → Downloads</li>
-                  <li>Location → Change → choose <code data-mcmaster-folder-name>this folder</code></li>
-                  <li>Optional: turn on “Ask where to save each file before downloading”</li>
+                  <li>Chrome → Settings → Downloads → ask where to save <em>or</em> set Location to:</li>
+                  <li><code data-mcmaster-folder-name>…/Render3D-McMaster</code></li>
+                  <li>Download STEP → it lands in the bucket → only that file uploads</li>
                 </ol>
               </div>
               <div class="mcmaster-local-list" data-mcmaster-local-list>
-                <p class="muted small">Set a download folder to list recent CAD files from it.</p>
+                <p class="muted small">Set a bucket folder to watch for new McMaster CAD.</p>
               </div>
             </div>
             <div class="mcmaster-live-drop" data-mcmaster-drop tabindex="0">
@@ -499,7 +500,9 @@ export function createMcMasterInsert({
   const gotCopy = host?.querySelector("[data-mcmaster-got-copy]");
 
   /** @type {FileSystemDirectoryHandle | null} */
-  let downloadsDir = null;
+  let parentDir = null;
+  /** @type {FileSystemDirectoryHandle | null} */
+  let downloadsDir = null; // the Render3D-McMaster bucket
   let downloadFolderName = readDownloadFolderName();
   let autoUploadEnabled = readAutoUploadPref();
   /** @type {{ name: string, file: File, at: number }[]} */
@@ -507,6 +510,8 @@ export function createMcMasterInsert({
   let localPollTimer = null;
   /** @type {Set<string>} */
   let seenLocalKeys = new Set();
+  /** @type {Set<string>} names present when download watch started */
+  let sessionBaselineNames = new Set();
   let autoUploading = false;
   let fsObserver = null;
 
@@ -516,23 +521,23 @@ export function createMcMasterInsert({
     gotBanner?.classList.toggle("is-urgent", !!visible);
   }
 
+  function syncDownloadFolderUi() {
+    const name = downloadFolderName || (downloadsDir ? `${parentDir?.name || "…"}/${MCMASTER_BUCKET}` : "");
+    if (localStatus) {
+      localStatus.textContent = name ? `Bucket: ${name}` : "Not set";
+      localStatus.classList.toggle("is-linked", !!downloadsDir);
+    }
+    if (folderNameEl) folderNameEl.textContent = name || `…/${MCMASTER_BUCKET}`;
+    if (chromeHint) chromeHint.hidden = !downloadsDir;
+    syncAutoUploadCopy();
+  }
+
   function syncAutoUploadCopy() {
     if (gotCopy) {
       gotCopy.textContent = autoUploadEnabled
-        ? "With auto-upload on, new files in your download folder go straight into the current workspace."
-        : "Files save to Chrome’s download folder. Match it to the linked folder, then choose the file or turn on auto-upload.";
+        ? "Save the STEP into the Render3D-McMaster bucket. Only that new file auto-uploads — not your whole Downloads."
+        : "Save into the Render3D-McMaster bucket, then choose the file (auto-upload is off).";
     }
-  }
-
-  function syncDownloadFolderUi() {
-    const name = downloadFolderName || downloadsDir?.name || "";
-    if (localStatus) {
-      localStatus.textContent = name ? `Saving to: ${name}` : "Not set";
-      localStatus.classList.toggle("is-linked", !!downloadsDir);
-    }
-    if (folderNameEl) folderNameEl.textContent = name || "this folder";
-    if (chromeHint) chromeHint.hidden = !downloadsDir;
-    syncAutoUploadCopy();
   }
 
   function localFileKey(item) {
@@ -603,6 +608,13 @@ export function createMcMasterInsert({
     awaitingDownload = true;
     returnPickerArmed = true;
     downloadWatchStartedAt = Date.now();
+    // Baseline = files already in the bucket — only names appearing after this count.
+    sessionBaselineNames = new Set(localFiles.map((f) => f.name));
+    void (async () => {
+      const found = await listLocalCadFiles();
+      sessionBaselineNames = new Set(found.map((f) => f.name));
+      for (const item of found) seenLocalKeys.add(localFileKey(item));
+    })();
     syncConnectionUi();
     setGotBannerVisible(true);
     dropZone?.classList.add("is-attention");
@@ -611,8 +623,8 @@ export function createMcMasterInsert({
     setStatus(
       "ok",
       autoUploadEnabled && downloadsDir
-        ? "Download the STEP — it will auto-upload into the current workspace when it appears in your folder."
-        : "Download the STEP, then click “I downloaded the STEP” (or set a download folder + auto-upload).",
+        ? `Download STEP into ${downloadFolderName || MCMASTER_BUCKET} — only that new file will auto-upload.`
+        : `Set the ${MCMASTER_BUCKET} bucket, download the STEP there, then choose it.`,
     );
   }
 
@@ -1126,11 +1138,11 @@ export function createMcMasterInsert({
     if (!localList) return;
     syncDownloadFolderUi();
     if (!downloadsDir) {
-      localList.innerHTML = `<p class="muted small">Set a download folder to list recent CAD files from it.</p>`;
+      localList.innerHTML = `<p class="muted small">Set a bucket folder — Render3D creates <code>${MCMASTER_BUCKET}/</code> inside it and only watches that.</p>`;
       return;
     }
     if (!localFiles.length) {
-      localList.innerHTML = `<p class="muted small">No CAD files in <strong>${escapeHtml(downloadFolderName || downloadsDir.name)}</strong> yet. Download a STEP from McMaster into this folder, then Refresh.</p>`;
+      localList.innerHTML = `<p class="muted small">Bucket <strong>${escapeHtml(downloadFolderName || MCMASTER_BUCKET)}</strong> is empty. Download a STEP into this bucket, then it will auto-upload.</p>`;
       return;
     }
     localList.innerHTML = localFiles.slice(0, 10).map((item) => `
@@ -1190,15 +1202,14 @@ export function createMcMasterInsert({
     return found;
   }
 
-  async function waitFileStable(item, attempts = 3) {
+  async function waitFileStable(item, attempts = 4) {
     let last = item.file.size;
     for (let i = 0; i < attempts; i += 1) {
-      await new Promise((r) => window.setTimeout(r, 700));
+      await new Promise((r) => window.setTimeout(r, 600));
       try {
-        // Re-read from directory handle if possible
         const handle = await downloadsDir.getFileHandle(item.name);
         const fresh = await handle.getFile();
-        if (fresh.size === last && fresh.size > 0) {
+        if (fresh.size === last && fresh.size > 64) {
           return { name: item.name, file: fresh, at: fresh.lastModified || Date.now() };
         }
         last = fresh.size;
@@ -1216,56 +1227,57 @@ export function createMcMasterInsert({
       localFiles = found.slice(0, 10);
       renderLocalDownloads();
 
-      const fresh = [];
-      for (const item of found) {
+      // Candidates: brand-new names since this download session (or since last snapshot).
+      const candidates = found.filter((item) => {
         const key = localFileKey(item);
-        if (seenLocalKeys.has(key)) continue;
-        // Ignore old files discovered for the first time (mark seen, don't upload).
-        if (!force && downloadWatchStartedAt && item.at < downloadWatchStartedAt - 20000) {
+        if (seenLocalKeys.has(key)) return false;
+        if (sessionBaselineNames.has(item.name) && !force) return false;
+        // Must be newer than watch start (with small clock skew allowance).
+        if (downloadWatchStartedAt && item.at < downloadWatchStartedAt - 3000 && !force) {
           seenLocalKeys.add(key);
-          continue;
+          return false;
         }
-        // Only auto-ingest while awaiting a download / active session unless forced.
         if (!force && !awaitingDownload && !sessionOpen) {
           seenLocalKeys.add(key);
-          continue;
+          return false;
         }
-        fresh.push(item);
-      }
-      if (!fresh.length) return [];
+        return true;
+      });
 
-      const stable = [];
-      for (const item of fresh.slice(0, 5)) {
-        const ready = await waitFileStable(item);
-        seenLocalKeys.add(localFileKey(ready));
-        // Also mark original key
-        seenLocalKeys.add(localFileKey(item));
-        stable.push(ready);
-      }
-      if (!stable.length) return [];
+      if (!candidates.length) return [];
 
-      if (!autoUploadEnabled) {
-        stageFiles(stable.map((s) => s.file));
-        setStatus("ok", `${stable[0].name} detected — staged. Turn on auto-upload or click Insert.`);
-        return stable;
+      // ONLY the single newest file — never bulk-upload the folder.
+      candidates.sort((a, b) => b.at - a.at);
+      const newest = candidates[0];
+      const ready = await waitFileStable(newest);
+      seenLocalKeys.add(localFileKey(ready));
+      seenLocalKeys.add(localFileKey(newest));
+      sessionBaselineNames.add(ready.name);
+
+      if (!autoUploadEnabled && !force) {
+        stageFiles([ready.file]);
+        setStatus("ok", `${ready.name} landed in the bucket — staged. Enable auto-upload or click Insert.`);
+        return [ready];
+      }
+
+      // Manual scan with auto-upload off still only stages the newest.
+      if (!autoUploadEnabled && force) {
+        stageFiles([ready.file]);
+        setStatus("ok", `${ready.name} found in bucket — staged.`);
+        return [ready];
       }
 
       autoUploading = true;
       try {
-        stageFiles(stable.map((s) => s.file));
-        setStatus("loading", `Auto-uploading ${stable[0].name} to current workspace…`);
+        stageFiles([ready.file]);
+        setStatus("loading", `Uploading ${ready.name} to current workspace…`);
         await insertPending(null, { forceCurrent: true });
         clearAwaitingDownload();
-        setStatus(
-          "ok",
-          stable.length === 1
-            ? `Auto-uploaded ${stable[0].name} into the current workspace.`
-            : `Auto-uploaded ${stable.length} files into the current workspace.`,
-        );
+        setStatus("ok", `Uploaded ${ready.name} from ${MCMASTER_BUCKET} into the current workspace.`);
       } finally {
         autoUploading = false;
       }
-      return stable;
+      return [ready];
     } catch (err) {
       console.warn("ingestNewDownloads failed", err);
       return [];
@@ -1277,21 +1289,19 @@ export function createMcMasterInsert({
       renderLocalDownloads();
       return [];
     }
-    if (autoStageNew || autoUploadEnabled) {
-      return ingestNewDownloads({ force: autoStageNew });
+    if (autoStageNew || (autoUploadEnabled && (awaitingDownload || sessionOpen))) {
+      return ingestNewDownloads({ force: !!autoStageNew });
     }
     const found = await listLocalCadFiles();
-    for (const item of found) {
-      if (!seenLocalKeys.has(localFileKey(item))) {
-        // first sighting of old files — don't auto upload
-        if (!downloadWatchStartedAt || item.at < downloadWatchStartedAt - 20000) {
-          seenLocalKeys.add(localFileKey(item));
-        }
-      }
-    }
+    for (const item of found) seenLocalKeys.add(localFileKey(item));
     localFiles = found.slice(0, 10);
     renderLocalDownloads();
     return found;
+  }
+
+  async function ensureMcMasterBucket(parentHandle) {
+    const bucket = await parentHandle.getDirectoryHandle(MCMASTER_BUCKET, { create: true });
+    return bucket;
   }
 
   async function linkDownloadsFolder() {
@@ -1303,49 +1313,75 @@ export function createMcMasterInsert({
     try {
       const handle = await window.showDirectoryPicker({
         mode: "readwrite",
-        id: "mcmaster-download-folder",
+        id: "mcmaster-download-parent",
       });
-      downloadsDir = handle;
-      downloadFolderName = handle.name || "Download folder";
+      parentDir = handle;
+      downloadsDir = await ensureMcMasterBucket(handle);
+      downloadFolderName = `${handle.name}/${MCMASTER_BUCKET}`;
       writeDownloadFolderName(downloadFolderName);
       try {
-        await idbSet("downloadsDir", handle);
+        await idbSet("downloadsParent", handle);
+        await idbSet("downloadsDir", downloadsDir);
       } catch {
         /* optional */
       }
       syncDownloadFolderUi();
       setStatus(
         "ok",
-        `Download folder set to “${downloadFolderName}”. Point Chrome Downloads there — new STEPs auto-upload when auto-upload is on.`,
+        `Bucket ready: ${downloadFolderName}. Point Chrome downloads there — only new files in this bucket auto-upload.`,
       );
       await snapshotSeenLocalFiles();
+      sessionBaselineNames = new Set(localFiles.map((f) => f.name));
       startLocalPoll({ fast: true });
       startFolderObserver();
     } catch (err) {
       if (err?.name === "AbortError") return;
-      setStatus("error", err?.message || "Could not set download folder.");
+      setStatus("error", err?.message || "Could not set download bucket.");
     }
   }
 
   async function restoreDownloadsFolder() {
     try {
-      const handle = await idbGet("downloadsDir");
-      if (!handle) {
+      const parent = await idbGet("downloadsParent");
+      const bucket = await idbGet("downloadsDir");
+      if (!parent && !bucket) {
         syncDownloadFolderUi();
         return;
       }
-      downloadsDir = handle;
-      let ok = await ensureDirPermission("readwrite");
-      if (!ok) ok = await ensureDirPermission("read");
-      if (!ok) {
-        downloadsDir = null;
-        syncDownloadFolderUi();
-        return;
+      if (parent) {
+        parentDir = parent;
+        downloadsDir = parent;
+        let ok = await ensureDirPermission("readwrite");
+        if (!ok) ok = await ensureDirPermission("read");
+        if (!ok) {
+          parentDir = null;
+          downloadsDir = null;
+          syncDownloadFolderUi();
+          return;
+        }
+        downloadsDir = await ensureMcMasterBucket(parent);
+        try {
+          await idbSet("downloadsDir", downloadsDir);
+        } catch {
+          /* ignore */
+        }
+      } else {
+        downloadsDir = bucket;
+        let ok = await ensureDirPermission("readwrite");
+        if (!ok) ok = await ensureDirPermission("read");
+        if (!ok) {
+          downloadsDir = null;
+          syncDownloadFolderUi();
+          return;
+        }
       }
-      downloadFolderName = handle.name || readDownloadFolderName() || "Download folder";
+      downloadFolderName =
+        readDownloadFolderName() ||
+        (parentDir ? `${parentDir.name}/${MCMASTER_BUCKET}` : downloadsDir?.name || MCMASTER_BUCKET);
       writeDownloadFolderName(downloadFolderName);
       syncDownloadFolderUi();
       await snapshotSeenLocalFiles();
+      sessionBaselineNames = new Set(localFiles.map((f) => f.name));
       startLocalPoll({ fast: false });
       startFolderObserver();
     } catch {
@@ -1509,8 +1545,8 @@ export function createMcMasterInsert({
     setStatus(
       "ok",
       autoUploadEnabled
-        ? "Auto-upload on — new STEP/STL files in the download folder go into the current workspace."
-        : "Auto-upload off — new files will only be staged.",
+        ? "Auto-upload on — only the newest file that appears in the Render3D-McMaster bucket uploads."
+        : "Auto-upload off — new bucket files will only be staged.",
     );
   });
   syncAutoUploadCopy();
