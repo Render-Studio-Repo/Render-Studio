@@ -364,22 +364,29 @@ PATTERN — for repeated surface details (vents, buttons, bolts, grilles, pads):
     {{"op":"cylinder","diameter":16,"height":4,"combine":"add","at":[-55,-45,2]}},
     {{"op":"pattern","arrange":"rectangular","x_count":2,"y_count":2,"x_spacing":110,"y_spacing":90}}
 
-CHARACTERISTIC PART COLORS (use these exact hex values for realism):
+CHARACTERISTIC PART COLORS (use these exact hex values for realism — match colour to what the part IS):
   Matte black ABS housing: #1e2124
   Dark charcoal plastic:   #2b2f33
   Light grey plastic:      #d4d4d0
   Brushed aluminium:       #9ea3a8
   Polished chrome:         #c8cdd2
   Stainless steel:         #b8bab8
+  Gunmetal / robot links:  #4e5c6c
   Glass / transparent:     #b0d4e8  (light blue for glass carafes, jars)
   LCD / display dark:      #1a2230
   Rubber / TPU black:      #111316
+  Copper / brass:          #b87333
+  Wood / timber:           #aa8250
+  PCB green:               #1a5c2a
   Accent blue:             #1e87f0
   Accent orange:           #e86828
   Accent red:              #d43030
   White plastic:           #e8e6e0
-  PCB green:               #1a5c2a
+  Food-safe / ceramic:     #e8e6e0
 
+When colouring multi-body assemblies, assign materials by role (bolts=steel, housings=ABS black,
+gears=gunmetal, rubber feet=TPU black, aluminium brackets=#9ea3a8). Do NOT invent random rainbow
+CAD colours for generic parts.
 ━━━ EXAMPLES OF GOOD CAD REASONING ━━━
 
 EXAMPLE 1 — "Make a coffee mug"

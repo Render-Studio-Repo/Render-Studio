@@ -60,19 +60,17 @@ function _isFaceFragmentedModel(meshes) {
 }
 
 
-/** Bright Onshape-like part appearances — saturated midtones for dark UI. */
+/** Muted industrial / material-like CAD palette (avoid random rainbows). */
 const CAD_PART_PALETTE = [
-  0x4f9cf0, // sky blue
-  0x62c45a, // green
-  0xff9f43, // orange
-  0xffd166, // gold
-  0xb388ff, // purple
-  0x2ec4b6, // teal
-  0xff6b6b, // coral
-  0x6c8cff, // periwinkle
-  0x8fd694, // mint
-  0xffb4a2, // peach
-].map((c) => new THREE.Color(c));
+  new THREE.Color("#9ea3a8"), // brushed aluminium
+  new THREE.Color("#4e5c6c"), // gunmetal
+  new THREE.Color("#2b2f33"), // charcoal plastic
+  new THREE.Color("#b8bab8"), // stainless
+  new THREE.Color("#d4d4d0"), // light grey plastic
+  new THREE.Color("#1e2124"), // matte black ABS
+  new THREE.Color("#aa8250"), // wood / phenolic
+  new THREE.Color("#b87333"), // copper / brass
+];
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 

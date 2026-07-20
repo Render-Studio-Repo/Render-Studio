@@ -50,7 +50,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260716-bodycolor-init";
+} from "./scene-style.js?v=20260720-material-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260720-prompt-undo";

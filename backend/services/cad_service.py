@@ -128,6 +128,50 @@ DEFAULT_APPEARANCE_PALETTE = np.array(
     dtype=np.uint8,
 )
 
+# Muted industrial fallback when no semantic material match (less "random rainbow").
+INDUSTRIAL_APPEARANCE_PALETTE = np.array(
+    [
+        [158, 163, 168, 255],  # brushed aluminium
+        [184, 186, 184, 255],  # stainless
+        [78, 92, 108, 255],    # gunmetal
+        [43, 47, 51, 255],     # charcoal plastic
+        [212, 212, 208, 255],  # light grey plastic
+        [30, 33, 36, 255],     # matte black ABS
+        [170, 130, 80, 255],   # wood / phenolic
+        [184, 115, 51, 255],   # copper / brass
+    ],
+    dtype=np.uint8,
+)
+
+# Keyword → realistic material colour for generated / unnamed parts.
+_SEMANTIC_PART_COLOR_RULES: list[tuple[tuple[str, ...], list[int]]] = [
+    (("pcb", "circuit board", "arduino", "raspberry"), [26, 92, 42, 255]),
+    (("rubber", "tpu", "gasket", "o-ring", "oring", "o ring", "tire", "tyre", "bumper"), [17, 19, 22, 255]),
+    (("glass", "lens", "window", "acrylic", "perspex", "transparent"), [176, 212, 232, 220]),
+    (("bolt", "screw", "nut", "washer", "fastener", "rivet", "dowel pin", "clevis"), [168, 172, 176, 255]),
+    (("bearing", "bushing", "race"), [200, 205, 210, 255]),
+    (("gear", "sprocket", "pulley", "rack"), [72, 88, 108, 255]),
+    (("motor", "servo", "nema", "actuator", "stepper"), [40, 44, 52, 255]),
+    (("wire", "cable", "harness", "loom"), [30, 34, 42, 255]),
+    (("aluminum", "aluminium", "al6061", "extrusion", "2020", "4040"), [158, 163, 168, 255]),
+    (("steel", "stainless", "inox", "sheet metal"), [184, 186, 184, 255]),
+    (("copper", "brass", "bronze"), [184, 115, 51, 255]),
+    (("wood", "oak", "pine", "plywood", "mdf"), [170, 130, 80, 255]),
+    (("housing", "enclosure", "case", "shell", "cover", "lid", "chassis"), [30, 33, 36, 255]),
+    (("plastic", "abs", "pla", "petg", "nylon"), [212, 212, 208, 255]),
+    (("wheel", "roller", "caster"), [28, 28, 32, 255]),
+    (("battery", "cell pack"), [36, 120, 72, 255]),
+    (("led", "lamp", "bulb", "light"), [240, 240, 220, 255]),
+    (("food", "bowl", "plate", "utensil", "whisk", "spatula"), [232, 230, 224, 255]),
+    (("robot", "arm", "link", "joint", "gripper"), [78, 92, 108, 255]),
+    (("bracket", "mount", "clamp", "plate", "flange"), [158, 163, 168, 255]),
+    (("spring", "coil"), [196, 198, 190, 255]),
+    (("magnet", "neodymium"), [28, 32, 40, 255]),
+    (("carbon", "cfrp"), [24, 24, 28, 255]),
+    (("concrete", "stone", "ceramic"), [160, 156, 148, 255]),
+    (("fabric", "cloth", "textile"), [90, 78, 70, 255]),
+]
+
 
 def project_dir(base: Path, project_id: str) -> Path:
     path = base / project_id
@@ -2434,14 +2478,32 @@ def _bake_face_colors_to_vertices(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
     return m
 
 
+def _semantic_color_for_name(name: str | None) -> np.ndarray | None:
+    """Map part / prompt words to realistic material colours when possible."""
+    text = re.sub(r"[_\-./]+", " ", str(name or "").lower())
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    # Word-boundary match so "rack" does not hit inside "bracket".
+    for keywords, rgba in _SEMANTIC_PART_COLOR_RULES:
+        for word in keywords:
+            if re.search(rf"(?<![\w]){re.escape(word)}(?![\w])", text):
+                return np.array(rgba, dtype=np.uint8)
+    return None
+
 def _palette_color_for_name(name: str | None) -> np.ndarray:
+    semantic = _semantic_color_for_name(name)
+    if semantic is not None:
+        return semantic.copy()
     text = str(name or "part")
-    idx = sum(ord(c) for c in text) % len(DEFAULT_APPEARANCE_PALETTE)
-    return DEFAULT_APPEARANCE_PALETTE[idx].copy()
+    # Prefer muted industrial tones over bright random CAD rainbows.
+    palette = INDUSTRIAL_APPEARANCE_PALETTE
+    idx = sum(ord(c) for c in text) % len(palette)
+    return palette[idx].copy()
 
 
 def _ensure_default_appearance(mesh: trimesh.Trimesh, *, seed: str | None = None) -> trimesh.Trimesh:
-    """Give otherwise grey/uncoloured generated meshes a stable Onshape-like colour."""
+    """Give otherwise grey/uncoloured generated meshes a stable material-like colour."""
     colors = _snapshot_face_colors(mesh)
     if colors is not None and not _colors_are_default_grey(colors):
         return mesh
@@ -2453,12 +2515,20 @@ def _ensure_default_appearance(mesh: trimesh.Trimesh, *, seed: str | None = None
 
 def _prompt_appearance_palette(prompt: str, seed: str | None = None) -> list[np.ndarray]:
     p = (prompt or "").lower()
+    semantic = _semantic_color_for_name(prompt) or _semantic_color_for_name(seed)
     if any(word in p for word in ("coke", "cola", "soda", "pepsi", "sprite", "fanta", "pet bottle", "plastic bottle")):
         return [
             np.array([212, 232, 240, 235], dtype=np.uint8),  # clear PET body
             np.array([196, 30, 58, 255], dtype=np.uint8),    # red cap/label
             np.array([255, 255, 255, 220], dtype=np.uint8),  # label band
             np.array([28, 28, 32, 255], dtype=np.uint8),     # dark base ring
+        ]
+    if any(word in p for word in ("coffee", "mug", "cup", "carafe", "kettle")):
+        return [
+            np.array([232, 230, 224, 255], dtype=np.uint8),  # ceramic
+            np.array([30, 33, 36, 255], dtype=np.uint8),     # handle / accent
+            np.array([176, 212, 232, 200], dtype=np.uint8),  # glass optional
+            np.array([158, 163, 168, 255], dtype=np.uint8),  # metal base
         ]
     if any(word in p for word in ("sunglass", "glasses", "eyewear", "lens", "wayfarer")):
         return [
@@ -2475,12 +2545,26 @@ def _prompt_appearance_palette(prompt: str, seed: str | None = None) -> list[np.
             np.array([218, 70, 54, 255], dtype=np.uint8),
             np.array([54, 132, 218, 255], dtype=np.uint8),
         ]
-    if any(word in p for word in ("robot", "mechanical", "bracket", "clamp", "mount", "arm", "gear")):
+    if any(word in p for word in ("wood", "table", "chair", "furniture", "frame house", "timber")):
+        return [
+            np.array([170, 130, 80, 255], dtype=np.uint8),
+            np.array([120, 84, 48, 255], dtype=np.uint8),
+            np.array([210, 180, 130, 255], dtype=np.uint8),
+            np.array([90, 64, 40, 255], dtype=np.uint8),
+        ]
+    if any(word in p for word in ("metal", "steel", "aluminium", "aluminum", "bracket", "chassis", "machine")):
+        return [
+            np.array([158, 163, 168, 255], dtype=np.uint8),
+            np.array([78, 92, 108, 255], dtype=np.uint8),
+            np.array([184, 186, 184, 255], dtype=np.uint8),
+            np.array([43, 47, 51, 255], dtype=np.uint8),
+        ]
+    if any(word in p for word in ("robot", "mechanical", "clamp", "mount", "arm", "gear", "actuator")):
         return [
             np.array([78, 92, 108, 255], dtype=np.uint8),
             np.array([36, 42, 50, 255], dtype=np.uint8),
             np.array([176, 184, 192, 255], dtype=np.uint8),
-            np.array([88, 166, 255, 255], dtype=np.uint8),
+            np.array([158, 163, 168, 255], dtype=np.uint8),
         ]
     if any(word in p for word in ("dxf", "drawing", "blueprint", "laser", "cut", "flat pattern")):
         return [
@@ -2488,7 +2572,10 @@ def _prompt_appearance_palette(prompt: str, seed: str | None = None) -> list[np.
             np.array([48, 54, 61, 255], dtype=np.uint8),
             np.array([196, 196, 196, 255], dtype=np.uint8),
         ]
-    base = _palette_color_for_name(seed)
+    if semantic is not None:
+        base = semantic
+    else:
+        base = _palette_color_for_name(seed)
     accent = np.array(
         [max(0, int(base[0]) - 42), max(0, int(base[1]) - 42), max(0, int(base[2]) - 42), 255],
         dtype=np.uint8,
@@ -2498,7 +2585,6 @@ def _prompt_appearance_palette(prompt: str, seed: str | None = None) -> list[np.
         dtype=np.uint8,
     )
     return [base, accent, highlight]
-
 
 def apply_prompt_appearance(mesh: trimesh.Trimesh, prompt: str, *, seed: str | None = None) -> trimesh.Trimesh:
     """Best-effort multi-color fallback for uncoloured generated preview meshes."""
@@ -2632,8 +2718,18 @@ def colorize_assembly_glb_parts(path: Path) -> bool:
         SimpleMaterial = None  # type: ignore
 
     for idx, (name, geom) in enumerate(scene.geometry.items()):
-        rgba = JAKE_ASSEMBLY_PART_PALETTE[idx % len(JAKE_ASSEMBLY_PART_PALETTE)]
-        rgba_u8 = np.array([int(round(c * 255)) for c in rgba], dtype=np.uint8)
+        # Prefer material colour implied by the node / mesh name; else muted industrial.
+        semantic = None
+        try:
+            semantic = _semantic_color_for_name(str(name or ""))
+        except Exception:
+            semantic = None
+        if semantic is not None:
+            rgba_u8 = np.asarray(semantic, dtype=np.uint8)
+            rgba = tuple(float(c) / 255.0 for c in rgba_u8[:4])
+        else:
+            rgba = JAKE_ASSEMBLY_PART_PALETTE[idx % len(JAKE_ASSEMBLY_PART_PALETTE)]
+            rgba_u8 = np.array([int(round(c * 255)) for c in rgba], dtype=np.uint8)
         visual = getattr(geom, "visual", None)
         if visual is None:
             continue
@@ -2690,6 +2786,111 @@ def _step_manifold_solid_names(step_path: Path) -> list[str]:
     return names
 
 
+def _quantity_color_to_rgba(color) -> np.ndarray:
+    """Convert OCC Quantity_ColorRGBA / Quantity_Color to uint8 RGBA."""
+    try:
+        rgb = color.GetRGB() if hasattr(color, "GetRGB") else color
+        r = float(rgb.Red())
+        g = float(rgb.Green())
+        b = float(rgb.Blue())
+        a = float(color.Alpha()) if hasattr(color, "Alpha") else 1.0
+    except Exception:
+        return np.array([196, 196, 196, 255], dtype=np.uint8)
+    if max(r, g, b) <= 1.5:
+        r, g, b = r * 255.0, g * 255.0, b * 255.0
+    if a <= 1.5:
+        a = a * 255.0
+    return np.array(
+        [
+            int(round(min(255.0, max(0.0, r)))),
+            int(round(min(255.0, max(0.0, g)))),
+            int(round(min(255.0, max(0.0, b)))),
+            int(round(min(255.0, max(0.0, a)))),
+        ],
+        dtype=np.uint8,
+    )
+
+
+def _xcaf_color_from_label(color_tool, label) -> np.ndarray | None:
+    from OCP.Quantity import Quantity_ColorRGBA
+    from OCP.XCAFDoc import XCAFDoc_ColorCurv, XCAFDoc_ColorGen, XCAFDoc_ColorSurf, XCAFDoc_ColorTool
+
+    color = Quantity_ColorRGBA()
+    for color_type in (XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv):
+        try:
+            if XCAFDoc_ColorTool.GetColor_s(label, color_type, color):
+                return _quantity_color_to_rgba(color)
+        except Exception:
+            continue
+    return None
+
+
+def _xcaf_color_for_shape(color_tool, shape) -> np.ndarray | None:
+    """Best-effort Fusion / STEP appearance colour for a solid or face set."""
+    if shape is None or getattr(shape, "IsNull", lambda: True)():
+        return None
+    from OCP.Quantity import Quantity_ColorRGBA
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.XCAFDoc import XCAFDoc_ColorCurv, XCAFDoc_ColorGen, XCAFDoc_ColorSurf
+
+    color = Quantity_ColorRGBA()
+    for color_type in (XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv):
+        for getter in ("GetColor", "GetInstanceColor"):
+            try:
+                fn = getattr(color_tool, getter, None)
+                if fn and fn(shape, color_type, color):
+                    return _quantity_color_to_rgba(color)
+            except Exception:
+                continue
+
+    # Majority face colour (Fusion often colours faces / bodies this way).
+    votes: dict[tuple[int, int, int, int], int] = {}
+    exp = TopExp_Explorer(shape, TopAbs_FACE)
+    while exp.More():
+        face = exp.Current()
+        found = None
+        for color_type in (XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv):
+            for getter in ("GetColor", "GetInstanceColor"):
+                try:
+                    fn = getattr(color_tool, getter, None)
+                    if fn and fn(face, color_type, color):
+                        found = _quantity_color_to_rgba(color)
+                        break
+                except Exception:
+                    continue
+            if found is not None:
+                break
+        if found is not None:
+            key = (int(found[0]), int(found[1]), int(found[2]), int(found[3]))
+            votes[key] = votes.get(key, 0) + 1
+        exp.Next()
+    if votes:
+        best = max(votes.items(), key=lambda item: item[1])[0]
+        return np.array(best, dtype=np.uint8)
+    return None
+
+
+def _paint_mesh_rgba(mesh: trimesh.Trimesh, rgba: np.ndarray | None) -> trimesh.Trimesh:
+    if mesh is None or rgba is None:
+        return mesh
+    faces = getattr(mesh, "faces", None)
+    try:
+        n_faces = 0 if faces is None else int(len(faces))
+    except Exception:
+        n_faces = 0
+    if n_faces < 1:
+        return mesh
+    m = mesh_copy(mesh)
+    m.visual.face_colors = np.tile(np.asarray(rgba, dtype=np.uint8)[:4], (n_faces, 1))
+    return m
+
+
+def _mesh_has_authored_color(mesh: trimesh.Trimesh) -> bool:
+    colors = _snapshot_face_colors(mesh)
+    return colors is not None and not _colors_are_default_grey(colors)
+
+
 def _tessellate_shape_to_mesh(shape, *, linear_deflection: float = 0.1, angular_deflection: float = 0.5) -> trimesh.Trimesh:
     """Tessellate one OpenCascade shape to a repaired triangle mesh."""
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
@@ -2717,6 +2918,10 @@ def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -
     XCAF→GLB writer then fragments those into dozens of mesh nodes; splitting the
     GLB scene over-counts parts. Solid-level split matches what users can select
     in Fusion.
+
+    When STEP/XCAF carries Fusion appearance colours, they are baked onto each
+    solid mesh so body-split imports keep the Fusion look instead of rainbow
+    palette colours.
     """
     from OCP.IFSelect import IFSelect_ReturnStatus
     from OCP.STEPCAFControl import STEPCAFControl_Reader
@@ -2731,7 +2936,7 @@ def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -
     from OCP.TDF import TDF_LabelSequence
 
     step_path = Path(step_path)
-    solids: list[tuple[str, Any]] = []
+    solids: list[tuple[str, Any, np.ndarray | None]] = []
 
     def _label_name(lab) -> str:
         attr = TDataStd_Name()
@@ -2754,11 +2959,13 @@ def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -
             raise ValueError(f"STEPCAFControl_Reader failed on {step_path.name}")
         reader.Transfer(doc)
         shape_tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
+        color_tool = XCAFDoc_DocumentTool.ColorTool_s(doc.Main())
         labels = TDF_LabelSequence()
         shape_tool.GetFreeShapes(labels)
         for i in range(1, labels.Size() + 1):
             lab = labels.Value(i)
             root_name = _label_name(lab) or step_path.stem
+            root_color = _xcaf_color_from_label(color_tool, lab)
             shape = XCAFDoc_ShapeTool.GetShape_s(lab)
             if shape.IsNull():
                 continue
@@ -2766,10 +2973,12 @@ def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -
             solid_i = 0
             while exp.More():
                 solid_i += 1
-                solids.append((f"{root_name} body {solid_i}", exp.Current()))
+                solid = exp.Current()
+                solid_color = _xcaf_color_for_shape(color_tool, solid) or root_color
+                solids.append((f"{root_name} body {solid_i}", solid, solid_color))
                 exp.Next()
             if solid_i == 0:
-                solids.append((root_name, shape))
+                solids.append((root_name, shape, root_color or _xcaf_color_for_shape(color_tool, shape)))
     except Exception as exc:
         logger.debug("XCAF solid listing failed for %s (%s); using STEPControl", step_path.name, exc)
         solids = []
@@ -2785,22 +2994,22 @@ def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -
         solid_i = 0
         while exp.More():
             solid_i += 1
-            solids.append((f"{step_path.stem} body {solid_i}", exp.Current()))
+            solids.append((f"{step_path.stem} body {solid_i}", exp.Current(), None))
             exp.Next()
         if solid_i == 0:
-            solids.append((step_path.stem, shape))
+            solids.append((step_path.stem, shape, None))
 
     # Prefer Fusion body names embedded in the STEP (Pillar, Floor, …).
     named = _step_manifold_solid_names(step_path)
     if named and len(named) == len(solids):
-        solids = [(named[i] or label, shape) for i, (label, shape) in enumerate(solids)]
+        solids = [(named[i] or label, shape, color) for i, (label, shape, color) in enumerate(solids)]
     elif named and len(named) > 1 and len(solids) > 1:
         for i in range(min(len(named), len(solids))):
             if named[i]:
-                solids[i] = (named[i], solids[i][1])
+                solids[i] = (named[i], solids[i][1], solids[i][2])
 
     meshes: list[tuple[str, trimesh.Trimesh]] = []
-    for label, shape in solids:
+    for label, shape, authored_color in solids:
         try:
             mesh = _tessellate_shape_to_mesh(shape, linear_deflection=linear_deflection)
         except Exception as exc:
@@ -2808,7 +3017,14 @@ def list_step_solid_meshes(step_path: Path, *, linear_deflection: float = 0.1) -
             continue
         if mesh is None or mesh.is_empty or len(mesh.faces) < 1:
             continue
+        # Prefer Fusion/XCAF colour; otherwise a semantic material colour from the
+        # body name (bolt → steel grey, rubber → black, …) instead of a random hue.
+        paint = authored_color if authored_color is not None else _semantic_color_for_name(label)
+        if paint is not None:
+            mesh = _paint_mesh_rgba(mesh, paint)
         mesh.metadata["name"] = label
+        if authored_color is not None:
+            mesh.metadata["fusion_color"] = [int(x) for x in authored_color.tolist()]
         meshes.append((label, mesh))
     return meshes
 
@@ -2861,12 +3077,15 @@ def split_step_solids_to_glbs(
     outputs: list[str] = []
     used: set[str] = set()
     kept: list[tuple[str, trimesh.Trimesh]] = []
+    authored_count = 0
     for idx, (label, mesh) in enumerate(parts[: max(1, int(max_parts))], start=1):
         slug = re.sub(r"[^\w\-]+", "_", str(label or "").lower()).strip("_")[:48] or f"part_{idx:02d}"
         if slug in used:
             slug = f"{slug}_{idx:02d}"
         used.add(slug)
         out_name = f"{base}__part_{idx:02d}_{slug}.glb"
+        if _mesh_has_authored_color(mesh):
+            authored_count += 1
         export_mesh(mesh, project_path / out_name)
         outputs.append(out_name)
         kept.append((label, mesh))
@@ -2874,11 +3093,12 @@ def split_step_solids_to_glbs(
     if shell_glb_path is not None and kept:
         try:
             rebuild_shell_glb_from_parts(Path(shell_glb_path), kept)
-            colorize_assembly_glb_parts(Path(shell_glb_path))
+            # Never rainbow-overwrite Fusion / STEP appearance colours.
+            if authored_count < max(1, len(kept) // 4):
+                colorize_assembly_glb_parts(Path(shell_glb_path))
         except Exception as exc:
             logger.warning("Could not rebuild shell GLB %s from STEP solids: %s", Path(shell_glb_path).name, exc)
     return outputs
-
 
 def split_scene_components_to_glbs(
     viewer_path: Path,
