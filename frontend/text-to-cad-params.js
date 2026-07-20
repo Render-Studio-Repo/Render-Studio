@@ -415,6 +415,7 @@ export function bindCadParamControls(panel, {
       try {
         const syncRes = await api(`/api/projects/${projectId}/files/${encodeURIComponent(applyFilename)}/cad-params`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ params, part, sync_only: true }),
         });
         if (Array.isArray(syncRes?.params)) adoptBaseline(syncRes.params);
@@ -461,6 +462,7 @@ export function bindCadParamControls(panel, {
     try {
       const res = await api(`/api/projects/${projectId}/files/${encodeURIComponent(applyFilename)}/cad-params`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ params, part }),
       });
       if (Array.isArray(res?.params)) adoptBaseline(res.params);

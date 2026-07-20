@@ -12665,13 +12665,13 @@ function bindObjectSizeControls(pop, filename) {
             scale,
           }
         : { scale };
-      // Clear live preview only right before bake so a failed request doesn't snap back.
-      resetLivePreview();
       const data = await api(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      // Clear live preview only after a successful bake so failures keep the preview size.
+      resetLivePreview();
       await afterModelEdit({ ...data, replaceCatalog: target.filename });
       lastAppliedKey = valueKey;
       // Refresh bases to the newly baked size.
