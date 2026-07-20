@@ -175,6 +175,8 @@ def list_mcmaster_library(project_path: Path) -> list[dict[str, Any]]:
                         "filename": str(item.get("filename") or name),
                         "at": item.get("at") or item.get("imported_at"),
                         "source": item.get("source") or "mcmaster",
+                        "page_url": str(item.get("page_url") or "").strip(),
+                        "reference": str(item.get("reference") or "").strip(),
                     }
                 )
         except Exception:
