@@ -4,12 +4,12 @@
  */
 
 import { createArchitectBuilding } from "./architect-building.js?v=20260714-wall-hover";
-import { createArchitectMeshLayer } from "./architect-mesh.js?v=20260714-wall-hover";
+import { createArchitectMeshLayer } from "./architect-mesh.js?v=20260720-architect-clip";
 import { createArchitectDrawTool } from "./architect-draw.js?v=20260714-wall-hover";
 import {
   applyArchitectDefaultView,
   clampArchitectHorizon,
-} from "./architect-camera.js?v=20260714-erase-grid";
+} from "./architect-camera.js?v=20260720-architect-clip";
 
 /**
  * @param {{

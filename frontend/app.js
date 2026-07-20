@@ -81,8 +81,8 @@ import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260715-connect-now";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-name-xform";
-import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260714-erase-grid";
-import { createArchitectSession } from "./architect-session.js?v=20260714-shift-mmb-tilt";
+import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-architect-clip";
+import { createArchitectSession } from "./architect-session.js?v=20260720-architect-clip";
 import { createDirectModeling } from "./direct-modeling.js?v=20260716-body-face-pull";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
@@ -7069,19 +7069,12 @@ function architectGridModelUnits() {
 const architectBayGrid = createArchitectBayGrid({
   scene,
   getMmPerModelUnit: () => sceneMmPerModelUnit(),
-  // Plan field sized for architecture, not the Design CAD bounding sphere
-  // (CAD radius can be huge and used to clip / explode the bay lattice).
+  // Size the plan lattice from bay pitch, not Design CAD radius (CAD can be huge and
+  // previously forced clip planes / a postage-stamp or oversize field that clipped walls).
   getExtentModel: () => {
-    const step = architectGridModelUnits();
-    const bayStep = (() => {
-      try {
-        return Math.max(step, 1);
-      } catch (_) {
-        return 1;
-      }
-    })();
-    // ~64–120 bays across; ignore Design sceneRadius so walls aren't frustum-clipped.
-    return Math.max(bayStep * 96, 80);
+    const mmPer = sceneMmPerModelUnit() || 1;
+    const bayModel = 914.4 / mmPer; // 3 ft
+    return Math.max(bayModel * 100, architectGridModelUnits() * 48, 80);
   },
 });
 

@@ -6301,7 +6301,7 @@ def autodesk_hubs(user: dict[str, Any] = Depends(get_current_user)):
     if not token:
         raise HTTPException(401, "Autodesk account not linked.")
     try:
-        hubs = _cached_autodesk_listing(("hubs", user["id"]), lambda: list_hubs(token), ttl=30.0)
+        hubs = _cached_autodesk_listing(("hubs", user["id"]), lambda: list_hubs(token), ttl=120.0)
         return {"hubs": hubs}
     except Exception as exc:
         raise HTTPException(502, f"Autodesk library error: {exc}") from exc
@@ -6314,7 +6314,7 @@ def autodesk_projects(hub_id: str, user: dict[str, Any] = Depends(get_current_us
     if not token:
         raise HTTPException(401, "Autodesk account not linked.")
     try:
-        projects = _cached_autodesk_listing(("projects", user["id"], hub_id), lambda: list_projects(token, hub_id), ttl=30.0)
+        projects = _cached_autodesk_listing(("projects", user["id"], hub_id), lambda: list_projects(token, hub_id), ttl=120.0)
         return {"projects": projects}
     except Exception as exc:
         raise HTTPException(502, f"Autodesk projects error: {exc}") from exc
@@ -6330,7 +6330,7 @@ def autodesk_top_folders(hub_id: str, aps_project_id: str, user: dict[str, Any] 
         folders = _cached_autodesk_listing(
             ("top-folders", user["id"], hub_id, aps_project_id),
             lambda: list_top_folders(token, hub_id, aps_project_id),
-            ttl=8.0,
+            ttl=120.0,
         )
         return {"folders": folders}
     except Exception as exc:
@@ -6347,7 +6347,7 @@ def autodesk_folder_contents(aps_project_id: str, folder_id: str, user: dict[str
         return _cached_autodesk_listing(
             ("contents", user["id"], aps_project_id, folder_id),
             lambda: list_folder_contents(token, aps_project_id, folder_id),
-            ttl=8.0,
+            ttl=120.0,
         )
     except Exception as exc:
         raise HTTPException(502, f"Autodesk folder contents error: {exc}") from exc
