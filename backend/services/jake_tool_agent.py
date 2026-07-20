@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from backend.services.ai_cost import estimate_cost_usd, usage_from_anthropic_response, usage_from_openai_response
 from backend.services.ai_service import AIService, uses_openai_responses_api
 from backend.services.cad_authoring_agent import (
     build_snapshot_job,
@@ -31,6 +32,7 @@ from backend.services.trace_log import add as trace_add
 
 ProgressCb = Callable[[dict[str, Any]], None] | None
 CancelCb = Callable[[], bool] | None
+UsageCb = Callable[[list[dict[str, Any]]], None] | None
 
 AGENT_TOOLS = [
     {
@@ -220,6 +222,7 @@ class JakeToolAgent:
         max_turns: int = 28,
         cancel_check: CancelCb = None,
         progress_callback: ProgressCb = None,
+        usage_callback: UsageCb = None,
         trace_id: str | None = None,
     ) -> None:
         self.ai = ai
@@ -236,6 +239,7 @@ class JakeToolAgent:
         self.max_turns = max_turns
         self.cancel_check = cancel_check
         self.progress_callback = progress_callback
+        self.usage_callback = usage_callback
         self.trace_id = trace_id
         self.finished: dict[str, Any] | None = None
         self.last_step_ok = False
@@ -310,6 +314,11 @@ class JakeToolAgent:
         if dxfs:
             parts.append("\nDXF files present: " + ", ".join(p.name for p in dxfs[:12]))
         return "\n".join(parts)
+
+    def _append_ai_trace(self, trace: dict[str, Any]) -> None:
+        self.ai_traces.append(trace)
+        if self.usage_callback:
+            self.usage_callback(list(self.ai_traces))
 
     def _emit(self, stage: str, label: str, pct: int) -> None:
         _progress(
@@ -540,15 +549,18 @@ class JakeToolAgent:
                 tool_choice="auto",
                 max_completion_tokens=8192,
             )
-            self.ai_traces.append(
-                {
-                    "provider": "openai",
-                    "api": "chat.completions.tools",
-                    "model": self.ai.model,
-                    "elapsed_ms": int((time.perf_counter() - t0) * 1000),
-                    "turn": turn + 1,
-                }
-            )
+            usage = usage_from_openai_response(completion)
+            trace = {
+                "provider": "openai",
+                "api": "chat.completions.tools",
+                "model": self.ai.model,
+                "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+                "turn": turn + 1,
+            }
+            if usage:
+                trace["usage"] = usage
+                trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+            self._append_ai_trace(trace)
             msg = completion.choices[0].message
             tool_calls = msg.tool_calls or []
             if not tool_calls:
@@ -615,15 +627,18 @@ class JakeToolAgent:
             if reasoning:
                 create_kwargs.update(reasoning)
             response = self.ai.client.responses.create(**create_kwargs)
-            self.ai_traces.append(
-                {
-                    "provider": "openai",
-                    "api": "responses.tools",
-                    "model": self.ai.model,
-                    "elapsed_ms": int((time.perf_counter() - t0) * 1000),
-                    "turn": turn + 1,
-                }
-            )
+            usage = usage_from_openai_response(response)
+            trace = {
+                "provider": "openai",
+                "api": "responses.tools",
+                "model": self.ai.model,
+                "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+                "turn": turn + 1,
+            }
+            if usage:
+                trace["usage"] = usage
+                trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+            self._append_ai_trace(trace)
             output = list(getattr(response, "output", None) or [])
             if not output:
                 input_items.append(
@@ -689,15 +704,18 @@ class JakeToolAgent:
             )
             response.raise_for_status()
             data = response.json()
-            self.ai_traces.append(
-                {
-                    "provider": "anthropic",
-                    "api": "messages.tools",
-                    "model": self.ai.model,
-                    "elapsed_ms": int((time.perf_counter() - t0) * 1000),
-                    "turn": turn + 1,
-                }
-            )
+            usage = usage_from_anthropic_response(data)
+            trace = {
+                "provider": "anthropic",
+                "api": "messages.tools",
+                "model": self.ai.model,
+                "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+                "turn": turn + 1,
+            }
+            if usage:
+                trace["usage"] = usage
+                trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="anthropic")
+            self._append_ai_trace(trace)
             content = data.get("content") or []
             messages.append({"role": "assistant", "content": content})
             tool_uses = [block for block in content if block.get("type") == "tool_use"]

@@ -3510,6 +3510,7 @@ def _run_text_to_cad_v2(
     previous_source_name: str | None = None,
     cancel_check=None,
     progress_callback=None,
+    usage_callback=None,
     fusion_mode: bool = False,
     architect_mode: bool = False,
     strict_upstream: bool = False,
@@ -3539,6 +3540,11 @@ def _run_text_to_cad_v2(
     ai_traces: list[dict[str, Any]] = []
     repair_note: str | None = None
     last_error: str | None = None
+
+    def _sync_ai_traces() -> None:
+        if usage_callback and ai_traces:
+            usage_callback(list(ai_traces))
+
     current_source: str | None = previous_source
     canonical_source: str | None = None
     target_mode = str((context or {}).get("target_mode") or "").strip().lower()
@@ -3701,6 +3707,7 @@ def _run_text_to_cad_v2(
         images=images,
     )
     ai_traces.append(brief_trace)
+    _sync_ai_traces()
     if cancel_check and cancel_check():
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
@@ -3816,10 +3823,12 @@ def _run_text_to_cad_v2(
                     max_turns=max(28, (max_repairs + 1) * 3),
                     cancel_check=cancel_check,
                     progress_callback=progress_callback,
+                    usage_callback=usage_callback,
                     trace_id=trace_id,
                 )
                 agent_runtime = "jake_tool_agent"
                 ai_traces.extend(agent_result.get("ai_traces") or [])
+                _sync_ai_traces()
             except DesignCanceled:
                 raise
             except Exception as tool_exc:
@@ -4031,6 +4040,7 @@ def _run_text_to_cad_v2(
                     fusion_mode=False if jake_identical else fusion_mode,
                 )
                 ai_traces.append(ai_trace)
+                _sync_ai_traces()
             # Preserve the exact source that failed validation so the next
             # repair pass can edit it, matching the upstream text-to-cad
             # source -> step -> repair loop.
@@ -4490,6 +4500,7 @@ def _run_text_to_cad_v2(
             )
             if snapshot_trace:
                 ai_traces.append(snapshot_trace)
+                _sync_ai_traces()
         except Exception as exc:
             # Fail closed — Jake does not skip visual review on agent errors.
             snapshot_note = f"Snapshot visual review crashed (mandatory gate): {exc}"
@@ -5171,6 +5182,7 @@ def run_design(
     previous_source_name: str | None = None,
     cancel_check=None,
     progress_callback=None,
+    usage_callback=None,
 ) -> dict[str, Any]:
     """Run the full prompt->validated-model pipeline with self-repair.
 
@@ -5249,6 +5261,7 @@ def run_design(
             previous_source_name=previous_source_name,
             cancel_check=cancel_check,
             progress_callback=progress_callback,
+            usage_callback=usage_callback,
             fusion_mode=is_fusion,
             architect_mode=is_architect,
             strict_upstream=strict_upstream_text_to_cad,

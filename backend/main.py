@@ -15566,6 +15566,7 @@ def _prompt_via_kernel(
     user: dict[str, Any],
     project_path: Path,
     progress_callback=None,
+    usage_callback=None,
 ):
     """New engineering pipeline: AI -> Feature Program -> validated, exported model."""
     from backend.services import design_service
@@ -15623,6 +15624,7 @@ def _prompt_via_kernel(
             previous_source_name=previous_source_name,
             cancel_check=cancel_check,
             progress_callback=progress_callback,
+            usage_callback=usage_callback,
         )
         if cancel_check():
             raise DesignCanceled("Generation canceled.")
@@ -15762,6 +15764,131 @@ class CancelGenerationRequest(BaseModel):
     )
 
 
+class StoppedPromptHistoryRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=8000)
+    trace_id: str | None = Field(default=None, max_length=128)
+    prompt_mode: str = "render"
+    kind: str = "render"
+    base_filename: str | None = None
+    speed: str | None = None
+    message: str | None = None
+
+
+def _stopped_prompt_message(
+    ai_traces: list[dict[str, Any]] | dict[str, Any] | None = None,
+    *,
+    fallback: str = "Stopped before completion.",
+) -> str:
+    meta = _usage_history_fields(ai_traces)
+    usage = meta.get("usage") or {}
+    tokens = int(usage.get("total_tokens") or 0)
+    cost = meta.get("cost_usd")
+    extras: list[str] = []
+    if tokens > 0:
+        extras.append(f"{tokens:,} tokens")
+    if cost is not None:
+        extras.append(f"${float(cost):.4f} est.")
+    if not extras:
+        return fallback
+    return f"{fallback.rstrip('.')}. Used {' · '.join(extras)} before stopping."
+
+
+def _upsert_stopped_prompt_history_from_job(
+    project_path: Path,
+    job: dict[str, Any],
+    *,
+    trace_id: str | None = None,
+    charge_credits: bool = True,
+) -> dict[str, Any] | None:
+    job_trace_id = str(job.get("trace_id") or job.get("id") or trace_id or "").strip()
+    if not job_trace_id:
+        return None
+    body_data = job.get("request_body")
+    if not isinstance(body_data, dict):
+        return None
+    try:
+        body = PromptRequest.model_validate(body_data)
+    except Exception:
+        return None
+    ai_traces = job.get("ai_traces")
+    usage_meta = _usage_history_fields(ai_traces)
+    message = _stopped_prompt_message(ai_traces)
+    existing = prompt_history_service.list_entries(project_path, limit=500)
+    prior = next((e for e in existing if str(e.get("trace_id") or "") == job_trace_id), None)
+    if prior and prior.get("status") == "stopped":
+        charge_credits = False
+        prior_tokens = int((prior.get("usage") or {}).get("total_tokens") or 0)
+        new_tokens = int((usage_meta.get("usage") or {}).get("total_tokens") or 0)
+        if prior_tokens >= new_tokens and prior.get("cost_usd") is not None:
+            return prior
+    job_user = get_user_by_id(str(job.get("by_user_id") or "")) if job.get("by_user_id") else None
+    if charge_credits and not prior:
+        return _save_prompt_history(
+            project_path,
+            prompt=body.prompt,
+            success=False,
+            body=body,
+            refs_list=[r.model_dump() for r in body.references],
+            trace_id=job_trace_id,
+            user=job_user,
+            message=message,
+            error="Stopped by user.",
+            status="stopped",
+            ai_traces=ai_traces,
+        )
+    try:
+        return prompt_history_service.append_entry(
+            project_path,
+            prompt=body.prompt,
+            success=False,
+            message=message,
+            speed=body.speed,
+            error="Stopped by user.",
+            references=[r.model_dump() for r in body.references],
+            trace_id=job_trace_id,
+            user_id=job_user["id"] if job_user else None,
+            user_name=job_user["display_name"] if job_user else None,
+            user_avatar_url=_avatar_url_for_user_id(job_user["id"]) if job_user else None,
+            prompt_mode=(body.mode or "standard").lower(),
+            kind="prompt",
+            status="stopped",
+            target_mode=str(getattr(body, "target_mode", "") or "").strip().lower() or None,
+            **usage_meta,
+        )
+    except Exception as exc:
+        logger.debug("Could not upsert stopped prompt history for %s trace=%s: %s", project_path.name, job_trace_id, exc)
+    return None
+
+
+def _refresh_stopped_prompt_history_usage(
+    project_path: Path,
+    trace_id: str,
+    body_data: dict[str, Any] | None = None,
+    user: dict[str, Any] | None = None,
+) -> None:
+    job = generation_service.get_job_by_trace(project_path, trace_id)
+    if not job:
+        if body_data and user:
+            try:
+                body = PromptRequest.model_validate(body_data)
+                _save_prompt_history(
+                    project_path,
+                    prompt=body.prompt,
+                    success=False,
+                    body=body,
+                    refs_list=[r.model_dump() for r in body.references],
+                    trace_id=trace_id,
+                    user=user,
+                    message="Stopped before completion.",
+                    error="Stopped by user.",
+                    status="stopped",
+                )
+            except Exception:
+                pass
+        return
+    _upsert_stopped_prompt_history_from_job(project_path, job, trace_id=trace_id, charge_credits=False)
+
+
 def _save_stopped_prompt_history_for_jobs(
     project_path: Path,
     jobs: list[dict[str, Any]],
@@ -15774,30 +15901,7 @@ def _save_stopped_prompt_history_for_jobs(
         job_trace_id = str(job.get("trace_id") or job.get("id") or "").strip()
         if trace_id and job_trace_id != trace_id:
             continue
-        body_data = job.get("request_body")
-        if not isinstance(body_data, dict):
-            continue
-        try:
-            body = PromptRequest.model_validate(body_data)
-            existing = prompt_history_service.list_entries(project_path, limit=500)
-            already_saved = any(str(e.get("trace_id") or "") == job_trace_id for e in existing)
-            if already_saved:
-                continue
-            job_user = get_user_by_id(str(job.get("by_user_id") or "")) if job.get("by_user_id") else None
-            _save_prompt_history(
-                project_path,
-                prompt=body.prompt,
-                success=False,
-                body=body,
-                refs_list=[r.model_dump() for r in body.references],
-                trace_id=job_trace_id or trace_id,
-                user=job_user,
-                message="Stopped before completion.",
-                error="Stopped by user.",
-                status="stopped",
-            )
-        except Exception as exc:
-            logger.debug("Could not save stopped prompt history for %s trace=%s: %s", project_path.name, job_trace_id, exc)
+        _upsert_stopped_prompt_history_from_job(project_path, job, trace_id=trace_id)
 
 
 @app.post("/api/projects/{project_id}/generation/cancel")
@@ -15812,7 +15916,49 @@ def cancel_generation(
         return generation_service.public_summary(path)
     trace_id = str(body.trace_id or "").strip() or None
     _save_stopped_prompt_history_for_jobs(path, generation_service.list_running_jobs(path), trace_id=trace_id)
-    return generation_service.request_cancel(path, trace_id=trace_id)
+    result = generation_service.request_cancel(path, trace_id=trace_id)
+    if trace_id:
+        job = generation_service.get_job_by_trace(path, trace_id)
+        if job:
+            _upsert_stopped_prompt_history_from_job(path, job, trace_id=trace_id, charge_credits=False)
+    else:
+        for canceled_tid in result.get("canceled_trace_ids") or []:
+            job = generation_service.get_job_by_trace(path, canceled_tid)
+            if job:
+                _upsert_stopped_prompt_history_from_job(path, job, trace_id=canceled_tid, charge_credits=False)
+    return result
+
+
+@app.post("/api/projects/{project_id}/prompt-history/stopped")
+def record_stopped_prompt_history(
+    project_id: str,
+    body: StoppedPromptHistoryRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    trace_id = str(body.trace_id or new_trace_id()).strip()
+    message = str(body.message or "Stopped before completion.").strip()
+    try:
+        entry = prompt_history_service.append_entry(
+            path,
+            prompt=body.prompt,
+            success=False,
+            message=message,
+            speed=body.speed or "fast",
+            error="Stopped by user.",
+            base_filename=body.base_filename,
+            trace_id=trace_id,
+            user_id=user["id"],
+            user_name=user["display_name"],
+            user_avatar_url=_avatar_url_for_user_id(user["id"]),
+            prompt_mode=str(body.prompt_mode or "render").lower(),
+            kind=str(body.kind or "render").lower(),
+            status="stopped",
+        )
+        return {"ok": True, "entry": entry}
+    except Exception as exc:
+        logger.debug("stopped prompt history save failed project=%s: %s", project_id, exc)
+        raise HTTPException(500, "Could not save stopped prompt history.") from exc
 
 
 def _background_prompt_kernel(
@@ -15840,6 +15986,9 @@ def _background_prompt_kernel(
         def progress_callback(progress: dict[str, Any]) -> None:
             generation_service.update_progress(project_path, progress, trace_id=trace_id)
 
+        def usage_callback(traces: list[dict[str, Any]]) -> None:
+            generation_service.record_ai_traces(project_path, traces, trace_id=trace_id)
+
         if hasattr(ai, "set_cancel_check"):
             ai.set_cancel_check(
                 lambda: generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir()
@@ -15852,8 +16001,10 @@ def _background_prompt_kernel(
             user,
             project_path,
             progress_callback=progress_callback,
+            usage_callback=usage_callback,
         )
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
+            _refresh_stopped_prompt_history_usage(project_path, trace_id, body_data, user)
             return
         complete_payload: dict[str, Any] = {
             "message": result.get("message"),
@@ -15879,6 +16030,8 @@ def _background_prompt_kernel(
             ).start()
     except HTTPException as exc:
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
+            if exc.status_code == 499:
+                _refresh_stopped_prompt_history_usage(project_path, trace_id, body_data, user)
             return
         detail = exc.detail if isinstance(exc.detail, str) else json.dumps(exc.detail)
         fail_payload: dict[str, Any] = {"error": detail}
@@ -15908,6 +16061,7 @@ def _background_prompt_kernel(
         generation_service.fail(project_path, detail, trace_id=trace_id, extra=fail_payload)
     except Exception as exc:
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
+            _refresh_stopped_prompt_history_usage(project_path, trace_id, body_data, user)
             return
         logger.exception("Background prompt failed project=%s trace=%s", project_id, trace_id)
         fail_payload = {"error": str(exc)}

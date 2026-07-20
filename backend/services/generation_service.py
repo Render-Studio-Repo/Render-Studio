@@ -62,6 +62,9 @@ _JOB_PUBLIC_KEYS = (
     "progress",
     "target_mode",
     "codex_agent",
+    "usage",
+    "cost_usd",
+    "ai_calls",
 )
 
 
@@ -420,6 +423,17 @@ def save(project_path: Path, data: dict[str, Any]) -> dict[str, Any]:
 def list_running_jobs(project_path: Path) -> list[dict[str, Any]]:
     data = load(project_path) or {}
     return [j for j in _jobs_from_data(data) if j.get("status") == "running"]
+
+
+def get_job_by_trace(project_path: Path, trace_id: str | None) -> dict[str, Any] | None:
+    tid = str(trace_id or "").strip()
+    if not tid:
+        return None
+    data = load(project_path) or {}
+    for job in _jobs_from_data(data):
+        if str(job.get("trace_id") or job.get("id") or "") == tid:
+            return job
+    return None
 
 
 def is_running(project_path: Path) -> bool:
@@ -808,6 +822,36 @@ def _merge_progress(prev: dict[str, Any] | None, progress: dict[str, Any]) -> di
     return next_progress
 
 
+def record_ai_traces(
+    project_path: Path,
+    ai_traces: list[dict[str, Any]] | None,
+    *,
+    trace_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Persist accumulated AI call traces + derived usage/cost on the running job."""
+    if not ai_traces:
+        return None
+    from backend.services.ai_cost import usage_fields_for_history
+
+    traces = [t for t in ai_traces if isinstance(t, dict)]
+    if not traces:
+        return None
+    usage_meta = usage_fields_for_history(traces)
+
+    def mutate(job: dict[str, Any]) -> None:
+        if job.get("status") not in ("running", "canceled"):
+            return
+        if trace_id and job.get("trace_id") and str(job.get("trace_id")) != str(trace_id):
+            return
+        job["ai_traces"] = traces
+        for key in ("usage", "cost_usd", "ai_calls", "model", "provider"):
+            if usage_meta.get(key) is not None:
+                job[key] = usage_meta[key]
+        job["updated_at"] = _now_iso()
+
+    return _update_job(project_path, trace_id=trace_id, mutator=mutate)
+
+
 def update_progress(
     project_path: Path,
     progress: dict[str, Any],
@@ -933,6 +977,7 @@ def public_summary(project_path: Path) -> dict[str, Any]:
         "prompt", "label", "message", "filename", "url", "error",
         "timeline_index", "prompt_id", "by_user_id", "by_user_name", "by_avatar_url", "mode",
         "benign_interrupt", "model", "provider", "speed",
+        "usage", "cost_usd", "ai_calls",
     )}
     if data.get("progress"):
         out["progress"] = data.get("progress")

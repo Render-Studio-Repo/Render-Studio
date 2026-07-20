@@ -951,6 +951,10 @@ async function cancelActiveGeneration(opts = {}) {
   ) {
     userCancelRequested = true;
     activePromptGenerationId++;
+    const renderPrompt = String(viewportOverlayState?.prompt || "").trim();
+    const renderTraceId = allProjects.find((p) => p.id === pid)?.generation?.trace_id || null;
+    const renderBase = selectedFile || null;
+    const renderSpeed = document.getElementById("prompt-speed")?.value === "quality" ? "quality" : "fast";
     activePromptAbort?.abort();
     activePromptAbort = null;
     const statusEl = document.getElementById("prompt-status");
@@ -960,6 +964,15 @@ async function cancelActiveGeneration(opts = {}) {
     }
     hideViewportOverlay(pid);
     syncStopButtonVisibility();
+    const stoppedEntry = await recordStoppedRenderHistory(pid, {
+      prompt: renderPrompt || "Render",
+      traceId: renderTraceId,
+      baseFilename: renderBase,
+      speed: renderSpeed,
+    });
+    if (statusEl && pid === projectId) {
+      statusEl.textContent = stoppedStatusMessage(stoppedEntry, "Render stopped.");
+    }
     return;
   }
 
@@ -1053,12 +1066,23 @@ async function cancelActiveGeneration(opts = {}) {
         const statusEl = document.getElementById(nextGen.kind === "wiring" ? "wiring-prompt-status" : "prompt-status");
         if (statusEl) {
           statusEl.className = "status";
-          statusEl.textContent = nextGen.error || "Generation canceled.";
         }
         await refreshTimeline();
         if (nextGen.kind === "wiring") await refreshWiringPromptHistory();
         else if (nextGen.kind === "rigging") await refreshRiggingPromptHistory();
         else await refreshPromptHistory();
+        if (statusEl) {
+          const stoppedEntry = latestPromptHistoryEntries.find(
+            (e) => e.status === "stopped" && (!traceId || e.trace_id === traceId),
+          ) || latestPromptHistoryEntries.find((e) => e.status === "stopped");
+          const jobUsageLabel = formatUsageStopLabel(nextGen);
+          const historyLabel = formatUsageStopLabel(stoppedEntry);
+          const usageLabel = historyLabel || jobUsageLabel;
+          const fallback = nextGen.error || "Generation canceled.";
+          statusEl.textContent = usageLabel
+            ? `${fallback.replace(/\.$/, "")}. Used ${usageLabel} before stopping.`
+            : fallback;
+        }
       }
     }
   } catch (err) {
@@ -5216,6 +5240,44 @@ function compactTokenCount(value) {
 function usageTokenTotal(usage) {
   if (!usage) return 0;
   return Number(usage.total_tokens) || Number(usage.input_tokens || 0) + Number(usage.output_tokens || 0) || 0;
+}
+
+function formatUsageStopLabel(entry) {
+  if (!entry) return "";
+  const cost = entry.cost_usd != null ? formatCostUsd(entry.cost_usd) : null;
+  const tokens = usageTokenTotal(entry.usage);
+  const tokenLabel = tokens > 0 ? compactTokenCount(tokens) : "";
+  if (cost && tokenLabel) return `${cost} · ${tokenLabel}`;
+  return cost || tokenLabel || "";
+}
+
+function stoppedStatusMessage(entry, fallback = "Generation stopped.") {
+  const usageLabel = formatUsageStopLabel(entry);
+  return usageLabel ? `${fallback.replace(/\.$/, "")}. Used ${usageLabel} before stopping.` : fallback;
+}
+
+async function recordStoppedRenderHistory(pid, { prompt, traceId, baseFilename, speed } = {}) {
+  const text = String(prompt || "").trim();
+  if (!pid || !text) return null;
+  try {
+    const data = await api(`/api/projects/${pid}/prompt-history/stopped`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: text,
+        trace_id: traceId || null,
+        prompt_mode: "render",
+        kind: "render",
+        base_filename: baseFilename || null,
+        speed: speed || "fast",
+        message: "Stopped before completion.",
+      }),
+    });
+    if (pid === projectId) await refreshPromptHistory();
+    return data?.entry || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function renderProjectCostThumb(entries = [], summary = null) {
