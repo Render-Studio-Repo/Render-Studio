@@ -12924,7 +12924,7 @@ def _share_page_html(token: str, request: Request) -> str:
     origin = _request_origin(request)
     title = html.escape(meta["share_title"], quote=True)
     description = html.escape(meta["share_description"], quote=True)
-    image = html.escape(str(meta.get("preview_image_url") or f"{origin}/favicon-180.png?v=20260715-new-logo"), quote=True)
+    image = html.escape(str(meta.get("preview_image_url") or f"{origin}/render3d-og-banner.jpg?v=20260721-official-banner"), quote=True)
     url = html.escape(f"{origin}/share/{token}", quote=True)
     icon = html.escape(f"{origin}/favicon-180.png?v=20260715-new-logo", quote=True)
     favicon = html.escape(f"{origin}/favicon.ico?v=20260715-new-logo", quote=True)
