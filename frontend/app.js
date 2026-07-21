@@ -88,7 +88,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-bake";
-import { createProjectTree } from "./project-tree.js?v=20260721-prompt-link-copy";
+import { createProjectTree } from "./project-tree.js?v=20260721-show-hidden";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -756,7 +756,9 @@ async function applyGenerationComplete(gen, pid = projectId) {
       fitView: true,
       latestFile: gen.filename,
       placedFiles,
-      loadAll: completionMode === "architect" || placedFiles.length > 0,
+      // Keep other project components on screen after Mode 2.0 / Fusion finishes —
+      // otherwise clear+reload of only the latest file makes siblings "disappear".
+      loadAll: true,
       orientationMode,
     });
     restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: gen.filename });
@@ -827,7 +829,7 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
     fitView: true,
     latestFile: msg.filename,
     placedFiles,
-    loadAll: reloadMode === "architect" || placedFiles.length > 0,
+    loadAll: true,
     orientationMode,
   });
   restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: msg.filename });
@@ -17073,7 +17075,12 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
     projectTree.setSelected(primary.name);
     featureEditor.setModel(projectId, primary.name);
     safeRestoreActiveModelPromptState();
-    if (fitView) fitCameraToComponent(primary.name);
+    if (fitView) {
+      // Fit the whole assembly when multiple components are on screen so siblings
+      // don't look like they "disappeared" outside a tight single-part frame.
+      if (projectAssembly.count() > 1) fitCamera();
+      else fitCameraToComponent(primary.name);
+    }
     setEditStatus("ok", "Loaded model in viewport.");
     viewerOverlay.clearError();
     return loadedCount > 0;
@@ -26542,7 +26549,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         fitView: true,
         latestFile: data.filename,
         placedFiles,
-        loadAll: promptMode === "architect" || placedFiles.length > 0,
+        loadAll: true,
         orientationMode: genMode === "v2" && targetMode !== "edit" ? "v2-upright" : null,
       });
       restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: data.filename });

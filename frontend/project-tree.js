@@ -396,9 +396,10 @@ export function createProjectTree(options = {}) {
       }
       selectedBrowserKeys.clear();
       selectedName = entry.name;
+      // Clicking a hidden component should bring it back, not silently no-op.
       if (sectionId === "components" && hidden.has(visKey)) {
-        render();
-        return;
+        hidden.delete(visKey);
+        onToggleVisibility?.(entry, true, sectionId);
       }
       if (sectionId === "components") onOpenComponent?.(entry);
       else if (sectionId === "robots") onOpenRobot?.(entry);
