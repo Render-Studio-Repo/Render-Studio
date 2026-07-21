@@ -1330,8 +1330,17 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
       const sep = raw.indexOf(":");
       const id = sep >= 0 ? raw.slice(sep + 1) : raw;
       const provider = id === "anthropic" ? "anthropic" : "openai";
-      const preferredModel = (status?.credits?.models || []).find((m) => m.provider === provider)?.model
-        || defaultModel(provider);
+      const preferredModel = (() => {
+        const pinned = String(status?.credits?.platform_model || "").trim();
+        if (provider === "anthropic") {
+          if (pinned && !/^(gpt|o1|o3|chatgpt)/i.test(pinned)) return pinned;
+          return "claude-opus-4-8";
+        }
+        if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/pro/i.test(pinned)) return pinned;
+        const fromList = (status?.credits?.models || []).find((m) => m.provider === provider)?.model;
+        if (fromList && /^(gpt|o1|o3|chatgpt)/i.test(fromList) && !/pro/i.test(fromList)) return fromList;
+        return defaultModel(provider);
+      })();
       setError("");
       try {
         const data = await api("/api/user/ai-credits", {

@@ -70,7 +70,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260721-quest-progress";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-model-labels";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-anthropic-default";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -15870,6 +15870,27 @@ function parsePromptKeyOptionValue(value) {
   return { source, keyId };
 }
 
+/** True when a stored platform:* key disagrees with the account's Render3D provider. */
+function storedPlatformConflictsWithAccount(value, status) {
+  const parsed = parsePromptKeyOptionValue(value);
+  if (!parsed || parsed.source !== "platform") return false;
+  const preferred = status?.credits?.platform_provider === "anthropic" ? "anthropic" : "openai";
+  const keyId = parsed.keyId === "anthropic" ? "anthropic" : "openai";
+  return keyId !== preferred;
+}
+
+function defaultPlatformModelForProvider(provider, status = aiStatus) {
+  const credits = status?.credits || {};
+  const pinned = String(credits.platform_model || "").trim();
+  if (provider === "anthropic") {
+    if (pinned && !/^(gpt|o1|o3|chatgpt)/i.test(pinned)) return pinned;
+    return "claude-opus-4-8";
+  }
+  // OpenAI: keep a non-Pro pin if present; otherwise gpt-5.5 (not Pro).
+  if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/-pro\b/i.test(pinned)) return pinned;
+  return "gpt-5.5";
+}
+
 function getStoredPromptAiKeyValue() {
   try {
     return localStorage.getItem(LS_PROMPT_AI_KEY) || "";
@@ -16194,11 +16215,12 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
 
   sel.disabled = false;
   const projectStored = getStoredProjectPromptAiKeyValue();
-  // Prefer the user's explicit selection (prev / stored). Do not let the server
-  // "effective" key steal focus when multiple shared keys are opted-in — that
-  // was flipping Claude Fable/Opus picks back to an older OpenAI shared key.
+  // Prefer the user's explicit selection, but never let a stale per-project
+  // OpenAI platform key override an account that is set to Anthropic (or vice versa).
+  // That was silently routing Anthropic picks to GPT-5.5 Pro.
   const candidates = [prev, projectStored, getStoredPromptAiKeyValue(), defaultValue].filter(Boolean);
   for (const value of candidates) {
+    if (storedPlatformConflictsWithAccount(value, status)) continue;
     if ([...sel.options].some((opt) => opt.value === value)) {
       sel.value = value;
       storePromptAiKeyValue(sel.value);
@@ -16410,13 +16432,21 @@ function initPromptKeyPopup() {
       if (source === "platform") {
         try {
           const platformKey = getPlatformPromptKeys(aiStatus).find((key) => key.id === keyId);
+          const provider = keyId === "anthropic" ? "anthropic" : "openai";
+          const platformModel = provider === "anthropic"
+            ? (platformKey?.model && !/^(gpt|o1|o3)/i.test(platformKey.model)
+              ? platformKey.model
+              : defaultPlatformModelForProvider("anthropic"))
+            : (platformKey?.model && /^(gpt|o1|o3)/i.test(platformKey.model)
+              ? platformKey.model
+              : defaultPlatformModelForProvider("openai"));
           const data = await api("/api/user/ai-credits", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               use_platform_key: true,
-              platform_provider: keyId === "anthropic" ? "anthropic" : "openai",
-              platform_model: platformKey?.model || null,
+              platform_provider: provider,
+              platform_model: platformModel || null,
             }),
           });
           const updatedAi = { ...(data.ai || aiStatus || {}), credits: data.credits || data.ai?.credits };
@@ -16479,7 +16509,8 @@ function initPromptKeyPopup() {
       const choice = getRender3dKeyChoices(aiStatus).find((c) => String(c.id) === String(parsed.keyId))
         || { id: parsed.keyId === "anthropic" ? "anthropic" : "openai", provider, model: "" };
       const resolvedProvider = choice.provider === "anthropic" ? "anthropic" : "openai";
-      const defaultModel = choice.model
+      const defaultModel = defaultPlatformModelForProvider(resolvedProvider, aiStatus)
+        || choice.model
         || PROMPT_KEY_MODEL_OPTIONS[resolvedProvider]?.[0]?.value
         || "";
       const platformValue = promptKeyOptionValue("platform", choice.id || resolvedProvider);

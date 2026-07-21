@@ -2010,8 +2010,16 @@ def _platform_ai_for_user(
             "use_platform_key": True,
             "platform_provider": provider_id,
         }
+        # Always pass a provider-compatible model so a leftover GPT-5.5 Pro pin
+        # cannot survive an Anthropic selection (and vice versa).
         if model is not None:
             settings_kwargs["platform_model"] = model
+        else:
+            current_model = str(account.get("platform_model") or "").strip()
+            if not ai_credit_service._platform_model_matches_provider(current_model, provider_id):
+                settings_kwargs["platform_model"] = ai_credit_service._default_platform_model(
+                    provider_id, speed=speed
+                )
         ai_credit_service.update_settings(user["id"], **settings_kwargs)
         account = ai_credit_service.ensure_account(user["id"])
     creds = ai_credit_service.resolve_platform_credentials(

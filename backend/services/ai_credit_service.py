@@ -145,6 +145,27 @@ def platform_models() -> list[dict[str, str]]:
     return out
 
 
+def _platform_model_matches_provider(model: str | None, provider: str) -> bool:
+    m = str(model or "").strip().lower()
+    if not m:
+        return True
+    prov = "anthropic" if provider in {"anthropic", "claude"} else "openai"
+    is_openai = m.startswith(("gpt", "o1", "o3", "chatgpt"))
+    if prov == "anthropic":
+        return not is_openai
+    return is_openai
+
+
+def _default_platform_model(provider: str, *, speed: str = "fast") -> str:
+    prov = "anthropic" if provider in {"anthropic", "claude"} else "openai"
+    if prov == "anthropic":
+        if speed == "fast":
+            return str(settings.anthropic_model or "claude-sonnet-4-5")
+        return str(getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8")
+    # Never default a provider switch to Pro — Quality mode can still pick Pro when OpenAI is active.
+    return str(settings.openai_model or "gpt-5.5")
+
+
 def resolve_platform_credentials(
     account: dict[str, Any] | None,
     *,
@@ -319,7 +340,7 @@ def update_settings(
     platform_provider: str | None = None,
     platform_model: str | None = None,
 ) -> dict[str, Any]:
-    ensure_account(user_id)
+    account = ensure_account(user_id)
     sets: list[str] = []
     vals: list[Any] = []
     if use_platform_key is not None:
@@ -334,19 +355,38 @@ def update_settings(
     if auto_refill_amount_cents is not None:
         sets.append("auto_refill_amount_cents = ?")
         vals.append(max(MIN_CHECKOUT_CENTS, int(auto_refill_amount_cents)))
-    if platform_provider is not None:
-        provider = str(platform_provider or "openai").strip().lower()
+
+    provider_out: str | None = None
+    model_out: str | None = None
+    if platform_provider is not None or platform_model is not None:
+        provider = str(
+            platform_provider
+            if platform_provider is not None
+            else (account.get("platform_provider") or "openai")
+        ).strip().lower()
+        if provider in {"claude"}:
+            provider = "anthropic"
         if provider not in {"openai", "anthropic"}:
             raise ValueError("platform_provider must be openai or anthropic")
         if provider == "openai" and not platform_openai_configured():
             raise ValueError("Render3D OpenAI key is not configured yet.")
         if provider == "anthropic" and not platform_anthropic_configured():
             raise ValueError("Render3D Claude key is not configured yet. Add ANTHROPIC_API_KEY on the server.")
+        model = (
+            str(platform_model).strip()[:120]
+            if platform_model is not None
+            else str(account.get("platform_model") or "").strip()[:120]
+        )
+        if not _platform_model_matches_provider(model, provider):
+            # Selecting Anthropic must never keep a leftover GPT-5.5 Pro pin (and vice versa).
+            model = _default_platform_model(provider, speed="fast")
+        provider_out = provider
+        model_out = model
         sets.append("platform_provider = ?")
-        vals.append(provider)
-    if platform_model is not None:
+        vals.append(provider_out)
         sets.append("platform_model = ?")
-        vals.append(str(platform_model or "").strip()[:120])
+        vals.append(model_out)
+
     if sets:
         sets.append("updated_at = ?")
         vals.extend([_now(), user_id])
