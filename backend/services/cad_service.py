@@ -1887,7 +1887,11 @@ def _scene_names_are_single_logical_body(names: list[str]) -> bool:
 
 
 def _sibling_step_solid_count(project_path: Path, glb_path: Path, parent_name: str) -> int | None:
-    """Return STEP solid count when a sibling STEP exists; None if unknown."""
+    """Return STEP solid count when a sibling STEP exists; None if unknown.
+
+    Avoids OCC mesh extraction on large STEP files — that path can peg a worker
+    for minutes and starve HTTP (models stuck spinning on project open).
+    """
     candidates: list[Path] = []
     stem = glb_path.stem
     parent = Path(parent_name or "")
@@ -1896,22 +1900,22 @@ def _sibling_step_solid_count(project_path: Path, glb_path: Path, parent_name: s
     for ext in (".step", ".stp"):
         candidates.append(project_path / f"{stem}{ext}")
     seen: set[str] = set()
+    # Text-scan only; skip huge STEP files (threaded rods / assemblies).
+    max_text_bytes = 4_000_000
     for step_path in candidates:
         key = str(step_path)
         if key in seen or not step_path.is_file():
             continue
         seen.add(key)
         try:
+            if step_path.stat().st_size > max_text_bytes:
+                continue
+        except OSError:
+            continue
+        try:
             names = _step_manifold_solid_names(step_path)
             if names:
                 return len(names)
-        except Exception:
-            pass
-        try:
-            info = step_body_info(step_path)
-            count = int(info.get("count") or 0)
-            if count > 0:
-                return count
         except Exception:
             pass
     return None
@@ -2249,7 +2253,11 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         newest["primary"] = True
         newest["auto_load"] = True
 
-    # Nest exploded body sidecars / named GLB scene meshes under each component.
+    # Nest exploded body sidecars under each component (cheap filesystem scan).
+    # Do NOT parse GLB/STEP scene bodies here — that can hang project open on large
+    # assemblies (36MB+ STEP / multi-mesh GLB) and wedge the API workers. The
+    # frontend already hydrates Bodies via GET .../files/{name}/bodies after the
+    # primary model is on screen.
     for comp in components:
         children = _body_children_from_part_sidecars(
             project_path,
@@ -2257,13 +2265,6 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
             parent_name=str(comp.get("name") or ""),
             parent_viewer=str(comp.get("viewer_filename") or comp.get("name") or ""),
         )
-        if not children:
-            children = _body_children_from_viewer_scene(
-                project_path,
-                parent_stem=str(comp.get("stem") or ""),
-                parent_name=str(comp.get("name") or ""),
-                parent_viewer=str(comp.get("viewer_filename") or comp.get("name") or ""),
-            )
         if children:
             comp["children_label"] = "Bodies"
             comp["children"] = children
