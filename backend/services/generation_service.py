@@ -23,10 +23,10 @@ GENERATION_FILE = "generation.json"
 # killed by this — Sol / quality CAD 2.0 routinely needs far longer than 20 min.
 MAX_RUNNING_SECONDS = 6 * 60 * 60  # default full-job recovery window
 MAX_RUNNING_SECONDS_SOL = 9 * 60 * 60  # 5.6 / Fable-class jobs can span multiple long calls
-# Auto-resume on restart is disabled — it re-ran prompts from scratch and re-billed.
-# Kept at 0 so dead-worker jobs are never left "running" waiting for a fake resume.
+# Auto-resume on restart is DISABLED for every model (current and future).
+# The old path re-queued request_body from scratch and re-billed. Do not raise these.
 MAX_RESTART_COUNT = 0
-MAX_RESTART_COUNT_EXPENSIVE = 0
+MAX_RESTART_COUNT_EXPENSIVE = 0  # legacy alias — same policy for all models
 # Grace before declaring a dead-PID job abandoned.
 STALE_IDLE_SECONDS = 60
 MAX_PARALLEL_PROMPT_JOBS = 5
@@ -323,19 +323,16 @@ def _job_model_provider(job: dict[str, Any]) -> tuple[str, str]:
 
 
 def is_expensive_ai_job(job: dict[str, Any]) -> bool:
-    """Opus / Fable / Sol / pro quality runs — auto-resume burns real money fast."""
-    model, provider = _job_model_provider(job)
-    rb = job.get("request_body") if isinstance(job.get("request_body"), dict) else {}
-    speed = str(job.get("speed") or rb.get("speed") or "").lower()
-    if any(token in model for token in ("opus", "fable", "mythos", "gpt-5.5-pro", "gpt-5.6", "sol")):
-        return True
-    if provider == "anthropic" and speed == "quality":
-        return True
-    return False
+    """Deprecated: restart policy is model-agnostic. Kept for callers; always True.
+
+    Any AI job is treated as too costly to auto-re-kick after a server restart.
+    """
+    return True
 
 
 def max_restart_count_for_job(job: dict[str, Any]) -> int:
-    return MAX_RESTART_COUNT_EXPENSIVE if is_expensive_ai_job(job) else MAX_RESTART_COUNT
+    """Never auto-resume any job after restart — including unknown future models."""
+    return 0
 
 
 def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = None) -> dict[str, Any]:

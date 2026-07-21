@@ -118,9 +118,54 @@ def _pricing_for_model(model: str | None, provider: str = "openai") -> dict[str,
     for key in sorted(table.keys(), key=len, reverse=True):
         if key in name:
             return table[key]
+    # Heuristics for unknown / future model ids (no per-model allowlist required).
     if provider == "anthropic":
-        return {"input": 3.0, "output": 15.0}
-    return {"input": 2.5, "output": 10.0}
+        if any(tok in name for tok in ("fable", "mythos")):
+            return {"input": 10.0, "output": 50.0, "cached_input": 1.0, "cache_write": 12.5}
+        if "opus" in name:
+            return {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25}
+        if "haiku" in name:
+            return {"input": 1.0, "output": 5.0, "cached_input": 0.1, "cache_write": 1.25}
+        # Default unknown Anthropic → Sonnet-class
+        return {"input": 3.0, "output": 15.0, "cached_input": 0.3, "cache_write": 3.75}
+    if "pro" in name:
+        return {"input": 30.0, "output": 180.0, "cached_input": 30.0}
+    if "sol" in name:
+        return {
+            "input": 5.0,
+            "output": 30.0,
+            "cached_input": 0.5,
+            **_LONG_CTX_5X,
+        }
+    if "terra" in name:
+        return {
+            "input": 2.5,
+            "output": 15.0,
+            "cached_input": 0.25,
+            **_LONG_CTX_TERRA,
+        }
+    if "luna" in name:
+        return {
+            "input": 1.0,
+            "output": 6.0,
+            "cached_input": 0.1,
+            **_LONG_CTX_LUNA,
+        }
+    if "codex" in name:
+        return {"input": 1.75, "output": 14.0, "cached_input": 0.175}
+    if name.startswith("o1-pro") or name.startswith("o3-pro"):
+        return {"input": 20.0, "output": 80.0, "cached_input": 20.0}
+    if name.startswith(("o1", "o3", "o4")):
+        return {"input": 2.0, "output": 8.0, "cached_input": 0.5}
+    if name.startswith("gpt-5") or name.startswith("gpt-4.1"):
+        return {
+            "input": 5.0,
+            "output": 30.0,
+            "cached_input": 0.5,
+            **_LONG_CTX_5X,
+        }
+    # Conservative OpenAI default for brand-new ids
+    return {"input": 5.0, "output": 30.0, "cached_input": 0.5}
 
 
 def _usage_attr(obj: Any, *names: str, default: Any = 0) -> Any:

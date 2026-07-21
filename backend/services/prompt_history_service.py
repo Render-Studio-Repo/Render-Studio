@@ -20,40 +20,8 @@ from backend.services.ai_cost import (
 HISTORY_FILE = "prompt_history.json"
 MAX_ENTRIES = 200
 
-PRICING_REFRESH_PREFIXES = (
-    "gpt-5.5-pro",
-    "gpt-5.5",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-5.6",
-    "gpt-5.4-pro",
-    "gpt-5.4",
-    "gpt-5.3-codex",
-    "gpt-5.3",
-    "gpt-5.2",
-    "gpt-5",
-    "gpt-4.1",
-    "gpt-4o",
-    "o4-mini",
-    "o3-pro",
-    "o3-mini",
-    "o3",
-    "o1-pro",
-    "o1-mini",
-    "o1",
-    "claude-fable-5",
-    "claude-mythos-5",
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    "claude-4.6-opus",
-    "claude-opus-4-6",
-    "claude-opus-4-5",
-    "claude-4.6-sonnet",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4-5",
-    "claude-haiku-4-5",
-)
+# Legacy name kept for imports; cost refresh now applies to every model with usage.
+PRICING_REFRESH_PREFIXES: tuple[str, ...] = ()
 
 
 def _safe_history_references(references: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -781,10 +749,8 @@ def _enrich_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
                 row.get("usage"),
                 provider=row.get("provider") or "openai",
             )
-            model = str(row.get("model") or "").lower()
-            should_refresh = row.get("cost_usd") is None or any(
-                model.startswith(prefix) for prefix in PRICING_REFRESH_PREFIXES
-            )
+            # Recompute from current pricing for every model (including future ids).
+            should_refresh = True
             if inferred is not None and should_refresh and row.get("cost_usd") != round(inferred, 6):
                 row["cost_usd"] = round(inferred, 6)
                 changed = True
