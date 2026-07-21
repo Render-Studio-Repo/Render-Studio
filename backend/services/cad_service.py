@@ -1889,15 +1889,19 @@ def _is_exploded_assembly_sidecar_stem(stem: str, project_path: Path) -> bool:
 
 def _exploded_sidecar_for_stem(project_path: Path, stem: str) -> str | None:
     """Return viewer filename for ``{stem}_exploded`` when present."""
-    base = stem
-    if base.lower().endswith("_exploded"):
-        exploded_stem = base
-    else:
-        exploded_stem = f"{base}_exploded"
-    for ext in (".glb", ".gltf", ".step", ".stp", ".stl", ".3mf"):
-        path = project_path / f"{exploded_stem}{ext}"
-        if path.is_file() and path.stat().st_size > 0:
-            return viewer_filename_for_model(path.name, project_path)
+    candidates: list[str] = []
+    for base in (stem, _logical_component_root(stem)):
+        text = str(base or "").strip()
+        if not text:
+            continue
+        exploded_stem = text if text.lower().endswith("_exploded") else f"{text}_exploded"
+        if exploded_stem not in candidates:
+            candidates.append(exploded_stem)
+    for exploded_stem in candidates:
+        for ext in (".glb", ".gltf", ".step", ".stp", ".stl", ".3mf"):
+            path = project_path / f"{exploded_stem}{ext}"
+            if path.is_file() and path.stat().st_size > 0:
+                return viewer_filename_for_model(path.name, project_path)
     return None
 
 
@@ -2331,7 +2335,8 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
                 break
         viewer = viewer_filename_for_model(canonical_file.name, project_path)
         is_primary = canonical is not None and stem == canonical
-        exploded_viewer = _exploded_sidecar_for_stem(project_path, stem)
+        already_exploded = stem.lower().endswith("_exploded")
+        exploded_viewer = None if already_exploded else _exploded_sidecar_for_stem(project_path, stem)
         components.append(
             {
                 "id": stem,

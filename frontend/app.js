@@ -10028,12 +10028,15 @@ function explodedViewerForCatalog(catalogName) {
     const comps = projectTree?.getComponents?.() || [];
     const hit = comps.find((c) => c.name === name || c.viewer_filename === name || c.stem === stem);
     if (hit?.exploded_viewer) return hit.exploded_viewer;
-    if (hit?.has_exploded === false) return null;
   } catch {
     /* tree optional */
   }
-  // Convention fallback: {stem}_exploded.glb next to the assembled file.
-  return `${stem}_exploded.glb`;
+  // Convention: strip edit/clean suffixes so Food Attachment_edited → Food Attachment_exploded.
+  const root = stem
+    .replace(/_edited(?:_\d+)?$/i, "")
+    .replace(/_cleaned(?:_\d+)?$/i, "")
+    || stem;
+  return `${root}_exploded.glb`;
 }
 
 function captureObjectTransform(obj) {
@@ -16120,7 +16123,8 @@ function buildModelOptionsHTML(provider, currentModel) {
     `<option value="${o.value}"${o.value === currentModel ? " selected" : ""}>${o.label}</option>`
   ).join("");
   if (currentModel && !known.includes(currentModel)) {
-    html += `<option value="${currentModel}" selected>${currentModel}</option>`;
+    const fallbackLabel = formatModelLabel(currentModel, provider) || currentModel;
+    html += `<option value="${currentModel}" selected>${fallbackLabel}</option>`;
   }
   return html;
 }

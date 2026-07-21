@@ -10422,7 +10422,8 @@ label.btn { display: inline-flex; align-items: center; }
 }
 
 .viewport-shot-control,
-.viewport-transparent-control {
+.viewport-transparent-control,
+.viewport-exploded-control {
   position: relative;
   display: inline-flex;
   align-items: stretch;
