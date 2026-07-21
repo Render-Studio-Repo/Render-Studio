@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 GENERATION_FILE = "generation.json"
 # Wall-clock budget for *abandoned* (dead-worker) jobs. Live workers are never
 # killed by this — Sol / quality CAD 2.0 routinely needs far longer than 20 min.
-MAX_RUNNING_SECONDS = None  # no wall-clock limit — live or recoverable jobs run until done/canceled
-MAX_RUNNING_SECONDS_SOL = None
+MAX_RUNNING_SECONDS = 6 * 60 * 60  # default full-job recovery window
+MAX_RUNNING_SECONDS_SOL = 9 * 60 * 60  # 5.6 / Fable-class jobs can span multiple long calls
 MAX_RESTART_COUNT = 8
 # Grace before declaring a dead-PID job abandoned when it cannot be recovered.
 STALE_IDLE_SECONDS = 5 * 60
@@ -141,9 +141,14 @@ def _is_long_running_model(job: dict[str, Any] | None) -> bool:
     return False
 
 
-def _job_max_running_seconds(job: dict[str, Any] | None) -> float | None:
-    """No model/job wall-clock limit. None means unlimited recovery window."""
-    return None
+def _job_max_running_seconds(job: dict[str, Any] | None) -> float:
+    """Full-generation recovery window — at least 3x the model's single-call budget."""
+    from backend.services.ai_service import model_hard_timeout_seconds
+
+    model = str((job or {}).get("model") or "").strip()
+    per_call = model_hard_timeout_seconds(model)
+    # Multi-turn CAD needs several calls; keep a generous job-level window.
+    return max(float(MAX_RUNNING_SECONDS), per_call * 3.0)
 
 
 def _job_age_seconds(job: dict[str, Any], *, now: datetime | None = None) -> float | None:
@@ -321,22 +326,25 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
     max_age = _job_max_running_seconds(job)
 
     # Dead worker but still recoverable after a deploy/crash: leave status=running
-    # so startup recovery can resume. Never expire by wall-clock age — models have
-    # no time limit; only repeated failed resumes or a missing request body stop us.
-    can_recover = has_body and restart_count < MAX_RESTART_COUNT
+    # so startup recovery can resume. Live workers are never wall-clock cancelled.
+    can_recover = (
+        has_body
+        and restart_count < MAX_RESTART_COUNT
+        and (age is None or age <= max_age)
+    )
     if can_recover:
         return job
 
     if idle is None or idle <= STALE_IDLE_SECONDS:
         return job
 
+    minutes = int(max_age / 60)
     if has_body and restart_count >= MAX_RESTART_COUNT:
         error = (
             "Generation stopped after repeated server restarts. "
             "Retry the prompt — long models like GPT-5.6 Sol were not finished."
         )
-    elif max_age is not None and age is not None and age > max_age:
-        minutes = int(max_age / 60)
+    elif age is not None and age > max_age:
         error = (
             f"Generation abandoned after {minutes} minutes with no live worker "
             "(still waiting on AI/CAD). Retry the prompt."

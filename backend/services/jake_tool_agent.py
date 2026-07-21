@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from backend.services.ai_cost import estimate_cost_usd, usage_from_anthropic_response, usage_from_openai_response
-from backend.services.ai_service import AIService, uses_openai_responses_api
+from backend.services.ai_service import AIService, model_hard_timeout_seconds, uses_openai_responses_api
 from backend.services.cad_authoring_agent import (
     build_snapshot_job,
     classify_cli_failure,
@@ -707,7 +707,7 @@ class JakeToolAgent:
                     "content-type": "application/json",
                 },
                 json=payload,
-                timeout=None,
+                timeout=model_hard_timeout_seconds(self.ai.model),
             )
             response.raise_for_status()
             data = response.json()

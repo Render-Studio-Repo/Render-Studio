@@ -58,6 +58,30 @@ def is_sol_model(model: str | None) -> bool:
     return bool(m.endswith("-sol") or "-sol" in m)
 
 
+# Per-model wall-clock budgets for a single API call (seconds).
+# Floor is 2 hours for every model except the explicit GPT-5.5 Pro override (1 hour).
+_MODEL_TIMEOUT_DEFAULT_S = 2 * 60 * 60
+_MODEL_TIMEOUT_PRO_S = 1 * 60 * 60
+_MODEL_TIMEOUT_OPUS_S = 2 * 60 * 60
+_MODEL_TIMEOUT_FABLE_S = 3 * 60 * 60
+_MODEL_TIMEOUT_GPT56_S = 3 * 60 * 60
+
+
+def model_hard_timeout_seconds(model: str | None) -> float:
+    """Wall-clock limit for one model API call."""
+    m = str(model or "").strip().lower()
+    if "gpt-5.5-pro" in m or m.endswith("5.5-pro"):
+        return float(_MODEL_TIMEOUT_PRO_S)
+    if "claude-fable-5" in m or "fable-5" in m or m.endswith("fable-5"):
+        return float(_MODEL_TIMEOUT_FABLE_S)
+    if "opus" in m:
+        return float(_MODEL_TIMEOUT_OPUS_S)
+    if m.startswith("gpt-5.6") or is_sol_model(m) or "-5.6" in m:
+        return float(_MODEL_TIMEOUT_GPT56_S)
+    # All other models: at least 2 hours.
+    return float(_MODEL_TIMEOUT_DEFAULT_S)
+
+
 def cad_authoring_max_tokens(model: str | None) -> int:
     """Pro / Sol CAD briefs + build123d sources routinely exceed 8k output tokens."""
     if is_sol_model(model) or str(model or "").endswith("-pro") or "gpt-5.5-pro" in str(model or "").lower():
@@ -907,9 +931,8 @@ class AIService:
         self.client = None
         self.cancel_check = None  # optional Callable[[], bool] set by generation runners
         if self.provider == "openai":
-            # No wall-clock timeout — Pro/Sol/Quality CAD can run as long as needed.
-            # Cancel is handled separately via cancel_check while waiting on the future.
-            self.client = OpenAI(api_key=self.api_key, timeout=None)
+            # Client read timeout matches the per-model hard budget (cancel still works).
+            self.client = OpenAI(api_key=self.api_key, timeout=model_hard_timeout_seconds(self.model))
         elif self.provider != "anthropic":
             raise RuntimeError(f"Unsupported AI provider: {self.provider}")
 
@@ -922,13 +945,22 @@ class AIService:
             raise RuntimeError("Generation canceled.")
 
     def _wait_future(self, fut, *, hard_timeout: float | None = None):
-        """Wait on a thread future until done or canceled. No model time limit."""
+        """Wait on a thread future, aborting on cancel or the per-model hard timeout."""
         import concurrent.futures as _cf
 
+        limit = float(hard_timeout) if hard_timeout is not None else model_hard_timeout_seconds(self.model)
+        deadline = time.perf_counter() + max(limit, 1.0)
         while True:
             self._raise_if_canceled()
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                fut.cancel()
+                raise TimeoutError(
+                    f"OpenAI {self.model} did not respond within {limit / 60:.0f} minutes. "
+                    "Retry the prompt, or cancel and try a different model."
+                )
             try:
-                return fut.result(timeout=1.0)
+                return fut.result(timeout=min(1.0, remaining))
             except _cf.TimeoutError:
                 continue
             except TimeoutError:
@@ -1629,7 +1661,7 @@ class AIService:
         ]
 
         model = self.model
-        # No wall-clock model timeout — wait until the API returns or the user cancels.
+        hard_timeout = model_hard_timeout_seconds(model)
         t0 = time.perf_counter()
         trace: dict[str, Any] = {
             "model": model,
@@ -1639,6 +1671,7 @@ class AIService:
             "reasoning": reasoning_effort or settings.openai_reasoning_effort,
             "image_count": len(clean_images),
             "image_names": [img["name"] for img in clean_images],
+            "hard_timeout_s": hard_timeout,
         }
         extra = self._reasoning_param(reasoning_effort) or {}
 
@@ -1657,11 +1690,13 @@ class AIService:
             }
             if json_response:
                 create_kwargs["text"] = {"format": {"type": "json_object"}}
-            # Run in a thread so cancel_check can abort between polls; no time limit.
+            # Run in a thread so cancel_check can abort between polls.
             with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-resp") as _pool:
                 _fut = _pool.submit(_do_responses_create, create_kwargs)
                 try:
-                    response = self._wait_future(_fut)
+                    response = self._wait_future(_fut, hard_timeout=hard_timeout)
+                except TimeoutError:
+                    raise
                 except RuntimeError:
                     _fut.cancel()
                     raise
@@ -1715,7 +1750,7 @@ class AIService:
                     chat_kwargs["response_format"] = {"type": "json_object"}
                 with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-chat") as _pool:
                     _fut = _pool.submit(self.client.chat.completions.create, **chat_kwargs)
-                    completion = self._wait_future(_fut)
+                    completion = self._wait_future(_fut, hard_timeout=hard_timeout)
                 choice = completion.choices[0]
                 text = choice.message.content or "{}"
                 chat_finish = choice.finish_reason or ""
@@ -1794,7 +1829,7 @@ class AIService:
                     "content-type": "application/json",
                 },
                 json=payload,
-                timeout=None,
+                timeout=model_hard_timeout_seconds(self.model),
             )
             response.raise_for_status()
             data = response.json()
