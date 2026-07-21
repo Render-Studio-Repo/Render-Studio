@@ -877,6 +877,80 @@ def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
     return None
 
 
+def resolve_existing_project_file(project_path: Path, filename: str | None) -> str | None:
+    """Resolve a project model path, including edited/exploded variants.
+
+    Export/share UIs often keep the pre-explode stem (e.g. ``foo.step``) after
+    generation wrote ``foo_exploded.step``. Prefer an exact hit, then common
+    variant suffixes, then a safe prefix match under the project folder.
+    """
+    if not filename:
+        return None
+    safe = Path(str(filename)).name
+    if not safe or safe in {".", ".."}:
+        return None
+    direct = project_path / safe
+    if direct.is_file():
+        return safe
+
+    stem = Path(safe).stem
+    requested_ext = Path(safe).suffix.lower()
+    root = stem
+    for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body", "_exploded"):
+        if root.endswith(suffix):
+            root = root[: -len(suffix)]
+            break
+
+    preferred_exts = (
+        ".step",
+        ".stp",
+        ".glb",
+        ".gltf",
+        ".stl",
+        ".3mf",
+        ".obj",
+        ".ply",
+        ".off",
+    )
+    exts: list[str] = []
+    if requested_ext:
+        exts.append(requested_ext)
+    for ext in preferred_exts:
+        if ext not in exts:
+            exts.append(ext)
+
+    candidate_stems: list[str] = []
+    for value in (stem, root, f"{stem}_exploded", f"{root}_exploded"):
+        if value and value not in candidate_stems:
+            candidate_stems.append(value)
+
+    for candidate_stem in candidate_stems:
+        for ext in exts:
+            path = project_path / f"{candidate_stem}{ext}"
+            if path.is_file():
+                return path.name
+
+    matches: list[Path] = []
+    for ext in exts:
+        matches.extend(
+            path
+            for path in project_path.glob(f"{root}*{ext}")
+            if path.is_file() and not path.name.startswith(".") and not path.name.startswith("_active_")
+        )
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda path: (
+            0 if path.suffix.lower() == requested_ext else 1,
+            0 if path.stem == stem else 1,
+            0 if path.stem.endswith("_exploded") else 1,
+            len(path.name),
+            path.name.lower(),
+        )
+    )
+    return matches[0].name
+
+
 def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, Any]]:
     """List downloadable artifacts that share a model basename."""
     stem = Path(filename).stem

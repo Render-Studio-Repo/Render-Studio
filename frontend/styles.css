@@ -16213,17 +16213,49 @@ section h2 {
   background: linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.96));
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   overflow-x: hidden;
+  position: relative;
 }
 
 .file-export-menu:has(.file-export-fusion-picker) {
   width: min(420px, calc(100vw - 16px));
 }
 
+.file-export-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .file-export-title {
+  flex: 1;
+  min-width: 0;
   font-size: 0.78rem;
   font-weight: 600;
-  margin-bottom: 4px;
   word-break: break-all;
+  padding-right: 4px;
+}
+
+.file-export-close {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin: -2px -4px 0 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8b949e;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-export-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f3f6;
 }
 
 .file-export-hint {

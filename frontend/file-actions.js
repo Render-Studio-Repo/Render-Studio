@@ -17,8 +17,11 @@ const PRIMARY_FORMATS = ["glb", "stl", "step", "3mf"];
 const EXPORT_ORDER = ["glb", "stl", "step", "source", "3mf", "obj", "program", "sim", "urdf", "mjcf"];
 
 let openMenu = null;
+let openMenuCleanup = null;
 
 function closeExportMenu() {
+  openMenuCleanup?.();
+  openMenuCleanup = null;
   openMenu?.remove();
   openMenu = null;
 }
@@ -401,7 +404,10 @@ export async function openFileExportMenu({
   const menu = document.createElement("div");
   menu.className = "file-export-menu";
   menu.innerHTML = `
-    <div class="file-export-title">${title || `Export ${filename}`}</div>
+    <div class="file-export-header">
+      <div class="file-export-title">${title || `Export ${filename}`}</div>
+      <button type="button" class="file-export-close" data-export-close aria-label="Close export">&times;</button>
+    </div>
     <p class="file-export-hint muted small">${hint || "Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to Bambu Studio — or copy a public preview link."}</p>
     <p class="file-export-status muted small">Preparing exports…</p>
     <div class="file-export-list"></div>
@@ -436,12 +442,30 @@ export async function openFileExportMenu({
   keepMenuInViewport(menu);
   openMenu = menu;
 
+  const closeFromUi = () => {
+    closeExportMenu();
+  };
+  menu.querySelector("[data-export-close]")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeFromUi();
+  });
+
   const onDoc = (ev) => {
     if (menu.contains(ev.target) || anchorEl.contains(ev.target)) return;
-    closeExportMenu();
-    document.removeEventListener("mousedown", onDoc);
+    closeFromUi();
   };
-  setTimeout(() => document.addEventListener("mousedown", onDoc), 0);
+  const onKey = (ev) => {
+    if (ev.key === "Escape") closeFromUi();
+  };
+  openMenuCleanup = () => {
+    document.removeEventListener("mousedown", onDoc);
+    document.removeEventListener("keydown", onKey);
+  };
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+  }, 0);
 
   const statusEl  = menu.querySelector(".file-export-status");
   const list      = menu.querySelector(".file-export-list");
@@ -476,6 +500,10 @@ export async function openFileExportMenu({
 
   let exports = data?.exports || [];
   const shareFilename = data?.filename || filename;
+  if (data?.filename && data.filename !== filename) {
+    const titleEl = menu.querySelector(".file-export-title");
+    if (titleEl && !title) titleEl.textContent = `Export ${data.filename}`;
+  }
 
   if (!exports.length && !exportsRequest) {
     exports = fallbackExports(filename);

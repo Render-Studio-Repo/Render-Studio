@@ -13023,8 +13023,8 @@ def create_file_share(
     user: dict[str, Any] = Depends(get_current_user),
 ):
     project_path = _require_project_read(user, project_id)
-    safe = Path(filename).name
-    if not (project_path / safe).is_file():
+    safe = cad_service.resolve_existing_project_file(project_path, filename)
+    if not safe:
         raise HTTPException(404, "File not found")
     meta = project_store.load_meta(project_path)
     shares = meta.setdefault("file_shares", {})
@@ -13342,27 +13342,8 @@ def share_preview_page(token: str, request: Request):
 @app.get("/api/projects/{project_id}/files/{filename}/exports")
 def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Depends(get_current_user)):
     path = _require_project_read(user, project_id)
-    safe = Path(filename).name
-    if not (path / safe).is_file():
-        stem = Path(safe).stem
-        root = stem
-        for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body"):
-            if root.endswith(suffix):
-                root = root[: -len(suffix)]
-                break
-        fallback = next(
-            (
-                path / f"{root}{ext}"
-                for ext in (".step", ".stp", ".glb", ".gltf", ".stl", ".3mf", ".obj", ".ply", ".off")
-                if (path / f"{root}{ext}").is_file()
-            ),
-            None,
-        )
-        if fallback is not None:
-            safe = fallback.name
-        else:
-            raise HTTPException(404, "File not found")
-    if not (path / safe).is_file():
+    safe = cad_service.resolve_existing_project_file(path, filename)
+    if not safe:
         raise HTTPException(404, "File not found")
     exports = cad_service.list_exports_for_model(path, safe)
     # Do not block the export menu if usable downloads already exist. Some mesh
@@ -15573,10 +15554,63 @@ def _usage_history_fields(ai_traces: list[dict[str, Any]] | dict[str, Any] | Non
     return usage_fields_for_history(ai_traces)
 
 
-def _usage_history_fields(ai_traces: list[dict[str, Any]] | dict[str, Any] | None) -> dict[str, Any]:
-    from backend.services.ai_cost import usage_fields_for_history
+def _usage_token_count(usage: Any) -> int:
+    if not isinstance(usage, dict):
+        return 0
+    total = int(usage.get("total_tokens") or 0)
+    if total:
+        return total
+    return int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
 
-    return usage_fields_for_history(ai_traces)
+
+def _usage_meta_for_prompt(
+    project_path: Path | None,
+    trace_id: str | None,
+    ai_traces: list[dict[str, Any]] | dict[str, Any] | None = None,
+    job: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Merge usage/cost from AI traces and the generation job (fail/stop often only have job data)."""
+    traces: list[dict[str, Any]] = []
+    if isinstance(ai_traces, list):
+        traces = [t for t in ai_traces if isinstance(t, dict)]
+    elif isinstance(ai_traces, dict):
+        traces = [ai_traces]
+
+    resolved_job = job
+    if resolved_job is None and project_path is not None and trace_id:
+        try:
+            resolved_job = generation_service.get_job_by_trace(project_path, trace_id)
+        except Exception:
+            resolved_job = None
+
+    if resolved_job:
+        job_traces = resolved_job.get("ai_traces")
+        if isinstance(job_traces, list) and job_traces:
+            job_dicts = [t for t in job_traces if isinstance(t, dict)]
+            if len(job_dicts) >= len(traces):
+                traces = job_dicts
+            elif not traces:
+                traces = job_dicts
+
+    meta = _usage_history_fields(traces) if traces else {}
+    if resolved_job:
+        job_usage = resolved_job.get("usage")
+        job_tokens = _usage_token_count(job_usage)
+        meta_tokens = _usage_token_count(meta.get("usage"))
+        if job_usage and job_tokens >= meta_tokens:
+            meta["usage"] = job_usage
+            if resolved_job.get("cost_usd") is not None:
+                meta["cost_usd"] = resolved_job.get("cost_usd")
+            if resolved_job.get("ai_calls") is not None:
+                meta["ai_calls"] = resolved_job.get("ai_calls")
+        elif resolved_job.get("cost_usd") is not None and meta.get("cost_usd") is None:
+            meta["cost_usd"] = resolved_job.get("cost_usd")
+            if job_usage:
+                meta["usage"] = job_usage
+        for key in ("model", "provider", "ai_calls"):
+            if meta.get(key) is None and resolved_job.get(key) is not None:
+                meta[key] = resolved_job.get(key)
+    return meta
 
 
 def _save_rigging_prompt_history(
@@ -15805,7 +15839,7 @@ def _save_prompt_history(
             except Exception:
                 key_meta = {}
                 effective = {}
-        usage_meta = _usage_history_fields(ai_traces)
+        usage_meta = _usage_meta_for_prompt(project_path, trace_id, ai_traces)
         platform_credit_charge = None
         if user and not effective:
             try:
@@ -16185,10 +16219,11 @@ def _stopped_prompt_message(
     ai_traces: list[dict[str, Any]] | dict[str, Any] | None = None,
     *,
     fallback: str = "Stopped before completion.",
+    usage_meta: dict[str, Any] | None = None,
 ) -> str:
-    meta = _usage_history_fields(ai_traces)
+    meta = usage_meta if usage_meta is not None else _usage_history_fields(ai_traces)
     usage = meta.get("usage") or {}
-    tokens = int(usage.get("total_tokens") or 0)
+    tokens = _usage_token_count(usage)
     cost = meta.get("cost_usd")
     extras: list[str] = []
     if tokens > 0:
@@ -16218,14 +16253,14 @@ def _upsert_stopped_prompt_history_from_job(
     except Exception:
         return None
     ai_traces = job.get("ai_traces")
-    usage_meta = _usage_history_fields(ai_traces)
-    message = _stopped_prompt_message(ai_traces)
+    usage_meta = _usage_meta_for_prompt(project_path, job_trace_id, ai_traces, job=job)
+    message = _stopped_prompt_message(ai_traces, usage_meta=usage_meta)
     existing = prompt_history_service.list_entries(project_path, limit=500)
     prior = next((e for e in existing if str(e.get("trace_id") or "") == job_trace_id), None)
     if prior and prior.get("status") == "stopped":
         charge_credits = False
-        prior_tokens = int((prior.get("usage") or {}).get("total_tokens") or 0)
-        new_tokens = int((usage_meta.get("usage") or {}).get("total_tokens") or 0)
+        prior_tokens = _usage_token_count(prior.get("usage"))
+        new_tokens = _usage_token_count(usage_meta.get("usage"))
         if prior_tokens >= new_tokens and prior.get("cost_usd") is not None:
             return prior
     job_user = get_user_by_id(str(job.get("by_user_id") or "")) if job.get("by_user_id") else None
@@ -16444,6 +16479,8 @@ def _background_prompt_kernel(
                 body = PromptRequest.model_validate(body_data)
                 existing = prompt_history_service.list_entries(project_path, limit=500)
                 already_saved = any(str(e.get("trace_id") or "") == str(trace_id) for e in existing)
+                ai_traces = getattr(exc, "ai_traces", None)
+                usage_meta = _usage_meta_for_prompt(project_path, trace_id, ai_traces)
                 if not already_saved:
                     saved = _save_prompt_history(
                         project_path,
@@ -16454,12 +16491,16 @@ def _background_prompt_kernel(
                         trace_id=trace_id,
                         user=user,
                         error=detail,
-                        ai_traces=getattr(exc, "ai_traces", None),
+                        ai_traces=ai_traces,
                     )
                     if saved:
                         for key in ("usage", "cost_usd", "model", "provider", "ai_calls"):
                             if saved.get(key) is not None:
                                 fail_payload[key] = saved.get(key)
+                else:
+                    for key in ("usage", "cost_usd", "model", "provider", "ai_calls"):
+                        if usage_meta.get(key) is not None:
+                            fail_payload[key] = usage_meta.get(key)
             except Exception:
                 pass
         generation_service.fail(project_path, detail, trace_id=trace_id, extra=fail_payload)
@@ -16470,11 +16511,13 @@ def _background_prompt_kernel(
         logger.exception("Background prompt failed project=%s trace=%s", project_id, trace_id)
         fail_payload = {"error": str(exc)}
         ai_traces = getattr(exc, "ai_traces", None)
-        if ai_traces:
-            usage_meta = _usage_history_fields(ai_traces)
-            fail_payload.update({k: v for k, v in usage_meta.items() if v is not None})
-            try:
-                body = PromptRequest.model_validate(body_data)
+        usage_meta = _usage_meta_for_prompt(project_path, trace_id, ai_traces)
+        fail_payload.update({k: v for k, v in usage_meta.items() if v is not None})
+        try:
+            body = PromptRequest.model_validate(body_data)
+            existing = prompt_history_service.list_entries(project_path, limit=500)
+            already_saved = any(str(e.get("trace_id") or "") == str(trace_id) for e in existing)
+            if not already_saved:
                 _save_prompt_history(
                     project_path,
                     prompt=body.prompt,
@@ -16486,8 +16529,8 @@ def _background_prompt_kernel(
                     error=str(exc),
                     ai_traces=ai_traces,
                 )
-            except Exception:
-                pass
+        except Exception:
+            pass
         generation_service.fail(project_path, str(exc), trace_id=trace_id, extra=fail_payload)
 
 

@@ -507,15 +507,15 @@ def run_backup(*, skip_upload: bool = False, keep_local: bool = False) -> None:
     local_dir = LOCAL_BACKUP_ROOT / folder
     LOCAL_BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
 
-    archive = create_archive(day, local_dir)
-
     if not skip_upload:
         service = get_drive_service()
-        # First migrate any leftover local archives into the Drive models folder.
+        # Move any leftover local archives first, then wipe staging before today's run.
         migrated = upload_existing_local_archives(service)
         if migrated:
             LOG.info("Migrated %s leftover local archive(s) to Drive", migrated)
+        prune_local(wipe_all=True)
 
+        archive = create_archive(day, local_dir)
         upload_day_backup(service, day, local_dir, archive)
         cutoff = day - timedelta(days=RETENTION_DAYS)
         prune_drive(service, cutoff)
@@ -523,6 +523,7 @@ def run_backup(*, skip_upload: bool = False, keep_local: bool = False) -> None:
             remove_local_staging(local_dir)
             prune_local(wipe_all=True)
     else:
+        archive = create_archive(day, local_dir)
         LOG.info("Local-only mode: left archive at %s", archive)
 
     LOG.info(

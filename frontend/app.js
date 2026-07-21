@@ -76,7 +76,7 @@ import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260720-repair-loop";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260719-fusion-close-3mf";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260721-export-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -9776,17 +9776,40 @@ function ensureUniqueMeshMaterials(mesh) {
   mesh.userData._transparentUniqueMaterial = true;
 }
 
-function transparentTargetForMesh(mesh) {
+function transparentTargetForMesh(mesh, faceIndex = null) {
   if (!mesh) return null;
-  return componentRootForMesh(mesh) || mesh;
+  const root = componentRootForMesh(mesh);
+  if (!root) return mesh;
+  const meshes = listObjectMeshes(root);
+  // Single-body component: ghost the whole object.
+  if (meshes.length <= 1) return root;
+  // Multi-body / multi-mesh assemblies: ghost only the clicked body mesh.
+  if (meshes.includes(mesh)) return mesh;
+  const bodyIndex = bodyIndexForHitMesh(mesh, root, faceIndex);
+  if (Number.isInteger(bodyIndex) && meshes[bodyIndex]) return meshes[bodyIndex];
+  return mesh;
+}
+
+function transparentTargetLabel(target, hitMesh = null) {
+  if (!target) return "object";
+  const meshName = String(hitMesh?.name || target?.name || "").trim();
+  if (meshName && !/\.(glb|gltf|step|stp|stl)$/i.test(meshName)) return meshName;
+  const catalog = catalogNameForMesh(hitMesh || target) || target?.userData?.catalogFilename;
+  if (catalog) return fileStem(catalog);
+  return meshName || "object";
 }
 
 function syncViewportTransparent(obj) {
   if (!obj) return;
-  obj.traverse?.((child) => {
-    if (!child.isMesh || child.userData?.isEdge || child.userData?.isSilhouette) return;
-    ensureUniqueMeshMaterials(child);
-  });
+  // Only clone materials under the target so sibling bodies keep shared solid materials.
+  if (obj.isMesh) {
+    ensureUniqueMeshMaterials(obj);
+  } else {
+    obj.traverse?.((child) => {
+      if (!child.isMesh || child.userData?.isEdge || child.userData?.isSilhouette) return;
+      ensureUniqueMeshMaterials(child);
+    });
+  }
   setObjectTransparent(obj, transparentObjects.has(obj), { wireframe: viewMode === "wireframe" });
 }
 
@@ -9933,13 +9956,13 @@ function handleTransparentPickClick(e) {
     setEditStatus("ok", "Transparent: click a model object to toggle see-through.");
     return true;
   }
-  const target = transparentTargetForMesh(hit.mesh);
+  const target = transparentTargetForMesh(hit.mesh, hit.faceIndex);
   if (!target) return true;
   if (transparentObjects.has(target)) transparentObjects.delete(target);
   else transparentObjects.add(target);
   syncViewportTransparent(target);
   const on = transparentObjects.has(target);
-  const label = catalogNameForMesh(hit.mesh) || target.name || "object";
+  const label = transparentTargetLabel(target, hit.mesh);
   setEditStatus("ok", on ? `Made ${label} transparent.` : `Restored ${label}.`);
   return true;
 }
