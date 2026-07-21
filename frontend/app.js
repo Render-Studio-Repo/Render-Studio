@@ -1632,43 +1632,9 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         syncCanvasGenerationUi();
         return;
       }
-      // After a deploy, the server marks the job canceled then auto-resumes.
-      // Keep the overlay/watch alive briefly so the user does not lose their place.
-      const finishedJobsPreview = Array.isArray(gen.jobs) && gen.jobs.length ? gen.jobs : [gen];
-      const benignInterruptJob = finishedJobsPreview.find(
-        (job) =>
-          (job?.status === "canceled" || job?.status === "failed")
-          && (job?.benign_interrupt || isBenignGenerationInterrupt(job?.error)),
-      );
-      if (benignInterruptJob && generationWatchOverlay) {
-        if (!generationWatchOverlay.benignInterruptAt) {
-          generationWatchOverlay.benignInterruptAt = Date.now();
-        }
-        const interruptWaitMs = Math.max(
-          0,
-          Date.now() - Number(generationWatchOverlay.benignInterruptAt || Date.now()),
-        );
-        if (interruptWaitMs < 90_000) {
-          const statusEl = document.getElementById(generationStatusElementId(generationWatchOverlay));
-          if (statusEl && pid === projectId) {
-            statusEl.className = "status";
-            statusEl.textContent = "Server updating — resuming your generation…";
-          }
-          if (generationWatchOverlay) {
-            generationWatchOverlay.message = "Server updating — resuming your generation…";
-            generationWatchOverlay.progress = {
-              ...(generationWatchOverlay.progress || {}),
-              label: "Resuming after server restart…",
-              thinking: "Picking up your generation where the server left off…",
-            };
-          }
-          syncViewportGenerationOverlay();
-          syncExplorerLoadingUI();
-          syncStopButtonVisibility();
-          syncCanvasGenerationUi();
-          return;
-        }
-      }
+      // After a deploy, stuck jobs are STOPPED (not auto-resumed). Auto-resume
+      // used to re-run the prompt from scratch and re-bill. Fall through to the
+      // normal finished-job handlers below.
       stopGenerationWatch();
       userCancelRequested = false;
       // Handle finished jobs from the multi-job list first.
@@ -1741,11 +1707,12 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           promptText: gen.prompt || lastPromptCopyContext?.promptText,
         };
         const statusEl = document.getElementById(generationStatusElementId(gen));
-        // Server-restart interrupts are expected after deploys — never popup the viewport error.
-        if (gen.benign_interrupt || isBenignGenerationInterrupt(rawError)) {
+        // Server-restart stops are expected after deploys — never popup, never auto-resume.
+        if (gen.benign_interrupt || gen.server_restart_stop || isBenignGenerationInterrupt(rawError)) {
           if (statusEl && pid === projectId) {
             statusEl.className = "status";
-            statusEl.textContent = "Ready — previous run stopped during a server update. Retry if needed.";
+            statusEl.textContent =
+              "Ready — previous run stopped during a server restart (not re-billed). Retry when ready.";
           }
           if (pid === projectId) {
             viewerOverlay.clearError();
@@ -1785,7 +1752,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       } else if (gen.status === "canceled") {
         const rawCancel = gen.error || "Generation canceled.";
         const msg = isBenignGenerationInterrupt(rawCancel)
-          ? "Ready — previous run stopped during a server update. Retry if needed."
+          ? "Ready — previous run stopped during a server restart (not re-billed). Retry when ready."
           : rawCancel;
         const statusEl = document.getElementById(generationStatusElementId(gen));
         if (statusEl && pid === projectId) {
@@ -14968,7 +14935,7 @@ function formatApiDetail(detail, statusText = "", status = 0) {
 }
 
 function isBenignGenerationInterrupt(message) {
-  return /interrupted by server restart|stopped during a server update|interrupted \(page refresh|Generation interrupted by server/i.test(
+  return /interrupted by server restart|stopped during a server (update|restart)|was not re-run automatically|interrupted \(page refresh|Generation interrupted by server/i.test(
     String(message || ""),
   );
 }

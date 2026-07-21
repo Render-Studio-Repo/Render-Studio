@@ -23,11 +23,12 @@ GENERATION_FILE = "generation.json"
 # killed by this — Sol / quality CAD 2.0 routinely needs far longer than 20 min.
 MAX_RUNNING_SECONDS = 6 * 60 * 60  # default full-job recovery window
 MAX_RUNNING_SECONDS_SOL = 9 * 60 * 60  # 5.6 / Fable-class jobs can span multiple long calls
-MAX_RESTART_COUNT = 8
-# Opus / Fable / Sol calls are expensive; don't auto-resume them into a billing loop.
-MAX_RESTART_COUNT_EXPENSIVE = 2
-# Grace before declaring a dead-PID job abandoned when it cannot be recovered.
-STALE_IDLE_SECONDS = 5 * 60
+# Auto-resume on restart is disabled — it re-ran prompts from scratch and re-billed.
+# Kept at 0 so dead-worker jobs are never left "running" waiting for a fake resume.
+MAX_RESTART_COUNT = 0
+MAX_RESTART_COUNT_EXPENSIVE = 0
+# Grace before declaring a dead-PID job abandoned.
+STALE_IDLE_SECONDS = 60
 MAX_PARALLEL_PROMPT_JOBS = 5
 
 _RUNNING_TRACES: dict[str, set[str]] = {}
@@ -58,6 +59,7 @@ _JOB_PUBLIC_KEYS = (
     "by_avatar_url",
     "mode",
     "benign_interrupt",
+    "server_restart_stop",
     "model",
     "provider",
     "speed",
@@ -347,21 +349,12 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
     idle = _job_idle_seconds(job, now=now)
     age = _job_age_seconds(job, now=now)
     has_body = isinstance(job.get("request_body"), dict) and bool(job.get("request_body"))
-    restart_count = int(job.get("restart_count") or 0)
     max_age = _job_max_running_seconds(job)
-    max_restarts = max_restart_count_for_job(job)
 
-    # Dead worker but still recoverable after a deploy/crash: leave status=running
-    # so startup recovery can resume. Live workers are never wall-clock cancelled.
-    can_recover = (
-        has_body
-        and restart_count < max_restarts
-        and (age is None or age <= max_age)
-    )
-    if can_recover:
-        return job
-
-    if idle is None or idle <= STALE_IDLE_SECONDS:
+    # Dead worker: never keep status=running for auto-resume. That path used to
+    # re-queue the full prompt from scratch and re-bill. Give a short grace so
+    # startup stop_for_server_restart can claim the job first.
+    if idle is not None and idle <= STALE_IDLE_SECONDS:
         return job
 
     minutes = int(max_age / 60)
@@ -377,11 +370,11 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
             tracked = f" About ${float(cost):.2f} in AI usage was tracked before stopping."
     except Exception:
         tracked = ""
-    if has_body and restart_count >= max_restarts:
+    if has_body:
         error = (
-            "Generation stopped after repeated server restarts. "
-            "Retry the prompt — long models like Opus / Fable / GPT-5.6 Sol were not finished."
-            + tracked
+            "Generation stopped during a server restart. "
+            "It was not re-run automatically — that would bill from scratch again. "
+            f"Retry the prompt when ready.{tracked}"
         )
     elif age is not None and age > max_age:
         error = (
@@ -390,8 +383,8 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
         )
     else:
         error = (
-            "Generation stopped — the worker exited and could not be resumed. "
-            f"Retry the prompt.{tracked}"
+            "Generation stopped — the worker exited and could not continue. "
+            f"Retry the prompt when ready.{tracked}"
         )
     failed = {
         **job,
@@ -399,7 +392,10 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
         "error": error,
         "finished_at": job.get("finished_at") or _now_iso(),
         "updated_at": _now_iso(),
+        "server_restart_stop": True,
+        "benign_interrupt": True,
     }
+    failed.pop("request_body", None)
     _untrack_running(project_path.name if project_path else "", job.get("trace_id"))
     return failed
 
@@ -752,13 +748,63 @@ def interrupt_for_restart(
         job["status"] = "canceled"
         job["error"] = message
         job["benign_interrupt"] = True
+        job["server_restart_stop"] = True
         job["finished_at"] = _now_iso()
         job["updated_at"] = _now_iso()
+        job.pop("request_body", None)
 
     if trace_id:
         return _update_job(project_path, trace_id=trace_id, mutator=mutate)
 
     # No trace: interrupt every running job.
+    with _file_lock(project_path):
+        path = _path(project_path)
+        raw = None
+        if path.is_file():
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                raw = None
+        jobs = _jobs_from_data(raw)
+        for job in jobs:
+            if job.get("status") == "running":
+                mutate(job)
+        _untrack_running(project_path.name)
+        out = _write_unlocked(project_path, _compose_document(jobs))
+    _emit(project_path, out)
+    return out
+
+
+def stop_for_server_restart(
+    project_path: Path,
+    message: str,
+    *,
+    trace_id: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Stop a dead-worker job after restart without re-queuing or re-billing.
+
+    Keeps usage/cost fields, clears request_body so it cannot be kicked again,
+    and marks the stop as a server-restart interrupt for quiet UI handling.
+    """
+
+    def mutate(job: dict[str, Any]) -> None:
+        if trace_id:
+            job["trace_id"] = trace_id
+            job["id"] = str(trace_id)
+        job["status"] = "failed"
+        job["error"] = message
+        job["benign_interrupt"] = True
+        job["server_restart_stop"] = True
+        job["finished_at"] = _now_iso()
+        job["updated_at"] = _now_iso()
+        if extra:
+            job.update({k: v for k, v in extra.items() if v is not None and k != "status"})
+        job.pop("request_body", None)
+
+    if trace_id:
+        return _update_job(project_path, trace_id=trace_id, mutator=mutate)
+
     with _file_lock(project_path):
         path = _path(project_path)
         raw = None
@@ -1069,7 +1115,8 @@ def public_summary(project_path: Path) -> dict[str, Any]:
 def find_stuck_jobs(projects_root: Path) -> list[dict[str, Any]]:
     """Scan all projects for generations that were running when the server last stopped.
 
-    Returns one entry per stuck running job that has a saved request_body.
+    Returns one entry per stuck running job with a dead worker (and usually a
+    saved request_body). Callers must stop these — never auto-re-queue.
     """
     now = datetime.now(timezone.utc)
     results = []
@@ -1089,17 +1136,15 @@ def find_stuck_jobs(projects_root: Path) -> list[dict[str, Any]]:
         for job in jobs:
             if job.get("status") != "running":
                 continue
-            if not job.get("request_body"):
-                continue
-            if int(job.get("restart_count") or 0) >= max_restart_count_for_job(job):
-                continue
             if _process_is_alive(job.get("worker_pid")):
                 continue
+            # Prefer jobs we can attribute (request_body), but always stop dead runners.
             age = _job_age_seconds(job, now=now)
             if age is None:
                 continue
             if age > _job_max_running_seconds(job):
-                continue
+                # Extremely old — normalize/fail path handles; still include so startup clears them.
+                pass
             results.append({
                 "project_path": d,
                 "project_id": d.name,
