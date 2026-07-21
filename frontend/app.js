@@ -28218,6 +28218,12 @@ window.addEventListener("keydown", (e) => {
     panel.querySelectorAll("[data-email-pref]").forEach((input) => {
       input.checked = !!emailPreferences[input.dataset.emailPref];
     });
+    void import("./feature-events.js?v=20260721-quest-notify").then((mod) => {
+      const on = mod.areQuestsEnabled?.() !== false;
+      panel.querySelectorAll("[data-quests-enabled-toggle]").forEach((input) => {
+        if (input instanceof HTMLInputElement) input.checked = on;
+      });
+    });
   }
 
   async function loadEmailPreferences(panel = document.getElementById("profile-preferences-panel")) {
@@ -28515,6 +28521,13 @@ window.addEventListener("keydown", (e) => {
                 <option value="current">Current shared workspace</option>
               </select>
             </label>
+            <label class="profile-preference-switch">
+              <span>
+                <b>Quest tracking</b>
+                <small>When on, Studio auto-completes Quest Book quests and shows a “Quest Complete!” note by your profile. Turn off to practice without marking progress.</small>
+              </span>
+              <input type="checkbox" data-quests-enabled-toggle checked />
+            </label>
             <p class="muted small profile-preferences-note">
               Viewport lighting can be adjusted from the ribbon Light button and is remembered on this device.
             </p>
@@ -28778,9 +28791,34 @@ window.addEventListener("keydown", (e) => {
   document.getElementById("btn-quest-book")?.addEventListener("click", (e) => {
     e.stopPropagation();
     document.getElementById("user-menu")?.classList.add("hidden");
-    void import("./quest-book.js?v=20260721-quest-progress").then((mod) => {
+    void import("./quest-book.js?v=20260721-quest-notify").then((mod) => {
       mod.openQuestBook?.();
     });
+  });
+
+  function syncQuestTrackingToggles() {
+    void import("./feature-events.js?v=20260721-quest-notify").then((mod) => {
+      const on = mod.areQuestsEnabled?.() !== false;
+      document.querySelectorAll("[data-quests-enabled-toggle]").forEach((input) => {
+        if (input instanceof HTMLInputElement) input.checked = on;
+      });
+      document.querySelectorAll("[data-quests-enabled-label]").forEach((el) => {
+        el.textContent = on ? "On" : "Off";
+      });
+    });
+  }
+
+  document.addEventListener("change", (e) => {
+    const toggle = e.target?.closest?.("[data-quests-enabled-toggle]");
+    if (!(toggle instanceof HTMLInputElement)) return;
+    void import("./feature-events.js?v=20260721-quest-notify").then((mod) => {
+      mod.setQuestsEnabled?.(toggle.checked);
+    });
+  });
+
+  syncQuestTrackingToggles();
+  document.getElementById("btn-auth")?.addEventListener("click", () => {
+    window.setTimeout(syncQuestTrackingToggles, 0);
   });
 
   document.getElementById("profile-preferences-panel")?.addEventListener("change", (e) => {

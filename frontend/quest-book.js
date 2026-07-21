@@ -10,7 +10,7 @@ import {
   isQuestCompleted,
   onQuestProgress,
   setQuestUser,
-} from "./feature-events.js?v=20260721-quest-progress";
+} from "./feature-events.js?v=20260721-quest-notify";
 
 const OVERLAY_ID = "quest-book-overlay";
 

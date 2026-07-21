@@ -4,6 +4,12 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-21 — Quest Complete header note + tracking toggle
+
+- Replaced bottom toast with a subtle **Quest Complete!** chip next to the profile button (`.quest-complete-note` in `.auth-widget`). Click opens Quest Book.
+- Added **Quest tracking** toggle (default ON): account menu Learn section + Preferences → General. When OFF: `emitFeatureUsed` does not mark progress and does not notify (`render3d:questsEnabled:v1`).
+- Files: `feature-events.js`, `index.html`, `styles.css`, thin wiring in `app.js`. Cache-bust `?v=20260721-quest-notify`.
+
 ## 2026-07-21 — Quest Book real progression (checkpoint)
 
 Shipped the first real gameplay loop — not full instrumentation of every feature.

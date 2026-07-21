@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260721-quest-progress" />
+  <link rel="stylesheet" href="/styles.css?v=20260721-quest-notify" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -471,6 +471,7 @@
         </select>
       </div>
       <div class="auth-widget">
+        <button type="button" id="quest-complete-note" class="quest-complete-note hidden" role="status" aria-live="polite" title="Quest Complete"></button>
         <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Account">
           <svg class="auth-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
@@ -527,6 +528,16 @@
               <span>Studio walkthrough</span>
               <small>Replay the guided tour of the Studio basics</small>
             </button>
+            <label class="user-menu-quest-toggle" title="When off, Studio will not mark quests complete or show Quest Complete notes">
+              <span>
+                <b>Quest tracking</b>
+                <small>Auto-complete quests and show “Quest Complete!” notes</small>
+              </span>
+              <span class="user-menu-quest-toggle-ctrl">
+                <em data-quests-enabled-label>On</em>
+                <input type="checkbox" data-quests-enabled-toggle checked />
+              </span>
+            </label>
           </div>
           <!-- Cloud connections: Onshape + Fusion 360 -->
           <div id="cloud-connections-card" class="cloud-connections-card">

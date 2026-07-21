@@ -397,7 +397,7 @@ export function createRenderAgent({
       return;
     }
     try {
-      void import("./feature-events.js?v=20260721-quest-progress").then((m) => {
+      void import("./feature-events.js?v=20260721-quest-notify").then((m) => {
         m.emitFeatureUsed?.("render-agent", { title: "Render Agent help chat" });
       });
     } catch {

@@ -1209,7 +1209,7 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
 
   if (guideId === "prompt-onboarding" || guideId === "ai-generate") {
     try {
-      void import("./feature-events.js?v=20260721-quest-progress").then((m) => {
+      void import("./feature-events.js?v=20260721-quest-notify").then((m) => {
         m.emitFeatureUsed?.("welcome-walkthrough", { title: "Take the Studio walkthrough" });
       });
     } catch {
