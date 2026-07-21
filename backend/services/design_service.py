@@ -1961,9 +1961,42 @@ def _ensure_gen_exploded_in_source(source: str) -> str:
     return text.rstrip() + "\n\n\n" + _DEFAULT_GEN_EXPLODED + "\n"
 
 
+def _normalize_exploded_sidecar_preview(project_path: Path, stem: str) -> None:
+    """Bake Z-up mm units into `{stem}_exploded.glb` (scripts/step often leaves metres)."""
+    step_path = project_path / f"{stem}.step"
+    if not step_path.is_file():
+        step_path = project_path / f"{stem}.stp"
+    if not step_path.is_file():
+        return
+    shell_glb = project_path / f"{stem}.glb"
+    jake_glb = project_path / jake_hidden_glb_name(step_path.name)
+    try:
+        if jake_glb.is_file() and shell_glb.is_file():
+            # Prefer STEP-derived Jake sidecar orientation, then share bytes both ways.
+            shell_glb.write_bytes(jake_glb.read_bytes())
+        elif jake_glb.is_file() and not shell_glb.is_file():
+            shell_glb.write_bytes(jake_glb.read_bytes())
+        elif shell_glb.is_file() and not jake_glb.is_file():
+            jake_glb.write_bytes(shell_glb.read_bytes())
+        for preview in (shell_glb, jake_glb):
+            if not preview.is_file():
+                continue
+            try:
+                cad_service._match_glb_scale_to_step(step_path, preview)
+            except Exception as exc:
+                logger.debug("Could not unit-match exploded preview %s: %s", preview.name, exc)
+            try:
+                _convert_text_to_cad_glb_to_z_up(preview)
+            except Exception as exc:
+                logger.debug("Could not Z-up exploded preview %s: %s", preview.name, exc)
+    except Exception as exc:
+        logger.debug("Exploded preview normalize skipped for %s: %s", stem, exc)
+
+
 def _collect_exploded_sidecar_files(project_path: Path, base: str) -> dict[str, str]:
     """Pick up `{base}_exploded.*` artifacts written by scripts/step."""
     stem = base if base.lower().endswith("_exploded") else f"{base}_exploded"
+    _normalize_exploded_sidecar_preview(project_path, stem)
     out: dict[str, str] = {}
     for ext, key in ((".step", "exploded_step"), (".glb", "exploded_glb"), (".stl", "exploded_stl"), (".3mf", "exploded_3mf")):
         path = project_path / f"{stem}{ext}"

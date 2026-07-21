@@ -1,6 +1,6 @@
 /** Prompt compose / history tabs (CAD AI + Wiring AI panels). */
 
-import { copyPromptRef, copyText, formatPromptRef, formatPromptModeLabel, formatModelLabel, formatSpeedLabel, formatTargetModeLabel } from "./prompt-ref.js?v=20260715-history-codex-target";
+import { copyPromptRef, copyText, formatPromptRef, formatPromptModeLabel, formatModelLabel, formatSpeedLabel, formatTargetModeLabel } from "./prompt-ref.js?v=20260721-model-labels";
 import { skillLabel } from "./skills-library.js?v=20260706-ui-fix";
 
 export function createPromptHistoryUI({

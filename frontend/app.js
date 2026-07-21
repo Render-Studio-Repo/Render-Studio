@@ -54,7 +54,7 @@ import {
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
-import { createPromptHistoryUI } from "./prompt-history.js?v=20260716-pending-history";
+import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260721-prompt-link-copy";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
@@ -70,7 +70,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260721-quest-progress";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-r3d-credits";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-model-labels";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -2314,6 +2314,20 @@ function isRobotArtifactFilename(name = "") {
 function normalizeBrowser(data) {
   const browser = data?.browser || {};
   let components = (browser.components || []).filter((entry) => !isInternalCadSidecar(entry?.name));
+  // Prefer assembled parents; exploded sidecars are toggled via the viewport control.
+  const assembledStems = new Set(
+    components
+      .map((entry) => String(entry?.stem || fileStem(entry?.name || "")).toLowerCase())
+      .filter((stem) => stem && !stem.endsWith("_exploded")),
+  );
+  if (assembledStems.size) {
+    components = components.filter((entry) => {
+      const stem = String(entry?.stem || fileStem(entry?.name || "")).toLowerCase();
+      if (!stem.endsWith("_exploded")) return true;
+      const parent = stem.slice(0, -"_exploded".length);
+      return !assembledStems.has(parent);
+    });
+  }
   if (!components.length && data?.files?.length) {
     components = filesToBrowserComponents(
       (data.files || []).filter((file) => !isDxfDrawingFilename(file?.name) && !isRobotArtifactFilename(file?.name)),
@@ -9876,6 +9890,7 @@ function toggleTransparentModeMenu() {
   const btn = document.getElementById("btn-transparent-options");
   if (!menu || !btn) return;
   const open = menu.classList.contains("hidden");
+  closeExplodedModeMenu();
   menu.classList.toggle("hidden", !open);
   btn.setAttribute("aria-expanded", String(open));
   if (open) syncTransparentModeUi();
@@ -9981,6 +9996,292 @@ document.addEventListener("click", (e) => {
   closeTransparentModeMenu();
 });
 syncTransparentModeUi();
+
+// --- Exploded view (assembled ↔ spaced BOM layout) + optional orbit ---
+const EXPLODED_ROTATE_KEY = "render3d.explodedRotate";
+let explodedViewEnabled = false;
+let explodedRotateEnabled = false;
+let explodedOrbit = null; // { center, radius, angle, elev }
+/** @type {Map<string, { assembled: string, exploded: string, savedTransform: object|null }>} */
+const explodedSwapByAssembled = new Map();
+
+function readExplodedRotateEnabled() {
+  try {
+    return String(localStorage.getItem(EXPLODED_ROTATE_KEY) || "off").toLowerCase() === "on";
+  } catch {
+    return false;
+  }
+}
+
+explodedRotateEnabled = readExplodedRotateEnabled();
+
+function fileStemName(name = "") {
+  return String(name || "").replace(/\.[^.]+$/, "");
+}
+
+function explodedViewerForCatalog(catalogName) {
+  const name = String(catalogName || "");
+  if (!name) return null;
+  const stem = fileStemName(name);
+  if (/_exploded$/i.test(stem)) return null;
+  try {
+    const comps = projectTree?.getComponents?.() || [];
+    const hit = comps.find((c) => c.name === name || c.viewer_filename === name || c.stem === stem);
+    if (hit?.exploded_viewer) return hit.exploded_viewer;
+    if (hit?.has_exploded === false) return null;
+  } catch {
+    /* tree optional */
+  }
+  // Convention fallback: {stem}_exploded.glb next to the assembled file.
+  return `${stem}_exploded.glb`;
+}
+
+function captureObjectTransform(obj) {
+  if (!obj) return null;
+  return {
+    position: obj.position.clone(),
+    quaternion: obj.quaternion.clone(),
+    scale: obj.scale.clone(),
+  };
+}
+
+function syncExplodedModeUi() {
+  const main = document.getElementById("btn-exploded-viewport");
+  const menu = document.getElementById("viewport-exploded-menu");
+  main?.classList.toggle("active", explodedViewEnabled);
+  main?.setAttribute("aria-pressed", String(explodedViewEnabled));
+  if (main) {
+    main.title = explodedViewEnabled
+      ? (explodedRotateEnabled
+        ? "Exploded view on — camera orbiting. Use ▾ to stop rotate."
+        : "Exploded view on — use ▾ to enable rotate.")
+      : "Exploded view — space parts apart for BOM review";
+  }
+  menu?.querySelectorAll("[data-exploded-rotate]").forEach((btn) => {
+    const on = btn.dataset.explodedRotate === "on";
+    const active = on === explodedRotateEnabled;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-checked", String(active));
+  });
+}
+
+function closeExplodedModeMenu() {
+  document.getElementById("viewport-exploded-menu")?.classList.add("hidden");
+  document.getElementById("btn-exploded-options")?.setAttribute("aria-expanded", "false");
+}
+
+function toggleExplodedModeMenu() {
+  const menu = document.getElementById("viewport-exploded-menu");
+  const btn = document.getElementById("btn-exploded-options");
+  if (!menu || !btn) return;
+  const open = menu.classList.contains("hidden");
+  closeTransparentModeMenu();
+  menu.classList.toggle("hidden", !open);
+  btn.setAttribute("aria-expanded", String(open));
+  if (open) syncExplodedModeUi();
+}
+
+function stopExplodedOrbit() {
+  explodedOrbit = null;
+}
+
+function startExplodedOrbit() {
+  if (!explodedViewEnabled || !explodedRotateEnabled) {
+    stopExplodedOrbit();
+    return;
+  }
+  const target = controls?.target;
+  if (!target) return;
+  const offset = camera.position.clone().sub(target);
+  const radius = Math.max(offset.length(), 1e-3);
+  const elev = Math.asin(Math.max(-1, Math.min(1, offset.z / radius)));
+  const angle = Math.atan2(offset.y, offset.x);
+  explodedOrbit = {
+    center: target.clone(),
+    radius,
+    angle,
+    elev: Number.isFinite(elev) ? elev : 0.35,
+  };
+}
+
+function setExplodedRotateEnabled(on) {
+  explodedRotateEnabled = !!on;
+  try {
+    localStorage.setItem(EXPLODED_ROTATE_KEY, explodedRotateEnabled ? "on" : "off");
+  } catch {
+    /* ignore */
+  }
+  syncExplodedModeUi();
+  closeExplodedModeMenu();
+  if (explodedRotateEnabled && explodedViewEnabled) startExplodedOrbit();
+  else stopExplodedOrbit();
+  setEditStatus(
+    "ok",
+    explodedRotateEnabled
+      ? "Exploded rotate on — camera will orbit the model."
+      : "Exploded rotate off.",
+  );
+}
+
+async function applyExplodedView(on) {
+  if (!projectId) {
+    setEditStatus("error", "Open a project before using Exploded view.");
+    return false;
+  }
+  const want = !!on;
+  if (want === explodedViewEnabled && (want ? explodedSwapByAssembled.size > 0 : explodedSwapByAssembled.size === 0)) {
+    syncExplodedModeUi();
+    return true;
+  }
+
+  if (!want) {
+    // Restore assembled meshes.
+    const restores = [...explodedSwapByAssembled.entries()];
+    explodedSwapByAssembled.clear();
+    explodedViewEnabled = false;
+    stopExplodedOrbit();
+    syncExplodedModeUi();
+    for (const [assembledName, meta] of restores) {
+      try {
+        if (meta.exploded && projectAssembly.has(meta.exploded)) {
+          projectAssembly.remove(meta.exploded);
+        }
+        if (!projectAssembly.has(assembledName)) {
+          await loadModel(projectFileUrl(projectId, assembledName), assembledName, {
+            projectId,
+            append: projectAssembly.count() > 0,
+            catalogFilename: assembledName,
+            center: !meta.savedTransform,
+            preservePlacement: !!meta.savedTransform,
+            savedTransform: meta.savedTransform || undefined,
+            fitView: false,
+            autoGizmo: false,
+            cacheBust: true,
+          });
+        } else {
+          projectAssembly.setVisible(assembledName, true);
+          if (meta.savedTransform) {
+            const obj = projectAssembly.get(assembledName);
+            if (obj) {
+              obj.position.copy(meta.savedTransform.position);
+              obj.quaternion.copy(meta.savedTransform.quaternion);
+              obj.scale.copy(meta.savedTransform.scale);
+              obj.updateMatrixWorld(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed restoring assembled view", assembledName, err);
+      }
+    }
+    fitCamera();
+    setEditStatus("ok", "Assembled view restored.");
+    return true;
+  }
+
+  // Enable exploded: swap each loaded assembled component that has a sidecar.
+  const loaded = [...(projectAssembly.list?.() || [])];
+  const candidates = [];
+  for (const [catalogName, obj] of loaded) {
+    if (!obj || obj.visible === false) continue;
+    if (/_exploded$/i.test(fileStemName(catalogName))) continue;
+    const explodedName = explodedViewerForCatalog(catalogName);
+    if (!explodedName) continue;
+    candidates.push({ catalogName, explodedName, savedTransform: captureObjectTransform(obj) });
+  }
+
+  if (!candidates.length) {
+    // Try selected / primary even if not yet detectable from tree metadata.
+    const fallback = selectedFile || projectAssembly.list?.()?.[0]?.[0];
+    if (fallback && !/_exploded$/i.test(fileStemName(fallback))) {
+      candidates.push({
+        catalogName: fallback,
+        explodedName: explodedViewerForCatalog(fallback) || `${fileStemName(fallback)}_exploded.glb`,
+        savedTransform: captureObjectTransform(projectAssembly.get(fallback)),
+      });
+    }
+  }
+
+  if (!candidates.length) {
+    setEditStatus("error", "No exploded layout found for the loaded model.");
+    explodedViewEnabled = false;
+    syncExplodedModeUi();
+    return false;
+  }
+
+  let swapped = 0;
+  for (const entry of candidates) {
+    try {
+      const ok = await loadModel(projectFileUrl(projectId, entry.explodedName), entry.explodedName, {
+        projectId,
+        append: true,
+        catalogFilename: entry.explodedName,
+        replaceCatalog: entry.catalogName,
+        preservePlacement: !!entry.savedTransform,
+        savedTransform: entry.savedTransform || undefined,
+        center: !entry.savedTransform,
+        fitView: false,
+        autoGizmo: false,
+        cacheBust: true,
+      });
+      if (ok || projectAssembly.has(entry.explodedName)) {
+        explodedSwapByAssembled.set(entry.catalogName, {
+          assembled: entry.catalogName,
+          exploded: entry.explodedName,
+          savedTransform: entry.savedTransform,
+        });
+        swapped += 1;
+      }
+    } catch (err) {
+      console.warn("Exploded load failed", entry.explodedName, err);
+    }
+  }
+
+  if (!swapped) {
+    setEditStatus("error", "Could not load exploded layout (missing sidecar?).");
+    explodedViewEnabled = false;
+    syncExplodedModeUi();
+    return false;
+  }
+
+  explodedViewEnabled = true;
+  syncExplodedModeUi();
+  fitCamera();
+  if (explodedRotateEnabled) startExplodedOrbit();
+  setEditStatus(
+    "ok",
+    explodedRotateEnabled
+      ? "Exploded view on — camera orbiting. Use ▾ to stop rotate."
+      : "Exploded view on — use ▾ to enable rotate.",
+  );
+  return true;
+}
+
+async function toggleExplodedView() {
+  closeExplodedModeMenu();
+  await applyExplodedView(!explodedViewEnabled);
+}
+
+document.getElementById("btn-exploded-viewport")?.addEventListener("click", () => {
+  void toggleExplodedView();
+});
+document.getElementById("btn-exploded-options")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  toggleExplodedModeMenu();
+});
+document.getElementById("viewport-exploded-menu")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-exploded-rotate]");
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  setExplodedRotateEnabled(btn.dataset.explodedRotate === "on");
+});
+document.addEventListener("click", (e) => {
+  if (e.target.closest?.(".viewport-exploded-control")) return;
+  closeExplodedModeMenu();
+});
+syncExplodedModeUi();
 
 // --- Remix button for public / read-only projects ---
 document.getElementById("btn-remix-viewport")?.addEventListener("click", async () => {
@@ -15632,7 +15933,7 @@ function getPlatformPromptKeys(status) {
   if (Array.isArray(status?.platform_keys) && status.platform_keys.length) {
     return status.platform_keys.map((key) => ({
       id: key.id,
-      name: key.name || (key.provider === "anthropic" ? "Render3D Claude" : "Render3D OpenAI"),
+      name: key.name || (key.provider === "anthropic" ? "Render3D Anthropic" : "Render3D OpenAI"),
       provider: key.provider === "anthropic" ? "anthropic" : "openai",
       model: key.model || "",
       source: "platform",
@@ -15655,7 +15956,7 @@ function getPlatformPromptKeys(status) {
   if (providers.anthropic) {
     keys.push({
       id: "anthropic",
-      name: "Render3D Claude",
+      name: "Render3D Anthropic",
       provider: "anthropic",
       model: preferred === "anthropic" ? preferredModel : (models.find((m) => m.provider === "anthropic")?.model || ""),
       source: "platform",
@@ -15803,11 +16104,10 @@ const PROMPT_KEY_MODEL_OPTIONS = {
     { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ],
   anthropic: [
-    { value: "claude-fable-5", label: "Claude Fable 5" },
-    { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-    { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
-    { value: "claude-4.6-sonnet", label: "Claude Sonnet 4.6" },
-    { value: "claude-4.6-opus", label: "Claude Opus 4.6" },
+    { value: "claude-fable-5", label: "Fable 5" },
+    { value: "claude-sonnet-4-5", label: "Sonnet 4.5" },
+    { value: "claude-opus-4-8", label: "Opus 4.8" },
+    { value: "claude-4.6-sonnet", label: "Sonnet 4.6" },
   ],
 };
 
@@ -15919,7 +16219,7 @@ function renderPromptKeyPopup(status) {
   const keyRow = (key, source) => {
     const active = isSelected(source, key.id);
     const badge = BADGE_CLASS_MAP[key.provider] || "badge-openai";
-    const providerLabel = key.provider_label || (key.provider === "anthropic" ? "Claude" : "OpenAI");
+    const providerLabel = key.provider_label || (key.provider === "anthropic" ? "Anthropic" : "OpenAI");
     return `<div class="prompt-key-popup-row${active ? " active" : ""}"
          data-action="select-key" data-source="${source}" data-key-id="${key.id}">
       <div class="prompt-key-popup-check">
@@ -15956,7 +16256,7 @@ function renderPromptKeyPopup(status) {
       const current = findRender3dChoice(status, currentValue) || render3dChoices[0];
       const platformActive = render3dChoices.some((c) => isSelected(c.source, c.id));
       const badge = BADGE_CLASS_MAP[current.provider] || "badge-openai";
-      const providerLabel = current.provider === "anthropic" ? "Claude" : "OpenAI";
+      const providerLabel = current.provider === "anthropic" ? "Anthropic" : "OpenAI";
       html += `<div class="prompt-key-popup-section">Render3D Key</div>`;
       html += `<div class="prompt-key-popup-row${platformActive ? " active" : ""}"
            data-action="select-key" data-source="platform" data-key-id="${current.id}">
@@ -15970,7 +16270,7 @@ function renderPromptKeyPopup(status) {
           </span>
         </div>
         <div class="prompt-key-popup-model-wrap prompt-key-popup-platform-wrap">
-          <select class="prompt-key-popup-model-select" data-action="render3d-provider" title="OpenAI or Anthropic">
+          <select class="prompt-key-popup-model-select prompt-key-popup-provider-select" data-action="render3d-provider" title="OpenAI or Anthropic">
             ${render3dChoices.map((c) => {
               const selected = String(c.id) === String(current.id) ? " selected" : "";
               return `<option value="${render3dChoiceValue(c)}"${selected}>${c.label}</option>`;
@@ -16004,7 +16304,7 @@ function positionPromptKeyPopup() {
   const popup = document.getElementById("prompt-key-popup");
   if (!anchor || !popup) return;
   const rect = anchor.getBoundingClientRect();
-  const popupW = 340;
+  const popupW = 380;
   const vw = window.innerWidth;
   let left = rect.right - popupW;
   if (left < 8) left = 8;

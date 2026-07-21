@@ -2,7 +2,7 @@
 
 const PROVIDER_LABELS = {
   openai: "OpenAI",
-  anthropic: "Claude",
+  anthropic: "Anthropic",
 };
 
 const PROVIDER_BADGE_CLASS = {
@@ -18,11 +18,10 @@ const MODEL_OPTIONS = {
     { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ],
   anthropic: [
-    { value: "claude-fable-5", label: "Claude Fable 5" },
-    { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-    { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
-    { value: "claude-4.6-sonnet", label: "Claude Sonnet 4.6" },
-    { value: "claude-4.6-opus", label: "Claude Opus 4.6" },
+    { value: "claude-fable-5", label: "Fable 5" },
+    { value: "claude-sonnet-4-5", label: "Sonnet 4.5" },
+    { value: "claude-opus-4-8", label: "Opus 4.8" },
+    { value: "claude-4.6-sonnet", label: "Sonnet 4.6" },
   ],
 };
 
@@ -285,7 +284,9 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
             ? selectedModel === m.model && preferredProvider === m.provider
             : preferredProvider === m.provider
               && m.model === (allModelsForSelect.find((x) => x.provider === preferredProvider)?.model);
-          const label = `${m.provider === "anthropic" ? "Claude" : "OpenAI"} · ${m.model}`;
+          const modelLabel = (MODEL_OPTIONS[m.provider] || []).find((opt) => opt.value === m.model)?.label
+            || String(m.model || "").replace(/^claude-/i, "").replace(/-/g, " ");
+          const label = `${m.provider === "anthropic" ? "Anthropic" : "OpenAI"} · ${modelLabel}`;
           return `<option value="${esc(value)}"${isSelected ? " selected" : ""}>${esc(label)}</option>`;
         }).join("")
       : `<option value="openai:">OpenAI (default)</option>`;

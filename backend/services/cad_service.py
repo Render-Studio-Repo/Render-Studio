@@ -1873,6 +1873,34 @@ def _is_promoted_detail_part_stem(stem: str, project_path: Path) -> bool:
     return False
 
 
+def _is_exploded_assembly_sidecar_stem(stem: str, project_path: Path) -> bool:
+    """Hide ``{base}_exploded`` previews when the assembled parent still exists.
+
+    Exploded layouts are toggled from the viewport Exploded control — they must
+    not appear as tiny sibling components beside the assembled model.
+    """
+    if not stem.lower().endswith("_exploded"):
+        return False
+    parent = stem[: -len("_exploded")]
+    if not parent:
+        return False
+    return _parent_assembly_exists(project_path, parent)
+
+
+def _exploded_sidecar_for_stem(project_path: Path, stem: str) -> str | None:
+    """Return viewer filename for ``{stem}_exploded`` when present."""
+    base = stem
+    if base.lower().endswith("_exploded"):
+        exploded_stem = base
+    else:
+        exploded_stem = f"{base}_exploded"
+    for ext in (".glb", ".gltf", ".step", ".stp", ".stl", ".3mf"):
+        path = project_path / f"{exploded_stem}{ext}"
+        if path.is_file() and path.stat().st_size > 0:
+            return viewer_filename_for_model(path.name, project_path)
+    return None
+
+
 def _body_children_from_part_sidecars(
     project_path: Path,
     *,
@@ -2131,6 +2159,10 @@ def _viewport_component_stems(project_path: Path, stems: set[str]) -> set[str]:
             visible.discard(stem)
 
     for stem in list(visible):
+        if _is_exploded_assembly_sidecar_stem(stem, project_path):
+            visible.discard(stem)
+
+    for stem in list(visible):
         if _is_jake_topology_sidecar_stem(stem):
             visible.discard(stem)
 
@@ -2299,6 +2331,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
                 break
         viewer = viewer_filename_for_model(canonical_file.name, project_path)
         is_primary = canonical is not None and stem == canonical
+        exploded_viewer = _exploded_sidecar_for_stem(project_path, stem)
         components.append(
             {
                 "id": stem,
@@ -2310,6 +2343,8 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
                 "size": canonical_file.stat().st_size,
                 "primary": is_primary,
                 "auto_load": is_primary,
+                "has_exploded": bool(exploded_viewer),
+                "exploded_viewer": exploded_viewer,
             }
         )
 

@@ -132,7 +132,6 @@ def platform_models() -> list[dict[str, str]]:
                 ("anthropic", "claude-sonnet-4-5"),
                 ("anthropic", "claude-opus-4-8"),
                 ("anthropic", "claude-4.6-sonnet"),
-                ("anthropic", "claude-4.6-opus"),
             ]
         )
     seen: set[tuple[str, str]] = set()
