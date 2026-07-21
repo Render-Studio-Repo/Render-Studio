@@ -55,7 +55,7 @@ import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260716-pending-history";
-import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
+import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260721-prompt-link-copy";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
@@ -88,7 +88,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-bake";
-import { createProjectTree } from "./project-tree.js?v=20260719-bodies-fix";
+import { createProjectTree } from "./project-tree.js?v=20260721-prompt-link-copy";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -2941,6 +2941,7 @@ const composer = createPromptComposer({
   inlineChipsEl: document.getElementById("prompt-inline-ref-chips"),
   refsListEl: document.getElementById("ref-list"),
   getMentionables: getPromptMentionables,
+  resolveClipboardPaste: (text, clipboardData) => resolvePromptLinkPaste(text, clipboardData),
   onUnlinkMentionable: (ref) => {
     if (ref?.type === "image" && ref.id) {
       const before = promptImages.length;
@@ -6221,6 +6222,7 @@ async function afterModelEdit(data) {
 }
 
 let objectClipboard = null;
+let promptLinkClipboard = null;
 const viewportUndoStack = [];
 const viewportRedoStack = [];
 
@@ -6416,14 +6418,165 @@ function restorePromptSelectionContext(context = pendingPromptSelectionContext, 
 }
 
 function copySelectedObjectToClipboard() {
-  const filename = selectedObjectFilename();
-  if (!filename) {
-    setEditStatus("error", "Select an object to copy.");
+  return copySelectedPromptLinkToClipboard();
+}
+
+function buildPromptRefFromBrowserPayload(payload) {
+  if (!payload) return null;
+  const filename = payload.filename || payload.name || payload.viewer_filename;
+  if (!filename && !payload.label) return null;
+  const bodyIndex = Number.isInteger(payload.body_index) ? payload.body_index : null;
+  const bodyName = payload.body_name || payload.label || (bodyIndex != null ? `Body ${bodyIndex + 1}` : null);
+  const stemBase = fileStem(filename || payload.stem || payload.label || "component");
+  const stem = bodyIndex != null
+    ? `${stemBase}-${String(bodyName || `Body-${bodyIndex + 1}`).replace(/[^a-zA-Z0-9_-]+/g, "-")}`
+    : (payload.stem || stemBase);
+  const token = compactComponentToken(stem);
+  return {
+    id: bodyIndex != null
+      ? `component-body:${projectId || "project"}:${filename}:${bodyIndex}`
+      : `component:${projectId || "project"}:${filename || stem}`,
+    type: payload.type === "sketch" || payload.type === "wiring" || payload.type === "dxf" ? payload.type : "component",
+    token,
+    label: bodyName || payload.label || stemBase,
+    filename: filename || undefined,
+    stem,
+    format: payload.format,
+    viewer_filename: payload.viewer_filename || filename,
+    projectId,
+    body_index: bodyIndex,
+  };
+}
+
+function buildSelectedPromptLinks() {
+  const links = [];
+  const seen = new Set();
+  const push = (ref) => {
+    if (!ref?.token || seen.has(ref.id || ref.token)) return;
+    seen.add(ref.id || ref.token);
+    links.push(ref);
+  };
+
+  const selection = objectTools?.getSelection?.();
+  if (selection?.catalogName || selection?.root || selection?.mesh) {
+    const catalogName = selection.catalogName || selection.root?.userData?.catalogFilename || selectedFile || "";
+    const baseStem = String(catalogName || selection.label || "selection").replace(/\.[^.]+$/, "");
+    if (selection.faceIndex != null) {
+      push({
+        id: `face:${projectId || "project"}:${catalogName || selection.mesh?.uuid || "model"}:${selection.faceIndex}`,
+        type: "face",
+        token: compactComponentToken(`face-${Number(selection.faceIndex) + 1}-${baseStem || "model"}`),
+        label: `Face ${Number(selection.faceIndex) + 1}${baseStem ? ` on ${baseStem}` : ""}`,
+        filename: catalogName || selectedFile || undefined,
+        stem: baseStem,
+        projectId,
+        face_index: selection.faceIndex,
+        mesh_uuid: selection.mesh?.uuid,
+      });
+    } else if (Number.isInteger(selection.bodyIndex)) {
+      const bodyLabel = selection.label || `Body ${selection.bodyIndex + 1}`;
+      push({
+        id: `component-body:${projectId || "project"}:${catalogName || "model"}:${selection.bodyIndex}`,
+        type: "component",
+        token: compactComponentToken(`${baseStem}-${bodyLabel}`),
+        label: bodyLabel,
+        filename: catalogName || selectedFile || undefined,
+        stem: `${baseStem}-${String(bodyLabel).replace(/[^a-zA-Z0-9_-]+/g, "-")}`,
+        projectId,
+        body_index: selection.bodyIndex,
+      });
+    } else if (catalogName || selectedFile) {
+      push(componentPromptReference({
+        filename: catalogName || selectedFile,
+        stem: baseStem,
+        label: selection.label || baseStem,
+        projectId,
+      }));
+    }
+  }
+
+  for (const payload of projectTree?.getSelectedEntries?.() || []) {
+    push(buildPromptRefFromBrowserPayload(payload));
+  }
+
+  if (!links.length && selectedFile) {
+    push(componentPromptReference({
+      filename: selectedFile,
+      stem: fileStem(selectedFile),
+      label: fileStem(selectedFile),
+      projectId,
+    }));
+  }
+
+  if (!links.length && promptTargetSelectedBody?.filename) {
+    push({
+      id: `component-body:${projectId || "project"}:${promptTargetSelectedBody.filename}:${promptTargetSelectedBody.bodyIndex}`,
+      type: "component",
+      token: compactComponentToken(`${fileStem(promptTargetSelectedBody.filename)}-${promptTargetSelectedBody.bodyName || `Body-${promptTargetSelectedBody.bodyIndex + 1}`}`),
+      label: promptTargetSelectedBody.bodyName || `Body ${promptTargetSelectedBody.bodyIndex + 1}`,
+      filename: promptTargetSelectedBody.filename,
+      stem: fileStem(promptTargetSelectedBody.filename),
+      projectId,
+      body_index: promptTargetSelectedBody.bodyIndex,
+    });
+  }
+
+  return links.filter(Boolean);
+}
+
+function canCopySelectionAsPromptLink() {
+  return buildSelectedPromptLinks().length > 0;
+}
+
+function formatPromptLinkPlainText(refs = []) {
+  return refs.map((ref) => ref.token || compactComponentToken(ref.stem || ref.label || ref.filename || "component")).join(" ");
+}
+
+async function copySelectedPromptLinkToClipboard() {
+  const refs = buildSelectedPromptLinks();
+  if (!refs.length) {
+    setEditStatus("error", "Select a component, body, or face to copy.");
     return false;
   }
-  objectClipboard = { projectId, filename };
-  setEditStatus("ok", `Copied ${filename.replace(/\.[^.]+$/, "")}. Press Cmd/Ctrl+V to paste.`);
+  const plain = formatPromptLinkPlainText(refs);
+  promptLinkClipboard = {
+    at: Date.now(),
+    plain,
+    refs: refs.map((ref) => ({ ...ref })),
+  };
+  const filename = selectedObjectFilename();
+  if (filename) objectClipboard = { projectId, filename };
+  const ok = await copyText(plain);
+  if (!ok) {
+    setEditStatus("error", "Could not copy to clipboard.");
+    return false;
+  }
+  const label = refs.length === 1
+    ? (refs[0].label || refs[0].token)
+    : `${refs.length} items`;
+  setEditStatus("ok", `Copied ${label} — paste into the AI prompt (Cmd/Ctrl+V).`);
   return true;
+}
+
+function resolvePromptLinkPaste(text = "") {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const stash = promptLinkClipboard;
+  if (stash?.refs?.length) {
+    const stashPlain = String(stash.plain || "").trim();
+    const tokens = stash.refs.map((ref) => String(ref.token || "").trim()).filter(Boolean);
+    const matchesStash =
+      raw === stashPlain
+      || tokens.some((token) => raw === token || raw.includes(token));
+    if (matchesStash) return stash.refs.map((ref) => ({ ...ref }));
+  }
+  const tokenMatch = raw.match(/^@([A-Za-z0-9_.:-]+)$/);
+  if (!tokenMatch) return null;
+  const want = `@${tokenMatch[1]}`;
+  const mentionable = (typeof getPromptMentionables === "function" ? getPromptMentionables() : [])
+    .map((item) => item?.ref)
+    .find((ref) => ref && (ref.token === want || compactComponentToken(ref.stem || ref.label || ref.filename || "") === want));
+  return mentionable ? { ...mentionable } : null;
 }
 
 async function duplicateSelectedObject(filename = selectedObjectFilename()) {
@@ -26022,6 +26175,8 @@ function shouldUseNativeClipboardShortcut(event, key, mod) {
   if (isEditableShortcutTarget(event.target)) return true;
   const selection = window.getSelection?.();
   if (selection && !selection.isCollapsed) return true;
+  // Let Cmd/Ctrl+C copy a prompt @link from the project tree / viewport selection.
+  if (key === "c" && canCopySelectionAsPromptLink()) return false;
   return isUiPanelShortcutTarget(event.target);
 }
 
@@ -26125,9 +26280,9 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (mod && key === "c") {
-    if (selectedObjectFilename()) {
+    if (canCopySelectionAsPromptLink()) {
       e.preventDefault();
-      copySelectedObjectToClipboard();
+      void copySelectedPromptLinkToClipboard();
     }
     return;
   }

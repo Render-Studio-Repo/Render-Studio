@@ -580,7 +580,7 @@ export function createPromptComposer({
     if (shouldSkipReference(ref)) return;
     references.push(ref);
     renderChips();
-    if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "spec" || ref.type === "image")) {
+    if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "spec" || ref.type === "image" || ref.type === "face")) {
       ensureTokenInPrompt(ref);
     }
     notifyRefs();
@@ -592,7 +592,7 @@ export function createPromptComposer({
       if (shouldSkipReference(ref)) continue;
       references.push(ref);
       added += 1;
-      if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "spec" || ref.type === "image")) {
+      if (insertMention && (ref.type === "component" || ref.type === "sketch" || ref.type === "wiring" || ref.type === "dxf" || ref.type === "document" || ref.type === "spec" || ref.type === "image" || ref.type === "face")) {
         ensureTokenInPrompt(ref);
       }
     }
