@@ -21134,6 +21134,99 @@ body.theme-light .quest-book-btn-text small {
   background: rgba(240, 185, 60, 0.06);
 }
 
+.quest-step-box--done {
+  border-color: rgba(240, 185, 60, 0.85);
+  background: linear-gradient(160deg, #ffe9a3, #f5b93c);
+}
+
+.quest-link--done {
+  stroke: rgba(240, 185, 60, 0.7);
+  stroke-dasharray: none;
+}
+
+.quest-book-tab--clear .quest-book-tab-count {
+  background: rgba(240, 185, 60, 0.28);
+  color: #ffe9a3;
+}
+
+.quest-node--flash {
+  animation: quest-node-flash 0.85s ease-out;
+}
+
+@keyframes quest-node-flash {
+  0% { transform: translate(-50%, -50%) scale(0.85); box-shadow: 0 0 0 0 rgba(240, 185, 60, 0.7); }
+  45% { transform: translate(-50%, -50%) scale(1.18); box-shadow: 0 0 28px 8px rgba(240, 185, 60, 0.55); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Quest complete toast */
+.quest-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 22px;
+  z-index: 980;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+  max-width: min(340px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid rgba(240, 185, 60, 0.55);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(250, 204, 21, 0.16), rgba(30, 22, 6, 0.92)),
+    #12151d;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.55),
+    0 0 18px rgba(240, 185, 60, 0.22);
+  color: #e6edf3;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.quest-toast.hidden {
+  display: none;
+}
+
+.quest-toast--in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.quest-toast-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: #2a1c04;
+  background: linear-gradient(160deg, #ffe9a3, #f5b93c 55%, #c47f17);
+}
+
+.quest-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.quest-toast-text strong {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffe9a3;
+}
+
+.quest-toast-text span {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
 @media (max-width: 860px) {
   .quest-book-overlay {
     padding: 10px;

@@ -396,6 +396,13 @@ export function createRenderAgent({
       onRequireLogin?.();
       return;
     }
+    try {
+      void import("./feature-events.js?v=20260721-quest-progress").then((m) => {
+        m.emitFeatureUsed?.("render-agent", { title: "Render Agent help chat" });
+      });
+    } catch {
+      /* ignore */
+    }
     panel.classList.remove("hidden");
     panel.classList.add("render-agent-panel--sticky");
     if (docsPanel) {

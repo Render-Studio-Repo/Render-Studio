@@ -4,25 +4,17 @@
 
 An FTB-Quests / modded-Minecraft-style learning map: fun to browse, gives a sense of progression, teaches the platform quest by quest. Deliberately game-y (dark panel, gold accents) and distinct from the rest of the app — that contrast is intentional, keep it.
 
-## Current state (shipped 2026-07-19)
+## Current state (updated 2026-07-21)
 
-- **Entry:** account menu → Learn section → gold shiny "Quest Book" button (`#btn-quest-book`, `.user-menu-item--quest` with animated shine sweep). "Studio walkthrough" sits next to it (replays the `prompt-onboarding` Show Me tour).
-- **Modal:** `frontend/quest-book.js`, lazy-imported from `app.js`. Left sidebar = chapter tabs (Welcome + the 9 `DOC_CATEGORIES`); main panel = deterministic branching node graph per chapter (nodes from `DOC_FEATURES`, wobble-seeded layout, dashed gold connectors); footer = detail panel with steps as checkbox-style rows; header = gold progress bar ("2 / 36 quests").
-- **CSS:** one appended block in `styles.css` (`/* ── Quest Book modal ... */`). Node states: gold `--completed` (check badge), pulsing blue `--available`, dimmed `--locked`. Responsive: tabs collapse to icons <860px.
-- **Explicitly fake for now:** `COMPLETED` is a hard-coded set (`welcome-account`, `welcome-open-book`); first node per chapter is "available", rest "locked". No persistence, no unlock logic.
-- Plan file: `.cursor/plans/quest_book_menu_entry_b3ec02ac.plan.md` (all todos completed).
+- **Entry / visual modal:** shipped (account menu → Learn → gold Quest Book).
+- **Progress (checkpoint shipped):** `frontend/feature-events.js` + localStorage per user; Welcome chapter + a few high-value features instrumented; unlock by parent node; toast + node flash; Quest Book live-refreshes.
+- **Still deferred:** backend persistence / analytics pipeline; remaining DOC_FEATURES instrumentation; CI smoke from Show Me tours.
 
-## Next stage: real progression = the feature-usage event bus
+Instrumented feature ids today: `welcome-account`, `welcome-open-book`, `welcome-walkthrough`, `welcome-first-project`, `welcome-first-generate`, `ai-generate`, `picks`, `preferences`, `render-agent`.
 
-The key architectural insight: **making quests complete requires detecting feature usage, and that same event stream is product analytics.** Build one primitive, get both.
+## Next stage: broaden instrumentation + optional backend
 
-Sketch (not yet built — design before implementing):
-
-1. **Event emission:** a tiny module (e.g. `frontend/feature-events.js`) with `emitFeatureUsed(featureId, meta?)` — feature ids are the `DOC_FEATURES` ids. Instrument call sites incrementally (first generate, project created, folder shared, picks used, ...). Welcome-chapter quests map to auth/boot events that already exist.
-2. **Persistence:** localStorage per user first (`render3d:questProgress:<userId>`), backend endpoint later so progress follows accounts (and so we get server-side analytics).
-3. **Unlock rules:** chapter-internal ordering already implied by the graph (parent spine). Keep it forgiving — quests complete whenever the event fires, even if "locked" visually; locked only gates the *highlight*, not credit.
-4. **Reward feel:** completion animation on the node, chapter completion state on the tab, maybe a toast. This is the "fun" the user asked for — don't skip it.
-5. **Quest Book UI reads progress** instead of the `COMPLETED` constant; progress bar becomes real.
+The key architectural insight: **making quests complete requires detecting feature usage, and that same event stream is product analytics.** The local event bus exists; next is more call sites, then a thin backend mirror.
 
 ## Development use cases unlocked by the catalog + event bus
 

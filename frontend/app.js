@@ -69,7 +69,7 @@ import { createProjectChatUI } from "./project-chat.js?v=20260716-chat-link-prev
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
-import { createRenderAgent } from "./render-agent.js?v=20260719-google-onboarding-suppress";
+import { createRenderAgent } from "./render-agent.js?v=20260721-quest-progress";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-r3d-credits";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
@@ -183,6 +183,28 @@ let allProjects = [];
 let projectsFetchGeneration = 0;
 let allTeams = [];
 let currentUser = null;
+
+/** Fire-and-forget quest/feature progress — never blocks Studio flows. */
+function emitQuest(featureId, title) {
+  try {
+    void import("./feature-events.js?v=20260721-quest-progress").then((mod) => {
+      mod.emitFeatureUsed?.(featureId, title ? { title } : undefined);
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+function bindQuestUser(user) {
+  try {
+    void import("./feature-events.js?v=20260721-quest-progress").then((mod) => {
+      mod.setQuestUser?.(user);
+      if (user?.id) mod.emitFeatureUsed?.("welcome-account", { title: "Create your account", silent: true });
+    });
+  } catch {
+    /* ignore */
+  }
+}
 const A1PROJECTS_ADMIN_EMAILS = new Set([
   "a1projects@protonmail.com",
   "a1projects.usa@gmail.com",
@@ -708,6 +730,8 @@ async function applyGenerationComplete(gen, pid = projectId) {
   if (!gen?.filename || !pid) return;
   syncPendingPromptHistoryFromGeneration(gen, pid);
   window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...gen, projectId: pid } }));
+  emitQuest("welcome-first-generate", "Generate your first part");
+  emitQuest("ai-generate", "Generate CAD with AI");
   // Always mark the project as having a new model — badge shows in the explorer
   // for every completion and is cleared when the user clicks on the project.
   newlyCompletedProjects.add(pid);
@@ -16312,7 +16336,7 @@ function initAISetupIntroModal() {
       return;
     }
     if (action === "tutorial") {
-      void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
+      void import("./show-me-tour.js?v=20260721-quest-progress").then((mod) => {
         mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
       });
     }
@@ -16353,7 +16377,7 @@ function maybeStartFirstProjectPromptOnboarding() {
     return;
   }
   window.setTimeout(() => {
-    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
+    void import("./show-me-tour.js?v=20260721-quest-progress").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   }, 1200);
@@ -20590,6 +20614,7 @@ async function createNewProject() {
   await fetchAllProjects();
   await loadProject(project_id);
   setEditStatus("ok", `New project created in ${workspaceExplorerLabel(targetTeam)}. Change this default anytime in Preferences.`);
+  emitQuest("welcome-first-project", "Create your first project");
   return project_id;
 }
 
@@ -20625,6 +20650,7 @@ async function createNewProjectInFolder(folderId) {
   await fetchAllProjects();
   await loadProject(project_id);
   renderProjectList();
+  emitQuest("welcome-first-project", "Create your first project");
 }
 
 async function remixWiringStepperExampleIntoFolder({ folderId = null } = {}) {
@@ -23796,6 +23822,10 @@ renderer.domElement.addEventListener("click", (e) => {
   } else {
     composer.addReference(annotatePickedReference(result.ref));
     viewerOverlay.clearError();
+    const kind = String(result.ref?.kind || result.ref?.type || "").toLowerCase();
+    if (kind.includes("face") || kind.includes("edge") || kind.includes("path") || kind.includes("line") || kind.includes("corner")) {
+      emitQuest("picks", "Pick faces, edges & paths");
+    }
   }
   refreshSelectionMeasureOverlay();
   editTools.updateExtrudeTarget?.();
@@ -26704,7 +26734,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (showMeParam) {
     window.__render3dShowMeFromQuery = true;
-    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
+    void import("./show-me-tour.js?v=20260721-quest-progress").then((mod) => {
       mod.maybeAutoStartShowMeFromQuery?.();
     });
   }
@@ -26862,6 +26892,7 @@ window.addEventListener("keydown", (e) => {
     },
     onReady: async (data) => {
       currentUser = data.user;
+      bindQuestUser(data.user);
       pendingGoogleNewUserWalkthrough = data?.social_new === true
         && String(data?.social_provider || "").toLowerCase() === "google";
       renderAgentUi?.setUser?.(data.user, { suppressOnboarding: pendingGoogleNewUserWalkthrough });
@@ -27971,6 +28002,7 @@ window.addEventListener("keydown", (e) => {
   function applyUpdatedUser(user) {
     if (!user) return;
     currentUser = user;
+    bindQuestUser(user);
     authUi?.setUser?.(user);
     renderPreferencesMenuPanel();
   }
@@ -28720,6 +28752,7 @@ window.addEventListener("keydown", (e) => {
     document.getElementById("user-menu")?.classList.add("hidden");
     renderPreferencesMenuPanel();
     panel.classList.remove("hidden");
+    emitQuest("preferences", "Preferences, theme & mouse");
     try {
       void loadSocialCalendarPrefs?.();
     } catch {
@@ -28736,7 +28769,8 @@ window.addEventListener("keydown", (e) => {
   document.getElementById("btn-studio-walkthrough")?.addEventListener("click", (e) => {
     e.stopPropagation();
     document.getElementById("user-menu")?.classList.add("hidden");
-    void import("./show-me-tour.js?v=20260715-stepper-bench-remix").then((mod) => {
+    emitQuest("welcome-walkthrough", "Take the Studio walkthrough");
+    void import("./show-me-tour.js?v=20260721-quest-progress").then((mod) => {
       mod.startShowMe?.("prompt-onboarding", { onDocsPage: false });
     });
   });
@@ -28744,7 +28778,7 @@ window.addEventListener("keydown", (e) => {
   document.getElementById("btn-quest-book")?.addEventListener("click", (e) => {
     e.stopPropagation();
     document.getElementById("user-menu")?.classList.add("hidden");
-    void import("./quest-book.js?v=20260719-quest-book-2").then((mod) => {
+    void import("./quest-book.js?v=20260721-quest-progress").then((mod) => {
       mod.openQuestBook?.();
     });
   });
@@ -29577,6 +29611,7 @@ window.addEventListener("keydown", (e) => {
   });
   if (session) {
     currentUser = session.user;
+    bindQuestUser(session.user);
     renderAgentUi?.setUser?.(session.user);
     allTeams = session.teams || [];
     aiKeyUi.render(session.ai);

@@ -1,15 +1,18 @@
 /**
  * Quest Book — gamified learning map for Render3D.
- * Visual structure only for now: chapter tabs on the left (from DOC_CATEGORIES),
- * a skill-node graph per chapter (from DOC_FEATURES), no persistence or
- * progression logic yet.
+ * Chapters from DOC_CATEGORIES; nodes from DOC_FEATURES + Welcome chapter.
+ * Progress via feature-events.js (localStorage per user).
  */
 import { DOC_CATEGORIES, DOC_FEATURES } from "./docs-features.js?v=20260716-source-parts";
+import {
+  emitFeatureUsed,
+  getCompletedQuestIds,
+  isQuestCompleted,
+  onQuestProgress,
+  setQuestUser,
+} from "./feature-events.js?v=20260721-quest-progress";
 
 const OVERLAY_ID = "quest-book-overlay";
-
-/* Hard-coded "completed" quest ids, purely for visual flavor. */
-const COMPLETED = new Set(["welcome-account", "welcome-open-book"]);
 
 const WELCOME_CHAPTER = {
   id: "welcome",
@@ -50,7 +53,6 @@ const WELCOME_QUESTS = [
   },
 ];
 
-/* Per-chapter node icon (small SVG path, 24x24 viewBox). */
 const CHAPTER_ICONS = {
   welcome: "M12 2l2.5 6.3L21 9.1l-5 4.4 1.5 6.6L12 16.6 6.5 20.1 8 13.5 3 9.1l6.5-.8L12 2z",
   "ai-cad": "M9 2l1.2 3.4L13 6.5l-2.8 1.1L9 11 7.8 7.6 5 6.5l2.8-1.1L9 2zm8 5l.9 2.4 2.1.8-2.1.8L17 13l-.9-2.4-2.1-.8 2.1-.8L17 7zM12 12.5l1.6 4.2 3.9 1.4-3.9 1.4L12 23l-1.6-3.5-3.9-1.4 3.9-1.4 1.6-4.2z",
@@ -63,6 +65,9 @@ const CHAPTER_ICONS = {
   architect: "M12 3l9 8h-3v9h-4v-6h-4v6H6v-9H3l9-8z",
   help: "M12 2a10 10 0 100 20 10 10 0 000-20zm.2 15.7a1.3 1.3 0 110 2.6 1.3 1.3 0 010-2.6zM12 5.8c2.2 0 4 1.5 4 3.6 0 1.5-.8 2.3-1.9 3-1 .7-1.3 1.1-1.3 2h-2c0-1.7.7-2.5 1.9-3.3.9-.6 1.3-1 1.3-1.7 0-1-.9-1.6-2-1.6-1.2 0-2 .7-2.1 1.8H8c.1-2.2 1.8-3.8 4-3.8z",
 };
+
+let overlayApi = null;
+let progressUnsub = null;
 
 function chapters() {
   const cats = DOC_CATEGORIES.map((cat) => ({
@@ -91,22 +96,16 @@ function icon(chapterId, size = 16) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
 }
 
-/* Small deterministic pseudo-random from a string, for organic node wobble. */
 function wobble(str, span) {
   let h = 0;
   for (let i = 0; i < str.length; i += 1) h = (h * 31 + str.charCodeAt(i)) >>> 0;
   return ((h % 1000) / 1000 - 0.5) * span;
 }
 
-/**
- * Deterministic quest-line layout: a winding main spine, and every third node
- * hangs off the spine as a side branch (like modpack quest chapters).
- * Returns { nodes: [{quest, x, y, parentIndex}], width, height }.
- */
 function layoutChapter(chapter) {
   const NODE = 58;
   const X_STEP = 148;
-  const X_START = 150; /* room for the hover tooltip on the first node */
+  const X_START = 150;
   const Y_MID = 210;
   const nodes = [];
   let spineIndex = 0;
@@ -136,28 +135,50 @@ function layoutChapter(chapter) {
   return { nodes, width, height };
 }
 
-function questState(quest, index) {
-  if (COMPLETED.has(quest.id)) return "completed";
-  if (index === 0) return "available";
-  return "locked";
+/** completed | available | locked — locked only gates highlight; credit still applies. */
+function computeStates(nodes) {
+  const states = new Map();
+  nodes.forEach((node) => {
+    if (isQuestCompleted(node.quest.id)) {
+      states.set(node.quest.id, "completed");
+      return;
+    }
+    if (node.parentIndex < 0) {
+      states.set(node.quest.id, "available");
+      return;
+    }
+    const parent = nodes[node.parentIndex];
+    const parentDone = parent && isQuestCompleted(parent.quest.id);
+    states.set(node.quest.id, parentDone ? "available" : "locked");
+  });
+  return states;
 }
 
-function renderGraph(chapter) {
+function stateLabel(state) {
+  if (state === "completed") return "Completed";
+  if (state === "available") return "Ready to start";
+  return "Locked — finish the previous quest";
+}
+
+function renderGraph(chapter, { flashId = null } = {}) {
   const { nodes, width, height } = layoutChapter(chapter);
+  const states = computeStates(nodes);
   const links = nodes
-    .map((node, i) => {
+    .map((node) => {
       if (node.parentIndex < 0) return "";
       const p = nodes[node.parentIndex];
-      return `<line x1="${p.x}" y1="${p.y}" x2="${node.x}" y2="${node.y}" class="quest-link" />`;
+      const done = states.get(node.quest.id) === "completed" && states.get(p.quest.id) === "completed";
+      return `<line x1="${p.x}" y1="${p.y}" x2="${node.x}" y2="${node.y}" class="quest-link${done ? " quest-link--done" : ""}" />`;
     })
     .join("");
 
   const dots = nodes
-    .map((node, i) => {
-      const state = questState(node.quest, i);
+    .map((node) => {
+      const state = states.get(node.quest.id) || "locked";
+      const flash = flashId === node.quest.id ? " quest-node--flash" : "";
       return `
         <button type="button"
-          class="quest-node quest-node--${state}"
+          class="quest-node quest-node--${state}${flash}"
           style="left:${node.x}px; top:${node.y}px;"
           data-quest-id="${esc(node.quest.id)}"
           aria-label="${esc(node.quest.title)}">
@@ -166,7 +187,7 @@ function renderGraph(chapter) {
           <span class="quest-node-tip">
             <strong>${esc(node.quest.title)}</strong>
             <span>${esc(node.quest.summary)}</span>
-            <em>${state === "completed" ? "Completed" : state === "available" ? "Ready to start" : "Locked — coming soon"}</em>
+            <em>${esc(stateLabel(state))}</em>
           </span>
         </button>`;
     })
@@ -181,11 +202,13 @@ function renderGraph(chapter) {
 
 function renderDetail(chapter, quest) {
   if (!quest) {
-    return `<p class="quest-detail-empty">Select a quest node to preview it. Completing quests is coming soon.</p>`;
+    return `<p class="quest-detail-empty">Select a quest node to preview it. Quests complete automatically as you use Studio.</p>`;
   }
-  const state = questState(quest, chapter.quests.indexOf(quest));
+  const { nodes } = layoutChapter(chapter);
+  const states = computeStates(nodes);
+  const state = states.get(quest.id) || "locked";
   const steps = (quest.steps || [])
-    .map((s) => `<li><span class="quest-step-box" aria-hidden="true"></span>${esc(s)}</li>`)
+    .map((s) => `<li><span class="quest-step-box${state === "completed" ? " quest-step-box--done" : ""}" aria-hidden="true"></span>${esc(s)}</li>`)
     .join("");
   return `
     <div class="quest-detail-head">
@@ -200,14 +223,21 @@ function renderDetail(chapter, quest) {
     ${steps ? `<ul class="quest-detail-steps">${steps}</ul>` : ""}`;
 }
 
+function countProgress(allChapters) {
+  const completed = getCompletedQuestIds();
+  let total = 0;
+  let done = 0;
+  allChapters.forEach((c) => {
+    c.quests.forEach((q) => {
+      total += 1;
+      if (completed.has(q.id)) done += 1;
+    });
+  });
+  return { total, done };
+}
+
 function buildOverlay() {
   const allChapters = chapters();
-  const totalQuests = allChapters.reduce((n, c) => n + c.quests.length, 0);
-  const doneQuests = allChapters.reduce(
-    (n, c) => n + c.quests.filter((q) => COMPLETED.has(q.id)).length,
-    0,
-  );
-
   const overlay = document.createElement("div");
   overlay.id = OVERLAY_ID;
   overlay.className = "quest-book-overlay hidden";
@@ -221,25 +251,13 @@ function buildOverlay() {
           <span>Learn Render3D quest by quest</span>
         </div>
         <div class="quest-book-progress" title="Quest completion">
-          <span class="quest-book-progress-label">${doneQuests} / ${totalQuests} quests</span>
-          <span class="quest-book-progress-track"><span class="quest-book-progress-fill" style="width:${totalQuests ? Math.round((doneQuests / totalQuests) * 100) : 0}%"></span></span>
+          <span class="quest-book-progress-label" id="quest-book-progress-label">0 / 0 quests</span>
+          <span class="quest-book-progress-track"><span class="quest-book-progress-fill" id="quest-book-progress-fill" style="width:0%"></span></span>
         </div>
         <button type="button" class="quest-book-close" data-quest-close aria-label="Close Quest Book">×</button>
       </header>
       <div class="quest-book-body">
-        <nav class="quest-book-tabs" aria-label="Quest chapters">
-          ${allChapters
-            .map((c) => {
-              const done = c.quests.filter((q) => COMPLETED.has(q.id)).length;
-              return `
-                <button type="button" class="quest-book-tab" data-chapter-id="${esc(c.id)}" title="${esc(c.blurb || c.title)}">
-                  <span class="quest-book-tab-icon">${icon(c.id)}</span>
-                  <span class="quest-book-tab-title">${esc(c.title)}</span>
-                  <span class="quest-book-tab-count">${done}/${c.quests.length}</span>
-                </button>`;
-            })
-            .join("")}
-        </nav>
+        <nav class="quest-book-tabs" aria-label="Quest chapters" id="quest-book-tabs"></nav>
         <div class="quest-book-main">
           <div class="quest-book-chapter-head">
             <strong id="quest-chapter-title"></strong>
@@ -254,25 +272,71 @@ function buildOverlay() {
 
   let activeChapter = allChapters[0];
   let selectedQuest = null;
+  let flashId = null;
 
   const canvas = overlay.querySelector("#quest-book-canvas");
   const detail = overlay.querySelector("#quest-book-detail");
+  const tabsNav = overlay.querySelector("#quest-book-tabs");
+
+  function renderTabs() {
+    const completed = getCompletedQuestIds();
+    tabsNav.innerHTML = allChapters
+      .map((c) => {
+        const done = c.quests.filter((q) => completed.has(q.id)).length;
+        const clear = done === c.quests.length && c.quests.length > 0;
+        return `
+          <button type="button" class="quest-book-tab${clear ? " quest-book-tab--clear" : ""}" data-chapter-id="${esc(c.id)}" title="${esc(c.blurb || c.title)}">
+            <span class="quest-book-tab-icon">${icon(c.id)}</span>
+            <span class="quest-book-tab-title">${esc(c.title)}</span>
+            <span class="quest-book-tab-count">${done}/${c.quests.length}</span>
+          </button>`;
+      })
+      .join("");
+    tabsNav.querySelectorAll(".quest-book-tab").forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.chapterId === activeChapter.id);
+    });
+  }
+
+  function syncProgressHeader() {
+    const { total, done } = countProgress(allChapters);
+    const label = overlay.querySelector("#quest-book-progress-label");
+    const fill = overlay.querySelector("#quest-book-progress-fill");
+    if (label) label.textContent = `${done} / ${total} quests`;
+    if (fill) fill.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
+  }
 
   function syncDetail() {
     detail.innerHTML = renderDetail(activeChapter, selectedQuest);
   }
 
-  function showChapter(chapterId) {
+  function showChapter(chapterId, { keepSelection = false } = {}) {
     activeChapter = allChapters.find((c) => c.id === chapterId) || allChapters[0];
-    selectedQuest = null;
-    overlay.querySelectorAll(".quest-book-tab").forEach((tab) => {
-      tab.classList.toggle("active", tab.dataset.chapterId === activeChapter.id);
-    });
+    if (!keepSelection) selectedQuest = null;
+    else if (selectedQuest && !activeChapter.quests.some((q) => q.id === selectedQuest.id)) {
+      selectedQuest = null;
+    }
+    renderTabs();
     overlay.querySelector("#quest-chapter-title").textContent = activeChapter.title;
     overlay.querySelector("#quest-chapter-blurb").textContent = activeChapter.blurb || "";
-    canvas.innerHTML = renderGraph(activeChapter);
-    canvas.scrollTo({ left: 0, top: 0 });
+    canvas.innerHTML = renderGraph(activeChapter, { flashId });
+    if (selectedQuest) {
+      canvas.querySelectorAll(".quest-node").forEach((n) => {
+        n.classList.toggle("is-selected", n.dataset.questId === selectedQuest.id);
+      });
+    }
     syncDetail();
+    syncProgressHeader();
+    flashId = null;
+  }
+
+  function refresh({ flashFeatureId = null } = {}) {
+    if (flashFeatureId) flashId = flashFeatureId;
+    const selId = selectedQuest?.id || null;
+    showChapter(activeChapter.id, { keepSelection: true });
+    if (selId) {
+      selectedQuest = activeChapter.quests.find((q) => q.id === selId) || selectedQuest;
+      syncDetail();
+    }
   }
 
   overlay.addEventListener("click", (e) => {
@@ -288,7 +352,7 @@ function buildOverlay() {
     const node = e.target.closest(".quest-node");
     if (node) {
       const quest = activeChapter.quests.find((q) => q.id === node.dataset.questId) || null;
-      selectedQuest = quest === selectedQuest ? null : quest;
+      selectedQuest = quest && quest === selectedQuest ? null : quest;
       canvas.querySelectorAll(".quest-node").forEach((n) => {
         n.classList.toggle("is-selected", n.dataset.questId === (selectedQuest?.id || ""));
       });
@@ -301,14 +365,36 @@ function buildOverlay() {
   });
 
   showChapter(WELCOME_CHAPTER.id);
-  return overlay;
+  return { overlay, refresh, showChapter };
+}
+
+function bindStoredUser() {
+  try {
+    const raw = localStorage.getItem("render3d_user") || localStorage.getItem("render3d:user");
+    /* auth may store differently — app.js will call setQuestUser on login */
+  } catch {
+    /* ignore */
+  }
 }
 
 export function openQuestBook() {
-  const overlay = document.getElementById(OVERLAY_ID) || buildOverlay();
-  overlay.classList.remove("hidden");
+  bindStoredUser();
+  if (!overlayApi) overlayApi = buildOverlay();
+  if (!progressUnsub) {
+    progressUnsub = onQuestProgress((detail) => {
+      if (!overlayApi) return;
+      const open = !overlayApi.overlay.classList.contains("hidden");
+      if (open) overlayApi.refresh({ flashFeatureId: detail?.featureId || null });
+    });
+  }
+  overlayApi.overlay.classList.remove("hidden");
+  emitFeatureUsed("welcome-open-book", { title: "Open the Quest Book" });
+  overlayApi.refresh();
 }
 
 export function closeQuestBook() {
   document.getElementById(OVERLAY_ID)?.classList.add("hidden");
 }
+
+/** Optional: app.js can push the signed-in user into quest storage. */
+export { setQuestUser };

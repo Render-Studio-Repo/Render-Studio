@@ -1207,6 +1207,16 @@ export function startShowMe(guideId, { onDocsPage = false } = {}) {
   const tour = getShowMeTour(guideId);
   if (!tour) return false;
 
+  if (guideId === "prompt-onboarding" || guideId === "ai-generate") {
+    try {
+      void import("./feature-events.js?v=20260721-quest-progress").then((m) => {
+        m.emitFeatureUsed?.("welcome-walkthrough", { title: "Take the Studio walkthrough" });
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   ensureOverlay();
   const overlay = document.getElementById("show-me-overlay");
   const nextBtn = document.getElementById("show-me-next");
