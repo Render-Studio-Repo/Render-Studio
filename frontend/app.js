@@ -14843,7 +14843,28 @@ function footprintPrefersFlip180(object3d) {
   return maxArea > minArea * 1.05 && maxArea > 1e-8;
 }
 
-function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true, orientationMode = null } = {}) {
+/** Lift/drop so the world AABB base sits on the grid plane (z = 0). */
+function seatObjectToFloor(object3d) {
+  if (!object3d) return;
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  if (box.isEmpty() || !Number.isFinite(box.min.z)) return;
+  if (Math.abs(box.min.z) <= 1e-9) return;
+  object3d.position.z -= box.min.z;
+  object3d.updateMatrixWorld(true);
+}
+
+function materializeObject(object3d, {
+  center = true,
+  normalizePivot = center,
+  // Always floor-seat unless restoring an explicit saved world transform.
+  // Edited/copied parts used to skip centering entirely and stayed origin-centered
+  // (half under the grid) even when upright.
+  seatToFloor = true,
+  filename = "",
+  orient = true,
+  orientationMode = null,
+} = {}) {
   // Mode 2.0 used to blindly rotateX(-90), which tipped already-Z-up GLBs onto their side.
   // Smart detector compares as-authored vs ±90° and only tips when upright clearly wins.
   if (orient || orientationMode === "v2-upright") {
@@ -14857,25 +14878,22 @@ function materializeObject(object3d, { center = true, normalizePivot = center, f
   meshCenterOffset = box.getCenter(new THREE.Vector3());
   object3d.userData.meshCenterOffset = meshCenterOffset.clone();
   if (center) {
-    // Z-up CAD: sit on XY floor (z = 0), center in X/Y.
+    // Z-up CAD: center in X/Y. Floor seating is applied after pivot normalize.
     object3d.position.x -= meshCenterOffset.x;
     object3d.position.y -= meshCenterOffset.y;
-    object3d.position.z -= box.min.z;
     object3d.updateMatrixWorld(true);
   }
   if (normalizePivot) {
     normalizeObjectPivotToBounds(object3d);
   }
-  if (center) {
-    // Re-seat after pivot normalize so the mesh cannot end up straddling z = 0.
-    object3d.updateMatrixWorld(true);
-    const seated = new THREE.Box3().setFromObject(object3d);
-    if (Number.isFinite(seated.min.z) && Math.abs(seated.min.z) > 1e-9) {
-      object3d.position.z -= seated.min.z;
-      object3d.updateMatrixWorld(true);
-    }
+  if (seatToFloor) {
+    seatObjectToFloor(object3d);
   }
   applyCadStyle(object3d);
+  // Silhouette/edge helpers can slightly expand the AABB — re-seat so the solid base stays on z = 0.
+  if (seatToFloor) {
+    seatObjectToFloor(object3d);
+  }
   positionShadowFloor(scene, object3d);
   return object3d;
 }
@@ -15309,6 +15327,7 @@ async function loadModel(url, filename, opts = {}) {
       materializeObject(object, {
         center: false,
         normalizePivot: shouldNormalizePivot,
+        seatToFloor: false,
         filename: viewFilename,
         orient: false,
         orientationMode: opts.orientationMode,
@@ -15330,6 +15349,8 @@ async function loadModel(url, filename, opts = {}) {
     object.quaternion.set(0, 0, 0, 1);
     object.scale.set(1, 1, 1);
     object.updateMatrixWorld(true);
+    // Identity can leave origin-centered meshes straddling the grid — seat the base.
+    seatObjectToFloor(object);
   }
   projectAssembly.add(catalogName, object);
   if (replaceCatalog && replaceCatalog !== catalogName) {

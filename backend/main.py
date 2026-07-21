@@ -257,6 +257,28 @@ def on_startup() -> None:
         logger.warning("Startup generation recovery failed: %s", exc)
 
 
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    """Graceful drain: finish in-flight gens on this worker before uvicorn exits.
+
+    systemd TimeoutStopSec / uvicorn --timeout-graceful-shutdown must be at least
+    as long as RENDER3D_SHUTDOWN_DRAIN_SEC or the process is still SIGKILL'd.
+    """
+    import os as _os
+
+    drain_sec = float(_os.environ.get("RENDER3D_SHUTDOWN_DRAIN_SEC", "3600"))
+    generation_service.begin_drain()
+    remaining = generation_service.wait_for_worker_jobs(PROJECTS, timeout_sec=drain_sec)
+    if remaining:
+        logger.warning(
+            "Shutdown drain ended with %s job(s) still running on pid=%s",
+            remaining,
+            _os.getpid(),
+        )
+    else:
+        logger.info("Shutdown drain complete — no running generations on pid=%s", _os.getpid())
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

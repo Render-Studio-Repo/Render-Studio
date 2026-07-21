@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,9 @@ _CANCELED_TRACES: set[str] = set()
 _listeners: list[Any] = []
 _FILE_LOCKS: dict[str, threading.RLock] = {}
 _FILE_LOCKS_GUARD = threading.Lock()
+# Set on SIGTERM/shutdown so we stop accepting new gens and wait for ours to finish.
+_DRAINING = False
+_DRAINING_LOCK = threading.Lock()
 
 _JOB_PUBLIC_KEYS = (
     "id",
@@ -177,8 +181,105 @@ def _job_idle_seconds(job: dict[str, Any], *, now: datetime | None = None) -> fl
     return ((now or datetime.now(timezone.utc)) - t0).total_seconds()
 
 
-def _running_set(project_id: str) -> set[str]:
-    return _RUNNING_TRACES.setdefault(project_id, set())
+def begin_drain() -> None:
+    """Mark this worker as shutting down — refuse new generations."""
+    global _DRAINING
+    with _DRAINING_LOCK:
+        _DRAINING = True
+    logger.info("Generation drain started (pid=%s) — refusing new jobs", os.getpid())
+
+
+def is_draining() -> bool:
+    with _DRAINING_LOCK:
+        return _DRAINING
+
+
+def running_jobs_for_pid(projects_root: Path, *, pid: int | None = None) -> list[dict[str, Any]]:
+    """Running jobs owned by this worker process (from on-disk generation.json)."""
+    target = int(pid if pid is not None else os.getpid())
+    out: list[dict[str, Any]] = []
+    if not projects_root.is_dir():
+        return out
+    for d in projects_root.iterdir():
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        gen_file = d / GENERATION_FILE
+        if not gen_file.is_file():
+            continue
+        try:
+            data = json.loads(gen_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        for job in _jobs_from_data(data):
+            if job.get("status") != "running":
+                continue
+            try:
+                job_pid = int(job.get("worker_pid") or 0)
+            except (TypeError, ValueError):
+                job_pid = 0
+            if job_pid != target:
+                continue
+            out.append({**job, "project_id": d.name, "project_path": str(d)})
+    return out
+
+
+def wait_for_worker_jobs(
+    projects_root: Path,
+    *,
+    timeout_sec: float,
+    poll_sec: float = 2.0,
+    pid: int | None = None,
+) -> int:
+    """Block until this worker's running jobs finish, or timeout. Returns remaining count."""
+    deadline = time.time() + max(0.0, float(timeout_sec))
+    last_log = 0.0
+    while True:
+        jobs = running_jobs_for_pid(projects_root, pid=pid)
+        if not jobs:
+            return 0
+        now = time.time()
+        if now >= deadline:
+            logger.warning(
+                "Drain timeout with %s job(s) still running on pid=%s: %s",
+                len(jobs),
+                pid or os.getpid(),
+                [(j.get("project_id"), j.get("trace_id"), j.get("model")) for j in jobs],
+            )
+            return len(jobs)
+        if now - last_log >= 15.0:
+            logger.info(
+                "Draining %s generation(s) on pid=%s (%.0fs left): %s",
+                len(jobs),
+                pid or os.getpid(),
+                deadline - now,
+                [(j.get("project_id"), j.get("trace_id"), (j.get("model") or "")[:24]) for j in jobs],
+            )
+            last_log = now
+        time.sleep(max(0.5, float(poll_sec)))
+
+
+def count_all_live_running_jobs(projects_root: Path) -> list[dict[str, Any]]:
+    """All running jobs whose worker_pid is still alive (any worker)."""
+    out: list[dict[str, Any]] = []
+    if not projects_root.is_dir():
+        return out
+    for d in projects_root.iterdir():
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        gen_file = d / GENERATION_FILE
+        if not gen_file.is_file():
+            continue
+        try:
+            data = json.loads(gen_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        for job in _jobs_from_data(data):
+            if job.get("status") != "running":
+                continue
+            if not _process_is_alive(job.get("worker_pid")):
+                continue
+            out.append({**job, "project_id": d.name})
+    return out
 
 
 def _track_running(project_id: str, trace_id: str | None) -> None:
@@ -508,6 +609,10 @@ def start(
         allow_parallel = kind_norm == "prompt"
 
     with _file_lock(project_path):
+        if is_draining():
+            raise GenerationCanceled(
+                "Server is restarting — generation was not started. Retry in a moment."
+            )
         if project_path.name in _CANCELED_PROJECTS and is_running(project_path):
             # Only block when a project-wide cancel is active AND something still runs.
             raise GenerationCanceled("Generation canceled.")
