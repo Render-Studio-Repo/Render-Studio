@@ -16292,20 +16292,13 @@ function renderPromptKeyPopup(status) {
     if (render3dChoices.length) {
       const current = findRender3dChoice(status, currentValue) || render3dChoices[0];
       const platformActive = render3dChoices.some((c) => isSelected(c.source, c.id));
-      const badge = BADGE_CLASS_MAP[current.provider] || "badge-openai";
-      const providerLabel = current.provider === "anthropic" ? "Anthropic" : "OpenAI";
       html += `<div class="prompt-key-popup-section">Render3D Key</div>`;
-      html += `<div class="prompt-key-popup-row${platformActive ? " active" : ""}"
+      html += `<div class="prompt-key-popup-row prompt-key-popup-row--platform${platformActive ? " active" : ""}"
            data-action="select-key" data-source="platform" data-key-id="${current.id}">
         <div class="prompt-key-popup-check">
           <div class="prompt-key-popup-check-dot"></div>
         </div>
-        <div class="prompt-key-popup-info">
-          <span class="prompt-key-popup-name">
-            Render3D Key
-            <span class="prompt-key-popup-badge ${badge}">${providerLabel}</span>
-          </span>
-        </div>
+        <span class="prompt-key-popup-name prompt-key-popup-name--platform">Render3D Key</span>
         <div class="prompt-key-popup-model-wrap prompt-key-popup-platform-wrap">
           <select class="prompt-key-popup-model-select prompt-key-popup-provider-select" data-action="render3d-provider" title="OpenAI or Anthropic">
             ${render3dChoices.map((c) => {
@@ -16313,7 +16306,7 @@ function renderPromptKeyPopup(status) {
               return `<option value="${render3dChoiceValue(c)}"${selected}>${c.label}</option>`;
             }).join("")}
           </select>
-          <select class="prompt-key-popup-model-select"
+          <select class="prompt-key-popup-model-select prompt-key-popup-platform-model"
             data-action="change-model"
             data-key-id="${current.id}"
             data-source="platform"

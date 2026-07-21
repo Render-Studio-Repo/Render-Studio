@@ -17504,19 +17504,44 @@ label input { margin-top: 4px; }
 .prompt-key-popup-platform-wrap {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: none;
   flex: 1 1 auto;
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-width: 0;
+}
+.prompt-key-popup-row--platform {
+  gap: 10px;
+}
+.prompt-key-popup-name--platform {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
 }
 .prompt-key-popup-platform-wrap .prompt-key-popup-model-select {
   max-width: none;
   min-width: 0;
   width: auto;
+  flex: 0 0 auto;
 }
 .prompt-key-popup-platform-wrap .prompt-key-popup-provider-select {
-  min-width: 7.5rem;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+.prompt-key-popup-platform-wrap .prompt-key-popup-platform-model {
+  flex: 1 1 auto;
+  min-width: 5.5rem;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 2px 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.prompt-key-popup-platform-wrap .prompt-key-popup-platform-model:focus {
+  border-color: transparent;
+  color: var(--text);
 }
 .prompt-key-popup-model-select {
   font-size: 0.68rem;
