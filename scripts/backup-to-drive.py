@@ -5,6 +5,9 @@ Creates a temporary archive of ``projects/``, uploads it under
 PARENT_FOLDER_ID/M-D-YYYY/, then deletes the local archive so model
 backups live on Drive only (not under backups/drive-daily).
 
+Drive keeps the last ``RETENTION_DAYS`` (10) daily folders; older day
+folders are pruned after each successful upload.
+
 Code continues to use local rolling snapshots via backup-code.sh
 (which does not include projects/).
 
@@ -28,7 +31,7 @@ from pathlib import Path
 ROOT = Path("/home/ubuntu")
 # Staging only — deleted after a successful Drive upload.
 LOCAL_BACKUP_ROOT = ROOT / "backups" / "drive-daily"
-RETENTION_DAYS = 7
+RETENTION_DAYS = 10
 PROTECTED_BACKUP_PREFIXES = ("golden-",)
 
 # Google Drive destination folder (model backups only)
@@ -548,6 +551,11 @@ def main() -> int:
         action="store_true",
         help="Only upload leftover backups/drive-daily archives to Drive, then delete local",
     )
+    parser.add_argument(
+        "--prune-only",
+        action="store_true",
+        help=f"Only prune Drive day folders older than {RETENTION_DAYS} days",
+    )
     args = parser.parse_args()
 
     if args.auth:
@@ -560,6 +568,12 @@ def main() -> int:
             count = upload_existing_local_archives(service)
             prune_local(wipe_all=True)
             LOG.info("Migrated %s local archive(s); local model backups removed", count)
+            return 0
+        if args.prune_only:
+            service = get_drive_service()
+            cutoff = datetime.now(timezone.utc).date() - timedelta(days=RETENTION_DAYS)
+            LOG.info("Pruning Drive model backups older than %s (%s days)", cutoff, RETENTION_DAYS)
+            prune_drive(service, cutoff)
             return 0
         run_backup(skip_upload=args.local_only, keep_local=args.keep_local)
     except Exception:
