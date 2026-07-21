@@ -909,10 +909,12 @@ class AIService:
         if self.provider == "openai":
             # Pro / reasoning models routinely exceed 90s, especially with skills + images.
             # Sol can sit quiet for many minutes while still streaming keepalives.
+            # gpt-5.5-pro CAD 2.0 briefs commonly need 10–25+ minutes — do not use a short
+            # httpx timeout that only looks alive because of keepalive bytes.
             if is_sol_model(self.model):
                 ai_timeout = 1200.0
             elif is_openai_frontier_model(self.model):
-                ai_timeout = 300.0
+                ai_timeout = 1200.0
             else:
                 ai_timeout = 180.0
             self.client = OpenAI(api_key=self.api_key, timeout=ai_timeout)
@@ -939,8 +941,8 @@ class AIService:
                 fut.cancel()
                 raise TimeoutError(
                     f"OpenAI {self.model} did not respond within {hard_timeout:.0f}s. "
-                    "This can happen with large code-generation prompts on pro models. "
-                    "Try again or switch to a faster model (gpt-5.5 fast mode)."
+                    "Quality / Pro CAD briefs can take a long time; if this keeps happening, "
+                    "retry the prompt or use Speed (gpt-5.5) for a quicker pass."
                 )
             try:
                 return fut.result(timeout=min(1.0, remaining))
@@ -1647,12 +1649,14 @@ class AIService:
         model = self.model
         # Hard wall-clock timeout: httpx read-timeout resets on every received byte,
         # so frontier models (which stream keepalives) can hang indefinitely despite
-        # timeout=300 on the client.  Enforce a true total elapsed limit here.
+        # a client timeout. Enforce a true total elapsed limit here.
         # Sol regularly needs 20–40+ minutes for CAD briefs / large assemblies.
+        # gpt-5.5-pro Quality / CAD 2.0 briefs often need 15–30 minutes — the old 480s
+        # cutoff killed healthy Quality runs mid-brief.
         if is_sol_model(model):
             hard_timeout = 2400.0
         elif is_openai_frontier_model(model):
-            hard_timeout = 480.0
+            hard_timeout = 1800.0
         else:
             hard_timeout = 300.0
         t0 = time.perf_counter()

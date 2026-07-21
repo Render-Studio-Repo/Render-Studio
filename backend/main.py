@@ -16558,9 +16558,6 @@ def prompt_cad(
             "prompt_id": hist_entry.get("id") if hist_entry else None,
         }
     speed = body.speed or "fast"
-    mode = (body.mode or "standard").lower()
-    if mode in {"v2", "fusion", "architect"} and speed == "fast":
-        speed = "quality"
     ai = _get_ai_for_user(
         user,
         speed,

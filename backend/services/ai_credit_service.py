@@ -35,6 +35,36 @@ def _stripe():
     return stripe
 
 
+def _stripe_as_dict(value: Any) -> dict[str, Any]:
+    """Normalize Stripe SDK objects to plain dicts (SDK no longer supports ``.get``)."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    for attr in ("to_dict_recursive", "to_dict"):
+        fn = getattr(value, attr, None)
+        if callable(fn):
+            try:
+                data = fn()
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+    try:
+        return {key: value[key] for key in value.keys()}  # type: ignore[attr-defined]
+    except Exception:
+        return {}
+
+
+def _stripe_get(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    try:
+        return value[key]
+    except Exception:
+        return default
+
+
 def _payment_link_url() -> str:
     return (getattr(settings, "stripe_ai_credits_payment_link_url", None) or "").strip()
 
