@@ -379,7 +379,11 @@ def update_settings(
         )
         if not _platform_model_matches_provider(model, provider):
             # Selecting Anthropic must never keep a leftover GPT-5.5 Pro pin (and vice versa).
-            model = _default_platform_model(provider, speed="fast")
+            # Prefer the quality Anthropic default (Opus) when clearing an OpenAI leftover.
+            model = _default_platform_model(
+                provider,
+                speed="quality" if provider == "anthropic" else "fast",
+            )
         provider_out = provider
         model_out = model
         sets.append("platform_provider = ?")
