@@ -111,12 +111,14 @@ def _pricing_table(provider: str) -> dict[str, dict[str, float]]:
 def _pricing_for_model(model: str | None, provider: str = "openai") -> dict[str, float]:
     name = (model or "").strip().lower()
     table = _pricing_table(provider)
-    # Prefer longest prefix match so gpt-5.5-pro beats gpt-5.5, gpt-5.6-sol beats gpt-5.6.
+    # Longest key first. Only exact / dated-snapshot / key- suffix matches —
+    # bare startswith("gpt-5") must NOT steal future ids like gpt-5.7-pro.
     for key in sorted(table.keys(), key=len, reverse=True):
-        if name == key or name.startswith(key + "-") or name.startswith(key):
+        if name == key or name.startswith(key + "-"):
             return table[key]
     for key in sorted(table.keys(), key=len, reverse=True):
-        if key in name:
+        # Whole-token containment (e.g. "haiku" inside "claude-haiku-4-5").
+        if f"-{key}-" in f"-{name}-" or name.endswith(f"-{key}") or name.startswith(f"{key}-"):
             return table[key]
     # Heuristics for unknown / future model ids (no per-model allowlist required).
     if provider == "anthropic":
