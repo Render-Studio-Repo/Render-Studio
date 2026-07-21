@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 GENERATION_FILE = "generation.json"
 # Wall-clock budget for *abandoned* (dead-worker) jobs. Live workers are never
 # killed by this — Sol / quality CAD 2.0 routinely needs far longer than 20 min.
-MAX_RUNNING_SECONDS = 3 * 60 * 60
-MAX_RUNNING_SECONDS_SOL = 6 * 60 * 60
+MAX_RUNNING_SECONDS = None  # no wall-clock limit — live or recoverable jobs run until done/canceled
+MAX_RUNNING_SECONDS_SOL = None
 MAX_RESTART_COUNT = 8
 # Grace before declaring a dead-PID job abandoned when it cannot be recovered.
 STALE_IDLE_SECONDS = 5 * 60
@@ -141,10 +141,9 @@ def _is_long_running_model(job: dict[str, Any] | None) -> bool:
     return False
 
 
-def _job_max_running_seconds(job: dict[str, Any] | None) -> int:
-    if _is_long_running_model(job):
-        return MAX_RUNNING_SECONDS_SOL
-    return MAX_RUNNING_SECONDS
+def _job_max_running_seconds(job: dict[str, Any] | None) -> float | None:
+    """No model/job wall-clock limit. None means unlimited recovery window."""
+    return None
 
 
 def _job_age_seconds(job: dict[str, Any], *, now: datetime | None = None) -> float | None:
@@ -322,26 +321,22 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
     max_age = _job_max_running_seconds(job)
 
     # Dead worker but still recoverable after a deploy/crash: leave status=running
-    # so startup recovery can resume. Do NOT fake a "20 minute timeout" after ~90s —
-    # that cancelled GPT-5.6 Sol while it was still writing the CAD brief.
-    can_recover = (
-        has_body
-        and restart_count < MAX_RESTART_COUNT
-        and (age is None or age <= max_age)
-    )
+    # so startup recovery can resume. Never expire by wall-clock age — models have
+    # no time limit; only repeated failed resumes or a missing request body stop us.
+    can_recover = has_body and restart_count < MAX_RESTART_COUNT
     if can_recover:
         return job
 
     if idle is None or idle <= STALE_IDLE_SECONDS:
         return job
 
-    minutes = int(max_age / 60)
     if has_body and restart_count >= MAX_RESTART_COUNT:
         error = (
             "Generation stopped after repeated server restarts. "
             "Retry the prompt — long models like GPT-5.6 Sol were not finished."
         )
-    elif age is not None and age > max_age:
+    elif max_age is not None and age is not None and age > max_age:
+        minutes = int(max_age / 60)
         error = (
             f"Generation abandoned after {minutes} minutes with no live worker "
             "(still waiting on AI/CAD). Retry the prompt."

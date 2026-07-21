@@ -1629,18 +1629,7 @@ class AIService:
         ]
 
         model = self.model
-        # Hard wall-clock timeout: httpx read-timeout resets on every received byte,
-        # so frontier models (which stream keepalives) can hang indefinitely despite
-        # a client timeout. Enforce a true total elapsed limit here.
-        # Sol regularly needs 20–40+ minutes for CAD briefs / large assemblies.
-        # gpt-5.5-pro Quality / CAD 2.0 briefs often need 15–30 minutes — the old 480s
-        # cutoff killed healthy Quality runs mid-brief.
-        if is_sol_model(model):
-            hard_timeout = 2400.0
-        elif is_openai_frontier_model(model):
-            hard_timeout = 1800.0
-        else:
-            hard_timeout = 300.0
+        # No wall-clock model timeout — wait until the API returns or the user cancels.
         t0 = time.perf_counter()
         trace: dict[str, Any] = {
             "model": model,
@@ -1668,13 +1657,11 @@ class AIService:
             }
             if json_response:
                 create_kwargs["text"] = {"format": {"type": "json_object"}}
-            # Run in a thread with a hard wall-clock deadline; poll cancel every ~1s.
+            # Run in a thread so cancel_check can abort between polls; no time limit.
             with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-resp") as _pool:
                 _fut = _pool.submit(_do_responses_create, create_kwargs)
                 try:
-                    response = self._wait_future(_fut, hard_timeout=hard_timeout)
-                except TimeoutError:
-                    raise
+                    response = self._wait_future(_fut)
                 except RuntimeError:
                     _fut.cancel()
                     raise
@@ -1728,7 +1715,7 @@ class AIService:
                     chat_kwargs["response_format"] = {"type": "json_object"}
                 with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-chat") as _pool:
                     _fut = _pool.submit(self.client.chat.completions.create, **chat_kwargs)
-                    completion = self._wait_future(_fut, hard_timeout=hard_timeout)
+                    completion = self._wait_future(_fut)
                 choice = completion.choices[0]
                 text = choice.message.content or "{}"
                 chat_finish = choice.finish_reason or ""
@@ -1807,7 +1794,7 @@ class AIService:
                     "content-type": "application/json",
                 },
                 json=payload,
-                timeout=300.0,
+                timeout=None,
             )
             response.raise_for_status()
             data = response.json()

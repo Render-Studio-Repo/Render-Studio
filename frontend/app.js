@@ -126,7 +126,7 @@ import { createSectionView } from "./section-view.js?v=20260715-section-no-silho
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
 
 const API = "";
-const PROMPT_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6h client ceiling — Sol/CAD 2.0 must not abort at 8 min
+const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
 const LS_LAST_PROJECT = "render3d:lastProjectId";
 const LS_LAST_WORKSPACE = "render3d:lastWorkspaceId";
 const LS_MODEL_PROMPT_STATE = "render3d:modelPromptState:v1";

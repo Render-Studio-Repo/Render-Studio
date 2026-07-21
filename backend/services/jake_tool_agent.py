@@ -707,7 +707,7 @@ class JakeToolAgent:
                     "content-type": "application/json",
                 },
                 json=payload,
-                timeout=300.0,
+                timeout=None,
             )
             response.raise_for_status()
             data = response.json()
