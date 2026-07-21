@@ -16188,9 +16188,6 @@ def _background_prompt_kernel(
             return
         body = PromptRequest.model_validate(body_data)
         speed = body.speed or "fast"
-        mode = (body.mode or "standard").lower()
-        if mode in {"v2", "fusion", "architect"} and speed == "fast":
-            speed = "quality"
         ai = _get_ai_for_user(
             user,
             speed,
