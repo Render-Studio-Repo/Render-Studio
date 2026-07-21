@@ -686,6 +686,12 @@ def _backfill_from_generation(project_path: Path) -> None:
             or (original and _has_billed_sibling(entries, original))
         ):
             continue
+        # prompt_id can be reused across retries; never collide with another trace's row.
+        row_id = str(row.get("id") or "")
+        if row_id and any(
+            e.get("id") == row_id and str(e.get("trace_id") or "") != str(trace_id) for e in entries
+        ):
+            row["id"] = str(uuid.uuid4())[:10]
         entries.append(row)
         changed = True
 
