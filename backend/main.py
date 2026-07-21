@@ -1905,11 +1905,8 @@ def _resolve_prompt_model_meta(
     speed = str(getattr(body, "speed", None) or "fast").lower()
     if speed not in {"fast", "quality"}:
         speed = "fast"
-    mode = (getattr(body, "mode", None) or "standard").lower()
+    # Keep UI Speed/Quality for model pick (do not force Pro on 2.0/Fusion/Architect).
     resolve_speed = speed
-    # Jake authoring (CAD 2.0 / Fusion / Architect) uses the quality model path.
-    if mode in {"v2", "fusion", "architect"} and resolve_speed == "fast":
-        resolve_speed = "quality"
     key_id = getattr(body, "ai_key_id", None)
     key_source = getattr(body, "ai_key_source", None)
     try:
@@ -2050,12 +2047,10 @@ def _ai_from_request_body(
     *,
     project_id: str | None = None,
 ) -> AIService:
+    # Respect the UI Speed/Quality control for model selection.
+    # CAD 2.0 / Fusion / Architect used to force "quality" here, which silently
+    # upgraded OpenAI keys to gpt-5.5-pro (~5–8+ min, often 480s timeout).
     speed = getattr(body, "speed", None) or "fast"
-    mode = (getattr(body, "mode", None) or "standard").lower()
-    # Jake authoring (CAD 2.0 / Fusion / Architect) needs the quality model.
-    # UI "fast" only affects repair-budget heuristics, not the CAD skill contract.
-    if mode in {"v2", "fusion", "architect"} and speed == "fast":
-        speed = "quality"
     return _get_ai_for_user(
         user,
         speed,
