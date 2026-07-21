@@ -1825,9 +1825,10 @@ const APP_THEMES = {
   },
   light: {
     label: "Light",
-    canvas: 0xdbeafe,
-    gridMajor: 0x8ea7c8,
-    gridMinor: 0xb9cbea,
+    // Fusion 360 Light Gray workspace
+    canvas: 0xececec,
+    gridMajor: 0xb0b0b0,
+    gridMinor: 0xd4d4d4,
   },
 };
 function normalizedAppTheme(theme) {
@@ -14670,34 +14671,6 @@ function allowAutoUpsideDownFlip(filename = "") {
   return Boolean(ext);
 }
 
-function projectHasSiblingCadSource(filename = "") {
-  const stem = String(filename || "").replace(/\.[^.]+$/i, "").toLowerCase();
-  if (!stem) return false;
-  const names = [];
-  for (const entry of (projectTree.getComponents?.() || [])) {
-    if (entry?.name) names.push(String(entry.name));
-    if (entry?.viewer_filename) names.push(String(entry.viewer_filename));
-  }
-  return names.some((name) => {
-    const lower = String(name || "").toLowerCase();
-    if (!(lower.endsWith(".step") || lower.endsWith(".stp"))) return false;
-    const other = lower.replace(/\.[^.]+$/i, "");
-    return other === stem
-      || other === `${stem}_exploded`
-      || stem === `${other}_exploded`
-      || other.startsWith(`${stem}__`)
-      || stem.startsWith(`${other}__`);
-  });
-}
-
-function isLikelyAlreadyZUpCadAsset(filename = "") {
-  const lower = String(filename || "").toLowerCase();
-  if (!lower) return false;
-  if (lower.includes("__faceted") || lower.includes("_exploded") || lower.includes("__part_")) return true;
-  if (lower.includes("autodesk_source_") || lower.endsWith(".step.glb")) return true;
-  return projectHasSiblingCadSource(filename);
-}
-
 function footprintScoreAtMinZ(object3d) {
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
@@ -14745,61 +14718,57 @@ function ensureModelZUp(object3d, filename = "") {
 
   // Flat plate already on the XY floor — leave alone.
   if (sz < Math.min(sx, sy) * 0.5) return false;
-  // Clear standing Z-up (height along Z).
-  if (sz >= max * 0.95) {
+
+  const q0 = object3d.quaternion.clone();
+  const scoreOrientation = (angle) => {
+    object3d.quaternion.copy(q0);
+    if (angle) object3d.rotateX(angle);
+    object3d.updateMatrixWorld(true);
+    const minScore = footprintScoreAtMinZ(object3d);
+    object3d.updateMatrixWorld(true);
+    const box2 = new THREE.Box3().setFromObject(object3d);
+    const sz2 = Math.abs(box2.getSize(new THREE.Vector3()).z);
+    // Prefer orientations that put meaningful height along Z and a solid base down.
+    return minScore + sz2 * 0.05;
+  };
+
+  // Always compare "as authored" vs ±90°. Only tip when a rotation clearly wins —
+  // this stops already-Z-up CAD (long in Y on the floor) from being flopped sideways,
+  // while still correcting Fusion/glTF Y-up models that arrive on their side.
+  const candidates = [
+    { angle: 0, score: scoreOrientation(0) },
+    { angle: Math.PI / 2, score: scoreOrientation(Math.PI / 2) },
+    { angle: -Math.PI / 2, score: scoreOrientation(-Math.PI / 2) },
+  ];
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  const asAuthored = candidates.find((c) => c.angle === 0) || candidates[0];
+  // Require a clear improvement before tipping (avoids random left/right flops).
+  const shouldRotate = best.angle !== 0 && best.score > asAuthored.score * 1.12 + 1e-6;
+
+  object3d.quaternion.copy(q0);
+  if (shouldRotate) {
+    object3d.rotateX(best.angle);
+    object3d.updateMatrixWorld(true);
     if (allowAutoUpsideDownFlip(filename) && footprintPrefersFlip180(object3d)) {
       object3d.rotateX(Math.PI);
       object3d.updateMatrixWorld(true);
-      object3d.userData.render3dZUp = true;
-      object3d.userData.render3dZUpSource = filename || true;
-      return true;
     }
-    return false;
+    object3d.userData.render3dZUp = true;
+    object3d.userData.render3dZUpSource = filename || true;
+    object3d.userData.render3dZUpAngle = best.angle;
+    return true;
   }
 
-  // Only tip when Y is clearly the "up"/long standing axis (classic Y-up),
-  // not merely the longest plan dimension of an already Z-up CAD part.
-  const classicYUp = sy >= max * 0.99 && sy > sz * 1.15;
-  const metreYUp = max <= 25 && sy >= sz * 1.08 && sy >= sx * 0.85;
-  const needsTip = classicYUp || metreYUp;
-  if (!needsTip) {
-    if (allowAutoUpsideDownFlip(filename) && sz >= sy * 0.9 && footprintPrefersFlip180(object3d)) {
-      object3d.rotateX(Math.PI);
-      object3d.updateMatrixWorld(true);
-      object3d.userData.render3dZUp = true;
-      object3d.userData.render3dZUpSource = filename || true;
-      return true;
-    }
-    return false;
-  }
-
-  // Try both ±90° about X (same as server) and keep the upright base on min Z.
-  const q0 = object3d.quaternion.clone();
-  let bestAngle = Math.PI / 2;
-  let bestScore = -Infinity;
-  for (const angle of [Math.PI / 2, -Math.PI / 2]) {
-    object3d.quaternion.copy(q0);
-    object3d.rotateX(angle);
-    object3d.updateMatrixWorld(true);
-    const minScore = footprintScoreAtMinZ(object3d);
-    // Prefer larger base footprint at min Z; slight bias to +90 on ties.
-    const score = minScore + (angle > 0 ? 1e-9 : 0);
-    if (score > bestScore) {
-      bestScore = score;
-      bestAngle = angle;
-    }
-  }
-  object3d.quaternion.copy(q0);
-  object3d.rotateX(bestAngle);
-  object3d.updateMatrixWorld(true);
-  if (allowAutoUpsideDownFlip(filename) && footprintPrefersFlip180(object3d)) {
+  // Already Z-up-ish but possibly inverted (base on +Z).
+  if (allowAutoUpsideDownFlip(filename) && sz >= sy * 0.85 && footprintPrefersFlip180(object3d)) {
     object3d.rotateX(Math.PI);
     object3d.updateMatrixWorld(true);
+    object3d.userData.render3dZUp = true;
+    object3d.userData.render3dZUpSource = filename || true;
+    return true;
   }
-  object3d.userData.render3dZUp = true;
-  object3d.userData.render3dZUpSource = filename || true;
-  object3d.userData.render3dZUpAngle = bestAngle;
-  return true;
+  return false;
 }
 
 /** Rough base-vs-top footprint test using the world AABB corners of child geometries. */
@@ -14852,14 +14821,10 @@ function footprintPrefersFlip180(object3d) {
 
 function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true, orientationMode = null } = {}) {
   // Mode 2.0 used to blindly rotateX(-90), which tipped already-Z-up GLBs onto their side.
-  // Auto-orient only when needed: skip CAD/STEP/Jake assets that are already Z-up unless
-  // Mode 2.0 explicitly asks for an upright pass.
-  const forceUpright = orientationMode === "v2-upright";
-  const shouldOrient = forceUpright
-    || (orient && !isLikelyAlreadyZUpCadAsset(filename));
-  if (shouldOrient) {
+  // Smart detector compares as-authored vs ±90° and only tips when upright clearly wins.
+  if (orient || orientationMode === "v2-upright") {
     ensureModelZUp(object3d, filename);
-    if (forceUpright) {
+    if (orientationMode === "v2-upright") {
       object3d.userData.render3dForcedUpright = "v2-upright";
     }
   }
