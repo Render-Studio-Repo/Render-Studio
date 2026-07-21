@@ -694,11 +694,18 @@ class JakeToolAgent:
             t0 = time.perf_counter()
             payload = {
                 "model": self.ai.model,
-                "max_tokens": 8192,
+                "max_tokens": 32768 if any(
+                    token in str(self.ai.model or "").lower()
+                    for token in ("opus", "fable", "mythos")
+                ) else 8192,
                 "system": system,
                 "tools": _anthropic_tools(),
                 "messages": messages,
             }
+            # Fable/Mythos always think; medium effort keeps tool-loop costs closer to tracked usage.
+            model_l = str(self.ai.model or "").lower()
+            if any(token in model_l for token in ("fable", "mythos")):
+                payload["output_config"] = {"effort": "medium"}
             response = httpx.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={

@@ -24,6 +24,8 @@ GENERATION_FILE = "generation.json"
 MAX_RUNNING_SECONDS = 6 * 60 * 60  # default full-job recovery window
 MAX_RUNNING_SECONDS_SOL = 9 * 60 * 60  # 5.6 / Fable-class jobs can span multiple long calls
 MAX_RESTART_COUNT = 8
+# Opus / Fable / Sol calls are expensive; don't auto-resume them into a billing loop.
+MAX_RESTART_COUNT_EXPENSIVE = 2
 # Grace before declaring a dead-PID job abandoned when it cannot be recovered.
 STALE_IDLE_SECONDS = 5 * 60
 MAX_PARALLEL_PROMPT_JOBS = 5
@@ -311,6 +313,29 @@ def _write_unlocked(project_path: Path, data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _job_model_provider(job: dict[str, Any]) -> tuple[str, str]:
+    rb = job.get("request_body") if isinstance(job.get("request_body"), dict) else {}
+    model = str(job.get("model") or rb.get("model") or "").lower()
+    provider = str(job.get("provider") or rb.get("provider") or "").lower()
+    return model, provider
+
+
+def is_expensive_ai_job(job: dict[str, Any]) -> bool:
+    """Opus / Fable / Sol / pro quality runs — auto-resume burns real money fast."""
+    model, provider = _job_model_provider(job)
+    rb = job.get("request_body") if isinstance(job.get("request_body"), dict) else {}
+    speed = str(job.get("speed") or rb.get("speed") or "").lower()
+    if any(token in model for token in ("opus", "fable", "mythos", "gpt-5.5-pro", "gpt-5.6", "sol")):
+        return True
+    if provider == "anthropic" and speed == "quality":
+        return True
+    return False
+
+
+def max_restart_count_for_job(job: dict[str, Any]) -> int:
+    return MAX_RESTART_COUNT_EXPENSIVE if is_expensive_ai_job(job) else MAX_RESTART_COUNT
+
+
 def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = None) -> dict[str, Any]:
     if job.get("status") != "running":
         return job
@@ -324,12 +349,13 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
     has_body = isinstance(job.get("request_body"), dict) and bool(job.get("request_body"))
     restart_count = int(job.get("restart_count") or 0)
     max_age = _job_max_running_seconds(job)
+    max_restarts = max_restart_count_for_job(job)
 
     # Dead worker but still recoverable after a deploy/crash: leave status=running
     # so startup recovery can resume. Live workers are never wall-clock cancelled.
     can_recover = (
         has_body
-        and restart_count < MAX_RESTART_COUNT
+        and restart_count < max_restarts
         and (age is None or age <= max_age)
     )
     if can_recover:
@@ -339,20 +365,33 @@ def _normalize_job_stale(job: dict[str, Any], *, project_path: Path | None = Non
         return job
 
     minutes = int(max_age / 60)
-    if has_body and restart_count >= MAX_RESTART_COUNT:
+    tracked = ""
+    try:
+        cost = job.get("cost_usd")
+        if cost is None:
+            from backend.services.ai_cost import usage_fields_for_history
+
+            meta = usage_fields_for_history(job_all_ai_traces(job))
+            cost = meta.get("cost_usd")
+        if cost is not None and float(cost) > 0:
+            tracked = f" About ${float(cost):.2f} in AI usage was tracked before stopping."
+    except Exception:
+        tracked = ""
+    if has_body and restart_count >= max_restarts:
         error = (
             "Generation stopped after repeated server restarts. "
-            "Retry the prompt — long models like GPT-5.6 Sol were not finished."
+            "Retry the prompt — long models like Opus / Fable / GPT-5.6 Sol were not finished."
+            + tracked
         )
     elif age is not None and age > max_age:
         error = (
             f"Generation abandoned after {minutes} minutes with no live worker "
-            "(still waiting on AI/CAD). Retry the prompt."
+            f"(still waiting on AI/CAD). Retry the prompt.{tracked}"
         )
     else:
         error = (
             "Generation stopped — the worker exited and could not be resumed. "
-            "Retry the prompt."
+            f"Retry the prompt.{tracked}"
         )
     failed = {
         **job,
@@ -1052,7 +1091,7 @@ def find_stuck_jobs(projects_root: Path) -> list[dict[str, Any]]:
                 continue
             if not job.get("request_body"):
                 continue
-            if job.get("restart_count", 0) >= MAX_RESTART_COUNT:
+            if int(job.get("restart_count") or 0) >= max_restart_count_for_job(job):
                 continue
             if _process_is_alive(job.get("worker_pid")):
                 continue

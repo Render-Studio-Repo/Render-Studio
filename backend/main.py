@@ -185,11 +185,22 @@ def _recover_stuck_generations() -> None:
                 continue
 
             restart_count = int(original_data.get("restart_count") or 0) + 1
-            if restart_count > generation_service.MAX_RESTART_COUNT:
-                generation_service.interrupt_for_restart(
+            max_restarts = generation_service.max_restart_count_for_job(original_data)
+            if restart_count > max_restarts:
+                # Fail (don't benign-interrupt) so tracked Opus/Fable spend stays visible.
+                cost = original_data.get("cost_usd")
+                tracked = f" About ${float(cost):.2f} tracked before stopping." if cost is not None else ""
+                generation_service.fail(
                     project_path_,
-                    "Generation stopped during a server update. You can retry the prompt.",
+                    "Generation stopped after repeated server restarts. "
+                    "Retry the prompt — long models like Opus / Fable were not finished."
+                    + tracked,
                     trace_id=original_trace,
+                    extra={
+                        k: original_data.get(k)
+                        for k in ("usage", "cost_usd", "ai_calls", "model", "provider", "ai_traces", "settled_ai_traces")
+                        if original_data.get(k) is not None
+                    },
                 )
                 continue
 
