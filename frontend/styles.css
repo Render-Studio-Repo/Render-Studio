@@ -17471,6 +17471,16 @@ label input { margin-top: 4px; }
 .prompt-key-popup-model-wrap {
   flex-shrink: 0;
 }
+.prompt-key-popup-platform-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 62%;
+}
+.prompt-key-popup-platform-wrap .prompt-key-popup-model-select {
+  max-width: 96px;
+  min-width: 0;
+}
 .prompt-key-popup-model-select {
   font-size: 0.68rem;
   padding: 3px 6px;
