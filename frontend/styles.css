@@ -24514,6 +24514,19 @@ body.theme-light .profile-preferences-advanced-nav button.active b {
   border-top: 1px solid var(--border);
   margin-top: 4px;
 }
+.ai-keys-section-hint {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.ai-key-row--platform {
+  background: rgba(210, 153, 34, 0.05);
+  border-color: #30363d;
+}
+.ai-key-row--disabled {
+  opacity: 0.62;
+}
 .ai-keys-section-label--with-action {
   display: flex;
   align-items: center;

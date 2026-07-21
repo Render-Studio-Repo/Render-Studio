@@ -51,7 +51,7 @@ function formatCents(cents) {
   return formatUsd(Number(cents || 0) / 100);
 }
 
-export function createAIKeyUI({ api, onStatusChange }) {
+export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
   const modal = document.getElementById("ai-key-modal");
   const form = document.getElementById("ai-key-form");
   const providerInput = document.getElementById("ai-key-provider");
@@ -941,6 +941,31 @@ export function createAIKeyUI({ api, onStatusChange }) {
       return;
     }
 
+    const activatePlatform = e.target.closest("[data-action='activate-platform']");
+    if (activatePlatform) {
+      const provider = activatePlatform.dataset.provider === "anthropic" ? "anthropic" : "openai";
+      const modelSel = keysList?.querySelector(`[data-action='platform-key-model'][data-provider='${provider}']`);
+      const model = modelSel?.value || undefined;
+      setError("");
+      try {
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            use_platform_key: true,
+            platform_provider: provider,
+            platform_model: model || null,
+          }),
+        });
+        const next = { ...(data.ai || status || {}), credits: data.credits || data.ai?.credits };
+        render(next);
+        onSelectPromptKey?.(`platform:${provider}`);
+      } catch (err) {
+        setError(err.message || "Could not activate Render3D key");
+      }
+      return;
+    }
+
     const disablePlatform = e.target.closest("[data-action='disable-platform-key']");
     if (disablePlatform) {
       setError("");
@@ -1285,8 +1310,31 @@ export function createAIKeyUI({ api, onStatusChange }) {
           }),
         });
         render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+        onSelectPromptKey?.(`platform:${provider === "anthropic" ? "anthropic" : "openai"}`);
       } catch (err) {
         setError(err.message || "Could not update shared model");
+      }
+      return;
+    }
+
+    const platformKeyModel = e.target.closest("[data-action='platform-key-model']");
+    if (platformKeyModel) {
+      const provider = platformKeyModel.dataset.provider === "anthropic" ? "anthropic" : "openai";
+      const model = platformKeyModel.value;
+      try {
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            use_platform_key: true,
+            platform_provider: provider,
+            platform_model: model || null,
+          }),
+        });
+        render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
+        onSelectPromptKey?.(`platform:${provider}`);
+      } catch (err) {
+        setError(err.message || "Could not update Render3D model");
       }
     }
   });

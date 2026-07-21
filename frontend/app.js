@@ -70,7 +70,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260719-google-onboarding-suppress";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260720-credits-studio";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260720-render3d-key";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -4431,11 +4431,17 @@ function storeCodexOpenAiKeyValue(value) {
 
 function selectPromptAiKeyValue(value) {
   const sel = document.getElementById("prompt-ai-key-select");
-  if (!sel || !value) return false;
-  if (![...sel.options].some((opt) => opt.value === value)) return false;
-  sel.value = value;
+  if (!value) return false;
   storePromptAiKeyValue(value);
-  storeCodexOpenAiKeyValue(value);
+  if (sel && ![...sel.options].some((opt) => opt.value === value)) {
+    renderPromptAiKeySelect(aiStatus, { preserveSelection: false });
+  }
+  if (!sel || ![...sel.options].some((opt) => opt.value === value)) return false;
+  sel.value = value;
+  const parsed = parsePromptKeyOptionValue(value);
+  if (!(parsed?.source === "platform" && parsed.keyId === "anthropic")) {
+    storeCodexOpenAiKeyValue(value);
+  }
   syncPromptKeyPill(aiStatus);
   if (promptKeyPopupOpen) renderPromptKeyPopup(aiStatus);
   return true;
@@ -15222,8 +15228,17 @@ function storePromptAiKeyValue(value, { projectScoped = true } = {}) {
 
 function defaultPromptKeyValue(status) {
   const eff = status?.effective;
+  if (eff?.source === "platform" && (eff?.key_id || eff?.provider)) {
+    return promptKeyOptionValue("platform", eff.key_id || (eff.provider === "anthropic" ? "anthropic" : "openai"));
+  }
   if (eff?.key_id && eff?.source) {
     return promptKeyOptionValue(eff.source, eff.key_id);
+  }
+  const platformKeys = getPlatformPromptKeys(status);
+  if (!status?.active_key_id && platformKeys.length && status?.credits?.use_platform_key) {
+    const preferred = status.credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+    const match = platformKeys.find((k) => k.id === preferred) || platformKeys[0];
+    return promptKeyOptionValue("platform", match.id);
   }
   if (status?.active_key_id) {
     return promptKeyOptionValue("personal", status.active_key_id);
@@ -15241,12 +15256,55 @@ function getPromptAiKeyBodyFields() {
   return { ai_key_id: picked.keyId, ai_key_source: picked.source };
 }
 
+function getPlatformPromptKeys(status) {
+  const credits = status?.credits || {};
+  const balance = Number(credits.balance_cents || 0);
+  if (!credits.available || balance <= 0) return [];
+  if (Array.isArray(status?.platform_keys) && status.platform_keys.length) {
+    return status.platform_keys.map((key) => ({
+      id: key.id,
+      name: key.name || (key.provider === "anthropic" ? "Render3D Claude" : "Render3D OpenAI"),
+      provider: key.provider === "anthropic" ? "anthropic" : "openai",
+      model: key.model || "",
+      source: "platform",
+    }));
+  }
+  const providers = credits.providers || {};
+  const preferred = credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+  const preferredModel = credits.platform_model || "";
+  const models = credits.models || [];
+  const keys = [];
+  if (providers.openai) {
+    keys.push({
+      id: "openai",
+      name: "Render3D OpenAI",
+      provider: "openai",
+      model: preferred === "openai" ? preferredModel : (models.find((m) => m.provider === "openai")?.model || ""),
+      source: "platform",
+    });
+  }
+  if (providers.anthropic) {
+    keys.push({
+      id: "anthropic",
+      name: "Render3D Claude",
+      provider: "anthropic",
+      model: preferred === "anthropic" ? preferredModel : (models.find((m) => m.provider === "anthropic")?.model || ""),
+      source: "platform",
+    });
+  }
+  return keys;
+}
+
 function getSelectedPromptAiKeyLabel() {
   const sel = document.getElementById("prompt-ai-key-select");
   if (!sel?.value) return aiStatus?.effective?.key_name || "Default key";
   // find label from aiStatus rather than option text
   const parsed = parsePromptKeyOptionValue(sel.value);
   if (!parsed) return aiStatus?.effective?.key_name || "Default key";
+  if (parsed.source === "platform") {
+    const platformKey = getPlatformPromptKeys(aiStatus).find((k) => k.id === parsed.keyId);
+    return platformKey?.name || "Render3D key";
+  }
   const allKeys = [...(aiStatus?.keys || []), ...(aiStatus?.team_keys || [])];
   const found = allKeys.find((k) => k.id === parsed.keyId);
   return found?.name || "Selected key";
@@ -15258,6 +15316,12 @@ function teamKeyDisplayModel(key) {
 
 function getSelectedPromptModelInfo() {
   const parsed = parsePromptKeyOptionValue(document.getElementById("prompt-ai-key-select")?.value);
+  if (parsed?.source === "platform") {
+    const platformKey = getPlatformPromptKeys(aiStatus).find((k) => k.id === parsed.keyId);
+    if (platformKey) {
+      return { model: platformKey.model || "", provider: platformKey.provider || "" };
+    }
+  }
   const allKeys = [...(aiStatus?.keys || []), ...(aiStatus?.team_keys || [])];
   const found = parsed ? allKeys.find((k) => k.id === parsed.keyId) : null;
   if (found) {
@@ -15282,11 +15346,21 @@ let lastPromptDefaultKeyValue = "";
 function syncPromptKeyPill(status) {
   const sel = document.getElementById("prompt-ai-key-select");
   const parsed = sel?.value ? parsePromptKeyOptionValue(sel.value) : null;
+  const platformKeys = getPlatformPromptKeys(status);
+  const platformFound = parsed?.source === "platform"
+    ? platformKeys.find((k) => k.id === parsed.keyId)
+    : null;
   const allKeys = [...(status?.keys || []), ...(status?.team_keys || [])];
-  const found = parsed ? allKeys.find((k) => k.id === parsed.keyId) : null;
+  const found = parsed && parsed.source !== "platform"
+    ? allKeys.find((k) => k.id === parsed.keyId)
+    : null;
 
   let keyName, modelName, providerName;
-  if (found) {
+  if (platformFound) {
+    keyName = "";
+    modelName = platformFound.model || "";
+    providerName = platformFound.provider || "";
+  } else if (found) {
     keyName = "";
     modelName = teamKeyDisplayModel(found) || found.model || "";
     providerName = found.provider || "";
@@ -15376,8 +15450,9 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
 
   const personalKeys = status?.keys || [];
   const teamKeys = (status?.team_keys || []).filter((k) => k.enabled !== false && aiKeyAllowedForCurrentProject(k));
+  const platformKeys = getPlatformPromptKeys(status);
 
-  if (!personalKeys.length && !teamKeys.length) {
+  if (!personalKeys.length && !teamKeys.length && !platformKeys.length) {
     sel.disabled = true;
     const opt = document.createElement("option");
     opt.value = "";
@@ -15387,6 +15462,12 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
     return;
   }
 
+  platformKeys.forEach((key) => {
+    const opt = document.createElement("option");
+    opt.value = promptKeyOptionValue("platform", key.id);
+    opt.textContent = key.name || "Render3D key";
+    sel.appendChild(opt);
+  });
   personalKeys.forEach((key) => {
     const opt = document.createElement("option");
     opt.value = promptKeyOptionValue("personal", key.id);
