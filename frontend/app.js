@@ -15515,6 +15515,7 @@ function renderPromptKeyPopup(status) {
 
   const personalKeys = status?.keys || [];
   const teamKeys = (status?.team_keys || []).filter((k) => k.enabled !== false && aiKeyAllowedForCurrentProject(k));
+  const platformKeys = getPlatformPromptKeys(status);
   const currentValue = document.getElementById("prompt-ai-key-select")?.value || "";
 
   const isSelected = (source, id) => currentValue === promptKeyOptionValue(source, id);
@@ -15552,9 +15553,13 @@ function renderPromptKeyPopup(status) {
       <button type="button" class="prompt-key-popup-manage" data-action="open-key-manager">Manage keys →</button>
     </div>`;
 
-  if (!personalKeys.length && !teamKeys.length) {
-    html += `<p class="prompt-key-popup-empty">No keys saved. Use <strong>Manage keys</strong> to add one.</p>`;
+  if (!personalKeys.length && !teamKeys.length && !platformKeys.length) {
+    html += `<p class="prompt-key-popup-empty">No keys saved. Use <strong>Manage keys</strong> to add one or buy Studio credits.</p>`;
   } else {
+    if (platformKeys.length) {
+      html += `<div class="prompt-key-popup-section">Render3D Key</div>`;
+      html += platformKeys.map((k) => keyRow(k, "platform")).join("");
+    }
     if (personalKeys.length) {
       html += `<div class="prompt-key-popup-section">Your keys</div>`;
       html += personalKeys.map((k) => keyRow(k, "personal")).join("");
@@ -15661,7 +15666,26 @@ function initPromptKeyPopup() {
       closePromptKeyPopup();
       // Make the chosen shared key the exclusive active default so generate
       // doesn't fall back to another opted-in OpenAI shared key.
-      if (source === "team") {
+      if (source === "platform") {
+        try {
+          const platformKey = getPlatformPromptKeys(aiStatus).find((key) => key.id === keyId);
+          const data = await api("/api/user/ai-credits", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              use_platform_key: true,
+              platform_provider: keyId === "anthropic" ? "anthropic" : "openai",
+              platform_model: platformKey?.model || null,
+            }),
+          });
+          const updatedAi = { ...(data.ai || aiStatus || {}), credits: data.credits || data.ai?.credits };
+          aiKeyUi?.render(updatedAi);
+          renderAIStatus(updatedAi);
+          selectPromptAiKeyValue(selectedValue);
+        } catch (err) {
+          console.error("Could not activate Render3D key:", err);
+        }
+      } else if (source === "team") {
         const teamKey = (aiStatus?.team_keys || []).find((key) => key.id === keyId);
         if (teamKey?.team_id) {
           try {
@@ -15710,17 +15734,31 @@ function initPromptKeyPopup() {
       if (source === "team" && !teamKey?.team_id) {
         throw new Error("Could not find the shared key team for this model change.");
       }
-      const data = source === "team"
-        ? await api(`/api/teams/${teamKey?.team_id}/ai-keys/${keyId}/toggle`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ use_key: true, model: newModel }),
-          })
-        : await api(`/api/user/ai-keys/${keyId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: newModel }),
-          });
+      let data;
+      if (source === "platform") {
+        data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            use_platform_key: true,
+            platform_provider: keyId === "anthropic" ? "anthropic" : "openai",
+            platform_model: newModel || null,
+          }),
+        });
+        data = { ai: { ...(data.ai || aiStatus || {}), credits: data.credits || data.ai?.credits } };
+      } else if (source === "team") {
+        data = await api(`/api/teams/${teamKey?.team_id}/ai-keys/${keyId}/toggle`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ use_key: true, model: newModel }),
+        });
+      } else {
+        data = await api(`/api/user/ai-keys/${keyId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: newModel }),
+        });
+      }
       const updatedAi = { ...(data.ai || {}), keys: data.ai?.keys || [] };
       aiKeyUi?.render(updatedAi);
       renderAIStatus(updatedAi);
@@ -26148,6 +26186,9 @@ window.addEventListener("keydown", (e) => {
     onStatusChange: (status) => {
       renderAIStatus(status);
       void refreshWorkspaceAiUsage();
+    },
+    onSelectPromptKey: (value) => {
+      selectPromptAiKeyValue(value);
     },
   });
 
