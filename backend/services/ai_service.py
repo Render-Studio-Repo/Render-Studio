@@ -954,17 +954,104 @@ class AIService:
             self._raise_if_canceled()
             remaining = deadline - time.perf_counter()
             if remaining <= 0:
-                fut.cancel()
-                raise TimeoutError(
+                # OpenAI may still finish (and bill) after our wall clock — salvage usage.
+                salvaged = self._salvage_future_response(fut, grace_s=8.0)
+                msg = (
                     f"OpenAI {self.model} did not respond within {limit / 60:.0f} minutes. "
                     "Retry the prompt, or cancel and try a different model."
                 )
+                err = TimeoutError(msg)
+                if salvaged is not None:
+                    setattr(err, "openai_response", salvaged)
+                    usage = usage_from_openai_response(salvaged)
+                    if usage:
+                        setattr(err, "usage", usage)
+                        setattr(
+                            err,
+                            "cost_usd",
+                            estimate_cost_usd(self.model, usage, provider="openai"),
+                        )
+                else:
+                    try:
+                        fut.cancel()
+                    except Exception:
+                        pass
+                raise err
             try:
                 return fut.result(timeout=min(1.0, remaining))
             except _cf.TimeoutError:
                 continue
             except TimeoutError:
                 continue
+
+    @staticmethod
+    def _salvage_future_response(fut, *, grace_s: float = 8.0):
+        """Best-effort: if the HTTP call completes just after our timeout, keep the response for usage."""
+        import concurrent.futures as _cf
+
+        try:
+            if fut.done() and not fut.cancelled():
+                return fut.result(timeout=0)
+        except Exception:
+            return None
+        try:
+            return fut.result(timeout=max(0.1, float(grace_s)))
+        except (_cf.TimeoutError, TimeoutError, Exception):
+            return None
+
+    @staticmethod
+    def _apply_openai_exc_usage(trace: dict[str, Any], exc: BaseException, model: str | None) -> None:
+        """Copy salvaged token usage from a timeout/API exception onto the call trace."""
+        if trace.get("usage"):
+            return
+        usage = getattr(exc, "usage", None)
+        if not usage:
+            resp = getattr(exc, "openai_response", None)
+            if resp is not None:
+                usage = usage_from_openai_response(resp)
+        if not usage:
+            # Walk the cause chain (TimeoutError nested under RuntimeError).
+            cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+            depth = 0
+            while cause is not None and depth < 4:
+                usage = getattr(cause, "usage", None)
+                if not usage:
+                    resp = getattr(cause, "openai_response", None)
+                    if resp is not None:
+                        usage = usage_from_openai_response(resp)
+                if usage:
+                    break
+                cause = getattr(cause, "__cause__", None) or getattr(cause, "__context__", None)
+                depth += 1
+        if not usage:
+            return
+        trace["usage"] = usage
+        cost = getattr(exc, "cost_usd", None)
+        if cost is None:
+            cost = estimate_cost_usd(model, usage, provider="openai")
+        if cost is not None:
+            trace["cost_usd"] = cost
+
+    @staticmethod
+    def _openai_error_with_trace(
+        message: str,
+        trace: dict[str, Any],
+        exc_type: type[BaseException] = RuntimeError,
+        *,
+        cause: BaseException | None = None,
+    ) -> BaseException:
+        err = exc_type(message)
+        setattr(err, "ai_trace", dict(trace))
+        if trace.get("usage"):
+            setattr(err, "usage", trace["usage"])
+        if trace.get("cost_usd") is not None:
+            setattr(err, "cost_usd", trace["cost_usd"])
+        if cause is not None:
+            try:
+                err.__cause__ = cause
+            except Exception:
+                pass
+        return err
 
     def generate_cad_plan(
         self,
@@ -1695,7 +1782,8 @@ class AIService:
                 _fut = _pool.submit(_do_responses_create, create_kwargs)
                 try:
                     response = self._wait_future(_fut, hard_timeout=hard_timeout)
-                except TimeoutError:
+                except TimeoutError as te:
+                    self._apply_openai_exc_usage(trace, te, model)
                     raise
                 except RuntimeError:
                     _fut.cancel()
@@ -1718,14 +1806,18 @@ class AIService:
                     trace["truncated"] = True
                     return text, trace
                 kind = "JSON" if json_response else "response"
-                raise ValueError(
+                raise self._openai_error_with_trace(
                     f"AI returned invalid {kind}: response truncated at token limit "
-                    f"(max_output_tokens={max_tokens}). Partial: {text[:400]}"
+                    f"(max_output_tokens={max_tokens}). Partial: {text[:400]}",
+                    trace,
+                    ValueError,
                 )
             if text:
                 return text, trace
-            raise RuntimeError("Empty response from OpenAI")
+            raise self._openai_error_with_trace("Empty response from OpenAI", trace, RuntimeError)
         except Exception as exc:
+            if not trace.get("usage"):
+                self._apply_openai_exc_usage(trace, exc, model)
             trace["duration_ms"] = (time.perf_counter() - t0) * 1000
             trace["error"] = str(exc)
             trace_add("error", f"OpenAI failed: {exc}", trace_id=trace_id, data=trace)
@@ -1736,7 +1828,12 @@ class AIService:
                 or model.startswith("gpt-5.6")
                 or model.endswith("-sol")
             ):
-                raise RuntimeError(f"OpenAI error ({model}): {exc}") from exc
+                raise self._openai_error_with_trace(
+                    f"OpenAI error ({model}): {exc}",
+                    trace,
+                    RuntimeError,
+                    cause=exc,
+                )
             try:
                 chat_kwargs: dict[str, Any] = {
                     "model": model,
@@ -1767,13 +1864,22 @@ class AIService:
                         trace["truncated"] = True
                         return text, trace
                     kind = "JSON" if json_response else "response"
-                    raise ValueError(
+                    raise self._openai_error_with_trace(
                         f"AI returned invalid {kind}: response truncated at token limit "
-                        f"(max_tokens={max_tokens}). Partial: {text[:400]}"
+                        f"(max_tokens={max_tokens}). Partial: {text[:400]}",
+                        trace,
+                        ValueError,
                     )
                 return text, trace
             except Exception as exc2:
-                raise RuntimeError(f"OpenAI API error: {exc2}") from exc2
+                if not trace.get("usage"):
+                    self._apply_openai_exc_usage(trace, exc2, model)
+                raise self._openai_error_with_trace(
+                    f"OpenAI API error: {exc2}",
+                    trace,
+                    RuntimeError,
+                    cause=exc2,
+                )
 
     def _call_anthropic(
         self,

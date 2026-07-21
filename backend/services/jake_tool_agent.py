@@ -541,21 +541,47 @@ class JakeToolAgent:
         return self._run_openai_chat()
 
     def _run_openai_chat(self) -> dict[str, Any]:
+        import concurrent.futures as _cf
+
+        from backend.services.ai_service import cad_authoring_max_tokens
+
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt()},
             {"role": "user", "content": self._user_kickoff()},
         ]
+        max_tokens = cad_authoring_max_tokens(self.ai.model)
         for turn in range(self.max_turns):
             self._raise_if_canceled()
             self._emit("ai_source", f"Agent turn {turn + 1}/{self.max_turns}…", min(70, 16 + turn * 2))
             t0 = time.perf_counter()
-            completion = self.ai.client.chat.completions.create(
-                model=self.ai.model,
-                messages=messages,
-                tools=AGENT_TOOLS,
-                tool_choice="auto",
-                max_completion_tokens=8192,
-            )
+            with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="jake-oai-chat") as pool:
+                fut = pool.submit(
+                    self.ai.client.chat.completions.create,
+                    model=self.ai.model,
+                    messages=messages,
+                    tools=AGENT_TOOLS,
+                    tool_choice="auto",
+                    max_completion_tokens=max_tokens,
+                )
+                try:
+                    completion = self.ai._wait_future(fut)
+                except Exception as exc:
+                    usage = getattr(exc, "usage", None) or {}
+                    if not usage and getattr(exc, "openai_response", None) is not None:
+                        usage = usage_from_openai_response(getattr(exc, "openai_response"))
+                    trace = {
+                        "provider": "openai",
+                        "api": "chat.completions.tools",
+                        "model": self.ai.model,
+                        "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+                        "turn": turn + 1,
+                        "error": str(exc),
+                    }
+                    if usage:
+                        trace["usage"] = usage
+                        trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+                    self._append_ai_trace(trace)
+                    raise
             usage = usage_from_openai_response(completion)
             trace = {
                 "provider": "openai",
@@ -612,6 +638,10 @@ class JakeToolAgent:
 
     def _run_openai_responses(self) -> dict[str, Any]:
         """OpenAI Responses API tool loop (GPT-5.5 / GPT-5.6 Sol and peers)."""
+        import concurrent.futures as _cf
+
+        from backend.services.ai_service import cad_authoring_max_tokens
+
         input_items: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt()},
             {"role": "user", "content": self._user_kickoff()},
@@ -621,6 +651,7 @@ class JakeToolAgent:
             reasoning = self.ai._reasoning_param()
         except Exception:
             reasoning = None
+        max_tokens = cad_authoring_max_tokens(self.ai.model)
         for turn in range(self.max_turns):
             self._raise_if_canceled()
             self._emit("ai_source", f"Agent turn {turn + 1}/{self.max_turns}…", min(70, 16 + turn * 2))
@@ -629,11 +660,31 @@ class JakeToolAgent:
                 "model": self.ai.model,
                 "input": input_items,
                 "tools": _responses_tools(),
-                "max_output_tokens": 8192,
+                "max_output_tokens": max_tokens,
             }
             if reasoning:
                 create_kwargs.update(reasoning)
-            response = self.ai.client.responses.create(**create_kwargs)
+            with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="jake-oai-resp") as pool:
+                fut = pool.submit(self.ai.client.responses.create, **create_kwargs)
+                try:
+                    response = self.ai._wait_future(fut)
+                except Exception as exc:
+                    usage = getattr(exc, "usage", None) or {}
+                    if not usage and getattr(exc, "openai_response", None) is not None:
+                        usage = usage_from_openai_response(getattr(exc, "openai_response"))
+                    trace = {
+                        "provider": "openai",
+                        "api": "responses.tools",
+                        "model": self.ai.model,
+                        "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+                        "turn": turn + 1,
+                        "error": str(exc),
+                    }
+                    if usage:
+                        trace["usage"] = usage
+                        trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+                    self._append_ai_trace(trace)
+                    raise
             usage = usage_from_openai_response(response)
             trace = {
                 "provider": "openai",
@@ -773,4 +824,9 @@ class JakeToolAgent:
 
 
 def run_jake_tool_agent(**kwargs: Any) -> dict[str, Any]:
-    return JakeToolAgent(**kwargs).run()
+    agent = JakeToolAgent(**kwargs)
+    try:
+        return agent.run()
+    except Exception as exc:
+        setattr(exc, "ai_traces", list(agent.ai_traces))
+        raise

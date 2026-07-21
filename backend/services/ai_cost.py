@@ -5,41 +5,85 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-# USD per 1M tokens — update when provider pricing changes.
+# USD per 1M tokens — OpenAI list prices (Responses / Chat Completions).
+# Cached input is typically 10% of input unless the model has no cache discount (Pro).
+_LONG_CTX_5X = {
+    "long_context_threshold": 272_000,
+    "long_context_input": 10.0,
+    "long_context_output": 45.0,
+    "long_context_cached_input": 1.0,
+}
+_LONG_CTX_TERRA = {
+    "long_context_threshold": 272_000,
+    "long_context_input": 5.0,
+    "long_context_output": 22.5,
+    "long_context_cached_input": 0.5,
+}
+_LONG_CTX_LUNA = {
+    "long_context_threshold": 272_000,
+    "long_context_input": 2.0,
+    "long_context_output": 9.0,
+    "long_context_cached_input": 0.2,
+}
+
 OPENAI_PRICING: dict[str, dict[str, float]] = {
-    "gpt-5.5-pro": {"input": 30.0, "output": 180.0},
+    # Pro: no cached-input discount (OpenAI docs).
+    "gpt-5.5-pro": {"input": 30.0, "output": 180.0, "cached_input": 30.0},
+    "gpt-5.4-pro": {"input": 30.0, "output": 180.0, "cached_input": 30.0},
     "gpt-5.6-sol": {
         "input": 5.0,
         "output": 30.0,
         "cached_input": 0.5,
-        "long_context_threshold": 272_000,
-        "long_context_input": 10.0,
-        "long_context_output": 45.0,
-        "long_context_cached_input": 1.0,
+        **_LONG_CTX_5X,
     },
+    "gpt-5.6-terra": {
+        "input": 2.5,
+        "output": 15.0,
+        "cached_input": 0.25,
+        **_LONG_CTX_TERRA,
+    },
+    "gpt-5.6-luna": {
+        "input": 1.0,
+        "output": 6.0,
+        "cached_input": 0.1,
+        **_LONG_CTX_LUNA,
+    },
+    # Alias `gpt-5.6` routes to Sol.
     "gpt-5.6": {
         "input": 5.0,
         "output": 30.0,
         "cached_input": 0.5,
-        "long_context_threshold": 272_000,
-        "long_context_input": 10.0,
-        "long_context_output": 45.0,
-        "long_context_cached_input": 1.0,
+        **_LONG_CTX_5X,
     },
     "gpt-5.5": {
         "input": 5.0,
         "output": 30.0,
         "cached_input": 0.5,
-        "long_context_threshold": 272_000,
-        "long_context_input": 10.0,
-        "long_context_output": 45.0,
-        "long_context_cached_input": 1.0,
+        **_LONG_CTX_5X,
+    },
+    "gpt-5.4": {
+        "input": 2.5,
+        "output": 15.0,
+        "cached_input": 0.25,
+        **_LONG_CTX_TERRA,
     },
     "gpt-5.3-codex": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
+    "gpt-5.3": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
+    "gpt-5.2-codex": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
+    "gpt-5.2": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
+    "gpt-5.1": {"input": 1.25, "output": 10.0, "cached_input": 0.125},
+    "gpt-5": {"input": 1.25, "output": 10.0, "cached_input": 0.125},
+    "gpt-4.1-mini": {"input": 0.4, "output": 1.6, "cached_input": 0.1},
+    "gpt-4.1": {"input": 2.0, "output": 8.0, "cached_input": 0.5},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cached_input": 0.075},
     "gpt-4o": {"input": 2.5, "output": 10.0, "cached_input": 1.25},
-    "o3": {"input": 10.0, "output": 40.0},
-    "o1": {"input": 15.0, "output": 60.0},
+    "o4-mini": {"input": 1.1, "output": 4.4, "cached_input": 0.275},
+    "o3-pro": {"input": 20.0, "output": 80.0, "cached_input": 20.0},
+    "o3-mini": {"input": 1.1, "output": 4.4, "cached_input": 0.55},
+    "o3": {"input": 2.0, "output": 8.0, "cached_input": 0.5},
+    "o1-pro": {"input": 150.0, "output": 600.0, "cached_input": 150.0},
+    "o1-mini": {"input": 1.1, "output": 4.4, "cached_input": 0.55},
+    "o1": {"input": 15.0, "output": 60.0, "cached_input": 7.5},
 }
 
 ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
@@ -65,31 +109,88 @@ def _pricing_table(provider: str) -> dict[str, dict[str, float]]:
 
 
 def _pricing_for_model(model: str | None, provider: str = "openai") -> dict[str, float]:
-    name = (model or "").lower()
+    name = (model or "").strip().lower()
     table = _pricing_table(provider)
+    # Prefer longest prefix match so gpt-5.5-pro beats gpt-5.5, gpt-5.6-sol beats gpt-5.6.
     for key in sorted(table.keys(), key=len, reverse=True):
-        if name.startswith(key) or key in name:
+        if name == key or name.startswith(key + "-") or name.startswith(key):
+            return table[key]
+    for key in sorted(table.keys(), key=len, reverse=True):
+        if key in name:
             return table[key]
     if provider == "anthropic":
         return {"input": 3.0, "output": 15.0}
     return {"input": 2.5, "output": 10.0}
 
 
-def usage_from_openai_response(response: Any) -> dict[str, int]:
-    usage = getattr(response, "usage", None)
+def _usage_attr(obj: Any, *names: str, default: Any = 0) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        for name in names:
+            if obj.get(name) is not None:
+                return obj.get(name)
+        return default
+    for name in names:
+        val = getattr(obj, name, None)
+        if val is not None:
+            return val
+    return default
+
+
+def _coerce_usage_object(usage: Any) -> Any:
     if usage is None:
+        return None
+    if isinstance(usage, dict):
+        return usage
+    # Pydantic / SDK models
+    for meth in ("model_dump", "to_dict", "dict"):
+        fn = getattr(usage, meth, None)
+        if callable(fn):
+            try:
+                dumped = fn()
+                if isinstance(dumped, dict):
+                    return dumped
+            except Exception:
+                pass
+    return usage
+
+
+def normalize_openai_usage(usage: Any) -> dict[str, int]:
+    """Normalize Chat Completions or Responses API usage into a flat token dict."""
+    usage = _coerce_usage_object(usage)
+    if not usage:
         return {}
-    input_tokens = int(getattr(usage, "input_tokens", 0) or getattr(usage, "prompt_tokens", 0) or 0)
-    output_tokens = int(getattr(usage, "output_tokens", 0) or getattr(usage, "completion_tokens", 0) or 0)
-    total_tokens = int(getattr(usage, "total_tokens", 0) or (input_tokens + output_tokens))
-    cached_input = 0
-    details = getattr(usage, "input_tokens_details", None) or getattr(usage, "prompt_tokens_details", None)
-    if details is not None:
-        cached_input = int(getattr(details, "cached_tokens", 0) or 0)
-    reasoning_tokens = 0
-    out_details = getattr(usage, "output_tokens_details", None) or getattr(usage, "completion_tokens_details", None)
-    if out_details is not None:
-        reasoning_tokens = int(getattr(out_details, "reasoning_tokens", 0) or 0)
+    input_tokens = int(
+        _usage_attr(usage, "input_tokens", "prompt_tokens", default=0) or 0
+    )
+    output_tokens = int(
+        _usage_attr(usage, "output_tokens", "completion_tokens", default=0) or 0
+    )
+    total_tokens = int(_usage_attr(usage, "total_tokens", default=0) or 0)
+    if total_tokens <= 0:
+        total_tokens = input_tokens + output_tokens
+    details = _usage_attr(
+        usage, "input_tokens_details", "prompt_tokens_details", default=None
+    )
+    cached_input = int(_usage_attr(details, "cached_tokens", default=0) or 0)
+    # Some Responses payloads expose cache fields at the top level.
+    if not cached_input:
+        cached_input = int(
+            _usage_attr(
+                usage,
+                "cached_input_tokens",
+                "cache_read_input_tokens",
+                default=0,
+            )
+            or 0
+        )
+    out_details = _usage_attr(
+        usage, "output_tokens_details", "completion_tokens_details", default=None
+    )
+    reasoning_tokens = int(_usage_attr(out_details, "reasoning_tokens", default=0) or 0)
+    if not reasoning_tokens:
+        reasoning_tokens = int(_usage_attr(usage, "reasoning_tokens", default=0) or 0)
     payload: dict[str, int] = {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
@@ -98,8 +199,27 @@ def usage_from_openai_response(response: Any) -> dict[str, int]:
     if cached_input:
         payload["cached_input_tokens"] = cached_input
     if reasoning_tokens:
+        # Subset of output_tokens for display; billed via output rate already.
         payload["reasoning_tokens"] = reasoning_tokens
     return payload
+
+
+def usage_from_openai_response(response: Any) -> dict[str, int]:
+    """Extract usage from an OpenAI SDK response, dict payload, or raw usage object."""
+    if response is None:
+        return {}
+    if isinstance(response, dict):
+        if "input_tokens" in response or "prompt_tokens" in response or "output_tokens" in response:
+            return normalize_openai_usage(response)
+        usage = response.get("usage")
+        return normalize_openai_usage(usage)
+    usage = getattr(response, "usage", None)
+    if usage is None and hasattr(response, "get"):
+        try:
+            usage = response.get("usage")  # type: ignore[call-arg]
+        except Exception:
+            usage = None
+    return normalize_openai_usage(usage)
 
 
 def usage_from_anthropic_response(data: dict[str, Any]) -> dict[str, int]:
@@ -180,7 +300,14 @@ def summarize_ai_traces(traces: list[dict[str, Any]] | dict[str, Any] | None) ->
     if not traces:
         return empty
     items = traces if isinstance(traces, list) else [traces]
-    totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    totals: dict[str, int] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
     cost_usd = 0.0
     calls = 0
     models: list[str] = []
@@ -198,8 +325,14 @@ def summarize_ai_traces(traces: list[dict[str, Any]] | dict[str, Any] | None) ->
         model = trace.get("model")
         if model and model not in models:
             models.append(model)
-        for key in ("input_tokens", "output_tokens", "total_tokens"):
-            totals[key] += int(usage.get(key) or 0)
+        totals["input_tokens"] += int(usage.get("input_tokens") or 0)
+        totals["output_tokens"] += int(usage.get("output_tokens") or 0)
+        totals["total_tokens"] += int(usage.get("total_tokens") or 0)
+        totals["cached_input_tokens"] += int(
+            usage.get("cached_input_tokens") or usage.get("cache_read_input_tokens") or 0
+        )
+        totals["reasoning_tokens"] += int(usage.get("reasoning_tokens") or usage.get("thinking_tokens") or 0)
+        totals["cache_creation_input_tokens"] += int(usage.get("cache_creation_input_tokens") or 0)
         call_cost = trace.get("cost_usd")
         if call_cost is None:
             call_cost = estimate_cost_usd(model, usage, provider=provider or "openai")
@@ -207,8 +340,17 @@ def summarize_ai_traces(traces: list[dict[str, Any]] | dict[str, Any] | None) ->
             cost_usd += float(call_cost)
     if calls == 0:
         return empty
+    # Drop zero-only detail fields so history stays compact.
+    usage_out = {
+        "input_tokens": totals["input_tokens"],
+        "output_tokens": totals["output_tokens"],
+        "total_tokens": totals["total_tokens"],
+    }
+    for key in ("cached_input_tokens", "reasoning_tokens", "cache_creation_input_tokens"):
+        if totals[key]:
+            usage_out[key] = totals[key]
     return {
-        "usage": totals,
+        "usage": usage_out,
         "cost_usd": round(cost_usd, 6),
         "calls": calls,
         "models": models,

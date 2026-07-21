@@ -3842,6 +3842,10 @@ def _run_text_to_cad_v2(
             except DesignCanceled:
                 raise
             except Exception as tool_exc:
+                partial = getattr(tool_exc, "ai_traces", None)
+                if isinstance(partial, list) and partial:
+                    ai_traces.extend(t for t in partial if isinstance(t, dict) and t not in ai_traces)
+                    _sync_ai_traces()
                 agent_exc_message = (
                     f"{agent_exc_message + ' | ' if agent_exc_message else ''}"
                     f"tool agent: {tool_exc}"
@@ -4111,6 +4115,10 @@ def _run_text_to_cad_v2(
                 )
         except Exception as exc:
             last_error = str(exc)
+            failed_trace = getattr(exc, "ai_trace", None)
+            if isinstance(failed_trace, dict) and failed_trace not in ai_traces:
+                ai_traces.append(failed_trace)
+                _sync_ai_traces()
             if cancel_check and cancel_check():
                 raise DesignCanceled("Generation canceled.") from exc
             if "Generation canceled" in last_error:
@@ -5415,6 +5423,9 @@ def run_design(
                 mode=mode,
             )
         except ValueError as exc:
+            failed_trace = getattr(exc, "ai_trace", None)
+            if isinstance(failed_trace, dict):
+                ai_traces.append(failed_trace)
             msg = str(exc)
             if "invalid JSON" not in msg:
                 raise
@@ -5427,6 +5438,11 @@ def run_design(
             )
             trace_add("warning", f"Invalid JSON on attempt {attempt + 1} — retrying", trace_id=trace_id)
             continue
+        except Exception as exc:
+            failed_trace = getattr(exc, "ai_trace", None)
+            if isinstance(failed_trace, dict):
+                ai_traces.append(failed_trace)
+            raise
         ai_traces.append(ai_trace)
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
