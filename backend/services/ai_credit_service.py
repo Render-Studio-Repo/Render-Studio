@@ -83,10 +83,12 @@ def _with_query(url: str, params: dict[str, Any]) -> str:
 
 
 def _user_for_checkout_session(session: dict[str, Any]) -> dict[str, Any] | None:
-    metadata = session.get("metadata") or {}
+    session = _stripe_as_dict(session)
+    metadata = _stripe_as_dict(session.get("metadata"))
+    customer_details = _stripe_as_dict(session.get("customer_details"))
     user_id = str(session.get("client_reference_id") or metadata.get("user_id") or "").strip()
     email = (
-        (session.get("customer_details") or {}).get("email")
+        customer_details.get("email")
         or session.get("customer_email")
         or metadata.get("email")
         or ""
@@ -464,8 +466,8 @@ def handle_success_session(session_id: str) -> bool:
     stripe = _stripe()
     if not stripe:
         return False
-    session = stripe.checkout.Session.retrieve(session_id)
-    meta = session.get("metadata") or {}
+    session = _stripe_as_dict(stripe.checkout.Session.retrieve(session_id))
+    meta = _stripe_as_dict(session.get("metadata"))
     if meta.get("kind") != "ai_credits" or session.get("payment_status") != "paid":
         return False
     user_id = meta.get("user_id") or session.get("client_reference_id")
@@ -507,14 +509,14 @@ def claim_checkout_session(user: dict[str, Any], session_id: str) -> dict[str, A
     stripe = _stripe()
     if not stripe:
         raise ValueError("Stripe is not configured")
-    session = stripe.checkout.Session.retrieve(sid)
-    meta = session.get("metadata") or {}
+    session = _stripe_as_dict(stripe.checkout.Session.retrieve(sid))
+    meta = _stripe_as_dict(session.get("metadata"))
     owner = str(meta.get("user_id") or session.get("client_reference_id") or "").strip()
     if owner and owner != user["id"]:
         raise ValueError("This checkout session belongs to another account.")
     if meta.get("kind") != "ai_credits":
         # Still try payment-link style claim for this user
-        if not handle_payment_link_session(dict(session)):
+        if not handle_payment_link_session(session):
             raise ValueError("Checkout session is not an AI credits purchase.")
     elif not handle_success_session(sid):
         if session.get("payment_status") != "paid":
@@ -522,15 +524,15 @@ def claim_checkout_session(user: dict[str, Any], session_id: str) -> dict[str, A
         raise ValueError("Could not apply credits for this session.")
     return status(user)
 
-
 def handle_payment_link_session(session: dict[str, Any]) -> bool:
     """Credit AI balance for a completed Stripe Payment Link checkout."""
-    if not isinstance(session, dict):
+    session = _stripe_as_dict(session)
+    if not session:
         return False
     session_id = str(session.get("id") or "").strip()
     if not session_id or session.get("payment_status") != "paid":
         return False
-    metadata = session.get("metadata") or {}
+    metadata = _stripe_as_dict(session.get("metadata"))
     if metadata.get("kind"):
         return False
 
@@ -561,10 +563,11 @@ def handle_payment_link_session(session: dict[str, Any]) -> bool:
     account = ensure_account(user["id"])
     balance = int(account.get("balance_cents") or 0) + amount
     now = _now()
+    customer_details = _stripe_as_dict(session.get("customer_details"))
     meta = {
         "stripe": True,
         "payment_link": session_link_id,
-        "checkout_email": (session.get("customer_details") or {}).get("email") or session.get("customer_email"),
+        "checkout_email": customer_details.get("email") or session.get("customer_email"),
     }
     with get_conn() as conn:
         conn.execute(

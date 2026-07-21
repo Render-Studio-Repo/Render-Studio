@@ -907,17 +907,9 @@ class AIService:
         self.client = None
         self.cancel_check = None  # optional Callable[[], bool] set by generation runners
         if self.provider == "openai":
-            # Pro / reasoning models routinely exceed 90s, especially with skills + images.
-            # Sol can sit quiet for many minutes while still streaming keepalives.
-            # gpt-5.5-pro CAD 2.0 briefs commonly need 10–25+ minutes — do not use a short
-            # httpx timeout that only looks alive because of keepalive bytes.
-            if is_sol_model(self.model):
-                ai_timeout = 1200.0
-            elif is_openai_frontier_model(self.model):
-                ai_timeout = 1200.0
-            else:
-                ai_timeout = 180.0
-            self.client = OpenAI(api_key=self.api_key, timeout=ai_timeout)
+            # No wall-clock timeout — Pro/Sol/Quality CAD can run as long as needed.
+            # Cancel is handled separately via cancel_check while waiting on the future.
+            self.client = OpenAI(api_key=self.api_key, timeout=None)
         elif self.provider != "anthropic":
             raise RuntimeError(f"Unsupported AI provider: {self.provider}")
 
@@ -929,27 +921,17 @@ class AIService:
         if check and check():
             raise RuntimeError("Generation canceled.")
 
-    def _wait_future(self, fut, *, hard_timeout: float):
-        """Wait on a thread future, aborting within ~1s when cancel_check trips."""
+    def _wait_future(self, fut, *, hard_timeout: float | None = None):
+        """Wait on a thread future until done or canceled. No model time limit."""
         import concurrent.futures as _cf
 
-        deadline = time.perf_counter() + max(float(hard_timeout), 1.0)
         while True:
             self._raise_if_canceled()
-            remaining = deadline - time.perf_counter()
-            if remaining <= 0:
-                fut.cancel()
-                raise TimeoutError(
-                    f"OpenAI {self.model} did not respond within {hard_timeout:.0f}s. "
-                    "Quality / Pro CAD briefs can take a long time; if this keeps happening, "
-                    "retry the prompt or use Speed (gpt-5.5) for a quicker pass."
-                )
             try:
-                return fut.result(timeout=min(1.0, remaining))
+                return fut.result(timeout=1.0)
             except _cf.TimeoutError:
                 continue
             except TimeoutError:
-                # Python's built-in TimeoutError from some futures backends
                 continue
 
     def generate_cad_plan(

@@ -207,6 +207,16 @@ def refresh_connect_status(user: dict[str, Any]) -> dict[str, Any]:
         return seller_status(user)
     try:
         remote = stripe.Account.retrieve(acct_id)
+        if hasattr(remote, "to_dict_recursive"):
+            remote = remote.to_dict_recursive()
+        elif hasattr(remote, "to_dict"):
+            remote = remote.to_dict()
+        if not isinstance(remote, dict):
+            remote = {
+                "charges_enabled": remote["charges_enabled"],
+                "payouts_enabled": remote["payouts_enabled"],
+                "details_submitted": remote["details_submitted"],
+            }
         upsert_seller_account(
             user["id"],
             charges_enabled=1 if remote.get("charges_enabled") else 0,
@@ -493,12 +503,30 @@ def handle_stripe_webhook(payload: bytes, sig_header: str | None) -> dict[str, A
 
         event = json.loads(payload.decode("utf-8"))
 
-    etype = event.get("type") if isinstance(event, dict) else event["type"]
-    data = event.get("data", {}).get("object", {}) if isinstance(event, dict) else event["data"]["object"]
+    # Newer Stripe SDK objects do not support ``.get`` — normalize to dicts.
+    if hasattr(event, "to_dict_recursive"):
+        event = event.to_dict_recursive()
+    elif hasattr(event, "to_dict"):
+        event = event.to_dict()
+    if not isinstance(event, dict):
+        event = {"type": event["type"], "data": {"object": event["data"]["object"]}}
+
+    etype = event.get("type")
+    data = ((event.get("data") or {}).get("object")) or {}
+    if not isinstance(data, dict) and hasattr(data, "to_dict_recursive"):
+        data = data.to_dict_recursive()
+    elif not isinstance(data, dict) and hasattr(data, "to_dict"):
+        data = data.to_dict()
+    if not isinstance(data, dict):
+        data = {}
 
     if etype == "checkout.session.completed":
         session_id = data.get("id")
         metadata = data.get("metadata") or {}
+        if not isinstance(metadata, dict) and hasattr(metadata, "to_dict"):
+            metadata = metadata.to_dict()
+        if not isinstance(metadata, dict):
+            metadata = {}
         if metadata.get("kind") == "ai_credits":
             from backend.services import ai_credit_service
 
