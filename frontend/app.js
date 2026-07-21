@@ -10104,8 +10104,23 @@ function startExplodedOrbit() {
     radius,
     angle,
     elev: Number.isFinite(elev) ? elev : 0.35,
+    paused: false,
   };
 }
+
+function pauseExplodedOrbitFromUser() {
+  if (!explodedOrbit || !explodedRotateEnabled) return;
+  explodedOrbit.paused = true;
+  // After the user finishes dragging, resume from the new camera pose.
+  window.clearTimeout(pauseExplodedOrbitFromUser._timer);
+  pauseExplodedOrbitFromUser._timer = window.setTimeout(() => {
+    if (explodedViewEnabled && explodedRotateEnabled) startExplodedOrbit();
+  }, 1200);
+}
+
+renderer?.domElement?.addEventListener("pointerdown", () => {
+  pauseExplodedOrbitFromUser();
+});
 
 function setExplodedRotateEnabled(on) {
   explodedRotateEnabled = !!on;
@@ -10132,8 +10147,9 @@ async function applyExplodedView(on) {
     return false;
   }
   const want = !!on;
-  if (want === explodedViewEnabled && (want ? explodedSwapByAssembled.size > 0 : explodedSwapByAssembled.size === 0)) {
+  if (want === explodedViewEnabled) {
     syncExplodedModeUi();
+    if (want && explodedRotateEnabled) startExplodedOrbit();
     return true;
   }
 
@@ -10146,33 +10162,17 @@ async function applyExplodedView(on) {
     syncExplodedModeUi();
     for (const [assembledName, meta] of restores) {
       try {
-        if (meta.exploded && projectAssembly.has(meta.exploded)) {
-          projectAssembly.remove(meta.exploded);
-        }
-        if (!projectAssembly.has(assembledName)) {
-          await loadModel(projectFileUrl(projectId, assembledName), assembledName, {
-            projectId,
-            append: projectAssembly.count() > 0,
-            catalogFilename: assembledName,
-            center: !meta.savedTransform,
-            preservePlacement: !!meta.savedTransform,
-            savedTransform: meta.savedTransform || undefined,
-            fitView: false,
-            autoGizmo: false,
-            cacheBust: true,
-          });
-        } else {
-          projectAssembly.setVisible(assembledName, true);
-          if (meta.savedTransform) {
-            const obj = projectAssembly.get(assembledName);
-            if (obj) {
-              obj.position.copy(meta.savedTransform.position);
-              obj.quaternion.copy(meta.savedTransform.quaternion);
-              obj.scale.copy(meta.savedTransform.scale);
-              obj.updateMatrixWorld(true);
-            }
-          }
-        }
+        await loadModel(projectFileUrl(projectId, assembledName), assembledName, {
+          projectId,
+          append: projectAssembly.count() > 0,
+          catalogFilename: assembledName,
+          center: !meta.savedTransform,
+          preservePlacement: !!meta.savedTransform,
+          savedTransform: meta.savedTransform || undefined,
+          fitView: false,
+          autoGizmo: false,
+          cacheBust: true,
+        });
       } catch (err) {
         console.warn("Failed restoring assembled view", assembledName, err);
       }
@@ -10194,7 +10194,6 @@ async function applyExplodedView(on) {
   }
 
   if (!candidates.length) {
-    // Try selected / primary even if not yet detectable from tree metadata.
     const fallback = selectedFile || projectAssembly.list?.()?.[0]?.[0];
     if (fallback && !/_exploded$/i.test(fileStemName(fallback))) {
       candidates.push({
@@ -10215,11 +10214,11 @@ async function applyExplodedView(on) {
   let swapped = 0;
   for (const entry of candidates) {
     try {
+      // Keep the same catalog identity so the browser selection stays on the assembled part.
       const ok = await loadModel(projectFileUrl(projectId, entry.explodedName), entry.explodedName, {
         projectId,
         append: true,
-        catalogFilename: entry.explodedName,
-        replaceCatalog: entry.catalogName,
+        catalogFilename: entry.catalogName,
         preservePlacement: !!entry.savedTransform,
         savedTransform: entry.savedTransform || undefined,
         center: !entry.savedTransform,
@@ -10227,7 +10226,7 @@ async function applyExplodedView(on) {
         autoGizmo: false,
         cacheBust: true,
       });
-      if (ok || projectAssembly.has(entry.explodedName)) {
+      if (ok || projectAssembly.has(entry.catalogName)) {
         explodedSwapByAssembled.set(entry.catalogName, {
           assembled: entry.catalogName,
           exploded: entry.explodedName,
@@ -12952,6 +12951,18 @@ function animate() {
       center.x + Math.cos(promptTargetPreview.angle) * dist,
       center.y + Math.sin(promptTargetPreview.angle) * dist,
       center.z + dist * 0.42
+    );
+    controls.target.copy(center);
+    camera.lookAt(center);
+    controls._eye?.subVectors(camera.position, controls.target);
+  } else if (explodedOrbit && explodedViewEnabled && explodedRotateEnabled && !explodedOrbit.paused) {
+    explodedOrbit.angle += 0.006;
+    const { center, radius, elev } = explodedOrbit;
+    const cosElev = Math.cos(elev);
+    camera.position.set(
+      center.x + Math.cos(explodedOrbit.angle) * radius * cosElev,
+      center.y + Math.sin(explodedOrbit.angle) * radius * cosElev,
+      center.z + Math.sin(elev) * radius
     );
     controls.target.copy(center);
     camera.lookAt(center);

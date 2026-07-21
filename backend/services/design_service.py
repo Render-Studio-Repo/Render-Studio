@@ -1962,7 +1962,7 @@ def _ensure_gen_exploded_in_source(source: str) -> str:
 
 
 def _normalize_exploded_sidecar_preview(project_path: Path, stem: str) -> None:
-    """Bake Z-up mm units into `{stem}_exploded.glb` (scripts/step often leaves metres)."""
+    """Bake mm units into `{stem}_exploded.glb` (scripts/step often leaves metres)."""
     step_path = project_path / f"{stem}.step"
     if not step_path.is_file():
         step_path = project_path / f"{stem}.stp"
@@ -1985,10 +1985,6 @@ def _normalize_exploded_sidecar_preview(project_path: Path, stem: str) -> None:
                 cad_service._match_glb_scale_to_step(step_path, preview)
             except Exception as exc:
                 logger.debug("Could not unit-match exploded preview %s: %s", preview.name, exc)
-            try:
-                _convert_text_to_cad_glb_to_z_up(preview)
-            except Exception as exc:
-                logger.debug("Could not Z-up exploded preview %s: %s", preview.name, exc)
     except Exception as exc:
         logger.debug("Exploded preview normalize skipped for %s: %s", stem, exc)
 
