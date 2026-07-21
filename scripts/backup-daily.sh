@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Daily Render3D backup: code + models -> local dated folder -> Google Drive.
-# Keeps 7 days locally and on Drive. Excludes .venv, myenv, node_modules, etc.
+# Daily Render3D models backup → Google Drive only
+# (folder RENDER3D_DRIVE_BACKUP_FOLDER_ID / 1ovSbfq6D8kNlL72CJcNueRdKKDsOgt6M).
+# Does not keep local model archives. Code snapshots stay in backups/snapshots/.
 set -euo pipefail
 
 ROOT="/home/ubuntu"
@@ -13,5 +14,7 @@ if [[ ! -x "${PY}" ]]; then
   echo "[backup-daily] Missing venv python: ${PY}" >&2
   exit 1
 fi
+
+export RENDER3D_DRIVE_BACKUP_FOLDER_ID="${RENDER3D_DRIVE_BACKUP_FOLDER_ID:-1ovSbfq6D8kNlL72CJcNueRdKKDsOgt6M}"
 
 exec "${PY}" "${SCRIPT}" "$@"

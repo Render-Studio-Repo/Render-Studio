@@ -10,6 +10,7 @@ export function createPromptComposer({
   onReferencesChange,
   getMentionables = () => [],
   onUnlinkMentionable = null,
+  resolveClipboardPaste = null,
 }) {
   const references = [];
   let inlineExpanded = false;
@@ -826,6 +827,14 @@ export function createPromptComposer({
     if (imageFiles.length) return; // app.js image paste handler owns this
     e.preventDefault();
     const text = e.clipboardData?.getData("text/plain") || "";
+    const resolved = typeof resolveClipboardPaste === "function"
+      ? resolveClipboardPaste(text, e.clipboardData)
+      : null;
+    if (resolved) {
+      const refs = Array.isArray(resolved) ? resolved : [resolved];
+      const added = addReferences(refs.filter(Boolean), { insertMention: true });
+      if (added) return;
+    }
     // Prefer insertText so the contenteditable undo stack (⌘Z / ⌘⇧Z) stays intact.
     if (text && document.queryCommandSupported?.("insertText")) {
       document.execCommand("insertText", false, text);

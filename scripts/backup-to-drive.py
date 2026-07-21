@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Daily backup of Render3D code + project models to Google Drive.
+"""Daily backup of Render3D 3D project models to Google Drive.
 
-Creates /home/ubuntu/backups/drive-daily/M-D-YYYY/render3d-backup.tar.gz,
-uploads it under PARENT_FOLDER_ID/M-D-YYYY/, and prunes backups older than
-RETENTION_DAYS locally and on Drive.
+Creates a temporary archive of ``projects/``, uploads it under
+PARENT_FOLDER_ID/M-D-YYYY/, then deletes the local archive so model
+backups live on Drive only (not under backups/drive-daily).
 
-Excludes installed packages (.venv, myenv, node_modules, __pycache__, etc.).
+Code continues to use local rolling snapshots via backup-code.sh
+(which does not include projects/).
 
 One-time auth (browser required):
   /home/ubuntu/.venv/bin/python3 /home/ubuntu/scripts/backup-to-drive.py --auth
@@ -25,14 +26,15 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path("/home/ubuntu")
+# Staging only — deleted after a successful Drive upload.
 LOCAL_BACKUP_ROOT = ROOT / "backups" / "drive-daily"
 RETENTION_DAYS = 7
 PROTECTED_BACKUP_PREFIXES = ("golden-",)
 
-# Google Drive destination folder (Render3D daily backups)
+# Google Drive destination folder (model backups only)
 PARENT_FOLDER_ID = os.getenv(
     "RENDER3D_DRIVE_BACKUP_FOLDER_ID",
-    "1fem3lTRHWwzHpnXZMUTaYFXf7qYeqGwU",
+    "1ovSbfq6D8kNlL72CJcNueRdKKDsOgt6M",
 )
 
 SCOPES = [
@@ -54,26 +56,9 @@ CLIENT_SECRET = os.getenv(
     "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",
 )
 
-BACKUP_DIRS = (
-    "backend",
-    "frontend",
-    "scripts",
-    "services",
-    "deploy",
-    "data",
-    "projects",
-    "fusion360-plugin",
-    "milestones",
-    "inbox",
-    "images",
-)
-BACKUP_FILES = (
-    "requirements.txt",
-    "run.py",
-    "README.md",
-    ".env",
-    ".env.example",
-)
+# Model / project data only — code stays in local snapshots.
+BACKUP_DIRS = ("projects",)
+BACKUP_FILES: tuple[str, ...] = ()
 
 TAR_EXCLUDES = (
     ".venv",
@@ -93,6 +78,8 @@ TAR_EXCLUDES = (
     ".mypy_cache",
     ".ruff_cache",
     "*.egg-info",
+    "*.tmp",
+    "*.part",
 )
 
 LOG = logging.getLogger("backup-to-drive")
@@ -126,7 +113,6 @@ def ensure_credentials_file() -> None:
 
 def get_drive_service():
     from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
 
@@ -184,9 +170,6 @@ def collect_paths() -> tuple[list[Path], list[Path]]:
         path = ROOT / name
         if path.is_file():
             files.append(path)
-    git_dir = ROOT / ".git"
-    if git_dir.is_dir():
-        dirs.append(git_dir)
     return dirs, files
 
 
@@ -222,8 +205,8 @@ def is_protected_backup_name(name: str) -> bool:
 def create_archive(day: date, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     folder = backup_folder_name(day)
-    archive = dest_dir / f"render3d-backup-{folder}.tar.gz"
-    if archive.is_file():
+    archive = dest_dir / f"render3d-models-{folder}.tar.gz"
+    if archive.is_file() and archive.stat().st_size > 0:
         LOG.info("Archive already exists for %s; reusing %s", day, archive)
         return archive
 
@@ -231,7 +214,16 @@ def create_archive(day: date, dest_dir: Path) -> Path:
     if not dirs and not files:
         raise RuntimeError("Nothing to back up")
 
-    cmd = ["tar", "-czf", str(archive), "-C", str(ROOT)]
+    cmd = [
+        "tar",
+        "-czf",
+        str(archive),
+        "-C",
+        str(ROOT),
+        "--ignore-failed-read",
+        "--warning=no-file-changed",
+        "--warning=no-file-removed",
+    ]
     for pattern in TAR_EXCLUDES:
         cmd.extend(["--exclude", pattern])
     for path in dirs:
@@ -239,8 +231,17 @@ def create_archive(day: date, dest_dir: Path) -> Path:
     for path in files:
         cmd.append(path.name)
 
-    LOG.info("Creating archive: %s", archive)
-    subprocess.run(cmd, check=True)
+    LOG.info("Creating models archive: %s", archive)
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    # Exit 1 = files changed/removed while reading — archive is still usable.
+    if result.returncode not in (0, 1):
+        if result.stderr:
+            LOG.error(result.stderr.strip())
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    if result.returncode == 1 and result.stderr:
+        LOG.warning("tar completed with warnings: %s", result.stderr.strip()[:500])
+    if not archive.is_file() or archive.stat().st_size <= 0:
+        raise RuntimeError(f"Archive missing or empty: {archive}")
 
     manifest = dest_dir / "MANIFEST.txt"
     manifest.write_text(
@@ -248,12 +249,15 @@ def create_archive(day: date, dest_dir: Path) -> Path:
             [
                 f"created_utc={datetime.now(timezone.utc).isoformat()}",
                 f"backup_date={backup_folder_name(day)}",
+                f"kind=models",
+                f"drive_folder_id={PARENT_FOLDER_ID}",
                 f"git_head={git_head()}",
                 f"archive={archive.name}",
                 f"archive_bytes={archive.stat().st_size}",
-                "included_dirs=" + ",".join(BACKUP_DIRS) + ",.git",
+                "included_dirs=" + ",".join(BACKUP_DIRS),
                 "included_files=" + ",".join(BACKUP_FILES),
                 "excludes=" + ",".join(TAR_EXCLUDES),
+                "local_retention=none (deleted after Drive upload)",
             ]
         )
         + "\n",
@@ -271,7 +275,14 @@ def drive_find_folder(service, name: str, parent_id: str) -> str | None:
     )
     resp = (
         service.files()
-        .list(q=query, spaces="drive", fields="files(id,name)", pageSize=10)
+        .list(
+            q=query,
+            spaces="drive",
+            fields="files(id,name)",
+            pageSize=10,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        )
         .execute()
     )
     files = resp.get("files") or []
@@ -287,24 +298,54 @@ def drive_create_folder(service, name: str, parent_id: str) -> str:
         "mimeType": "application/vnd.google-apps.folder",
         "parents": [parent_id],
     }
-    created = service.files().create(body=meta, fields="id").execute()
+    created = (
+        service.files()
+        .create(body=meta, fields="id", supportsAllDrives=True)
+        .execute()
+    )
     folder_id = created["id"]
     LOG.info("Created Drive folder %s (%s)", name, folder_id)
     return folder_id
+
+
+def drive_find_file(service, name: str, parent_id: str) -> str | None:
+    safe_name = name.replace("'", "\\'")
+    query = f"name='{safe_name}' and '{parent_id}' in parents and trashed=false"
+    resp = (
+        service.files()
+        .list(
+            q=query,
+            spaces="drive",
+            fields="files(id,name)",
+            pageSize=10,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        )
+        .execute()
+    )
+    files = resp.get("files") or []
+    return files[0]["id"] if files else None
 
 
 def drive_upload_file(service, local_path: Path, folder_id: str) -> str:
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
+    suffix = local_path.suffix.lower()
+    mime = "application/gzip" if suffix in {".gz", ".tgz"} else "text/plain" if suffix == ".txt" else "application/octet-stream"
     existing = drive_find_file(service, local_path.name, folder_id)
-    media = MediaFileUpload(str(local_path), mimetype="application/gzip", resumable=True)
+    media = MediaFileUpload(str(local_path), mimetype=mime, resumable=True)
     try:
         if existing:
             LOG.info("Updating existing Drive file %s", local_path.name)
             updated = (
                 service.files()
-                .update(fileId=existing, media_body=media, fields="id,name,size")
+                .update(
+                    fileId=existing,
+                    media_body=media,
+                    fields="id,name,size",
+                    supportsAllDrives=True,
+                )
                 .execute()
             )
             return updated["id"]
@@ -316,6 +357,7 @@ def drive_upload_file(service, local_path: Path, folder_id: str) -> str:
                 body={"name": local_path.name, "parents": [folder_id]},
                 media_body=media,
                 fields="id,name,size",
+                supportsAllDrives=True,
             )
             .execute()
         )
@@ -325,40 +367,61 @@ def drive_upload_file(service, local_path: Path, folder_id: str) -> str:
         raise RuntimeError(f"Google Drive upload failed for {local_path.name}: {detail}") from exc
 
 
-def drive_find_file(service, name: str, parent_id: str) -> str | None:
-    safe_name = name.replace("'", "\\'")
-    query = f"name='{safe_name}' and '{parent_id}' in parents and trashed=false"
-    resp = (
-        service.files()
-        .list(q=query, spaces="drive", fields="files(id,name)", pageSize=10)
-        .execute()
-    )
-    files = resp.get("files") or []
-    return files[0]["id"] if files else None
-
-
 def upload_day_backup(service, day: date, local_dir: Path, archive: Path) -> None:
     folder_id = drive_create_folder(service, backup_folder_name(day), PARENT_FOLDER_ID)
     drive_upload_file(service, archive, folder_id)
     manifest = local_dir / "MANIFEST.txt"
     if manifest.is_file():
-        drive_upload_file(service, manifest, folder_id)
+        # Manifest is text; upload with correct mime when possible.
+        from googleapiclient.http import MediaFileUpload
+        from googleapiclient.errors import HttpError
+
+        existing = drive_find_file(service, manifest.name, folder_id)
+        media = MediaFileUpload(str(manifest), mimetype="text/plain", resumable=True)
+        try:
+            if existing:
+                service.files().update(
+                    fileId=existing, media_body=media, fields="id", supportsAllDrives=True
+                ).execute()
+            else:
+                service.files().create(
+                    body={"name": manifest.name, "parents": [folder_id]},
+                    media_body=media,
+                    fields="id",
+                    supportsAllDrives=True,
+                ).execute()
+            LOG.info("Uploaded MANIFEST.txt")
+        except HttpError as exc:
+            raise RuntimeError(f"Google Drive upload failed for MANIFEST.txt: {exc}") from exc
 
 
-def prune_local(cutoff: date) -> None:
+def prune_local(cutoff: date | None = None, *, wipe_all: bool = False) -> None:
+    """Remove local model backup staging dirs. Model backups are Drive-only."""
     if not LOCAL_BACKUP_ROOT.is_dir():
         return
-    for entry in LOCAL_BACKUP_ROOT.iterdir():
+    for entry in list(LOCAL_BACKUP_ROOT.iterdir()):
         if not entry.is_dir():
+            if wipe_all and entry.is_file():
+                LOG.info("Removing leftover local backup file %s", entry)
+                entry.unlink(missing_ok=True)
             continue
         if is_protected_backup_name(entry.name):
             LOG.info("Keeping protected local backup folder %s", entry)
             continue
-        day = parse_backup_date(entry.name)
-        if day is None or day >= cutoff:
+        if wipe_all:
+            LOG.info("Removing local model backup folder %s", entry)
+            shutil.rmtree(entry, ignore_errors=True)
             continue
-        LOG.info("Pruning local backup folder %s", entry)
-        shutil.rmtree(entry)
+        day = parse_backup_date(entry.name)
+        if day is None or (cutoff is not None and day < cutoff):
+            LOG.info("Pruning local backup folder %s", entry)
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def remove_local_staging(local_dir: Path) -> None:
+    if local_dir.is_dir():
+        LOG.info("Removing local staging after Drive upload: %s", local_dir)
+        shutil.rmtree(local_dir, ignore_errors=True)
 
 
 def prune_drive(service, cutoff: date) -> None:
@@ -379,6 +442,8 @@ def prune_drive(service, cutoff: date) -> None:
                     fields="nextPageToken, files(id,name)",
                     pageSize=100,
                     pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
@@ -394,7 +459,7 @@ def prune_drive(service, cutoff: date) -> None:
                 continue
             LOG.info("Pruning Drive backup folder %s (%s)", name, item["id"])
             try:
-                service.files().delete(fileId=item["id"]).execute()
+                service.files().delete(fileId=item["id"], supportsAllDrives=True).execute()
             except HttpError as exc:
                 LOG.warning("Could not delete Drive folder %s: %s", name, exc)
         page_token = resp.get("nextPageToken")
@@ -402,28 +467,86 @@ def prune_drive(service, cutoff: date) -> None:
             break
 
 
-def run_backup(*, skip_upload: bool = False) -> None:
+def upload_existing_local_archives(service) -> int:
+    """Move any leftover local drive-daily archives into the models Drive folder."""
+    if not LOCAL_BACKUP_ROOT.is_dir():
+        return 0
+    uploaded = 0
+    for entry in sorted(LOCAL_BACKUP_ROOT.iterdir()):
+        if not entry.is_dir() or is_protected_backup_name(entry.name):
+            continue
+        day = parse_backup_date(entry.name) or datetime.now(timezone.utc).date()
+        archives = sorted(entry.glob("*.tar.gz"))
+        if not archives:
+            continue
+        folder_id = drive_create_folder(service, backup_folder_name(day), PARENT_FOLDER_ID)
+        for archive in archives:
+            # Keep original name so older full backups remain identifiable.
+            LOG.info("Migrating local archive %s → Drive %s", archive, PARENT_FOLDER_ID)
+            drive_upload_file(service, archive, folder_id)
+            uploaded += 1
+        manifest = entry / "MANIFEST.txt"
+        if manifest.is_file():
+            drive_upload_file(service, manifest, folder_id)
+        note = entry / "MIGRATED.txt"
+        note.write_text(
+            f"migrated_utc={datetime.now(timezone.utc).isoformat()}\n"
+            f"drive_folder_id={PARENT_FOLDER_ID}\n"
+            f"day_folder={backup_folder_name(day)}\n",
+            encoding="utf-8",
+        )
+        drive_upload_file(service, note, folder_id)
+    return uploaded
+
+
+def run_backup(*, skip_upload: bool = False, keep_local: bool = False) -> None:
     day = datetime.now(timezone.utc).date()
     folder = backup_folder_name(day)
+    # Stage on the root disk (not /tmp tmpfs — models archives exceed tmpfs).
+    # Deleted after a successful Drive upload unless --keep-local / --local-only.
     local_dir = LOCAL_BACKUP_ROOT / folder
+    LOCAL_BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+
     archive = create_archive(day, local_dir)
 
     if not skip_upload:
         service = get_drive_service()
+        # First migrate any leftover local archives into the Drive models folder.
+        migrated = upload_existing_local_archives(service)
+        if migrated:
+            LOG.info("Migrated %s leftover local archive(s) to Drive", migrated)
+
         upload_day_backup(service, day, local_dir, archive)
         cutoff = day - timedelta(days=RETENTION_DAYS)
         prune_drive(service, cutoff)
+        if not keep_local:
+            remove_local_staging(local_dir)
+            prune_local(wipe_all=True)
+    else:
+        LOG.info("Local-only mode: left archive at %s", archive)
 
-    cutoff = day - timedelta(days=RETENTION_DAYS)
-    prune_local(cutoff)
-    LOG.info("Daily backup complete for %s", folder)
+    LOG.info(
+        "Models backup complete for %s → Drive folder %s",
+        folder,
+        PARENT_FOLDER_ID,
+    )
 
 
 def main() -> int:
     setup_logging()
-    parser = argparse.ArgumentParser(description="Backup Render3D code/models to Google Drive")
+    parser = argparse.ArgumentParser(description="Backup Render3D models to Google Drive")
     parser.add_argument("--auth", action="store_true", help="Run OAuth flow and save token")
     parser.add_argument("--local-only", action="store_true", help="Create archive only; skip Drive upload")
+    parser.add_argument(
+        "--keep-local",
+        action="store_true",
+        help="Keep a local staging copy after upload (default: Drive-only)",
+    )
+    parser.add_argument(
+        "--migrate-local",
+        action="store_true",
+        help="Only upload leftover backups/drive-daily archives to Drive, then delete local",
+    )
     args = parser.parse_args()
 
     if args.auth:
@@ -431,7 +554,13 @@ def main() -> int:
         return 0
 
     try:
-        run_backup(skip_upload=args.local_only)
+        if args.migrate_local:
+            service = get_drive_service()
+            count = upload_existing_local_archives(service)
+            prune_local(wipe_all=True)
+            LOG.info("Migrated %s local archive(s); local model backups removed", count)
+            return 0
+        run_backup(skip_upload=args.local_only, keep_local=args.keep_local)
     except Exception:
         LOG.exception("Backup failed")
         return 1

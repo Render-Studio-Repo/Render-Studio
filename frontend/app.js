@@ -53,7 +53,7 @@ import {
 } from "./scene-style.js?v=20260720-material-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
-import { createPromptComposer } from "./prompt-composer.js?v=20260720-prompt-undo";
+import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260716-pending-history";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260715-history-codex-target";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -9601,6 +9601,18 @@ document.querySelectorAll(".color-swatch").forEach((btn) => {
 
 let transparentPickEnabled = false;
 const transparentObjects = new Set();
+const TRANSPARENT_MODE_KEY = "render3d.transparentMode";
+
+function readTransparentMode() {
+  try {
+    const mode = String(localStorage.getItem(TRANSPARENT_MODE_KEY) || "click").toLowerCase();
+    return mode === "entire" ? "entire" : "click";
+  } catch {
+    return "click";
+  }
+}
+
+let transparentMode = readTransparentMode();
 
 function ensureUniqueMeshMaterials(mesh) {
   if (!mesh?.material || mesh.userData?._transparentUniqueMaterial) return;
@@ -9631,21 +9643,119 @@ function clearViewportTransparent() {
   targets.forEach((obj) => setObjectTransparent(obj, false, { wireframe: viewMode === "wireframe" }));
 }
 
+function entireModelTransparentTargets() {
+  const targets = [];
+  const seen = new Set();
+  const push = (obj) => {
+    if (!obj || seen.has(obj)) return;
+    seen.add(obj);
+    targets.push(obj);
+  };
+  try {
+    for (const [, obj] of projectAssembly?.list?.() || []) {
+      if (obj?.visible === false) continue;
+      push(obj);
+    }
+  } catch {
+    /* assembly optional during early boot */
+  }
+  if (!targets.length && currentMesh) push(currentMesh);
+  return targets;
+}
+
+function applyEntireModelTransparent() {
+  clearViewportTransparent();
+  const targets = entireModelTransparentTargets();
+  if (!targets.length) {
+    setEditStatus("ok", "Transparent: load a model first.");
+    return false;
+  }
+  for (const obj of targets) {
+    transparentObjects.add(obj);
+    syncViewportTransparent(obj);
+  }
+  return true;
+}
+
+function transparentModeLabel(mode = transparentMode) {
+  return mode === "entire" ? "Entire model" : "Click items";
+}
+
+function syncTransparentModeUi() {
+  const main = document.getElementById("btn-transparent-viewport");
+  const menu = document.getElementById("viewport-transparent-menu");
+  if (main) {
+    main.dataset.transparentMode = transparentMode;
+    main.title =
+      transparentMode === "entire"
+        ? "Transparent: entire model. Use ▾ to switch to click items."
+        : "Transparent: click items. Use ▾ to ghost the entire model.";
+  }
+  menu?.querySelectorAll("[data-transparent-mode]").forEach((btn) => {
+    const active = btn.dataset.transparentMode === transparentMode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-checked", String(active));
+  });
+}
+
+function closeTransparentModeMenu() {
+  document.getElementById("viewport-transparent-menu")?.classList.add("hidden");
+  document.getElementById("btn-transparent-options")?.setAttribute("aria-expanded", "false");
+}
+
+function toggleTransparentModeMenu() {
+  const menu = document.getElementById("viewport-transparent-menu");
+  const btn = document.getElementById("btn-transparent-options");
+  if (!menu || !btn) return;
+  const open = menu.classList.contains("hidden");
+  menu.classList.toggle("hidden", !open);
+  btn.setAttribute("aria-expanded", String(open));
+  if (open) syncTransparentModeUi();
+}
+
+function setTransparentMode(mode, { applyIfActive = true } = {}) {
+  transparentMode = mode === "entire" ? "entire" : "click";
+  try {
+    localStorage.setItem(TRANSPARENT_MODE_KEY, transparentMode);
+  } catch {
+    /* ignore */
+  }
+  syncTransparentModeUi();
+  closeTransparentModeMenu();
+  if (!transparentPickEnabled || !applyIfActive) return;
+  clearViewportTransparent();
+  if (transparentMode === "entire") {
+    applyEntireModelTransparent();
+    setEditStatus("ok", "Transparent: entire model is see-through. Toggle Transparent to restore.");
+  } else if (renderer?.domElement) {
+    renderer.domElement.style.cursor = "crosshair";
+    setEditStatus("ok", "Transparent: click an object to toggle see-through. Click again to restore.");
+  }
+}
+
 function setTransparentPickEnabled(on) {
   transparentPickEnabled = !!on;
   const btn = document.getElementById("btn-transparent-viewport");
   btn?.classList.toggle("active", transparentPickEnabled);
   btn?.setAttribute("aria-pressed", String(transparentPickEnabled));
+  syncTransparentModeUi();
   if (renderer?.domElement) {
-    renderer.domElement.style.cursor = transparentPickEnabled ? "crosshair" : "";
+    renderer.domElement.style.cursor =
+      transparentPickEnabled && transparentMode === "click" ? "crosshair" : "";
   }
   if (transparentPickEnabled) {
     directModeling.reset?.();
     activatePickMode("off");
-    setEditStatus("ok", "Transparent: click an object to toggle see-through. Click again to restore.");
+    if (transparentMode === "entire") {
+      applyEntireModelTransparent();
+      setEditStatus("ok", "Transparent: entire model is see-through. Toggle Transparent to restore.");
+    } else {
+      setEditStatus("ok", "Transparent: click an object to toggle see-through. Click again to restore.");
+    }
   } else {
     // Leaving the tool must put every ghosted body back to solid.
     clearViewportTransparent();
+    closeTransparentModeMenu();
     if (btn) setEditStatus("ok", "Transparent tool off — objects restored to solid.");
   }
 }
@@ -9656,6 +9766,10 @@ function toggleTransparentPick() {
 
 function handleTransparentPickClick(e) {
   if (!transparentPickEnabled || !currentMesh) return false;
+  if (transparentMode === "entire") {
+    // Entire-model mode is button-driven; viewport clicks should not toggle parts.
+    return true;
+  }
   if (e.button != null && e.button !== 0) return false;
   const hit = pickObject(e, {
     camera,
@@ -9677,7 +9791,28 @@ function handleTransparentPickClick(e) {
   return true;
 }
 
-document.getElementById("btn-transparent-viewport")?.addEventListener("click", toggleTransparentPick);
+document.getElementById("btn-transparent-viewport")?.addEventListener("click", () => {
+  closeTransparentModeMenu();
+  toggleTransparentPick();
+});
+document.getElementById("btn-transparent-options")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  toggleTransparentModeMenu();
+});
+document.getElementById("viewport-transparent-menu")?.addEventListener("click", (e) => {
+  const modeBtn = e.target.closest("[data-transparent-mode]");
+  if (!modeBtn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  setTransparentMode(modeBtn.dataset.transparentMode || "click");
+  setEditStatus("ok", `Transparent mode: ${transparentModeLabel()}.`);
+});
+document.addEventListener("click", (e) => {
+  if (e.target.closest?.(".viewport-transparent-control")) return;
+  closeTransparentModeMenu();
+});
+syncTransparentModeUi();
 
 // --- Remix button for public / read-only projects ---
 document.getElementById("btn-remix-viewport")?.addEventListener("click", async () => {
@@ -17705,7 +17840,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Screenshot", hint: "Download a PNG of the viewport", run: () => document.getElementById("btn-screenshot-viewport")?.click() },
         { label: "Measure", hint: "Open model measurement tool", run: () => document.getElementById("btn-measure")?.click() },
         { label: "Color", hint: "Color selected object or faces", run: () => showColorTool() },
-        { label: "Transparent", hint: "Click objects to make them see-through", run: () => document.getElementById("btn-transparent-viewport")?.click() },
+        { label: "Transparent", hint: "Ghost click-picked parts or the entire model", run: () => document.getElementById("btn-transparent-viewport")?.click() },
       ]);
       return;
     }

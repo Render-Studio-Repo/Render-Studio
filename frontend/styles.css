@@ -10392,11 +10392,68 @@ label.btn { display: inline-flex; align-items: center; }
   pointer-events: auto;
 }
 
-.viewport-shot-control {
+.viewport-shot-control,
+.viewport-transparent-control {
   position: relative;
   display: inline-flex;
   align-items: stretch;
   gap: 2px;
+}
+
+.viewport-transparent-control .viewport-view-btn:first-child {
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
+
+.viewport-transparent-options {
+  min-width: 28px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
+}
+
+.viewport-transparent-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  width: 248px;
+  padding: 6px;
+  border: 1px solid rgba(139, 148, 158, 0.32);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.96);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.viewport-transparent-menu button {
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.viewport-transparent-menu button:hover,
+.viewport-transparent-menu button.active {
+  border-color: rgba(88, 166, 255, 0.36);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.viewport-transparent-menu strong {
+  font-size: 0.78rem;
+}
+
+.viewport-transparent-menu span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.25;
 }
 
 .viewport-shot-control .viewport-view-btn--shot {

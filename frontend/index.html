@@ -10,7 +10,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260720-render3d-key" />
+  <link rel="stylesheet" href="/styles.css?v=20260721-transparent-mode" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -920,7 +920,20 @@
             </div>
           </div>
           <button type="button" id="btn-grid" class="viewport-view-btn active" title="Toggle floor grid (Shift+G)" aria-pressed="true">Grid</button>
-          <button type="button" id="btn-transparent-viewport" class="viewport-view-btn" title="Click objects to make them transparent" aria-pressed="false">Transparent</button>
+          <div class="viewport-transparent-control">
+            <button type="button" id="btn-transparent-viewport" class="viewport-view-btn" title="Transparent mode — click objects or ghost the whole model" aria-pressed="false">Transparent</button>
+            <button type="button" id="btn-transparent-options" class="viewport-view-btn viewport-transparent-options" aria-haspopup="menu" aria-expanded="false" aria-controls="viewport-transparent-menu" title="Transparent options">▾</button>
+            <div id="viewport-transparent-menu" class="viewport-transparent-menu hidden" role="menu" aria-label="Transparent options">
+              <button type="button" data-transparent-mode="click" role="menuitem">
+                <strong>Click items</strong>
+                <span>Click individual parts or bodies to ghost them.</span>
+              </button>
+              <button type="button" data-transparent-mode="entire" role="menuitem">
+                <strong>Entire model</strong>
+                <span>Make the whole loaded assembly see-through.</span>
+              </button>
+            </div>
+          </div>
           <button type="button" id="btn-remix-viewport" class="viewport-view-btn viewport-remix-btn hidden" title="Remix this model into your own project">Remix</button>
         </div>
         <div id="viewport-measure-readout" class="viewport-measure-readout hidden" aria-live="polite">
@@ -2723,7 +2736,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260720-render3d-key"></script>
+  <script type="module" src="/app.js?v=20260721-transparent-mode"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

@@ -558,6 +558,12 @@ export function createProjectTree(options = {}) {
     getComponents() {
       return [...(browser.components || [])];
     },
+    getSelectedName() {
+      return selectedName;
+    },
+    getSelectedEntries() {
+      return selectedBrowserPayloads(null);
+    },
     isHidden(name) {
       return hidden.has(name);
     },
