@@ -513,39 +513,66 @@ def _best_generated_filename(project_path: Path, started_at: str | None) -> str 
     return candidates[0][2]
 
 
-def _backfill_from_generation(project_path: Path) -> None:
-    """Recover prompt-history rows from generation.json when a worker missed save."""
-    from backend.services import generation_service
+def _apply_job_usage_to_entry(entry: dict[str, Any], gen: dict[str, Any]) -> bool:
+    """Copy usage/cost from a generation job onto a history row when missing or incomplete."""
+    from backend.services.ai_cost import usage_fields_for_history
 
-    gen = generation_service.load(project_path)
-    if not gen or gen.get("kind") != "prompt" or not gen.get("prompt"):
-        return
+    changed = False
+    usage_meta: dict[str, Any] = {}
+    if gen.get("usage") or gen.get("cost_usd") is not None:
+        for key in ("usage", "cost_usd", "ai_calls", "model", "provider"):
+            if gen.get(key) is not None:
+                usage_meta[key] = gen.get(key)
+    elif gen.get("ai_traces"):
+        usage_meta = usage_fields_for_history(gen.get("ai_traces"))
 
-    data = load(project_path)
-    entries: list[dict[str, Any]] = data.get("entries", [])
-    trace_id = gen.get("trace_id")
-    if trace_id and any(str(e.get("trace_id")) == str(trace_id) for e in entries):
-        return
-    request_body = gen.get("request_body") if isinstance(gen.get("request_body"), dict) else {}
-    recovered_prompt = str(
-        request_body.get("prompt")
-        or gen.get("prompt")
-        or ""
+    entry_tokens = int((entry.get("usage") or {}).get("total_tokens") or 0) or (
+        int((entry.get("usage") or {}).get("input_tokens") or 0)
+        + int((entry.get("usage") or {}).get("output_tokens") or 0)
     )
-    original = str(request_body.get("original_prompt") or "").strip()
-    if _has_billed_sibling(entries, recovered_prompt) or (
-        original and _has_billed_sibling(entries, original)
+    job_tokens = int((usage_meta.get("usage") or {}).get("total_tokens") or 0) or (
+        int((usage_meta.get("usage") or {}).get("input_tokens") or 0)
+        + int((usage_meta.get("usage") or {}).get("output_tokens") or 0)
+    )
+    if usage_meta.get("usage") and job_tokens > entry_tokens:
+        entry["usage"] = usage_meta["usage"]
+        changed = True
+    if usage_meta.get("cost_usd") is not None and (
+        entry.get("cost_usd") is None or job_tokens > entry_tokens
     ):
-        return
+        entry["cost_usd"] = usage_meta["cost_usd"]
+        changed = True
+    if usage_meta.get("ai_calls") is not None and entry.get("ai_calls") is None:
+        entry["ai_calls"] = usage_meta["ai_calls"]
+        changed = True
+    for key in ("model", "provider"):
+        if usage_meta.get(key) and not entry.get(key):
+            entry[key] = usage_meta[key]
+            changed = True
+    return changed
 
+
+def _row_from_generation_job(gen: dict[str, Any], project_path: Path) -> dict[str, Any] | None:
+    """Build a recovered prompt-history row from one finished generation job."""
+    from backend.services.ai_cost import usage_fields_for_history
+
+    kind = str(gen.get("kind") or "prompt").lower()
+    if kind not in {"prompt", "cad"}:
+        return None
+    request_body = gen.get("request_body") if isinstance(gen.get("request_body"), dict) else {}
+    recovered_prompt = str(request_body.get("prompt") or gen.get("prompt") or "")
+    if not recovered_prompt.strip():
+        return None
+    trace_id = gen.get("trace_id")
+    if not trace_id:
+        return None
     status = gen.get("status")
     if status == "running":
-        return
-    # Deploy interrupts are resumed in-place — do not leave a permanent failed history row.
+        return None
     if gen.get("benign_interrupt") or (
         status in {"canceled", "failed"} and _is_server_update_error(gen.get("error"))
     ):
-        return
+        return None
 
     filename = gen.get("filename")
     if filename and not (project_path / str(filename)).is_file():
@@ -575,19 +602,24 @@ def _backfill_from_generation(project_path: Path) -> None:
         "created_at": gen.get("started_at") or datetime.now(timezone.utc).isoformat(),
         "recovered": True,
     }
+    if status in {"canceled", "stopped"}:
+        row["status"] = "stopped"
+    elif status == "failed":
+        row["status"] = "failed"
     mode = gen.get("mode") or request_body.get("mode")
     if mode:
         row["prompt_mode"] = str(mode).lower()
-    if gen.get("usage"):
-        row["usage"] = gen["usage"]
-    if gen.get("cost_usd") is not None:
-        row["cost_usd"] = gen.get("cost_usd")
-    if gen.get("model"):
-        row["model"] = gen.get("model")
-    if gen.get("provider"):
-        row["provider"] = gen.get("provider")
+    usage_meta: dict[str, Any] = {}
+    if gen.get("usage") or gen.get("cost_usd") is not None:
+        for key in ("usage", "cost_usd", "ai_calls", "model", "provider"):
+            if gen.get(key) is not None:
+                usage_meta[key] = gen.get(key)
+    elif gen.get("ai_traces"):
+        usage_meta = usage_fields_for_history(gen.get("ai_traces"))
+    for key, value in usage_meta.items():
+        if value is not None:
+            row[key] = value
     if not row.get("model"):
-        # Prefer intended model stamped at generation start; fall back to request body hints.
         intended = str(request_body.get("model") or "").strip()
         if intended:
             row["model"] = intended
@@ -608,9 +640,58 @@ def _backfill_from_generation(project_path: Path) -> None:
     row["target_mode"] = target
     if request_body.get("codex_agent") or request_body.get("jake_codex_agent") or gen.get("codex_agent"):
         row["codex_agent"] = True
-    entries.append(row)
-    data["entries"] = entries[-MAX_ENTRIES:]
-    save(project_path, data)
+    return row
+
+
+def _backfill_from_generation(project_path: Path) -> None:
+    """Recover prompt-history rows from generation.json when a worker missed save.
+
+    Walks every finished job (not only the primary/composed one) and also patches
+    existing history rows that are missing usage/cost still present on the job.
+    """
+    from backend.services import generation_service
+
+    gen_doc = generation_service.load(project_path)
+    if not gen_doc:
+        return
+    jobs = gen_doc.get("jobs") if isinstance(gen_doc.get("jobs"), list) else None
+    if not jobs:
+        jobs = [gen_doc]
+
+    data = load(project_path)
+    entries: list[dict[str, Any]] = data.get("entries", [])
+    changed = False
+
+    for gen in jobs:
+        if not isinstance(gen, dict):
+            continue
+        trace_id = gen.get("trace_id")
+        if not trace_id:
+            continue
+        existing = next((e for e in entries if str(e.get("trace_id") or "") == str(trace_id)), None)
+        if existing is not None:
+            if _apply_job_usage_to_entry(existing, gen):
+                changed = True
+            continue
+
+        row = _row_from_generation_job(gen, project_path)
+        if not row:
+            continue
+        recovered_prompt = str(row.get("prompt") or "")
+        original = str(row.get("original_prompt") or "").strip()
+        # Avoid inventing a second billed row for the same prompt text when usage
+        # already landed on another entry — unless this job itself has usage to keep.
+        if not (row.get("usage") or row.get("cost_usd") is not None) and (
+            _has_billed_sibling(entries, recovered_prompt)
+            or (original and _has_billed_sibling(entries, original))
+        ):
+            continue
+        entries.append(row)
+        changed = True
+
+    if changed:
+        data["entries"] = entries[-MAX_ENTRIES:]
+        save(project_path, data)
 
 
 def _reconcile_interrupt_stubs(entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
