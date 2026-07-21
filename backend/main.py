@@ -15584,13 +15584,12 @@ def _usage_meta_for_prompt(
             resolved_job = None
 
     if resolved_job:
-        job_traces = resolved_job.get("ai_traces")
-        if isinstance(job_traces, list) and job_traces:
-            job_dicts = [t for t in job_traces if isinstance(t, dict)]
-            if len(job_dicts) >= len(traces):
-                traces = job_dicts
+        job_traces = generation_service.job_all_ai_traces(resolved_job)
+        if job_traces:
+            if len(job_traces) >= len(traces):
+                traces = job_traces
             elif not traces:
-                traces = job_dicts
+                traces = job_traces
 
     meta = _usage_history_fields(traces) if traces else {}
     if resolved_job:
@@ -16253,6 +16252,14 @@ def _upsert_stopped_prompt_history_from_job(
     except Exception:
         return None
     ai_traces = job.get("ai_traces")
+    try:
+        from backend.services.generation_service import job_all_ai_traces
+
+        combined = job_all_ai_traces(job)
+        if combined:
+            ai_traces = combined
+    except Exception:
+        pass
     usage_meta = _usage_meta_for_prompt(project_path, job_trace_id, ai_traces, job=job)
     message = _stopped_prompt_message(ai_traces, usage_meta=usage_meta)
     existing = prompt_history_service.list_entries(project_path, limit=500)

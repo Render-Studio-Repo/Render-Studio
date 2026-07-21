@@ -43,18 +43,20 @@ OPENAI_PRICING: dict[str, dict[str, float]] = {
 }
 
 ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
-    "claude-fable-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0},
-    "claude-opus-4-8": {"input": 5.0, "output": 25.0},
-    "claude-opus-4-7": {"input": 5.0, "output": 25.0},
-    "claude-4.6-opus": {"input": 5.0, "output": 25.0},
-    "claude-opus-4-6": {"input": 5.0, "output": 25.0},
-    "claude-opus-4-5": {"input": 5.0, "output": 25.0},
-    "claude-4.6-sonnet": {"input": 3.0, "output": 15.0},
-    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
-    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
-    "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
-    "claude-opus-4": {"input": 15.0, "output": 75.0},
-    "claude-haiku": {"input": 0.25, "output": 1.25},
+    # Fable/Mythos: $10/$50 + cache write 1.25× / cache read 0.1× (Anthropic list).
+    "claude-fable-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0, "cache_write": 12.5},
+    "claude-mythos-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0, "cache_write": 12.5},
+    "claude-opus-4-8": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
+    "claude-opus-4-7": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
+    "claude-4.6-opus": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
+    "claude-opus-4-6": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
+    "claude-opus-4-5": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
+    "claude-4.6-sonnet": {"input": 3.0, "output": 15.0, "cached_input": 0.3, "cache_write": 3.75},
+    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cached_input": 0.3, "cache_write": 3.75},
+    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0, "cached_input": 0.3, "cache_write": 3.75},
+    "claude-haiku-4-5": {"input": 1.0, "output": 5.0, "cached_input": 0.1, "cache_write": 1.25},
+    "claude-opus-4": {"input": 15.0, "output": 75.0, "cached_input": 1.5, "cache_write": 18.75},
+    "claude-haiku": {"input": 0.25, "output": 1.25, "cached_input": 0.03, "cache_write": 0.3125},
 }
 
 
@@ -104,11 +106,31 @@ def usage_from_anthropic_response(data: dict[str, Any]) -> dict[str, int]:
     usage = data.get("usage") or {}
     input_tokens = int(usage.get("input_tokens") or 0)
     output_tokens = int(usage.get("output_tokens") or 0)
-    return {
+    cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
+    cache_read = int(usage.get("cache_read_input_tokens") or 0)
+    # Nested cache_creation buckets (5m / 1h) if top-level is absent.
+    if not cache_creation and isinstance(usage.get("cache_creation"), dict):
+        created = usage["cache_creation"]
+        cache_creation = int(created.get("ephemeral_5m_input_tokens") or 0) + int(
+            created.get("ephemeral_1h_input_tokens") or 0
+        )
+    thinking_tokens = 0
+    details = usage.get("output_tokens_details")
+    if isinstance(details, dict):
+        thinking_tokens = int(details.get("thinking_tokens") or 0)
+    payload: dict[str, int] = {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
+        "total_tokens": input_tokens + output_tokens + cache_creation + cache_read,
     }
+    if cache_creation:
+        payload["cache_creation_input_tokens"] = cache_creation
+    if cache_read:
+        payload["cached_input_tokens"] = cache_read
+        payload["cache_read_input_tokens"] = cache_read
+    if thinking_tokens:
+        payload["thinking_tokens"] = thinking_tokens
+    return payload
 
 
 def estimate_cost_usd(
@@ -121,8 +143,9 @@ def estimate_cost_usd(
         return None
     input_tokens = int(usage.get("input_tokens") or 0)
     output_tokens = int(usage.get("output_tokens") or 0)
-    cached_input = int(usage.get("cached_input_tokens") or 0)
-    if input_tokens == 0 and output_tokens == 0:
+    cached_input = int(usage.get("cached_input_tokens") or usage.get("cache_read_input_tokens") or 0)
+    cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
+    if input_tokens == 0 and output_tokens == 0 and cached_input == 0 and cache_creation == 0:
         return None
     prices = _pricing_for_model(model, provider)
     if input_tokens > int(prices.get("long_context_threshold") or 0):
@@ -132,10 +155,14 @@ def estimate_cost_usd(
             "output": prices.get("long_context_output", prices["output"]),
             "cached_input": prices.get("long_context_cached_input", prices.get("cached_input", prices["input"])),
         }
-    billable_input = max(0, input_tokens - cached_input)
+    # Anthropic reports uncached input separately from cache read/write.
+    billable_input = max(0, input_tokens - (cached_input if provider != "anthropic" else 0))
+    cache_write_rate = float(prices.get("cache_write", prices["input"] * 1.25))
+    cache_read_rate = float(prices.get("cached_input", prices["input"] * 0.1))
     cost = (
         billable_input * prices["input"] / 1_000_000
-        + cached_input * prices.get("cached_input", prices["input"]) / 1_000_000
+        + cache_creation * cache_write_rate / 1_000_000
+        + cached_input * cache_read_rate / 1_000_000
         + output_tokens * prices["output"] / 1_000_000
     )
     return round(cost, 6)

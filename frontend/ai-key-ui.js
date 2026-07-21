@@ -387,103 +387,69 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     const balance = Number(credits.balance_cents || 0);
     const providers = credits.providers || {};
     const preferred = credits.platform_provider === "anthropic" ? "anthropic" : "openai";
-    const enabledPlatform = !!credits.use_platform_key && balance > 0;
-    const personalKeys = status?.keys || [];
-    const activeKeyId = status?.active_key_id;
-
-    const pickPersonal = (provider) => {
-      const matches = personalKeys.filter(
-        (k) => String(k.provider || "openai").toLowerCase() === provider,
-      );
-      if (!matches.length) return null;
-      return matches.find((k) => k.id === activeKeyId || k.is_active) || matches[0];
-    };
-
-    const choices = [];
-    for (const provider of ["openai", "anthropic"]) {
-      const personal = pickPersonal(provider);
-      if (personal) {
-        choices.push({
-          source: "personal",
-          id: personal.id,
-          provider,
-          label: provider === "anthropic" ? "Anthropic" : "OpenAI",
-          model: personal.model || "",
-          live: true,
-        });
-        continue;
-      }
-      const live = provider === "anthropic" ? !!providers.anthropic : !!providers.openai;
-      if (live && balance > 0) {
-        const platform = (platformKeys || []).find((k) => k.id === provider) || {};
-        choices.push({
-          source: "platform",
-          id: provider,
-          provider,
-          label: provider === "anthropic" ? "Anthropic" : "OpenAI",
-          model: platform.model
-            || (credits.models || []).find((m) => m.provider === provider)?.model
-            || "",
-          live: true,
-        });
-      }
-    }
+    const enabled = !!credits.use_platform_key && balance > 0;
+    const rows = [
+      {
+        id: "openai",
+        name: "OpenAI",
+        provider: "openai",
+        live: !!providers.openai,
+        model: (platformKeys.find((k) => k.id === "openai") || {}).model
+          || (credits.models || []).find((m) => m.provider === "openai")?.model
+          || "",
+      },
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        provider: "anthropic",
+        live: !!providers.anthropic,
+        model: (platformKeys.find((k) => k.id === "anthropic") || {}).model
+          || (credits.models || []).find((m) => m.provider === "anthropic")?.model
+          || "",
+      },
+    ];
 
     let body = "";
-    if (!choices.length) {
-      body = balance <= 0 && !personalKeys.length
-        ? `<p class="ai-keys-empty">Add your OpenAI or Claude key below, or buy Studio credits to use the Render3D key.</p>`
-        : `<p class="ai-keys-empty">Add an OpenAI or Claude API key to use the Render3D key dropdown.</p>`;
+    if (balance <= 0) {
+      body = `<p class="ai-keys-empty">Buy Studio credits to unlock the Render3D key (OpenAI or Anthropic) — no personal API key required.</p>`;
     } else {
-      const current = choices.find((c) => c.source === "personal" && c.id === activeKeyId)
-        || choices.find((c) => c.source === "platform" && enabledPlatform && c.provider === preferred)
-        || choices.find((c) => c.provider === preferred)
-        || choices[0];
-      const badgeClass = PROVIDER_BADGE_CLASS[current.provider] || "badge-openai";
-      const isActive = (current.source === "personal" && (current.id === activeKeyId || personalKeys.some((k) => k.id === current.id && k.is_active)))
-        || (current.source === "platform" && enabledPlatform && preferred === current.provider);
-      body = `
-        <div class="ai-key-row ai-key-row--platform${isActive ? " ai-key-row--active" : ""}"
-             data-platform-provider="${esc(current.provider)}">
-          <div class="ai-key-row-info">
-            <span class="ai-key-row-name">Render3D Key</span>
-            <span class="ai-key-badge ${badgeClass}">${esc(labelFor(current.provider))}</span>
-            <select class="ai-key-model-select" data-action="render3d-provider" title="OpenAI or Anthropic">
-              ${choices.map((c) => {
-                const value = c.source === "platform" ? `platform:${c.id}` : `personal:${c.id}`;
-                const selected = c.source === current.source && String(c.id) === String(current.id) ? " selected" : "";
-                return `<option value="${esc(value)}"${selected}>${esc(c.label)}</option>`;
-              }).join("")}
-            </select>
-            <select class="ai-key-model-select"
-              data-action="${current.source === "platform" ? "platform-key-model" : "change-model"}"
-              data-provider="${esc(current.provider)}"
-              data-key-id="${esc(current.id)}"
-              title="Model for this key">
-              ${modelOptionsHTML(
-                current.provider,
-                current.source === "platform"
-                  ? (credits.platform_model || current.model)
-                  : current.model,
-              )}
-            </select>
-          </div>
-          <div class="ai-key-row-actions">
-            ${isActive
-              ? `<span class="ai-key-active-badge">✓ Active</span>`
-              : current.source === "platform"
-                ? `<button type="button" class="btn ai-key-btn-activate" data-action="activate-platform" data-provider="${esc(current.id)}">Use in prompts</button>`
-                : `<button type="button" class="btn ai-key-btn-activate" data-action="activate" data-key-id="${esc(current.id)}">Use in prompts</button>`
-            }
-          </div>
-        </div>`;
+      const available = rows.filter((row) => row.live);
+      const current = available.find((row) => row.id === preferred) || available[0];
+      if (!current) {
+        body = `<p class="ai-keys-empty">Render3D shared keys are not configured on this server yet.</p>`;
+      } else {
+        const badgeClass = PROVIDER_BADGE_CLASS[current.provider] || "badge-openai";
+        const isActive = enabled;
+        body = `
+          <div class="ai-key-row ai-key-row--platform${isActive ? " ai-key-row--active" : ""}"
+               data-platform-provider="${esc(current.id)}">
+            <div class="ai-key-row-info">
+              <span class="ai-key-row-name">Render3D Key</span>
+              <span class="ai-key-badge ${badgeClass}">${esc(labelFor(current.provider))}</span>
+              <select class="ai-key-model-select" data-action="render3d-provider" title="OpenAI or Anthropic">
+                ${available.map((row) => `
+                  <option value="platform:${esc(row.id)}"${row.id === current.id ? " selected" : ""}>${esc(row.name)}</option>
+                `).join("")}
+              </select>
+              <select class="ai-key-model-select" data-action="platform-key-model" data-provider="${esc(current.id)}" title="Model for this Render3D key">
+                ${modelOptionsHTML(current.provider, credits.platform_model || current.model)}
+              </select>
+            </div>
+            <div class="ai-key-row-actions">
+              ${isActive
+                ? `<span class="ai-key-active-badge">✓ Active</span>`
+                : `<button type="button" class="btn ai-key-btn-activate" data-action="activate-platform" data-provider="${esc(current.id)}">Use in prompts</button>`
+              }
+            </div>
+          </div>`;
+      }
     }
 
     return `
       <div class="ai-keys-section-label">
         <span>Render3D Key</span>
       </div>
-      <p class="ai-keys-section-hint">Uses your OpenAI and Claude keys in one menu. Studio credits fill in only if you don’t have a personal key for that provider.</p>
+      <p class="ai-keys-section-hint">Anyone with Studio credits can use the shared OpenAI and Anthropic keys you offer — pick a provider, then a model.</p>
       ${body}
     `;
   }
@@ -1357,11 +1323,15 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
       return;
     }
 
-    const platformProvider = e.target.closest("[data-action='platform-provider']");
+    const platformProvider = e.target.closest("[data-action='platform-provider'], [data-action='render3d-provider']");
     if (platformProvider) {
-      const provider = platformProvider.value === "anthropic" ? "anthropic" : "openai";
+      const raw = String(platformProvider.value || "");
+      const sep = raw.indexOf(":");
+      const id = sep >= 0 ? raw.slice(sep + 1) : raw;
+      const provider = id === "anthropic" ? "anthropic" : "openai";
       const preferredModel = (status?.credits?.models || []).find((m) => m.provider === provider)?.model
         || defaultModel(provider);
+      setError("");
       try {
         const data = await api("/api/user/ai-credits", {
           method: "PATCH",
@@ -1383,8 +1353,10 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
 
     const platformKeyModel = e.target.closest("[data-action='platform-key-model']");
     if (platformKeyModel) {
-      const providerSel = keysList?.querySelector("[data-action='platform-provider']");
-      const providerRaw = platformKeyModel.dataset.provider || providerSel?.value || "openai";
+      const providerSel = keysList?.querySelector("[data-action='platform-provider'], [data-action='render3d-provider']");
+      const providerRaw = platformKeyModel.dataset.provider
+        || String(providerSel?.value || "").split(":")[1]
+        || "openai";
       const provider = providerRaw === "anthropic" ? "anthropic" : "openai";
       const model = platformKeyModel.value;
       try {

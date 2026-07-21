@@ -516,6 +516,7 @@ def _best_generated_filename(project_path: Path, started_at: str | None) -> str 
 def _apply_job_usage_to_entry(entry: dict[str, Any], gen: dict[str, Any]) -> bool:
     """Copy usage/cost from a generation job onto a history row when missing or incomplete."""
     from backend.services.ai_cost import usage_fields_for_history
+    from backend.services.generation_service import job_all_ai_traces
 
     changed = False
     usage_meta: dict[str, Any] = {}
@@ -523,8 +524,10 @@ def _apply_job_usage_to_entry(entry: dict[str, Any], gen: dict[str, Any]) -> boo
         for key in ("usage", "cost_usd", "ai_calls", "model", "provider"):
             if gen.get(key) is not None:
                 usage_meta[key] = gen.get(key)
-    elif gen.get("ai_traces"):
-        usage_meta = usage_fields_for_history(gen.get("ai_traces"))
+    else:
+        combined = job_all_ai_traces(gen)
+        if combined:
+            usage_meta = usage_fields_for_history(combined)
 
     entry_tokens = int((entry.get("usage") or {}).get("total_tokens") or 0) or (
         int((entry.get("usage") or {}).get("input_tokens") or 0)
@@ -614,8 +617,12 @@ def _row_from_generation_job(gen: dict[str, Any], project_path: Path) -> dict[st
         for key in ("usage", "cost_usd", "ai_calls", "model", "provider"):
             if gen.get(key) is not None:
                 usage_meta[key] = gen.get(key)
-    elif gen.get("ai_traces"):
-        usage_meta = usage_fields_for_history(gen.get("ai_traces"))
+    else:
+        from backend.services.generation_service import job_all_ai_traces
+
+        combined = job_all_ai_traces(gen)
+        if combined:
+            usage_meta = usage_fields_for_history(combined)
     for key, value in usage_meta.items():
         if value is not None:
             row[key] = value

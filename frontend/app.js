@@ -70,7 +70,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260719-google-onboarding-suppress";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-r3d-key-dd";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-r3d-credits";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -15606,49 +15606,16 @@ function getPlatformPromptKeys(status) {
   return keys;
 }
 
-function pickBestPersonalKeyForProvider(status, provider) {
-  const wanted = provider === "anthropic" ? "anthropic" : "openai";
-  const matches = (status?.keys || []).filter(
-    (key) => String(key.provider || "openai").toLowerCase() === wanted,
-  );
-  if (!matches.length) return null;
-  const activeId = status?.active_key_id;
-  return (
-    matches.find((key) => key.id === activeId || key.is_active)
-    || matches[0]
-  );
-}
-
-/** OpenAI / Anthropic choices for the single Render3D Key dropdown (personal keys first). */
+/** Platform OpenAI / Anthropic keys offered to anyone with Studio credits. */
 function getRender3dKeyChoices(status) {
-  const platformKeys = getPlatformPromptKeys(status);
-  const choices = [];
-  for (const provider of ["openai", "anthropic"]) {
-    const personal = pickBestPersonalKeyForProvider(status, provider);
-    if (personal) {
-      choices.push({
-        source: "personal",
-        id: personal.id,
-        provider,
-        model: personal.model || "",
-        label: provider === "anthropic" ? "Anthropic" : "OpenAI",
-        name: personal.name || (provider === "anthropic" ? "Claude key" : "OpenAI key"),
-      });
-      continue;
-    }
-    const platform = platformKeys.find((key) => key.id === provider || key.provider === provider);
-    if (platform) {
-      choices.push({
-        source: "platform",
-        id: platform.id,
-        provider,
-        model: platform.model || "",
-        label: provider === "anthropic" ? "Anthropic" : "OpenAI",
-        name: "Studio credits",
-      });
-    }
-  }
-  return choices;
+  return getPlatformPromptKeys(status).map((key) => ({
+    source: "platform",
+    id: key.id,
+    provider: key.provider === "anthropic" ? "anthropic" : "openai",
+    model: key.model || "",
+    label: key.provider === "anthropic" ? "Anthropic" : "OpenAI",
+    name: key.name || "Render3D Key",
+  }));
 }
 
 function render3dChoiceValue(choice) {
@@ -15658,16 +15625,9 @@ function render3dChoiceValue(choice) {
 function findRender3dChoice(status, value) {
   const choices = getRender3dKeyChoices(status);
   const parsed = value ? parsePromptKeyOptionValue(value) : null;
-  if (parsed) {
-    const match = choices.find(
-      (choice) => choice.source === parsed.source && String(choice.id) === String(parsed.keyId),
-    );
+  if (parsed?.source === "platform") {
+    const match = choices.find((choice) => String(choice.id) === String(parsed.keyId));
     if (match) return match;
-  }
-  const activeId = status?.active_key_id;
-  if (activeId) {
-    const active = choices.find((choice) => choice.source === "personal" && choice.id === activeId);
-    if (active) return active;
   }
   const preferred = status?.credits?.platform_provider === "anthropic" ? "anthropic" : "openai";
   return choices.find((choice) => choice.provider === preferred) || choices[0] || null;
@@ -15894,10 +15854,6 @@ function renderPromptKeyPopup(status) {
   const personalKeys = status?.keys || [];
   const teamKeys = (status?.team_keys || []).filter((k) => k.enabled !== false && aiKeyAllowedForCurrentProject(k));
   const render3dChoices = getRender3dKeyChoices(status);
-  const render3dPersonalIds = new Set(
-    render3dChoices.filter((c) => c.source === "personal").map((c) => String(c.id)),
-  );
-  const extraPersonalKeys = personalKeys.filter((k) => !render3dPersonalIds.has(String(k.id)));
   const currentValue = document.getElementById("prompt-ai-key-select")?.value || "";
 
   const isSelected = (source, id) => currentValue === promptKeyOptionValue(source, id);
@@ -15935,7 +15891,7 @@ function renderPromptKeyPopup(status) {
       <button type="button" class="prompt-key-popup-manage" data-action="open-key-manager">Manage keys →</button>
     </div>`;
 
-  if (!extraPersonalKeys.length && !teamKeys.length && !render3dChoices.length) {
+  if (!personalKeys.length && !teamKeys.length && !render3dChoices.length) {
     html += `<p class="prompt-key-popup-empty">No keys saved. Use <strong>Manage keys</strong> to add one or buy Studio credits.</p>`;
   } else {
     if (render3dChoices.length) {
@@ -15945,7 +15901,7 @@ function renderPromptKeyPopup(status) {
       const providerLabel = current.provider === "anthropic" ? "Claude" : "OpenAI";
       html += `<div class="prompt-key-popup-section">Render3D Key</div>`;
       html += `<div class="prompt-key-popup-row${platformActive ? " active" : ""}"
-           data-action="select-key" data-source="${current.source}" data-key-id="${current.id}">
+           data-action="select-key" data-source="platform" data-key-id="${current.id}">
         <div class="prompt-key-popup-check">
           <div class="prompt-key-popup-check-dot"></div>
         </div>
@@ -15958,23 +15914,23 @@ function renderPromptKeyPopup(status) {
         <div class="prompt-key-popup-model-wrap prompt-key-popup-platform-wrap">
           <select class="prompt-key-popup-model-select" data-action="render3d-provider" title="OpenAI or Anthropic">
             ${render3dChoices.map((c) => {
-              const selected = c.source === current.source && String(c.id) === String(current.id) ? " selected" : "";
+              const selected = String(c.id) === String(current.id) ? " selected" : "";
               return `<option value="${render3dChoiceValue(c)}"${selected}>${c.label}</option>`;
             }).join("")}
           </select>
           <select class="prompt-key-popup-model-select"
             data-action="change-model"
             data-key-id="${current.id}"
-            data-source="${current.source}"
-            title="Model for this key">
+            data-source="platform"
+            title="Model for this Render3D key">
             ${buildModelOptionsHTML(current.provider, current.model || "")}
           </select>
         </div>
       </div>`;
     }
-    if (extraPersonalKeys.length) {
+    if (personalKeys.length) {
       html += `<div class="prompt-key-popup-section">Your keys</div>`;
-      html += extraPersonalKeys.map((k) => keyRow(k, "personal")).join("");
+      html += personalKeys.map((k) => keyRow(k, "personal")).join("");
     }
     if (teamKeys.length) {
       html += `<div class="prompt-key-popup-section">Shared keys</div>`;
@@ -16143,50 +16099,42 @@ function initPromptKeyPopup() {
       const selectedValue = String(providerSel.value || "");
       const parsed = parsePromptKeyOptionValue(selectedValue);
       if (!parsed) return;
-      const choice = getRender3dKeyChoices(aiStatus).find(
-        (c) => c.source === parsed.source && String(c.id) === String(parsed.keyId),
-      ) || {
-        source: parsed.source,
-        id: parsed.keyId,
-        provider: parsed.keyId === "anthropic" ? "anthropic" : "openai",
-        model: "",
-      };
+      const provider = parsed.keyId === "anthropic" || parsed.keyId.includes?.("anthropic")
+        ? "anthropic"
+        : (getRender3dKeyChoices(aiStatus).find((c) => String(c.id) === String(parsed.keyId))?.provider
+          || (parsed.keyId === "anthropic" ? "anthropic" : "openai"));
+      const choice = getRender3dKeyChoices(aiStatus).find((c) => String(c.id) === String(parsed.keyId))
+        || { id: parsed.keyId === "anthropic" ? "anthropic" : "openai", provider, model: "" };
+      const resolvedProvider = choice.provider === "anthropic" ? "anthropic" : "openai";
+      const defaultModel = choice.model
+        || PROMPT_KEY_MODEL_OPTIONS[resolvedProvider]?.[0]?.value
+        || "";
+      const platformValue = promptKeyOptionValue("platform", choice.id || resolvedProvider);
       const hiddenSelect = document.getElementById("prompt-ai-key-select");
       if (hiddenSelect) {
-        if (![...hiddenSelect.options].some((opt) => opt.value === selectedValue)) {
+        if (![...hiddenSelect.options].some((opt) => opt.value === platformValue)) {
           const opt = document.createElement("option");
-          opt.value = selectedValue;
-          opt.textContent = choice.label || "Render3D key";
+          opt.value = platformValue;
+          opt.textContent = "Render3D key";
           hiddenSelect.appendChild(opt);
         }
-        hiddenSelect.value = selectedValue;
-        storePromptAiKeyValue(selectedValue);
+        hiddenSelect.value = platformValue;
+        storePromptAiKeyValue(platformValue);
       }
       try {
-        if (choice.source === "personal") {
-          const data = await api(`/api/user/ai-keys/${choice.id}/activate`, { method: "PUT" });
-          const updatedAi = { ...(data.ai || data || aiStatus || {}) };
-          aiKeyUi?.render(updatedAi);
-          renderAIStatus(updatedAi);
-        } else {
-          const provider = choice.provider === "anthropic" ? "anthropic" : "openai";
-          const defaultModel = choice.model
-            || PROMPT_KEY_MODEL_OPTIONS[provider]?.[0]?.value
-            || "";
-          const data = await api("/api/user/ai-credits", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              use_platform_key: true,
-              platform_provider: provider,
-              platform_model: defaultModel || null,
-            }),
-          });
-          const updatedAi = { ...(data.ai || aiStatus || {}), credits: data.credits || data.ai?.credits };
-          aiKeyUi?.render(updatedAi);
-          renderAIStatus(updatedAi);
-        }
-        selectPromptAiKeyValue(selectedValue);
+        const data = await api("/api/user/ai-credits", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            use_platform_key: true,
+            platform_provider: resolvedProvider,
+            platform_model: defaultModel || null,
+          }),
+        });
+        const updatedAi = { ...(data.ai || aiStatus || {}), credits: data.credits || data.ai?.credits };
+        aiKeyUi?.render(updatedAi);
+        renderAIStatus(updatedAi);
+        selectPromptAiKeyValue(platformValue);
         renderPromptKeyPopup(aiStatus);
       } catch (err) {
         console.error("Could not switch Render3D provider:", err);

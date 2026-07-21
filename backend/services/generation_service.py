@@ -493,9 +493,11 @@ def start(
         data = _normalize_stale(raw, project_path=project_path) if raw else None
         jobs = _jobs_from_data(data)
         running = [j for j in jobs if j.get("status") == "running"]
+        settled_carry: list[dict[str, Any]] = []
 
         if replace_running:
             # Replace the matching running job (or all running if no trace match).
+            # Preserve AI traces/cost so Anthropic-billed calls are not erased on resume.
             kept: list[dict[str, Any]] = []
             replaced = False
             for job in jobs:
@@ -503,11 +505,16 @@ def start(
                     kept.append(job)
                     continue
                 job_tid = str(job.get("trace_id") or job.get("id") or "")
-                if str(trace_id) and job_tid == str(trace_id):
-                    _untrack_running(project_path.name, job_tid)
-                    replaced = True
-                    continue
-                if not trace_id:
+                should_replace = (str(trace_id) and job_tid == str(trace_id)) or (not trace_id)
+                if should_replace:
+                    prior_settled = [
+                        t for t in (job.get("settled_ai_traces") or []) if isinstance(t, dict)
+                    ]
+                    prior_live = [t for t in (job.get("ai_traces") or []) if isinstance(t, dict)]
+                    if str(trace_id) and job_tid == str(trace_id):
+                        settled_carry = prior_settled + prior_live
+                    elif not trace_id and not settled_carry:
+                        settled_carry = prior_settled + prior_live
                     _untrack_running(project_path.name, job_tid)
                     replaced = True
                     continue
@@ -571,6 +578,15 @@ def start(
                 job["target_mode"] = target
             if body.get("codex_agent") or body.get("jake_codex_agent"):
                 job["codex_agent"] = True
+
+        if settled_carry:
+            from backend.services.ai_cost import usage_fields_for_history
+
+            job["settled_ai_traces"] = settled_carry
+            settled_meta = usage_fields_for_history(settled_carry)
+            for key in ("usage", "cost_usd", "ai_calls", "model", "provider"):
+                if settled_meta.get(key) is not None:
+                    job[key] = settled_meta[key]
 
         _CANCELED_TRACES.discard(str(trace_id))
         if not running or replace_running:
@@ -825,6 +841,15 @@ def _merge_progress(prev: dict[str, Any] | None, progress: dict[str, Any]) -> di
     return next_progress
 
 
+def job_all_ai_traces(job: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Settled (pre-restart) traces plus the current run's live traces."""
+    if not isinstance(job, dict):
+        return []
+    settled = [t for t in (job.get("settled_ai_traces") or []) if isinstance(t, dict)]
+    live = [t for t in (job.get("ai_traces") or []) if isinstance(t, dict)]
+    return settled + live
+
+
 def record_ai_traces(
     project_path: Path,
     ai_traces: list[dict[str, Any]] | None,
@@ -839,7 +864,6 @@ def record_ai_traces(
     traces = [t for t in ai_traces if isinstance(t, dict)]
     if not traces:
         return None
-    usage_meta = usage_fields_for_history(traces)
 
     def mutate(job: dict[str, Any]) -> None:
         if job.get("status") not in ("running", "canceled"):
@@ -847,6 +871,8 @@ def record_ai_traces(
         if trace_id and job.get("trace_id") and str(job.get("trace_id")) != str(trace_id):
             return
         job["ai_traces"] = traces
+        combined = job_all_ai_traces(job)
+        usage_meta = usage_fields_for_history(combined)
         for key in ("usage", "cost_usd", "ai_calls", "model", "provider"):
             if usage_meta.get(key) is not None:
                 job[key] = usage_meta[key]
