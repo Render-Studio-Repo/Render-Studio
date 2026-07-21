@@ -2,21 +2,31 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
+import os
 import re
+import shutil
 import struct
+import threading
+import time
 import uuid
 import zipfile
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 from xml.etree import ElementTree as ET
 
 import numpy as np
 import trimesh
 
 logger = logging.getLogger(__name__)
+
+# Cross-process lock + in-flight set so lazy/upload STEP→GLB never blocks HTTP workers.
+_PREVIEW_GLB_GUARD = threading.Lock()
+_PREVIEW_GLB_THREADS: dict[str, threading.Thread] = {}
+_PREVIEW_CACHE_DIRNAME = ".preview-glb-cache"
 
 THREEMF_CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 THREEMF_PRODUCTION_NS = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
@@ -1185,14 +1195,167 @@ def tessellate_step_to_glb(step_path: Path, glb_path: Path | None = None) -> Pat
     Falls back to the legacy STL-route if XCAF writing fails.
     """
     dest = glb_path or step_path.with_suffix(".glb")
+    cached = _try_reuse_cached_preview_glb(step_path, dest)
+    if cached is not None:
+        return cached
     try:
         _step_to_glb_xcaf(step_path, dest)
         _match_glb_scale_to_step(step_path, dest)
+        _store_cached_preview_glb(step_path, dest)
         return dest
     except Exception as exc:
         logger.warning("XCAF GLTF export failed (%s), falling back to STL route", exc)
         mesh = import_step_mesh(step_path)
-        return export_mesh(mesh, dest)
+        out = export_mesh(mesh, dest)
+        _store_cached_preview_glb(step_path, out)
+        return out
+
+
+def _preview_glb_fingerprint(step_path: Path) -> str | None:
+    """Fast content fingerprint for STEP→GLB preview reuse across projects."""
+    try:
+        path = Path(step_path)
+        size = path.stat().st_size
+        h = hashlib.sha256()
+        h.update(str(size).encode("ascii"))
+        with path.open("rb") as fh:
+            head = fh.read(min(size, 1024 * 1024))
+            h.update(head)
+            if size > 128 * 1024:
+                fh.seek(max(0, size - 65536))
+                h.update(fh.read(65536))
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _preview_glb_cache_path(step_path: Path) -> Path | None:
+    digest = _preview_glb_fingerprint(step_path)
+    if not digest:
+        return None
+    # Prefer project-parent cache so McMaster re-inserts reuse prior tessellation.
+    root = Path(step_path).resolve().parent.parent
+    return root / _PREVIEW_CACHE_DIRNAME / f"{digest}.glb"
+
+
+def _try_reuse_cached_preview_glb(step_path: Path, glb_path: Path) -> Path | None:
+    cache = _preview_glb_cache_path(step_path)
+    dest = Path(glb_path)
+    if cache is None or not cache.is_file() or cache.stat().st_size < 64:
+        return None
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.resolve() != cache.resolve():
+            shutil.copy2(cache, dest)
+        logger.info("Reused cached STEP preview GLB for %s → %s", step_path.name, dest.name)
+        return dest
+    except OSError as exc:
+        logger.warning("Could not reuse cached preview GLB for %s: %s", step_path.name, exc)
+        return None
+
+
+def _store_cached_preview_glb(step_path: Path, glb_path: Path) -> None:
+    cache = _preview_glb_cache_path(step_path)
+    src = Path(glb_path)
+    if cache is None or not src.is_file() or src.stat().st_size < 64:
+        return
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        if not cache.is_file() or cache.stat().st_size != src.stat().st_size:
+            tmp = cache.with_suffix(".glb.tmp")
+            shutil.copy2(src, tmp)
+            tmp.replace(cache)
+    except OSError as exc:
+        logger.debug("Could not store preview GLB cache for %s: %s", step_path.name, exc)
+
+
+def preview_glb_build_lock_path(glb_path: Path) -> Path:
+    return Path(glb_path).with_name(Path(glb_path).name + ".building")
+
+
+def is_preview_glb_building(glb_path: Path) -> bool:
+    lock = preview_glb_build_lock_path(glb_path)
+    if not lock.is_file():
+        return False
+    try:
+        age = time.time() - lock.stat().st_mtime
+        # Stale locks after a killed worker — allow a new build.
+        if age > 45 * 60:
+            lock.unlink(missing_ok=True)
+            return False
+    except OSError:
+        return False
+    return True
+
+
+def schedule_tessellate_step_to_glb(
+    step_path: Path,
+    glb_path: Path | None = None,
+    *,
+    on_done: Callable[[Path | None, BaseException | None], None] | None = None,
+) -> bool:
+    """Start STEP→GLB in a daemon thread. Returns True if a build is in flight or started.
+
+    Never blocks the caller on tessellation — large McMaster STEPs take minutes and
+    would otherwise trip uvicorn worker healthchecks (502s on /files/*.glb).
+    """
+    step = Path(step_path)
+    dest = Path(glb_path) if glb_path is not None else step.with_suffix(".glb")
+    if dest.is_file() and dest.stat().st_size > 0:
+        return False
+    key = str(dest.resolve())
+    lock = preview_glb_build_lock_path(dest)
+
+    with _PREVIEW_GLB_GUARD:
+        existing = _PREVIEW_GLB_THREADS.get(key)
+        if existing is not None and existing.is_alive():
+            return True
+        if is_preview_glb_building(dest):
+            return True
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(f"{os.getpid()}\n{time.time()}\n{step.name}\n")
+        except FileExistsError:
+            if is_preview_glb_building(dest):
+                return True
+            try:
+                lock.unlink(missing_ok=True)
+                fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(f"{os.getpid()}\n{time.time()}\n{step.name}\n")
+            except FileExistsError:
+                return True
+
+        def _run() -> None:
+            err: BaseException | None = None
+            out: Path | None = None
+            try:
+                out = tessellate_step_to_glb(step, dest)
+            except BaseException as exc:  # noqa: BLE001 — surface to callback, then clear lock
+                err = exc
+                logger.warning("Background STEP preview GLB failed for %s: %s", step.name, exc)
+            finally:
+                try:
+                    lock.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                with _PREVIEW_GLB_GUARD:
+                    _PREVIEW_GLB_THREADS.pop(key, None)
+                if on_done is not None:
+                    try:
+                        on_done(out, err)
+                    except Exception as cb_exc:  # pragma: no cover
+                        logger.debug("preview GLB on_done failed: %s", cb_exc)
+
+        thread = threading.Thread(
+            target=_run,
+            name=f"step-preview-glb:{dest.name[:48]}",
+            daemon=True,
+        )
+        _PREVIEW_GLB_THREADS[key] = thread
+        thread.start()
+        return True
 
 
 def _step_to_glb_xcaf(step_path: Path, glb_path: Path) -> None:

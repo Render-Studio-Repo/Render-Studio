@@ -1840,16 +1840,51 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         status["credits"] = {"available": False, "balance_cents": 0, "markup_percent": 15}
     credits = status.get("credits") or {}
-    if credits.get("use_platform_key") and credits.get("available") and int(credits.get("balance_cents") or 0) > 0:
+    providers = credits.get("providers") or {}
+    balance_ok = int(credits.get("balance_cents") or 0) > 0
+    platform_keys: list[dict[str, Any]] = []
+    if credits.get("available") and balance_ok:
+        account = ai_credit_service.ensure_account(user["id"])
+        preferred = str(credits.get("platform_provider") or "openai").strip().lower()
+        preferred_model = str(credits.get("platform_model") or "").strip()
+        for provider_id, label, configured in (
+            ("openai", "Render3D OpenAI", bool(providers.get("openai"))),
+            ("anthropic", "Render3D Claude", bool(providers.get("anthropic"))),
+        ):
+            if not configured:
+                continue
+            creds = ai_credit_service.resolve_platform_credentials(
+                account,
+                provider=provider_id,
+                model=preferred_model if preferred == provider_id else None,
+            )
+            if not creds:
+                continue
+            platform_keys.append(
+                {
+                    "id": provider_id,
+                    "name": label,
+                    "provider": creds["provider"],
+                    "model": creds["model"],
+                    "source": "platform",
+                    "enabled": bool(credits.get("use_platform_key")),
+                    "is_active": bool(credits.get("use_platform_key")) and preferred == provider_id,
+                }
+            )
+    status["platform_keys"] = platform_keys
+    if credits.get("use_platform_key") and credits.get("available") and balance_ok and platform_keys:
         status["ai_ready"] = True
-        status["provider"] = "openai"
-        status["model"] = settings.openai_model
-        status["effective"] = status.get("effective") or {
-            "source": "platform",
-            "provider": "openai",
-            "model": settings.openai_model,
-            "key_name": "Render3D shared API key",
-        }
+        active = next((k for k in platform_keys if k.get("is_active")), platform_keys[0])
+        if not status.get("effective"):
+            status["provider"] = active["provider"]
+            status["model"] = active["model"]
+            status["effective"] = {
+                "source": "platform",
+                "provider": active["provider"],
+                "model": active["model"],
+                "key_id": active["id"],
+                "key_name": active["name"],
+            }
     daily_usage = _daily_ai_usage_for_user(user["id"])
     spent_today = float(daily_usage.get("cost_usd") or 0)
     tokens_today = int(daily_usage.get("tokens") or 0)
@@ -1909,8 +1944,19 @@ def _resolve_prompt_model_meta(
     resolve_speed = speed
     key_id = getattr(body, "ai_key_id", None)
     key_source = getattr(body, "ai_key_source", None)
+    if str(key_source or "").strip().lower() == "platform":
+        credits = ai_credit_service.status(user)
+        if credits.get("available") and int(credits.get("balance_cents") or 0) > 0:
+            account = ai_credit_service.ensure_account(user["id"])
+            creds = ai_credit_service.resolve_platform_credentials(
+                account,
+                speed=resolve_speed,
+                provider=str(key_id or "").strip() or None,
+            )
+            if creds:
+                return {"model": creds["model"], "provider": creds["provider"], "speed": speed}
     try:
-        if key_id:
+        if key_id and str(key_source or "").strip().lower() != "platform":
             effective = user_ai_keys_service.resolve_key_for_user(
                 user["id"], key_id, key_source, project_id=project_id
             )
@@ -1966,6 +2012,63 @@ def _sam_ai_service() -> AIService:
     return AIService(model="gpt-4o-mini", api_key=sam["api_key"], provider="openai")
 
 
+def _platform_ai_for_user(
+    user: dict[str, Any],
+    *,
+    speed: str = "fast",
+    provider: str | None = None,
+    model: str | None = None,
+    require_enabled: bool = False,
+) -> AIService:
+    credits = ai_credit_service.status(user)
+    if not credits.get("available"):
+        raise HTTPException(
+            status_code=503,
+            detail="Render3D platform AI keys are not configured. Add OpenAI or Anthropic keys on the server.",
+        )
+    if int(credits.get("balance_cents") or 0) <= 0:
+        raise HTTPException(status_code=402, detail="Buy shared-key credits to use the platform AI key.")
+    if require_enabled and not credits.get("use_platform_key"):
+        raise HTTPException(status_code=403, detail="Enable Render3D shared keys in AI & billing first.")
+    account = ai_credit_service.ensure_account(user["id"])
+    if not account.get("use_platform_key"):
+        ai_credit_service.update_settings(user["id"], use_platform_key=True)
+        account = ai_credit_service.ensure_account(user["id"])
+    provider_id = str(provider or "").strip().lower() or None
+    if provider_id in {"claude", "anthropic"}:
+        provider_id = "anthropic"
+    elif provider_id in {"openai", "gpt"}:
+        provider_id = "openai"
+    elif provider_id:
+        raise HTTPException(status_code=400, detail="Render3D key must be openai or anthropic.")
+    if provider_id:
+        settings_kwargs: dict[str, Any] = {
+            "use_platform_key": True,
+            "platform_provider": provider_id,
+        }
+        if model is not None:
+            settings_kwargs["platform_model"] = model
+        ai_credit_service.update_settings(user["id"], **settings_kwargs)
+        account = ai_credit_service.ensure_account(user["id"])
+    creds = ai_credit_service.resolve_platform_credentials(
+        account,
+        speed=speed,
+        provider=provider_id,
+        model=model,
+    )
+    if not creds:
+        label = "Claude" if provider_id == "anthropic" else "OpenAI" if provider_id == "openai" else "AI"
+        raise HTTPException(
+            status_code=503,
+            detail=f"Render3D {label} platform key is not configured on the server.",
+        )
+    ai = AIService(model=creds["model"], api_key=creds["api_key"], provider=creds["provider"])
+    setattr(ai, "billing_source", "platform")
+    setattr(ai, "billing_user_id", user["id"])
+    setattr(ai, "platform_key_id", creds.get("key_id") or provider_id or creds["provider"])
+    return ai
+
+
 def _get_ai_for_user(
     user: dict[str, Any],
     speed: str = "fast",
@@ -1974,6 +2077,9 @@ def _get_ai_for_user(
     key_source: str | None = None,
     project_id: str | None = None,
 ) -> AIService:
+    source = str(key_source or "").strip().lower()
+    if source == "platform":
+        return _platform_ai_for_user(user, speed=speed, provider=key_id)
     try:
         if key_id:
             effective = user_ai_keys_service.resolve_key_for_user(user["id"], key_id, key_source, project_id=project_id)
@@ -1984,19 +2090,7 @@ def _get_ai_for_user(
     if not effective or not effective.get("api_key"):
         credits = ai_credit_service.status(user)
         if credits.get("use_platform_key") and credits.get("available"):
-            if int(credits.get("balance_cents") or 0) <= 0:
-                raise HTTPException(status_code=402, detail="Buy shared-key credits to use the platform AI key.")
-            account = ai_credit_service.ensure_account(user["id"])
-            creds = ai_credit_service.resolve_platform_credentials(account, speed=speed)
-            if not creds:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Render3D platform AI keys are not configured. Add OpenAI or Anthropic keys on the server.",
-                )
-            ai = AIService(model=creds["model"], api_key=creds["api_key"], provider=creds["provider"])
-            setattr(ai, "billing_source", "platform")
-            setattr(ai, "billing_user_id", user["id"])
-            return ai
+            return _platform_ai_for_user(user, speed=speed, require_enabled=True)
         raise HTTPException(
             status_code=403,
             detail="Add your OpenAI or Claude API key, or buy shared-key credits from the account menu before generating.",
@@ -12195,6 +12289,7 @@ async def upload_file(
 
     # Browser can load STL/OBJ/GLB/GLTF natively. Everything else needs a GLB sidecar.
     viewer_filename = dest.name
+    preview_pending = False
     needs_viewer_glb = (
         suffix in {".3mf", ".ply", ".off"}
         | cad_service.STEP_SUFFIXES
@@ -12205,11 +12300,54 @@ async def upload_file(
         glb_dest = dest.with_suffix(".glb")
         try:
             if suffix in cad_service.STEP_SUFFIXES:
-                cad_service.tessellate_step_to_glb(dest, glb_dest)
+                # Large McMaster STEPs take minutes — never block the upload worker.
+                # Cache reuse / background build; client polls GLB (503 → retry).
+                viewer_filename = glb_dest.name
+                if glb_dest.is_file() and glb_dest.stat().st_size > 0:
+                    preview_pending = False
+                else:
+                    reused = cad_service._try_reuse_cached_preview_glb(dest, glb_dest)
+                    if reused is not None and glb_dest.is_file():
+                        preview_pending = False
+                    else:
+                        preview_pending = True
+
+                        def _on_preview_ready(out: Path | None, err: BaseException | None, *,
+                                              _pid: str = project_id, _dest_name: str = dest.name,
+                                              _glb_name: str = glb_dest.name,
+                                              _by: str = user["display_name"],
+                                              _uid: str = user["id"]) -> None:
+                            if err is not None or out is None or not Path(out).is_file():
+                                _notify_project(
+                                    _pid,
+                                    {
+                                        "type": "model.preview_failed",
+                                        "filename": _glb_name,
+                                        "uploaded_filename": _dest_name,
+                                        "error": str(err) if err else "preview build failed",
+                                    },
+                                )
+                                return
+                            _notify_project(
+                                _pid,
+                                {
+                                    "type": "model.reload",
+                                    "filename": _glb_name,
+                                    "uploaded_filename": _dest_name,
+                                    "url": f"/api/projects/{_pid}/files/{_glb_name}",
+                                    "by": _by,
+                                    "by_user_id": _uid,
+                                    "action": "preview_ready",
+                                },
+                            )
+
+                        cad_service.schedule_tessellate_step_to_glb(
+                            dest, glb_dest, on_done=_on_preview_ready
+                        )
             else:
                 mesh = cad_service.load_mesh(dest)
                 cad_service.export_mesh(mesh, glb_dest)
-            viewer_filename = glb_dest.name
+                viewer_filename = glb_dest.name
         except Exception as exc:
             logger.warning("Viewer GLB conversion failed for %s: %s", dest.name, exc)
             raise HTTPException(
@@ -12232,6 +12370,7 @@ async def upload_file(
             "by_user_id": user["id"],
             "action": "upload",
             "timeline_entry": entry,
+            "preview_pending": preview_pending,
         },
     )
     payload = {
@@ -12240,9 +12379,15 @@ async def upload_file(
         "url": f"/api/projects/{project_id}/files/{viewer_filename}",
         "timeline_index": entry.get("index") if isinstance(entry, dict) else None,
         "drawing": False,
+        "preview_pending": preview_pending,
     }
     if extracted_note:
         payload["note"] = extracted_note
+    if preview_pending:
+        payload["note"] = (
+            (payload.get("note") + " " if payload.get("note") else "")
+            + "3D preview is building in the background — the model will appear when ready."
+        ).strip()
     return payload
 
 
@@ -12397,10 +12542,53 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
     if not file_path.is_file() and file_path.suffix.lower() == ".glb":
         step_src = cad_service.find_step_source(project_path, file_path.stem)
         if step_src is not None:
-            try:
-                cad_service.tessellate_step_to_glb(step_src, file_path)
-            except Exception as exc:
-                logger.warning("Lazy STEP preview GLB failed for %s: %s", step_src.name, exc)
+            # Prefer instant cache reuse; otherwise build in background and ask client to retry.
+            reused = cad_service._try_reuse_cached_preview_glb(step_src, file_path)
+            if reused is None or not file_path.is_file():
+                building = cad_service.is_preview_glb_building(file_path)
+                if not building:
+                    def _on_lazy_preview(out: Path | None, err: BaseException | None, *,
+                                         _pid: str = project_id,
+                                         _glb_name: str = file_path.name,
+                                         _step_name: str = step_src.name) -> None:
+                        if err is not None or out is None or not Path(out).is_file():
+                            _notify_project(
+                                _pid,
+                                {
+                                    "type": "model.preview_failed",
+                                    "filename": _glb_name,
+                                    "uploaded_filename": _step_name,
+                                    "error": str(err) if err else "preview build failed",
+                                },
+                            )
+                            return
+                        _notify_project(
+                            _pid,
+                            {
+                                "type": "model.reload",
+                                "filename": _glb_name,
+                                "uploaded_filename": _step_name,
+                                "url": f"/api/projects/{_pid}/files/{_glb_name}",
+                                "action": "preview_ready",
+                            },
+                        )
+
+                    cad_service.schedule_tessellate_step_to_glb(
+                        step_src, file_path, on_done=_on_lazy_preview
+                    )
+                if not file_path.is_file():
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "detail": "3D preview is still building — retry in a few seconds.",
+                            "preview_pending": True,
+                            "filename": safe,
+                        },
+                        headers={
+                            "Retry-After": "3",
+                            "Cache-Control": "no-store",
+                        },
+                    )
     if not file_path.is_file():
         raise HTTPException(404, "File not found")
     step_mode_normalized = (step_mode or "").lower()
@@ -15308,11 +15496,15 @@ def import_catalog_part(
         except RuntimeError as exc:
             logger.warning("Catalog GLB preview download failed for %s: %s", dest.name, exc)
     if viewer_filename == dest.name:
-        try:
-            cad_service.tessellate_step_to_glb(dest, glb_dest)
+        glb_dest = dest.with_suffix(".glb")
+        reused = cad_service._try_reuse_cached_preview_glb(dest, glb_dest)
+        if reused is not None and glb_dest.is_file():
             viewer_filename = glb_dest.name
-        except Exception as exc:
-            logger.warning("Catalog STEP preview GLB failed for %s: %s", dest.name, exc)
+        else:
+            # Don't block the request on large catalog STEPs — client retries GLB.
+            cad_service.schedule_tessellate_step_to_glb(dest, glb_dest)
+            viewer_filename = glb_dest.name
+
 
     stem = dest.stem
     profile = part_profiles_service.save_profile(

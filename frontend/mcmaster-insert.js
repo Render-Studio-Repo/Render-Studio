@@ -417,12 +417,12 @@ export function createMcMasterInsert({
           <section class="mcmaster-tab-main">
             <div class="mcmaster-stage-banner">
               <strong>Push McMaster downloads into this tab</strong>
-              <span>Browsers cannot silently read your Downloads folder — Chrome blocks it as system files. After Download STEP, one click pushes the file into this tab bucket and the current workspace. Each insert also saves an AI spec pointer (strength, material, listing) under Reference Files.</span>
+              <span>Browsers cannot silently read your Downloads folder — Chrome blocks it as system files. After Download STEP, click <strong>Push download → workspace</strong> and multi-select every new STEP (Cmd/Ctrl+click). Download a second part? Push again (or Scan → Push) and select all new STEPs together.</span>
             </div>
             <div class="mcmaster-local-block">
               <div class="mcmaster-got-download-banner is-urgent" data-mcmaster-got-banner>
                 <strong>Download finished?</strong>
-                <span data-mcmaster-got-copy>One click opens Downloads, drops the STEP into this tab’s bucket, uploads it, and stores the McMaster AI reference pointer.</span>
+                <span data-mcmaster-got-copy>One click opens Downloads — select one or more STEPs, push them into this tab bucket + workspace, and save AI spec pointers.</span>
                 <button type="button" class="btn accent" data-mcmaster-got-download>Push download → workspace</button>
               </div>
               <div class="mcmaster-bucket-panel">
@@ -575,8 +575,8 @@ export function createMcMasterInsert({
   function syncAutoUploadCopy() {
     if (gotCopy) {
       gotCopy.textContent = autoUploadEnabled
-        ? "One click opens Downloads, pushes the STEP into this tab bucket + workspace, and saves the AI spec pointer."
-        : "One click pulls the STEP into this tab bucket (auto-upload off — insert manually). AI spec still saves on insert.";
+        ? "Opens Downloads — multi-select every new STEP (Cmd/Ctrl+click), push into this tab + workspace, and save AI spec pointers."
+        : "Opens Downloads — multi-select STEPs into the tab bucket (auto-upload off — insert manually). AI specs still save on insert.";
     }
   }
 
@@ -675,12 +675,25 @@ export function createMcMasterInsert({
     setStatus(
       "ok",
       autoUploadEnabled && downloadsDir
-        ? `Download STEP into ${downloadFolderName || MCMASTER_BUCKET} — only that new file will auto-upload.`
-        : `Set the ${MCMASTER_BUCKET} bucket, download the STEP there, then choose it.`,
+        ? `Download STEP into ${downloadFolderName || MCMASTER_BUCKET} — each new file will auto-upload. Or use Push download and multi-select from Downloads.`
+        : `After Download STEP, click Push download → workspace and select every new STEP (multi-select OK).`,
     );
   }
 
-  function clearAwaitingDownload() {
+  function clearAwaitingDownload({ disarm = false } = {}) {
+    // Keep the session armed while the McMaster popup is still open so a 2nd/3rd
+    // STEP download is not marked "seen" and skipped by Scan / folder watch.
+    if (!disarm && isWinOpen()) {
+      awaitingDownload = true;
+      returnPickerArmed = true;
+      downloadWatchStartedAt = Date.now();
+      setGotBannerVisible(true);
+      dropZone?.classList.add("is-attention");
+      localList?.closest(".mcmaster-local-block")?.classList.add("is-attention");
+      startLocalPoll({ fast: true });
+      syncConnectionUi();
+      return;
+    }
     awaitingDownload = false;
     returnPickerArmed = false;
     syncConnectionUi();
@@ -905,7 +918,8 @@ export function createMcMasterInsert({
       if (typeof window.showOpenFilePicker === "function") {
         try {
           const pickerOpts = {
-            multiple: false,
+            // Allow multi-select so a second (or third) McMaster STEP is not missed.
+            multiple: true,
             // Always open OS Downloads — no directory grant / no “system files” block.
             startIn: "downloads",
             types: [
@@ -1223,7 +1237,7 @@ export function createMcMasterInsert({
       return;
     }
     if (!localFiles.length) {
-      localList.innerHTML = `<p class="muted small">Watch folder <strong>${escapeHtml(downloadFolderName || MCMASTER_BUCKET)}</strong> is empty.</p>`;
+      localList.innerHTML = `<p class="muted small">Watch folder <strong>${escapeHtml(downloadFolderName || MCMASTER_BUCKET)}</strong> is empty. McMaster saves into Chrome Downloads — use <strong>Push download → workspace</strong> and multi-select every new STEP (Cmd/Ctrl+click).</p>`;
       return;
     }
     localList.innerHTML = localFiles.slice(0, 10).map((item) => `
@@ -1305,60 +1319,90 @@ export function createMcMasterInsert({
     if (!downloadsDir || autoUploading) return [];
     try {
       const found = await listLocalCadFiles();
-      localFiles = found.slice(0, 10);
+      localFiles = found.slice(0, 20);
       renderLocalDownloads();
 
-      // Candidates: brand-new names since this download session (or since last snapshot).
       const candidates = found.filter((item) => {
         const key = localFileKey(item);
+        const alreadyPending = pending.some(
+          (p) => p.file?.name === item.name && Number(p.file?.size || 0) === Number(item.file?.size || 0),
+        );
+        if (alreadyPending) return false;
+
+        // Manual Scan: pick up every CAD file in the bucket that isn't already staged
+        // (do not permanently skip just because an earlier poll marked it "seen").
+        if (force) return true;
+
         if (seenLocalKeys.has(key)) return false;
-        if (sessionBaselineNames.has(item.name) && !force) return false;
+        if (sessionBaselineNames.has(item.name)) return false;
         // Must be newer than watch start (with small clock skew allowance).
-        if (downloadWatchStartedAt && item.at < downloadWatchStartedAt - 3000 && !force) {
-          seenLocalKeys.add(key);
+        if (downloadWatchStartedAt && item.at < downloadWatchStartedAt - 3000) {
           return false;
         }
-        if (!force && !awaitingDownload && !sessionOpen) {
-          seenLocalKeys.add(key);
+        // Not in an active download session — leave unseen so a later Scan can still find it.
+        if (!awaitingDownload && !sessionOpen) {
           return false;
         }
         return true;
       });
 
-      if (!candidates.length) return [];
-
-      // ONLY the single newest file — never bulk-upload the folder.
-      candidates.sort((a, b) => b.at - a.at);
-      const newest = candidates[0];
-      const ready = await waitFileStable(newest);
-      seenLocalKeys.add(localFileKey(ready));
-      seenLocalKeys.add(localFileKey(newest));
-      sessionBaselineNames.add(ready.name);
-
-      if (!autoUploadEnabled && !force) {
-        stageFiles([ready.file]);
-        setStatus("ok", `${ready.name} landed in the bucket — staged. Enable auto-upload or click Insert.`);
-        return [ready];
+      if (!candidates.length) {
+        if (force) {
+          setStatus(
+            "ok",
+            found.length
+              ? "No new STEPs in the watch folder (already staged or previously seen). Use Push download for Chrome Downloads."
+              : "Watch folder is empty. McMaster saves to Chrome Downloads — use Push download → workspace and multi-select every STEP.",
+          );
+        }
+        return [];
       }
 
-      // Manual scan with auto-upload off still only stages the newest.
-      if (!autoUploadEnabled && force) {
-        stageFiles([ready.file]);
-        setStatus("ok", `${ready.name} found in bucket — staged.`);
-        return [ready];
+      candidates.sort((a, b) => b.at - a.at);
+      const readyList = [];
+      for (const candidate of candidates) {
+        const ready = await waitFileStable(candidate);
+        seenLocalKeys.add(localFileKey(ready));
+        seenLocalKeys.add(localFileKey(candidate));
+        sessionBaselineNames.add(ready.name);
+        readyList.push(ready);
+      }
+      if (!readyList.length) return [];
+
+      const files = readyList.map((item) => item.file);
+      const label =
+        readyList.length === 1
+          ? readyList[0].name
+          : `${readyList.length} new STEPs`;
+
+      if (!autoUploadEnabled) {
+        stageFiles(files);
+        setStatus(
+          "ok",
+          force
+            ? `${label} found in watch folder — staged. Click Insert or enable auto-upload.`
+            : `${label} landed in the bucket — staged. Enable auto-upload or click Insert.`,
+        );
+        return readyList;
       }
 
       autoUploading = true;
       try {
-        stageFiles([ready.file]);
-        setStatus("loading", `Uploading ${ready.name} to current workspace…`);
+        stageFiles(files);
+        setStatus("loading", `Uploading ${label} to current workspace…`);
         await insertPending(null, { forceCurrent: true });
+        // Keep armed if McMaster is still open — more parts may follow.
         clearAwaitingDownload();
-        setStatus("ok", `Uploaded ${ready.name} from ${MCMASTER_BUCKET} into the current workspace.`);
+        setStatus(
+          "ok",
+          readyList.length === 1
+            ? `Uploaded ${readyList[0].name} into the current workspace.`
+            : `Uploaded ${readyList.length} files into the current workspace.`,
+        );
       } finally {
         autoUploading = false;
       }
-      return [ready];
+      return readyList;
     } catch (err) {
       console.warn("ingestNewDownloads failed", err);
       return [];
@@ -1373,8 +1417,8 @@ export function createMcMasterInsert({
     if (autoStageNew || (autoUploadEnabled && (awaitingDownload || sessionOpen))) {
       return ingestNewDownloads({ force: !!autoStageNew });
     }
+    // Display-only refresh — do NOT mark files as seen (that made Scan miss later parts).
     const found = await listLocalCadFiles();
-    for (const item of found) seenLocalKeys.add(localFileKey(item));
     localFiles = found.slice(0, 10);
     renderLocalDownloads();
     return found;
@@ -1555,7 +1599,7 @@ export function createMcMasterInsert({
     sessionOpen = false;
     hideViewerOnly();
     stopWatch();
-    clearAwaitingDownload();
+    clearAwaitingDownload({ disarm: true });
     if (docTabs?.has?.(MCMASTER_TAB_ID)) docTabs.remove(MCMASTER_TAB_ID);
     if (!keepWindow && isWinOpen()) {
       try {
@@ -1635,7 +1679,18 @@ export function createMcMasterInsert({
 
   host?.querySelector("[data-mcmaster-link-downloads]")?.addEventListener("click", () => void linkDownloadsFolder());
   host?.querySelector("[data-mcmaster-change-downloads]")?.addEventListener("click", () => void linkDownloadsFolder());
-  host?.querySelector("[data-mcmaster-refresh-local]")?.addEventListener("click", () => void ingestNewDownloads({ force: true }));
+  host?.querySelector("[data-mcmaster-refresh-local]")?.addEventListener("click", () => {
+    void (async () => {
+      const found = await ingestNewDownloads({ force: true });
+      if (found?.length) return;
+      // Watch folder empty / no new files — McMaster usually saved into Chrome Downloads.
+      setStatus(
+        "ok",
+        "Nothing new in the watch folder. Opening Downloads — multi-select every STEP (Cmd/Ctrl+click).",
+      );
+      await pickDownloadedCad({ upload: true });
+    })();
+  });
   autoUploadInput?.addEventListener("change", () => {
     autoUploadEnabled = !!autoUploadInput.checked;
     writeAutoUploadPref(autoUploadEnabled);

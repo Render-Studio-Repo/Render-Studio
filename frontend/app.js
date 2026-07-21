@@ -107,7 +107,7 @@ import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
 import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
-import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260720-mcmaster-spec";
+import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260721-mcmaster-second-part";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
   suggestElectronicsForBuild,
@@ -1307,9 +1307,9 @@ function isModelElectronicsEnabled() {
   const btn = document.getElementById("prompt-electronics");
   if (btn) return btn.getAttribute("aria-pressed") === "true";
   try {
-    return localStorage.getItem(ELECTRONICS_KEY) !== "0";
+    return localStorage.getItem(ELECTRONICS_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -1342,11 +1342,12 @@ function syncElectronicsToggleVisibility(mode = promptMode) {
 function initPromptElectronicsToggle() {
   const btn = document.getElementById("prompt-electronics");
   if (!btn) return;
-  let enabled = true;
+  let enabled = false;
   try {
-    enabled = localStorage.getItem(ELECTRONICS_KEY) !== "0";
+    const saved = localStorage.getItem(ELECTRONICS_KEY);
+    enabled = saved === "1";
   } catch {
-    enabled = true;
+    enabled = false;
   }
   setModelElectronicsEnabled(enabled, { persist: false });
   btn.addEventListener("click", () => {
@@ -14768,7 +14769,11 @@ function sleep(ms) {
 
 async function fetchModelBlob(path, { retries = 2 } = {}) {
   let lastError = null;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
+  const started = Date.now();
+  // Large McMaster STEPs can take minutes to tessellate; keep polling 503s.
+  const previewDeadlineMs = 12 * 60 * 1000;
+  let attempt = 0;
+  while (true) {
     const fetchPath = attempt ? _cacheBustModelPath(path.split("?")[0], { force: true }) : path;
     const res = await rawFetch(fetchPath);
     if (res.ok) return res.blob();
@@ -14776,8 +14781,20 @@ async function fetchModelBlob(path, { retries = 2 } = {}) {
     const detail = data.detail;
     const msg = typeof detail === "string" ? detail : JSON.stringify(detail) || res.statusText;
     lastError = new Error(`fetch for "${API}${fetchPath}" responded with ${res.status}: ${msg}`);
-    if (![502, 503, 504].includes(res.status) || attempt === retries) break;
+    const previewPending = res.status === 503 && (data.preview_pending === true || /still building/i.test(msg));
+    if (previewPending && Date.now() - started < previewDeadlineMs) {
+      const retryAfterSec = Number(res.headers.get("Retry-After") || 3);
+      const waitMs = Math.min(15000, Math.max(1000, (Number.isFinite(retryAfterSec) ? retryAfterSec : 3) * 1000));
+      if (attempt === 0 || attempt % 4 === 0) {
+        setEditStatus?.("ok", "Building 3D preview… large STEP files can take a few minutes.");
+      }
+      await sleep(waitMs);
+      attempt += 1;
+      continue;
+    }
+    if (![502, 503, 504].includes(res.status) || attempt >= retries) break;
     await sleep(350 * (attempt + 1));
+    attempt += 1;
   }
   throw lastError || new Error(`Could not fetch model "${API}${path}".`);
 }
@@ -23454,6 +23471,9 @@ async function uploadProjectFile(file, choice = {}) {
   await refreshFiles();
   projectTree.setSelected(data.filename);
   const viewerFile = data.viewer_filename || data.filename;
+  if (data.preview_pending) {
+    setEditStatus("ok", `Added ${data.filename} — building 3D preview…`);
+  }
   await loadModel(data.url, viewerFile, {
     projectId: targetProjectId,
     append: destination === "current" && hadComponents,

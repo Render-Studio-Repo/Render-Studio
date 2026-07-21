@@ -383,12 +383,85 @@ export function createAIKeyUI({ api, onStatusChange }) {
     }
   }
 
+  function renderPlatformKeysSection(credits = {}, platformKeys = []) {
+    const balance = Number(credits.balance_cents || 0);
+    const providers = credits.providers || {};
+    const preferred = credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+    const enabled = !!credits.use_platform_key && balance > 0;
+    const rows = [
+      {
+        id: "openai",
+        name: "Render3D OpenAI",
+        provider: "openai",
+        live: !!providers.openai,
+        model: (platformKeys.find((k) => k.id === "openai") || {}).model
+          || (credits.models || []).find((m) => m.provider === "openai")?.model
+          || "",
+      },
+      {
+        id: "anthropic",
+        name: "Render3D Claude",
+        provider: "anthropic",
+        live: !!providers.anthropic,
+        model: (platformKeys.find((k) => k.id === "anthropic") || {}).model
+          || (credits.models || []).find((m) => m.provider === "anthropic")?.model
+          || "",
+      },
+    ];
+
+    let body = "";
+    if (balance <= 0) {
+      body = `<p class="ai-keys-empty">Buy Studio credits above to unlock Render3D OpenAI and Claude in the prompt picker.</p>`;
+    } else {
+      body = rows.map((row) => {
+        const badgeClass = PROVIDER_BADGE_CLASS[row.provider] || "badge-openai";
+        const isActive = enabled && preferred === row.id;
+        const canUse = row.live && balance > 0;
+        return `
+          <div class="ai-key-row ai-key-row--platform${isActive ? " ai-key-row--active" : ""}${canUse ? "" : " ai-key-row--disabled"}"
+               data-platform-provider="${esc(row.id)}">
+            <div class="ai-key-row-info">
+              <span class="ai-key-row-name">${esc(row.name)}</span>
+              <span class="ai-key-badge ${badgeClass}">${esc(labelFor(row.provider))}</span>
+              ${canUse ? `
+                <select class="ai-key-model-select" data-action="platform-key-model" data-provider="${esc(row.id)}" title="Model for this Render3D key">
+                  ${modelOptionsHTML(row.provider, preferred === row.id ? (credits.platform_model || row.model) : row.model)}
+                </select>
+              ` : `<span class="ai-key-row-model">${row.live ? "Buy credits to use" : "Not configured on server"}</span>`}
+            </div>
+            <div class="ai-key-row-actions">
+              ${!canUse
+                ? `<span class="ai-key-row-model">${row.live ? "Unavailable" : "Offline"}</span>`
+                : isActive
+                  ? `<span class="ai-key-active-badge">✓ Active</span>`
+                  : `<button type="button" class="btn ai-key-btn-activate" data-action="activate-platform" data-provider="${esc(row.id)}">Use in prompts</button>`
+              }
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    return `
+      <div class="ai-keys-section-label">
+        <span>Render3D Key</span>
+      </div>
+      <p class="ai-keys-section-hint">Studio credits power both providers below. Pick OpenAI or Claude when prompting — no personal API key required.</p>
+      ${body}
+    `;
+  }
+
   function renderKeysList(keys = [], activeKeyId = null, teamKeys = []) {
     if (!keysList) return;
-    let html = renderCreditCard(status?.credits || {});
+    const credits = status?.credits || {};
+    let html = renderCreditCard(credits);
+    html += renderPlatformKeysSection(credits, status?.platform_keys || []);
 
     // ── Personal keys ──
     if (keys.length) {
+      html += `
+        <div class="ai-keys-section-label">
+          <span>Your keys</span>
+        </div>`;
       html += keys.map((k) => {
         const isActive = k.id === activeKeyId || k.is_active;
         const badgeClass = PROVIDER_BADGE_CLASS[k.provider] || "badge-openai";

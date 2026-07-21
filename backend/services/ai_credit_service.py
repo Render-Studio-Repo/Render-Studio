@@ -150,43 +150,68 @@ def resolve_platform_credentials(
     account: dict[str, Any] | None,
     *,
     speed: str = "fast",
+    provider: str | None = None,
+    model: str | None = None,
 ) -> dict[str, str] | None:
-    """Pick Render3D platform OpenAI/Claude credentials for a credit account."""
-    preferred = str((account or {}).get("platform_provider") or "openai").strip().lower()
-    pinned = str((account or {}).get("platform_model") or "").strip()
+    """Pick Render3D platform OpenAI/Claude credentials for a credit account.
+
+    ``provider`` / ``model`` let a prompt request pick Claude or OpenAI explicitly
+    instead of only the account's single preferred shared model.
+    """
+    preferred = str(
+        provider or (account or {}).get("platform_provider") or "openai"
+    ).strip().lower()
+    if preferred in {"claude", "anthropic"}:
+        preferred = "anthropic"
+    else:
+        preferred = "openai"
+    pinned = str(model if model is not None else ((account or {}).get("platform_model") or "")).strip()
     openai_ok = platform_openai_configured()
     anthropic_ok = platform_anthropic_configured()
-    if preferred == "anthropic" and not anthropic_ok and openai_ok:
-        preferred = "openai"
-    elif preferred != "anthropic" and not openai_ok and anthropic_ok:
-        preferred = "anthropic"
-    if preferred == "anthropic" and anthropic_ok:
-        if pinned and not pinned.startswith("gpt"):
-            model = pinned
+    # Only fall back across providers when the caller did not pin a provider.
+    if provider is None:
+        if preferred == "anthropic" and not anthropic_ok and openai_ok:
+            preferred = "openai"
+        elif preferred != "anthropic" and not openai_ok and anthropic_ok:
+            preferred = "anthropic"
+    if preferred == "anthropic":
+        if not anthropic_ok:
+            return None
+        # Ignore OpenAI model pins when Claude was requested.
+        if pinned and (pinned.startswith("gpt") or pinned.startswith("o1") or pinned.startswith("o3")):
+            pinned = ""
+        if pinned:
+            chosen = pinned
         elif speed == "fast":
-            model = settings.anthropic_model
+            chosen = settings.anthropic_model
         else:
-            model = getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8"
+            chosen = getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8"
         return {
             "provider": "anthropic",
-            "model": model,
+            "model": chosen,
             "api_key": settings.anthropic_api_key.strip(),
             "shared_key_name": "Render3D Claude",
+            "key_id": "anthropic",
+            "source": "platform",
         }
-    if openai_ok:
-        if pinned and pinned.startswith("gpt"):
-            model = pinned if speed != "fast" else settings.openai_model
-        elif speed == "fast":
-            model = settings.openai_model
-        else:
-            model = settings.openai_model_quality
-        return {
-            "provider": "openai",
-            "model": model,
-            "api_key": settings.openai_api_key.strip(),
-            "shared_key_name": "Render3D OpenAI",
-        }
-    return None
+    if not openai_ok:
+        return None
+    if pinned and not (pinned.startswith("gpt") or pinned.startswith("o1") or pinned.startswith("o3")):
+        pinned = ""
+    if pinned and speed != "fast":
+        chosen = pinned
+    elif speed == "fast":
+        chosen = settings.openai_model
+    else:
+        chosen = settings.openai_model_quality
+    return {
+        "provider": "openai",
+        "model": chosen,
+        "api_key": settings.openai_api_key.strip(),
+        "shared_key_name": "Render3D OpenAI",
+        "key_id": "openai",
+        "source": "platform",
+    }
 
 
 def ensure_account(user_id: str) -> dict[str, Any]:
