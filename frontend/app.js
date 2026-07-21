@@ -14665,14 +14665,74 @@ function annotatePickedReference(ref) {
 
 function allowAutoUpsideDownFlip(filename = "") {
   const ext = String(filename || "").split(".").pop()?.toLowerCase() || "";
-  // GLB/GLTF files can carry explicit authoring transforms/material scene roots.
-  // A footprint guess is too aggressive for robot arms and often flips them.
-  return ext !== "glb" && ext !== "gltf";
+  // Allow footprint correction for all formats when choosing ±90° —
+  // CAD GLBs from Fusion/STEP are the ones that most need the right direction.
+  return Boolean(ext);
+}
+
+function projectHasSiblingCadSource(filename = "") {
+  const stem = String(filename || "").replace(/\.[^.]+$/i, "").toLowerCase();
+  if (!stem) return false;
+  const names = [];
+  for (const entry of (projectTree.getComponents?.() || [])) {
+    if (entry?.name) names.push(String(entry.name));
+    if (entry?.viewer_filename) names.push(String(entry.viewer_filename));
+  }
+  return names.some((name) => {
+    const lower = String(name || "").toLowerCase();
+    if (!(lower.endsWith(".step") || lower.endsWith(".stp"))) return false;
+    const other = lower.replace(/\.[^.]+$/i, "");
+    return other === stem
+      || other === `${stem}_exploded`
+      || stem === `${other}_exploded`
+      || other.startsWith(`${stem}__`)
+      || stem.startsWith(`${other}__`);
+  });
+}
+
+function isLikelyAlreadyZUpCadAsset(filename = "") {
+  const lower = String(filename || "").toLowerCase();
+  if (!lower) return false;
+  if (lower.includes("__faceted") || lower.includes("_exploded") || lower.includes("__part_")) return true;
+  if (lower.includes("autodesk_source_") || lower.endsWith(".step.glb")) return true;
+  return projectHasSiblingCadSource(filename);
+}
+
+function footprintScoreAtMinZ(object3d) {
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  if (box.isEmpty()) return 0;
+  const size = box.getSize(new THREE.Vector3());
+  if (!(size.z > 1e-9)) return 0;
+  const tol = size.z * 0.04;
+  let area = 0;
+  object3d.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    const pos = child.geometry.attributes?.position;
+    if (!pos) return;
+    const v = new THREE.Vector3();
+    let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity; let count = 0;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(child.matrixWorld);
+      if (Math.abs(v.z - box.min.z) > tol) continue;
+      count += 1;
+      minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
+      minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
+    }
+    if (count < 8) return;
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+    const mn = Math.min(spanX, spanY);
+    const mx = Math.max(spanX, spanY) || 1;
+    area += mn * (1 - Math.abs(spanX - spanY) / mx);
+  });
+  return area;
 }
 
 function ensureModelZUp(object3d, filename = "") {
-  /** Rotate Y-up meshes (glTF / text-to-cad) into Render3D's Z-up viewport. */
+  /** Rotate Y-up meshes (glTF / Fusion / text-to-cad) into Render3D's Z-up viewport. */
   if (!object3d) return false;
+  if (object3d.userData?.render3dZUp) return false;
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
   if (box.isEmpty()) return false;
@@ -14683,46 +14743,63 @@ function ensureModelZUp(object3d, filename = "") {
   const max = Math.max(sx, sy, sz);
   if (!(max > 0)) return false;
 
-  let rotated = false;
-  // Already standing in Z-up (height along Z).
-  if (sz >= max * 0.99) {
-    rotated = false;
-  } else if (sy >= max * 0.99) {
-    // Tallest axis is Y → classic Y-up standing model.
-    object3d.rotateX(Math.PI / 2);
-    rotated = true;
-  } else if (sz < Math.min(sx, sy) * 0.5) {
-    // Flat Z-up plate/gear on the XY floor (thin Z vs both plan extents).
-    return false;
-  } else if (max <= 25 && sy >= sz * 0.98) {
-    object3d.rotateX(Math.PI / 2);
-    rotated = true;
-  } else if (sy > sz * 1.12 && sy >= sx * 0.9) {
-    object3d.rotateX(Math.PI / 2);
-    rotated = true;
-  }
-
-  if (rotated) {
-    object3d.updateMatrixWorld(true);
-    // If the wider footprint ended up on +Z, flip 180° so the base sits down.
+  // Flat plate already on the XY floor — leave alone.
+  if (sz < Math.min(sx, sy) * 0.5) return false;
+  // Clear standing Z-up (height along Z).
+  if (sz >= max * 0.95) {
     if (allowAutoUpsideDownFlip(filename) && footprintPrefersFlip180(object3d)) {
       object3d.rotateX(Math.PI);
       object3d.updateMatrixWorld(true);
+      object3d.userData.render3dZUp = true;
+      object3d.userData.render3dZUpSource = filename || true;
+      return true;
     }
-    object3d.userData.render3dZUp = true;
-    object3d.userData.render3dZUpSource = filename || true;
-    return true;
+    return false;
   }
 
-  // Already Z-up-ish but possibly inverted (base on +Z).
-  if (allowAutoUpsideDownFlip(filename) && sz >= sy * 0.9 && footprintPrefersFlip180(object3d)) {
+  // Only tip when Y is clearly the "up"/long standing axis (classic Y-up),
+  // not merely the longest plan dimension of an already Z-up CAD part.
+  const classicYUp = sy >= max * 0.99 && sy > sz * 1.15;
+  const metreYUp = max <= 25 && sy >= sz * 1.08 && sy >= sx * 0.85;
+  const needsTip = classicYUp || metreYUp;
+  if (!needsTip) {
+    if (allowAutoUpsideDownFlip(filename) && sz >= sy * 0.9 && footprintPrefersFlip180(object3d)) {
+      object3d.rotateX(Math.PI);
+      object3d.updateMatrixWorld(true);
+      object3d.userData.render3dZUp = true;
+      object3d.userData.render3dZUpSource = filename || true;
+      return true;
+    }
+    return false;
+  }
+
+  // Try both ±90° about X (same as server) and keep the upright base on min Z.
+  const q0 = object3d.quaternion.clone();
+  let bestAngle = Math.PI / 2;
+  let bestScore = -Infinity;
+  for (const angle of [Math.PI / 2, -Math.PI / 2]) {
+    object3d.quaternion.copy(q0);
+    object3d.rotateX(angle);
+    object3d.updateMatrixWorld(true);
+    const minScore = footprintScoreAtMinZ(object3d);
+    // Prefer larger base footprint at min Z; slight bias to +90 on ties.
+    const score = minScore + (angle > 0 ? 1e-9 : 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestAngle = angle;
+    }
+  }
+  object3d.quaternion.copy(q0);
+  object3d.rotateX(bestAngle);
+  object3d.updateMatrixWorld(true);
+  if (allowAutoUpsideDownFlip(filename) && footprintPrefersFlip180(object3d)) {
     object3d.rotateX(Math.PI);
     object3d.updateMatrixWorld(true);
-    object3d.userData.render3dZUp = true;
-    object3d.userData.render3dZUpSource = filename || true;
-    return true;
   }
-  return false;
+  object3d.userData.render3dZUp = true;
+  object3d.userData.render3dZUpSource = filename || true;
+  object3d.userData.render3dZUpAngle = bestAngle;
+  return true;
 }
 
 /** Rough base-vs-top footprint test using the world AABB corners of child geometries. */
@@ -14775,10 +14852,14 @@ function footprintPrefersFlip180(object3d) {
 
 function materializeObject(object3d, { center = true, normalizePivot = center, filename = "", orient = true, orientationMode = null } = {}) {
   // Mode 2.0 used to blindly rotateX(-90), which tipped already-Z-up GLBs onto their side.
-  // Always use the smart Y-up→Z-up detector (server also bakes Z-up when it can).
-  if (orient || orientationMode === "v2-upright") {
+  // Auto-orient only when needed: skip CAD/STEP/Jake assets that are already Z-up unless
+  // Mode 2.0 explicitly asks for an upright pass.
+  const forceUpright = orientationMode === "v2-upright";
+  const shouldOrient = forceUpright
+    || (orient && !isLikelyAlreadyZUpCadAsset(filename));
+  if (shouldOrient) {
     ensureModelZUp(object3d, filename);
-    if (orientationMode === "v2-upright") {
+    if (forceUpright) {
       object3d.userData.render3dForcedUpright = "v2-upright";
     }
   }

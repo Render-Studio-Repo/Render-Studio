@@ -3871,10 +3871,9 @@ def _run_text_to_cad_v2(
                 step_name=step_name,
                 glb_name=glb_name,
             )
+            # Jake/cadjs sidecar is already STEP Z-up. Do not re-run Y→Z tip after
+            # wiring — that was flopping upright models onto their side.
             if (project_path / glb_name).is_file():
-                _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
-                # Z-up re-export must not leave metre-scale Jake previews tiny —
-                # re-apply STEP unit match after orientation bake.
                 step_path = project_path / step_name
                 if step_path.is_file():
                     try:
