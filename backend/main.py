@@ -10986,7 +10986,7 @@ def get_user_ai_costs(
                WHERE k.shared_by = ?
                  AND k.enabled = 1
                  AND tm.user_id != ?
-                 AND COALESCE(g.granted, 1) = 1
+                 AND (k.shared_by = tm.user_id OR COALESCE(g.granted, 0) = 1)
                ORDER BY u.display_name, u.email, k.created_at""",
             (user["id"], user["id"]),
         ).fetchall()

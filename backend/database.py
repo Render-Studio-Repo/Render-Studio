@@ -789,12 +789,13 @@ def init_db() -> None:
             );
 
             -- Owner-controlled per-member access grants.
-            -- If no row exists for a member, access is GRANTED by default.
-            -- granted=0 means the owner has explicitly blocked that member.
+            -- If no row exists for a member, access is DENIED by default.
+            -- granted=1 means the owner has explicitly allowed that member.
+            -- Key owners always retain access even without a grant row.
             CREATE TABLE IF NOT EXISTS team_key_grants (
                 key_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,
-                granted INTEGER NOT NULL DEFAULT 1,
+                granted INTEGER NOT NULL DEFAULT 0,
                 updated_by TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (key_id, user_id),
@@ -906,12 +907,13 @@ def init_db() -> None:
             );
 
             -- Owner-controlled per-member access grants.
-            -- If no row exists for a member, access is GRANTED by default.
-            -- granted=0 means the owner has explicitly blocked that member.
+            -- If no row exists for a member, access is DENIED by default.
+            -- granted=1 means the owner has explicitly allowed that member.
+            -- Key owners always retain access even without a grant row.
             CREATE TABLE IF NOT EXISTS team_key_grants (
                 key_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,
-                granted INTEGER NOT NULL DEFAULT 1,
+                granted INTEGER NOT NULL DEFAULT 0,
                 updated_by TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (key_id, user_id),
@@ -953,6 +955,22 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE user_team_key_opts ADD COLUMN allowed_models TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Preserve prior implicit access (old default was grant-on-missing-row), then
+        # new teammates are inserted with granted=0 going forward.
+        try:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO team_key_grants (key_id, user_id, granted, updated_by, updated_at)
+                SELECT k.id, tm.user_id, 1, k.shared_by, datetime('now')
+                FROM team_shared_ai_keys k
+                JOIN team_members tm ON tm.team_id = k.team_id
+                LEFT JOIN team_key_grants g ON g.key_id = k.id AND g.user_id = tm.user_id
+                WHERE g.key_id IS NULL
+                  AND tm.user_id != k.shared_by
+                """
+            )
         except sqlite3.OperationalError:
             pass
         try:

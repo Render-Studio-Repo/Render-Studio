@@ -923,9 +923,21 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
           }
         );
         const panel = document.getElementById(`members-panel-${teamKeyId}`);
-        if (panel) renderMembersPanel(panel, teamId, teamKeyId, data.members || []);
-        // Refresh status so prompt model pickers pick up the new allow-list.
-        await refresh();
+        if (panel) {
+          panel.classList.remove("hidden");
+          document.querySelector(`[data-action='manage-access'][data-team-key-id='${CSS.escape(teamKeyId)}']`)
+            ?.classList.add("active");
+          renderMembersPanel(panel, teamId, teamKeyId, data.members || []);
+        }
+        // Soft-update status for prompt pickers — do NOT remount the keys list
+        // (full refresh() would collapse this Members panel).
+        try {
+          const statusData = await api("/api/user/ai-keys");
+          status = { ...(statusData.ai || {}), keys: statusData.keys || statusData.ai?.keys || [] };
+          onStatusChange?.(status);
+        } catch {
+          /* ignore soft refresh errors */
+        }
       } catch (err) {
         setError(err.message || "Could not update allowed models");
         memberAllowed.checked = !memberAllowed.checked;

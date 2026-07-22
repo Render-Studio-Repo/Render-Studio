@@ -78,6 +78,7 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
     user_id = str(uuid.uuid4())[:12]
     team_id = str(uuid.uuid4())[:8]
     now = _now()
+    joined_team_ids: list[str] = []
     with get_conn() as conn:
         try:
             handle = ensure_unique_handle(conn, slugify_handle(display_name or email.split("@")[0]))
@@ -115,10 +116,16 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
                         "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'user', ?)",
                         (invite["team_id"], user_id, now),
                     )
+                    joined_team_ids.append(invite["team_id"])
                 conn.execute("UPDATE team_invites SET status='accepted' WHERE id=?", (invite["id"],))
             conn.commit()
         except sqlite3.IntegrityError as exc:
             raise ValueError("Email already registered") from exc
+    if joined_team_ids:
+        from backend.services.user_ai_keys_service import deny_shared_keys_for_new_member
+
+        for team_id in joined_team_ids:
+            deny_shared_keys_for_new_member(team_id, user_id)
     out = {"id": user_id, "email": email, "display_name": display_name, "created_at": now}
     if handle:
         out["handle"] = handle
@@ -484,11 +491,18 @@ def add_registered_user_to_team(team_id: str, email: str, requester_id: str) -> 
                 "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'user', ?)",
                 (team_id, user["id"], _now()),
             )
+            newly_added = True
+        else:
+            newly_added = False
         conn.execute(
             "UPDATE team_invites SET status='accepted' WHERE team_id=? AND lower(email)=? AND status='pending'",
             (team_id, email),
         )
         conn.commit()
+    if newly_added:
+        from backend.services.user_ai_keys_service import deny_shared_keys_for_new_member
+
+        deny_shared_keys_for_new_member(team_id, user["id"], updated_by=requester_id)
     return {"status": "added", "user": dict(user)}
 
 
@@ -682,6 +696,9 @@ def accept_team_invite(invite_id: str, user_id: str, email: str) -> dict[str, An
                 "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
                 (invite["team_id"], user_id, "user", _now()),
             )
+            newly_added = True
+        else:
+            newly_added = False
         conn.execute(
             "UPDATE team_invites SET status = 'accepted' WHERE id = ?",
             (invite_id,),
@@ -689,7 +706,10 @@ def accept_team_invite(invite_id: str, user_id: str, email: str) -> dict[str, An
         conn.commit()
         team = conn.execute("SELECT id, name FROM teams WHERE id = ?", (invite["team_id"],)).fetchone()
     from backend.services import folders_service
+    from backend.services.user_ai_keys_service import deny_shared_keys_for_new_member
 
+    if newly_added:
+        deny_shared_keys_for_new_member(invite["team_id"], user_id)
     folders_service.grant_pending_folder_shares(user_id, email, invite["team_id"])
     return {"status": "accepted", "team": dict(team)}
 
@@ -700,6 +720,7 @@ def accept_pending_invites_for_user(user_id: str, email: str) -> list[dict[str, 
     if not user_id or not email:
         return []
     accepted: list[dict[str, Any]] = []
+    newly_joined: list[str] = []
     with get_conn() as conn:
         _ensure_invite_token_column(conn)
         rows = conn.execute(
@@ -722,13 +743,17 @@ def accept_pending_invites_for_user(user_id: str, email: str) -> list[dict[str, 
                     "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
                     (invite["team_id"], user_id, "user", _now()),
                 )
+                newly_joined.append(invite["team_id"])
             conn.execute("UPDATE team_invites SET status = 'accepted' WHERE id = ?", (invite["id"],))
             accepted.append({"id": invite["id"], "team_id": invite["team_id"], "team_name": invite["team_name"]})
         if accepted:
             conn.commit()
     if accepted:
         from backend.services import folders_service
+        from backend.services.user_ai_keys_service import deny_shared_keys_for_new_member
 
+        for team_id in newly_joined:
+            deny_shared_keys_for_new_member(team_id, user_id)
         for invite in accepted:
             folders_service.grant_pending_folder_shares(user_id, email, invite["team_id"])
     return accepted
@@ -762,16 +787,21 @@ def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
             "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
             (invite["team_id"], user["id"]),
         ).fetchone()
+        newly_added = False
         if not existing:
             conn.execute(
                 "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
                 (invite["team_id"], user["id"], "user", _now()),
             )
+            newly_added = True
         conn.execute("UPDATE team_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
         conn.commit()
         team = {"id": invite["team_id"], "name": invite["team_name"]}
     from backend.services import folders_service
+    from backend.services.user_ai_keys_service import deny_shared_keys_for_new_member
 
+    if newly_added:
+        deny_shared_keys_for_new_member(invite["team_id"], user["id"])
     folders_service.grant_pending_folder_shares(user["id"], invite["email"], invite["team_id"])
     return {"status": "accepted", "team": team, "user": dict(user)}
 

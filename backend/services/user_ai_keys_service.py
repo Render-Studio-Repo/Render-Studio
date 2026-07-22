@@ -338,6 +338,55 @@ def update_key(user_id: str, key_id: str, *, name: str | None = None, model: str
 
 # ── Team-shared keys ──────────────────────────────────────────────────────────
 
+def deny_shared_keys_for_new_member(
+    team_id: str,
+    user_id: str,
+    *,
+    updated_by: str | None = None,
+) -> None:
+    """New teammates start with no access to existing shared keys (except key owners)."""
+    now = datetime.now(timezone.utc).isoformat()
+    actor = updated_by or user_id
+    with get_conn() as conn:
+        keys = conn.execute(
+            "SELECT id, shared_by FROM team_shared_ai_keys WHERE team_id=?",
+            (team_id,),
+        ).fetchall()
+        for key in keys:
+            if key["shared_by"] == user_id:
+                continue
+            conn.execute(
+                "INSERT INTO team_key_grants (key_id,user_id,granted,updated_by,updated_at) VALUES (?,?,0,?,?) "
+                "ON CONFLICT(key_id,user_id) DO NOTHING",
+                (key["id"], user_id, actor, now),
+            )
+        conn.commit()
+
+
+def deny_members_for_new_shared_key(
+    team_id: str,
+    key_id: str,
+    shared_by: str,
+) -> None:
+    """When a shared key is created, existing members stay denied until explicitly granted."""
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        members = conn.execute(
+            "SELECT user_id FROM team_members WHERE team_id=?",
+            (team_id,),
+        ).fetchall()
+        for member in members:
+            uid = member["user_id"]
+            if uid == shared_by:
+                continue
+            conn.execute(
+                "INSERT INTO team_key_grants (key_id,user_id,granted,updated_by,updated_at) VALUES (?,?,0,?,?) "
+                "ON CONFLICT(key_id,user_id) DO NOTHING",
+                (key_id, uid, shared_by, now),
+            )
+        conn.commit()
+
+
 def add_team_shared_key(
     team_id: str,
     shared_by: str,
@@ -370,6 +419,7 @@ def add_team_shared_key(
             (key_id, team_id, key_name, provider, enc, chosen_model, shared_by, now, scope_type, scope_project_id, scope_label),
         )
         conn.commit()
+    deny_members_for_new_shared_key(team_id, key_id, shared_by)
     return list_team_shared_keys(team_id, shared_by)
 
 
@@ -411,6 +461,7 @@ def add_team_shared_key_from_user_key(
             (key_id, team_id, key_name, source["provider"], source["api_key_enc"], chosen_model, shared_by, now, scope_type, scope_project_id, scope_label),
         )
         conn.commit()
+    deny_members_for_new_shared_key(team_id, key_id, shared_by)
     return list_team_shared_keys(team_id, shared_by)
 
 
@@ -472,7 +523,7 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
                LEFT JOIN user_team_key_opts opt ON opt.key_id = k.id AND opt.user_id = ?
                LEFT JOIN team_key_grants g ON g.key_id = k.id AND g.user_id = ?
                WHERE k.team_id = ?
-                 AND (k.shared_by = ? OR COALESCE(g.granted, 1) = 1)
+                 AND (k.shared_by = ? OR COALESCE(g.granted, 0) = 1)
                ORDER BY k.created_at""",
             (user_id, user_id, team_id, user_id),
         ).fetchall()
@@ -520,7 +571,7 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
                     "user_id": m["user_id"],
                     "display_name": m["display_name"] or m["email"] or "Team member",
                     "email": m["email"],
-                    "granted": grants.get((key_id, m["user_id"]), True) or m["user_id"] == key["shared_by"],
+                    "granted": grants.get((key_id, m["user_id"]), False) or m["user_id"] == key["shared_by"],
                     "use_key": opts.get((key_id, m["user_id"]), {}).get("use_key", False),
                     "model": opts.get((key_id, m["user_id"]), {}).get("model") or key["model"],
                     "daily_limit_usd": opts.get((key_id, m["user_id"]), {}).get("daily_limit_usd"),
@@ -531,7 +582,7 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
                     ),
                 }
                 for m in member_rows
-                if grants.get((key_id, m["user_id"]), True) or m["user_id"] == key["shared_by"]
+                if grants.get((key_id, m["user_id"]), False) or m["user_id"] == key["shared_by"]
             ]
     return [
         {
@@ -591,7 +642,7 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
         rows = conn.execute(
             """SELECT tm.user_id, u.display_name, u.email,
                       tm.role,
-                      COALESCE(g.granted, 1) AS granted,
+                      CASE WHEN tm.user_id = ? THEN 1 ELSE COALESCE(g.granted, 0) END AS granted,
                       COALESCE(opt.use_key, 0) AS use_key,
                       opt.model AS member_model,
                       opt.daily_limit_usd AS daily_limit_usd,
@@ -603,7 +654,7 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
                LEFT JOIN user_team_key_opts opt ON opt.key_id = ? AND opt.user_id = tm.user_id
                WHERE tm.team_id = ?
                ORDER BY u.display_name""",
-            (key_id, key_id, team_id),
+            (key_row["shared_by"], key_id, key_id, team_id),
         ).fetchall()
     provider = normalize_provider(key_row["provider"])
     return [
@@ -678,12 +729,13 @@ def set_team_key_member_access(
         if not target_member:
             raise ValueError("Target user is not a team member")
         if self_limit_only:
-            grant = conn.execute(
-                "SELECT granted FROM team_key_grants WHERE key_id=? AND user_id=?",
-                (key_id, target_user_id),
-            ).fetchone()
-            if grant is not None and not bool(grant["granted"]) and target_user_id != key_row["shared_by"]:
-                raise PermissionError("You do not have access to this shared key")
+            if target_user_id != key_row["shared_by"]:
+                grant = conn.execute(
+                    "SELECT granted FROM team_key_grants WHERE key_id=? AND user_id=?",
+                    (key_id, target_user_id),
+                ).fetchone()
+                if grant is None or not bool(grant["granted"]):
+                    raise PermissionError("You do not have access to this shared key")
         if target_user_id == key_row["shared_by"] and granted is False:
             raise PermissionError("The key owner must keep access to their own shared key")
         if granted is True and use_key is None:
@@ -840,7 +892,7 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
                WHERE opt.user_id = ?
                  AND opt.use_key = 1
                  AND k.enabled = 1
-                 AND COALESCE(g.granted, 1) = 1
+                 AND (k.shared_by = opt.user_id OR COALESCE(g.granted, 0) = 1)
                ORDER BY k.created_at DESC LIMIT 1""",
             (user_id,),
         ).fetchone()
@@ -889,7 +941,7 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
                LEFT JOIN team_key_grants g ON g.key_id = k.id AND g.user_id = ?
                WHERE k.enabled = 1
                  AND COALESCE(opt.use_key, 1) = 1
-                 AND COALESCE(g.granted, 1) = 1
+                 AND (k.shared_by = ? OR COALESCE(g.granted, 0) = 1)
                  AND (
                    COALESCE(k.scope_type, 'all') = 'all'
                    OR (k.scope_type = 'project' AND k.scope_project_id = ?)
@@ -901,7 +953,7 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
                    )
                  )
                ORDER BY k.created_at LIMIT 1""",
-            (user_id, user_id, user_id, project_id, project_id),
+            (user_id, user_id, user_id, user_id, project_id, project_id),
         ).fetchone()
     if not row:
         return None
@@ -988,8 +1040,8 @@ def _resolve_team_key_for_user(user_id: str, key_id: str, *, project_id: str | N
                LEFT JOIN team_key_grants g ON g.key_id = k.id AND g.user_id = ?
                WHERE k.id = ?
                  AND k.enabled = 1
-                 AND COALESCE(g.granted, 1) = 1""",
-            (user_id, user_id, user_id, key_id),
+                 AND (k.shared_by = ? OR COALESCE(g.granted, 0) = 1)""",
+            (user_id, user_id, user_id, key_id, user_id),
         ).fetchone()
         if not row:
             raise ValueError("Shared key not found or not accessible")
