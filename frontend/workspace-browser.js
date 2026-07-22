@@ -2030,7 +2030,13 @@ export function createWorkspaceBrowser({
       searching ? list.filter((p) => matchesProjectSearch(p, query, folderName)) : list;
     const folderTeamId = resolveTeamId();
     const workspaceMeta = getWorkspaceMeta?.(folderTeamId) || {};
-    const rootLabel = workspaceMeta.rootLabel || "Personal files";
+    const teamIdsInView = [
+      ...new Set((projects || []).map((p) => p?.team_id).filter(Boolean).map(String)),
+    ];
+    const multiWorkspace = teamIdsInView.length > 1;
+    const rootLabel = multiWorkspace
+      ? "All workspaces"
+      : workspaceMeta.rootLabel || "Personal files";
     const rootProjects = filterProjects(allRootProjects, rootLabel);
     const folderProjects = (fid, folderName = "") =>
       filterProjects(
@@ -2143,15 +2149,18 @@ export function createWorkspaceBrowser({
     });
 
     if (showPrivateGroup && (showCommunityGroup || privateFolders.length || rootProjects.length || !searching)) {
-      appendFolderGroupLabel(container, workspaceMeta.shared ? "Shared workspace" : "Personal");
+      appendFolderGroupLabel(
+        container,
+        multiWorkspace ? "Workspaces" : workspaceMeta.shared ? "Shared workspace" : "Personal"
+      );
     }
 
     if (rootProjects.length || !searching) {
       const rootCollapsed = searching ? false : collapsedFolders.has(folderStorageId(null));
       const rootZone = document.createElement("section");
       rootZone.className = "folder-zone folder-zone-root";
-      rootZone.classList.toggle("folder-zone-root--personal", !!workspaceMeta.personal);
-      rootZone.classList.toggle("folder-zone-root--shared", !!workspaceMeta.shared);
+      rootZone.classList.toggle("folder-zone-root--personal", !multiWorkspace && !!workspaceMeta.personal);
+      rootZone.classList.toggle("folder-zone-root--shared", !multiWorkspace && !!workspaceMeta.shared);
       if (rootCollapsed) rootZone.classList.add("folder-zone-collapsed");
       rootZone.dataset.folderId = "";
       const rootHeader = document.createElement("header");
@@ -2160,10 +2169,10 @@ export function createWorkspaceBrowser({
         buildFolderCollapseBtn(null, rootCollapsed),
         Object.assign(document.createElement("span"), {
           className: "folder-icon",
-          textContent: workspaceMeta.shared ? "🟧" : "📁",
+          textContent: multiWorkspace ? "📁" : workspaceMeta.shared ? "🟧" : "📁",
         }),
         Object.assign(document.createElement("span"), { className: "folder-title", textContent: rootLabel }),
-        ...(workspaceMeta.shared
+        ...(!multiWorkspace && workspaceMeta.shared
           ? [
               Object.assign(document.createElement("span"), {
                 className: "folder-workspace-highlight",
@@ -2239,11 +2248,17 @@ export function createWorkspaceBrowser({
       const canManage = folder.can_manage || folder.is_owner;
 
       header.appendChild(buildFolderCollapseBtn(folder.id, folderCollapsed));
+      const folderWsMeta = folder.team_id ? getWorkspaceMeta?.(folder.team_id) : null;
+      const folderWsTag =
+        multiWorkspace && folderWsMeta?.label && !folder.virtual && !folder.public
+          ? `<span class="folder-workspace-tag" title="Workspace">${escapeHtml(folderWsMeta.label)}</span>`
+          : "";
       header.insertAdjacentHTML(
         "beforeend",
         `
         <span class="folder-icon">📂</span>
         <span class="folder-title">${escapeHtml(folder.name)}</span>
+        ${folderWsTag}
         ${sharedLabel}
         ${shareBadge}
         <span class="folder-count muted small">${inFolder.length}</span>
@@ -2329,45 +2344,47 @@ export function createWorkspaceBrowser({
   }
 
   async function refreshFolders() {
-    const teamId = getWorkspaceId();
-    if (!teamId) {
-      const seen = new Set();
-      folders = [];
-      for (const project of getProjects() || []) {
-        const id = project?.folder_id;
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        const isPublic = id === "__public__";
-        const isOtherRenders = id === "__other_user_renders__";
-        folders.push({
-          id,
-          team_id: project.team_id || null,
-          name: project.folder_name || (isPublic ? "Public" : isOtherRenders ? "New renders from other users" : "Folder"),
-          virtual: isPublic || isOtherRenders || !project.team_id,
-          read_only: isPublic || isOtherRenders || !!project.read_only_project,
-          public: isPublic,
-        });
-      }
-      const folderTeamId = resolveTeamId();
-      if (folderTeamId) {
-        try {
-          const data = await api(`/api/teams/${folderTeamId}/folders`);
-          for (const folder of data.folders || []) {
-            if (!folder?.id || seen.has(folder.id)) continue;
-            seen.add(folder.id);
-            folders.push(folder);
-          }
-        } catch {
-          /* keep virtual folders only */
-        }
-      }
-      return;
+    const projects = getProjects() || [];
+    const seen = new Set();
+    folders = [];
+
+    // Seed from project folder refs (covers virtual Public / other-user folders too).
+    for (const project of projects) {
+      const id = project?.folder_id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const isPublic = id === "__public__";
+      const isOtherRenders = id === "__other_user_renders__";
+      folders.push({
+        id,
+        team_id: project.team_id || null,
+        name: project.folder_name || (isPublic ? "Public" : isOtherRenders ? "New renders from other users" : "Folder"),
+        virtual: isPublic || isOtherRenders || !project.team_id,
+        read_only: isPublic || isOtherRenders || !!project.read_only_project,
+        public: isPublic,
+      });
     }
-    try {
-      const data = await api(`/api/teams/${teamId}/folders`);
-      folders = data.folders || [];
-    } catch {
-      folders = [];
+
+    // Load real folders for every workspace that has visible projects, plus the
+    // active/folder workspace (so empty checked workspaces still get their folders).
+    const teamIds = new Set(
+      projects.map((p) => p?.team_id).filter(Boolean).map(String)
+    );
+    const focusId = resolveTeamId();
+    if (focusId) teamIds.add(String(focusId));
+    // When focused on one workspace, still pull folders for other teams present
+    // in the project list so checkbox-visible shared workspaces keep their folders.
+    for (const tid of teamIds) {
+      try {
+        const data = await api(`/api/teams/${encodeURIComponent(tid)}/folders`);
+        for (const folder of data.folders || []) {
+          if (!folder?.id || seen.has(folder.id)) continue;
+          seen.add(folder.id);
+          folders.push(folder);
+        }
+      } catch {
+        /* keep whatever we already have for this team */
+      }
     }
   }
 

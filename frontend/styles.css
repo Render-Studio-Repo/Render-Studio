@@ -15052,11 +15052,11 @@ section h2 {
 }
 
 .shared-workspaces-menu {
-  position: absolute;
-  top: 34px;
-  right: 0;
-  z-index: 40;
-  width: min(280px, calc(100vw - 32px));
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 12050;
+  width: min(280px, calc(100vw - 16px));
   max-height: min(70vh, 420px);
   overflow: auto;
   padding: 10px;
@@ -15064,6 +15064,7 @@ section h2 {
   border-radius: 12px;
   background: #0d1117;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
+  box-sizing: border-box;
 }
 
 .shared-workspaces-menu.hidden {
@@ -17674,31 +17675,21 @@ label input { margin-top: 4px; }
   display: inline-flex;
 }
 
-.prompt-mode-tip {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  z-index: 500;
-  width: min(250px, 72vw);
-  transform: translateX(-50%) translateY(4px);
-  pointer-events: none;
-  opacity: 0;
-  border: 1px solid rgba(88, 166, 255, 0.28);
-  border-radius: 12px;
-  background: rgba(13, 17, 23, 0.96);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42);
-  color: #c9d1d9;
-  padding: 9px 10px;
-  font-size: 0.72rem;
-  line-height: 1.35;
-  white-space: normal;
-  transition: opacity 0.16s ease, transform 0.16s ease;
+/* Mode tips are portaled to body as .prompt-spice-tip; keep legacy class inert if leftover. */
+.prompt-mode-tip:not(.prompt-spice-tip) {
+  display: none !important;
 }
 
-.prompt-mode-wrap:hover .prompt-mode-tip,
-.prompt-mode-wrap:focus-within .prompt-mode-tip {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
+.prompt-mode-tip-badge--v2 {
+  background: rgba(212, 160, 23, 0.18) !important;
+  border-color: rgba(212, 160, 23, 0.45) !important;
+  color: #f0c040 !important;
+}
+
+.prompt-mode-tip-badge--fusion {
+  background: rgba(88, 166, 255, 0.14) !important;
+  border-color: rgba(88, 166, 255, 0.4) !important;
+  color: #79c0ff !important;
 }
 
 .prompt-mode-btn.active {
@@ -27761,7 +27752,7 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .prompt-spice-tip::after {
   content: "";
   position: absolute;
-  left: 18px;
+  left: var(--tip-caret-left, 18px);
   bottom: -6px;
   width: 10px;
   height: 10px;
@@ -28728,6 +28719,16 @@ body.kb-modal-open {
   border-color: #0099ff;
   color: #fff;
   background: linear-gradient(135deg, rgba(0, 120, 212, 0.35), rgba(0, 180, 216, 0.25));
+}
+
+.prompt-mode-btn--fusion:disabled,
+.prompt-mode-btn--fusion[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  border-color: rgba(0, 120, 212, 0.2);
+  color: rgba(148, 163, 184, 0.85);
+  background: rgba(15, 23, 42, 0.35);
 }
 
 .prompt-mode-btn--electronics {

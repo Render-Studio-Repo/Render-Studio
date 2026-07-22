@@ -4,6 +4,13 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-22 — Workspace invite moved to popup
+
+- Slimmed left Workspace panel: removed inline people-picker + invite email row; replaced with a single **Invite people** button.
+- New `frontend/workspace-send-invite.js` popup invites to the **current** workspace only (no workspace picker in the modal). Switch workspace from Projects first.
+- Thin hooks in `app.js`; markup in `index.html`; scoped CSS appended to `styles.css`. Cache-bust `?v=20260722-ws-send-invite`.
+- Existing accept-invite modal (`#workspace-invite-modal`) unchanged.
+
 ## 2026-07-21 — Quest Complete header note + tracking toggle
 
 - Replaced bottom toast with a subtle **Quest Complete!** chip next to the profile button (`.quest-complete-note` in `.auth-widget`). Click opens Quest Book.

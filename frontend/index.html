@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260722-workspace-folder-menu" />
+  <link rel="stylesheet" href="/styles.css?v=20260722-popup-fit" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -702,16 +702,11 @@
             <input type="checkbox" id="workspace-connect-fusion" />
             Connect this workspace to Fusion
           </label>
-          <div class="team-invite-block">
-            <select id="team-invite-pick" class="team-invite-pick" aria-label="People you've worked with" hidden>
-              <option value="">People you've worked with…</option>
-            </select>
-            <div class="team-invite-row">
-              <input type="email" id="team-invite-email" placeholder="Invite email" autocomplete="off" />
-              <button type="button" id="btn-team-invite" class="btn secondary btn-compact">Invite</button>
-            </div>
+          <div class="workspace-invite-open-row">
+            <button type="button" id="btn-open-workspace-invite" class="btn secondary btn-compact workspace-invite-open-btn">
+              Invite people
+            </button>
           </div>
-          <p id="team-invite-status" class="muted small"></p>
           <ul id="team-members" class="team-members"></ul>
           <div id="workspace-realtime-editor" class="workspace-realtime-editor is-compact">
             <button type="button" id="workspace-realtime-open" class="workspace-realtime-head workspace-realtime-open" aria-haspopup="dialog" aria-expanded="false" title="Open realtime editor">
@@ -1572,16 +1567,14 @@
             </div>
             <div class="prompt-mode-row" role="group" aria-label="Prompt mode">
               <div class="prompt-mode-group">
-                <span class="prompt-mode-wrap">
+                <span class="prompt-mode-wrap" data-prompt-mode-tip="render">
                   <button type="button" class="prompt-mode-btn" data-prompt-mode="render" aria-describedby="prompt-mode-render-tip">Render</button>
-                  <span id="prompt-mode-render-tip" class="prompt-mode-tip" role="tooltip">Creates photoreal images from the current model, scene, lighting, materials, and camera direction.</span>
                 </span>
-                <span class="prompt-mode-wrap">
+                <span class="prompt-mode-wrap" data-prompt-mode-tip="v2">
                   <button type="button" class="prompt-mode-btn prompt-mode-btn--v2 active" data-prompt-mode="v2" aria-describedby="prompt-mode-v2-tip">2.0</button>
-                  <span id="prompt-mode-v2-tip" class="prompt-mode-tip" role="tooltip">Builds CAD geometry by default: parametric parts, assemblies, dimensions, and named features.</span>
                 </span>
-                <span class="prompt-mode-wrap">
-                  <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" title="Generate parametric CAD then push directly to Fusion 360">Fusion</button>
+                <span class="prompt-mode-wrap" data-prompt-mode-tip="fusion">
+                  <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" disabled aria-disabled="true" aria-describedby="prompt-mode-fusion-tip">Fusion</button>
                 </span>
                 <span class="prompt-mode-wrap prompt-electronics-wrap" id="prompt-electronics-wrap">
                   <button
@@ -1592,6 +1585,33 @@
                     aria-describedby="prompt-electronics-tip"
                   >Electronics</button>
                 </span>
+              </div>
+              <div id="prompt-mode-render-tip" class="prompt-spice-tip prompt-mode-tip" role="tooltip" hidden>
+                <div class="prompt-spice-tip-top">
+                  <span class="prompt-spice-tip-badge">Render</span>
+                  <strong class="prompt-spice-tip-title">Photoreal images</strong>
+                </div>
+                <p class="prompt-spice-tip-body">
+                  Creates photoreal images from the current model, scene, lighting, materials, and camera direction.
+                </p>
+              </div>
+              <div id="prompt-mode-v2-tip" class="prompt-spice-tip prompt-mode-tip" role="tooltip" hidden>
+                <div class="prompt-spice-tip-top">
+                  <span class="prompt-spice-tip-badge prompt-mode-tip-badge--v2">CAD Prompt</span>
+                  <strong class="prompt-spice-tip-title">Mode 2.0</strong>
+                </div>
+                <p class="prompt-spice-tip-body">
+                  Builds CAD geometry by default: parametric parts, assemblies, dimensions, and named features.
+                </p>
+              </div>
+              <div id="prompt-mode-fusion-tip" class="prompt-spice-tip prompt-mode-tip" role="tooltip" hidden>
+                <div class="prompt-spice-tip-top">
+                  <span class="prompt-spice-tip-badge prompt-mode-tip-badge--fusion">Fusion</span>
+                  <strong class="prompt-spice-tip-title">Push to Fusion 360</strong>
+                </div>
+                <p class="prompt-spice-tip-body">
+                  Generate parametric CAD, then push the result directly into Fusion 360. Temporarily unavailable.
+                </p>
               </div>
               <div id="prompt-electronics-tip" class="prompt-spice-tip prompt-electronics-tip" role="tooltip" hidden>
                 <div class="prompt-spice-tip-top">
@@ -2144,6 +2164,33 @@
       <div class="app-dialog-actions workspace-invite-actions">
         <button type="button" id="btn-workspace-invite-decline" class="btn secondary">Decline</button>
         <button type="button" id="btn-workspace-invite-accept" class="btn accent">Accept</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="workspace-send-invite-modal" class="auth-modal workspace-send-invite-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-send-invite-title">
+    <div class="auth-backdrop" data-ws-send-invite-close></div>
+    <div class="auth-card app-dialog-card workspace-send-invite-card">
+      <button type="button" class="auth-close" data-ws-send-invite-close aria-label="Close">&times;</button>
+      <p class="workspace-send-invite-eyebrow">Invite people</p>
+      <h2 id="workspace-send-invite-title" class="app-dialog-title">
+        Invite to <span id="ws-send-invite-workspace-name">workspace</span>
+      </h2>
+      <p id="ws-send-invite-hint" class="muted small workspace-send-invite-hint">
+        Invites go to the workspace you have open now.
+      </p>
+      <div class="team-invite-block workspace-send-invite-fields">
+        <select id="team-invite-pick" class="team-invite-pick" aria-label="People you've worked with" hidden>
+          <option value="">People you've worked with…</option>
+        </select>
+        <div class="team-invite-row">
+          <input type="email" id="team-invite-email" placeholder="Invite email" autocomplete="off" />
+          <button type="button" id="btn-team-invite" class="btn accent btn-compact">Invite</button>
+        </div>
+      </div>
+      <p id="ws-send-invite-status" class="muted small workspace-send-invite-status" role="status"></p>
+      <div class="app-dialog-actions workspace-send-invite-actions">
+        <button type="button" class="btn secondary" data-ws-send-invite-close>Done</button>
       </div>
     </div>
   </div>
@@ -2777,7 +2824,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260722-workspace-folder-menu"></script>
+  <script type="module" src="/app.js?v=20260722-popup-fit"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

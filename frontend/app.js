@@ -142,6 +142,7 @@ const LS_GOOGLE_NEW_USER_WALKTHROUGH = "render3d:googleNewUserWalkthrough:v1";
 const LS_AI_SETUP_INTRO_DISMISSED = "render3d:aiSetupIntroDismissed:v1";
 const SS_AI_SETUP_INTRO_OFFERED = "render3d:aiSetupIntroOffered:v1";
 const DEFAULT_PROMPT_MODE = "v2";
+const FUSION_PROMPT_MODE_ENABLED = false;
 
 let projectId = null;
 const wiringLoadCache = { projectId: null, promise: null, data: null };
@@ -1299,7 +1300,11 @@ function generationPromptMode(generation = {}, fallback = "standard") {
 
 function applyPromptModeUI(mode = promptMode) {
   promptMode = mode === "draw" ? DEFAULT_PROMPT_MODE : (mode || DEFAULT_PROMPT_MODE);
-  if (!document.querySelector(`[data-prompt-mode="${promptMode}"]`)) {
+  if (!FUSION_PROMPT_MODE_ENABLED && promptMode === "fusion") {
+    promptMode = DEFAULT_PROMPT_MODE;
+  }
+  const modeBtn = document.querySelector(`[data-prompt-mode="${promptMode}"]`);
+  if (!modeBtn || modeBtn.disabled) {
     promptMode = DEFAULT_PROMPT_MODE;
   }
   document.querySelectorAll("[data-prompt-mode]").forEach((b) => {
@@ -1382,14 +1387,52 @@ function initPromptElectronicsToggle() {
     setModelElectronicsEnabled(!isModelElectronicsEnabled());
   });
   syncElectronicsToggleVisibility(promptMode);
+  initPromptModeHoverTips();
   initPromptElectronicsHoverTip();
 }
 
-function initPromptElectronicsHoverTip() {
-  const wrap = document.getElementById("prompt-electronics-wrap");
-  const tip = document.getElementById("prompt-electronics-tip");
-  if (!wrap || !tip) return;
+function placeFixedHoverTip(tip, anchorEl, {
+  width = 280,
+  gap = 10,
+  preferBelow = false,
+} = {}) {
+  if (!tip || !anchorEl) return;
+  const rect = anchorEl.getBoundingClientRect();
+  const tipWidth = Math.min(width, Math.max(220, Math.min(window.innerWidth - 16, width)));
+  tip.style.width = `${tipWidth}px`;
+  tip.style.bottom = "auto";
+  tip.style.right = "auto";
 
+  let left = rect.left + rect.width / 2 - tipWidth / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tipWidth - 8));
+  tip.style.left = `${Math.round(left)}px`;
+
+  const wasVisible = tip.classList.contains("is-visible");
+  if (!wasVisible) tip.classList.add("prompt-spice-tip--measure");
+  const estimatedHeight = tip.offsetHeight || 120;
+  if (!wasVisible) tip.classList.remove("prompt-spice-tip--measure");
+
+  const spaceAbove = rect.top;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const placeBelow = preferBelow
+    || spaceAbove < estimatedHeight + gap + 8
+    || (spaceBelow >= estimatedHeight + gap && spaceBelow > spaceAbove);
+
+  if (placeBelow) {
+    tip.classList.add("prompt-spice-tip--below");
+    tip.style.top = `${Math.round(rect.bottom + gap)}px`;
+  } else {
+    tip.classList.remove("prompt-spice-tip--below");
+    tip.style.top = `${Math.round(rect.top - gap)}px`;
+  }
+
+  // Point the caret toward the anchor button, not always the tip's left edge.
+  const caretLeft = Math.max(14, Math.min(tipWidth - 14, rect.left + rect.width / 2 - left - 5));
+  tip.style.setProperty("--tip-caret-left", `${Math.round(caretLeft)}px`);
+}
+
+function bindFixedHoverTip(wrap, tip, options = {}) {
+  if (!wrap || !tip) return;
   tip.hidden = false;
   if (tip.parentElement !== document.body) {
     document.body.appendChild(tip);
@@ -1399,22 +1442,7 @@ function initPromptElectronicsHoverTip() {
   let hideTimer = 0;
   let open = false;
 
-  const placeTip = () => {
-    const rect = wrap.getBoundingClientRect();
-    const tipWidth = Math.min(300, Math.max(240, window.innerWidth * 0.72));
-    tip.style.width = `${tipWidth}px`;
-    const gap = 10;
-    let left = rect.left + rect.width / 2 - tipWidth / 2;
-    left = Math.max(8, Math.min(left, window.innerWidth - tipWidth - 8));
-    tip.style.left = `${Math.round(left)}px`;
-    tip.style.bottom = "auto";
-    tip.classList.add("prompt-spice-tip--below");
-    const wasVisible = tip.classList.contains("is-visible");
-    if (!wasVisible) tip.classList.add("prompt-spice-tip--measure");
-    const estimatedHeight = tip.offsetHeight || 160;
-    if (!wasVisible) tip.classList.remove("prompt-spice-tip--measure");
-    tip.style.top = `${Math.round(rect.bottom + gap)}px`;
-  };
+  const placeTip = () => placeFixedHoverTip(tip, wrap, options);
 
   const show = () => {
     if (wrap.classList.contains("hidden")) return;
@@ -1456,6 +1484,29 @@ function initPromptElectronicsHoverTip() {
   window.addEventListener("resize", () => {
     if (open) placeTip();
   });
+}
+
+function initPromptModeHoverTips() {
+  const tips = [
+    { wrap: '[data-prompt-mode-tip="render"]', tip: "prompt-mode-render-tip" },
+    { wrap: '[data-prompt-mode-tip="v2"]', tip: "prompt-mode-v2-tip" },
+    { wrap: '[data-prompt-mode-tip="fusion"]', tip: "prompt-mode-fusion-tip" },
+  ];
+  for (const entry of tips) {
+    bindFixedHoverTip(
+      document.querySelector(entry.wrap),
+      document.getElementById(entry.tip),
+      { width: 280, preferBelow: true },
+    );
+  }
+}
+
+function initPromptElectronicsHoverTip() {
+  bindFixedHoverTip(
+    document.getElementById("prompt-electronics-wrap"),
+    document.getElementById("prompt-electronics-tip"),
+    { width: 300, preferBelow: true },
+  );
 }
 
 function preservePromptModeAfterAttach(modeBeforeAttach = promptMode) {
@@ -5176,13 +5227,25 @@ function clearPromptComposeResult() {
 document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (btn.disabled) return;
     if ((btn.dataset.promptMode || DEFAULT_PROMPT_MODE) === "fusion") {
+      if (!FUSION_PROMPT_MODE_ENABLED) return;
       openFusionCapabilityModal();
       return;
     }
     applyPromptModeUI(btn.dataset.promptMode || DEFAULT_PROMPT_MODE);
   });
 });
+
+(function syncFusionPromptModeButton() {
+  const fusionBtn = document.querySelector('[data-prompt-mode="fusion"]');
+  if (!fusionBtn) return;
+  fusionBtn.disabled = !FUSION_PROMPT_MODE_ENABLED;
+  fusionBtn.title = FUSION_PROMPT_MODE_ENABLED
+    ? "Generate parametric CAD then push directly to Fusion 360"
+    : "Fusion prompt mode is temporarily unavailable";
+  fusionBtn.setAttribute("aria-disabled", FUSION_PROMPT_MODE_ENABLED ? "false" : "true");
+})();
 
 applyPromptModeUI(
   document.querySelector("[data-prompt-mode].active")?.dataset?.promptMode || DEFAULT_PROMPT_MODE,
@@ -5198,6 +5261,7 @@ function setFusionTarget(target) {
 }
 
 function openFusionCapabilityModal() {
+  if (!FUSION_PROMPT_MODE_ENABLED) return;
   const modal = document.getElementById("fusion-capability-modal");
   if (!modal) {
     applyPromptModeUI("fusion");
@@ -16834,16 +16898,19 @@ function getSelectedWorkspaceId() {
 
 function hiddenWorkspaceIds() {
   try {
-    return new Set(JSON.parse(localStorage.getItem(LS_HIDDEN_WORKSPACES) || "[]"));
+    const raw = JSON.parse(localStorage.getItem(LS_HIDDEN_WORKSPACES) || "[]");
+    return new Set((Array.isArray(raw) ? raw : []).map((id) => String(id)));
   } catch {
     return new Set();
   }
 }
 
 function setWorkspaceVisible(teamId, visible) {
+  if (!teamId) return;
+  const id = String(teamId);
   const hidden = hiddenWorkspaceIds();
-  if (visible) hidden.delete(teamId);
-  else hidden.add(teamId);
+  if (visible) hidden.delete(id);
+  else hidden.add(id);
   try {
     localStorage.setItem(LS_HIDDEN_WORKSPACES, JSON.stringify([...hidden]));
   } catch (_) {}
@@ -17040,26 +17107,15 @@ async function fetchPublicProjectsForAnonymous() {
 
 async function fetchAllProjects() {
   const fetchGen = ++projectsFetchGeneration;
-  const teamId = getSelectedWorkspaceId();
+  // Always load every workspace the user can access. Shared-workspace checkboxes
+  // (hiddenWorkspaceIds) decide what the Projects browser shows — focusing a
+  // workspace in the folder menu only changes create/invite/active context.
   const previousProjects = allProjects;
   projectFetchSucceeded = false;
   try {
-    const qs = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
-    const data = await api(`/api/projects${qs}`);
+    const data = await api("/api/projects");
     if (fetchGen !== projectsFetchGeneration) return allProjects;
     allProjects = data.projects || [];
-    if (!allProjects.length && teamId) {
-      const all = await api("/api/projects");
-      if (fetchGen !== projectsFetchGeneration) return allProjects;
-      const fallback = all.projects || [];
-      if (fallback.length) {
-        allProjects = fallback;
-        setEditStatus(
-          "error",
-          `No projects in this workspace — showing all ${fallback.length} projects you can access.`
-        );
-      }
-    }
     projectFetchSucceeded = true;
   } catch (err) {
     if (fetchGen !== projectsFetchGeneration) return allProjects;
@@ -17319,8 +17375,10 @@ const workspaceBrowser = createWorkspaceBrowser({
   getWorkspaceMeta,
   getProjects: () => {
     const hidden = hiddenWorkspaceIds();
-    if (!hidden.size || getSelectedWorkspaceId()) return allProjects;
-    return allProjects.filter((p) => !p.team_id || !hidden.has(p.team_id));
+    // Checkboxes in the Projects folder menu hide shared workspaces.
+    // Focusing a workspace only changes create/invite/active context — not this list.
+    if (!hidden.size) return allProjects;
+    return allProjects.filter((p) => !p.team_id || !hidden.has(String(p.team_id)));
   },
   getActiveProjectId: () => projectId,
   isProjectLoading: (id) => loadingProjectIds.has(id),
@@ -27576,7 +27634,7 @@ window.addEventListener("keydown", (e) => {
       .filter((team) => isSharedWorkspace(team))
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
     const hidden = hiddenWorkspaceIds();
-    const visibleCount = sharedTeams.filter((team) => !hidden.has(team.id)).length;
+    const visibleCount = sharedTeams.filter((team) => !hidden.has(String(team.id))).length;
     const activeId = document.getElementById("team-select")?.value || "";
     const hasTeams = allTeams.length > 0;
     // Always show the folder control once signed-in teams exist — it replaces the old top dropdown.
@@ -27593,7 +27651,7 @@ window.addEventListener("keydown", (e) => {
           <strong>Workspaces</strong>
           <small>${sharedTeams.length ? `${visibleCount}/${sharedTeams.length} shared visible` : "Personal"}</small>
         </div>
-        <p class="shared-workspace-menu-hint">Click to switch · checkboxes show/hide in Projects</p>
+        <p class="shared-workspace-menu-hint">Checkboxes choose which shared workspaces appear in Projects · click a name to set the active workspace</p>
         <button type="button" class="shared-workspace-menu-row${allActive ? " is-active" : ""}" role="menuitem" data-shared-workspace-switch="__all__" aria-current="${allActive ? "true" : "false"}">
           <span>
             <strong>All workspaces</strong>
@@ -27609,7 +27667,7 @@ window.addEventListener("keydown", (e) => {
           </button>
         ` : ""}
         ${sharedTeams.map((team) => {
-          const checked = !hidden.has(team.id);
+          const checked = !hidden.has(String(team.id));
           const members = workspaceMemberCount(team);
           const active = activeId === team.id;
           return `
@@ -27618,7 +27676,7 @@ window.addEventListener("keydown", (e) => {
                 <strong>${appEscapeHtml(team.name || "Shared workspace")}</strong>
                 <small>👥 ${members} member${members === 1 ? "" : "s"}</small>
               </button>
-              <label class="shared-workspace-menu-check" title="Show in Projects">
+              <label class="shared-workspace-menu-check" title="Show this workspace in Projects (All workspaces)">
                 <input type="checkbox" data-shared-workspace-visible="${appEscapeHtml(team.id)}" ${checked ? "checked" : ""} />
               </label>
             </div>
@@ -27630,7 +27688,7 @@ window.addEventListener("keydown", (e) => {
 
   function visibleTeamsForExplorer() {
     const hidden = hiddenWorkspaceIds();
-    const visible = allTeams.filter((t) => !hidden.has(t.id));
+    const visible = allTeams.filter((t) => !hidden.has(String(t.id)));
     const teams = visible.length ? visible : allTeams;
     const personalId = personalWorkspaceId(teams);
     return [...teams].sort((a, b) => {
@@ -27718,6 +27776,53 @@ window.addEventListener("keydown", (e) => {
     workspaceManagement?.syncMenuVisibility?.();
   }
 
+  function placeSharedWorkspaceMenu() {
+    const btn = document.getElementById("btn-shared-workspaces-menu");
+    const menu = document.getElementById("shared-workspaces-menu");
+    if (!btn || !menu || menu.classList.contains("hidden")) return;
+    if (menu.parentElement !== document.body) {
+      document.body.appendChild(menu);
+    }
+    const rect = btn.getBoundingClientRect();
+    const gap = 8;
+    const menuWidth = Math.min(280, window.innerWidth - 16);
+    menu.style.width = `${menuWidth}px`;
+    menu.style.maxHeight = `${Math.min(420, window.innerHeight - 16)}px`;
+
+    // Prefer aligning to the button's right edge so it stays inside the left sidebar.
+    let left = rect.right - menuWidth;
+    left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.right = "auto";
+
+    // Measure height after width is applied.
+    const menuHeight = menu.offsetHeight || 240;
+    let top = rect.bottom + gap;
+    if (top + menuHeight > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - gap - menuHeight);
+    }
+    menu.style.top = `${Math.round(top)}px`;
+  }
+
+  function openSharedWorkspaceMenu() {
+    const btn = document.getElementById("btn-shared-workspaces-menu");
+    const menu = document.getElementById("shared-workspaces-menu");
+    if (!btn || !menu) return;
+    renderSharedWorkspaceMenu();
+    menu.classList.remove("hidden");
+    btn.setAttribute("aria-expanded", "true");
+    placeSharedWorkspaceMenu();
+  }
+
+  function closeSharedWorkspaceMenu() {
+    const btn = document.getElementById("btn-shared-workspaces-menu");
+    const menu = document.getElementById("shared-workspaces-menu");
+    if (!menu) return;
+    menu.classList.add("hidden");
+    btn?.setAttribute("aria-expanded", "false");
+  }
+
   async function switchWorkspaceFromMenu(teamId) {
     const sel = document.getElementById("team-select");
     if (!sel || !teamId) return;
@@ -27734,22 +27839,17 @@ window.addEventListener("keydown", (e) => {
     sel.classList.toggle("team-select--shared", isSharedWorkspace(getActiveTeam()));
     renderSharedWorkspaceMenu();
     updateWorkspaceRenameButton();
-    const menu = document.getElementById("shared-workspaces-menu");
-    const btn = document.getElementById("btn-shared-workspaces-menu");
-    menu?.classList.add("hidden");
-    btn?.setAttribute("aria-expanded", "false");
+    closeSharedWorkspaceMenu();
     await onWorkspaceChange();
     await refreshWorkspaceMenuPanel();
   }
 
   document.getElementById("btn-shared-workspaces-menu")?.addEventListener("click", (event) => {
     event.stopPropagation();
-    const btn = event.currentTarget;
     const menu = document.getElementById("shared-workspaces-menu");
     if (!menu) return;
-    renderSharedWorkspaceMenu();
-    const open = menu.classList.toggle("hidden");
-    btn.setAttribute("aria-expanded", open ? "false" : "true");
+    if (menu.classList.contains("hidden")) openSharedWorkspaceMenu();
+    else closeSharedWorkspaceMenu();
   });
 
   document.getElementById("shared-workspaces-menu")?.addEventListener("change", async (event) => {
@@ -27757,26 +27857,31 @@ window.addEventListener("keydown", (e) => {
     if (!input) return;
     setWorkspaceVisible(input.getAttribute("data-shared-workspace-visible"), input.checked);
     renderTeams();
+    placeSharedWorkspaceMenu();
     await onWorkspaceChange();
     await refreshWorkspaceMenuPanel();
   });
 
-  document.getElementById("shared-workspaces-menu")?.addEventListener("click", async (event) => {
+  // Menu is portaled to body; bind once via delegation on document for switch clicks
+  // after portal, the original element listener still works if we attach to the menu node itself.
+  document.addEventListener("click", async (event) => {
+    const menu = document.getElementById("shared-workspaces-menu");
+    if (!menu || menu.classList.contains("hidden")) return;
     const switchBtn = event.target.closest("[data-shared-workspace-switch]");
-    if (!switchBtn) return;
-    event.preventDefault();
-    event.stopPropagation();
-    await switchWorkspaceFromMenu(switchBtn.getAttribute("data-shared-workspace-switch"));
+    if (switchBtn && menu.contains(switchBtn)) {
+      event.preventDefault();
+      event.stopPropagation();
+      await switchWorkspaceFromMenu(switchBtn.getAttribute("data-shared-workspace-switch"));
+      return;
+    }
+    if (event.target.closest("#btn-shared-workspaces-menu") || menu.contains(event.target)) return;
+    closeSharedWorkspaceMenu();
   });
 
-  document.addEventListener("click", (event) => {
-    const menu = document.getElementById("shared-workspaces-menu");
-    const btn = document.getElementById("btn-shared-workspaces-menu");
-    if (!menu || menu.classList.contains("hidden")) return;
-    if (event.target.closest(".shared-workspace-menu")) return;
-    menu.classList.add("hidden");
-    btn?.setAttribute("aria-expanded", "false");
-  });
+  window.addEventListener("resize", () => placeSharedWorkspaceMenu());
+  document.querySelector(".sidebar.left .left-scroll")?.addEventListener("scroll", () => {
+    placeSharedWorkspaceMenu();
+  }, { passive: true });
 
   function openWorkspaceRenameModal() {
     const team = getActiveTeam();
@@ -29986,34 +30091,14 @@ window.addEventListener("keydown", (e) => {
   }
 
   async function refreshInviteCandidates() {
-    const pick = document.getElementById("team-invite-pick");
-    if (!pick) return;
-    const teamId = document.getElementById("team-select")?.value || "";
-    if (!teamId || teamId === "__all__") {
-      pick.hidden = true;
-      pick.innerHTML = `<option value="">People you've worked with…</option>`;
-      return;
-    }
     try {
-      const data = await api(
-        `/api/teams/invite-candidates?team_id=${encodeURIComponent(teamId)}`,
-      );
-      const candidates = data.candidates || [];
-      pick.innerHTML = [
-        `<option value="">People you've worked with…</option>`,
-        ...candidates.map((c) => {
-          const label = c.display_name || c.email || "";
-          const hint = c.source_teams
-            ? ` · ${String(c.source_teams).split(",")[0]}`
-            : "";
-          return `<option value="${appEscapeHtml(c.email || "")}">${appEscapeHtml(label)}${appEscapeHtml(hint)}</option>`;
-        }),
-      ].join("");
-      pick.hidden = candidates.length === 0;
-      if (!candidates.length) pick.value = "";
+      const mod = await import("./workspace-send-invite.js?v=20260722-ws-send-invite");
+      await mod.refreshInviteCandidates?.({
+        getActiveTeam,
+        api,
+      });
     } catch {
-      pick.hidden = true;
-      pick.innerHTML = `<option value="">People you've worked with…</option>`;
+      /* invite popup optional */
     }
   }
 
@@ -30024,7 +30109,7 @@ window.addEventListener("keydown", (e) => {
     if (teamId === "__all__") {
       ul.innerHTML = `
         <li class="team-members-dropdown">
-          <p class="muted small">Pick a workspace from the Projects folder icon to view members and send invites.</p>
+          <p class="muted small">Pick a workspace from the Projects folder icon to view members. Use Invite people to send invites.</p>
         </li>`;
       return;
     }
@@ -30059,11 +30144,14 @@ window.addEventListener("keydown", (e) => {
   refreshTeamMembersRealtime = () => void refreshTeamMembers();
   refreshWorkspacePanelRealtime = () => void refreshWorkspaceMenuPanel();
 
-  document.getElementById("team-invite-pick")?.addEventListener("change", () => {
-    const pick = document.getElementById("team-invite-pick");
-    const emailInput = document.getElementById("team-invite-email");
-    if (!pick || !emailInput) return;
-    if (pick.value) emailInput.value = pick.value;
+  void import("./workspace-send-invite.js?v=20260722-ws-send-invite").then((mod) => {
+    mod.bindWorkspaceSendInvite?.({
+      getActiveTeam,
+      api,
+      onInvited: async () => {
+        await refreshTeamMembers();
+      },
+    });
   });
 
   document.getElementById("btn-create-workspace")?.addEventListener("click", async () => {
@@ -30110,36 +30198,6 @@ window.addEventListener("keydown", (e) => {
       }
     } catch (err) {
       if (status) status.textContent = err.message;
-    }
-  });
-
-  document.getElementById("btn-team-invite")?.addEventListener("click", async () => {
-    const teamId = document.getElementById("team-select")?.value;
-    const email = document.getElementById("team-invite-email")?.value?.trim();
-    const status = document.getElementById("team-invite-status");
-    if (!teamId || teamId === "__all__" || !email) {
-      if (status && (!teamId || teamId === "__all__")) {
-        status.textContent = "Pick a workspace from the Projects folder icon first.";
-      }
-      return;
-    }
-    try {
-      const res = await api(`/api/teams/${teamId}/invite`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      status.textContent =
-        res.status === "invited"
-          ? `Invite sent to ${email}`
-          : `${email} is already in this workspace`;
-      document.getElementById("team-invite-email").value = "";
-      const pick = document.getElementById("team-invite-pick");
-      if (pick) pick.value = "";
-      await refreshTeamMembers();
-      await refreshInviteCandidates();
-    } catch (err) {
-      status.textContent = err.message;
     }
   });
 
