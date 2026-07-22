@@ -16832,6 +16832,23 @@ function getSelectedWorkspaceId() {
   return value || allTeams[0]?.id || null;
 }
 
+function hiddenWorkspaceIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(LS_HIDDEN_WORKSPACES) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function setWorkspaceVisible(teamId, visible) {
+  const hidden = hiddenWorkspaceIds();
+  if (visible) hidden.delete(teamId);
+  else hidden.add(teamId);
+  try {
+    localStorage.setItem(LS_HIDDEN_WORKSPACES, JSON.stringify([...hidden]));
+  } catch (_) {}
+}
+
 function getFolderTeamId() {
   const selected = getSelectedWorkspaceId();
   if (selected) return selected;
@@ -17300,7 +17317,11 @@ const workspaceBrowser = createWorkspaceBrowser({
   getWorkspaceId: getSelectedWorkspaceId,
   getFolderTeamId,
   getWorkspaceMeta,
-  getProjects: () => allProjects,
+  getProjects: () => {
+    const hidden = hiddenWorkspaceIds();
+    if (!hidden.size || getSelectedWorkspaceId()) return allProjects;
+    return allProjects.filter((p) => !p.team_id || !hidden.has(p.team_id));
+  },
   getActiveProjectId: () => projectId,
   isProjectLoading: (id) => loadingProjectIds.has(id),
   isProjectGenerating: (id) => isProjectGenerating(id),
@@ -27542,61 +27563,69 @@ window.addEventListener("keydown", (e) => {
 
   function getActiveTeam() {
     const teamId = document.getElementById("team-select")?.value || allTeams[0]?.id;
+    if (!teamId || teamId === "__all__") return null;
     return allTeams.find((t) => t.id === teamId) || null;
-  }
-
-  function hiddenWorkspaceIds() {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(LS_HIDDEN_WORKSPACES) || "[]"));
-    } catch {
-      return new Set();
-    }
-  }
-
-  function setWorkspaceVisible(teamId, visible) {
-    const hidden = hiddenWorkspaceIds();
-    if (visible) hidden.delete(teamId);
-    else hidden.add(teamId);
-    try {
-      localStorage.setItem(LS_HIDDEN_WORKSPACES, JSON.stringify([...hidden]));
-    } catch (_) {}
   }
 
   function renderSharedWorkspaceMenu() {
     const btn = document.getElementById("btn-shared-workspaces-menu");
     const menu = document.getElementById("shared-workspaces-menu");
     if (!btn || !menu) return;
+    const personalId = personalWorkspaceId();
     const sharedTeams = allTeams
       .filter((team) => isSharedWorkspace(team))
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
     const hidden = hiddenWorkspaceIds();
     const visibleCount = sharedTeams.filter((team) => !hidden.has(team.id)).length;
-    btn.hidden = !sharedTeams.length;
+    const activeId = document.getElementById("team-select")?.value || "";
+    const hasTeams = allTeams.length > 0;
+    // Always show the folder control once signed-in teams exist — it replaces the old top dropdown.
+    btn.hidden = !hasTeams;
     btn.title = sharedTeams.length
-      ? `${visibleCount}/${sharedTeams.length} shared workspace${sharedTeams.length === 1 ? "" : "s"} visible`
-      : "No shared workspaces yet";
+      ? `${visibleCount}/${sharedTeams.length} shared workspace${sharedTeams.length === 1 ? "" : "s"} visible · click to switch`
+      : "Manage workspaces";
     btn.classList.toggle("has-hidden-workspaces", sharedTeams.length > 0 && visibleCount < sharedTeams.length);
-    menu.innerHTML = sharedTeams.length
+    const allActive = activeId === "__all__" || (!activeId && allTeams.length > 1);
+    const personalTeam = allTeams.find((t) => t.id === personalId) || null;
+    menu.innerHTML = hasTeams
       ? `
         <div class="shared-workspaces-menu-title">
-          <strong>Shared workspaces</strong>
-          <small>${visibleCount}/${sharedTeams.length} visible</small>
+          <strong>Workspaces</strong>
+          <small>${sharedTeams.length ? `${visibleCount}/${sharedTeams.length} shared visible` : "Personal"}</small>
         </div>
+        <p class="shared-workspace-menu-hint">Click to switch · checkboxes show/hide in Projects</p>
+        <button type="button" class="shared-workspace-menu-row${allActive ? " is-active" : ""}" role="menuitem" data-shared-workspace-switch="__all__" aria-current="${allActive ? "true" : "false"}">
+          <span>
+            <strong>All workspaces</strong>
+            <small>Every visible workspace in Projects</small>
+          </span>
+        </button>
+        ${personalTeam ? `
+          <button type="button" class="shared-workspace-menu-row${activeId === personalTeam.id ? " is-active" : ""}" role="menuitem" data-shared-workspace-switch="${appEscapeHtml(personalTeam.id)}" aria-current="${activeId === personalTeam.id ? "true" : "false"}">
+            <span>
+              <strong>${appEscapeHtml(personalWorkspaceLabel())}</strong>
+              <small>Personal workspace</small>
+            </span>
+          </button>
+        ` : ""}
         ${sharedTeams.map((team) => {
           const checked = !hidden.has(team.id);
           const members = workspaceMemberCount(team);
+          const active = activeId === team.id;
           return `
-            <label class="shared-workspace-menu-row">
-              <span>
+            <div class="shared-workspace-menu-row${active ? " is-active" : ""}">
+              <button type="button" class="shared-workspace-menu-switch" role="menuitem" data-shared-workspace-switch="${appEscapeHtml(team.id)}" aria-current="${active ? "true" : "false"}">
                 <strong>${appEscapeHtml(team.name || "Shared workspace")}</strong>
                 <small>👥 ${members} member${members === 1 ? "" : "s"}</small>
-              </span>
-              <input type="checkbox" data-shared-workspace-visible="${appEscapeHtml(team.id)}" ${checked ? "checked" : ""} />
-            </label>
+              </button>
+              <label class="shared-workspace-menu-check" title="Show in Projects">
+                <input type="checkbox" data-shared-workspace-visible="${appEscapeHtml(team.id)}" ${checked ? "checked" : ""} />
+              </label>
+            </div>
           `;
         }).join("")}
       `
-      : `<p class="muted small">Shared workspaces will appear here.</p>`;
+      : `<p class="muted small">Sign in to manage workspaces.</p>`;
   }
 
   function visibleTeamsForExplorer() {
@@ -27630,7 +27659,22 @@ window.addEventListener("keydown", (e) => {
     const sel = document.getElementById("team-select");
     if (!sel) return;
     sel.innerHTML = "";
-    const explorerTeams = visibleTeamsForExplorer();
+    // Hidden select keeps every team so the Projects folder menu can switch freely.
+    // Visibility checkboxes only filter what appears in the project browser.
+    const explorerTeams = (() => {
+      const personalId = personalWorkspaceId(allTeams);
+      return [...allTeams].sort((a, b) => {
+        if (a.id === personalId) return -1;
+        if (b.id === personalId) return 1;
+        const ac = workspaceMemberCount(a);
+        const bc = workspaceMemberCount(b);
+        const aShared = a.id !== personalId;
+        const bShared = b.id !== personalId;
+        if (aShared !== bShared) return aShared ? 1 : -1;
+        if (bc !== ac) return bc - ac;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+    })();
     const personalTeams = explorerTeams.filter((team) => isPersonalWorkspace(team));
     const sharedTeams = explorerTeams.filter((team) => !isPersonalWorkspace(team));
     const appendTeamOption = (parent, team) => {
@@ -27649,12 +27693,7 @@ window.addEventListener("keydown", (e) => {
       sel.appendChild(allOpt);
     }
     personalTeams.forEach((team) => appendTeamOption(sel, team));
-    if (sharedTeams.length) {
-      const sharedGroup = document.createElement("optgroup");
-      sharedGroup.label = "Shared workspaces";
-      sharedTeams.forEach((team) => appendTeamOption(sharedGroup, team));
-      sel.appendChild(sharedGroup);
-    }
+    sharedTeams.forEach((team) => appendTeamOption(sel, team));
     const saved = readSavedWorkspaceId();
     if (saved === "__all__" && explorerTeams.length > 1) {
       sel.value = "__all__";
@@ -27679,6 +27718,30 @@ window.addEventListener("keydown", (e) => {
     workspaceManagement?.syncMenuVisibility?.();
   }
 
+  async function switchWorkspaceFromMenu(teamId) {
+    const sel = document.getElementById("team-select");
+    if (!sel || !teamId) return;
+    if (teamId !== "__all__" && !allTeams.some((t) => t.id === teamId)) return;
+    if (teamId !== "__all__") {
+      const hidden = hiddenWorkspaceIds();
+      if (hidden.has(teamId)) {
+        setWorkspaceVisible(teamId, true);
+      }
+    }
+    writeSavedWorkspaceId(teamId);
+    renderTeams();
+    sel.value = teamId;
+    sel.classList.toggle("team-select--shared", isSharedWorkspace(getActiveTeam()));
+    renderSharedWorkspaceMenu();
+    updateWorkspaceRenameButton();
+    const menu = document.getElementById("shared-workspaces-menu");
+    const btn = document.getElementById("btn-shared-workspaces-menu");
+    menu?.classList.add("hidden");
+    btn?.setAttribute("aria-expanded", "false");
+    await onWorkspaceChange();
+    await refreshWorkspaceMenuPanel();
+  }
+
   document.getElementById("btn-shared-workspaces-menu")?.addEventListener("click", (event) => {
     event.stopPropagation();
     const btn = event.currentTarget;
@@ -27696,6 +27759,14 @@ window.addEventListener("keydown", (e) => {
     renderTeams();
     await onWorkspaceChange();
     await refreshWorkspaceMenuPanel();
+  });
+
+  document.getElementById("shared-workspaces-menu")?.addEventListener("click", async (event) => {
+    const switchBtn = event.target.closest("[data-shared-workspace-switch]");
+    if (!switchBtn) return;
+    event.preventDefault();
+    event.stopPropagation();
+    await switchWorkspaceFromMenu(switchBtn.getAttribute("data-shared-workspace-switch"));
   });
 
   document.addEventListener("click", (event) => {
@@ -29918,7 +29989,7 @@ window.addEventListener("keydown", (e) => {
     const pick = document.getElementById("team-invite-pick");
     if (!pick) return;
     const teamId = document.getElementById("team-select")?.value || "";
-    if (!teamId) {
+    if (!teamId || teamId === "__all__") {
       pick.hidden = true;
       pick.innerHTML = `<option value="">People you've worked with…</option>`;
       return;
@@ -29950,6 +30021,13 @@ window.addEventListener("keydown", (e) => {
     const teamId = document.getElementById("team-select")?.value;
     const ul = document.getElementById("team-members");
     if (!teamId || !ul) return;
+    if (teamId === "__all__") {
+      ul.innerHTML = `
+        <li class="team-members-dropdown">
+          <p class="muted small">Pick a workspace from the Projects folder icon to view members and send invites.</p>
+        </li>`;
+      return;
+    }
     try {
       const data = await api(`/api/teams/${teamId}/members`);
       const members = data.members || [];
@@ -30039,7 +30117,12 @@ window.addEventListener("keydown", (e) => {
     const teamId = document.getElementById("team-select")?.value;
     const email = document.getElementById("team-invite-email")?.value?.trim();
     const status = document.getElementById("team-invite-status");
-    if (!teamId || !email) return;
+    if (!teamId || teamId === "__all__" || !email) {
+      if (status && (!teamId || teamId === "__all__")) {
+        status.textContent = "Pick a workspace from the Projects folder icon first.";
+      }
+      return;
+    }
     try {
       const res = await api(`/api/teams/${teamId}/invite`, {
         method: "POST",

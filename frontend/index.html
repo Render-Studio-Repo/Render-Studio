@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260722-allowed-models" />
+  <link rel="stylesheet" href="/styles.css?v=20260722-workspace-folder-menu" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -691,14 +691,13 @@
             <button type="button" id="btn-create-workspace" class="btn secondary btn-compact">Create</button>
           </div>
           <p id="workspace-create-status" class="muted small"></p>
-          <div class="workspace-switcher-row">
-            <select id="team-select" class="team-select" aria-label="Active workspace">
-              <option value="">Sign in to load workspaces…</option>
-            </select>
-            <button type="button" id="btn-rename-workspace" class="btn-icon" title="Rename workspace" hidden aria-label="Rename workspace">
-              <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
-            </button>
-          </div>
+          <!-- Active workspace is managed via the Projects folder icon (shared-workspaces menu). -->
+          <select id="team-select" class="team-select team-select--hidden" aria-label="Active workspace" hidden tabindex="-1">
+            <option value="">Sign in to load workspaces…</option>
+          </select>
+          <button type="button" id="btn-rename-workspace" class="btn-icon" title="Rename workspace" hidden aria-label="Rename workspace" style="display:none">
+            <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
+          </button>
           <label class="workspace-fusion-row checkbox-field" id="workspace-fusion-row">
             <input type="checkbox" id="workspace-connect-fusion" />
             Connect this workspace to Fusion
@@ -743,11 +742,11 @@
               <p class="workspace-browser-hint muted small">Drag into folders · ▾ to expand</p>
             </div>
             <div class="shared-workspace-menu">
-              <button type="button" id="btn-shared-workspaces-menu" class="shared-workspace-menu-btn" aria-expanded="false" aria-controls="shared-workspaces-menu" title="Shared workspaces">
+              <button type="button" id="btn-shared-workspaces-menu" class="shared-workspace-menu-btn" aria-expanded="false" aria-controls="shared-workspaces-menu" title="Manage workspaces">
                 <span aria-hidden="true">📁</span>
                 <span class="shared-workspace-menu-dot" aria-hidden="true"></span>
               </button>
-              <div id="shared-workspaces-menu" class="shared-workspaces-menu hidden" role="menu" aria-label="Shared workspaces"></div>
+              <div id="shared-workspaces-menu" class="shared-workspaces-menu hidden" role="menu" aria-label="Workspaces"></div>
             </div>
           </div>
           <div id="project-browser" class="project-browser"></div>
@@ -2778,7 +2777,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260722-grant-default-deny"></script>
+  <script type="module" src="/app.js?v=20260722-workspace-folder-menu"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

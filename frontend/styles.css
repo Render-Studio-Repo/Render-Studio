@@ -15056,7 +15056,9 @@ section h2 {
   top: 34px;
   right: 0;
   z-index: 40;
-  width: min(260px, calc(100vw - 32px));
+  width: min(280px, calc(100vw - 32px));
+  max-height: min(70vh, 420px);
+  overflow: auto;
   padding: 10px;
   border: 1px solid rgba(251, 133, 0, 0.26);
   border-radius: 12px;
@@ -15085,13 +15087,39 @@ section h2 {
   font-size: 0.68rem;
 }
 
+.team-select--hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+
+.shared-workspace-menu-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
 .shared-workspace-menu-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  width: 100%;
   padding: 8px;
+  border: 1px solid transparent;
   border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -15099,8 +15127,36 @@ section h2 {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.shared-workspace-menu-row.is-active {
+  border-color: rgba(251, 133, 0, 0.45);
+  background: rgba(251, 133, 0, 0.12);
+}
+
+.shared-workspace-menu-switch {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shared-workspace-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  cursor: pointer;
+}
+
 .shared-workspace-menu-row strong,
-.shared-workspace-menu-row small {
+.shared-workspace-menu-row small,
+.shared-workspace-menu-switch strong,
+.shared-workspace-menu-switch small {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -15108,11 +15164,13 @@ section h2 {
   white-space: nowrap;
 }
 
-.shared-workspace-menu-row strong {
+.shared-workspace-menu-row strong,
+.shared-workspace-menu-switch strong {
   font-size: 0.76rem;
 }
 
-.shared-workspace-menu-row small {
+.shared-workspace-menu-row small,
+.shared-workspace-menu-switch small {
   margin-top: 2px;
   color: var(--muted);
   font-size: 0.66rem;
