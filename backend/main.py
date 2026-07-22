@@ -1748,23 +1748,77 @@ def _notify_project_history(project_id: str, entry: dict[str, Any], user: dict[s
 
 def _daily_ai_usage_for_user(user_id: str, *, shared_key_id: str | None = None) -> dict[str, Any]:
     """Best-effort UTC daily token/cost totals for one user across accessible projects."""
+    return _batch_daily_ai_usage_for_users([user_id], shared_key_id=shared_key_id).get(
+        str(user_id),
+        {"cost_usd": 0.0, "tokens": 0},
+    )
+
+
+_DAILY_AI_USAGE_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_DAILY_AI_USAGE_TTL_SEC = 45.0
+_DAILY_AI_USAGE_CACHE_LOCK = threading.Lock()
+
+
+def _daily_ai_usage_cache_key(user_id: str, shared_key_id: str | None) -> tuple[str, str]:
+    return (str(user_id), str(shared_key_id or ""))
+
+
+def _batch_daily_ai_usage_for_users(
+    user_ids: list[str],
+    *,
+    shared_key_id: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Scan each project once for today's spend across many users.
+
+    Avoids the N-members × M-projects × heavy history-prepare path that made the
+    shared-key Members panel hang.
+    """
     from backend.services.ai_cost import entry_effective_cost
 
+    wanted = [str(uid) for uid in user_ids if uid]
+    if not wanted:
+        return {}
+
+    now_mono = time.monotonic()
+    out: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
+    with _DAILY_AI_USAGE_CACHE_LOCK:
+        for uid in wanted:
+            cached = _DAILY_AI_USAGE_CACHE.get(_daily_ai_usage_cache_key(uid, shared_key_id))
+            if cached and (now_mono - cached[0]) < _DAILY_AI_USAGE_TTL_SEC:
+                out[uid] = dict(cached[1])
+            else:
+                missing.append(uid)
+
+    if not missing:
+        return out
+
     today = datetime.now(timezone.utc).date()
-    cost_total = 0.0
-    token_total = 0
-    accessible_projects = teams_service.user_project_access(user_id, None)
-    project_ids = {row["project_id"] for row in accessible_projects}
+    cost_total = {uid: 0.0 for uid in missing}
+    token_total = {uid: 0 for uid in missing}
+    missing_set = set(missing)
+
+    project_ids: set[str] = set()
+    for uid in missing:
+        try:
+            for row in teams_service.user_project_access(uid, None):
+                pid = str(row.get("project_id") or "")
+                if pid:
+                    project_ids.add(pid)
+        except Exception:
+            continue
+
     for project_id in project_ids:
         project_path = PROJECTS / project_id
         if not project_path.is_dir():
             continue
         try:
-            entries = prompt_history_service.list_entries(project_path, limit=500)
+            entries = prompt_history_service.list_entries_lightweight(project_path)
         except Exception:
             continue
         for entry in entries:
-            if entry.get("user_id") != user_id:
+            uid = str(entry.get("user_id") or "")
+            if uid not in missing_set:
                 continue
             if shared_key_id:
                 if entry.get("shared_key_id") != shared_key_id and not (
@@ -1775,21 +1829,40 @@ def _daily_ai_usage_for_user(user_id: str, *, shared_key_id: str | None = None) 
                 created = datetime.fromisoformat(str(entry.get("created_at")).replace("Z", "+00:00"))
                 if created.tzinfo is None:
                     created = created.replace(tzinfo=timezone.utc)
-                if created.astimezone(timezone.utc).date() != today:
+                entry_day = created.astimezone(timezone.utc).date()
+                if entry_day < today:
+                    # Newest-first listing: older than today means we're done for this project.
+                    break
+                if entry_day != today:
                     continue
             except Exception:
                 continue
-            cost_total += float(entry_effective_cost(entry) or 0)
+            cost_total[uid] += float(entry_effective_cost(entry) or 0)
             usage = entry.get("usage") or {}
             if isinstance(usage, dict):
-                token_total += int(
+                token_total[uid] += int(
                     usage.get("total_tokens")
                     or usage.get("tokens")
-                    or (int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
-                        + int(usage.get("output_tokens") or usage.get("completion_tokens") or 0))
+                    or (
+                        int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+                        + int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+                    )
                     or 0
                 )
-    return {"cost_usd": round(cost_total, 6), "tokens": token_total}
+
+    with _DAILY_AI_USAGE_CACHE_LOCK:
+        for uid in missing:
+            payload = {"cost_usd": round(cost_total[uid], 6), "tokens": token_total[uid]}
+            _DAILY_AI_USAGE_CACHE[_daily_ai_usage_cache_key(uid, shared_key_id)] = (time.monotonic(), payload)
+            out[uid] = dict(payload)
+        # Bound cache growth for long-lived workers.
+        if len(_DAILY_AI_USAGE_CACHE) > 4000:
+            cutoff = time.monotonic() - _DAILY_AI_USAGE_TTL_SEC
+            stale = [k for k, (ts, _) in _DAILY_AI_USAGE_CACHE.items() if ts < cutoff]
+            for k in stale[:2000]:
+                _DAILY_AI_USAGE_CACHE.pop(k, None)
+
+    return out
 
 
 def _daily_ai_spend_for_user(user_id: str) -> float:
@@ -1881,10 +1954,14 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
 
 
 def _members_with_daily_ai_usage(members: list[dict[str, Any]], key_id: str) -> list[dict[str, Any]]:
+    usage_by_user = _batch_daily_ai_usage_for_users(
+        [str(member.get("user_id") or "") for member in members],
+        shared_key_id=key_id,
+    )
     out: list[dict[str, Any]] = []
     for member in members:
         row = dict(member)
-        usage = _daily_ai_usage_for_user(str(member.get("user_id") or ""), shared_key_id=key_id)
+        usage = usage_by_user.get(str(member.get("user_id") or ""), {"cost_usd": 0.0, "tokens": 0})
         row["spent_today_tokens"] = int(usage.get("tokens") or 0)
         row["spent_today_usd"] = float(usage.get("cost_usd") or 0)
         limit = row.get("daily_token_limit")

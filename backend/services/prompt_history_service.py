@@ -82,6 +82,18 @@ def load(project_path: Path) -> dict[str, Any]:
         return {"entries": []}
 
 
+def list_entries_lightweight(project_path: Path, *, limit: int = MAX_ENTRIES) -> list[dict[str, Any]]:
+    """Read prompt history JSON only — no timeline backfill / enrich / save.
+
+    Used for spend dashboards and daily limits where scanning many projects must
+    stay fast. Newest entries first.
+    """
+    entries = list(load(project_path).get("entries") or [])
+    if limit > 0:
+        entries = entries[-limit:]
+    return list(reversed(entries))
+
+
 def save(project_path: Path, data: dict[str, Any]) -> None:
     _path(project_path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
