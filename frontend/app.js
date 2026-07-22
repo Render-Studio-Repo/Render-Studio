@@ -70,7 +70,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
 import { createRenderAgent } from "./render-agent.js?v=20260721-quest-progress";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260721-anthropic-default";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260722-allowed-models";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -791,6 +791,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
     }
     pendingPromptSelectionContext = null;
     void maybeAskGenerateSimulatedMotion(gen, pid);
+    void maybeShowElectronicsSuggestDockAfterGeneration(pid);
   }
   clearCanvasGenerationPending(pid);
   markGenerationApplied(pid, gen.trace_id);
@@ -840,6 +841,7 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   showAiComposePanel();
   await maybeReapplyCapturedTexture(preservedTexture, msg.filename);
   pendingPromptSelectionContext = null;
+  void maybeShowElectronicsSuggestDockAfterGeneration(pid);
 }
 
 async function applyWiringGenerationComplete(gen, pid = projectId) {
@@ -11922,13 +11924,13 @@ document.querySelectorAll("[data-right-tab]").forEach((btn) => {
   btn.addEventListener("click", () => setRightTab(btn.dataset.rightTab));
 });
 document.getElementById("btn-electronics-refresh")?.addEventListener("click", () => {
-  electronicsSuggestDismissedFor = null;
-  void refreshElectronicsSuggestions().then(() => renderElectronicsUsedList());
+  void refreshElectronicsSuggestions({ showDock: false }).then(() => renderElectronicsUsedList());
   setEditStatus("ok", "Electronics list refreshed.");
 });
 document.getElementById("btn-electronics-suggest-dismiss")?.addEventListener("click", () => {
   electronicsSuggestDismissedFor = projectId;
-  renderElectronicsSuggestDock(null);
+  markElectronicsDockShown(projectId);
+  hideElectronicsSuggestDock();
 });
 document.getElementById("btn-electronics-suggest-wiring")?.addEventListener("click", () => {
   void sendAllSuggestionsToWiring().catch((err) => setEditStatus("error", err?.message || "Could not send to wiring."));
@@ -13345,6 +13347,39 @@ function electronicsUsedListHtml(data, { emptyHint = null } = {}) {
 let latestElectronicsBundle = null;
 let electronicsSuggestDismissedFor = null;
 
+const LS_ELECTRONICS_DOCK_SHOWN = "render3d:electronicsSuggestDockShown:v1";
+
+function electronicsDockShownMap() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_ELECTRONICS_DOCK_SHOWN) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function hasElectronicsDockBeenShown(pid = projectId) {
+  if (!pid) return false;
+  return !!electronicsDockShownMap()[pid];
+}
+
+function markElectronicsDockShown(pid = projectId) {
+  if (!pid) return;
+  try {
+    const map = electronicsDockShownMap();
+    map[pid] = true;
+    localStorage.setItem(LS_ELECTRONICS_DOCK_SHOWN, JSON.stringify(map));
+  } catch {
+    /* best-effort */
+  }
+}
+
+function hideElectronicsSuggestDock() {
+  const dock = document.getElementById("electronics-suggest-dock");
+  if (!dock) return;
+  dock.classList.add("hidden");
+  dock.hidden = true;
+}
+
 function openElectronicsDocs(searchQuery, label = "") {
   const links = electronicsDocLinks(searchQuery || label, label);
   const primary = links[0];
@@ -13567,18 +13602,23 @@ function bindElectronicsListActions(root) {
   });
 }
 
-function renderElectronicsSuggestDock(bundle) {
+function renderElectronicsSuggestDock(bundle, { force = false } = {}) {
   const dock = document.getElementById("electronics-suggest-dock");
   const list = document.getElementById("electronics-suggest-dock-list");
   const meta = document.getElementById("electronics-suggest-dock-meta");
   if (!dock || !list) return;
   const suggestions = bundle?.suggestions || [];
-  if (!projectId || !suggestions.length || electronicsSuggestDismissedFor === projectId) {
-    dock.classList.add("hidden");
-    dock.hidden = true;
+  // Floating dock is a one-shot after the first generation. Later viewing is via Electronics tab.
+  const allowShow = force
+    && !!projectId
+    && suggestions.length > 0
+    && electronicsSuggestDismissedFor !== projectId
+    && !hasElectronicsDockBeenShown(projectId);
+  if (!allowShow) {
+    hideElectronicsSuggestDock();
     return;
   }
-  // Always show when there are suggestions — even if Electronics tab is not selected.
+  markElectronicsDockShown(projectId);
   dock.hidden = false;
   dock.classList.remove("hidden");
   if (meta) {
@@ -13605,7 +13645,7 @@ async function renderElectronicsUsedList(target = document.getElementById("elect
   if (!target && !document.getElementById("electronics-suggest-dock")) return null;
   if (!projectId) {
     if (target) target.innerHTML = `<div class="object-iteration-empty">Select a project to list electronics.</div>`;
-    renderElectronicsSuggestDock(null);
+    hideElectronicsSuggestDock();
     return null;
   }
   if (target) target.innerHTML = `<div class="object-iteration-empty">Loading electronics…</div>`;
@@ -13615,19 +13655,24 @@ async function renderElectronicsUsedList(target = document.getElementById("elect
     target.innerHTML = electronicsUsedListHtml(data);
     bindElectronicsListActions(target);
   }
-  renderElectronicsSuggestDock(latestElectronicsBundle);
+  // Keep dock closed while refreshing the Electronics panel / lists.
+  hideElectronicsSuggestDock();
   return data;
 }
 
-async function refreshElectronicsSuggestions() {
+async function refreshElectronicsSuggestions({ showDock = false } = {}) {
   if (!projectId) {
     latestElectronicsBundle = null;
-    renderElectronicsSuggestDock(null);
+    hideElectronicsSuggestDock();
     return null;
   }
   const data = await collectElectronicsUsed();
   latestElectronicsBundle = { used: data, suggestions: data.suggestions || [] };
-  renderElectronicsSuggestDock(latestElectronicsBundle);
+  if (showDock) {
+    renderElectronicsSuggestDock(latestElectronicsBundle, { force: true });
+  } else {
+    hideElectronicsSuggestDock();
+  }
   const panelList = document.getElementById("electronics-used-list");
   if (panelList && document.querySelector('[data-right-panel="electronics"].active')) {
     panelList.innerHTML = electronicsUsedListHtml(data);
@@ -13641,6 +13686,16 @@ async function refreshElectronicsSuggestions() {
     }
   }
   return data;
+}
+
+/** One-shot floating suggestions after the first CAD generation for this project. */
+async function maybeShowElectronicsSuggestDockAfterGeneration(pid = projectId) {
+  if (!pid || pid !== projectId) return;
+  if (hasElectronicsDockBeenShown(pid) || electronicsSuggestDismissedFor === pid) {
+    hideElectronicsSuggestDock();
+    return;
+  }
+  await refreshElectronicsSuggestions({ showDock: true });
 }
 
 function closeElectronicsPopover() {
@@ -13698,7 +13753,6 @@ async function openElectronicsPopover(anchor = document.getElementById("workspac
 }
 
 async function showElectronicsTabUi() {
-  electronicsSuggestDismissedFor = null;
   setRightTab("electronics");
   await renderElectronicsUsedList();
   const tabsEl = document.getElementById("workspace-tabs");
@@ -16150,8 +16204,13 @@ const PROMPT_KEY_MODEL_OPTIONS = {
 
 const BADGE_CLASS_MAP = { openai: "badge-openai", anthropic: "badge-claude" };
 
-function buildModelOptionsHTML(provider, currentModel) {
-  const opts = PROMPT_KEY_MODEL_OPTIONS[provider] || PROMPT_KEY_MODEL_OPTIONS.openai;
+function buildModelOptionsHTML(provider, currentModel, allowedModels = null) {
+  let opts = PROMPT_KEY_MODEL_OPTIONS[provider] || PROMPT_KEY_MODEL_OPTIONS.openai;
+  if (Array.isArray(allowedModels) && allowedModels.length) {
+    const allow = new Set(allowedModels);
+    const filtered = opts.filter((o) => allow.has(o.value));
+    if (filtered.length) opts = filtered;
+  }
   const known = opts.map((o) => o.value);
   let html = opts.map((o) =>
     `<option value="${o.value}"${o.value === currentModel ? " selected" : ""}>${o.label}</option>`
@@ -16276,7 +16335,7 @@ function renderPromptKeyPopup(status) {
           data-key-id="${key.id}"
           data-source="${source}"
           title="Model for this key">
-          ${buildModelOptionsHTML(key.provider, source === "team" ? teamKeyDisplayModel(key) : (key.model || ""))}
+          ${buildModelOptionsHTML(key.provider, source === "team" ? teamKeyDisplayModel(key) : (key.model || ""), source === "team" ? (key.allowed_models || null) : null)}
         </select>
       </div>
     </div>`;
@@ -20708,7 +20767,7 @@ async function loadProject(id) {
       referenceFilesViewer?.closeAll?.({ localOnly: true });
       dxfViewer?.closeAll?.({ localOnly: true });
       docTabs?.clear?.();
-      electronicsSuggestDismissedFor = null;
+      hideElectronicsSuggestDock();
       showEmptyProjectViewport({ keepBrowser: true });
       window.dispatchEvent(new CustomEvent("render3d:project-changed", { detail: { projectId: id } }));
       // If Architect is open, reload that project's building.json (additive; Design path unchanged).
@@ -20751,6 +20810,14 @@ async function loadProject(id) {
     scroll: true,
     scrollAlign: cur >= max ? "end" : "auto",
   });
+  // Existing projects already had their "first generation" — don't auto-popup suggestions again.
+  if ((timelineData?.entries || []).some((entry) => {
+    const kind = String(entry?.kind || "").toLowerCase();
+    return kind === "prompt" || kind === "build" || entry?.meta?.success === true;
+  })) {
+    markElectronicsDockShown(id);
+    hideElectronicsSuggestDock();
+  }
   renderProjectList();
     renderFileList(data.files || []);
     const browser = normalizeBrowser(data);
@@ -26562,6 +26629,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       clearPromptComposeResult();
       await maybeReapplyCapturedTexture(preservedTexture, data.filename);
       setEditStatus("ok", data.message || "Model ready.");
+      void maybeShowElectronicsSuggestDockAfterGeneration(projectId);
     } catch (err) {
       if (genId !== activePromptGenerationId || userCancelRequested) {
         if (userCancelRequested || !generationPollTimer) stopGenerationWatch();

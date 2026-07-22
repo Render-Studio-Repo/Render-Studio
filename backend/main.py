@@ -9977,6 +9977,14 @@ def set_team_key_member_access(
     granted = bool(body["granted"]) if "granted" in body else None
     use_key = bool(body["use_key"]) if "use_key" in body else None
     model = body.get("model")
+    allowed_models_provided = "allowed_models" in body
+    allowed_models = body.get("allowed_models")
+    if allowed_models_provided:
+        if allowed_models is None:
+            allowed_models = []
+        elif not isinstance(allowed_models, list):
+            raise HTTPException(400, "allowed_models must be a list of model ids")
+        allowed_models = [str(m).strip() for m in allowed_models if str(m).strip()]
     daily_limit_provided = "daily_limit_usd" in body
     daily_limit_usd = body.get("daily_limit_usd")
     daily_token_limit_provided = "daily_token_limit" in body
@@ -10008,13 +10016,17 @@ def set_team_key_member_access(
             user["id"],
             use_key=use_key,
             model=model,
+            allowed_models=allowed_models if allowed_models_provided else None,
+            allowed_models_provided=allowed_models_provided,
             daily_limit_usd=daily_limit_usd,
             daily_limit_provided=daily_limit_provided,
             daily_token_limit=daily_token_limit,
             daily_token_limit_provided=daily_token_limit_provided,
         )
-    except (ValueError, PermissionError) as exc:
+    except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     reason = "updated"
     if granted is True:
         reason = "granted"
@@ -10024,6 +10036,8 @@ def set_team_key_member_access(
         reason = "assigned"
     elif use_key is False:
         reason = "unassigned"
+    elif allowed_models_provided:
+        reason = "models"
     _notify_ai_keys_changed(
         [target_user_id, user["id"]],
         team_id=team_id,

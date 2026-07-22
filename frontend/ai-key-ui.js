@@ -202,6 +202,34 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     return html;
   }
 
+  function allowedModelsChecklistHTML(provider, allowedModels, { teamId, teamKeyId, userId, disabled = false } = {}) {
+    const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai;
+    const allowed = new Set(
+      Array.isArray(allowedModels) && allowedModels.length
+        ? allowedModels
+        : options.map((o) => o.value),
+    );
+    return `
+      <div class="ai-key-allowed-models" title="Models this member may use with the shared key">
+        <span class="ai-key-allowed-models-label">Allowed models</span>
+        <div class="ai-key-allowed-models-list">
+          ${options.map((o) => `
+            <label class="ai-key-allowed-model">
+              <input type="checkbox"
+                data-action="member-allowed-model"
+                data-team-key-id="${esc(teamKeyId)}"
+                data-team-id="${esc(teamId)}"
+                data-user-id="${esc(userId)}"
+                data-model="${esc(o.value)}"
+                ${allowed.has(o.value) ? "checked" : ""}
+                ${disabled ? "disabled" : ""} />
+              <span>${esc(o.label)}</span>
+            </label>
+          `).join("")}
+        </div>
+      </div>`;
+  }
+
   function renderTeamFilter(teamKeys = []) {
     const teamIds = [...new Set(teamKeys.map((k) => k.team_id).filter(Boolean))];
     if (teamIds.length <= 1) return "";
@@ -603,7 +631,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     panel.innerHTML = `
       <div class="ai-key-members-header">
         <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 1a2 2 0 100 4 2 2 0 000-4zM5 8a3 3 0 016 0v.5H5V8z"/></svg>
-        Member access — toggle to grant or revoke
+        Member access — grant, assign, and checkmark allowed models
       </div>
       ${members.map((m) => `
         <div class="ai-key-member-row">
@@ -638,15 +666,12 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
               title="${m.use_key ? "Set this member back to their own/default key" : "Assign this shared key to this member"}">
               ${m.use_key ? "Shared" : "Own"}
             </button>
-            <select class="ai-key-model-select ai-key-member-model-select"
-              data-action="member-model"
-              data-team-key-id="${esc(teamKeyId)}"
-              data-team-id="${esc(teamId)}"
-              data-user-id="${esc(m.user_id)}"
-              ${m.granted ? "" : "disabled"}
-              title="Model this member uses with this shared key">
-              ${modelOptionsHTML(m.provider, m.model)}
-            </select>
+            ${allowedModelsChecklistHTML(m.provider, m.allowed_models, {
+              teamId,
+              teamKeyId,
+              userId: m.user_id,
+              disabled: !m.granted || m.is_key_owner,
+            })}
             <label class="ai-key-daily-limit" title="Daily shared-key dollar limit for this member">
               <span>$/day</span>
               <input type="number"
@@ -846,8 +871,9 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
   keysList?.addEventListener("change", async (e) => {
     const sel = e.target.closest("[data-action='change-model']");
     const memberModel = e.target.closest("[data-action='member-model']");
+    const memberAllowed = e.target.closest("[data-action='member-allowed-model']");
     const dailyLimit = e.target.closest("[data-action='member-daily-dollar-limit']");
-    if (!sel && !memberModel && !dailyLimit) return;
+    if (!sel && !memberModel && !memberAllowed && !dailyLimit) return;
     if (dailyLimit) {
       const teamKeyId = dailyLimit.dataset.teamKeyId;
       const teamId = dailyLimit.dataset.teamId;
@@ -871,6 +897,38 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
         if (panel) renderMembersPanel(panel, teamId, teamKeyId, data.members || []);
       } catch (err) {
         setError(err.message || "Could not update daily dollar limit");
+      }
+      return;
+    }
+    if (memberAllowed) {
+      const teamKeyId = memberAllowed.dataset.teamKeyId;
+      const teamId = memberAllowed.dataset.teamId;
+      const targetUserId = memberAllowed.dataset.userId;
+      const row = memberAllowed.closest(".ai-key-member-row");
+      const checked = [...(row?.querySelectorAll("[data-action='member-allowed-model']:checked") || [])]
+        .map((el) => el.dataset.model)
+        .filter(Boolean);
+      if (!checked.length) {
+        memberAllowed.checked = true;
+        setError("Keep at least one allowed model checked.");
+        return;
+      }
+      try {
+        const data = await api(
+          `/api/teams/${teamId}/ai-keys/${teamKeyId}/members/${targetUserId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ allowed_models: checked }),
+          }
+        );
+        const panel = document.getElementById(`members-panel-${teamKeyId}`);
+        if (panel) renderMembersPanel(panel, teamId, teamKeyId, data.members || []);
+        // Refresh status so prompt model pickers pick up the new allow-list.
+        await refresh();
+      } catch (err) {
+        setError(err.message || "Could not update allowed models");
+        memberAllowed.checked = !memberAllowed.checked;
       }
       return;
     }

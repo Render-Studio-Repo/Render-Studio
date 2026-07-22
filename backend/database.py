@@ -952,6 +952,10 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE user_team_key_opts ADD COLUMN allowed_models TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute("ALTER TABLE team_shared_ai_keys ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'all'")
         except sqlite3.OperationalError:
             pass

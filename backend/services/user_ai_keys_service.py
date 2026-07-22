@@ -15,6 +15,22 @@ from backend.database import get_conn
 
 SUPPORTED_PROVIDERS = {"openai", "anthropic"}
 
+# Catalog of models owners can allow on a shared key (keep in sync with frontend).
+PROVIDER_MODEL_CATALOG: dict[str, list[str]] = {
+    "openai": [
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.3-codex",
+        "gpt-5.6-sol",
+    ],
+    "anthropic": [
+        "claude-fable-5",
+        "claude-sonnet-4-5",
+        "claude-opus-4-8",
+        "claude-4.6-sonnet",
+    ],
+}
+
 
 def _fernet() -> Fernet:
     digest = hashlib.sha256(settings.jwt_secret.encode("utf-8")).digest()
@@ -35,6 +51,72 @@ def default_model(provider: str) -> str:
     if provider == "anthropic":
         return settings.anthropic_model
     return settings.openai_model
+
+
+def _parse_allowed_models(raw: Any, provider: str) -> list[str] | None:
+    """Return explicit allow-list, or None when unrestricted (legacy / unset)."""
+    if raw is None or raw == "":
+        return None
+    data = raw
+    if isinstance(raw, str):
+        try:
+            import json
+
+            data = json.loads(raw)
+        except Exception:
+            return None
+    if not isinstance(data, list):
+        return None
+    valid = set(PROVIDER_MODEL_CATALOG.get(normalize_provider(provider), []))
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in data:
+        model = str(item or "").strip()
+        if not model or model in seen:
+            continue
+        if valid and model not in valid:
+            continue
+        seen.add(model)
+        cleaned.append(model)
+    return cleaned
+
+
+def _serialize_allowed_models(models: list[str] | None) -> str | None:
+    if models is None:
+        return None
+    import json
+
+    return json.dumps(list(models))
+
+
+def effective_allowed_models(raw: Any, provider: str) -> list[str]:
+    """Models a member may use. Unset allow-list → full provider catalog."""
+    provider = normalize_provider(provider)
+    parsed = _parse_allowed_models(raw, provider)
+    catalog = list(PROVIDER_MODEL_CATALOG.get(provider, []))
+    if parsed is None:
+        return catalog
+    return parsed
+
+
+def clamp_model_to_allowed(
+    model: str | None,
+    *,
+    provider: str,
+    allowed_raw: Any,
+    fallback: str | None = None,
+) -> str:
+    provider = normalize_provider(provider)
+    allowed = effective_allowed_models(allowed_raw, provider)
+    candidate = (model or "").strip()
+    if candidate and candidate in allowed:
+        return candidate
+    fb = (fallback or "").strip()
+    if fb and fb in allowed:
+        return fb
+    if allowed:
+        return allowed[0]
+    return candidate or fb or default_model(provider)
 
 
 def validate_key(provider: str, api_key: str) -> str:
@@ -383,7 +465,8 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
                       COALESCE(opt.use_key, 0) AS use_key,
                       opt.model AS member_model,
                       opt.daily_limit_usd AS daily_limit_usd,
-                      opt.daily_token_limit AS daily_token_limit
+                      opt.daily_token_limit AS daily_token_limit,
+                      opt.allowed_models AS allowed_models
                FROM team_shared_ai_keys k
                JOIN users u ON u.id = k.shared_by
                LEFT JOIN user_team_key_opts opt ON opt.key_id = k.id AND opt.user_id = ?
@@ -402,7 +485,8 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
             (team_id,),
         ).fetchall()
         opt_rows = conn.execute(
-            """SELECT opt.user_id, opt.key_id, opt.use_key, opt.model, opt.daily_limit_usd, opt.daily_token_limit
+            """SELECT opt.user_id, opt.key_id, opt.use_key, opt.model, opt.daily_limit_usd,
+                      opt.daily_token_limit, opt.allowed_models
                FROM user_team_key_opts opt
                JOIN team_shared_ai_keys k ON k.id = opt.key_id
                WHERE k.team_id = ?""",
@@ -423,12 +507,14 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
                 "model": o["model"],
                 "daily_limit_usd": o["daily_limit_usd"],
                 "daily_token_limit": o["daily_token_limit"],
+                "allowed_models": o["allowed_models"],
             }
             for o in opt_rows
         }
         members_by_key: dict[str, list[dict[str, Any]]] = {}
         for key in rows:
             key_id = key["id"]
+            provider = normalize_provider(key["provider"])
             members_by_key[key_id] = [
                 {
                     "user_id": m["user_id"],
@@ -439,6 +525,10 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
                     "model": opts.get((key_id, m["user_id"]), {}).get("model") or key["model"],
                     "daily_limit_usd": opts.get((key_id, m["user_id"]), {}).get("daily_limit_usd"),
                     "daily_token_limit": opts.get((key_id, m["user_id"]), {}).get("daily_token_limit"),
+                    "allowed_models": effective_allowed_models(
+                        opts.get((key_id, m["user_id"]), {}).get("allowed_models"),
+                        provider,
+                    ),
                 }
                 for m in member_rows
                 if grants.get((key_id, m["user_id"]), True) or m["user_id"] == key["shared_by"]
@@ -450,8 +540,14 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
             "name": r["name"],
             "provider": r["provider"],
             "provider_label": "Claude" if r["provider"] == "anthropic" else "OpenAI",
-            "model": r["member_model"] or r["model"],
+            "model": clamp_model_to_allowed(
+                r["member_model"] or r["model"],
+                provider=r["provider"],
+                allowed_raw=r["allowed_models"],
+                fallback=r["model"],
+            ),
             "key_model": r["model"],
+            "allowed_models": effective_allowed_models(r["allowed_models"], r["provider"]),
             "enabled": bool(r["enabled"]),
             "shared_by": r["shared_by"],
             "shared_by_name": r["shared_by_name"],
@@ -459,7 +555,12 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
             "scope_project_id": r["scope_project_id"],
             "scope_label": r["scope_label"],
             "use_key": bool(r["use_key"]),
-            "effective_model": r["member_model"] or r["model"],
+            "effective_model": clamp_model_to_allowed(
+                r["member_model"] or r["model"],
+                provider=r["provider"],
+                allowed_raw=r["allowed_models"],
+                fallback=r["model"],
+            ),
             "daily_limit_usd": r["daily_limit_usd"],
             "daily_token_limit": r["daily_token_limit"],
             "is_owner": r["shared_by"] == user_id,
@@ -494,7 +595,8 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
                       COALESCE(opt.use_key, 0) AS use_key,
                       opt.model AS member_model,
                       opt.daily_limit_usd AS daily_limit_usd,
-                      opt.daily_token_limit AS daily_token_limit
+                      opt.daily_token_limit AS daily_token_limit,
+                      opt.allowed_models AS allowed_models
                FROM team_members tm
                JOIN users u ON u.id = tm.user_id
                LEFT JOIN team_key_grants g ON g.key_id = ? AND g.user_id = tm.user_id
@@ -503,6 +605,7 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
                ORDER BY u.display_name""",
             (key_id, key_id, team_id),
         ).fetchall()
+    provider = normalize_provider(key_row["provider"])
     return [
         {
             "user_id": r["user_id"],
@@ -511,9 +614,15 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
             "role": r["role"],
             "granted": bool(r["granted"]),
             "use_key": bool(r["use_key"]),
-            "provider": key_row["provider"],
-            "model": r["member_model"] or key_row["model"],
+            "provider": provider,
+            "model": clamp_model_to_allowed(
+                r["member_model"] or key_row["model"],
+                provider=provider,
+                allowed_raw=r["allowed_models"],
+                fallback=key_row["model"],
+            ),
             "key_model": key_row["model"],
+            "allowed_models": effective_allowed_models(r["allowed_models"], provider),
             "daily_limit_usd": r["daily_limit_usd"],
             "daily_token_limit": r["daily_token_limit"],
             "is_key_owner": r["user_id"] == key_row["shared_by"],
@@ -531,6 +640,8 @@ def set_team_key_member_access(
     *,
     use_key: bool | None = None,
     model: str | None = None,
+    allowed_models: list[str] | None = None,
+    allowed_models_provided: bool = False,
     daily_limit_usd: float | None = None,
     daily_limit_provided: bool = False,
     daily_token_limit: int | None = None,
@@ -549,6 +660,7 @@ def set_team_key_member_access(
             and granted is None
             and use_key is None
             and model is None
+            and not allowed_models_provided
             and (daily_limit_provided or daily_token_limit_provided)
         )
         if not self_limit_only and key_row["shared_by"] != requester_id and not _is_team_owner(conn, team_id, requester_id):
@@ -584,21 +696,60 @@ def set_team_key_member_access(
                 "ON CONFLICT(key_id,user_id) DO UPDATE SET granted=excluded.granted, updated_by=excluded.updated_by, updated_at=excluded.updated_at",
                 (key_id, target_user_id, 1 if granted else 0, requester_id, now),
             )
-        if use_key is not None or model is not None or daily_limit_provided or daily_token_limit_provided:
+        if (
+            use_key is not None
+            or model is not None
+            or allowed_models_provided
+            or daily_limit_provided
+            or daily_token_limit_provided
+        ):
             current = conn.execute(
-                "SELECT use_key, model, daily_limit_usd, daily_token_limit FROM user_team_key_opts WHERE user_id=? AND key_id=?",
+                "SELECT use_key, model, daily_limit_usd, daily_token_limit, allowed_models "
+                "FROM user_team_key_opts WHERE user_id=? AND key_id=?",
                 (target_user_id, key_id),
             ).fetchone()
             chosen_use = (bool(current["use_key"]) if current else False) if use_key is None else bool(use_key)
-            chosen_model = (current["model"] if current else None) if model is None else (model.strip() or None)
             chosen_limit = daily_limit_usd if daily_limit_provided else (current["daily_limit_usd"] if current else None)
             chosen_token_limit = daily_token_limit if daily_token_limit_provided else (current["daily_token_limit"] if current else None)
-            if chosen_model is None:
-                chosen_model = key_row["model"]
+            if allowed_models_provided:
+                chosen_allowed = _parse_allowed_models(allowed_models or [], key_row["provider"])
+                if not chosen_allowed:
+                    raise ValueError("Select at least one allowed model for this member")
+                chosen_allowed_raw = _serialize_allowed_models(chosen_allowed)
+            else:
+                chosen_allowed_raw = current["allowed_models"] if current else None
+                chosen_allowed = _parse_allowed_models(chosen_allowed_raw, key_row["provider"])
+            raw_model = (current["model"] if current else None) if model is None else (model.strip() or None)
+            if raw_model is None:
+                raw_model = key_row["model"]
+            chosen_model = clamp_model_to_allowed(
+                raw_model,
+                provider=key_row["provider"],
+                allowed_raw=chosen_allowed_raw if allowed_models_provided else chosen_allowed_raw,
+                fallback=key_row["model"],
+            )
+            # If an explicit model was requested but is not allowed, reject instead of silently switching.
+            if model is not None and chosen_allowed is not None:
+                requested = (model or "").strip()
+                if requested and requested not in effective_allowed_models(chosen_allowed_raw, key_row["provider"]):
+                    raise ValueError("That model is not allowed for this member on the shared key")
             conn.execute(
-                "INSERT INTO user_team_key_opts (user_id,key_id,use_key,model,daily_limit_usd,daily_token_limit) VALUES (?,?,?,?,?,?) "
-                "ON CONFLICT(user_id,key_id) DO UPDATE SET use_key=excluded.use_key, model=excluded.model, daily_limit_usd=excluded.daily_limit_usd, daily_token_limit=excluded.daily_token_limit",
-                (target_user_id, key_id, 1 if chosen_use else 0, chosen_model, chosen_limit, chosen_token_limit),
+                "INSERT INTO user_team_key_opts "
+                "(user_id,key_id,use_key,model,daily_limit_usd,daily_token_limit,allowed_models) "
+                "VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(user_id,key_id) DO UPDATE SET "
+                "use_key=excluded.use_key, model=excluded.model, "
+                "daily_limit_usd=excluded.daily_limit_usd, daily_token_limit=excluded.daily_token_limit, "
+                "allowed_models=excluded.allowed_models",
+                (
+                    target_user_id,
+                    key_id,
+                    1 if chosen_use else 0,
+                    chosen_model,
+                    chosen_limit,
+                    chosen_token_limit,
+                    chosen_allowed_raw,
+                ),
             )
         conn.commit()
     if self_limit_only:
@@ -632,8 +783,27 @@ def toggle_team_key(user_id: str, key_id: str, use_key: bool, model: str | None 
     picking Claude Fable/Opus cannot silently fall back to an older OpenAI shared key.
     """
     with get_conn() as conn:
-        key = conn.execute("SELECT model FROM team_shared_ai_keys WHERE id=?", (key_id,)).fetchone()
-        chosen_model = (model or "").strip() or (key["model"] if key else None)
+        key = conn.execute(
+            "SELECT model, provider FROM team_shared_ai_keys WHERE id=?",
+            (key_id,),
+        ).fetchone()
+        if not key:
+            raise ValueError("Shared key not found")
+        current = conn.execute(
+            "SELECT allowed_models FROM user_team_key_opts WHERE user_id=? AND key_id=?",
+            (user_id, key_id),
+        ).fetchone()
+        allowed_raw = current["allowed_models"] if current else None
+        allowed = effective_allowed_models(allowed_raw, key["provider"])
+        requested = (model or "").strip()
+        if requested and allowed_raw is not None and requested not in allowed:
+            raise ValueError("That model is not allowed on this shared key for your account")
+        chosen_model = clamp_model_to_allowed(
+            requested or None,
+            provider=key["provider"],
+            allowed_raw=allowed_raw,
+            fallback=key["model"],
+        )
         if use_key:
             # Only one shared key can be the active default at a time.
             conn.execute(
@@ -641,10 +811,11 @@ def toggle_team_key(user_id: str, key_id: str, use_key: bool, model: str | None 
                 (user_id, key_id),
             )
         conn.execute(
-            "INSERT INTO user_team_key_opts (user_id,key_id,use_key,model) VALUES (?,?,?,?) "
+            "INSERT INTO user_team_key_opts (user_id,key_id,use_key,model,allowed_models) VALUES (?,?,?,?,?) "
             "ON CONFLICT(user_id,key_id) DO UPDATE SET use_key=excluded.use_key, "
-            "model=COALESCE(excluded.model, user_team_key_opts.model)",
-            (user_id, key_id, 1 if use_key else 0, chosen_model),
+            "model=COALESCE(excluded.model, user_team_key_opts.model), "
+            "allowed_models=COALESCE(user_team_key_opts.allowed_models, excluded.allowed_models)",
+            (user_id, key_id, 1 if use_key else 0, chosen_model, allowed_raw),
         )
         conn.commit()
 
@@ -658,6 +829,7 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
             """SELECT k.api_key_enc, k.provider, COALESCE(opt.model, k.model) AS model,
                       opt.daily_limit_usd AS daily_limit_usd,
                       opt.daily_token_limit AS daily_token_limit,
+                      opt.allowed_models AS allowed_models,
                       k.id AS key_id, k.name AS key_name, u.display_name AS shared_by_name,
                       k.scope_type, k.scope_project_id, k.scope_label
                FROM user_team_key_opts opt
@@ -675,10 +847,17 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
         if row and _team_key_scope_allows(conn, row, project_id):
             api_key = _decrypt(row["api_key_enc"])
             if api_key:
+                provider = normalize_provider(row["provider"])
                 return {
-                    "provider": row["provider"],
+                    "provider": provider,
                     "api_key": api_key,
-                    "model": row["model"],
+                    "model": clamp_model_to_allowed(
+                        row["model"],
+                        provider=provider,
+                        allowed_raw=row["allowed_models"],
+                        fallback=row["model"],
+                    ),
+                    "allowed_models": effective_allowed_models(row["allowed_models"], provider),
                     "source": "team",
                     "key_id": row["key_id"],
                     "key_name": row["key_name"],
@@ -700,6 +879,7 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
             """SELECT k.api_key_enc, k.provider, COALESCE(opt.model, k.model) AS model,
                       opt.daily_limit_usd AS daily_limit_usd,
                       opt.daily_token_limit AS daily_token_limit,
+                      opt.allowed_models AS allowed_models,
                       k.id AS key_id, k.name AS key_name, u.display_name AS shared_by_name,
                       k.scope_type, k.scope_project_id, k.scope_label
                FROM team_shared_ai_keys k
@@ -728,10 +908,17 @@ def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> d
     api_key = _decrypt(row["api_key_enc"])
     if not api_key:
         return None
+    provider = normalize_provider(row["provider"])
     return {
-        "provider": row["provider"],
+        "provider": provider,
         "api_key": api_key,
-        "model": row["model"],
+        "model": clamp_model_to_allowed(
+            row["model"],
+            provider=provider,
+            allowed_raw=row["allowed_models"],
+            fallback=row["model"],
+        ),
+        "allowed_models": effective_allowed_models(row["allowed_models"], provider),
         "source": "team",
         "key_id": row["key_id"],
         "key_name": row["key_name"],
@@ -791,6 +978,7 @@ def _resolve_team_key_for_user(user_id: str, key_id: str, *, project_id: str | N
             """SELECT k.api_key_enc, k.provider, COALESCE(opt.model, k.model) AS model,
                       opt.daily_limit_usd AS daily_limit_usd,
                       opt.daily_token_limit AS daily_token_limit,
+                      opt.allowed_models AS allowed_models,
                       k.id AS key_id, k.name AS key_name, u.display_name AS shared_by_name,
                       k.scope_type, k.scope_project_id, k.scope_label
                FROM team_shared_ai_keys k
@@ -815,7 +1003,13 @@ def _resolve_team_key_for_user(user_id: str, key_id: str, *, project_id: str | N
     return {
         "provider": provider,
         "api_key": api_key,
-        "model": (row["model"] or "").strip() or default_model(provider),
+        "model": clamp_model_to_allowed(
+            row["model"],
+            provider=provider,
+            allowed_raw=row["allowed_models"],
+            fallback=row["model"],
+        ),
+        "allowed_models": effective_allowed_models(row["allowed_models"], provider),
         "source": "team",
         "key_id": row["key_id"],
         "key_name": row["key_name"],
