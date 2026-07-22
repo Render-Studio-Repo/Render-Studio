@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260719-bodies-fix";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260722-ws-visible";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
@@ -21719,7 +21719,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
         const sel = document.getElementById("team-select");
         if (!teamId || !sel) return;
         const hidden = hiddenWorkspaceIds();
-        if (hidden.has(teamId)) {
+        if (hidden.has(String(teamId))) {
           setWorkspaceVisible(teamId, true);
           renderTeams();
         }
@@ -21793,7 +21793,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
         const sel = document.getElementById("team-select");
         if (!teamId || !sel) return;
         const hidden = hiddenWorkspaceIds();
-        if (hidden.has(teamId)) {
+        if (hidden.has(String(teamId))) {
           setWorkspaceVisible(teamId, true);
           renderTeams();
         }
@@ -27828,10 +27828,10 @@ window.addEventListener("keydown", (e) => {
     if (!sel || !teamId) return;
     if (teamId !== "__all__" && !allTeams.some((t) => t.id === teamId)) return;
     if (teamId !== "__all__") {
-      const hidden = hiddenWorkspaceIds();
-      if (hidden.has(teamId)) {
-        setWorkspaceVisible(teamId, true);
-      }
+        const hidden = hiddenWorkspaceIds();
+        if (hidden.has(String(teamId))) {
+          setWorkspaceVisible(teamId, true);
+        }
     }
     writeSavedWorkspaceId(teamId);
     renderTeams();
@@ -29789,7 +29789,7 @@ window.addEventListener("keydown", (e) => {
         }
       }
       const isOwner = team.role === "owner";
-      const visible = !hidden.has(team.id);
+      const visible = !hidden.has(String(team.id));
       const memberRows = data.members || [];
       parts.push(`
         <section class="profile-workspace-card" data-team-id="${appEscapeHtml(team.id)}">

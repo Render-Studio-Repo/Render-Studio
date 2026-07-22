@@ -4,6 +4,13 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-22 — Shared workspace checkboxes actually show projects
+
+- Bug: Projects folder 📁 checkboxes looked checked, but focusing one shared workspace (e.g. “fusion render”) still scoped `/api/projects?team_id=…`, so other checked workspaces never appeared.
+- Fix: always fetch `/api/projects` (all accessible); checkbox hide-list filters the browser. Focusing a workspace only sets active create/invite context.
+- `workspace-browser` loads folders for every team present in the visible project list; multi-workspace view labels root “All workspaces” and tags folders with workspace name.
+- Cache-bust `?v=20260722-ws-visible`.
+
 ## 2026-07-22 — Workspace invite moved to popup
 
 - Slimmed left Workspace panel: removed inline people-picker + invite email row; replaced with a single **Invite people** button.
