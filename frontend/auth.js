@@ -582,12 +582,21 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       document.getElementById("btn-onshape-panel")?.click();
       return;
     }
+    if (!loggedInUser) {
+      showModal(true);
+      switchTab("login");
+      const box = document.getElementById("auth-connect-onshape");
+      if (box) box.checked = true;
+      return;
+    }
     void (async () => {
       try {
         const oauth = await api("/api/onshape/oauth-url", { method: "POST" });
-        watchOAuthPopup(openOAuthPopup(oauth?.url || "/oauth/start", "render3d-onshape-connect"));
-      } catch {
-        watchOAuthPopup(openOAuthPopup("/oauth/start", "render3d-onshape-connect"));
+        if (!oauth?.url) throw new Error("Onshape authorization URL was not returned.");
+        watchOAuthPopup(openOAuthPopup(oauth.url, "render3d-onshape-connect"));
+      } catch (err) {
+        if (authError) authError.textContent = err.message || "Could not start Onshape connection.";
+        else window.alert(err.message || "Could not start Onshape connection. Sign in first, then try again.");
       }
     })();
   });
@@ -679,6 +688,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
     async bootstrap() {
       const params = new URLSearchParams(window.location.search);
       const oauthToken = params.get("onshape_token");
+      const oauthLinked = params.get("onshape_linked");
       const oauthError = params.get("onshape_error");
       const autodeskLinked = params.get("autodesk_linked");
       const autodeskError = params.get("autodesk_error");
@@ -771,17 +781,48 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
 
       if (oauthError) {
         history.replaceState({}, "", window.location.pathname);
-        if (authError) authError.textContent = `Onshape login failed: ${oauthError}`;
+        const detail = decodeURIComponent(oauthError);
+        if (authError) authError.textContent = `Onshape login failed: ${detail}`;
         if (inOAuthPopup) {
-          notifyOpenerAndClose("onshape", false, oauthError);
+          notifyOpenerAndClose("onshape", false, detail);
           return null;
         }
         showModal(true);
         return null;
       }
 
+      // Connect-after-login: tokens are already stored for this user — do not replace session.
+      if (oauthLinked) {
+        history.replaceState({}, "", window.location.pathname);
+        setOnshapeBadge(true);
+        if (inOAuthPopup) {
+          notifyOpenerAndClose("onshape", true);
+          return null;
+        }
+        try {
+          await refreshCloudBadges();
+        } catch { /* non-critical */ }
+        const token = getToken();
+        if (!token) return null;
+        try {
+          const data = await fetchCurrentSessionWithRetry();
+          setSession(token, data.user);
+          cacheSessionData(token, data);
+          setUserUI(data.user);
+          return data;
+        } catch {
+          return null;
+        }
+      }
+
       if (oauthToken) {
         history.replaceState({}, "", window.location.pathname);
+        // If this popup was opened while already signed in, keep that session and only mark linked.
+        if (inOAuthPopup && getToken()) {
+          setOnshapeBadge(true);
+          notifyOpenerAndClose("onshape", true);
+          return null;
+        }
         try {
           localStorage.setItem(TOKEN_KEY, oauthToken);
           const data = await api("/api/auth/me");

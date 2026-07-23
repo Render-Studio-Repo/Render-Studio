@@ -299,12 +299,16 @@ export function initOnshapePanel({ api, onImported, onView, getCurrentProjectId 
         headers: authHeaders(),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        setStatus("Sign in to Render3D first, then connect Onshape.", true);
+        return;
+      }
       if (!res.ok) throw new Error(data.detail || `Could not start Onshape connect (${res.status})`);
-      const url = data.url || "/oauth/start";
+      const url = data.url;
+      if (!url) throw new Error("Onshape authorization URL was not returned.");
       window.open(url, "render3d-onshape-connect", "popup=yes,width=720,height=820");
     } catch (err) {
       setStatus(err.message || "Could not start Onshape connection.", true);
-      window.open("/oauth/start", "render3d-onshape-connect", "popup=yes,width=720,height=820");
     }
   }
 

@@ -64,7 +64,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-ws-che
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-onshape-link";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
 import { createProjectChatUI } from "./project-chat.js?v=20260716-chat-link-previews";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
@@ -78,7 +78,7 @@ import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260721-export-close";
-import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
+import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-name-xform";

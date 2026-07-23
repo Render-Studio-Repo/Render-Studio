@@ -6251,28 +6251,50 @@ def onshape_oauth_callback(code: str | None = None, state: str | None = None, er
     Exchange the code for tokens, upsert the local user, issue our JWT,
     then redirect to the frontend with the token in the query string.
     """
+    import logging
+    import urllib.parse
+
     from backend.services.onshape_oauth import consume_oauth_state, exchange_code_for_tokens, upsert_user_tokens
     from backend.auth import create_access_token
 
+    log = logging.getLogger("render3d.onshape")
+
     if error:
-        return RedirectResponse(f"/?onshape_error={error}", status_code=302)
+        log.warning("onshape oauth callback error=%s", error)
+        return RedirectResponse(f"/?onshape_error={urllib.parse.quote(str(error)[:160])}", status_code=302)
 
     if not code or not state:
+        log.warning("onshape oauth callback missing code/state")
         return RedirectResponse("/?onshape_error=missing_params", status_code=302)
 
-    # CSRF check
+    # CSRF check — False means invalid/expired; None means login-with-Onshape (no prior user).
     stored_user_id = consume_oauth_state(state)
-    if stored_user_id is False:  # unknown / expired state
+    if stored_user_id is False:
+        log.warning("onshape oauth callback invalid_state")
         return RedirectResponse("/?onshape_error=invalid_state", status_code=302)
 
     try:
         token_data = exchange_code_for_tokens(code)
-        result     = upsert_user_tokens(token_data, link_user_id=stored_user_id)
-        jwt        = create_access_token(result["user_id"])
+        result = upsert_user_tokens(token_data, link_user_id=stored_user_id)
+        jwt = create_access_token(result["user_id"])
+        log.info(
+            "onshape oauth linked user_id=%s link_user_id=%s email=%s",
+            result.get("user_id"),
+            stored_user_id,
+            result.get("email"),
+        )
     except Exception as exc:
-        return RedirectResponse(f"/?onshape_error={str(exc)[:80]}", status_code=302)
+        log.exception("onshape oauth token exchange failed")
+        return RedirectResponse(
+            f"/?onshape_error={urllib.parse.quote(str(exc)[:160])}",
+            status_code=302,
+        )
 
-    # Redirect to the app; the frontend picks up ?token= and stores it
+    # Connect-after-login: keep the existing Render3D session; only signal success.
+    if stored_user_id:
+        return RedirectResponse("/?onshape_linked=1", status_code=302)
+
+    # Login-with-Onshape: issue a Render3D session for the Onshape-backed user.
     return RedirectResponse(f"/?onshape_token={jwt}", status_code=302)
 
 

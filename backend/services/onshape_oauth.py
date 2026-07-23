@@ -461,10 +461,16 @@ def get_valid_access_token(user_id: str) -> str | None:
     expires_at = datetime.fromisoformat(row["expires_at"])
     if datetime.now(timezone.utc) < expires_at - timedelta(minutes=5):
         return row["access_token"]
-    # Token expired — refresh it
+    # Token expired — refresh it, keeping tokens on the same Render3D user.
     try:
         new_tokens = refresh_access_token(row["refresh_token"])
-        upsert_user_tokens({**new_tokens, "refresh_token": new_tokens.get("refresh_token", row["refresh_token"])})
+        upsert_user_tokens(
+            {
+                **new_tokens,
+                "refresh_token": new_tokens.get("refresh_token", row["refresh_token"]),
+            },
+            link_user_id=user_id,
+        )
         return new_tokens["access_token"]
     except Exception:
         return None

@@ -4,6 +4,11 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Robotic Simulator tab (next to Electronics)
+
+- Design/Wiring tab **ROBOTICS** + right panel: catalog arms, URDF/SRDF upload, work-cell environments, play cycle / joint playground.
+- New `frontend/robotic-simulator.js`; upload accepts `.urdf`/`.srdf` in `POST /upload`. Cache-bust `?v=20260723-robot-sim`.
+
 ## 2026-07-23 — Link preview title → AI & Robotics Studio
 
 - Updated `frontend/index.html` `<title>`, `og:title`, `twitter:title`, and descriptions to **Render3D — The AI & Robotics Studio** (was “AI Product Studio”).
