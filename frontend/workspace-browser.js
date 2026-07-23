@@ -9,6 +9,9 @@ const PROJECT_EXPAND_KEY = "render3d:project-expanded";
 const PROJECT_SEARCH_KEY = "render3d:project-search";
 const FOLDER_SHOW_ALL_KEY = "render3d:folder-show-all";
 const HIERARCHY_SHOW_ALL_KEY = "render3d:hierarchy-show-all";
+const FOLDER_ARCHIVE_KEY = "render3d:archived-folders:v1";
+const ARCHIVE_SECTION_COLLAPSE_KEY = "render3d:archive-section-collapsed:v1";
+const ARCHIVE_SECTION_ID = "__archive__";
 const COMPACT_LIST_LIMIT = 5;
 
 let projectSearchQuery = "";
@@ -26,6 +29,78 @@ function loadIdSet(key) {
 
 function saveIdSet(key, set) {
   localStorage.setItem(key, JSON.stringify([...set]));
+}
+
+function loadArchivedFolders() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FOLDER_ARCHIVE_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((entry) => entry && entry.id)
+      .map((entry) => ({
+        id: String(entry.id),
+        name: String(entry.name || "Folder"),
+        team_id: entry.team_id ? String(entry.team_id) : null,
+        archived_at: String(entry.archived_at || ""),
+      }))
+      .sort((a, b) => String(b.archived_at || "").localeCompare(String(a.archived_at || "")));
+  } catch {
+    return [];
+  }
+}
+
+function saveArchivedFolders(entries) {
+  localStorage.setItem(FOLDER_ARCHIVE_KEY, JSON.stringify(entries));
+}
+
+function archivedFolderIds() {
+  return new Set(loadArchivedFolders().map((entry) => entry.id));
+}
+
+function isArchiveSectionCollapsed() {
+  try {
+    return localStorage.getItem(ARCHIVE_SECTION_COLLAPSE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function setArchiveSectionCollapsed(collapsed) {
+  try {
+    localStorage.setItem(ARCHIVE_SECTION_COLLAPSE_KEY, collapsed ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+function canArchiveFolder(folder) {
+  if (!folder?.id) return false;
+  if (folder.virtual || folder.read_only || folder.public) return false;
+  if (isCommunityFolder(folder)) return false;
+  return true;
+}
+
+function archiveFolderEntry(folder) {
+  if (!canArchiveFolder(folder)) return;
+  const now = new Date().toISOString();
+  const next = loadArchivedFolders().filter((entry) => entry.id !== folder.id);
+  next.unshift({
+    id: folder.id,
+    name: folder.name || "Folder",
+    team_id: folder.team_id || null,
+    archived_at: now,
+  });
+  saveArchivedFolders(next);
+  render();
+  document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
+}
+
+function restoreArchivedFolder(folderId) {
+  if (!folderId) return;
+  const next = loadArchivedFolders().filter((entry) => entry.id !== folderId);
+  saveArchivedFolders(next);
+  render();
+  document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
 }
 
 function hierarchyItemCount(project) {
@@ -1012,6 +1087,10 @@ export function createWorkspaceBrowser({
       <button type="button" data-action="delete">Delete folder</button>
     `;
     }
+    if (folder && canArchiveFolder(folder)) {
+      if (html) html += `<hr />`;
+      html += `<button type="button" data-action="archive">Move to archive</button>`;
+    }
     if (!html) return;
 
     const menu = document.createElement("div");
@@ -1053,6 +1132,7 @@ export function createWorkspaceBrowser({
       const teamId = getWorkspaceId();
       try {
         await api(`/api/teams/${teamId}/folders/${folder.id}`, { method: "DELETE" });
+        restoreArchivedFolder(folder.id);
         await refreshFolders();
         render();
         document.dispatchEvent(new CustomEvent("workspace-folders-changed"));
@@ -1060,6 +1140,115 @@ export function createWorkspaceBrowser({
         alert(err.message || "Could not delete folder");
       }
     });
+    menu.querySelector('[data-action="archive"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      archiveFolderEntry(folder);
+    });
+  }
+
+  function showArchiveFolderContextMenu(e, entry) {
+    if (e?.preventDefault) e.preventDefault();
+    if (e?.stopPropagation) e.stopPropagation();
+    closeContextMenu();
+    const menu = document.createElement("div");
+    menu.className = "folder-context-menu archive-folder-context-menu";
+    menu.innerHTML = `
+      <button type="button" data-action="restore">Restore to workspace</button>
+      <button type="button" data-action="remove">Remove from archive</button>
+    `;
+    const x = e?.clientX ?? 0;
+    const y = e?.clientY ?? 0;
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
+    contextMenu = menu;
+    menu.querySelector('[data-action="restore"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      restoreArchivedFolder(entry.id);
+    });
+    menu.querySelector('[data-action="remove"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      restoreArchivedFolder(entry.id);
+    });
+  }
+
+  function renderArchiveSection(parent, { searching = false, query = "", multiWorkspace = false } = {}) {
+    const archived = loadArchivedFolders();
+    if (!archived.length) return;
+
+    const visibleArchived = searching
+      ? archived.filter((entry) => String(entry.name || "").toLowerCase().includes(query))
+      : archived;
+    if (!visibleArchived.length) return;
+
+    appendFolderGroupLabel(parent, "Archive", { breakBefore: true });
+
+    const archiveCollapsed = searching ? false : isArchiveSectionCollapsed();
+    const zone = document.createElement("section");
+    zone.className = "folder-zone folder-zone-archive";
+    if (archiveCollapsed) zone.classList.add("folder-zone-collapsed");
+    zone.dataset.folderId = ARCHIVE_SECTION_ID;
+
+    const header = document.createElement("header");
+    header.className = "folder-header folder-header-archive";
+    const collapseBtn = document.createElement("button");
+    collapseBtn.type = "button";
+    collapseBtn.className = "folder-collapse-btn";
+    collapseBtn.setAttribute("aria-expanded", archiveCollapsed ? "false" : "true");
+    collapseBtn.title = archiveCollapsed ? "Expand archive" : "Collapse archive";
+    collapseBtn.textContent = archiveCollapsed ? "▸" : "▾";
+    collapseBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      setArchiveSectionCollapsed(!archiveCollapsed);
+      render();
+    });
+    header.append(
+      collapseBtn,
+      Object.assign(document.createElement("span"), { className: "folder-icon", textContent: "🗃" }),
+      Object.assign(document.createElement("span"), { className: "folder-title", textContent: "Archived folders" }),
+      Object.assign(document.createElement("span"), {
+        className: "folder-count muted small",
+        textContent: `${visibleArchived.length}`,
+      })
+    );
+    header.title = "Click a folder to restore it to Projects";
+    zone.appendChild(header);
+
+    if (!archiveCollapsed) {
+      const list = document.createElement("ul");
+      list.className = "project-list archive-folder-list";
+      for (const entry of visibleArchived) {
+        const li = document.createElement("li");
+        li.className = "archive-folder-item";
+        const wsMeta = entry.team_id ? getWorkspaceMeta?.(entry.team_id) : null;
+        const wsTag =
+          multiWorkspace && wsMeta?.label
+            ? `<span class="folder-workspace-tag" title="Workspace">${escapeHtml(wsMeta.label)}</span>`
+            : "";
+        const when = entry.archived_at
+          ? `<span class="archive-folder-when muted small">${escapeHtml(new Date(entry.archived_at).toLocaleDateString())}</span>`
+          : "";
+        li.innerHTML = `
+          <button type="button" class="archive-folder-restore" title="Restore ${escapeHtml(entry.name)} to Projects">
+            <span class="archive-folder-icon" aria-hidden="true">📂</span>
+            <span class="archive-folder-name">${escapeHtml(entry.name)}</span>
+            ${wsTag}
+            ${when}
+            <span class="archive-folder-action muted small">Restore</span>
+          </button>
+        `;
+        li.querySelector(".archive-folder-restore")?.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          restoreArchivedFolder(entry.id);
+        });
+        li.addEventListener("contextmenu", (ev) => showArchiveFolderContextMenu(ev, entry));
+        list.appendChild(li);
+      }
+      zone.appendChild(list);
+    }
+
+    parent.appendChild(zone);
   }
 
   function escapeHtml(s) {
@@ -2175,7 +2364,9 @@ export function createWorkspaceBrowser({
 
     let visibleProjectCount = 0;
 
-    const privateFolders = folders.filter((f) => !isCommunityFolder(f));
+    const privateFolders = folders.filter(
+      (f) => !isCommunityFolder(f) && !archivedFolderIds().has(f.id)
+    );
     const communityFolders = folders.filter((f) => isCommunityFolder(f));
     const showPrivateGroup = !!(rootProjects.length || !searching || privateFolders.some((f) => folderProjects(f.id, f.name).length));
     const showCommunityGroup = communityFolders.some((f) => {
@@ -2303,7 +2494,9 @@ export function createWorkspaceBrowser({
       `
       );
       attachFolderTitleToggle(header.querySelector(".folder-title"), folder.id);
-      header.title = canManage ? "Open the folder menu for new project, edit, share, and more" : "Right-click to collapse all projects";
+      header.title = canManage
+        ? "Right-click for folder menu · Move to archive"
+        : "Right-click to collapse all projects or move to archive";
 
       const openMenu = (ev) => showFolderContextMenu(ev, folder);
       header.addEventListener("contextmenu", openMenu);
@@ -2365,7 +2558,13 @@ export function createWorkspaceBrowser({
       }
     }
 
-    if (searching && visibleProjectCount === 0) {
+    renderArchiveSection(container, { searching, query, multiWorkspace });
+
+    const archivedMatchesSearch = searching
+      ? loadArchivedFolders().some((entry) => String(entry.name || "").toLowerCase().includes(query))
+      : false;
+
+    if (searching && visibleProjectCount === 0 && !archivedMatchesSearch) {
       const noMatch = document.createElement("p");
       noMatch.className = "muted small browser-empty project-search-empty";
       noMatch.textContent = `No projects or objects match “${projectSearchQuery.trim()}”`;
@@ -2420,6 +2619,23 @@ export function createWorkspaceBrowser({
       } catch {
         /* keep whatever we already have for this team */
       }
+    }
+
+    const archived = loadArchivedFolders();
+    if (archived.length) {
+      let changed = false;
+      const next = archived.map((entry) => {
+        const live = folders.find((f) => f.id === entry.id);
+        if (!live) return entry;
+        const name = live.name || entry.name;
+        const team_id = live.team_id || entry.team_id;
+        if (name !== entry.name || team_id !== entry.team_id) {
+          changed = true;
+          return { ...entry, name, team_id };
+        }
+        return entry;
+      });
+      if (changed) saveArchivedFolders(next);
     }
   }
 

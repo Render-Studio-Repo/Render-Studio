@@ -14450,6 +14450,12 @@ button.onshape-doc-name.fusion-folder-select:hover,
   color: #f85149;
 }
 
+.folder-context-menu button[data-action="archive"]:hover,
+.folder-context-menu button[data-action="remove"]:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+}
+
 .component-context-menu {
   min-width: 220px;
 }
@@ -15428,6 +15434,74 @@ section h2 {
 
 .folder-zone-root--shared .folder-header {
   background: linear-gradient(90deg, rgba(251, 133, 0, 0.18), rgba(13, 17, 23, 0));
+}
+
+.folder-zone-archive {
+  border-color: rgba(110, 118, 129, 0.35);
+  background: rgba(13, 17, 23, 0.55);
+}
+
+.folder-header-archive .folder-title {
+  color: #8b949e;
+}
+
+.archive-folder-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 6px 8px;
+}
+
+.archive-folder-item {
+  margin: 0;
+}
+
+.archive-folder-restore {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.archive-folder-restore:hover,
+.archive-folder-restore:focus-visible {
+  border-color: rgba(56, 139, 253, 0.35);
+  background: rgba(56, 139, 253, 0.08);
+}
+
+.archive-folder-icon {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.archive-folder-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-folder-when {
+  flex-shrink: 0;
+}
+
+.archive-folder-action {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.archive-folder-restore:hover .archive-folder-action,
+.archive-folder-restore:focus-visible .archive-folder-action {
+  opacity: 1;
 }
 
 .folder-workspace-highlight {
