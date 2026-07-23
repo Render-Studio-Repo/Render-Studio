@@ -573,23 +573,25 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
                 </span>
               `}
               ${canManage ? `
-                <button type="button"
-                  class="btn ai-key-btn-manage-access"
-                  data-action="manage-access"
-                  data-team-key-id="${esc(k.id)}"
-                  data-team-id="${esc(k.team_id || "")}"
-                  title="Manage who can use this key">
-                  <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 1a2 2 0 100 4 2 2 0 000-4zM3 7a2 2 0 100 4 2 2 0 000-4zm10 0a2 2 0 100 4 2 2 0 000-4z"/></svg>
-                  Members
-                </button>
-                <button type="button"
-                  class="btn ai-key-btn-manage-access"
-                  data-action="manage-team"
-                  data-team-key-id="${esc(k.id)}"
-                  data-team-id="${esc(k.team_id || "")}"
-                  title="Add people from your other workspaces">
-                  Team
-                </button>
+                <div class="ai-key-action-group" role="group" aria-label="Manage shared key">
+                  <button type="button"
+                    class="btn ai-key-btn-manage-access"
+                    data-action="manage-access"
+                    data-team-key-id="${esc(k.id)}"
+                    data-team-id="${esc(k.team_id || "")}"
+                    title="Manage who can use this key">
+                    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 1a2 2 0 100 4 2 2 0 000-4zM3 7a2 2 0 100 4 2 2 0 000-4zm10 0a2 2 0 100 4 2 2 0 000-4z"/></svg>
+                    Members
+                  </button>
+                  <button type="button"
+                    class="btn ai-key-btn-manage-access"
+                    data-action="manage-team"
+                    data-team-key-id="${esc(k.id)}"
+                    data-team-id="${esc(k.team_id || "")}"
+                    title="Add people from your other workspaces">
+                    Team
+                  </button>
+                </div>
               ` : ""}
               ${isOwner ? "" : `
                 <button type="button"
