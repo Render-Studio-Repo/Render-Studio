@@ -282,6 +282,10 @@ def count_all_live_running_jobs(projects_root: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _running_set(project_id: str) -> set[str]:
+    return _RUNNING_TRACES.setdefault(project_id, set())
+
+
 def _track_running(project_id: str, trace_id: str | None) -> None:
     if not trace_id:
         return
