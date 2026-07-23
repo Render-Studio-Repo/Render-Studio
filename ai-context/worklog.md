@@ -4,6 +4,14 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Restored missing `_running_set` (generation NameError)
+
+- Symptom: `name '_running_set' is not defined` on prompt start (trace `7bfeacf1`, project `6b458c64`).
+- Cause: commit `f7208c1` (2026-07-21 cron backup) inserted drain helpers by **replacing** `def _running_set` instead of adding beside it. Call site `_running_set(project_id).add(...)` stayed; helper gone. All later cron snapshots were identical broken copies — nothing to restore from snapshot tree.
+- Fix: restored exact original from `f7208c1^`:
+  `def _running_set(project_id): return _RUNNING_TRACES.setdefault(project_id, set())`
+- Service restarted to load backend change.
+
 ## 2026-07-22 — Shared workspace checkboxes actually show projects
 
 - Bug: Projects folder 📁 checkboxes looked checked, but focusing one shared workspace (e.g. “fusion render”) still scoped `/api/projects?team_id=…`, so other checked workspaces never appeared.

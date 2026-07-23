@@ -30092,9 +30092,10 @@ window.addEventListener("keydown", (e) => {
 
   async function refreshInviteCandidates() {
     try {
-      const mod = await import("./workspace-send-invite.js?v=20260722-ws-send-invite");
+      const mod = await import("./workspace-send-invite.js?v=20260722-invite-hub");
       await mod.refreshInviteCandidates?.({
         getActiveTeam,
+        getTeams: () => allTeams,
         api,
       });
     } catch {
@@ -30144,9 +30145,10 @@ window.addEventListener("keydown", (e) => {
   refreshTeamMembersRealtime = () => void refreshTeamMembers();
   refreshWorkspacePanelRealtime = () => void refreshWorkspaceMenuPanel();
 
-  void import("./workspace-send-invite.js?v=20260722-ws-send-invite").then((mod) => {
+  void import("./workspace-send-invite.js?v=20260722-invite-hub").then((mod) => {
     mod.bindWorkspaceSendInvite?.({
       getActiveTeam,
+      getTeams: () => allTeams,
       api,
       onInvited: async () => {
         await refreshTeamMembers();

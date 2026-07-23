@@ -26164,6 +26164,313 @@ body.theme-light .profile-preferences-advanced-nav button.active b {
   font-size: 0.82rem;
 }
 
+.workspace-invite-open-row {
+  margin-top: 8px;
+}
+
+.workspace-invite-open-btn {
+  width: 100%;
+}
+
+.workspace-send-invite-modal .workspace-send-invite-card {
+  width: min(760px, calc(100vw - 28px));
+  max-width: min(760px, calc(100vw - 28px));
+  max-height: min(88vh, 820px);
+  overflow: auto;
+  padding: 22px 22px 18px;
+}
+
+.workspace-send-invite-eyebrow {
+  margin: 0 0 4px;
+  color: #ffa657;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-send-invite-hint {
+  margin: 0 0 14px;
+  line-height: 1.4;
+}
+
+.ws-invite-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ws-invite-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ws-invite-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+}
+
+.ws-invite-field > span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.ws-invite-field select,
+.ws-invite-compose .team-invite-pick {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0d1117;
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.ws-invite-mode {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ws-invite-mode legend {
+  margin-bottom: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ws-invite-mode-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: #0d1117;
+  cursor: pointer;
+}
+
+.ws-invite-mode-option:has(input:checked) {
+  border-color: rgba(251, 133, 0, 0.45);
+  background: rgba(251, 133, 0, 0.08);
+}
+
+.ws-invite-mode-option strong,
+.ws-invite-mode-option small {
+  display: block;
+}
+
+.ws-invite-mode-option strong {
+  font-size: 0.84rem;
+}
+
+.ws-invite-mode-option small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.ws-invite-folder-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed rgba(88, 166, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(88, 166, 255, 0.05);
+}
+
+.ws-invite-restrict {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.workspace-send-invite-fields {
+  margin-top: 0;
+  gap: 8px;
+}
+
+.workspace-send-invite-fields .team-invite-row input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+}
+
+.workspace-send-invite-status {
+  min-height: 1.2em;
+  margin: 0;
+}
+
+.workspace-send-invite-status.is-error {
+  color: #f85149;
+}
+
+.ws-invite-have {
+  min-width: 0;
+  min-height: 180px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.72);
+}
+
+.ws-invite-have-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.ws-invite-have-head strong {
+  font-size: 0.88rem;
+}
+
+.ws-invite-have-head small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.ws-invite-have-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ws-invite-have-card {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ws-invite-have-card--wide {
+  grid-column: 1 / -1;
+}
+
+.ws-invite-have-card h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ws-invite-have-card h3 span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.16);
+  color: #79c0ff;
+  font-size: 0.68rem;
+}
+
+.ws-invite-have-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.ws-invite-have-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.ws-invite-have-row:last-child {
+  border-bottom: 0;
+}
+
+.ws-invite-have-row strong,
+.ws-invite-have-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-invite-have-row strong {
+  font-size: 0.78rem;
+}
+
+.ws-invite-have-row small {
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.ws-invite-have-row em {
+  flex-shrink: 0;
+  font-style: normal;
+  font-size: 0.66rem;
+  color: #8b949e;
+  text-transform: capitalize;
+}
+
+.ws-invite-have-row--pending em {
+  color: #d4a017;
+}
+
+.ws-invite-have-empty {
+  padding: 4px 2px;
+}
+
+.workspace-send-invite-actions {
+  margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .ws-invite-layout,
+  .ws-invite-have-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-invite-have-card--wide {
+    grid-column: auto;
+  }
+}
+
 .profile-workspace-invite {
   flex-wrap: wrap;
 }

@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260722-ws-visible" />
+  <link rel="stylesheet" href="/styles.css?v=20260722-invite-hub" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -2172,23 +2172,71 @@
     <div class="auth-backdrop" data-ws-send-invite-close></div>
     <div class="auth-card app-dialog-card workspace-send-invite-card">
       <button type="button" class="auth-close" data-ws-send-invite-close aria-label="Close">&times;</button>
-      <p class="workspace-send-invite-eyebrow">Invite people</p>
+      <p class="workspace-send-invite-eyebrow">Collaborate</p>
       <h2 id="workspace-send-invite-title" class="app-dialog-title">
         Invite to <span id="ws-send-invite-workspace-name">workspace</span>
       </h2>
-      <p id="ws-send-invite-hint" class="muted small workspace-send-invite-hint">
-        Invites go to the workspace you have open now.
+      <p class="muted small workspace-send-invite-hint">
+        Add someone to a team workspace, or invite them into a shared folder. See who already has access below.
       </p>
-      <div class="team-invite-block workspace-send-invite-fields">
-        <select id="team-invite-pick" class="team-invite-pick" aria-label="People you've worked with" hidden>
-          <option value="">People you've worked with…</option>
-        </select>
-        <div class="team-invite-row">
-          <input type="email" id="team-invite-email" placeholder="Invite email" autocomplete="off" />
-          <button type="button" id="btn-team-invite" class="btn accent btn-compact">Invite</button>
-        </div>
+
+      <div class="ws-invite-layout">
+        <section class="ws-invite-compose" aria-label="Send invite">
+          <label class="ws-invite-field">
+            <span>Workspace</span>
+            <select id="ws-send-invite-team" aria-label="Choose workspace"></select>
+          </label>
+
+          <fieldset class="ws-invite-mode">
+            <legend>Access</legend>
+            <label class="ws-invite-mode-option">
+              <input type="radio" name="ws-invite-mode" value="workspace" checked />
+              <span>
+                <strong>Whole workspace</strong>
+                <small>Full team access to projects in this workspace</small>
+              </span>
+            </label>
+            <label class="ws-invite-mode-option">
+              <input type="radio" name="ws-invite-mode" value="folder" />
+              <span>
+                <strong>Shared folder</strong>
+                <small>Invite + share one folder (private unless you choose otherwise)</small>
+              </span>
+            </label>
+          </fieldset>
+
+          <div id="ws-send-invite-folder-wrap" class="ws-invite-folder-wrap" hidden>
+            <label class="ws-invite-field">
+              <span>Folder</span>
+              <select id="ws-send-invite-folder" aria-label="Choose folder to share"></select>
+            </label>
+            <label class="ws-invite-restrict">
+              <input type="checkbox" id="ws-send-invite-restrict" checked />
+              <span>Keep folder private — only you and people you share with</span>
+            </label>
+          </div>
+
+          <div class="team-invite-block workspace-send-invite-fields">
+            <label class="ws-invite-field">
+              <span>Who</span>
+              <select id="team-invite-pick" class="team-invite-pick" aria-label="People you've worked with" hidden>
+                <option value="">People you've worked with…</option>
+              </select>
+            </label>
+            <div class="team-invite-row">
+              <input type="email" id="team-invite-email" placeholder="name@company.com" autocomplete="off" />
+              <button type="button" id="btn-team-invite" class="btn accent btn-compact">Send invite</button>
+            </div>
+          </div>
+
+          <p id="ws-send-invite-status" class="muted small workspace-send-invite-status" role="status"></p>
+        </section>
+
+        <aside id="ws-send-invite-have" class="ws-invite-have" aria-live="polite">
+          <p class="muted small">Pick a workspace to see members, invites, and folders.</p>
+        </aside>
       </div>
-      <p id="ws-send-invite-status" class="muted small workspace-send-invite-status" role="status"></p>
+
       <div class="app-dialog-actions workspace-send-invite-actions">
         <button type="button" class="btn secondary" data-ws-send-invite-close>Done</button>
       </div>
@@ -2824,7 +2872,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260722-ws-visible"></script>
+  <script type="module" src="/app.js?v=20260722-invite-hub"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
