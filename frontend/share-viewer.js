@@ -868,6 +868,18 @@ async function main() {
   function renderComponentTree() {
     if (!componentListEl) return;
     const browserComponents = Array.isArray(meta.browser?.components) ? meta.browser.components : [];
+    const visibleSet = new Set(
+      (Array.isArray(meta.visible_filenames) ? meta.visible_filenames : [])
+        .map((name) => String(name || "").split("#")[0].trim())
+        .filter(Boolean)
+        .map((name) => name.toLowerCase()),
+    );
+    const hiddenSet = new Set(
+      (Array.isArray(meta.hidden_filenames) ? meta.hidden_filenames : [])
+        .map((name) => String(name || "").split("#")[0].trim())
+        .filter(Boolean)
+        .map((name) => name.toLowerCase()),
+    );
     const rows = [];
     objectsByName.clear();
     objectsById.clear();
@@ -892,6 +904,17 @@ async function main() {
     for (const item of browserComponents) {
       const name = item.name || item.filename || item.stem || item.label;
       if (!name) continue;
+      const keys = [name, item.viewer_filename, item.source_filename, item.filename, item.stem]
+        .map((v) => String(v || "").split("#")[0].trim())
+        .filter(Boolean);
+      const keyLower = keys.map((k) => k.toLowerCase());
+      if (visibleSet.size && !keyLower.some((k) => visibleSet.has(k) || visibleSet.has(k.replace(/\.[^.]+$/, "")))) {
+        // Also allow stem match against visible basenames.
+        const stems = keyLower.map((k) => k.replace(/\.[^.]+$/, ""));
+        const visibleStems = [...visibleSet].map((k) => k.replace(/\.[^.]+$/, ""));
+        if (!stems.some((s) => visibleStems.includes(s))) continue;
+      }
+      if (hiddenSet.size && keyLower.some((k) => hiddenSet.has(k))) continue;
       const obj = objectsByName.get(name) || objectsByName.get(item.viewer_filename) || null;
       addRow({
         label: PathBasename(name),
@@ -902,6 +925,13 @@ async function main() {
     }
     if (!rows.length && loadedScene) {
       objectsByName.forEach((obj, label) => {
+        const lower = String(label || "").toLowerCase();
+        const stem = lower.replace(/\.[^.]+$/, "");
+        if (hiddenSet.has(lower) || hiddenSet.has(stem)) return;
+        if (visibleSet.size) {
+          const visibleStems = [...visibleSet].map((k) => k.replace(/\.[^.]+$/, ""));
+          if (![...visibleSet].includes(lower) && !visibleStems.includes(stem)) return;
+        }
         addRow({
           label: PathBasename(label),
           kind: "part",

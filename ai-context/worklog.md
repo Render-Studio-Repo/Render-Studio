@@ -1,13 +1,13 @@
-## 2026-07-23 — Better robot floor + rotate without explode
-
-- Exploded ▾ menu: **Rotate off** / **Rotate model** (assembled, no explode) / **Rotate exploded**.
-- Robotics work cells rebuilt for Z-up: flat concrete slab + painted aisle planes (no floating bars). Cache-bust `?v=20260723-zup-floor4`.
-
 # Agent worklog
 
 Append a dated entry when you finish meaningful work. Newest first. Keep entries short: what changed, which files, anything a future agent must know.
 
 ---
+
+## 2026-07-23 — Share links respect unhidden models only
+
+- Bug: share saved visibility lists but the public viewer still loaded the full catalog.
+- Fix: bake visible-only `_share_visible_*.glb` at create; filter allow-list + browser tree; expose visibility on `/api/share/{token}`; share-viewer filters parts (`?v=20260723-share-visible`).
 
 ## 2026-07-23 — Better robot floor + rotate without explode
 

@@ -13089,6 +13089,39 @@ def _make_share_og_jpeg(project_path: Path, snapshot_name: str) -> tuple[str, in
     return share_preview.make_share_og_jpeg(project_path, snapshot_name)
 
 
+def _share_basename(raw: Any) -> str:
+    """Filename for share visibility keys (strips optional #body:… suffixes)."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if "#" in text:
+        text = text.split("#", 1)[0]
+    return Path(text).name
+
+
+def _share_name_list(raw: Any, *, limit: int = 200) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        name = _share_basename(item)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _share_visible_basenames(share: dict[str, Any] | None) -> list[str] | None:
+    if not isinstance(share, dict):
+        return None
+    names = _share_name_list(share.get("visible_filenames"))
+    return names or None
+
+
 def _share_preview_filename(project_path: Path, filename: str) -> str | None:
     return share_preview.share_preview_filename(
         project_path,
@@ -13105,19 +13138,63 @@ def _share_preview_image_meta(project_path: Path, filename: str) -> dict[str, An
     )
 
 
-def _share_allowed_filenames(project_path: Path, filename: str) -> set[str]:
+def _share_allowed_filenames(
+    project_path: Path,
+    filename: str,
+    share: dict[str, Any] | None = None,
+) -> set[str]:
     safe = Path(filename).name
     allowed = {safe}
-    try:
-        viewer = cad_service.resolve_viewport_filename(project_path, safe)
-        if viewer:
-            allowed.add(Path(viewer).name)
-    except Exception:
-        pass
-    for item in cad_service.list_exports_for_model(project_path, safe):
-        name = item.get("name")
-        if name:
-            allowed.add(Path(name).name)
+    visible = _share_visible_basenames(share)
+
+    def _add_model_and_artifacts(model_name: str) -> None:
+        model = Path(model_name).name
+        if not model:
+            return
+        allowed.add(model)
+        try:
+            viewer = cad_service.resolve_viewport_filename(project_path, model)
+            if viewer:
+                allowed.add(Path(viewer).name)
+        except Exception:
+            pass
+        try:
+            for item in cad_service.list_exports_for_model(project_path, model):
+                name = item.get("name")
+                if name:
+                    allowed.add(Path(name).name)
+        except Exception:
+            pass
+
+    _add_model_and_artifacts(safe)
+
+    if isinstance(share, dict):
+        for key in ("viewer_filename", "assembly_filename", "preview_file"):
+            extra = Path(str(share.get(key) or "")).name
+            if extra:
+                allowed.add(extra)
+
+    if visible is not None:
+        # Visibility-aware shares: only unhidden models (+ their viewers/exports).
+        for name in visible:
+            _add_model_and_artifacts(name)
+        model_stems = {Path(name).stem for name in allowed}
+        for stem in list(model_stems):
+            for preview_path in project_path.glob(f"{stem}*_share_og*.png"):
+                if preview_path.is_file():
+                    allowed.add(preview_path.name)
+            for preview_path in project_path.glob(f"{stem}*_share_transparent.png"):
+                if preview_path.is_file():
+                    allowed.add(preview_path.name)
+            for preview_path in project_path.glob(f"{stem}*_share_view*.png"):
+                if preview_path.is_file():
+                    allowed.add(preview_path.name)
+        snapshot = _share_snapshot_filename(project_path, safe)
+        if snapshot:
+            allowed.add(snapshot)
+        return allowed
+
+    # Legacy shares (no visibility snapshot): keep prior broad allow-list.
     try:
         browser = cad_service.list_browser_tree(project_path)
         for entry in browser.get("components") or []:
@@ -13171,14 +13248,26 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
     filename = _resolve_shared_filename(project_path, share) or ""
     if not filename:
         raise HTTPException(404, "Shared file not found")
-    allowed = _share_allowed_filenames(project_path, filename)
-    viewer_filename = cad_service.resolve_viewport_filename(project_path, filename) or filename
+    allowed = _share_allowed_filenames(project_path, filename, share)
+    viewer_override = Path(str(share.get("viewer_filename") or share.get("assembly_filename") or "")).name
+    viewer_filename = viewer_override or cad_service.resolve_viewport_filename(project_path, filename) or filename
+    if viewer_filename and (project_path / viewer_filename).is_file():
+        allowed.add(Path(viewer_filename).name)
     exports = []
     for item in cad_service.list_exports_for_model(project_path, filename):
         name = Path(str(item.get("name") or "")).name
         if not name or name not in allowed:
             continue
         exports.append({**item, "name": name, "url": f"/api/share/{token}/files/{urllib.parse.quote(name)}"})
+    # Also expose exports for the visibility-baked assembly viewer when present.
+    if viewer_override and viewer_override != Path(filename).name:
+        for item in cad_service.list_exports_for_model(project_path, viewer_override):
+            name = Path(str(item.get("name") or "")).name
+            if not name or name not in allowed:
+                continue
+            if any(row.get("name") == name for row in exports):
+                continue
+            exports.append({**item, "name": name, "url": f"/api/share/{token}/files/{urllib.parse.quote(name)}"})
     if viewer_filename not in allowed and (project_path / viewer_filename).is_file():
         allowed.add(viewer_filename)
     meta = project_store.load_meta(project_path)
@@ -13242,6 +13331,20 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         browser = cad_service.list_browser_tree(project_path)
     except Exception:
         browser = {"components": [], "sketches": [], "wiring": [], "drawings": [], "references": [], "renders": []}
+    visible_filenames = _share_visible_basenames(share)
+    hidden_filenames = _share_name_list(share.get("hidden_filenames") if isinstance(share, dict) else None)
+    if visible_filenames is not None:
+        visible_set = set(visible_filenames)
+        filtered_components = []
+        for entry in browser.get("components") or []:
+            names = {
+                _share_basename(entry.get(key))
+                for key in ("name", "viewer_filename", "source_filename", "filename", "stem")
+            }
+            names.discard("")
+            if names & visible_set:
+                filtered_components.append(entry)
+        browser = {**browser, "components": filtered_components}
     robot = _robot_artifact_summary(project_path)
     robot_artifacts = [
         {
@@ -13292,6 +13395,8 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         "filename": filename,
         "viewer_filename": viewer_filename,
         "viewer_url": f"/api/share/{token}/files/{urllib.parse.quote(viewer_filename)}",
+        "visible_filenames": visible_filenames or [],
+        "hidden_filenames": hidden_filenames,
         "source_model": {
             "filename": filename,
             "viewer_filename": viewer_filename,
@@ -13440,10 +13545,45 @@ def create_file_share(
                     share["preview_captured_at"] = datetime.now(timezone.utc).isoformat()
             except Exception as exc:
                 logger.warning("Could not save viewport share preview for %s/%s: %s", project_id, safe, exc)
-        visible = [Path(str(item)).name for item in (body.get("visible_filenames") or []) if str(item).strip()]
-        hidden = [Path(str(item)).name for item in (body.get("hidden_filenames") or []) if str(item).strip()]
+        visible = _share_name_list(body.get("visible_filenames"))
+        hidden = _share_name_list(body.get("hidden_filenames"))
         if visible:
             share["visible_filenames"] = visible[:200]
+            # Bake a GLB of only the unhidden models so the public 3D viewer
+            # matches what the sharer saw (not the full project catalog).
+            try:
+                exportable = [
+                    name
+                    for name in visible
+                    if (project_path / name).is_file()
+                    and (project_path / name).suffix.lower()
+                    in cad_service.SUPPORTED_IMPORT | cad_service.SUPPORTED_EXPORT
+                ]
+                if exportable:
+                    stem = f"_share_visible_{token[:8]}"
+                    built = cad_service.build_visible_assembly_exports(
+                        project_path,
+                        exportable,
+                        stem=stem,
+                    )
+                    glb = next(
+                        (
+                            str(item.get("name") or "")
+                            for item in built
+                            if str(item.get("format") or "").lower() == "glb"
+                        ),
+                        "",
+                    )
+                    if glb and (project_path / glb).is_file():
+                        share["viewer_filename"] = glb
+                        share["assembly_filename"] = glb
+            except Exception as exc:
+                logger.warning(
+                    "Could not bake visible-only share GLB for %s/%s: %s",
+                    project_id,
+                    safe,
+                    exc,
+                )
         if hidden:
             share["hidden_filenames"] = hidden[:200]
         share["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -13502,7 +13642,7 @@ def open_share_in_project(
         teams_service.register_project_access(project_id, team_id, user["id"])
 
     copied: list[str] = []
-    for name in sorted(_share_allowed_filenames(source_path, shared_filename)):
+    for name in sorted(_share_allowed_filenames(source_path, shared_filename, share)):
         safe = Path(name).name
         src = source_path / safe
         if not src.is_file():
@@ -13687,10 +13827,14 @@ def get_share_file(token: str, filename: str, step_mode: str | None = Query(None
     if not shared_filename:
         raise HTTPException(404, "Shared file not found")
     safe = Path(filename).name
-    allowed = _share_allowed_filenames(project_path, shared_filename)
+    allowed = _share_allowed_filenames(project_path, shared_filename, share)
     preview_file = Path(str(share.get("preview_file") or "")).name
     if preview_file:
         allowed.add(preview_file)
+    for key in ("viewer_filename", "assembly_filename"):
+        extra = Path(str(share.get(key) or "")).name
+        if extra:
+            allowed.add(extra)
     if safe not in allowed:
         raise HTTPException(404, "File not found")
     response = _file_response(project_path, project_id, safe, step_mode=step_mode)
