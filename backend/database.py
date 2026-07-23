@@ -98,6 +98,24 @@ def init_db() -> None:
                 FOREIGN KEY (invited_by) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS project_shares (
+                project_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, user_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (shared_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_hidden (
+                project_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, user_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS project_access (
                 project_id TEXT PRIMARY KEY,
                 team_id TEXT NOT NULL,

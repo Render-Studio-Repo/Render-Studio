@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260722-ws-visible";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-proj-share";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
@@ -74,7 +74,7 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260722-grant-default-deny";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260720-repair-loop";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260721-export-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260715-connect-now";
@@ -277,6 +277,52 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
   const overlayPid = generationWatchPid || viewportOverlayPid;
   const activeOverlay = generationWatchOverlay?.kind === "wiring" ? (wiringOverlay || viewerOverlay) : viewerOverlay;
   const inactiveOverlay = activeOverlay === viewerOverlay ? wiringOverlay : viewerOverlay;
+
+  function usageSummaryFromJobs(jobs = [], fallbackGen = null) {
+    const list = Array.isArray(jobs) ? jobs : [];
+    const focused = list[0] || null;
+    const pick = focused || fallbackGen || null;
+    if (!pick) return null;
+    const usage = pick.usage || pick.meta?.usage || null;
+    const cost = pick.cost_usd ?? pick.meta?.cost_usd ?? null;
+    const model = pick.model || pick.meta?.model || "";
+    const tokens = usageTokenTotal(usage);
+    if (!tokens && (cost == null || !Number(cost)) && !model) {
+      // Multi-job: sum all running jobs when focused has no usage yet.
+      if (list.length > 1) {
+        let sumTokens = 0;
+        let sumCost = 0;
+        let hasCost = false;
+        let anyModel = "";
+        let calls = 0;
+        for (const job of list) {
+          const u = job.usage || job.meta?.usage || null;
+          sumTokens += usageTokenTotal(u);
+          if (job.cost_usd != null || job.meta?.cost_usd != null) {
+            sumCost += Number(job.cost_usd ?? job.meta?.cost_usd) || 0;
+            hasCost = true;
+          }
+          calls += Number(job.ai_calls || job.meta?.ai_calls || 0) || 0;
+          if (!anyModel) anyModel = job.model || job.meta?.model || "";
+        }
+        if (!sumTokens && !hasCost && !anyModel) return null;
+        return {
+          cost_usd: hasCost ? sumCost : null,
+          usage: { total_tokens: sumTokens },
+          model: anyModel,
+          ai_calls: calls,
+        };
+      }
+      return null;
+    }
+    return {
+      cost_usd: cost != null && Number.isFinite(Number(cost)) ? Number(cost) : null,
+      usage: usage || { total_tokens: tokens },
+      model,
+      ai_calls: Number(pick.ai_calls || pick.meta?.ai_calls || 0) || 0,
+    };
+  }
+
   if (overlayPid && overlayPid === projectId) {
     if (generationWatchPid === projectId && generationWatchOverlay) {
       inactiveOverlay?.setGenerating(false);
@@ -299,10 +345,15 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
               ?? watchProgress?.prompt_preview,
           }
         : null;
+      const usageSummary = usageSummaryFromJobs(
+        focused ? [focused, ...runningJobs.filter((j) => j !== focused)] : runningJobs,
+        liveGen,
+      );
       activeOverlay.setGenerating(true, generationWatchOverlay.message, {
         ...generationWatchOverlay,
         progress: mergedProgress,
         jobs: runningJobs,
+        usageSummary,
       });
       syncViewportGenerationUserBadge(
         runningJobs.length > 1
@@ -320,11 +371,13 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
   const runningJobs = generationRunningJobs(currentGeneration);
   if ((currentGeneration?.status === "running" || runningJobs.length) && currentGeneration?.kind !== "wiring") {
     const mode = generationPromptMode(currentGeneration);
+    const focused = runningJobs[0] || currentGeneration;
     viewerOverlay.setGenerating(true, promptGenerationOverlayOpts(mode).message, {
       kind: currentGeneration.kind || "prompt",
       promptMode: mode,
       progress: currentGeneration.progress,
       jobs: runningJobs,
+      usageSummary: usageSummaryFromJobs(runningJobs, focused),
       ...promptGenerationOverlayOpts(mode),
     });
     wiringOverlay?.setGenerating(false);
@@ -4357,6 +4410,8 @@ function handleWorkspaceRealtimeEvent(msg = {}) {
     || msg.type === "folder.renamed"
     || msg.type === "folder.created"
     || msg.type === "folder.deleted"
+    || msg.type === "project.shared"
+    || msg.type === "project.unshared"
     || msg.type === "fusion.mirror.updated"
   ) {
     if (msg.type === "fusion.mirror.updated") {
@@ -17381,6 +17436,7 @@ const workspaceBrowser = createWorkspaceBrowser({
     return allProjects.filter((p) => !p.team_id || !hidden.has(String(p.team_id)));
   },
   getActiveProjectId: () => projectId,
+  getCurrentUserId: () => currentUser?.id || null,
   isProjectLoading: (id) => loadingProjectIds.has(id),
   isProjectGenerating: (id) => isProjectGenerating(id),
   isProjectNew: (id) => newlyCompletedProjects.has(id),
@@ -19980,6 +20036,11 @@ document.addEventListener("workspace-folders-changed", () => {
   fetchAllProjects().then(() => renderProjectList());
 });
 
+document.addEventListener("workspace-projects-changed", () => {
+  refreshWorkspaceHistory();
+  fetchAllProjects().then(() => renderProjectList());
+});
+
 function syncExplorerLoadingUI() {
   workspaceBrowser?.render?.();
   projectTree?.setLoading?.(!!(projectId && loadingProjectIds.has(projectId)));
@@ -20446,6 +20507,8 @@ const STRUCTURAL_WORKSPACE_KINDS = new Set([
   "project_moved",
   "project_created",
   "project_deleted",
+  "project_shared",
+  "project_unshared",
   "autodesk_import",
   "onshape_import",
 ]);
@@ -20463,6 +20526,8 @@ function isStructuralWorkspaceEvent(msg = {}) {
     || type === "project.renamed"
     || type === "project.moved"
     || type === "project.meta"
+    || type === "project.shared"
+    || type === "project.unshared"
   ) {
     return true;
   }
@@ -20623,6 +20688,28 @@ function handleRealtimeEvent(msg = {}) {
     ) {
       const folderName = msg.folder?.name || "a folder";
       setEditStatus("ok", `${msg.by || "Someone"} shared “${folderName}” with you`);
+    }
+    void refreshProjectShell({ forceExplorer: true });
+    return;
+  }
+
+  if (msg.type === "project.shared" || msg.type === "project.unshared") {
+    if (
+      msg.type === "project.shared"
+      && msg.shared_with_user_id
+      && msg.shared_with_user_id === currentUser?.id
+      && msg.by_user_id !== currentUser?.id
+    ) {
+      setEditStatus("ok", `${msg.by || "Someone"} shared a project with you`);
+    }
+    if (
+      msg.type === "project.unshared"
+      && msg.target_user_id
+      && msg.target_user_id === currentUser?.id
+      && msg.project_id
+    ) {
+      allProjects = allProjects.filter((p) => p.id !== msg.project_id);
+      renderProjectList();
     }
     void refreshProjectShell({ forceExplorer: true });
     return;

@@ -999,7 +999,13 @@ def can_access_project(user_id: str, project_id: str) -> bool:
             """,
             (project_id, user_id),
         ).fetchone()
-    return row is not None
+        if row:
+            return True
+        shared = conn.execute(
+            "SELECT 1 FROM project_shares WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        ).fetchone()
+    return shared is not None
 
 
 def delete_project_access(project_id: str) -> None:

@@ -42,6 +42,7 @@ from backend.services import (
     generation_service,
     history_service,
     project_log_service,
+    project_shares_service,
     project_store,
     prompt_history_service,
     feedback_service,
@@ -830,6 +831,10 @@ class WiringSaveRequest(BaseModel):
 class FolderShareRequest(BaseModel):
     email: EmailStr
     restrict_access: bool = True
+
+
+class ProjectShareRequest(BaseModel):
+    email: EmailStr
 
 
 class FolderCreateRequest(BaseModel):
@@ -10294,6 +10299,141 @@ def remove_folder_share(
     return result
 
 
+def _notify_project_share_realtime(
+    *,
+    project_id: str,
+    team_id: str,
+    event_type: str,
+    user: dict[str, Any],
+    target_user_id: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "type": event_type,
+        "team_id": team_id,
+        "project_id": project_id,
+        "by": user.get("display_name"),
+        "by_user_id": user.get("id"),
+    }
+    if extra:
+        payload.update(extra)
+    _notify_workspace(team_id, payload)
+    if target_user_id:
+        _notify_user(target_user_id, payload)
+
+
+@app.get("/api/projects/{project_id}/shares")
+def list_project_shares_route(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return project_shares_service.list_project_shares(project_id, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/projects/{project_id}/shares")
+def share_project_route(
+    project_id: str,
+    body: ProjectShareRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        result = project_shares_service.share_project(project_id, str(body.email), user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    target_user = result.get("user") or {}
+    target_user_id = target_user.get("id")
+    team_id = result.get("team_id")
+    if team_id:
+        _log_workspace(
+            team_id,
+            kind="project_shared",
+            label=f'Shared project with {body.email}',
+            user=user,
+            project_id=project_id,
+            meta={
+                "email": str(body.email),
+                "shared_with_user_id": target_user_id,
+            },
+        )
+        _notify_project_share_realtime(
+            project_id=project_id,
+            team_id=team_id,
+            event_type="project.shared",
+            user=user,
+            target_user_id=target_user_id,
+            extra={
+                "shared_with_user_id": target_user_id,
+                "shared_with_email": str(body.email).strip().lower(),
+                "shared_with_name": target_user.get("display_name"),
+            },
+        )
+    return result
+
+
+@app.delete("/api/projects/{project_id}/shares/me")
+def leave_project_share_route(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        result = project_shares_service.leave_project_share(project_id, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    team_id = result.get("team_id")
+    if team_id:
+        _notify_project_share_realtime(
+            project_id=project_id,
+            team_id=team_id,
+            event_type="project.unshared",
+            user=user,
+            target_user_id=user["id"],
+            extra={"target_user_id": user["id"], "left": True},
+        )
+    return result
+
+
+@app.delete("/api/projects/{project_id}/shares/{target_user_id}")
+def remove_project_share_route(
+    project_id: str,
+    target_user_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        result = project_shares_service.remove_project_share(project_id, target_user_id, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    team_id = result.get("team_id")
+    if team_id:
+        _log_workspace(
+            team_id,
+            kind="project_unshared",
+            label="Removed project share",
+            user=user,
+            project_id=project_id,
+            meta={"target_user_id": target_user_id},
+        )
+        _notify_project_share_realtime(
+            project_id=project_id,
+            team_id=team_id,
+            event_type="project.unshared",
+            user=user,
+            target_user_id=target_user_id,
+            extra={"target_user_id": target_user_id},
+        )
+    return result
+
+
 @app.patch("/api/projects/{project_id}/folder")
 def move_project_to_folder(
     project_id: str,
@@ -10360,26 +10500,57 @@ def list_projects(
             raise HTTPException(403, "Not a member of that workspace")
     access = teams_service.user_project_access(user["id"], team_id)
     by_project = {r["project_id"]: r for r in access}
+    shared_ids = project_shares_service.shared_project_ids_for_user(user["id"])
+    hidden_ids = project_shares_service.hidden_project_ids_for_user(user["id"])
     projects = []
     for project_id, row in by_project.items():
+        if project_id in hidden_ids and project_id not in shared_ids:
+            continue
         project_path = PROJECTS / project_id
         if not project_path.is_dir():
             continue
         fid = row.get("folder_id")
-        if fid and not folders_service.user_can_access_folder(fid, user["id"]):
+        # Shared-with-me bypasses restricted-folder ACL so the project still shows up.
+        if fid and project_id not in shared_ids and not folders_service.user_can_access_folder(fid, user["id"]):
             continue
         p = project_store.project_list_summary(project_path)
         p = {
             **p,
             "team_id": row["team_id"],
-            "folder_id": fid,
-            "folder_name": folders_service.folder_name(fid),
+            "folder_id": None if project_id in shared_ids else fid,
+            "folder_name": None if project_id in shared_ids else folders_service.folder_name(fid),
             "sort_order": int(row.get("sort_order") or 0),
             "owner_user_id": row.get("created_by"),
             "owner_email": row.get("owner_email"),
             "owner_name": row.get("owner_name") or (p.get("generation") or {}).get("by_user_name"),
+            "shared_with_me": project_id in shared_ids,
         }
         projects.append(p)
+    # Inject shares that aren't already present (e.g. personal-team projects, or
+    # projects the user couldn't see due to folder ACL / hide+reshare).
+    listed_ids = {p["id"] for p in projects}
+    for row in project_shares_service.shared_access_rows_for_user(user["id"], team_id):
+        project_id = row["project_id"]
+        if project_id in listed_ids:
+            continue
+        project_path = PROJECTS / project_id
+        if not project_path.is_dir():
+            continue
+        p = project_store.project_list_summary(project_path)
+        projects.append(
+            {
+                **p,
+                "team_id": row["team_id"],
+                "folder_id": None,
+                "folder_name": None,
+                "sort_order": int(row.get("sort_order") or 0),
+                "owner_user_id": row.get("created_by"),
+                "owner_email": row.get("owner_email"),
+                "owner_name": row.get("owner_name") or (p.get("generation") or {}).get("by_user_name"),
+                "shared_with_me": True,
+            }
+        )
+        listed_ids.add(project_id)
     # Stable sort: newest first within the same sort_order, then ascending sort_order.
     projects.sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
     projects.sort(key=lambda p: int(p.get("sort_order") or 0))

@@ -125,6 +125,54 @@ function formatStepCounter(stats, { repair = false } = {}) {
   return repair ? `↺ ${base}` : base;
 }
 
+function formatOverlayCostUsd(value) {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  const n = Number(value);
+  if (n === 0) return "$0.00";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function overlayTokenTotal(usage) {
+  if (!usage || typeof usage !== "object") return 0;
+  return Number(usage.total_tokens)
+    || (Number(usage.input_tokens || 0) + Number(usage.output_tokens || 0))
+    || Number(usage.tokens)
+    || 0;
+}
+
+function compactOverlayTokens(value) {
+  const total = Number(value) || 0;
+  if (total >= 1_000_000) return `${(total / 1_000_000).toFixed(2)}M tokens`;
+  if (total >= 1000) return `${(total / 1000).toFixed(1)}k tokens`;
+  return `${Math.round(total)} tokens`;
+}
+
+function shortOverlayModel(model) {
+  const raw = String(model || "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/^openai\//i, "")
+    .replace(/^anthropic\//i, "")
+    .replace(/^models\//i, "");
+}
+
+function usageFromJob(job) {
+  if (!job || typeof job !== "object") return null;
+  const usage = job.usage || job.meta?.usage || null;
+  const cost = job.cost_usd ?? job.meta?.cost_usd ?? null;
+  const model = job.model || job.meta?.model || job.provider_model || "";
+  const tokens = overlayTokenTotal(usage);
+  const costNum = cost != null && Number.isFinite(Number(cost)) ? Number(cost) : null;
+  if (!tokens && (costNum == null || costNum <= 0) && !model) return null;
+  return {
+    cost_usd: costNum,
+    usage: usage || { total_tokens: tokens },
+    model: shortOverlayModel(model),
+    ai_calls: Number(job.ai_calls || job.meta?.ai_calls || 0) || 0,
+  };
+}
+
 function formatProgressHeadline(stats, detailText, { repair = false } = {}) {
   const detail = humanizeProgressText(detailText, stats.label);
   const step = formatStepCounter(stats, { repair });
@@ -248,7 +296,16 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
           <ul class="viewport-agent-activity"></ul>
         </div>
       </div>
-      <button type="button" class="btn danger viewport-stop-btn hidden" aria-label="Stop generating">Stop generating</button>
+      <div class="viewport-spinner-footer">
+        <div class="viewport-progress-usage" hidden aria-live="polite">
+          <span class="viewport-progress-usage-pulse" aria-hidden="true"></span>
+          <span class="viewport-progress-usage-cost">$0.00</span>
+          <span class="viewport-progress-usage-sep" aria-hidden="true">·</span>
+          <span class="viewport-progress-usage-tokens">0 tokens</span>
+          <span class="viewport-progress-usage-model" hidden></span>
+        </div>
+        <button type="button" class="btn danger viewport-stop-btn hidden" aria-label="Stop generating">Stop generating</button>
+      </div>
     </div>
   `;
   const spinnerLabel = spinner.querySelector(".viewport-spinner-label");
@@ -256,6 +313,10 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const progressFill = spinner.querySelector(".viewport-progress-fill");
   const progressPct = spinner.querySelector(".viewport-progress-pct");
   const progressStep = spinner.querySelector(".viewport-progress-step");
+  const progressUsage = spinner.querySelector(".viewport-progress-usage");
+  const progressUsageCost = spinner.querySelector(".viewport-progress-usage-cost");
+  const progressUsageTokens = spinner.querySelector(".viewport-progress-usage-tokens");
+  const progressUsageModel = spinner.querySelector(".viewport-progress-usage-model");
   const expandBtn = spinner.querySelector(".viewport-spinner-expand");
   const detailsEl = spinner.querySelector(".viewport-spinner-details");
   const jobsEl = spinner.querySelector(".viewport-gen-jobs");
@@ -317,6 +378,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   let progressStart = 0;
   let estimateMs = 150000;
   let progressTimer = null;
+  let usageSummary = null;
+  let lastUsageSignature = "";
   let pollTimer = null;
   let finishTimer = null;
   let activeJobs = [];
@@ -419,6 +482,15 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       const prompt = truncatePrompt(job.prompt || job.label || "New part");
       const selected = id === focusedJobId;
       const pending = id === "pending";
+      const jobUsage = usageFromJob(job);
+      const usageBits = [];
+      if (jobUsage) {
+        const cost = formatOverlayCostUsd(jobUsage.cost_usd);
+        const tokens = overlayTokenTotal(jobUsage.usage);
+        if (cost) usageBits.push(cost);
+        if (tokens) usageBits.push(compactOverlayTokens(tokens));
+      }
+      const usageLabel = usageBits.join(" · ");
       return `
         <article class="viewport-gen-job${selected ? " is-selected" : ""}" data-job-id="${esc(id)}" title="${esc(prompt)}">
           <span class="viewport-gen-job-top">
@@ -431,6 +503,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
           <span class="viewport-gen-job-track"><span class="viewport-gen-job-fill" style="width:${pct}%"></span></span>
           <span class="viewport-gen-job-meta">
             <span class="viewport-gen-job-label">${esc(label)}</span>
+            ${usageLabel ? `<span class="viewport-gen-job-usage">${esc(usageLabel)}</span>` : ""}
             <span class="viewport-gen-job-more">${selected && detailsOpen ? "Hide" : "View more"}</span>
           </span>
           <div class="viewport-gen-job-expanded">
@@ -591,7 +664,101 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     renderActivity();
   }
 
+  function resolveUsageSummary(opts = {}) {
+    if (opts.usageSummary && typeof opts.usageSummary === "object") {
+      return {
+        cost_usd: opts.usageSummary.cost_usd ?? opts.usageSummary.cost ?? null,
+        usage: opts.usageSummary.usage || null,
+        model: shortOverlayModel(opts.usageSummary.model || ""),
+        ai_calls: Number(opts.usageSummary.ai_calls || 0) || 0,
+      };
+    }
+    const focused = activeJobs.find((j) => jobKey(j) === focusedJobId) || activeJobs[0] || null;
+    const fromFocused = usageFromJob(focused);
+    if (fromFocused) return fromFocused;
+    if (activeJobs.length > 1) {
+      let tokens = 0;
+      let cost = 0;
+      let hasCost = false;
+      let model = "";
+      let calls = 0;
+      for (const job of activeJobs) {
+        const u = usageFromJob(job);
+        if (!u) continue;
+        tokens += overlayTokenTotal(u.usage);
+        if (u.cost_usd != null) {
+          cost += Number(u.cost_usd) || 0;
+          hasCost = true;
+        }
+        calls += Number(u.ai_calls || 0) || 0;
+        if (!model && u.model) model = u.model;
+      }
+      if (tokens || hasCost) {
+        return {
+          cost_usd: hasCost ? cost : null,
+          usage: { total_tokens: tokens },
+          model,
+          ai_calls: calls,
+        };
+      }
+    }
+    return usageSummary;
+  }
+
+  function renderUsageMeter(opts = {}) {
+    if (!progressUsage) return;
+    const next = resolveUsageSummary(opts);
+    if (next) usageSummary = next;
+    const tokens = overlayTokenTotal(usageSummary?.usage);
+    const costNum = usageSummary?.cost_usd != null && Number.isFinite(Number(usageSummary.cost_usd))
+      ? Number(usageSummary.cost_usd)
+      : null;
+    const costLabel = costNum != null && (costNum > 0 || tokens > 0)
+      ? formatOverlayCostUsd(costNum)
+      : null;
+    const model = shortOverlayModel(usageSummary?.model || "");
+    const show = Boolean(tokens > 0 || (costNum != null && costNum > 0));
+    const signature = `${costLabel || ""}|${tokens}|${model}|${usageSummary?.ai_calls || 0}`;
+    progressUsage.hidden = !show;
+    progressUsage.classList.toggle("is-live", show);
+    spinner.classList.toggle("viewport-spinner--has-usage", show);
+    if (progressUsageCost) {
+      progressUsageCost.textContent = costLabel || "$0.00";
+      progressUsageCost.hidden = !costLabel;
+    }
+    if (progressUsageTokens) {
+      progressUsageTokens.textContent = tokens > 0 ? compactOverlayTokens(tokens) : "0 tokens";
+      progressUsageTokens.hidden = tokens <= 0;
+    }
+    if (progressUsageModel) {
+      const calls = Number(usageSummary?.ai_calls || 0) || 0;
+      const modelLabel = model
+        ? (calls > 1 ? `${model} · ${calls} calls` : model)
+        : (calls > 1 ? `${calls} AI calls` : "");
+      progressUsageModel.textContent = modelLabel ? `· ${modelLabel}` : "";
+      progressUsageModel.hidden = !modelLabel;
+    }
+    if (show) {
+      progressUsage.title = [
+        costLabel ? `Estimated cost ${costLabel}` : null,
+        tokens > 0 ? compactOverlayTokens(tokens) : null,
+        model || null,
+      ].filter(Boolean).join(" · ");
+      if (signature !== lastUsageSignature) {
+        lastUsageSignature = signature;
+        progressUsage.classList.remove("is-ticking");
+        // Retrigger the bump animation when usage climbs.
+        void progressUsage.offsetWidth;
+        progressUsage.classList.add("is-ticking");
+      }
+    } else {
+      lastUsageSignature = "";
+      progressUsage.classList.remove("is-ticking");
+    }
+  }
+
   function renderProgress() {
+    renderUsageMeter();
     if (activeJobs.length > 1) {
       const focused = activeJobs.find((j) => jobKey(j) === focusedJobId) || activeJobs[0];
       const jobPct = Number(focused?.progress?.pct);
@@ -863,6 +1030,13 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
     activity = [];
     activeJobs = [];
     focusedJobId = null;
+    usageSummary = null;
+    lastUsageSignature = "";
+    if (progressUsage) {
+      progressUsage.hidden = true;
+      progressUsage.classList.remove("is-live", "is-ticking");
+    }
+    spinner.classList.remove("viewport-spinner--has-usage");
     if (jobsEl) {
       jobsEl.innerHTML = "";
       jobsEl.classList.add("hidden");
@@ -916,6 +1090,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function setGenerating(active, message = "Generating…", opts = {}) {
     if (active) {
+      if (opts.usageSummary) usageSummary = opts.usageSummary;
+      else if (opts.jobs || opts.job) {
+        const next = resolveUsageSummary(opts);
+        if (next) usageSummary = next;
+      }
       if (opts.pendingStart) {
         pendingHoldUntil = Math.max(pendingHoldUntil, Date.now() + 90000);
       } else if (opts.pendingStart === false || (opts.progress && Number(opts.progress?.pct) >= 5)) {

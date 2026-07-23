@@ -11664,11 +11664,27 @@ body.mobile-sheet-open {
   pointer-events: auto;
 }
 
+.viewport-spinner-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  min-width: 0;
+}
+
 .viewport-stop-btn {
-  margin-top: 8px;
-  width: 100%;
+  margin-top: 0;
+  width: auto;
+  min-width: 132px;
   box-sizing: border-box;
   flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.viewport-spinner:not(.viewport-spinner--has-usage) .viewport-stop-btn {
+  width: 100%;
+  margin-left: 0;
 }
 
 .viewport-spinner.hidden {
@@ -12480,6 +12496,122 @@ body.mobile-sheet-open {
   min-width: 0;
   font-size: 0.75rem;
   color: #c9d1d9;
+}
+
+.viewport-progress-usage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: min(220px, 58%);
+  min-width: 0;
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(210, 153, 34, 0.32);
+  background:
+    linear-gradient(135deg, rgba(210, 153, 34, 0.16), rgba(13, 17, 23, 0.55));
+  color: #e3b341;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(210, 153, 34, 0.05);
+  animation: viewport-usage-in 280ms ease-out;
+}
+
+.viewport-progress-usage-pulse {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    rgba(240, 192, 64, 0.12) 42%,
+    rgba(240, 192, 64, 0.28) 50%,
+    rgba(240, 192, 64, 0.12) 58%,
+    transparent 100%
+  );
+  transform: translateX(-120%);
+  opacity: 0;
+}
+
+.viewport-progress-usage[hidden] {
+  display: none !important;
+}
+
+.viewport-progress-usage.is-live {
+  border-color: rgba(210, 153, 34, 0.5);
+}
+
+.viewport-progress-usage.is-ticking {
+  animation: viewport-usage-bump 420ms ease-out;
+}
+
+.viewport-progress-usage.is-ticking .viewport-progress-usage-pulse {
+  opacity: 1;
+  animation: viewport-usage-shimmer 650ms ease-out;
+}
+
+.viewport-progress-usage-cost {
+  color: #f0c040;
+  font-weight: 700;
+}
+
+.viewport-progress-usage-sep {
+  color: rgba(227, 179, 65, 0.5);
+}
+
+.viewport-progress-usage-tokens {
+  color: #e3b341;
+}
+
+.viewport-progress-usage-model {
+  color: #c9d1d9;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.viewport-progress-usage-model[hidden] {
+  display: none !important;
+}
+
+@keyframes viewport-usage-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes viewport-usage-bump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.035); border-color: rgba(240, 192, 64, 0.75); }
+  100% { transform: scale(1); }
+}
+
+@keyframes viewport-usage-shimmer {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); }
+}
+
+.viewport-gen-job-usage {
+  color: #e3b341;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .viewport-progress-step {
@@ -38399,3 +38531,9 @@ body.theme-light .folder-workspace-tag {
   color: #656d76;
 }
 
+
+/* Project share tag (reuses folder-shared-tag colors) */
+.proj-shared-tag {
+  margin-left: 6px;
+  flex-shrink: 0;
+}
