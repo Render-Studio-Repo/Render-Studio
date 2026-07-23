@@ -1657,9 +1657,9 @@ export function createWorkspaceBrowser({
               item.addEventListener("dragend", onDragEnd);
             }
 
-            list.appendChild(item);
+            // Bodies nest under the component row (header first, then body parts).
             if (isComponent && Array.isArray(entry.children) && entry.children.length) {
-              const bodiesGroup = document.createElement("li");
+              const bodiesGroup = document.createElement("div");
               bodiesGroup.className = "proj-hierarchy-bodies";
               const bodiesKey = `${project.id}:${entry.name}:bodies`;
               const bodiesOpen = expandedHierarchyBodies.has(bodiesKey);
@@ -1728,8 +1728,10 @@ export function createWorkspaceBrowser({
                 }
                 bodiesGroup.appendChild(nested);
               }
-              list.appendChild(bodiesGroup);
+              item.appendChild(bodiesGroup);
             }
+
+            list.appendChild(item);
           }
           const more = buildShowMoreControl({
             total: section.items.length,

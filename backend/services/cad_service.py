@@ -1857,6 +1857,21 @@ def _parent_assembly_exists(project_path: Path, base: str) -> bool:
     )
 
 
+def _is_part_extension_sidecar_stem(stem: str, project_path: Path) -> bool:
+    """Hide ``foo.part.step`` when ``foo.step`` / ``foo.glb`` already exists.
+
+    Some exports write a spurious ``*.part.step`` next to the real assembly; it
+    steals primary and shows as a duplicate component with no Bodies.
+    """
+    text = str(stem or "")
+    if not text.lower().endswith(".part"):
+        return False
+    parent = text[: -len(".part")]
+    if not parent:
+        return False
+    return _parent_assembly_exists(project_path, parent)
+
+
 def _is_promoted_detail_part_stem(stem: str, project_path: Path) -> bool:
     """Hide exploded body sidecars when the parent assembly file still exists.
 
@@ -2163,6 +2178,10 @@ def _viewport_component_stems(project_path: Path, stems: set[str]) -> set[str]:
             visible.discard(stem)
 
     for stem in list(visible):
+        if _is_part_extension_sidecar_stem(stem, project_path):
+            visible.discard(stem)
+
+    for stem in list(visible):
         if _is_exploded_assembly_sidecar_stem(stem, project_path):
             visible.discard(stem)
 
@@ -2368,10 +2387,8 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         newest["auto_load"] = True
 
     # Nest exploded body sidecars under each component (cheap filesystem scan).
-    # Do NOT parse GLB/STEP scene bodies here — that can hang project open on large
-    # assemblies (36MB+ STEP / multi-mesh GLB) and wedge the API workers. The
-    # frontend already hydrates Bodies via GET .../files/{name}/bodies after the
-    # primary model is on screen.
+    # Fall back to named GLB scene meshes when no __part_ sidecars exist — scene
+    # parse is fast; avoid load_mesh/OCC here (those can wedge workers).
     for comp in components:
         children = _body_children_from_part_sidecars(
             project_path,
@@ -2379,6 +2396,13 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
             parent_name=str(comp.get("name") or ""),
             parent_viewer=str(comp.get("viewer_filename") or comp.get("name") or ""),
         )
+        if not children:
+            children = _body_children_from_viewer_scene(
+                project_path,
+                parent_stem=str(comp.get("stem") or ""),
+                parent_name=str(comp.get("name") or ""),
+                parent_viewer=str(comp.get("viewer_filename") or comp.get("name") or ""),
+            )
         if children:
             comp["children_label"] = "Bodies"
             comp["children"] = children

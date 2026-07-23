@@ -15861,7 +15861,7 @@ section h2 {
 }
 
 .proj-hierarchy {
-  margin: 0 4px 6px 22px;
+  margin: 0 2px 6px 8px;
   padding: 4px 0 2px;
   border-left: 1px solid #30363d;
 }
@@ -15871,7 +15871,7 @@ section h2 {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 4px 6px;
+  padding: 4px 4px;
   border: none;
   background: transparent;
   color: #8b949e;
@@ -15898,22 +15898,25 @@ section h2 {
 .proj-hierarchy-list {
   list-style: none;
   margin: 0;
-  padding: 0 0 2px 12px;
+  padding: 0 0 2px 4px;
 }
 
 .proj-hierarchy-bodies {
   list-style: none;
   margin: 0;
   padding: 0;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
 }
 
 .proj-hierarchy-bodies-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: calc(100% - 10px);
-  margin: 2px 0 2px 18px;
-  padding: 3px 6px;
+  width: 100%;
+  margin: 2px 0;
+  padding: 3px 4px;
   border: none;
   background: transparent;
   color: #8b949e;
@@ -15935,7 +15938,7 @@ section h2 {
 }
 
 .proj-hierarchy-list--bodies {
-  padding-left: 10px;
+  padding-left: 12px;
   margin: 0;
 }
 
@@ -27660,9 +27663,10 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 }
 
 /* Workspace explorer component rows: badge + profile button + drag affordance */
-.proj-hierarchy-item--component { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.proj-hierarchy-item--component { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .proj-hierarchy-item--component .proj-hierarchy-item-btn { flex: 1 1 auto; min-width: 0; cursor: grab; }
 .proj-hierarchy-item--component .proj-hierarchy-item-btn:active { cursor: grabbing; }
+.proj-hierarchy-item--component > .proj-hierarchy-bodies { order: 5; }
 .proj-hierarchy-badge {
   display: inline-block;
   margin-left: 6px;

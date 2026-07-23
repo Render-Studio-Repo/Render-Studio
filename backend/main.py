@@ -19003,13 +19003,25 @@ def mesh_bodies_info(
     cached = _bodies_info_cache.get(cache_key)
     if cached and cached[0] == mtime:
         return cached[1]
-    mesh = cad_service.load_mesh(mesh_src)
-    info = cad_service.mesh_body_info(mesh)
+
+    info: dict[str, Any] = {"count": 0, "body_names": [], "face_offsets": [], "can_split": False, "faces": 0}
+    # GLB/GLTF: prefer named scene meshes. Avoid load_mesh first — large multi-mesh
+    # assemblies can hang workers for minutes before scene_body_info would have won.
     if mesh_src.suffix.lower() in {".glb", ".gltf"}:
         try:
             info = cad_service.scene_body_info(mesh_src)
         except Exception:
-            pass
+            info = {"count": 0, "body_names": [], "face_offsets": [], "can_split": False, "faces": 0}
+        if int(info.get("count") or 0) <= 1:
+            try:
+                mesh = cad_service.load_mesh(mesh_src)
+                info = cad_service.mesh_body_info(mesh)
+            except Exception:
+                pass
+    else:
+        mesh = cad_service.load_mesh(mesh_src)
+        info = cad_service.mesh_body_info(mesh)
+
     # If GLB only shows 1 body but a STEP source exists with multiple solids,
     # use the STEP body info so users can see/toggle individual parts.
     if info.get("count", 0) <= 1 and step_src and step_src.is_file():
