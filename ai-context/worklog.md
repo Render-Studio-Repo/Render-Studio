@@ -4,6 +4,10 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Link preview title → AI & Robotics Studio
+
+- Updated `frontend/index.html` `<title>`, `og:title`, `twitter:title`, and descriptions to **Render3D — The AI & Robotics Studio** (was “AI Product Studio”).
+
 ## 2026-07-23 — Viewport high-quality video record control
 
 - Added video camera icon next to Screenshot in the viewport view bar.
