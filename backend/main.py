@@ -13250,6 +13250,42 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         raise HTTPException(404, "Shared file not found")
     allowed = _share_allowed_filenames(project_path, filename, share)
     viewer_override = Path(str(share.get("viewer_filename") or share.get("assembly_filename") or "")).name
+    visible_filenames = _share_visible_basenames(share)
+    # Older shares stored visibility lists but never baked a visible-only GLB.
+    # Repair once on read so the public viewer matches unhidden models.
+    if visible_filenames and not viewer_override:
+        try:
+            exportable = [
+                name
+                for name in visible_filenames
+                if (project_path / name).is_file()
+                and (project_path / name).suffix.lower()
+                in cad_service.SUPPORTED_IMPORT | cad_service.SUPPORTED_EXPORT
+            ]
+            if exportable:
+                stem = f"_share_visible_{token[:8]}"
+                glb_path = project_path / f"{stem}.glb"
+                if not glb_path.is_file():
+                    cad_service.build_visible_assembly_exports(
+                        project_path,
+                        exportable,
+                        stem=stem,
+                    )
+                if glb_path.is_file():
+                    share["viewer_filename"] = glb_path.name
+                    share["assembly_filename"] = glb_path.name
+                    viewer_override = glb_path.name
+                    try:
+                        meta_tmp = project_store.load_meta(project_path)
+                        shares_tmp = meta_tmp.setdefault("file_shares", {})
+                        if token in shares_tmp and isinstance(shares_tmp[token], dict):
+                            shares_tmp[token]["viewer_filename"] = glb_path.name
+                            shares_tmp[token]["assembly_filename"] = glb_path.name
+                            project_store.save_meta(project_path, meta_tmp)
+                    except Exception:
+                        logger.debug("Could not persist repaired share viewer for %s", token, exc_info=True)
+        except Exception as exc:
+            logger.warning("Could not repair visible share GLB for token %s: %s", token, exc)
     viewer_filename = viewer_override or cad_service.resolve_viewport_filename(project_path, filename) or filename
     if viewer_filename and (project_path / viewer_filename).is_file():
         allowed.add(Path(viewer_filename).name)
