@@ -2259,7 +2259,7 @@ export function createWorkspaceBrowser({
     ];
     const multiWorkspace = teamIdsInView.length > 1;
     const rootLabel = multiWorkspace
-      ? "All workspaces"
+      ? "Projects"
       : workspaceMeta.rootLabel || "Personal files";
     const rootProjects = filterProjects(allRootProjects, rootLabel);
     const folderProjects = (fid, folderName = "") =>

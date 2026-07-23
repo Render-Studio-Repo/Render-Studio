@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260723-bodies-indent" />
+  <link rel="stylesheet" href="/styles.css?v=20260723-video-rec" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -545,16 +545,6 @@
               <span>Studio walkthrough</span>
               <small>Replay the guided tour of the Studio basics</small>
             </button>
-            <label class="user-menu-quest-toggle" title="When off, Studio will not mark quests complete or show Quest Complete notes">
-              <span>
-                <b>Quest tracking</b>
-                <small>Auto-complete quests and show “Quest Complete!” notes</small>
-              </span>
-              <span class="user-menu-quest-toggle-ctrl">
-                <em data-quests-enabled-label>On</em>
-                <input type="checkbox" data-quests-enabled-toggle checked />
-              </span>
-            </label>
           </div>
           <!-- Cloud connections: Onshape + Fusion 360 -->
           <div id="cloud-connections-card" class="cloud-connections-card">
@@ -938,6 +928,44 @@
               <button type="button" data-shot-mode="ask" role="menuitem">
                 <strong>Ask each time</strong>
                 <span>Show choices before capturing.</span>
+              </button>
+            </div>
+          </div>
+          <div class="viewport-video-control">
+            <button type="button" id="btn-video-record" class="viewport-view-btn viewport-view-btn--video" title="Record viewport video" aria-label="Record viewport video" aria-pressed="false">
+              <span data-video-icon aria-hidden="true">
+                <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="11" height="10" rx="2"/><path d="M13.5 8.2L17.5 6v8L13.5 11.8V8.2z" fill="currentColor" stroke="none"/></svg>
+              </span>
+              <span id="viewport-video-timer" class="viewport-video-timer hidden">0:00</span>
+            </button>
+            <button type="button" id="btn-video-options" class="viewport-view-btn viewport-video-options" aria-haspopup="menu" aria-expanded="false" aria-controls="viewport-video-menu" title="Video recording settings">▾</button>
+            <div id="viewport-video-menu" class="viewport-video-menu hidden" role="menu" aria-label="Video recording settings">
+              <div class="viewport-video-menu-head">
+                <strong>Record video</strong>
+                <span data-video-summary>High · 30 fps</span>
+              </div>
+              <div class="viewport-video-menu-section" role="group" aria-label="Quality">
+                <span class="viewport-video-menu-label">Quality</span>
+                <div class="viewport-video-menu-choices">
+                  <button type="button" data-video-quality="standard" role="menuitemradio">Standard</button>
+                  <button type="button" data-video-quality="high" role="menuitemradio" class="active">High</button>
+                  <button type="button" data-video-quality="ultra" role="menuitemradio">Ultra</button>
+                </div>
+              </div>
+              <div class="viewport-video-menu-section" role="group" aria-label="Frame rate">
+                <span class="viewport-video-menu-label">Frame rate</span>
+                <div class="viewport-video-menu-choices">
+                  <button type="button" data-video-fps="30" role="menuitemradio" class="active">30 fps</button>
+                  <button type="button" data-video-fps="60" role="menuitemradio">60 fps</button>
+                </div>
+              </div>
+              <label class="viewport-video-menu-mic">
+                <input type="checkbox" data-video-mic />
+                <span>Include microphone</span>
+              </label>
+              <button type="button" class="viewport-video-menu-start" data-video-start role="menuitem">
+                <strong>Start recording</strong>
+                <span>Saves a high-quality WebM of the viewport.</span>
               </button>
             </div>
           </div>
@@ -2872,7 +2900,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260723-usage-footer"></script>
+  <script type="module" src="/app.js?v=20260723-video-rec"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

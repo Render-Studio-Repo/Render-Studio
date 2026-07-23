@@ -4,6 +4,25 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Viewport high-quality video record control
+
+- Added video camera icon next to Screenshot in the viewport view bar.
+- ▾ opens settings: quality (Standard/High/Ultra), fps (30/60), optional mic; main click starts/stops recording.
+- New `frontend/viewport-video-record.js` (canvas.captureStream + MediaRecorder WebM). Cache-bust `?v=20260723-video-rec`.
+
+## 2026-07-23 — Quest tracking moved to Preferences → Advanced
+
+- Removed Quest tracking toggle from the account Learn menu and General preferences.
+- Now lives under Preferences → Advanced → Viewport (still ON by default).
+- Cache-bust `app.js?v=20260723-quest-pref`.
+
+## 2026-07-23 — Workspaces menu: drop All, nicer checks, auto-show on accept
+
+- Removed **All workspaces** focus row from the Projects workspaces menu (and retired `__all__` as default/saved focus).
+- Personal + shared workspaces each get a visibility checkbox; custom orange check UI (not native blue).
+- Accepting a workspace invite marks it visible, selects it as active, and refreshes Projects.
+- Cache-bust `?v=20260723-ws-checks`.
+
 ## 2026-07-23 — Components tree: Bodies for assemblies + less indent
 
 - Top gripper (`Fully_Assembled…`) had no Bodies: `/bodies` called `load_mesh` first on a 14MB GLB and hung; also a spurious `*.part.step` stole primary. Scene parse already had 16 parts.
