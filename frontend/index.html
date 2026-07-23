@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260723-video-rec" />
+  <link rel="stylesheet" href="/styles.css?v=20260723-robot-sim" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -1196,6 +1196,7 @@
         <button type="button" class="right-panel-tab sketch-mode-tab hidden" data-right-tab="sketch">Sketch</button>
         <button type="button" class="right-panel-tab wiring-mode-tab" data-right-tab="wiring">Wiring</button>
         <button type="button" class="right-panel-tab electronics-mode-tab" data-right-tab="electronics">Electronics</button>
+        <button type="button" class="right-panel-tab robotics-mode-tab" data-right-tab="robotics">Robotics</button>
         <button type="button" class="right-panel-tab rigging-mode-tab" data-right-tab="rigging">Rigging</button>
       </div>
       <div id="project-cost-thumb" class="project-cost-thumb" aria-live="polite">
@@ -1877,6 +1878,56 @@
         </div>
         <div id="electronics-used-list" class="electronics-used-list" aria-live="polite">
           <div class="object-iteration-empty">Select a project to list electronics.</div>
+        </div>
+      </section>
+
+      <section class="robotics-panel right-tab-panel" data-right-panel="robotics" id="robotics-panel">
+        <div class="panel-section-head robotics-panel-head">
+          <h2>Robotic Simulator</h2>
+          <button type="button" id="btn-robotics-refresh" class="btn secondary btn-compact" title="Refresh robot artifacts">Refresh</button>
+        </div>
+        <p class="muted small robotics-panel-lead">Shop a catalog arm or upload your URDF/SRDF package, drop it into a work cell, and simulate motion in the viewport.</p>
+
+        <div class="robotics-panel-section">
+          <div class="robotics-section-head">
+            <strong>Arm catalog</strong>
+            <span class="muted small">Demo · store · yours</span>
+          </div>
+          <div id="robotics-catalog-list" class="robotics-catalog-list"></div>
+        </div>
+
+        <div class="robotics-panel-section">
+          <div class="robotics-section-head">
+            <strong>Upload package</strong>
+            <span class="muted small">.urdf · .srdf · meshes</span>
+          </div>
+          <input id="robotics-upload-input" type="file" multiple hidden accept=".urdf,.srdf,.stl,.obj,.glb,.gltf,.dae,.png,.jpg,.jpeg" />
+          <button type="button" class="btn secondary full" id="btn-robotics-upload">Upload URDF / meshes</button>
+          <p class="muted small robotics-upload-hint">Drag files onto this panel, or upload a folder’s worth of meshes next to your URDF.</p>
+        </div>
+
+        <div class="robotics-panel-section">
+          <div class="robotics-section-head">
+            <strong>Work environment</strong>
+            <span class="muted small">Real-world cell</span>
+          </div>
+          <div id="robotics-env-choices" class="robotics-env-choices" role="group" aria-label="Work environment"></div>
+        </div>
+
+        <div class="robotics-panel-section">
+          <div class="robotics-section-head">
+            <strong>Project robot</strong>
+            <span class="muted small">Artifacts</span>
+          </div>
+          <div id="robotics-artifact-list" class="robotics-artifact-list" aria-live="polite">
+            <div class="object-iteration-empty">Select a project to list robot files.</div>
+          </div>
+          <div class="robotics-sim-actions">
+            <button type="button" class="btn accent full" id="btn-robotics-load-scene">Load robot in viewport</button>
+            <button type="button" class="btn secondary full" id="btn-robotics-play" aria-pressed="false">Play work cycle</button>
+            <button type="button" class="btn secondary full" id="btn-robotics-playground">Open joint playground</button>
+          </div>
+          <p id="robotics-sim-status" class="muted small robotics-sim-status" aria-live="polite"></p>
         </div>
       </section>
 
@@ -2900,7 +2951,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260723-video-rec"></script>
+  <script type="module" src="/app.js?v=20260723-robot-sim"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

@@ -15,6 +15,7 @@ const DESIGN_TABS = [
   { id: "RIGGING", label: "RIGGING", enabled: true },
   { id: "ARCHITECT", label: "ARCHITECT", enabled: true },
   { id: "ELECTRONICS", label: "ELECTRONICS", enabled: true },
+  { id: "ROBOTICS", label: "ROBOTICS", enabled: true },
   { id: "INSERT", label: "INSERT", enabled: true },
   { id: "CATALOG", label: "CATALOG", enabled: true },
   { id: "TEXTURE", label: "TEXTURE", enabled: true },
@@ -24,6 +25,7 @@ const DESIGN_TABS = [
 const WIRING_TABS = [
   { id: "WIRING", label: "WIRING", enabled: true },
   { id: "ELECTRONICS", label: "ELECTRONICS", enabled: true },
+  { id: "ROBOTICS", label: "ROBOTICS", enabled: true },
   { id: "INSERT", label: "INSERT", enabled: true },
   { id: "CATALOG", label: "CATALOG", enabled: true },
   { id: "TEXTURE", label: "TEXTURE", enabled: true },

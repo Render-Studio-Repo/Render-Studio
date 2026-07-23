@@ -4735,6 +4735,30 @@ async def _handle_discord_link_callback(code: str | None, state: str | None, err
     return RedirectResponse("/?discord_link=connected", status_code=302)
 
 
+async def _handle_twitter_link_callback(code: str | None, state: str | None, error: str | None = None) -> RedirectResponse:
+    from backend.database import get_conn
+    from backend.services import twitter_link_service
+
+    if error:
+        return RedirectResponse(f"/?twitter_link=error&twitter_error={urllib.parse.quote(str(error)[:160])}", status_code=302)
+    if not code or not state:
+        return RedirectResponse("/?twitter_link=error&twitter_error=missing_params", status_code=302)
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT user_id FROM twitter_oauth_pending WHERE state = ?",
+                (state,),
+            ).fetchone()
+        pending_user = str((row["user_id"] if row else "") or "")
+        if not pending_user:
+            return RedirectResponse("/?twitter_link=error&twitter_error=invalid_state", status_code=302)
+        twitter_link_service.upsert_link(pending_user, code, state)
+    except Exception as exc:
+        logger.warning("Twitter link callback failed: %s", exc)
+        return RedirectResponse(f"/?twitter_link=error&twitter_error={urllib.parse.quote(str(exc)[:160])}", status_code=302)
+    return RedirectResponse("/?twitter_link=connected", status_code=302)
+
+
 @app.get("/oauth/{provider}/callback")
 async def social_oauth_callback(
     request: Request,
@@ -4749,6 +4773,8 @@ async def social_oauth_callback(
         return autodesk_oauth_callback(request, code=code, state=state, error=error, error_description=error_description)
     if provider_key == "discord":
         return await _handle_discord_link_callback(code, state, error)
+    if provider_key in {"twitter", "x"}:
+        return await _handle_twitter_link_callback(code, state, error)
     return await _handle_social_callback(provider, code, state, error)
 
 
@@ -4766,6 +4792,12 @@ async def social_oauth_callback_post(provider: str, request: Request):
         )
     if provider_key == "discord":
         return await _handle_discord_link_callback(
+            str(form.get("code") or "") or None,
+            str(form.get("state") or "") or None,
+            str(form.get("error") or "") or None,
+        )
+    if provider_key in {"twitter", "x"}:
+        return await _handle_twitter_link_callback(
             str(form.get("code") or "") or None,
             str(form.get("state") or "") or None,
             str(form.get("error") or "") or None,
@@ -4806,6 +4838,63 @@ def discord_unlink(user: dict[str, Any] = Depends(get_current_user)):
 
     discord_link_service.unlink(user["id"])
     return {"ok": True}
+
+
+@app.get("/api/integrations/twitter/status")
+def twitter_link_status(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import twitter_link_service
+
+    return twitter_link_service.status(user)
+
+
+@app.post("/api/integrations/twitter/link-url")
+def twitter_link_url(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import twitter_link_service
+
+    try:
+        return {"url": twitter_link_service.link_url(user["id"])}
+    except Exception as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.delete("/api/integrations/twitter/link")
+def twitter_unlink(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import twitter_link_service
+
+    twitter_link_service.unlink(user["id"])
+    return {"ok": True}
+
+
+@app.post("/api/integrations/twitter/post-video")
+async def twitter_post_video(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import twitter_link_service
+
+    form = await request.form()
+    upload = form.get("video")
+    text = str(form.get("text") or "").strip()
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(400, "Missing video file.")
+    raw = await upload.read()
+    filename = str(getattr(upload, "filename", None) or "render3d-video.webm")
+    mime = str(getattr(upload, "content_type", None) or "video/webm")
+    try:
+        return twitter_link_service.post_video(
+            user["id"],
+            video_bytes=raw,
+            filename=filename,
+            mime_type=mime,
+            text=text,
+        )
+    except RuntimeError as exc:
+        msg = str(exc)
+        status = 401 if "Connect your X" in msg or "Reconnect" in msg else 400
+        raise HTTPException(status, msg) from exc
+    except Exception as exc:
+        logger.exception("twitter post-video failed user_id=%s", user.get("id"))
+        raise HTTPException(502, str(exc) or "Could not post to X.") from exc
 
 
 RENDER_AGENT_SYSTEM_PROMPT = """You are Render Agent, the in-app support assistant for Render3D.
@@ -12328,11 +12417,46 @@ async def upload_file(
     path = _require_project(user, project_id)
     suffix = Path(file.filename or "").suffix.lower()
     is_reference = cad_service.is_reference_suffix(suffix)
-    if suffix not in cad_service.SUPPORTED_IMPORT and not is_reference:
+    if suffix not in cad_service.SUPPORTED_IMPORT and not is_reference and suffix not in cad_service.SUPPORTED_ROBOT:
         raise HTTPException(
             400,
-            f"Unsupported format. Use: {sorted(cad_service.SUPPORTED_IMPORT | cad_service.SUPPORTED_REFERENCE)}",
+            f"Unsupported format. Use: {sorted(cad_service.SUPPORTED_IMPORT | cad_service.SUPPORTED_REFERENCE | cad_service.SUPPORTED_ROBOT)}",
         )
+
+    if suffix in cad_service.SUPPORTED_ROBOT:
+        dest = path / (file.filename or f"robot{suffix}")
+        if dest.exists():
+            stem = dest.stem
+            n = 2
+            while True:
+                candidate = path / f"{stem}_{n}{suffix}"
+                if not candidate.exists():
+                    dest = candidate
+                    break
+                n += 1
+        with dest.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+        project_store.touch_project(path)
+        _notify_project(
+            project_id,
+            {
+                "type": "robot.artifact_added",
+                "filename": dest.name,
+                "url": f"/api/projects/{project_id}/files/{dest.name}",
+                "uploaded_filename": dest.name,
+                "by": user["display_name"],
+                "by_user_id": user["id"],
+                "action": "upload_robot",
+            },
+        )
+        return {
+            "filename": dest.name,
+            "viewer_filename": dest.name,
+            "url": f"/api/projects/{project_id}/files/{dest.name}",
+            "timeline_index": None,
+            "robot": True,
+            "kind": "robot",
+        }
 
     if is_reference:
         dest = cad_service.unique_reference_path(path, file.filename or f"reference{suffix}")

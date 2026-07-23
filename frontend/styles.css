@@ -10656,6 +10656,72 @@ label.btn { display: inline-flex; align-items: center; }
   line-height: 1.25;
 }
 
+.viewport-video-share-modal .viewport-video-share-card {
+  width: min(440px, calc(100vw - 28px));
+  max-height: min(92vh, 720px);
+  overflow: auto;
+}
+
+.viewport-video-share-eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.viewport-video-share-preview {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  margin: 12px 0 14px;
+  border-radius: 10px;
+  background: #0a0d12;
+  object-fit: contain;
+}
+
+.viewport-video-share-caption {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.viewport-video-share-caption textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.9);
+  color: var(--text);
+  font: inherit;
+}
+
+.viewport-video-share-x-status,
+.viewport-video-share-status {
+  margin: 0 0 6px;
+  min-height: 1.1em;
+}
+
+.viewport-video-share-status.is-error {
+  color: #f85149;
+}
+
+.viewport-video-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.viewport-video-share-actions .btn {
+  flex: 1 1 auto;
+  min-width: 110px;
+}
+
 .viewport-shot-menu {
   position: absolute;
   left: 0;
@@ -27222,7 +27288,8 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .prompt-panel.right-tab-panel.active,
 .wiring-prompt-panel.right-tab-panel.active,
 .rigging-prompt-panel.right-tab-panel.active,
-.electronics-panel.right-tab-panel.active {
+.electronics-panel.right-tab-panel.active,
+.robotics-panel.right-tab-panel.active {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -37600,6 +37667,11 @@ body.gs-agent-open .updates-page {
   background: linear-gradient(135deg, #ab8fff, #5f49d8);
 }
 
+.authorized-app-row--twitter .authorized-app-icon {
+  background: #000;
+  color: #fff;
+}
+
 .authorized-app-row--discord .authorized-app-icon {
   min-width: 34px;
   background: #5865f2;
@@ -38825,4 +38897,171 @@ body.theme-light .folder-workspace-tag {
 .proj-shared-tag {
   margin-left: 6px;
   flex-shrink: 0;
+}
+
+/* ── Robotic Simulator panel (next to Electronics) ─────────────────────── */
+.robotics-panel {
+  padding: 12px 14px 18px;
+  overflow: auto;
+}
+
+.robotics-panel.is-drop-target {
+  outline: 2px dashed rgba(88, 166, 255, 0.55);
+  outline-offset: -4px;
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.robotics-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.robotics-panel-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.robotics-panel-lead {
+  margin: 0 0 12px;
+  line-height: 1.35;
+}
+
+.robotics-panel-section {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(139, 148, 158, 0.18);
+}
+
+.robotics-panel-section:last-child {
+  border-bottom: 0;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.robotics-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.robotics-section-head strong {
+  font-size: 0.82rem;
+}
+
+.robotics-catalog-list {
+  display: grid;
+  gap: 8px;
+}
+
+.robotics-catalog-card {
+  padding: 10px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 10px;
+  background: rgba(22, 27, 34, 0.72);
+}
+
+.robotics-catalog-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.robotics-catalog-card p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.robotics-catalog-badge {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  background: rgba(88, 166, 255, 0.12);
+  color: var(--accent);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.robotics-upload-hint {
+  margin: 6px 0 0;
+}
+
+.robotics-env-choices {
+  display: grid;
+  gap: 6px;
+}
+
+.robotics-env-btn {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.robotics-env-btn:hover,
+.robotics-env-btn.active {
+  border-color: rgba(88, 166, 255, 0.36);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.robotics-env-btn strong {
+  font-size: 0.78rem;
+}
+
+.robotics-env-btn span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.25;
+}
+
+.robotics-artifact-summary {
+  margin-bottom: 6px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.robotics-artifact-files {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 0.74rem;
+}
+
+.robotics-artifact-files code {
+  font-size: 0.72rem;
+}
+
+.robotics-sim-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.robotics-sim-status {
+  margin: 8px 0 0;
+  min-height: 1.2em;
+}
+
+#app.robotics-design-tab .robotics-mode-tab,
+body.robotics-design-tab .robotics-mode-tab {
+  display: inline-flex;
+}
+
+.robotics-mode-tab {
+  /* always available like Electronics */
 }

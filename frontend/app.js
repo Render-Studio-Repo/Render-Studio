@@ -61,7 +61,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-ws-checks";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-video-rec";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260715-google-login-invites";
@@ -100,7 +100,8 @@ import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260720-mcmaster-insert";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260723-robot-sim";
+import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-robot-sim";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
@@ -8985,6 +8986,7 @@ function exitCanvasTab() {
 function handleDesignTabChange(tab) {
   const app = document.getElementById("app");
   if (tab !== "ELECTRONICS") closeElectronicsPopover();
+  if (tab !== "ROBOTICS") roboticSimulator?.hide?.();
   if (tab !== "SKETCH" && sketchEditor.isActive()) {
     if (!finishActiveSketch()) sketchEditor.cancel();
   }
@@ -9041,6 +9043,13 @@ function handleDesignTabChange(tab) {
     texturePanel?.close?.();
     mcmasterInsert?.close?.();
     void showElectronicsTabUi();
+  } else if (tab === "ROBOTICS") {
+    exitCanvasTab();
+    exitSketchMode();
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    mcmasterInsert?.close?.();
+    void showRoboticsTabUi();
   } else if (tab === "CANVAS") {
     exitSketchMode();
     enterCanvasTab();
@@ -9059,9 +9068,11 @@ function handleDesignTabChange(tab) {
   app?.classList.toggle("rigging-design-tab", tab === "RIGGING");
   app?.classList.toggle("architect-design-tab", tab === "ARCHITECT");
   app?.classList.toggle("canvas-design-tab", tab === "CANVAS");
+  app?.classList.toggle("robotics-design-tab", tab === "ROBOTICS");
   // Generation / snap paths key off body classes (same as Canvas).
   document.body.classList.toggle("architect-design-tab", tab === "ARCHITECT");
   document.body.classList.toggle("rigging-design-tab", tab === "RIGGING");
+  document.body.classList.toggle("robotics-design-tab", tab === "ROBOTICS");
   syncObjectAdjustmentChrome(tab);
 }
 
@@ -9407,6 +9418,46 @@ const urdfRobotRuntime = createUrdfRobotRuntime({
   scene,
   authHeaders: () => authHeaders(),
 });
+
+const roboticSimulator = createRoboticSimulator({
+  getProjectId: () => projectId,
+  authHeaders: () => authHeaders(),
+  getScene: () => scene,
+  onStatus: (ok, msg) => setEditStatus(ok ? "ok" : "error", msg),
+  seedDemoArm: async () => {
+    const headers = { ...(authHeaders() || {}), "Content-Type": "application/json" };
+    const res = await fetch("/api/demo/robot-arm", { method: "POST", headers });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(detail || `Could not seed robot arm (${res.status})`);
+    }
+    return res.json();
+  },
+  openProject: (id) => openProjectById(id),
+  refreshArtifacts: ({ quiet } = {}) => refreshRobotArtifacts({ quiet }),
+  loadRobotScene: ({ force } = {}) => ensureUrdfRobotScene({ quiet: false, force: !!force }),
+  openPlayground: (opts) => openUrdfMotionModal(opts),
+  togglePlay: () => urdfRobotRuntime.togglePlay({ durationSec: 4.2 }),
+  isPlaying: () => urdfRobotRuntime.isPlaying(),
+  getRobotState: () => ({
+    ...(urdfRobotRuntime.getState?.() || {}),
+    artifacts: robotArtifactData,
+  }),
+  uploadFiles: async (files) => {
+    if (!projectId) throw new Error("Open a project first.");
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file);
+      await api(`/api/projects/${projectId}/upload`, { method: "POST", body: form });
+    }
+  },
+});
+try {
+  roboticSimulator.bind();
+} catch (_) {
+  /* optional panel */
+}
+
 const planetaryGearRuntime = createPlanetaryGearRuntime({
   getRoot: () => getRiggingPartRoot() || projectAssembly.getRoot() || currentMesh,
 });
@@ -11307,6 +11358,7 @@ function setRightTab(tab) {
   document.getElementById("project-cost-thumb")?.classList.toggle("hidden", tab !== "prompt");
   if (tab === "rigging") refreshRobotArtifacts({ quiet: true });
   if (tab === "electronics") void renderElectronicsUsedList();
+  if (tab === "robotics") void roboticSimulator?.refresh?.({ quiet: true });
 }
 
 async function refreshRobotArtifacts({ quiet = false } = {}) {
@@ -11849,11 +11901,11 @@ function isUrdfMotionModalOpen() {
   return !document.getElementById("urdf-motion-modal")?.classList.contains("hidden");
 }
 
-function openUrdfMotionModal() {
+function openUrdfMotionModal({ forceRigging = true } = {}) {
   const modal = document.getElementById("urdf-motion-modal");
   if (!modal) return;
   const app = document.getElementById("app");
-  if (!app?.classList.contains("rigging-design-tab")) {
+  if (forceRigging && !app?.classList.contains("rigging-design-tab")) {
     workspaceModes?.setDesignTab?.("RIGGING");
     ribbon?.setDesignTab?.("RIGGING");
     setRightTab("rigging");
@@ -13878,6 +13930,11 @@ async function showElectronicsTabUi() {
   const tabsEl = document.getElementById("workspace-tabs");
   await openElectronicsPopover(tabsEl, { force: true });
   setEditStatus("ok", "Electronics — used parts, build suggestions, wiring + sourcing docs.");
+}
+
+async function showRoboticsTabUi() {
+  setRightTab("robotics");
+  await roboticSimulator?.show?.();
 }
 
 function formatHistoryWhen(iso) {
@@ -18715,6 +18772,7 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
         { label: "Insert", hint: "McMaster-Carr and supplier part insert", run: () => openMobileDesignTab("INSERT") },
         { label: "Catalog", hint: "Search STEP models, suppliers, datasheets", run: () => openMobileDesignTab("CATALOG") },
         { label: "Electronics", hint: "List wiring and CAD electronics used in this project", run: () => openMobileDesignTab("ELECTRONICS") },
+        { label: "Robotics", hint: "Shop arms, upload URDF, simulate in a work cell", run: () => openMobileDesignTab("ROBOTICS") },
         { label: "Textures", hint: "Saved textures, favorites, apply to parts/faces", run: () => openMobileDesignTab("TEXTURE") },
         { label: "Canvas", hint: "2D grid sketch pad with pen tools", run: () => openMobileDesignTab("CANVAS") },
       ]);
@@ -19967,6 +20025,13 @@ function handleWiringTabChange(tab) {
     texturePanel?.close?.();
     mcmasterInsert?.close?.();
     void showElectronicsTabUi();
+    return;
+  }
+  if (tab === "ROBOTICS") {
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    mcmasterInsert?.close?.();
+    void showRoboticsTabUi();
     return;
   }
   catalogPanel?.close?.();
@@ -25186,6 +25251,8 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   getCanvas: () => renderer?.domElement || null,
   onStatus: (ok, msg) => setEditStatus(ok ? "ok" : "error", msg),
   onMenuOpen: () => closeScreenshotMenu(),
+  api,
+  getToken,
 });
 try {
   viewportVideoRecorder.bind();
@@ -27305,6 +27372,8 @@ window.addEventListener("keydown", (e) => {
   const projectParam = new URLSearchParams(window.location.search).get("project");
   const discordLinkParam = new URLSearchParams(window.location.search).get("discord_link");
   const discordErrorParam = new URLSearchParams(window.location.search).get("discord_error");
+  const twitterLinkParam = new URLSearchParams(window.location.search).get("twitter_link");
+  const twitterErrorParam = new URLSearchParams(window.location.search).get("twitter_error");
   if (askAgentParam) {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl || "/");
@@ -27327,6 +27396,24 @@ window.addEventListener("keydown", (e) => {
     const qs = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
   }
+  if (twitterLinkParam) {
+    preferencesAdvancedOpen = true;
+    preferencesAdvancedTab = "authorized";
+    window.setTimeout(() => {
+      openPreferencesModal();
+      setEditStatus(
+        twitterLinkParam === "connected" ? "ok" : "error",
+        twitterLinkParam === "connected"
+          ? "X linked. You can share viewport videos to your account."
+          : `X link failed${twitterErrorParam ? `: ${twitterErrorParam}` : "."}`,
+      );
+    }, 500);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("twitter_link");
+    params.delete("twitter_error");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
+  }
   if (projectParam) {
     try {
       localStorage.setItem(LS_LAST_PROJECT, projectParam);
@@ -27339,7 +27426,7 @@ window.addEventListener("keydown", (e) => {
     try {
       if (tab === "WIRING") {
         workspaceModes.setMode("wiring");
-      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "ELECTRONICS", "INSERT", "CATALOG", "TEXTURE"].includes(tab)) {
+      } else if (["SOLID", "SKETCH", "CANVAS", "RIGGING", "ARCHITECT", "ELECTRONICS", "ROBOTICS", "INSERT", "CATALOG", "TEXTURE"].includes(tab)) {
         workspaceModes.setDesignTab(tab);
         ribbon?.setDesignTab?.(tab);
       }
@@ -28969,9 +29056,10 @@ window.addEventListener("keydown", (e) => {
     }
     try {
       const payments = await import("./marketplace-payments.js?v=20260715-payout-sso");
-      const [seller, discord] = await Promise.all([
+      const [seller, discord, twitter] = await Promise.all([
         payments.loadSellerStatus(),
         api("/api/integrations/discord/status").catch((err) => ({ error: err.message || "Could not load Discord status." })),
+        api("/api/integrations/twitter/status").catch((err) => ({ error: err.message || "Could not load X status." })),
       ]);
       const details = seller?.payout_details || {};
       const short = (value = "") => {
@@ -28982,6 +29070,10 @@ window.addEventListener("keydown", (e) => {
       const discordReady = !!discord?.connected;
       const discordConfigured = !!discord?.configured;
       const discordHandle = discordAccount?.handle || discordAccount?.display_name || "";
+      const twitterAccount = twitter?.account || {};
+      const twitterReady = !!twitter?.connected;
+      const twitterConfigured = !!twitter?.configured;
+      const twitterHandle = twitterAccount?.username || twitterAccount?.display_name || "";
       const googleAccountReady = String(currentUser?.email || "").toLowerCase().includes("@gmail.")
         || String(currentUser?.email || "").toLowerCase().includes("@googlemail.");
       const discordDetail = discord?.error
@@ -28991,6 +29083,13 @@ window.addEventListener("keydown", (e) => {
           : discordConfigured
             ? "Get bot alerts for Render messages and tags"
             : "Needs Discord OAuth client settings";
+      const twitterDetail = twitter?.error
+        ? twitter.error
+        : twitterReady
+          ? `Post viewport videos as ${twitterHandle ? `@${twitterHandle}` : "this X account"}`
+          : twitterConfigured
+            ? "Share viewport recordings to your X timeline"
+            : "Needs X OAuth client settings";
       const rows = [
         {
           key: "stripe",
@@ -29028,6 +29127,16 @@ window.addEventListener("keydown", (e) => {
           action: discordReady ? "unlink-discord" : "connect-discord",
           cta: discordReady ? "Unlink" : discordConfigured ? "Link" : "Setup needed",
           disabled: !!discord?.error || (!discordReady && !discordConfigured),
+        },
+        {
+          key: "twitter",
+          label: "X",
+          iconHtml: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
+          detail: twitterDetail,
+          connected: twitterReady,
+          action: twitterReady ? "unlink-twitter" : "connect-twitter",
+          cta: twitterReady ? "Unlink" : twitterConfigured ? "Link" : "Setup needed",
+          disabled: !!twitter?.error || (!twitterReady && !twitterConfigured),
         },
         {
           key: "google-drive",
@@ -29665,6 +29774,19 @@ window.addEventListener("keydown", (e) => {
           if (action === "unlink-discord") {
             await api("/api/integrations/discord/link", { method: "DELETE" });
             setEditStatus("ok", "Discord unlinked.");
+            await hydrateAuthorizedApps(panel);
+            return;
+          }
+          if (action === "connect-twitter") {
+            setEditStatus("ok", "Opening X authorization...");
+            const data = await api("/api/integrations/twitter/link-url", { method: "POST" });
+            if (!data?.url) throw new Error("X authorization URL was not returned.");
+            window.location.href = data.url;
+            return;
+          }
+          if (action === "unlink-twitter") {
+            await api("/api/integrations/twitter/link", { method: "DELETE" });
+            setEditStatus("ok", "X unlinked.");
             await hydrateAuthorizedApps(panel);
             return;
           }

@@ -59,6 +59,8 @@ export function createViewportVideoRecorder({
   getCanvas,
   onStatus,
   onMenuOpen,
+  api,
+  getToken,
 } = {}) {
   let prefs = readPrefs();
   let recorder = null;
@@ -68,6 +70,8 @@ export function createViewportVideoRecorder({
   let startedAt = 0;
   let tickTimer = 0;
   let recording = false;
+  let lastBlob = null;
+  let shareModalEl = null;
 
   function els() {
     return {
@@ -166,6 +170,195 @@ export function createViewportVideoRecorder({
     setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
+  function ensureShareModal() {
+    if (shareModalEl) return shareModalEl;
+    shareModalEl = document.createElement("div");
+    shareModalEl.id = "viewport-video-share-modal";
+    shareModalEl.className = "auth-modal viewport-video-share-modal hidden";
+    shareModalEl.setAttribute("role", "dialog");
+    shareModalEl.setAttribute("aria-modal", "true");
+    shareModalEl.innerHTML = `
+      <div class="auth-backdrop" data-video-share-close></div>
+      <div class="auth-card app-dialog-card viewport-video-share-card">
+        <button type="button" class="auth-close" data-video-share-close aria-label="Close">&times;</button>
+        <p class="viewport-video-share-eyebrow">Viewport recording</p>
+        <h2 class="app-dialog-title">Share your clip</h2>
+        <p class="muted small">Download it, or post straight to X once your account is connected.</p>
+        <video class="viewport-video-share-preview" controls playsinline muted></video>
+        <label class="viewport-video-share-caption">
+          <span>Caption</span>
+          <textarea data-video-share-text maxlength="270" rows="3" placeholder="Made in Render3D…"></textarea>
+        </label>
+        <p class="viewport-video-share-x-status muted small" data-video-share-x-status></p>
+        <p class="viewport-video-share-status muted small" data-video-share-status role="status"></p>
+        <div class="viewport-video-share-actions">
+          <button type="button" class="btn secondary" data-video-share-download>Download</button>
+          <button type="button" class="btn secondary" data-video-share-connect-x>Connect X</button>
+          <button type="button" class="btn accent" data-video-share-post-x>Share to X</button>
+        </div>
+        <div class="app-dialog-actions">
+          <button type="button" class="btn secondary" data-video-share-close>Done</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(shareModalEl);
+    shareModalEl.querySelectorAll("[data-video-share-close]").forEach((el) => {
+      el.addEventListener("click", () => closeShareModal());
+    });
+    shareModalEl.querySelector("[data-video-share-download]")?.addEventListener("click", () => {
+      if (lastBlob) downloadBlob(lastBlob);
+      setShareStatus("Downloaded.");
+    });
+    shareModalEl.querySelector("[data-video-share-connect-x]")?.addEventListener("click", () => {
+      void connectX();
+    });
+    shareModalEl.querySelector("[data-video-share-post-x]")?.addEventListener("click", () => {
+      void postToX();
+    });
+    return shareModalEl;
+  }
+
+  function setShareStatus(text, isError = false) {
+    const el = shareModalEl?.querySelector("[data-video-share-status]");
+    if (!el) return;
+    el.textContent = text || "";
+    el.classList.toggle("is-error", !!isError && !!text);
+  }
+
+  function setXStatus(text) {
+    const el = shareModalEl?.querySelector("[data-video-share-x-status]");
+    if (el) el.textContent = text || "";
+  }
+
+  async function refreshXStatus() {
+    const connectBtn = shareModalEl?.querySelector("[data-video-share-connect-x]");
+    const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
+    if (!api) {
+      setXStatus("Sign in to connect X.");
+      if (connectBtn) connectBtn.disabled = true;
+      if (postBtn) postBtn.disabled = true;
+      return { connected: false };
+    }
+    try {
+      const data = await api("/api/integrations/twitter/status");
+      const connected = !!data?.connected;
+      const handle = data?.account?.username ? `@${data.account.username}` : "";
+      if (!data?.configured) {
+        setXStatus("X posting needs TWITTER_CLIENT_ID / SECRET on the server.");
+        if (connectBtn) connectBtn.disabled = true;
+        if (postBtn) postBtn.disabled = true;
+      } else if (connected) {
+        setXStatus(`Connected as ${handle || "X account"}.`);
+        if (connectBtn) {
+          connectBtn.textContent = "Reconnect X";
+          connectBtn.disabled = false;
+        }
+        if (postBtn) postBtn.disabled = false;
+      } else {
+        setXStatus("Connect X to post this clip from Render3D.");
+        if (connectBtn) {
+          connectBtn.textContent = "Connect X";
+          connectBtn.disabled = false;
+        }
+        if (postBtn) postBtn.disabled = true;
+      }
+      return data;
+    } catch (err) {
+      setXStatus(err?.message || "Could not load X status.");
+      if (postBtn) postBtn.disabled = true;
+      return { connected: false };
+    }
+  }
+
+  async function connectX() {
+    if (!api) {
+      setShareStatus("Sign in first.", true);
+      return;
+    }
+    setShareStatus("Opening X authorization…");
+    try {
+      const data = await api("/api/integrations/twitter/link-url", { method: "POST" });
+      if (!data?.url) throw new Error("X authorization URL was not returned.");
+      window.location.href = data.url;
+    } catch (err) {
+      setShareStatus(err?.message || "Could not start X connect.", true);
+    }
+  }
+
+  async function postToX() {
+    if (!lastBlob || !api) {
+      setShareStatus("Nothing to post yet.", true);
+      return;
+    }
+    const text = shareModalEl?.querySelector("[data-video-share-text]")?.value?.trim() || "Made in Render3D";
+    const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
+    if (postBtn) postBtn.disabled = true;
+    setShareStatus("Uploading to X… this can take a minute for longer clips.");
+    try {
+      const form = new FormData();
+      const ext = (lastBlob.type || "").includes("mp4") ? "mp4" : "webm";
+      form.append("video", lastBlob, `render3d-video.${ext}`);
+      form.append("text", text);
+      const headers = {};
+      const token = getToken?.();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch("/api/integrations/twitter/post-video", {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data?.detail || data?.message || res.statusText || "Post failed.";
+        if (res.status === 401) {
+          setShareStatus(String(detail), true);
+          await refreshXStatus();
+          return;
+        }
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      setShareStatus(data?.url ? `Posted — ${data.url}` : "Posted to X.");
+      setStatus(true, "Shared viewport video to X.");
+      if (data?.url) {
+        try {
+          window.open(data.url, "_blank", "noopener");
+        } catch (_) {}
+      }
+    } catch (err) {
+      setShareStatus(err?.message || "Could not post to X.", true);
+    } finally {
+      if (postBtn) postBtn.disabled = false;
+      await refreshXStatus();
+    }
+  }
+
+  function closeShareModal() {
+    const preview = shareModalEl?.querySelector(".viewport-video-share-preview");
+    if (preview) {
+      preview.removeAttribute("src");
+      preview.load?.();
+    }
+    shareModalEl?.classList.add("hidden");
+  }
+
+  async function openShareModal(blob) {
+    lastBlob = blob;
+    const modal = ensureShareModal();
+    const preview = modal.querySelector(".viewport-video-share-preview");
+    if (preview) {
+      const url = URL.createObjectURL(blob);
+      preview.src = url;
+      preview.onloadeddata = () => {
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      };
+    }
+    const text = modal.querySelector("[data-video-share-text]");
+    if (text && !text.value) text.value = "Made in Render3D";
+    setShareStatus("");
+    modal.classList.remove("hidden");
+    await refreshXStatus();
+  }
+
   function cleanupStreams() {
     try {
       mixedStream?.getTracks?.().forEach((t) => t.stop());
@@ -245,8 +438,8 @@ export function createViewportVideoRecorder({
       cleanupStreams();
       recorder = null;
       if (blob.size > 0) {
-        downloadBlob(blob);
-        setStatus(true, `Saved ${qualityLabel(prefs.quality)} viewport video.`);
+        void openShareModal(blob);
+        setStatus(true, `${qualityLabel(prefs.quality)} clip ready — download or share to X.`);
       } else {
         setStatus(false, "Recording was empty — nothing saved.");
       }
@@ -351,7 +544,10 @@ export function createViewportVideoRecorder({
     });
 
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeMenu();
+      if (e.key === "Escape") {
+        closeMenu();
+        if (shareModalEl && !shareModalEl.classList.contains("hidden")) closeShareModal();
+      }
     });
 
     syncMainUi();
@@ -365,5 +561,6 @@ export function createViewportVideoRecorder({
     toggleRecording,
     isRecording: () => recording,
     closeMenu,
+    openShareModal,
   };
 }

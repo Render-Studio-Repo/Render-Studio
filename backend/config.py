@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     discord_redirect_uri: str = "https://render3d.app/oauth/discord/callback"
     discord_updates_webhook_url: str = ""
 
+    # X (Twitter) — per-user OAuth for Share to X from viewport video
+    twitter_client_id: str = ""
+    twitter_client_secret: str = ""
+    twitter_redirect_uri: str = "https://render3d.app/oauth/twitter/callback"
+
     # LinkedIn product-update announcements (member or organization URN)
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""
