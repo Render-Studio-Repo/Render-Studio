@@ -4,6 +4,13 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Right-click share project with teammate
+
+- Feature: project owner right-clicks a project → **Share with teammate…** → appears in recipient’s files with a **Shared** tag; recipient right-clicks → **Remove from my folder**.
+- Backend: `project_shares` + `project_hidden` tables; `backend/services/project_shares_service.py`; routes `GET/POST /api/projects/{id}/shares`, `DELETE .../shares/me`, `DELETE .../shares/{user_id}`; `can_access_project` honors shares; list injects/tags shared projects and filters hidden.
+- Frontend: new `frontend/project-share.js`; context menu + Shared tag in `workspace-browser.js`; thin realtime hooks in `app.js`. Cache-bust `?v=20260723-proj-share`.
+- Target must already be on the project’s workspace (invite first if not).
+
 ## 2026-07-23 — Robot artifact gen: gripper URDF/SRDF + clearer errors
 
 - Symptom: `Robot artifact generation failed.` on project `6b458c64` (trace `7dc9b7d7`) after CAD OK — SRDF stage failed.
