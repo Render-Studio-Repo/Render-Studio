@@ -2,7 +2,7 @@
 
 import { recognizePart } from "./part-catalog.js?v=20260715-elec-none";
 import { setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
-import { createProjectShareDialog } from "./project-share.js?v=20260723-proj-share";
+import { createProjectShareDialog } from "./project-share.js?v=20260723-email-share";
 
 const FOLDER_COLLAPSE_KEY = "render3d:folder-collapsed";
 const PROJECT_EXPAND_KEY = "render3d:project-expanded";

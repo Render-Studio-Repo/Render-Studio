@@ -4643,6 +4643,12 @@ def login(body: LoginRequest):
     user = teams_service.authenticate(body.email, body.password)
     if not user:
         raise HTTPException(401, "Invalid email or password")
+    try:
+        project_shares_service.accept_pending_project_shares_for_user(
+            user["id"], user.get("email") or body.email
+        )
+    except Exception:
+        logger.warning("Could not claim pending project shares for user_id=%s", user.get("id"), exc_info=True)
     token = create_access_token(user["id"])
     teams = teams_service.list_teams(user["id"])
     return {"token": token, "user": user, "teams": teams, "ai": _ai_status_for_user(user)}
@@ -10459,8 +10465,46 @@ def share_project_route(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     target_user = result.get("user") or {}
-    target_user_id = target_user.get("id")
+    target_user_id = result.get("target_user_id") or target_user.get("id")
     team_id = result.get("team_id")
+    if result.get("status") == "invited" and result.get("invite_token"):
+        try:
+            from backend.services import email_notification_service
+
+            project_name = project_id
+            try:
+                summary = project_store.project_list_summary(PROJECTS / project_id)
+                project_name = summary.get("name") or project_id
+            except Exception:
+                pass
+            invite_url = (
+                f"https://render3d.app/?project_share={urllib.parse.quote(str(result['invite_token']))}"
+            )
+            email_notification_service.send_project_share_invite_email(
+                to_email=str(body.email),
+                inviter_name=user.get("display_name") or user.get("email") or "A teammate",
+                project_name=project_name,
+                invite_url=invite_url,
+                user_id=target_user_id,
+            )
+        except Exception:
+            logger.warning(
+                "Could not send project share invite email project_id=%s email=%s",
+                project_id,
+                body.email,
+                exc_info=True,
+            )
+        if target_user_id:
+            _notify_user(
+                target_user_id,
+                {
+                    "type": "project.share.invite",
+                    "project_id": project_id,
+                    "invite_token": result.get("invite_token"),
+                    "by": user.get("display_name") or user.get("email"),
+                    "by_user_id": user.get("id"),
+                },
+            )
     if team_id:
         _log_workspace(
             team_id,
@@ -10471,21 +10515,72 @@ def share_project_route(
             meta={
                 "email": str(body.email),
                 "shared_with_user_id": target_user_id,
+                "status": result.get("status"),
             },
         )
+        if result.get("status") == "shared":
+            _notify_project_share_realtime(
+                project_id=project_id,
+                team_id=team_id,
+                event_type="project.shared",
+                user=user,
+                target_user_id=target_user_id,
+                extra={
+                    "shared_with_user_id": target_user_id,
+                    "shared_with_email": str(body.email).strip().lower(),
+                    "shared_with_name": target_user.get("display_name"),
+                },
+            )
+    return result
+
+
+@app.post("/api/projects/share-invites/{token}/accept")
+def accept_project_share_invite_route(
+    token: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        result = project_shares_service.accept_project_share_invite(token, user)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    team_id = result.get("team_id")
+    project_id = result.get("project_id")
+    if team_id and project_id:
         _notify_project_share_realtime(
             project_id=project_id,
             team_id=team_id,
             event_type="project.shared",
             user=user,
-            target_user_id=target_user_id,
-            extra={
-                "shared_with_user_id": target_user_id,
-                "shared_with_email": str(body.email).strip().lower(),
-                "shared_with_name": target_user.get("display_name"),
-            },
+            target_user_id=user["id"],
+            extra={"shared_with_user_id": user["id"], "accepted": True},
         )
+        _notify_user(user["id"], {"type": "project.share.accepted", "project_id": project_id})
     return result
+
+
+@app.get("/api/me/project-share-invites")
+def list_my_project_share_invites(user: dict[str, Any] = Depends(get_current_user)):
+    return {
+        "invites": project_shares_service.pending_project_shares_for_user(
+            user["id"], user.get("email") or ""
+        )
+    }
+
+
+@app.delete("/api/projects/{project_id}/share-invites/{invite_id}")
+def cancel_project_share_invite_route(
+    project_id: str,
+    invite_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return project_shares_service.cancel_project_share_invite(project_id, invite_id, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @app.delete("/api/projects/{project_id}/shares/me")

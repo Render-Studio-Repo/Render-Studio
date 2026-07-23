@@ -1,4 +1,4 @@
-/** Project share dialog — share a project with a workspace teammate. */
+/** Project share dialog — teammates or any email (accept → Shared linked project). */
 
 export function createProjectShareDialog({ api, getWorkspaceId, onChanged } = {}) {
   let modalEl = null;
@@ -21,23 +21,23 @@ export function createProjectShareDialog({ api, getWorkspaceId, onChanged } = {}
     modalEl.setAttribute("aria-modal", "true");
     modalEl.innerHTML = `
       <div class="auth-backdrop" data-project-share-close></div>
-      <div class="auth-card app-dialog-card">
+      <div class="auth-card app-dialog-card project-share-card">
         <button type="button" class="auth-close" data-project-share-close aria-label="Close">&times;</button>
         <h2 class="app-dialog-title" id="project-share-title">Share project</h2>
-        <p class="muted small folder-share-hint">Pick a teammate on this workspace. The project appears in their files with a Shared tag.</p>
-        <ul class="folder-share-list" id="project-share-list"></ul>
-        <label class="app-dialog-label">Team member
-          <select id="project-share-member" class="folder-share-member-select">
-            <option value="">Loading workspace members…</option>
-          </select>
-        </label>
-        <label class="app-dialog-label">Email <span class="muted small">(optional if you picked a member)</span>
-          <input type="email" id="project-share-email" placeholder="coworker@company.com" autocomplete="email" />
-        </label>
-        <p id="project-share-status" class="muted small"></p>
+        <p class="muted small project-share-lead">Add people by email. Teammates get it right away; others accept an invite. Same live project — your edits stay linked.</p>
+        <div class="project-share-people" id="project-share-list"></div>
+        <div class="project-share-compose">
+          <label class="app-dialog-label" for="project-share-email">Email</label>
+          <div class="project-share-row">
+            <input type="email" id="project-share-email" list="project-share-suggestions" placeholder="name@company.com" autocomplete="email" />
+            <button type="button" class="btn accent" id="project-share-submit">Share</button>
+          </div>
+          <datalist id="project-share-suggestions"></datalist>
+          <p class="muted small project-share-hint">Workspace members appear as suggestions. Outside emails get an invite link.</p>
+        </div>
+        <p id="project-share-status" class="project-share-status muted small" role="status"></p>
         <div class="app-dialog-actions">
-          <button type="button" class="btn secondary" data-project-share-close>Close</button>
-          <button type="button" class="btn accent" id="project-share-submit">Share</button>
+          <button type="button" class="btn secondary" data-project-share-close>Done</button>
         </div>
       </div>
     `;
@@ -47,13 +47,6 @@ export function createProjectShareDialog({ api, getWorkspaceId, onChanged } = {}
     });
     modalEl.querySelector("#project-share-submit")?.addEventListener("click", () => {
       void submit();
-    });
-    modalEl.querySelector("#project-share-member")?.addEventListener("change", (e) => {
-      const email = String(e.target.value || "").trim();
-      const emailInput = modalEl?.querySelector("#project-share-email");
-      const status = modalEl?.querySelector("#project-share-status");
-      if (emailInput) emailInput.value = email;
-      if (status) status.textContent = email ? `Ready to share with ${email}` : "";
     });
     modalEl.querySelector("#project-share-email")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -69,111 +62,147 @@ export function createProjectShareDialog({ api, getWorkspaceId, onChanged } = {}
     activeProject = null;
   }
 
-  async function loadMemberOptions(existingShares = []) {
+  function setStatus(text, isError = false) {
+    const status = modalEl?.querySelector("#project-share-status");
+    if (!status) return;
+    status.textContent = text || "";
+    status.classList.toggle("is-error", !!isError && !!text);
+  }
+
+  async function loadMemberSuggestions(existingShares = [], pending = []) {
     const teamId = activeProject?.team_id || getWorkspaceId?.();
-    const select = modalEl?.querySelector("#project-share-member");
-    if (!select || !teamId) return;
-    select.innerHTML = `<option value="">Loading workspace members…</option>`;
+    const list = modalEl?.querySelector("#project-share-suggestions");
+    if (!list || !teamId) return;
+    list.innerHTML = "";
     try {
       const data = await api(`/api/teams/${teamId}/members`);
-      const sharedEmails = new Set(
-        existingShares.map((s) => String(s.email || "").toLowerCase()).filter(Boolean)
-      );
+      const taken = new Set([
+        ...existingShares.map((s) => String(s.email || "").toLowerCase()),
+        ...pending.map((p) => String(p.email || "").toLowerCase()),
+      ].filter(Boolean));
       const ownerId = activeProject?.owner_user_id;
-      const members = (data.members || []).filter(
-        (m) => m.id !== ownerId && !sharedEmails.has(String(m.email || "").toLowerCase())
-      );
-      select.innerHTML = "";
-      const blank = document.createElement("option");
-      blank.value = "";
-      blank.textContent = "Select a teammate…";
-      select.appendChild(blank);
-      for (const member of members) {
+      for (const member of data.members || []) {
+        const email = String(member.email || "").toLowerCase();
+        if (!email || member.id === ownerId || taken.has(email)) continue;
         const opt = document.createElement("option");
         opt.value = member.email;
-        opt.textContent = `${member.display_name || member.email} (${member.email})`;
-        select.appendChild(opt);
-      }
-      if (!members.length) {
-        blank.textContent = "No unshared teammates — type an email…";
+        opt.label = member.display_name || member.email;
+        list.appendChild(opt);
       }
     } catch {
-      select.innerHTML = `<option value="">Could not load members — type an email…</option>`;
+      /* suggestions optional */
     }
   }
 
+  function renderPeople(shares, pending) {
+    const host = modalEl?.querySelector("#project-share-list");
+    if (!host) return;
+    const items = [];
+    for (const s of shares || []) {
+      items.push({
+        kind: "active",
+        key: `u:${s.user_id}`,
+        title: s.display_name || s.email,
+        subtitle: s.email,
+        userId: s.user_id,
+      });
+    }
+    for (const p of pending || []) {
+      items.push({
+        kind: "pending",
+        key: `i:${p.id}`,
+        title: p.email,
+        subtitle: "Invite pending",
+        inviteId: p.id,
+      });
+    }
+    if (!items.length) {
+      host.innerHTML = `<p class="muted small project-share-empty">Not shared yet.</p>`;
+      return;
+    }
+    host.innerHTML = items
+      .map(
+        (item) => `
+      <div class="project-share-person" data-kind="${item.kind}">
+        <div class="project-share-person-copy">
+          <strong>${escapeHtml(item.title)}</strong>
+          <small>${escapeHtml(item.subtitle || "")}</small>
+        </div>
+        <span class="project-share-chip">${item.kind === "pending" ? "Pending" : "Shared"}</span>
+        <button type="button" class="btn-icon btn-share-remove" data-remove-kind="${item.kind}" data-remove-id="${escapeHtml(item.userId || item.inviteId || "")}" title="Remove" aria-label="Remove">&times;</button>
+      </div>`,
+      )
+      .join("");
+    host.querySelectorAll("[data-remove-id]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        void removePerson(btn.getAttribute("data-remove-kind"), btn.getAttribute("data-remove-id"));
+      });
+    });
+  }
+
   async function loadShareList(project) {
-    const listEl = modalEl?.querySelector("#project-share-list");
-    if (!listEl || !project?.id) return [];
-    listEl.innerHTML = `<li class="muted small">Loading…</li>`;
-    let shares = [];
+    const host = modalEl?.querySelector("#project-share-list");
+    if (!host || !project?.id) return { shares: [], pending: [] };
+    host.innerHTML = `<p class="muted small">Loading…</p>`;
     try {
       const data = await api(`/api/projects/${encodeURIComponent(project.id)}/shares`);
-      shares = data.shares || [];
+      const shares = data.shares || [];
+      const pending = data.pending || [];
+      renderPeople(shares, pending);
+      return { shares, pending };
     } catch {
-      listEl.innerHTML = `<li class="muted small">Could not load shares.</li>`;
-      return [];
+      host.innerHTML = `<p class="muted small">Could not load shares.</p>`;
+      return { shares: [], pending: [] };
     }
-    if (!shares.length) {
-      listEl.innerHTML = `<li class="muted small folder-share-empty">Not shared with anyone yet.</li>`;
-      return shares;
+  }
+
+  async function removePerson(kind, id) {
+    const project = activeProject;
+    if (!project?.id || !id) return;
+    try {
+      if (kind === "pending") {
+        await api(`/api/projects/${encodeURIComponent(project.id)}/share-invites/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+      } else {
+        if (!window.confirm("Remove this person’s access?")) return;
+        await api(`/api/projects/${encodeURIComponent(project.id)}/shares/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+      }
+      const next = await loadShareList(project);
+      await loadMemberSuggestions(next.shares, next.pending);
+      onChanged?.();
+      setStatus("Removed.");
+    } catch (err) {
+      setStatus(err.message || "Could not remove", true);
     }
-    listEl.innerHTML = "";
-    for (const s of shares) {
-      const li = document.createElement("li");
-      li.className = "folder-share-item";
-      li.innerHTML = `<span><strong>${escapeHtml(s.display_name || s.email)}</strong> <span class="muted small">${escapeHtml(s.email)}</span></span>`;
-      const rm = document.createElement("button");
-      rm.type = "button";
-      rm.className = "btn-icon btn-share-remove";
-      rm.title = "Remove access";
-      rm.textContent = "×";
-        rm.addEventListener("click", async () => {
-        if (!window.confirm(`Remove ${s.display_name || s.email} from this project?`)) return;
-        try {
-          await api(`/api/projects/${encodeURIComponent(project.id)}/shares/${encodeURIComponent(s.user_id)}`, {
-            method: "DELETE",
-          });
-          const next = await loadShareList(project);
-          await loadMemberOptions(next);
-          onChanged?.();
-        } catch (err) {
-          alert(err.message || "Could not remove share");
-        }
-      });
-      li.appendChild(rm);
-      listEl.appendChild(li);
-    }
-    return shares;
   }
 
   async function submit() {
     const project = activeProject;
-    const status = modalEl?.querySelector("#project-share-status");
     const emailInput = modalEl?.querySelector("#project-share-email");
-    const memberSelect = modalEl?.querySelector("#project-share-member");
     if (!project?.id) return;
-    const email = String(emailInput?.value || memberSelect?.value || "").trim();
+    const email = String(emailInput?.value || "").trim();
     if (!email) {
-      if (status) status.textContent = "Pick a team member or enter an email address.";
-      memberSelect?.focus();
+      setStatus("Enter an email address.", true);
+      emailInput?.focus();
       return;
     }
-    if (status) status.textContent = "Sharing…";
+    setStatus("Sending…");
     try {
       const res = await api(`/api/projects/${encodeURIComponent(project.id)}/shares`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      if (status) status.textContent = res.message || "Project shared.";
+      setStatus(res.message || (res.status === "invited" ? "Invite sent." : "Shared."));
       if (emailInput) emailInput.value = "";
-      if (memberSelect) memberSelect.value = "";
-      const shares = await loadShareList(project);
-      await loadMemberOptions(shares);
+      const next = await loadShareList(project);
+      await loadMemberSuggestions(next.shares, next.pending);
       onChanged?.();
     } catch (err) {
-      if (status) status.textContent = err.message || "Could not share project";
+      setStatus(err.message || "Could not share project", true);
     }
   }
 
@@ -183,12 +212,11 @@ export function createProjectShareDialog({ api, getWorkspaceId, onChanged } = {}
     const modal = ensureModal();
     modal.querySelector("#project-share-title").textContent = `Share “${project.name || project.id}”`;
     modal.querySelector("#project-share-email").value = "";
-    modal.querySelector("#project-share-member").innerHTML = `<option value="">Loading workspace members…</option>`;
-    modal.querySelector("#project-share-status").textContent = "";
+    setStatus("");
     modal.classList.remove("hidden");
-    const shares = await loadShareList(project);
-    await loadMemberOptions(shares);
-    modal.querySelector("#project-share-member")?.focus();
+    const next = await loadShareList(project);
+    await loadMemberSuggestions(next.shares, next.pending);
+    modal.querySelector("#project-share-email")?.focus();
   }
 
   async function leave(project) {

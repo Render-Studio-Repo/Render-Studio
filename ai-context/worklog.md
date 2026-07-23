@@ -4,6 +4,11 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Fix: robotic work-cell props polluted Design viewport
+
+- Bug: `robotic-simulator.js` applied shop-floor boxes/lanes on boot into the main Three.js scene.
+- Fix: never inject on bind; default env `empty`; always clear on leave; sweep leftover `isRobotSimEnvironment` nodes. Cache-bust `?v=20260723-robot-sim-fix`.
+
 ## 2026-07-23 — Robotic Simulator tab (next to Electronics)
 
 - Design/Wiring tab **ROBOTICS** + right panel: catalog arms, URDF/SRDF upload, work-cell environments, play cycle / joint playground.

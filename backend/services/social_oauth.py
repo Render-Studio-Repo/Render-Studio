@@ -341,6 +341,12 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
             accepted_invites = teams_service.accept_pending_invites_for_user(user_id, email)
             if accepted_invites:
                 out["_accepted_invites"] = accepted_invites
+            try:
+                from backend.services import project_shares_service
+
+                project_shares_service.accept_pending_project_shares_for_user(user_id, email)
+            except Exception:
+                pass
         except Exception:
             # Social login must not fail just because invite cleanup had an issue.
             pass

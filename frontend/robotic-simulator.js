@@ -62,10 +62,10 @@ const ENVIRONMENTS = [
 
 function readEnv() {
   try {
-    const id = localStorage.getItem(ENV_KEY) || "shop-floor";
-    return ENVIRONMENTS.some((e) => e.id === id) ? id : "shop-floor";
+    const id = localStorage.getItem(ENV_KEY) || "empty";
+    return ENVIRONMENTS.some((e) => e.id === id) ? id : "empty";
   } catch {
-    return "shop-floor";
+    return "empty";
   }
 }
 
@@ -205,13 +205,11 @@ export function createRoboticSimulator(options = {}) {
     if (status) status.textContent = msg || "";
   }
 
-  function applyEnvironment(nextId = envId) {
-    envId = ENVIRONMENTS.some((e) => e.id === nextId) ? nextId : "empty";
-    writeEnv(envId);
+  function clearEnvironment() {
     const scene = getScene?.();
     if (envRoot) {
       scene?.remove(envRoot);
-      envRoot.traverse((obj) => {
+      envRoot.traverse?.((obj) => {
         if (obj.geometry) obj.geometry.dispose?.();
         if (obj.material) {
           if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose?.());
@@ -220,18 +218,37 @@ export function createRoboticSimulator(options = {}) {
       });
       envRoot = null;
     }
-    if (!scene) return;
+    // Sweep any leftover work-cell props from earlier bugs / hot reloads.
+    if (scene) {
+      const leftovers = [];
+      scene.traverse((obj) => {
+        if (obj?.userData?.isRobotSimEnvironment) leftovers.push(obj);
+      });
+      leftovers.forEach((obj) => {
+        obj.parent?.remove(obj);
+        obj.traverse?.((child) => {
+          if (child.geometry) child.geometry.dispose?.();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose?.());
+            else child.material.dispose?.();
+          }
+        });
+      });
+    }
+  }
+
+  function applyEnvironment(nextId = envId) {
+    envId = ENVIRONMENTS.some((e) => e.id === nextId) ? nextId : "empty";
+    writeEnv(envId);
+    clearEnvironment();
+    const scene = getScene?.();
+    if (!scene || envId === "empty") {
+      syncEnvUi();
+      return;
+    }
     envRoot = buildEnvironment(envId);
     scene.add(envRoot);
     syncEnvUi();
-  }
-
-  function clearEnvironment() {
-    const scene = getScene?.();
-    if (envRoot) {
-      scene?.remove(envRoot);
-      envRoot = null;
-    }
   }
 
   function syncEnvUi() {
@@ -333,7 +350,6 @@ export function createRoboticSimulator(options = {}) {
         const result = await seedDemoArm?.();
         const pid = result?.project_id;
         if (pid && openProject) await openProject(pid);
-        applyEnvironment(envId === "empty" ? "shop-floor" : envId);
         await refreshPanel({ quiet: true });
         await loadRobotScene?.({ force: true });
         openPlayground?.({ forceRigging: false });
@@ -362,7 +378,6 @@ export function createRoboticSimulator(options = {}) {
     setPanelStatus(`Uploading ${robotFiles.length} robot file(s)…`);
     try {
       await uploadFiles?.(robotFiles);
-      applyEnvironment(envId);
       await refreshPanel({ quiet: true });
       await loadRobotScene?.({ force: true });
       openPlayground?.({ forceRigging: false });
@@ -380,22 +395,30 @@ export function createRoboticSimulator(options = {}) {
   async function show() {
     const { panel } = els();
     if (!panel) return;
-    applyEnvironment(envId);
+    // Do not inject props into the CAD viewport until the user picks a cell.
+    clearEnvironment();
+    syncEnvUi();
     await refreshPanel({ quiet: true });
     onStatus?.(true, "Robotic Simulator — shop catalog arms, upload URDF, simulate in a work cell.");
   }
 
   function hide() {
-    // Keep environment if a robot is loaded; clear only when leaving and nothing playing.
-    if (!isPlaying?.() && !getRobotState?.()?.loaded) clearEnvironment();
+    clearEnvironment();
   }
 
   function bind() {
     if (bound) return;
     bound = true;
+    // Reset buggy default that used to inject shop-floor into Design on boot.
+    if (envId !== "empty") {
+      envId = "empty";
+      writeEnv("empty");
+    }
     renderCatalog();
     renderEnvironments();
-    applyEnvironment(envId);
+    // Critical: never add work-cell props on boot — that pollutes Design viewport.
+    clearEnvironment();
+    syncEnvUi();
 
     const {
       catalog,
@@ -430,7 +453,6 @@ export function createRoboticSimulator(options = {}) {
     });
 
     loadBtn?.addEventListener("click", async () => {
-      applyEnvironment(envId);
       await refreshPanel({ quiet: true });
       const state = await loadRobotScene?.({ force: true });
       if (state?.loaded) {

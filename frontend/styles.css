@@ -26581,6 +26581,109 @@ body.theme-light .profile-preferences-advanced-nav button.active b {
   margin: 0 0 10px;
 }
 
+.project-share-card {
+  width: min(420px, calc(100vw - 28px));
+}
+
+.project-share-lead {
+  margin: 0 0 14px;
+  line-height: 1.4;
+}
+
+.project-share-people {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  max-height: 168px;
+  overflow: auto;
+}
+
+.project-share-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed rgba(139, 148, 158, 0.28);
+  border-radius: 10px;
+}
+
+.project-share-person {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.55);
+}
+
+.project-share-person-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.project-share-person-copy strong {
+  font-size: 0.84rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-share-person-copy small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-share-chip {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #bc8cff;
+}
+
+.project-share-person[data-kind="pending"] .project-share-chip {
+  color: #d4a72c;
+}
+
+.project-share-compose {
+  display: grid;
+  gap: 6px;
+}
+
+.project-share-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.project-share-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.9);
+  color: var(--text);
+  font: inherit;
+}
+
+.project-share-hint {
+  margin: 0;
+}
+
+.project-share-status {
+  min-height: 1.2em;
+  margin: 10px 0 0;
+}
+
+.project-share-status.is-error {
+  color: #f85149;
+}
+
 .folder-share-restrict {
   display: flex;
   align-items: flex-start;

@@ -108,6 +108,17 @@ def init_db() -> None:
                 FOREIGN KEY (shared_by) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS project_share_invites (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                email TEXT NOT NULL,
+                invited_by TEXT NOT NULL,
+                invite_token TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (invited_by) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS project_hidden (
                 project_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,

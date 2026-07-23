@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-ws-checks";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-email-share";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
@@ -101,7 +101,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260723-robot-sim";
-import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-robot-sim";
+import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-robot-sim-fix";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
@@ -27367,6 +27367,7 @@ window.addEventListener("keydown", (e) => {
   const askAgentParam = new URLSearchParams(window.location.search).get("askAgent")
     || new URLSearchParams(window.location.search).get("agentQ");
   const openShareParam = new URLSearchParams(window.location.search).get("open_share");
+  const projectShareParam = new URLSearchParams(window.location.search).get("project_share");
   const designTabParam = new URLSearchParams(window.location.search).get("designTab");
   const showMeParam = new URLSearchParams(window.location.search).get("showMe");
   const projectParam = new URLSearchParams(window.location.search).get("project");
@@ -27611,6 +27612,26 @@ window.addEventListener("keydown", (e) => {
       if (openShareParam) {
         await openSharedPreviewIntoProject(openShareParam);
       }
+      if (projectShareParam) {
+        try {
+          const accepted = await api(`/api/projects/share-invites/${encodeURIComponent(projectShareParam)}/accept`, {
+            method: "POST",
+          });
+          setEditStatus("ok", "Shared project added to your files.");
+          try {
+            await refreshWorkspaceRealtimeEditor?.();
+          } catch (_) {}
+          if (accepted?.project_id) {
+            await openProjectById?.(accepted.project_id);
+          }
+        } catch (err) {
+          setEditStatus("error", err.message || "Could not accept project share.");
+        }
+        const params = new URLSearchParams(window.location.search);
+        params.delete("project_share");
+        const qs = params.toString();
+        window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
+      }
     },
   });
   authUi = auth;
@@ -27620,6 +27641,9 @@ window.addEventListener("keydown", (e) => {
     setTimeout(() => authUi?.openModal?.(), 300);
   }
   if (openShareParam && !getToken?.()) {
+    setTimeout(() => authUi?.openModal?.(), 300);
+  }
+  if (projectShareParam && !getToken?.()) {
     setTimeout(() => authUi?.openModal?.(), 300);
   }
 

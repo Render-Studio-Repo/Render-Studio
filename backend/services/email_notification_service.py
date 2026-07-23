@@ -205,3 +205,45 @@ def send_workspace_invite_email(
         category="workspace_invites",
         user_id=user_id,
     )
+
+
+def send_project_share_invite_email(
+    *,
+    to_email: str,
+    inviter_name: str,
+    project_name: str,
+    invite_url: str,
+    user_id: str | None = None,
+) -> dict[str, Any]:
+    safe_inviter = html.escape(inviter_name or "A teammate")
+    safe_project = html.escape(project_name or "a Render3D project")
+    safe_url = html.escape(invite_url)
+    subject = f"{inviter_name or 'Someone'} shared “{project_name or 'a project'}” with you"
+    text = (
+        f"{inviter_name or 'A teammate'} shared “{project_name or 'a project'}” with you on Render3D.\n\n"
+        f"Accept share: {invite_url}\n\n"
+        "After you accept, the project appears in your files with a Shared tag. "
+        "Edits stay linked to the same live project."
+    )
+    html_body = f"""<!doctype html>
+<html>
+  <body style="margin:0;background:#0d1117;color:#e6edf3;font-family:Inter,Arial,sans-serif;">
+    <div style="max-width:640px;margin:0 auto;padding:28px;">
+      <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:linear-gradient(135deg,#161b22,#0d1117);">
+        <img src="https://render3d.app/render3d-logo.png" alt="Render3D" width="52" height="52" style="border-radius:14px;" />
+        <h1 style="margin:18px 0 8px;font-size:26px;">Shared: {safe_project}</h1>
+        <p style="margin:0 0 18px;color:#9da7b3;line-height:1.55;">{safe_inviter} shared a project with you. Accept to add it to your files with a Shared tag — edits stay linked live.</p>
+        <a href="{safe_url}" style="display:inline-block;padding:12px 16px;border-radius:999px;background:#fb8500;color:#0d1117;text-decoration:none;font-weight:800;">Accept project</a>
+        <p style="margin:18px 0 0;color:#9da7b3;font-size:13px;">If the button does not work, paste this link into your browser:<br />{safe_url}</p>
+      </div>
+    </div>
+  </body>
+</html>"""
+    return send_email(
+        to_email=to_email,
+        subject=subject,
+        text=text,
+        html_body=html_body,
+        category="workspace_invites",
+        user_id=user_id,
+    )
