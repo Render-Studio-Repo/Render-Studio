@@ -4,6 +4,16 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Robot artifact gen: gripper URDF/SRDF + clearer errors
+
+- Symptom: `Robot artifact generation failed.` on project `6b458c64` (trace `7dc9b7d7`) after CAD OK — SRDF stage failed.
+- Causes: AI `gen_urdf()` empty `<inertial/>` + joints to missing `finger_*_seg0`; `gen_srdf()` returned unsupported `planning_group` and put URDF XML in `urdf` instead of a relative `.urdf` path. Author prompt in `main.py` had said “dict with xml/urdf and a planning group.”
+- Fixes:
+  - Author-robot prompt: inertial/geometry/tree rules; `gen_srdf` exactly `{xml, urdf}` with `urdf` = sibling path.
+  - Failure message now surfaces last stderr lines (not only the generic string).
+  - Rewrote gripper `gen_urdf`/`gen_srdf` (revolute at flexures, valid inertials, SRDF envelope). Regenerated `.urdf` + `.srdf` via skill_runner.
+- Restarted `render3d.service`.
+
 ## 2026-07-23 — Restored missing `_running_set` (generation NameError)
 
 - Symptom: `name '_running_set' is not defined` on prompt start (trace `7bfeacf1`, project `6b458c64`).
