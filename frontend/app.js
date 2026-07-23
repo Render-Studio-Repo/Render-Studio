@@ -64,7 +64,7 @@ import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-email-
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
-import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-onshape-link";
+import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
 import { createProjectChatUI } from "./project-chat.js?v=20260716-chat-link-previews";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
@@ -27400,6 +27400,13 @@ window.addEventListener("keydown", (e) => {
     || new URLSearchParams(window.location.search).get("agentQ");
   const openShareParam = new URLSearchParams(window.location.search).get("open_share");
   const projectShareParam = new URLSearchParams(window.location.search).get("project_share");
+  const workspaceInviteParam = new URLSearchParams(window.location.search).get("workspace_invite");
+  const inviteTokenParam = new URLSearchParams(window.location.search).get("invite_token");
+  const workspaceJoinedParam = new URLSearchParams(window.location.search).get("workspace_joined");
+  const inviteErrorParam = new URLSearchParams(window.location.search).get("invite_error");
+  const signupInviteParam = new URLSearchParams(window.location.search).get("signup");
+  const inviteEmailParam = new URLSearchParams(window.location.search).get("invite_email");
+  const inviteIdParam = new URLSearchParams(window.location.search).get("invite_id");
   const designTabParam = new URLSearchParams(window.location.search).get("designTab");
   const showMeParam = new URLSearchParams(window.location.search).get("showMe");
   const projectParam = new URLSearchParams(window.location.search).get("project");
@@ -27407,6 +27414,31 @@ window.addEventListener("keydown", (e) => {
   const discordErrorParam = new URLSearchParams(window.location.search).get("discord_error");
   const twitterLinkParam = new URLSearchParams(window.location.search).get("twitter_link");
   const twitterErrorParam = new URLSearchParams(window.location.search).get("twitter_error");
+
+  function clearInviteQueryParams() {
+    const params = new URLSearchParams(window.location.search);
+    [
+      "workspace_invite",
+      "invite_token",
+      "workspace_joined",
+      "invite_error",
+      "signup",
+      "invite_email",
+      "invite_id",
+      "team_id",
+    ].forEach((key) => params.delete(key));
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
+  }
+
+  async function claimWorkspaceInviteFromQuery() {
+    if (!workspaceInviteParam || !inviteTokenParam) return null;
+    const result = await api(
+      `/api/teams/invites/${encodeURIComponent(workspaceInviteParam)}/claim?token=${encodeURIComponent(inviteTokenParam)}`,
+      { method: "POST" },
+    );
+    return result;
+  }
   if (askAgentParam) {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl || "/");
@@ -27446,6 +27478,18 @@ window.addEventListener("keydown", (e) => {
     params.delete("twitter_error");
     const qs = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
+  }
+  if (inviteErrorParam) {
+    window.setTimeout(() => {
+      setEditStatus("error", inviteErrorParam || "Invite not found or expired.");
+    }, 400);
+    clearInviteQueryParams();
+  }
+  if (workspaceJoinedParam) {
+    window.setTimeout(() => {
+      setEditStatus("ok", "You're in the workspace. Sign in with the invited email if you don't see it yet.");
+    }, 400);
+    clearInviteQueryParams();
   }
   if (projectParam) {
     try {
@@ -27664,6 +27708,35 @@ window.addEventListener("keydown", (e) => {
         const qs = params.toString();
         window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
       }
+      if (workspaceInviteParam && inviteTokenParam) {
+        try {
+          const claimed = await claimWorkspaceInviteFromQuery();
+          if (claimed?.status === "accepted") {
+            const teamName = claimed?.team?.name || "workspace";
+            setEditStatus("ok", `Joined ${teamName}.`);
+            try {
+              const me = await api("/api/auth/me");
+              allTeams = me.teams || allTeams;
+              renderTeams();
+              const teamSelect = document.getElementById("team-select");
+              if (teamSelect && claimed?.team?.id) {
+                teamSelect.value = claimed.team.id;
+                teamSelect.dispatchEvent(new Event("change"));
+              }
+            } catch (_) {}
+          } else if (claimed?.status === "signup_required") {
+            setEditStatus("ok", "Create an account with the invited email to join this workspace.");
+            authUi?.openModal?.({ email: claimed?.email || inviteEmailParam || "", tab: "register" });
+          }
+        } catch (err) {
+          setEditStatus("error", err.message || "Could not accept workspace invite.");
+        }
+        clearInviteQueryParams();
+      } else if (signupInviteParam === "1" && inviteEmailParam) {
+        setEditStatus("ok", "Create an account with the invited email to join this workspace.");
+        authUi?.openModal?.({ email: inviteEmailParam, tab: "register" });
+        clearInviteQueryParams();
+      }
     },
   });
   authUi = auth;
@@ -27677,6 +27750,30 @@ window.addEventListener("keydown", (e) => {
   }
   if (projectShareParam && !getToken?.()) {
     setTimeout(() => authUi?.openModal?.(), 300);
+  }
+  // Claim invite even when logged out (token authenticates the invite).
+  if (workspaceInviteParam && inviteTokenParam && !getToken?.()) {
+    void (async () => {
+      try {
+        const claimed = await claimWorkspaceInviteFromQuery();
+        if (claimed?.status === "accepted") {
+          setEditStatus("ok", `Joined ${claimed?.team?.name || "workspace"}. Sign in with ${claimed?.user?.email || "the invited email"} to continue.`);
+          authUi?.openModal?.({ email: claimed?.user?.email || inviteEmailParam || "", tab: "login" });
+        } else if (claimed?.status === "signup_required") {
+          setEditStatus("ok", "Create an account with the invited email to join this workspace.");
+          authUi?.openModal?.({ email: claimed?.email || inviteEmailParam || "", tab: "register" });
+        }
+      } catch (err) {
+        setEditStatus("error", err.message || "Could not accept workspace invite.");
+      }
+      clearInviteQueryParams();
+    })();
+  } else if (signupInviteParam === "1" && inviteEmailParam && !getToken?.()) {
+    setTimeout(() => {
+      setEditStatus("ok", "Create an account with the invited email to join this workspace.");
+      authUi?.openModal?.({ email: inviteEmailParam, tab: "register" });
+      clearInviteQueryParams();
+    }, 300);
   }
 
   window.addEventListener("render3d:open-fusion-library", () => {

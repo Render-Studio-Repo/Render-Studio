@@ -9918,9 +9918,11 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, request: Request, user
                     (body.email.strip().lower(),),
                 ).fetchone()
             base = str(getattr(settings, "public_base_url", None) or _request_origin(request)).rstrip("/")
+            # Frontend URL (not /api/.../claim): email scanners prefetch GET links and
+            # used to consume the invite before the user clicked, then show raw JSON.
             invite_url = (
-                f"{base}/api/teams/invites/{result['invite_id']}/claim"
-                f"?token={urllib.parse.quote(str(result['invite_token']))}"
+                f"{base}/?workspace_invite={urllib.parse.quote(str(result['invite_id']))}"
+                f"&invite_token={urllib.parse.quote(str(result['invite_token']))}"
             )
             email_result = email_notification_service.send_workspace_invite_email(
                 to_email=body.email.strip().lower(),
@@ -9960,20 +9962,46 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, request: Request, user
     return result
 
 
-@app.get("/api/teams/invites/{invite_id}/claim")
-def claim_team_invite_link(invite_id: str, token: str = Query(..., min_length=1)):
-    try:
-        result = teams_service.claim_team_invite(invite_id, token)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+def _workspace_invite_claim_redirect(invite_id: str, result: dict[str, Any]) -> RedirectResponse:
     if result.get("status") == "accepted":
-        return RedirectResponse(url=f"/?workspace_joined={urllib.parse.quote(str(result.get('team', {}).get('id') or ''))}", status_code=303)
+        team_id = str(result.get("team", {}).get("id") or "")
+        return RedirectResponse(
+            url=f"/?workspace_joined={urllib.parse.quote(team_id)}",
+            status_code=303,
+        )
     email = str(result.get("email") or "")
     team_id = str(result.get("team", {}).get("id") or "")
     return RedirectResponse(
-        url=f"/?signup=1&invite_id={urllib.parse.quote(invite_id)}&invite_email={urllib.parse.quote(email)}&team_id={urllib.parse.quote(team_id)}",
+        url=(
+            f"/?signup=1&invite_id={urllib.parse.quote(invite_id)}"
+            f"&invite_email={urllib.parse.quote(email)}"
+            f"&team_id={urllib.parse.quote(team_id)}"
+        ),
         status_code=303,
     )
+
+
+@app.get("/api/teams/invites/{invite_id}/claim")
+def claim_team_invite_link(invite_id: str, token: str = Query(..., min_length=1)):
+    """Legacy email claim URL. Always HTML-redirects (never raw JSON) so mobile browsers
+    do not download claim.json. Prefer /?workspace_invite=… for new emails."""
+    try:
+        result = teams_service.claim_team_invite(invite_id, token)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?invite_error={urllib.parse.quote(str(exc))}",
+            status_code=303,
+        )
+    return _workspace_invite_claim_redirect(invite_id, result)
+
+
+@app.post("/api/teams/invites/{invite_id}/claim")
+def claim_team_invite_api(invite_id: str, token: str = Query(..., min_length=1)):
+    """JSON claim used by the app when opening /?workspace_invite=…&invite_token=…"""
+    try:
+        return teams_service.claim_team_invite(invite_id, token)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/teams/invite-candidates")

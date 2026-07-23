@@ -760,6 +760,12 @@ def accept_pending_invites_for_user(user_id: str, email: str) -> list[dict[str, 
 
 
 def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
+    """Claim a workspace invite via emailed link token.
+
+    Idempotent: email scanners often prefetch the link once (accepting it), then the
+    real click would otherwise fail with "Invite not found or expired". Matching
+    tokens on already-accepted invites still succeed.
+    """
     token = str(token or "").strip()
     if not token:
         raise ValueError("Invite link is missing its token")
@@ -770,18 +776,37 @@ def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
             SELECT i.*, t.name AS team_name
             FROM team_invites i
             JOIN teams t ON t.id = i.team_id
-            WHERE i.id = ? AND i.status = 'pending'
+            WHERE i.id = ?
             """,
             (invite_id,),
         ).fetchone()
         if not invite or str(invite["token"] or "") != token:
             raise ValueError("Invite not found or expired")
-        user = conn.execute("SELECT id, email, display_name FROM users WHERE lower(email)=lower(?)", (invite["email"],)).fetchone()
+        status = str(invite["status"] or "")
+        if status == "declined":
+            raise ValueError("Invite was declined")
+        team = {"id": invite["team_id"], "name": invite["team_name"]}
+        user = conn.execute(
+            "SELECT id, email, display_name FROM users WHERE lower(email)=lower(?)",
+            (invite["email"],),
+        ).fetchone()
+        if status == "accepted":
+            # Prefetch / double-click: treat as success without mutating again.
+            if not user:
+                return {
+                    "status": "signup_required",
+                    "email": invite["email"],
+                    "team": team,
+                    "already_claimed": True,
+                }
+            return {"status": "accepted", "team": team, "user": dict(user), "already_claimed": True}
+        if status != "pending":
+            raise ValueError("Invite not found or expired")
         if not user:
             return {
                 "status": "signup_required",
                 "email": invite["email"],
-                "team": {"id": invite["team_id"], "name": invite["team_name"]},
+                "team": team,
             }
         existing = conn.execute(
             "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
@@ -796,7 +821,6 @@ def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
             newly_added = True
         conn.execute("UPDATE team_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
         conn.commit()
-        team = {"id": invite["team_id"], "name": invite["team_name"]}
     from backend.services import folders_service
     from backend.services.user_ai_keys_service import deny_shared_keys_for_new_member
 

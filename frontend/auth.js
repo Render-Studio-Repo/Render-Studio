@@ -676,9 +676,17 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
   setLoggedOutUI();
 
   return {
-    openModal() {
+    openModal(opts = {}) {
+      const email = String(opts?.email || "").trim();
+      const tab = opts?.tab === "register" ? "register" : "login";
+      if (email) {
+        const loginEmail = document.getElementById("login-email");
+        const registerEmail = document.getElementById("register-email");
+        if (loginEmail) loginEmail.value = email;
+        if (registerEmail) registerEmail.value = email;
+      }
       showModal(true);
-      switchTab("login");
+      switchTab(tab);
     },
     setUser(user) {
       if (user) setUserUI(user);
