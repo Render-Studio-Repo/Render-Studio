@@ -14280,15 +14280,28 @@ def _run_rigging_artifact_pipeline(
             "- Keep `gen_step()` and ALL existing CAD code byte-for-byte identical in behavior.\n"
             "- Do NOT change module-scope numeric constants. CAD units stay millimeters.\n"
             "- Do NOT divide/scale CAD parameters by 1000. Do NOT rewrite values like 600.0 → 0.6.\n"
-            "- Only ADD `def gen_urdf():` and `def gen_srdf():` (plus imports they need).\n"
+            "- Only ADD `def gen_urdf():` and `def gen_srdf():` (plus imports they need, e.g. xml.etree.ElementTree).\n"
             "- Inside gen_urdf ONLY, convert mm→meters locally (value / 1000.0) for link sizes/origins.\n"
-            "- gen_urdf returns xml.etree.ElementTree Element or XML string.\n"
-            "- gen_srdf returns dict with keys `xml` and `urdf` and a planning group.\n"
+            "- gen_urdf returns an xml.etree.ElementTree Element OR a URDF XML string (not a dict).\n"
+            "- Every physical <link> with <inertial> MUST include <mass value=\"...\"/> and a full "
+            "<inertia ixx=... ixy=... ixz=... iyy=... iyz=... izz=.../>. Or omit <inertial> entirely "
+            "for frame-only links. Never emit empty <inertial/>.\n"
+            "- If you add <visual> or <collision>, each must include <geometry> (box/cylinder/sphere/mesh). "
+            "Otherwise omit visual/collision.\n"
+            "- Joint parent/child names must reference existing links. The first child of each chain "
+            "parents to the real base/root link (never invent missing seg0 links).\n"
+            "- Form a connected tree: exactly (links - 1) joints, single root.\n"
+            "- gen_srdf MUST return a dict with EXACTLY two keys: `xml` and `urdf`.\n"
+            "  * `xml`: SRDF root Element or XML string (planning <group> lives inside this XML).\n"
+            "  * `urdf`: relative path string to the sibling .urdf file ONLY "
+            f"(e.g. \"{Path(source).stem}.urdf\"). NEVER put URDF XML or gen_urdf() output in `urdf`.\n"
+            "  * Do NOT add keys like planning_group, group, states, etc.\n"
             "- If this model is a static assembly/fixture (no arm joints), use fixed joints only — "
             "do not invent revolute joints on structural pillars/frames.\n"
             "- Prefer fixed joints linking named bodies; only use revolute/prismatic when the source "
-            "already implies actuated robot joints.\n"
-            "- Visual/collision mesh filenames may reference the sibling STL if present, else omit meshes.\n"
+            "already implies actuated robot joints (or compliant flexures approximated as revolute).\n"
+            "- Visual/collision mesh filenames may reference the sibling STL if present, else use "
+            "primitive geometry or omit meshes.\n"
             "- Return ONLY the full updated Python source file contents.\n\n"
             f"SOURCE FILE NAME: {source}\n\n"
             f"CURRENT SOURCE:\n{text[:120000]}"
@@ -14365,18 +14378,34 @@ def _run_rigging_artifact_pipeline(
 
     project_store.touch_project(path)
     summary = _robot_artifact_summary(path)
-    if errors and not outputs:
+    if errors:
         stderr_text = "\n".join(str(err.get("stderr") or "") for err in errors)
         missing_generators: list[str] = []
         if "does not define callable gen_urdf()" in stderr_text:
             missing_generators.append("gen_urdf()")
         if "does not define callable gen_srdf()" in stderr_text:
             missing_generators.append("gen_srdf()")
-        message = "Robot artifact generation failed."
         if missing_generators:
             message = (
                 f"Python source is missing {', '.join(missing_generators)}. "
                 "Author URDF/SRDF with AI first, then generate robot artifacts."
+            )
+        else:
+            snippets: list[str] = []
+            for err in errors:
+                se = str(err.get("stderr") or "").strip()
+                if not se:
+                    continue
+                lines = [ln.strip() for ln in se.splitlines() if ln.strip()]
+                if not lines:
+                    continue
+                pick = next((ln for ln in reversed(lines) if "Error" in ln or "error" in ln), lines[-1])
+                tool = str(err.get("tool") or "tool")
+                snippets.append(f"{tool}: {pick[:220]}")
+            message = (
+                "Robot artifact generation failed — " + " | ".join(snippets[:2])
+                if snippets
+                else "Robot artifact generation failed."
             )
         raise RuntimeError(message)
     msg = (
