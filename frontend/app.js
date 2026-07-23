@@ -101,7 +101,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260723-robot-sim";
-import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor2";
+import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor4";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";

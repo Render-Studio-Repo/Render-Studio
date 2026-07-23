@@ -106,118 +106,66 @@ function box(w, d, h, color, opts = {}) {
   return mesh;
 }
 
-/** Concrete / epoxy floor texture — reads as a real slab, not a floating disk. */
-function makeFloorTexture({ kind = "shop-floor", sizePx = 1024 } = {}) {
-  const canvas = document.createElement("canvas");
-  canvas.width = sizePx;
-  canvas.height = sizePx;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
+function buildFloorSlab(kind) {
+  const size = kind === "lab-bench" ? 5000 : 6500; // mm
+  const group = new THREE.Group();
+  group.name = "robotSimFloor";
 
-  const base = kind === "lab-bench" ? "#1e2430" : kind === "warehouse" ? "#2a2722" : "#2f343c";
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, sizePx, sizePx);
+  const baseColor =
+    kind === "lab-bench" ? 0x2a3140 : kind === "warehouse" ? 0x2e2b26 : 0x3a4049;
+  // Main slab — flat on XY (Z-up), reads as a real floor under the CAD grid.
+  const slab = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size),
+    mat(baseColor, { basic: true }),
+  );
+  slab.position.z = -1;
+  slab.receiveShadow = true;
+  group.add(slab);
 
-  for (let i = 0; i < 2800; i += 1) {
-    const x = Math.random() * sizePx;
-    const y = Math.random() * sizePx;
-    const r = 0.6 + Math.random() * 3.2;
-    const a = 0.015 + Math.random() * 0.05;
-    ctx.fillStyle = Math.random() > 0.5 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a * 1.2})`;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  // Soft outer apron so the slab doesn't hard-cut into the void
+  const apron = new THREE.Mesh(
+    new THREE.PlaneGeometry(size * 1.35, size * 1.35),
+    mat(0x12151a, { basic: true }),
+  );
+  apron.position.z = -2;
+  group.add(apron);
 
-  for (let i = 0; i < 18; i += 1) {
-    const x = Math.random() * sizePx;
-    const y = Math.random() * sizePx;
-    const r = 40 + Math.random() * 120;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, `rgba(255,255,255,${0.03 + Math.random() * 0.04})`);
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-
-  ctx.strokeStyle = "rgba(0,0,0,0.22)";
-  ctx.lineWidth = 2;
-  for (let i = 1; i < 4; i += 1) {
-    const p = (i / 4) * sizePx;
-    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, sizePx); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(sizePx, p); ctx.stroke();
-  }
-
+  // Painted aisle cues as coplanar planes (not thick bars)
   if (kind === "shop-floor") {
-    ctx.fillStyle = "rgba(240, 180, 41, 0.9)";
-    const tape = sizePx * 0.03;
-    const inset = sizePx * 0.12;
-    ctx.fillRect(inset, sizePx * 0.2 - tape / 2, sizePx - inset * 2, tape);
-    ctx.fillRect(inset, sizePx * 0.8 - tape / 2, sizePx - inset * 2, tape);
-    ctx.fillStyle = "rgba(240, 180, 41, 0.55)";
-    const dashW = sizePx * 0.045;
-    const gap = sizePx * 0.028;
-    let x = inset;
-    const y = sizePx * 0.5 - tape * 0.35;
-    while (x < sizePx - inset) {
-      ctx.fillRect(x, y, dashW, tape * 0.7);
-      x += dashW + gap;
+    const tapeMat = mat(0xe3a812, { basic: true });
+    const span = size * 0.7;
+    const tapeW = 55;
+    for (const y of [-size * 0.3, size * 0.3]) {
+      const strip = new THREE.Mesh(new THREE.PlaneGeometry(span, tapeW), tapeMat);
+      strip.position.set(0, y, -0.2);
+      group.add(strip);
     }
   }
 
   if (kind === "lab-bench") {
-    ctx.strokeStyle = "rgba(88, 166, 255, 0.35)";
-    ctx.lineWidth = 5;
-    ctx.strokeRect(sizePx * 0.18, sizePx * 0.18, sizePx * 0.64, sizePx * 0.64);
-    ctx.fillStyle = "rgba(88, 166, 255, 0.06)";
-    ctx.fillRect(sizePx * 0.18, sizePx * 0.18, sizePx * 0.64, sizePx * 0.64);
+    const zone = new THREE.Mesh(
+      new THREE.PlaneGeometry(size * 0.5, size * 0.5),
+      mat(0x243044, { basic: true }),
+    );
+    zone.position.z = -0.3;
+    group.add(zone);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(size * 0.24, size * 0.255, 64),
+      mat(0x58a6ff, { basic: true }),
+    );
+    ring.position.z = -0.15;
+    group.add(ring);
   }
 
   if (kind === "warehouse") {
-    ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
-    for (let i = 0; i < 7; i += 1) {
-      const x = sizePx * 0.2 + i * sizePx * 0.09;
-      ctx.beginPath();
-      ctx.moveTo(x, sizePx * 0.72);
-      ctx.lineTo(x + sizePx * 0.04, sizePx * 0.78);
-      ctx.lineTo(x, sizePx * 0.84);
-      ctx.closePath();
-      ctx.fill();
-    }
+    const lane = new THREE.Mesh(
+      new THREE.PlaneGeometry(size * 0.75, 90),
+      mat(0x4a4450, { basic: true }),
+    );
+    lane.position.set(0, -size * 0.28, -0.2);
+    group.add(lane);
   }
 
-  const vig = ctx.createRadialGradient(sizePx / 2, sizePx / 2, sizePx * 0.22, sizePx / 2, sizePx / 2, sizePx * 0.74);
-  vig.addColorStop(0, "rgba(0,0,0,0)");
-  vig.addColorStop(1, "rgba(0,0,0,0.4)");
-  ctx.fillStyle = vig;
-  ctx.fillRect(0, 0, sizePx, sizePx);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.anisotropy = 4;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-function buildFloorSlab(kind) {
-  const size = kind === "lab-bench" ? 5200 : 7200; // mm
-  const map = makeFloorTexture({ kind });
-  // PlaneGeometry is XY with +Z normal — correct for Render3D's Z-up world.
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(size, size, 1, 1),
-    mat(0xffffff, { map, basic: true }),
-  );
-  mesh.position.z = -0.5;
-  mesh.receiveShadow = true;
-  mesh.name = "robotSimFloor";
-
-  const skirt = box(size, size, 28, kind === "warehouse" ? 0x1c1a17 : 0x1a1e24, { basic: true });
-  skirt.position.z = -15;
-  skirt.receiveShadow = true;
-  skirt.castShadow = false;
-
-  const group = new THREE.Group();
-  group.add(mesh);
-  group.add(skirt);
   return group;
 }
 
@@ -232,54 +180,33 @@ function buildEnvironment(kind) {
 
   if (kind === "shop-floor") {
     const benchH = 720;
-    const bench = box(1100, 600, benchH, 0x2b313a, { roughness: 0.78 });
-    bench.position.set(2100, 200, benchH / 2);
+    const bench = box(1000, 520, benchH, 0x2b313a, { roughness: 0.78 });
+    bench.position.set(2000, 150, benchH / 2);
     root.add(bench);
-    const top = box(1140, 640, 22, 0x4a5562, { roughness: 0.55, metalness: 0.18 });
-    top.position.set(2100, 200, benchH + 11);
+    const top = box(1040, 560, 24, 0x4a5562, { roughness: 0.55, metalness: 0.18 });
+    top.position.set(2000, 150, benchH + 12);
     root.add(top);
-    [[1650, -40], [2550, -40], [1650, 440], [2550, 440]].forEach(([x, y]) => {
-      const p = box(120, 120, 18, 0x1f242b);
-      p.position.set(x, y, 9);
-      root.add(p);
-    });
   }
 
   if (kind === "lab-bench") {
-    const h = 760;
-    const table = box(1600, 800, 36, 0xc9d1d9, { roughness: 0.35, metalness: 0.22 });
-    table.position.set(0, 400, h + 18);
+    const h = 740;
+    const table = box(1500, 750, 34, 0xc9d1d9, { roughness: 0.35, metalness: 0.22 });
+    table.position.set(0, 350, h + 17);
     root.add(table);
-    [[-700, 120], [700, 120], [-700, 680], [700, 680]].forEach(([x, y]) => {
-      const leg = box(48, 48, h, 0x6e7681, { metalness: 0.35, roughness: 0.4 });
+    [[-650, 80], [650, 80], [-650, 620], [650, 620]].forEach(([x, y]) => {
+      const leg = box(44, 44, h, 0x6e7681, { metalness: 0.35, roughness: 0.4 });
       leg.position.set(x, y, h / 2);
       root.add(leg);
     });
-    const plate = box(480, 360, 10, 0x58a6ff, { metalness: 0.45, roughness: 0.35 });
-    plate.position.set(-200, 380, h + 41);
-    root.add(plate);
   }
 
   if (kind === "warehouse") {
-    const pallet = box(1100, 900, 100, 0xa67c52, { roughness: 0.9 });
-    pallet.position.set(1800, 300, 50);
+    const pallet = box(1000, 800, 90, 0xa67c52, { roughness: 0.9 });
+    pallet.position.set(1700, 250, 45);
     root.add(pallet);
-    for (let i = 0; i < 5; i += 1) {
-      const s = box(1100, 80, 18, 0x8b6914);
-      s.position.set(1800, -50 + i * 175, 110);
-      root.add(s);
-    }
-    const crate = box(480, 400, 360, 0x8d6e4c, { roughness: 0.85 });
-    crate.position.set(1800, 300, 290);
+    const crate = box(440, 360, 320, 0x8d6e4c, { roughness: 0.85 });
+    crate.position.set(1700, 250, 260);
     root.add(crate);
-    for (let i = 0; i < 3; i += 1) {
-      const post = box(70, 70, 1800, 0x3d4450, { metalness: 0.4, roughness: 0.45 });
-      post.position.set(-2000, -900 + i * 70, 900);
-      root.add(post);
-      const shelf = box(1200, 420, 28, 0x6e7681, { metalness: 0.25, roughness: 0.5 });
-      shelf.position.set(-1600, -860, 400 + i * 480);
-      root.add(shelf);
-    }
   }
 
   return root;
