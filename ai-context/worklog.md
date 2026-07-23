@@ -4,6 +4,11 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Better robot floor + rotate without explode
+
+- Robotics work cells: real concrete/epoxy slab texture (painted aisle tape), not floating yellow bars.
+- Exploded ▾ menu: **Rotate off** / **Rotate model** (assembled, no explode) / **Rotate exploded**. Cache-bust `?v=20260723-orbit-floor`.
+
 ## 2026-07-23 — Fix: robotic work-cell props polluted Design viewport
 
 - Bug: `robotic-simulator.js` applied shop-floor boxes/lanes on boot into the main Three.js scene.

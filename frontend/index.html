@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260723-email-share" />
+  <link rel="stylesheet" href="/styles.css?v=20260723-right-tabs" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -988,13 +988,17 @@
             <button type="button" id="btn-exploded-viewport" class="viewport-view-btn" title="Exploded view — space parts apart for BOM review" aria-pressed="false">Exploded</button>
             <button type="button" id="btn-exploded-options" class="viewport-view-btn viewport-transparent-options" aria-haspopup="menu" aria-expanded="false" aria-controls="viewport-exploded-menu" title="Exploded options">▾</button>
             <div id="viewport-exploded-menu" class="viewport-transparent-menu hidden" role="menu" aria-label="Exploded options">
-              <button type="button" data-exploded-rotate="off" role="menuitem">
+              <button type="button" data-viewport-orbit="off" role="menuitem">
                 <strong>Rotate off</strong>
-                <span>Keep the camera still while viewing exploded.</span>
+                <span>Keep the camera still.</span>
               </button>
-              <button type="button" data-exploded-rotate="on" role="menuitem">
-                <strong>Rotate</strong>
-                <span>Orbit the camera slowly around the exploded model.</span>
+              <button type="button" data-viewport-orbit="assembled" role="menuitem">
+                <strong>Rotate model</strong>
+                <span>Orbit the assembled model — no exploded view.</span>
+              </button>
+              <button type="button" data-viewport-orbit="exploded" role="menuitem">
+                <strong>Rotate exploded</strong>
+                <span>Space parts apart and orbit the camera.</span>
               </button>
             </div>
           </div>
@@ -2951,7 +2955,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260723-email-share"></script>
+  <script type="module" src="/app.js?v=20260723-zup-floor2"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

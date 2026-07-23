@@ -101,7 +101,7 @@ import { createReferenceFilesViewer, isReferenceFilename } from "./reference-fil
 import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260723-robot-sim";
-import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-robot-sim-fix";
+import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor2";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
 import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags";
@@ -10173,22 +10173,35 @@ document.addEventListener("click", (e) => {
 syncTransparentModeUi();
 
 // --- Exploded view (assembled ↔ spaced BOM layout) + optional orbit ---
-const EXPLODED_ROTATE_KEY = "render3d.explodedRotate";
+const VIEWPORT_ORBIT_KEY = "render3d.viewportOrbit";
+const EXPLODED_ROTATE_KEY = "render3d.explodedRotate"; // legacy
 let explodedViewEnabled = false;
-let explodedRotateEnabled = false;
+/** @type {"off"|"assembled"|"exploded"} */
+let viewportOrbitMode = "off";
 let explodedOrbit = null; // { center, radius, angle, elev }
 /** @type {Map<string, { assembled: string, exploded: string, savedTransform: object|null }>} */
 const explodedSwapByAssembled = new Map();
 
-function readExplodedRotateEnabled() {
+function readViewportOrbitMode() {
   try {
-    return String(localStorage.getItem(EXPLODED_ROTATE_KEY) || "off").toLowerCase() === "on";
+    const raw = String(localStorage.getItem(VIEWPORT_ORBIT_KEY) || "").toLowerCase();
+    if (raw === "off" || raw === "assembled" || raw === "exploded") return raw;
+    // Migrate old boolean key
+    if (String(localStorage.getItem(EXPLODED_ROTATE_KEY) || "off").toLowerCase() === "on") return "exploded";
   } catch {
-    return false;
+    /* ignore */
   }
+  return "off";
 }
 
-explodedRotateEnabled = readExplodedRotateEnabled();
+viewportOrbitMode = readViewportOrbitMode();
+const explodedRotateEnabled = () => viewportOrbitMode !== "off";
+
+function orbitShouldRun() {
+  if (viewportOrbitMode === "assembled") return true;
+  if (viewportOrbitMode === "exploded") return !!explodedViewEnabled;
+  return false;
+}
 
 function fileStemName(name = "") {
   return String(name || "").replace(/\.[^.]+$/, "");
@@ -10229,15 +10242,18 @@ function syncExplodedModeUi() {
   main?.classList.toggle("active", explodedViewEnabled);
   main?.setAttribute("aria-pressed", String(explodedViewEnabled));
   if (main) {
-    main.title = explodedViewEnabled
-      ? (explodedRotateEnabled
+    if (viewportOrbitMode === "assembled") {
+      main.title = "Exploded view off — camera orbiting assembled model. Use ▾ to change.";
+    } else if (explodedViewEnabled) {
+      main.title = viewportOrbitMode === "exploded"
         ? "Exploded view on — camera orbiting. Use ▾ to stop rotate."
-        : "Exploded view on — use ▾ to enable rotate.")
-      : "Exploded view — space parts apart for BOM review";
+        : "Exploded view on — use ▾ to enable rotate.";
+    } else {
+      main.title = "Exploded view — space parts apart for BOM review";
+    }
   }
-  menu?.querySelectorAll("[data-exploded-rotate]").forEach((btn) => {
-    const on = btn.dataset.explodedRotate === "on";
-    const active = on === explodedRotateEnabled;
+  menu?.querySelectorAll("[data-viewport-orbit]").forEach((btn) => {
+    const active = btn.dataset.viewportOrbit === viewportOrbitMode;
     btn.classList.toggle("active", active);
     btn.setAttribute("aria-checked", String(active));
   });
@@ -10264,7 +10280,7 @@ function stopExplodedOrbit() {
 }
 
 function startExplodedOrbit() {
-  if (!explodedViewEnabled || !explodedRotateEnabled) {
+  if (!orbitShouldRun()) {
     stopExplodedOrbit();
     return;
   }
@@ -10284,12 +10300,12 @@ function startExplodedOrbit() {
 }
 
 function pauseExplodedOrbitFromUser() {
-  if (!explodedOrbit || !explodedRotateEnabled) return;
+  if (!explodedOrbit || !orbitShouldRun()) return;
   explodedOrbit.paused = true;
   // After the user finishes dragging, resume from the new camera pose.
   window.clearTimeout(pauseExplodedOrbitFromUser._timer);
   pauseExplodedOrbitFromUser._timer = window.setTimeout(() => {
-    if (explodedViewEnabled && explodedRotateEnabled) startExplodedOrbit();
+    if (orbitShouldRun()) startExplodedOrbit();
   }, 1200);
 }
 
@@ -10297,23 +10313,38 @@ renderer?.domElement?.addEventListener("pointerdown", () => {
   pauseExplodedOrbitFromUser();
 });
 
-function setExplodedRotateEnabled(on) {
-  explodedRotateEnabled = !!on;
+async function setViewportOrbitMode(mode) {
+  const next = mode === "assembled" || mode === "exploded" ? mode : "off";
+  viewportOrbitMode = next;
   try {
-    localStorage.setItem(EXPLODED_ROTATE_KEY, explodedRotateEnabled ? "on" : "off");
+    localStorage.setItem(VIEWPORT_ORBIT_KEY, viewportOrbitMode);
+    localStorage.setItem(EXPLODED_ROTATE_KEY, viewportOrbitMode === "exploded" ? "on" : "off");
   } catch {
     /* ignore */
   }
-  syncExplodedModeUi();
   closeExplodedModeMenu();
-  if (explodedRotateEnabled && explodedViewEnabled) startExplodedOrbit();
+
+  if (viewportOrbitMode === "exploded" && !explodedViewEnabled) {
+    await applyExplodedView(true);
+  } else if (viewportOrbitMode === "assembled" && explodedViewEnabled) {
+    await applyExplodedView(false);
+  }
+
+  syncExplodedModeUi();
+  if (orbitShouldRun()) startExplodedOrbit();
   else stopExplodedOrbit();
-  setEditStatus(
-    "ok",
-    explodedRotateEnabled
-      ? "Exploded rotate on — camera will orbit the model."
-      : "Exploded rotate off.",
-  );
+
+  const messages = {
+    off: "Camera rotate off.",
+    assembled: "Rotating assembled model — exploded view stays off.",
+    exploded: "Rotating exploded view.",
+  };
+  setEditStatus("ok", messages[viewportOrbitMode] || "Orbit updated.");
+}
+
+/** @deprecated use setViewportOrbitMode */
+function setExplodedRotateEnabled(on) {
+  void setViewportOrbitMode(on ? "exploded" : "off");
 }
 
 async function applyExplodedView(on) {
@@ -10324,7 +10355,7 @@ async function applyExplodedView(on) {
   const want = !!on;
   if (want === explodedViewEnabled) {
     syncExplodedModeUi();
-    if (want && explodedRotateEnabled) startExplodedOrbit();
+    if (want && orbitShouldRun()) startExplodedOrbit();
     return true;
   }
 
@@ -10353,6 +10384,7 @@ async function applyExplodedView(on) {
       }
     }
     fitCamera();
+    if (orbitShouldRun()) startExplodedOrbit();
     setEditStatus("ok", "Assembled view restored.");
     return true;
   }
@@ -10424,10 +10456,10 @@ async function applyExplodedView(on) {
   explodedViewEnabled = true;
   syncExplodedModeUi();
   fitCamera();
-  if (explodedRotateEnabled) startExplodedOrbit();
+  if (orbitShouldRun()) startExplodedOrbit();
   setEditStatus(
     "ok",
-    explodedRotateEnabled
+    viewportOrbitMode === "exploded"
       ? "Exploded view on — camera orbiting. Use ▾ to stop rotate."
       : "Exploded view on — use ▾ to enable rotate.",
   );
@@ -10448,11 +10480,11 @@ document.getElementById("btn-exploded-options")?.addEventListener("click", (e) =
   toggleExplodedModeMenu();
 });
 document.getElementById("viewport-exploded-menu")?.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-exploded-rotate]");
+  const btn = e.target.closest("[data-viewport-orbit]");
   if (!btn) return;
   e.preventDefault();
   e.stopPropagation();
-  setExplodedRotateEnabled(btn.dataset.explodedRotate === "on");
+  void setViewportOrbitMode(btn.dataset.viewportOrbit || "off");
 });
 document.addEventListener("click", (e) => {
   if (e.target.closest?.(".viewport-exploded-control")) return;
@@ -13131,7 +13163,7 @@ function animate() {
     controls.target.copy(center);
     camera.lookAt(center);
     controls._eye?.subVectors(camera.position, controls.target);
-  } else if (explodedOrbit && explodedViewEnabled && explodedRotateEnabled && !explodedOrbit.paused) {
+  } else if (explodedOrbit && orbitShouldRun() && !explodedOrbit.paused) {
     explodedOrbit.angle += 0.006;
     const { center, radius, elev } = explodedOrbit;
     const cosElev = Math.cos(elev);
