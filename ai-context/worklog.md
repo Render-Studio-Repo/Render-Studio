@@ -4,6 +4,12 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Components tree: Bodies for assemblies + less indent
+
+- Top gripper (`Fully_Assembled…`) had no Bodies: `/bodies` called `load_mesh` first on a 14MB GLB and hung; also a spurious `*.part.step` stole primary. Scene parse already had 16 parts.
+- Fix: GLB `/bodies` prefers `scene_body_info` first; `list_browser_tree` nests viewer-scene Bodies when no `__part_` sidecars; hide `foo.part.step` when `foo` exists.
+- UI: nest Bodies under the component row (header above parts); tighten `.proj-hierarchy` left indent so names fill the panel. Cache-bust `?v=20260723-bodies-indent`.
+
 ## 2026-07-23 — Right-click share project with teammate
 
 - Feature: project owner right-clicks a project → **Share with teammate…** → appears in recipient’s files with a **Shared** tag; recipient right-clicks → **Remove from my folder**.
