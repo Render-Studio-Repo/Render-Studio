@@ -27708,35 +27708,6 @@ window.addEventListener("keydown", (e) => {
         const qs = params.toString();
         window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
       }
-      if (workspaceInviteParam && inviteTokenParam) {
-        try {
-          const claimed = await claimWorkspaceInviteFromQuery();
-          if (claimed?.status === "accepted") {
-            const teamName = claimed?.team?.name || "workspace";
-            setEditStatus("ok", `Joined ${teamName}.`);
-            try {
-              const me = await api("/api/auth/me");
-              allTeams = me.teams || allTeams;
-              renderTeams();
-              const teamSelect = document.getElementById("team-select");
-              if (teamSelect && claimed?.team?.id) {
-                teamSelect.value = claimed.team.id;
-                teamSelect.dispatchEvent(new Event("change"));
-              }
-            } catch (_) {}
-          } else if (claimed?.status === "signup_required") {
-            setEditStatus("ok", "Create an account with the invited email to join this workspace.");
-            authUi?.openModal?.({ email: claimed?.email || inviteEmailParam || "", tab: "register" });
-          }
-        } catch (err) {
-          setEditStatus("error", err.message || "Could not accept workspace invite.");
-        }
-        clearInviteQueryParams();
-      } else if (signupInviteParam === "1" && inviteEmailParam) {
-        setEditStatus("ok", "Create an account with the invited email to join this workspace.");
-        authUi?.openModal?.({ email: inviteEmailParam, tab: "register" });
-        clearInviteQueryParams();
-      }
     },
   });
   authUi = auth;
@@ -27750,30 +27721,6 @@ window.addEventListener("keydown", (e) => {
   }
   if (projectShareParam && !getToken?.()) {
     setTimeout(() => authUi?.openModal?.(), 300);
-  }
-  // Claim invite even when logged out (token authenticates the invite).
-  if (workspaceInviteParam && inviteTokenParam && !getToken?.()) {
-    void (async () => {
-      try {
-        const claimed = await claimWorkspaceInviteFromQuery();
-        if (claimed?.status === "accepted") {
-          setEditStatus("ok", `Joined ${claimed?.team?.name || "workspace"}. Sign in with ${claimed?.user?.email || "the invited email"} to continue.`);
-          authUi?.openModal?.({ email: claimed?.user?.email || inviteEmailParam || "", tab: "login" });
-        } else if (claimed?.status === "signup_required") {
-          setEditStatus("ok", "Create an account with the invited email to join this workspace.");
-          authUi?.openModal?.({ email: claimed?.email || inviteEmailParam || "", tab: "register" });
-        }
-      } catch (err) {
-        setEditStatus("error", err.message || "Could not accept workspace invite.");
-      }
-      clearInviteQueryParams();
-    })();
-  } else if (signupInviteParam === "1" && inviteEmailParam && !getToken?.()) {
-    setTimeout(() => {
-      setEditStatus("ok", "Create an account with the invited email to join this workspace.");
-      authUi?.openModal?.({ email: inviteEmailParam, tab: "register" });
-      clearInviteQueryParams();
-    }, 300);
   }
 
   window.addEventListener("render3d:open-fusion-library", () => {
@@ -30593,6 +30540,41 @@ window.addEventListener("keydown", (e) => {
   });
 
   const session = await auth.bootstrap();
+  if (workspaceInviteParam && inviteTokenParam) {
+    try {
+      const claimed = await claimWorkspaceInviteFromQuery();
+      if (claimed?.status === "accepted") {
+        const teamName = claimed?.team?.name || "workspace";
+        const invitedEmail = claimed?.user?.email || inviteEmailParam || "";
+        if (session?.user) {
+          setEditStatus("ok", `Joined ${teamName}.`);
+          try {
+            const me = await api("/api/auth/me");
+            allTeams = me.teams || allTeams;
+            renderTeams();
+            const teamSelect = document.getElementById("team-select");
+            if (teamSelect && claimed?.team?.id) {
+              teamSelect.value = claimed.team.id;
+              teamSelect.dispatchEvent(new Event("change"));
+            }
+          } catch (_) {}
+        } else {
+          setEditStatus("ok", `Joined ${teamName}. Sign in with ${invitedEmail || "the invited email"} to continue.`);
+          authUi?.openModal?.({ email: invitedEmail, tab: "login" });
+        }
+      } else if (claimed?.status === "signup_required") {
+        setEditStatus("ok", "Create an account with the invited email to join this workspace.");
+        authUi?.openModal?.({ email: claimed?.email || inviteEmailParam || "", tab: "register" });
+      }
+    } catch (err) {
+      setEditStatus("error", err.message || "Could not accept workspace invite.");
+    }
+    clearInviteQueryParams();
+  } else if (signupInviteParam === "1" && inviteEmailParam) {
+    setEditStatus("ok", "Create an account with the invited email to join this workspace.");
+    authUi?.openModal?.({ email: inviteEmailParam, tab: "register" });
+    clearInviteQueryParams();
+  }
   initClientVersionWatcher({
     getSnapshot: () => ({
       projectId,
