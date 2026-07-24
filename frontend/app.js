@@ -86,7 +86,7 @@ import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-ar
 import { createArchitectSession } from "./architect-session.js?v=20260720-architect-clip";
 import { createDirectModeling } from "./direct-modeling.js?v=20260716-body-face-pull";
 import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
-import { createObjectTools } from "./object-tools.js?v=20260716-body-name-xform";
+import { createObjectTools } from "./object-tools.js?v=20260724-select-whole";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-bake";
 import { createProjectTree } from "./project-tree.js?v=20260721-show-hidden";
@@ -2647,8 +2647,9 @@ function browserBodySelectionName(catalogName, bodyIndex) {
   return child?.name || catalogName;
 }
 
-/** Single-click selects a body when the model has multiple Fusion/scene parts.
- *  Double-click (or clicking the parent in the browser) selects the whole model.
+/** Single-click: select the whole model/component.
+ *  Double-click (partLevel: true) drills into a specific part/body.
+ *  Browser parent click / wholeModel: true also selects the whole model.
  */
 function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel = false } = {}) {
   if (!hit?.mesh) return null;
@@ -2659,13 +2660,7 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel 
     syncPromptTargetUI();
     featureEditor.setModel(projectId, target.catalogName);
   }
-  const meshes = listObjectMeshes(target.root || target.mesh);
-  const bodyInfo = objectTools.getBodyInfo?.();
-  const bodyCount = Math.max(
-    meshes.length,
-    Number(bodyInfo?.count) || 1,
-  );
-  const preferPart = !wholeModel && !wholeLocalModule && (partLevel || bodyCount > 1);
+  const preferPart = !wholeModel && !wholeLocalModule && partLevel;
   if (preferPart) {
     const bodyIndex = bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
     if (target.catalogName) {
@@ -2684,7 +2679,7 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel 
         showObjectGizmo(objectTools.getSelection()?.mesh || target.mesh, "translate", { switchTab: false });
       }
       const label = objectTools.getSelection()?.label || `Body ${bodyIndex + 1}`;
-      setEditStatus("ok", `Selected ${label} · drag to move this part · double-click for whole model · Cmd+Z to undo`);
+      setEditStatus("ok", `Selected ${label} · drag to move this part · click for whole model · Cmd+Z to undo`);
     };
     const pending = objectTools.refreshBodyInfo?.(target.catalogName);
     if (pending?.then) pending.finally(applyPartSelect);
@@ -2700,7 +2695,7 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel 
       isRoot: true,
     });
     if (showGizmo) showObjectGizmo(target.root || target.mesh, "translate", { switchTab: false });
-    setEditStatus("ok", "Selected whole model · click a part to select just that body · Cmd+Z to undo");
+    setEditStatus("ok", "Selected whole model · double-click a part to select just that body · Cmd+Z to undo");
   }
   renderer.domElement.focus({ preventScroll: true });
   syncSolidObjectAdjustmentsForSelection({ autoExpand: preferPart });

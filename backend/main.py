@@ -1221,25 +1221,44 @@ def _public_folder_summary(projects: list[dict[str, Any]] | None = None, team_id
 
 
 def _personal_workspace_id(user: dict[str, Any]) -> str | None:
+    """Return the user's true personal workspace id.
+
+    Prefer a solo owned workspace (or a classic \"Name's Workspace\"). Multi-member
+    collab teams like \"Render3D\" must not be treated as personal — otherwise they
+    never appear as a shared-workspace folder in Projects.
+    """
     user_id = str(user.get("id") or "")
     if not user_id:
         return None
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT t.id
-            FROM teams t
-            JOIN team_members tm ON tm.team_id = t.id
-            WHERE tm.user_id = ?
-            ORDER BY
-              CASE WHEN t.created_by = ? AND tm.role IN ('owner', 'admin') THEN 0 ELSE 1 END,
-              t.created_at,
-              lower(t.name)
-            LIMIT 1
-            """,
-            (user_id, user_id),
-        ).fetchone()
-    return str(row["id"]) if row else None
+    teams = teams_service.list_teams(user_id)
+    owned = [
+        t
+        for t in teams
+        if str(t.get("created_by") or "") == user_id
+        and str(t.get("role") or "").lower() in {"owner", "admin"}
+    ]
+    owned.sort(key=lambda t: str(t.get("created_at") or ""))
+
+    def _members(team: dict[str, Any]) -> int:
+        return int(team.get("member_count") or team.get("members_count") or 1) or 1
+
+    def _looks_personal(team: dict[str, Any]) -> bool:
+        name = str(team.get("name") or "").strip().lower()
+        return bool(
+            name.endswith("'s workspace")
+            or name.endswith("’s workspace")
+            or name in {"my workspace", "personal workspace", "personal"}
+        )
+
+    solo = [t for t in owned if _members(t) <= 1]
+    if solo:
+        named = next((t for t in solo if _looks_personal(t)), None)
+        return str((named or solo[0])["id"])
+    named_owned = next((t for t in owned if _looks_personal(t)), None)
+    if named_owned:
+        return str(named_owned["id"])
+    # No dedicated personal workspace — leave unset so multi-member teams can nest.
+    return None
 
 
 def _shared_workspace_folder_id(team_id: str) -> str:
@@ -1262,20 +1281,17 @@ def _nest_shared_workspace_root_projects(
     projects: list[dict[str, Any]],
     user: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Keep personal projects at the browser root; put invited/shared workspace
+    """Keep personal/solo projects at the browser root; put multi-member workspace
     root projects under a virtual per-team folder (e.g. "Render3D shared workspace").
     Real subfolders inside those workspaces are left alone.
     """
     personal_id = _personal_workspace_id(user)
-    if not personal_id:
-        return projects
     teams_by_id = {str(t["id"]): t for t in teams_service.list_teams(user["id"])}
     out: list[dict[str, Any]] = []
     for project in projects:
         tid = project.get("team_id")
         if (
             not tid
-            or str(tid) == str(personal_id)
             or project.get("folder_id")
             or project.get("public")
             or project.get("private_project")
@@ -1284,6 +1300,15 @@ def _nest_shared_workspace_root_projects(
             out.append(project)
             continue
         team = teams_by_id.get(str(tid)) or {}
+        member_count = int(team.get("member_count") or team.get("members_count") or 1) or 1
+        # Solo / true-personal teams stay at root. Multi-member collab teams nest
+        # even when the current user is the workspace admin/owner.
+        if member_count <= 1 or (personal_id and str(tid) == str(personal_id) and member_count <= 1):
+            out.append(project)
+            continue
+        if personal_id and str(tid) == str(personal_id) and member_count <= 1:
+            out.append(project)
+            continue
         folder_id = _shared_workspace_folder_id(str(tid))
         out.append(
             {
