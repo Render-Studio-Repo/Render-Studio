@@ -1,3 +1,12 @@
+## 2026-07-24 — Export still sent Arduino: Base stem collision
+
+- Root cause: hiding Two-finger stored body label `Base`; `isBrowserComponentHidden` stem-matched that onto Fully_Assembled (same STEP product name `base`), so Export treated the gripper as hidden and opened `arduino_uno_q` (`latest_file`).
+- Fix: eye-icon visibility is exact file keys only (no cross-component body-name stems). With any hidden siblings, Export always bakes `_export_visible_assembly` from unhidden top-level components; Fusion push sends `allowed_filenames` and backend refuses off-list uploads.
+- Verified bake of Fully_Assembled only: editable B-rep, 12 solids, 0 assembly links, no arduino. Compared Jul16 golden — native STEP path unchanged for this solid. Service restarted.
+- Cache-bust: `app.js` / `file-actions.js` `?v=20260724-visible-eye`.
+
+---
+
 ## 2026-07-24 — Pick bar sits on ribbon bottom border
 
 - Ribbon `.ribbon-pick-host` was vertically centered (`top: 50%` + translate). Anchored to `bottom: 0` so the Pick strip sits on the grey ribbon/viewport divider; bottom corners squared to meet the line.
