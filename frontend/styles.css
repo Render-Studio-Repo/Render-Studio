@@ -4057,7 +4057,8 @@ body.wiring-mode .auth-widget {
 }
 
 #app.wiring-mode .right-panel-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr;
 }
 
 #app.wiring-mode .wiring-mode-tab {
@@ -10183,7 +10184,7 @@ label.btn { display: inline-flex; align-items: center; }
   grid-area: right;
   position: relative;
   border-left: 1px solid var(--border);
-  padding: 14px 14px 8px;
+  padding: 6px 10px 8px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -17638,17 +17639,18 @@ label input { margin-top: 4px; }
 }
 
 .project-cost-thumb {
-  margin: 8px 10px 10px;
-  padding: 12px;
+  margin: 4px 0 6px;
+  padding: 7px 10px;
   border: 1px solid rgba(168, 178, 192, 0.38);
-  border-radius: 14px;
+  border-radius: 10px;
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 34%),
     linear-gradient(135deg, #2a3038 0%, #151a21 42%, #1c222b 68%, #0f1319 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
     inset 0 -1px 0 rgba(0, 0, 0, 0.45),
-    0 10px 26px rgba(0, 0, 0, 0.32);
+    0 6px 16px rgba(0, 0, 0, 0.28);
+  flex-shrink: 0;
 }
 
 .project-cost-thumb.hidden {
@@ -17665,14 +17667,14 @@ label input { margin-top: 4px; }
 
 .project-cost-thumb-head span {
   color: #b7c0cc;
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   font-weight: 750;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .project-cost-thumb-head strong {
-  font-size: 1.15rem;
+  font-size: 0.95rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: transparent;
@@ -17690,14 +17692,14 @@ label input { margin-top: 4px; }
 }
 
 .project-cost-thumb-chart {
-  height: 54px;
-  margin: 10px 0 8px;
+  height: 28px;
+  margin: 5px 0 4px;
   display: flex;
   align-items: flex-end;
-  gap: 4px;
-  padding: 8px 6px 4px;
+  gap: 3px;
+  padding: 4px 5px 3px;
   border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 10px;
+  border-radius: 7px;
   background:
     linear-gradient(to top, rgba(148, 163, 184, 0.14) 1px, transparent 1px) 0 0 / 100% 25%,
     linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.28));
@@ -17721,9 +17723,9 @@ label input { margin-top: 4px; }
 
 .project-cost-thumb-meta {
   color: #9aa4b2;
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   flex-wrap: wrap;
-  row-gap: 6px;
+  row-gap: 2px;
 }
 
 .project-cost-thumb-credits {
@@ -27484,47 +27486,51 @@ body.sidebar-hidden #sidebar-reopen-tab { display: flex; }
 .fe-mesh-edit { opacity: 0.92; border-style: dashed; }
 
 .right-panel-tabs {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
-  margin: 10px 10px 8px;
+  margin: 0 0 4px;
   padding: 0;
   position: sticky;
   top: 0;
   z-index: 5;
+  flex-shrink: 0;
   background: rgba(88, 166, 255, 0.22);
   border: 1px solid rgba(88, 166, 255, 0.42);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     0 0 0 1px rgba(13, 17, 23, 0.55),
-    0 10px 24px rgba(0, 0, 0, 0.28);
+    0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
 .right-panel-tab {
   position: relative;
-  flex: 1 1 5.6rem;
-  min-width: 5.6rem;
+  flex: unset;
+  min-width: 0;
+  width: 100%;
   border: 0;
   border-radius: 0;
   background: #0d1117;
   color: #9da7b3;
-  padding: 11px 8px;
-  font-size: 0.74rem;
+  padding: 7px 4px;
+  font-size: 0.68rem;
   font-weight: 650;
-  letter-spacing: 0.015em;
-  line-height: 1.15;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
   text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
   transition: color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
 }
 
 .right-panel-tab[data-right-tab="electronics"],
 .right-panel-tab[data-right-tab="robotics"] {
-  flex: 1 1 6.6rem;
-  min-width: 6.6rem;
+  flex: unset;
+  min-width: 0;
 }
 
 .right-panel-tab:hover:not(.active):not(:disabled) {

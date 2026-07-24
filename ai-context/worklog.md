@@ -4,6 +4,12 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Right panel tabs: 2 rows, tighter chrome
+
+- Right tabs forced to a 3-column / 2-row grid (was wrapping to 3 rows).
+- Pulled tabs up (less top padding/margin); slimmer AI usage thumb (shorter chart/padding).
+- Cache-bust `styles.css?v=20260723-right-tabs-2row`.
+
 ## 2026-07-23 — Share links respect unhidden models only
 
 - Bug: share saved visibility lists but the public viewer still loaded the full catalog.
