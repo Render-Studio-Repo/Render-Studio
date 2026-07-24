@@ -90,6 +90,8 @@ ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
     # Fable/Mythos: $10/$50 + cache write 1.25× / cache read 0.1× (Anthropic list).
     "claude-fable-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0, "cache_write": 12.5},
     "claude-mythos-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0, "cache_write": 12.5},
+    # Opus 5 / 4.x: $5/$25 (Anthropic list, Jul 2026).
+    "claude-opus-5": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
     "claude-opus-4-8": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
     "claude-opus-4-7": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
     "claude-4.6-opus": {"input": 5.0, "output": 25.0, "cached_input": 0.5, "cache_write": 6.25},
@@ -103,9 +105,45 @@ ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
     "claude-haiku": {"input": 0.25, "output": 1.25, "cached_input": 0.03, "cache_write": 0.3125},
 }
 
+# Moonshot / Kimi list prices (USD per 1M tokens, international api.moonshot.ai).
+KIMI_PRICING: dict[str, dict[str, float]] = {
+    "kimi-k3": {"input": 3.0, "output": 15.0, "cached_input": 0.30},
+    "kimi-k2.6": {"input": 0.95, "output": 4.0, "cached_input": 0.16},
+    "kimi-k2.7-code": {"input": 0.95, "output": 4.0, "cached_input": 0.19},
+    "kimi-k2.5": {"input": 0.60, "output": 3.0, "cached_input": 0.10},
+}
+
+# xAI / Grok list prices. Requests ≥200k prompt tokens bill the whole request at the higher tier.
+_LONG_CTX_GROK = {
+    "long_context_threshold": 200_000,
+    "long_context_input": 4.0,
+    "long_context_output": 12.0,
+    "long_context_cached_input": 0.60,
+}
+XAI_PRICING: dict[str, dict[str, float]] = {
+    "grok-4.5": {
+        "input": 2.0,
+        "output": 6.0,
+        "cached_input": 0.30,
+        **_LONG_CTX_GROK,
+    },
+    "grok-4.5-latest": {
+        "input": 2.0,
+        "output": 6.0,
+        "cached_input": 0.30,
+        **_LONG_CTX_GROK,
+    },
+}
+
 
 def _pricing_table(provider: str) -> dict[str, dict[str, float]]:
-    return ANTHROPIC_PRICING if provider == "anthropic" else OPENAI_PRICING
+    if provider == "anthropic":
+        return ANTHROPIC_PRICING
+    if provider in {"kimi", "moonshot"}:
+        return KIMI_PRICING
+    if provider in {"xai", "grok"}:
+        return XAI_PRICING
+    return OPENAI_PRICING
 
 
 def _pricing_for_model(model: str | None, provider: str = "openai") -> dict[str, float]:
@@ -130,6 +168,19 @@ def _pricing_for_model(model: str | None, provider: str = "openai") -> dict[str,
             return {"input": 1.0, "output": 5.0, "cached_input": 0.1, "cache_write": 1.25}
         # Default unknown Anthropic → Sonnet-class
         return {"input": 3.0, "output": 15.0, "cached_input": 0.3, "cache_write": 3.75}
+    if provider in {"kimi", "moonshot"}:
+        if "k3" in name:
+            return {"input": 3.0, "output": 15.0, "cached_input": 0.30}
+        if "2.5" in name:
+            return {"input": 0.60, "output": 3.0, "cached_input": 0.10}
+        return {"input": 0.95, "output": 4.0, "cached_input": 0.16}
+    if provider in {"xai", "grok"}:
+        return {
+            "input": 2.0,
+            "output": 6.0,
+            "cached_input": 0.30,
+            **_LONG_CTX_GROK,
+        }
     if "pro" in name:
         return {"input": 30.0, "output": 180.0, "cached_input": 30.0}
     if "sol" in name:

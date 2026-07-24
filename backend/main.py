@@ -666,7 +666,7 @@ class LoginRequest(BaseModel):
 
 
 class UserAIKeyRequest(BaseModel):
-    provider: str = Field("openai", description="openai | anthropic")
+    provider: str = Field("openai", description="openai | anthropic | kimi | xai")
     api_key: str | None = Field(None, min_length=20, max_length=512)
     model: str | None = Field(None, max_length=120)
     name: str | None = Field(None, max_length=80)

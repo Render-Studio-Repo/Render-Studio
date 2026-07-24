@@ -18330,6 +18330,14 @@ label input { margin-top: 4px; }
   background: rgba(205, 143, 80, 0.18);
   color: #cd8f50;
 }
+.prompt-key-popup-badge.badge-kimi {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+}
+.prompt-key-popup-badge.badge-grok {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
 
 .prompt-key-popup-model-wrap {
   flex-shrink: 0;
@@ -25656,6 +25664,18 @@ body.theme-light .profile-preferences-advanced-nav button.active b {
   background: rgba(139,92,246,.18);
   color: #c084fc;
   border: 1px solid rgba(139,92,246,.3);
+}
+
+.badge-kimi {
+  background: rgba(59,130,246,.18);
+  color: #60a5fa;
+  border: 1px solid rgba(59,130,246,.3);
+}
+
+.badge-grok {
+  background: rgba(148,163,184,.18);
+  color: #e2e8f0;
+  border: 1px solid rgba(148,163,184,.35);
 }
 
 .ai-key-row-model {

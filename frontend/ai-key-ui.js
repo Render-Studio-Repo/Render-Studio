@@ -3,11 +3,15 @@
 const PROVIDER_LABELS = {
   openai: "OpenAI",
   anthropic: "Anthropic",
+  kimi: "Kimi",
+  xai: "Grok",
 };
 
 const PROVIDER_BADGE_CLASS = {
   openai: "badge-openai",
   anthropic: "badge-claude",
+  kimi: "badge-kimi",
+  xai: "badge-grok",
 };
 
 const MODEL_OPTIONS = {
@@ -18,19 +22,40 @@ const MODEL_OPTIONS = {
     { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ],
   anthropic: [
+    { value: "claude-opus-5", label: "Opus 5 · $5/$25" },
     { value: "claude-fable-5", label: "Fable 5" },
     { value: "claude-sonnet-4-5", label: "Sonnet 4.5" },
     { value: "claude-opus-4-8", label: "Opus 4.8" },
     { value: "claude-4.6-sonnet", label: "Sonnet 4.6" },
   ],
+  kimi: [
+    { value: "kimi-k2.6", label: "Kimi K2.6 · $0.95/$4" },
+    { value: "kimi-k2.5", label: "Kimi K2.5 · $0.60/$3" },
+    { value: "kimi-k3", label: "Kimi K3 · $3/$15" },
+  ],
+  xai: [
+    { value: "grok-4.5", label: "Grok 4.5 · $2/$6" },
+  ],
 };
 
 function labelFor(provider) {
-  return PROVIDER_LABELS[provider] || "OpenAI";
+  return PROVIDER_LABELS[provider] || provider || "AI";
 }
 
 function defaultModel(provider) {
   return MODEL_OPTIONS[provider]?.[0]?.value || "gpt-5.5";
+}
+
+function keyPlaceholder(provider) {
+  if (provider === "anthropic") return "sk-ant-...";
+  if (provider === "xai") return "xai-...";
+  if (provider === "kimi") return "sk-... (Moonshot / Kimi)";
+  return "sk-...";
+}
+
+function nicknamePlaceholder(provider, shared = false) {
+  const label = labelFor(provider);
+  return shared ? `e.g. Team ${label} key` : `e.g. My ${label} key`;
 }
 
 function esc(s) {
@@ -145,14 +170,12 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     if (keyInput) {
       keyInput.required = !usingSavedSource;
       keyInput.disabled = usingSavedSource;
-      keyInput.placeholder = usingSavedSource ? "Using selected saved key" : "sk-... or sk-ant-...";
+      keyInput.placeholder = usingSavedSource ? "Using selected saved key" : keyPlaceholder(providerInput?.value || "openai");
       if (usingSavedSource) keyInput.value = "";
     }
     if (nameInput) {
       const provider = providerInput?.value || "openai";
-      nameInput.placeholder = shared
-        ? (provider === "anthropic" ? "e.g. Team Claude key" : "e.g. Team OpenAI key")
-        : (provider === "anthropic" ? "e.g. My Claude key" : "e.g. My OpenAI key");
+      nameInput.placeholder = nicknamePlaceholder(provider, shared);
     }
   }
 
@@ -314,7 +337,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
               && m.model === (allModelsForSelect.find((x) => x.provider === preferredProvider)?.model);
           const modelLabel = (MODEL_OPTIONS[m.provider] || []).find((opt) => opt.value === m.model)?.label
             || String(m.model || "").replace(/^claude-/i, "").replace(/-/g, " ");
-          const label = `${m.provider === "anthropic" ? "Anthropic" : "OpenAI"} · ${modelLabel}`;
+          const label = `${labelFor(m.provider)} · ${modelLabel}`;
           return `<option value="${esc(value)}"${isSelected ? " selected" : ""}>${esc(label)}</option>`;
         }).join("")
       : `<option value="openai:">OpenAI (default)</option>`;
@@ -820,7 +843,9 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     modal.classList.toggle("hidden", !show);
     if (show) {
       modal.dataset.required = required ? "1" : "";
-      const provider = preferProvider === "anthropic" ? "anthropic" : "openai";
+      const provider = ["anthropic", "kimi", "xai", "openai"].includes(preferProvider)
+        ? preferProvider
+        : "openai";
       setError(
         message
           || (required
@@ -844,7 +869,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
   // Provider dropdown change
   providerInput?.addEventListener("change", () => {
     renderModelOptions(providerInput.value);
-    if (nameInput && !nameInput.value) updateSharedAddUI();
+    updateSharedAddUI();
   });
 
   sharedInput?.addEventListener("change", () => {

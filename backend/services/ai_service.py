@@ -922,17 +922,41 @@ Use mm sizes when the mesh is in mm. Max 8 ops. Exactly one action with result:t
 
 
 class AIService:
+    OPENAI_COMPAT_BASE_URLS = {
+        "openai": None,
+        "xai": "https://api.x.ai/v1",
+        "kimi": "https://api.moonshot.ai/v1",
+    }
+
     def __init__(self, model: str | None = None, api_key: str | None = None, provider: str = "openai") -> None:
         self.provider = (provider or "openai").lower()
-        self.model = model or (settings.anthropic_model if self.provider == "anthropic" else settings.openai_model)
+        if self.provider in {"moonshot"}:
+            self.provider = "kimi"
+        if self.provider in {"grok", "x-ai"}:
+            self.provider = "xai"
+        if self.provider == "anthropic":
+            default_model = settings.anthropic_model
+        elif self.provider == "kimi":
+            default_model = getattr(settings, "kimi_model", None) or "kimi-k2.6"
+        elif self.provider == "xai":
+            default_model = getattr(settings, "xai_model", None) or "grok-4.5"
+        else:
+            default_model = settings.openai_model
+        self.model = model or default_model
         self.api_key = (api_key or "").strip()
         if not self.api_key:
             raise RuntimeError("Add your AI provider API key from the account menu before generating.")
         self.client = None
         self.cancel_check = None  # optional Callable[[], bool] set by generation runners
-        if self.provider == "openai":
-            # Client read timeout matches the per-model hard budget (cancel still works).
-            self.client = OpenAI(api_key=self.api_key, timeout=model_hard_timeout_seconds(self.model))
+        if self.provider in self.OPENAI_COMPAT_BASE_URLS:
+            base_url = self.OPENAI_COMPAT_BASE_URLS[self.provider]
+            kwargs: dict[str, Any] = {
+                "api_key": self.api_key,
+                "timeout": model_hard_timeout_seconds(self.model),
+            }
+            if base_url:
+                kwargs["base_url"] = base_url
+            self.client = OpenAI(**kwargs)
         elif self.provider != "anthropic":
             raise RuntimeError(f"Unsupported AI provider: {self.provider}")
 
@@ -1706,10 +1730,11 @@ class AIService:
 
     @staticmethod
     def _anthropic_supports_temperature(model: str) -> bool:
-        """Newer Claude 4.6+ snapshots reject temperature in Messages API requests."""
+        """Newer Claude 4.6+ / Opus 5 / Fable snapshots reject temperature in Messages API requests."""
         return not any(
             marker in model
             for marker in (
+                "claude-opus-5",
                 "claude-opus-4-8",
                 "claude-opus-4-7",
                 "claude-opus-4-6",
@@ -1742,6 +1767,18 @@ class AIService:
                 allow_truncated=allow_truncated,
             )
 
+        # Kimi (Moonshot) is OpenAI chat-completions compatible only — skip Responses API.
+        if self.provider == "kimi":
+            return self._call_openai_compat_chat(
+                system_prompt,
+                user_content,
+                trace_id=trace_id,
+                images=clean_images,
+                max_tokens=max_tokens,
+                json_response=json_response,
+                allow_truncated=allow_truncated,
+            )
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": self._openai_user_content(user_content, clean_images)},
@@ -1749,10 +1786,11 @@ class AIService:
 
         model = self.model
         hard_timeout = model_hard_timeout_seconds(model)
+        cost_provider = self.provider if self.provider in {"openai", "xai", "kimi"} else "openai"
         t0 = time.perf_counter()
         trace: dict[str, Any] = {
             "model": model,
-            "provider": "openai",
+            "provider": cost_provider,
             "api": "responses",
             "prompt_preview": user_content[:200],
             "reasoning": reasoning_effort or settings.openai_reasoning_effort,
@@ -1768,7 +1806,8 @@ class AIService:
             return self.client.responses.create(**kwargs)
 
         try:
-            trace_add("info", f"OpenAI Responses → {model}", trace_id=trace_id, data=trace)
+            label = "xAI" if cost_provider == "xai" else "OpenAI"
+            trace_add("info", f"{label} Responses → {model}", trace_id=trace_id, data=trace)
             create_kwargs: dict[str, Any] = {
                 "model": model,
                 "input": messages,
@@ -1799,8 +1838,8 @@ class AIService:
             usage = usage_from_openai_response(response)
             if usage:
                 trace["usage"] = usage
-                trace["cost_usd"] = estimate_cost_usd(model, usage, provider="openai")
-            trace_add("info", f"OpenAI OK ({trace['duration_ms']:.0f}ms) finish={finish_reason}", trace_id=trace_id, data=trace)
+                trace["cost_usd"] = estimate_cost_usd(model, usage, provider=cost_provider)
+            trace_add("info", f"{label} OK ({trace['duration_ms']:.0f}ms) finish={finish_reason}", trace_id=trace_id, data=trace)
             if finish_reason in ("max_output_tokens", "length"):
                 if text.strip() and allow_truncated:
                     trace["truncated"] = True
@@ -1814,19 +1853,22 @@ class AIService:
                 )
             if text:
                 return text, trace
-            raise self._openai_error_with_trace("Empty response from OpenAI", trace, RuntimeError)
+            raise self._openai_error_with_trace(f"Empty response from {label}", trace, RuntimeError)
         except Exception as exc:
             if not trace.get("usage"):
                 self._apply_openai_exc_usage(trace, exc, model)
             trace["duration_ms"] = (time.perf_counter() - t0) * 1000
             trace["error"] = str(exc)
-            trace_add("error", f"OpenAI failed: {exc}", trace_id=trace_id, data=trace)
+            trace_add("error", f"{'xAI' if cost_provider == 'xai' else 'OpenAI'} failed: {exc}", trace_id=trace_id, data=trace)
             # Do not silently degrade Sol / Pro to chat.completions — that under-drives CAD.
             if (
-                model in RESPONSES_ONLY_MODELS
-                or model.startswith("gpt-5.5-pro")
-                or model.startswith("gpt-5.6")
-                or model.endswith("-sol")
+                cost_provider == "openai"
+                and (
+                    model in RESPONSES_ONLY_MODELS
+                    or model.startswith("gpt-5.5-pro")
+                    or model.startswith("gpt-5.6")
+                    or model.endswith("-sol")
+                )
             ):
                 raise self._openai_error_with_trace(
                     f"OpenAI error ({model}): {exc}",
@@ -1835,52 +1877,103 @@ class AIService:
                     cause=exc,
                 )
             try:
-                chat_kwargs: dict[str, Any] = {
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": self._openai_chat_user_content(user_content, clean_images)},
-                    ],
-                    "max_completion_tokens": max_tokens,
-                }
-                if json_response:
-                    chat_kwargs["response_format"] = {"type": "json_object"}
-                with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-chat") as _pool:
-                    _fut = _pool.submit(self.client.chat.completions.create, **chat_kwargs)
-                    completion = self._wait_future(_fut, hard_timeout=hard_timeout)
-                choice = completion.choices[0]
-                text = choice.message.content or "{}"
-                chat_finish = choice.finish_reason or ""
-                trace["api"] = "chat.completions"
-                trace["finish_reason"] = chat_finish
-                trace["duration_ms"] = (time.perf_counter() - t0) * 1000
-                trace["raw_preview"] = text[:4000]
-                usage = usage_from_openai_response(completion)
-                if usage:
-                    trace["usage"] = usage
-                    trace["cost_usd"] = estimate_cost_usd(model, usage, provider="openai")
-                if chat_finish == "length":
-                    if text.strip() and allow_truncated:
-                        trace["truncated"] = True
-                        return text, trace
-                    kind = "JSON" if json_response else "response"
-                    raise self._openai_error_with_trace(
-                        f"AI returned invalid {kind}: response truncated at token limit "
-                        f"(max_tokens={max_tokens}). Partial: {text[:400]}",
-                        trace,
-                        ValueError,
-                    )
-                return text, trace
+                return self._call_openai_compat_chat(
+                    system_prompt,
+                    user_content,
+                    trace_id=trace_id,
+                    images=clean_images,
+                    max_tokens=max_tokens,
+                    json_response=json_response,
+                    allow_truncated=allow_truncated,
+                    prior_trace=trace,
+                    t0=t0,
+                )
             except Exception as exc2:
                 if not trace.get("usage"):
                     self._apply_openai_exc_usage(trace, exc2, model)
                 raise self._openai_error_with_trace(
-                    f"OpenAI API error: {exc2}",
+                    f"{'xAI' if cost_provider == 'xai' else 'OpenAI'} API error: {exc2}",
                     trace,
                     RuntimeError,
                     cause=exc2,
                 )
 
+    def _call_openai_compat_chat(
+        self,
+        system_prompt: str,
+        user_content: str,
+        *,
+        trace_id: str | None = None,
+        images: list[dict[str, Any]] | None = None,
+        max_tokens: int = 16384,
+        json_response: bool = True,
+        allow_truncated: bool = False,
+        prior_trace: dict[str, Any] | None = None,
+        t0: float | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Chat Completions path for OpenAI + OpenAI-compatible providers (xAI, Kimi)."""
+        import concurrent.futures as _cf
+
+        clean_images = images or []
+        model = self.model
+        hard_timeout = model_hard_timeout_seconds(model)
+        cost_provider = self.provider if self.provider in {"openai", "xai", "kimi"} else "openai"
+        started = t0 if t0 is not None else time.perf_counter()
+        label = {"xai": "xAI", "kimi": "Kimi"}.get(cost_provider, "OpenAI")
+        trace: dict[str, Any] = prior_trace or {
+            "model": model,
+            "provider": cost_provider,
+            "api": "chat.completions",
+            "prompt_preview": user_content[:200],
+            "image_count": len(clean_images),
+            "image_names": [img["name"] for img in clean_images],
+            "hard_timeout_s": hard_timeout,
+        }
+        trace["api"] = "chat.completions"
+        trace["provider"] = cost_provider
+        if not prior_trace:
+            trace_add("info", f"{label} chat.completions → {model}", trace_id=trace_id, data=trace)
+        chat_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": self._openai_chat_user_content(user_content, clean_images)},
+            ],
+            "max_completion_tokens": max_tokens,
+        }
+        if json_response:
+            chat_kwargs["response_format"] = {"type": "json_object"}
+        # Kimi prefers max_tokens over max_completion_tokens on older snapshots.
+        if cost_provider == "kimi":
+            chat_kwargs.pop("max_completion_tokens", None)
+            chat_kwargs["max_tokens"] = max_tokens
+        with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-chat") as _pool:
+            _fut = _pool.submit(self.client.chat.completions.create, **chat_kwargs)
+            completion = self._wait_future(_fut, hard_timeout=hard_timeout)
+        choice = completion.choices[0]
+        text = choice.message.content or "{}"
+        chat_finish = choice.finish_reason or ""
+        trace["finish_reason"] = chat_finish
+        trace["duration_ms"] = (time.perf_counter() - started) * 1000
+        trace["raw_preview"] = text[:4000]
+        usage = usage_from_openai_response(completion)
+        if usage:
+            trace["usage"] = usage
+            trace["cost_usd"] = estimate_cost_usd(model, usage, provider=cost_provider)
+        if chat_finish == "length":
+            if text.strip() and allow_truncated:
+                trace["truncated"] = True
+                return text, trace
+            kind = "JSON" if json_response else "response"
+            raise self._openai_error_with_trace(
+                f"AI returned invalid {kind}: response truncated at token limit "
+                f"(max_tokens={max_tokens}). Partial: {text[:400]}",
+                trace,
+                ValueError,
+            )
+        if not prior_trace:
+            trace_add("info", f"{label} OK ({trace['duration_ms']:.0f}ms) finish={chat_finish}", trace_id=trace_id, data=trace)
+        return text, trace
     def _call_anthropic(
         self,
         system_prompt: str,

@@ -55,12 +55,12 @@ import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
-import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260721-prompt-link-copy";
+import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260724-opus5-kimi-grok";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260724-ws-perms";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260724-opus5-kimi-grok";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
@@ -71,7 +71,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260723-key-layout";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260724-opus5-kimi-grok";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -16471,14 +16471,28 @@ const PROMPT_KEY_MODEL_OPTIONS = {
     { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ],
   anthropic: [
+    { value: "claude-opus-5", label: "Opus 5 · $5/$25" },
     { value: "claude-fable-5", label: "Fable 5" },
     { value: "claude-sonnet-4-5", label: "Sonnet 4.5" },
     { value: "claude-opus-4-8", label: "Opus 4.8" },
     { value: "claude-4.6-sonnet", label: "Sonnet 4.6" },
   ],
+  kimi: [
+    { value: "kimi-k2.6", label: "Kimi K2.6 · $0.95/$4" },
+    { value: "kimi-k2.5", label: "Kimi K2.5 · $0.60/$3" },
+    { value: "kimi-k3", label: "Kimi K3 · $3/$15" },
+  ],
+  xai: [
+    { value: "grok-4.5", label: "Grok 4.5 · $2/$6" },
+  ],
 };
 
-const BADGE_CLASS_MAP = { openai: "badge-openai", anthropic: "badge-claude" };
+const BADGE_CLASS_MAP = {
+  openai: "badge-openai",
+  anthropic: "badge-claude",
+  kimi: "badge-kimi",
+  xai: "badge-grok",
+};
 
 function buildModelOptionsHTML(provider, currentModel, allowedModels = null) {
   let opts = PROMPT_KEY_MODEL_OPTIONS[provider] || PROMPT_KEY_MODEL_OPTIONS.openai;

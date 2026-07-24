@@ -5,6 +5,7 @@ const MODEL_LABELS = {
   "gpt-5.5-pro": "GPT-5.5 Pro",
   "gpt-5.3-codex": "GPT-5.3 Codex",
   "gpt-5.6-sol": "GPT-5.6 Sol",
+  "claude-opus-5": "Opus 5",
   "claude-fable-5": "Fable 5",
   "claude-sonnet-4-5": "Sonnet 4.5",
   "claude-opus-4-8": "Opus 4.8",
@@ -15,6 +16,10 @@ const MODEL_LABELS = {
   "claude-opus-4-5": "Opus 4.5",
   "claude-sonnet-4-6": "Sonnet 4.6",
   "claude-haiku-4-5": "Haiku 4.5",
+  "kimi-k2.6": "Kimi K2.6",
+  "kimi-k2.5": "Kimi K2.5",
+  "kimi-k3": "Kimi K3",
+  "grok-4.5": "Grok 4.5",
 };
 
 export function formatPromptModeLabel(mode) {

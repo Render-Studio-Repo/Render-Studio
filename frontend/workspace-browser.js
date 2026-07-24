@@ -134,9 +134,13 @@ function projectProviderLabel(summary) {
   if (provider === "deterministic") return "Deterministic";
   if (provider === "anthropic") return "Claude";
   if (provider === "openai") return "OpenAI";
+  if (provider === "kimi" || provider === "moonshot") return "Kimi";
+  if (provider === "xai" || provider === "grok") return "Grok";
   // Infer from model name if provider field missing
   const model = (summary?.model || "").toLowerCase();
   if (model.includes("claude") || model.includes("anthropic")) return "Claude";
+  if (model.includes("kimi")) return "Kimi";
+  if (model.includes("grok")) return "Grok";
   if (model.includes("gpt") || model.includes("o1") || model.includes("o3")) return "OpenAI";
   return "AI";
 }

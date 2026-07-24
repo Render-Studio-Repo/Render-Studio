@@ -128,6 +128,7 @@ def platform_models() -> list[dict[str, str]]:
             [
                 ("anthropic", settings.anthropic_model),
                 ("anthropic", getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8"),
+                ("anthropic", "claude-opus-5"),
                 ("anthropic", "claude-fable-5"),
                 ("anthropic", "claude-sonnet-4-5"),
                 ("anthropic", "claude-opus-4-8"),

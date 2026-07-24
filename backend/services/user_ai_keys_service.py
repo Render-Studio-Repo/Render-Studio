@@ -13,7 +13,14 @@ from cryptography.fernet import Fernet, InvalidToken
 from backend.config import settings
 from backend.database import get_conn
 
-SUPPORTED_PROVIDERS = {"openai", "anthropic"}
+SUPPORTED_PROVIDERS = {"openai", "anthropic", "kimi", "xai"}
+
+PROVIDER_LABELS: dict[str, str] = {
+    "openai": "OpenAI",
+    "anthropic": "Claude",
+    "kimi": "Kimi",
+    "xai": "Grok",
+}
 
 # Catalog of models owners can allow on a shared key (keep in sync with frontend).
 PROVIDER_MODEL_CATALOG: dict[str, list[str]] = {
@@ -24,10 +31,19 @@ PROVIDER_MODEL_CATALOG: dict[str, list[str]] = {
         "gpt-5.6-sol",
     ],
     "anthropic": [
+        "claude-opus-5",
         "claude-fable-5",
         "claude-sonnet-4-5",
         "claude-opus-4-8",
         "claude-4.6-sonnet",
+    ],
+    "kimi": [
+        "kimi-k2.6",
+        "kimi-k2.5",
+        "kimi-k3",
+    ],
+    "xai": [
+        "grok-4.5",
     ],
 }
 
@@ -39,17 +55,34 @@ def _fernet() -> Fernet:
 
 def normalize_provider(provider: str | None) -> str:
     value = (provider or "openai").strip().lower()
-    if value == "claude":
-        value = "anthropic"
+    aliases = {
+        "claude": "anthropic",
+        "moonshot": "kimi",
+        "grok": "xai",
+        "x-ai": "xai",
+        "spacexai": "xai",
+    }
+    value = aliases.get(value, value)
     if value not in SUPPORTED_PROVIDERS:
-        raise ValueError("Provider must be openai or anthropic")
+        raise ValueError("Provider must be openai, anthropic, kimi, or xai")
     return value
+
+
+def provider_label(provider: str | None) -> str:
+    try:
+        return PROVIDER_LABELS[normalize_provider(provider)]
+    except ValueError:
+        return PROVIDER_LABELS.get(str(provider or "").strip().lower(), "AI")
 
 
 def default_model(provider: str) -> str:
     provider = normalize_provider(provider)
     if provider == "anthropic":
         return settings.anthropic_model
+    if provider == "kimi":
+        return getattr(settings, "kimi_model", None) or "kimi-k2.6"
+    if provider == "xai":
+        return getattr(settings, "xai_model", None) or "grok-4.5"
     return settings.openai_model
 
 
@@ -128,6 +161,10 @@ def validate_key(provider: str, api_key: str) -> str:
         raise ValueError('OpenAI API keys usually start with "sk-"')
     if provider == "anthropic" and not key.startswith("sk-ant-"):
         raise ValueError('Claude/Anthropic API keys usually start with "sk-ant-"')
+    if provider == "xai" and not key.startswith("xai-"):
+        raise ValueError('Grok / xAI API keys usually start with "xai-"')
+    if provider == "kimi" and key.startswith("sk-ant-"):
+        raise ValueError("That looks like an Anthropic key — pick Claude / Anthropic as the provider.")
     return key
 
 
@@ -166,7 +203,7 @@ def _migrate_legacy_key(user_id: str, conn: Any) -> None:
         return  # No legacy key
     provider = normalize_provider(row["ai_provider"] or "openai")
     model = (row["ai_model"] or "").strip() or default_model(provider)
-    key_name = "Claude key" if provider == "anthropic" else "OpenAI key"
+    key_name = f"{provider_label(provider)} key"
     key_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -200,7 +237,7 @@ def list_keys(user_id: str) -> list[dict[str, Any]]:
             "id": row["id"],
             "name": row["name"],
             "provider": row["provider"],
-            "provider_label": "Claude" if row["provider"] == "anthropic" else "OpenAI",
+            "provider_label": provider_label(row["provider"]),
             "model": row["model"],
             "created_at": row["created_at"],
             "is_active": row["id"] == active_key_id,
@@ -222,7 +259,7 @@ def add_key(
     enc = _encrypt(key)
     chosen_model = (model or "").strip() or default_model(provider)
     key_name = (name or "").strip() or (
-        "Claude key" if provider == "anthropic" else "OpenAI key"
+        f"{provider_label(provider)} key"
     )
     key_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
@@ -403,7 +440,7 @@ def add_team_shared_key(
     key = validate_key(provider, api_key)
     enc = _encrypt(key)
     chosen_model = (model or "").strip() or default_model(provider)
-    key_name = (name or "").strip() or ("Team Claude key" if provider == "anthropic" else "Team OpenAI key")
+    key_name = (name or "").strip() or (f"Team {provider_label(provider)} key")
     scope_type, scope_project_id, scope_label = _normalize_team_key_scope(scope_type, scope_project_id, scope_label)
     key_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
@@ -590,7 +627,7 @@ def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
             "team_id": team_id,
             "name": r["name"],
             "provider": r["provider"],
-            "provider_label": "Claude" if r["provider"] == "anthropic" else "OpenAI",
+            "provider_label": provider_label(r["provider"]),
             "model": clamp_model_to_allowed(
                 r["member_model"] or r["model"],
                 provider=r["provider"],
@@ -1136,7 +1173,7 @@ def status_for_user_id(user_id: str) -> dict[str, Any]:
 
     return {
         "provider": effective["provider"] if effective else provider,
-        "provider_label": "Claude" if (effective["provider"] if effective else provider) == "anthropic" else "OpenAI",
+        "provider_label": provider_label(effective["provider"] if effective else provider),
         "model": effective["model"] if effective else settings_for_user["model"],
         "has_key": bool(api_key) or bool(team_keys),
         "ai_ready": ai_ready,
@@ -1148,7 +1185,7 @@ def status_for_user_id(user_id: str) -> dict[str, Any]:
         "effective": {
             "source": effective.get("source", "personal"),
             "provider": effective["provider"],
-            "provider_label": "Claude" if effective["provider"] == "anthropic" else "OpenAI",
+            "provider_label": provider_label(effective["provider"]),
             "model": effective["model"],
             "key_id": effective.get("key_id"),
             "key_name": effective.get("key_name") or ("Personal key" if effective.get("source") == "personal" else "Shared key"),

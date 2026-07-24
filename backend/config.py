@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
     anthropic_model_quality: str = "claude-opus-4-8"
+    # BYOK OpenAI-compatible providers (optional platform keys unused unless set).
+    kimi_api_key: str = ""
+    kimi_model: str = "kimi-k2.6"
+    kimi_model_quality: str = "kimi-k3"
+    xai_api_key: str = ""
+    xai_model: str = "grok-4.5"
+    xai_model_quality: str = "grok-4.5"
     host: str = "127.0.0.1"
     port: int = 8000
     projects_dir: str = "projects"
