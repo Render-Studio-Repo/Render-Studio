@@ -17877,6 +17877,62 @@ section h2 {
   cursor: default;
 }
 
+.file-export-fusion-files {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.file-export-fusion-file-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.file-export-fusion-file-card {
+  display: grid;
+  gap: 5px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
+}
+
+.file-export-fusion-file-thumb {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background:
+    #f4f4f4
+    center / cover no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.file-export-fusion-file-thumb--cube {
+  background:
+    linear-gradient(145deg, #eceff3 0%, #d7dde5 48%, #c3ccd6 100%);
+  position: relative;
+}
+
+.file-export-fusion-file-thumb--cube::after {
+  content: "";
+  position: absolute;
+  inset: 28% 30% 30% 28%;
+  background: linear-gradient(145deg, #f7f8fa, #9aa7b5);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  opacity: 0.9;
+}
+
+.file-export-fusion-file-name {
+  font-size: 0.72rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.9;
+}
+
 .file-export-fusion-status {
   margin-top: 6px;
   line-height: 1.35;

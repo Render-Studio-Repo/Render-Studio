@@ -542,16 +542,40 @@ def _request_step_derivative(access_token: str, component_version_id: str) -> di
     raise RuntimeError("Autodesk did not return a STEP derivative for this Fusion design.")
 
 
-def upload_step_to_folder(access_token: str, *, project_id: str, folder_id: str, filename: str, data: bytes) -> dict[str, Any]:
+def upload_step_to_folder(
+    access_token: str,
+    *,
+    project_id: str,
+    folder_id: str,
+    filename: str,
+    data: bytes,
+    conflict_mode: str = "replace",
+) -> dict[str, Any]:
+    """Upload a file into a Fusion/APS folder.
+
+    conflict_mode:
+      - replace: if same name exists, create a new version on that item
+      - new: if same name exists, upload under a unique name (Create new file)
+    """
+    mode = str(conflict_mode or "replace").strip().lower()
+    if mode not in {"replace", "new"}:
+        mode = "replace"
+
     existing_item_id = ""
+    folder_items: list[dict[str, Any]] = []
     try:
         folder_contents = list_folder_contents(access_token, project_id, folder_id)
-        for item in folder_contents.get("items", []) or []:
+        folder_items = list(folder_contents.get("items", []) or [])
+        for item in folder_items:
             if str(item.get("name") or "").casefold() == filename.casefold():
                 existing_item_id = str(item.get("id") or "")
                 break
     except Exception as exc:
         logger.debug("Could not preflight Autodesk folder for duplicate %s: %s", filename, exc)
+
+    if existing_item_id and mode == "new":
+        filename = _unique_folder_filename(folder_items, filename)
+        existing_item_id = ""
 
     storage = _create_storage(access_token, project_id=project_id, folder_id=folder_id, filename=filename)
     storage_id = storage["data"]["id"]
@@ -560,13 +584,16 @@ def upload_step_to_folder(access_token: str, *, project_id: str, folder_id: str,
     if existing_item_id:
         version = _create_version(access_token, project_id=project_id, item_id=existing_item_id, storage_id=storage_id, filename=filename)
         version_data = version.get("data") or {}
+        version_id = version_data.get("id")
+        _kickoff_model_thumbnail(access_token, version_id)
         return {
             "item_id": existing_item_id,
-            "version_id": version_data.get("id"),
+            "version_id": version_id,
             "name": filename,
             "storage_id": storage_id,
             "web_url": ((version_data.get("links") or {}).get("webView") or {}).get("href"),
             "updated_existing": True,
+            "conflict_mode": "replace",
         }
     item = _create_item(access_token, project_id=project_id, folder_id=folder_id, storage_id=storage_id, filename=filename)
     item_data = item.get("data") or {}
@@ -580,13 +607,71 @@ def upload_step_to_folder(access_token: str, *, project_id: str, folder_id: str,
                     break
         except Exception as exc:
             logger.debug("Could not read new Autodesk item version for %s: %s", item_id, exc)
+    _kickoff_model_thumbnail(access_token, version_id)
     return {
         "item_id": item_id,
         "version_id": version_id,
         "name": filename,
         "storage_id": storage_id,
         "web_url": ((item_data.get("links") or {}).get("webView") or {}).get("href"),
+        "conflict_mode": mode,
+        "created_new": True,
     }
+
+
+def _unique_folder_filename(folder_items: list[dict[str, Any]], filename: str) -> str:
+    """Return filename, or stem (2).ext / stem (3).ext if taken."""
+    from pathlib import Path as _Path
+
+    taken = {str(item.get("name") or "").casefold() for item in folder_items}
+    if filename.casefold() not in taken:
+        return filename
+    stem = _Path(filename).stem
+    suffix = _Path(filename).suffix or ".step"
+    for n in range(2, 200):
+        candidate = f"{stem} ({n}){suffix}"
+        if candidate.casefold() not in taken:
+            return candidate
+    return f"{stem}-{int(time.time())}{suffix}"
+
+
+def _kickoff_model_thumbnail(access_token: str, version_id: str | None) -> None:
+    """Best-effort Model Derivative job so Fusion Data Panel gets a real preview thumb."""
+    if not version_id:
+        return
+    try:
+        import base64
+
+        urn = base64.urlsafe_b64encode(str(version_id).encode("utf-8")).decode("ascii").rstrip("=")
+        resp = httpx.post(
+            "https://developer.api.autodesk.com/modelderivative/v2/designdata/job",
+            headers={**_auth_headers(access_token), "Content-Type": "application/json"},
+            json={
+                "input": {"urn": urn},
+                "output": {
+                    "formats": [
+                        {
+                            "type": "thumbnail",
+                            "advanced": {"width": 400, "height": 400},
+                        },
+                        {
+                            "type": "svf2",
+                            "views": ["3d"],
+                        },
+                    ]
+                },
+            },
+            timeout=30,
+        )
+        if resp.status_code not in {200, 201, 202}:
+            logger.debug(
+                "Fusion thumbnail job not started for %s: %s %s",
+                version_id,
+                resp.status_code,
+                (resp.text or "")[:240],
+            )
+    except Exception as exc:
+        logger.debug("Fusion thumbnail kickoff failed for %s: %s", version_id, exc)
 
 
 def upload_step_as_new_version(
@@ -753,6 +838,12 @@ def _normalize_item(item: dict[str, Any], included_by_id: dict[str, dict[str, An
     version = included_by_id.get(tip_id or "") or {}
     version_attrs = version.get("attributes") or {}
     storage_meta = (((version.get("relationships") or {}).get("storage") or {}).get("meta") or {})
+    thumb_rel = ((version.get("relationships") or {}).get("thumbnails") or {})
+    thumb_meta = thumb_rel.get("meta") or {}
+    thumb_link = ((thumb_meta.get("link") or {}).get("href")
+                  or ((thumb_rel.get("data") or {}) if isinstance(thumb_rel.get("data"), dict) else {}))
+    if isinstance(thumb_link, dict):
+        thumb_link = (thumb_link.get("href") or thumb_link.get("id") or "")
     return {
         "id": item.get("id"),
         "version_id": version.get("id") or tip_id,
@@ -761,4 +852,5 @@ def _normalize_item(item: dict[str, Any], included_by_id: dict[str, dict[str, An
         "mime_type": version_attrs.get("mimeType") or attrs.get("mimeType"),
         "download_url": ((storage_meta.get("link") or {}).get("href")),
         "web_url": ((item.get("links") or {}).get("webView") or {}).get("href"),
+        "thumbnail_url": thumb_link or None,
     }

@@ -329,21 +329,33 @@ function showStepModeChooser(menu, item, onChoose, anchorEl = null) {
   chooser.scrollIntoView({ block: "nearest" });
 }
 
-function showFusionActionChooser(menu, onChoose, anchorEl = null) {
+function showFusionActionChooser(menu, onChoose, anchorEl = null, { allowPush = true, allowShared = true } = {}) {
   menu.querySelector(".file-export-fusion-action-chooser")?.remove();
+  if (!allowPush && !allowShared) return;
+  // One action → run it; don't show a useless single-option card.
+  if (allowPush && !allowShared) {
+    onChoose("push");
+    return;
+  }
+  if (!allowPush && allowShared) {
+    onChoose("shared");
+    return;
+  }
   const chooser = document.createElement("div");
   chooser.className = "file-export-step-chooser file-export-fusion-action-chooser";
   chooser.innerHTML = `
     <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close Fusion export">&times;</button>
     <div class="file-export-step-title">How should Fusion handle this model?</div>
+    ${allowPush ? `
     <button type="button" class="file-export-step-choice" data-fusion-action="push">
       <strong>Update original Fusion file</strong>
       <span>Push a new version back to the Fusion item this project came from.</span>
-    </button>
+    </button>` : ""}
+    ${allowShared ? `
     <button type="button" class="file-export-step-choice" data-fusion-action="shared">
       <strong>Shared Fusion folder/link</strong>
       <span>Choose a Fusion project folder so other Fusion users can access the uploaded file.</span>
-    </button>
+    </button>` : ""}
   `;
   chooser.addEventListener("click", (ev) => {
     if (ev.target.closest("[data-fusion-close]")) {
@@ -787,20 +799,25 @@ export async function openFileExportMenu({
   }
 
   fusionActionBtn?.addEventListener("click", async () => {
-    // Jul 16 behavior: no Part/Assembly chooser. Push only when a mirror folder
-    // is already linked; otherwise open the folder picker.
+    // Update-original only when a Fusion item is linked; Shared folder/link only
+    // when there is an uploadable STEP/3MF. One action → run it (no chooser card).
     const source = autodeskSource || {};
-    const hasMirrorFolder = Boolean(
-      (source.aps_project_id || source.autodesk_project_id) && source.folder_id
+    const allowPush = Boolean(source.item_id);
+    const allowShared = Boolean(
+      fusionUploadFilename
+      && /\.(step|stp|3mf)$/i.test(String(fusionUploadFilename))
     );
-    if (hasMirrorFolder) {
-      showFusionActionChooser(menu, (choice) => {
-        if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
-        else void openSharedFusionExport(fusionActionBtn);
-      }, fusionActionBtn);
+    if (!allowPush && !allowShared) {
+      showExportError(menu, new Error("No Fusion file or STEP/3MF available to export."), {
+        title: "Nothing to send to Fusion",
+        onRetry: null,
+      });
       return;
     }
-    await openSharedFusionExport(fusionActionBtn);
+    showFusionActionChooser(menu, (choice) => {
+      if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
+      else void openSharedFusionExport(fusionActionBtn);
+    }, fusionActionBtn, { allowPush, allowShared });
   });
 
   bambuBtn?.addEventListener("click", async () => {
@@ -1069,8 +1086,47 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
   let selectedFolderName = "";
   let allProjects = [];
   let lastFolderList = [];
+  let lastFolderItems = [];
   let autoSelectFolders = true;
   let restoringFolderPath = null;
+
+  const askReplaceOrNew = (existingName) => new Promise((resolve) => {
+    menu.querySelector(".file-export-fusion-conflict")?.remove();
+    const stem = String(existingName || "model").replace(/(\.[^.]+)$/, "");
+    const ext = (String(existingName || "").match(/(\.[^.]+)$/) || [".step"])[0];
+    const card = document.createElement("div");
+    card.className = "file-export-step-chooser file-export-fusion-conflict";
+    card.innerHTML = `
+      <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close">&times;</button>
+      <div class="file-export-step-title">“${escText(existingName)}” already exists in this folder</div>
+      <button type="button" class="file-export-step-choice" data-conflict="replace">
+        <strong>Replace</strong>
+        <span>Upload a new version of the existing Fusion file</span>
+      </button>
+      <button type="button" class="file-export-step-choice" data-conflict="new">
+        <strong>Create new file</strong>
+        <span>Keep the old one and upload as “${escText(`${stem} (2)${ext}`)}”</span>
+      </button>
+    `;
+    const finish = (mode) => {
+      card.remove();
+      resolve(mode);
+    };
+    card.addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-fusion-close]")) return finish(null);
+      const btn = ev.target.closest("[data-conflict]");
+      if (!btn) return;
+      finish(btn.dataset.conflict || "replace");
+    });
+    picker.appendChild(card);
+    card.scrollIntoView({ block: "nearest" });
+    keepMenuInViewport(menu);
+  });
+
+  const findExistingFolderItem = (uploadName) => {
+    const needle = String(uploadName || "").toLowerCase();
+    return (lastFolderItems || []).find((item) => String(item?.name || "").toLowerCase() === needle) || null;
+  };
 
   const LAST_KEY = "render3d:lastFusionExportTarget";
   const readLastTarget = () => {
@@ -1248,8 +1304,9 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
     loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
   };
 
-  const renderFolderBrowser = (folders, { loading = false, emptyText = "No folders found." } = {}) => {
+  const renderFolderBrowser = (folders, { loading = false, emptyText = "No folders found.", items = null } = {}) => {
     lastFolderList = folders || [];
+    if (items) lastFolderItems = items;
     if (loading) {
       folderBrowser.innerHTML = `<p class="muted small">Loading folders...</p>`;
       return;
@@ -1260,6 +1317,17 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       ...path.map((f, i) => ({ label: f.name || "Folder", depth: i + 1 })),
     ];
     const currentSelected = !!(currentFolder && selectedFolderId === currentFolder.id);
+    const fileCards = (lastFolderItems || []).slice(0, 12).map((item) => {
+      const thumb = item.thumbnail_url
+        ? `<span class="file-export-fusion-file-thumb" style="background-image:url('${escAttr(item.thumbnail_url)}')"></span>`
+        : `<span class="file-export-fusion-file-thumb file-export-fusion-file-thumb--cube" aria-hidden="true"></span>`;
+      return `
+        <div class="file-export-fusion-file-card" title="${escAttr(item.name || "")}">
+          ${thumb}
+          <span class="file-export-fusion-file-name">${escText(item.name || "file")}</span>
+        </div>
+      `;
+    }).join("");
     folderBrowser.innerHTML = `
       <div class="file-export-fusion-folder-head">
         <button type="button" class="btn secondary btn-compact" data-folder-back ${path.length ? "" : "disabled"} title="Go up one folder">Back</button>
@@ -1300,6 +1368,12 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
           `;
         }).join("") : `<p class="muted small file-export-fusion-folder-empty">${escText(emptyText)}</p>`}
       </div>
+      ${fileCards ? `
+        <div class="file-export-fusion-files">
+          <p class="muted small">Files already in this folder</p>
+          <div class="file-export-fusion-file-grid">${fileCards}</div>
+        </div>
+      ` : ""}
     `;
     folderBrowser.querySelector("[data-folder-back]")?.addEventListener("click", () => {
       autoSelectFolders = false;
@@ -1347,6 +1421,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       ? await autodeskJson(`/api/autodesk/projects/${encodeURIComponent(apsProjectId)}/folders/${encodeURIComponent(currentFolder.id)}/contents`)
       : await autodeskJson(`/api/autodesk/hubs/${encodeURIComponent(hubId)}/projects/${encodeURIComponent(apsProjectId)}/top-folders`);
     const folders = data.folders || [];
+    lastFolderItems = currentFolder ? (data.items || []) : [];
 
     // Restore nested path from last export (Project Files → Render3D → …).
     if (restoringFolderPath?.length && autoSelectFolders) {
@@ -1378,6 +1453,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       }
     }
     renderFolderBrowser(folders, {
+      items: lastFolderItems,
       emptyText: currentFolder
         ? "No subfolders here — use Export here, or go Back."
         : "No top folders found.",
@@ -1444,6 +1520,30 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       setStatus("Choose a Fusion folder first.", true);
       return;
     }
+    // If destination folder contents aren't loaded yet (exporting a sibling
+    // without opening it), fetch items so we can detect name collisions.
+    if (!currentFolder || selectedFolderId !== currentFolder.id || !lastFolderItems.length) {
+      try {
+        const contents = await autodeskJson(
+          `/api/autodesk/projects/${encodeURIComponent(projectSelect.value)}/folders/${encodeURIComponent(selectedFolderId)}/contents`
+        );
+        lastFolderItems = contents.items || [];
+      } catch {
+        /* collision check is best-effort */
+      }
+    }
+    const uploadBaseName = String(filename || "model.step").split(/[/\\]/).pop();
+    const existing = findExistingFolderItem(uploadBaseName);
+    let conflictMode = "replace";
+    if (existing) {
+      const choice = await askReplaceOrNew(existing.name || uploadBaseName);
+      if (!choice) {
+        setStatus("Export cancelled.");
+        submit.disabled = false;
+        return;
+      }
+      conflictMode = choice;
+    }
     submit.disabled = true;
     setStatus(isThreeMf ? "Uploading 3MF to Fusion..." : "Uploading STEP to Fusion...");
     try {
@@ -1459,6 +1559,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
           folder_label: selectedFolderName,
           filename,
           allow_faceted_step: allowFacetedStep,
+          conflict_mode: conflictMode,
           // Jul 16 working path: no step_mode — native solid STEP as-is.
           ...(isThreeMf ? { format: "3mf" } : {}),
         }),

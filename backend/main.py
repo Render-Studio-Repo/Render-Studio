@@ -8536,6 +8536,9 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
         upload_name = Path(str(body.get("name") or upload_path.name)).name
         if not upload_name.lower().endswith(".3mf"):
             upload_name = f"{Path(upload_name).stem}.3mf"
+        conflict_mode = str(body.get("conflict_mode") or body.get("on_conflict") or "replace").strip().lower()
+        if conflict_mode not in {"replace", "new"}:
+            conflict_mode = "replace"
         try:
             result = upload_step_to_folder(
                 token,
@@ -8543,6 +8546,7 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 folder_id=folder_id,
                 filename=upload_name,
                 data=upload_path.read_bytes(),
+                conflict_mode=conflict_mode,
             )
         except Exception as exc:
             raise HTTPException(502, f"Fusion 3MF push failed: {exc}") from exc
@@ -8589,6 +8593,9 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     upload_name = Path(str(body.get("name") or f"{upload_stem}.step")).name
     if not upload_name.lower().endswith((".step", ".stp")):
         upload_name = f"{Path(upload_name).stem}.step"
+    conflict_mode = str(body.get("conflict_mode") or body.get("on_conflict") or "replace").strip().lower()
+    if conflict_mode not in {"replace", "new"}:
+        conflict_mode = "replace"
 
     try:
         result = upload_step_to_folder(
@@ -8596,8 +8603,10 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             project_id=aps_project_id,
             folder_id=folder_id,
             filename=upload_name,
-                data=step_path.read_bytes(),
-            )
+            data=step_path.read_bytes(),
+            conflict_mode=conflict_mode,
+        )
+        upload_name = str(result.get("name") or upload_name)
         if body.get("upload_source", True) and source_path.is_file():
             try:
                 source_name = f"{source_path.stem}.build123d.py"
@@ -8607,6 +8616,7 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                     folder_id=folder_id,
                     filename=source_name,
                     data=source_path.read_bytes(),
+                    conflict_mode=conflict_mode,
                 )
             except Exception as exc:
                 logger.warning("Fusion companion source upload failed for %s: %s", source_path.name, exc)

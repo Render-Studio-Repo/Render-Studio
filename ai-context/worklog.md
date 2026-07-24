@@ -1,3 +1,20 @@
+## 2026-07-24 — Fusion chooser: Shared only with a file
+
+- **Shared Fusion folder/link** only when a STEP/3MF is available to upload; **Update original** only when `autodesk_source.item_id` exists.
+- Single action skips the chooser and runs directly (no lone Shared card).
+- Cache-bust: `?v=20260724-fusion-opt`.
+
+---
+
+## 2026-07-24 — Fusion export: restore Jul 16 / pre-Jul19 working path
+
+- Break introduced **Jul 19** (`3fc6c13`): Part/Assembly chooser + `export_step_as_single_part`. Jul 16–17 goldens and commit `a17400c` never sent `step_mode`.
+- Restored that push body (`filename` + `allow_faceted_step` only); no Part chooser; folder picker opens when no mirror folder linked (avoids stuck “Link a Fusion mirror folder” retry).
+- Backend: `upload_source` defaults to True again (Jul 16). Kept folder-grid / export-here / toast auto-dismiss UX.
+- Cache-bust: `?v=20260724-fusion-jul16`. Service restarted.
+
+---
+
 ## 2026-07-24 — Fusion export error toast auto-dismiss
 
 - Error cards (incl. “Link a Fusion mirror folder…”) fade in and auto-dismiss ~4s — no stuck Retry loop.
