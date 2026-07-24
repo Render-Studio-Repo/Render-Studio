@@ -1281,10 +1281,17 @@ def _nest_shared_workspace_root_projects(
     projects: list[dict[str, Any]],
     user: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Keep personal/solo projects at the browser root; put multi-member workspace
-    root projects under a virtual per-team folder (e.g. "Render3D shared workspace").
+    """Keep the user's personal/home projects at the browser root; nest other
+    workspaces' root projects under a virtual "{Team} shared workspace" folder.
+
+    Rules:
+    - If the user has a true personal/solo workspace: nest every other team's
+      root projects (invitee case — e.g. Vineet + Render3D).
+    - If they don't (owner of only multi-member teams, e.g. Sam W): keep teams
+      they own/admin at the root, and nest teams where they are only a member.
     Real subfolders inside those workspaces are left alone.
     """
+    personal_id = _personal_workspace_id(user)
     teams_by_id = {str(t["id"]): t for t in teams_service.list_teams(user["id"])}
     out: list[dict[str, Any]] = []
     for project in projects:
@@ -1298,14 +1305,26 @@ def _nest_shared_workspace_root_projects(
         ):
             out.append(project)
             continue
-        team = teams_by_id.get(str(tid)) or {}
-        member_count = int(team.get("member_count") or team.get("members_count") or 1) or 1
-        # Solo / true-personal teams stay at root. Multi-member collab teams nest
-        # even when the current user is the workspace admin/owner.
-        if member_count <= 1:
-            out.append(project)
-            continue
-        folder_id = _shared_workspace_folder_id(str(tid))
+        tid_s = str(tid)
+        team = teams_by_id.get(tid_s) or {}
+        role = str(team.get("role") or "").lower()
+        is_owner_admin = role in {"owner", "admin"}
+        if personal_id:
+            # Invitee with a personal workspace: only that workspace stays at root.
+            if tid_s == str(personal_id):
+                out.append(project)
+                continue
+        else:
+            # No solo personal workspace: owner's own teams stay visible at root
+            # so Personal/Projects isn't emptied for accounts like Sam W.
+            if is_owner_admin:
+                out.append(project)
+                continue
+            member_count = int(team.get("member_count") or team.get("members_count") or 1) or 1
+            if member_count <= 1:
+                out.append(project)
+                continue
+        folder_id = _shared_workspace_folder_id(tid_s)
         out.append(
             {
                 **project,
