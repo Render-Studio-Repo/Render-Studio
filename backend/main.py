@@ -17530,6 +17530,10 @@ Return JSON only:
 {"improved_prompt":"..."}
 
 Rules for improved_prompt:
+- Start with the short product/part name (2–5 words), then a colon, then the CAD details.
+  Example: "Parallel gripper: dual-finger FDM-printable gripper, 80 mm stroke, named bodies base/jaw_left/jaw_right."
+- Do NOT open with CAD boilerplate like "Create a parametric fully assembled CAD/STEP/multi-body assembly…".
+  Put process words (parametric, STEP, mm, named bodies) after the colon, not before the part name.
 - Keep the user's intent, product, and constraints. Do not invent a totally different part.
 - Make it concrete for parametric CAD: units (mm preferred), overall size envelope, key dimensions, wall thickness, fillets/chamfers when relevant.
 - Prefer named features (base, boss, pocket, rib, hole pattern) and clear solids over vague styling words.

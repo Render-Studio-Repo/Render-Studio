@@ -1,6 +1,9 @@
-# Agent worklog
+## 2026-07-24 — Part names: product noun, not “fully assembled CAD”
 
-Append a dated entry when you finish meaningful work. Newest first. Keep entries short: what changed, which files, anything a future agent must know.
+- Spice-improved prompts often started with CAD boilerplate, so STEP/Fusion file + `model_label` became `Parametric Fully Assembled CAD…`.
+- `title_from_prompt` / `file_stem_from_prompt` now strip that jargon and prefer `Gripper - Robot Arm`-style names; colon openings (`Parallel gripper: …`) keep the product name.
+- Improve-prompt + CAD brief / authoring guidance: lead with the short part name; `model_label` must be the product noun.
+- Files: `backend/services/project_store.py`, `design_service.py`, `ai_service.py`, `backend/main.py`, `backend/skills/cad/references/cad-brief.md` (service restart).
 
 ---
 
@@ -9,6 +12,11 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 - Manage workspace modal lists each workspace with a **Permissions** dropdown for admins.
 - Expanding it loads members and shows Access (`Can edit` / `View only`) + Invite (`Can invite` / `Cannot invite`) selects; patches existing `/api/teams/.../permissions`.
 - Files: `frontend/workspace-manage.js`, `frontend/styles.css`, `frontend/index.html`, `frontend/app.js` cache-bust `?v=20260724-ws-manage-perms`.
+
+## 2026-07-24 — Account menu: “Manage AI Keys”
+
+- Renamed account-menu AI entry from dynamic “OpenAI API key” / “AI & billing” to **Manage AI Keys** (hint still shows provider/credits status).
+- Files: `frontend/index.html`, `frontend/ai-key-ui.js`; cache-bust `app.js?v=20260724-manage-keys`.
 
 ## 2026-07-24 — Admin prompts: original vs improved + copy
 

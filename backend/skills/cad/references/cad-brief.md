@@ -43,7 +43,7 @@ Use concise Markdown notes, not a user-facing structured schema:
 
 ```text
 CAD brief:
-- Model: <part or assembly name>
+- Model: <short product noun, e.g. parallel_gripper or tractrix_horn — not "fully_assembled_cad" or "parametric_step_assembly">
 - Task type: <new part, assembly, modification, inspection, secondary output>
 - Inputs: <reference images or drawing views used; omit when prose-only>
 - Units: <explicit or assumed>

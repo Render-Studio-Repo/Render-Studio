@@ -813,11 +813,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     const creditBal = Number(credits.balance_cents || 0);
     const usingCredits = !hasKey && credits.use_platform_key && creditBal > 0;
     if (menuLabel) {
-      menuLabel.textContent = hasKey
-        ? `${providerLabel} API key`
-        : usingCredits
-          ? "Render3D credits"
-          : "AI & billing";
+      menuLabel.textContent = "Manage AI Keys";
     }
     if (menuHint) {
       menuHint.textContent = hasKey

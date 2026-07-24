@@ -64,15 +64,144 @@ def is_default_project_name(project_path: Path, meta: dict[str, Any] | None = No
     return False
 
 
-def title_from_prompt(prompt: str, *, max_len: int = 64) -> str:
-    """Human project/file title from a prompt: Capitalization And Spaces."""
-    text = (prompt or "").strip()
+# Words that are CAD/process boilerplate, not the product name.
+_CAD_TITLE_NOISE = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "for",
+        "to",
+        "in",
+        "on",
+        "with",
+        "using",
+        "via",
+        "from",
+        "into",
+        "as",
+        "please",
+        "make",
+        "create",
+        "generating",
+        "generate",
+        "design",
+        "designing",
+        "build",
+        "building",
+        "model",
+        "models",
+        "draw",
+        "drawing",
+        "new",
+        "revised",
+        "revise",
+        "update",
+        "updated",
+        "parametric",
+        "fully",
+        "assembled",
+        "assembly",
+        "assemblies",
+        "cad",
+        "step",
+        "stp",
+        "brep",
+        "multi",
+        "body",
+        "bodies",
+        "multibody",
+        "multi-body",
+        "solid",
+        "solids",
+        "part",
+        "parts",
+        "component",
+        "components",
+        "printable",
+        "3d",
+        "3d-printable",
+        "fdm",
+        "fdm-printable",
+        "cnc",
+        "mm",
+        "millimeter",
+        "millimeters",
+        "millimetre",
+        "millimetres",
+        "geometry",
+        "prismatic",
+        "feature",
+        "features",
+        "tree",
+        "export",
+        "exports",
+        "ready",
+        "quality",
+        "precise",
+        "clean",
+        "complete",
+        "single",
+        "one",
+    }
+)
+
+_CAD_BOILERPLATE_CHUNK = re.compile(
+    r"(?:"
+    r"(?:(?:new|revised?|update[sd]?)\s+)?"
+    r"(?:fully\s+assembled\s+)?"
+    r"(?:parametric\s+)?"
+    r"(?:multi[-\s]?body\s+)?"
+    r"(?:(?:3d|fdm)[-\s]?printable\s+)?"
+    r"(?:step\s+|stp\s+|brep\s+)?"
+    r"(?:cad\s+)?"
+    r"(?:assembly|assemblies|model|models|solid|solids|part|parts|component|components)\s+"
+    r"(?:in\s+(?:mm|millimeters?|millimetres?)\s+)?"
+    r"(?:using\s+(?:prismatic\s+)?geometry\s+)?"
+    r"(?:of\s+(?:a|an|the)\s+|for\s+(?:a|an|the)\s+|for\s+|of\s+)?"
+    r")+",
+    re.I,
+)
+
+
+def _title_case_word(word: str) -> str:
+    if word.isupper() and 2 <= len(word) <= 8:
+        return word
+    if re.fullmatch(r"[A-Za-z]+-\d+[A-Za-z0-9-]*", word):  # e.g. HC-SR04
+        return word.upper() if word.lower().startswith("hc-") else word
+    if any(ch.isdigit() for ch in word) and re.search(r"[A-Za-z]", word):
+        return word.upper() if len(word) <= 8 else word
+    return word[:1].upper() + word[1:].lower() if word else word
+
+
+def _strip_cad_title_boilerplate(text: str) -> tuple[str, str | None]:
+    """Pull the real product noun out of spice/CAD-jargon prompts.
+
+    Returns (cleaned_text, preferred_name_hint). preferred_name_hint is set when
+    the prompt opens with ``Name: details`` so the title can keep that product name.
+    """
+    text = (text or "").strip()
     if not text:
-        return "New Model"
-    # First sentence / clause only.
+        return "", None
+    text = re.sub(r"[*_`#]+", " ", text)
+    text = re.sub(r"^\s*[-•]\s*", "", text)
+    preferred_name: str | None = None
+    # Prefer "Name: details" / "Name — details" openings from improved prompts.
+    lead = re.match(r"^(.{2,48}?)\s*[:—–]\s+(.+)$", text)
+    if lead:
+        head, tail = lead.group(1).strip(), lead.group(2).strip()
+        head_words = [w for w in re.split(r"\s+", head) if w]
+        if 1 <= len(head_words) <= 6 and not all(
+            re.sub(r"[^a-z0-9-]", "", w.lower()) in _CAD_TITLE_NOISE for w in head_words
+        ):
+            preferred_name = " ".join(head_words)
+            text = tail
     text = re.split(r"[.!?\n]", text, maxsplit=1)[0]
     text = re.split(
-        r",\s+(?:it|and|because|with|that|which|so|then|for|where|when)\b",
+        r",\s+(?:it|and|because|with|that|which|so|then|where|when)\b",
         text,
         maxsplit=1,
         flags=re.I,
@@ -87,15 +216,88 @@ def title_from_prompt(prompt: str, *, max_len: int = 64) -> str:
         text,
         flags=re.I,
     ).strip()
+    # Peel CAD boilerplate repeatedly ("parametric fully assembled CAD model of …").
+    for _ in range(4):
+        nxt = _CAD_BOILERPLATE_CHUNK.sub("", text, count=1).strip()
+        if nxt == text:
+            break
+        text = nxt
+    # Slash noise left by "CAD / multi-body …"
+    text = re.sub(r"^\s*/\s*", "", text)
+    text = re.sub(
+        r"^(?:multi[-\s]?body|parametric|step|stp|cad|assembly|model)\b[\s/,-]*",
+        "",
+        text,
+        flags=re.I,
+    ).strip()
+    # If still noise-heavy, take the object after of/for a|an|the.
+    of_match = re.search(
+        r"\b(?:of|for)\s+(?:a|an|the)\s+(.+)$",
+        text,
+        flags=re.I,
+    )
+    if of_match:
+        before = text[: of_match.start()]
+        before_tokens = [
+            re.sub(r"[^a-z0-9-]", "", w.lower())
+            for w in before.split()
+            if re.sub(r"[^a-z0-9-]", "", w.lower())
+        ]
+        if before_tokens and sum(1 for t in before_tokens if t in _CAD_TITLE_NOISE) >= max(
+            1, len(before_tokens) - 1
+        ):
+            text = of_match.group(1).strip()
     text = re.sub(r"^(?:an|a|the)\s+", "", text, flags=re.I)
     text = re.sub(r"\s+", " ", text).strip(" -_")
-    if not text:
+    return text, preferred_name
+
+
+def title_from_prompt(prompt: str, *, max_len: int = 64) -> str:
+    """Human project/file title: product name (+ short description), not CAD boilerplate."""
+    text, preferred_name = _strip_cad_title_boilerplate(prompt)
+    if preferred_name and not text:
+        return " ".join(_title_case_word(w) for w in preferred_name.split())[:max_len] or "New Model"
+    if not text and not preferred_name:
         return "New Model"
-    words = text.split()
+    raw_words = [w for w in text.split() if w]
+    words: list[str] = []
+    for word in raw_words:
+        token = re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9)-]+$", "", word)
+        if not token:
+            continue
+        key = re.sub(r"[^a-z0-9-]", "", token.lower())
+        # Keep leading noise off; keep later "for"/"with" as description separators.
+        if not words and key in _CAD_TITLE_NOISE:
+            continue
+        words.append(token)
+    if preferred_name:
+        name = " ".join(_title_case_word(w) for w in preferred_name.split()).strip(" -_")
+        # Short descriptor from the details clause (skip manufacturing noise).
+        desc_words: list[str] = []
+        for word in words:
+            key = re.sub(r"[^a-z0-9-]", "", word.lower())
+            if key in _CAD_TITLE_NOISE or key in {"for", "with", "using", "and", "named", "bodies"}:
+                continue
+            # Skip repeats of the name itself.
+            if key and key in {re.sub(r"[^a-z0-9-]", "", w.lower()) for w in preferred_name.split()}:
+                continue
+            desc_words.append(word)
+            if len(desc_words) >= 4:
+                break
+        if desc_words:
+            desc = " ".join(_title_case_word(w) for w in desc_words).strip(" -_")
+            titled = f"{name} - {desc}" if desc else name
+        else:
+            titled = name
+        if len(titled) > max_len:
+            titled = titled[:max_len].rsplit(" ", 1)[0].strip().rstrip(" -") or name[:max_len]
+        return titled or "New Model"
+    if not words:
+        return "New Model"
     # Drop trailing filler like "than is on the ground..."
     stop_at = None
     for i, word in enumerate(words):
-        lower = word.lower()
+        lower = re.sub(r"[^a-z0-9-]", "", word.lower())
         if lower in {"than", "that", "which", "because"} and i >= 1:
             stop_at = i
             break
@@ -104,21 +306,56 @@ def title_from_prompt(prompt: str, *, max_len: int = 64) -> str:
             break
     if stop_at is not None:
         words = words[:stop_at]
-    if len(words) > 8:
-        words = words[:8]
-    title = " ".join(words).strip(" -_")
-    if not title:
-        return "New Model"
-    # Title case; keep short all-caps tokens (FANUC, CNC, PET).
-    parts: list[str] = []
-    for word in title.split():
-        if word.isupper() and 2 <= len(word) <= 6:
-            parts.append(word)
+    # Name (first content words) + optional short description.
+    content = [w for w in words if re.sub(r"[^a-z0-9-]", "", w.lower()) not in {"a", "an", "the"}]
+    if not content:
+        content = words
+    # Take words until a connector, or up to 5 (so "Arduino stepper test bench" stays together).
+    name_words: list[str] = []
+    for word in content:
+        key = re.sub(r"[^a-z0-9-]", "", word.lower())
+        if key in {"for", "with", "using"} and name_words:
+            break
+        if key in _CAD_TITLE_NOISE and name_words:
+            break
+        name_words.append(word)
+        if len(name_words) >= 5:
+            break
+    if not name_words:
+        name_words = content[:3]
+    rest_start = len(name_words)
+    desc_words: list[str] = []
+    i = rest_start
+    if i < len(content):
+        conn = re.sub(r"[^a-z0-9-]", "", content[i].lower())
+        if conn in {"for", "with", "using", "and", "-"}:
+            i += 1
+        while i < len(content) and len(desc_words) < 4:
+            key = re.sub(r"[^a-z0-9-]", "", content[i].lower())
+            if key in _CAD_TITLE_NOISE or key in {"for", "with", "using", "and"}:
+                i += 1
+                continue
+            desc_words.append(content[i])
+            i += 1
+    name = " ".join(_title_case_word(w) for w in name_words).strip(" -_")
+    # Only add " - desc" when the remainder is a real phrase (2+ words), not a lone leftover.
+    if len(desc_words) >= 2:
+        desc = " ".join(_title_case_word(w) for w in desc_words).strip(" -_")
+        titled = f"{name} - {desc}" if desc and desc.lower() != name.lower() else name
+    elif len(desc_words) == 1 and len(name_words) <= 3:
+        # "Gripper - Robot Arm" style: short name + short for-clause
+        titled = f"{name} - {_title_case_word(desc_words[0])}"
+    else:
+        # Fold a single leftover into the name when it was truncated at 5 ("… Test Bench").
+        if len(desc_words) == 1 and len(name_words) >= 4:
+            titled = f"{name} {_title_case_word(desc_words[0])}".strip()
         else:
-            parts.append(word[:1].upper() + word[1:].lower() if word else word)
-    titled = " ".join(parts)
+            titled = name
+    if not titled:
+        return "New Model"
     if len(titled) > max_len:
         titled = titled[:max_len].rsplit(" ", 1)[0].strip() or titled[:max_len].strip()
+        titled = titled.rstrip(" -")
     return titled or "New Model"
 
 

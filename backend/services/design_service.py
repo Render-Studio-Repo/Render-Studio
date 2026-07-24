@@ -3554,11 +3554,14 @@ def _run_text_to_cad_v2(
         from backend.services.project_store import file_stem_from_prompt
 
         base = file_stem_from_prompt(prompt)
-    if base in {"create", "make", "build", "design", "New Model"}:
+    if base in {"create", "make", "build", "design", "New Model"} or re.fullmatch(
+        r"(?i)(parametric|fully|assembled|cad|step|assembly|multi-?body)([\s_-]+(parametric|fully|assembled|cad|step|assembly|multi-?body|model|in|mm|millimeters?)){0,8}",
+        base or "",
+    ):
         from backend.services.project_store import file_stem_from_prompt
 
         better = file_stem_from_prompt(prompt)
-        if better and better != "New Model":
+        if better and better != "New Model" and better != base:
             base = better
         elif base in {"create", "make", "build", "design"}:
             base = "text_to_cad_model"
