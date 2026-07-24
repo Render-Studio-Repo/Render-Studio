@@ -1,6 +1,6 @@
 import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
 import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
-import { mountActivityCharts, mountNetworkBrain } from "./admin-charts.js?v=20260715-admin-charts";
+import { mountActivityCharts, mountNetworkBrain } from "./admin-charts.js?v=20260724-brain-avatars";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -54,6 +54,88 @@ async function authBlobUrl(path) {
   const res = await fetch(path, { headers: authHeaders() });
   if (!res.ok) throw new Error(`Could not load ${path}`);
   return URL.createObjectURL(await res.blob());
+}
+
+async function authDownloadFile(path, filename) {
+  const res = await fetch(path, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Could not download ${filename || path}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "model";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function fileStem(name = "") {
+  return String(name).replace(/\.[^.]+$/, "");
+}
+
+function buildDownloadOptions(project = {}, files = []) {
+  const preferred = String(project.model_file || project.latest_file || "").trim();
+  const stem = preferred ? fileStem(preferred).toLowerCase() : "";
+  const formats = new Map();
+  const order = ["glb", "stl", "step", "3mf", "obj"];
+  const consider = (file) => {
+    const name = String(file?.name || "").trim();
+    if (!name) return;
+    let fmt = String(file.format || name.split(".").pop() || "").toLowerCase();
+    if (fmt === "stp") fmt = "step";
+    if (!order.includes(fmt)) return;
+    const url = file.url || null;
+    if (!url) return;
+    const related = !stem
+      || fileStem(name).toLowerCase().startsWith(stem)
+      || stem.startsWith(fileStem(name).toLowerCase());
+    const existing = formats.get(fmt);
+    if (!existing || (related && !existing.related)) {
+      formats.set(fmt, { format: fmt, name, url, related: !!related });
+    }
+  };
+  for (const file of files) consider(file);
+  if (project.model_url && project.model_file) {
+    consider({ name: project.model_file, format: "glb", url: project.model_url });
+  }
+  return [...formats.values()].sort((a, b) => {
+    if (a.related !== b.related) return a.related ? -1 : 1;
+    return order.indexOf(a.format) - order.indexOf(b.format);
+  });
+}
+
+function bindModalDownload(el, options) {
+  const wrap = el.querySelector("#admin-modal-download");
+  const select = el.querySelector("#admin-modal-download-format");
+  const btn = el.querySelector("#admin-modal-download-btn");
+  if (!wrap || !select || !btn) return;
+  if (!options.length) {
+    wrap.hidden = true;
+    select.innerHTML = "";
+    return;
+  }
+  wrap.hidden = false;
+  select.innerHTML = options.map((opt) => `
+    <option value="${escapeHtml(opt.url)}" data-name="${escapeHtml(opt.name)}">${escapeHtml(opt.format.toUpperCase())} · ${escapeHtml(opt.name)}</option>
+  `).join("");
+  btn.onclick = async () => {
+    const option = select.selectedOptions?.[0];
+    const url = select.value;
+    const name = option?.dataset?.name || "model";
+    if (!url) return;
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Downloading…";
+    try {
+      await authDownloadFile(url, name);
+    } catch (err) {
+      alert(err.message || "Download failed");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev || "Download";
+    }
+  };
 }
 
 function statCard(label, value, hint = "") {
@@ -259,7 +341,14 @@ function ensureModalShell() {
           <h2 id="admin-modal-title">Loading…</h2>
           <p class="muted small" id="admin-modal-sub"></p>
         </div>
-        <button type="button" class="btn secondary btn-compact" id="admin-modal-close">Close</button>
+        <div class="admin-modal-head-actions">
+          <div class="admin-modal-download" id="admin-modal-download" hidden>
+            <label class="admin-modal-download-label" for="admin-modal-download-format">Download</label>
+            <select id="admin-modal-download-format" aria-label="Download file format"></select>
+            <button type="button" class="btn accent btn-compact" id="admin-modal-download-btn">Download</button>
+          </div>
+          <button type="button" class="btn secondary btn-compact" id="admin-modal-close">Close</button>
+        </div>
       </header>
       <div class="admin-modal-stats" id="admin-modal-stats"></div>
       <div class="admin-modal-body">
@@ -326,6 +415,49 @@ async function openProjectModal(projectId) {
     filesEl.innerHTML = (data.files || []).slice(0, 24).map((file) => `
       <span class="admin-pill"><strong>${escapeHtml(file.name || "")}</strong></span>
     `).join("") || '<span class="muted small">No CAD files</span>';
+
+    let downloadOptions = buildDownloadOptions(project, data.files || []);
+    // Prefer exports API for sibling formats (STL/STEP/3MF) of the previewed model.
+    const exportSource = project.model_file || project.latest_file;
+    if (exportSource) {
+      try {
+        const exportData = await api(
+          `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(exportSource)}/exports`,
+        );
+        const exportOpts = (exportData.exports || [])
+          .filter((item) => item?.name)
+          .map((item) => {
+            let format = String(item.format || item.name.split(".").pop() || "").toLowerCase();
+            if (format === "stp") format = "step";
+            return {
+              format,
+              name: item.name,
+              url: item.url || `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(item.name)}`,
+              related: true,
+            };
+          })
+          .filter((item) => ["glb", "stl", "step", "3mf", "obj"].includes(item.format));
+        if (exportData.file_url && exportSource) {
+          exportOpts.unshift({
+            format: "glb",
+            name: exportData.filename || exportSource,
+            url: exportData.file_url,
+            related: true,
+          });
+        }
+        if (exportOpts.length) {
+          const byFmt = new Map(downloadOptions.map((o) => [o.format, o]));
+          for (const opt of exportOpts) byFmt.set(opt.format, opt);
+          downloadOptions = [...byFmt.values()].sort((a, b) => {
+            const order = ["glb", "stl", "step", "3mf", "obj"];
+            return order.indexOf(a.format) - order.indexOf(b.format);
+          });
+        }
+      } catch {
+        /* keep file-list options */
+      }
+    }
+    bindModalDownload(el, downloadOptions);
 
     snapsEl.innerHTML = "";
     for (const snapUrl of (project.snapshot_urls || []).slice(0, 4)) {

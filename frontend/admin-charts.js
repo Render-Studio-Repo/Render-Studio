@@ -298,6 +298,9 @@ export function mountNetworkBrain(container, network = {}, handlers = {}) {
       vx: 0,
       vy: 0,
       r: Math.max(7, Math.min(22, 6 + Math.sqrt(Number(node.weight || 1)) * 2.2)),
+      avatarImg: null,
+      avatarReady: false,
+      avatarFailed: false,
     };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -308,6 +311,26 @@ export function mountNetworkBrain(container, network = {}, handlers = {}) {
       target: byId.get(edge.target),
     }))
     .filter((edge) => edge.source && edge.target);
+
+  // Prefetch user profile pictures so nodes show faces instead of color dots.
+  for (const node of nodes) {
+    if (node.kind !== "user") continue;
+    const avatarUrl = node.avatar_url
+      || (node.user_id ? `/api/users/${encodeURIComponent(node.user_id)}/avatar` : null);
+    if (!avatarUrl) continue;
+    node.avatar_url = avatarUrl;
+    const img = new Image();
+    img.decoding = "async";
+    img.referrerPolicy = "same-origin";
+    img.onload = () => {
+      node.avatarReady = true;
+    };
+    img.onerror = () => {
+      node.avatarFailed = true;
+    };
+    img.src = String(avatarUrl);
+    node.avatarImg = img;
+  }
 
   function resize() {
     const rect = canvas.parentElement.getBoundingClientRect();
@@ -422,20 +445,55 @@ export function mountNetworkBrain(container, network = {}, handlers = {}) {
 
     for (const node of nodes) {
       const color = nodeColor(node.kind);
+      const radius = node.r + (hover?.id === node.id ? 3 : 0);
+      const showAvatar = node.kind === "user"
+        && node.avatarReady
+        && node.avatarImg
+        && !node.avatarFailed
+        && node.avatarImg.naturalWidth > 0;
+
       ctx.beginPath();
-      ctx.arc(node.x, node.y, node.r + (hover?.id === node.id ? 3 : 0), 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.95;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "rgba(255,255,255,0.35)";
-      ctx.stroke();
+      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+      if (showAvatar) {
+        ctx.save();
+        ctx.clip();
+        const size = radius * 2;
+        ctx.drawImage(node.avatarImg, node.x - radius, node.y - radius, size, size);
+        ctx.restore();
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        ctx.lineWidth = hover?.id === node.id ? 2.5 : 1.75;
+        ctx.strokeStyle = "rgba(255,255,255,0.72)";
+        ctx.stroke();
+        // Soft ring so avatars read on the dark brain background
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius + 1.5, 0, Math.PI * 2);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(88,166,255,0.45)";
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.95;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255,255,255,0.35)";
+        ctx.stroke();
+        if (node.kind === "user") {
+          const initial = String(node.label || "?").trim().charAt(0).toUpperCase() || "?";
+          ctx.fillStyle = "#0d1117";
+          ctx.font = `bold ${Math.max(9, Math.round(radius * 0.95))}px ui-sans-serif, system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(initial, node.x, node.y + 0.5);
+        }
+      }
 
       if (scale > 0.75 || hover?.id === node.id) {
         ctx.fillStyle = "#e6edf3";
         ctx.font = `${hover?.id === node.id ? 12 : 10}px ui-sans-serif, system-ui, sans-serif`;
         ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
         ctx.fillText(String(node.label || "").slice(0, 18), node.x, node.y + node.r + 12);
       }
     }

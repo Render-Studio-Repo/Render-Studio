@@ -34752,6 +34752,63 @@ body.feedback-page-dragging {
   border-bottom: 1px solid rgba(139, 148, 158, 0.22);
 }
 
+.admin-modal-head-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.admin-modal-download {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  background: rgba(22, 27, 34, 0.9);
+}
+
+.admin-modal-download[hidden] {
+  display: none !important;
+}
+
+.admin-modal-download-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9da7b3;
+}
+
+.admin-modal-download select {
+  min-width: 150px;
+  max-width: 220px;
+  border: 1px solid rgba(48, 54, 61, 0.95);
+  border-radius: 8px;
+  background: #0d1117;
+  color: #e6edf3;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 720px) {
+  .admin-modal-head {
+    flex-direction: column;
+  }
+  .admin-modal-head-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .admin-modal-download {
+    flex: 1 1 auto;
+  }
+  .admin-modal-download select {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+}
+
 .admin-modal-head h2 {
   margin: 0 0 4px;
   font-size: 1.25rem;

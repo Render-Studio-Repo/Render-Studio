@@ -9247,11 +9247,13 @@ def admin_dashboard(
             has_model=bool(project_item.get("model_file")),
         )
         if owner_id:
+            owner_user = users_by_id.get(owner_id) or {}
             _net_node(
                 owner_node,
                 "user",
                 str(access["owner_name"] or access["owner_email"] or owner_id),
                 user_id=owner_id,
+                avatar_url=owner_user.get("avatar_url") or _avatar_url_for_user_id(owner_id),
             )
             _net_edge(owner_node, project_node, "owns", 2)
         if team_node:
@@ -9327,11 +9329,13 @@ def admin_dashboard(
                 users_by_id[entry_user_id]["recent_prompts"].append(prompt_item)
             if entry_user_id:
                 collab_node = f"user:{entry_user_id}"
+                collab_user = users_by_id.get(entry_user_id) or {}
                 _net_node(
                     collab_node,
                     "user",
                     str(entry.get("user_name") or access["owner_name"] or entry_user_id),
                     user_id=entry_user_id,
+                    avatar_url=collab_user.get("avatar_url") or _avatar_url_for_user_id(entry_user_id),
                 )
                 edge_kind = "owns" if entry_user_id == owner_id else "collab"
                 _net_edge(collab_node, f"project:{pid}", edge_kind, 1)
@@ -9379,6 +9383,8 @@ def admin_dashboard(
             "user",
             str(member["display_name"] or member["email"] or member["user_id"]),
             user_id=member["user_id"],
+            avatar_url=(users_by_id.get(member["user_id"]) or {}).get("avatar_url")
+            or _avatar_url_for_user_id(member["user_id"]),
         )
         _net_edge(user_node, team_node, "member", 1)
 
@@ -9407,6 +9413,10 @@ def admin_dashboard(
                 node["prompt_count"] = stats_u.get("prompt_count") or 0
                 node["project_count"] = stats_u.get("project_count") or 0
                 node["weight"] = max(1, int(stats_u.get("prompt_count") or 0) + int(stats_u.get("project_count") or 0))
+                if stats_u.get("avatar_url"):
+                    node["avatar_url"] = stats_u.get("avatar_url")
+                elif not node.get("avatar_url") and uid:
+                    node["avatar_url"] = _avatar_url_for_user_id(uid)
         elif node["kind"] == "project":
             node["weight"] = max(1, int(node.get("weight") or 1))
     network_edges_out = [
