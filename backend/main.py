@@ -2504,6 +2504,19 @@ def _step_for_cloud_cad(project_path: Path, filename: str, *, allow_faceted: boo
     suffix = src.suffix.lower()
     stem = src.stem
 
+    # Visible-assembly bake must never resolve to a hidden sibling model.
+    if safe.lower().startswith("_export_visible_assembly"):
+        if suffix in cad_service.STEP_SUFFIXES:
+            kind = cad_service.classify_step_file_kind(src)
+            if kind == "editable_brep" or allow_faceted or "__faceted" in stem.lower():
+                return src
+            if allow_faceted:
+                return src
+        raise HTTPException(
+            422,
+            "Visible-assembly STEP is missing or not Fusion-ready. Re-export visible components and try again.",
+        )
+
     # Prefer generative parent B-rep when the selection is an edited/pulled mesh.
     native = cad_service.resolve_native_brep_step(project_path, safe)
     if native is not None:

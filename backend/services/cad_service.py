@@ -1055,12 +1055,17 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
     """Build downloadable artifacts for the currently visible browser components.
 
     Prefers existing viewer GLBs (copy / merge) over STEP retessellation so public
-    share previews keep the same multi-body quality as the studio.
+    share previews keep the same multi-body quality as the studio. Also tries to
+    write a solid B-rep STEP compound from the visible native STEPs so Fusion /
+    cloud push cannot fall back to a hidden sibling model.
     """
     safe_names: list[str] = []
     seen: set[str] = set()
     for raw in filenames:
         safe = Path(str(raw or "")).name
+        # Strip virtual body suffixes (foo.step#body:3) → parent file.
+        if "#body:" in safe:
+            safe = safe.split("#body:", 1)[0]
         if not safe or safe in seen:
             continue
         src = project_path / safe
@@ -1073,6 +1078,9 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
         raise ValueError("No visible exportable components.")
 
     for old in project_path.glob(f"{stem}.*"):
+        if old.is_file():
+            old.unlink(missing_ok=True)
+    for old in project_path.glob(f"{stem}__faceted.*"):
         if old.is_file():
             old.unlink(missing_ok=True)
 
@@ -1158,6 +1166,11 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
         except Exception:
             pass
 
+    # Prefer a solid B-rep compound of the *visible* native STEPs for Fusion.
+    solid_step = _build_visible_brep_step(project_path, safe_names, project_path / f"{stem}.step")
+    if solid_step is not None and solid_step.is_file():
+        outputs.insert(1, solid_step)
+
     result: list[dict[str, Any]] = []
     for out in outputs:
         if not out.is_file():
@@ -1169,8 +1182,70 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
         }
         if item["format"] == "step":
             item["step_kind"] = classify_step_file_kind(out)
+            if out.name.startswith(stem) and "__faceted" not in out.name.lower():
+                item["label"] = "STEP (visible assembly B-rep)"
+            elif out.name.startswith(stem):
+                item["label"] = "STEP (visible assembly mesh)"
         result.append(item)
     return result
+
+
+def _build_visible_brep_step(project_path: Path, filenames: list[str], dest: Path) -> Path | None:
+    """Compound native solids from visible filenames into one STEP (no hidden siblings)."""
+    from OCP.BRep import BRep_Builder
+    from OCP.IFSelect import IFSelect_ReturnStatus
+    from OCP.STEPControl import STEPControl_Reader, STEPControl_StepModelType, STEPControl_Writer
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS_Compound
+
+    solids = []
+    for name in filenames:
+        safe = Path(name).name
+        native = resolve_native_brep_step(project_path, safe)
+        step_path = native if native is not None else find_step_source(project_path, Path(safe).stem)
+        if step_path is None or not step_path.is_file():
+            continue
+        if not is_editable_brep_step(step_path):
+            continue
+        try:
+            reader = STEPControl_Reader()
+            status = reader.ReadFile(str(step_path))
+            if status != IFSelect_ReturnStatus.IFSelect_RetDone:
+                continue
+            reader.TransferRoots()
+            shape = reader.OneShape()
+            if shape.IsNull():
+                continue
+            exp = TopExp_Explorer(shape, TopAbs_SOLID)
+            while exp.More():
+                solids.append(exp.Current())
+                exp.Next()
+        except Exception:
+            continue
+
+    if not solids:
+        return None
+
+    if len(solids) == 1:
+        out_shape = solids[0]
+    else:
+        builder = BRep_Builder()
+        compound = TopoDS_Compound()
+        builder.MakeCompound(compound)
+        for solid in solids:
+            builder.Add(compound, solid)
+        out_shape = compound
+
+    try:
+        writer = STEPControl_Writer()
+        writer.Transfer(out_shape, STEPControl_StepModelType.STEPControl_AsIs)
+        status = writer.Write(str(dest))
+        if status != IFSelect_ReturnStatus.IFSelect_RetDone or not dest.is_file():
+            return None
+        return dest
+    except Exception:
+        return None
 
 
 def rename_model_file(project_path: Path, old_filename: str, new_filename: str) -> list[str]:

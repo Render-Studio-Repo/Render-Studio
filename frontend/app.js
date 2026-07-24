@@ -77,7 +77,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-conflict";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-visible-export";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -20368,7 +20368,12 @@ async function exportCurrentModel(anchorEl) {
     .filter((entry) => !isBrowserComponentHidden(entry))
     .map((entry) => entry.name)
     .filter(Boolean);
-  const visibleFiles = visibleBrowser.length ? visibleBrowser : visibleLoaded;
+  // Prefer browser visibility (eye icons). Never fall back to a hidden sibling.
+  const visibleFiles = [...new Set(
+    (visibleBrowser.length ? visibleBrowser : visibleLoaded)
+      .map((name) => String(name || "").split("#body:")[0])
+      .filter((name) => name && !isComponentHidden(name))
+  )];
   const anchor = anchorEl || document.getElementById("btn-export-model") || document.body;
   if (visibleFiles.length > 1) {
     const regularFile = selectedFile && visibleFiles.includes(selectedFile) && !isComponentHidden(selectedFile)
@@ -20381,14 +20386,16 @@ async function exportCurrentModel(anchorEl) {
       filename: "visible assembly",
       anchorEl: anchor,
       title: `Export visible assembly`,
-      hint: `Choose regular STEP for one selected part, or assembly STEP for all ${visibleFiles.length} visible components.`,
+      hint: `Exports only the ${visibleFiles.length} unhidden components (hidden parts like Arduino stay out).`,
       allowOnshape: false,
       shareContext: currentVisibleShareContext,
+      // Download-only shortcut for one visible part — Fusion/cloud uses the baked
+      // `_export_visible_assembly` STEP, never a hidden sibling.
       extraExports: regularStepName ? [{
         name: regularStepName,
         format: "step",
         size: null,
-        label: "STEP (regular part)",
+        label: "STEP (one visible part · download)",
         url: `/api/projects/${projectId}/files/${encodeURIComponent(regularStepName)}`,
       }] : [],
       exportsRequest: {
@@ -20402,8 +20409,8 @@ async function exportCurrentModel(anchorEl) {
     });
     return;
   }
-  let file = visibleFiles[0] || selectedFile || allProjects.find((p) => p.id === projectId)?.latest_file;
-  if (isComponentHidden(file)) file = null;
+  let file = visibleFiles[0] || null;
+  if (file && isComponentHidden(file)) file = null;
   if (!file) {
     alert("No visible component to export. Show at least one component first.");
     return;

@@ -606,13 +606,29 @@ export async function openFileExportMenu({
       || EXPORT_ORDER.indexOf(a.format) - EXPORT_ORDER.indexOf(b.format)
       || a.name.localeCompare(b.name),
   );
-  const cloudStep = sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || fileStem(item.name) === targetStem))
-    || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep")
-    || sorted.find((item) => item.format === "step" && (item.current || fileStem(item.name) === targetStem))
-    || sorted.find((item) => item.format === "step")
-    || null;
-  const resolvedCloudFilename = cloudFilename || cloudStep?.name || filename;
-  const resolvedCloudStepIsFaceted = false;
+  const isVisibleAssemblyExport = Boolean(exportsRequest)
+    || /visible assembly/i.test(String(filename || ""))
+    || sorted.some((item) => String(item.name || "").startsWith("_export_visible_assembly"));
+  // Never fall back to an unrelated project STEP (that was uploading hidden
+  // siblings like arduino_uno_q while exporting the visible gripper).
+  const cloudStep = isVisibleAssemblyExport
+    ? (
+      sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && item.step_kind === "editable_brep")
+      || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly"))
+      || null
+    )
+    : (
+      sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || fileStem(item.name) === targetStem))
+      || sorted.find((item) => item.format === "step" && (item.current || fileStem(item.name) === targetStem))
+      || null
+    );
+  const resolvedCloudFilename = cloudFilename || cloudStep?.name || (
+    isVisibleAssemblyExport ? null : filename
+  );
+  const resolvedCloudStepIsFaceted = Boolean(
+    cloudStep?.step_kind === "faceted_mesh"
+    || /__faceted/i.test(String(cloudStep?.name || resolvedCloudFilename || ""))
+  );
 
   for (const item of sorted) {
     const btn = document.createElement("button");
@@ -736,6 +752,13 @@ export async function openFileExportMenu({
   }
 
   async function pushToOriginalFusion(btn) {
+    if (!fusionUploadFilename) {
+      showExportError(menu, new Error("No visible STEP/3MF to push. Show the components you want, then export again."), {
+        title: "Nothing visible to send to Fusion",
+        onRetry: null,
+      });
+      return;
+    }
     btn.disabled = true;
     const original = btn.innerHTML;
     btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Pushing…`;
@@ -777,6 +800,13 @@ export async function openFileExportMenu({
   }
 
   async function openSharedFusionExport(btn) {
+    if (!fusionUploadFilename) {
+      showExportError(menu, new Error("No visible STEP/3MF to upload. Show the components you want, then export again."), {
+        title: "Nothing visible to send to Fusion",
+        onRetry: null,
+      });
+      return;
+    }
     btn.disabled = true;
     const original = btn.innerHTML;
     btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Loading Fusion…`;

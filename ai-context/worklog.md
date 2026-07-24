@@ -1,3 +1,20 @@
+## 2026-07-24 — Export visible: don’t upload hidden siblings (Arduino)
+
+- Bug: Fusion cloud push fell back to any editable STEP in the project, so hiding Fully_Assembled still uploaded `arduino_uno_q.step`.
+- Fix: visible-assembly bake writes `_export_visible_assembly.step` from **only** unhidden filenames; Fusion uses that file only (never unrelated B-rep). `_step_for_cloud_cad` won’t remap visible-assembly to another model.
+- Export button no longer falls back to `latest_file` / hidden selection.
+- Cache-bust: `?v=20260724-visible-export`. Service restarted.
+
+---
+
+## 2026-07-24 — Fusion export: replace vs new + thumbnails
+
+- If the destination folder already has the same filename, ask **Replace** (new version) or **Create new file** (`name (2).step`).
+- Folder picker lists existing files; after upload, kick off Model Derivative so Fusion Data Panel can generate a real preview (not the gray cube forever).
+- Cache-bust: `?v=20260724-fusion-conflict`. Service restarted.
+
+---
+
 ## 2026-07-24 — Fusion chooser: Shared only with a file
 
 - **Shared Fusion folder/link** only when a STEP/3MF is available to upload; **Update original** only when `autodesk_source.item_id` exists.
