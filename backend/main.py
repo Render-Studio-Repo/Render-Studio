@@ -8587,11 +8587,33 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 )
         return result
 
-    # Always upload native solid B-rep STEP. Never rewrite via export_step_as_single_part
-    # for Fusion — that path broke Extrude/Cut (see golden-working-code-20260716).
-    # Ignore legacy step_mode=part/regular/single from older clients.
+    # Native Jake/build123d STEPs often include NEXT_ASSEMBLY_USAGE, so Fusion
+    # opens them as linked assemblies — Extrude Cut then fails with
+    # "No target body found to cut or intersect". Flatten to one Part (Bodies
+    # kept) while preserving MANIFOLD_SOLID_BREP. Jul 19 export_step_as_single_part
+    # was the right fix for Cut; earlier we removed it thinking it broke B-rep.
     step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
-    upload_stem = step_path.stem.replace(".part", "") if step_path.stem.endswith(".part") else step_path.stem
+    try:
+        kind = cad_service.classify_step_file_kind(step_path)
+    except Exception:
+        kind = "unknown"
+    if kind == "editable_brep":
+        try:
+            peek = step_path.read_bytes()[:2_000_000].decode("utf-8", errors="ignore").upper()
+        except Exception:
+            peek = ""
+        if "NEXT_ASSEMBLY_USAGE" in peek or step_path.name.lower().startswith("_export_visible_assembly"):
+            part_path = path / f"{step_path.stem}.fusionpart{step_path.suffix.lower()}"
+            try:
+                step_path = cad_service.export_step_as_single_part(step_path, part_path)
+            except Exception as exc:
+                logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc)
+
+    upload_stem = step_path.stem
+    for suffix in (".fusionpart", ".part"):
+        if upload_stem.endswith(suffix):
+            upload_stem = upload_stem[: -len(suffix)]
+            break
     source_path = path / f"{upload_stem}.py"
     if not source_path.is_file():
         try:
@@ -8606,6 +8628,9 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     upload_name = Path(str(body.get("name") or f"{upload_stem}.step")).name
     if not upload_name.lower().endswith((".step", ".stp")):
         upload_name = f"{Path(upload_name).stem}.step"
+    # Never upload *.fusionpart.step as the Fusion filename — use clean .step
+    if ".fusionpart" in upload_name.lower() or upload_name.lower().endswith(".part.step"):
+        upload_name = f"{upload_stem}.step"
     conflict_mode = str(body.get("conflict_mode") or body.get("on_conflict") or "replace").strip().lower()
     if conflict_mode not in {"replace", "new"}:
         conflict_mode = "replace"

@@ -1191,10 +1191,10 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
 
 
 def _build_visible_brep_step(project_path: Path, filenames: list[str], dest: Path) -> Path | None:
-    """Compound native solids from visible filenames into one STEP (no hidden siblings)."""
+    """Compound native solids from visible filenames into one Fusion-cuttable Part STEP."""
     from OCP.BRep import BRep_Builder
     from OCP.IFSelect import IFSelect_ReturnStatus
-    from OCP.STEPControl import STEPControl_Reader, STEPControl_StepModelType, STEPControl_Writer
+    from OCP.STEPControl import STEPControl_Reader
     from OCP.TopAbs import TopAbs_SOLID
     from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS_Compound
@@ -1237,15 +1237,25 @@ def _build_visible_brep_step(project_path: Path, filenames: list[str], dest: Pat
             builder.Add(compound, solid)
         out_shape = compound
 
+    # Write via a temp single-solid STEP then flatten with the Fusion Part writer
+    # so NEXT_ASSEMBLY_USAGE is never present (Extrude Cut needs a Part, not Assembly).
+    tmp = dest.with_name(f"{dest.stem}.__tmp_compound{dest.suffix}")
     try:
+        from OCP.STEPControl import STEPControl_StepModelType, STEPControl_Writer
+
         writer = STEPControl_Writer()
         writer.Transfer(out_shape, STEPControl_StepModelType.STEPControl_AsIs)
-        status = writer.Write(str(dest))
-        if status != IFSelect_ReturnStatus.IFSelect_RetDone or not dest.is_file():
+        status = writer.Write(str(tmp))
+        if status != IFSelect_ReturnStatus.IFSelect_RetDone or not tmp.is_file():
             return None
-        return dest
+        return export_step_as_single_part(tmp, dest)
     except Exception:
         return None
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def rename_model_file(project_path: Path, old_filename: str, new_filename: str) -> list[str]:
