@@ -10,6 +10,13 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 - Expanding it loads members and shows Access (`Can edit` / `View only`) + Invite (`Can invite` / `Cannot invite`) selects; patches existing `/api/teams/.../permissions`.
 - Files: `frontend/workspace-manage.js`, `frontend/styles.css`, `frontend/index.html`, `frontend/app.js` cache-bust `?v=20260724-ws-manage-perms`.
 
+## 2026-07-24 — Personal projects missing for Sam (shared-ws nest)
+
+- Bug: after shared-workspace nesting, **all** multi-member team roots were nested — Sam W has no solo personal workspace, so Personal/Projects looked empty (everything under shared folders). Public “Sam W” files still showed.
+- Fix: nest invited (member-only) teams; keep owner/admin team roots at Projects root. Users with a true personal workspace (Vineet) still nest other teams under `{Team} shared workspace`.
+- Verified: Sam ~94 root projects restored; Vineet still 1 personal + Render3D shared folder.
+- File: `backend/main.py` (service restart).
+
 ## 2026-07-24 — Keep AI prompt draft across refresh
 
 - Bug: opening/reloading a project called `resetComposerForProject()` which saved an empty prompt into localStorage, wiping the typed draft before restore. Update-banner refresh then looked like the prompt “vanished” and never hit history.
