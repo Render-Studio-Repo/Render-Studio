@@ -4,6 +4,11 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-24 — Pick tools missing until tab click after refresh
+
+- Cause: `solid-design-tab` applied before ribbon mount (or skipped), so `#ribbon-pick-host` stayed `display:none` until another design tab click.
+- Fix: re-force design tab after `createRibbon`; ribbon boot fallback adds `solid-design-tab`; CSS shows Pick in Design even without a class yet. `?v=20260724-pick-boot`.
+
 ## 2026-07-24 — Pick bar in Create row + catalog suggestions + sketch D
 
 - Pick tools centered in the ribbon Create row for SOLID / SKETCH / RIGGING / ROBOTICS (was stuck hidden: default SOLID tab never applied `solid-design-tab`).
