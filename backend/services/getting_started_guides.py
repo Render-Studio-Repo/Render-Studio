@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 FRONTEND_MEDIA = Path(__file__).resolve().parents[2] / "frontend" / "docs" / "media"
-GIF_CACHE = "v=20260715-robot-arm"
+GIF_CACHE = "v=20260724-unique"
 
 GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
     {

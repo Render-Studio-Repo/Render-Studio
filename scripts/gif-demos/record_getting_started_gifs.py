@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 import traceback
@@ -1257,6 +1258,163 @@ async def demo_source_parts(page: Page):
     await page.wait_for_timeout(800)
 
 
+async def _click_workspace_tab(page: Page, label: str):
+    tab = page.locator("#workspace-tabs button, .workspace-tabs button, .workspace-tab").filter(has_text=label).first
+    if await tab.count() and await tab.is_visible():
+        box = await tab.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=24)
+            await page.wait_for_timeout(250)
+        await tab.click(timeout=4000)
+        await page.wait_for_timeout(700)
+        return True
+    return False
+
+
+async def demo_multi_gen(page: Page):
+    """Two quick Generate clicks so the viewport banner shows parallel rows."""
+    await force_close_agent(page)
+    await focus_prompt(page)
+    await clear_prompt(page)
+    await type_text(page, "Make a 40mm cube with 4mm fillets.")
+    await page.wait_for_timeout(300)
+    x, y = await box_center(page, "#btn-prompt")
+    await move_to(page, x, y, steps=28)
+    await click_xy(page, x, y)
+    await page.wait_for_timeout(900)
+    await focus_prompt(page)
+    await clear_prompt(page)
+    await type_text(page, "Make a 60mm cylinder stand next to it.")
+    await page.wait_for_timeout(250)
+    x, y = await box_center(page, "#btn-prompt")
+    await move_to(page, x, y, steps=24)
+    await click_xy(page, x, y)
+    # Linger on the multi-gen banner if it appeared
+    banner = page.locator("#canvas-generation-banner, .viewport-generation-banner, .gen-progress-row").first
+    try:
+        await banner.wait_for(state="visible", timeout=4000)
+        box = await banner.bounding_box()
+        if box:
+            await move_to(page, box["x"] + min(120, box["width"] / 2), box["y"] + box["height"] / 2, steps=20)
+    except Exception:
+        pass
+    await page.wait_for_timeout(1400)
+
+
+async def demo_link_to_prompt(page: Page):
+    """Shift-select project files and drag into the AI prompt."""
+    await force_close_agent(page)
+    await focus_prompt(page)
+    await clear_prompt(page)
+    files = page.locator(".proj-item, .proj-row, .project-file-row, .file-row").filter(has_text=re.compile(r"\.(glb|step|stl|obj)", re.I))
+    if await files.count() < 1:
+        files = page.locator(".proj-item, .proj-row").filter(has_text=re.compile(r".+", re.I))
+    count = await files.count()
+    if count < 1:
+        await page.wait_for_timeout(800)
+        return
+    first = files.nth(0)
+    await first.scroll_into_view_if_needed()
+    box = await first.bounding_box()
+    if not box:
+        return
+    await move_to(page, box["x"] + 28, box["y"] + box["height"] / 2, steps=22)
+    await page.wait_for_timeout(200)
+    await page.mouse.click(box["x"] + 28, box["y"] + box["height"] / 2)
+    await page.wait_for_timeout(250)
+    if count >= 2:
+        second = files.nth(1)
+        sbox = await second.bounding_box()
+        if sbox:
+            await page.keyboard.down("Shift")
+            await move_to(page, sbox["x"] + 28, sbox["y"] + sbox["height"] / 2, steps=18)
+            await page.mouse.click(sbox["x"] + 28, sbox["y"] + sbox["height"] / 2)
+            await page.keyboard.up("Shift")
+            await page.wait_for_timeout(300)
+            start = sbox
+        else:
+            start = box
+    else:
+        start = box
+    prompt = page.locator(".prompt-editor, #prompt-input, textarea.prompt-editor").first
+    pbox = await prompt.bounding_box()
+    if not pbox:
+        return
+    await page.mouse.move(start["x"] + 24, start["y"] + start["height"] / 2)
+    await page.mouse.down()
+    await move_to(page, pbox["x"] + pbox["width"] / 2, pbox["y"] + pbox["height"] / 2, steps=36)
+    await page.mouse.up()
+    await page.wait_for_timeout(1100)
+
+
+async def demo_solid_tools(page: Page):
+    await force_close_agent(page)
+    await _click_workspace_tab(page, "SOLID")
+    # Hover a few ribbon tools
+    for sel in [
+        ".ribbon-btn, .ribbon-tool, [data-ribbon-id]",
+        "#btn-press-pull, #btn-transform, .tool-btn",
+    ]:
+        tools = page.locator(sel)
+        n = min(await tools.count(), 4)
+        for i in range(n):
+            t = tools.nth(i)
+            if not await t.is_visible():
+                continue
+            box = await t.bounding_box()
+            if not box:
+                continue
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=16)
+            await page.wait_for_timeout(280)
+        if n:
+            break
+    await page.wait_for_timeout(700)
+
+
+async def demo_sketch(page: Page):
+    await force_close_agent(page)
+    await _click_workspace_tab(page, "SKETCH")
+    await page.wait_for_timeout(500)
+    # Hover sketch tools / plane picker if present
+    for sel in [".ribbon-btn", ".sketch-tool", "#btn-sketch-line", ".ribbon-panel button"]:
+        tools = page.locator(sel)
+        n = min(await tools.count(), 3)
+        for i in range(n):
+            t = tools.nth(i)
+            if not await t.is_visible():
+                continue
+            box = await t.bounding_box()
+            if not box:
+                continue
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=14)
+            await page.wait_for_timeout(250)
+        if n:
+            break
+    await page.wait_for_timeout(900)
+
+
+async def demo_rigging_urdf(page: Page):
+    await force_close_agent(page)
+    await _click_workspace_tab(page, "RIGGING")
+    await page.wait_for_timeout(500)
+    urdf_btn = page.locator("[data-rigging-mode='urdf'], .rigging-mode-btn").filter(has_text=re.compile(r"URDF", re.I)).first
+    if await urdf_btn.count() and await urdf_btn.is_visible():
+        box = await urdf_btn.bounding_box()
+        if box:
+            await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=20)
+            await page.wait_for_timeout(200)
+        await urdf_btn.click(timeout=4000)
+        await page.wait_for_timeout(700)
+    for sel in ["#btn-rigging-author-jake", "#btn-rigging-generate-urdf", "#btn-rigging-open-motion"]:
+        loc = page.locator(sel).first
+        if await loc.count() and await loc.is_visible():
+            box = await loc.bounding_box()
+            if box:
+                await move_to(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=18)
+                await page.wait_for_timeout(350)
+    await page.wait_for_timeout(900)
+
+
 DEMOS = {
     "ai-generate": demo_ai_generate,
     "workspaces": demo_workspaces,
@@ -1270,6 +1428,11 @@ DEMOS = {
     "render-agent": demo_agent,
     "preferences": demo_preferences,
     "source-parts": demo_source_parts,
+    "multi-gen": demo_multi_gen,
+    "link-to-prompt": demo_link_to_prompt,
+    "solid-tools": demo_solid_tools,
+    "sketch": demo_sketch,
+    "rigging-urdf": demo_rigging_urdf,
 }
 
 

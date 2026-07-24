@@ -9933,17 +9933,50 @@ def remove_team_member(team_id: str, target_user_id: str, user: dict[str, Any] =
 @app.delete("/api/teams/{team_id}/leave")
 def leave_team(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
     try:
-        return teams_service.leave_team(team_id, user["id"])
+        result = teams_service.leave_team(team_id, user["id"])
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    _notify_user(
+        user["id"],
+        {"type": "workspace.member.updated", "team_id": team_id, "status": "left"},
+    )
+    return result
 
 
-@app.delete("/api/teams/{team_id}/leave")
-def leave_team(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
+@app.delete("/api/teams/{team_id}")
+def delete_team(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
     try:
-        return teams_service.leave_team(team_id, user["id"])
+        result = teams_service.delete_team(team_id, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    # Remove project files that belonged to this workspace.
+    for project_id in result.get("project_ids") or []:
+        path = PROJECTS / str(project_id)
+        try:
+            generation_service.cancel_project(path)
+        except Exception:
+            logger.debug("cancel before workspace delete failed project=%s", project_id, exc_info=True)
+        try:
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            logger.warning("Could not remove project dir after workspace delete project=%s", project_id, exc_info=True)
+        try:
+            teams_service.delete_project_access(str(project_id))
+        except Exception:
+            pass
+    _notify_user(
+        user["id"],
+        {
+            "type": "workspace.updated",
+            "team_id": team_id,
+            "status": "deleted",
+            "name": result.get("name"),
+        },
+    )
+    return result
 
 
 @app.post("/api/teams/{team_id}/invite")

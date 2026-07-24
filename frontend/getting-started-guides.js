@@ -45,7 +45,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "ai-cad",
     "title": "Generate CAD with AI",
     "demo": "generate",
-    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
+    "gif": "/docs/media/ai-generate.gif?v=20260724-unique",
     "summary": "Describe a part; Generate builds geometry into the open project.",
     "steps": [
       "Open or create a project in the left explorer.",
@@ -76,7 +76,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "ai-cad",
     "title": "Parallel generations",
     "demo": "generate",
-    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
+    "gif": "/docs/media/multi-gen.gif?v=20260724-unique",
     "summary": "Run up to five CAD prompts at once; stop one or all from the viewport banner.",
     "steps": [
       "Start a Generate while another is still running.",
@@ -97,7 +97,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "ai-cad",
     "title": "Pick faces, edges & paths",
     "demo": "picks",
-    "gif": "/docs/media/picks.gif?v=20260715-robot-arm",
+    "gif": "/docs/media/picks.gif?v=20260724-unique",
     "summary": "Click geometry into the prompt as @face / @edge / @path chips.",
     "steps": [
       "Choose Face, Edge, Line/path, or related pick mode.",
@@ -119,7 +119,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "ai-cad",
     "title": "Link project items to the prompt",
     "demo": "picks",
-    "gif": "/docs/media/picks.gif?v=20260715-robot-arm",
+    "gif": "/docs/media/link-to-prompt.gif?v=20260724-unique",
     "summary": "Shift-select files in the Project browser and drag them into the AI prompt as @component references.",
     "steps": [
       "In the Project browser, click one file, then Shift-click another to select a range.",
@@ -143,7 +143,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "projects",
     "title": "Workspaces & teammates",
     "demo": "workspaces",
-    "gif": "/docs/media/workspaces.gif?v=20260715-real",
+    "gif": "/docs/media/workspaces.gif?v=20260724-unique",
     "summary": "Shared workspaces keep projects, folders, and invites together.",
     "steps": [
       "Create or switch a workspace from the account menu.",
@@ -164,7 +164,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "projects",
     "title": "Share a private folder",
     "demo": "share",
-    "gif": "/docs/media/share-folder.gif?v=20260715-real",
+    "gif": "/docs/media/share-folder.gif?v=20260724-unique",
     "summary": "Folders stay private until you share them with specific teammates.",
     "steps": [
       "Right-click a folder \u2192 Share.",
@@ -183,7 +183,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "projects",
     "title": "Reference files, pen markup & Send to AI",
     "demo": "markup",
-    "gif": "/docs/media/reference-markup.gif?v=20260716-pdf-tab",
+    "gif": "/docs/media/reference-markup.gif?v=20260724-unique",
     "summary": "Open PDFs/images in tabs, mark them up, and push callouts into the CAD prompt.",
     "steps": [
       "Drop a PDF or image into the project.",
@@ -204,7 +204,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "modeling",
     "title": "Solid modeling tools",
     "demo": "picks",
-    "gif": "/docs/media/select-object.gif?v=20260715-robot-arm",
+    "gif": "/docs/media/solid-tools.gif?v=20260724-unique",
     "summary": "Ribbon Create/Modify/Pattern plus direct tools: Press-Pull, fillet, transform, color, measure.",
     "steps": [
       "Switch to the SOLID design tab.",
@@ -227,7 +227,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "modeling",
     "title": "Select object & body",
     "demo": "picks",
-    "gif": "/docs/media/select-object.gif?v=20260715-robot-arm",
+    "gif": "/docs/media/select-object.gif?v=20260724-unique",
     "summary": "Click once to select the whole robot arm; double-click a link to select only that body/part.",
     "steps": [
       "Open Select in the Pick toolbar (or press V).",
@@ -252,7 +252,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "sketch-canvas",
     "title": "Constrained Sketch",
     "demo": "canvas",
-    "gif": "/docs/media/canvas.gif?v=20260715-real",
+    "gif": "/docs/media/sketch.gif?v=20260724-unique",
     "summary": "2D sketch on a plane with constraints, then extrude to solid.",
     "steps": [
       "Open SKETCH and create a sketch on XY/XZ/YZ or a face.",
@@ -272,7 +272,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "sketch-canvas",
     "title": "Canvas sketch mode",
     "demo": "canvas",
-    "gif": "/docs/media/canvas.gif?v=20260715-real",
+    "gif": "/docs/media/canvas.gif?v=20260724-unique",
     "summary": "Freehand concept pad \u2014 attach the sketch to AI Compose.",
     "steps": [
       "Switch to CANVAS.",
@@ -291,7 +291,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "rigging",
     "title": "URDF / SRDF & Motion",
     "demo": "generate",
-    "gif": "/docs/media/ai-generate.gif?v=20260715-real",
+    "gif": "/docs/media/rigging-urdf.gif?v=20260724-unique",
     "summary": "GLB shows shape; URDF/SRDF drive simulation. Author Jake gen_urdf()/gen_srdf(), then open Motion.",
     "steps": [
       "In Rigging, switch to URDF / SRDF mode.",
@@ -315,7 +315,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "wiring",
     "title": "Wiring Simulator",
     "demo": "wiring",
-    "gif": "/docs/media/wiring.gif?v=20260715-real",
+    "gif": "/docs/media/wiring.gif?v=20260724-unique",
     "summary": "Breadboard circuits from AI, wire pin-to-pin, validate drivers, code & simulate.",
     "steps": [
       "Switch to Wiring mode.",
@@ -337,7 +337,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "wiring",
     "title": "Source parts with \u24d8 and drag into Wiring AI",
     "demo": "source-parts",
-    "gif": "/docs/media/source-parts.gif?v=20260716-source",
+    "gif": "/docs/media/source-parts.gif?v=20260724-unique",
     "summary": "Click \u24d8 on a component to identify and source it online, then drag the sourced part into the Wiring Simulator AI prompt for pin-aware circuits.",
     "steps": [
       "In the Project browser, click the \u24d8 button on a component.",
@@ -361,7 +361,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "cloud",
     "title": "Fusion 360 & Onshape sync",
     "demo": "cloud",
-    "gif": "/docs/media/cloud-sync.gif?v=20260715-real",
+    "gif": "/docs/media/cloud-sync.gif?v=20260724-unique",
     "summary": "Connect cloud libraries to import and push without leaving Studio.",
     "steps": [
       "Connect Fusion or Onshape from Account \u2192 Cloud.",
@@ -381,7 +381,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "help",
     "title": "Render Agent help chat",
     "demo": "agent",
-    "gif": "/docs/media/render-agent.gif?v=20260715-real",
+    "gif": "/docs/media/render-agent.gif?v=20260724-unique",
     "summary": "Product help (not CAD Generate) \u2014 tools, Fusion, workflows, with demo GIFs.",
     "steps": [
       "Click Agent in the ribbon (or Ask Agent on Getting Started).",
@@ -401,7 +401,7 @@ export const GETTING_STARTED_GUIDES = [
     "category": "help",
     "title": "Preferences, theme & mouse",
     "demo": "preferences",
-    "gif": "/docs/media/preferences.gif?v=20260716-prefs",
+    "gif": "/docs/media/preferences.gif?v=20260724-unique",
     "summary": "Avatar, mouse presets, dark/light theme, and simulated-motion after generate.",
     "steps": [
       "Open Preferences from the account menu.",

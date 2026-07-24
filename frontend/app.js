@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-shared-ws-folder";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260723-hierarchy-row";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
@@ -30554,6 +30554,42 @@ window.addEventListener("keydown", (e) => {
       api,
       onInvited: async () => {
         await refreshTeamMembers();
+      },
+    });
+  });
+
+  void import("./workspace-manage.js?v=20260724-manage").then((mod) => {
+    mod.bindWorkspaceManage?.({
+      getActiveTeam,
+      getTeams: () => allTeams,
+      api,
+      personalWorkspaceId: (teams) => personalWorkspaceId(teams || allTeams),
+      personalWorkspaceLabel,
+      currentUserId: () => currentUser?.id || null,
+      onChanged: async ({ action, teamId, team }) => {
+        if (action === "rename" && team) {
+          const idx = allTeams.findIndex((t) => t.id === teamId);
+          if (idx >= 0) allTeams[idx] = { ...allTeams[idx], ...team };
+        } else if (action === "leave" || action === "delete") {
+          allTeams = allTeams.filter((t) => t.id !== teamId);
+          const sel = document.getElementById("team-select");
+          if (sel && sel.value === teamId) {
+            const fallback = personalWorkspaceId() || allTeams[0]?.id || "";
+            if (fallback) sel.value = fallback;
+          }
+        }
+        renderTeams();
+        await onWorkspaceChange();
+        await refreshTeamMembers();
+        await refreshWorkspaceMenuPanel?.();
+        setEditStatus(
+          "ok",
+          action === "delete"
+            ? "Workspace deleted."
+            : action === "leave"
+              ? "Left workspace."
+              : "Workspace updated.",
+        );
       },
     });
   });

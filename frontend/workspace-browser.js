@@ -1732,17 +1732,18 @@ export function createWorkspaceBrowser({
             const stored = isComponent ? (getPartProfile?.(stem) || null) : null;
             const wiringType = stored?.wiring_type || null;
 
+            const displayName = hierarchyDisplayName(entry);
             const editHint = isEditableSketch ? ` <span class="proj-hierarchy-edit-hint" title="Double-click to edit">✎</span>` : "";
-            btn.innerHTML = `<span class="proj-hierarchy-item-name">${escapeHtml(hierarchyDisplayName(entry))}</span>${editHint}`;
+            btn.innerHTML = `<span class="proj-hierarchy-item-name">${escapeHtml(displayName)}</span>${editHint}`;
             btn.title = isEditableSketch
-              ? `${entry.name} — double-click to open in feature editor`
+              ? `${displayName} — double-click to open in feature editor`
               : isDxf
-              ? `${entry.name} — click to open this DXF drawing preview.`
+              ? `${displayName} — click to open this DXF drawing preview.`
               : isReference
-              ? `${entry.name} — click to open this reference file.`
+              ? `${displayName} — click to open this reference file.`
               : isComponent
-              ? `${entry.name} — drag into the AI prompt to reference it, or into the Wiring Simulator. Shift-click to select multiple. Click ⓘ for ID, tags, and part profile.`
-              : entry.name;
+              ? displayName
+              : displayName;
             btn.addEventListener("click", (e) => {
               e.stopPropagation();
               if (suppressHierarchyClick) {
@@ -1791,11 +1792,7 @@ export function createWorkspaceBrowser({
                 render();
               });
               item.appendChild(visBtn);
-            }
 
-            item.appendChild(btn);
-
-            if (isComponent) {
               item.classList.add("proj-hierarchy-item--component");
               const payload = componentPayload(project, entry, { stem, stored, recognized, wiringType });
               item.addEventListener("contextmenu", (e) => showComponentContextMenu(e, project, entry, payload));
@@ -1821,17 +1818,22 @@ export function createWorkspaceBrowser({
               prof.className = "proj-hierarchy-profile-btn";
               prof.textContent = "ⓘ";
               prof.title = "View component ID, tags, part profile, and 3D preview";
+              prof.setAttribute("aria-label", "Component info");
               prof.addEventListener("click", (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 onOpenProfile?.(project, entry);
               });
+              // Row order: eye → ⓘ → name (name sits to the right of the eye).
               item.appendChild(prof);
+              item.appendChild(btn);
             } else if (isReference) {
+              item.appendChild(btn);
               const payload = hierarchyPayload(project, section.id, entry);
               item.classList.add(isDxf ? "proj-hierarchy-item--drawing" : "proj-hierarchy-item--reference");
               item.addEventListener("contextmenu", (e) => showHierarchyItemContextMenu(e, project, entry, section.id, payload));
             } else {
+              item.appendChild(btn);
               const payload = hierarchyPayload(project, section.id, entry);
               item.addEventListener("contextmenu", (e) => showHierarchyItemContextMenu(e, project, entry, section.id, payload));
               const onDragStart = (e) => {
@@ -1908,8 +1910,9 @@ export function createWorkspaceBrowser({
                   const childBtn = document.createElement("button");
                   childBtn.type = "button";
                   childBtn.className = "proj-hierarchy-item-btn";
-                  childBtn.innerHTML = `<span class="proj-hierarchy-body-icon" aria-hidden="true">◆</span><span class="proj-hierarchy-item-name">${escapeHtml(hierarchyDisplayName(child))}</span>`;
-                  childBtn.title = `${child.body_name || child.label || child.name} — click to select this body`;
+                  const childDisplayName = hierarchyDisplayName(child);
+                  childBtn.innerHTML = `<span class="proj-hierarchy-body-icon" aria-hidden="true">◆</span><span class="proj-hierarchy-item-name">${escapeHtml(childDisplayName)}</span>`;
+                  childBtn.title = child.body_name || child.label || child.name || childDisplayName;
                   childBtn.addEventListener("click", (e) => {
                     e.stopPropagation();
                     selectedHierarchyKeys.clear();

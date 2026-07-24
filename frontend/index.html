@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260723-architect-center" />
+  <link rel="stylesheet" href="/styles.css?v=20260723-hierarchy-row" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -446,7 +446,7 @@
           <a href="/" class="nav-tab active" role="menuitem">Studio</a>
           <a href="/marketplace.html" class="nav-tab" role="menuitem">Product Marketplace</a>
           <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
-          <a href="/docs.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html" class="nav-tab" role="menuitem">Docs</a>
           <a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
           <div class="mobile-app-menu-grid" aria-label="Studio actions">
             <button type="button" data-mobile-app="explorer">Explorer<small>Projects &amp; models</small></button>
@@ -695,6 +695,9 @@
           <div class="workspace-invite-open-row">
             <button type="button" id="btn-open-workspace-invite" class="btn secondary btn-compact workspace-invite-open-btn">
               Invite people
+            </button>
+            <button type="button" id="btn-open-workspace-manage" class="btn secondary btn-compact workspace-manage-open-btn">
+              Manage
             </button>
           </div>
           <ul id="team-members" class="team-members"></ul>
@@ -2251,6 +2254,40 @@
     </div>
   </div>
 
+  <div id="workspace-manage-modal" class="auth-modal workspace-manage-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-manage-title">
+    <div class="auth-backdrop" data-ws-manage-close></div>
+    <div class="auth-card app-dialog-card workspace-manage-card">
+      <button type="button" class="auth-close" data-ws-manage-close aria-label="Close">&times;</button>
+      <p class="workspace-manage-eyebrow">Workspace</p>
+      <h2 id="workspace-manage-title" class="app-dialog-title">Manage workspace</h2>
+      <p class="muted small workspace-manage-hint">Leave a shared team, or permanently delete one you admin.</p>
+
+      <label class="ws-manage-field">
+        <span>Workspace</span>
+        <select id="ws-manage-team" aria-label="Choose workspace"></select>
+      </label>
+
+      <div id="ws-manage-summary" class="ws-manage-summary" aria-live="polite"></div>
+
+      <div id="ws-manage-rename" class="ws-manage-rename" hidden>
+        <label class="ws-manage-field">
+          <span>Name</span>
+          <div class="ws-manage-rename-row">
+            <input type="text" id="ws-manage-name" maxlength="120" autocomplete="off" />
+            <button type="button" id="btn-ws-manage-rename" class="btn accent btn-compact">Save</button>
+          </div>
+        </label>
+      </div>
+
+      <div id="ws-manage-danger" class="ws-manage-danger"></div>
+      <p id="ws-manage-status" class="muted small workspace-manage-status" role="status"></p>
+
+      <div class="app-dialog-actions workspace-manage-actions">
+        <button type="button" class="btn secondary" data-ws-manage-close>Done</button>
+      </div>
+    </div>
+  </div>
+
   <div id="workspace-send-invite-modal" class="auth-modal workspace-send-invite-modal hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-send-invite-title">
     <div class="auth-backdrop" data-ws-send-invite-close></div>
     <div class="auth-card app-dialog-card workspace-send-invite-card">
@@ -2955,7 +2992,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260724-invite-accept-ui"></script>
+  <script type="module" src="/app.js?v=20260723-hierarchy-row"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

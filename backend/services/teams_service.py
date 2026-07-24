@@ -564,6 +564,65 @@ def leave_team(team_id: str, user_id: str) -> dict[str, Any]:
     return {"status": "left", "team_id": team_id}
 
 
+def _personal_team_id_for_user(conn: sqlite3.Connection, user_id: str) -> str | None:
+    row = conn.execute(
+        """
+        SELECT t.id
+        FROM teams t
+        JOIN team_members tm ON tm.team_id = t.id AND tm.user_id = ?
+        WHERE t.created_by = ? AND tm.role IN ('owner', 'admin')
+        ORDER BY t.created_at ASC
+        LIMIT 1
+        """,
+        (user_id, user_id),
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def delete_team(team_id: str, user_id: str) -> dict[str, Any]:
+    """Permanently delete a shared workspace. Owners only; personal workspace blocked."""
+    _require_team_owner(team_id, user_id)
+    with get_conn() as conn:
+        personal_id = _personal_team_id_for_user(conn, user_id)
+        if personal_id and personal_id == team_id:
+            raise ValueError("Your personal workspace cannot be deleted")
+        team = conn.execute("SELECT id, name FROM teams WHERE id = ?", (team_id,)).fetchone()
+        if not team:
+            raise ValueError("Workspace not found")
+        project_ids = [
+            r["project_id"]
+            for r in conn.execute(
+                "SELECT project_id FROM project_access WHERE team_id = ?",
+                (team_id,),
+            ).fetchall()
+        ]
+        # Clean related rows (ignore missing tables/columns).
+        for sql, params in (
+            ("DELETE FROM team_key_grants WHERE key_id IN (SELECT id FROM team_shared_ai_keys WHERE team_id=?)", (team_id,)),
+            ("DELETE FROM user_team_key_opts WHERE key_id IN (SELECT id FROM team_shared_ai_keys WHERE team_id=?)", (team_id,)),
+            ("DELETE FROM team_shared_ai_keys WHERE team_id=?", (team_id,)),
+            ("DELETE FROM folder_share_invites WHERE folder_id IN (SELECT id FROM workspace_folders WHERE team_id=?)", (team_id,)),
+            ("DELETE FROM folder_shares WHERE folder_id IN (SELECT id FROM workspace_folders WHERE team_id=?)", (team_id,)),
+            ("DELETE FROM workspace_folders WHERE team_id=?", (team_id,)),
+            ("DELETE FROM workspace_activity WHERE team_id=?", (team_id,)),
+            ("DELETE FROM team_invites WHERE team_id=?", (team_id,)),
+            ("DELETE FROM team_members WHERE team_id=?", (team_id,)),
+            ("DELETE FROM project_access WHERE team_id=?", (team_id,)),
+            ("DELETE FROM teams WHERE id=?", (team_id,)),
+        ):
+            try:
+                conn.execute(sql, params)
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
+    return {
+        "status": "deleted",
+        "team_id": team_id,
+        "name": team["name"],
+        "project_ids": project_ids,
+    }
+
+
 def update_team(team_id: str, name: str, user_id: str) -> dict[str, Any]:
     _require_team_owner(team_id, user_id)
     clean = name.strip()
