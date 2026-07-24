@@ -1426,6 +1426,15 @@ function _buildRibbonDOM() {
   treeWrap.append(treeLabel, tree);
 
   body.append(panelsWrap, treeWrap);
+
+  // Centered host for the Pick toolbar (moved from the top header for
+  // SOLID / SKETCH / RIGGING / ROBOTICS design tabs).
+  const pickHost = document.createElement("div");
+  pickHost.className = "ribbon-pick-host";
+  pickHost.id = "ribbon-pick-host";
+  pickHost.setAttribute("aria-label", "Pick tools");
+  body.appendChild(pickHost);
+
   bar.append(toggleRow, body);
 
   _ribbonBar = bar;
@@ -1485,6 +1494,13 @@ export function createRibbon({
   const target = container || document.getElementById("ribbon-container") || document.body;
   target.innerHTML = "";
   target.appendChild(bar);
+
+  // Relocate Pick tools into the Create-row center slot (keeps same button IDs).
+  const pickBar = document.querySelector(".toolbar-pick");
+  const pickHost = bar.querySelector("#ribbon-pick-host");
+  if (pickBar && pickHost && pickBar.parentElement !== pickHost) {
+    pickHost.appendChild(pickBar);
+  }
 
   // Tab wiring handled in _mountCatalog
 

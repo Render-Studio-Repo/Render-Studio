@@ -1,3 +1,17 @@
+/** Suggested searches shown before the user types (step.parts-friendly). */
+const CATALOG_SUGGESTIONS = [
+  "Arduino Nano",
+  "Arduino Uno",
+  "NEMA 17",
+  "SG90 servo",
+  "Raspberry Pi",
+  "breadboard",
+  "ULN2003",
+  "ESP32",
+  "ball bearing",
+  "M3 screw",
+];
+
 export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {}) {
   const overlay = document.createElement("div");
   overlay.className = "catalog-panel-overlay hidden";
@@ -11,8 +25,16 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
         <button type="button" class="catalog-panel-close" aria-label="Close catalog">×</button>
       </div>
       <div class="catalog-panel-search">
-        <input type="text" class="catalog-panel-query" placeholder="Search STEP models, e.g. Arduino Nano, NEMA 17, SG90 servo" />
+        <input type="text" class="catalog-panel-query" placeholder="Search STEP models, e.g. Arduino Nano, NEMA 17, SG90 servo" autocomplete="off" />
         <button type="button" class="btn accent catalog-panel-search-btn">Search</button>
+      </div>
+      <div class="catalog-suggestions" aria-label="Suggested parts">
+        <p class="catalog-suggestions-label muted small">Suggestions</p>
+        <div class="catalog-suggestion-chips">
+          ${CATALOG_SUGGESTIONS.map(
+            (q) => `<button type="button" class="catalog-suggestion-chip" data-catalog-suggest="${escapeAttr(q)}">${escapeHtml(q)}</button>`
+          ).join("")}
+        </div>
       </div>
       <div class="catalog-source-filter">
         <div class="catalog-source-filter-head">
@@ -33,8 +55,15 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
   const resultsEl = overlay.querySelector(".catalog-panel-results");
   const statusEl = overlay.querySelector(".catalog-panel-status");
   const sourceListEl = overlay.querySelector(".catalog-source-list");
+  const suggestionsEl = overlay.querySelector(".catalog-suggestions");
   let sourceOptions = [];
   let selectedSources = new Set();
+  let searchTimer = 0;
+  let lastAutoQuery = "";
+
+  function setSuggestionsVisible(visible) {
+    suggestionsEl?.classList.toggle("is-hidden", !visible);
+  }
 
   function setStatus(text, kind = "") {
     statusEl.textContent = text || "";
@@ -151,12 +180,16 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
     }
   }
 
-  async function search() {
-    const query = queryEl.value.trim();
+  async function search(forcedQuery) {
+    const query = String(forcedQuery ?? queryEl.value).trim();
     if (!query) {
-      setStatus("Enter a part name or number.", "error");
+      setSuggestionsVisible(true);
+      resultsEl.innerHTML = `<p class="muted small">Pick a suggestion above, or type a part name / number.</p>`;
+      setStatus("Suggestions ready — click a chip or start typing.", "");
       return;
     }
+    setSuggestionsVisible(false);
+    queryEl.value = query;
     setStatus("Searching catalog...");
     resultsEl.innerHTML = "";
     try {
@@ -173,18 +206,53 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
     }
   }
 
+  function scheduleSearch() {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      const q = queryEl.value.trim();
+      if (q.length >= 2 && q !== lastAutoQuery) {
+        lastAutoQuery = q;
+        void search(q);
+      } else if (!q) {
+        lastAutoQuery = "";
+        setSuggestionsVisible(true);
+        resultsEl.innerHTML = `<p class="muted small">Pick a suggestion above, or type a part name / number.</p>`;
+        setStatus("Suggestions ready — click a chip or start typing.", "");
+      }
+    }, 280);
+  }
+
   function open(initialQuery = "") {
     overlay.classList.remove("hidden");
-    if (initialQuery) queryEl.value = initialQuery;
+    queryEl.value = initialQuery || "";
+    lastAutoQuery = "";
+    setSuggestionsVisible(!queryEl.value.trim());
     queryEl.focus();
+    if (queryEl.value.trim()) {
+      void search(queryEl.value);
+    } else {
+      resultsEl.innerHTML = `<p class="muted small">Pick a suggestion above, or type a part name / number.</p>`;
+      setStatus("Suggestions ready — click a chip or start typing.", "");
+      // Warm results with the first suggestion so the panel isn't empty.
+      void search(CATALOG_SUGGESTIONS[0]);
+      setSuggestionsVisible(true);
+    }
   }
 
   function close() {
     overlay.classList.add("hidden");
+    window.clearTimeout(searchTimer);
   }
 
   overlay.querySelector(".catalog-panel-close")?.addEventListener("click", close);
-  overlay.querySelector(".catalog-panel-search-btn")?.addEventListener("click", search);
+  overlay.querySelector(".catalog-panel-search-btn")?.addEventListener("click", () => search());
+  overlay.querySelectorAll("[data-catalog-suggest]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const q = btn.getAttribute("data-catalog-suggest") || "";
+      lastAutoQuery = q;
+      void search(q);
+    });
+  });
   overlay.querySelector(".catalog-sources-all")?.addEventListener("click", () => {
     selectedSources = new Set(sourceOptions.map((s) => s.id));
     renderSourceFilters();
@@ -200,9 +268,12 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
   queryEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      search();
+      window.clearTimeout(searchTimer);
+      lastAutoQuery = queryEl.value.trim();
+      void search();
     }
   });
+  queryEl.addEventListener("input", scheduleSearch);
   overlay.addEventListener("mousedown", (e) => {
     if (e.target === overlay) close();
   });

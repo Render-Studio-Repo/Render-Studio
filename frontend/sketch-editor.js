@@ -104,6 +104,7 @@ export function createSketchEditor({
   let preview = null;
   let dragStart = null;
   let pointerDown = null;
+  let pointerUv = null;
   let arcPts = [];
   let splinePts = [];
   let savedView = null;
@@ -1591,14 +1592,105 @@ export function createSketchEditor({
   }
 
   function activateShortcutTool(next) {
-    setTool(next);
-    if (next === "dimension" && selectedId) {
-      const ent = entityById(selectedId);
-      if (ent?.type === "line" || ent?.type === "circle") {
-        promptDimension(ent);
+    if (next === "dimension") {
+      if (applyInlineDistance()) return true;
+      setTool("dimension");
+      let ent = selectedId ? entityById(selectedId) : null;
+      if (!ent || (ent.type !== "line" && ent.type !== "circle")) {
+        for (let i = entities.length - 1; i >= 0; i--) {
+          const candidate = entities[i];
+          if (candidate.type === "line" || candidate.type === "circle") {
+            ent = candidate;
+            selectedId = candidate.id;
+            break;
+          }
+        }
       }
+      if (ent?.type === "line" || ent?.type === "circle") {
+        rebuildMeshes();
+        promptDimension(ent);
+      } else {
+        onStatus?.("ok", "Dimension (D): click a line or circle, then press D again — or press D while drawing a line to set length.");
+      }
+      return true;
     }
+    setTool(next);
     return true;
+  }
+
+  function applyInlineDistance() {
+    const drawing =
+      (tool === "line" && dragStart)
+      || (tool === "circle" && dragStart && pointerUv)
+      || (tool === "rectangle" && dragStart && pointerUv);
+    if (!drawing) return false;
+    const label = tool === "circle" ? "Diameter (mm)" : "Distance (mm)";
+    const seed =
+      tool === "circle" && pointerUv
+        ? Math.hypot(pointerUv.u - dragStart.u, pointerUv.v - dragStart.v) * 2
+        : tool === "line" && pointerUv
+          ? Math.hypot(pointerUv.u - dragStart.u, pointerUv.v - dragStart.v)
+          : tool === "rectangle" && pointerUv
+            ? Math.abs(pointerUv.u - dragStart.u)
+            : 25;
+    const input = window.prompt(`${label}:`, `${Math.max(0.1, seed).toFixed(1)}mm`);
+    if (input == null) return true;
+    const num = parseDimensionInput(input);
+    if (!Number.isFinite(num) || num <= 0) {
+      onStatus?.("error", "Invalid distance. Try values like 25mm or 1in.");
+      return true;
+    }
+    pushUndo();
+    if (tool === "line") {
+      const target = pointerUv || { u: dragStart.u + Math.max(num, 1), v: dragStart.v };
+      let dx = target.u - dragStart.u;
+      let dy = target.v - dragStart.v;
+      let len = Math.hypot(dx, dy);
+      if (len < 1e-6) {
+        dx = 1;
+        dy = 0;
+        len = 1;
+      }
+      const end = { u: dragStart.u + (dx / len) * num, v: dragStart.v + (dy / len) * num };
+      const lineEnt = addEntity("line", { a: { ...dragStart }, b: end });
+      maybeAutoAxisConstraint(lineEnt);
+      dragStart = end;
+      pointerUv = end;
+      applyConstraints();
+      clearPreview();
+      onStatus?.("ok", `Line length set to ${num.toFixed(2)} mm. Click next point or press D again.`);
+      return true;
+    }
+    if (tool === "circle") {
+      const radius = num / 2;
+      addEntity("circle", { c: { ...dragStart }, r: radius });
+      dragStart = null;
+      pointerUv = null;
+      pointerDown = null;
+      applyConstraints();
+      clearPreview();
+      onStatus?.("ok", `Circle diameter set to ${num.toFixed(2)} mm.`);
+      return true;
+    }
+    if (tool === "rectangle") {
+      const target = pointerUv || { u: dragStart.u + num, v: dragStart.v + num };
+      const height = Math.abs(target.v - dragStart.v) || num;
+      const signedX = target.u >= dragStart.u ? num : -num;
+      const signedY = target.v >= dragStart.v ? height : -height;
+      const end = { u: dragStart.u + signedX, v: dragStart.v + signedY };
+      const corners = rectCorners(dragStart, end);
+      for (let i = 0; i < 4; i++) {
+        addEntity("line", { a: corners[i], b: corners[(i + 1) % 4] });
+      }
+      dragStart = null;
+      pointerUv = null;
+      pointerDown = null;
+      applyConstraints();
+      clearPreview();
+      onStatus?.("ok", `Rectangle width set to ${num.toFixed(2)} mm.`);
+      return true;
+    }
+    return false;
   }
 
   function onPointerDown(e) {
@@ -1692,12 +1784,16 @@ export function createSketchEditor({
       return;
     }
     if (!dragStart) {
-      if (tool === "line") raycastPlane(e);
+      if (tool === "line" || tool === "circle" || tool === "rectangle") {
+        const hover = raycastPlane(e);
+        if (hover) pointerUv = hover.uv;
+      }
       return;
     }
     const rc = raycastPlane(e);
     if (!rc) return;
     const uv = rc.uv;
+    pointerUv = uv;
     clearPreview();
     if (tool === "rectangle") {
       preview = polyMesh(rectCorners(dragStart, uv), PREVIEW_COLOR, true);

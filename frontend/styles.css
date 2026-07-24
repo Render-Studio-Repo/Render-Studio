@@ -1061,6 +1061,49 @@ body.theme-light .file-export-dl:hover {
 }
 .catalog-panel-query {
   flex: 1;
+}
+
+.catalog-suggestions {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 4px;
+}
+
+.catalog-suggestions.is-hidden {
+  display: none;
+}
+
+.catalog-suggestions-label {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.catalog-suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.catalog-suggestion-chip {
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  background: rgba(88, 166, 255, 0.08);
+  color: #dbeafe;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.catalog-suggestion-chip:hover {
+  background: rgba(88, 166, 255, 0.18);
+  border-color: rgba(88, 166, 255, 0.55);
+  color: #f0f6fc;
+}
+
+.catalog-panel-results {  flex: 1;
   min-width: 0;
   background: #0d1117;
   color: var(--text);
@@ -3904,6 +3947,88 @@ body:not(.info-page) {
 
 .wm-role-pill--user {
   color: #c9d1d9;
+  border-color: rgba(139, 148, 158, 0.35);
+  background: rgba(48, 54, 61, 0.45);
+}
+
+.wm-member-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.wm-access-pill,
+.wm-invite-pill {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.wm-access-pill--edit {
+  color: #3fb950;
+  border-color: rgba(63, 185, 80, 0.4);
+  background: rgba(46, 160, 67, 0.14);
+}
+
+.wm-access-pill--view {
+  color: #d2a8ff;
+  border-color: rgba(163, 113, 247, 0.4);
+  background: rgba(163, 113, 247, 0.14);
+}
+
+.wm-invite-pill {
+  color: #79c0ff;
+  border-color: rgba(56, 139, 253, 0.4);
+  background: rgba(31, 111, 235, 0.14);
+}
+
+.wm-member-row--perms {
+  align-items: flex-start;
+}
+
+.wm-perm-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.wm-perm-field {
+  display: grid;
+  gap: 3px;
+  font-size: 0.68rem;
+  color: #9da7b3;
+}
+
+.wm-perm-field select {
+  min-width: 110px;
+  border: 1px solid rgba(48, 54, 61, 0.95);
+  border-radius: 8px;
+  background: #0d1117;
+  color: #e6edf3;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+}
+
+.wm-perm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #c9d1d9;
+  padding: 6px 0;
+}
+
+.wm-member-list--perms .wm-member-row {
+  padding: 10px 0;
+}
   background: rgba(110, 118, 129, 0.16);
 }
 

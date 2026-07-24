@@ -16,6 +16,7 @@ from backend.database import get_conn
 WORKSPACE_ROLES = ("owner", "manager", "user")
 ROLE_ALIASES = {"member": "user", "admin": "owner"}
 ASSIGNABLE_ROLES = ("manager", "user")
+ACCESS_LEVELS = ("edit", "view")
 
 
 def _now() -> str:
@@ -27,6 +28,24 @@ def _ensure_invite_token_column(conn) -> None:
         conn.execute("ALTER TABLE team_invites ADD COLUMN token TEXT")
     except sqlite3.OperationalError:
         pass
+
+
+def _ensure_member_permission_columns(conn) -> None:
+    try:
+        conn.execute("ALTER TABLE team_members ADD COLUMN can_invite INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE team_members ADD COLUMN access TEXT NOT NULL DEFAULT 'edit'")
+    except sqlite3.OperationalError:
+        pass
+
+
+def normalize_access(access: str | None) -> str:
+    raw = str(access or "edit").strip().lower()
+    if raw in {"view", "viewer", "read", "readonly", "read_only"}:
+        return "view"
+    return "edit"
 
 
 def _invite_token() -> str:
@@ -50,8 +69,23 @@ def display_role(role: str | None) -> str:
 def decorate_member_row(row: dict[str, Any] | Any) -> dict[str, Any]:
     data = dict(row) if not isinstance(row, dict) else dict(row)
     role = normalize_role(data.get("role"))
+    access = normalize_access(data.get("access"))
+    # Owners always have full invite + edit; ignore stale column values.
+    if role == "owner":
+        can_invite = True
+        access = "edit"
+    else:
+        raw_invite = data.get("can_invite")
+        if raw_invite is None and role == "manager":
+            can_invite = True
+        else:
+            can_invite = bool(int(raw_invite or 0))
     data["role"] = role
     data["role_label"] = display_role(role)
+    data["access"] = access
+    data["access_label"] = "Can edit" if access == "edit" else "View only"
+    data["can_invite"] = can_invite
+    data["can_edit"] = access == "edit"
     return data
 
 
@@ -66,8 +100,56 @@ def get_member_role(team_id: str, user_id: str) -> str | None:
     return normalize_role(row["role"])
 
 
+def get_member_permissions(team_id: str, user_id: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        _ensure_member_permission_columns(conn)
+        row = conn.execute(
+            """
+            SELECT role, can_invite, access
+            FROM team_members
+            WHERE team_id=? AND user_id=?
+            """,
+            (team_id, user_id),
+        ).fetchone()
+    if not row:
+        return None
+    return decorate_member_row(row)
+
+
 def can_manage_workspace(role: str | None) -> bool:
     return normalize_role(role) in {"owner", "manager"}
+
+
+def member_can_invite(team_id: str, user_id: str) -> bool:
+    perms = get_member_permissions(team_id, user_id)
+    return bool(perms and perms.get("can_invite"))
+
+
+def member_can_edit(team_id: str, user_id: str) -> bool:
+    perms = get_member_permissions(team_id, user_id)
+    return bool(perms and perms.get("can_edit"))
+
+
+def can_edit_project(user_id: str, project_id: str) -> bool:
+    """True when the user may mutate the project (generate/edit/upload), not just view."""
+    with get_conn() as conn:
+        _ensure_member_permission_columns(conn)
+        row = conn.execute(
+            """
+            SELECT tm.role, tm.can_invite, tm.access
+            FROM project_access pa
+            JOIN team_members tm ON tm.team_id = pa.team_id
+            WHERE pa.project_id = ? AND tm.user_id = ?
+            """,
+            (project_id, user_id),
+        ).fetchone()
+        if row:
+            return decorate_member_row(row).get("can_edit") is True
+        shared = conn.execute(
+            "SELECT 1 FROM project_shares WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        ).fetchone()
+    return shared is not None
 
 
 def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
@@ -152,9 +234,11 @@ def authenticate(email: str, password: str) -> dict[str, Any] | None:
 
 def list_teams(user_id: str) -> list[dict[str, Any]]:
     with get_conn() as conn:
+        _ensure_member_permission_columns(conn)
         rows = conn.execute(
             """
             SELECT t.id, t.name, t.created_by, t.created_at, tm.role,
+                   tm.can_invite, tm.access,
                    t.render_folder_provider, t.render_folder_ref,
                    t.render_folder_label, t.render_folder_connected_at,
                    (SELECT COUNT(*) FROM team_members tm2 WHERE tm2.team_id = t.id) AS member_count
@@ -170,9 +254,21 @@ def list_teams(user_id: str) -> list[dict[str, Any]]:
         ).fetchall()
     out = []
     for row in rows:
-        item = dict(row)
-        item["role"] = normalize_role(item.get("role"))
-        item["role_label"] = display_role(item["role"])
+        item = decorate_member_row(row)
+        # Keep team fields on the payload (decorate focuses on member flags).
+        item.update(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "created_by": row["created_by"],
+                "created_at": row["created_at"],
+                "member_count": row["member_count"],
+                "render_folder_provider": row["render_folder_provider"],
+                "render_folder_ref": row["render_folder_ref"],
+                "render_folder_label": row["render_folder_label"],
+                "render_folder_connected_at": row["render_folder_connected_at"],
+            }
+        )
         out.append(item)
     return out
 
@@ -180,9 +276,11 @@ def list_teams(user_id: str) -> list[dict[str, Any]]:
 def list_team_members(team_id: str, user_id: str) -> list[dict[str, Any]]:
     _require_team_member(team_id, user_id)
     with get_conn() as conn:
+        _ensure_member_permission_columns(conn)
         rows = conn.execute(
             """
-            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at
+            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at,
+                   tm.can_invite, tm.access
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
             WHERE tm.team_id = ?
@@ -352,8 +450,9 @@ def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
     """Workspace roster: members, pending invites, and management capabilities."""
     with get_conn() as conn:
         _ensure_invite_token_column(conn)
+        _ensure_member_permission_columns(conn)
         requester = conn.execute(
-            "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
+            "SELECT role, can_invite, access FROM team_members WHERE team_id=? AND user_id=?",
             (team_id, user_id),
         ).fetchone()
         if not requester:
@@ -364,7 +463,8 @@ def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
         ).fetchone()
         members = conn.execute(
             """
-            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at
+            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at,
+                   tm.can_invite, tm.access
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
             WHERE tm.team_id = ?
@@ -393,7 +493,8 @@ def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
             "SELECT COUNT(*) AS n FROM project_access WHERE team_id=?",
             (team_id,),
         ).fetchone()["n"]
-    role = normalize_role(requester["role"])
+    requester_perms = decorate_member_row(requester)
+    role = requester_perms["role"]
     return {
         "team": dict(team) if team else {"id": team_id},
         "members": [decorate_member_row(r) for r in members],
@@ -402,9 +503,12 @@ def team_management_summary(team_id: str, user_id: str) -> dict[str, Any]:
         "project_count": int(project_count or 0),
         "requester_role": role,
         "requester_role_label": display_role(role),
+        "requester_access": requester_perms.get("access"),
+        "requester_can_edit": requester_perms.get("can_edit"),
         "can_manage_roles": role == "owner",
+        "can_manage_permissions": role == "owner",
         "can_remove_members": can_manage_workspace(role),
-        "can_invite": True,
+        "can_invite": bool(requester_perms.get("can_invite")),
         "is_workspace_admin": role == "owner",
     }
 
@@ -423,6 +527,7 @@ def set_member_role(
     if target_user_id == requester_id:
         raise ValueError("You cannot change your own workspace admin role")
     with get_conn() as conn:
+        _ensure_member_permission_columns(conn)
         target = conn.execute(
             "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
             (team_id, target_user_id),
@@ -431,14 +536,69 @@ def set_member_role(
             raise ValueError("User is not a member of this workspace")
         if normalize_role(target["role"]) == "owner":
             raise ValueError("Cannot change the workspace admin role")
+        # Promoting to manager grants invite by default; demoting leaves invite as owner set it.
+        if wanted == "manager":
+            conn.execute(
+                "UPDATE team_members SET role=?, can_invite=1 WHERE team_id=? AND user_id=?",
+                (wanted, team_id, target_user_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE team_members SET role=? WHERE team_id=? AND user_id=?",
+                (wanted, team_id, target_user_id),
+            )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at,
+                   tm.can_invite, tm.access
+            FROM team_members tm
+            JOIN users u ON u.id = tm.user_id
+            WHERE tm.team_id=? AND tm.user_id=?
+            """,
+            (team_id, target_user_id),
+        ).fetchone()
+    return decorate_member_row(row)
+
+
+def set_member_permissions(
+    team_id: str,
+    target_user_id: str,
+    requester_id: str,
+    *,
+    can_invite: bool | None = None,
+    access: str | None = None,
+) -> dict[str, Any]:
+    """Workspace owner sets invite + edit/view permissions for a member."""
+    _require_team_owner(team_id, requester_id)
+    if target_user_id == requester_id:
+        raise ValueError("You cannot change your own workspace admin permissions")
+    if can_invite is None and access is None:
+        raise ValueError("Provide can_invite and/or access")
+    wanted_access = normalize_access(access) if access is not None else None
+    if wanted_access is not None and wanted_access not in ACCESS_LEVELS:
+        raise ValueError("Access must be edit or view")
+    with get_conn() as conn:
+        _ensure_member_permission_columns(conn)
+        target = conn.execute(
+            "SELECT role, can_invite, access FROM team_members WHERE team_id=? AND user_id=?",
+            (team_id, target_user_id),
+        ).fetchone()
+        if not target:
+            raise ValueError("User is not a member of this workspace")
+        if normalize_role(target["role"]) == "owner":
+            raise ValueError("Cannot change the workspace admin permissions")
+        next_invite = int(bool(can_invite)) if can_invite is not None else int(target["can_invite"] or 0)
+        next_access = wanted_access if wanted_access is not None else normalize_access(target["access"])
         conn.execute(
-            "UPDATE team_members SET role=? WHERE team_id=? AND user_id=?",
-            (wanted, team_id, target_user_id),
+            "UPDATE team_members SET can_invite=?, access=? WHERE team_id=? AND user_id=?",
+            (next_invite, next_access, team_id, target_user_id),
         )
         conn.commit()
         row = conn.execute(
             """
-            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at
+            SELECT u.id, u.email, u.display_name, u.avatar_url, tm.role, tm.joined_at,
+                   tm.can_invite, tm.access
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
             WHERE tm.team_id=? AND tm.user_id=?
@@ -472,11 +632,13 @@ def _require_team_manager(team_id: str, user_id: str) -> None:
 
 def add_registered_user_to_team(team_id: str, email: str, requester_id: str) -> dict[str, Any]:
     """Owner adds an existing registered user immediately; unknown emails stay as invites."""
-    _require_team_member(team_id, requester_id)
+    if not member_can_invite(team_id, requester_id):
+        raise PermissionError("You do not have permission to invite people to this workspace")
     email = email.strip().lower()
     if not email:
         raise ValueError("Email is required")
     with get_conn() as conn:
+        _ensure_member_permission_columns(conn)
         user = conn.execute("SELECT id, email, display_name FROM users WHERE lower(email)=?", (email,)).fetchone()
         if not user:
             # Preserve the existing invite flow for users who have not signed up yet.
@@ -488,7 +650,10 @@ def add_registered_user_to_team(team_id: str, email: str, requester_id: str) -> 
         ).fetchone()
         if not existing:
             conn.execute(
-                "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'user', ?)",
+                """
+                INSERT INTO team_members (team_id, user_id, role, joined_at, can_invite, access)
+                VALUES (?, ?, 'user', ?, 0, 'edit')
+                """,
                 (team_id, user["id"], _now()),
             )
             newly_added = True
@@ -666,6 +831,10 @@ def create_team(name: str, user_id: str) -> dict[str, Any]:
         "created_at": now,
         "role": "owner",
         "role_label": display_role("owner"),
+        "can_invite": True,
+        "can_edit": True,
+        "access": "edit",
+        "access_label": "Can edit",
         "member_count": 1,
         "render_folder_provider": "render3d",
         "render_folder_ref": None,
@@ -675,7 +844,8 @@ def create_team(name: str, user_id: str) -> dict[str, Any]:
 
 
 def invite_user_to_team(team_id: str, email: str, inviter_id: str) -> dict[str, Any]:
-    _require_team_member(team_id, inviter_id)
+    if not member_can_invite(team_id, inviter_id):
+        raise PermissionError("You do not have permission to invite people to this workspace")
     email = email.strip().lower()
     with get_conn() as conn:
         _ensure_invite_token_column(conn)

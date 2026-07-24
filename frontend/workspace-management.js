@@ -1,4 +1,4 @@
-/** Workspace management panel — overview + role assignment for workspace admins. */
+/** Workspace management panel — overview + role / permission assignment for workspace admins. */
 
 import { authHeaders, getStoredUser, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
 
@@ -85,7 +85,7 @@ export function createWorkspaceManagementUI({
       <div class="wm-head">
         <div>
           <strong>Workspace management</strong>
-          <span class="muted small">Data and roles for workspaces you admin</span>
+          <span class="muted small">Roles, invite rights, and edit vs view access</span>
         </div>
         <select id="wm-team-select" aria-label="Workspace">
           ${owned
@@ -98,7 +98,7 @@ export function createWorkspaceManagementUI({
       </div>
       <div class="wm-tabs" role="tablist">
         <button type="button" class="wm-tab${activeTab === "overview" ? " active" : ""}" data-wm-tab="overview">Overview</button>
-        <button type="button" class="wm-tab${activeTab === "roles" ? " active" : ""}" data-wm-tab="roles" ${canRoles ? "" : "disabled"}>Roles</button>
+        <button type="button" class="wm-tab${activeTab === "roles" ? " active" : ""}" data-wm-tab="roles" ${canRoles ? "" : "disabled"}>Permissions</button>
       </div>
       <div class="wm-body">
         ${
@@ -132,16 +132,26 @@ export function createWorkspaceManagementUI({
     panelEl.querySelectorAll("[data-wm-role]").forEach((sel) => {
       sel.addEventListener("change", () => void setRole(sel.dataset.userId, sel.value));
     });
+    panelEl.querySelectorAll("[data-wm-access]").forEach((sel) => {
+      sel.addEventListener("change", () => void setPermissions(sel.dataset.userId, { access: sel.value }));
+    });
+    panelEl.querySelectorAll("[data-wm-invite]").forEach((input) => {
+      input.addEventListener("change", () => {
+        void setPermissions(input.dataset.userId, { can_invite: !!input.checked });
+      });
+    });
   }
 
   function renderOverviewTab(team, data, members, invites) {
     const managers = members.filter((m) => m.role === "manager").length;
+    const viewers = members.filter((m) => m.access === "view").length;
     const users = members.filter((m) => m.role === "user" || m.role === "member").length;
     return `
       <div class="wm-stats">
         <article><span>Members</span><strong>${members.length}</strong></article>
         <article><span>Managers</span><strong>${managers}</strong></article>
         <article><span>Users</span><strong>${users}</strong></article>
+        <article><span>View only</span><strong>${viewers}</strong></article>
         <article><span>Projects</span><strong>${Number(data.project_count || 0)}</strong></article>
         <article><span>Pending invites</span><strong>${invites.length}</strong></article>
       </div>
@@ -157,7 +167,11 @@ export function createWorkspaceManagementUI({
                 <strong>${esc(m.display_name || m.email)}</strong>
                 <span class="muted small">${esc(m.email || "")}</span>
               </div>
-              <small class="wm-role-pill wm-role-pill--${esc(m.role || "user")}">${esc(m.role_label || m.role || "User")}</small>
+              <div class="wm-member-flags">
+                <small class="wm-role-pill wm-role-pill--${esc(m.role || "user")}">${esc(m.role_label || m.role || "User")}</small>
+                <small class="wm-access-pill wm-access-pill--${esc(m.access || "edit")}">${esc(m.access_label || (m.access === "view" ? "View only" : "Can edit"))}</small>
+                ${m.can_invite ? `<small class="wm-invite-pill">Can invite</small>` : ""}
+              </div>
             </div>`
               )
               .join("") || `<p class="muted small">No members yet.</p>`
@@ -172,33 +186,52 @@ export function createWorkspaceManagementUI({
             </div>`
           : ""
       }
-      <p class="muted small wm-note">Your role: <strong>${esc(data.requester_role_label || team?.role_label || "Admin")}</strong>. Site admins (you &amp; Matt) keep the full Management dashboard.</p>
+      <p class="muted small wm-note">Your role: <strong>${esc(data.requester_role_label || team?.role_label || "Admin")}</strong>. Only the workspace admin can change invite rights and edit/view access.</p>
     `;
   }
 
   function renderRolesTab(members, canRoles) {
     if (!canRoles) {
-      return `<p class="muted small">Only the workspace admin can assign Manager / User roles.</p>`;
+      return `<p class="muted small">Only the workspace admin can assign roles and permissions.</p>`;
     }
     return `
-      <p class="muted small">Assign <strong>Manager</strong> (can manage members &amp; shared chat threads) or <strong>User</strong> (standard access + private chat threads).</p>
-      <div class="wm-member-list">
+      <p class="muted small">Set each member’s <strong>role</strong>, whether they can <strong>invite</strong> others, and whether they can <strong>edit</strong> or only <strong>view</strong> projects.</p>
+      <div class="wm-member-list wm-member-list--perms">
         ${members
           .map((m) => {
             const isOwner = m.role === "owner";
             return `
-              <div class="wm-member-row">
+              <div class="wm-member-row wm-member-row--perms">
                 <div>
                   <strong>${esc(m.display_name || m.email)}</strong>
                   <span class="muted small">${esc(m.email || "")}</span>
                 </div>
                 ${
                   isOwner
-                    ? `<small class="wm-role-pill wm-role-pill--owner">Admin</small>`
-                    : `<select data-wm-role data-user-id="${esc(m.id)}" aria-label="Role for ${esc(m.display_name || m.email)}">
-                        <option value="manager" ${m.role === "manager" ? "selected" : ""}>Manager</option>
-                        <option value="user" ${m.role === "user" || m.role === "member" ? "selected" : ""}>User</option>
-                      </select>`
+                    ? `<div class="wm-perm-controls">
+                        <small class="wm-role-pill wm-role-pill--owner">Admin</small>
+                        <small class="muted small">Full access</small>
+                      </div>`
+                    : `<div class="wm-perm-controls">
+                        <label class="wm-perm-field">
+                          <span>Role</span>
+                          <select data-wm-role data-user-id="${esc(m.id)}" aria-label="Role for ${esc(m.display_name || m.email)}">
+                            <option value="manager" ${m.role === "manager" ? "selected" : ""}>Manager</option>
+                            <option value="user" ${m.role === "user" || m.role === "member" ? "selected" : ""}>User</option>
+                          </select>
+                        </label>
+                        <label class="wm-perm-field">
+                          <span>Access</span>
+                          <select data-wm-access data-user-id="${esc(m.id)}" aria-label="Access for ${esc(m.display_name || m.email)}">
+                            <option value="edit" ${m.access !== "view" ? "selected" : ""}>Can edit</option>
+                            <option value="view" ${m.access === "view" ? "selected" : ""}>View only</option>
+                          </select>
+                        </label>
+                        <label class="wm-perm-check">
+                          <input type="checkbox" data-wm-invite data-user-id="${esc(m.id)}" ${m.can_invite ? "checked" : ""} />
+                          <span>Can invite people</span>
+                        </label>
+                      </div>`
                 }
               </div>`;
           })
@@ -229,7 +262,35 @@ export function createWorkspaceManagementUI({
     }
   }
 
-  async function openPanel() {
+  async function setPermissions(userId, patch = {}) {
+    if (!selectedTeamId || !userId) return;
+    try {
+      await api(
+        `/api/teams/${encodeURIComponent(selectedTeamId)}/members/${encodeURIComponent(userId)}/permissions`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        },
+      );
+      await loadTeam(selectedTeamId);
+      const bits = [];
+      if (patch.access) bits.push(patch.access === "view" ? "view only" : "can edit");
+      if (typeof patch.can_invite === "boolean") bits.push(patch.can_invite ? "can invite" : "cannot invite");
+      onStatus?.("ok", bits.length ? `Updated permissions (${bits.join(", ")})` : "Updated permissions");
+      onTeamsChanged?.();
+      render();
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not update permissions");
+      try {
+        await loadTeam(selectedTeamId);
+      } catch {
+        /* ignore */
+      }
+      render();
+    }
+  }
+
+  async function openPanel({ teamId = null, tab = null } = {}) {
     if (!syncMenuVisibility()) return;
     const costs = document.getElementById("profile-costs-panel");
     const prefs = document.getElementById("profile-preferences-panel");
@@ -237,10 +298,14 @@ export function createWorkspaceManagementUI({
     costs?.classList.add("hidden");
     prefs?.classList.add("hidden");
     workspaces?.classList.add("hidden");
-    panelEl?.classList.toggle("hidden");
-    if (panelEl?.classList.contains("hidden")) return;
+    if (tab) activeTab = tab;
+    panelEl?.classList.remove("hidden");
     const owned = ownedTeams();
-    selectedTeamId = selectedTeamId || owned[0]?.id || null;
+    if (teamId && owned.some((t) => t.id === teamId)) {
+      selectedTeamId = teamId;
+    } else {
+      selectedTeamId = selectedTeamId || owned[0]?.id || null;
+    }
     if (selectedTeamId) {
       try {
         await loadTeam(selectedTeamId);
@@ -258,6 +323,7 @@ export function createWorkspaceManagementUI({
 
   return {
     syncMenuVisibility,
+    openPanel,
     refresh: async () => {
       syncMenuVisibility();
       if (panelEl && !panelEl.classList.contains("hidden") && selectedTeamId) {

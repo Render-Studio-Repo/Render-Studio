@@ -476,6 +476,32 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE team_members ADD COLUMN can_invite INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE team_members ADD COLUMN access TEXT NOT NULL DEFAULT 'edit'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            # Owners + managers can invite by default; regular users cannot until granted.
+            conn.execute(
+                """
+                UPDATE team_members
+                SET can_invite = 1
+                WHERE lower(role) IN ('owner', 'admin', 'manager')
+                """
+            )
+            conn.execute(
+                """
+                UPDATE team_members
+                SET access = 'edit'
+                WHERE access IS NULL OR trim(access) = ''
+                """
+            )
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_app_status_featured ON agent_app_listings(status, featured)")
         except sqlite3.OperationalError:
             pass

@@ -840,6 +840,7 @@
 
 /* ── Body (collapsible) ──────────────────────────────────────────────────────── */
 .ribbon-body {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 0;
@@ -880,6 +881,48 @@
 
 .ribbon-panel--active {
   display: flex;
+}
+
+/* ── Centered Pick tools in the Create / tool row ─────────────────────────── */
+.ribbon-pick-host {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  pointer-events: none;
+  max-width: min(720px, calc(100% - 24px));
+}
+
+.ribbon-pick-host .toolbar-pick {
+  pointer-events: auto;
+  margin: 0;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  background: #0d1117ee;
+  backdrop-filter: blur(6px);
+}
+
+#app.solid-design-tab .ribbon-pick-host,
+#app.sketch-design-tab .ribbon-pick-host,
+#app.rigging-design-tab .ribbon-pick-host,
+#app.robotics-design-tab .ribbon-pick-host,
+body.solid-design-tab .ribbon-pick-host,
+body.sketch-design-tab .ribbon-pick-host,
+body.rigging-design-tab .ribbon-pick-host,
+body.robotics-design-tab .ribbon-pick-host {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Pick lives in the ribbon Create row now — keep header slot empty */
+.toolbar > .toolbar-pick {
+  display: none !important;
+}
+
+#app.wiring-mode .ribbon-pick-host {
+  display: none !important;
 }
 
 /* ── Individual tool buttons ────────────────────────────────────────────────── */

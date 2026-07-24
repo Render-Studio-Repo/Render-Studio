@@ -914,6 +914,11 @@ class TeamMemberRoleRequest(BaseModel):
     role: str = Field(..., min_length=1, max_length=16)
 
 
+class TeamMemberPermissionsRequest(BaseModel):
+    can_invite: bool | None = None
+    access: str | None = Field(default=None, max_length=16)
+
+
 class ProjectChatMessageRequest(BaseModel):
     body: str = Field(default="", max_length=8000)
     parent_id: str | None = Field(default=None, max_length=64)
@@ -1039,6 +1044,7 @@ def _require_project_write(user: dict[str, Any], project_id: str) -> Path:
     """Team members or a1projects admins may mutate a project (generate, edit, etc.).
 
     Public folder projects are read-only for everyone except a1projects admins.
+    View-only workspace members can open projects but cannot mutate them.
     Non-admin users should remix (copy) the file into their own project.
     """
     if _is_public_project(project_id) and not _is_a1projects_admin(user):
@@ -1046,7 +1052,16 @@ def _require_project_write(user: dict[str, Any], project_id: str) -> Path:
             403,
             "Public folder projects are read-only. Use Remix to copy this model into your own project.",
         )
-    if teams_service.can_access_project(user["id"], project_id) or _is_a1projects_admin(user):
+    if _is_a1projects_admin(user):
+        path = PROJECTS / project_id
+        if path.is_dir():
+            return path
+    if teams_service.can_access_project(user["id"], project_id):
+        if not teams_service.can_edit_project(user["id"], project_id):
+            raise HTTPException(
+                403,
+                "This shared workspace is view-only for your account. Ask the workspace admin for edit access.",
+            )
         path = PROJECTS / project_id
         if path.is_dir():
             return path
@@ -9920,6 +9935,41 @@ def set_team_member_role(
     return {"member": member}
 
 
+@app.patch("/api/teams/{team_id}/members/{target_user_id}/permissions")
+def set_team_member_permissions(
+    team_id: str,
+    target_user_id: str,
+    body: TeamMemberPermissionsRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        member = teams_service.set_member_permissions(
+            team_id,
+            target_user_id,
+            user["id"],
+            can_invite=body.can_invite,
+            access=body.access,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _notify_workspace(
+        team_id,
+        {
+            "type": "workspace.member.permissions",
+            "team_id": team_id,
+            "user_id": target_user_id,
+            "can_invite": member.get("can_invite"),
+            "access": member.get("access"),
+            "access_label": member.get("access_label"),
+            "by": user["display_name"],
+            "by_user_id": user["id"],
+        },
+    )
+    return {"member": member}
+
+
 @app.post("/api/teams/{team_id}/members")
 def add_team_member(team_id: str, body: TeamInviteRequest, user: dict[str, Any] = Depends(get_current_user)):
     try:
@@ -10399,6 +10449,11 @@ def create_workspace_folder(
     body: FolderCreateRequest,
     user: dict[str, Any] = Depends(get_current_user),
 ):
+    if not teams_service.member_can_edit(team_id, user["id"]):
+        raise HTTPException(
+            403,
+            "This shared workspace is view-only for your account. Ask the workspace admin for edit access.",
+        )
     try:
         folder = folders_service.create_folder(
             team_id, body.name, user["id"], parent_id=body.parent_id
@@ -10880,6 +10935,7 @@ def list_projects(
             "owner_email": row.get("owner_email"),
             "owner_name": row.get("owner_name") or (p.get("generation") or {}).get("by_user_name"),
             "shared_with_me": project_id in shared_ids,
+            "read_only_project": not teams_service.can_edit_project(user["id"], project_id),
         }
         projects.append(p)
     # Inject shares that aren't already present (e.g. personal-team projects, or
@@ -11227,6 +11283,11 @@ def create_project(
     tid = team_id or teams[0]["id"]
     if tid not in {t["id"] for t in teams}:
         raise HTTPException(403, "Not a member of that team")
+    if not teams_service.member_can_edit(tid, user["id"]):
+        raise HTTPException(
+            403,
+            "This shared workspace is view-only for your account. Ask the workspace admin for edit access.",
+        )
     project_id = str(uuid.uuid4())[:8]
     path = cad_service.project_dir(PROJECTS, project_id)
     if name:
@@ -11347,6 +11408,8 @@ def get_project(
                 "owner_name": owner.get("owner_name"),
             }
         )
+    else:
+        summary["read_only_project"] = not teams_service.can_edit_project(user["id"], project_id)
     return summary
 
 

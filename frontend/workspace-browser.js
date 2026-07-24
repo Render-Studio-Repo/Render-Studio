@@ -221,6 +221,7 @@ export function createWorkspaceBrowser({
   getProjects,
   getActiveProjectId,
   getCurrentUserId = () => null,
+  getTeams = () => [],
   isProjectLoading,
   isProjectGenerating,
   isProjectNew,
@@ -243,6 +244,9 @@ export function createWorkspaceBrowser({
   isHierarchyItemHidden,
   onDragComponent,
   getPartProfile,
+  onInviteWorkspace = null,
+  onLeaveWorkspace = null,
+  onManageWorkspacePermissions = null,
 }) {
   let folders = [];
   let dragProjectId = null;
@@ -326,6 +330,22 @@ export function createWorkspaceBrowser({
     if (!folder) return false;
     const id = String(folder.id || "");
     return folder.shared_workspace === true || id.startsWith("__shared_ws_");
+  }
+
+  function sharedWorkspaceTeamId(folder = null) {
+    if (folder && isSharedWorkspaceFolder(folder)) {
+      const id = String(folder.id || "");
+      if (folder.team_id) return String(folder.team_id);
+      if (id.startsWith("__shared_ws_")) return id.slice("__shared_ws_".length) || null;
+    }
+    const meta = getWorkspaceMeta?.(resolveTeamId()) || {};
+    if (meta.shared && meta.id) return String(meta.id);
+    return null;
+  }
+
+  function teamRecord(teamId) {
+    if (!teamId) return null;
+    return (getTeams?.() || []).find((t) => String(t.id) === String(teamId)) || null;
   }
 
   function isCommunityFolder(folder) {
@@ -1077,11 +1097,32 @@ export function createWorkspaceBrowser({
     const canManage = folder && (folder.can_manage || folder.is_owner);
     const inFolder = projectsInFolder(folderId);
     const canCollapseAll = inFolder.length > 0 && folderHasExpandedProjects(folderId);
+    const sharedTeamId = sharedWorkspaceTeamId(folder);
+    const sharedTeam = teamRecord(sharedTeamId);
+    const isSharedTarget = !!sharedTeamId && (
+      isSharedWorkspaceFolder(folder)
+      || (!folder && !!(getWorkspaceMeta?.(resolveTeamId()) || {}).shared)
+    );
+    const canInviteShared = !!(sharedTeam?.can_invite || sharedTeam?.role === "owner");
+    const canLeaveShared = !!(sharedTeam && String(sharedTeam.role || "").toLowerCase() !== "owner");
+    const canManageSharedPerms = !!(sharedTeam && String(sharedTeam.role || "").toLowerCase() === "owner");
 
     let html = "";
     if (inFolder.length) {
       html += `<button type="button" data-action="collapse-all"${canCollapseAll ? "" : " disabled"}>Collapse all projects</button>`;
-      if (canManage) html += `<hr />`;
+      if (canManage || isSharedTarget) html += `<hr />`;
+    }
+    if (isSharedTarget) {
+      if (canInviteShared && typeof onInviteWorkspace === "function") {
+        html += `<button type="button" data-action="invite-workspace">Invite people…</button>`;
+      }
+      if (canLeaveShared && typeof onLeaveWorkspace === "function") {
+        html += `<button type="button" data-action="leave-workspace">Leave workspace…</button>`;
+      }
+      if (canManageSharedPerms && typeof onManageWorkspacePermissions === "function") {
+        html += `<button type="button" data-action="manage-workspace-perms">Member permissions…</button>`;
+      }
+      if (html && (canManage || canArchiveFolder(folder))) html += `<hr />`;
     }
     if (canManage) {
       html += `
@@ -1094,7 +1135,7 @@ export function createWorkspaceBrowser({
     `;
     }
     if (folder && canArchiveFolder(folder)) {
-      if (html) html += `<hr />`;
+      if (html && !html.trimEnd().endsWith("<hr />")) html += `<hr />`;
       html += `<button type="button" data-action="archive">Move to archive</button>`;
     }
     if (!html) return;
@@ -1115,6 +1156,18 @@ export function createWorkspaceBrowser({
     menu.querySelector('[data-action="collapse-all"]')?.addEventListener("click", () => {
       closeContextMenu();
       collapseAllProjectsInFolder(folderId);
+    });
+    menu.querySelector('[data-action="invite-workspace"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      void onInviteWorkspace?.(sharedTeamId, sharedTeam);
+    });
+    menu.querySelector('[data-action="leave-workspace"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      void onLeaveWorkspace?.(sharedTeamId, sharedTeam);
+    });
+    menu.querySelector('[data-action="manage-workspace-perms"]')?.addEventListener("click", () => {
+      closeContextMenu();
+      void onManageWorkspacePermissions?.(sharedTeamId, sharedTeam);
     });
     menu.querySelector('[data-action="new-project"]')?.addEventListener("click", () => {
       closeContextMenu();
@@ -2479,6 +2532,16 @@ export function createWorkspaceBrowser({
         : "";
 
       const canManage = folder.can_manage || folder.is_owner;
+      const sharedTeamId = isSharedWorkspaceFolder(folder) ? sharedWorkspaceTeamId(folder) : null;
+      const sharedTeam = teamRecord(sharedTeamId);
+      const showSharedMenu = !!(
+        sharedTeamId
+        && (
+          sharedTeam?.can_invite
+          || sharedTeam?.role === "owner"
+          || (sharedTeam && String(sharedTeam.role || "").toLowerCase() !== "owner")
+        )
+      );
 
       header.appendChild(buildFolderCollapseBtn(folder.id, folderCollapsed));
       const folderWsMeta = folder.team_id ? getWorkspaceMeta?.(folder.team_id) : null;
@@ -2499,15 +2562,17 @@ export function createWorkspaceBrowser({
         ${sharedWsBadge}
         ${shareBadge}
         <span class="folder-count muted small">${inFolder.length}</span>
-        ${canManage ? `<span class="folder-header-actions">
+        ${canManage || showSharedMenu ? `<span class="folder-header-actions">
           <button type="button" class="btn-folder-menu" title="Folder menu" aria-label="Folder menu">⋯</button>
         </span>` : ""}
       `
       );
       attachFolderTitleToggle(header.querySelector(".folder-title"), folder.id);
-      header.title = canManage
-        ? "Right-click for folder menu · Move to archive"
-        : "Right-click to collapse all projects or move to archive";
+      header.title = isSharedWorkspaceFolder(folder)
+        ? "Right-click to invite, leave, or manage this shared workspace"
+        : canManage
+          ? "Right-click for folder menu · Move to archive"
+          : "Right-click to collapse all projects or move to archive";
 
       const openMenu = (ev) => showFolderContextMenu(ev, folder);
       header.addEventListener("contextmenu", openMenu);

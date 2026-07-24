@@ -60,7 +60,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260724-hierarchy-row";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260724-ws-perms";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
@@ -69,11 +69,11 @@ import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?
 import { createProjectChatUI } from "./project-chat.js?v=20260724-gs-gifs";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
-import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
+import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260723-key-layout";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
-import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
+import { createRibbon } from "./ribbon.js?v=20260724-pick-row";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
@@ -108,7 +108,7 @@ import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags"
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
-import { createCatalogPanel } from "./catalog-panel.js?v=20260618-catalog-import-fallback";
+import { createCatalogPanel } from "./catalog-panel.js?v=20260724-catalog-suggest";
 import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260721-mcmaster-second-part";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
@@ -118,7 +118,7 @@ import {
 } from "./electronics-suggestions.js?v=20260720-electronics-suggest";
 import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-targets";
 import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
-import { createSketchEditor } from "./sketch-editor.js?v=20260629-sketch-shortcuts";
+import { createSketchEditor } from "./sketch-editor.js?v=20260724-sketch-d";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260715-rigging-viewport";
 import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-hierarchy-play";
@@ -9070,6 +9070,7 @@ function handleDesignTabChange(tab) {
     focusViewportForShortcuts();
   }
   if (tab !== "CANVAS") ribbon?.setDesignTab(tab);
+  app?.classList.toggle("solid-design-tab", tab === "SOLID");
   app?.classList.toggle("sketch-design-tab", tab === "SKETCH");
   app?.classList.toggle("rigging-design-tab", tab === "RIGGING");
   app?.classList.toggle("architect-design-tab", tab === "ARCHITECT");
@@ -9079,6 +9080,8 @@ function handleDesignTabChange(tab) {
   document.body.classList.toggle("architect-design-tab", tab === "ARCHITECT");
   document.body.classList.toggle("rigging-design-tab", tab === "RIGGING");
   document.body.classList.toggle("robotics-design-tab", tab === "ROBOTICS");
+  document.body.classList.toggle("solid-design-tab", tab === "SOLID");
+  document.body.classList.toggle("sketch-design-tab", tab === "SKETCH");
   syncObjectAdjustmentChrome(tab);
 }
 
@@ -17524,6 +17527,7 @@ const workspaceBrowser = createWorkspaceBrowser({
   getWorkspaceId: getSelectedWorkspaceId,
   getFolderTeamId,
   getWorkspaceMeta,
+  getTeams: () => allTeams,
   getProjects: () => {
     const hidden = hiddenWorkspaceIds();
     // Checkboxes in the Projects folder menu hide shared workspaces.
@@ -17564,6 +17568,44 @@ const workspaceBrowser = createWorkspaceBrowser({
   onToggleHierarchyVisibility: (project, entry, visible) => setHierarchyComponentVisible(project, entry, visible),
   onDragComponent: () => {},
   getPartProfile,
+  onInviteWorkspace: (teamId) => {
+    void import("./workspace-send-invite.js?v=20260724-ws-perms").then((mod) => {
+      mod.openWorkspaceSendInvite?.({
+        getActiveTeam,
+        getTeams: () => allTeams,
+        api,
+        preferTeamId: teamId,
+        onInvited: async () => {
+          await refreshTeamMembers?.();
+        },
+      });
+    });
+  },
+  onLeaveWorkspace: async (teamId, team) => {
+    const name = team?.name || "this workspace";
+    if (!window.confirm(`Leave “${name}”? It will disappear from your explorer.`)) return;
+    try {
+      await api(`/api/teams/${encodeURIComponent(teamId)}/leave`, { method: "DELETE" });
+      allTeams = allTeams.filter((t) => t.id !== teamId);
+      const sel = document.getElementById("team-select");
+      if (sel && sel.value === teamId) {
+        const fallback = personalWorkspaceId() || allTeams[0]?.id || "";
+        if (fallback) sel.value = fallback;
+      }
+      renderTeams();
+      await onWorkspaceChange();
+      await refreshTeamMembers?.();
+      await refreshWorkspaceMenuPanel?.();
+      setEditStatus("ok", `Left ${name}.`);
+    } catch (err) {
+      setEditStatus("error", err?.message || "Could not leave workspace.");
+    }
+  },
+  onManageWorkspacePermissions: (teamId) => {
+    document.getElementById("user-menu")?.classList.remove("hidden");
+    document.getElementById("btn-user-menu")?.setAttribute("aria-expanded", "true");
+    void workspaceManagement?.openPanel?.({ teamId, tab: "roles" });
+  },
   onEditHierarchyItem: async (project, entry, sectionId) => {
     if (sectionId !== "sketches") return;
     if (project?.id && project.id !== projectId) {
@@ -27156,6 +27198,8 @@ window.addEventListener("keydown", (e) => {
       sketchEditor.cancelCurrentAction?.();
       return;
     }
+    // Sketch owns letter shortcuts (L/C/D/…) — don't fall through to viewport pick tools.
+    return;
   }
   if (inField && e.key === "Escape") {
     e.preventDefault();
@@ -28092,6 +28136,16 @@ window.addEventListener("keydown", (e) => {
     };
     updateWorkspaceRenameButton();
     sel.classList.toggle("team-select--shared", isSharedWorkspace(getActiveTeam()));
+    const inviteBtn = document.getElementById("btn-open-workspace-invite");
+    if (inviteBtn) {
+      const active = getActiveTeam();
+      const canInvite = !!(active && (active.can_invite || active.role === "owner"));
+      inviteBtn.disabled = !canInvite;
+      inviteBtn.title = canInvite
+        ? "Invite someone to a workspace or shared folder"
+        : "You do not have permission to invite people to this workspace";
+      inviteBtn.classList.toggle("is-disabled", !canInvite);
+    }
     renderSharedWorkspaceMenu();
     refreshTeamMembers();
     refreshTeamInvites();
@@ -30547,7 +30601,7 @@ window.addEventListener("keydown", (e) => {
   refreshTeamMembersRealtime = () => void refreshTeamMembers();
   refreshWorkspacePanelRealtime = () => void refreshWorkspaceMenuPanel();
 
-  void import("./workspace-send-invite.js?v=20260722-invite-hub").then((mod) => {
+  void import("./workspace-send-invite.js?v=20260724-ws-perms").then((mod) => {
     mod.bindWorkspaceSendInvite?.({
       getActiveTeam,
       getTeams: () => allTeams,

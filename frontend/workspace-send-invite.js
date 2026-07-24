@@ -323,9 +323,13 @@ export async function openWorkspaceSendInvite(opts = {}) {
   const modal = $(MODAL_ID);
   if (!modal) return;
 
-  const teams = resolveTeams(getTeams, getActiveTeam);
-  const active = currentTeamSafe(getActiveTeam);
-  fillTeamSelect(teams, active?.id);
+  let teams = resolveTeams(getTeams, getActiveTeam);
+  // Prefer workspaces the user is allowed to invite into.
+  const inviteable = teams.filter((t) => t?.can_invite || t?.role === "owner");
+  if (inviteable.length) teams = inviteable;
+  const preferredId = opts.preferTeamId || opts.teamId || currentTeamSafe(getActiveTeam)?.id;
+  const active = teams.find((t) => t.id === preferredId) || teams[0] || currentTeamSafe(getActiveTeam);
+  fillTeamSelect(teams, preferredId || active?.id);
 
   setStatus("");
   const emailInput = $("team-invite-email");
