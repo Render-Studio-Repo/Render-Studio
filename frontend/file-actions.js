@@ -126,6 +126,17 @@ function friendlyExportError(err, fallback = "Export failed.") {
       action: "Sign in",
       kind: "auth",
       detail: raw,
+      retryable: false,
+    };
+  }
+  if (/Link a Fusion mirror folder|aps_project_id|folder_id/i.test(raw)) {
+    return {
+      title: "Pick a Fusion folder",
+      message: "This project isn’t linked to a Fusion folder yet. Choose a hub/project/folder to export.",
+      action: null,
+      kind: "fusion",
+      detail: raw,
+      retryable: false,
     };
   }
   if (/Fusion request failed\s*\(502\)|Fusion export failed\s*\(502\)|502|bad gateway/i.test(raw)) {
@@ -135,6 +146,7 @@ function friendlyExportError(err, fallback = "Export failed.") {
       action: "Retry",
       kind: "fusion",
       detail: raw,
+      retryable: true,
     };
   }
   return {
@@ -143,15 +155,17 @@ function friendlyExportError(err, fallback = "Export failed.") {
     action: "Retry",
     kind: "generic",
     detail: raw,
+    retryable: true,
   };
 }
 
-function showExportError(menu, err, { title = "Export failed", onRetry = null } = {}) {
+function showExportError(menu, err, { title = "Export failed", onRetry = null, autoDismissMs = 4200 } = {}) {
   if (!menu) {
     alert(err?.message || title);
     return;
   }
   const info = friendlyExportError(err, title);
+  const canRetry = typeof onRetry === "function" && info.retryable !== false && info.action;
   menu.querySelector(".file-export-error-card")?.remove();
   const card = document.createElement("div");
   card.className = `file-export-error-card file-export-error-card--${info.kind}`;
@@ -163,7 +177,7 @@ function showExportError(menu, err, { title = "Export failed", onRetry = null } 
       ${info.detail && info.detail !== info.message ? `<small>${escText(info.detail)}</small>` : ""}
       <div class="file-export-error-actions">
         ${info.kind === "auth" ? `<button type="button" class="btn btn-compact" data-export-sign-in>${escText(info.action)}</button>` : ""}
-        ${typeof onRetry === "function" ? `<button type="button" class="btn secondary btn-compact" data-export-retry>${escText(info.action)}</button>` : ""}
+        ${canRetry ? `<button type="button" class="btn secondary btn-compact" data-export-retry>${escText(info.action)}</button>` : ""}
       </div>
     </div>
   `;
@@ -174,13 +188,21 @@ function showExportError(menu, err, { title = "Export failed", onRetry = null } 
     document.getElementById("btn-auth")?.click();
   });
   card.querySelector("[data-export-retry]")?.addEventListener("click", () => {
+    window.clearTimeout(card._dismissTimer);
     card.remove();
     onRetry?.();
   });
   keepMenuInViewport(menu);
+  if (autoDismissMs > 0) {
+    card._dismissTimer = window.setTimeout(() => {
+      if (!card.isConnected) return;
+      card.classList.add("is-dismissing");
+      window.setTimeout(() => card.remove(), 220);
+    }, autoDismissMs);
+  }
 }
 
-function showExportSuccess(menu, message) {
+function showExportSuccess(menu, message, { autoDismissMs = 4200 } = {}) {
   if (!menu) return;
   menu.querySelector(".file-export-error-card")?.remove();
   menu.querySelector(".file-export-success-card")?.remove();
@@ -196,6 +218,13 @@ function showExportSuccess(menu, message) {
   const actions = menu.querySelector(".file-export-actions");
   actions?.insertAdjacentElement("afterend", card) || menu.appendChild(card);
   keepMenuInViewport(menu);
+  if (autoDismissMs > 0) {
+    card._dismissTimer = window.setTimeout(() => {
+      if (!card.isConnected) return;
+      card.classList.add("is-dismissing");
+      window.setTimeout(() => card.remove(), 220);
+    }, autoDismissMs);
+  }
 }
 
 async function createShareUrl(projectId, filename, shareContext = null) {
@@ -671,35 +700,9 @@ export async function openFileExportMenu({
   );
 
   function showFusionStepModeChooser(onChoose, anchorEl = null) {
-    menu.querySelector(".file-export-fusion-step-chooser")?.remove();
-    const chooser = document.createElement("div");
-    chooser.className = "file-export-step-chooser file-export-fusion-step-chooser";
-    chooser.innerHTML = `
-      <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close Fusion export">&times;</button>
-      <div class="file-export-step-title">Export to Fusion as part or assembly?</div>
-      <button type="button" class="file-export-step-choice" data-fusion-step-mode="part">
-        <strong>Part</strong>
-        <span>Single Fusion design — solids fused into one part (not an assembly)</span>
-      </button>
-      <button type="button" class="file-export-step-choice" data-fusion-step-mode="assembly">
-        <strong>Assembly</strong>
-        <span>Keep separate bodies/components so Fusion opens it as an assembly</span>
-      </button>
-    `;
-    chooser.addEventListener("click", (ev) => {
-      if (ev.target.closest("[data-fusion-close]")) {
-        chooser.remove();
-        return;
-      }
-      const choiceBtn = ev.target.closest("[data-fusion-step-mode]");
-      if (!choiceBtn) return;
-      chooser.remove();
-      onChoose(choiceBtn.dataset.fusionStepMode || "assembly");
-    });
-    if (anchorEl?.parentNode) anchorEl.insertAdjacentElement("afterend", chooser);
-    else menu.appendChild(chooser);
-    chooser.scrollIntoView({ block: "nearest" });
-    keepMenuInViewport(menu);
+    // Removed Jul 19 Part/Assembly chooser — it forced export_step_as_single_part
+    // and broke Extrude/Cut. Kept as no-op shim so any stale callers stay safe.
+    onChoose?.("assembly");
   }
 
   const isThreeMfFusionUpload = /\.3mf$/i.test(String(cloudFilename || filename || ""));
@@ -707,7 +710,20 @@ export async function openFileExportMenu({
     ? String(cloudFilename || filename).split(/[/\\]/).pop()
     : resolvedCloudFilename;
 
-  async function pushToOriginalFusion(btn, stepMode = "assembly") {
+  // Jul 16 / pre-3fc6c13 working Fusion push body: filename + allow_faceted only.
+  function fusionPushBody(extra = {}) {
+    const body = {
+      filename: fusionUploadFilename,
+      allow_faceted_step: resolvedCloudStepIsFaceted,
+      ...extra,
+    };
+    if (isThreeMfFusionUpload) {
+      body.format = "3mf";
+    }
+    return body;
+  }
+
+  async function pushToOriginalFusion(btn) {
     btn.disabled = true;
     const original = btn.innerHTML;
     btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Pushing…`;
@@ -715,13 +731,7 @@ export async function openFileExportMenu({
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: fusionUploadFilename,
-          allow_faceted_step: resolvedCloudStepIsFaceted,
-          // Native solid STEP only — never Part rewrite (breaks Fusion Cut).
-          step_mode: isThreeMfFusionUpload ? "raw" : "assembly",
-          format: isThreeMfFusionUpload ? "3mf" : "step",
-        }),
+        body: JSON.stringify(fusionPushBody()),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -737,19 +747,24 @@ export async function openFileExportMenu({
         : mirrorCount
           ? ` Also pushed to ${mirrorCount} teammate mirror${mirrorCount === 1 ? "" : "s"}.`
           : "";
-      const modeNote = isThreeMfFusionUpload ? " as 3MF" : " as solid B-rep STEP";
-      showExportSuccess(menu, `Pushed ${data.name || fusionUploadFilename} to Fusion${modeNote}.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
+      showExportSuccess(menu, `Pushed ${data.name || fusionUploadFilename} to Fusion.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = original;
+      const needsFolder = /Link a Fusion mirror folder|aps_project_id|folder_id/i.test(String(err?.message || ""));
       showExportError(menu, err, {
         title: "Fusion push failed",
-        onRetry: () => pushToOriginalFusion(btn, stepMode),
+        onRetry: needsFolder ? null : () => pushToOriginalFusion(btn),
       });
+      if (needsFolder) {
+        window.setTimeout(() => {
+          void openSharedFusionExport(btn);
+        }, 900);
+      }
     }
   }
 
-  async function openSharedFusionExport(btn, stepMode = "assembly") {
+  async function openSharedFusionExport(btn) {
     btn.disabled = true;
     const original = btn.innerHTML;
     btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Loading Fusion…`;
@@ -758,13 +773,12 @@ export async function openFileExportMenu({
         projectId,
         filename: fusionUploadFilename,
         allowFacetedStep: resolvedCloudStepIsFaceted,
-        stepMode: isThreeMfFusionUpload ? "raw" : stepMode,
         format: isThreeMfFusionUpload ? "3mf" : "step",
       });
     } catch (err) {
       showExportError(menu, err, {
         title: "Could not open Fusion export picker",
-        onRetry: () => openSharedFusionExport(btn, stepMode),
+        onRetry: () => openSharedFusionExport(btn),
       });
     } finally {
       btn.disabled = false;
@@ -773,20 +787,20 @@ export async function openFileExportMenu({
   }
 
   fusionActionBtn?.addEventListener("click", async () => {
-    // Always push native solid B-rep (assembly STEP). The Part rewrite path
-    // breaks Fusion boolean Cut — Jul 16 working export never sent step_mode.
-    const startFusionExport = () => {
-      const stepMode = isThreeMfFusionUpload ? "raw" : "assembly";
-      if (autodeskSource) {
-        showFusionActionChooser(menu, (choice) => {
-          if (choice === "push") void pushToOriginalFusion(fusionActionBtn, stepMode);
-          else void openSharedFusionExport(fusionActionBtn, stepMode);
-        }, fusionActionBtn);
-        return;
-      }
-      void openSharedFusionExport(fusionActionBtn, stepMode);
-    };
-    startFusionExport();
+    // Jul 16 behavior: no Part/Assembly chooser. Push only when a mirror folder
+    // is already linked; otherwise open the folder picker.
+    const source = autodeskSource || {};
+    const hasMirrorFolder = Boolean(
+      (source.aps_project_id || source.autodesk_project_id) && source.folder_id
+    );
+    if (hasMirrorFolder) {
+      showFusionActionChooser(menu, (choice) => {
+        if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
+        else void openSharedFusionExport(fusionActionBtn);
+      }, fusionActionBtn);
+      return;
+    }
+    await openSharedFusionExport(fusionActionBtn);
   });
 
   bambuBtn?.addEventListener("click", async () => {
@@ -997,18 +1011,15 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
   keepMenuInViewport(menu);
 }
 
-async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, allowFacetedStep = false, stepMode = "assembly", format = "step" }) {
+async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, allowFacetedStep = false, format = "step" }) {
   menu.querySelector(".file-export-fusion-picker")?.remove();
   const picker = document.createElement("div");
   picker.className = "file-export-fusion-picker";
   const isThreeMf = format === "3mf" || /\.3mf$/i.test(String(filename || ""));
-  // Fusion cloud push always uses native solid STEP (never Part rewrite — that breaks Cut).
-  if (!isThreeMf) stepMode = "assembly";
-  const modeLabel = isThreeMf ? "3MF" : "Solid B-rep";
-  const uploadLabel = isThreeMf ? "3MF" : "solid STEP";
+  const uploadLabel = isThreeMf ? "3MF" : "STEP";
   picker.innerHTML = `
     <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close Fusion export">&times;</button>
-    <div class="file-export-fusion-title">Export to Fusion 360 · ${modeLabel}</div>
+    <div class="file-export-fusion-title">Export to Fusion 360</div>
     <p class="muted small">Uploads the native editable solid STEP (for Extrude / Cut). Pick a hub, project, and folder — you can export into the folder you’re viewing.</p>
     ${allowFacetedStep && !isThreeMf ? '<p class="status error small">Only faceted mesh STEP is available for this model. Export will work, but Fusion boolean Cut may be limited.</p>' : ""}
     ${isThreeMf ? '<p class="muted small">This file is 3MF — it will upload as 3MF for Fusion mesh import.</p>' : ""}
@@ -1434,9 +1445,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       return;
     }
     submit.disabled = true;
-    setStatus(isThreeMf
-      ? "Uploading 3MF to Fusion..."
-      : "Uploading solid B-rep STEP to Fusion...");
+    setStatus(isThreeMf ? "Uploading 3MF to Fusion..." : "Uploading STEP to Fusion...");
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
         method: "POST",
@@ -1450,9 +1459,8 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
           folder_label: selectedFolderName,
           filename,
           allow_faceted_step: allowFacetedStep,
-          // Native solid STEP only — never Part rewrite (breaks Fusion Cut).
-          step_mode: isThreeMf ? "raw" : "assembly",
-          format: isThreeMf ? "3mf" : "step",
+          // Jul 16 working path: no step_mode — native solid STEP as-is.
+          ...(isThreeMf ? { format: "3mf" } : {}),
         }),
       });
       if (!res.ok) {

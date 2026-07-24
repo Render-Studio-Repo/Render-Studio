@@ -1,3 +1,11 @@
+## 2026-07-24 — Fusion export error toast auto-dismiss
+
+- Error cards (incl. “Link a Fusion mirror folder…”) fade in and auto-dismiss ~4s — no stuck Retry loop.
+- Missing-folder push opens the Fusion folder picker after a short toast instead of Retry.
+- Cache-bust: `?v=20260724-fusion-toast`.
+
+---
+
 ## 2026-07-24 — STEP download: restore native B-rep (no Part rewrite)
 
 - Same bug as Fusion push: `?step_mode=part|regular` ran `export_step_as_single_part` in `_file_response`, breaking Extrude/Cut.

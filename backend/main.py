@@ -8598,7 +8598,7 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             filename=upload_name,
                 data=step_path.read_bytes(),
             )
-        if body.get("upload_source") is True and source_path.is_file():
+        if body.get("upload_source", True) and source_path.is_file():
             try:
                 source_name = f"{source_path.stem}.build123d.py"
                 result["source_upload"] = upload_step_to_folder(
