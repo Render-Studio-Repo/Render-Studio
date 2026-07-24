@@ -4,6 +4,12 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Invited workspace projects → shared folder
+
+- Problem: accepting a workspace invite dumped that team's root projects into the invitee's personal Projects root (Vineet had 1 personal + ~60 Render3D models mixed).
+- Fix: `list_projects` nests non-personal root projects under virtual `__shared_ws_{teamId}` named "{Team} shared workspace". Real subfolders unchanged. Browser treats them as virtual/read-only.
+- Files: `backend/main.py`, `frontend/workspace-browser.js`, cache-bust `?v=20260723-shared-ws-folder`.
+
 ## 2026-07-23 — Fix AI usage sparkline overflow
 
 - Cost bars were scaled to 42px inside a 28px chart (clipped/overflow). Chart restored to 40px; bar heights capped to fit; overflow hidden. Cache-bust `?v=20260723-cost-bars`.
