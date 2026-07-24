@@ -1,3 +1,11 @@
+## 2026-07-24 — Fusion export used hidden file name (arduino)
+
+- Symptom: Export → Fusion still created/replaced `arduino_uno_q.step` while the gripper was the only visible component.
+- Fix: Export always sends `name` = visible stem (e.g. `Fully_Assembled_….step`) plus `allowed_filenames`. Bake bytes (`_export_visible_assembly`) stay the payload; Fusion **item name** is the visible part. Backend renames bake uploads and rejects/overrides destination names outside the visible allow-list; skips companion `.py` for bake (was also naming Arduino).
+- Cache-bust: `app.js` / `file-actions.js` `?v=20260724-fusion-name`. Service restarted.
+
+---
+
 ## 2026-07-24 — STEP export: Fusion Part for Extrude/Cut
 
 - Gripper native `.step` is a **linked assembly** (16× `NEXT_ASSEMBLY_USAGE`) → Fusion Extrude Cut fails. `.part.step` / flattened bake has 18 solids and 0 assembly links.

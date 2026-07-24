@@ -8681,10 +8681,13 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     def _visible_step_name() -> str:
         preferred = Path(str(body.get("name") or "")).name
         if preferred and not preferred.lower().startswith("_export_"):
-            stem = Path(preferred).stem
-            if not preferred.lower().endswith((".step", ".stp")):
-                return f"{stem}.step"
-            return preferred
+            pref_stem = Path(preferred).stem.lower().replace(".fusionpart", "").replace(".part", "")
+            # Only trust body.name when it matches the visible allow-list (or
+            # there is no allow-list). Otherwise arduino_uno_q slips through.
+            if not allowed_name_stems or pref_stem in allowed_name_stems:
+                if not preferred.lower().endswith((".step", ".stp")):
+                    return f"{Path(preferred).stem}.step"
+                return preferred
         if allowed_for_name:
             return f"{Path(str(allowed_for_name[0])).stem}.step"
         return upload_name
