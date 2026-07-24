@@ -213,10 +213,12 @@ def latest_model_file(project_path: Path) -> str | None:
             return None
         meta = entry.get("meta") or {}
         status = str(meta.get("status") or entry.get("status") or "").lower()
+        kind = str(entry.get("kind") or "").lower()
         label = str(entry.get("label") or "").lower()
-        # Skip canceled/failed timeline rows — they often point at the edit target
-        # (base_filename) rather than a new artifact.
-        if status in {"stopped", "canceled", "cancelled", "failed"} or label.startswith("stopped"):
+        # Skip deleted/canceled/failed timeline rows — they often point at missing files.
+        if kind in {"delete_object", "delete", "deleted"}:
+            return None
+        if status in {"stopped", "canceled", "cancelled", "failed"} or label.startswith("stopped") or label.startswith("delete "):
             if meta.get("success") is not True:
                 return None
         if meta.get("success") is False:

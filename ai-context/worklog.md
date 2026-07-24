@@ -4,6 +4,12 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-24 — Fix Components hierarchy row layout
+
+- Bug: eye / ⓘ / name stacked vertically (name btn `width:100%` + flex-wrap).
+- Fix: row order eye → ⓘ → name; override width so name flexes; ellipsis + `title` for full name on hover (components + bodies).
+- Files: `frontend/workspace-browser.js`, `frontend/styles.css`; cache-bust `?v=20260724-hierarchy-row`.
+
 ## 2026-07-23 — Invited workspace projects → shared folder
 
 - Problem: accepting a workspace invite dumped that team's root projects into the invitee's personal Projects root (Vineet had 1 personal + ~60 Render3D models mixed).

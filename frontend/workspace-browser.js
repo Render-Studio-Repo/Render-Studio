@@ -1741,8 +1741,6 @@ export function createWorkspaceBrowser({
               ? `${displayName} — click to open this DXF drawing preview.`
               : isReference
               ? `${displayName} — click to open this reference file.`
-              : isComponent
-              ? displayName
               : displayName;
             btn.addEventListener("click", (e) => {
               e.stopPropagation();

@@ -2042,6 +2042,63 @@ def _sibling_step_solid_count(project_path: Path, glb_path: Path, parent_name: s
     return None
 
 
+def _glb_scene_mesh_names_fast(path: Path) -> list[str]:
+    """Read mesh/node labels from a GLB JSON chunk without loading geometry.
+
+    Used by the project browser so a wedged trimesh/OCC parse cannot block HTTP.
+    """
+    path = Path(path)
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(12)
+            if len(header) < 12:
+                return []
+            magic, version, length = struct.unpack("<3I", header)
+            if magic != 0x46546C67 or version != 2:
+                return []
+            names: list[str] = []
+            offset = 12
+            while offset + 8 <= length:
+                chunk_header = fh.read(8)
+                if len(chunk_header) < 8:
+                    break
+                chunk_len, chunk_type = struct.unpack("<2I", chunk_header)
+                offset += 8
+                data = fh.read(chunk_len)
+                offset += chunk_len
+                if chunk_type != 0x4E4F534A:  # JSON
+                    continue
+                try:
+                    meta = json.loads(data.decode("utf-8"))
+                except Exception:
+                    return []
+                meshes = meta.get("meshes") or []
+                nodes = meta.get("nodes") or []
+                # Prefer named nodes that reference a mesh.
+                for node in nodes:
+                    if not isinstance(node, dict):
+                        continue
+                    if node.get("mesh") is None:
+                        continue
+                    label = str(node.get("name") or "").strip()
+                    if label:
+                        names.append(label)
+                if len(names) >= 2:
+                    return names
+                # Fall back to mesh names.
+                names = []
+                for mesh in meshes:
+                    if not isinstance(mesh, dict):
+                        continue
+                    label = str(mesh.get("name") or "").strip()
+                    if label:
+                        names.append(label)
+                return names
+    except Exception:
+        return []
+    return []
+
+
 def _body_children_from_viewer_scene(
     project_path: Path,
     *,
@@ -2073,7 +2130,7 @@ def _body_children_from_viewer_scene(
         mtime = path.stat().st_mtime
     except OSError:
         return []
-    cache_key = f"v2:{path.resolve()}"
+    cache_key = f"v3fast:{path.resolve()}"
     cached = _SCENE_BODY_CHILDREN_CACHE.get(cache_key)
     if cached and cached[0] == mtime:
         return [dict(child) for child in cached[1]]
@@ -2084,12 +2141,10 @@ def _body_children_from_viewer_scene(
         _SCENE_BODY_CHILDREN_CACHE[cache_key] = (mtime, [])
         return []
 
-    try:
-        info = scene_body_info(path)
-    except Exception:
-        info = {"count": 0, "body_names": []}
-    count = int(info.get("count") or 0)
-    names = [str(n or "").strip() for n in (info.get("body_names") or [])]
+    # Fast JSON-only parse. Never call trimesh/OCC here — that path has wedged
+    # workers for minutes on some large GLBs (project open spins forever).
+    names = [str(n or "").strip() for n in _glb_scene_mesh_names_fast(path)]
+    count = len(names)
     if count <= 1 or count > _MAX_BROWSER_SCENE_BODIES or _scene_names_are_single_logical_body(names):
         _SCENE_BODY_CHILDREN_CACHE[cache_key] = (mtime, [])
         return []
