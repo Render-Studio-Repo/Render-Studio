@@ -40133,3 +40133,40 @@ body.robotics-design-tab .robotics-mode-tab {
   color: #8b949e;
   white-space: nowrap;
 }
+
+
+/* ── Admin prompt original vs improved ─────────────────────────────── */
+.admin-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.admin-prompt-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #f0c674;
+  border: 1px solid rgba(240, 198, 116, 0.35);
+  background: rgba(240, 198, 116, 0.1);
+}
+.admin-prompt-body {
+  margin: 6px 0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+.admin-prompt-body.hidden {
+  display: none;
+}
+.admin-prompt-row .admin-prompt-actions .btn {
+  font-size: 0.75rem;
+  padding: 4px 9px;
+}

@@ -274,13 +274,36 @@ function renderProjectRows(projects = []) {
 
 function renderPromptRows(prompts = [], { openProject = true } = {}) {
   if (!prompts.length) return '<p class="muted">No prompt history yet.</p>';
-  return prompts.map((prompt) => `
-    <article class="admin-prompt-row ${prompt.success ? "" : "admin-prompt-row--error"}${openProject ? " admin-row--clickable" : ""}" ${openProject && prompt.project_id ? `data-project-id="${escapeHtml(prompt.project_id)}"` : ""}>
+  return prompts.map((prompt, index) => {
+    const improved = String(prompt.prompt || prompt.prompt_preview || "").trim();
+    const original = String(prompt.original_prompt || "").trim();
+    const hasOriginal = Boolean(
+      prompt.prompt_improved || (original && original !== improved)
+    );
+    const rowId = escapeHtml(String(prompt.id || `${prompt.project_id || "p"}-${index}`));
+    const versionBar = `
+      <div class="admin-prompt-actions">
+        ${hasOriginal ? `
+          <span class="admin-prompt-badge" data-prompt-badge>Improved</span>
+          <button type="button" class="btn secondary btn-compact admin-prompt-toggle" data-show="original">Show original</button>
+        ` : ""}
+        <button type="button" class="btn secondary btn-compact admin-prompt-copy" title="Copy prompt to clipboard">Copy</button>
+      </div>
+    `;
+    const bodies = hasOriginal
+      ? `
+        <p class="admin-prompt-body" data-version="improved">${escapeHtml(improved || "(empty prompt)")}</p>
+        <p class="admin-prompt-body hidden" data-version="original">${escapeHtml(original || "(no original prompt)")}</p>
+      `
+      : `<p class="admin-prompt-body">${escapeHtml(improved || "(empty prompt)")}</p>`;
+    return `
+    <article class="admin-prompt-row ${prompt.success ? "" : "admin-prompt-row--error"}${openProject ? " admin-row--clickable" : ""}" ${openProject && prompt.project_id ? `data-project-id="${escapeHtml(prompt.project_id)}"` : ""} data-prompt-row="${rowId}">
       <div class="admin-prompt-head">
         <strong>${escapeHtml(prompt.user_name || prompt.owner_name || "Unknown user")}</strong>
         <span>${escapeHtml(prompt.kind || "cad")} · ${escapeHtml(prompt.prompt_mode || "mode")} · ${formatDate(prompt.created_at)}</span>
       </div>
-      <p>${escapeHtml(prompt.prompt || prompt.prompt_preview || "(empty prompt)")}</p>
+      ${versionBar}
+      ${bodies}
       <small>
         ${escapeHtml(prompt.project_name || prompt.project_id || "Project")}
         ${prompt.filename ? ` · ${escapeHtml(prompt.filename)}` : ""}
@@ -289,7 +312,64 @@ function renderPromptRows(prompts = [], { openProject = true } = {}) {
         ${prompt.error ? ` · Error: ${escapeHtml(prompt.error)}` : ""}
       </small>
     </article>
-  `).join("");
+  `;
+  }).join("");
+}
+
+function bindPromptRowActions(root) {
+  root.querySelectorAll(".admin-prompt-row").forEach((row) => {
+    const toggleBtn = row.querySelector(".admin-prompt-toggle");
+    const copyBtn = row.querySelector(".admin-prompt-copy");
+    const badge = row.querySelector("[data-prompt-badge]");
+    const improvedEl = row.querySelector('.admin-prompt-body[data-version="improved"]')
+      || row.querySelector(".admin-prompt-body:not([data-version])");
+    const originalEl = row.querySelector('.admin-prompt-body[data-version="original"]');
+
+    const visibleText = () => {
+      const visible = [...row.querySelectorAll(".admin-prompt-body")].find((el) => !el.classList.contains("hidden"));
+      return (visible?.textContent || "").trim();
+    };
+
+    toggleBtn?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!originalEl || !improvedEl) return;
+      const showingOriginal = toggleBtn.dataset.show === "improved";
+      if (showingOriginal) {
+        originalEl.classList.add("hidden");
+        improvedEl.classList.remove("hidden");
+        toggleBtn.dataset.show = "original";
+        toggleBtn.textContent = "Show original";
+        if (badge) badge.textContent = "Improved";
+      } else {
+        improvedEl.classList.add("hidden");
+        originalEl.classList.remove("hidden");
+        toggleBtn.dataset.show = "improved";
+        toggleBtn.textContent = "Show improved";
+        if (badge) badge.textContent = "Original";
+      }
+    });
+
+    copyBtn?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const text = visibleText();
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const prev = copyBtn.textContent;
+        copyBtn.textContent = "Copied";
+        window.setTimeout(() => {
+          if (copyBtn.isConnected) copyBtn.textContent = prev || "Copy";
+        }, 1200);
+      } catch {
+        copyBtn.textContent = "Copy failed";
+        window.setTimeout(() => {
+          if (copyBtn.isConnected) copyBtn.textContent = "Copy";
+        }, 1200);
+      }
+    });
+  });
 }
 
 let modalState = {
@@ -412,6 +492,7 @@ async function openProjectModal(projectId) {
     `;
 
     promptsEl.innerHTML = renderPromptRows(prompts, { openProject: false });
+    bindPromptRowActions(promptsEl);
     filesEl.innerHTML = (data.files || []).slice(0, 24).map((file) => `
       <span class="admin-pill"><strong>${escapeHtml(file.name || "")}</strong></span>
     `).join("") || '<span class="muted small">No CAD files</span>';
@@ -570,6 +651,9 @@ async function openUserPanel(root, userId, dashboardData) {
 function bindInteractive(root, data) {
   root.querySelectorAll("[data-project-id]").forEach((el) => {
     const open = (event) => {
+      if (event.target?.closest?.(".admin-prompt-toggle, .admin-prompt-copy, .admin-prompt-actions")) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       const id = el.getAttribute("data-project-id") || el.dataset.projectId;
@@ -587,6 +671,7 @@ function bindInteractive(root, data) {
       if (id) void openUserPanel(root.closest(".admin-dashboard") || root, id, data);
     });
   });
+  bindPromptRowActions(root);
 }
 
 function bindAdminViewToolbar(root) {
@@ -827,7 +912,7 @@ function renderDashboard(root, data) {
     </section>
   `;
 
-  root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root));
+  root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root, { refresh: true }));
   root.querySelector("#admin-agent-refresh")?.addEventListener("click", () => {
     void loadRenderAgentActivity(root);
   });
@@ -1348,7 +1433,7 @@ async function loadRenderAgentActivity(root) {
   }
 }
 
-async function loadDashboard(root) {
+async function loadDashboard(root, { refresh = false } = {}) {
   const user = getStoredUser();
   if (!getToken()) {
     root.innerHTML = '<section class="admin-hero-card"><h2>Sign in required</h2><p class="muted">Sign in with an admin account to view the management dashboard.</p><a class="btn primary" href="/">Go to Studio</a></section>';
@@ -1361,7 +1446,7 @@ async function loadDashboard(root) {
   root.innerHTML = '<section class="admin-hero-card"><h2>Loading dashboard…</h2><p class="muted">Aggregating users, projects, model previews, and prompt histories.</p></section>';
   clearChartCleanups();
   try {
-    const data = await api("/api/admin/dashboard");
+    const data = await api(`/api/admin/dashboard${refresh ? "?refresh=true" : ""}`);
     renderDashboard(root, data);
   } catch (err) {
     root.innerHTML = `<section class="admin-hero-card"><h2>Could not load dashboard</h2><p class="muted">${escapeHtml(err.message || "Request failed")}</p><a class="btn secondary" href="/">Back to Studio</a></section>`;

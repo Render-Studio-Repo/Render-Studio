@@ -366,7 +366,7 @@ def estimate_cost_usd(
     if input_tokens == 0 and output_tokens == 0 and cached_input == 0 and cache_creation == 0:
         return None
     prices = _pricing_for_model(model, provider)
-    if input_tokens > int(prices.get("long_context_threshold") or 0):
+    if input_tokens >= int(prices.get("long_context_threshold") or 10**18):
         prices = {
             **prices,
             "input": prices.get("long_context_input", prices["input"]),

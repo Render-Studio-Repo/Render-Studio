@@ -9363,11 +9363,19 @@ def admin_dashboard(
                 active_dt = _parse_admin_dt(user_item.get("last_active_at"))
                 if entry_dt and (active_dt is None or entry_dt > active_dt):
                     user_item["last_active_at"] = entry.get("created_at")
+            final_prompt = str(entry.get("prompt") or "")
+            original_prompt = str(entry.get("original_prompt") or "").strip() or None
+            prompt_improved = bool(entry.get("prompt_improved")) or (
+                bool(original_prompt) and original_prompt != final_prompt.strip()
+            )
             prompt_item = {
                 "id": entry.get("id"),
                 "project_id": pid,
                 "project_name": project_item["name"],
-                "prompt": _admin_prompt_preview(entry.get("prompt")),
+                "prompt": final_prompt,
+                "prompt_preview": _admin_prompt_preview(final_prompt),
+                "original_prompt": original_prompt,
+                "prompt_improved": prompt_improved,
                 "success": entry.get("success") is not False,
                 "error": entry.get("error"),
                 "kind": kind,
@@ -9657,13 +9665,20 @@ def admin_user_detail(user_id: str, user: dict[str, Any] = Depends(get_current_u
             active = _parse_admin_dt(last_active)
             if entry_dt and (active is None or entry_dt > active):
                 last_active = entry.get("created_at")
+            final_prompt = str(entry.get("prompt") or "")
+            original_prompt = str(entry.get("original_prompt") or "").strip() or None
+            prompt_improved = bool(entry.get("prompt_improved")) or (
+                bool(original_prompt) and original_prompt != final_prompt.strip()
+            )
             prompts.append(
                 {
                     "id": entry.get("id"),
                     "project_id": pid,
                     "project_name": project_item["name"],
-                    "prompt": entry.get("prompt") or "",
-                    "prompt_preview": _admin_prompt_preview(entry.get("prompt"), 280),
+                    "prompt": final_prompt,
+                    "prompt_preview": _admin_prompt_preview(final_prompt, 280),
+                    "original_prompt": original_prompt,
+                    "prompt_improved": prompt_improved,
                     "success": entry.get("success") is not False,
                     "error": entry.get("error"),
                     "kind": entry.get("kind") or "cad",
@@ -9731,10 +9746,18 @@ def admin_project_detail(project_id: str, user: dict[str, Any] = Depends(get_cur
     prompts = []
     for entry in entries:
         cost = entry_effective_cost(entry)
+        final_prompt = str(entry.get("prompt") or "")
+        original_prompt = str(entry.get("original_prompt") or "").strip() or None
+        prompt_improved = bool(entry.get("prompt_improved")) or (
+            bool(original_prompt) and original_prompt != final_prompt.strip()
+        )
         prompts.append(
             {
                 "id": entry.get("id"),
-                "prompt": entry.get("prompt") or "",
+                "prompt": final_prompt,
+                "prompt_preview": _admin_prompt_preview(final_prompt, 280),
+                "original_prompt": original_prompt,
+                "prompt_improved": prompt_improved,
                 "success": entry.get("success") is not False,
                 "error": entry.get("error"),
                 "kind": entry.get("kind") or "cad",
