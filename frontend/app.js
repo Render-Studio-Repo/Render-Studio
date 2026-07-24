@@ -77,7 +77,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-visible-export";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-visible-eye";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -18698,7 +18698,30 @@ function isComponentHidden(name) {
 }
 
 function isBrowserComponentHidden(entry) {
-  return componentVisibilityCandidates(entry).some((name) => isComponentHidden(name));
+  if (!entry?.name) return false;
+  const hidden = new Set(projectTree.getHidden?.() || loadHiddenComponentState());
+  // Eye-icon keys are exact entry.name values. Do NOT expand via
+  // componentVisibilityCandidates() — that stem-matched generic body labels
+  // like "Base" across siblings, so hiding Two-finger marked Fully_Assembled
+  // hidden and Export fell through to latest_file (arduino_uno_q).
+  if (hidden.has(entry.name)) return true;
+  if (entry.viewer_filename && hidden.has(entry.viewer_filename)) return true;
+  if (entry.filename && hidden.has(entry.filename)) return true;
+  if (entry.virtual_body || entry.virtual_component) {
+    const parent = entry.source_filename || entry.parent_filename || entry.filename;
+    if (parent && hidden.has(parent)) return true;
+    if (hidden.has(entry.name)) return true;
+  }
+  // Only match .glb ↔ .step twins of the SAME file stem (not body product names).
+  const stem = componentStemName(entry.name);
+  if (!stem) return false;
+  for (const key of hidden) {
+    const text = String(key || "");
+    if (!text || text.includes("#body:")) continue;
+    if (!/\.(glb|gltf|step|stp|stl|3mf)$/i.test(text) && text !== stem) continue;
+    if (componentStemName(text) === stem) return true;
+  }
+  return false;
 }
 
 let browserBodyHydrationRun = 0;
@@ -20360,22 +20383,32 @@ async function exportCurrentModel(anchorEl) {
     alert("Open a project first.");
     return;
   }
+  const topLevel = (projectTree.getComponents?.() || []).filter(
+    (entry) => entry?.name && !entry.virtual_body && !entry.virtual_component,
+  );
+  const visibleBrowser = topLevel
+    .filter((entry) => !isBrowserComponentHidden(entry))
+    .map((entry) => entry.name)
+    .filter(Boolean);
   const visibleLoaded = projectAssembly
     .list()
     .filter(([name, obj]) => obj?.visible !== false && !isComponentHidden(name))
     .map(([name]) => name);
-  const visibleBrowser = (projectTree.getComponents?.() || [])
-    .filter((entry) => !isBrowserComponentHidden(entry))
-    .map((entry) => entry.name)
-    .filter(Boolean);
-  // Prefer browser visibility (eye icons). Never fall back to a hidden sibling.
+  // Prefer browser eye icons. Never fall back to latest_file / hidden Arduino.
   const visibleFiles = [...new Set(
     (visibleBrowser.length ? visibleBrowser : visibleLoaded)
       .map((name) => String(name || "").split("#body:")[0])
-      .filter((name) => name && !isComponentHidden(name))
+      .filter((name) => name && !isComponentHidden(name) && !isBrowserComponentHidden({ name })),
   )];
   const anchor = anchorEl || document.getElementById("btn-export-model") || document.body;
-  if (visibleFiles.length > 1) {
+  if (!visibleFiles.length) {
+    alert("No visible component to export. Show at least one component first.");
+    return;
+  }
+  const hasHiddenSiblings = topLevel.some((entry) => isBrowserComponentHidden(entry));
+  // When siblings are hidden (or multiple are visible), bake a visible-only STEP so
+  // Fusion cannot pick latest_file (arduino_uno_q) or another hidden model.
+  if (visibleFiles.length > 1 || hasHiddenSiblings) {
     const regularFile = selectedFile && visibleFiles.includes(selectedFile) && !isComponentHidden(selectedFile)
       ? selectedFile
       : visibleFiles[0];
@@ -20383,19 +20416,19 @@ async function exportCurrentModel(anchorEl) {
     await openFileExportMenu({
       api,
       projectId,
-      filename: "visible assembly",
+      filename: visibleFiles.length === 1 ? visibleFiles[0] : "visible assembly",
       anchorEl: anchor,
-      title: `Export visible assembly`,
-      hint: `Exports only the ${visibleFiles.length} unhidden components (hidden parts like Arduino stay out).`,
+      title: visibleFiles.length === 1 ? `Export ${visibleFiles[0]}` : "Export visible assembly",
+      hint: hasHiddenSiblings
+        ? `Exports only the ${visibleFiles.length} unhidden component${visibleFiles.length === 1 ? "" : "s"} (hidden parts stay out).`
+        : `Exports the ${visibleFiles.length} unhidden components.`,
       allowOnshape: false,
       shareContext: currentVisibleShareContext,
-      // Download-only shortcut for one visible part — Fusion/cloud uses the baked
-      // `_export_visible_assembly` STEP, never a hidden sibling.
       extraExports: regularStepName ? [{
         name: regularStepName,
         format: "step",
         size: null,
-        label: "STEP (one visible part · download)",
+        label: "STEP (visible part · download)",
         url: `/api/projects/${projectId}/files/${encodeURIComponent(regularStepName)}`,
       }] : [],
       exportsRequest: {
@@ -20409,12 +20442,7 @@ async function exportCurrentModel(anchorEl) {
     });
     return;
   }
-  let file = visibleFiles[0] || null;
-  if (file && isComponentHidden(file)) file = null;
-  if (!file) {
-    alert("No visible component to export. Show at least one component first.");
-    return;
-  }
+  const file = visibleFiles[0];
   await openFileExportMenu({ api, projectId, filename: file, anchorEl: anchor, shareContext: currentVisibleShareContext });
 }
 

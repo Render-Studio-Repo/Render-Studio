@@ -1,3 +1,33 @@
+## 2026-07-24 — Pick bar sits on ribbon bottom border
+
+- Ribbon `.ribbon-pick-host` was vertically centered (`top: 50%` + translate). Anchored to `bottom: 0` so the Pick strip sits on the grey ribbon/viewport divider; bottom corners squared to meet the line.
+- Cache-bust: `ribbon.css?v=20260724-pick-bar-bottom`.
+
+---
+
+## 2026-07-24 — Fusion “Uploading…” hang: Replace dialog clipped
+
+- After a file already existed in the Fusion folder, export set “Uploading…” then showed Replace/Create **below** the picker. Picker has `overflow:hidden`, so the dialog was clipped and the request never started.
+- Conflict UI is now an overlay on the picker; status asks for Replace/Create until upload actually begins.
+- Cache-bust: `app.js` / `file-actions.js` / `styles.css` `?v=20260724-fusion-conflict-overlay`.
+
+---
+
+## 2026-07-24 — Chat unread badge: don’t cover “Chat”
+
+- Unread badge sat on the Chat label. Moved to the corner with `transform: translate(45%, -45%)`, extra right padding, and a panel ring so “Chat” stays clear (0 overlap verified).
+- Cache-bust: `styles.css?v=20260724-chat-badge2`.
+
+---
+
+## 2026-07-24 — Admin Recent Projects: un-scrunch left column
+
+- Project cards used a 3-column grid (thumb + text + View model) inside a narrow left pane, so labels wrapped one word per line and overlapped.
+- Cards are now thumb + text, with **View model** under the text; left pane gets `minmax(320px, …)`.
+- Cache-bust: `admin-dashboard.html` `styles.css?v=20260724-admin-proj-layout`.
+
+---
+
 ## 2026-07-24 — Fusion Extrude Cut: flatten assembly STEP → Part
 
 - Fusion error **“No target body found to cut or intersect”** = STEP has `NEXT_ASSEMBLY_USAGE` (linked assembly). Solids were fine; hierarchy blocked Cut.

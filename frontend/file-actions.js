@@ -609,16 +609,19 @@ export async function openFileExportMenu({
   const isVisibleAssemblyExport = Boolean(exportsRequest)
     || /visible assembly/i.test(String(filename || ""))
     || sorted.some((item) => String(item.name || "").startsWith("_export_visible_assembly"));
-  // Never fall back to an unrelated project STEP (that was uploading hidden
-  // siblings like arduino_uno_q while exporting the visible gripper).
+  // Prefer the visible-assembly bake. Never fall back to a sibling STEP
+  // (that was uploading hidden arduino_uno_q while the gripper was showing).
   const cloudStep = isVisibleAssemblyExport
     ? (
       sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && item.step_kind === "editable_brep")
+      || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")))
       || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly"))
+      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || fileStem(item.name) === targetStem))
       || null
     )
     : (
       sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || fileStem(item.name) === targetStem))
+      || sorted.find((item) => item.format === "step" && (item.current || fileStem(item.name) === targetStem) && item.step_kind === "editable_brep")
       || sorted.find((item) => item.format === "step" && (item.current || fileStem(item.name) === targetStem))
       || null
     );
@@ -738,6 +741,15 @@ export async function openFileExportMenu({
     ? String(cloudFilename || filename).split(/[/\\]/).pop()
     : resolvedCloudFilename;
 
+  let visibleAllowList = [];
+  try {
+    const rawBody = exportsRequest?.options?.body;
+    const parsed = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+    if (Array.isArray(parsed?.filenames)) visibleAllowList = parsed.filenames.map(String);
+  } catch {
+    visibleAllowList = [];
+  }
+
   // Jul 16 / pre-3fc6c13 working Fusion push body: filename + allow_faceted only.
   function fusionPushBody(extra = {}) {
     const body = {
@@ -747,6 +759,10 @@ export async function openFileExportMenu({
     };
     if (isThreeMfFusionUpload) {
       body.format = "3mf";
+    }
+    if (visibleAllowList.length) {
+      body.allowed_filenames = visibleAllowList;
+      body.visible_filenames = visibleAllowList;
     }
     return body;
   }
@@ -816,6 +832,7 @@ export async function openFileExportMenu({
         filename: fusionUploadFilename,
         allowFacetedStep: resolvedCloudStepIsFaceted,
         format: isThreeMfFusionUpload ? "3mf" : "step",
+        allowedFilenames: visibleAllowList,
       });
     } catch (err) {
       showExportError(menu, err, {
@@ -1058,7 +1075,13 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
   keepMenuInViewport(menu);
 }
 
-async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, allowFacetedStep = false, format = "step" }) {
+async function showFusionExportPicker(menu, anchorBtn, {
+  projectId,
+  filename,
+  allowFacetedStep = false,
+  format = "step",
+  allowedFilenames = [],
+}) {
   menu.querySelector(".file-export-fusion-picker")?.remove();
   const picker = document.createElement("div");
   picker.className = "file-export-fusion-picker";
@@ -1120,15 +1143,26 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
   let autoSelectFolders = true;
   let restoringFolderPath = null;
 
+  const resetExportHereBtn = () => {
+    const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
+    if (!hereBtn || !currentFolder) return;
+    hereBtn.disabled = false;
+    hereBtn.classList.remove("file-export-fusion-use-current--success");
+    hereBtn.textContent = `Export to Fusion · ${currentFolder.name || "this folder"}`;
+  };
+
   const askReplaceOrNew = (existingName) => new Promise((resolve) => {
     menu.querySelector(".file-export-fusion-conflict")?.remove();
     const stem = String(existingName || "model").replace(/(\.[^.]+)$/, "");
     const ext = (String(existingName || "").match(/(\.[^.]+)$/) || [".step"])[0];
     const card = document.createElement("div");
+    // Overlay on the picker — picker uses overflow:hidden, so appending at the
+    // bottom used to clip this dialog while status still said “Uploading…”.
     card.className = "file-export-step-chooser file-export-fusion-conflict";
     card.innerHTML = `
       <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close">&times;</button>
       <div class="file-export-step-title">“${escText(existingName)}” already exists in this folder</div>
+      <p class="muted small" style="margin:0 0 4px">Choose how to continue — upload has not started yet.</p>
       <button type="button" class="file-export-step-choice" data-conflict="replace">
         <strong>Replace</strong>
         <span>Upload a new version of the existing Fusion file</span>
@@ -1149,7 +1183,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       finish(btn.dataset.conflict || "replace");
     });
     picker.appendChild(card);
-    card.scrollIntoView({ block: "nearest" });
+    setStatus(`“${existingName}” already exists — choose Replace or Create new.`);
     keepMenuInViewport(menu);
   });
 
@@ -1258,11 +1292,12 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
     autoSelectFolders = false;
     restoringFolderPath = null;
     setSelectedFolder(folder, { quiet: true });
-    setStatus(`Uploading to “${folder.name || "folder"}”…`);
+    // Don't claim “Uploading…” yet — collision check / Replace dialog may run first.
+    setStatus(`Preparing export to “${folder.name || "folder"}”…`);
     const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
     if (hereBtn) {
       hereBtn.disabled = true;
-      hereBtn.textContent = "Uploading…";
+      hereBtn.textContent = "Preparing…";
     }
     submit.click();
   };
@@ -1570,11 +1605,22 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       if (!choice) {
         setStatus("Export cancelled.");
         submit.disabled = false;
+        resetExportHereBtn();
+        folderBrowser.querySelectorAll("[data-folder-select]").forEach((btn) => {
+          btn.disabled = false;
+          if (btn.dataset.folderSelect === selectedFolderId) btn.textContent = "Export ✓";
+          else btn.textContent = "Export";
+        });
         return;
       }
       conflictMode = choice;
     }
     submit.disabled = true;
+    const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
+    if (hereBtn) {
+      hereBtn.disabled = true;
+      hereBtn.textContent = "Uploading…";
+    }
     setStatus(isThreeMf ? "Uploading 3MF to Fusion..." : "Uploading STEP to Fusion...");
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
@@ -1592,6 +1638,9 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
           conflict_mode: conflictMode,
           // Jul 16 working path: no step_mode — native solid STEP as-is.
           ...(isThreeMf ? { format: "3mf" } : {}),
+          ...(Array.isArray(allowedFilenames) && allowedFilenames.length
+            ? { allowed_filenames: allowedFilenames, visible_filenames: allowedFilenames }
+            : {}),
         }),
       });
       if (!res.ok) {

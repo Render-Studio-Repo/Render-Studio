@@ -2696,7 +2696,8 @@ body:not(.info-page) {
 
 .workspace-feedback-btn--chat {
   position: relative;
-  padding-right: 14px;
+  padding-right: 22px;
+  overflow: visible;
 }
 
 .workspace-feedback-btn--chat:hover {
@@ -2705,18 +2706,22 @@ body:not(.info-page) {
 
 .pc-btn-badge {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 14px;
-  height: 14px;
+  top: 0;
+  right: 0;
+  min-width: 15px;
+  height: 15px;
   padding: 0 4px;
   border-radius: 999px;
   background: #1f6feb;
   color: #fff;
   font-size: 0.58rem;
   font-weight: 800;
-  line-height: 14px;
+  line-height: 15px;
   text-align: center;
+  pointer-events: none;
+  transform: translate(45%, -45%);
+  box-shadow: 0 0 0 2px var(--panel, #0d1117);
+  z-index: 1;
 }
 
 .pc-btn-badge--mention {
@@ -17147,6 +17152,20 @@ section h2 {
   border: 1px solid rgba(74, 107, 63, 0.55);
   border-radius: 9px;
   background: rgba(42, 61, 34, 0.22);
+}
+
+/* Must sit on top of the Fusion picker (overflow:hidden) so Replace/Create
+   isn't clipped while status still looks like a stuck upload. */
+.file-export-fusion-conflict {
+  position: absolute;
+  inset: 8px;
+  z-index: 6;
+  margin: 0;
+  padding: 12px 10px 10px;
+  overflow: auto;
+  background: rgba(13, 17, 23, 0.97);
+  border: 1px solid rgba(241, 138, 43, 0.45);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
 }
 
 .file-export-step-title {
@@ -34508,7 +34527,7 @@ body.feedback-page-dragging {
 }
 
 .admin-grid--wide-right {
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: minmax(320px, 1.05fr) minmax(0, 1.35fr);
 }
 
 .admin-panel {
@@ -35211,20 +35230,21 @@ body.feedback-page-dragging {
 
 .admin-project-row {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: start;
 }
 
 .admin-project-thumb {
-  width: 72px;
-  height: 72px;
+  width: 64px;
+  height: 64px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: rgba(13, 17, 23, 0.85) center/cover no-repeat;
   display: grid;
   place-items: center;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .admin-project-thumb.has-image .admin-thumb-fallback {
@@ -35240,10 +35260,20 @@ body.feedback-page-dragging {
 
 .admin-project-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-project-main strong {
+  color: var(--text, #e6edf3);
+  font-size: 0.92rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .admin-project-prompt {
-  margin: 6px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.35;
@@ -35265,7 +35295,10 @@ body.feedback-page-dragging {
 }
 
 .admin-preview-btn {
+  grid-column: 2;
+  justify-self: start;
   white-space: nowrap;
+  margin-top: 2px;
 }
 
 .admin-panel-hint {
@@ -35514,9 +35547,9 @@ body.feedback-page-dragging {
 .admin-row-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 6px 0;
-  font-size: 0.82rem;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.78rem;
   color: var(--muted);
 }
 
@@ -35524,6 +35557,7 @@ body.feedback-page-dragging {
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid rgba(139, 148, 158, 0.25);
+  white-space: nowrap;
 }
 
 .admin-user-row small,
@@ -35532,6 +35566,7 @@ body.feedback-page-dragging {
   color: var(--muted);
   font-size: 0.72rem;
   line-height: 1.4;
+  word-break: break-word;
 }
 
 .admin-prompt-row p {
@@ -35554,12 +35589,18 @@ body.feedback-page-dragging {
   }
 
   .admin-project-row {
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .admin-project-thumb {
+    width: 56px;
+    height: 56px;
   }
 
   .admin-preview-btn {
     grid-column: 1 / -1;
-    justify-self: start;
+    justify-self: stretch;
+    width: 100%;
   }
 
   .admin-modal-body {

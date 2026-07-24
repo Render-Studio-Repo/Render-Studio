@@ -8597,6 +8597,31 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
         kind = cad_service.classify_step_file_kind(step_path)
     except Exception:
         kind = "unknown"
+    logger.info(
+        "Fusion push project=%s requested=%s resolved=%s kind=%s size=%s",
+        project_id,
+        safe,
+        step_path.name,
+        kind,
+        step_path.stat().st_size if step_path.is_file() else None,
+    )
+    # Optional allow-list from the Export UI (visible eye icons only).
+    allowed = body.get("allowed_filenames") or body.get("visible_filenames") or []
+    if isinstance(allowed, list) and allowed:
+        allowed_stems = {Path(str(name)).stem.lower() for name in allowed if name}
+        allowed_stems.update(
+            Path(str(name)).stem.lower().replace(".fusionpart", "").replace(".part", "")
+            for name in allowed
+            if name
+        )
+        resolved_stem = step_path.stem.lower().replace(".fusionpart", "").replace(".part", "")
+        bake = step_path.name.lower().startswith("_export_visible_assembly")
+        if not bake and resolved_stem not in allowed_stems and Path(safe).stem.lower() not in allowed_stems:
+            raise HTTPException(
+                422,
+                f"Refusing to push {step_path.name} — it is not in the visible component list. "
+                "Show the component you want, then export again.",
+            )
     if kind == "editable_brep":
         try:
             peek = step_path.read_bytes()[:2_000_000].decode("utf-8", errors="ignore").upper()
