@@ -77,7 +77,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-viewport-export";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-one-step";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -702,7 +702,7 @@ function syncCanvasGenerationUi() {
     generationWatchOverlay?.message
     || "Generating 3D model in background — safe to switch tabs or refresh.";
   const bannerMode = generationPromptMode(generationWatchOverlay, viewportOverlayState?.promptMode);
-  banner.classList.toggle("canvas-generation-banner--fusion", bannerMode === "fusion");
+  banner.classList.toggle("canvas-generation-banner--mesh", bannerMode === "mesh" || bannerMode === "fusion");
   banner.classList.toggle("canvas-generation-banner--v2", bannerMode === "v2");
   if (messageEl) {
     messageEl.textContent = msg.replace(/\s*\(safe to refresh\)/i, " — safe to switch tabs or refresh");
@@ -1144,14 +1144,14 @@ async function cancelActiveGeneration(opts = {}) {
       const isWiring = generationWatchOverlay?.kind === "wiring";
       const stopMode = (generationWatchOverlay?.promptMode || "").toLowerCase();
       const isV2 = stopMode === "v2";
-      const isFusion = stopMode === "fusion";
+      const isMesh = stopMode === "mesh" || stopMode === "fusion";
       const statusEl = document.getElementById(isWiring ? "wiring-prompt-status" : "prompt-status");
       if (statusEl) {
         statusEl.className = "status";
         statusEl.textContent = isWiring
           ? "Stopping… killing generation now"
-          : isFusion
-            ? "Stopping Fusion mode… killing generation now"
+          : isMesh
+            ? "Stopping Mesh mode… killing generation now"
           : isV2
             ? "Stopping 2.0… killing generation now"
             : runningJobs.length > 1 && traceId
@@ -1326,11 +1326,11 @@ function promptGenerationOverlayOpts(mode = "standard") {
       estimateMs: 180000,
     };
   }
-  if (normalized === "fusion") {
+  if (normalized === "mesh" || normalized === "fusion") {
     return {
-      message: "Fusion is revolving geometry... building, rendering, reviewing, and repairing.",
+      message: "Mesh mode: writing Three.js factory → exporting GLB… (safe to refresh)",
       mode: "ai",
-      estimateMs: 1200000,
+      estimateMs: 600000,
     };
   }
   if (normalized === "v2") {
@@ -1707,8 +1707,8 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     if (statusEl && pid === projectId) {
       statusEl.className = "status loading";
       statusEl.textContent =
-        (mode || "standard").toLowerCase() === "fusion"
-          ? "Generating with Fusion mode in background... building, rendering, reviewing, and repairing."
+        (mode || "standard").toLowerCase() === "mesh" || (mode || "standard").toLowerCase() === "fusion"
+          ? "Generating Mesh in background… Three.js factory → GLB (safe to refresh)."
           : (mode || "standard").toLowerCase() === "v2"
           ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
           : "Generating in background… safe to refresh.";
@@ -5150,7 +5150,9 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
     thinking:
       improveMode === "render"
         ? "Rewriting your prompt for a clearer photoreal scene…"
-        : improveMode === "v2" || improveMode === "mesh" || improveMode === "architect"
+        : improveMode === "mesh" || improveMode === "fusion"
+        ? "Rewriting your prompt for a clearer procedural mesh rebuild…"
+        : improveMode === "v2" || improveMode === "architect"
         ? "Rewriting your prompt for clearer parametric CAD…"
         : improveMode === "draw"
           ? "Rewriting your prompt for a clearer direct edit…"
@@ -21701,8 +21703,8 @@ function isPromptLikeGenerationKind(kind) {
 function pendingPromptTimelineEntry({ kind = "prompt", mode = "standard" } = {}) {
   const normalizedMode = String(mode || "").toLowerCase();
   const label =
-    normalizedMode === "fusion"
-      ? "Generating Fusion prompt…"
+    normalizedMode === "mesh" || normalizedMode === "fusion"
+      ? "Generating Mesh…"
       : normalizedMode === "v2"
         ? "Generating 2.0 prompt…"
         : normalizedMode === "render"
@@ -26898,7 +26900,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   promptSubmitInFlight = true;
   promptClickInFlight = false;
   try {
-    if (hasPromptImages && !alreadyHasDxfRef) {
+    // Mesh mode needs the reference image for img2threejs — never convert to DXF.
+    if (hasPromptImages && !alreadyHasDxfRef && promptMode !== "mesh" && promptMode !== "fusion") {
       const choice = await askConvertImageToDrawing();
       if (choice === "cancel") return;
       convertImagesToDrawing = choice === "yes";

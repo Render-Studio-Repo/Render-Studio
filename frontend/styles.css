@@ -4407,11 +4407,13 @@ body.canvas-design-tab .main-column {
   box-shadow: 0 0 12px rgba(212, 160, 23, 0.28);
 }
 
+.canvas-generation-banner--mesh,
 .canvas-generation-banner--fusion {
   border-bottom-color: rgba(56, 189, 248, 0.42);
   background: linear-gradient(180deg, rgba(14, 165, 233, 0.18), rgba(8, 47, 73, 0.08));
 }
 
+.canvas-generation-banner--mesh .canvas-generation-spinner,
 .canvas-generation-banner--fusion .canvas-generation-spinner {
   border-color: rgba(56, 189, 248, 0.22);
   border-top-color: #7dd3fc;

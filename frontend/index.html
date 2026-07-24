@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260724-fusion-conflict-overlay" />
+  <link rel="stylesheet" href="/styles.css?v=20260724-mesh-mode" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -2795,27 +2795,14 @@
   <script type="module" src="/early-boot.js?v=20260716-boot-5s"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="prompt-target-popup" class="prompt-target-popup hidden" role="dialog" aria-modal="false" aria-label="Select object to edit"></div>
-  <div id="fusion-capability-modal" class="fusion-capability-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title">
+  <div id="fusion-capability-modal" class="fusion-capability-modal hidden" hidden role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title" aria-hidden="true">
     <div class="fusion-capability-card">
       <button type="button" id="fusion-capability-close" class="fusion-capability-close" aria-label="Close">×</button>
       <div class="fusion-capability-head">
-        <span class="fusion-capability-kicker">Fusion mode</span>
-        <h2 id="fusion-capability-title">Choose how Fusion should build</h2>
-        <p>Use the stronger Fusion-style planning loop inside Render3D, or connect to a Fusion 360 add-in bridge for API-driven modeling.</p>
+        <span class="fusion-capability-kicker">Legacy</span>
+        <h2 id="fusion-capability-title">Fusion prompt mode removed</h2>
+        <p>Use the Mesh tab for procedural Three.js rebuilds (img2threejs → GLB). Fusion 360 cloud sync remains in the workspace library.</p>
       </div>
-      <div class="fusion-capability-options">
-        <button type="button" class="fusion-capability-option active" data-fusion-target="in_app">
-          <span class="fusion-capability-icon">R3D</span>
-          <strong>Use in-app Fusion</strong>
-          <small>build123d + STEP/GLB render snapshot + visual review + repair loop. Best for web generation.</small>
-        </button>
-        <button type="button" class="fusion-capability-option fusion-capability-option--plugin" data-fusion-target="fusion360">
-          <span class="fusion-capability-icon">F360</span>
-          <strong>Connect to Fusion 360 plugin</strong>
-          <small>Generate Fusion-style phased code for a local Fusion 360 add-in bridge.</small>
-        </button>
-      </div>
-      <p class="fusion-capability-note">You can reopen this by clicking the Fusion tab again. The selected target is remembered on this device.</p>
     </div>
   </div>
 
@@ -2994,7 +2981,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260724-viewport-export"></script>
+  <script type="module" src="/app.js?v=20260724-mesh-mode"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

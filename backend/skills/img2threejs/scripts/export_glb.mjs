@@ -11,9 +11,6 @@ import "./node_shims.js";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
 
 function usage() {
   console.error("Usage: node export_glb.mjs <factory.mjs> <out.glb>");
@@ -28,8 +25,6 @@ if (!fs.existsSync(factoryPath)) {
   process.exit(1);
 }
 
-// Load Three after shims (side-effect import above runs first among static deps,
-// but sibling ESM imports of three would still hoist — keep three dynamic).
 const THREE = await import("three");
 const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js");
 

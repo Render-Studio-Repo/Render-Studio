@@ -1,3 +1,11 @@
+## 2026-07-24 — One Fusion-ready STEP for download / share / admin
+
+- Management download + studio export + share menus listed multiple STEPs (assembly / faceted / part); linked assemblies break Extrude/Cut.
+- Backend `list_exports_for_model` / visible-assembly bake now expose **one** STEP via `ensure_fusion_part_step`. Downloads use `?step_mode=part` and a clean `.step` filename. Admin modal defaults to that STEP.
+- Cache-bust: `app.js` / `file-actions.js` / `admin-dashboard.js` / `share-viewer.js` `?v=20260724-one-step`. Service restarted.
+
+---
+
 ## 2026-07-24 — Admin project cards: long filenames overflow
 
 - Long `model_file` pills used `white-space: nowrap` and spilled past the card border (e.g. Food Robot / connector `.glb`).

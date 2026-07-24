@@ -466,7 +466,7 @@ class RenderRegionEditRequest(BaseModel):
 
 class ImprovePromptRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
-    mode: str = Field(default="standard", description="standard, v2, fusion, architect, draw")
+    mode: str = Field(default="standard", description="standard, v2, mesh, architect, draw")
     target_mode: str = Field(default="new", description="new or edit")
     speed: str = Field(default="fast")
     project_id: str | None = Field(default=None, max_length=64)
@@ -17778,6 +17778,27 @@ Rules for improved_prompt:
 """
 
 
+IMPROVE_MESH_PROMPT_SYSTEM = """You rewrite user prompts into stronger Mesh-mode prompts for Render3D (img2threejs).
+
+Mesh mode rebuilds an object as a CODE-ONLY procedural Three.js model (primitives + materials + hierarchy), then exports GLB. It is NOT photogrammetry and NOT parametric CAD/STEP.
+
+Return JSON only:
+{"improved_prompt":"..."}
+
+Rules for improved_prompt:
+- Start with the short object name (2–5 words), then a colon, then reconstruction details.
+  Example: "Desk lamp: cylindrical base, tapered stem, conical shade; matte black metal stem, warm cream shade interior."
+- Describe silhouette, major part breakdown (named parts), proportions, and PBR materials (color, metalness, roughness).
+- Prefer hard-surface primitives and clear hierarchy over organic micro-detail.
+- If a reference image is implied, call out silhouette match, colors, and which parts should be separate meshes.
+- Avoid CAD jargon (extrude, loft, pocket, STEP, B-rep, feature tree).
+- For edits, say what to change on the existing procedural mesh and what to keep.
+- Put the entire rewrite inside the improved_prompt string. Escape newlines as \\n inside the JSON string.
+- Do not mention that you are an AI or that you rewrote the prompt.
+- Keep under 1200 characters when possible; hard max 4000.
+"""
+
+
 @app.post("/api/prompt/improve")
 def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
     """Rewrite a freeform prompt into a stronger Render3D prompt using the user's AI key."""
@@ -17797,13 +17818,19 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         project_id=body.project_id,
     )
     mode = (body.mode or "standard").strip().lower()
+    if mode in {"fusion", "fusion360", "fusion-360"}:
+        mode = "mesh"
     target = (body.target_mode or "new").strip().lower()
     # Honor the explicit mode from the client. Photoreal scene-render submits
-    # send mode="render"; Mode 2.0 / Fusion / Architect must keep CAD improve.
+    # send mode="render"; Mode 2.0 / Architect keep CAD improve; Mesh uses mesh improve.
     use_render_improve = mode in {"render", "standard", ""}
+    use_mesh_improve = mode in {"mesh", "img2threejs", "threejs"}
     mode_hint = {
         "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
-        "fusion": "Fusion 360 parametric CAD. Prefer feature-friendly dimensions and clear solids.",
+        "mesh": (
+            "Mesh mode (img2threejs): procedural Three.js rebuild with primitives, materials, and named hierarchy. "
+            "Prefer silhouette, part breakdown, and PBR materials — not CAD feature trees."
+        ),
         "architect": "Modular architecture / room kit parts with separate named bodies and snap interfaces.",
         "draw": "Direct modeling edit of selected faces/edges. Be specific about which features change.",
         "render": (
@@ -17821,12 +17848,22 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         if target == "edit"
         else "This is a NEW object generation."
     )
-    system_prompt = IMPROVE_RENDER_PROMPT_SYSTEM if use_render_improve else IMPROVE_CAD_PROMPT_SYSTEM
+    if use_mesh_improve:
+        system_prompt = IMPROVE_MESH_PROMPT_SYSTEM
+    elif use_render_improve:
+        system_prompt = IMPROVE_RENDER_PROMPT_SYSTEM
+    else:
+        system_prompt = IMPROVE_CAD_PROMPT_SYSTEM
     plain_retry = (
-        "Rewrite this into a stronger Render-mode prompt focused on how the object should look when rendered. "
+        "Rewrite this into a stronger Mesh-mode prompt for procedural Three.js reconstruction. "
         "Return only the improved prompt text."
-        if use_render_improve
-        else "Rewrite this into a stronger parametric CAD / Mode 2.0 prompt. Return only the improved prompt text."
+        if use_mesh_improve
+        else (
+            "Rewrite this into a stronger Render-mode prompt focused on how the object should look when rendered. "
+            "Return only the improved prompt text."
+            if use_render_improve
+            else "Rewrite this into a stronger parametric CAD / Mode 2.0 prompt. Return only the improved prompt text."
+        )
     )
     user_content = (
         f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
