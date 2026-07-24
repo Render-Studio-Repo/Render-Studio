@@ -1,3 +1,11 @@
+## 2026-07-24 — Fusion export: upload to current folder
+
+- Inside a Fusion folder (e.g. Render3D) there is a primary **Export to Fusion · {folder}** button — no subfolder required.
+- Folder tiles use **Export** (one-click upload there). Bottom submit label shows the destination folder name.
+- Cache-bust: `file-actions.js` / `styles.css` `?v=20260724-fusion-export-here`.
+
+---
+
 ## 2026-07-24 — Restore working B-rep export/Fusion from backup
 
 - Afternoon Part-mode forcing rewrote native STEPs through `export_step_as_single_part`, which broke Fusion editability (“all B-rep messed up”).

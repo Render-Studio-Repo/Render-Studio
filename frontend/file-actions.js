@@ -1029,7 +1029,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
   picker.innerHTML = `
     <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close Fusion export">&times;</button>
     <div class="file-export-fusion-title">Export to Fusion 360 · ${modeLabel}</div>
-    <p class="muted small">Pick a hub and project, then browse folders in the grid. Click a folder to open it; use <strong>Export here</strong> for the current folder (including nested ones).</p>
+    <p class="muted small">Pick a hub and project, then a folder. You can export into the folder you’re viewing — you don’t need a subfolder.</p>
     ${allowFacetedStep && !isThreeMf ? '<p class="status error small">Only faceted mesh STEP is available for this model. Export will work, but Fusion boolean Cut may be limited.</p>' : ""}
     ${isThreeMf ? '<p class="muted small">This file is 3MF — it will upload as 3MF for Fusion mesh import.</p>' : ""}
     <label class="file-export-cloud-field">
@@ -1138,9 +1138,29 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
     selectedFolderId = folder?.id || "";
     selectedFolderName = folder?.name || selectedFolderId;
     submit.disabled = !selectedFolderId;
-    if (!quiet) {
-      setStatus(selectedFolderId ? `Selected: ${selectedFolderName}` : "");
+    if (selectedFolderId) {
+      const dest = selectedFolderName || "folder";
+      submit.textContent = `Export to Fusion · ${dest}`;
+      submit.title = `Upload into “${dest}”`;
+    } else {
+      submit.textContent = `Upload ${uploadLabel} to Fusion`;
+      submit.title = "";
     }
+    if (!quiet) {
+      setStatus(selectedFolderId ? `Ready: “${selectedFolderName}”` : "");
+    }
+  };
+
+  const exportToFolder = (folder) => {
+    if (!folder?.id) {
+      setStatus("Choose a Fusion folder first.", true);
+      return;
+    }
+    autoSelectFolders = false;
+    restoringFolderPath = null;
+    setSelectedFolder(folder, { quiet: true });
+    setStatus(`Uploading to “${folder.name || "folder"}”…`);
+    submit.click();
   };
 
   const renderProjectGrid = () => {
@@ -1235,11 +1255,14 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
         </nav>
       </div>
       ${currentFolder ? `
-        <button type="button" class="btn btn-compact file-export-fusion-use-current${currentSelected ? " is-active" : ""}" data-folder-select-current>
-          ${currentSelected ? "Exporting here ✓" : `Export here · ${escText(currentFolder.name || "this folder")}`}
+        <button type="button" class="btn primary file-export-fusion-use-current" data-folder-export-here title="Upload into this folder (no subfolder required)">
+          Export to Fusion · ${escText(currentFolder.name || "this folder")}
         </button>
-      ` : `<p class="muted small file-export-fusion-folder-hint">Open a folder (e.g. Project Files → Render3D → …), then tap <strong>Export here</strong> or Select on a subfolder tile.</p>`}
-      ${selectedFolderId && !currentSelected ? `<p class="muted small">Selected: <strong>${escText(selectedFolderName)}</strong></p>` : ""}
+        <p class="muted small file-export-fusion-folder-hint">Or open / Select a subfolder below.</p>
+      ` : `
+        <p class="muted small file-export-fusion-folder-hint">Tap <strong>Select</strong> on a top folder to export there, or open it to browse inside.</p>
+      `}
+      ${selectedFolderId && !currentSelected ? `<p class="muted small">Selected destination: <strong>${escText(selectedFolderName)}</strong></p>` : ""}
       <div class="file-export-fusion-folder-grid" role="list">
         ${folders.length ? folders.map((folder, index) => {
           const when = formatWhen(folder.last_modified || folder.created);
@@ -1254,7 +1277,7 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
                   <span>${when ? `Updated ${escText(when)}` : "Open to browse"}${recent ? " · recent" : ""}</span>
                 </span>
               </button>
-              <button type="button" class="btn btn-compact file-export-fusion-folder-pick" data-folder-select="${escAttr(folder.id)}" title="Export into this folder">${active ? "✓" : "Select"}</button>
+              <button type="button" class="btn btn-compact file-export-fusion-folder-pick" data-folder-select="${escAttr(folder.id)}" title="Export into this folder now">${active ? "Export ✓" : "Export"}</button>
             </div>
           `;
         }).join("") : `<p class="muted small file-export-fusion-folder-empty">${escText(emptyText)}</p>`}
@@ -1273,11 +1296,8 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
         goToBreadcrumb(Number(btn.dataset.folderCrumb) || 0);
       });
     });
-    folderBrowser.querySelector("[data-folder-select-current]")?.addEventListener("click", () => {
-      autoSelectFolders = false;
-      restoringFolderPath = null;
-      setSelectedFolder(currentFolder);
-      renderFolderBrowser(lastFolderList);
+    folderBrowser.querySelector("[data-folder-export-here]")?.addEventListener("click", () => {
+      exportToFolder(currentFolder);
     });
     folderBrowser.querySelectorAll("[data-folder-open]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1292,10 +1312,8 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
         event.stopPropagation();
         const folder = folders.find((item) => item.id === btn.dataset.folderSelect);
         if (!folder) return;
-        autoSelectFolders = false;
-        restoringFolderPath = null;
-        setSelectedFolder(folder);
-        renderFolderBrowser(lastFolderList);
+        // One-click: export into this folder without opening it.
+        exportToFolder(folder);
       });
     });
     keepMenuInViewport(menu);
@@ -1334,11 +1352,11 @@ async function showFusionExportPicker(menu, anchorBtn, { projectId, filename, al
       } else if (currentFolder) {
         // Inside a nested folder: default destination is this folder, not a random child.
         setSelectedFolder(currentFolder, { quiet: true });
-        setStatus(`Ready to export into “${currentFolder.name || "this folder"}”. Open a subfolder or tap Select on one.`);
+        setStatus(`Ready to export into “${currentFolder.name || "this folder"}”. Tap Export to Fusion · ${currentFolder.name || "here"}.`);
       } else if (folders.length) {
         const pick = folders[0];
         setSelectedFolder(pick, { quiet: true });
-        setStatus(`Auto-selected most recent folder: ${pick.name || pick.id}. Open it to pick a nested folder.`);
+        setStatus(`Auto-selected “${pick.name || pick.id}”. Tap Export on a folder tile, or open it and use Export to Fusion here.`);
       }
     }
     renderFolderBrowser(folders, {

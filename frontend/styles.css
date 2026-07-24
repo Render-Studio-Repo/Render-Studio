@@ -17819,6 +17819,7 @@ section h2 {
 .file-export-fusion-use-current {
   width: 100%;
   margin-bottom: 6px;
+  font-weight: 700;
 }
 
 .file-export-fusion-use-current.is-active {
