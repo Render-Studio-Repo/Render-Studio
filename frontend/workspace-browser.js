@@ -322,6 +322,12 @@ export function createWorkspaceBrowser({
     return meta.rootLabel || "Personal files";
   }
 
+  function isSharedWorkspaceFolder(folder) {
+    if (!folder) return false;
+    const id = String(folder.id || "");
+    return folder.shared_workspace === true || id.startsWith("__shared_ws_");
+  }
+
   function isCommunityFolder(folder) {
     if (!folder) return false;
     const id = folder.id;
@@ -2479,13 +2485,17 @@ export function createWorkspaceBrowser({
         multiWorkspace && folderWsMeta?.label && !folder.virtual && !folder.public
           ? `<span class="folder-workspace-tag" title="Workspace">${escapeHtml(folderWsMeta.label)}</span>`
           : "";
+      const sharedWsBadge = isSharedWorkspaceFolder(folder)
+        ? `<span class="folder-shared-tag">Shared workspace</span>`
+        : "";
       header.insertAdjacentHTML(
         "beforeend",
         `
-        <span class="folder-icon">📂</span>
+        <span class="folder-icon">${isSharedWorkspaceFolder(folder) ? "🟧" : "📂"}</span>
         <span class="folder-title">${escapeHtml(folder.name)}</span>
         ${folderWsTag}
         ${sharedLabel}
+        ${sharedWsBadge}
         ${shareBadge}
         <span class="folder-count muted small">${inFolder.length}</span>
         ${canManage ? `<span class="folder-header-actions">
@@ -2582,20 +2592,24 @@ export function createWorkspaceBrowser({
     const seen = new Set();
     folders = [];
 
-    // Seed from project folder refs (covers virtual Public / other-user folders too).
+    // Seed from project folder refs (covers virtual Public / other-user / shared-ws folders too).
     for (const project of projects) {
       const id = project?.folder_id;
       if (!id || seen.has(id)) continue;
       seen.add(id);
       const isPublic = id === "__public__";
       const isOtherRenders = id === "__other_user_renders__";
+      const isSharedWs = String(id).startsWith("__shared_ws_") || !!project.shared_workspace_folder;
       folders.push({
         id,
         team_id: project.team_id || null,
-        name: project.folder_name || (isPublic ? "Public" : isOtherRenders ? "New renders from other users" : "Folder"),
-        virtual: isPublic || isOtherRenders || !project.team_id,
-        read_only: isPublic || isOtherRenders || !!project.read_only_project,
+        name:
+          project.folder_name
+          || (isPublic ? "Public" : isOtherRenders ? "New renders from other users" : isSharedWs ? "Shared workspace" : "Folder"),
+        virtual: isPublic || isOtherRenders || isSharedWs || !project.team_id,
+        read_only: isPublic || isOtherRenders || isSharedWs || !!project.read_only_project,
         public: isPublic,
+        shared_workspace: isSharedWs,
       });
     }
 

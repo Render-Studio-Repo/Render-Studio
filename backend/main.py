@@ -110,6 +110,7 @@ PUBLIC_FOLDER_ID = "__public__"
 PUBLIC_FOLDER_NAME = "Public"
 PRIVATE_FOLDER_ID = "__private__"
 PRIVATE_FOLDER_NAME = "Private"
+SHARED_WORKSPACE_FOLDER_PREFIX = "__shared_ws_"
 VIEWPORT_WORKSPACE_ACTIVITY_KINDS = {
     "upload",
     "delete_object",
@@ -1220,6 +1221,61 @@ def _personal_workspace_id(user: dict[str, Any]) -> str | None:
             (user_id, user_id),
         ).fetchone()
     return str(row["id"]) if row else None
+
+
+def _shared_workspace_folder_id(team_id: str) -> str:
+    return f"{SHARED_WORKSPACE_FOLDER_PREFIX}{team_id}"
+
+
+def _is_shared_workspace_folder_id(folder_id: str | None) -> bool:
+    return bool(folder_id) and str(folder_id).startswith(SHARED_WORKSPACE_FOLDER_PREFIX)
+
+
+def _shared_workspace_folder_name(team_name: str | None) -> str:
+    name = str(team_name or "").strip() or "Shared workspace"
+    lower = name.lower()
+    if lower.endswith("shared workspace"):
+        return name
+    return f"{name} shared workspace"
+
+
+def _nest_shared_workspace_root_projects(
+    projects: list[dict[str, Any]],
+    user: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Keep personal projects at the browser root; put invited/shared workspace
+    root projects under a virtual per-team folder (e.g. "Render3D shared workspace").
+    Real subfolders inside those workspaces are left alone.
+    """
+    personal_id = _personal_workspace_id(user)
+    if not personal_id:
+        return projects
+    teams_by_id = {str(t["id"]): t for t in teams_service.list_teams(user["id"])}
+    out: list[dict[str, Any]] = []
+    for project in projects:
+        tid = project.get("team_id")
+        if (
+            not tid
+            or str(tid) == str(personal_id)
+            or project.get("folder_id")
+            or project.get("public")
+            or project.get("private_project")
+            or _is_shared_workspace_folder_id(project.get("folder_id"))
+        ):
+            out.append(project)
+            continue
+        team = teams_by_id.get(str(tid)) or {}
+        folder_id = _shared_workspace_folder_id(str(tid))
+        out.append(
+            {
+                **project,
+                "original_folder_id": None,
+                "folder_id": folder_id,
+                "folder_name": _shared_workspace_folder_name(team.get("name")),
+                "shared_workspace_folder": True,
+            }
+        )
+    return out
 
 
 def _private_folder_summary(projects: list[dict[str, Any]], team_id: str | None) -> dict[str, Any]:
@@ -10824,6 +10880,9 @@ def list_projects(
     if public_ids:
         projects = [p for p in projects if p.get("id") not in public_ids]
         projects.extend(public_projects)
+    # Invitees (and multi-workspace views): keep personal root clean by nesting
+    # other workspaces' root projects under "{Team} shared workspace".
+    projects = _nest_shared_workspace_root_projects(projects, user)
     return {"projects": projects}
 
 
