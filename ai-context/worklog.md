@@ -4,6 +4,12 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-24 — Docs → Getting Started + unique GIFs + laptop layout
+
+- Studio **Docs** nav → `/getting-started.html` (was `/docs.html`).
+- Each Getting Started section now has its own GIF (was reusing ai-generate/picks/canvas/select-object). Added `multi-gen`, `link-to-prompt`, `solid-tools`, `sketch`, `rigging-urdf`; synced backend guides (`?v=20260724-unique`).
+- MacBook/laptop layout: earlier breakpoints + container queries so TOC/features don’t scrunch (`?v=20260724-gs-layout`).
+
 ## 2026-07-24 — Fix Components hierarchy row layout
 
 - Bug: eye / ⓘ / name stacked vertically (name btn `width:100%` + flex-wrap).

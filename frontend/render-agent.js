@@ -5,7 +5,7 @@ import {
   getCurrentTip,
   tipTopicClass,
 } from "./getting-started-tips.js?v=20260715-tips-tricks";
-import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260715-chat-show-me-actions";
+import { matchGettingStartedGuides, guideMediaPayload } from "./getting-started-guides.js?v=20260724-gs-gifs";
 import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
 
 

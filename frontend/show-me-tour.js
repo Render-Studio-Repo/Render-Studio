@@ -1,6 +1,6 @@
 /** Guided "Show me" tours for Getting Started + Studio. */
 
-import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260715-summary-popup";
+import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260724-gs-gifs";
 
 /** Tours that click the 3D viewport always seed the Robot Arm demo project. */
 const ROBOT_ARM_DEMO_TOURS = new Set(["picks", "select-object", "solid-tools", "link-to-prompt"]);

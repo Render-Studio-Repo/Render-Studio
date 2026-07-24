@@ -3,8 +3,8 @@
 import { GETTING_STARTED_GUIDES } from "./getting-started-guides.js?v=20260724-gs-gifs";
 import { GETTING_STARTED_TIPS } from "./getting-started-tips.js?v=20260716-source-parts";
 import { authHeaders, createAuthUI, getStoredUser, getToken } from "./auth.js?v=20260715-auth-connect-social";
-import { createRenderAgent } from "./render-agent.js?v=20260720-mobile-docs-agent";
-import { startShowMe } from "./show-me-tour.js?v=20260715-stepper-bench-remix";
+import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
+import { startShowMe } from "./show-me-tour.js?v=20260724-gs-gifs";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 const FEATURES = GETTING_STARTED_GUIDES;

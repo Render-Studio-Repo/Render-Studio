@@ -66,11 +66,11 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
-import { createProjectChatUI } from "./project-chat.js?v=20260716-chat-link-previews";
+import { createProjectChatUI } from "./project-chat.js?v=20260724-gs-gifs";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260715-chat-roles";
-import { createRenderAgent } from "./render-agent.js?v=20260721-quest-progress";
+import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260723-key-layout";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
 import { createRibbon } from "./ribbon.js?v=20260716-move-shortcut";
