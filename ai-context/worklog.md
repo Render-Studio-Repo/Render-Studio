@@ -4,6 +4,25 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-24 — Manage workspace: per-member invite / edit / view
+
+- Manage workspace modal lists each workspace with a **Permissions** dropdown for admins.
+- Expanding it loads members and shows Access (`Can edit` / `View only`) + Invite (`Can invite` / `Cannot invite`) selects; patches existing `/api/teams/.../permissions`.
+- Files: `frontend/workspace-manage.js`, `frontend/styles.css`, `frontend/index.html`, `frontend/app.js` cache-bust `?v=20260724-ws-manage-perms`.
+
+## 2026-07-24 — Keep AI prompt draft across refresh
+
+- Bug: opening/reloading a project called `resetComposerForProject()` which saved an empty prompt into localStorage, wiping the typed draft before restore. Update-banner refresh then looked like the prompt “vanished” and never hit history.
+- Fix: UI-only composer reset (no persist); prefer newest non-empty draft when merging; save draft on `beforeunload` / `pagehide` and when an update refresh starts.
+- Cache-bust: `app.js?v=20260724-prompt-draft`.
+
+## 2026-07-24 — Restore click=whole / double-click=part selection
+
+- Regression (since ~Jul 20): multi-body models single-clicked into a part; double-click selected the whole model. UI copy and Getting Started still described the opposite.
+- Restored Jul 15 semantics: single-click → whole model; double-click → part/body (amber) for transform.
+- Guard ignores a trailing whole-select click right after a part double-click.
+- Files: `frontend/app.js`, `frontend/object-tools.js` status strings; cache-bust `app.js?v=20260724-select-fix2`.
+
 ## 2026-07-24 — Golden snapshot: working production
 
 - Code-only golden: `backups/golden/golden-working-production-20260724T151815Z/` (~138 MB).

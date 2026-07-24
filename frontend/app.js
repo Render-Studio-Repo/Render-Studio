@@ -72,7 +72,7 @@ import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-stor
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260723-key-layout";
-import { createCollab } from "./collab.js?v=20260715-realtime-sync";
+import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
@@ -863,6 +863,25 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
     renderProjectList();
     return;
   }
+  // Local transform/paint already ran afterModelEdit with a placement baseline.
+  // Re-applying the same model.reload here races that swap and leaves twin meshes
+  // (z-fighting / color flicker) that bounce between the pre/post poses.
+  const action = String(msg.action || msg.kind || "").toLowerCase();
+  const ownEdit =
+    !!msg.by_user_id
+    && !!currentUser?.id
+    && msg.by_user_id === currentUser.id
+    && (
+      action === "transform"
+      || action === "body_transform"
+      || action === "paint"
+      || action === "color"
+      || action === "texture"
+    );
+  if (ownEdit) {
+    if (msg.timeline_entry || msg.timeline) void refreshTimeline();
+    return;
+  }
   if (isDxfDrawingFilename(msg.filename)) {
     await refreshFiles();
     setEditStatus("ok", `Added DXF drawing ${msg.filename}. Open it from Reference Files when needed.`);
@@ -883,6 +902,19 @@ async function applyLiveModelReload(msg = {}, pid = msg.project_id || projectId)
   const orientationMode = reloadMode === "v2" && String(msg.target_mode || "").toLowerCase() !== "edit"
     ? "v2-upright"
     : null;
+  // Transforms from teammates: swap one component in place (no full assembly reload).
+  if (action === "transform" || action === "body_transform") {
+    await afterModelEdit({
+      ...msg,
+      filename: msg.filename,
+      url: msg.url || `/api/projects/${pid}/files/${encodeURIComponent(msg.filename)}`,
+      replaceCatalog: msg.replace_catalog || msg.replaceCatalog || null,
+      action: action === "body_transform" ? "body_transform" : "transform",
+    });
+    viewerOverlay.clearError();
+    await refreshTimeline();
+    return;
+  }
   await reloadViewportFromProject({
     fitView: true,
     latestFile: msg.filename,
@@ -2661,7 +2693,11 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel 
     featureEditor.setModel(projectId, target.catalogName);
   }
   const preferPart = !wholeModel && !wholeLocalModule && partLevel;
+  if (!preferPart && !wholeModel && Date.now() - lastPartSelectAt < PART_SELECT_GUARD_MS) {
+    return target;
+  }
   if (preferPart) {
+    lastPartSelectAt = Date.now();
     const bodyIndex = bodyIndexForHitMesh(hit.mesh, target.root, hit.faceIndex);
     if (target.catalogName) {
       projectTree.setSelected(browserBodySelectionName(target.catalogName, bodyIndex));
@@ -2681,9 +2717,11 @@ function selectObjectHit(hit, { showGizmo = true, partLevel = false, wholeModel 
       const label = objectTools.getSelection()?.label || `Body ${bodyIndex + 1}`;
       setEditStatus("ok", `Selected ${label} · drag to move this part · click for whole model · Cmd+Z to undo`);
     };
+    // Select immediately so double-click isn't blocked on body-info fetch; refresh labels after.
+    applyPartSelect();
     const pending = objectTools.refreshBodyInfo?.(target.catalogName);
-    if (pending?.then) pending.finally(applyPartSelect);
-    else applyPartSelect();
+    if (pending?.then) pending.then(applyPartSelect).catch(() => {});
+    else if (pending) applyPartSelect();
   } else {
     if (target.catalogName) projectTree.setSelected(target.catalogName);
     objectTools.selectObject({
@@ -3239,9 +3277,18 @@ function mergePromptReferenceSnapshots(modelState, projectState, globalState) {
   const candidates = [modelState, projectState, globalState].filter(Boolean);
   candidates.sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
   const newest = candidates[0] || null;
+  // Prefer the newest non-empty prompt so a transient empty clear (project load /
+  // viewport reset) cannot wipe a draft the user typed before refresh.
+  let prompt = "";
+  for (const c of candidates) {
+    if (String(c?.prompt || "").trim()) {
+      prompt = c.prompt;
+      break;
+    }
+  }
   if (Array.isArray(newest?.references)) {
     return {
-      prompt: newest?.prompt || "",
+      prompt,
       references: dedupeRefsById(newest.references),
       images: newest?.images,
     };
@@ -3249,7 +3296,7 @@ function mergePromptReferenceSnapshots(modelState, projectState, globalState) {
   const modelRefs = modelState?.references || [];
   const projectRefs = projectState?.references || [];
   return {
-    prompt: newest?.prompt || "",
+    prompt,
     references: dedupeRefsById([...modelRefs, ...projectRefs]),
     images: newest?.images,
   };
@@ -6308,12 +6355,14 @@ async function afterModelEdit(data) {
     };
   }
 
-  // Drop same-stem twins before reload so paint/color cannot leave a ghost mesh.
+  // Drop same-stem twins before reload so paint/color/transform cannot leave a ghost mesh.
+  // Include stableCatalog itself — loadModel will re-add the fresh object under that key.
   if (prevStem) {
     for (const [name] of [...projectAssembly.list()]) {
-      if (name === stableCatalog) continue;
       const other = fileStem(name).replace(/_edited(?:_\d+)?$/i, "");
-      if (other === prevStem) projectAssembly.remove(name);
+      if (other === prevStem || name === prevCatalog || name === stableCatalog || name === data.filename) {
+        projectAssembly.remove(name);
+      }
     }
   }
 
@@ -6331,17 +6380,21 @@ async function afterModelEdit(data) {
     savedTransform: isBakedTransform ? placementBaseline : savedTransform,
     catalogFilename: stableCatalog,
     append: inAssembly || alreadyPresent,
-    replaceCatalog: null,
+    replaceCatalog: alreadyPresent && prevCatalog && prevCatalog !== stableCatalog ? prevCatalog : null,
     fitView: false,
     // Avoid popping the transform gizmo after Extrude/Cut — it feels like a hard reload.
     autoGizmo: isBakedTransform ? true : !isFacePull && !inAssembly,
   });
   gizmoPanel.resetDragBaseline?.();
-  if (isBakedTransform || projectAssembly.count() > 0) {
+  // Transforms already swapped the edited mesh — do not re-pull browser primaries,
+  // which can resurrect the pre-edit twin and cause z-fighting / pose bounce.
+  if (!isBakedTransform && projectAssembly.count() > 0) {
     await ensureMissingBrowserComponentsLoaded({
-      keepGizmoOn: isBakedTransform ? stableCatalog : null,
+      keepGizmoOn: null,
       fitView: false,
     });
+  } else if (isBakedTransform && stableCatalog && projectAssembly.has(stableCatalog)) {
+    selectAssemblyComponent(stableCatalog, { autoGizmo: true, fitView: false });
   }
   if (data.timeline) {
     timelineData = data.timeline;
@@ -13318,6 +13371,8 @@ function clearModel() {
 }
 
 function resetComposerForProject() {
+  // UI-only clear. Do NOT persist here — loadProject / showEmptyProjectViewport
+  // call this before restore, and saving "" would wipe the draft across refresh.
   restoringModelPromptState = true;
   composer.setPromptText?.("");
   composer.replaceReferences([]);
@@ -13326,7 +13381,6 @@ function resetComposerForProject() {
   promptImages = [];
   renderPromptImages();
   sendCollabPresence();
-  saveActiveModelPromptState();
 }
 
 function showEmptyProjectViewport({ keepBrowser = false } = {}) {
@@ -23820,6 +23874,9 @@ let viewportSelectDrag = null;
 let viewportMarqueeEl = null;
 let suppressNextObjectClick = false;
 let controlsEnabledBeforeViewportSelect = true;
+/** Ignore a whole-model click that arrives right after a part double-click. */
+let lastPartSelectAt = 0;
+const PART_SELECT_GUARD_MS = 400;
 
 function syncLeftDragModeButton() {
   const btn = document.getElementById("btn-left-drag-mode");
@@ -24516,13 +24573,18 @@ renderer.domElement.addEventListener("click", (e) => {
   }
   if (getPickMode() === "off") {
     if (isMobileInteraction()) return;
+    // 2nd click of a double-click: ignore — dblclick handler drills into a part.
+    if (e.detail > 1) {
+      e.preventDefault();
+      return;
+    }
     const hit = pickObject(e, {
       camera,
       domElement: renderer.domElement,
       meshRoot: currentMesh,
     });
     if (hit?.mesh) {
-      selectObjectHit(hit);
+      selectObjectHit(hit, { showGizmo: true, partLevel: false });
       e.preventDefault();
     }
     return;
@@ -24545,6 +24607,11 @@ renderer.domElement.addEventListener("click", (e) => {
     return;
   }
   if (getPickMode() === "object") {
+    // 2nd click of a double-click: ignore — dblclick handler drills into a part.
+    if (e.detail > 1) {
+      e.preventDefault();
+      return;
+    }
     const hit = pickObject(e, {
       camera,
       domElement: renderer.domElement,
@@ -24559,7 +24626,7 @@ renderer.domElement.addEventListener("click", (e) => {
       e.preventDefault();
       return;
     }
-    // Single click selects the whole model. Double-click selects a part.
+    // Single click selects the whole model (delayed so double-click can take a part).
     selectObjectHit(hit, { showGizmo: true, partLevel: false });
     e.preventDefault();
     return;
@@ -30792,13 +30859,20 @@ window.addEventListener("keydown", (e) => {
       || !!transformGizmoDragging
       || document.body.classList.contains("viewport-select-dragging"),
     onUpdating: () => {
+      try { saveActiveModelPromptState(); } catch (_) {}
       setEditStatus("ok", "Reloading new version and restoring your project…");
     },
     onUpdateAvailable: () => {
-      setEditStatus("ok", "New version available — reloading when idle…");
+      try { saveActiveModelPromptState(); } catch (_) {}
+      setEditStatus("ok", "New version available — refresh when ready (your prompt draft is saved).");
     },
   });
   window.addEventListener("beforeunload", () => {
+    try { saveActiveModelPromptState(); } catch (_) {}
+    captureSessionSnapshot();
+  });
+  window.addEventListener("pagehide", () => {
+    try { saveActiveModelPromptState(); } catch (_) {}
     captureSessionSnapshot();
   });
   if (session) {

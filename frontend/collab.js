@@ -135,40 +135,12 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
     );
   }
 
-  function applyRemoteObjectTransform(userId, meshRoot, ref, target) {
+  function applyRemoteObjectTransform(_userId, _meshRoot, ref, target) {
+    // Intentionally do NOT mutate the live mesh. Writing remote poses onto the
+    // real object fights local gizmo drags and post-bake reloads (pose bounce +
+    // twin z-fighting). Presence already ships local_box_* for the helper.
     if (!target || !hasTransformPayload(ref)) return null;
-    const key = refTransformKey(ref, target);
-    if (!key) return null;
-    let previews = remoteTransformPreviews.get(userId);
-    if (!previews) {
-      previews = new Map();
-      remoteTransformPreviews.set(userId, previews);
-    }
-    if (!previews.has(key)) {
-      previews.set(key, {
-        target,
-        position: target.position.clone(),
-        quaternion: target.quaternion.clone(),
-        scale: target.scale.clone(),
-      });
-    } else {
-      const entry = previews.get(key);
-      if (entry.target !== target) {
-        restorePreviewEntry(entry);
-        previews.set(key, {
-          target,
-          position: target.position.clone(),
-          quaternion: target.quaternion.clone(),
-          scale: target.scale.clone(),
-        });
-      }
-    }
-    target.position.set(ref.transform_position[0], ref.transform_position[1], ref.transform_position[2]);
-    target.quaternion.set(ref.transform_quaternion[0], ref.transform_quaternion[1], ref.transform_quaternion[2], ref.transform_quaternion[3]);
-    target.scale.set(ref.transform_scale[0], ref.transform_scale[1], ref.transform_scale[2]);
-    target.updateMatrixWorld?.(true);
-    meshRoot?.updateMatrixWorld?.(true);
-    return key;
+    return refTransformKey(ref, target);
   }
 
   function pickWorldPosition(meshRoot, ref) {
@@ -237,6 +209,15 @@ export function createCollab({ getToken, getProjectId, getMeshOffset, scene }) {
       const min = localToWorld(meshRoot, ref.local_box_min);
       const max = localToWorld(meshRoot, ref.local_box_max);
       return new THREE.Box3().setFromPoints([min, max]);
+    }
+    // Prefer the collaborator's reported center when they are actively moving —
+    // do not fall back to mutating / reading our unmoved mesh pose.
+    if (Array.isArray(ref.local_point) && ref.local_point.length === 3) {
+      const center = localToWorld(meshRoot, ref.local_point);
+      const size = target
+        ? new THREE.Box3().setFromObject(target).getSize(new THREE.Vector3())
+        : new THREE.Vector3(0.05, 0.05, 0.05);
+      return new THREE.Box3().setFromCenterAndSize(center, size);
     }
     return target ? new THREE.Box3().setFromObject(target) : null;
   }

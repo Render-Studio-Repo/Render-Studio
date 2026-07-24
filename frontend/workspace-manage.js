@@ -384,10 +384,14 @@ export function closeWorkspaceManage() {
 export async function openWorkspaceManage(opts = {}) {
   const modal = $(MODAL_ID);
   if (!modal) return;
+  if (opts && (opts.api || opts.getTeams || opts.onChanged)) {
+    boundOpts = { ...(boundOpts || {}), ...opts };
+  }
+  const o = boundOpts || opts;
   setStatus("");
   invalidateManagement();
-  fillTeamSelect(opts);
-  refreshPanel(opts);
+  fillTeamSelect(o);
+  refreshPanel(o);
   modal.classList.remove("hidden");
   requestAnimationFrame(() => $("ws-manage-team")?.focus());
 }
