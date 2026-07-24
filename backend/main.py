@@ -13353,9 +13353,26 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
         except Exception as exc:
             logger.warning("Faceted STEP export failed for %s: %s", safe, exc)
             raise HTTPException(422, f"Could not create faceted STEP: {exc}") from exc
-    # Do NOT rewrite STEP via export_step_as_single_part for downloads.
-    # Jul 16 working export served the native solid B-rep as-is; Part rewrite
-    # breaks Extrude/Cut in Fusion and other CAD (same bug as Fusion push).
+    # Solid assemblies (NEXT_ASSEMBLY_USAGE) open in Fusion as linked components,
+    # so Extrude Cut fails with "No target body found". Flatten to one Part unless
+    # the caller explicitly asks for assembly.
+    if (
+        file_path.suffix.lower() in {".step", ".stp"}
+        and step_mode_normalized in {"", "regular", "part", "single", "fusion"}
+    ):
+        try:
+            kind = cad_service.classify_step_file_kind(file_path)
+            peek = file_path.read_bytes()[:2_000_000].decode("utf-8", errors="ignore").upper()
+        except Exception:
+            kind, peek = "unknown", ""
+        if kind == "editable_brep" and "NEXT_ASSEMBLY_USAGE" in peek and step_mode_normalized != "assembly":
+            part_path = project_path / f"{file_path.stem}.fusionpart{file_path.suffix.lower()}"
+            try:
+                cad_service.export_step_as_single_part(file_path, part_path)
+                file_path = part_path
+                safe = f"{Path(safe).stem}.step"
+            except Exception as exc:
+                logger.warning("Part STEP flatten failed for %s: %s", safe, exc)
     if file_path.suffix.lower() == ".3mf":
         stem = file_path.stem
         for suffix in (".step", ".stp", ".glb", ".gltf", ".stl", ".obj", ".ply", ".off"):

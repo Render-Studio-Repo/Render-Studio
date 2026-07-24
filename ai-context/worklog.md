@@ -1,3 +1,11 @@
+## 2026-07-24 — Fusion Extrude Cut: flatten assembly STEP → Part
+
+- Fusion error **“No target body found to cut or intersect”** = STEP has `NEXT_ASSEMBLY_USAGE` (linked assembly). Solids were fine; hierarchy blocked Cut.
+- Fusion push + STEP download now flatten editable B-rep assemblies via `export_step_as_single_part` (keeps `MANIFOLD_SOLID_BREP`, clears assembly links). Visible-assembly bake writes the same Part-style STEP.
+- Verified on shelf/box project STEP: solids 3→3, assembly markers 3→0. Service restarted.
+
+---
+
 ## 2026-07-24 — Export visible: don’t upload hidden siblings (Arduino)
 
 - Bug: Fusion cloud push fell back to any editable STEP in the project, so hiding Fully_Assembled still uploaded `arduino_uno_q.step`.
