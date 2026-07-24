@@ -4,6 +4,10 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-23 — Fix AI usage sparkline overflow
+
+- Cost bars were scaled to 42px inside a 28px chart (clipped/overflow). Chart restored to 40px; bar heights capped to fit; overflow hidden. Cache-bust `?v=20260723-cost-bars`.
+
 ## 2026-07-23 — Right panel tabs: 2 rows, tighter chrome
 
 - Right tabs forced to a 3-column / 2-row grid (was wrapping to 3 rows).

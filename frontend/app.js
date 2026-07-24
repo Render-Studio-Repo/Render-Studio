@@ -5687,12 +5687,18 @@ function renderProjectCostThumb(entries = [], summary = null) {
       .reverse()
       .slice(-14)
       .map((e) => Number(e.cost_usd) || 0);
-    const values = recent.length ? recent : [0, 0, 0, 0, 0, 0, 0];
+    // Keep a readable sparkline even with sparse history.
+    while (recent.length < 8) recent.unshift(0);
+    const values = recent.length ? recent : [0, 0, 0, 0, 0, 0, 0, 0];
     const max = Math.max(0.000001, ...values);
+    const chartH = 30; // fits inside .project-cost-thumb-chart (40px - padding)
     chartEl.innerHTML = values
       .map((value) => {
-        const h = value > 0 ? Math.max(6, Math.round((value / max) * 42)) : 3;
-        return `<i style="height:${h}px" title="${formatCostUsd(value) || "$0.00"}"></i>`;
+        const h = value > 0
+          ? Math.max(4, Math.round((value / max) * chartH))
+          : 2;
+        const tip = formatCostUsd(value) || "$0.00";
+        return `<i style="height:${h}px" title="${tip}"></i>`;
       })
       .join("");
   }

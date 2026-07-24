@@ -17692,14 +17692,16 @@ label input { margin-top: 4px; }
 }
 
 .project-cost-thumb-chart {
-  height: 28px;
+  height: 40px;
   margin: 5px 0 4px;
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  padding: 4px 5px 3px;
+  padding: 5px 6px 4px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 7px;
+  overflow: hidden;
+  box-sizing: border-box;
   background:
     linear-gradient(to top, rgba(148, 163, 184, 0.14) 1px, transparent 1px) 0 0 / 100% 25%,
     linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.28));
@@ -17707,13 +17709,16 @@ label input { margin-top: 4px; }
 }
 
 .project-cost-thumb-chart i {
-  flex: 1;
-  min-width: 4px;
-  max-width: 16px;
-  border-radius: 999px 999px 3px 3px;
+  display: block;
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: none;
+  align-self: flex-end;
+  border-radius: 2px 2px 1px 1px;
   background: linear-gradient(180deg, #9ecbff, #58a6ff 55%, #1f6feb);
   opacity: 0.95;
-  box-shadow: 0 0 8px rgba(88, 166, 255, 0.35);
+  box-shadow: 0 0 5px rgba(88, 166, 255, 0.22);
+  box-sizing: border-box;
 }
 
 .project-cost-thumb.is-empty .project-cost-thumb-chart i {
@@ -29856,6 +29861,10 @@ body.kb-modal-open {
 
 .architect-mode-tab {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
 }
 
 .architect-panel-head {
