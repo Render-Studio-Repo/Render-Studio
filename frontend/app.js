@@ -50,7 +50,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260724-face-frag";
+} from "./scene-style.js?v=20260720-material-colors";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -66,7 +66,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
-import { createProjectChatUI } from "./project-chat.js?v=20260724-gs-gifs";
+import { createProjectChatUI } from "./project-chat.js?v=20260724-chat-edit";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
@@ -77,7 +77,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-share-visible";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260721-export-close";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -24362,8 +24362,8 @@ renderer.domElement.addEventListener("dblclick", (e) => {
     meshRoot: currentMesh,
   });
   if (!hit?.mesh) return;
-  // Double-click selects the whole model (single-click already picks the body).
-  selectObjectHit(hit, { showGizmo: true, wholeModel: true });
+  // Double-click drills into a specific part/body and highlights it.
+  selectObjectHit(hit, { showGizmo: true, partLevel: true });
   e.preventDefault();
 });
 
@@ -24540,8 +24540,8 @@ renderer.domElement.addEventListener("click", (e) => {
       e.preventDefault();
       return;
     }
-    // Multi-body Fusion imports: single-click selects the clicked body.
-    selectObjectHit(hit, { showGizmo: true });
+    // Single click selects the whole model. Double-click selects a part.
+    selectObjectHit(hit, { showGizmo: true, partLevel: false });
     e.preventDefault();
     return;
   }
@@ -30627,7 +30627,7 @@ window.addEventListener("keydown", (e) => {
     });
   });
 
-  void import("./workspace-manage.js?v=20260724-manage").then((mod) => {
+  void import("./workspace-manage.js?v=20260724-ws-manage-perms").then((mod) => {
     mod.bindWorkspaceManage?.({
       getActiveTeam,
       getTeams: () => allTeams,

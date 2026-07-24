@@ -886,6 +886,47 @@ def post_message(
         return msg
 
 
+def edit_message(
+    project_path: Path,
+    *,
+    thread_id: str,
+    message_id: str,
+    body: str,
+    user: dict[str, Any],
+    mention_candidates_list: list[dict[str, Any]] | None = None,
+    workspace_role: str | None = None,
+    workspace_id: str | None = None,
+) -> dict[str, Any]:
+    """Edit a message the current user previously sent (text only; images stay)."""
+    text_body = (body or "").strip()
+    if not text_body:
+        raise ValueError("Message body required")
+    if len(text_body) > 8000:
+        raise ValueError("Message too long")
+    storage_root, seed = chat_storage_for_thread(
+        project_path, thread_id, workspace_id=workspace_id, user=user
+    )
+    with _lock_for(storage_root):
+        data = _load(storage_root)
+        thread = _find_thread(data, seed.get("id") or thread_id)
+        if not thread:
+            raise KeyError("Thread not found")
+        if not user_can_access_thread(thread, user, workspace_role=workspace_role):
+            raise PermissionError("Thread not found")
+        msg = _find_message(thread, message_id)
+        if not msg:
+            raise KeyError("Message not found")
+        if msg.get("is_agent"):
+            raise PermissionError("Agent messages cannot be edited")
+        if str(msg.get("user_id") or "") != str(user.get("id") or ""):
+            raise PermissionError("You can only edit your own messages")
+        msg["body"] = text_body
+        msg["mentions"] = parse_mentions(text_body, mention_candidates_list)
+        msg["edited_at"] = _now()
+        _save(storage_root, data)
+        return msg
+
+
 def toggle_reaction(
     project_path: Path,
     *,

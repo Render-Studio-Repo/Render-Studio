@@ -1,5 +1,6 @@
 /**
- * Manage workspace popup — rename, leave, or delete next to Invite people.
+ * Manage workspace popup — rename, leave, delete, and member permissions
+ * (invite / edit / view) for each workspace you admin.
  */
 
 const MODAL_ID = "workspace-manage-modal";
@@ -48,39 +49,6 @@ function personalId(teams, currentUserId, helpers = {}) {
   return mine[0]?.id || null;
 }
 
-function fillTeamSelect({ getTeams, getActiveTeam, helpers = {} }) {
-  const sel = $("ws-manage-team");
-  if (!sel) return null;
-  const { teams, active } = resolveTeams(getTeams, getActiveTeam);
-  const pid = personalId(teams, helpers.currentUserId?.(), helpers);
-  const listed = [...teams].sort((a, b) => {
-    if (a.id === pid) return -1;
-    if (b.id === pid) return 1;
-    return String(a.name || "").localeCompare(String(b.name || ""));
-  });
-  const preferred = active?.id && listed.some((t) => t.id === active.id)
-    ? active.id
-    : (listed[0]?.id || "");
-  sel.innerHTML = listed.length
-    ? listed.map((team) => {
-        const personal = team.id === pid;
-        const label = personal
-          ? (helpers.personalWorkspaceLabel?.() || team.name || "Personal workspace")
-          : (team.name || "Shared workspace");
-        const role = team.role_label || team.role || "member";
-        return `<option value="${escapeHtml(team.id)}">${escapeHtml(label)} · ${escapeHtml(role)}</option>`;
-      }).join("")
-    : `<option value="">No workspaces</option>`;
-  if (preferred) sel.value = preferred;
-  return listed.find((t) => t.id === sel.value) || null;
-}
-
-function selectedTeam(opts) {
-  const id = String($("ws-manage-team")?.value || "").trim();
-  const teams = (opts.getTeams?.() || []);
-  return teams.find((t) => t.id === id) || null;
-}
-
 function helpersFrom(opts) {
   return {
     personalWorkspaceId: opts.personalWorkspaceId,
@@ -90,15 +58,209 @@ function helpersFrom(opts) {
   };
 }
 
-function renderSummary(team, opts = {}) {
+function teamTitle(team, opts = {}) {
+  const helpers = helpersFrom(opts);
+  const pid = personalId(opts.getTeams?.() || [], opts.currentUserId?.(), helpers);
+  if (team?.id === pid) {
+    return opts.personalWorkspaceLabel?.() || team.name || "Personal workspace";
+  }
+  return team?.name || "Shared workspace";
+}
+
+function listedTeams(opts) {
+  const { teams, active } = resolveTeams(opts.getTeams, opts.getActiveTeam);
+  const helpers = helpersFrom(opts);
+  const pid = personalId(teams, opts.currentUserId?.(), helpers);
+  const listed = [...teams].sort((a, b) => {
+    if (a.id === pid) return -1;
+    if (b.id === pid) return 1;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+  return { teams: listed, active, pid };
+}
+
+function fillTeamSelect(opts) {
+  const sel = $("ws-manage-team");
+  if (!sel) return null;
+  const { teams, active, pid } = listedTeams(opts);
+  const preferred = active?.id && teams.some((t) => t.id === active.id)
+    ? active.id
+    : (teams[0]?.id || "");
+  sel.innerHTML = teams.length
+    ? teams.map((team) => {
+        const personal = team.id === pid;
+        const label = personal
+          ? (opts.personalWorkspaceLabel?.() || team.name || "Personal workspace")
+          : (team.name || "Shared workspace");
+        const role = team.role_label || team.role || "member";
+        return `<option value="${escapeHtml(team.id)}">${escapeHtml(label)} · ${escapeHtml(role)}</option>`;
+      }).join("")
+    : `<option value="">No workspaces</option>`;
+  if (preferred) sel.value = preferred;
+  return teams.find((t) => t.id === sel.value) || null;
+}
+
+function selectedTeam(opts) {
+  const id = String($("ws-manage-team")?.value || "").trim();
+  const teams = (opts.getTeams?.() || []);
+  return teams.find((t) => t.id === id) || null;
+}
+
+/** @type {Map<string, any>} */
+const managementCache = new Map();
+/** @type {Set<string>} */
+const openPermPanels = new Set();
+/** @type {Set<string>} */
+const loadingTeams = new Set();
+
+async function ensureManagement(opts, teamId) {
+  if (!teamId) return null;
+  if (managementCache.has(teamId)) return managementCache.get(teamId);
+  if (loadingTeams.has(teamId)) return null;
+  loadingTeams.add(teamId);
+  try {
+    const data = await opts.api(`/api/teams/${encodeURIComponent(teamId)}/management`);
+    managementCache.set(teamId, data);
+    return data;
+  } finally {
+    loadingTeams.delete(teamId);
+  }
+}
+
+function invalidateManagement(teamId) {
+  if (teamId) managementCache.delete(teamId);
+  else managementCache.clear();
+}
+
+function renderMemberPerms(team, data, opts) {
+  const canManage = !!(data?.can_manage_permissions || isOwner(team));
+  const members = (data?.members || []).filter((m) => String(m.role || "").toLowerCase() !== "owner");
+  if (!canManage) {
+    return `<p class="muted small ws-manage-perms-empty">Only the workspace admin can change invite and edit/view permissions.</p>`;
+  }
+  if (!members.length) {
+    return `<p class="muted small ws-manage-perms-empty">Invite teammates to this workspace, then set whether each person can invite others, edit projects, or only view.</p>`;
+  }
+  return `
+    <div class="ws-manage-member-list">
+      ${members.map((m) => {
+        const access = m.access === "view" ? "view" : "edit";
+        const canInvite = !!m.can_invite;
+        return `
+          <div class="ws-manage-member-row" data-ws-member="${escapeHtml(m.id)}">
+            <div class="ws-manage-member-meta">
+              <strong>${escapeHtml(m.display_name || m.email || "Member")}</strong>
+              <span class="muted small">${escapeHtml(m.email || "")}</span>
+            </div>
+            <div class="ws-manage-member-controls">
+              <label class="ws-manage-perm-field">
+                <span>Access</span>
+                <select
+                  data-ws-perm-access
+                  data-team-id="${escapeHtml(team.id)}"
+                  data-user-id="${escapeHtml(m.id)}"
+                  aria-label="Access for ${escapeHtml(m.display_name || m.email || "member")}"
+                >
+                  <option value="edit" ${access === "edit" ? "selected" : ""}>Can edit</option>
+                  <option value="view" ${access === "view" ? "selected" : ""}>View only</option>
+                </select>
+              </label>
+              <label class="ws-manage-perm-field">
+                <span>Invite</span>
+                <select
+                  data-ws-perm-invite
+                  data-team-id="${escapeHtml(team.id)}"
+                  data-user-id="${escapeHtml(m.id)}"
+                  aria-label="Invite rights for ${escapeHtml(m.display_name || m.email || "member")}"
+                >
+                  <option value="1" ${canInvite ? "selected" : ""}>Can invite</option>
+                  <option value="0" ${!canInvite ? "selected" : ""}>Cannot invite</option>
+                </select>
+              </label>
+            </div>
+          </div>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderWorkspaceList(opts) {
   const box = $("ws-manage-summary");
+  if (!box) return;
+  const { teams, pid } = listedTeams(opts);
+  if (!teams.length) {
+    box.innerHTML = `<p class="muted small">Select a workspace to manage.</p>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="ws-manage-workspace-list" role="list">
+      ${teams.map((team) => {
+        const personal = team.id === pid;
+        const owner = isOwner(team);
+        const title = teamTitle(team, opts);
+        const members = Number(team.member_count ?? team.members_count ?? 0) || 0;
+        const subtitle = personal
+          ? "Personal workspace"
+          : (members
+            ? `${members} member${members === 1 ? "" : "s"} · shared`
+            : "Shared workspace");
+        const open = openPermPanels.has(team.id);
+        const data = managementCache.get(team.id);
+        const loading = loadingTeams.has(team.id);
+        const canManage = owner;
+        return `
+          <article class="ws-manage-workspace-card${open ? " is-open" : ""}" data-team-id="${escapeHtml(team.id)}" role="listitem">
+            <div class="ws-manage-workspace-card-head">
+              <div>
+                <strong>${escapeHtml(title)}</strong>
+                <p class="muted small">${escapeHtml(subtitle)}</p>
+              </div>
+              <div class="ws-manage-workspace-card-actions">
+                ${
+                  canManage
+                    ? `<div class="ws-manage-perm-dropdown">
+                        <button
+                          type="button"
+                          class="ws-manage-perm-toggle${open ? " is-open" : ""}"
+                          data-ws-manage-action="toggle-perms"
+                          data-team-id="${escapeHtml(team.id)}"
+                          aria-expanded="${open ? "true" : "false"}"
+                          aria-controls="ws-manage-perms-${escapeHtml(team.id)}"
+                        >
+                          Permissions
+                          <span class="ws-manage-perm-caret" aria-hidden="true">▾</span>
+                        </button>
+                      </div>`
+                    : `<span class="ws-manage-role-pill">${escapeHtml(team.role_label || team.role || "member")}</span>`
+                }
+              </div>
+            </div>
+            ${
+              canManage && open
+                ? `<div id="ws-manage-perms-${escapeHtml(team.id)}" class="ws-manage-perms-panel">
+                    <p class="muted small ws-manage-perms-hint">Choose whether each teammate can <strong>invite</strong> people, <strong>edit</strong> projects, or only <strong>view</strong>.</p>
+                    ${
+                      loading && !data
+                        ? `<p class="muted small">Loading members…</p>`
+                        : renderMemberPerms(team, data, opts)
+                    }
+                  </div>`
+                : ""
+            }
+          </article>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderDanger(team, opts = {}) {
   const renameWrap = $("ws-manage-rename");
   const danger = $("ws-manage-danger");
   const nameInput = $("ws-manage-name");
-  if (!box || !danger) return;
+  if (!danger) return;
 
   if (!team) {
-    box.innerHTML = `<p class="muted small">Select a workspace to manage.</p>`;
     if (renameWrap) renameWrap.hidden = true;
     danger.innerHTML = "";
     return;
@@ -108,20 +270,6 @@ function renderSummary(team, opts = {}) {
   const pid = personalId(opts.getTeams?.() || [], opts.currentUserId?.(), helpers);
   const personal = team.id === pid;
   const owner = isOwner(team);
-  const members = Number(team.member_count ?? team.members_count ?? 1) || 1;
-  const title = personal
-    ? (opts.personalWorkspaceLabel?.() || team.name || "Personal workspace")
-    : (team.name || "Shared workspace");
-
-  box.innerHTML = `
-    <div class="ws-manage-summary-card">
-      <div>
-        <strong>${escapeHtml(title)}</strong>
-        <p class="muted small">${personal ? "Personal workspace" : `${members} member${members === 1 ? "" : "s"} · shared`}</p>
-      </div>
-      <span class="ws-manage-role-pill">${escapeHtml(team.role_label || team.role || "member")}</span>
-    </div>
-  `;
 
   if (renameWrap) {
     renameWrap.hidden = !owner || personal;
@@ -133,7 +281,7 @@ function renderSummary(team, opts = {}) {
       <article class="ws-manage-action-card">
         <div>
           <strong>Personal workspace</strong>
-          <p class="muted small">Your personal files stay here. Leave and delete are only for shared teams.</p>
+          <p class="muted small">Your personal files stay here. Leave and delete are only for shared teams. Use Permissions above after you invite people.</p>
         </div>
       </article>
     `;
@@ -172,7 +320,60 @@ function renderSummary(team, opts = {}) {
 }
 
 function refreshPanel(opts) {
-  renderSummary(selectedTeam(opts), opts);
+  renderWorkspaceList(opts);
+  renderDanger(selectedTeam(opts), opts);
+}
+
+async function togglePerms(opts, teamId) {
+  if (!teamId) return;
+  if (openPermPanels.has(teamId)) {
+    openPermPanels.delete(teamId);
+    refreshPanel(opts);
+    return;
+  }
+  openPermPanels.add(teamId);
+  refreshPanel(opts);
+  try {
+    await ensureManagement(opts, teamId);
+  } catch (err) {
+    openPermPanels.delete(teamId);
+    setStatus(err?.message || "Could not load members.", true);
+  }
+  refreshPanel(opts);
+}
+
+async function patchPermissions(opts, teamId, userId, patch) {
+  if (!teamId || !userId) return;
+  try {
+    setStatus("Saving permissions…");
+    await opts.api(
+      `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}/permissions`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      },
+    );
+    invalidateManagement(teamId);
+    await ensureManagement(opts, teamId);
+    const bits = [];
+    if (patch.access) bits.push(patch.access === "view" ? "view only" : "can edit");
+    if (typeof patch.can_invite === "boolean") {
+      bits.push(patch.can_invite ? "can invite" : "cannot invite");
+    }
+    setStatus(bits.length ? `Updated (${bits.join(", ")}).` : "Permissions updated.");
+    await opts.onChanged?.({ action: "permissions", teamId, userId, patch });
+    refreshPanel(opts);
+  } catch (err) {
+    setStatus(err?.message || "Could not update permissions.", true);
+    invalidateManagement(teamId);
+    try {
+      await ensureManagement(opts, teamId);
+    } catch {
+      /* ignore */
+    }
+    refreshPanel(opts);
+  }
 }
 
 export function closeWorkspaceManage() {
@@ -184,7 +385,8 @@ export async function openWorkspaceManage(opts = {}) {
   const modal = $(MODAL_ID);
   if (!modal) return;
   setStatus("");
-  fillTeamSelect({ ...opts, helpers: helpersFrom(opts) });
+  invalidateManagement();
+  fillTeamSelect(opts);
   refreshPanel(opts);
   modal.classList.remove("hidden");
   requestAnimationFrame(() => $("ws-manage-team")?.focus());
@@ -226,7 +428,7 @@ export function bindWorkspaceManage(opts = {}) {
           body: JSON.stringify({ name }),
         });
         await o.onChanged?.({ action: "rename", teamId: team.id, team: data?.team || data });
-        fillTeamSelect({ ...o, helpers: helpersFrom(o) });
+        fillTeamSelect(o);
         refreshPanel(o);
         setStatus("Workspace renamed.");
       } catch (err) {
@@ -241,6 +443,10 @@ export function bindWorkspaceManage(opts = {}) {
     const action = actionBtn.dataset.wsManageAction;
     const o = boundOpts || opts;
     void (async () => {
+      if (action === "toggle-perms") {
+        await togglePerms(o, actionBtn.dataset.teamId);
+        return;
+      }
       const team = selectedTeam(o);
       if (!team) return;
       if (action === "leave") {
@@ -276,6 +482,23 @@ export function bindWorkspaceManage(opts = {}) {
         }
       }
     })();
+  });
+
+  $(MODAL_ID)?.addEventListener("change", (e) => {
+    const accessSel = e.target?.closest?.("[data-ws-perm-access]");
+    const inviteSel = e.target?.closest?.("[data-ws-perm-invite]");
+    const o = boundOpts || opts;
+    if (accessSel) {
+      void patchPermissions(o, accessSel.dataset.teamId, accessSel.dataset.userId, {
+        access: accessSel.value === "view" ? "view" : "edit",
+      });
+      return;
+    }
+    if (inviteSel) {
+      void patchPermissions(o, inviteSel.dataset.teamId, inviteSel.dataset.userId, {
+        can_invite: inviteSel.value === "1",
+      });
+    }
   });
 
   $(MODAL_ID)?.addEventListener("input", (e) => {

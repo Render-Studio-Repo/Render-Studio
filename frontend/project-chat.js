@@ -1306,16 +1306,28 @@ export function createProjectChatUI({
         )
         .join("");
       const replies = byParent.get(msg.id) || [];
-      return `<article class="pc-message${msg.is_agent ? " pc-message--agent" : ""}${depth ? " pc-message--reply" : ""}" data-message-id="${esc(msg.id)}" style="--pc-depth:${depth}">
+      const isOwn = !msg.is_agent && String(msg.user_id || "") === String(getStoredUser()?.id || "");
+      const editedLabel = msg.edited_at
+        ? `<span class="pc-edited-label" title="Edited ${esc(formatWhen(msg.edited_at))}">(edited)</span>`
+        : "";
+      const editBtn = isOwn
+        ? `<button type="button" class="pc-edit-btn" data-edit-message="${esc(msg.id)}" title="Edit message" aria-label="Edit message">
+            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
+          </button>`
+        : "";
+      return `<article class="pc-message${msg.is_agent ? " pc-message--agent" : ""}${depth ? " pc-message--reply" : ""}${isOwn ? " pc-message--own" : ""}" data-message-id="${esc(msg.id)}" style="--pc-depth:${depth}">
         <div class="pc-message-head">
           ${avatarHtml(msg)}
           <div class="pc-message-meta">
             <strong>${esc(msg.user_name || "User")}${msg.is_agent ? " · Agent" : ""}</strong>
-            <time>${esc(formatWhen(msg.created_at))}</time>
+            <time>${esc(formatWhen(msg.created_at))}${editedLabel}</time>
           </div>
-          <button type="button" class="pc-reply-btn" data-reply-to="${esc(msg.id)}" data-reply-name="${esc(msg.user_name || "message")}">Reply</button>
+          <div class="pc-message-actions">
+            ${editBtn}
+            <button type="button" class="pc-reply-btn" data-reply-to="${esc(msg.id)}" data-reply-name="${esc(msg.user_name || "message")}">Reply</button>
+          </div>
         </div>
-        <div class="pc-message-body">${simpleMarkdown(msg.body || "")}</div>
+        <div class="pc-message-body" data-message-body="${esc(msg.id)}">${simpleMarkdown(msg.body || "")}</div>
         ${linkPreviewPlaceholders(msg.body || "")}
         ${guideActions}
         ${images ? `<div class="pc-message-images">${images}</div>` : ""}
@@ -1335,6 +1347,9 @@ export function createProjectChatUI({
         renderReplyBar();
         overlay.querySelector("#pc-input")?.focus();
       });
+    });
+    host.querySelectorAll("[data-edit-message]").forEach((btn) => {
+      btn.addEventListener("click", () => startEditMessage(btn.dataset.editMessage));
     });
     host.querySelectorAll("[data-react]").forEach((btn) => {
       btn.addEventListener("click", () => void toggleReaction(btn.dataset.messageId, btn.dataset.react));
@@ -1520,6 +1535,71 @@ export function createProjectChatUI({
       }
     } catch (err) {
       onStatus?.("error", err.message || "Could not react");
+    }
+  }
+
+  function startEditMessage(messageId) {
+    const msg = messages.find((m) => m.id === messageId);
+    const article = overlay?.querySelector(`[data-message-id="${CSS.escape(String(messageId || ""))}"]`);
+    const bodyEl = article?.querySelector(`[data-message-body="${CSS.escape(String(messageId || ""))}"]`);
+    if (!msg || !article || !bodyEl) return;
+    if (article.querySelector(".pc-edit-form")) return;
+    const form = document.createElement("div");
+    form.className = "pc-edit-form";
+    form.innerHTML = `
+      <textarea class="pc-edit-input" rows="3" maxlength="8000" aria-label="Edit message">${esc(msg.body || "")}</textarea>
+      <div class="pc-edit-actions">
+        <button type="button" class="btn secondary btn-compact" data-edit-cancel>Cancel</button>
+        <button type="button" class="btn accent btn-compact" data-edit-save>Save</button>
+      </div>
+    `;
+    bodyEl.replaceWith(form);
+    const input = form.querySelector(".pc-edit-input");
+    input?.focus();
+    input?.setSelectionRange?.(input.value.length, input.value.length);
+    form.querySelector("[data-edit-cancel]")?.addEventListener("click", () => renderMessages());
+    form.querySelector("[data-edit-save]")?.addEventListener("click", () => {
+      void saveEditedMessage(messageId, input?.value || "");
+    });
+    input?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        renderMessages();
+      }
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+        ev.preventDefault();
+        void saveEditedMessage(messageId, input.value || "");
+      }
+    });
+  }
+
+  async function saveEditedMessage(messageId, nextBody) {
+    const projectId = getProjectId?.();
+    const text = String(nextBody || "").trim();
+    if (!projectId || !activeThreadId || !messageId) return;
+    if (!text) {
+      onStatus?.("error", "Message cannot be empty.");
+      return;
+    }
+    const saveBtn = overlay?.querySelector(`[data-message-id="${CSS.escape(String(messageId))}"] [data-edit-save]`);
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const data = await api(
+        `/api/projects/${encodeURIComponent(projectId)}/chat/threads/${encodeURIComponent(activeThreadId)}/messages/${encodeURIComponent(messageId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: text }),
+        },
+      );
+      if (data.message) {
+        messages = messages.map((m) => (m.id === data.message.id ? data.message : m));
+        renderMessages();
+        onStatus?.("ok", "Message updated.");
+      }
+    } catch (err) {
+      onStatus?.("error", err.message || "Could not edit message");
+      if (saveBtn) saveBtn.disabled = false;
     }
   }
 
@@ -1729,6 +1809,12 @@ export function createProjectChatUI({
       }
       if (msg.type === "project.chat.mention" || msg.mention) {
         onStatus?.("ok", `${msg.message?.user_name || "Someone"} tagged you in chat`);
+      }
+    }
+    if (msg.type === "project.chat.message.edited" && msg.message && open) {
+      if (msg.thread_id === activeThreadId) {
+        messages = messages.map((m) => (m.id === msg.message.id ? msg.message : m));
+        renderMessages();
       }
     }
     if (msg.type === "project.chat.reaction" && msg.message && open) {

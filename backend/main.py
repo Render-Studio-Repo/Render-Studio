@@ -925,6 +925,10 @@ class ProjectChatMessageRequest(BaseModel):
     images: list[str] = Field(default_factory=list, max_length=6, description="Stored chat media names")
 
 
+class ProjectChatMessageEditRequest(BaseModel):
+    body: str = Field(..., min_length=1, max_length=8000)
+
+
 class ProjectChatReactionRequest(BaseModel):
     emoji: str = Field(..., min_length=1, max_length=8)
 
@@ -12495,6 +12499,58 @@ async def post_project_chat_message(
     return {"message": decorated, "unread": project_chat_service.unread_summary(path, user["id"], workspace_id=public_scope)}
 
 
+@app.patch("/api/projects/{project_id}/chat/threads/{thread_id}/messages/{message_id}")
+def edit_project_chat_message(
+    project_id: str,
+    thread_id: str,
+    message_id: str,
+    body: ProjectChatMessageEditRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_chat_service
+
+    path = _require_project_read(user, project_id)
+    role = _project_workspace_role(project_id, user.get("id"))
+    public_scope = _public_chat_scope_id(project_id)
+    thread = project_chat_service.get_thread(
+        path, thread_id, user=user, workspace_role=role, workspace_id=public_scope
+    )
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    members = _project_chat_members(project_id)
+    candidates = project_chat_service.mention_candidates(members)
+    try:
+        message = project_chat_service.edit_message(
+            path,
+            thread_id=thread["id"],
+            message_id=message_id,
+            body=body.body,
+            user=user,
+            mention_candidates_list=candidates,
+            workspace_role=role,
+            workspace_id=public_scope,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    decorated = _decorate_chat_message(project_id, message)
+    payload = {
+        "type": "project.chat.message.edited",
+        "project_id": project_id,
+        "thread_id": thread.get("id"),
+        "thread_title": thread.get("title"),
+        "message": decorated,
+        "by_user_id": user.get("id"),
+        "by_user_name": user.get("display_name"),
+    }
+    hub.notify(project_id, payload)
+    _notify_project_workspace(project_id, payload)
+    return {"message": decorated}
+
+
 @app.post("/api/projects/{project_id}/chat/threads/{thread_id}/messages/{message_id}/reactions")
 def react_project_chat_message(
     project_id: str,
@@ -13597,27 +13653,6 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
             if names & visible_set:
                 filtered_components.append(entry)
         browser = {**browser, "components": filtered_components}
-    else:
-        # Legacy shares (no visibility snapshot): only expose the shared model
-        # family in the part tree — not the whole project catalog.
-        shared_stem = Path(filename).stem.lower()
-        viewer_stem = Path(str(viewer_filename or "")).stem.lower()
-        filtered_components = []
-        for entry in browser.get("components") or []:
-            names = {
-                _share_basename(entry.get(key)).lower()
-                for key in ("name", "viewer_filename", "source_filename", "filename", "stem")
-            }
-            names.discard("")
-            if any(
-                name == Path(filename).name.lower()
-                or name == Path(str(viewer_filename or "")).name.lower()
-                or Path(name).stem.lower() in {shared_stem, viewer_stem}
-                for name in names
-            ):
-                filtered_components.append(entry)
-        if filtered_components:
-            browser = {**browser, "components": filtered_components}
     robot = _robot_artifact_summary(project_path)
     robot_artifacts = [
         {
@@ -13780,43 +13815,15 @@ def create_file_share(
         raise HTTPException(404, "File not found")
     meta = project_store.load_meta(project_path)
     shares = meta.setdefault("file_shares", {})
-    visible = _share_name_list((body or {}).get("visible_filenames")) if isinstance(body, dict) else []
-    hidden = _share_name_list((body or {}).get("hidden_filenames")) if isinstance(body, dict) else []
     has_live_share_context = bool(
         isinstance(body, dict)
         and (
             str(body.get("viewport_image") or "").startswith("data:image/")
-            or visible
-            or hidden
+            or body.get("visible_filenames")
+            or body.get("hidden_filenames")
         )
     )
-    # Prefer the primary visible model as the share target when the export menu
-    # was opened on a hidden/secondary file (common cause of "old model" shares).
-    primary_visible = ""
-    for name in visible:
-        if (project_path / name).is_file():
-            primary_visible = name
-            break
-        try:
-            viewer = cad_service.resolve_viewport_filename(project_path, name)
-        except Exception:
-            viewer = None
-        if viewer and (project_path / viewer).is_file():
-            primary_visible = name
-            break
-    if primary_visible:
-        resolved_primary = cad_service.resolve_existing_project_file(project_path, primary_visible)
-        if resolved_primary:
-            safe = resolved_primary
-
-    token = None if has_live_share_context else next(
-        (
-            tok
-            for tok, share in shares.items()
-            if isinstance(share, dict) and share.get("filename") == safe
-        ),
-        None,
-    )
+    token = None if has_live_share_context else next((tok for tok, share in shares.items() if isinstance(share, dict) and share.get("filename") == safe), None)
     if not token:
         token = secrets.token_urlsafe(18)
         while token in shares:
@@ -13827,7 +13834,6 @@ def create_file_share(
             "created_by": user["id"],
         }
     share = shares[token]
-    share["filename"] = safe
     if isinstance(body, dict):
         viewport_image = str(body.get("viewport_image") or "")
         if viewport_image.startswith("data:image/"):
@@ -13847,9 +13853,12 @@ def create_file_share(
                     share["preview_captured_at"] = datetime.now(timezone.utc).isoformat()
             except Exception as exc:
                 logger.warning("Could not save viewport share preview for %s/%s: %s", project_id, safe, exc)
+        visible = _share_name_list(body.get("visible_filenames"))
+        hidden = _share_name_list(body.get("hidden_filenames"))
         if visible:
             share["visible_filenames"] = visible[:200]
-            # Prefer an existing single-model viewer GLB; bake only for multi-file assemblies.
+            # Bake a GLB of only the unhidden models so the public 3D viewer
+            # matches what the sharer saw (not the full project catalog).
             try:
                 exportable = [
                     name
@@ -13858,18 +13867,7 @@ def create_file_share(
                     and (project_path / name).suffix.lower()
                     in cad_service.SUPPORTED_IMPORT | cad_service.SUPPORTED_EXPORT
                 ]
-                viewer_pick = ""
-                if len(exportable) == 1:
-                    try:
-                        viewer_pick = cad_service.resolve_viewport_filename(project_path, exportable[0]) or ""
-                    except Exception:
-                        viewer_pick = ""
-                    if not viewer_pick and Path(exportable[0]).suffix.lower() in {".glb", ".gltf"}:
-                        viewer_pick = exportable[0]
-                if viewer_pick and (project_path / viewer_pick).is_file():
-                    share["viewer_filename"] = Path(viewer_pick).name
-                    share["assembly_filename"] = Path(viewer_pick).name
-                elif exportable:
+                if exportable:
                     stem = f"_share_visible_{token[:8]}"
                     built = cad_service.build_visible_assembly_exports(
                         project_path,

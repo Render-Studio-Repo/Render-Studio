@@ -314,8 +314,8 @@ export function createObjectTools({
     setStatus(
       "ok",
       selected.partLevel
-        ? `Selected part ${selected.label} · drag to move · click another part to switch · double-click for whole model · Cmd+Z to undo`
-        : `Selected ${selected.label} · drag to move whole model · click a part to select it · Cmd+Z to undo`,
+        ? `Selected part ${selected.label} · drag to move · double-click another part to switch · click for whole model · Cmd+Z to undo`
+        : `Selected ${selected.label} · drag to move whole model · double-click a part to select it · Cmd+Z to undo`,
     );
     window.dispatchEvent(new CustomEvent("render3d:object-selection-changed", { detail: { selected } }));
   }
