@@ -13597,6 +13597,27 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
             if names & visible_set:
                 filtered_components.append(entry)
         browser = {**browser, "components": filtered_components}
+    else:
+        # Legacy shares (no visibility snapshot): only expose the shared model
+        # family in the part tree — not the whole project catalog.
+        shared_stem = Path(filename).stem.lower()
+        viewer_stem = Path(str(viewer_filename or "")).stem.lower()
+        filtered_components = []
+        for entry in browser.get("components") or []:
+            names = {
+                _share_basename(entry.get(key)).lower()
+                for key in ("name", "viewer_filename", "source_filename", "filename", "stem")
+            }
+            names.discard("")
+            if any(
+                name == Path(filename).name.lower()
+                or name == Path(str(viewer_filename or "")).name.lower()
+                or Path(name).stem.lower() in {shared_stem, viewer_stem}
+                for name in names
+            ):
+                filtered_components.append(entry)
+        if filtered_components:
+            browser = {**browser, "components": filtered_components}
     robot = _robot_artifact_summary(project_path)
     robot_artifacts = [
         {
@@ -13759,15 +13780,43 @@ def create_file_share(
         raise HTTPException(404, "File not found")
     meta = project_store.load_meta(project_path)
     shares = meta.setdefault("file_shares", {})
+    visible = _share_name_list((body or {}).get("visible_filenames")) if isinstance(body, dict) else []
+    hidden = _share_name_list((body or {}).get("hidden_filenames")) if isinstance(body, dict) else []
     has_live_share_context = bool(
         isinstance(body, dict)
         and (
             str(body.get("viewport_image") or "").startswith("data:image/")
-            or body.get("visible_filenames")
-            or body.get("hidden_filenames")
+            or visible
+            or hidden
         )
     )
-    token = None if has_live_share_context else next((tok for tok, share in shares.items() if isinstance(share, dict) and share.get("filename") == safe), None)
+    # Prefer the primary visible model as the share target when the export menu
+    # was opened on a hidden/secondary file (common cause of "old model" shares).
+    primary_visible = ""
+    for name in visible:
+        if (project_path / name).is_file():
+            primary_visible = name
+            break
+        try:
+            viewer = cad_service.resolve_viewport_filename(project_path, name)
+        except Exception:
+            viewer = None
+        if viewer and (project_path / viewer).is_file():
+            primary_visible = name
+            break
+    if primary_visible:
+        resolved_primary = cad_service.resolve_existing_project_file(project_path, primary_visible)
+        if resolved_primary:
+            safe = resolved_primary
+
+    token = None if has_live_share_context else next(
+        (
+            tok
+            for tok, share in shares.items()
+            if isinstance(share, dict) and share.get("filename") == safe
+        ),
+        None,
+    )
     if not token:
         token = secrets.token_urlsafe(18)
         while token in shares:
@@ -13778,6 +13827,7 @@ def create_file_share(
             "created_by": user["id"],
         }
     share = shares[token]
+    share["filename"] = safe
     if isinstance(body, dict):
         viewport_image = str(body.get("viewport_image") or "")
         if viewport_image.startswith("data:image/"):
@@ -13797,12 +13847,9 @@ def create_file_share(
                     share["preview_captured_at"] = datetime.now(timezone.utc).isoformat()
             except Exception as exc:
                 logger.warning("Could not save viewport share preview for %s/%s: %s", project_id, safe, exc)
-        visible = _share_name_list(body.get("visible_filenames"))
-        hidden = _share_name_list(body.get("hidden_filenames"))
         if visible:
             share["visible_filenames"] = visible[:200]
-            # Bake a GLB of only the unhidden models so the public 3D viewer
-            # matches what the sharer saw (not the full project catalog).
+            # Prefer an existing single-model viewer GLB; bake only for multi-file assemblies.
             try:
                 exportable = [
                     name
@@ -13811,7 +13858,18 @@ def create_file_share(
                     and (project_path / name).suffix.lower()
                     in cad_service.SUPPORTED_IMPORT | cad_service.SUPPORTED_EXPORT
                 ]
-                if exportable:
+                viewer_pick = ""
+                if len(exportable) == 1:
+                    try:
+                        viewer_pick = cad_service.resolve_viewport_filename(project_path, exportable[0]) or ""
+                    except Exception:
+                        viewer_pick = ""
+                    if not viewer_pick and Path(exportable[0]).suffix.lower() in {".glb", ".gltf"}:
+                        viewer_pick = exportable[0]
+                if viewer_pick and (project_path / viewer_pick).is_file():
+                    share["viewer_filename"] = Path(viewer_pick).name
+                    share["assembly_filename"] = Path(viewer_pick).name
+                elif exportable:
                     stem = f"_share_visible_{token[:8]}"
                     built = cad_service.build_visible_assembly_exports(
                         project_path,

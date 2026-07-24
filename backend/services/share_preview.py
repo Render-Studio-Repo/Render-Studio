@@ -398,10 +398,8 @@ def share_snapshot_filename(project_path: Path, filename: str, *, resolve_viewpo
         if candidates:
             break
     if not candidates:
-        candidates = _collect(["*_snapshot_iso_*.png", "*_snapshot_iso*.png"])
-    if not candidates:
-        candidates = _collect(["*_snapshot_*.png"])
-    if not candidates:
+        # Do not fall back to unrelated project snapshots — that makes share OG
+        # cards show a different model than the 3D viewer.
         return None
     iso = [p for p in candidates if "_snapshot_iso" in p.name.lower()]
     pool = iso or candidates

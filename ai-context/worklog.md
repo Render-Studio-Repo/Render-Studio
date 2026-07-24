@@ -4,6 +4,12 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-24 — Golden snapshot: working production
+
+- Code-only golden: `backups/golden/golden-working-production-20260724T151815Z/` (~138 MB).
+- Drive folder `golden-working-production-20260724T151815Z` (ID `1ilEKdoBGIMd5e3c7aMjvWySNbh4yzr2V`); protected from prune via `golden-` prefix.
+- Git HEAD `1bcfac51578eae013c203414679458a2225d1e2d`.
+
 ## 2026-07-24 — Pick tools missing until tab click after refresh
 
 - Cause: `solid-design-tab` applied before ribbon mount (or skipped), so `#ribbon-pick-host` stayed `display:none` until another design tab click.

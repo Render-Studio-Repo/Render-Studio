@@ -56,7 +56,14 @@ function _isFaceFragmentedModel(meshes) {
   }
   const tinyRatio = tiny / sample.length;
   const avgTris = trisTotal / sample.length;
-  return tinyRatio >= 0.55 || (meshes.length >= 200 && avgTris <= 4);
+  // OCC/STEP face dumps often land as ~80–200 meshes with tens of tris each
+  // (Arduino-class boards). Treat those as fragmented so we skip edges/silhouettes
+  // that cause mesh clipping / z-fighting in the share viewer.
+  return (
+    tinyRatio >= 0.55
+    || (meshes.length >= 200 && avgTris <= 4)
+    || (meshes.length >= 80 && avgTris <= 40)
+  );
 }
 
 

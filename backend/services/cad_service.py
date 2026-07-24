@@ -1052,7 +1052,11 @@ def resolve_step_module_sidecar(project_path: Path, filename: str) -> Path | Non
 
 
 def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, stem: str = "_export_visible_assembly") -> list[dict[str, Any]]:
-    """Build downloadable artifacts for the currently visible browser components."""
+    """Build downloadable artifacts for the currently visible browser components.
+
+    Prefers existing viewer GLBs (copy / merge) over STEP retessellation so public
+    share previews keep the same multi-body quality as the studio.
+    """
     safe_names: list[str] = []
     seen: set[str] = set()
     for raw in filenames:
@@ -1072,32 +1076,88 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
         if old.is_file():
             old.unlink(missing_ok=True)
 
-    meshes: list[trimesh.Trimesh] = []
-    scene = trimesh.Scene()
+    # Resolve each visible name to the best on-disk viewer GLB when available.
+    viewer_paths: list[Path] = []
     for safe in safe_names:
         src = project_path / safe
-        mesh = load_mesh(src)
-        if mesh.is_empty:
-            continue
-        mesh.metadata["name"] = Path(safe).stem
-        meshes.append(mesh)
-        scene.add_geometry(mesh.copy(), geom_name=Path(safe).stem, node_name=Path(safe).stem)
+        viewer_name = None
+        try:
+            viewer_name = resolve_viewport_filename(project_path, safe)
+        except Exception:
+            viewer_name = None
+        if viewer_name and (project_path / viewer_name).is_file():
+            viewer_paths.append(project_path / viewer_name)
+        elif src.suffix.lower() in {".glb", ".gltf"}:
+            viewer_paths.append(src)
 
-    if not meshes:
-        raise ValueError("Visible components did not contain exportable geometry.")
+    out_glb = project_path / f"{stem}.glb"
+    # Single visible model with an existing GLB — copy it (no remesh).
+    if len(viewer_paths) == 1 and len(safe_names) == 1:
+        import shutil
 
-    combined = repair_mesh(trimesh.util.concatenate(meshes)) if len(meshes) > 1 else repair_mesh(meshes[0])
-    # Mesh-derived STEP must use __faceted so it never pretends to be Jake/native B-rep.
-    outputs = [
-        project_path / f"{stem}.glb",
-        project_path / f"{stem}.stl",
-        project_path / faceted_step_name(stem),
-        project_path / f"{stem}.3mf",
-    ]
-    export_scene(scene, outputs[0])
-    export_mesh(combined, outputs[1])
-    export_mesh_step(combined, outputs[2])
-    export_scene(scene, outputs[3])
+        shutil.copy2(viewer_paths[0], out_glb)
+    else:
+        scene = trimesh.Scene()
+        meshes: list[trimesh.Trimesh] = []
+        sources = viewer_paths if viewer_paths else [project_path / name for name in safe_names]
+        for src in sources:
+            try:
+                if src.suffix.lower() in {".glb", ".gltf"}:
+                    loaded = load_scene(src)
+                    if isinstance(loaded, trimesh.Scene):
+                        for geom_name, geom in (loaded.geometry or {}).items():
+                            if geom is None or getattr(geom, "is_empty", False):
+                                continue
+                            node = Path(src).stem if len(sources) > 1 else str(geom_name)
+                            scene.add_geometry(geom.copy(), geom_name=node, node_name=node)
+                            if isinstance(geom, trimesh.Trimesh):
+                                meshes.append(geom)
+                        continue
+                mesh = load_mesh(src)
+                if mesh.is_empty:
+                    continue
+                mesh.metadata["name"] = Path(src).stem
+                meshes.append(mesh)
+                scene.add_geometry(mesh.copy(), geom_name=Path(src).stem, node_name=Path(src).stem)
+            except Exception:
+                continue
+        if scene.is_empty and not meshes:
+            raise ValueError("Visible components did not contain exportable geometry.")
+        if not scene.is_empty:
+            export_scene(scene, out_glb)
+        else:
+            combined = repair_mesh(trimesh.util.concatenate(meshes)) if len(meshes) > 1 else repair_mesh(meshes[0])
+            export_mesh(combined, out_glb)
+
+    if not out_glb.is_file():
+        raise ValueError("Could not build visible assembly GLB.")
+
+    # Companion mesh exports for download menu (STL / faceted STEP / 3MF).
+    try:
+        combined_mesh = load_mesh(out_glb)
+    except Exception:
+        combined_mesh = None
+    outputs = [out_glb]
+    if combined_mesh is not None and not combined_mesh.is_empty:
+        stl = project_path / f"{stem}.stl"
+        step = project_path / faceted_step_name(stem)
+        three_mf = project_path / f"{stem}.3mf"
+        try:
+            export_mesh(combined_mesh, stl)
+            outputs.append(stl)
+        except Exception:
+            pass
+        try:
+            export_mesh_step(combined_mesh, step)
+            outputs.append(step)
+        except Exception:
+            pass
+        try:
+            export_scene(trimesh.Scene(combined_mesh), three_mf)
+            outputs.append(three_mf)
+        except Exception:
+            pass
+
     result: list[dict[str, Any]] = []
     for out in outputs:
         if not out.is_file():
@@ -2527,6 +2587,7 @@ def list_browser_tree(project_path: Path) -> dict[str, Any]:
         if f.is_file()
         and not f.name.startswith("_active_")
         and not f.name.startswith("_export_")
+        and not f.name.startswith("_share_")
         and f.suffix.lower() != ".dxf"
         and f.suffix.lower() in SUPPORTED_IMPORT | SUPPORTED_EXPORT
     ]
