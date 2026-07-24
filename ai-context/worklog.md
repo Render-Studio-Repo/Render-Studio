@@ -1,3 +1,20 @@
+## 2026-07-24 — STEP download: restore native B-rep (no Part rewrite)
+
+- Same bug as Fusion push: `?step_mode=part|regular` ran `export_step_as_single_part` in `_file_response`, breaking Extrude/Cut.
+- Jul 16 golden served the on-disk solid STEP as-is (no rewrite). Removed that rewrite from downloads; studio STEP click downloads the native file (no Part/Assembly chooser).
+- Cache-bust: `?v=20260724-step-native`. Service restarted.
+
+---
+
+## 2026-07-24 — Fusion B-rep Cut: restore Jul 16 native STEP push
+
+- Root cause: Fusion export offered **Part** first and backend ran `export_step_as_single_part`, which broke Extrude/Cut. Jul 16 golden (`golden-working-code-20260716T231304Z`) never sent `step_mode` / never rewrote STEP.
+- Fix: Fusion cloud push always uploads **native solid B-rep** (`assembly` only). Removed Part/Assembly chooser for Fusion; backend ignores legacy `step_mode=part` on `/push-to-autodesk`.
+- UI title: **Export to Fusion 360 · Solid B-rep**. Cache-bust: `?v=20260724-brep-native`. Service restarted.
+- Local STEP download Part rewrite (`_file_response`) left as-is — Fusion path only.
+
+---
+
 ## 2026-07-24 — Fusion export: green check on success
 
 - **Export to Fusion · {folder}** turns green with **Exported ✓** after a successful upload (same for the bottom submit + matching folder tile).

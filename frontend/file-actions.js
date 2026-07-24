@@ -592,27 +592,8 @@ export async function openFileExportMenu({
           );
           if (!ok) return;
         }
-        if (item.format === "step" && item.step_kind == null) {
-          showStepModeChooser(menu, item, async (mode, picked) => {
-            try {
-              const chooser = menu.querySelector(".file-export-step-chooser");
-              chooser?.querySelectorAll("button")?.forEach((b) => (b.disabled = true));
-              const title = chooser?.querySelector(".file-export-step-title");
-              if (title) title.textContent = "Preparing STEP download…";
-              const baseUrl = picked.url || `/api/projects/${projectId}/files/${encodeURIComponent(picked.name)}`;
-              const sep = baseUrl.includes("?") ? "&" : "?";
-              const url = `${baseUrl}${sep}step_mode=${encodeURIComponent(mode)}`;
-              const stem = picked.name.replace(/\.(step|stp)$/i, "");
-              const dlName = mode === "regular" ? `${stem}.part.step` : picked.name;
-              await downloadFile(url, dlName);
-              chooser?.remove();
-            } catch (err) {
-              showExportError(menu, err, { title: "Download failed" });
-              menu.querySelector(".file-export-step-chooser")?.querySelectorAll("button")?.forEach((b) => (b.disabled = false));
-            }
-          }, btn);
-          return;
-        }
+        // Always download the native STEP on disk. Do not send step_mode=part/regular —
+        // that rewrite broke Extrude/Cut (Jul 16 golden served the file as-is).
         const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
         const dlName = item.format === "3mf"
           ? item.name.replace(/\.3mf$/i, ".3MF")
