@@ -77,7 +77,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-step-part";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-name";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -20383,52 +20383,78 @@ async function exportCurrentModel(anchorEl) {
     alert("Open a project first.");
     return;
   }
+  // Refresh eye state from localStorage in case the tree hasn't painted yet.
+  try {
+    projectTree.setHidden?.(loadHiddenComponentState());
+  } catch {
+    /* ignore */
+  }
   const topLevel = (projectTree.getComponents?.() || []).filter(
     (entry) => entry?.name && !entry.virtual_body && !entry.virtual_component,
   );
+  const isHiddenName = (name) => {
+    if (!name) return true;
+    const raw = String(name).split("#body:")[0];
+    // Exact eye-icon keys only — do not stem-match body labels across siblings.
+    return isBrowserComponentHidden({ name: raw });
+  };
   const visibleBrowser = topLevel
-    .filter((entry) => !isBrowserComponentHidden(entry))
+    .filter((entry) => !isHiddenName(entry.name))
     .map((entry) => entry.name)
     .filter(Boolean);
   const visibleLoaded = projectAssembly
     .list()
-    .filter(([name, obj]) => obj?.visible !== false && !isComponentHidden(name))
-    .map(([name]) => name);
+    .filter(([name, obj]) => obj?.visible !== false && !isHiddenName(name))
+    .map(([name]) => String(name || "").split("#body:")[0])
+    .filter(Boolean);
   // Prefer browser eye icons. Never fall back to latest_file / hidden Arduino.
-  const visibleFiles = [...new Set(
-    (visibleBrowser.length ? visibleBrowser : visibleLoaded)
-      .map((name) => String(name || "").split("#body:")[0])
-      .filter((name) => name && !isComponentHidden(name) && !isBrowserComponentHidden({ name })),
+  let visibleFiles = [...new Set(
+    (visibleBrowser.length ? visibleBrowser : visibleLoaded).filter((name) => !isHiddenName(name)),
   )];
+  // Last resort: any top-level component that is not hidden (ignore empty assembly).
+  if (!visibleFiles.length) {
+    visibleFiles = topLevel.map((e) => e.name).filter((name) => name && !isHiddenName(name));
+  }
   const anchor = anchorEl || document.getElementById("btn-export-model") || document.body;
   if (!visibleFiles.length) {
     alert("No visible component to export. Show at least one component first.");
     return;
   }
-  const hasHiddenSiblings = topLevel.some((entry) => isBrowserComponentHidden(entry));
-  // When siblings are hidden (or multiple are visible), bake a visible-only STEP so
-  // Fusion cannot pick latest_file (arduino_uno_q) or another hidden model.
-  if (visibleFiles.length > 1 || hasHiddenSiblings) {
-    const regularFile = selectedFile && visibleFiles.includes(selectedFile) && !isComponentHidden(selectedFile)
-      ? selectedFile
-      : visibleFiles[0];
+  // Prefer the on-screen / selected visible model over whatever was imported last
+  // (latest_file is often a hidden Arduino).
+  const preferred =
+    (selectedFile && visibleFiles.includes(selectedFile) && !isHiddenName(selectedFile) && selectedFile)
+    || visibleFiles.find((name) => /fully_assembled|gripper/i.test(name))
+    || visibleFiles[0];
+  if (preferred && visibleFiles[0] !== preferred) {
+    visibleFiles = [preferred, ...visibleFiles.filter((n) => n !== preferred)];
+  }
+  const hasHiddenSiblings = topLevel.some((entry) => isHiddenName(entry.name));
+  const multiComponentProject = topLevel.length > 1;
+  const fusionDisplayName = `${componentStemName(visibleFiles[0]) || "model"}.step`;
+  // Always bake when other components exist/are hidden so Fusion cannot pick
+  // arduino_uno_q (latest_file) or keep that name in the destination folder.
+  if (visibleFiles.length > 1 || hasHiddenSiblings || multiComponentProject) {
+    const regularFile = visibleFiles[0];
     const regularStepName = String(regularFile || "").replace(/\.[^.]+$/, ".step");
     await openFileExportMenu({
       api,
       projectId,
       filename: visibleFiles.length === 1 ? visibleFiles[0] : "visible assembly",
+      cloudFilename: null,
+      fusionUploadName: fusionDisplayName,
       anchorEl: anchor,
-      title: visibleFiles.length === 1 ? `Export ${visibleFiles[0]}` : "Export visible assembly",
-      hint: hasHiddenSiblings
-        ? `Exports only the ${visibleFiles.length} unhidden component${visibleFiles.length === 1 ? "" : "s"} (hidden parts stay out).`
-        : `Exports the ${visibleFiles.length} unhidden components.`,
+      title: visibleFiles.length === 1 ? `Export ${visibleFiles[0]}` : "Export visible components",
+      hint: `Exports only unhidden geometry as “${fusionDisplayName}” (hidden parts like Arduino stay out).`,
       allowOnshape: false,
       shareContext: currentVisibleShareContext,
       extraExports: regularStepName ? [{
         name: regularStepName,
         format: "step",
         size: null,
-        label: "STEP (visible part · download)",
+        label: "STEP (Fusion Part · Extrude/Cut)",
+        step_structure: "part",
+        fusion_editable: true,
         url: `/api/projects/${projectId}/files/${encodeURIComponent(regularStepName)}`,
       }] : [],
       exportsRequest: {
@@ -20443,7 +20469,14 @@ async function exportCurrentModel(anchorEl) {
     return;
   }
   const file = visibleFiles[0];
-  await openFileExportMenu({ api, projectId, filename: file, anchorEl: anchor, shareContext: currentVisibleShareContext });
+  await openFileExportMenu({
+    api,
+    projectId,
+    filename: file,
+    fusionUploadName: fusionDisplayName,
+    anchorEl: anchor,
+    shareContext: currentVisibleShareContext,
+  });
 }
 
 function openRenameDialog({

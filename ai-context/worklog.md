@@ -1,3 +1,11 @@
+## 2026-07-24 — STEP export: Fusion Part for Extrude/Cut
+
+- Gripper native `.step` is a **linked assembly** (16× `NEXT_ASSEMBLY_USAGE`) → Fusion Extrude Cut fails. `.part.step` / flattened bake has 18 solids and 0 assembly links.
+- Download + Fusion push now prefer/ensure `*.part.step` via `ensure_fusion_part_step` (clean download name `.step`). Export menu labels/sorts **Fusion Part · Extrude/Cut** first and demotes linked assemblies.
+- Cache-bust: `app.js` / `file-actions.js` `?v=20260724-step-part`. Service restarted.
+
+---
+
 ## 2026-07-24 — Export still sent Arduino: Base stem collision
 
 - Root cause: hiding Two-finger stored body label `Base`; `isBrowserComponentHidden` stem-matched that onto Fully_Assembled (same STEP product name `base`), so Export treated the gripper as hidden and opened `arduino_uno_q` (`latest_file`).

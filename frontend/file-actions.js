@@ -444,6 +444,7 @@ export async function openFileExportMenu({
   allowOnshape = true,
   allowFusion = true,
   cloudFilename = null,
+  fusionUploadName = null,
   autoAction = null,
   shareContext = null,
 }) {
@@ -660,6 +661,25 @@ export async function openFileExportMenu({
     || /__faceted/i.test(String(cloudStep?.name || resolvedCloudFilename || ""))
   );
 
+  let visibleAllowList = [];
+  try {
+    const rawBody = exportsRequest?.options?.body;
+    const parsed = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+    if (Array.isArray(parsed?.filenames)) visibleAllowList = parsed.filenames.map(String);
+  } catch {
+    visibleAllowList = [];
+  }
+  const fusionDestName = (() => {
+    const raw = String(fusionUploadName || "").trim();
+    if (raw) return raw.toLowerCase().endsWith(".step") || raw.toLowerCase().endsWith(".stp") ? raw : `${modelStem(raw)}.step`;
+    if (visibleAllowList.length) return `${modelStem(visibleAllowList[0])}.step`;
+    const cloud = String(resolvedCloudFilename || "");
+    if (cloud && !cloud.startsWith("_export_visible_assembly")) return `${modelStem(cloud)}.step`;
+    const base = String(filename || "");
+    if (base && !/visible assembly/i.test(base)) return `${modelStem(base)}.step`;
+    return "model.step";
+  })();
+
   for (const item of sorted) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -687,10 +707,11 @@ export async function openFileExportMenu({
         }
         // Server flattens linked assemblies to a Part on download (clean .step name).
         const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
+        const isBake = String(item.name || "").startsWith("_export_visible_assembly");
         const dlName = item.format === "3mf"
           ? item.name.replace(/\.3mf$/i, ".3MF")
           : item.format === "step"
-            ? `${modelStem(item.name)}.step`
+            ? (isBake ? fusionDestName : `${modelStem(item.name)}.step`)
             : item.name;
         await downloadFile(url, dlName);
       } catch (err) {
@@ -771,24 +792,33 @@ export async function openFileExportMenu({
   }
 
   const isThreeMfFusionUpload = /\.3mf$/i.test(String(cloudFilename || filename || ""));
-  const fusionUploadFilename = isThreeMfFusionUpload
+  let fusionUploadFilename = isThreeMfFusionUpload
     ? String(cloudFilename || filename).split(/[/\\]/).pop()
     : resolvedCloudFilename;
 
-  let visibleAllowList = [];
-  try {
-    const rawBody = exportsRequest?.options?.body;
-    const parsed = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
-    if (Array.isArray(parsed?.filenames)) visibleAllowList = parsed.filenames.map(String);
-  } catch {
-    visibleAllowList = [];
+  // Never Fusion-push a file outside the visible allow-list (blocks hidden Arduino).
+  if (visibleAllowList.length && fusionUploadFilename) {
+    const allowStems = new Set(visibleAllowList.map((n) => modelStem(n).toLowerCase()));
+    const uploadStem = modelStem(fusionUploadFilename).toLowerCase();
+    const isBake = String(fusionUploadFilename).startsWith("_export_visible_assembly");
+    if (!isBake && uploadStem && !allowStems.has(uploadStem)) {
+      const fallback = visibleAllowList[0];
+      fusionUploadFilename = String(fallback || "").replace(/\.[^.]+$/, ".step");
+    }
+  }
+  // Prefer bake STEP as the bytes source; Fusion *display* name is the visible part.
+  if (isVisibleAssemblyExport) {
+    const bake = sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")));
+    if (bake?.name) fusionUploadFilename = bake.name;
   }
 
   // Jul 16 / pre-3fc6c13 working Fusion push body: filename + allow_faceted only.
   function fusionPushBody(extra = {}) {
     const body = {
       filename: fusionUploadFilename,
+      name: fusionDestName,
       allow_faceted_step: resolvedCloudStepIsFaceted,
+      upload_source: !(isVisibleAssemblyExport || String(fusionUploadFilename || "").startsWith("_export_visible_assembly")),
       ...extra,
     };
     if (isThreeMfFusionUpload) {
@@ -864,6 +894,7 @@ export async function openFileExportMenu({
       await showFusionExportPicker(menu, btn, {
         projectId,
         filename: fusionUploadFilename,
+        uploadName: fusionDestName,
         allowFacetedStep: resolvedCloudStepIsFaceted,
         format: isThreeMfFusionUpload ? "3mf" : "step",
         allowedFilenames: visibleAllowList,
@@ -1112,6 +1143,7 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
 async function showFusionExportPicker(menu, anchorBtn, {
   projectId,
   filename,
+  uploadName = null,
   allowFacetedStep = false,
   format = "step",
   allowedFilenames = [],
@@ -1631,7 +1663,13 @@ async function showFusionExportPicker(menu, anchorBtn, {
         /* collision check is best-effort */
       }
     }
-    const uploadBaseName = String(filename || "model.step").split(/[/\\]/).pop();
+    const destName = (() => {
+      const raw = String(uploadName || filename || "model.step").split(/[/\\]/).pop();
+      if (/\.3mf$/i.test(raw)) return raw;
+      const stem = String(raw).replace(/(\.fusionpart|\.part)?(\.[^.]+)?$/i, "");
+      return `${stem || "model"}.step`;
+    })();
+    const uploadBaseName = destName;
     const existing = findExistingFolderItem(uploadBaseName);
     let conflictMode = "replace";
     if (existing) {
@@ -1655,7 +1693,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
       hereBtn.disabled = true;
       hereBtn.textContent = "Uploading…";
     }
-    setStatus(isThreeMf ? "Uploading 3MF to Fusion..." : "Uploading STEP to Fusion...");
+    setStatus(isThreeMf ? "Uploading 3MF to Fusion..." : `Uploading ${uploadBaseName} to Fusion...`);
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
         method: "POST",
@@ -1668,8 +1706,13 @@ async function showFusionExportPicker(menu, anchorBtn, {
           folder_id: selectedFolderId,
           folder_label: selectedFolderName,
           filename,
+          name: uploadBaseName,
           allow_faceted_step: allowFacetedStep,
           conflict_mode: conflictMode,
+          upload_source: !(
+            String(filename || "").startsWith("_export_visible_assembly")
+            || (Array.isArray(allowedFilenames) && allowedFilenames.length > 0)
+          ),
           // Jul 16 working path: no step_mode — native solid STEP as-is.
           ...(isThreeMf ? { format: "3mf" } : {}),
           ...(Array.isArray(allowedFilenames) && allowedFilenames.length
@@ -1694,15 +1737,15 @@ async function showFusionExportPicker(menu, anchorBtn, {
         folder_path: navPath,
       });
       markExportSuccess("Exported ✓");
-      setStatus(`Uploaded ${data.name || filename} — closing…`);
+      setStatus(`Uploaded ${data.name || uploadBaseName} — closing…`);
       setTimeout(() => closeExportMenu(), 1400);
     } catch (err) {
       submit.disabled = false;
-      const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
-      if (hereBtn && currentFolder) {
-        hereBtn.disabled = false;
-        hereBtn.classList.remove("file-export-fusion-use-current--success");
-        hereBtn.textContent = `Export to Fusion · ${currentFolder.name || "this folder"}`;
+      const hereBtn2 = folderBrowser.querySelector("[data-folder-export-here]");
+      if (hereBtn2 && currentFolder) {
+        hereBtn2.disabled = false;
+        hereBtn2.classList.remove("file-export-fusion-use-current--success");
+        hereBtn2.textContent = `Export to Fusion · ${currentFolder.name || "this folder"}`;
       }
       folderBrowser.querySelectorAll("[data-folder-select]").forEach((btn) => {
         btn.disabled = false;

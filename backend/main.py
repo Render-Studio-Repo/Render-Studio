@@ -8660,9 +8660,55 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     # Never upload *.fusionpart.step / *.part.step as the Fusion filename
     if ".fusionpart" in upload_name.lower() or ".part." in upload_name.lower() or upload_name.lower().endswith(".part.step"):
         upload_name = f"{upload_stem}.step"
+
+    # Visible-assembly bake bytes must land in Fusion under the *visible* part
+    # name — never `_export_visible_assembly.step` and never a hidden sibling
+    # like arduino_uno_q when the UI sent an allow-list.
+    allowed_for_name = body.get("allowed_filenames") or body.get("visible_filenames") or []
+    if not isinstance(allowed_for_name, list):
+        allowed_for_name = []
+    allowed_name_stems = {
+        Path(str(n)).stem.lower().replace(".fusionpart", "").replace(".part", "")
+        for n in allowed_for_name
+        if n
+    }
+    is_bake_upload = (
+        step_path.name.lower().startswith("_export_visible_assembly")
+        or upload_stem.lower().startswith("_export_visible_assembly")
+        or upload_name.lower().startswith("_export_visible_assembly")
+    )
+
+    def _visible_step_name() -> str:
+        preferred = Path(str(body.get("name") or "")).name
+        if preferred and not preferred.lower().startswith("_export_"):
+            stem = Path(preferred).stem
+            if not preferred.lower().endswith((".step", ".stp")):
+                return f"{stem}.step"
+            return preferred
+        if allowed_for_name:
+            return f"{Path(str(allowed_for_name[0])).stem}.step"
+        return upload_name
+
+    if is_bake_upload:
+        upload_name = _visible_step_name()
+    elif allowed_name_stems:
+        name_stem = Path(upload_name).stem.lower().replace(".fusionpart", "").replace(".part", "")
+        if name_stem not in allowed_name_stems:
+            # Client asked for a destination name outside the visible set
+            # (classic bug: latest_file / arduino). Force the visible stem.
+            upload_name = _visible_step_name()
+
     conflict_mode = str(body.get("conflict_mode") or body.get("on_conflict") or "replace").strip().lower()
     if conflict_mode not in {"replace", "new"}:
         conflict_mode = "replace"
+
+    logger.info(
+        "Fusion push name project=%s upload_name=%s bake=%s allowed=%s",
+        project_id,
+        upload_name,
+        is_bake_upload,
+        [Path(str(n)).name for n in allowed_for_name[:8]],
+    )
 
     try:
         result = upload_step_to_folder(
@@ -8674,7 +8720,17 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             conflict_mode=conflict_mode,
         )
         upload_name = str(result.get("name") or upload_name)
-        if body.get("upload_source", True) and source_path.is_file():
+        # Don't upload a companion .py for bake files — source resolve often
+        # picks a hidden sibling (arduino) and pollutes the Fusion folder.
+        if (
+            body.get("upload_source", True)
+            and source_path.is_file()
+            and not is_bake_upload
+            and (
+                not allowed_name_stems
+                or source_path.stem.lower().replace(".fusionpart", "").replace(".part", "") in allowed_name_stems
+            )
+        ):
             try:
                 source_name = f"{source_path.stem}.build123d.py"
                 result["source_upload"] = upload_step_to_folder(
