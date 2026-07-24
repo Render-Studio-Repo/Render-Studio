@@ -445,6 +445,7 @@ export async function openFileExportMenu({
   allowFusion = true,
   cloudFilename = null,
   fusionUploadName = null,
+  allowedFilenames = null,
   autoAction = null,
   shareContext = null,
 }) {
@@ -669,6 +670,9 @@ export async function openFileExportMenu({
   } catch {
     visibleAllowList = [];
   }
+  if (!visibleAllowList.length && Array.isArray(allowedFilenames) && allowedFilenames.length) {
+    visibleAllowList = allowedFilenames.map(String);
+  }
   const fusionDestName = (() => {
     const raw = String(fusionUploadName || "").trim();
     if (raw) return raw.toLowerCase().endsWith(".step") || raw.toLowerCase().endsWith(".stp") ? raw : `${modelStem(raw)}.step`;
@@ -786,10 +790,38 @@ export async function openFileExportMenu({
   );
 
   function showFusionStepModeChooser(onChoose, anchorEl = null) {
-    // Removed Jul 19 Part/Assembly chooser — it forced export_step_as_single_part
-    // and broke Extrude/Cut. Kept as no-op shim so any stale callers stay safe.
-    onChoose?.("assembly");
+    menu.querySelector(".file-export-step-chooser")?.remove();
+    const chooser = document.createElement("div");
+    chooser.className = "file-export-step-chooser";
+    chooser.innerHTML = `
+      <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close">&times;</button>
+      <div class="file-export-step-title">Export STEP as part or assembly?</div>
+      <button type="button" class="file-export-step-choice" data-step-mode="part">
+        <strong>Part STEP</strong>
+        <span>Flattened single part — best for Extrude/Cut in Fusion</span>
+      </button>
+      <button type="button" class="file-export-step-choice" data-step-mode="assembly">
+        <strong>Assembly STEP</strong>
+        <span>Keep linked components / separate bodies as in the file</span>
+      </button>
+    `;
+    chooser.addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-fusion-close]")) {
+        chooser.remove();
+        return;
+      }
+      const btn = ev.target.closest("[data-step-mode]");
+      if (!btn) return;
+      chooser.remove();
+      onChoose(btn.dataset.stepMode || "part");
+    });
+    if (anchorEl?.parentNode) anchorEl.insertAdjacentElement("afterend", chooser);
+    else menu.appendChild(chooser);
+    chooser.scrollIntoView({ block: "nearest" });
+    keepMenuInViewport(menu);
   }
+
+  let fusionStepMode = "part";
 
   const isThreeMfFusionUpload = /\.3mf$/i.test(String(cloudFilename || filename || ""));
   let fusionUploadFilename = isThreeMfFusionUpload
@@ -818,6 +850,7 @@ export async function openFileExportMenu({
       filename: fusionUploadFilename,
       name: fusionDestName,
       allow_faceted_step: resolvedCloudStepIsFaceted,
+      step_mode: fusionStepMode,
       upload_source: !(isVisibleAssemblyExport || String(fusionUploadFilename || "").startsWith("_export_visible_assembly")),
       ...extra,
     };
@@ -898,6 +931,7 @@ export async function openFileExportMenu({
         allowFacetedStep: resolvedCloudStepIsFaceted,
         format: isThreeMfFusionUpload ? "3mf" : "step",
         allowedFilenames: visibleAllowList,
+        stepMode: fusionStepMode,
       });
     } catch (err) {
       showExportError(menu, err, {
@@ -926,10 +960,18 @@ export async function openFileExportMenu({
       });
       return;
     }
-    showFusionActionChooser(menu, (choice) => {
-      if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
-      else void openSharedFusionExport(fusionActionBtn);
-    }, fusionActionBtn, { allowPush, allowShared });
+    const afterStepMode = (stepMode) => {
+      fusionStepMode = stepMode || "part";
+      showFusionActionChooser(menu, (choice) => {
+        if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
+        else void openSharedFusionExport(fusionActionBtn);
+      }, fusionActionBtn, { allowPush, allowShared });
+    };
+    if (isThreeMfFusionUpload) {
+      afterStepMode("assembly");
+      return;
+    }
+    showFusionStepModeChooser(afterStepMode, fusionActionBtn);
   });
 
   bambuBtn?.addEventListener("click", async () => {
@@ -1147,6 +1189,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
   allowFacetedStep = false,
   format = "step",
   allowedFilenames = [],
+  stepMode = "part",
 }) {
   menu.querySelector(".file-export-fusion-picker")?.remove();
   const picker = document.createElement("div");
@@ -1709,6 +1752,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
           name: uploadBaseName,
           allow_faceted_step: allowFacetedStep,
           conflict_mode: conflictMode,
+          step_mode: stepMode || "part",
           upload_source: !(
             String(filename || "").startsWith("_export_visible_assembly")
             || (Array.isArray(allowedFilenames) && allowedFilenames.length > 0)

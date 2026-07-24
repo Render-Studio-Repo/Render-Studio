@@ -8518,9 +8518,9 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     if not token:
         raise HTTPException(401, "Autodesk account not linked.")
 
-    filename = body.get("filename") or project_store.latest_model_file(path)
+    filename = body.get("filename")
     if not filename:
-        raise HTTPException(422, "No model file found in this project.")
+        raise HTTPException(422, "No model filename specified for Fusion export.")
     safe = Path(filename).name
     stem = safe[: safe.rfind(".")] if "." in safe else safe
     fmt = str(body.get("format") or "").strip().lower()
@@ -8623,20 +8623,25 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 "Show the component you want, then export again.",
             )
     if kind == "editable_brep":
-        try:
-            step_path = cad_service.ensure_fusion_part_step(path, step_path)
-        except Exception as exc:
-            logger.warning("Fusion Part ensure failed for %s: %s", step_path.name, exc)
+        step_mode = str(body.get("step_mode") or "part").strip().lower()
+        want_part = step_mode not in {"assembly", "native", "as_is", "linked"}
+        if want_part:
             try:
-                peek = step_path.read_bytes()[:8_000_000].decode("utf-8", errors="ignore").upper()
-            except Exception:
-                peek = ""
-            if "NEXT_ASSEMBLY_USAGE" in peek or step_path.name.lower().startswith("_export_visible_assembly"):
-                part_path = path / f"{step_path.stem}.fusionpart{step_path.suffix.lower()}"
+                step_path = cad_service.ensure_fusion_part_step(path, step_path)
+            except Exception as exc:
+                logger.warning("Fusion Part ensure failed for %s: %s", step_path.name, exc)
                 try:
-                    step_path = cad_service.export_step_as_single_part(step_path, part_path)
-                except Exception as exc2:
-                    logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc2)
+                    peek = step_path.read_bytes()[:8_000_000].decode("utf-8", errors="ignore").upper()
+                except Exception:
+                    peek = ""
+                if "NEXT_ASSEMBLY_USAGE" in peek or step_path.name.lower().startswith("_export_visible_assembly"):
+                    part_path = path / f"{step_path.stem}.fusionpart{step_path.suffix.lower()}"
+                    try:
+                        step_path = cad_service.export_step_as_single_part(step_path, part_path)
+                    except Exception as exc2:
+                        logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc2)
+        else:
+            logger.info("Fusion push keeping assembly STEP project=%s file=%s", project_id, step_path.name)
 
     upload_stem = step_path.stem
     for suffix in (".fusionpart", ".part"):

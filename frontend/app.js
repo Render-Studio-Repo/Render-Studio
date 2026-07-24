@@ -77,7 +77,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-name";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-viewport-export";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -20398,20 +20398,27 @@ async function exportCurrentModel(anchorEl) {
     // Exact eye-icon keys only — do not stem-match body labels across siblings.
     return isBrowserComponentHidden({ name: raw });
   };
+  // Viewport is source of truth for “what I’m looking at”. Eye icons can desync
+  // (or selectedFile can still be a hidden Arduino) after imports.
+  const viewportVisible = projectAssembly
+    .list()
+    .filter(([name, obj]) => obj?.visible !== false)
+    .map(([name]) => String(name || "").split("#body:")[0])
+    .filter(Boolean);
   const visibleBrowser = topLevel
     .filter((entry) => !isHiddenName(entry.name))
     .map((entry) => entry.name)
     .filter(Boolean);
-  const visibleLoaded = projectAssembly
-    .list()
-    .filter(([name, obj]) => obj?.visible !== false && !isHiddenName(name))
-    .map(([name]) => String(name || "").split("#body:")[0])
-    .filter(Boolean);
-  // Prefer browser eye icons. Never fall back to latest_file / hidden Arduino.
   let visibleFiles = [...new Set(
-    (visibleBrowser.length ? visibleBrowser : visibleLoaded).filter((name) => !isHiddenName(name)),
+    viewportVisible.filter((name) => !isHiddenName(name)),
   )];
-  // Last resort: any top-level component that is not hidden (ignore empty assembly).
+  // Eye says everything hidden but geometry is still on screen → trust viewport.
+  if (!visibleFiles.length && viewportVisible.length) {
+    visibleFiles = [...new Set(viewportVisible)];
+  }
+  if (!visibleFiles.length) {
+    visibleFiles = [...new Set(visibleBrowser)];
+  }
   if (!visibleFiles.length) {
     visibleFiles = topLevel.map((e) => e.name).filter((name) => name && !isHiddenName(name));
   }
@@ -20420,17 +20427,27 @@ async function exportCurrentModel(anchorEl) {
     alert("No visible component to export. Show at least one component first.");
     return;
   }
-  // Prefer the on-screen / selected visible model over whatever was imported last
-  // (latest_file is often a hidden Arduino).
+  // Prefer on-screen gripper/Fully_Assembled over selectedFile (often last import = Arduino).
   const preferred =
-    (selectedFile && visibleFiles.includes(selectedFile) && !isHiddenName(selectedFile) && selectedFile)
-    || visibleFiles.find((name) => /fully_assembled|gripper/i.test(name))
+    visibleFiles.find((name) => /fully_assembled|gripper/i.test(String(name)))
+    || (selectedFile && visibleFiles.includes(selectedFile) && !isHiddenName(selectedFile) && selectedFile)
     || visibleFiles[0];
   if (preferred && visibleFiles[0] !== preferred) {
     visibleFiles = [preferred, ...visibleFiles.filter((n) => n !== preferred)];
   }
-  const hasHiddenSiblings = topLevel.some((entry) => isHiddenName(entry.name));
-  const multiComponentProject = topLevel.length > 1;
+  const projectModelFiles = (lastProjectFiles || [])
+    .map((f) => (typeof f === "string" ? f : f?.name))
+    .filter((name) => {
+      if (!name || String(name).startsWith("_")) return false;
+      if (!/\.(glb|gltf|step|stp|3mf)$/i.test(name)) return false;
+      if (/_exploded/i.test(name) || /__part_/i.test(name) || /\.part\.step$/i.test(name)) return false;
+      return true;
+    });
+  const projectModelStems = new Set(projectModelFiles.map((n) => componentStemName(n)));
+  const hasHiddenSiblings =
+    topLevel.some((entry) => isHiddenName(entry.name))
+    || projectModelFiles.some((name) => isHiddenName(name) && !visibleFiles.some((v) => componentStemName(v) === componentStemName(name)));
+  const multiComponentProject = topLevel.length > 1 || projectModelStems.size > 1;
   const fusionDisplayName = `${componentStemName(visibleFiles[0]) || "model"}.step`;
   // Always bake when other components exist/are hidden so Fusion cannot pick
   // arduino_uno_q (latest_file) or keep that name in the destination folder.
@@ -20445,7 +20462,7 @@ async function exportCurrentModel(anchorEl) {
       fusionUploadName: fusionDisplayName,
       anchorEl: anchor,
       title: visibleFiles.length === 1 ? `Export ${visibleFiles[0]}` : "Export visible components",
-      hint: `Exports only unhidden geometry as “${fusionDisplayName}” (hidden parts like Arduino stay out).`,
+      hint: `Exports only what’s on screen as “${fusionDisplayName}” (hidden parts stay out). Choose Part or Assembly when you send to Fusion.`,
       allowOnshape: false,
       shareContext: currentVisibleShareContext,
       extraExports: regularStepName ? [{
@@ -20474,6 +20491,7 @@ async function exportCurrentModel(anchorEl) {
     projectId,
     filename: file,
     fusionUploadName: fusionDisplayName,
+    allowedFilenames: [file],
     anchorEl: anchor,
     shareContext: currentVisibleShareContext,
   });
@@ -23577,7 +23595,15 @@ function renderFileList(files = []) {
         alert("Show this component before exporting it.");
         return;
       }
-      openFileExportMenu({ api, projectId, filename: f.name, anchorEl: exp, shareContext: currentVisibleShareContext }).catch((err) => {
+      openFileExportMenu({
+        api,
+        projectId,
+        filename: f.name,
+        fusionUploadName: `${componentStemName(f.name) || "model"}.step`,
+        allowedFilenames: [f.name],
+        anchorEl: exp,
+        shareContext: currentVisibleShareContext,
+      }).catch((err) => {
         alert(err.message || "Could not load exports");
       });
     });

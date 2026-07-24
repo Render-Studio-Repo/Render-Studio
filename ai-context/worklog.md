@@ -1,3 +1,11 @@
+## 2026-07-24 — Export: viewport truth + Part/Assembly chooser back
+
+- Latest bad push (`23:36`) hit `arduino_uno_q.glb/exports` while Fully_Assembled was on screen — `selectedFile` / eye state overrode the viewport; no allow-list.
+- Ribbon Export now prefers **viewport-visible** meshes, demotes `selectedFile`, and always bakes when the project has multiple model files. Fusion asks **Part vs Assembly** again (`step_mode`); Part flattens for Extrude/Cut, Assembly keeps linked STEP. Backend no longer falls back to `latest_model_file` when filename is missing.
+- Cache-bust: `app.js` / `file-actions.js` `?v=20260724-viewport-export`. Service restarted.
+
+---
+
 ## 2026-07-24 — Fusion export used hidden file name (arduino)
 
 - Symptom: Export → Fusion still created/replaced `arduino_uno_q.step` while the gripper was the only visible component.
