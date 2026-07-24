@@ -17828,6 +17828,22 @@ section h2 {
   color: #ffd0a3;
 }
 
+.file-export-fusion-use-current.file-export-fusion-use-current--success,
+.file-export-fusion-use-current--success {
+  background: #238636 !important;
+  border-color: #2ea043 !important;
+  color: #fff !important;
+  cursor: default;
+}
+
+.file-export-fusion-folder-pick.file-export-fusion-folder-pick--success,
+.file-export-fusion-folder-pick--success {
+  background: #238636 !important;
+  border-color: #2ea043 !important;
+  color: #fff !important;
+  cursor: default;
+}
+
 .file-export-fusion-submit {
   width: 100%;
   margin-top: 4px;

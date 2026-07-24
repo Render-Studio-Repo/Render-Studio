@@ -1,3 +1,10 @@
+## 2026-07-24 — Fusion export: green check on success
+
+- **Export to Fusion · {folder}** turns green with **Exported ✓** after a successful upload (same for the bottom submit + matching folder tile).
+- Cache-bust: `?v=20260724-fusion-check`.
+
+---
+
 ## 2026-07-24 — Fusion export: upload to current folder
 
 - Inside a Fusion folder (e.g. Render3D) there is a primary **Export to Fusion · {folder}** button — no subfolder required.
