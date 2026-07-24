@@ -182,14 +182,15 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
 
   async function search(forcedQuery) {
     const query = String(forcedQuery ?? queryEl.value).trim();
+    const inputEmpty = !String(queryEl.value || "").trim();
+    // Keep suggestion chips visible until the user types in the search box.
+    setSuggestionsVisible(inputEmpty);
     if (!query) {
-      setSuggestionsVisible(true);
       resultsEl.innerHTML = `<p class="muted small">Pick a suggestion above, or type a part name / number.</p>`;
       setStatus("Suggestions ready — click a chip or start typing.", "");
       return;
     }
-    setSuggestionsVisible(false);
-    queryEl.value = query;
+    if (!forcedQuery) queryEl.value = query;
     setStatus("Searching catalog...");
     resultsEl.innerHTML = "";
     try {
@@ -201,8 +202,10 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
       renderResults(data.candidates || [], data.query || query);
       const errors = data.errors ? Object.values(data.errors) : [];
       setStatus(`${(data.candidates || []).length} result${(data.candidates || []).length === 1 ? "" : "s"}.${errors.length ? ` Some sources unavailable.` : ""}`, errors.length ? "warn" : "ok");
+      setSuggestionsVisible(!String(queryEl.value || "").trim());
     } catch (err) {
       setStatus(err.message || "Catalog search failed.", "error");
+      setSuggestionsVisible(!String(queryEl.value || "").trim());
     }
   }
 
@@ -233,9 +236,8 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
     } else {
       resultsEl.innerHTML = `<p class="muted small">Pick a suggestion above, or type a part name / number.</p>`;
       setStatus("Suggestions ready — click a chip or start typing.", "");
-      // Warm results with the first suggestion so the panel isn't empty.
-      void search(CATALOG_SUGGESTIONS[0]);
-      setSuggestionsVisible(true);
+      // Warm results quietly; keep chips visible (input still empty).
+      void search(CATALOG_SUGGESTIONS[0]).then(() => setSuggestionsVisible(true));
     }
   }
 
@@ -249,7 +251,9 @@ export function createCatalogPanel({ api, getProjectId, onImport, onStatus } = {
   overlay.querySelectorAll("[data-catalog-suggest]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const q = btn.getAttribute("data-catalog-suggest") || "";
+      queryEl.value = q;
       lastAutoQuery = q;
+      setSuggestionsVisible(false);
       void search(q);
     });
   });

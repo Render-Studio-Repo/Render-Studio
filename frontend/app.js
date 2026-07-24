@@ -73,7 +73,7 @@ import { createWorkspaceManagementUI } from "./workspace-management.js?v=2026072
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260723-key-layout";
 import { createCollab } from "./collab.js?v=20260715-realtime-sync";
-import { createRibbon } from "./ribbon.js?v=20260724-pick-row";
+import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
@@ -100,7 +100,7 @@ import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260723-robot-sim";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260724-pick-row2";
 import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor4";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
@@ -108,7 +108,7 @@ import { createCanvasMode } from "./canvas-mode.js?v=20260715-canvas-shape-tags"
 import { createWiringCodeUI } from "./wiring-code-ui.js?v=20260617-general-ide";
 import { createDriverPicker } from "./driver-picker.js?v=20260617-driver-aware";
 import { createComponentProfileUI } from "./component-profile.js?v=20260715-elec-none";
-import { createCatalogPanel } from "./catalog-panel.js?v=20260724-catalog-suggest";
+import { createCatalogPanel } from "./catalog-panel.js?v=20260724-catalog-suggest2";
 import { createMcMasterInsert } from "./mcmaster-insert.js?v=20260721-mcmaster-second-part";
 import { recognizePart, prettyPartLabel } from "./part-catalog.js?v=20260720-electronics-tab";
 import {
@@ -118,7 +118,7 @@ import {
 } from "./electronics-suggestions.js?v=20260720-electronics-suggest";
 import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-targets";
 import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
-import { createSketchEditor } from "./sketch-editor.js?v=20260724-sketch-d";
+import { createSketchEditor } from "./sketch-editor.js?v=20260724-sketch-d2";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260715-rigging-viewport";
 import { createUrdfRobotRuntime, createMoveIt2Client } from "./urdf-robot-runtime.js?v=20260715-urdf-hierarchy-play";
@@ -271,6 +271,7 @@ let workspaceRealtimeUsers = [];
 let refreshTeamInvitesRealtime = () => {};
 let refreshTeamMembersRealtime = () => {};
 let refreshWorkspacePanelRealtime = () => {};
+let renderTeamsRealtime = () => {};
 let pendingPromptSelectionContext = null;
 let workspaceFusionLiveRefreshTimer = null;
 let workspaceFusionLiveRefreshInFlight = false;
@@ -6219,9 +6220,17 @@ const workspaceManagement = createWorkspaceManagementUI({
   panelEl: document.getElementById("profile-workspace-mgmt-panel"),
   getTeams: () => allTeams,
   onStatus: (kind, message) => setEditStatus(kind, message),
-  onTeamsChanged: () => {
+  onTeamsChanged: async () => {
+    try {
+      const data = await api("/api/teams");
+      allTeams = data.teams || allTeams;
+      renderTeamsRealtime();
+    } catch {
+      /* keep cached teams */
+    }
     refreshTeamMembersRealtime();
     refreshWorkspacePanelRealtime();
+    workspaceBrowser?.render?.();
   },
 });
 initManagementNotifications();
@@ -17592,10 +17601,10 @@ const workspaceBrowser = createWorkspaceBrowser({
         const fallback = personalWorkspaceId() || allTeams[0]?.id || "";
         if (fallback) sel.value = fallback;
       }
-      renderTeams();
+      renderTeamsRealtime();
       await onWorkspaceChange();
-      await refreshTeamMembers?.();
-      await refreshWorkspaceMenuPanel?.();
+      await refreshTeamMembersRealtime?.();
+      await refreshWorkspacePanelRealtime?.();
       setEditStatus("ok", `Left ${name}.`);
     } catch (err) {
       setEditStatus("error", err?.message || "Could not leave workspace.");
@@ -20171,6 +20180,8 @@ const workspaceModes = createWorkspaceModes({
   onDesignTabChange: (tab) => handleDesignTabChange(tab),
   onWiringTabChange: (tab) => handleWiringTabChange(tab),
 });
+// Default SOLID tab must apply body/app classes (setDesignTab no-ops when already SOLID).
+workspaceModes.setDesignTab("SOLID", { force: true });
 
 document.getElementById("canvas-gen-view-solid")?.addEventListener("click", () => {
   workspaceModes?.setDesignTab?.("SOLID");
@@ -27062,6 +27073,9 @@ ribbon = createRibbon({
     await refreshPromptHistory();
   },
 });
+// Ribbon mounts after the first SOLID sync — re-apply so Pick host CSS classes stick on refresh.
+workspaceModes?.setDesignTab?.(workspaceModes.getDesignTab?.() || "SOLID", { force: true });
+ribbon?.setDesignTab?.(workspaceModes.getDesignTab?.() || "SOLID");
 
 function isEditableShortcutTarget(target) {
   return !!target?.closest?.("textarea, input, select, [contenteditable='true'], [contenteditable='']");
@@ -30600,6 +30614,7 @@ window.addEventListener("keydown", (e) => {
   refreshTeamInvitesRealtime = () => void refreshTeamInvites();
   refreshTeamMembersRealtime = () => void refreshTeamMembers();
   refreshWorkspacePanelRealtime = () => void refreshWorkspaceMenuPanel();
+  renderTeamsRealtime = () => renderTeams();
 
   void import("./workspace-send-invite.js?v=20260724-ws-perms").then((mod) => {
     mod.bindWorkspaceSendInvite?.({

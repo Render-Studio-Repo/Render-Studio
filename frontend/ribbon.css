@@ -903,6 +903,7 @@
   backdrop-filter: blur(6px);
 }
 
+/* Prefer explicit design-tab classes; fall back so refresh still shows Pick in Design. */
 #app.solid-design-tab .ribbon-pick-host,
 #app.sketch-design-tab .ribbon-pick-host,
 #app.rigging-design-tab .ribbon-pick-host,
@@ -910,7 +911,8 @@
 body.solid-design-tab .ribbon-pick-host,
 body.sketch-design-tab .ribbon-pick-host,
 body.rigging-design-tab .ribbon-pick-host,
-body.robotics-design-tab .ribbon-pick-host {
+body.robotics-design-tab .ribbon-pick-host,
+#app:not(.wiring-mode):not(.architect-design-tab):not(.canvas-design-tab) .ribbon-pick-host {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -921,7 +923,9 @@ body.robotics-design-tab .ribbon-pick-host {
   display: none !important;
 }
 
-#app.wiring-mode .ribbon-pick-host {
+#app.wiring-mode .ribbon-pick-host,
+#app.architect-design-tab .ribbon-pick-host,
+#app.canvas-design-tab .ribbon-pick-host {
   display: none !important;
 }
 

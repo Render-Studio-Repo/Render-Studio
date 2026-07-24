@@ -1504,6 +1504,7 @@ export function createSketchEditor({
     pickRefs = [];
     showSnapIndicator(null);
     clearPreview();
+    document.getElementById("sketch-distance-pop")?.remove();
     unlockCamera2D();
     group.clear();
     group.visible = false;
@@ -1527,6 +1528,7 @@ export function createSketchEditor({
     arcPts = [];
     splinePts = [];
     clearPreview();
+    document.getElementById("sketch-distance-pop")?.remove();
     showSnapIndicator(null);
     unlockCamera2D();
     group.clear();
@@ -1624,7 +1626,7 @@ export function createSketchEditor({
       || (tool === "circle" && dragStart && pointerUv)
       || (tool === "rectangle" && dragStart && pointerUv);
     if (!drawing) return false;
-    const label = tool === "circle" ? "Diameter (mm)" : "Distance (mm)";
+    const label = tool === "circle" ? "Diameter" : "Distance";
     const seed =
       tool === "circle" && pointerUv
         ? Math.hypot(pointerUv.u - dragStart.u, pointerUv.v - dragStart.v) * 2
@@ -1633,64 +1635,100 @@ export function createSketchEditor({
           : tool === "rectangle" && pointerUv
             ? Math.abs(pointerUv.u - dragStart.u)
             : 25;
-    const input = window.prompt(`${label}:`, `${Math.max(0.1, seed).toFixed(1)}mm`);
-    if (input == null) return true;
-    const num = parseDimensionInput(input);
-    if (!Number.isFinite(num) || num <= 0) {
-      onStatus?.("error", "Invalid distance. Try values like 25mm or 1in.");
-      return true;
-    }
-    pushUndo();
-    if (tool === "line") {
-      const target = pointerUv || { u: dragStart.u + Math.max(num, 1), v: dragStart.v };
-      let dx = target.u - dragStart.u;
-      let dy = target.v - dragStart.v;
-      let len = Math.hypot(dx, dy);
-      if (len < 1e-6) {
-        dx = 1;
-        dy = 0;
-        len = 1;
+    promptDistanceValue(label, Math.max(0.1, seed), (num) => {
+      if (!Number.isFinite(num) || num <= 0) {
+        onStatus?.("error", "Invalid distance. Try values like 25mm or 1in.");
+        return;
       }
-      const end = { u: dragStart.u + (dx / len) * num, v: dragStart.v + (dy / len) * num };
-      const lineEnt = addEntity("line", { a: { ...dragStart }, b: end });
-      maybeAutoAxisConstraint(lineEnt);
-      dragStart = end;
-      pointerUv = end;
-      applyConstraints();
-      clearPreview();
-      onStatus?.("ok", `Line length set to ${num.toFixed(2)} mm. Click next point or press D again.`);
-      return true;
-    }
-    if (tool === "circle") {
-      const radius = num / 2;
-      addEntity("circle", { c: { ...dragStart }, r: radius });
-      dragStart = null;
-      pointerUv = null;
-      pointerDown = null;
-      applyConstraints();
-      clearPreview();
-      onStatus?.("ok", `Circle diameter set to ${num.toFixed(2)} mm.`);
-      return true;
-    }
-    if (tool === "rectangle") {
-      const target = pointerUv || { u: dragStart.u + num, v: dragStart.v + num };
-      const height = Math.abs(target.v - dragStart.v) || num;
-      const signedX = target.u >= dragStart.u ? num : -num;
-      const signedY = target.v >= dragStart.v ? height : -height;
-      const end = { u: dragStart.u + signedX, v: dragStart.v + signedY };
-      const corners = rectCorners(dragStart, end);
-      for (let i = 0; i < 4; i++) {
-        addEntity("line", { a: corners[i], b: corners[(i + 1) % 4] });
+      pushUndo();
+      if (tool === "line") {
+        const target = pointerUv || { u: dragStart.u + Math.max(num, 1), v: dragStart.v };
+        let dx = target.u - dragStart.u;
+        let dy = target.v - dragStart.v;
+        let len = Math.hypot(dx, dy);
+        if (len < 1e-6) {
+          dx = 1;
+          dy = 0;
+          len = 1;
+        }
+        const end = { u: dragStart.u + (dx / len) * num, v: dragStart.v + (dy / len) * num };
+        const lineEnt = addEntity("line", { a: { ...dragStart }, b: end });
+        maybeAutoAxisConstraint(lineEnt);
+        dragStart = end;
+        pointerUv = end;
+        applyConstraints();
+        clearPreview();
+        onStatus?.("ok", `Line length set to ${num.toFixed(2)} mm. Click next point or press D again.`);
+        return;
       }
-      dragStart = null;
-      pointerUv = null;
-      pointerDown = null;
-      applyConstraints();
-      clearPreview();
-      onStatus?.("ok", `Rectangle width set to ${num.toFixed(2)} mm.`);
-      return true;
-    }
-    return false;
+      if (tool === "circle") {
+        const radius = num / 2;
+        addEntity("circle", { c: { ...dragStart }, r: radius });
+        dragStart = null;
+        pointerUv = null;
+        pointerDown = null;
+        applyConstraints();
+        clearPreview();
+        onStatus?.("ok", `Circle diameter set to ${num.toFixed(2)} mm.`);
+        return;
+      }
+      if (tool === "rectangle") {
+        const target = pointerUv || { u: dragStart.u + num, v: dragStart.v + num };
+        const height = Math.abs(target.v - dragStart.v) || num;
+        const signedX = target.u >= dragStart.u ? num : -num;
+        const signedY = target.v >= dragStart.v ? height : -height;
+        const end = { u: dragStart.u + signedX, v: dragStart.v + signedY };
+        const corners = rectCorners(dragStart, end);
+        for (let i = 0; i < 4; i++) {
+          addEntity("line", { a: corners[i], b: corners[(i + 1) % 4] });
+        }
+        dragStart = null;
+        pointerUv = null;
+        pointerDown = null;
+        applyConstraints();
+        clearPreview();
+        onStatus?.("ok", `Rectangle width set to ${num.toFixed(2)} mm.`);
+      }
+    });
+    return true;
+  }
+
+  function promptDistanceValue(label, seedMm, onCommit) {
+    document.getElementById("sketch-distance-pop")?.remove();
+    const pop = document.createElement("div");
+    pop.id = "sketch-distance-pop";
+    pop.className = "sketch-distance-pop";
+    pop.innerHTML = `
+      <label class="sketch-distance-pop-label">${label}</label>
+      <input type="text" class="sketch-distance-pop-input" value="${Number(seedMm).toFixed(1)}mm" aria-label="${label}" />
+      <span class="sketch-distance-pop-hint">Enter · Esc cancel</span>
+    `;
+    document.body.appendChild(pop);
+    const input = pop.querySelector("input");
+    const finish = (commit) => {
+      const raw = input?.value;
+      pop.remove();
+      if (!commit) return;
+      const num = parseDimensionInput(raw);
+      onCommit?.(num);
+    };
+    input?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        finish(true);
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        finish(false);
+      }
+    });
+    // Don't let sketch shortcuts steal keys while typing distance.
+    input?.addEventListener("keyup", (ev) => ev.stopPropagation());
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.select();
+    });
   }
 
   function onPointerDown(e) {

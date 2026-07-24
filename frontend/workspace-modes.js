@@ -124,10 +124,10 @@ export function createWorkspaceModes(options = {}) {
     onChange?.(mode);
   }
 
-  function setDesignTab(tab) {
+  function setDesignTab(tab, { force = false } = {}) {
     const match = DESIGN_TABS.find((t) => t.id === tab);
     if (!match?.enabled) return;
-    if (designTab === tab) return;
+    if (designTab === tab && !force) return;
     designTab = tab;
     renderTabs();
     onDesignTabChange?.(designTab);

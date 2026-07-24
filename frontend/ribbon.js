@@ -1501,6 +1501,19 @@ export function createRibbon({
   if (pickBar && pickHost && pickBar.parentElement !== pickHost) {
     pickHost.appendChild(pickBar);
   }
+  // Boot race: design-tab classes are sometimes applied before the ribbon exists
+  // (or skipped when SOLID is already selected). Ensure Pick is visible on refresh.
+  const appEl = document.getElementById("app");
+  if (
+    appEl
+    && !appEl.classList.contains("wiring-mode")
+    && !["solid-design-tab", "sketch-design-tab", "rigging-design-tab", "robotics-design-tab"].some((c) =>
+      appEl.classList.contains(c)
+    )
+  ) {
+    appEl.classList.add("solid-design-tab");
+    document.body.classList.add("solid-design-tab");
+  }
 
   // Tab wiring handled in _mountCatalog
 

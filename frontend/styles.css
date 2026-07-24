@@ -10154,6 +10154,7 @@ body.canvas-design-tab .main-column {
   flex: 0 0 auto;
   min-width: 0;
   overflow: visible;
+  margin-left: auto;
 }
 
 .toolbar-actions > .btn,
@@ -39837,4 +39838,53 @@ body.robotics-design-tab .robotics-mode-tab {
     width: 280px;
     height: 180px;
   }
+}
+
+/* ── Sketch Fusion-style distance popover (D while drawing) ──────────────── */
+.sketch-distance-pop {
+  position: fixed;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(88, 166, 255, 0.45);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: #e6edf3;
+}
+
+.sketch-distance-pop-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #79b8ff;
+}
+
+.sketch-distance-pop-input {
+  width: 110px;
+  padding: 6px 8px;
+  border: 1px solid #30363d;
+  border-radius: 7px;
+  background: #0d1117;
+  color: #f0f3f6;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.sketch-distance-pop-input:focus {
+  outline: none;
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+}
+
+.sketch-distance-pop-hint {
+  font-size: 0.7rem;
+  color: #8b949e;
+  white-space: nowrap;
 }

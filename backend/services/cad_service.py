@@ -2001,6 +2001,138 @@ def _logical_body_name_key(name: str) -> str:
     return text
 
 
+def _is_generic_gltf_body_id(name: str) -> bool:
+    """True for Jake occurrence ids / glTF mesh placeholders (o1, o1.16, mesh_0)."""
+    raw = str(name or "").strip()
+    if not raw:
+        return True
+    if raw.lower().startswith("mesh_"):
+        return True
+    return bool(re.fullmatch(r"o\d+(?:\.\d+)*", raw, flags=re.I))
+
+
+def _jake_occurrence_leaf_id(name: str) -> int | None:
+    """Extract the leaf occurrence number from ``o1.16`` / ``o1.2.3`` style ids."""
+    raw = str(name or "").strip()
+    match = re.fullmatch(r"o\d+(?:\.(\d+))+", raw, flags=re.I)
+    if not match:
+        match = re.fullmatch(r"o(\d+)", raw, flags=re.I)
+        if not match:
+            return None
+        return int(match.group(1))
+    return int(match.group(1))
+
+
+def _humanize_body_label(raw: str) -> str:
+    """Turn ``front_cover`` / ``pivot-pin-R`` into a short tree label."""
+    text = " ".join(str(raw or "").replace("-", "_").replace("|", " ").split()).strip()
+    if not text:
+        return ""
+    if _is_generic_gltf_body_id(text):
+        return text
+    parts = re.split(r"[_\s]+", text)
+    return " ".join(part[:1].upper() + part[1:] if part else "" for part in parts if part)[:96]
+
+
+def _step_assembly_occurrence_names(step_path: Path) -> dict[int, str]:
+    """Map STEP ``NEXT_ASSEMBLY_USAGE_OCCURRENCE`` id → part name (base, front_cover, …)."""
+    try:
+        text = Path(step_path).read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return {}
+    out: dict[int, str] = {}
+    for occ_id, name in re.findall(
+        r"NEXT_ASSEMBLY_USAGE_OCCURRENCE\(\s*'(\d+)'\s*,\s*'([^']*)'",
+        text,
+    ):
+        try:
+            key = int(occ_id)
+        except ValueError:
+            continue
+        label = " ".join(str(name or "").split()).strip()
+        if label and key not in out:
+            out[key] = label
+    return out
+
+
+def _sibling_step_occurrence_names(
+    project_path: Path,
+    glb_path: Path,
+    parent_name: str,
+) -> dict[int, str]:
+    """Load assembly occurrence names from a sibling STEP without OCC."""
+    candidates: list[Path] = []
+    stem = glb_path.stem
+    parent = Path(parent_name or "")
+    if parent.suffix.lower() in {".step", ".stp"}:
+        candidates.append(project_path / parent.name)
+    for ext in (".step", ".stp"):
+        candidates.append(project_path / f"{stem}{ext}")
+        # Edited GLBs often keep the generative STEP under the root stem.
+        root = _logical_component_root(stem)
+        if root and root != stem:
+            candidates.append(project_path / f"{root}{ext}")
+    seen: set[str] = set()
+    max_text_bytes = 8_000_000
+    for step_path in candidates:
+        key = str(step_path)
+        if key in seen or not step_path.is_file():
+            continue
+        seen.add(key)
+        try:
+            if step_path.stat().st_size > max_text_bytes:
+                continue
+        except OSError:
+            continue
+        names = _step_assembly_occurrence_names(step_path)
+        if names:
+            return names
+    return {}
+
+
+def _display_names_for_scene_bodies(
+    raw_names: list[str],
+    occurrence_names: dict[int, str] | None = None,
+) -> list[str]:
+    """Prefer STEP occurrence / cadName labels; else generated ``Part N`` names.
+
+    Jake GLBs often store node.name as occurrence ids (``o1.16``). Real CAD names
+    live in sibling STEP ``NEXT_ASSEMBLY_USAGE_OCCURRENCE`` rows (or GLB cadName).
+    """
+    occ = dict(occurrence_names or {})
+    ordered_occ = [occ[k] for k in sorted(occ)]
+    # When leaf ids don't match STEP ids (exploded assemblies renumber 17..32),
+    # zip sorted occurrence leaves to sorted STEP names.
+    leaf_pairs: list[tuple[int, int]] = []
+    for idx, raw in enumerate(raw_names):
+        leaf = _jake_occurrence_leaf_id(raw)
+        if leaf is not None:
+            leaf_pairs.append((leaf, idx))
+    order_map: dict[int, str] = {}
+    if ordered_occ and len(leaf_pairs) == len(ordered_occ) == len(raw_names):
+        leaf_pairs.sort(key=lambda item: item[0])
+        for occ_name, (_leaf, idx) in zip(ordered_occ, leaf_pairs):
+            order_map[idx] = occ_name
+
+    out: list[str] = []
+    for idx, raw in enumerate(raw_names):
+        label = str(raw or "").strip()
+        if "|" in label:
+            label = label.split("|", 1)[0].strip() or label
+        if _is_generic_gltf_body_id(label):
+            leaf = _jake_occurrence_leaf_id(label)
+            mapped = ""
+            if leaf is not None and leaf in occ:
+                mapped = occ[leaf]
+            elif idx in order_map:
+                mapped = order_map[idx]
+            label = mapped or f"Part {idx + 1}"
+        elif not label:
+            label = f"Part {idx + 1}"
+        out.append(_humanize_body_label(label) or f"Part {idx + 1}")
+    return out
+
+
 def _scene_names_are_single_logical_body(names: list[str]) -> bool:
     """True when GLB scene nodes are mesh fragments of one part, not distinct bodies."""
     keys = {key for name in names if (key := _logical_body_name_key(name))}
@@ -2080,7 +2212,14 @@ def _glb_scene_mesh_names_fast(path: Path) -> list[str]:
                         continue
                     if node.get("mesh") is None:
                         continue
-                    label = str(node.get("name") or "").strip()
+                    extras = node.get("extras") if isinstance(node.get("extras"), dict) else {}
+                    cad_name = str((extras or {}).get("cadName") or "").strip()
+                    node_name = str(node.get("name") or "").strip()
+                    # Prefer human CAD name when Jake stored the occurrence id in name.
+                    if cad_name and (_is_generic_gltf_body_id(node_name) or not node_name):
+                        label = cad_name
+                    else:
+                        label = node_name or cad_name
                     if label:
                         names.append(label)
                 if len(names) >= 2:
@@ -2090,7 +2229,10 @@ def _glb_scene_mesh_names_fast(path: Path) -> list[str]:
                 for mesh in meshes:
                     if not isinstance(mesh, dict):
                         continue
-                    label = str(mesh.get("name") or "").strip()
+                    extras = mesh.get("extras") if isinstance(mesh.get("extras"), dict) else {}
+                    cad_name = str((extras or {}).get("cadName") or "").strip()
+                    mesh_name = str(mesh.get("name") or "").strip()
+                    label = cad_name if cad_name and _is_generic_gltf_body_id(mesh_name) else (mesh_name or cad_name)
                     if label:
                         names.append(label)
                 return names
@@ -2130,7 +2272,7 @@ def _body_children_from_viewer_scene(
         mtime = path.stat().st_mtime
     except OSError:
         return []
-    cache_key = f"v3fast:{path.resolve()}"
+    cache_key = f"v4names:{path.resolve()}"
     cached = _SCENE_BODY_CHILDREN_CACHE.get(cache_key)
     if cached and cached[0] == mtime:
         return [dict(child) for child in cached[1]]
@@ -2143,19 +2285,18 @@ def _body_children_from_viewer_scene(
 
     # Fast JSON-only parse. Never call trimesh/OCC here — that path has wedged
     # workers for minutes on some large GLBs (project open spins forever).
-    names = [str(n or "").strip() for n in _glb_scene_mesh_names_fast(path)]
-    count = len(names)
-    if count <= 1 or count > _MAX_BROWSER_SCENE_BODIES or _scene_names_are_single_logical_body(names):
+    raw_names = [str(n or "").strip() for n in _glb_scene_mesh_names_fast(path)]
+    count = len(raw_names)
+    if count <= 1 or count > _MAX_BROWSER_SCENE_BODIES or _scene_names_are_single_logical_body(raw_names):
         _SCENE_BODY_CHILDREN_CACHE[cache_key] = (mtime, [])
         return []
 
+    occurrence_names = _sibling_step_occurrence_names(project_path, path, parent_name)
+    names = _display_names_for_scene_bodies(raw_names, occurrence_names)
+
     children: list[dict[str, Any]] = []
     for idx in range(count):
-        label = names[idx] if idx < len(names) else ""
-        label = str(label or "").strip() or f"Body {idx + 1}"
-        # Shorten Jake-style annotated names for the tree.
-        if "|" in label:
-            label = label.split("|", 1)[0].strip() or label
+        label = names[idx] if idx < len(names) else f"Part {idx + 1}"
         slug = re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_").lower() or f"body_{idx + 1}"
         children.append(
             {
@@ -6460,12 +6601,8 @@ def scene_body_info(path: Path) -> dict[str, Any]:
         stem = path.stem.replace("_", " ").strip()
         for label, mesh in parts:
             raw = str(label or "").strip()
-            # Replace generic scene node IDs (o11, o1.1, mesh_0, etc.) with numbered names.
-            if (
-                not raw
-                or re.fullmatch(r"o\d+(?:\.\d+)?", raw, flags=re.I)
-                or raw.startswith("mesh_")
-            ):
+            # Replace generic scene node IDs (o11, o1.1, o1.16, mesh_0, etc.) with numbered names.
+            if not raw or _is_generic_gltf_body_id(raw):
                 raw = f"Part {len(names) + 1}"
             offsets.append(off)
             names.append(raw)

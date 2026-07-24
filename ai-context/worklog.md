@@ -4,6 +4,13 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 
 ---
 
+## 2026-07-24 — Pick bar in Create row + catalog suggestions + sketch D
+
+- Pick tools centered in the ribbon Create row for SOLID / SKETCH / RIGGING / ROBOTICS (was stuck hidden: default SOLID tab never applied `solid-design-tab`).
+- New project / Upload stay far right (`toolbar-actions { margin-left: auto }`).
+- Catalog shows suggestion chips before typing; Sketch **D** while drawing opens a Fusion-style distance popover.
+- Cache-bust: `?v=20260724-pick-row2`, `catalog-suggest2`, `sketch-d2`, `styles …pick-catalog-d2`.
+
 ## 2026-07-24 — Docs → Getting Started + unique GIFs + laptop layout
 
 - Studio **Docs** nav → `/getting-started.html` (was `/docs.html`).
