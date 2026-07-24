@@ -355,19 +355,35 @@ function bindPromptRowActions(root) {
       event.stopPropagation();
       const text = visibleText();
       if (!text) return;
+      let ok = false;
       try {
-        await navigator.clipboard.writeText(text);
-        const prev = copyBtn.textContent;
-        copyBtn.textContent = "Copied";
-        window.setTimeout(() => {
-          if (copyBtn.isConnected) copyBtn.textContent = prev || "Copy";
-        }, 1200);
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          ok = true;
+        }
       } catch {
-        copyBtn.textContent = "Copy failed";
-        window.setTimeout(() => {
-          if (copyBtn.isConnected) copyBtn.textContent = "Copy";
-        }, 1200);
+        ok = false;
       }
+      if (!ok) {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.select();
+          ok = document.execCommand("copy");
+          ta.remove();
+        } catch {
+          ok = false;
+        }
+      }
+      const prev = copyBtn.textContent;
+      copyBtn.textContent = ok ? "Copied" : "Copy failed";
+      window.setTimeout(() => {
+        if (copyBtn.isConnected) copyBtn.textContent = prev || "Copy";
+      }, 1200);
     });
   });
 }

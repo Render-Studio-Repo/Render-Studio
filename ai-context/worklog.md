@@ -10,6 +10,13 @@ Append a dated entry when you finish meaningful work. Newest first. Keep entries
 - Expanding it loads members and shows Access (`Can edit` / `View only`) + Invite (`Can invite` / `Cannot invite`) selects; patches existing `/api/teams/.../permissions`.
 - Files: `frontend/workspace-manage.js`, `frontend/styles.css`, `frontend/index.html`, `frontend/app.js` cache-bust `?v=20260724-ws-manage-perms`.
 
+## 2026-07-24 — Admin prompts: original vs improved + copy
+
+- Admin Recent Prompt History (and project/user prompt lists) now include full `prompt`, `original_prompt`, and `prompt_improved`.
+- UI: **Improved** badge, **Show original** / **Show improved** toggle, **Copy** (copies the visible version).
+- Refresh button forces `?refresh=true` so dashboard cache picks up new fields.
+- Files: `backend/main.py`, `frontend/admin-dashboard.js`, `styles.css`, `admin-dashboard.html` (`?v=20260724-prompt-orig`).
+
 ## 2026-07-24 — Personal projects missing for Sam (shared-ws nest)
 
 - Bug: after shared-workspace nesting, **all** multi-member team roots were nested — Sam W has no solo personal workspace, so Personal/Projects looked empty (everything under shared folders). Public “Sam W” files still showed.
