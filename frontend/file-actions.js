@@ -85,25 +85,51 @@ function setExportActionsPreparing(menu, preparing) {
   }
 }
 
+function modelStem(filename) {
+  return fileStem(filename)
+    .replace(/\.part$/i, "")
+    .replace(/\.fusionpart$/i, "")
+    .replace(/__faceted$/i, "");
+}
+
 function exportPriority(item, targetStem) {
-  if (item.current || fileStem(item.name) === targetStem) return 0;
+  const name = String(item.name || "");
+  const stem = modelStem(name);
+  const target = modelStem(targetStem || "");
+  // Fusion-editable Part first (Extrude/Cut). Demote linked assemblies + faceted.
+  if (item.format === "step") {
+    if (item.step_structure === "part" || item.fusion_editable || /\.part\.step$/i.test(name)) return -3;
+    if (item.step_structure === "faceted" || /__faceted/i.test(name) || item.step_kind === "faceted_mesh") return 6;
+    if (item.step_structure === "assembly") return 5;
+  }
+  if (item.current || stem === target || fileStem(name) === targetStem) return 0;
   if (item.base) return 2;
   return 1;
 }
 
 function exportLabel(item, targetStem) {
-  const base =
-    item.label ||
-    (
-      item.format === "step"
-        ? item.step_kind === "faceted_mesh"
-          ? "STEP (faceted mesh fallback)"
-          : String(item.name || "").startsWith("_export_visible_assembly")
-            ? "STEP (assembly)"
-            : "STEP (editable B-rep)"
-        : (FORMAT_LABELS[item.format] || item.format.toUpperCase())
-    );
-  if (item.current || fileStem(item.name) === targetStem) return `${base} · current updated`;
+  const name = String(item.name || "");
+  let base = item.label || null;
+  if (!base && item.format === "step") {
+    if (item.step_kind === "faceted_mesh" || /__faceted/i.test(name) || item.step_structure === "faceted") {
+      base = "STEP (faceted mesh — Cut may fail)";
+    } else if (item.step_structure === "assembly") {
+      base = "STEP (linked assembly — Extrude/Cut fails)";
+    } else if (
+      item.step_structure === "part"
+      || item.fusion_editable
+      || /\.part\.step$/i.test(name)
+      || name.startsWith("_export_visible_assembly")
+    ) {
+      base = "STEP (Fusion Part · Extrude/Cut)";
+    } else {
+      base = "STEP (editable B-rep)";
+    }
+  }
+  if (!base) base = FORMAT_LABELS[item.format] || item.format.toUpperCase();
+  const stem = modelStem(name);
+  const target = modelStem(targetStem || "");
+  if (item.current || stem === target || fileStem(name) === targetStem) return `${base} · current`;
   if (item.base) return `${base} · original/base`;
   return base;
 }
@@ -613,16 +639,17 @@ export async function openFileExportMenu({
   // (that was uploading hidden arduino_uno_q while the gripper was showing).
   const cloudStep = isVisibleAssemblyExport
     ? (
-      sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && item.step_kind === "editable_brep")
+      sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && (item.fusion_editable || item.step_structure === "part" || item.step_kind === "editable_brep"))
       || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")))
       || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly"))
-      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || fileStem(item.name) === targetStem))
+      || sorted.find((item) => item.format === "step" && (item.fusion_editable || item.step_structure === "part"))
       || null
     )
     : (
-      sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || fileStem(item.name) === targetStem))
-      || sorted.find((item) => item.format === "step" && (item.current || fileStem(item.name) === targetStem) && item.step_kind === "editable_brep")
-      || sorted.find((item) => item.format === "step" && (item.current || fileStem(item.name) === targetStem))
+      sorted.find((item) => item.format === "step" && (item.fusion_editable || item.step_structure === "part") && (item.current || modelStem(item.name) === modelStem(targetStem)))
+      || sorted.find((item) => item.format === "step" && (item.fusion_editable || item.step_structure === "part"))
+      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && item.step_structure !== "assembly" && (item.current || modelStem(item.name) === modelStem(targetStem)))
+      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || modelStem(item.name) === modelStem(targetStem)))
       || null
     );
   const resolvedCloudFilename = cloudFilename || cloudStep?.name || (
@@ -646,18 +673,25 @@ export async function openFileExportMenu({
     btn.title = item.name;
     btn.addEventListener("click", async () => {
       try {
-        if (item.format === "step" && item.step_kind !== "editable_brep") {
+        if (item.format === "step" && (item.step_kind !== "editable_brep" || item.step_structure === "faceted")) {
           const ok = window.confirm(
             "This STEP was generated from mesh triangles, so Fusion may import it but boolean Cut may fail. Download it anyway?"
           );
           if (!ok) return;
         }
-        // Always download the native STEP on disk. Do not send step_mode=part/regular —
-        // that rewrite broke Extrude/Cut (Jul 16 golden served the file as-is).
+        if (item.format === "step" && item.step_structure === "assembly") {
+          const ok = window.confirm(
+            "This STEP is a linked assembly. Fusion Extrude/Cut usually fails on it. Download the “Fusion Part · Extrude/Cut” STEP instead when possible. Download this assembly anyway?"
+          );
+          if (!ok) return;
+        }
+        // Server flattens linked assemblies to a Part on download (clean .step name).
         const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
         const dlName = item.format === "3mf"
           ? item.name.replace(/\.3mf$/i, ".3MF")
-          : item.name;
+          : item.format === "step"
+            ? `${modelStem(item.name)}.step`
+            : item.name;
         await downloadFile(url, dlName);
       } catch (err) {
         showExportError(menu, err, { title: "Download failed" });

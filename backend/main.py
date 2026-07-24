@@ -8624,15 +8624,19 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             )
     if kind == "editable_brep":
         try:
-            peek = step_path.read_bytes()[:2_000_000].decode("utf-8", errors="ignore").upper()
-        except Exception:
-            peek = ""
-        if "NEXT_ASSEMBLY_USAGE" in peek or step_path.name.lower().startswith("_export_visible_assembly"):
-            part_path = path / f"{step_path.stem}.fusionpart{step_path.suffix.lower()}"
+            step_path = cad_service.ensure_fusion_part_step(path, step_path)
+        except Exception as exc:
+            logger.warning("Fusion Part ensure failed for %s: %s", step_path.name, exc)
             try:
-                step_path = cad_service.export_step_as_single_part(step_path, part_path)
-            except Exception as exc:
-                logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc)
+                peek = step_path.read_bytes()[:8_000_000].decode("utf-8", errors="ignore").upper()
+            except Exception:
+                peek = ""
+            if "NEXT_ASSEMBLY_USAGE" in peek or step_path.name.lower().startswith("_export_visible_assembly"):
+                part_path = path / f"{step_path.stem}.fusionpart{step_path.suffix.lower()}"
+                try:
+                    step_path = cad_service.export_step_as_single_part(step_path, part_path)
+                except Exception as exc2:
+                    logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc2)
 
     upload_stem = step_path.stem
     for suffix in (".fusionpart", ".part"):
@@ -8653,8 +8657,8 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
     upload_name = Path(str(body.get("name") or f"{upload_stem}.step")).name
     if not upload_name.lower().endswith((".step", ".stp")):
         upload_name = f"{Path(upload_name).stem}.step"
-    # Never upload *.fusionpart.step as the Fusion filename — use clean .step
-    if ".fusionpart" in upload_name.lower() or upload_name.lower().endswith(".part.step"):
+    # Never upload *.fusionpart.step / *.part.step as the Fusion filename
+    if ".fusionpart" in upload_name.lower() or ".part." in upload_name.lower() or upload_name.lower().endswith(".part.step"):
         upload_name = f"{upload_stem}.step"
     conflict_mode = str(body.get("conflict_mode") or body.get("on_conflict") or "replace").strip().lower()
     if conflict_mode not in {"replace", "new"}:
@@ -13378,26 +13382,30 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
         except Exception as exc:
             logger.warning("Faceted STEP export failed for %s: %s", safe, exc)
             raise HTTPException(422, f"Could not create faceted STEP: {exc}") from exc
-    # Solid assemblies (NEXT_ASSEMBLY_USAGE) open in Fusion as linked components,
-    # so Extrude Cut fails with "No target body found". Flatten to one Part unless
-    # the caller explicitly asks for assembly.
+    # Prefer / create a Fusion Part STEP (no NEXT_ASSEMBLY_USAGE). Linked
+    # assemblies open in Fusion without a cut target ("No target body found").
     if (
         file_path.suffix.lower() in {".step", ".stp"}
         and step_mode_normalized in {"", "regular", "part", "single", "fusion"}
     ):
         try:
             kind = cad_service.classify_step_file_kind(file_path)
-            peek = file_path.read_bytes()[:2_000_000].decode("utf-8", errors="ignore").upper()
         except Exception:
-            kind, peek = "unknown", ""
-        if kind == "editable_brep" and "NEXT_ASSEMBLY_USAGE" in peek and step_mode_normalized != "assembly":
-            part_path = project_path / f"{file_path.stem}.fusionpart{file_path.suffix.lower()}"
+            kind = "unknown"
+        if kind == "editable_brep" and step_mode_normalized != "assembly":
             try:
-                cad_service.export_step_as_single_part(file_path, part_path)
-                file_path = part_path
-                safe = f"{Path(safe).stem}.step"
+                part_path = cad_service.ensure_fusion_part_step(project_path, file_path)
+                if part_path.is_file():
+                    file_path = part_path
+                    # Always download as clean .step (never *.part.step / *.fusionpart.step)
+                    stem = file_path.stem
+                    for suffix in (".fusionpart", ".part"):
+                        if stem.endswith(suffix):
+                            stem = stem[: -len(suffix)]
+                            break
+                    safe = f"{stem}.step"
             except Exception as exc:
-                logger.warning("Part STEP flatten failed for %s: %s", safe, exc)
+                logger.warning("Part STEP ensure failed for %s: %s", safe, exc)
     if file_path.suffix.lower() == ".3mf":
         stem = file_path.stem
         for suffix in (".step", ".stp", ".glb", ".gltf", ".stl", ".obj", ".ply", ".off"):
