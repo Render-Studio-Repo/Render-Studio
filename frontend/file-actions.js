@@ -96,12 +96,7 @@ function exportPriority(item, targetStem) {
   const name = String(item.name || "");
   const stem = modelStem(name);
   const target = modelStem(targetStem || "");
-  // Fusion-editable Part first (Extrude/Cut). Demote linked assemblies + faceted.
-  if (item.format === "step") {
-    if (item.step_structure === "part" || item.fusion_editable || /\.part\.step$/i.test(name)) return -3;
-    if (item.step_structure === "faceted" || /__faceted/i.test(name) || item.step_kind === "faceted_mesh") return 6;
-    if (item.step_structure === "assembly") return 5;
-  }
+  if (item.format === "step") return -3; // single STEP slot — already Fusion-ready
   if (item.current || stem === target || fileStem(name) === targetStem) return 0;
   if (item.base) return 2;
   return 1;
@@ -111,20 +106,7 @@ function exportLabel(item, targetStem) {
   const name = String(item.name || "");
   let base = item.label || null;
   if (!base && item.format === "step") {
-    if (item.step_kind === "faceted_mesh" || /__faceted/i.test(name) || item.step_structure === "faceted") {
-      base = "STEP (faceted mesh — Cut may fail)";
-    } else if (item.step_structure === "assembly") {
-      base = "STEP (linked assembly — Extrude/Cut fails)";
-    } else if (
-      item.step_structure === "part"
-      || item.fusion_editable
-      || /\.part\.step$/i.test(name)
-      || name.startsWith("_export_visible_assembly")
-    ) {
-      base = "STEP (Fusion Part · Extrude/Cut)";
-    } else {
-      base = "STEP (editable B-rep)";
-    }
+    base = "STEP";
   }
   if (!base) base = FORMAT_LABELS[item.format] || item.format.toUpperCase();
   const stem = modelStem(name);
@@ -132,6 +114,49 @@ function exportLabel(item, targetStem) {
   if (item.current || stem === target || fileStem(name) === targetStem) return `${base} · current`;
   if (item.base) return `${base} · original/base`;
   return base;
+}
+
+function collapseExportsToSingleStep(items = []) {
+  const out = [];
+  let bestStep = null;
+  for (const item of items) {
+    if (String(item?.format || "").toLowerCase() !== "step") {
+      out.push(item);
+      continue;
+    }
+    const name = String(item.name || "");
+    if (/__faceted/i.test(name) || item.step_structure === "faceted" || item.step_kind === "faceted_mesh") {
+      continue;
+    }
+    const score =
+      (item.fusion_editable || item.step_structure === "part" || /\.part\.step$/i.test(name) ? 4 : 0)
+      + (item.step_kind === "editable_brep" ? 2 : 0)
+      + (item.base ? 1 : 0);
+    const prev = bestStep
+      ? (bestStep.fusion_editable || bestStep.step_structure === "part" ? 4 : 0)
+        + (bestStep.step_kind === "editable_brep" ? 2 : 0)
+        + (bestStep.base ? 1 : 0)
+      : -1;
+    if (!bestStep || score >= prev) bestStep = item;
+  }
+  if (bestStep) {
+    out.push({
+      ...bestStep,
+      label: "STEP",
+      step_structure: "part",
+      fusion_editable: true,
+      download_name: bestStep.download_name || `${modelStem(bestStep.name)}.step`,
+    });
+  }
+  return out;
+}
+
+function stepDownloadUrl(projectId, item) {
+  const name = item?.name;
+  if (!name) return item?.url || "";
+  const base = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(name)}`;
+  if (/[?&]step_mode=/i.test(base)) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}step_mode=part`;
 }
 
 function formatApiError(err) {
@@ -567,7 +592,7 @@ export async function openFileExportMenu({
     fetchError = err;
   }
 
-  let exports = data?.exports || [];
+  let exports = collapseExportsToSingleStep(data?.exports || []);
   const shareFilename = data?.filename || filename;
   if (data?.filename && data.filename !== filename) {
     const titleEl = menu.querySelector(".file-export-title");
@@ -578,7 +603,7 @@ export async function openFileExportMenu({
     exports = fallbackExports(filename);
   }
   if (extraExports.length) {
-    exports = [...exports, ...extraExports];
+    exports = collapseExportsToSingleStep([...exports, ...extraExports]);
   }
 
   if (fetchError && !(data?.exports?.length)) {
@@ -697,25 +722,14 @@ export async function openFileExportMenu({
     btn.title = item.name;
     btn.addEventListener("click", async () => {
       try {
-        if (item.format === "step" && (item.step_kind !== "editable_brep" || item.step_structure === "faceted")) {
-          const ok = window.confirm(
-            "This STEP was generated from mesh triangles, so Fusion may import it but boolean Cut may fail. Download it anyway?"
-          );
-          if (!ok) return;
-        }
-        if (item.format === "step" && item.step_structure === "assembly") {
-          const ok = window.confirm(
-            "This STEP is a linked assembly. Fusion Extrude/Cut usually fails on it. Download the “Fusion Part · Extrude/Cut” STEP instead when possible. Download this assembly anyway?"
-          );
-          if (!ok) return;
-        }
-        // Server flattens linked assemblies to a Part on download (clean .step name).
-        const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
-        const isBake = String(item.name || "").startsWith("_export_visible_assembly");
+        // One Fusion-ready STEP (server flattens linked assemblies via step_mode=part).
+        const url = item.format === "step"
+          ? stepDownloadUrl(projectId, item)
+          : (item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`);
         const dlName = item.format === "3mf"
           ? item.name.replace(/\.3mf$/i, ".3MF")
           : item.format === "step"
-            ? (isBake ? fusionDestName : `${modelStem(item.name)}.step`)
+            ? (item.download_name || fusionDestName || `${modelStem(item.name)}.step`)
             : item.name;
         await downloadFile(url, dlName);
       } catch (err) {
@@ -790,35 +804,8 @@ export async function openFileExportMenu({
   );
 
   function showFusionStepModeChooser(onChoose, anchorEl = null) {
-    menu.querySelector(".file-export-step-chooser")?.remove();
-    const chooser = document.createElement("div");
-    chooser.className = "file-export-step-chooser";
-    chooser.innerHTML = `
-      <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close">&times;</button>
-      <div class="file-export-step-title">Export STEP as part or assembly?</div>
-      <button type="button" class="file-export-step-choice" data-step-mode="part">
-        <strong>Part STEP</strong>
-        <span>Flattened single part — best for Extrude/Cut in Fusion</span>
-      </button>
-      <button type="button" class="file-export-step-choice" data-step-mode="assembly">
-        <strong>Assembly STEP</strong>
-        <span>Keep linked components / separate bodies as in the file</span>
-      </button>
-    `;
-    chooser.addEventListener("click", (ev) => {
-      if (ev.target.closest("[data-fusion-close]")) {
-        chooser.remove();
-        return;
-      }
-      const btn = ev.target.closest("[data-step-mode]");
-      if (!btn) return;
-      chooser.remove();
-      onChoose(btn.dataset.stepMode || "part");
-    });
-    if (anchorEl?.parentNode) anchorEl.insertAdjacentElement("afterend", chooser);
-    else menu.appendChild(chooser);
-    chooser.scrollIntoView({ block: "nearest" });
-    keepMenuInViewport(menu);
+    // Single Fusion-ready Part STEP everywhere — no Part/Assembly picker.
+    onChoose?.("part");
   }
 
   let fusionStepMode = "part";
@@ -961,17 +948,13 @@ export async function openFileExportMenu({
       return;
     }
     const afterStepMode = (stepMode) => {
-      fusionStepMode = stepMode || "part";
+      fusionStepMode = "part";
       showFusionActionChooser(menu, (choice) => {
         if (choice === "push") void pushToOriginalFusion(fusionActionBtn);
         else void openSharedFusionExport(fusionActionBtn);
       }, fusionActionBtn, { allowPush, allowShared });
     };
-    if (isThreeMfFusionUpload) {
-      afterStepMode("assembly");
-      return;
-    }
-    showFusionStepModeChooser(afterStepMode, fusionActionBtn);
+    afterStepMode("part");
   });
 
   bambuBtn?.addEventListener("click", async () => {

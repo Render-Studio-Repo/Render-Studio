@@ -1,3 +1,11 @@
+## 2026-07-24 — Admin project cards: long filenames overflow
+
+- Long `model_file` pills used `white-space: nowrap` and spilled past the card border (e.g. Food Robot / connector `.glb`).
+- Removed redundant filename pill from stats; filename stays on the muted line. Cards/stats now clip with ellipsis and `overflow: hidden`.
+- Cache-bust: `admin-dashboard.html` → `styles.css` / `admin-dashboard.js` `?v=20260724-admin-card-clip`.
+
+---
+
 ## 2026-07-24 — Export: viewport truth + Part/Assembly chooser back
 
 - Latest bad push (`23:36`) hit `arduino_uno_q.glb/exports` while Fully_Assembled was on screen — `selectedFile` / eye state overrode the viewport; no allow-list.

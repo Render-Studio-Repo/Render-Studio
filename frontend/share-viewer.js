@@ -313,8 +313,10 @@ async function main() {
       a.download = item.name;
       a.rel = "noopener";
       a.setAttribute("role", "menuitem");
-      const label = FORMAT_LABELS[String(item.format || "").toLowerCase()]
-        || String(item.format || "File").toUpperCase();
+      const fmt = String(item.format || "").toLowerCase();
+      const label = fmt === "step" || fmt === "stp"
+        ? "STEP"
+        : (FORMAT_LABELS[fmt] || String(item.format || "File").toUpperCase());
       a.innerHTML = `<strong>${label}</strong><span>${item.size != null ? formatBytes(item.size) : item.name}</span>`;
       into.appendChild(a);
     }
@@ -393,6 +395,44 @@ async function main() {
       url: `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(meta.filename)}`,
       size: null,
     });
+  }
+  // One Fusion-ready STEP only (same as studio export / admin download).
+  {
+    const collapsed = [];
+    let bestStep = null;
+    for (const item of exportItems) {
+      const fmt = String(item.format || item.name?.split(".").pop() || "").toLowerCase();
+      if (fmt === "stp" || fmt === "step") {
+        if (/__faceted/i.test(String(item.name || ""))) continue;
+        const score =
+          (item.fusion_editable || item.step_structure === "part" || /\.part\.step$/i.test(item.name || "") ? 4 : 0)
+          + (item.step_kind === "editable_brep" ? 2 : 0);
+        const prev = bestStep
+          ? ((bestStep.fusion_editable || bestStep.step_structure === "part" ? 4 : 0)
+            + (bestStep.step_kind === "editable_brep" ? 2 : 0))
+          : -1;
+        if (!bestStep || score >= prev) bestStep = { ...item, format: "step" };
+        continue;
+      }
+      collapsed.push(item);
+    }
+    if (bestStep) {
+      let url = bestStep.url
+        || `/api/share/${encodeURIComponent(token)}/files/${encodeURIComponent(bestStep.name)}`;
+      if (!/[?&]step_mode=/i.test(url)) url += `${url.includes("?") ? "&" : "?"}step_mode=part`;
+      const stem = String(bestStep.download_name || bestStep.name || "model")
+        .replace(/\.part\.step$/i, ".step")
+        .replace(/\.fusionpart\.step$/i, ".step");
+      const dlName = /\.ste?p$/i.test(stem) ? stem : `${stem.replace(/\.[^.]+$/, "")}.step`;
+      collapsed.push({
+        ...bestStep,
+        format: "step",
+        url,
+        name: dlName,
+        label: "STEP",
+      });
+    }
+    exportItems = collapsed;
   }
   exportsReady = true;
   renderDownloadMenu(downloadMenuEl);

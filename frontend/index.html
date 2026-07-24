@@ -1609,8 +1609,8 @@
                 <span class="prompt-mode-wrap" data-prompt-mode-tip="v2">
                   <button type="button" class="prompt-mode-btn prompt-mode-btn--v2 active" data-prompt-mode="v2" aria-describedby="prompt-mode-v2-tip">2.0</button>
                 </span>
-                <span class="prompt-mode-wrap" data-prompt-mode-tip="fusion">
-                  <button type="button" class="prompt-mode-btn prompt-mode-btn--fusion" data-prompt-mode="fusion" disabled aria-disabled="true" aria-describedby="prompt-mode-fusion-tip">Fusion</button>
+                <span class="prompt-mode-wrap" data-prompt-mode-tip="mesh">
+                  <button type="button" class="prompt-mode-btn prompt-mode-btn--mesh" data-prompt-mode="mesh" aria-describedby="prompt-mode-mesh-tip">Mesh</button>
                 </span>
                 <span class="prompt-mode-wrap prompt-electronics-wrap" id="prompt-electronics-wrap">
                   <button
@@ -1640,18 +1640,18 @@
                   Builds CAD geometry by default: parametric parts, assemblies, dimensions, and named features.
                 </p>
               </div>
-              <div id="prompt-mode-fusion-tip" class="prompt-spice-tip prompt-mode-tip" role="tooltip" hidden>
+              <div id="prompt-mode-mesh-tip" class="prompt-spice-tip prompt-mode-tip" role="tooltip" hidden>
                 <div class="prompt-spice-tip-top">
-                  <span class="prompt-spice-tip-badge prompt-mode-tip-badge--fusion">Fusion</span>
-                  <strong class="prompt-spice-tip-title">Push to Fusion 360</strong>
+                  <span class="prompt-spice-tip-badge prompt-mode-tip-badge--mesh">Mesh</span>
+                  <strong class="prompt-spice-tip-title">Procedural Three.js mesh</strong>
                 </div>
                 <p class="prompt-spice-tip-body">
-                  Generate parametric CAD, then push the result directly into Fusion 360. Temporarily unavailable.
+                  Rebuilds a reference image (or text prompt) as a code-only Three.js model — primitives, materials, hierarchy — then loads the GLB in the viewport (img2threejs).
                 </p>
               </div>
               <div id="prompt-electronics-tip" class="prompt-spice-tip prompt-electronics-tip" role="tooltip" hidden>
                 <div class="prompt-spice-tip-top">
-                  <span class="prompt-spice-tip-badge prompt-electronics-tip-badge">2.0 / Fusion</span>
+                  <span class="prompt-spice-tip-badge prompt-electronics-tip-badge">2.0</span>
                   <strong class="prompt-spice-tip-title">Model electronics solids</strong>
                 </div>
                 <p class="prompt-spice-tip-body">

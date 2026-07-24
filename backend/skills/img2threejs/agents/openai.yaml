@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mesh (img2threejs)"
+  short_description: "Procedural Three.js mesh from image or text"
+default_prompt: "Rebuild this as a procedural Three.js model with correct proportions and materials."

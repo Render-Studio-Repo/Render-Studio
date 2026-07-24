@@ -395,7 +395,7 @@ class PromptRequest(BaseModel):
     images: list[PromptImage] = Field(default_factory=list, max_length=8)
     speed: str = Field(default="fast", description="fast (~30s) or quality (slower, gpt-5.5-pro)")
     skills: list[str] = Field(default_factory=list, max_length=20)
-    mode: str = Field(default="standard", description="standard (Render), v2, fusion, or architect")
+    mode: str = Field(default="standard", description="standard (Render), v2, mesh, fusion, or architect")
     fusion_target: str | None = Field(default=None, description="in_app or fusion360")
     convert_images_to_drawing: bool = Field(
         default=False,
@@ -2995,6 +2995,14 @@ def _source_for_base_model(project_path: Path, base_filename: str | None) -> tup
     if not base_filename:
         return None, None
     stem = Path(base_filename).stem
+    # Mesh mode (img2threejs) stores factories as `{stem}.mesh.mjs`.
+    mesh_candidates = [
+        project_path / f"{stem}.mesh.mjs",
+        project_path / f"{stem.replace('.mesh', '')}.mesh.mjs" if ".mesh" in stem else None,
+    ]
+    for path in mesh_candidates:
+        if path and path.is_file():
+            return path.read_text(encoding="utf-8", errors="ignore"), path.name
     candidates = [project_path / f"{stem}.py"]
     for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body"):
         if stem.endswith(suffix):
@@ -3030,7 +3038,7 @@ def _infer_implicit_edit_base(project_path: Path, body: PromptRequest) -> str | 
 
 def _should_use_kernel_pipeline(body: PromptRequest, project_path: Path | None = None) -> bool:
     """Route to the parametric kernel instead of legacy mesh-edit actions."""
-    if (body.mode or "standard").lower() in {"v2", "fusion", "architect"}:
+    if (body.mode or "standard").lower() in {"v2", "fusion", "architect", "mesh"}:
         return True
     if _is_reference_anchored_addition(body) and (body.base_filename or _reference_base_filename(body)):
         return False
@@ -3623,6 +3631,9 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
         # Keep BYOK tool-agent as primary (or soft fallback when Codex is on).
         context["jake_tool_agent"] = True
         context["model_electronics"] = bool(getattr(body, "model_electronics", True))
+    if (body.mode or "standard").lower() == "mesh":
+        context["mesh_img2threejs"] = True
+        context["pipeline"] = "img2threejs"
     if (body.mode or "standard").lower() == "fusion":
         context["fusion_target"] = "fusion360" if (body.fusion_target or "").lower() == "fusion360" else "in_app"
     if (body.mode or "standard").lower() == "architect":
@@ -13367,6 +13378,34 @@ def get_public_file(project_id: str, filename: str, step_mode: str | None = Quer
     return _file_response(project_path, project_id, filename, step_mode=step_mode)
 
 
+def _annotate_export_download_urls(project_id: str, exports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach download URLs; STEP always requests the Fusion-ready Part rewrite."""
+    out: list[dict[str, Any]] = []
+    for item in exports or []:
+        row = dict(item)
+        name = str(row.get("name") or "")
+        if not name:
+            out.append(row)
+            continue
+        url = f"/api/projects/{project_id}/files/{name}"
+        if str(row.get("format") or "").lower() == "step":
+            url = f"{url}?step_mode=part"
+            stem = Path(name).name
+            for suffix in (".part.step", ".fusionpart.step", ".step", ".stp"):
+                if stem.lower().endswith(suffix):
+                    stem = stem[: -len(suffix)]
+                    break
+            else:
+                stem = Path(stem).stem
+            row["download_name"] = row.get("download_name") or f"{stem}.step"
+            row["label"] = row.get("label") or "STEP"
+            row["step_structure"] = "part"
+            row["fusion_editable"] = True
+        row["url"] = url
+        out.append(row)
+    return out
+
+
 def _file_response(project_path: Path, project_id: str, filename: str, *, step_mode: str | None = None):
     safe = Path(filename).name
     file_path = project_path / safe
@@ -13780,7 +13819,10 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         name = Path(str(item.get("name") or "")).name
         if not name or name not in allowed:
             continue
-        exports.append({**item, "name": name, "url": f"/api/share/{token}/files/{urllib.parse.quote(name)}"})
+        url = f"/api/share/{token}/files/{urllib.parse.quote(name)}"
+        if str(item.get("format") or "").lower() == "step":
+            url = f"{url}?step_mode=part"
+        exports.append({**item, "name": name, "url": url})
     # Also expose exports for the visibility-baked assembly viewer when present.
     if viewer_override and viewer_override != Path(filename).name:
         for item in cad_service.list_exports_for_model(project_path, viewer_override):
@@ -13789,7 +13831,23 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
                 continue
             if any(row.get("name") == name for row in exports):
                 continue
-            exports.append({**item, "name": name, "url": f"/api/share/{token}/files/{urllib.parse.quote(name)}"})
+            url = f"/api/share/{token}/files/{urllib.parse.quote(name)}"
+            if str(item.get("format") or "").lower() == "step":
+                url = f"{url}?step_mode=part"
+            exports.append({**item, "name": name, "url": url})
+    # One STEP only in the share download menu.
+    collapsed: list[dict[str, Any]] = []
+    best_step: dict[str, Any] | None = None
+    for row in exports:
+        if str(row.get("format") or "").lower() == "step":
+            if "__faceted" in str(row.get("name") or "").lower():
+                continue
+            best_step = row
+            continue
+        collapsed.append(row)
+    if best_step is not None:
+        collapsed.append(best_step)
+    exports = collapsed
     if viewer_filename not in allowed and (project_path / viewer_filename).is_file():
         allowed.add(viewer_filename)
     meta = project_store.load_meta(project_path)
@@ -14395,6 +14453,7 @@ def list_file_exports(project_id: str, filename: str, user: dict[str, Any] = Dep
         except Exception as exc:
             logger.warning("Could not refresh exports for %s: %s", safe, exc)
         exports = cad_service.list_exports_for_model(path, safe)
+    exports = _annotate_export_download_urls(project_id, exports)
     return {
         "filename": safe,
         "exports": exports,
@@ -14514,6 +14573,7 @@ def build_visible_assembly_exports(
         exports = cad_service.build_visible_assembly_exports(path, body.filenames)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    exports = _annotate_export_download_urls(project_id, exports)
     primary = next((item["name"] for item in exports if item.get("format") == "glb"), exports[0]["name"] if exports else "")
     return {
         "filename": primary,
@@ -17089,7 +17149,7 @@ def _prompt_via_kernel(
         skills=body.skills,
     )
     previous_source, previous_source_name = (None, None)
-    if (getattr(body, "mode", "standard") or "standard").lower() in {"v2", "fusion", "architect"} and body.base_filename:
+    if (getattr(body, "mode", "standard") or "standard").lower() in {"v2", "fusion", "architect", "mesh"} and body.base_filename:
         previous_source, previous_source_name = _source_for_base_model(project_path, body.base_filename)
         if previous_source_name:
             trace_add(

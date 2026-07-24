@@ -22,6 +22,7 @@ LOCAL_SKILLS=(
   blueprint-vision
   silicone-mold-generation
   wiring
+  img2threejs
 )
 LOCAL_EXCLUDES=()
 for skill in "${LOCAL_SKILLS[@]}"; do

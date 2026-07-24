@@ -1000,10 +1000,16 @@ def resolve_existing_project_file(project_path: Path, filename: str | None) -> s
 
 
 def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, Any]]:
-    """List downloadable artifacts that share a model basename."""
+    """List downloadable artifacts that share a model basename.
+
+    Exposes at most **one** STEP — a Fusion-ready Part (no assembly links) so
+    Extrude/Cut works. Faceted / linked-assembly siblings are not listed.
+    """
     stem = Path(filename).stem
     # Strip .part from stem so Fully_Assembled.part.step still lists siblings.
     root_stem = stem[:-5] if stem.endswith(".part") else stem
+    if root_stem.endswith(".fusionpart"):
+        root_stem = root_stem[: -len(".fusionpart")]
     exports: list[dict[str, Any]] = []
     faceted_name = faceted_step_name(root_stem)
     for f in sorted(project_path.iterdir()):
@@ -1018,69 +1024,89 @@ def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, 
             and name != f"{root_stem}.part.step"
         ):
             continue
-        item: dict[str, Any] = {
-            "name": name,
-            "format": _export_format(name),
-            "size": f.stat().st_size,
-        }
-        if item["format"] == "step":
-            item["step_kind"] = classify_step_file_kind(f)
-            is_part_name = name.lower().endswith(".part.step") or ".fusionpart." in name.lower()
-            has_links = False if is_part_name else step_has_assembly_links(f)
-            if item["step_kind"] == "faceted_mesh" or "__faceted" in name.lower():
-                item["step_structure"] = "faceted"
-                item["label"] = "STEP (faceted mesh — Cut may fail)"
-            elif has_links:
-                item["step_structure"] = "assembly"
-                item["label"] = "STEP (linked assembly — Extrude/Cut fails)"
-            else:
-                item["step_structure"] = "part"
-                item["fusion_editable"] = True
-                item["label"] = "STEP (Fusion Part · Extrude/Cut)"
-        exports.append(item)
-
-    # Ensure a Part-style STEP exists when the native file is a linked assembly.
-    native = project_path / f"{root_stem}.step"
-    if not native.is_file():
-        native = project_path / f"{root_stem}.stp"
-    if native.is_file() and is_editable_brep_step(native) and step_has_assembly_links(native):
-        try:
-            part = ensure_fusion_part_step(project_path, native)
-            if part.is_file() and not any(item.get("name") == part.name for item in exports):
-                exports.append(
-                    {
-                        "name": part.name,
-                        "format": "step",
-                        "size": part.stat().st_size,
-                        "step_kind": "editable_brep",
-                        "step_structure": "part",
-                        "fusion_editable": True,
-                        "label": "STEP (Fusion Part · Extrude/Cut)",
-                    }
-                )
-        except Exception:
-            pass
-
-    native_step = resolve_native_brep_step(project_path, filename)
-    if native_step is not None and not any(item.get("name") == native_step.name for item in exports):
-        has_links = step_has_assembly_links(native_step)
+        fmt = _export_format(name)
+        if fmt == "step":
+            # Collected below after Part ensure — never list raw/faceted/assembly STEPs.
+            continue
         exports.append(
             {
-                "name": native_step.name,
-                "format": "step",
-                "size": native_step.stat().st_size,
-                "step_kind": "editable_brep",
-                "step_structure": "assembly" if has_links else "part",
-                "fusion_editable": not has_links,
-                "base": True,
-                "label": (
-                    "STEP (linked assembly — Extrude/Cut fails)"
-                    if has_links
-                    else "STEP (Fusion Part · Extrude/Cut)"
-                ),
+                "name": name,
+                "format": fmt,
+                "size": f.stat().st_size,
             }
         )
+
+    best_step = _fusion_ready_step_export(project_path, root_stem, filename)
+    if best_step is not None:
+        exports.append(best_step)
     return exports
+
+
+def _fusion_ready_step_export(
+    project_path: Path,
+    root_stem: str,
+    filename: str,
+) -> dict[str, Any] | None:
+    """Pick/create one Extrude/Cut-ready STEP for downloads and share menus."""
+    project_path = Path(project_path)
+    candidates: list[Path] = []
+    for name in (
+        f"{root_stem}.part.step",
+        f"{root_stem}.fusionpart.step",
+        f"{root_stem}.step",
+        f"{root_stem}.stp",
+        Path(filename).name,
+    ):
+        path = project_path / Path(name).name
+        if path.is_file() and path.suffix.lower() in {".step", ".stp"}:
+            candidates.append(path)
+    native = resolve_native_brep_step(project_path, filename)
+    if native is not None and native.is_file():
+        candidates.insert(0, native)
+
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else path.name
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+
+    source: Path | None = None
+    for path in unique:
+        try:
+            if classify_step_file_kind(path) == "editable_brep":
+                source = path
+                break
+        except Exception:
+            continue
+    if source is None:
+        for path in unique:
+            if "__faceted" not in path.name.lower():
+                source = path
+                break
+    if source is None:
+        return None
+
+    try:
+        part = ensure_fusion_part_step(project_path, source)
+    except Exception:
+        part = source
+    if not part.is_file():
+        return None
+    return {
+        "name": part.name,
+        "format": "step",
+        "size": part.stat().st_size,
+        "step_kind": "editable_brep",
+        "step_structure": "part",
+        "fusion_editable": True,
+        "base": True,
+        "label": "STEP",
+        # Clients download as clean Model.step (server also rewrites Content-Disposition).
+        "download_name": f"{root_stem}.step",
+    }
 
 
 def resolve_step_module_sidecar(project_path: Path, filename: str) -> Path | None:
@@ -1267,27 +1293,55 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
     # Prefer a solid B-rep compound of the *visible* native STEPs for Fusion.
     solid_step = _build_visible_brep_step(project_path, safe_names, project_path / f"{stem}.step")
     if solid_step is not None and solid_step.is_file():
+        try:
+            solid_step = ensure_fusion_part_step(project_path, solid_step)
+        except Exception:
+            pass
         outputs.insert(1, solid_step)
 
     result: list[dict[str, Any]] = []
+    best_step: dict[str, Any] | None = None
     for out in outputs:
         if not out.is_file():
             continue
-        item: dict[str, Any] = {
-            "name": out.name,
-            "format": _export_format(out.name),
-            "size": out.stat().st_size,
-        }
-        if item["format"] == "step":
-            item["step_kind"] = classify_step_file_kind(out)
-            if out.name.startswith(stem) and "__faceted" not in out.name.lower():
-                item["step_structure"] = "part"
-                item["fusion_editable"] = True
-                item["label"] = "STEP (Fusion Part · Extrude/Cut)"
-            elif out.name.startswith(stem):
-                item["step_structure"] = "faceted"
-                item["label"] = "STEP (faceted mesh — Cut may fail)"
-        result.append(item)
+        fmt = _export_format(out.name)
+        if fmt == "step":
+            # One STEP only — Fusion-ready Part. Skip faceted mesh siblings.
+            if "__faceted" in out.name.lower():
+                continue
+            try:
+                kind = classify_step_file_kind(out)
+            except Exception:
+                kind = "unknown"
+            item = {
+                "name": out.name,
+                "format": "step",
+                "size": out.stat().st_size,
+                "step_kind": kind if kind != "unknown" else "editable_brep",
+                "step_structure": "part",
+                "fusion_editable": True,
+                "label": "STEP",
+                "download_name": (
+                    f"{Path(safe_names[0]).stem}.step"
+                    if stem.startswith("_export_") and safe_names
+                    else f"{stem}.step"
+                ),
+            }
+            # Prefer non-faceted solid over anything else.
+            if best_step is None or (
+                best_step.get("step_kind") != "editable_brep" and kind == "editable_brep"
+            ):
+                best_step = item
+            continue
+        result.append(
+            {
+                "name": out.name,
+                "format": fmt,
+                "size": out.stat().st_size,
+            }
+        )
+    if best_step is not None:
+        result.append(best_step)
     return result
 
 

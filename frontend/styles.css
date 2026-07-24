@@ -18721,10 +18721,10 @@ label input { margin-top: 4px; }
   color: #f0c040 !important;
 }
 
-.prompt-mode-tip-badge--fusion {
-  background: rgba(88, 166, 255, 0.14) !important;
-  border-color: rgba(88, 166, 255, 0.4) !important;
-  color: #79c0ff !important;
+.prompt-mode-tip-badge--mesh {
+  background: rgba(56, 189, 248, 0.14) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+  color: #7dd3fc !important;
 }
 
 .prompt-mode-btn.active {
@@ -30600,30 +30600,20 @@ body.kb-modal-open {
   color: #e6edf3;
 }
 
-.prompt-mode-btn--fusion {
-  border-color: rgba(0, 120, 212, 0.45);
+.prompt-mode-btn--mesh {
+  border-color: rgba(56, 189, 248, 0.45);
 }
 
-.prompt-mode-btn--fusion:hover:not(.active) {
-  border-color: #0099ff;
+.prompt-mode-btn--mesh:hover:not(.active) {
+  border-color: #38bdf8;
   color: #7dd3fc;
-  background: rgba(0, 153, 255, 0.08);
+  background: rgba(56, 189, 248, 0.08);
 }
 
-.prompt-mode-btn--fusion.active {
-  border-color: #0099ff;
+.prompt-mode-btn--mesh.active {
+  border-color: #38bdf8;
   color: #fff;
-  background: linear-gradient(135deg, rgba(0, 120, 212, 0.35), rgba(0, 180, 216, 0.25));
-}
-
-.prompt-mode-btn--fusion:disabled,
-.prompt-mode-btn--fusion[aria-disabled="true"] {
-  opacity: 0.45;
-  cursor: not-allowed;
-  pointer-events: none;
-  border-color: rgba(0, 120, 212, 0.2);
-  color: rgba(148, 163, 184, 0.85);
-  background: rgba(15, 23, 42, 0.35);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.25));
 }
 
 .prompt-mode-btn--electronics {
@@ -35233,6 +35223,8 @@ body.feedback-page-dragging {
   grid-template-columns: 64px minmax(0, 1fr);
   gap: 8px 12px;
   align-items: start;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .admin-project-thumb {
@@ -35260,9 +35252,11 @@ body.feedback-page-dragging {
 
 .admin-project-main {
   min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow: hidden;
 }
 
 .admin-project-main strong {
@@ -35535,6 +35529,8 @@ body.feedback-page-dragging {
   align-items: baseline;
   gap: 8px;
   margin-bottom: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .admin-user-row span,
@@ -35551,6 +35547,8 @@ body.feedback-page-dragging {
   margin: 0;
   font-size: 0.78rem;
   color: var(--muted);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .admin-row-stats span {
@@ -35558,6 +35556,9 @@ body.feedback-page-dragging {
   border-radius: 999px;
   border: 1px solid rgba(139, 148, 158, 0.25);
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-user-row small,
@@ -35567,6 +35568,8 @@ body.feedback-page-dragging {
   font-size: 0.72rem;
   line-height: 1.4;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 .admin-prompt-row p {

@@ -71,11 +71,18 @@ async function authDownloadFile(path, filename) {
 }
 
 function fileStem(name = "") {
-  return String(name).replace(/\.[^.]+$/, "");
+  return String(name || "")
+    .replace(/\.part\.step$/i, "")
+    .replace(/\.fusionpart\.step$/i, "")
+    .replace(/\.[^.]+$/, "");
 }
 
 function isFacetedStepName(name = "") {
   return /__faceted/i.test(String(name || ""));
+}
+
+function isPartStepName(name = "") {
+  return /\.part\.step$/i.test(String(name || "")) || /\.fusionpart\.step$/i.test(String(name || ""));
 }
 
 function preferBetterDownloadOption(existing, candidate) {
@@ -87,10 +94,29 @@ function preferBetterDownloadOption(existing, candidate) {
   if (String(candidate.format || "").toLowerCase() === "step") {
     if (aFaceted && !bFaceted) return candidate;
     if (!aFaceted && bFaceted) return existing;
+    const aPart = existing.fusion_editable || existing.step_structure === "part" || isPartStepName(existing.name);
+    const bPart = candidate.fusion_editable || candidate.step_structure === "part" || isPartStepName(candidate.name);
+    if (bPart && !aPart) return candidate;
+    if (aPart && !bPart) return existing;
     if (candidate.step_kind === "editable_brep" && existing.step_kind !== "editable_brep") return candidate;
   }
   if (candidate.related && !existing.related) return candidate;
   return existing;
+}
+
+function stepDownloadUrl(url, name) {
+  const base = String(url || "");
+  if (!base) {
+    return name ? `/api/projects/_/files/${encodeURIComponent(name)}?step_mode=part` : "";
+  }
+  if (!/\.ste?p($|\?)/i.test(base) && !/\.ste?p$/i.test(String(name || ""))) return base;
+  if (/[?&]step_mode=/i.test(base)) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}step_mode=part`;
+}
+
+function cleanStepDownloadName(name = "") {
+  const stem = fileStem(name) || "model";
+  return `${stem}.step`;
 }
 
 function buildDownloadOptions(project = {}, files = []) {
@@ -139,7 +165,7 @@ function bindModalDownload(el, options) {
     return;
   }
   wrap.hidden = false;
-  // Prefer STEP (editable B-rep) in the default selection when present.
+  // Prefer STEP (Fusion-ready Part) in the default selection when present.
   let preferredIdx = options.findIndex((opt) => {
     if (String(opt.format || "").toLowerCase() !== "step") return false;
     if (isFacetedStepName(opt.name) || opt.step_kind === "faceted_mesh") return false;
@@ -149,15 +175,17 @@ function bindModalDownload(el, options) {
   if (preferredIdx < 0) preferredIdx = 0;
   select.innerHTML = options.map((opt, idx) => {
     const fmt = String(opt.format || "").toUpperCase();
-    let label = `${fmt} · ${opt.name}`;
+    let label = fmt;
+    let value = opt.url;
+    let dlName = opt.name;
     if (String(opt.format || "").toLowerCase() === "step") {
-      if (isFacetedStepName(opt.name) || opt.step_kind === "faceted_mesh") {
-        label = `${fmt} (faceted mesh) · ${opt.name}`;
-      } else if (opt.step_kind === "editable_brep" || opt.base) {
-        label = `${fmt} (editable B-rep) · ${opt.name}`;
-      }
+      label = "STEP";
+      value = stepDownloadUrl(opt.url, opt.name);
+      dlName = opt.download_name || cleanStepDownloadName(opt.name);
+    } else {
+      label = `${fmt} · ${opt.name}`;
     }
-    return `<option value="${escapeHtml(opt.url)}" data-name="${escapeHtml(opt.name)}"${idx === preferredIdx ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    return `<option value="${escapeHtml(value)}" data-name="${escapeHtml(dlName)}"${idx === preferredIdx ? " selected" : ""}>${escapeHtml(label)}</option>`;
   }).join("");
   btn.onclick = async () => {
     const option = select.selectedOptions?.[0];
@@ -302,9 +330,8 @@ function renderProjectRows(projects = []) {
           ${project.prompt_count != null ? `<span>${formatNumber(project.prompt_count)} prompts</span>` : ""}
           ${project.total_cost_usd != null ? `<span>${formatMoney(project.total_cost_usd)}</span>` : ""}
           ${project.public ? "<span>Public</span>" : ""}
-          ${project.model_file ? `<span>${escapeHtml(project.model_file)}</span>` : ""}
         </div>
-        <small>${escapeHtml(project.latest_file || "No model file")} · updated ${formatDate(project.updated_at)}</small>
+        <small title="${escapeHtml(project.latest_file || project.model_file || "No model file")}">${escapeHtml(project.latest_file || project.model_file || "No model file")} · updated ${formatDate(project.updated_at)}</small>
         ${project.latest_prompt ? `<p class="admin-project-prompt">${escapeHtml(project.latest_prompt)}</p>` : ""}
       </div>
       <button type="button" class="btn secondary btn-compact admin-preview-btn" data-project-id="${escapeHtml(project.id)}">View model</button>
@@ -469,16 +496,21 @@ async function openProjectModal(projectId) {
           .map((item) => {
             let format = String(item.format || item.name.split(".").pop() || "").toLowerCase();
             if (format === "stp") format = "step";
+            const url = item.url || `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(item.name)}`;
             return {
               format,
               name: item.name,
-              url: item.url || `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(item.name)}`,
+              url: format === "step" ? stepDownloadUrl(url, item.name) : url,
               related: true,
               step_kind: item.step_kind || (format === "step" && isFacetedStepName(item.name) ? "faceted_mesh" : null),
+              step_structure: item.step_structure || null,
+              fusion_editable: !!item.fusion_editable,
               base: !!item.base,
+              download_name: item.download_name || (format === "step" ? cleanStepDownloadName(item.name) : item.name),
             };
           })
-          .filter((item) => ["glb", "stl", "step", "3mf", "obj"].includes(item.format));
+          .filter((item) => ["glb", "stl", "step", "3mf", "obj"].includes(item.format))
+          .filter((item) => !(item.format === "step" && (isFacetedStepName(item.name) || item.step_kind === "faceted_mesh")));
         if (exportData.file_url && exportSource) {
           let srcFmt = String(exportSource.split(".").pop() || "").toLowerCase();
           if (srcFmt === "stp") srcFmt = "step";

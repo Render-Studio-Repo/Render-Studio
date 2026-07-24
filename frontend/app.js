@@ -506,7 +506,8 @@ function promptGenerateButtonLabel(mode = promptMode, runningCount = activeCadGe
   if (mode === "render") return "Render scene";
   if (mode === "draw") return "Apply Draw command";
   if (mode === "architect") return "Generate modular house part";
-  if (mode === "fusion") return `Generate with ${fusionTargetLabel()}`;
+  if (mode === "mesh") return "Generate mesh";
+  if (mode === "fusion") return "Generate mesh";
   if (mode === "v2") return "Generate with 2.0";
   return "Generate / modify with AI";
 }
@@ -566,7 +567,7 @@ function syncViewportGenerationUserBadge(gen) {
   const kind = String(gen.kind || generationWatchOverlay?.kind || "prompt").toLowerCase();
   const mode = generationPromptMode(gen);
   const rendering = kind === "render" || kind === "scene_render" || mode === "render";
-  const v2ish = !rendering && ["v2", "fusion", "architect"].includes(mode);
+  const v2ish = !rendering && ["v2", "mesh", "fusion", "architect"].includes(mode);
   btn.classList.remove("hidden");
   btn.classList.toggle("viewport-generation-user--rigging", rigging);
   btn.classList.toggle("viewport-generation-user--render", !rigging && rendering);
@@ -1362,7 +1363,8 @@ function generationPromptMode(generation = {}, fallback = "standard") {
     generation?.request_body?.mode ||
     generation?.request_body?.prompt_mode;
   const text = String(explicitRaw || "").toLowerCase();
-  if (text === "fusion" || text === "fusion360" || text === "fusion-360") return "fusion";
+  if (text === "mesh" || text === "img2threejs" || text === "threejs") return "mesh";
+  if (text === "fusion" || text === "fusion360" || text === "fusion-360") return "mesh";
   if (text === "architect" || text === "architecture") return "architect";
   if (text === "v2" || text === "2.0" || text === "2") return "v2";
   if (text === "render") return "render";
@@ -1374,11 +1376,13 @@ function generationPromptMode(generation = {}, fallback = "standard") {
     generation?.prompt,
     generation?.progress?.label,
   ].filter(Boolean).join(" "));
-  if (searchable.match(/\bfusion\b/i)) return "fusion";
+  if (searchable.match(/\bmesh\b|img2threejs|three\.?js/i)) return "mesh";
+  if (searchable.match(/\bfusion\b/i)) return "mesh";
   if (searchable.match(/\barchitect(?:ure)?\b/i)) return "architect";
   if (searchable.match(/\b(v2|2\.0)\b/i)) return "v2";
   const fallbackText = String(fallback || "standard").toLowerCase();
-  if (fallbackText === "fusion" || fallbackText === "fusion360" || fallbackText === "fusion-360") return "fusion";
+  if (fallbackText === "mesh" || fallbackText === "img2threejs") return "mesh";
+  if (fallbackText === "fusion" || fallbackText === "fusion360" || fallbackText === "fusion-360") return "mesh";
   if (fallbackText === "architect" || fallbackText === "architecture") return "architect";
   if (fallbackText === "v2" || fallbackText === "2.0" || fallbackText === "2") return "v2";
   if (fallbackText === "render") return "render";
@@ -1388,8 +1392,9 @@ function generationPromptMode(generation = {}, fallback = "standard") {
 
 function applyPromptModeUI(mode = promptMode) {
   promptMode = mode === "draw" ? DEFAULT_PROMPT_MODE : (mode || DEFAULT_PROMPT_MODE);
-  if (!FUSION_PROMPT_MODE_ENABLED && promptMode === "fusion") {
-    promptMode = DEFAULT_PROMPT_MODE;
+  if (promptMode === "fusion") {
+    // Fusion prompt tab removed — map legacy sessions to Mesh.
+    promptMode = "mesh";
   }
   const modeBtn = document.querySelector(`[data-prompt-mode="${promptMode}"]`);
   if (!modeBtn || modeBtn.disabled) {
@@ -1406,6 +1411,8 @@ function applyPromptModeUI(mode = promptMode) {
   if (input) {
     const placeholder = promptMode === "render"
       ? "Describe the real-life environment to render. Example: put this model on a kitchen counter in morning light..."
+      : promptMode === "mesh"
+      ? "Attach a reference image or describe an object to rebuild as a procedural Three.js mesh…"
       : "Describe what to make or edit. Type @ to link uploaded files…";
     input.placeholder = placeholder;
     if (composer?.editor) composer.editor.dataset.placeholder = placeholder;
@@ -1421,7 +1428,7 @@ function applyPromptModeUI(mode = promptMode) {
 }
 
 function selectedPromptSupportsElectronics(mode = promptMode) {
-  return ["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase());
+  return ["v2", "architect"].includes(String(mode || "").toLowerCase());
 }
 
 function isModelElectronicsEnabled() {
@@ -1578,7 +1585,7 @@ function initPromptModeHoverTips() {
   const tips = [
     { wrap: '[data-prompt-mode-tip="render"]', tip: "prompt-mode-render-tip" },
     { wrap: '[data-prompt-mode-tip="v2"]', tip: "prompt-mode-v2-tip" },
-    { wrap: '[data-prompt-mode-tip="fusion"]', tip: "prompt-mode-fusion-tip" },
+    { wrap: '[data-prompt-mode-tip="mesh"]', tip: "prompt-mode-mesh-tip" },
   ];
   for (const entry of tips) {
     bindFixedHoverTip(
@@ -1599,7 +1606,7 @@ function initPromptElectronicsHoverTip() {
 
 function preservePromptModeAfterAttach(modeBeforeAttach = promptMode) {
   const mode = String(modeBeforeAttach || DEFAULT_PROMPT_MODE).toLowerCase();
-  if (!["render", "v2", "fusion", "architect"].includes(mode)) return;
+  if (!["render", "v2", "mesh", "fusion", "architect"].includes(mode)) return;
   if (promptMode !== mode || !document.querySelector(`[data-prompt-mode="${mode}"]`)?.classList.contains("active")) {
     applyPromptModeUI(mode);
   }
@@ -1706,7 +1713,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
           : "Generating in background… safe to refresh.";
     }
-    if (["v2", "fusion", "architect"].includes((mode || "standard").toLowerCase()) && pid === projectId) {
+    if (["v2", "mesh", "architect"].includes((mode || "standard").toLowerCase()) && pid === projectId) {
       applyPromptModeUI((mode || "standard").toLowerCase());
     }
   }
@@ -4534,7 +4541,7 @@ const promptHistory = createPromptHistoryUI({
   },
   onReuse: (entry) => {
     const reusedMode = generationPromptMode({ prompt_mode: entry.prompt_mode }, promptMode);
-    if (["v2", "fusion", "architect", "draw", "standard"].includes(reusedMode)) {
+    if (["v2", "mesh", "architect", "draw", "standard"].includes(reusedMode)) {
       applyPromptModeUI(reusedMode === "standard" ? "render" : reusedMode);
     }
     const refs = promptHistoryReferencesForReuse(entry);
@@ -4741,7 +4748,7 @@ function setCodexEnabled(enabled, { persist = true } = {}) {
 }
 
 function selectedPromptSupportsCodex(mode = promptMode) {
-  if (!["v2", "fusion", "architect"].includes(String(mode || "").toLowerCase())) return false;
+  if (!["v2", "architect"].includes(String(mode || "").toLowerCase())) return false;
   const { provider } = getSelectedPromptModelInfo();
   return String(provider || "").toLowerCase() === "openai";
 }
@@ -5143,7 +5150,7 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
     thinking:
       improveMode === "render"
         ? "Rewriting your prompt for a clearer photoreal scene…"
-        : improveMode === "v2" || improveMode === "fusion" || improveMode === "architect"
+        : improveMode === "v2" || improveMode === "mesh" || improveMode === "architect"
         ? "Rewriting your prompt for clearer parametric CAD…"
         : improveMode === "draw"
           ? "Rewriting your prompt for a clearer direct edit…"
@@ -5294,7 +5301,8 @@ function fusionTargetLabel(target = fusionTarget) {
 
 function promptModeForRef(mode = promptMode) {
   const normalized = (mode || DEFAULT_PROMPT_MODE).toLowerCase();
-  if (normalized === "fusion") return "fusion";
+  if (normalized === "mesh") return "mesh";
+  if (normalized === "fusion") return "mesh";
   if (normalized === "architect") return "architect";
   if (normalized === "v2") return "v2";
   if (normalized === "draw") return "draw";
@@ -5328,24 +5336,9 @@ document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (btn.disabled) return;
-    if ((btn.dataset.promptMode || DEFAULT_PROMPT_MODE) === "fusion") {
-      if (!FUSION_PROMPT_MODE_ENABLED) return;
-      openFusionCapabilityModal();
-      return;
-    }
     applyPromptModeUI(btn.dataset.promptMode || DEFAULT_PROMPT_MODE);
   });
 });
-
-(function syncFusionPromptModeButton() {
-  const fusionBtn = document.querySelector('[data-prompt-mode="fusion"]');
-  if (!fusionBtn) return;
-  fusionBtn.disabled = !FUSION_PROMPT_MODE_ENABLED;
-  fusionBtn.title = FUSION_PROMPT_MODE_ENABLED
-    ? "Generate parametric CAD then push directly to Fusion 360"
-    : "Fusion prompt mode is temporarily unavailable";
-  fusionBtn.setAttribute("aria-disabled", FUSION_PROMPT_MODE_ENABLED ? "false" : "true");
-})();
 
 applyPromptModeUI(
   document.querySelector("[data-prompt-mode].active")?.dataset?.promptMode || DEFAULT_PROMPT_MODE,
@@ -15229,7 +15222,7 @@ function syncPromptTargetUI() {
   const pickerSubtitle = document.getElementById("prompt-target-picker-subtitle");
   const pickerThumb = document.getElementById("prompt-target-picker-thumb");
   const entries = visiblePromptTargetEntries();
-  const targetControlsEnabled = ["standard", "v2", "fusion"].includes(promptMode);
+  const targetControlsEnabled = ["standard", "v2", "mesh"].includes(promptMode);
   const canEdit = targetControlsEnabled && entries.length > 0;
   if (select) {
     select.disabled = !targetControlsEnabled;
@@ -17655,7 +17648,15 @@ const workspaceBrowser = createWorkspaceBrowser({
   onRenameHierarchyItem: (project, entry) => renameHierarchyComponent(project, entry),
   onDeleteHierarchyItem: (project, entry) => deleteHierarchyComponent(project, entry),
   onExportHierarchyItem: (project, entry) => {
-    openFileExportMenu({ api, projectId: project.id, filename: entry.name, anchorEl: document.body, shareContext: currentVisibleShareContext }).catch((err) => {
+    openFileExportMenu({
+      api,
+      projectId: project.id,
+      filename: entry.name,
+      fusionUploadName: `${componentStemName(entry.name) || "model"}.step`,
+      allowedFilenames: [entry.name],
+      anchorEl: document.body,
+      shareContext: currentVisibleShareContext,
+    }).catch((err) => {
       alert(err.message || "Could not load exports");
     });
   },
@@ -18655,7 +18656,15 @@ const projectTree = createProjectTree({
       alert("Show this component before exporting it.");
       return;
     }
-    openFileExportMenu({ api, projectId, filename: entry.name, anchorEl, shareContext: currentVisibleShareContext }).catch((err) => {
+    openFileExportMenu({
+      api,
+      projectId,
+      filename: entry.name,
+      fusionUploadName: `${componentStemName(entry.name) || "model"}.step`,
+      allowedFilenames: [entry.name],
+      anchorEl,
+      shareContext: currentVisibleShareContext,
+    }).catch((err) => {
       alert(err.message || "Could not load exports");
     });
   },
@@ -20462,18 +20471,9 @@ async function exportCurrentModel(anchorEl) {
       fusionUploadName: fusionDisplayName,
       anchorEl: anchor,
       title: visibleFiles.length === 1 ? `Export ${visibleFiles[0]}` : "Export visible components",
-      hint: `Exports only what’s on screen as “${fusionDisplayName}” (hidden parts stay out). Choose Part or Assembly when you send to Fusion.`,
+      hint: `Exports only what’s on screen as “${fusionDisplayName}” (hidden parts stay out).`,
       allowOnshape: false,
       shareContext: currentVisibleShareContext,
-      extraExports: regularStepName ? [{
-        name: regularStepName,
-        format: "step",
-        size: null,
-        label: "STEP (Fusion Part · Extrude/Cut)",
-        step_structure: "part",
-        fusion_editable: true,
-        url: `/api/projects/${projectId}/files/${encodeURIComponent(regularStepName)}`,
-      }] : [],
       exportsRequest: {
         path: `/api/projects/${projectId}/assembly/exports`,
         options: {
@@ -26859,7 +26859,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     aiKeyUi?.openRequired();
     return;
   }
-  if (["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()) {
+  if (["v2", "architect"].includes(promptMode) && isCodexEnabled()) {
     const openAiKeys = listOpenAiKeysForCodex();
     if (!openAiKeys.length) {
       setCodexEnabled(false);
@@ -26911,7 +26911,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     const { targetMode, baseFilename: targetBaseFilename } = resolvePromptEditTarget(promptReferences, { canvasAttached });
     const status = document.getElementById("prompt-status");
     const reply = document.getElementById("prompt-reply");
-    const genMode = promptMode === "fusion" ? "fusion" : promptMode === "architect" ? "architect" : promptMode === "v2" ? "v2" : "standard";
+    const genMode = promptMode === "mesh" || promptMode === "fusion"
+      ? "mesh"
+      : promptMode === "architect"
+        ? "architect"
+        : promptMode === "v2"
+          ? "v2"
+          : "standard";
     const promptHistoryId = newPromptHistoryId();
     const selectedModelInfo = getSelectedPromptModelInfo();
     addPendingPromptHistoryEntry({
@@ -26939,7 +26945,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       references: promptReferences,
       model: selectedModelInfo.model,
       provider: selectedModelInfo.provider,
-      codex_agent: ["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled(),
+      codex_agent: ["v2", "architect"].includes(promptMode) && isCodexEnabled(),
       model_electronics: selectedPromptSupportsElectronics(promptMode) && isModelElectronicsEnabled(),
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
     });
@@ -27025,8 +27031,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       status.className = "status loading";
       status.textContent = convertImagesToDrawing
         ? "Converting image to drawing, then generating…"
-        : promptMode === "fusion"
-        ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${fusionTargetLabel()}... (builds, renders, reviews, repairs)`
+        : promptMode === "mesh" || promptMode === "fusion"
+        ? `${targetMode === "edit" ? "Editing selected mesh" : "Building procedural mesh"} with Mesh mode... (img2threejs → GLB)`
         : promptMode === "architect"
         ? `${targetMode === "edit" ? "Editing selected module" : "Adding modular house part"} with Architect mode... (runs in background - safe to refresh)`
         : promptMode === "v2"
@@ -27051,10 +27057,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
         target_mode: targetMode === "edit" ? "edit" : "new",
         ...getPromptAiKeyBodyFields(),
-        ...(promptMode === "fusion" ? { mode: "fusion", fusion_target: fusionTarget } : {}),
+        ...(promptMode === "mesh" || promptMode === "fusion" ? { mode: "mesh" } : {}),
         ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
         ...(promptMode === "v2" ? { mode: "v2" } : {}),
-        ...(["v2", "fusion", "architect"].includes(promptMode) && isCodexEnabled()
+        ...(["v2", "architect"].includes(promptMode) && isCodexEnabled()
           ? { codex_agent: true }
           : {}),
         ...(selectedPromptSupportsElectronics(promptMode)
@@ -27123,8 +27129,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
           if (proj) proj.generation = data.generation;
         }
         if (status) {
-          status.textContent = promptMode === "fusion"
-            ? `Generating with ${fusionTargetLabel()} in background... building, rendering, reviewing, and repairing.`
+          status.textContent = promptMode === "mesh" || promptMode === "fusion"
+            ? "Generating Mesh in background... writing Three.js, exporting GLB, then loading viewport."
             : promptMode === "architect"
             ? "Generating Architect module in background... building, rendering, reviewing, and repairing."
             : promptMode === "v2"
