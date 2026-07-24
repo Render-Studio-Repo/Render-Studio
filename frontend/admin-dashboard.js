@@ -438,12 +438,16 @@ async function openProjectModal(projectId) {
           })
           .filter((item) => ["glb", "stl", "step", "3mf", "obj"].includes(item.format));
         if (exportData.file_url && exportSource) {
-          exportOpts.unshift({
-            format: "glb",
-            name: exportData.filename || exportSource,
-            url: exportData.file_url,
-            related: true,
-          });
+          let srcFmt = String(exportSource.split(".").pop() || "").toLowerCase();
+          if (srcFmt === "stp") srcFmt = "step";
+          if (["glb", "stl", "step", "3mf", "obj"].includes(srcFmt)) {
+            exportOpts.unshift({
+              format: srcFmt,
+              name: exportData.filename || exportSource,
+              url: exportData.file_url,
+              related: true,
+            });
+          }
         }
         if (exportOpts.length) {
           const byFmt = new Map(downloadOptions.map((o) => [o.format, o]));
