@@ -206,18 +206,8 @@ async function createShareUrl(projectId, filename, shareContext = null) {
     } catch {
       body = null;
     }
-  } else if (shareContext && typeof shareContext === "object") {
-    body = shareContext;
   }
-  // Prefer the primary visible model so shares don't stick to a hidden/secondary
-  // file that happened to own the export menu.
-  let shareFilename = filename;
-  const visible = Array.isArray(body?.visible_filenames) ? body.visible_filenames : [];
-  const primaryVisible = visible.find((name) => typeof name === "string" && name.trim()) || "";
-  if (primaryVisible) {
-    shareFilename = String(primaryVisible).trim();
-  }
-  const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(shareFilename)}/share`, {
+  const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/share`, {
     method: "POST",
     headers: {
       ...authHeaders(),

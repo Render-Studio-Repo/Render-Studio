@@ -74,6 +74,25 @@ function fileStem(name = "") {
   return String(name).replace(/\.[^.]+$/, "");
 }
 
+function isFacetedStepName(name = "") {
+  return /__faceted/i.test(String(name || ""));
+}
+
+function preferBetterDownloadOption(existing, candidate) {
+  if (!existing) return candidate;
+  if (!candidate) return existing;
+  const aFaceted = isFacetedStepName(existing.name) || existing.step_kind === "faceted_mesh";
+  const bFaceted = isFacetedStepName(candidate.name) || candidate.step_kind === "faceted_mesh";
+  // Never let faceted mesh STEP win over a solid/editable B-rep sibling.
+  if (String(candidate.format || "").toLowerCase() === "step") {
+    if (aFaceted && !bFaceted) return candidate;
+    if (!aFaceted && bFaceted) return existing;
+    if (candidate.step_kind === "editable_brep" && existing.step_kind !== "editable_brep") return candidate;
+  }
+  if (candidate.related && !existing.related) return candidate;
+  return existing;
+}
+
 function buildDownloadOptions(project = {}, files = []) {
   const preferred = String(project.model_file || project.latest_file || "").trim();
   const stem = preferred ? fileStem(preferred).toLowerCase() : "";
@@ -90,10 +109,14 @@ function buildDownloadOptions(project = {}, files = []) {
     const related = !stem
       || fileStem(name).toLowerCase().startsWith(stem)
       || stem.startsWith(fileStem(name).toLowerCase());
-    const existing = formats.get(fmt);
-    if (!existing || (related && !existing.related)) {
-      formats.set(fmt, { format: fmt, name, url, related: !!related });
-    }
+    const candidate = {
+      format: fmt,
+      name,
+      url,
+      related: !!related,
+      step_kind: file.step_kind || (fmt === "step" && isFacetedStepName(name) ? "faceted_mesh" : null),
+    };
+    formats.set(fmt, preferBetterDownloadOption(formats.get(fmt), candidate));
   };
   for (const file of files) consider(file);
   if (project.model_url && project.model_file) {
@@ -116,9 +139,26 @@ function bindModalDownload(el, options) {
     return;
   }
   wrap.hidden = false;
-  select.innerHTML = options.map((opt) => `
-    <option value="${escapeHtml(opt.url)}" data-name="${escapeHtml(opt.name)}">${escapeHtml(opt.format.toUpperCase())} · ${escapeHtml(opt.name)}</option>
-  `).join("");
+  // Prefer STEP (editable B-rep) in the default selection when present.
+  let preferredIdx = options.findIndex((opt) => {
+    if (String(opt.format || "").toLowerCase() !== "step") return false;
+    if (isFacetedStepName(opt.name) || opt.step_kind === "faceted_mesh") return false;
+    return true;
+  });
+  if (preferredIdx < 0) preferredIdx = options.findIndex((opt) => String(opt.format || "").toLowerCase() === "step");
+  if (preferredIdx < 0) preferredIdx = 0;
+  select.innerHTML = options.map((opt, idx) => {
+    const fmt = String(opt.format || "").toUpperCase();
+    let label = `${fmt} · ${opt.name}`;
+    if (String(opt.format || "").toLowerCase() === "step") {
+      if (isFacetedStepName(opt.name) || opt.step_kind === "faceted_mesh") {
+        label = `${fmt} (faceted mesh) · ${opt.name}`;
+      } else if (opt.step_kind === "editable_brep" || opt.base) {
+        label = `${fmt} (editable B-rep) · ${opt.name}`;
+      }
+    }
+    return `<option value="${escapeHtml(opt.url)}" data-name="${escapeHtml(opt.name)}"${idx === preferredIdx ? " selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
   btn.onclick = async () => {
     const option = select.selectedOptions?.[0];
     const url = select.value;
@@ -274,36 +314,13 @@ function renderProjectRows(projects = []) {
 
 function renderPromptRows(prompts = [], { openProject = true } = {}) {
   if (!prompts.length) return '<p class="muted">No prompt history yet.</p>';
-  return prompts.map((prompt, index) => {
-    const improved = String(prompt.prompt || prompt.prompt_preview || "").trim();
-    const original = String(prompt.original_prompt || "").trim();
-    const hasOriginal = Boolean(
-      prompt.prompt_improved || (original && original !== improved)
-    );
-    const rowId = escapeHtml(String(prompt.id || `${prompt.project_id || "p"}-${index}`));
-    const versionBar = `
-      <div class="admin-prompt-actions">
-        ${hasOriginal ? `
-          <span class="admin-prompt-badge" data-prompt-badge>Improved</span>
-          <button type="button" class="btn secondary btn-compact admin-prompt-toggle" data-show="original">Show original</button>
-        ` : ""}
-        <button type="button" class="btn secondary btn-compact admin-prompt-copy" title="Copy prompt to clipboard">Copy</button>
-      </div>
-    `;
-    const bodies = hasOriginal
-      ? `
-        <p class="admin-prompt-body" data-version="improved">${escapeHtml(improved || "(empty prompt)")}</p>
-        <p class="admin-prompt-body hidden" data-version="original">${escapeHtml(original || "(no original prompt)")}</p>
-      `
-      : `<p class="admin-prompt-body">${escapeHtml(improved || "(empty prompt)")}</p>`;
-    return `
-    <article class="admin-prompt-row ${prompt.success ? "" : "admin-prompt-row--error"}${openProject ? " admin-row--clickable" : ""}" ${openProject && prompt.project_id ? `data-project-id="${escapeHtml(prompt.project_id)}"` : ""} data-prompt-row="${rowId}">
+  return prompts.map((prompt) => `
+    <article class="admin-prompt-row ${prompt.success ? "" : "admin-prompt-row--error"}${openProject ? " admin-row--clickable" : ""}" ${openProject && prompt.project_id ? `data-project-id="${escapeHtml(prompt.project_id)}"` : ""}>
       <div class="admin-prompt-head">
         <strong>${escapeHtml(prompt.user_name || prompt.owner_name || "Unknown user")}</strong>
         <span>${escapeHtml(prompt.kind || "cad")} · ${escapeHtml(prompt.prompt_mode || "mode")} · ${formatDate(prompt.created_at)}</span>
       </div>
-      ${versionBar}
-      ${bodies}
+      <p>${escapeHtml(prompt.prompt || prompt.prompt_preview || "(empty prompt)")}</p>
       <small>
         ${escapeHtml(prompt.project_name || prompt.project_id || "Project")}
         ${prompt.filename ? ` · ${escapeHtml(prompt.filename)}` : ""}
@@ -312,80 +329,7 @@ function renderPromptRows(prompts = [], { openProject = true } = {}) {
         ${prompt.error ? ` · Error: ${escapeHtml(prompt.error)}` : ""}
       </small>
     </article>
-  `;
-  }).join("");
-}
-
-function bindPromptRowActions(root) {
-  root.querySelectorAll(".admin-prompt-row").forEach((row) => {
-    const toggleBtn = row.querySelector(".admin-prompt-toggle");
-    const copyBtn = row.querySelector(".admin-prompt-copy");
-    const badge = row.querySelector("[data-prompt-badge]");
-    const improvedEl = row.querySelector('.admin-prompt-body[data-version="improved"]')
-      || row.querySelector(".admin-prompt-body:not([data-version])");
-    const originalEl = row.querySelector('.admin-prompt-body[data-version="original"]');
-
-    const visibleText = () => {
-      const visible = [...row.querySelectorAll(".admin-prompt-body")].find((el) => !el.classList.contains("hidden"));
-      return (visible?.textContent || "").trim();
-    };
-
-    toggleBtn?.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!originalEl || !improvedEl) return;
-      const showingOriginal = toggleBtn.dataset.show === "improved";
-      if (showingOriginal) {
-        originalEl.classList.add("hidden");
-        improvedEl.classList.remove("hidden");
-        toggleBtn.dataset.show = "original";
-        toggleBtn.textContent = "Show original";
-        if (badge) badge.textContent = "Improved";
-      } else {
-        improvedEl.classList.add("hidden");
-        originalEl.classList.remove("hidden");
-        toggleBtn.dataset.show = "improved";
-        toggleBtn.textContent = "Show improved";
-        if (badge) badge.textContent = "Original";
-      }
-    });
-
-    copyBtn?.addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const text = visibleText();
-      if (!text) return;
-      let ok = false;
-      try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-          ok = true;
-        }
-      } catch {
-        ok = false;
-      }
-      if (!ok) {
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.setAttribute("readonly", "");
-          ta.style.position = "fixed";
-          ta.style.left = "-9999px";
-          document.body.appendChild(ta);
-          ta.select();
-          ok = document.execCommand("copy");
-          ta.remove();
-        } catch {
-          ok = false;
-        }
-      }
-      const prev = copyBtn.textContent;
-      copyBtn.textContent = ok ? "Copied" : "Copy failed";
-      window.setTimeout(() => {
-        if (copyBtn.isConnected) copyBtn.textContent = prev || "Copy";
-      }, 1200);
-    });
-  });
+  `).join("");
 }
 
 let modalState = {
@@ -508,7 +452,6 @@ async function openProjectModal(projectId) {
     `;
 
     promptsEl.innerHTML = renderPromptRows(prompts, { openProject: false });
-    bindPromptRowActions(promptsEl);
     filesEl.innerHTML = (data.files || []).slice(0, 24).map((file) => `
       <span class="admin-pill"><strong>${escapeHtml(file.name || "")}</strong></span>
     `).join("") || '<span class="muted small">No CAD files</span>';
@@ -531,6 +474,8 @@ async function openProjectModal(projectId) {
               name: item.name,
               url: item.url || `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(item.name)}`,
               related: true,
+              step_kind: item.step_kind || (format === "step" && isFacetedStepName(item.name) ? "faceted_mesh" : null),
+              base: !!item.base,
             };
           })
           .filter((item) => ["glb", "stl", "step", "3mf", "obj"].includes(item.format));
@@ -543,12 +488,17 @@ async function openProjectModal(projectId) {
               name: exportData.filename || exportSource,
               url: exportData.file_url,
               related: true,
+              step_kind: srcFmt === "step"
+                ? (isFacetedStepName(exportData.filename || exportSource) ? "faceted_mesh" : "editable_brep")
+                : null,
             });
           }
         }
         if (exportOpts.length) {
           const byFmt = new Map(downloadOptions.map((o) => [o.format, o]));
-          for (const opt of exportOpts) byFmt.set(opt.format, opt);
+          for (const opt of exportOpts) {
+            byFmt.set(opt.format, preferBetterDownloadOption(byFmt.get(opt.format), opt));
+          }
           downloadOptions = [...byFmt.values()].sort((a, b) => {
             const order = ["glb", "stl", "step", "3mf", "obj"];
             return order.indexOf(a.format) - order.indexOf(b.format);
@@ -667,9 +617,6 @@ async function openUserPanel(root, userId, dashboardData) {
 function bindInteractive(root, data) {
   root.querySelectorAll("[data-project-id]").forEach((el) => {
     const open = (event) => {
-      if (event.target?.closest?.(".admin-prompt-toggle, .admin-prompt-copy, .admin-prompt-actions")) {
-        return;
-      }
       event.preventDefault();
       event.stopPropagation();
       const id = el.getAttribute("data-project-id") || el.dataset.projectId;
@@ -687,7 +634,6 @@ function bindInteractive(root, data) {
       if (id) void openUserPanel(root.closest(".admin-dashboard") || root, id, data);
     });
   });
-  bindPromptRowActions(root);
 }
 
 function bindAdminViewToolbar(root) {
@@ -928,7 +874,7 @@ function renderDashboard(root, data) {
     </section>
   `;
 
-  root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root, { refresh: true }));
+  root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root));
   root.querySelector("#admin-agent-refresh")?.addEventListener("click", () => {
     void loadRenderAgentActivity(root);
   });
@@ -1449,7 +1395,7 @@ async function loadRenderAgentActivity(root) {
   }
 }
 
-async function loadDashboard(root, { refresh = false } = {}) {
+async function loadDashboard(root) {
   const user = getStoredUser();
   if (!getToken()) {
     root.innerHTML = '<section class="admin-hero-card"><h2>Sign in required</h2><p class="muted">Sign in with an admin account to view the management dashboard.</p><a class="btn primary" href="/">Go to Studio</a></section>';
@@ -1462,7 +1408,7 @@ async function loadDashboard(root, { refresh = false } = {}) {
   root.innerHTML = '<section class="admin-hero-card"><h2>Loading dashboard…</h2><p class="muted">Aggregating users, projects, model previews, and prompt histories.</p></section>';
   clearChartCleanups();
   try {
-    const data = await api(`/api/admin/dashboard${refresh ? "?refresh=true" : ""}`);
+    const data = await api("/api/admin/dashboard");
     renderDashboard(root, data);
   } catch (err) {
     root.innerHTML = `<section class="admin-hero-card"><h2>Could not load dashboard</h2><p class="muted">${escapeHtml(err.message || "Request failed")}</p><a class="btn secondary" href="/">Back to Studio</a></section>`;

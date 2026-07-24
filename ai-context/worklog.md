@@ -1,3 +1,38 @@
+## 2026-07-24 — Restore working B-rep export/Fusion from backup
+
+- Afternoon Part-mode forcing rewrote native STEPs through `export_step_as_single_part`, which broke Fusion editability (“all B-rep messed up”).
+- Restored `file-actions.js` + `admin-dashboard.js` from snapshot `20260724T150001Z-cron` (pre-break), then re-applied only the nested Fusion folder grid.
+- Exports/Fusion again ship **native editable B-rep** by default (assembly); Part rewrite only when `step_kind` is unknown / user explicitly picks Part.
+- Admin download prefers editable B-rep over `*__faceted.step` without rewriting solids.
+- Cache-bust: `?v=20260724-brep-restore`.
+
+---
+
+## 2026-07-24 — Fusion/STEP: Part mode for editable solids
+
+- Assembly STEPs open in Fusion as linked components (hard to edit). Downloads + Fusion export now prefer **Part** (one design, solid bodies, no `NEXT_ASSEMBLY_USAGE`).
+- Studio STEP download always asks Part vs Assembly (Part recommended). Admin defaults to `?step_mode=part` and labels options clearly.
+- Cache-bust: `file-actions.js` / `admin-dashboard.js` `?v=20260724-fusion-part-edit`.
+- Note: STEP never carries build123d parameter history into Fusion — edit via Press Pull / Extrude Cut on solids.
+
+---
+
+## 2026-07-24 — Admin STEP download: keep parametric B-rep
+
+- Admin project modal download collapsed all STEPs into one format slot; `*__faceted.step` often won, so downloads lost solid/parametric B-rep (labels/bodies).
+- Now keeps both variants, labels them (`parametric B-rep` vs `faceted mesh`), and defaults to editable B-rep.
+- Files: `frontend/admin-dashboard.js`, `admin-dashboard.html` (`?v=20260724-admin-step-brep`).
+
+---
+
+## 2026-07-24 — Fusion export: nested folder grid picker
+
+- Export → Fusion folder browser is now a **2-column tile grid**; click a tile to open nested folders (e.g. Project Files → Render3D → …).
+- **Export here** selects the current folder; breadcrumbs + Back for navigation; last nested path remembered.
+- Cache-bust: `file-actions.js?v=20260724-fusion-folder-grid`, `styles.css?v=20260724-fusion-folder-grid`, `app.js` import bump.
+
+---
+
 ## 2026-07-24 — Part names: product noun, not “fully assembled CAD”
 
 - Spice-improved prompts often started with CAD boilerplate, so STEP/Fusion file + `model_label` became `Parametric Fully Assembled CAD…`.
