@@ -1285,7 +1285,6 @@ def _nest_shared_workspace_root_projects(
     root projects under a virtual per-team folder (e.g. "Render3D shared workspace").
     Real subfolders inside those workspaces are left alone.
     """
-    personal_id = _personal_workspace_id(user)
     teams_by_id = {str(t["id"]): t for t in teams_service.list_teams(user["id"])}
     out: list[dict[str, Any]] = []
     for project in projects:
@@ -1303,10 +1302,7 @@ def _nest_shared_workspace_root_projects(
         member_count = int(team.get("member_count") or team.get("members_count") or 1) or 1
         # Solo / true-personal teams stay at root. Multi-member collab teams nest
         # even when the current user is the workspace admin/owner.
-        if member_count <= 1 or (personal_id and str(tid) == str(personal_id) and member_count <= 1):
-            out.append(project)
-            continue
-        if personal_id and str(tid) == str(personal_id) and member_count <= 1:
+        if member_count <= 1:
             out.append(project)
             continue
         folder_id = _shared_workspace_folder_id(str(tid))

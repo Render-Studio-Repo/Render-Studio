@@ -17089,15 +17089,39 @@ function personalWorkspaceId(teams = allTeams) {
   const mine = teams
     .filter((team) => team.role === "owner" && (!currentUser?.id || team.created_by === currentUser.id))
     .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
-  return mine[0]?.id || teams.find((team) => team.role === "owner")?.id || null;
+  const looksPersonal = (team) => {
+    const name = String(team?.name || "").trim().toLowerCase();
+    return (
+      /'s\s+workspace$/i.test(name)
+      || /’s\s+workspace$/i.test(name)
+      || name === "my workspace"
+      || name === "personal workspace"
+      || name === "personal"
+    );
+  };
+  // Prefer a true solo personal workspace. Multi-member collab teams (Render3D)
+  // must not steal the personal slot or they disappear from shared-workspace UI.
+  const solo = mine.filter((team) => workspaceMemberCount(team) <= 1);
+  if (solo.length) {
+    return (solo.find(looksPersonal) || solo[0]).id;
+  }
+  const named = mine.find(looksPersonal);
+  if (named) return named.id;
+  return null;
 }
 
 function isPersonalWorkspace(team) {
-  return !!team?.id && team.id === personalWorkspaceId();
+  if (!team?.id) return false;
+  // Multi-member workspaces are always shared, even if owned by you.
+  if (workspaceMemberCount(team) > 1) return false;
+  const personalId = personalWorkspaceId();
+  return !!personalId && team.id === personalId;
 }
 
 function isSharedWorkspace(team) {
-  return !!team?.id && !isPersonalWorkspace(team);
+  if (!team?.id) return false;
+  if (workspaceMemberCount(team) > 1) return true;
+  return !isPersonalWorkspace(team);
 }
 
 function workspaceMemberCount(team) {
