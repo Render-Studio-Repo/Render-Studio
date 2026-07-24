@@ -27,7 +27,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "How do parallel CAD generations and Stop work?",
         "steps": ["Start a Generate while another is still running.", "Watch skinny progress rows in the viewport banner.", "Use View more for details; Stop opens a picker when several run."],
         "keywords": ["parallel", "multi gen", "stop generating", "multiple prompts"],
-        "gif": f"/docs/media/ai-generate.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/multi-gen.gif?{GIF_CACHE}",
     },
     {
         "id": "picks",
@@ -47,7 +47,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "How do I link project files and geometry into the AI prompt with @component and picks?",
         "steps": ["In the Project browser, click one file, then Shift-click another to select a range.", "Drag the selection into the AI prompt box \u2014 reference chips appear.", "Combine with @face / @edge / @path picks for precise edits."],
         "keywords": ["link to prompt", "drag to prompt", "@component", "project browser", "shift select", "attach files", "reference chips"],
-        "gif": f"/docs/media/picks.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/link-to-prompt.gif?{GIF_CACHE}",
     },
     {
         "id": "workspaces",
@@ -87,7 +87,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "What solid modeling tools are available?",
         "steps": ["Switch to the SOLID design tab.", "Use Ribbon Create for primitives and features.", "Use Tools for Press-Pull, Transform (G), Color, Measure, Split."],
         "keywords": ["solid", "press-pull", "fillet", "extrude", "transform", "gizmo"],
-        "gif": f"/docs/media/select-object.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/solid-tools.gif?{GIF_CACHE}",
     },
     {
         "id": "select-object",
@@ -112,7 +112,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "How do I create and extrude a constrained sketch?",
         "steps": ["Open SKETCH and create a sketch on XY/XZ/YZ or a face.", "Draw with Line/Rect/Circle and add constraints.", "Finish Sketch, then Extrude (new/add/cut)."],
         "keywords": ["sketch", "constraint", "extrude sketch"],
-        "gif": f"/docs/media/canvas.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/sketch.gif?{GIF_CACHE}",
     },
     {
         "id": "canvas",
@@ -132,7 +132,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "How do I generate URDF/SRDF and open Motion?",
         "steps": ["In Rigging, switch to URDF / SRDF mode.", "Select the CAD Python source.", "Author with AI (Jake) or Generate URDF/SRDF.", "Inspect the link/joint tree, then Open URDF / SRDF Motion."],
         "keywords": ["urdf", "srdf", "motion", "jake", "gen_urdf", "simulated motion"],
-        "gif": f"/docs/media/ai-generate.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/rigging-urdf.gif?{GIF_CACHE}",
     },
     {
         "id": "wiring",
@@ -172,7 +172,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "Where do I change Preferences and simulated-motion defaults?",
         "steps": ["Open Preferences from the account menu.", "Set mouse controls and appearance.", "Choose Simulated motion: ask / always URDF\u00b7SRDF / never."],
         "keywords": ["preferences", "theme", "mouse", "simulated motion"],
-        "gif": f"/docs/media/render-agent.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/preferences.gif?{GIF_CACHE}",
     },
     {
         "id": "tips-tricks",
@@ -182,7 +182,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "ask": "Give me practical Render3D tips and tricks.",
         "steps": ["Shift-click in the Project browser to select a file range.", "Drag files into the AI prompt as references.", "Prefer @face/@edge/@path chips over vague locations.", "Generate the main object first, then revise selected results."],
         "keywords": ["tips", "tricks", "shift select", "best practices"],
-        "gif": f"/docs/media/ai-generate.gif?{GIF_CACHE}",
+        "gif": f"/docs/media/link-to-prompt.gif?{GIF_CACHE}",
     },
 ]
 
