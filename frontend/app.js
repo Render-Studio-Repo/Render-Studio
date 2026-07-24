@@ -27437,13 +27437,50 @@ window.addEventListener("keydown", (e) => {
     window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
   }
 
-  async function claimWorkspaceInviteFromQuery() {
+  /** Email-link invite waiting for explicit Accept (never auto-claim — scanners run JS). */
+  let pendingEmailWorkspaceInvite = null;
+
+  async function previewWorkspaceInviteFromQuery() {
     if (!workspaceInviteParam || !inviteTokenParam) return null;
-    const result = await api(
-      `/api/teams/invites/${encodeURIComponent(workspaceInviteParam)}/claim?token=${encodeURIComponent(inviteTokenParam)}`,
+    return api(
+      `/api/teams/invites/${encodeURIComponent(workspaceInviteParam)}/preview?token=${encodeURIComponent(inviteTokenParam)}`,
+    );
+  }
+
+  async function claimPendingEmailWorkspaceInvite() {
+    const pending = pendingEmailWorkspaceInvite;
+    if (!pending?.id || !pending?.token) return null;
+    return api(
+      `/api/teams/invites/${encodeURIComponent(pending.id)}/claim?token=${encodeURIComponent(pending.token)}`,
       { method: "POST" },
     );
-    return result;
+  }
+
+  async function declinePendingEmailWorkspaceInvite() {
+    const pending = pendingEmailWorkspaceInvite;
+    if (!pending?.id || !pending?.token) return null;
+    return api(
+      `/api/teams/invites/${encodeURIComponent(pending.id)}/decline-token?token=${encodeURIComponent(pending.token)}`,
+      { method: "POST" },
+    );
+  }
+
+  async function applyAcceptedWorkspaceInvite(claimed) {
+    const teamId = claimed?.team?.id || null;
+    const teamName = claimed?.team?.name || "workspace";
+    setEditStatus("ok", `Joined ${teamName}.`);
+    try {
+      const me = await api("/api/auth/me");
+      allTeams = me.teams || allTeams;
+      renderTeams();
+      const teamSelect = document.getElementById("team-select");
+      if (teamSelect && teamId) {
+        teamSelect.value = teamId;
+        teamSelect.dispatchEvent(new Event("change"));
+      }
+    } catch (_) {
+      /* not signed in — invite still accepted for the invited account */
+    }
   }
   if (askAgentParam) {
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
@@ -30314,17 +30351,40 @@ window.addEventListener("keydown", (e) => {
       const pendingInvite = activeWorkspaceInviteLocal?.id === id
         ? activeWorkspaceInviteLocal
         : (activeWorkspaceInvite?.id === id ? activeWorkspaceInvite : null);
-      const acceptedTeamId = pendingInvite?.team_id || null;
+      const acceptedTeamId = pendingInvite?.team_id || pendingEmailWorkspaceInvite?.team_id || null;
       const beforeIds = new Set(allTeams.map((t) => String(t.id)));
-      const result = await api(`/api/teams/invites/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+      const emailTokenClaim = pendingEmailWorkspaceInvite?.id === id && pendingEmailWorkspaceInvite?.token;
+      let result = null;
+      if (emailTokenClaim) {
+        if (action === "accept") {
+          result = await claimPendingEmailWorkspaceInvite();
+          if (result?.status === "signup_required") {
+            setEditStatus("ok", "Create an account with the invited email to join this workspace.");
+            authUi?.openModal?.({ email: result?.email || "", tab: "register" });
+            return;
+          }
+        } else {
+          result = await declinePendingEmailWorkspaceInvite();
+        }
+        pendingEmailWorkspaceInvite = null;
+      } else {
+        result = await api(`/api/teams/invites/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+      }
       shownWorkspaceInviteIdsLocal.delete(id);
       if (activeWorkspaceInvite?.id === id) activeWorkspaceInvite = null;
       if (activeWorkspaceInviteLocal?.id === id) activeWorkspaceInviteLocal = null;
       hideWorkspaceInvitePopup();
       projectChat?.clearWorkspaceInvite?.(id);
       if (action === "accept") {
-        const teamsData = await api("/api/teams");
-        allTeams = teamsData.teams || [];
+        const invitedEmail = result?.user?.email || pendingInvite?.email || "";
+        if (!getToken?.()) {
+          setEditStatus("ok", "Joined workspace. Sign in with the invited email to open it.");
+          authUi?.openModal?.({ email: invitedEmail, tab: "login" });
+          await refreshTeamInvites({ presentNew: false }).catch(() => {});
+          return;
+        }
+        const teamsData = await api("/api/teams").catch(() => ({ teams: allTeams }));
+        allTeams = teamsData.teams || allTeams;
         const newlyJoined = allTeams.find((t) => !beforeIds.has(String(t.id)));
         const targetId =
           acceptedTeamId
@@ -30548,32 +30608,47 @@ window.addEventListener("keydown", (e) => {
   const session = await auth.bootstrap();
   if (workspaceInviteParam && inviteTokenParam) {
     try {
-      const claimed = await claimWorkspaceInviteFromQuery();
-      if (claimed?.status === "accepted") {
-        const teamName = claimed?.team?.name || "workspace";
-        const invitedEmail = claimed?.user?.email || inviteEmailParam || "";
-        if (session?.user) {
-          setEditStatus("ok", `Joined ${teamName}.`);
-          try {
-            const me = await api("/api/auth/me");
-            allTeams = me.teams || allTeams;
-            renderTeams();
-            const teamSelect = document.getElementById("team-select");
-            if (teamSelect && claimed?.team?.id) {
-              teamSelect.value = claimed.team.id;
-              teamSelect.dispatchEvent(new Event("change"));
-            }
-          } catch (_) {}
+      const preview = await previewWorkspaceInviteFromQuery();
+      pendingEmailWorkspaceInvite = {
+        id: preview?.invite_id || workspaceInviteParam,
+        token: inviteTokenParam,
+        team_id: preview?.team?.id || null,
+        team_name: preview?.team?.name || "workspace",
+        email: preview?.email || inviteEmailParam || "",
+        inviter_name: preview?.inviter_name || "A teammate",
+      };
+      if (preview?.status === "accepted" || preview?.already_member) {
+        setEditStatus("ok", `You're already in ${pendingEmailWorkspaceInvite.team_name}.`);
+        if (!session?.user) {
+          authUi?.openModal?.({ email: pendingEmailWorkspaceInvite.email, tab: "login" });
         } else {
-          setEditStatus("ok", `Joined ${teamName}. Sign in with ${invitedEmail || "the invited email"} to continue.`);
-          authUi?.openModal?.({ email: invitedEmail, tab: "login" });
+          await applyAcceptedWorkspaceInvite({ team: preview.team });
         }
-      } else if (claimed?.status === "signup_required") {
-        setEditStatus("ok", "Create an account with the invited email to join this workspace.");
-        authUi?.openModal?.({ email: claimed?.email || inviteEmailParam || "", tab: "register" });
+        pendingEmailWorkspaceInvite = null;
+      } else if (preview?.signup_required) {
+        setEditStatus("ok", "Create an account with the invited email, then accept the workspace invite.");
+        presentWorkspaceInvite({
+          id: pendingEmailWorkspaceInvite.id,
+          team_id: pendingEmailWorkspaceInvite.team_id,
+          team_name: pendingEmailWorkspaceInvite.team_name,
+          inviter_name: pendingEmailWorkspaceInvite.inviter_name,
+        }, { openChat: false, showPopup: true });
+        authUi?.openModal?.({ email: pendingEmailWorkspaceInvite.email, tab: "register" });
+      } else {
+        presentWorkspaceInvite({
+          id: pendingEmailWorkspaceInvite.id,
+          team_id: pendingEmailWorkspaceInvite.team_id,
+          team_name: pendingEmailWorkspaceInvite.team_name,
+          inviter_name: pendingEmailWorkspaceInvite.inviter_name,
+        }, { openChat: true, showPopup: true });
+        setEditStatus("ok", "Workspace invite ready — Accept to join.");
+        if (!session?.user) {
+          authUi?.openModal?.({ email: pendingEmailWorkspaceInvite.email, tab: "login" });
+        }
       }
     } catch (err) {
-      setEditStatus("error", err.message || "Could not accept workspace invite.");
+      setEditStatus("error", err.message || "Could not open workspace invite.");
+      pendingEmailWorkspaceInvite = null;
     }
     clearInviteQueryParams();
   } else if (signupInviteParam === "1" && inviteEmailParam) {

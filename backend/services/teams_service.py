@@ -759,12 +759,60 @@ def accept_pending_invites_for_user(user_id: str, email: str) -> list[dict[str, 
     return accepted
 
 
-def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
-    """Claim a workspace invite via emailed link token.
+def peek_team_invite(invite_id: str, token: str) -> dict[str, Any]:
+    """Read invite metadata for the email-link UI without accepting it."""
+    token = str(token or "").strip()
+    if not token:
+        raise ValueError("Invite link is missing its token")
+    with get_conn() as conn:
+        _ensure_invite_token_column(conn)
+        invite = conn.execute(
+            """
+            SELECT i.id, i.team_id, i.email, i.status, i.token, i.invited_by, i.created_at,
+                   t.name AS team_name,
+                   u.display_name AS inviter_name,
+                   u.email AS inviter_email
+            FROM team_invites i
+            JOIN teams t ON t.id = i.team_id
+            LEFT JOIN users u ON u.id = i.invited_by
+            WHERE i.id = ?
+            """,
+            (invite_id,),
+        ).fetchone()
+        if not invite or str(invite["token"] or "") != token:
+            raise ValueError("Invite not found or expired")
+        status = str(invite["status"] or "")
+        if status == "declined":
+            raise ValueError("Invite was declined")
+        user = conn.execute(
+            "SELECT id, email, display_name FROM users WHERE lower(email)=lower(?)",
+            (invite["email"],),
+        ).fetchone()
+        already_member = False
+        if user:
+            already_member = bool(
+                conn.execute(
+                    "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
+                    (invite["team_id"], user["id"]),
+                ).fetchone()
+            )
+    return {
+        "invite_id": invite["id"],
+        "status": status,
+        "email": invite["email"],
+        "team": {"id": invite["team_id"], "name": invite["team_name"]},
+        "inviter_name": invite["inviter_name"] or invite["inviter_email"] or "A teammate",
+        "user_exists": bool(user),
+        "already_member": already_member,
+        "signup_required": not bool(user),
+    }
 
-    Idempotent: email scanners often prefetch the link once (accepting it), then the
-    real click would otherwise fail with "Invite not found or expired". Matching
-    tokens on already-accepted invites still succeed.
+
+def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
+    """Accept a workspace invite via emailed link token (explicit user action only).
+
+    Idempotent for already-accepted invites with a matching token so double-clicks
+    still land in the app cleanly.
     """
     token = str(token or "").strip()
     if not token:
@@ -791,7 +839,6 @@ def claim_team_invite(invite_id: str, token: str) -> dict[str, Any]:
             (invite["email"],),
         ).fetchone()
         if status == "accepted":
-            # Prefetch / double-click: treat as success without mutating again.
             if not user:
                 return {
                     "status": "signup_required",
@@ -839,6 +886,27 @@ def decline_team_invite(invite_id: str, email: str) -> dict[str, Any]:
         ).fetchone()
         if not invite:
             raise ValueError("Invite not found")
+        conn.execute("UPDATE team_invites SET status = 'declined' WHERE id = ?", (invite_id,))
+        conn.commit()
+    return {"status": "declined"}
+
+
+def decline_team_invite_by_token(invite_id: str, token: str) -> dict[str, Any]:
+    token = str(token or "").strip()
+    if not token:
+        raise ValueError("Invite link is missing its token")
+    with get_conn() as conn:
+        _ensure_invite_token_column(conn)
+        invite = conn.execute(
+            "SELECT id, token, status FROM team_invites WHERE id = ?",
+            (invite_id,),
+        ).fetchone()
+        if not invite or str(invite["token"] or "") != token:
+            raise ValueError("Invite not found or expired")
+        if str(invite["status"] or "") == "declined":
+            return {"status": "declined"}
+        if str(invite["status"] or "") != "pending":
+            raise ValueError("Invite not found or expired")
         conn.execute("UPDATE team_invites SET status = 'declined' WHERE id = ?", (invite_id,))
         conn.commit()
     return {"status": "declined"}

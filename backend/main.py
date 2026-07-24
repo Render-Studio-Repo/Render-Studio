@@ -9983,23 +9983,46 @@ def _workspace_invite_claim_redirect(invite_id: str, result: dict[str, Any]) -> 
 
 @app.get("/api/teams/invites/{invite_id}/claim")
 def claim_team_invite_link(invite_id: str, token: str = Query(..., min_length=1)):
-    """Legacy email claim URL. Always HTML-redirects (never raw JSON) so mobile browsers
-    do not download claim.json. Prefer /?workspace_invite=… for new emails."""
+    """Legacy email claim URL. Validates the token, then sends the user to the app
+    Accept UI — does not auto-join (email scanners used to consume invites)."""
     try:
-        result = teams_service.claim_team_invite(invite_id, token)
+        teams_service.peek_team_invite(invite_id, token)
     except ValueError as exc:
         return RedirectResponse(
             url=f"/?invite_error={urllib.parse.quote(str(exc))}",
             status_code=303,
         )
-    return _workspace_invite_claim_redirect(invite_id, result)
+    return RedirectResponse(
+        url=(
+            f"/?workspace_invite={urllib.parse.quote(invite_id)}"
+            f"&invite_token={urllib.parse.quote(token)}"
+        ),
+        status_code=303,
+    )
+
+
+@app.get("/api/teams/invites/{invite_id}/preview")
+def preview_team_invite(invite_id: str, token: str = Query(..., min_length=1)):
+    """Safe read of invite details for the Accept modal (no side effects)."""
+    try:
+        return teams_service.peek_team_invite(invite_id, token)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/teams/invites/{invite_id}/claim")
 def claim_team_invite_api(invite_id: str, token: str = Query(..., min_length=1)):
-    """JSON claim used by the app when opening /?workspace_invite=…&invite_token=…"""
+    """JSON claim used when the invitee clicks Accept on /?workspace_invite=…"""
     try:
         return teams_service.claim_team_invite(invite_id, token)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/teams/invites/{invite_id}/decline-token")
+def decline_team_invite_by_token(invite_id: str, token: str = Query(..., min_length=1)):
+    try:
+        return teams_service.decline_team_invite_by_token(invite_id, token)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
