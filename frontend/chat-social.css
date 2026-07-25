@@ -275,6 +275,113 @@
   padding: 12px 14px 14px;
 }
 
+.pc-msg-image {
+  display: inline-flex;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 8px;
+}
+
+.pc-msg-image:focus-visible {
+  outline: 2px solid rgba(88, 166, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.pc-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 23000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.pc-image-lightbox.hidden {
+  display: none !important;
+}
+
+.pc-image-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(1, 4, 9, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.pc-image-lightbox-card {
+  position: relative;
+  z-index: 1;
+  width: min(1100px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(88, 166, 255, 0.12), transparent 34%),
+    rgba(13, 17, 23, 0.98);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.pc-image-lightbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.85);
+}
+
+.pc-image-lightbox-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #e6edf3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pc-image-lightbox-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9ba7b4;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.pc-image-lightbox-close:hover,
+.pc-image-lightbox-close:focus-visible {
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pc-image-lightbox-media {
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.pc-image-lightbox-media img {
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  object-fit: contain;
+  border-radius: 10px;
+  background: #010409;
+}
+
+body.pc-image-lightbox-open {
+  overflow: hidden;
+}
+
 @media (max-width: 900px) {
   .pc-body {
     grid-template-columns: 150px minmax(0, 1fr) !important;

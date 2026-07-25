@@ -3585,12 +3585,23 @@ body:not(.info-page) {
   margin-top: 8px;
 }
 
+.pc-msg-image {
+  display: inline-flex;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 8px;
+}
+
 .pc-msg-image img {
   max-width: 180px;
   max-height: 140px;
   border-radius: 8px;
   border: 1px solid rgba(48, 54, 61, 0.9);
   object-fit: cover;
+  pointer-events: none;
 }
 
 .pc-reactions {

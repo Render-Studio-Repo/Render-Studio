@@ -284,7 +284,7 @@ export function createProjectChatUI({
     const link = document.createElement("link");
     link.id = "chat-social-css";
     link.rel = "stylesheet";
-    link.href = "/chat-social.css?v=20260715-chat-social";
+    link.href = "/chat-social.css?v=20260725-chat-lightbox";
     document.head.appendChild(link);
   }
 
@@ -498,10 +498,71 @@ export function createProjectChatUI({
     });
 
     document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && open) close();
+      if (ev.key !== "Escape" || !open) return;
+      if (closeImageLightbox()) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      close();
     });
 
     return overlay;
+  }
+
+  function ensureImageLightbox() {
+    let box = document.getElementById("pc-image-lightbox");
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "pc-image-lightbox";
+    box.className = "pc-image-lightbox hidden";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "Image preview");
+    box.innerHTML = `
+      <div class="pc-image-lightbox-backdrop" data-pc-lightbox-close></div>
+      <div class="pc-image-lightbox-card">
+        <header class="pc-image-lightbox-head">
+          <h3 class="pc-image-lightbox-title" id="pc-image-lightbox-title">Image</h3>
+          <button type="button" class="pc-image-lightbox-close" data-pc-lightbox-close aria-label="Close image">✕</button>
+        </header>
+        <div class="pc-image-lightbox-media">
+          <img id="pc-image-lightbox-img" alt="" />
+        </div>
+      </div>
+    `;
+    box.querySelectorAll("[data-pc-lightbox-close]").forEach((el) => {
+      el.addEventListener("click", () => closeImageLightbox());
+    });
+    document.body.appendChild(box);
+    return box;
+  }
+
+  function openImageLightbox(src, alt = "Image") {
+    if (!src) return;
+    const box = ensureImageLightbox();
+    const img = box.querySelector("#pc-image-lightbox-img");
+    const title = box.querySelector("#pc-image-lightbox-title");
+    if (img) {
+      img.src = src;
+      img.alt = alt || "Image";
+    }
+    if (title) title.textContent = alt || "Image";
+    box.classList.remove("hidden");
+    document.body.classList.add("pc-image-lightbox-open");
+  }
+
+  function closeImageLightbox() {
+    const box = document.getElementById("pc-image-lightbox");
+    if (!box || box.classList.contains("hidden")) return false;
+    const img = box.querySelector("#pc-image-lightbox-img");
+    if (img) {
+      img.removeAttribute("src");
+      img.alt = "";
+    }
+    box.classList.add("hidden");
+    document.body.classList.remove("pc-image-lightbox-open");
+    return true;
   }
 
   function applyFormat(kind) {
@@ -1299,10 +1360,12 @@ export function createProjectChatUI({
       const guideActions = msg.is_agent ? guideActionsHtml(parent?.body || previousUser?.body || "") : "";
       const images = (msg.images || [])
         .map(
-          (img, index) =>
-            `<a class="pc-msg-image" href="${esc(img.url)}" target="_blank" rel="noopener" data-auth-img="${esc(img.url)}">
-              <img data-auth-src="${esc(img.url)}" alt="${esc(img.filename || `image-${index + 1}`)}" />
-            </a>`
+          (img, index) => {
+            const alt = img.filename || `image-${index + 1}`;
+            return `<button type="button" class="pc-msg-image" data-auth-img="${esc(img.url)}" data-image-alt="${esc(alt)}" title="View image">
+              <img data-auth-src="${esc(img.url)}" alt="${esc(alt)}" />
+            </button>`;
+          }
         )
         .join("");
       const replies = byParent.get(msg.id) || [];
@@ -1360,6 +1423,14 @@ export function createProjectChatUI({
         if (guideId) startShowMe(guideId, { onDocsPage: false });
       });
     });
+    host.querySelectorAll("button.pc-msg-image").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const img = btn.querySelector("img");
+        const src = img?.currentSrc || img?.src || btn.getAttribute("data-auth-img") || "";
+        const alt = btn.getAttribute("data-image-alt") || img?.alt || "Image";
+        openImageLightbox(src, alt);
+      });
+    });
     void hydrateAuthImages(host);
     void hydrateLinkPreviews(host);
     host.scrollTop = host.scrollHeight;
@@ -1375,8 +1446,6 @@ export function createProjectChatUI({
           const blobUrl = await authBlobUrl(path);
           imageBlobUrls.push(blobUrl);
           img.src = blobUrl;
-          const link = img.closest("a.pc-msg-image");
-          if (link) link.href = blobUrl;
         } catch {
           img.replaceWith(Object.assign(document.createElement("span"), {
             className: "muted small",
@@ -1755,6 +1824,7 @@ export function createProjectChatUI({
   }
 
   function close() {
+    closeImageLightbox();
     open = false;
     overlay?.classList.add("hidden");
     document.body.classList.remove("project-chat-open");

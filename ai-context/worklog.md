@@ -1,3 +1,11 @@
+## 2026-07-25 — Chat images open in-app lightbox
+
+- Project chat image thumbs were `<a target="_blank">` and opened a new browser tab.
+- Click now opens an in-app lightbox (backdrop / ✕ / Escape); Escape closes lightbox before chat.
+- Cache-bust `project-chat.js` / `chat-social.css` / `app.js` / `styles.css` `?v=20260725-chat-lightbox`.
+
+---
+
 ## 2026-07-25 — Kimi tool-agent costs were priced as OpenAI
 
 - Kimi list prices were already in `ai_cost.py` ($3/$15 for `kimi-k3`).

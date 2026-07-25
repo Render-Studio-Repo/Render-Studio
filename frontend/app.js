@@ -79,7 +79,7 @@ import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.j
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
 import { createFeedbackUI, initManagementNotifications } from "./feedback-ui.js?v=20260715-management-realtime";
-import { createProjectChatUI } from "./project-chat.js?v=20260724-chat-edit";
+import { createProjectChatUI } from "./project-chat.js?v=20260725-chat-lightbox";
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
