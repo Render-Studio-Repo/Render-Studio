@@ -788,6 +788,44 @@ function markGenerationApplied(pid, traceId) {
   } catch (_) {}
 }
 
+const pendingViewportReveal = new Set();
+
+function pendingViewportRevealKey() {
+  return "render3d:pending-viewport-reveal";
+}
+
+function markPendingViewportReveal(pid) {
+  if (!pid) return;
+  pendingViewportReveal.add(pid);
+  try {
+    const raw = JSON.parse(localStorage.getItem(pendingViewportRevealKey()) || "[]");
+    const all = Array.isArray(raw) ? raw.map(String) : [];
+    if (!all.includes(pid)) all.push(pid);
+    localStorage.setItem(pendingViewportRevealKey(), JSON.stringify(all.slice(-80)));
+  } catch (_) {}
+}
+
+function clearPendingViewportReveal(pid) {
+  if (!pid) return;
+  pendingViewportReveal.delete(pid);
+  try {
+    const raw = JSON.parse(localStorage.getItem(pendingViewportRevealKey()) || "[]");
+    const all = (Array.isArray(raw) ? raw.map(String) : []).filter((id) => id !== pid);
+    localStorage.setItem(pendingViewportRevealKey(), JSON.stringify(all));
+  } catch (_) {}
+}
+
+function hasPendingViewportReveal(pid) {
+  if (!pid) return false;
+  if (pendingViewportReveal.has(pid)) return true;
+  try {
+    const raw = JSON.parse(localStorage.getItem(pendingViewportRevealKey()) || "[]");
+    return Array.isArray(raw) && raw.map(String).includes(pid);
+  } catch {
+    return false;
+  }
+}
+
 function jobFinishedDuringCurrentWatch(job = {}) {
   if (!generationWatchOverlay?.startedAt) return true;
   const watchStarted = Number(generationWatchOverlay.startedAt) || 0;
@@ -876,6 +914,10 @@ async function applyGenerationComplete(gen, pid = projectId) {
     pendingPromptSelectionContext = null;
     void maybeAskGenerateSimulatedMotion(gen, pid);
     void maybeShowElectronicsSuggestDockAfterGeneration(pid);
+    clearPendingViewportReveal(pid);
+  } else {
+    // Finished while viewing another project — badge yes, viewport load on next open.
+    markPendingViewportReveal(pid);
   }
   clearCanvasGenerationPending(pid);
   markGenerationApplied(pid, gen.trace_id);
@@ -2008,16 +2050,28 @@ async function resumeGenerationIfNeeded(pid, generation) {
     });
     return;
   }
-  if (generation.status === "complete" && !wasGenerationApplied(pid, generation.trace_id)) {
-    if (generation.kind === "wiring") {
-      await applyWiringGenerationComplete(generation, pid);
-      return;
+  if (generation.status === "complete") {
+    const applied = wasGenerationApplied(pid, generation.trace_id);
+    // Off-project completions mark applied without loading — reopen must still reveal.
+    const needsViewportReload =
+      pid === projectId
+      && !!generation.filename
+      && !(workspaceModes?.isWiring?.() ?? false)
+      && (
+        hasPendingViewportReveal(pid)
+        || (projectAssembly.count() === 0 && !projectAssembly.has(generation.filename))
+      );
+    if (!applied || needsViewportReload) {
+      if (generation.kind === "wiring") {
+        await applyWiringGenerationComplete(generation, pid);
+        return;
+      }
+      if (generation.kind === "rigging") {
+        await applyRiggingGenerationComplete(generation, pid);
+        return;
+      }
+      await applyGenerationComplete(generation, pid);
     }
-    if (generation.kind === "rigging") {
-      await applyRiggingGenerationComplete(generation, pid);
-      return;
-    }
-    await applyGenerationComplete(generation, pid);
   }
 }
 
@@ -20557,6 +20611,16 @@ function applyWorkspaceMode(mode) {
     }
     resize();
     if (currentMesh && tab !== "CANVAS" && tab !== "ARCHITECT") fitCamera();
+    else if (
+      !currentMesh
+      && projectId
+      && tab !== "CANVAS"
+      && tab !== "ARCHITECT"
+      && tab !== "RIGGING"
+    ) {
+      // Wiring open skips the 3D load; returning to Design should pull the model in.
+      void reloadViewportFromProject({ fitView: true });
+    }
     if (tab === "RIGGING") enterRiggingMode();
     else exitRiggingMode();
   }
@@ -21637,8 +21701,12 @@ async function loadProject(id) {
   }
   renderProjectList();
     renderFileList(data.files || []);
+    lastProjectFiles = data.files || [];
+    lastProjectFusionSource = data.fusion_source || null;
     const browser = normalizeBrowser(data);
-    const modelLatestFile = isDxfDrawingFilename(data.latest_file) ? null : data.latest_file;
+    const modelLatestFile = isDxfDrawingFilename(data.latest_file)
+      ? null
+      : (data.latest_file || (!isDxfDrawingFilename(data.generation?.filename) ? data.generation?.filename : null) || null);
     upsertProjectInList({
       id,
       ...data,
@@ -21651,10 +21719,44 @@ async function loadProject(id) {
     // Do NOT await body hydration / sketches before the primary GLB — that was making
     // project open wait on N× /bodies trimesh splits for every component.
     syncSketchVisibilityFromTree(browser);
-    const comps = browser.components || [];
+    let comps = browser.components || [];
+    const projectFiles = data.files || [];
+    const ensureLoadFile = (filename, { primary = false } = {}) => {
+      if (!filename) return;
+      const file = projectFiles.find((f) => f.name === filename);
+      if (!file && !/\.(glb|gltf|stl|obj|ply|off)$/i.test(filename)) return;
+      const existing = comps.find((c) => c.name === filename || c.viewer_filename === filename);
+      const patch = {
+        auto_load: true,
+        baked_placement: hasBakedPlacement(filename) || existing?.baked_placement === true,
+        primary: primary || existing?.primary === true,
+        viewer_filename: existing?.viewer_filename || filename,
+      };
+      if (existing) {
+        Object.assign(existing, patch);
+        return;
+      }
+      comps = [
+        {
+          id: fileStem(filename),
+          name: filename,
+          stem: fileStem(filename),
+          format: filename.slice(filename.lastIndexOf(".") + 1).toLowerCase(),
+          size: file?.size,
+          ...patch,
+        },
+        ...comps,
+      ];
+    };
+    ensureLoadFile(modelLatestFile, { primary: true });
     if (!wiringMode) prepareViewportForModels();
     if (comps.length && !wiringMode) {
-      const alreadyLoaded = prevProjectId === id && componentsAlreadyLoaded(comps, modelLatestFile);
+      // Same-project soft reopen can leave an empty assembly after an off-project
+      // Mesh/2.0 completion — never skip load just because browser comps match.
+      const alreadyLoaded =
+        prevProjectId === id
+        && projectAssembly.count() > 0
+        && componentsAlreadyLoaded(comps, modelLatestFile);
       if (alreadyLoaded) {
         for (const comp of comps) {
           setAssemblyComponentVisible(comp, !isBrowserComponentHidden(comp));
@@ -21677,6 +21779,9 @@ async function loadProject(id) {
           latestFile: modelLatestFile,
           loadGen,
           fitView: true,
+          styleMode: (hasMeshFactorySibling(modelLatestFile) || /\.mesh\./i.test(String(modelLatestFile || "")))
+            ? "shaded"
+            : "auto",
         });
         if (currentUser || isPublicProject(id)) await refreshPromptHistory();
         if (currentUser || isPublicProject(id)) await refreshObjectHistory();

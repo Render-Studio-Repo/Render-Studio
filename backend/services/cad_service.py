@@ -712,17 +712,23 @@ def list_project_files(project_path: Path) -> list[dict[str, Any]]:
     files = []
     listed = SUPPORTED_IMPORT | SUPPORTED_EXPORT | SUPPORTED_ROBOT
     for f in sorted(project_path.iterdir()):
-        if f.is_file() and f.suffix.lower() in listed:
-            if f.name.startswith("_active_") or f.name.startswith("_export_") or _is_internal_dxf_sidecar(f.name):
-                continue
-            files.append(
-                {
-                    "id": f.stem,
-                    "name": f.name,
-                    "format": f.suffix.lower().lstrip("."),
-                    "size": f.stat().st_size,
-                }
-            )
+        if not f.is_file():
+            continue
+        # Mesh-mode Three.js factories sit beside the exported GLB; include them so
+        # the viewport can detect authored/shaded style on reopen.
+        is_mesh_factory = f.name.lower().endswith(".mesh.mjs") or f.name.lower().endswith(".mesh.js")
+        if f.suffix.lower() not in listed and not is_mesh_factory:
+            continue
+        if f.name.startswith("_active_") or f.name.startswith("_export_") or _is_internal_dxf_sidecar(f.name):
+            continue
+        files.append(
+            {
+                "id": f.stem,
+                "name": f.name,
+                "format": "mesh" if is_mesh_factory else f.suffix.lower().lstrip("."),
+                "size": f.stat().st_size,
+            }
+        )
     return files
 
 

@@ -1,3 +1,11 @@
+## 2026-07-25 — Mesh finished off-project left empty viewport
+
+- Root cause: Mesh for `a096cb1a` completed while viewing another project; completion marked applied without loading the GLB, so reopen skipped reveal.
+- Fix: track `pendingViewportReveal`; reopen / empty-assembly resume forces `applyGenerationComplete`; `loadProject` ensures `latest_file` and won't soft-skip an empty assembly; Design←Wiring reloads if no mesh; list `.mesh.mjs` in project files for shaded style.
+- Cache-bust `?v=20260725-mesh-viewport-reveal`. Needs service restart for file-list change.
+
+---
+
 ## 2026-07-25 — Mesh generating chrome matches Mode 2.0 orange
 
 - Mesh spinner / canvas banner / timeline pending steps now use the same orange Jake chrome as Mode 2.0 (`timeline-step--v2`, `viewport-spinner--v2`).
