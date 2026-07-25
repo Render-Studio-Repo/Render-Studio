@@ -1,3 +1,11 @@
+## 2026-07-25 — Kimi tool-agent costs were priced as OpenAI
+
+- Kimi list prices were already in `ai_cost.py` ($3/$15 for `kimi-k3`).
+- Bug: Jake tool-agent traces hardcoded `provider: openai`, so some Kimi turns were overcharged (~2×).
+- Fix: use `self.ai.provider` for tool-agent + timeout salvage cost estimates. Needs service restart after in-flight gens finish.
+
+---
+
 ## 2026-07-25 — Kimi selection no longer snaps back to Claude
 
 - Bug: prompt-key UI treated every non-Claude provider as OpenAI; `normalizePlatformProviderId` was missing in `app.js` (threw when reconciling platform picks). Selecting Kimi could silently keep/patch Anthropic.

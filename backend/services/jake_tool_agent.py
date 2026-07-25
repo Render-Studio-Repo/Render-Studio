@@ -570,7 +570,7 @@ class JakeToolAgent:
                     if not usage and getattr(exc, "openai_response", None) is not None:
                         usage = usage_from_openai_response(getattr(exc, "openai_response"))
                     trace = {
-                        "provider": "openai",
+                        "provider": self.ai.provider if self.ai.provider in {"openai", "xai", "kimi"} else "openai",
                         "api": "chat.completions.tools",
                         "model": self.ai.model,
                         "elapsed_ms": int((time.perf_counter() - t0) * 1000),
@@ -579,12 +579,16 @@ class JakeToolAgent:
                     }
                     if usage:
                         trace["usage"] = usage
-                        trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+                        trace["cost_usd"] = estimate_cost_usd(
+                            self.ai.model,
+                            usage,
+                            provider=trace["provider"],
+                        )
                     self._append_ai_trace(trace)
                     raise
             usage = usage_from_openai_response(completion)
             trace = {
-                "provider": "openai",
+                "provider": self.ai.provider if self.ai.provider in {"openai", "xai", "kimi"} else "openai",
                 "api": "chat.completions.tools",
                 "model": self.ai.model,
                 "elapsed_ms": int((time.perf_counter() - t0) * 1000),
@@ -592,7 +596,11 @@ class JakeToolAgent:
             }
             if usage:
                 trace["usage"] = usage
-                trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+                trace["cost_usd"] = estimate_cost_usd(
+                    self.ai.model,
+                    usage,
+                    provider=trace["provider"],
+                )
             self._append_ai_trace(trace)
             msg = completion.choices[0].message
             tool_calls = msg.tool_calls or []
@@ -673,7 +681,7 @@ class JakeToolAgent:
                     if not usage and getattr(exc, "openai_response", None) is not None:
                         usage = usage_from_openai_response(getattr(exc, "openai_response"))
                     trace = {
-                        "provider": "openai",
+                        "provider": self.ai.provider if self.ai.provider in {"openai", "xai", "kimi"} else "openai",
                         "api": "responses.tools",
                         "model": self.ai.model,
                         "elapsed_ms": int((time.perf_counter() - t0) * 1000),
@@ -682,12 +690,16 @@ class JakeToolAgent:
                     }
                     if usage:
                         trace["usage"] = usage
-                        trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+                        trace["cost_usd"] = estimate_cost_usd(
+                            self.ai.model,
+                            usage,
+                            provider=trace["provider"],
+                        )
                     self._append_ai_trace(trace)
                     raise
             usage = usage_from_openai_response(response)
             trace = {
-                "provider": "openai",
+                "provider": self.ai.provider if self.ai.provider in {"openai", "xai", "kimi"} else "openai",
                 "api": "responses.tools",
                 "model": self.ai.model,
                 "elapsed_ms": int((time.perf_counter() - t0) * 1000),
@@ -695,7 +707,11 @@ class JakeToolAgent:
             }
             if usage:
                 trace["usage"] = usage
-                trace["cost_usd"] = estimate_cost_usd(self.ai.model, usage, provider="openai")
+                trace["cost_usd"] = estimate_cost_usd(
+                    self.ai.model,
+                    usage,
+                    provider=trace["provider"],
+                )
             self._append_ai_trace(trace)
             output = list(getattr(response, "output", None) or [])
             if not output:

@@ -992,7 +992,11 @@ class AIService:
                         setattr(
                             err,
                             "cost_usd",
-                            estimate_cost_usd(self.model, usage, provider="openai"),
+                            estimate_cost_usd(
+                                self.model,
+                                usage,
+                                provider=self.provider if self.provider in {"openai", "xai", "kimi"} else "openai",
+                            ),
                         )
                 else:
                     try:
@@ -1051,7 +1055,10 @@ class AIService:
         trace["usage"] = usage
         cost = getattr(exc, "cost_usd", None)
         if cost is None:
-            cost = estimate_cost_usd(model, usage, provider="openai")
+            provider = str(trace.get("provider") or "openai").strip().lower()
+            if provider not in {"openai", "anthropic", "kimi", "xai"}:
+                provider = "openai"
+            cost = estimate_cost_usd(model, usage, provider=provider)
         if cost is not None:
             trace["cost_usd"] = cost
 
