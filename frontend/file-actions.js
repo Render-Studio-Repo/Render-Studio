@@ -851,13 +851,14 @@ export async function openFileExportMenu({
   }
 
   // Jul 16 / pre-3fc6c13 working Fusion push body: filename + allow_faceted only.
+  // Never upload companion .py (doubles Fusion folder) — STEP Part only for Cut.
   function fusionPushBody(extra = {}) {
     const body = {
       filename: fusionUploadFilename,
       name: fusionDestName,
       allow_faceted_step: resolvedCloudStepIsFaceted,
-      step_mode: fusionStepMode,
-      upload_source: !(isVisibleAssemblyExport || String(fusionUploadFilename || "").startsWith("_export_visible_assembly")),
+      step_mode: fusionStepMode || "part",
+      upload_source: false,
       ...extra,
     };
     if (isThreeMfFusionUpload) {
@@ -1520,29 +1521,32 @@ async function showFusionExportPicker(menu, anchorBtn, {
       </div>
       ${currentFolder ? `
         <button type="button" class="btn secondary btn-compact file-export-fusion-use-current${currentSelected ? " is-active" : ""}" data-folder-select-here title="${currentSelected ? "Export into this folder" : "Select this folder as the export destination"}">
-          ${currentSelected ? "✓ " : ""}${currentSelected ? "Selected · " : "Select · "}${escText(currentFolder.name || "this folder")}
+          ${currentSelected ? "✓ Selected · " : "Select · "}${escText(currentFolder.name || "this folder")}
         </button>
-        <p class="muted small file-export-fusion-folder-hint">${currentSelected ? "Export to Fusion is pinned below. Click another folder to change the target." : "Click a folder below to select it (✓), or Open to browse inside."}</p>
+        <p class="muted small file-export-fusion-folder-hint">${currentSelected ? "Export to Fusion is pinned below." : "Select this folder to export here, or Select / Open a subfolder."}</p>
       ` : `
-        <p class="muted small file-export-fusion-folder-hint">Click a folder to select it (✓). Use Open to browse inside.</p>
+        <p class="muted small file-export-fusion-folder-hint">Root folders of this project — click <strong>Select</strong> on one to export into it (or Open to go deeper).</p>
       `}
       ${selectedFolderId && !currentSelected ? `<p class="muted small">Selected destination: <strong>✓ ${escText(selectedFolderName)}</strong></p>` : ""}
       <div class="file-export-fusion-folder-grid" role="list">
         ${folders.length ? folders.map((folder, index) => {
           const when = formatWhen(folder.last_modified || folder.created);
           const active = selectedFolderId === folder.id;
-          const recent = index === 0 && !currentFolder && !folderStack.length;
+          const atRoot = !currentFolder && !folderStack.length;
           return `
-            <div class="file-export-fusion-folder-tile${active ? " is-active" : ""}" role="listitem">
+            <div class="file-export-fusion-folder-tile${active ? " is-active" : ""}" role="listitem" data-folder-tile="${escAttr(folder.id)}">
               <button type="button" class="file-export-fusion-folder-tile-main" data-folder-select="${escAttr(folder.id)}" title="Select ${escAttr(folder.name || "folder")} for export" aria-pressed="${active ? "true" : "false"}">
                 <span class="file-export-fusion-folder-icon" aria-hidden="true"></span>
                 <span class="file-export-fusion-folder-tile-body">
                   <strong>${active ? "✓ " : ""}${escText(folder.name || "Folder")}</strong>
-                  <span>${active ? "Selected for export" : (when ? `Updated ${escText(when)}` : "Click to select")}${recent && !active ? " · recent" : ""}</span>
+                  <span>${active ? "Selected — ready to export" : (atRoot ? "Root folder · click Select" : (when ? `Updated ${escText(when)}` : "Click Select"))}</span>
                 </span>
                 ${active ? `<span class="file-export-fusion-folder-check" aria-hidden="true">✓</span>` : ""}
               </button>
-              <button type="button" class="btn secondary btn-compact file-export-fusion-folder-open" data-folder-open="${escAttr(folder.id)}" title="Open ${escAttr(folder.name || "folder")}">Open</button>
+              <div class="file-export-fusion-folder-actions">
+                <button type="button" class="btn btn-compact file-export-fusion-folder-pick${active ? " is-active" : ""}" data-folder-select="${escAttr(folder.id)}" title="Select this folder for export">${active ? "✓ Selected" : "Select"}</button>
+                <button type="button" class="btn secondary btn-compact file-export-fusion-folder-open" data-folder-open="${escAttr(folder.id)}" title="Browse inside ${escAttr(folder.name || "folder")}">Open</button>
+              </div>
             </div>
           `;
         }).join("") : `<p class="muted small file-export-fusion-folder-empty">${escText(emptyText)}</p>`}
@@ -1589,8 +1593,10 @@ async function showFusionExportPicker(menu, anchorBtn, {
       btn.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const folder = folders.find((item) => item.id === btn.dataset.folderSelect);
-        if (!folder) return;
+        const id = btn.dataset.folderSelect;
+        const folder = folders.find((item) => item.id === id)
+          || (id ? { id, name: btn.closest("[data-folder-tile]")?.querySelector("strong")?.textContent?.replace(/^✓\s*/, "").trim() || "Folder" } : null);
+        if (!folder?.id) return;
         exportToFolder(folder);
       });
     });
@@ -1722,11 +1728,8 @@ async function showFusionExportPicker(menu, anchorBtn, {
           allow_faceted_step: allowFacetedStep,
           conflict_mode: conflictMode,
           step_mode: stepMode || "part",
-          upload_source: !(
-            String(filename || "").startsWith("_export_visible_assembly")
-            || (Array.isArray(allowedFilenames) && allowedFilenames.length > 0)
-          ),
-          // Jul 16 working path: no step_mode — native solid STEP as-is.
+          // One STEP only — never companion .py (was creating 2 Fusion files).
+          upload_source: false,
           ...(isThreeMf ? { format: "3mf" } : {}),
           ...(Array.isArray(allowedFilenames) && allowedFilenames.length
             ? { allowed_filenames: allowedFilenames, visible_filenames: allowedFilenames }

@@ -1,3 +1,10 @@
+## 2026-07-24 — Fusion: select root folders to export
+
+- Top-level (root) folders now show an explicit **Select** + **Open** row so you can export into Render3D/etc without opening first.
+- Cache-bust `?v=20260724-fusion-root`.
+
+---
+
 ## 2026-07-24 — Fusion export: no auto folder select
 
 - Stopped auto-selecting last/first/current folder and auto-diving past project root.

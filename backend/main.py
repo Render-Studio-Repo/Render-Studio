@@ -8653,6 +8653,34 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                         logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc2)
         else:
             logger.info("Fusion push keeping assembly STEP project=%s file=%s", project_id, step_path.name)
+    else:
+        # Unknown / faceted still try Part flatten when Extrude/Cut is requested
+        # and the STEP still has assembly links.
+        step_mode = str(body.get("step_mode") or "part").strip().lower()
+        want_part = step_mode not in {"assembly", "native", "as_is", "linked"}
+        if want_part:
+            try:
+                if cad_service.step_has_assembly_links(step_path):
+                    step_path = cad_service.ensure_fusion_part_step(path, step_path)
+            except Exception as exc:
+                logger.warning("Fusion Part flatten (non-brep path) failed for %s: %s", step_path.name, exc)
+
+    # Final Cut-safety check: refuse to upload a linked assembly for part mode.
+    try:
+        step_mode_final = str(body.get("step_mode") or "part").strip().lower()
+        if step_mode_final not in {"assembly", "native", "as_is", "linked"}:
+            if cad_service.step_has_assembly_links(step_path):
+                step_path = cad_service.ensure_fusion_part_step(path, step_path)
+            if cad_service.step_has_assembly_links(step_path):
+                raise HTTPException(
+                    422,
+                    "This STEP is still a linked Fusion assembly, so Extrude/Cut will fail. "
+                    "Re-export as a Part STEP from Render3D and try again.",
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Fusion Cut-safety check failed for %s: %s", step_path.name, exc)
 
     upload_stem = step_path.stem
     for suffix in (".fusionpart", ".part"):
@@ -8739,10 +8767,10 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             conflict_mode=conflict_mode,
         )
         upload_name = str(result.get("name") or upload_name)
-        # Don't upload a companion .py for bake files — source resolve often
-        # picks a hidden sibling (arduino) and pollutes the Fusion folder.
+        # Never auto-upload companion .py — it doubles files in Fusion and often
+        # picks the wrong sibling. Opt-in only via upload_source=true.
         if (
-            body.get("upload_source", True)
+            body.get("upload_source") is True
             and source_path.is_file()
             and not is_bake_upload
             and (

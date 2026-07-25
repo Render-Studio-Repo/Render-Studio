@@ -18007,6 +18007,27 @@ section h2 {
   justify-self: stretch;
 }
 
+.file-export-fusion-folder-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.file-export-fusion-folder-pick {
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-color: rgba(241, 138, 43, 0.55) !important;
+  background: rgba(241, 138, 43, 0.16) !important;
+  color: #ffd0a3 !important;
+}
+
+.file-export-fusion-folder-pick.is-active,
+.file-export-fusion-folder-pick:hover {
+  border-color: rgba(241, 138, 43, 0.85) !important;
+  background: rgba(241, 138, 43, 0.28) !important;
+  color: #fff !important;
+}
+
 .file-export-fusion-folder-open {
   font-size: 0.68rem;
   font-weight: 600;
