@@ -13787,7 +13787,6 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         if not name or name not in allowed:
             continue
         url = f"/api/share/{token}/files/{urllib.parse.quote(name)}"
-        if str(item.get("format") or "").lower() == "step":
         exports.append({**item, "name": name, "url": url})
     # Also expose exports for the visibility-baked assembly viewer when present.
     if viewer_override and viewer_override != Path(filename).name:
@@ -13798,8 +13797,7 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
             if any(row.get("name") == name for row in exports):
                 continue
             url = f"/api/share/{token}/files/{urllib.parse.quote(name)}"
-            if str(item.get("format") or "").lower() == "step":
-                exports.append({**item, "name": name, "url": url})
+            exports.append({**item, "name": name, "url": url})
     # One STEP only in the share download menu.
     collapsed: list[dict[str, Any]] = []
     best_step: dict[str, Any] | None = None
