@@ -5258,7 +5258,8 @@ def run_design(
             # Jake authoring agent needs enough turns for step/inspect/snapshot/revise.
             max_repairs = max(max_repairs, 12)
         if is_mesh:
-            max_repairs = max(max_repairs, 3)
+            # Match Mode 2.0 repair budget so Mesh can write → export → review → revise.
+            max_repairs = max(max_repairs, 12)
 
     if is_mesh:
         trace_add(

@@ -21560,6 +21560,8 @@ async function createNewProject() {
   ribbon.reset();
   await fetchAllProjects();
   await loadProject(project_id);
+  // Fresh projects always start on Mode 2.0 (don't inherit Render/Mesh from the prior project).
+  applyPromptModeUI(DEFAULT_PROMPT_MODE);
   setEditStatus("ok", `New project created in ${workspaceExplorerLabel(targetTeam)}. Change this default anytime in Preferences.`);
   emitQuest("welcome-first-project", "Create your first project");
   return project_id;
@@ -21596,6 +21598,7 @@ async function createNewProjectInFolder(folderId) {
   ribbon.reset();
   await fetchAllProjects();
   await loadProject(project_id);
+  applyPromptModeUI(DEFAULT_PROMPT_MODE);
   renderProjectList();
   emitQuest("welcome-first-project", "Create your first project");
 }

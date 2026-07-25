@@ -1,3 +1,11 @@
+## 2026-07-24 — New projects default to Mode 2.0
+
+- Creating a project kept the prior session’s prompt mode (e.g. Mesh/Render).
+- `createNewProject` / `createNewProjectInFolder` now call `applyPromptModeUI(DEFAULT_PROMPT_MODE)` (`v2`) after load.
+- Cache-bust: `app.js?v=20260724-new-v2`.
+
+---
+
 ## 2026-07-24 — Mesh mode: Stop generating control
 
 - Mesh runs had no obvious Stop (Generate stayed in the compose row; canvas banner had no cancel).

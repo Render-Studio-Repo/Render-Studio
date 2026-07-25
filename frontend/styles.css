@@ -18054,11 +18054,13 @@ label input { margin-top: 4px; }
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 
 .prompt-panel.right-tab-panel.active {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .prompt-panel-tabs {
@@ -18224,9 +18226,8 @@ label input { margin-top: 4px; }
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  /* Keep chrome fixed — only the prompt field scrolls, not this pane. */
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
@@ -18696,13 +18697,8 @@ label input { margin-top: 4px; }
   min-width: 0;
 }
 
-#prompt-pane-compose,
-#prompt-pane-compose .prompt-mode-row,
-.prompt-panel:has(.prompt-mode-row),
-.right-tab-panel:has(.prompt-mode-row),
-.sidebar.right:has(.prompt-mode-row) {
-  overflow: visible;
-}
+/* Mode / Improve tips are portaled to <body>. Do NOT unlock sidebar/compose
+   overflow here — that forced an outer scrollbar on the AI panel. */
 
 .prompt-mode-btn {
   flex-shrink: 0;
@@ -18761,26 +18757,29 @@ label input { margin-top: 4px; }
   box-shadow: 0 0 0 1px rgba(212, 160, 23, 0.35);
 }
 
-/* Compose pane — prompt area scrolls when image thumbnails are attached */
+/* Compose pane — prompt field absorbs leftover height and scrolls inside. */
 #prompt-pane-compose #prompt-input {
-  flex: 0 1 auto;
-  min-height: clamp(84px, 15vh, 145px);
+  flex: 1 1 auto;
+  min-height: 72px;
   height: auto;
-  max-height: min(170px, 24vh);
+  max-height: none;
   margin-bottom: 2px;
-  resize: vertical;
+  overflow-x: hidden;
+  overflow-y: auto;
+  resize: none;
 }
 
 #prompt-pane-compose:has(.prompt-image-list:not(:empty)) #prompt-input {
-  min-height: 72px;
-  max-height: 118px;
+  min-height: 64px;
 }
 
 #prompt-pane-compose .prompt-compose-toolbar,
 #prompt-pane-compose .prompt-skills-row,
+#prompt-pane-compose .prompt-skills-plan,
 #prompt-pane-compose .prompt-inline-ref-chips,
 #prompt-pane-compose .prompt-image-drop,
 #prompt-pane-compose .prompt-image-list,
+#prompt-pane-compose .prompt-generate-row,
 #prompt-pane-compose #btn-prompt,
 #prompt-pane-compose #btn-stop-generation,
 #prompt-pane-compose #prompt-status,

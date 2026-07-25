@@ -940,28 +940,55 @@ PIPELINE_CHECKLIST = (
     {"id": "finalize", "label": "Finalize artifacts"},
 )
 
+MESH_PIPELINE_CHECKLIST = (
+    {"id": "analyze", "label": "Analyze prompt & reference"},
+    {"id": "generate", "label": "Write Three.js factory"},
+    {"id": "export", "label": "Export GLB"},
+    {"id": "review", "label": "Review mesh vs brief"},
+    {"id": "finalize", "label": "Finalize viewport model"},
+)
+
 _STAGE_ALIASES = {
     "analyze": "analyze",
     "plan": "analyze",
     "build": "step",
     "brief": "brief",
     "ai_source": "ai_source",
+    "generate": "generate",
+    "export": "export",
     "step": "step",
     "inspect": "inspect",
     "inspect-quality": "inspect",
     "snapshot": "snapshot",
     "snapshot_review": "snapshot_review",
+    "review": "review",
     "finalize": "finalize",
+    "done": "finalize",
 }
 
 
-def _checklist_for_stage(stage: str | None, *, current_label: str | None = None) -> list[dict[str, Any]]:
+def _checklist_for_stage(
+    stage: str | None,
+    *,
+    current_label: str | None = None,
+    pipeline: str | None = None,
+) -> list[dict[str, Any]]:
     """Jake-style pipeline checklist derived from the active progress stage."""
+    label = str(current_label or "")
+    pipe = str(pipeline or "").strip().lower()
+    use_mesh = pipe in {"img2threejs", "mesh", "threejs"} or label.lower().startswith("mesh")
+    checklist = MESH_PIPELINE_CHECKLIST if use_mesh else PIPELINE_CHECKLIST
     normalized = _STAGE_ALIASES.get(str(stage or "").strip().lower(), "")
-    ids = [item["id"] for item in PIPELINE_CHECKLIST]
+    if use_mesh and normalized in {"ai_source", "brief"}:
+        normalized = "generate"
+    if use_mesh and normalized in {"step", "inspect", "snapshot"}:
+        normalized = "export"
+    if use_mesh and normalized == "snapshot_review":
+        normalized = "review"
+    ids = [item["id"] for item in checklist]
     active_idx = ids.index(normalized) if normalized in ids else -1
     out: list[dict[str, Any]] = []
-    for i, item in enumerate(PIPELINE_CHECKLIST):
+    for i, item in enumerate(checklist):
         if active_idx < 0:
             status = "pending"
         elif i < active_idx:
@@ -996,6 +1023,8 @@ def _merge_progress(prev: dict[str, Any] | None, progress: dict[str, Any]) -> di
         next_progress["thinking"] = str(detail)[:500]
     elif label is not None:
         next_progress["thinking"] = str(label)[:500]
+    if progress.get("pipeline"):
+        next_progress["pipeline"] = str(progress.get("pipeline"))[:64]
 
     if isinstance(progress.get("checklist"), list) and progress.get("checklist"):
         next_progress["checklist"] = progress["checklist"][:16]
@@ -1003,6 +1032,7 @@ def _merge_progress(prev: dict[str, Any] | None, progress: dict[str, Any]) -> di
         next_progress["checklist"] = _checklist_for_stage(
             next_progress.get("stage"),
             current_label=next_progress.get("label"),
+            pipeline=next_progress.get("pipeline"),
         )
 
     activity = list(next_progress.get("activity") or [])

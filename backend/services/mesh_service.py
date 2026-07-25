@@ -1,7 +1,7 @@
 """Mesh mode: img2threejs-style procedural Three.js → GLB for the viewport.
 
-Mirrors the Jake text-to-cad flow (AI writes code → run skill script → load GLB),
-but the artifact is a Three.js factory exported via headless GLTFExporter.
+Mirrors Jake Mode 2.0: write → export → review → repair → continue until gates pass
+(or cancel). Artifacts are Three.js factories exported via headless GLTFExporter.
 """
 
 from __future__ import annotations
@@ -24,6 +24,14 @@ UsageCb = Callable[[list[dict[str, Any]]], None] | None
 
 SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "img2threejs"
 EXPORT_SCRIPT = SKILL_DIR / "scripts" / "export_glb.mjs"
+
+MESH_CHECKLIST = (
+    {"id": "analyze", "label": "Analyze prompt & reference"},
+    {"id": "generate", "label": "Write Three.js factory"},
+    {"id": "export", "label": "Export GLB"},
+    {"id": "review", "label": "Review mesh vs brief"},
+    {"id": "finalize", "label": "Finalize viewport model"},
+)
 
 MESH_SYSTEM = """You are the img2threejs Mesh builder for Render3D.
 
@@ -56,6 +64,20 @@ Rules:
 - Seat the model roughly around origin; the exporter will floor-align.
 """
 
+MESH_REVIEW_SYSTEM = """You are the Mesh visual/structure reviewer for Render3D (img2threejs).
+
+Given the user brief, the Three.js factory source, and export metadata, decide if the mesh is good enough to ship to the viewport.
+
+Return JSON only:
+{"pass": true|false, "issues": ["..."], "repair_brief": "..."}
+
+Rules:
+- pass=true when major named parts from the brief exist, silhouette/proportions are plausible, and materials roughly match.
+- pass=false for missing primary parts, collapsed/degenerate size, wrong hierarchy, or materials that ignore the brief.
+- repair_brief: short concrete instructions for the next factory rewrite (what to add/fix). Empty string when pass=true.
+- Do not ask for photogrammetry or external assets.
+"""
+
 
 def _find_node() -> str:
     env = (os.environ.get("RENDER3D_NODE") or os.environ.get("NODE_BIN") or "").strip()
@@ -64,7 +86,6 @@ def _find_node() -> str:
     which = shutil.which("node")
     if which:
         return which
-    # Cursor-server bundled Node (dev hosts without system node/npm).
     cursor_bins = sorted(Path("/home/ubuntu/.cursor-server/bin").glob("linux-*/node"))
     for candidate in reversed(cursor_bins):
         if candidate.is_file():
@@ -75,7 +96,7 @@ def _find_node() -> str:
 def _strip_fences(text: str) -> str:
     raw = (text or "").strip()
     if raw.startswith("```"):
-        raw = re.sub(r"^```(?:js|javascript|ts|typescript)?\s*", "", raw)
+        raw = re.sub(r"^```(?:js|javascript|ts|typescript|json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
     return raw.strip()
 
@@ -86,6 +107,53 @@ def _looks_like_factory(source: str) -> bool:
         or re.search(r"export\s+(?:async\s+)?function\s+(?:createModel|createObjectModel|build)\s*\(", source)
         or re.search(r"export\s+default\s+\w+", source)
     )
+
+
+def _mesh_checklist(stage: str, label: str | None = None) -> list[dict[str, Any]]:
+    ids = [item["id"] for item in MESH_CHECKLIST]
+    active = stage if stage in ids else ""
+    if stage == "done":
+        active = "finalize"
+    active_idx = ids.index(active) if active in ids else -1
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(MESH_CHECKLIST):
+        if stage == "done":
+            status = "done"
+        elif active_idx < 0:
+            status = "pending"
+        elif i < active_idx:
+            status = "done"
+        elif i == active_idx:
+            status = "active"
+        else:
+            status = "pending"
+        entry = {"id": item["id"], "label": item["label"], "status": status}
+        if status == "active" and label:
+            entry["detail"] = str(label)[:240]
+        out.append(entry)
+    return out
+
+
+def _progress(cb: ProgressCb, stage: str, pct: int, label: str) -> None:
+    if not cb:
+        return
+    cb(
+        {
+            "stage": stage,
+            "pct": pct,
+            "label": label,
+            "pipeline": "img2threejs",
+            "checklist": _mesh_checklist(stage if stage != "done" else "done", label),
+        }
+    )
+
+
+def _safe_stem(raw: str, *, max_len: int = 48) -> str:
+    stem = re.sub(r'[\\/:*?"<>|]+', "", (raw or "").strip(" ."))
+    stem = re.sub(r"\s+", " ", stem).strip()
+    if len(stem) > max_len:
+        stem = stem[:max_len].rstrip(" .-_")
+    return stem or "mesh_model"
 
 
 def _run_export(
@@ -107,6 +175,8 @@ def _run_export(
         env={**os.environ, "NODE_PATH": str(scripts_dir / "node_modules")},
     )
     deadline = time.monotonic() + max(5.0, float(timeout_sec))
+    stdout = ""
+    stderr = ""
     try:
         while True:
             if cancel_check and cancel_check():
@@ -136,14 +206,14 @@ def _run_export(
             proc.kill()
         except Exception:
             pass
-        stdout, stderr = proc.communicate(timeout=5) if proc.poll() is not None else ("", "")
+        if proc.poll() is not None:
+            stdout, stderr = proc.communicate(timeout=5)
         raise
     stdout = (stdout or "").strip()
     stderr = (stderr or "").strip()
     meta: dict[str, Any] = {}
     if stdout:
         try:
-            # last JSON line
             for line in reversed(stdout.splitlines()):
                 line = line.strip()
                 if line.startswith("{"):
@@ -162,6 +232,67 @@ def _run_export(
     }
 
 
+def _parse_review(raw: str) -> dict[str, Any]:
+    text = _strip_fences(raw)
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    # Truncated / messy JSON — best-effort
+    passed = bool(re.search(r'"pass"\s*:\s*true', text, re.I))
+    failed = bool(re.search(r'"pass"\s*:\s*false', text, re.I))
+    repair = ""
+    m = re.search(r'"repair_brief"\s*:\s*"((?:\\.|[^"\\])*)"', text)
+    if m:
+        repair = bytes(m.group(1), "utf-8").decode("unicode_escape")
+    return {
+        "pass": passed and not failed,
+        "issues": [],
+        "repair_brief": repair or ("Reviewer did not confirm pass." if not passed else ""),
+    }
+
+
+def _review_factory(
+    ai: AIService,
+    *,
+    prompt: str,
+    source: str,
+    export_meta: dict[str, Any],
+    trace_id: str | None,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    """Return (passed, repair_brief, ai_trace)."""
+    size = export_meta.get("size") if isinstance(export_meta, dict) else None
+    user = (
+        f"User brief:\n{prompt[:4000]}\n\n"
+        f"Export meta: bytes={export_meta.get('bytes') if isinstance(export_meta, dict) else None}, "
+        f"size={size}\n\n"
+        f"Factory source:\n```js\n{source[:14000]}\n```"
+    )
+    try:
+        text, trace = ai._call_model(
+            MESH_REVIEW_SYSTEM,
+            user,
+            trace_id=trace_id,
+            max_tokens=1200,
+            json_response=True,
+            allow_truncated=True,
+        )
+    except Exception as exc:
+        # Soft-open on reviewer failure — keep exported mesh (2.0 still iterates on hard gates;
+        # Mesh treats review crashes as pass-with-warning so a good export is not discarded).
+        return True, f"Reviewer unavailable ({exc}); accepting export.", None if not isinstance(exc, dict) else exc
+
+    data = _parse_review(text or "")
+    passed = bool(data.get("pass"))
+    repair = str(data.get("repair_brief") or "").strip()
+    if not passed and not repair:
+        issues = data.get("issues") or []
+        repair = "; ".join(str(x) for x in issues[:6]) or "Improve fidelity to the brief."
+    return passed, repair, trace if isinstance(trace, dict) else None
+
+
 def run_mesh_img2threejs(
     prompt: str,
     project_path: Path,
@@ -175,21 +306,24 @@ def run_mesh_img2threejs(
     cancel_check: CancelCb = None,
     progress_callback: ProgressCb = None,
     usage_callback: UsageCb = None,
-    max_repairs: int = 3,
+    max_repairs: int = 12,
 ) -> dict[str, Any]:
-    """Generate a procedural Three.js factory and export a viewport GLB."""
+    """Generate a procedural Three.js factory and export a viewport GLB (Jake-style loop)."""
     from backend.services.project_store import file_stem_from_prompt
 
     project_path = Path(project_path)
     base = Path(previous_source_name).stem if previous_source_name else ""
+    if base.endswith(".mesh"):
+        base = base[: -len(".mesh")]
     if not base:
-        base = file_stem_from_prompt(prompt) or "mesh_model"
+        base = file_stem_from_prompt(prompt, max_len=48) or "mesh_model"
     if base.lower() in {"create", "make", "build", "design", "new model", "mesh"}:
-        better = file_stem_from_prompt(prompt)
+        better = file_stem_from_prompt(prompt, max_len=48)
         if better and better.lower() not in {"new model", "mesh"}:
             base = better
         else:
             base = "mesh_model"
+    base = _safe_stem(base, max_len=48)
 
     factory_name = f"{base}.mesh.mjs"
     glb_name = f"{base}.glb"
@@ -204,8 +338,33 @@ def run_mesh_img2threejs(
     def _canceled() -> bool:
         return bool(cancel_check and cancel_check())
 
-    if progress_callback:
-        progress_callback({"stage": "analyze", "pct": 8, "label": "Mesh · analyzing reference…"})
+    def _success(source: str, attempts: int, note: str | None = None) -> dict[str, Any]:
+        msg = f"Built {base} as a procedural Three.js mesh (img2threejs)."
+        if note:
+            msg = f"{msg} {note}"
+        _progress(progress_callback, "done", 100, "Mesh ready")
+        return {
+            "intent": "generative",
+            "message": msg,
+            "specs_used": ["img2threejs"],
+            "result": {
+                "primary": glb_name,
+                "files": {
+                    "source": factory_name,
+                    "glb": glb_name,
+                },
+                "glb": glb_name,
+                "source": factory_name,
+                "pipeline": "img2threejs",
+            },
+            "attempts": attempts,
+            "ai_trace": ai_traces,
+            "dfm_warnings": [],
+            "primary": glb_name,
+            "filename": glb_name,
+        }
+
+    _progress(progress_callback, "analyze", 8, "Mesh · analyzing reference…")
 
     has_image = bool(images)
     user_brief = (
@@ -219,29 +378,33 @@ def run_mesh_img2threejs(
             f"```js\n{previous_source[:12000]}\n```"
         )
 
-    source = previous_source
+    source = previous_source or ""
     last_error = None
     attempts = 0
+    last_good_export: dict[str, Any] | None = None
+    budget = max(1, int(max_repairs))
 
-    for attempt in range(max(1, max_repairs)):
+    for attempt in range(budget):
         if _canceled():
+            # Prefer shipping a last-good GLB rather than discarding work (2.0 keeps artifacts).
+            if last_good_export and glb_path.is_file() and glb_path.stat().st_size > 100 and source:
+                factory_path.write_text(source, encoding="utf-8")
+                return _success(source, attempts or attempt + 1, note="(stopped after last good export)")
             raise RuntimeError("Generation canceled.")
+
         attempts = attempt + 1
-        if progress_callback:
-            progress_callback(
-                {
-                    "stage": "generate",
-                    "pct": 15 + attempt * 20,
-                    "label": f"Mesh · writing Three.js factory (try {attempts})…",
-                }
-            )
+        _progress(
+            progress_callback,
+            "generate",
+            min(70, 12 + attempt * 8),
+            f"Mesh · writing Three.js factory (try {attempts}/{budget})…",
+        )
 
         repair_block = ""
         if last_error:
             repair_block = (
-                "\n\nPrevious export failed. Fix the factory.\n"
-                f"Error:\n{last_error[:2500]}\n"
-                "Return the FULL corrected module only."
+                "\n\nPrevious attempt failed review/export. Fix the factory and return the FULL module only.\n"
+                f"Feedback:\n{last_error[:3500]}\n"
             )
 
         try:
@@ -263,26 +426,26 @@ def run_mesh_img2threejs(
             continue
 
         source = _strip_fences(text)
+        # Tolerate leading prose if a factory is present later in the blob.
         if not _looks_like_factory(source) or "THREE" not in source:
             last_error = "Model did not return a valid createModel(THREE) ES module."
             continue
+        # If the model wrapped the factory in commentary, keep from first export.
+        m = re.search(r"export\s+(?:default\s+)?(?:async\s+)?(?:function|const|class)", source)
+        if m and m.start() > 0:
+            source = source[m.start() :].strip()
 
         factory_path.write_text(source, encoding="utf-8")
-        if progress_callback:
-            progress_callback(
-                {
-                    "stage": "export",
-                    "pct": 55 + attempt * 10,
-                    "label": "Mesh · exporting GLB…",
-                }
-            )
-        if _canceled():
-            raise RuntimeError("Generation canceled.")
+        _progress(progress_callback, "export", min(88, 55 + attempt * 5), "Mesh · exporting GLB…")
 
+        # Finish the current export even if cancel flips after the write — cancel still
+        # kills a hung exporter via cancel_check inside _run_export.
         try:
             export = _run_export(factory_path, glb_path, cancel_check=_canceled)
         except RuntimeError as exc:
             if "canceled" in str(exc).lower():
+                if last_good_export and glb_path.is_file() and glb_path.stat().st_size > 100:
+                    return _success(source, attempts, note="(stopped after last good export)")
                 raise
             last_error = str(exc)
             continue
@@ -293,37 +456,44 @@ def run_mesh_img2threejs(
             last_error = f"Export failed: {exc}"
             continue
 
-        if export.get("ok"):
-            trace_add(
-                "info",
-                f"[Mesh] Exported {glb_name} ({export.get('bytes')} bytes)",
-                trace_id=trace_id,
-                data=export.get("meta") or {},
-            )
-            if progress_callback:
-                progress_callback({"stage": "done", "pct": 100, "label": "Mesh ready"})
-            return {
-                "intent": "generative",
-                "message": f"Built {base} as a procedural Three.js mesh (img2threejs).",
-                "specs_used": ["img2threejs"],
-                "result": {
-                    "primary": glb_name,
-                    "files": {
-                        "source": factory_name,
-                        "glb": glb_name,
-                    },
-                    "glb": glb_name,
-                    "source": factory_name,
-                    "pipeline": "img2threejs",
-                },
-                "attempts": attempts,
-                "ai_trace": ai_traces,
-                "dfm_warnings": [],
-                "primary": glb_name,
-                "filename": glb_name,
-            }
+        if not export.get("ok"):
+            last_error = export.get("stderr") or export.get("stdout") or "GLB export failed"
+            trace_add("warning", f"[Mesh] Export failed (try {attempts}): {last_error[:400]}", trace_id=trace_id)
+            continue
 
-        last_error = export.get("stderr") or export.get("stdout") or "GLB export failed"
-        trace_add("warning", f"[Mesh] Export failed (try {attempts}): {last_error[:400]}", trace_id=trace_id)
+        last_good_export = export
+        trace_add(
+            "info",
+            f"[Mesh] Exported {glb_name} ({export.get('bytes')} bytes)",
+            trace_id=trace_id,
+            data=export.get("meta") or {},
+        )
+
+        # Review gate (Jake-style). Soft-open on reviewer crashes.
+        _progress(progress_callback, "review", min(96, 78 + attempt * 2), "Mesh · reviewing against brief…")
+        if _canceled():
+            return _success(source, attempts, note="(stopped after export)")
+
+        passed, repair_brief, review_trace = _review_factory(
+            ai,
+            prompt=prompt,
+            source=source,
+            export_meta={"bytes": export.get("bytes"), **(export.get("meta") or {})},
+            trace_id=trace_id,
+        )
+        if isinstance(review_trace, dict):
+            ai_traces.append(review_trace)
+            _sync_usage()
+
+        if passed:
+            return _success(source, attempts)
+
+        last_error = repair_brief or "Mesh review requested repairs."
+        trace_add("warning", f"[Mesh] Review requested repair (try {attempts}): {last_error[:400]}", trace_id=trace_id)
+        # Continue like 2.0 — keep iterating with the repair brief.
+
+    if last_good_export and glb_path.is_file() and glb_path.stat().st_size > 100 and source:
+        # Exhausted budget but we have a shippable GLB — return it (2.0 also surfaces best effort).
+        return _success(source, attempts, note="(shipped last export after repair budget)")
 
     raise RuntimeError(last_error or "Mesh generation failed")
