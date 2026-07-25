@@ -1636,8 +1636,16 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         : mirrorCount
           ? ` Also pushed to ${mirrorCount} teammate mirror${mirrorCount === 1 ? "" : "s"}.`
           : "";
-      setStatus(`Pushed ${result.name || "STEP"} to ${folder.name}. Saved as your Fusion mirror.${mirrorNote}`, mirrorErrors > 0);
-      onStatus?.(mirrorErrors ? "error" : "ok", `Pushed ${result.name || "STEP"} to your Fusion mirror.${mirrorNote}`);
+      setStatus(
+        `Pushed Part “${result.name || "STEP"}” to ${folder.name}. Open from Data Panel (don’t Insert).`
+          + (result.open_instructions ? ` ${result.open_instructions}` : "")
+          + mirrorNote,
+        mirrorErrors > 0,
+      );
+      onStatus?.(
+        mirrorErrors ? "error" : "ok",
+        `Pushed Part “${result.name || "STEP"}” to your Fusion mirror.${mirrorNote}`,
+      );
     } catch (err) {
       btn.disabled = false;
       btn.textContent = orig;

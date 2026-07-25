@@ -384,7 +384,7 @@ function showStepModeChooser(menu, item, onChoose, anchorEl = null, clickEvent =
     <div class="file-export-step-title">Export STEP as part or assembly?</div>
     <button type="button" class="file-export-step-choice" data-step-mode="part">
       <strong>Part STEP</strong>
-      <span>One solid Part (Bodies) — Extrude / Cut in Fusion</span>
+      <span>Standalone Part with Bodies — Extrude / Cut in Fusion (Open from Data Panel, don’t Insert)</span>
     </button>
     <button type="button" class="file-export-step-choice" data-step-mode="assembly">
       <strong>Assembly STEP</strong>
@@ -955,7 +955,17 @@ export async function openFileExportMenu({
         : mirrorCount
           ? ` Also pushed to ${mirrorCount} teammate mirror${mirrorCount === 1 ? "" : "s"}.`
           : "";
-      showExportSuccess(menu, `Pushed ${data.name || fusionUploadFilename} to Fusion.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
+      const openHint = String(data.open_instructions || "").trim()
+        || (
+          (fusionStepMode || "part") === "part"
+            ? "In Fusion Data Panel: Open this file (do not Insert into another design). If you see a chain-link component, Break Link first — then Extrude/Cut."
+            : ""
+        );
+      const partName = data.name || fusionUploadFilename;
+      showExportSuccess(
+        menu,
+        `Pushed Part “${partName}” to Fusion.${sourceNote}${mirrorNote} Refresh the Data Panel, then Open it.${openHint ? ` ${openHint}` : ""}`,
+      );
     } catch (err) {
       fusionPushInFlight = false;
       btn.disabled = false;
@@ -1807,8 +1817,13 @@ async function showFusionExportPicker(menu, anchorBtn, {
         folder_path: navPath,
       });
       markExportSuccess("Exported ✓");
-      setStatus(`Uploaded ${data.name || uploadBaseName} — closing…`);
-      setTimeout(() => closeExportMenu(), 1400);
+      const openHint = String(data.open_instructions || "").trim();
+      setStatus(
+        `Uploaded Part “${data.name || uploadBaseName}”. Open it from Data Panel (don’t Insert).`
+        + (openHint ? ` ${openHint}` : "")
+        + " Closing…",
+      );
+      setTimeout(() => closeExportMenu(), 2200);
     } catch (err) {
       submit.disabled = false;
       setSelectedFolder({ id: selectedFolderId, name: selectedFolderName }, { quiet: true });

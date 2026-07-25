@@ -8738,12 +8738,22 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
 
     if is_bake_upload:
         upload_name = _visible_step_name()
-    elif allowed_name_stems:
+    elif (not want_part) and allowed_name_stems:
         name_stem = Path(upload_name).stem.lower().replace(".fusionpart", "").replace(".part", "")
         if name_stem not in allowed_name_stems:
             # Client asked for a destination name outside the visible set
             # (classic bug: latest_file / arduino). Force the visible stem.
             upload_name = _visible_step_name()
+
+    # Part mode LAST: always land under a Part-safe cloud name (…_Part.step).
+    # Never version an old "…Assembly…" Fusion item — document type sticks and
+    # Cut fails with linked inserts ("No target body found to cut or intersect!").
+    # Do this after allow-list rewrite so Assembly names cannot win.
+    if want_part and step_path.suffix.lower() in {".step", ".stp"}:
+        base_for_part = upload_stem
+        if is_bake_upload or allowed_for_name:
+            base_for_part = Path(_visible_step_name()).stem
+        upload_name = cad_service.fusion_part_cloud_filename(base_for_part)
 
     conflict_mode = str(body.get("conflict_mode") or body.get("on_conflict") or "replace").strip().lower()
     if conflict_mode not in {"replace", "new"}:
@@ -8847,6 +8857,15 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
         **result,
         "name": upload_name,
         "filename": safe,
+        "step_mode": step_mode if want_part else (step_mode or "assembly"),
+        "fusion_document_kind": "part" if want_part else "assembly",
+        "open_instructions": (
+            "In Fusion Data Panel: Open this file (do not Insert into another design). "
+            "Browser should show Bodies under the root — not a chain-link component. "
+            "If you see a link icon: right-click → Break Link, then Extrude/Cut on a solid face."
+            if want_part
+            else ""
+        ),
         "pushed_mirrors": [
             *([{
                 "user_id": user["id"],

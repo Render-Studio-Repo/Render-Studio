@@ -799,6 +799,41 @@ def step_has_assembly_links(path: Path | str, *, max_bytes: int = 8_000_000) -> 
     return "NEXT_ASSEMBLY_USAGE" in text
 
 
+def sanitize_fusion_part_stem(stem: str) -> str:
+    """Cloud/XCAF stem for Fusion Part uploads — strip Assembly wording, end with ``_Part``.
+
+    Fusion keeps document type sticky on an item. Versioning ``Parametric_Assembly_Of_….step``
+    with Part bytes still opens as a linked Assembly insert → Extrude Cut fails with
+    "No target body found to cut or intersect!". A fresh ``…_Part.step`` item opens as Part.
+    """
+    raw = Path(str(stem or "Part")).name
+    if raw.lower().endswith((".step", ".stp")):
+        raw = Path(raw).stem
+    for suffix in (".fusionpart", ".part"):
+        if raw.lower().endswith(suffix):
+            raw = raw[: -len(suffix)]
+            break
+    s = str(raw or "Part")
+    s = re.sub(r"(?i)parametric[_\s-]*step[_\s-]*", "", s)
+    s = re.sub(r"(?i)parametric[_\s-]*cad[_\s-]*", "", s)
+    s = re.sub(r"(?i)parametric[_\s-]*", "", s)
+    s = re.sub(r"(?i)multi[_\s-]*body[_\s-]*", "", s)
+    s = re.sub(r"(?i)assembl(?:y|ies)[_\s-]*of[_\s-]*", "", s)
+    s = re.sub(r"(?i)[_\s-]*assembl(?:y|ies)[_\s-]*", "_", s)
+    s = re.sub(r"(?i)^new_", "", s)
+    s = re.sub(r"[^\w\-]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_") or "Render3D_Model"
+    s = s[:72]
+    if not re.search(r"(?i)_part$", s):
+        s = f"{s}_Part"
+    return s
+
+
+def fusion_part_cloud_filename(stem: str) -> str:
+    """Filename Fusion Data Panel should show for Extrude/Cut-ready Part pushes."""
+    return f"{sanitize_fusion_part_stem(stem)}.step"
+
+
 def ensure_fusion_part_step(project_path: Path, step_path: Path) -> Path:
     """Return a Part-style STEP (no assembly links) suitable for Extrude/Cut.
 
@@ -4638,11 +4673,14 @@ def export_step_as_single_part(step_path: Path, dest_path: Path | None = None) -
     shape_tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
     # makeAssembly=False keeps one free shape / one product — Fusion Part, not Assembly.
     label = shape_tool.AddShape(out_shape, False)
+    part_label = sanitize_fusion_part_stem(step_path.stem)
+    # Avoid leaving "Assembly" in the STEP product name — Fusion mirrors that into
+    # the browser and users Insert it as a linked component.
     try:
-        TDataStd_Name.Set_s(label, TCollection_ExtendedString((step_path.stem or "Part")[:120]))
+        TDataStd_Name.Set_s(label, TCollection_ExtendedString(part_label[:120]))
     except Exception:
         try:
-            TDataStd_Name.Set(label, TCollection_ExtendedString((step_path.stem or "Part")[:120]))
+            TDataStd_Name.Set(label, TCollection_ExtendedString(part_label[:120]))
         except Exception:
             pass
     writer = STEPCAFControl_Writer()
@@ -4661,6 +4699,15 @@ def export_step_as_single_part(step_path: Path, dest_path: Path | None = None) -
         write_status = plain.Write(str(dest))
         if write_status != IFSelect_ReturnStatus.IFSelect_RetDone:
             raise ValueError(f"Could not write part STEP: {dest.name}")
+    # Refuse to hand Fusion a still-linked STEP (Cut → "No target body found…").
+    if step_has_assembly_links(dest):
+        raise ValueError(
+            f"Part STEP {dest.name} still has assembly links after flatten — refusing Fusion upload."
+        )
+    if not is_editable_brep_step(dest):
+        raise ValueError(
+            f"Part STEP {dest.name} is not editable B-rep — Extrude/Cut would fail in Fusion."
+        )
     return dest
 
 

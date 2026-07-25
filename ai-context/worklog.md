@@ -1,4 +1,11 @@
-## 2026-07-25 — Sticky AI compose draft no longer leaks across projects
+## 2026-07-25 — Fusion Part push: standalone Part file (not linked Assembly)
+
+- Cut failed with “No target body found…” because Fusion opened a **linked** `Parametric_Assembly_Of…` insert (chain icon) under an Unsaved parent — often from versioning an old Assembly-named item.
+- Part pushes now upload as sanitized `…_Part.step` (Assembly wording stripped), after flatten; never rewrite back to Assembly names via allow-list.
+- Part STEP product label cleaned; refuse still-linked/faceted Part writes. Success copy: Open from Data Panel, don’t Insert / Break Link.
+- Cache-bust `app.js` / `file-actions.js` / `fusion-panel.js` `?v=20260725-fusion-part-open`. Service restart required.
+
+---
 
 - Long prompts (e.g. Yeti enduro bike) were sticking in the compose box and getting re-saved into whatever project you opened next during the async `loadProject` gap — so the same text showed up in House Framing, Gripper, etc.
 - On project switch: save outgoing draft → clear compose UI + lock saves → restore the new project’s draft.
