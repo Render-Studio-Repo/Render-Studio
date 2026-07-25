@@ -53,7 +53,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260724-mesh-pbr";
+} from "./scene-style.js?v=20260724-texture-keep";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -64,7 +64,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260724-opus5-kimi-grok";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260723-share-x";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260724-x-config";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -6389,6 +6389,7 @@ async function afterModelEdit(data) {
   bumpModelCacheEpoch();
   await refreshFiles();
   const isFacePull = data?.action === "face_pull" || data?.kind === "face_pull" || /pulled|face.?pull/i.test(String(data?.label || ""));
+  const isTextureEdit = /texture/i.test(String(data?.action || "")) || /texture/i.test(String(data?.label || ""));
   await loadModel(data.url, data.filename, {
     cacheBust: true,
     projectId,
@@ -6403,6 +6404,8 @@ async function afterModelEdit(data) {
     fitView: false,
     // Avoid popping the transform gizmo after Extrude/Cut — it feels like a hard reload.
     autoGizmo: isBakedTransform ? true : !isFacePull && !inAssembly,
+    // Textured GLBs must keep maps; Mode 2.0 CAD edits stay on auto → CAD plastic.
+    styleMode: isTextureEdit ? "shaded" : "auto",
   });
   gizmoPanel.resetDragBaseline?.();
   // Transforms already swapped the edited mesh — do not re-pull browser primaries,
@@ -26078,7 +26081,7 @@ async function maybeReapplyCapturedTexture(capture, replacementFilename) {
   }
 }
 
-function applyBoxProjectionUvs(geometry) {
+function applyBoxProjectionUvs(geometry, { tilesPerUnit = 0.004 } = {}) {
   if (!geometry?.attributes?.position) return geometry;
   const geom = geometry.index ? geometry.toNonIndexed() : geometry.clone();
   geom.computeBoundingBox();
@@ -26092,6 +26095,8 @@ function applyBoxProjectionUvs(geometry) {
   const sx = Math.max(size.x, 1e-6);
   const sy = Math.max(size.y, 1e-6);
   const sz = Math.max(size.z, 1e-6);
+  // Tile by physical size so large parts get repeats instead of one stretched wrap.
+  const scale = Math.max(tilesPerUnit, 1e-5);
   const uvs = new Float32Array(pos.count * 2);
   for (let i = 0; i < pos.count; i += 1) {
     const x = pos.getX(i);
@@ -26103,17 +26108,23 @@ function applyBoxProjectionUvs(geometry) {
     let u;
     let v;
     if (nx >= ny && nx >= nz) {
-      u = (y - min.y) / sy;
-      v = (z - min.z) / sz;
+      u = (y - min.y) * scale;
+      v = (z - min.z) * scale;
     } else if (ny >= nx && ny >= nz) {
-      u = (x - min.x) / sx;
-      v = (z - min.z) / sz;
+      u = (x - min.x) * scale;
+      v = (z - min.z) * scale;
     } else {
-      u = (x - min.x) / sx;
-      v = (y - min.y) / sy;
+      u = (x - min.x) * scale;
+      v = (y - min.y) * scale;
     }
     uvs[i * 2] = u;
     uvs[i * 2 + 1] = v;
+  }
+  // Tiny parts: boost so the map isn't a single blurry texel blob.
+  const maxDim = Math.max(sx, sy, sz);
+  if (maxDim * scale < 0.85) {
+    const boost = 0.85 / Math.max(maxDim * scale, 1e-6);
+    for (let i = 0; i < uvs.length; i += 1) uvs[i] *= boost;
   }
   geom.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
   return geom;
@@ -26158,13 +26169,23 @@ function findMeshByUuid(root, uuid) {
 }
 
 function makeTexturedMaterial(texture) {
+  if (texture) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.anisotropy = Math.max(Number(texture.anisotropy) || 1, 8);
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+  }
   return new THREE.MeshStandardMaterial({
     color: 0xffffff,
     map: texture,
-    metalness: 0.04,
-    roughness: 0.58,
+    metalness: 0.08,
+    roughness: 0.52,
     side: THREE.DoubleSide,
-    envMapIntensity: 0.35,
+    envMapIntensity: 0.9,
   });
 }
 
@@ -26175,6 +26196,12 @@ function applyTextureToModelClone(object, texture, { targetMesh = null, faceIndi
   clone.position.set(0, 0, 0);
   clone.quaternion.set(0, 0, 0, 1);
   clone.scale.set(1, 1, 1);
+  // Tag so reload keeps maps via authored shading — CAD plastic must not wipe textures.
+  clone.userData = {
+    ...(clone.userData || {}),
+    render3dStyle: "shaded",
+    render3dPipeline: "texture",
+  };
   stripViewportHelperObjects(clone);
   const cloneTarget = targetPath ? meshAtChildPath(clone, targetPath) : null;
   clone.traverse((child) => {
@@ -29603,7 +29630,7 @@ window.addEventListener("keydown", (e) => {
           ? `Post viewport videos as ${twitterHandle ? `@${twitterHandle}` : "this X account"}`
           : twitterConfigured
             ? "Share viewport recordings to your X timeline"
-            : "Needs X OAuth client settings";
+            : "Server needs an X developer app (TWITTER_CLIENT_ID / SECRET)";
       const rows = [
         {
           key: "stripe",

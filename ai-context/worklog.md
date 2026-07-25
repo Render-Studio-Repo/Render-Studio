@@ -1,3 +1,30 @@
+## 2026-07-24 — Textures kept (CAD wipe) + better wrap; Mode 2.0 untouched
+
+- Library/render textures were wiped on reload: `applyCadStyle` treated white+map as washed and dropped maps / swapped shared face plastic.
+- Textured GLBs now tagged `render3dPipeline=texture`; maps force authored style. `afterModelEdit` passes `styleMode: shaded` only for texture actions (Mode 2.0 stays CAD).
+- Better box UVs (physical tiling + boost for small parts), anisotropy / mipmaps, brighter env.
+- Cache-bust: `scene-style.js` / `app.js` `?v=20260724-texture-keep`.
+
+---
+
+## 2026-07-24 — Why Connect X / Share to X fail
+
+- Root cause: `TWITTER_CLIENT_ID` and `TWITTER_CLIENT_SECRET` are **missing from `.env`** (never present in live or backup envs). `twitter_link_service.configured()` is false → Connect disabled, link-url returns 503.
+- Callback route `/oauth/twitter/callback` is fine; redirect default is `https://render3d.app/oauth/twitter/callback`.
+- Documented vars in `.env.example`; clearer UI copy. Needs real X developer app credentials to enable.
+
+---
+
+## 2026-07-24 — Export/share: all models, never stale ball token
+
+- Share links were reusing old tokens and/or baking the wrong sibling (Arduino / ball) via eye-hide filtering; Fusion push followed the same allow-list bugs.
+- **Export everything:** `collectProjectExportFilenames()` ignores hide state, dedupes by stem (prefer STEP), and multi-model Export always POSTs `/assembly/exports` with the full list.
+- **Fresh shares:** `createShareUrl` always sends JSON + `force_new`; rejects `"visible|project assembly"` placeholders; backend clears old `viewer_filename` and rebakes `_share_visible_*` from the full filename list.
+- Per-file Export no longer blocked when eye-hidden; Export button enables when any model files exist.
+- Cache-bust: `app.js` / `file-actions.js` `?v=20260724-export-all`. Restarted `render3d` for `main.py` + `cad_service.py`.
+
+---
+
 ## 2026-07-24 — Mode 2.0 CAD shading: Mesh PBR heuristic only
 
 - Bug: Mesh PBR “vivid/shiny” auto-detect flipped Mode 2.0 STEP/GLB previews into authored shading (black / unlit).

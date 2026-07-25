@@ -244,7 +244,7 @@ export function createViewportVideoRecorder({
       const connected = !!data?.connected;
       const handle = data?.account?.username ? `@${data.account.username}` : "";
       if (!data?.configured) {
-        setXStatus("X posting needs TWITTER_CLIENT_ID / SECRET on the server.");
+        setXStatus("X isn’t set up on this server yet (missing TWITTER_CLIENT_ID / SECRET). Download the clip for now.");
         if (connectBtn) connectBtn.disabled = true;
         if (postBtn) postBtn.disabled = true;
       } else if (connected) {
