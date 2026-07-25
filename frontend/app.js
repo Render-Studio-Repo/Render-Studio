@@ -20449,15 +20449,33 @@ function collectProjectExportFilenames() {
   for (const f of lastProjectFiles || []) {
     push(typeof f === "string" ? f : f?.name);
   }
+  // One file per model stem — avoid baking the same part 3× as .step+.glb+.3mf.
+  const formatRank = (name) => {
+    const ext = String(name).split(".").pop()?.toLowerCase() || "";
+    if (ext === "step" || ext === "stp") return 3;
+    if (ext === "glb" || ext === "gltf") return 2;
+    if (ext === "3mf") return 1;
+    return 0;
+  };
+  const byStem = new Map();
+  for (const name of names) {
+    const stem = String(name).replace(/\.[^.]+$/, "").toLowerCase();
+    const prev = byStem.get(stem);
+    if (!prev || formatRank(name) > formatRank(prev)) byStem.set(stem, name);
+  }
+  const deduped = [...byStem.values()];
   // Prefer Fully_Assembled / selected first for naming, keep the rest.
   const preferred =
-    names.find((n) => /fully_assembled|gripper/i.test(n))
-    || (selectedFile && names.includes(selectedFile) ? selectedFile : null)
-    || names[0];
-  if (preferred && names[0] !== preferred) {
-    return [preferred, ...names.filter((n) => n !== preferred)];
+    deduped.find((n) => /fully_assembled|gripper/i.test(n))
+    || (selectedFile && deduped.includes(selectedFile) ? selectedFile : null)
+    || (selectedFile
+      ? deduped.find((n) => String(n).replace(/\.[^.]+$/, "").toLowerCase() === String(selectedFile).replace(/\.[^.]+$/, "").toLowerCase())
+      : null)
+    || deduped[0];
+  if (preferred && deduped[0] !== preferred) {
+    return [preferred, ...deduped.filter((n) => n !== preferred)];
   }
-  return names;
+  return deduped;
 }
 
 function currentProjectShareContext() {

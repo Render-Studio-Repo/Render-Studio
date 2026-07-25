@@ -1210,6 +1210,7 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
 
     # Resolve each visible name to the best on-disk viewer GLB when available.
     viewer_paths: list[Path] = []
+    seen_viewers: set[str] = set()
     for safe in safe_names:
         src = project_path / safe
         viewer_name = None
@@ -1217,10 +1218,18 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
             viewer_name = resolve_viewport_filename(project_path, safe)
         except Exception:
             viewer_name = None
+        path = None
         if viewer_name and (project_path / viewer_name).is_file():
-            viewer_paths.append(project_path / viewer_name)
+            path = project_path / viewer_name
         elif src.suffix.lower() in {".glb", ".gltf"}:
-            viewer_paths.append(src)
+            path = src
+        if path is None:
+            continue
+        key = path.name.lower()
+        if key in seen_viewers:
+            continue
+        seen_viewers.add(key)
+        viewer_paths.append(path)
 
     out_glb = project_path / f"{stem}.glb"
     # Single visible model with an existing GLB — copy it (no remesh).

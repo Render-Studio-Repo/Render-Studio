@@ -421,13 +421,32 @@ export function setupRenderer(renderer) {
   renderer.toneMappingExposure = 1.1;
 }
 
+function _materialHasTextureMaps(mat) {
+  if (!mat) return false;
+  return !!(
+    mat.map
+    || mat.normalMap
+    || mat.roughnessMap
+    || mat.metalnessMap
+    || mat.aoMap
+    || mat.emissiveMap
+    || mat.bumpMap
+  );
+}
+
+function _meshHasTextureMaps(mesh) {
+  if (!mesh?.isMesh) return false;
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  return mats.some(_materialHasTextureMaps);
+}
+
 /**
  * True when this tree was authored as a shaded Three.js / img2threejs model
  * (keep PBR colors) rather than a CAD STEP→GLB preview.
  *
  * Do NOT infer from color/metalness heuristics — that wrongly flipped Mode 2.0
- * CAD parts into authored shading (black / unlit plastic). Mesh-only signals:
- * `.mesh.mjs` sibling / filename, or export extras `render3dPipeline=img2threejs|mesh`.
+ * CAD parts into authored shading (black / unlit plastic). Explicit signals only:
+ * Mesh markers, texture-library exports, or materials that already carry maps.
  */
 export function prefersAuthoredShading(object3d, filename = "") {
   if (!object3d) return false;
@@ -443,7 +462,17 @@ export function prefersAuthoredShading(object3d, filename = "") {
     const style = String(ud.render3dStyle || extras.render3dStyle || "").toLowerCase();
     const pipeline = String(ud.render3dPipeline || extras.render3dPipeline || "").toLowerCase();
     if (style === "shaded" || style === "authored" || style === "pbr") flagged = true;
-    if (pipeline === "img2threejs" || pipeline === "mesh") flagged = true;
+    if (
+      pipeline === "img2threejs"
+      || pipeline === "mesh"
+      || pipeline === "texture"
+      || pipeline === "texture_library"
+    ) {
+      flagged = true;
+    }
+    // Library / render wraps bake maps into the GLB — keep them (Mode 2.0 CAD
+    // STEP dumps almost never ship texture maps).
+    if (_meshHasTextureMaps(child)) flagged = true;
   });
   return flagged;
 }
@@ -617,6 +646,11 @@ export function applyCadStyle(object3d) {
   const meshInfos = meshes.map((mesh) => ({ mesh, info: _meshColorInfo(mesh) }));
   const faceFragmented = _isFaceFragmentedModel(meshes);
   const preserveFragmentColors = faceFragmented && _hasPreservableFragmentColors(meshInfos);
+  const hasTextureMaps = meshes.some(_meshHasTextureMaps);
+  // Textured library wraps must keep maps — shared face plastic would wipe them.
+  if (hasTextureMaps) {
+    return applyAuthoredStyle(object3d);
+  }
   const highFragmentModel = faceFragmented || meshes.length > HIGH_FRAGMENT_MESH_COUNT;
   // Per-mesh palette only for real multi-body assemblies, not triangle dumps.
   const usePalette = !faceFragmented && _useGeneratedPalette(meshInfos);
@@ -689,6 +723,21 @@ export function applyCadStyle(object3d) {
     const keepVertexColors = !shouldPaletteColor && vertexColors && !info.washed && info.source === "vertex";
 
     const existingMats = Array.isArray(child.material) ? child.material : [child.material];
+    // Never rewrite materials that already carry texture maps (library wrap / PBR).
+    if (existingMats.some(_materialHasTextureMaps)) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      for (const mat of existingMats) {
+        if (!mat) continue;
+        if ("envMapIntensity" in mat) {
+          const cur = Number(mat.envMapIntensity);
+          mat.envMapIntensity = Number.isFinite(cur) ? Math.max(cur, 0.55) : 0.85;
+        }
+        if ("flatShading" in mat) mat.flatShading = false;
+        mat.needsUpdate = true;
+      }
+      return;
+    }
     const origColor = !vertexColors ? info.color : null;
     const origMap = existingMats[0]?.map ?? null;
     const origMetal = existingMats[0]?.metalness ?? FUSION.bodyMetalness;
