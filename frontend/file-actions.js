@@ -370,7 +370,13 @@ async function copyText(text) {
   ta.remove();
 }
 
-function showStepModeChooser(menu, item, onChoose, anchorEl = null) {
+function showStepModeChooser(menu, item, onChoose, anchorEl = null, clickEvent = null) {
+  // Default Part STEP so Extrude/Cut works (linked assemblies fail Cut in Fusion).
+  // Hold Alt/Option when clicking STEP in the list to keep the Assembly chooser.
+  if (!clickEvent?.altKey) {
+    onChoose?.("part", item);
+    return;
+  }
   menu.querySelector(".file-export-step-chooser")?.remove();
   const chooser = document.createElement("div");
   chooser.className = "file-export-step-chooser";
@@ -691,21 +697,22 @@ export async function openFileExportMenu({
   const isPartCache = (item) => /\.part\.step$/i.test(String(item?.name || "")) || /\.fusionpart\.step$/i.test(String(item?.name || ""));
   const cloudStep = isVisibleAssemblyExport
     ? (
+      // Only the bake — never fall back to a random sibling STEP (arduino latch).
       sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && item.step_kind === "editable_brep" && !isPartCache(item))
       || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")) && !isPartCache(item))
       || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")))
-      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && !isPartCache(item))
       || null
     )
     : (
       sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && !isPartCache(item) && (item.current || modelStem(item.name) === modelStem(targetStem)))
-      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && !isPartCache(item))
       || sorted.find((item) => item.format === "step" && !isPartCache(item) && !/__faceted/i.test(String(item.name || "")) && (item.current || modelStem(item.name) === modelStem(targetStem)))
       || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || modelStem(item.name) === modelStem(targetStem)))
       || null
     );
   const resolvedCloudFilename = cloudFilename || cloudStep?.name || (
-    isVisibleAssemblyExport ? null : filename
+    isVisibleAssemblyExport
+      ? (allowedFilenames?.[0] ? String(allowedFilenames[0]).replace(/\.[^.]+$/, ".step") : null)
+      : filename
   );
   const resolvedCloudStepIsFaceted = Boolean(
     cloudStep?.step_kind === "faceted_mesh"
@@ -745,7 +752,7 @@ export async function openFileExportMenu({
     const label = exportLabel(item, targetStem);
     btn.textContent = `${label}${sizeKb}`;
     btn.title = item.name;
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", async (ev) => {
       try {
         if (item.format === "step" && item.step_kind === "faceted_mesh") {
           const ok = window.confirm(
@@ -768,7 +775,7 @@ export async function openFileExportMenu({
               showExportError(menu, err, { title: "Download failed" });
               menu.querySelector(".file-export-step-chooser")?.querySelectorAll("button")?.forEach((b) => (b.disabled = false));
             }
-          }, btn);
+          }, btn, ev);
           return;
         }
         const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
@@ -873,9 +880,16 @@ export async function openFileExportMenu({
   if (isVisibleAssemblyExport) {
     const bake = sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")));
     if (bake?.name) fusionUploadFilename = bake.name;
+    else if (!fusionUploadFilename && visibleAllowList.length) {
+      fusionUploadFilename = String(visibleAllowList[0]).replace(/\.[^.]+$/, ".step");
+    }
+  }
+  if (!fusionUploadFilename && visibleAllowList.length) {
+    fusionUploadFilename = String(visibleAllowList[0]).replace(/\.[^.]+$/, ".step");
   }
 
   // Fusion push: Part STEP for Extrude/Cut; no companion .py.
+  let fusionPushInFlight = false;
   function fusionPushBody(extra = {}) {
     const body = {
       filename: fusionUploadFilename,
@@ -903,6 +917,8 @@ export async function openFileExportMenu({
       });
       return;
     }
+    if (fusionPushInFlight) return;
+    fusionPushInFlight = true;
     btn.disabled = true;
     const original = btn.innerHTML;
     btn.innerHTML = `<img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" /> Pushing…`;
@@ -928,6 +944,7 @@ export async function openFileExportMenu({
           : "";
       showExportSuccess(menu, `Pushed ${data.name || fusionUploadFilename} to Fusion.${sourceNote}${mirrorNote} Refresh Fusion 360's Data Panel to see the new version.`);
     } catch (err) {
+      fusionPushInFlight = false;
       btn.disabled = false;
       btn.innerHTML = original;
       const needsFolder = /Link a Fusion mirror folder|aps_project_id|folder_id/i.test(String(err?.message || ""));

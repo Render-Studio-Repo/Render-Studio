@@ -1,4 +1,20 @@
-## 2026-07-25 — Cmd+Z move undo no longer deletes parts
+## 2026-07-25 — Fusion Data Panel: fix missing STEP thumbnails
+
+- Peach cube placeholders: Model Derivative kickoff after Fusion push was always `406` because the job requested unsupported `svf2` for WIP STEP uploads (sometimes `400` too).
+- Kickoff now tries `svf`+thumbnail → `svf` → thumbnail → `svf2` fallbacks, logs warnings, extracts tip `version_id` from create-item, and runs on `upload_step_as_new_version` too.
+- Re-export / Replace in Fusion to regenerate thumbs on existing files (or open once in Fusion). Service restarted.
+
+---
+
+
+- Root cause: Export/Fusion/admin latched onto timeline `latest_file` (often a tiny sibling like `arduino_uno_q`) instead of the visible / Fully_Assembled model. Logs showed Fusion push `requested=arduino_uno_q` with `allowed=[]`.
+- Restored Jul 24 golden **visible-only** studio export (eye icons matter again); sidebar export + admin prefer Fully_Assembled / largest primary over latest.
+- Admin download lists each model’s STEP separately; default is primary + `?step_mode=part` (flatten for Extrude/Cut).
+- Studio STEP download defaults to Part; Fusion push debounced; no sibling STEP fallback on assembly bake.
+- Cache-bust `app.js` / `file-actions.js` / `admin-dashboard.js` `?v=20260725-export-visible`. Frontend-only (no service restart).
+
+---
+
 
 - Bug: after a gizmo move, Cmd+Z fell through to `undoTimeline()` on the previous generation when the transform tip wasn’t ready — that restored an old snapshot and wiped sibling parts.
 - Transform undo now only reverts pose or a real transform timeline tip; never undoes prompt/build steps. In-flight auto-apply is cancelled on undo.

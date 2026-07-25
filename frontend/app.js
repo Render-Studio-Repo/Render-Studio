@@ -89,7 +89,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-step-part";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-export-visible";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-step-part";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -20527,31 +20527,33 @@ function syncExportButton() {
   exportBtn.disabled = !(projectId && hasAny);
 }
 
-function collectProjectExportFilenames() {
-  // Export/share everything in the project — ignore eye-icon hide state.
-  // Visibility filtering kept picking the wrong sibling (Arduino / ball).
+function collectVisibleExportFilenames() {
+  // Export only what is on-screen (eye-visible). Exporting *everything* was
+  // latching Fusion/admin onto the newest sibling (arduino_uno_q) instead of
+  // the Fully_Assembled model in the viewport — Jul 24 golden behavior.
   const names = [];
   const seen = new Set();
   const push = (raw) => {
     const name = String(raw || "").split("#body:")[0].trim();
     if (!name || seen.has(name)) return;
-    if (name.startsWith("_")) return;
+    if (name.startsWith("_") || name.startsWith(".")) return;
     if (!/\.(glb|gltf|step|stp|3mf)$/i.test(name)) return;
     if (/_exploded/i.test(name) || /__part_/i.test(name) || /\.part\.step$/i.test(name)) return;
     if (/__faceted/i.test(name)) return;
     seen.add(name);
     names.push(name);
   };
-  for (const entry of projectTree.getComponents?.() || []) {
-    if (!entry || entry.virtual_body || entry.virtual_component) continue;
+  const browserVisible = (projectTree.getComponents?.() || [])
+    .filter((entry) => entry && !entry.virtual_body && !entry.virtual_component && !isBrowserComponentHidden(entry));
+  for (const entry of browserVisible) {
     push(entry.name);
     push(entry.viewer_filename);
   }
-  for (const [name] of projectAssembly.list() || []) push(name);
-  for (const f of lastProjectFiles || []) {
-    push(typeof f === "string" ? f : f?.name);
+  for (const [name, obj] of projectAssembly.list() || []) {
+    if (obj?.visible === false || isComponentHidden(name)) continue;
+    push(name);
   }
-  // One file per model stem — avoid baking the same part 3× as .step+.glb+.3mf.
+  // One file per model stem — prefer native STEP over GLB/3MF.
   const formatRank = (name) => {
     const ext = String(name).split(".").pop()?.toLowerCase() || "";
     if (ext === "step" || ext === "stp") return 3;
@@ -20566,13 +20568,12 @@ function collectProjectExportFilenames() {
     if (!prev || formatRank(name) > formatRank(prev)) byStem.set(stem, name);
   }
   const deduped = [...byStem.values()];
-  // Prefer Fully_Assembled / selected first for naming, keep the rest.
   const preferred =
-    deduped.find((n) => /fully_assembled|gripper/i.test(n))
-    || (selectedFile && deduped.includes(selectedFile) ? selectedFile : null)
-    || (selectedFile
-      ? deduped.find((n) => String(n).replace(/\.[^.]+$/, "").toLowerCase() === String(selectedFile).replace(/\.[^.]+$/, "").toLowerCase())
+    (selectedFile && !isComponentHidden(selectedFile)
+      ? deduped.find((n) => String(n).replace(/\.[^.]+$/, "").toLowerCase()
+        === String(selectedFile).replace(/\.[^.]+$/, "").toLowerCase())
       : null)
+    || deduped.find((n) => /fully_assembled/i.test(n))
     || deduped[0];
   if (preferred && deduped[0] !== preferred) {
     return [preferred, ...deduped.filter((n) => n !== preferred)];
@@ -20580,8 +20581,55 @@ function collectProjectExportFilenames() {
   return deduped;
 }
 
-function currentProjectShareContext() {
-  const filenames = collectProjectExportFilenames();
+/** @deprecated name — kept for call sites; now visible-only again. */
+function collectProjectExportFilenames() {
+  return collectVisibleExportFilenames();
+}
+
+function pickPrimaryExportFilename(files = [], preferred = null) {
+  // Prefer a real assembly over timeline "latest" (often a tiny add-on like arduino).
+  const names = (files || [])
+    .map((f) => (typeof f === "string" ? f : f?.name))
+    .filter(Boolean)
+    .map((n) => String(n).split("#body:")[0].trim())
+    .filter((n) => /\.(glb|gltf|step|stp|3mf)$/i.test(n))
+    .filter((n) => !n.startsWith("_") && !n.startsWith(".") && !/_exploded/i.test(n) && !/__part_/i.test(n)
+      && !/\.part\.step$/i.test(n) && !/__faceted/i.test(n));
+  if (!names.length) return preferred || null;
+  const formatRank = (name) => {
+    const ext = String(name).split(".").pop()?.toLowerCase() || "";
+    if (ext === "step" || ext === "stp") return 3;
+    if (ext === "glb" || ext === "gltf") return 2;
+    if (ext === "3mf") return 1;
+    return 0;
+  };
+  const sizeOf = (name) => {
+    const row = (files || []).find((f) => (typeof f === "string" ? f : f?.name) === name);
+    return Number(typeof row === "object" && row ? row.size : 0) || 0;
+  };
+  const byStem = new Map();
+  for (const name of names) {
+    const stem = String(name).replace(/\.[^.]+$/, "").toLowerCase();
+    const prev = byStem.get(stem);
+    if (!prev || formatRank(name) > formatRank(prev)) byStem.set(stem, name);
+  }
+  const deduped = [...byStem.values()];
+  const prefStem = preferred
+    ? String(preferred).replace(/\.[^.]+$/, "").toLowerCase().replace(/\.part$/i, "")
+    : "";
+  const assembled = deduped.find((n) => /fully_assembled/i.test(n));
+  if (assembled) return assembled;
+  const byPreferred = prefStem
+    ? deduped.find((n) => String(n).replace(/\.[^.]+$/, "").toLowerCase() === prefStem)
+    : null;
+  if (byPreferred && sizeOf(byPreferred) >= 200_000) return byPreferred;
+  const largest = [...deduped].sort((a, b) => sizeOf(b) - sizeOf(a))[0];
+  if (largest && sizeOf(largest) > sizeOf(byPreferred || "")) return largest;
+  return byPreferred || largest || deduped[0];
+}
+
+function currentVisibleShareContext() {
+  const filenames = collectVisibleExportFilenames();
   let viewportImage = "";
   try {
     renderer.render(scene, camera);
@@ -20591,17 +20639,15 @@ function currentProjectShareContext() {
   }
   return {
     viewport_image: viewportImage,
-    // Backend treats this as the share allow-list / bake input — send ALL models.
     visible_filenames: filenames,
-    hidden_filenames: [],
+    hidden_filenames: [...new Set(projectTree.getHidden?.() || loadHiddenComponentState())],
     force_new: true,
     captured_at: new Date().toISOString(),
   };
 }
 
-/** @deprecated name kept for call sites — now exports/shares the full project. */
-function currentVisibleShareContext() {
-  return currentProjectShareContext();
+function currentProjectShareContext() {
+  return currentVisibleShareContext();
 }
 
 async function exportCurrentModel(anchorEl) {
@@ -20609,48 +20655,46 @@ async function exportCurrentModel(anchorEl) {
     alert("Open a project first.");
     return;
   }
-  const allFiles = collectProjectExportFilenames();
+  const visibleFiles = collectVisibleExportFilenames();
   const anchor = anchorEl || document.getElementById("btn-export-model") || document.body;
-  if (!allFiles.length) {
-    alert("No model files to export in this project.");
+  if (!visibleFiles.length) {
+    alert("No visible component to export. Show at least one component first.");
     return;
   }
-  const fusionDisplayName = `${componentStemName(allFiles[0]) || "model"}.step`;
-  // Always bake a combined assembly when more than one model exists so Fusion
-  // and share links cannot latch onto a random sibling (Arduino / ball).
-  if (allFiles.length > 1) {
+  const primary = visibleFiles[0];
+  const fusionDisplayName = `${componentStemName(primary) || "model"}.step`;
+  if (visibleFiles.length > 1) {
     await openFileExportMenu({
       api,
       projectId,
-      filename: "project assembly",
+      filename: "visible assembly",
       cloudFilename: null,
       fusionUploadName: fusionDisplayName,
-      allowedFilenames: allFiles,
+      allowedFilenames: visibleFiles,
       anchorEl: anchor,
-      title: `Export project (${allFiles.length} models)`,
-      hint: `Exports every model in this project as “${fusionDisplayName}” (eye-icon hide is ignored).`,
+      title: `Export visible (${visibleFiles.length} models)`,
+      hint: `Exports the models currently shown in the viewport as “${fusionDisplayName}” (Part STEP for Fusion Cut).`,
       allowOnshape: false,
-      shareContext: currentProjectShareContext,
+      shareContext: currentVisibleShareContext,
       exportsRequest: {
         path: `/api/projects/${projectId}/assembly/exports`,
         options: {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filenames: allFiles }),
+          body: JSON.stringify({ filenames: visibleFiles }),
         },
       },
     });
     return;
   }
-  const file = allFiles[0];
   await openFileExportMenu({
     api,
     projectId,
-    filename: file,
+    filename: primary,
     fusionUploadName: fusionDisplayName,
-    allowedFilenames: [file],
+    allowedFilenames: [primary],
     anchorEl: anchor,
-    shareContext: currentProjectShareContext,
+    shareContext: currentVisibleShareContext,
   });
 }
 
@@ -23859,35 +23903,39 @@ async function deleteProjectFile(filename) {
 async function exportProject(p) {
   const pid = p?.id;
   if (!pid) return;
-  let file = p.latest_file || p.files?.[0]?.name
+  let files = Array.isArray(p.files) ? p.files : [];
+  let preferred = p.latest_file || files?.[0]?.name
     || (p.browser?.components || []).find((c) => c?.name)?.name
     || null;
   // Sidebar list summaries intentionally omit latest_file/files until a project is
   // opened — resolve them here so right-click Export works without selecting first.
-  if (!file) {
-    try {
-      const data = await api(projectApiPath(pid));
-      file = (isDxfDrawingFilename(data.latest_file) ? null : data.latest_file)
-        || data.files?.[0]?.name
-        || (normalizeBrowser(data).components || []).find((c) => c?.name)?.name
-        || null;
-      upsertProjectInList({
-        id: pid,
-        name: data.name || p.name || pid,
-        updated_at: data.updated_at,
-        created_at: data.created_at,
-        file_count: data.files?.length ?? data.file_count ?? p.file_count ?? 0,
-        files: data.files,
-        browser: normalizeBrowser(data),
-        timeline: data.timeline,
-        latest_file: data.latest_file,
-        generation: data.generation,
-      });
-    } catch (err) {
+  // Never trust latest_file alone: timeline often points at a tiny add-on (arduino).
+  try {
+    const data = await api(projectApiPath(pid));
+    files = data.files || files || [];
+    preferred = (isDxfDrawingFilename(data.latest_file) ? null : data.latest_file)
+      || preferred
+      || (normalizeBrowser(data).components || []).find((c) => c?.name)?.name
+      || null;
+    upsertProjectInList({
+      id: pid,
+      name: data.name || p.name || pid,
+      updated_at: data.updated_at,
+      created_at: data.created_at,
+      file_count: data.files?.length ?? data.file_count ?? p.file_count ?? 0,
+      files: data.files,
+      browser: normalizeBrowser(data),
+      timeline: data.timeline,
+      latest_file: data.latest_file,
+      generation: data.generation,
+    });
+  } catch (err) {
+    if (!preferred && !files.length) {
       alert(err.message || "Could not load project for export");
       return;
     }
   }
+  const file = pickPrimaryExportFilename(files, preferred) || preferred;
   if (!file) {
     alert("This project has no model to export yet.");
     return;
@@ -23901,6 +23949,8 @@ async function exportProject(p) {
       api,
       projectId: pid,
       filename: file,
+      fusionUploadName: `${componentStemName(file) || "model"}.step`,
+      allowedFilenames: [file],
       anchorEl: anchor,
       allowOnshape: !isAnonymousPublicProject(pid),
       allowFusion: !isAnonymousPublicProject(pid),

@@ -119,10 +119,36 @@ function cleanStepDownloadName(name = "") {
   return `${stem}.step`;
 }
 
-function buildDownloadOptions(project = {}, files = []) {
+function pickAdminPrimaryModel(project = {}, files = []) {
+  const names = (files || [])
+    .map((f) => String(f?.name || "").trim())
+    .filter((n) => /\.(glb|gltf|step|stp|3mf)$/i.test(n))
+    .filter((n) => !n.startsWith("_") && !n.startsWith("."))
+    .filter((n) => !/_exploded/i.test(n) && !/__part_/i.test(n)
+      && !/\.part\.step$/i.test(n) && !/__faceted/i.test(n));
+  const sizeOf = (name) => {
+    const row = (files || []).find((f) => f?.name === name);
+    return Number(row?.size || 0);
+  };
+  const assembled = names.find((n) => /fully_assembled/i.test(n));
+  if (assembled) {
+    const stem = fileStem(assembled);
+    const step = names.find((n) => fileStem(n) === stem && /\.ste?p$/i.test(n));
+    const glb = names.find((n) => fileStem(n) === stem && /\.glb$/i.test(n));
+    return step || glb || assembled;
+  }
   const preferred = String(project.model_file || project.latest_file || "").trim();
-  const stem = preferred ? fileStem(preferred).toLowerCase() : "";
+  if (preferred && names.includes(preferred) && sizeOf(preferred) >= 200_000) return preferred;
+  const bySize = [...names].sort((a, b) => sizeOf(b) - sizeOf(a));
+  return bySize[0] || preferred || null;
+}
+
+function buildDownloadOptions(project = {}, files = []) {
+  const primary = pickAdminPrimaryModel(project, files);
+  const stem = primary ? fileStem(primary).toLowerCase() : "";
+  const projectId = String(project.id || "").trim();
   const formats = new Map();
+  const stepByStem = new Map();
   const order = ["glb", "stl", "step", "3mf", "obj"];
   const consider = (file) => {
     const name = String(file?.name || "").trim();
@@ -130,9 +156,13 @@ function buildDownloadOptions(project = {}, files = []) {
     let fmt = String(file.format || name.split(".").pop() || "").toLowerCase();
     if (fmt === "stp") fmt = "step";
     if (!order.includes(fmt)) return;
-    const url = file.url || null;
+    if (fmt === "step" && (isFacetedStepName(name) || file.step_kind === "faceted_mesh")) return;
+    if (fmt === "step" && isPartStepName(name)) return; // download via ?step_mode=part from native
+    const url = file.url
+      || (projectId ? `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(name)}` : null);
     if (!url) return;
     const related = !stem
+      || fileStem(name).toLowerCase() === stem
       || fileStem(name).toLowerCase().startsWith(stem)
       || stem.startsWith(fileStem(name).toLowerCase());
     const candidate = {
@@ -140,18 +170,31 @@ function buildDownloadOptions(project = {}, files = []) {
       name,
       url,
       related: !!related,
-      step_kind: file.step_kind || (fmt === "step" && isFacetedStepName(name) ? "faceted_mesh" : null),
+      size: Number(file.size || 0),
+      step_kind: file.step_kind || (fmt === "step" ? "editable_brep" : null),
+      download_name: fmt === "step" ? cleanStepDownloadName(name) : name,
     };
+    if (fmt === "step") {
+      const key = fileStem(name).toLowerCase();
+      stepByStem.set(key, preferBetterDownloadOption(stepByStem.get(key), candidate));
+      return;
+    }
     formats.set(fmt, preferBetterDownloadOption(formats.get(fmt), candidate));
   };
   for (const file of files) consider(file);
   if (project.model_url && project.model_file) {
     consider({ name: project.model_file, format: "glb", url: project.model_url });
   }
-  return [...formats.values()].sort((a, b) => {
+  // Prefer primary model's STEP first, then other models as separate options.
+  const stepOpts = [...stepByStem.values()].sort((a, b) => {
     if (a.related !== b.related) return a.related ? -1 : 1;
-    return order.indexOf(a.format) - order.indexOf(b.format);
+    if (/fully_assembled/i.test(a.name) !== /fully_assembled/i.test(b.name)) {
+      return /fully_assembled/i.test(a.name) ? -1 : 1;
+    }
+    return (b.size || 0) - (a.size || 0);
   });
+  const other = [...formats.values()].sort((a, b) => order.indexOf(a.format) - order.indexOf(b.format));
+  return [...stepOpts, ...other];
 }
 
 function bindModalDownload(el, options) {
@@ -165,11 +208,11 @@ function bindModalDownload(el, options) {
     return;
   }
   wrap.hidden = false;
-  // Prefer STEP (Fusion-ready Part) in the default selection when present.
+  // Prefer primary / Fully_Assembled STEP (Fusion-ready Part) as default.
   let preferredIdx = options.findIndex((opt) => {
     if (String(opt.format || "").toLowerCase() !== "step") return false;
     if (isFacetedStepName(opt.name) || opt.step_kind === "faceted_mesh") return false;
-    return true;
+    return /fully_assembled/i.test(opt.name) || opt.related;
   });
   if (preferredIdx < 0) preferredIdx = options.findIndex((opt) => String(opt.format || "").toLowerCase() === "step");
   if (preferredIdx < 0) preferredIdx = 0;
@@ -179,7 +222,9 @@ function bindModalDownload(el, options) {
     let value = opt.url;
     let dlName = opt.name;
     if (String(opt.format || "").toLowerCase() === "step") {
-      label = "STEP";
+      const stem = fileStem(opt.name) || "model";
+      const short = stem.length > 42 ? `${stem.slice(0, 40)}…` : stem;
+      label = `STEP · ${short}`;
       value = stepDownloadUrl(opt.url, opt.name);
       dlName = opt.download_name || cleanStepDownloadName(opt.name);
     } else {
@@ -484,8 +529,11 @@ async function openProjectModal(projectId) {
     `).join("") || '<span class="muted small">No CAD files</span>';
 
     let downloadOptions = buildDownloadOptions(project, data.files || []);
-    // Prefer exports API for sibling formats (STL/STEP/3MF) of the previewed model.
-    const exportSource = project.model_file || project.latest_file;
+    // Prefer exports API for sibling formats (STL/STEP/3MF) of the primary model
+    // (Fully_Assembled / largest) — not timeline latest (often a tiny add-on).
+    const exportSource = pickAdminPrimaryModel(project, data.files || [])
+      || project.model_file
+      || project.latest_file;
     if (exportSource) {
       try {
         const exportData = await api(
@@ -502,6 +550,7 @@ async function openProjectModal(projectId) {
               name: item.name,
               url: format === "step" ? stepDownloadUrl(url, item.name) : url,
               related: true,
+              size: Number(item.size || 0),
               step_kind: item.step_kind || (format === "step" && isFacetedStepName(item.name) ? "faceted_mesh" : null),
               step_structure: item.step_structure || null,
               fusion_editable: !!item.fusion_editable,
@@ -527,14 +576,35 @@ async function openProjectModal(projectId) {
           }
         }
         if (exportOpts.length) {
-          const byFmt = new Map(downloadOptions.map((o) => [o.format, o]));
-          for (const opt of exportOpts) {
-            byFmt.set(opt.format, preferBetterDownloadOption(byFmt.get(opt.format), opt));
+          // Keep per-model STEP options; only collapse non-STEP formats.
+          const stepOpts = [];
+          const byFmt = new Map();
+          for (const opt of downloadOptions) {
+            if (String(opt.format || "").toLowerCase() === "step") stepOpts.push(opt);
+            else byFmt.set(opt.format, opt);
           }
-          downloadOptions = [...byFmt.values()].sort((a, b) => {
-            const order = ["glb", "stl", "step", "3mf", "obj"];
-            return order.indexOf(a.format) - order.indexOf(b.format);
+          for (const opt of exportOpts) {
+            if (String(opt.format || "").toLowerCase() === "step") {
+              const key = fileStem(opt.name).toLowerCase();
+              const idx = stepOpts.findIndex((s) => fileStem(s.name).toLowerCase() === key);
+              if (idx >= 0) stepOpts[idx] = preferBetterDownloadOption(stepOpts[idx], opt);
+              else stepOpts.push(opt);
+            } else {
+              byFmt.set(opt.format, preferBetterDownloadOption(byFmt.get(opt.format), opt));
+            }
+          }
+          stepOpts.sort((a, b) => {
+            if (a.related !== b.related) return a.related ? -1 : 1;
+            if (/fully_assembled/i.test(a.name) !== /fully_assembled/i.test(b.name)) {
+              return /fully_assembled/i.test(a.name) ? -1 : 1;
+            }
+            return (b.size || 0) - (a.size || 0);
           });
+          const order = ["glb", "stl", "3mf", "obj"];
+          downloadOptions = [
+            ...stepOpts,
+            ...[...byFmt.values()].sort((a, b) => order.indexOf(a.format) - order.indexOf(b.format)),
+          ];
         }
       } catch {
         /* keep file-list options */

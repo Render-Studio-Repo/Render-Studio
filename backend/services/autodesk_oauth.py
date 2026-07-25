@@ -598,8 +598,8 @@ def upload_step_to_folder(
     item = _create_item(access_token, project_id=project_id, folder_id=folder_id, storage_id=storage_id, filename=filename)
     item_data = item.get("data") or {}
     item_id = item_data.get("id")
-    version_id = None
-    if item_id:
+    version_id = _version_id_from_create_item(item)
+    if not version_id and item_id:
         try:
             for folder_item in list_folder_contents(access_token, project_id, folder_id).get("items", []) or []:
                 if folder_item.get("id") == item_id:
@@ -635,43 +635,87 @@ def _unique_folder_filename(folder_items: list[dict[str, Any]], filename: str) -
     return f"{stem}-{int(time.time())}{suffix}"
 
 
+def _version_id_from_create_item(payload: dict[str, Any] | None) -> str | None:
+    """Pull tip version URN from a Data Management create-item response."""
+    if not isinstance(payload, dict):
+        return None
+    for inc in payload.get("included") or []:
+        if not isinstance(inc, dict):
+            continue
+        if str(inc.get("type") or "") == "versions" and inc.get("id"):
+            return str(inc.get("id"))
+    tip = (((payload.get("data") or {}).get("relationships") or {}).get("tip") or {}).get("data") or {}
+    tip_id = tip.get("id")
+    return str(tip_id) if tip_id and str(tip_id) != "1" else None
+
+
 def _kickoff_model_thumbnail(access_token: str, version_id: str | None) -> None:
-    """Best-effort Model Derivative job so Fusion Data Panel gets a real preview thumb."""
+    """Best-effort Model Derivative job so Fusion Data Panel gets a real preview thumb.
+
+    Logs showed every prior kickoff returning 406 — usually ``svf2`` unsupported for
+    WIP STEP uploads. Prefer classic ``svf`` (+ thumbnail), then fall back.
+    """
     if not version_id:
+        logger.warning("Fusion thumbnail skipped — missing version_id")
         return
     try:
         import base64
 
         urn = base64.urlsafe_b64encode(str(version_id).encode("utf-8")).decode("ascii").rstrip("=")
-        resp = httpx.post(
-            "https://developer.api.autodesk.com/modelderivative/v2/designdata/job",
-            headers={**_auth_headers(access_token), "Content-Type": "application/json"},
-            json={
-                "input": {"urn": urn},
-                "output": {
-                    "formats": [
-                        {
-                            "type": "thumbnail",
-                            "advanced": {"width": 400, "height": 400},
-                        },
-                        {
-                            "type": "svf2",
-                            "views": ["3d"],
-                        },
-                    ]
-                },
+        attempts: list[dict[str, Any]] = [
+            # SVF first — STEP on Fusion hubs often rejects SVF2 with 406.
+            {
+                "formats": [
+                    {"type": "svf", "views": ["3d"]},
+                    {"type": "thumbnail", "advanced": {"width": 400, "height": 400}},
+                ]
             },
-            timeout=30,
-        )
-        if resp.status_code not in {200, 201, 202}:
-            logger.debug(
-                "Fusion thumbnail job not started for %s: %s %s",
-                version_id,
-                resp.status_code,
-                (resp.text or "")[:240],
+            {"formats": [{"type": "svf", "views": ["3d"]}]},
+            {"formats": [{"type": "thumbnail", "advanced": {"width": 400, "height": 400}}]},
+            {
+                "formats": [
+                    {"type": "svf2", "views": ["3d"]},
+                    {"type": "thumbnail", "advanced": {"width": 400, "height": 400}},
+                ]
+            },
+        ]
+        last_detail = ""
+        for idx, output in enumerate(attempts):
+            resp = httpx.post(
+                "https://developer.api.autodesk.com/modelderivative/v2/designdata/job",
+                headers={
+                    **_auth_headers(access_token),
+                    "Content-Type": "application/json",
+                    "x-ads-force": "true",
+                },
+                json={"input": {"urn": urn}, "output": output},
+                timeout=30,
             )
+            if resp.status_code in {200, 201, 202}:
+                logger.info(
+                    "Fusion thumbnail job started version=%s attempt=%s formats=%s",
+                    version_id,
+                    idx,
+                    [f.get("type") for f in output.get("formats") or []],
+                )
+                return
+            last_detail = (resp.text or "")[:300]
+            # 406/400 = unsupported format combo — try next payload.
+            if resp.status_code not in {400, 406, 409}:
+                logger.warning(
+                    "Fusion thumbnail job failed version=%s status=%s body=%s",
+                    version_id,
+                    resp.status_code,
+                    last_detail,
+                )
+                return
+        logger.warning(
+            "Fusion thumbnail job not accepted version=%s last=%s",
+            version_id,
+            last_detail,
+        )
     except Exception as exc:
-        logger.debug("Fusion thumbnail kickoff failed for %s: %s", version_id, exc)
+        logger.warning("Fusion thumbnail kickoff failed for %s: %s", version_id, exc)
 
 
 def upload_step_as_new_version(
@@ -689,9 +733,11 @@ def upload_step_as_new_version(
     _upload_object_to_signed_s3(access_token, bucket_key=bucket_key, object_name=object_name, data=data)
     version = _create_version(access_token, project_id=project_id, item_id=item_id, storage_id=storage_id, filename=filename)
     version_data = version.get("data") or {}
+    version_id = version_data.get("id")
+    _kickoff_model_thumbnail(access_token, version_id)
     return {
         "item_id": item_id,
-        "version_id": version_data.get("id"),
+        "version_id": version_id,
         "name": filename,
         "storage_id": storage_id,
         "web_url": ((version_data.get("links") or {}).get("webView") or {}).get("href"),
