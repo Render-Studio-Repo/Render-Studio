@@ -198,6 +198,8 @@ function invalidateWiringPrefetch() {
 }
 let lastProjectBrowser = { components: [], drawings: [], sketches: [], wiring: [] };
 let lastProjectFiles = [];
+/** Autodesk/Fusion provenance from project_summary (`fusion_source`). */
+let lastProjectFusionSource = null;
 let robotArtifactData = null;
 let allProjects = [];
 let projectsFetchGeneration = 0;
@@ -11188,6 +11190,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
   const serverLatestFile = isDxfDrawingFilename(data.latest_file) ? null : data.latest_file;
   timelineData = data.timeline;
   lastProjectFiles = data.files || [];
+  lastProjectFusionSource = data.fusion_source || null;
   const cur = timelineData?.current_index ?? -1;
   const max = Math.max(0, (timelineData?.entries?.length || 1) - 1);
   timeline.setTimeline(timelineData, {
@@ -15409,7 +15412,27 @@ function allowAutoUpsideDownFlip(filename = "") {
   return ext !== "glb" && ext !== "gltf";
 }
 
-/** Fusion/APS STEP imports are authored Y-up; detect via hidden `.autodesk_source_*` siblings. */
+/** Slug used to match Fusion item names to local stems (`House Framing` → `house_framing`). */
+function fusionSourceStem(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** True when `stem` is the Fusion source model or a derived sibling/part. */
+function stemMatchesFusionSource(stem, src) {
+  if (!stem || !src) return false;
+  return (
+    stem === src
+    || stem.startsWith(`${src}_`)
+    || stem.startsWith(`${src}__`)
+    || stem.startsWith(`${src}.`)
+  );
+}
+
+/** Fusion/APS STEP imports are authored Y-up; detect via `.autodesk_source_*` or project fusion_source. */
 function isFusionAuthoredModel(filename = "") {
   const raw = String(filename || "").split("#body:")[0].trim();
   if (!raw) return false;
@@ -15421,12 +15444,21 @@ function isFusionAuthoredModel(filename = "") {
     .replace(/__part_.*$/i, "");
   if (!stem) return false;
   const names = (lastProjectFiles || []).map((f) => String(typeof f === "string" ? f : f?.name || ""));
-  return names.some((name) => {
+  if (names.some((name) => {
     const m = String(name).match(/^\.autodesk_source_(.+)\.(step|stp|glb|gltf)$/i);
     if (!m) return false;
-    const src = String(m[1] || "").toLowerCase();
-    return stem === src || stem.startsWith(`${src}_`) || stem.startsWith(`${src}__`);
-  });
+    return stemMatchesFusionSource(stem, String(m[1] || "").toLowerCase());
+  })) {
+    return true;
+  }
+  const src = lastProjectFusionSource;
+  if (!src || typeof src !== "object") return false;
+  // Prefer explicit local/import stem when present; fall back to item name slug.
+  const candidates = [
+    fusionSourceStem(src.local_stem || src.local_filename || ""),
+    fusionSourceStem(src.item_name || ""),
+  ].filter(Boolean).map((s) => s.replace(/\.(step|stp|glb|gltf)$/i, ""));
+  return candidates.some((c) => stemMatchesFusionSource(stem, c));
 }
 
 function ensureModelZUp(object3d, filename = "") {
@@ -15434,7 +15466,8 @@ function ensureModelZUp(object3d, filename = "") {
    * LOCKED — Jul 16 axis heuristic (do not bring back footprint ±90° scoring).
    * Rotate clear Y-up meshes into Render3D's Z-up viewport. Leave already-Z-up
    * models alone — the old footprint tipper laid bikes/long assemblies on their side.
-   * Exception: Fusion/APS imports are always Y-up (even when plan X is longest).
+   * Exception: Fusion/APS imports that are still Y-up (including long floor plans
+   * where tallest=X) get rotateX(+90°). Already-Z-up Fusion files must not tip.
    * See `.cursor/rules/model-upright-orientation.mdc`.
    */
   if (!object3d) return false;
@@ -15450,21 +15483,25 @@ function ensureModelZUp(object3d, filename = "") {
   if (!(max > 0)) return false;
 
   let rotated = false;
+  const fusionAuthored = isFusionAuthoredModel(filename);
 
-  // Fusion imports: always Y-up → Z-up. Long floor plans have tallest=X so the
-  // generic axis heuristic leaves them tipped on their side ("turned left").
-  if (isFusionAuthoredModel(filename)) {
-    object3d.rotateX(Math.PI / 2);
-    rotated = true;
-  } else if (sz >= max * 0.99) {
-    // Already standing in Z-up (height along Z).
+  if (sz >= max * 0.99) {
+    // Already standing in Z-up (height along Z) — includes many Fusion screwdrivers.
     rotated = false;
   } else if (sy >= max * 0.99) {
     // Tallest axis is Y → classic Y-up standing model.
     object3d.rotateX(Math.PI / 2);
     rotated = true;
-  } else if (sz < Math.min(sx, sy) * 0.5) {
+  } else if (!fusionAuthored && sz < Math.min(sx, sy) * 0.5) {
     // Flat Z-up plate/gear on the XY floor (thin Z vs both plan extents).
+    // Skip for Fusion: wall boards are Y-up with thin Z and still need +90°.
+    return false;
+  } else if (fusionAuthored && sx >= max * 0.99 && sy >= sz * 0.95) {
+    // Fusion floor plan / long assembly / wall board: length along X, height on Y.
+    // Generic heuristic skips these (tallest≠Y) → they stay "turned left".
+    object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  } else if (sz < Math.min(sx, sy) * 0.5) {
     return false;
   } else if (max <= 25 && sy >= sz * 0.98) {
     object3d.rotateX(Math.PI / 2);
@@ -23938,6 +23975,7 @@ async function refreshFiles() {
   await fetchAllProjects();
   const data = await api(`/api/projects/${projectId}`);
   lastProjectFiles = data.files || [];
+  lastProjectFusionSource = data.fusion_source || null;
   timelineData = data.timeline;
   timeline.setTimeline(data.timeline);
   renderProjectList();

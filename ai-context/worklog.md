@@ -1,8 +1,9 @@
-## 2026-07-25 — Fusion imports upright (Y-up → Z-up)
+## 2026-07-25 — Fusion imports upright (Y-up floor plans)
 
-- Fusion/APS imports stayed “turned left”: they’re Y-up, but long floor plans have tallest=X so the Jul 16 axis heuristic skipped them.
-- `isFusionAuthoredModel` (via `.autodesk_source_*` siblings) always applies `rotateX(+90°)`; native models keep axis-only heuristic.
-- `project_summary` now includes `fusion_source`. Cache-bust `app.js?v=20260725-fusion-yup`.
+- Fusion/APS imports stayed “turned left”: they’re often Y-up, and long floor plans have tallest=X so the Jul 16 axis heuristic skipped them.
+- Native gens stay on the axis heuristic only.
+- `isFusionAuthoredModel` via `.autodesk_source_*` + `project_summary.fusion_source`; Fusion tip only when still Y-up (incl. tallest=X with Y≳Z). Do **not** always-rotate (that tipped already-Z-up Fusion screwdrivers).
+- Cache-bust `app.js?v=20260725-fusion-yup2`. Hard-refresh / reopen the Fusion project.
 
 ---
 
