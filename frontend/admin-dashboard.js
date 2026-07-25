@@ -1,6 +1,12 @@
 import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
 import { createMiniViewer } from "./mini-viewer.js?v=20260724-texture-keep";
 import { mountActivityCharts, mountNetworkBrain } from "./admin-charts.js?v=20260724-brain-avatars";
+import {
+  loadProjectSortMode,
+  saveProjectSortMode,
+  sortProjects,
+  projectSortSelectHtml,
+} from "./admin-project-sort.js?v=20260725-sort";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -716,6 +722,21 @@ async function openUserPanel(root, userId, dashboardData) {
   }
 }
 
+
+function bindProjectSort(root, data) {
+  const select = root.querySelector("#admin-project-sort");
+  const list = root.querySelector("#admin-recent-projects-list");
+  if (!select || !list) return;
+  const projects = data.recent_projects || [];
+  select.addEventListener("change", () => {
+    const mode = select.value || "date-desc";
+    saveProjectSortMode(mode);
+    list.innerHTML = renderProjectRows(sortProjects(projects, mode));
+    bindInteractive(list, data);
+    void hydrateThumbs(list);
+  });
+}
+
 function bindInteractive(root, data) {
   root.querySelectorAll("[data-project-id]").forEach((el) => {
     const open = (event) => {
@@ -884,9 +905,12 @@ function renderDashboard(root, data) {
 
     <section class="admin-grid admin-grid--wide-right">
       <article class="admin-panel" id="admin-section-projects" data-admin-section="projects">
-        <h3>Recent Projects</h3>
+        <div class="admin-projects-head">
+          <h3>Recent Projects</h3>
+          ${projectSortSelectHtml(loadProjectSortMode())}
+        </div>
         <p class="muted small admin-panel-hint">Click a row or <strong>View model</strong> for 3D preview + prompt detail.</p>
-        <div class="admin-list">${renderProjectRows(data.recent_projects || [])}</div>
+        <div class="admin-list" id="admin-recent-projects-list">${renderProjectRows(sortProjects(data.recent_projects || [], loadProjectSortMode()))}</div>
       </article>
       <article class="admin-panel" id="admin-section-prompts" data-admin-section="prompts">
         <h3>Recent Prompt History</h3>
@@ -1008,6 +1032,7 @@ function renderDashboard(root, data) {
     }
   });
   bindInteractive(root, data);
+  bindProjectSort(root, data);
   void hydrateThumbs(root);
 
   clearChartCleanups();

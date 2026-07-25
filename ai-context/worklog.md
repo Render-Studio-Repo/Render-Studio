@@ -1,3 +1,11 @@
+## 2026-07-25 — Admin Recent Projects sort
+
+- Sort dropdown on Admin → Recent Projects: date (newest/oldest), name A–Z/Z–A, person A–Z/Z–A, cost, files.
+- Module `frontend/admin-project-sort.js` + `.css`; preference in `localStorage` (`render3d:adminProjectSort:v1`).
+- Cache-bust `admin-dashboard.js?v=20260725-project-sort`.
+
+---
+
 ## 2026-07-25 — Fusion unlink howto: Break Link menu shot
 
 - Added `frontend/media/fusion-unlink-break-link.png` (right-click menu with Break Link) + pointer “3 · Break Link”.
