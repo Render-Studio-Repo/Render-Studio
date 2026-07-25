@@ -23678,7 +23678,7 @@ async function pushFusionWorkspaceFile(payload) {
         || "Open it from the Data Panel (don’t Insert). Break Link if you see a chain icon, then Extrude/Cut."),
   );
   try {
-    const { maybeShowFusionUnlinkHowto } = await import("./fusion-unlink-howto.js?v=20260725-unlink");
+    const { maybeShowFusionUnlinkHowto } = await import("./fusion-unlink-howto.js?v=20260725-break");
     void maybeShowFusionUnlinkHowto();
   } catch (_) { /* ignore */ }
   await refreshWorkspaceRealtimeEditor();

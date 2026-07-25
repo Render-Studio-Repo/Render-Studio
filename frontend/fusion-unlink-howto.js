@@ -87,16 +87,29 @@ function showFusionUnlinkHowto() {
               <div class="fusion-unlink-pointer fusion-unlink-pointer--closeup" aria-hidden="true">
                 <span class="fusion-unlink-pointer-dot"></span>
                 <span class="fusion-unlink-pointer-line"></span>
-                <span class="fusion-unlink-pointer-label">2 · Right-click → Break Link</span>
+                <span class="fusion-unlink-pointer-label">2 · Right-click the linked row</span>
               </div>
             </div>
-            <ol class="fusion-unlink-howto-steps">
-              <li>Find the row with the <strong>chain link</strong> icon.</li>
-              <li><strong>Right-click</strong> that component → <strong>Break Link</strong>.</li>
-              <li>Then <strong>Extrude → Cut</strong> on a solid face.</li>
-              <li>Or skip Insert: <strong>Open</strong> the Part as its own design.</li>
-            </ol>
+            <div class="fusion-unlink-howto-callout-shot fusion-unlink-howto-callout-shot--menu">
+              <img
+                src="/media/fusion-unlink-break-link.png?v=20260725-break"
+                alt="Right-click menu showing Break Link on a linked component"
+                width="387"
+                height="285"
+              />
+              <div class="fusion-unlink-pointer fusion-unlink-pointer--break" aria-hidden="true">
+                <span class="fusion-unlink-pointer-dot"></span>
+                <span class="fusion-unlink-pointer-line"></span>
+                <span class="fusion-unlink-pointer-label">3 · Break Link</span>
+              </div>
+            </div>
           </div>
+          <ol class="fusion-unlink-howto-steps">
+            <li>Find the row with the <strong>chain link</strong> icon.</li>
+            <li><strong>Right-click</strong> that component → <strong>Break Link</strong>.</li>
+            <li>Then <strong>Extrude → Cut</strong> on a solid face.</li>
+            <li>Or skip Insert: <strong>Open</strong> the Part as its own design.</li>
+          </ol>
         </div>
 
         <label class="welcome-dismiss app-remember-choice fusion-unlink-howto-dismiss">

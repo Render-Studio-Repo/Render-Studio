@@ -1,3 +1,20 @@
+## 2026-07-25 — Fusion unlink howto: Break Link menu shot
+
+- Added `frontend/media/fusion-unlink-break-link.png` (right-click menu with Break Link) + pointer “3 · Break Link”.
+- Howto callout now shows browser chain close-up + Break Link menu; steps row below.
+- Cache-bust `fusion-unlink-howto.js/css?v=20260725-break`.
+
+---
+
+## 2026-07-25 — Fusion export unlink howto popup
+
+- After Fusion export/push, show one-time screenshot popup (X top-right + Don’t show again) explaining Insert → chain-link → Break Link before Extrude/Cut.
+- New modules: `frontend/fusion-unlink-howto.js` + `.css`; assets `frontend/media/fusion-unlink-{full,browser}.png` with pointers on the chain icon.
+- Wired from `file-actions.js` (push + shared export), `fusion-panel.js`, and `app.js` workspace push.
+- Cache-bust: `file-actions.js` / `fusion-panel.js` `?v=20260725-unlink-howto`, CSS `?v=20260725-unlink2`.
+
+---
+
 ## 2026-07-25 — Fusion Part push: standalone Part file (not linked Assembly)
 
 - Cut failed with “No target body found…” because Fusion opened a **linked** `Parametric_Assembly_Of…` insert (chain icon) under an Unsaved parent — often from versioning an old Assembly-named item.

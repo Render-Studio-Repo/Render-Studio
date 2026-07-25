@@ -1,7 +1,7 @@
 /** Fusion Library panel — browse Autodesk/Fusion hubs, import models, and push STEP updates. */
 
 import { authHeaders } from "./auth.js";
-import { maybeShowFusionUnlinkHowto } from "./fusion-unlink-howto.js?v=20260725-unlink";
+import { maybeShowFusionUnlinkHowto } from "./fusion-unlink-howto.js?v=20260725-break";
 
 const IMPORTABLE_EXTS = /\.(step|stp|stl|3mf|obj|glb|gltf)$/i;
 const LS_FUSION_FOLDER_OPEN = "render3d:fusionLibraryFolderOpen:v1";

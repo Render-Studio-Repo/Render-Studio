@@ -75,9 +75,19 @@
 
 .fusion-unlink-howto-callout {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
   gap: 12px;
   align-items: stretch;
+}
+
+.fusion-unlink-howto-callout-shot--menu {
+  align-self: stretch;
+}
+
+.fusion-unlink-howto-callout-shot--menu img {
+  height: 100%;
+  object-fit: cover;
+  object-position: left center;
 }
 
 .fusion-unlink-howto-steps {
@@ -89,10 +99,14 @@
   color: #c9d4e2;
   font-size: 0.84rem;
   line-height: 1.45;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 18px;
+  list-style-position: outside;
 }
 
-.fusion-unlink-howto-steps li + li {
-  margin-top: 6px;
+.fusion-unlink-howto-steps li {
+  margin: 0;
 }
 
 .fusion-unlink-howto-steps strong {
@@ -168,10 +182,10 @@
   top: -28px;
 }
 
-/* Full screenshot: inserted screw on canvas (~74%, 68%) */
+/* Full screenshot: inserted screw on canvas (~82%, 75%) */
 .fusion-unlink-pointer--screw {
-  left: 74%;
-  top: 68%;
+  left: 82%;
+  top: 75%;
 }
 
 .fusion-unlink-pointer--screw .fusion-unlink-pointer-line {
@@ -208,6 +222,22 @@
   top: -26px;
 }
 
+/* Break Link menu item (~42%, 42%) */
+.fusion-unlink-pointer--break {
+  left: 42%;
+  top: 42%;
+}
+
+.fusion-unlink-pointer--break .fusion-unlink-pointer-line {
+  width: 70px;
+  transform: rotate(-8deg);
+}
+
+.fusion-unlink-pointer--break .fusion-unlink-pointer-label {
+  left: 76px;
+  top: -24px;
+}
+
 @keyframes fusion-unlink-pulse {
   0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); }
   70% { box-shadow: 0 0 0 12px rgba(249, 115, 22, 0); }
@@ -215,8 +245,18 @@
 }
 
 @media (max-width: 640px) {
-  .fusion-unlink-howto-callout {
+  .fusion-unlink-howto-callout,
+  .fusion-unlink-howto-steps {
     grid-template-columns: 1fr;
+  }
+
+  .fusion-unlink-howto-callout-shot--menu img {
+    height: auto;
+    object-fit: contain;
+  }
+
+  .fusion-unlink-howto-steps li + li {
+    margin-top: 6px;
   }
 
   .fusion-unlink-pointer-label {

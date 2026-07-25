@@ -1,5 +1,5 @@
 import { authHeaders, getToken } from "./auth.js";
-import { maybeShowFusionUnlinkHowto } from "./fusion-unlink-howto.js?v=20260725-unlink";
+import { maybeShowFusionUnlinkHowto } from "./fusion-unlink-howto.js?v=20260725-break";
 
 const FORMAT_LABELS = {
   glb: "GLB",
