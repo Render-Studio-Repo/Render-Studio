@@ -89,9 +89,9 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-fusion-part-open";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-unlink-howto";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
-import { initFusionPanel } from "./fusion-panel.js?v=20260725-fusion-part-open";
+import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260725-undo-move";
 import {
@@ -23677,6 +23677,10 @@ async function pushFusionWorkspaceFile(payload) {
       + (result.open_instructions
         || "Open it from the Data Panel (don’t Insert). Break Link if you see a chain icon, then Extrude/Cut."),
   );
+  try {
+    const { maybeShowFusionUnlinkHowto } = await import("./fusion-unlink-howto.js?v=20260725-unlink");
+    void maybeShowFusionUnlinkHowto();
+  } catch (_) { /* ignore */ }
   await refreshWorkspaceRealtimeEditor();
   return result;
 }

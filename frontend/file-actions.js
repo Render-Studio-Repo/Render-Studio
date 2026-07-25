@@ -1,4 +1,5 @@
 import { authHeaders, getToken } from "./auth.js";
+import { maybeShowFusionUnlinkHowto } from "./fusion-unlink-howto.js?v=20260725-unlink";
 
 const FORMAT_LABELS = {
   glb: "GLB",
@@ -966,6 +967,7 @@ export async function openFileExportMenu({
         menu,
         `Pushed Part “${partName}” to Fusion.${sourceNote}${mirrorNote} Refresh the Data Panel, then Open it.${openHint ? ` ${openHint}` : ""}`,
       );
+      void maybeShowFusionUnlinkHowto();
     } catch (err) {
       fusionPushInFlight = false;
       btn.disabled = false;
@@ -1823,6 +1825,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
         + (openHint ? ` ${openHint}` : "")
         + " Closing…",
       );
+      void maybeShowFusionUnlinkHowto();
       setTimeout(() => closeExportMenu(), 2200);
     } catch (err) {
       submit.disabled = false;

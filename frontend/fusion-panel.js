@@ -1,6 +1,7 @@
 /** Fusion Library panel — browse Autodesk/Fusion hubs, import models, and push STEP updates. */
 
 import { authHeaders } from "./auth.js";
+import { maybeShowFusionUnlinkHowto } from "./fusion-unlink-howto.js?v=20260725-unlink";
 
 const IMPORTABLE_EXTS = /\.(step|stp|stl|3mf|obj|glb|gltf)$/i;
 const LS_FUSION_FOLDER_OPEN = "render3d:fusionLibraryFolderOpen:v1";
@@ -1646,6 +1647,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         mirrorErrors ? "error" : "ok",
         `Pushed Part “${result.name || "STEP"}” to your Fusion mirror.${mirrorNote}`,
       );
+      void maybeShowFusionUnlinkHowto();
     } catch (err) {
       btn.disabled = false;
       btn.textContent = orig;
