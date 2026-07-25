@@ -1455,7 +1455,10 @@ async function showFusionExportPicker(menu, anchorBtn, {
 
   const openFolder = (folder) => {
     if (!folder?.id) return;
-    autoSelectFolders = true;
+    // Browsing clears selection — user must click to pick an export target.
+    selectedFolderId = "";
+    selectedFolderName = "";
+    setSelectedFolder(null, { quiet: true });
     if (currentFolder) folderStack.push(currentFolder);
     currentFolder = folder;
     loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
@@ -1463,8 +1466,9 @@ async function showFusionExportPicker(menu, anchorBtn, {
 
   const goToBreadcrumb = (depth) => {
     // depth 0 = top folders; 1 = first stack entry as current; etc.
-    autoSelectFolders = false;
-    restoringFolderPath = null;
+    selectedFolderId = "";
+    selectedFolderName = "";
+    setSelectedFolder(null, { quiet: true });
     if (depth <= 0) {
       folderStack = [];
       currentFolder = null;
@@ -1551,8 +1555,9 @@ async function showFusionExportPicker(menu, anchorBtn, {
       ` : ""}
     `;
     folderBrowser.querySelector("[data-folder-back]")?.addEventListener("click", () => {
-      autoSelectFolders = false;
-      restoringFolderPath = null;
+      selectedFolderId = "";
+      selectedFolderName = "";
+      setSelectedFolder(null, { quiet: true });
       if (currentFolder) {
         currentFolder = folderStack.pop() || null;
       }
@@ -1577,7 +1582,6 @@ async function showFusionExportPicker(menu, anchorBtn, {
         event.stopPropagation();
         const folder = folders.find((item) => item.id === btn.dataset.folderOpen);
         if (!folder) return;
-        restoringFolderPath = null;
         openFolder(folder);
       });
     });
@@ -1605,39 +1609,15 @@ async function showFusionExportPicker(menu, anchorBtn, {
     const folders = data.folders || [];
     lastFolderItems = currentFolder ? (data.items || []) : [];
 
-    // Restore nested path from last export (Project Files → Render3D → …).
-    if (restoringFolderPath?.length && autoSelectFolders) {
-      const next = restoringFolderPath[0];
-      const match = next?.id ? folders.find((f) => f.id === next.id) : null;
-      if (match) {
-        restoringFolderPath = restoringFolderPath.slice(1);
-        openFolder(match);
-        return;
-      }
-      restoringFolderPath = null;
-    }
-
-    if (autoSelectFolders) {
-      const remembered = lastTarget?.folder_id
-        ? folders.find((f) => f.id === lastTarget.folder_id)
-        : null;
-      if (remembered) {
-        setSelectedFolder(remembered, { quiet: true });
-        setStatus(`Auto-selected your last folder: ${remembered.name || remembered.id}`);
-      } else if (currentFolder) {
-        // Inside a nested folder: default destination is this folder, not a random child.
-        setSelectedFolder(currentFolder, { quiet: true });
-        setStatus(`Ready to export into “${currentFolder.name || "this folder"}”. Tap Export to Fusion below.`);
-      } else if (folders.length) {
-        const pick = folders[0];
-        setSelectedFolder(pick, { quiet: true });
-        setStatus(`Auto-selected “${pick.name || pick.id}”. Tap Export to Fusion below, or Select another folder.`);
-      }
-    }
+    // Stay at the level the user opened — never auto-select or dive past root.
+    setSelectedFolder(null, { quiet: true });
+    setStatus(currentFolder
+      ? `Inside “${currentFolder.name || "folder"}”. Click a folder (or Select this folder) to choose where to export.`
+      : "Click a folder to select it for export. Use Open to browse inside.");
     renderFolderBrowser(folders, {
       items: lastFolderItems,
       emptyText: currentFolder
-        ? "No subfolders here — Select this folder above, or go Back."
+        ? "No subfolders here — use Select · this folder above to export here, or go Back."
         : "No top folders found.",
     });
     submit.disabled = !selectedFolderId;
@@ -1649,7 +1629,6 @@ async function showFusionExportPicker(menu, anchorBtn, {
     folderStack = [];
     selectedFolderId = "";
     selectedFolderName = "";
-    autoSelectFolders = true;
     allProjects = [];
     setOptions(projectSelect, [], "Loading projects...");
     projectSearch.disabled = true;
@@ -1662,15 +1641,11 @@ async function showFusionExportPicker(menu, anchorBtn, {
     allProjects = data.projects || [];
     setOptions(projectSelect, allProjects, "No projects found");
     projectSearch.disabled = !allProjects.length;
+    // Remember hub/project only — never restore a nested folder path.
     if (lastTarget?.hub_id === hubId && lastTarget?.aps_project_id
       && allProjects.some((p) => p.id === lastTarget.aps_project_id)) {
       projectSelect.value = lastTarget.aps_project_id;
     }
-    restoringFolderPath = (lastTarget?.hub_id === hubId
-      && lastTarget?.aps_project_id === projectSelect.value
-      && Array.isArray(lastTarget?.folder_path))
-      ? [...lastTarget.folder_path]
-      : null;
     renderProjectGrid();
     if (projectSelect.value) {
       await loadFolders();
@@ -1687,11 +1662,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
     folderStack = [];
     selectedFolderId = "";
     selectedFolderName = "";
-    autoSelectFolders = true;
-    restoringFolderPath = (lastTarget?.aps_project_id === projectSelect.value
-      && Array.isArray(lastTarget?.folder_path))
-      ? [...lastTarget.folder_path]
-      : null;
+    setSelectedFolder(null, { quiet: true });
     renderProjectGrid();
     loadFolders().catch((err) => setStatus(err.message || "Could not load Fusion folders.", true));
   });

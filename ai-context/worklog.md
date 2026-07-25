@@ -1,3 +1,11 @@
+## 2026-07-24 — Fusion export: no auto folder select
+
+- Stopped auto-selecting last/first/current folder and auto-diving past project root.
+- Hub/project may still restore; folders start unselected until the user clicks one (✓).
+- Cache-bust `file-actions.js` / `app.js` `?v=20260724-fusion-noauto`.
+
+---
+
 ## 2026-07-24 — Fusion Export CTA visible (orange)
 
 - Export submit used faint `.btn.primary` blue and was easy to miss / look “not there”.
