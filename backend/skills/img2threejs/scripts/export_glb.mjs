@@ -56,6 +56,11 @@ if (!root || !root.isObject3D) {
   process.exit(1);
 }
 
+// Tag for the Render3D viewport: keep authored PBR (do not apply CAD plastic style).
+root.userData.render3dStyle = "shaded";
+root.userData.render3dPipeline = "img2threejs";
+root.name = root.name || "MeshModel";
+
 root.updateMatrixWorld(true);
 let box = new THREE.Box3().setFromObject(root);
 if (box.isEmpty()) {
@@ -88,6 +93,9 @@ if (size.length() < 1e-6) {
 }
 
 const scene = new THREE.Scene();
+scene.name = "Render3DMeshScene";
+scene.userData.render3dStyle = "shaded";
+scene.userData.render3dPipeline = "img2threejs";
 scene.add(root);
 
 const exporter = new GLTFExporter();

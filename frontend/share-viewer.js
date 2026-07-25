@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyCadStyle, setupRenderer, setObjectTransparent as styleSetObjectTransparent } from "./scene-style.js?v=20260720-material-colors";
+import { applyViewportStyle, setupRenderer, setObjectTransparent as styleSetObjectTransparent } from "./scene-style.js?v=20260724-cad-style-fix";
 import { authHeaders, getToken } from "./auth.js?v=20260715-share-open-project";
 import { createUrdfRobotRuntime } from "./urdf-robot-runtime.js?v=20260715-share-public-urdf";
 
@@ -1113,7 +1113,7 @@ async function main() {
           root.clear();
           loadedScene = gltf.scene;
           root.add(loadedScene);
-          applyCadStyle(root);
+          applyViewportStyle(root, { filename: viewerUrl || "", styleMode: "auto" });
           hardenShareDepthLayers(root);
           fitCamera();
           renderComponentTree();

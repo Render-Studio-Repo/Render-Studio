@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyCadStyle, setupRenderer } from "./scene-style.js?v=20260720-material-colors";
+import { applyViewportStyle, setupRenderer } from "./scene-style.js?v=20260724-cad-style-fix";
 
 const PREVIEW_PALETTE = [0x4f9cf0, 0x62c45a, 0xff9f43, 0xffd166, 0xb388ff, 0x2ec4b6];
 
@@ -132,7 +132,7 @@ export function createMiniViewer(container, { autoRotate = true, background = 0x
     const gltf = await loader.loadAsync(url);
     if (disposed) return;
     current = gltf.scene;
-    applyCadStyle(current);
+    applyViewportStyle(current, { filename: url || "", styleMode: "auto" });
     colorizePlainPreviewMeshes(current);
     scene.add(current);
     // Layout may still be settling when the modal opens — frame twice.

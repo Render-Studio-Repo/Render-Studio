@@ -1,3 +1,11 @@
+## 2026-07-24 — Mode 2.0 CAD shading: Mesh PBR heuristic only
+
+- Bug: Mesh PBR “vivid/shiny” auto-detect flipped Mode 2.0 STEP/GLB previews into authored shading (black / unlit).
+- `prefersAuthoredShading` now only honors Mesh markers (`.mesh.mjs` / `render3dPipeline=img2threejs|mesh` / explicit style extras) — no color heuristics.
+- Cache-bust: `scene-style.js` / `app.js` / `share-viewer.js` / `mini-viewer.js` `?v=20260724-cad-style-fix`.
+
+---
+
 ## 2026-07-24 — Right-click Export works without opening the project
 
 - Sidebar project list summaries set `latest_file: null` / `files: []` until a project is opened, so right-click **Export / share…** on an unselected project always said “no model to export.”
@@ -19,6 +27,14 @@
 - Right AI panel scrolled as a whole (`overflow: visible` on sidebar/compose unlocked for old in-panel mode tips).
 - Removed that unlock (tips are body-portaled). Chrome stays put; only the prompt editor scrolls. Compacted cost thumb + toolbar so typical heights fit without an outer bar.
 - Cache-bust: `styles.css?v=20260724-ai-noscroll`.
+
+---
+
+## 2026-07-24 — Mesh models keep Three.js PBR (not CAD plastic)
+
+- Viewport `applyCadStyle` was rewriting Mesh/img2threejs GLB materials to Fusion plastic + edges, so colors never showed.
+- Auto-detect `.mesh.mjs` siblings / PBR heuristics / export `render3dPipeline=img2threejs` → `applyAuthoredStyle` (preserve materials).
+- Cache-bust: `scene-style.js` / `app.js` `?v=20260724-mesh-pbr`. Re-exported bike GLB.
 
 ---
 

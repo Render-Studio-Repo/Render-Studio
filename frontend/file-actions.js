@@ -279,21 +279,31 @@ function showExportSuccess(menu, message, { autoDismissMs = 4200 } = {}) {
 }
 
 async function createShareUrl(projectId, filename, shareContext = null) {
-  let body = null;
+  let body = {};
   if (typeof shareContext === "function") {
     try {
-      body = await shareContext();
-    } catch {
-      body = null;
+      const ctx = await shareContext();
+      if (ctx && typeof ctx === "object") body = { ...ctx };
+    } catch (err) {
+      console.warn("shareContext failed; sharing without viewport snapshot", err);
     }
+  } else if (shareContext && typeof shareContext === "object") {
+    body = { ...shareContext };
   }
-  const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/share`, {
+  // Always mint a fresh share so we never reopen an old Arduino/ball token.
+  body.force_new = true;
+  if (!Array.isArray(body.visible_filenames)) body.visible_filenames = [];
+  const safeName = String(filename || "").trim();
+  if (!safeName || /^(visible|project)\s+assembly$/i.test(safeName)) {
+    throw new Error("No shareable model file prepared yet. Try Export again.");
+  }
+  const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(safeName)}/share`, {
     method: "POST",
     headers: {
       ...authHeaders(),
-      ...(body ? { "Content-Type": "application/json" } : {}),
+      "Content-Type": "application/json",
     },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -593,8 +603,16 @@ export async function openFileExportMenu({
   }
 
   let exports = collapseExportsToSingleStep(data?.exports || []);
-  const shareFilename = data?.filename || filename;
-  if (data?.filename && data.filename !== filename) {
+  // Prefer the baked assembly GLB/STEP from exportsRequest — never share the
+  // placeholder label "visible assembly" / "project assembly" (404 → old token).
+  const bakedGlb = (data?.exports || []).find((item) => item.format === "glb" && String(item.name || "").startsWith("_export_visible_assembly"))
+    || (data?.filename && String(data.filename).endsWith(".glb") ? { name: data.filename } : null);
+  const shareFilename = bakedGlb?.name
+    || (data?.filename && !/^(visible|project)\s+assembly$/i.test(String(data.filename)) ? data.filename : null)
+    || (filename && !/^(visible|project)\s+assembly$/i.test(String(filename)) ? filename : null)
+    || (exports.find((item) => item.format === "glb")?.name)
+    || null;
+  if (data?.filename && data.filename !== filename && !/^(visible|project)\s+assembly$/i.test(String(data.filename))) {
     const titleEl = menu.querySelector(".file-export-title");
     if (titleEl && !title) titleEl.textContent = `Export ${data.filename}`;
   }
@@ -635,6 +653,7 @@ export async function openFileExportMenu({
     shareBtn.classList.add("is-loading");
     shareBtn.textContent = "Creating share link...";
     try {
+      if (!shareFilename) throw new Error("No shareable model file prepared yet.");
       preparedShareUrl = await createShareUrl(projectId, shareFilename, shareContext);
       shareBtn.textContent = "Copy share link";
       shareBtn.disabled = false;
@@ -660,7 +679,7 @@ export async function openFileExportMenu({
       || a.name.localeCompare(b.name),
   );
   const isVisibleAssemblyExport = Boolean(exportsRequest)
-    || /visible assembly/i.test(String(filename || ""))
+    || /^(visible|project)\s+assembly$/i.test(String(filename || ""))
     || sorted.some((item) => String(item.name || "").startsWith("_export_visible_assembly"));
   // Prefer the visible-assembly bake. Never fall back to a sibling STEP
   // (that was uploading hidden arduino_uno_q while the gripper was showing).
@@ -705,7 +724,7 @@ export async function openFileExportMenu({
     const cloud = String(resolvedCloudFilename || "");
     if (cloud && !cloud.startsWith("_export_visible_assembly")) return `${modelStem(cloud)}.step`;
     const base = String(filename || "");
-    if (base && !/visible assembly/i.test(base)) return `${modelStem(base)}.step`;
+    if (base && !/^(visible|project)\s+assembly$/i.test(base)) return `${modelStem(base)}.step`;
     return "model.step";
   })();
 
@@ -853,8 +872,8 @@ export async function openFileExportMenu({
 
   async function pushToOriginalFusion(btn) {
     if (!fusionUploadFilename) {
-      showExportError(menu, new Error("No visible STEP/3MF to push. Show the components you want, then export again."), {
-        title: "Nothing visible to send to Fusion",
+      showExportError(menu, new Error("No STEP/3MF prepared for Fusion. Try Export again."), {
+        title: "Nothing to send to Fusion",
         onRetry: null,
       });
       return;

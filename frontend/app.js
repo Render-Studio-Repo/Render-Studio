@@ -44,13 +44,16 @@ import {
   setupSceneLighting,
   setupRenderer,
   applyCadStyle,
+  applyAuthoredStyle,
+  applyViewportStyle,
+  prefersAuthoredShading,
   disposeStyledModel,
   positionShadowFloor,
   setViewMode,
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260720-material-colors";
+} from "./scene-style.js?v=20260724-mesh-pbr";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -77,7 +80,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-one-btn";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-export-all";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -117,7 +120,7 @@ import {
   electronicsDocLinks,
 } from "./electronics-suggestions.js?v=20260720-electronics-suggest";
 import { createTexturePanel } from "./texture-panel.js?v=20260716-texture-targets";
-import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
+import { createMiniViewer } from "./mini-viewer.js?v=20260724-mesh-pbr";
 import { createSketchEditor } from "./sketch-editor.js?v=20260724-sketch-d2";
 import { computeFacePlaneRef } from "./sketch-plane.js";
 import { createRiggingEditor } from "./rigging-editor.js?v=20260715-rigging-viewport";
@@ -810,6 +813,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
     const orientationMode = completionMode === "v2" && String(gen.target_mode || "").toLowerCase() !== "edit"
       ? "v2-upright"
       : null;
+    const styleMode = completionMode === "mesh" ? "shaded" : "auto";
     await reloadViewportFromProject({
       fitView: true,
       latestFile: gen.filename,
@@ -818,6 +822,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
       // otherwise clear+reload of only the latest file makes siblings "disappear".
       loadAll: true,
       orientationMode,
+      styleMode,
     });
     restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: gen.filename });
     viewerOverlay.clearError();
@@ -11132,12 +11137,13 @@ async function answerDimensionPrompt(prompt) {
   return data;
 }
 
-async function reloadViewportFromProject({ fitView = false, latestFile = null, placedFiles = [], loadAll = false, orientationMode = null } = {}) {
+async function reloadViewportFromProject({ fitView = false, latestFile = null, placedFiles = [], loadAll = false, orientationMode = null, styleMode = "auto" } = {}) {
   if (!projectId) return;
   const data = await api(`/api/projects/${projectId}`);
   const modelLatestFile = isDxfDrawingFilename(latestFile) ? null : latestFile;
   const serverLatestFile = isDxfDrawingFilename(data.latest_file) ? null : data.latest_file;
   timelineData = data.timeline;
+  lastProjectFiles = data.files || [];
   const cur = timelineData?.current_index ?? -1;
   const max = Math.max(0, (timelineData?.entries?.length || 1) - 1);
   timeline.setTimeline(timelineData, {
@@ -11288,6 +11294,7 @@ async function reloadViewportFromProject({ fitView = false, latestFile = null, p
       fitView,
       loadAll: loadAll || assemblyCount > 0 || placed.length > 0,
       orientationMode,
+      styleMode,
     });
   } else {
     selectedFile = null;
@@ -15525,6 +15532,7 @@ function materializeObject(object3d, {
   filename = "",
   orient = true,
   orientationMode = null,
+  styleMode = "auto",
 } = {}) {
   // Mode 2.0 used to blindly rotateX(-90), which tipped already-Z-up GLBs onto their side.
   // Smart detector compares as-authored vs ±90° and only tips when upright clearly wins.
@@ -15550,13 +15558,46 @@ function materializeObject(object3d, {
   if (seatToFloor) {
     seatObjectToFloor(object3d);
   }
-  applyCadStyle(object3d);
+  const resolvedStyle = resolveViewportStyleMode(object3d, filename, styleMode);
+  applyViewportStyle(object3d, { filename, styleMode: resolvedStyle });
   // Silhouette/edge helpers can slightly expand the AABB — re-seat so the solid base stays on z = 0.
   if (seatToFloor) {
     seatObjectToFloor(object3d);
   }
   positionShadowFloor(scene, object3d);
   return object3d;
+}
+
+function resolveViewportStyleMode(object3d, filename = "", styleMode = "auto") {
+  const explicit = String(styleMode || "auto").toLowerCase();
+  if (explicit === "cad" || explicit === "shaded" || explicit === "authored" || explicit === "pbr") {
+    return explicit === "authored" || explicit === "pbr" ? "shaded" : explicit;
+  }
+  if (hasMeshFactorySibling(filename) || prefersAuthoredShading(object3d, filename)) {
+    return "shaded";
+  }
+  return "cad";
+}
+
+function hasMeshFactorySibling(filename = "") {
+  const stem = fileStemName(filename || "");
+  if (!stem) return false;
+  const names = new Set();
+  for (const f of lastProjectFiles || []) {
+    if (f?.name) names.add(String(f.name));
+  }
+  try {
+    for (const entry of projectTree?.getComponents?.() || []) {
+      if (entry?.name) names.add(String(entry.name));
+      if (entry?.viewer_filename) names.add(String(entry.viewer_filename));
+      if (entry?.source) names.add(String(entry.source));
+    }
+  } catch {
+    /* tree optional */
+  }
+  if (names.has(`${stem}.mesh.mjs`)) return true;
+  const bare = stem.replace(/\.mesh$/i, "");
+  return bare !== stem && names.has(`${bare}.mesh.mjs`);
 }
 
 function normalizeObjectPivotToBounds(object3d) {
@@ -15992,6 +16033,7 @@ async function loadModel(url, filename, opts = {}) {
         filename: viewFilename,
         orient: false,
         orientationMode: opts.orientationMode,
+        styleMode: opts.styleMode,
       });
       object.position.copy(saved.position);
       object.quaternion.copy(saved.quaternion);
@@ -15999,11 +16041,11 @@ async function loadModel(url, filename, opts = {}) {
     } else {
       // Fallback: re-center (floor-align + X/Y center) so the model
       // sits in the same visual area rather than jumping to raw origin.
-      materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename, orientationMode: opts.orientationMode });
+      materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename, orientationMode: opts.orientationMode, styleMode: opts.styleMode });
     }
     object.updateMatrixWorld(true);
   } else {
-    materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename, orientationMode: opts.orientationMode });
+    materializeObject(object, { center: shouldCenter, normalizePivot: shouldNormalizePivot, filename: viewFilename, orientationMode: opts.orientationMode, styleMode: opts.styleMode });
   }
   if (opts.resetTransform) {
     object.position.set(0, 0, 0);
@@ -17406,7 +17448,7 @@ async function fetchAllProjects() {
   return allProjects;
 }
 
-async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false, orientationMode = null } = {}) {
+async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false, orientationMode = null, styleMode = "auto" } = {}) {
   if (!comps?.length) return false;
   comps = comps.filter((entry) => !isInternalCadSidecar(entry?.name));
   if (!comps.length) return false;
@@ -17459,6 +17501,11 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
           fitView: false,
           autoGizmo: false,
           orientationMode: (orientationMode && (entry.name === latestFile || entry.viewer_filename === latestFile)) ? orientationMode : null,
+          styleMode: (styleMode && styleMode !== "auto")
+            ? ((entry.name === latestFile || entry.viewer_filename === latestFile || hasMeshFactorySibling(entry.name) || hasMeshFactorySibling(entry.viewer_filename))
+              ? styleMode
+              : "auto")
+            : (hasMeshFactorySibling(entry.name) || hasMeshFactorySibling(entry.viewer_filename) ? "shaded" : "auto"),
         },
       );
       if (loadGen != null && loadGen !== loadProjectGeneration) return false;
@@ -18673,10 +18720,6 @@ const projectTree = createProjectTree({
     workspaceBrowser?.render?.();
   },
   onExport: (entry, anchorEl) => {
-    if (isComponentHidden(entry.name)) {
-      alert("Show this component before exporting it.");
-      return;
-    }
     openFileExportMenu({
       api,
       projectId,
@@ -20375,24 +20418,50 @@ function setProjectHeader(name, id) {
 function syncExportButton() {
   const exportBtn = document.getElementById("btn-export-model");
   if (!exportBtn) return;
-  const hasVisibleLoaded = projectAssembly
-    .list()
-    .some(([name, obj]) => obj?.visible !== false && !isComponentHidden(name));
-  const hasVisibleBrowser = (projectTree.getComponents?.() || []).some((entry) => !isBrowserComponentHidden(entry));
-  exportBtn.disabled = !(projectId && (hasVisibleBrowser || hasVisibleLoaded || (selectedFile && !isComponentHidden(selectedFile))));
+  // Export ignores eye-hide — enable whenever the project has any model files.
+  const hasAny = Boolean(collectProjectExportFilenames().length)
+    || Boolean(selectedFile)
+    || Boolean((lastProjectFiles || []).length);
+  exportBtn.disabled = !(projectId && hasAny);
 }
 
-function currentVisibleShareContext() {
-  const loadedVisible = projectAssembly
-    .list()
-    .filter(([name, obj]) => obj?.visible !== false && !isComponentHidden(name))
-    .map(([name]) => name)
-    .filter(Boolean);
-  const browserVisible = (projectTree.getComponents?.() || [])
-    .filter((entry) => !isBrowserComponentHidden(entry))
-    .map((entry) => entry.name || entry.viewer_filename)
-    .filter(Boolean);
-  const visible = [...new Set([...(browserVisible.length ? browserVisible : loadedVisible), ...loadedVisible])];
+function collectProjectExportFilenames() {
+  // Export/share everything in the project — ignore eye-icon hide state.
+  // Visibility filtering kept picking the wrong sibling (Arduino / ball).
+  const names = [];
+  const seen = new Set();
+  const push = (raw) => {
+    const name = String(raw || "").split("#body:")[0].trim();
+    if (!name || seen.has(name)) return;
+    if (name.startsWith("_")) return;
+    if (!/\.(glb|gltf|step|stp|3mf)$/i.test(name)) return;
+    if (/_exploded/i.test(name) || /__part_/i.test(name) || /\.part\.step$/i.test(name)) return;
+    if (/__faceted/i.test(name)) return;
+    seen.add(name);
+    names.push(name);
+  };
+  for (const entry of projectTree.getComponents?.() || []) {
+    if (!entry || entry.virtual_body || entry.virtual_component) continue;
+    push(entry.name);
+    push(entry.viewer_filename);
+  }
+  for (const [name] of projectAssembly.list() || []) push(name);
+  for (const f of lastProjectFiles || []) {
+    push(typeof f === "string" ? f : f?.name);
+  }
+  // Prefer Fully_Assembled / selected first for naming, keep the rest.
+  const preferred =
+    names.find((n) => /fully_assembled|gripper/i.test(n))
+    || (selectedFile && names.includes(selectedFile) ? selectedFile : null)
+    || names[0];
+  if (preferred && names[0] !== preferred) {
+    return [preferred, ...names.filter((n) => n !== preferred)];
+  }
+  return names;
+}
+
+function currentProjectShareContext() {
+  const filenames = collectProjectExportFilenames();
   let viewportImage = "";
   try {
     renderer.render(scene, camera);
@@ -20402,10 +20471,17 @@ function currentVisibleShareContext() {
   }
   return {
     viewport_image: viewportImage,
-    visible_filenames: visible,
-    hidden_filenames: [...new Set(projectTree.getHidden?.() || loadHiddenComponentState())],
+    // Backend treats this as the share allow-list / bake input — send ALL models.
+    visible_filenames: filenames,
+    hidden_filenames: [],
+    force_new: true,
     captured_at: new Date().toISOString(),
   };
+}
+
+/** @deprecated name kept for call sites — now exports/shares the full project. */
+function currentVisibleShareContext() {
+  return currentProjectShareContext();
 }
 
 async function exportCurrentModel(anchorEl) {
@@ -20413,100 +20489,40 @@ async function exportCurrentModel(anchorEl) {
     alert("Open a project first.");
     return;
   }
-  // Refresh eye state from localStorage in case the tree hasn't painted yet.
-  try {
-    projectTree.setHidden?.(loadHiddenComponentState());
-  } catch {
-    /* ignore */
-  }
-  const topLevel = (projectTree.getComponents?.() || []).filter(
-    (entry) => entry?.name && !entry.virtual_body && !entry.virtual_component,
-  );
-  const isHiddenName = (name) => {
-    if (!name) return true;
-    const raw = String(name).split("#body:")[0];
-    // Exact eye-icon keys only — do not stem-match body labels across siblings.
-    return isBrowserComponentHidden({ name: raw });
-  };
-  // Viewport is source of truth for “what I’m looking at”. Eye icons can desync
-  // (or selectedFile can still be a hidden Arduino) after imports.
-  const viewportVisible = projectAssembly
-    .list()
-    .filter(([name, obj]) => obj?.visible !== false)
-    .map(([name]) => String(name || "").split("#body:")[0])
-    .filter(Boolean);
-  const visibleBrowser = topLevel
-    .filter((entry) => !isHiddenName(entry.name))
-    .map((entry) => entry.name)
-    .filter(Boolean);
-  let visibleFiles = [...new Set(
-    viewportVisible.filter((name) => !isHiddenName(name)),
-  )];
-  // Eye says everything hidden but geometry is still on screen → trust viewport.
-  if (!visibleFiles.length && viewportVisible.length) {
-    visibleFiles = [...new Set(viewportVisible)];
-  }
-  if (!visibleFiles.length) {
-    visibleFiles = [...new Set(visibleBrowser)];
-  }
-  if (!visibleFiles.length) {
-    visibleFiles = topLevel.map((e) => e.name).filter((name) => name && !isHiddenName(name));
-  }
+  const allFiles = collectProjectExportFilenames();
   const anchor = anchorEl || document.getElementById("btn-export-model") || document.body;
-  if (!visibleFiles.length) {
-    alert("No visible component to export. Show at least one component first.");
+  if (!allFiles.length) {
+    alert("No model files to export in this project.");
     return;
   }
-  // Prefer on-screen gripper/Fully_Assembled over selectedFile (often last import = Arduino).
-  const preferred =
-    visibleFiles.find((name) => /fully_assembled|gripper/i.test(String(name)))
-    || (selectedFile && visibleFiles.includes(selectedFile) && !isHiddenName(selectedFile) && selectedFile)
-    || visibleFiles[0];
-  if (preferred && visibleFiles[0] !== preferred) {
-    visibleFiles = [preferred, ...visibleFiles.filter((n) => n !== preferred)];
-  }
-  const projectModelFiles = (lastProjectFiles || [])
-    .map((f) => (typeof f === "string" ? f : f?.name))
-    .filter((name) => {
-      if (!name || String(name).startsWith("_")) return false;
-      if (!/\.(glb|gltf|step|stp|3mf)$/i.test(name)) return false;
-      if (/_exploded/i.test(name) || /__part_/i.test(name) || /\.part\.step$/i.test(name)) return false;
-      return true;
-    });
-  const projectModelStems = new Set(projectModelFiles.map((n) => componentStemName(n)));
-  const hasHiddenSiblings =
-    topLevel.some((entry) => isHiddenName(entry.name))
-    || projectModelFiles.some((name) => isHiddenName(name) && !visibleFiles.some((v) => componentStemName(v) === componentStemName(name)));
-  const multiComponentProject = topLevel.length > 1 || projectModelStems.size > 1;
-  const fusionDisplayName = `${componentStemName(visibleFiles[0]) || "model"}.step`;
-  // Always bake when other components exist/are hidden so Fusion cannot pick
-  // arduino_uno_q (latest_file) or keep that name in the destination folder.
-  if (visibleFiles.length > 1 || hasHiddenSiblings || multiComponentProject) {
-    const regularFile = visibleFiles[0];
-    const regularStepName = String(regularFile || "").replace(/\.[^.]+$/, ".step");
+  const fusionDisplayName = `${componentStemName(allFiles[0]) || "model"}.step`;
+  // Always bake a combined assembly when more than one model exists so Fusion
+  // and share links cannot latch onto a random sibling (Arduino / ball).
+  if (allFiles.length > 1) {
     await openFileExportMenu({
       api,
       projectId,
-      filename: visibleFiles.length === 1 ? visibleFiles[0] : "visible assembly",
+      filename: "project assembly",
       cloudFilename: null,
       fusionUploadName: fusionDisplayName,
+      allowedFilenames: allFiles,
       anchorEl: anchor,
-      title: visibleFiles.length === 1 ? `Export ${visibleFiles[0]}` : "Export visible components",
-      hint: `Exports only what’s on screen as “${fusionDisplayName}” (hidden parts stay out).`,
+      title: `Export project (${allFiles.length} models)`,
+      hint: `Exports every model in this project as “${fusionDisplayName}” (eye-icon hide is ignored).`,
       allowOnshape: false,
-      shareContext: currentVisibleShareContext,
+      shareContext: currentProjectShareContext,
       exportsRequest: {
         path: `/api/projects/${projectId}/assembly/exports`,
         options: {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filenames: visibleFiles }),
+          body: JSON.stringify({ filenames: allFiles }),
         },
       },
     });
     return;
   }
-  const file = visibleFiles[0];
+  const file = allFiles[0];
   await openFileExportMenu({
     api,
     projectId,
@@ -20514,7 +20530,7 @@ async function exportCurrentModel(anchorEl) {
     fusionUploadName: fusionDisplayName,
     allowedFilenames: [file],
     anchorEl: anchor,
-    shareContext: currentVisibleShareContext,
+    shareContext: currentProjectShareContext,
   });
 }
 
@@ -23611,14 +23627,9 @@ function renderFileList(files = []) {
     exp.className = "btn-file-export";
     exp.title = "Export / share";
     exp.textContent = "Export";
-    exp.disabled = isComponentHidden(f.name);
     exp.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (isComponentHidden(f.name)) {
-        alert("Show this component before exporting it.");
-        return;
-      }
       openFileExportMenu({
         api,
         projectId,

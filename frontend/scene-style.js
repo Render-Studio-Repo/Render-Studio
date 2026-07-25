@@ -421,6 +421,88 @@ export function setupRenderer(renderer) {
   renderer.toneMappingExposure = 1.1;
 }
 
+/**
+ * True when this tree was authored as a shaded Three.js / img2threejs model
+ * (keep PBR colors) rather than a CAD STEP→GLB preview.
+ *
+ * Do NOT infer from color/metalness heuristics — that wrongly flipped Mode 2.0
+ * CAD parts into authored shading (black / unlit plastic). Mesh-only signals:
+ * `.mesh.mjs` sibling / filename, or export extras `render3dPipeline=img2threejs|mesh`.
+ */
+export function prefersAuthoredShading(object3d, filename = "") {
+  if (!object3d) return false;
+  const name = String(filename || object3d.name || "").toLowerCase();
+  if (name.includes(".mesh.") || /\.mesh\.mjs$/i.test(name) || /\.mesh\.glb$/i.test(name)) {
+    return true;
+  }
+  let flagged = false;
+  object3d.traverse((child) => {
+    if (flagged) return;
+    const ud = child.userData || {};
+    const extras = ud.extras || {};
+    const style = String(ud.render3dStyle || extras.render3dStyle || "").toLowerCase();
+    const pipeline = String(ud.render3dPipeline || extras.render3dPipeline || "").toLowerCase();
+    if (style === "shaded" || style === "authored" || style === "pbr") flagged = true;
+    if (pipeline === "img2threejs" || pipeline === "mesh") flagged = true;
+  });
+  return flagged;
+}
+
+/**
+ * Keep authored Three.js / GLB materials (img2threejs). Do not rewrite to CAD plastic.
+ */
+export function applyAuthoredStyle(object3d) {
+  if (!object3d) return object3d;
+  object3d.userData.render3dStyle = object3d.userData.render3dStyle || "shaded";
+  object3d.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    if (child.userData.isSilhouette || child.userData.isEdge || child.userData.isFloor) return;
+    // Drop CAD helper overlays if a prior pass added them.
+    if (child.children?.length) {
+      const toRemove = [];
+      for (const c of child.children) {
+        if (c.userData?.isEdge || c.userData?.isSilhouette) toRemove.push(c);
+      }
+      for (const c of toRemove) {
+        child.remove(c);
+        c.geometry?.dispose?.();
+        if (Array.isArray(c.material)) c.material.forEach((m) => m?.dispose?.());
+        else c.material?.dispose?.();
+      }
+    }
+    child.castShadow = true;
+    child.receiveShadow = true;
+    child.visible = true;
+    delete child.userData.cadInternalHidden;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      // Preserve color / metalness / roughness / maps — only tune for viewport lighting.
+      if ("envMapIntensity" in mat) {
+        const cur = Number(mat.envMapIntensity);
+        mat.envMapIntensity = Number.isFinite(cur) ? Math.max(cur, 0.85) : 1.0;
+      }
+      if ("flatShading" in mat) mat.flatShading = false;
+      if (mat.polygonOffset && mat.userData?.render3dCadColorHex) {
+        mat.polygonOffset = false;
+      }
+      mat.needsUpdate = true;
+    }
+  });
+  return object3d;
+}
+
+/**
+ * Apply the right viewport look: CAD plastic for STEP-ish previews, authored PBR for Mesh.
+ */
+export function applyViewportStyle(object3d, { filename = "", styleMode = "auto" } = {}) {
+  const mode = String(styleMode || "auto").toLowerCase();
+  const useAuthored = mode === "shaded" || mode === "authored" || mode === "pbr"
+    || (mode === "auto" && prefersAuthoredShading(object3d, filename));
+  if (useAuthored) return applyAuthoredStyle(object3d);
+  return applyCadStyle(object3d);
+}
+
 // ─── shadow floor ─────────────────────────────────────────────────────────────
 
 export function ensureShadowFloor(scene) {

@@ -1,5 +1,5 @@
 import { authHeaders, getStoredUser, getToken, isAdminUser } from "./auth.js?v=20260715-auth-connect-social";
-import { createMiniViewer } from "./mini-viewer.js?v=20260716-bodycolor-init";
+import { createMiniViewer } from "./mini-viewer.js?v=20260724-cad-style-fix";
 import { mountActivityCharts, mountNetworkBrain } from "./admin-charts.js?v=20260724-brain-avatars";
 
 function escapeHtml(value) {

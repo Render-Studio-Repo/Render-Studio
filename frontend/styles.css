@@ -12147,9 +12147,9 @@ body.mobile-sheet-open {
 
 .viewport-spinner-footer {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   margin-top: 4px;
   min-width: 0;
 }
@@ -12157,10 +12157,10 @@ body.mobile-sheet-open {
 .viewport-stop-btn {
   margin-top: 0;
   width: auto;
-  min-width: 132px;
+  min-width: 118px;
   box-sizing: border-box;
   flex: 0 0 auto;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .viewport-spinner:not(.viewport-spinner--has-usage) .viewport-stop-btn {
@@ -12983,13 +12983,14 @@ body.mobile-sheet-open {
   position: relative;
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
-  max-width: min(220px, 58%);
+  flex-wrap: nowrap;
+  gap: 6px;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: none;
   margin: 0;
-  padding: 6px 9px;
-  border-radius: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
   border: 1px solid rgba(210, 153, 34, 0.32);
   background:
     linear-gradient(135deg, rgba(210, 153, 34, 0.16), rgba(13, 17, 23, 0.55));
@@ -12998,7 +12999,8 @@ body.mobile-sheet-open {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: 0.01em;
-  line-height: 1.25;
+  line-height: 1.15;
+  white-space: nowrap;
   overflow: hidden;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
@@ -13042,14 +13044,17 @@ body.mobile-sheet-open {
 .viewport-progress-usage-cost {
   color: #f0c040;
   font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .viewport-progress-usage-sep {
   color: rgba(227, 179, 65, 0.5);
+  flex: 0 0 auto;
 }
 
 .viewport-progress-usage-tokens {
   color: #e3b341;
+  flex: 0 0 auto;
 }
 
 .viewport-progress-usage-model {
@@ -13058,8 +13063,9 @@ body.mobile-sheet-open {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 7.5rem;
-  flex: 0 1 auto;
+  max-width: none;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .viewport-progress-usage-model[hidden] {

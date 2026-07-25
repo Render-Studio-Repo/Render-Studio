@@ -14090,7 +14090,8 @@ def create_file_share(
     has_live_share_context = bool(
         isinstance(body, dict)
         and (
-            str(body.get("viewport_image") or "").startswith("data:image/")
+            body.get("force_new")
+            or str(body.get("viewport_image") or "").startswith("data:image/")
             or body.get("visible_filenames")
             or body.get("hidden_filenames")
         )
@@ -14129,8 +14130,10 @@ def create_file_share(
         hidden = _share_name_list(body.get("hidden_filenames"))
         if visible:
             share["visible_filenames"] = visible[:200]
-            # Bake a GLB of only the unhidden models so the public 3D viewer
-            # matches what the sharer saw (not the full project catalog).
+            # Drop any previous bake so we never keep an old Arduino/ball viewer GLB.
+            share.pop("viewer_filename", None)
+            share.pop("assembly_filename", None)
+            # Bake a GLB of the requested models so the public 3D viewer matches.
             try:
                 exportable = [
                     name
@@ -14164,7 +14167,7 @@ def create_file_share(
                     safe,
                     exc,
                 )
-        if hidden:
+        if "hidden_filenames" in body:
             share["hidden_filenames"] = hidden[:200]
         share["updated_at"] = datetime.now(timezone.utc).isoformat()
     project_store.save_meta(project_path, meta)
