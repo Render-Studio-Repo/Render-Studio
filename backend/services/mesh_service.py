@@ -55,6 +55,7 @@ export default function createModel(THREE) {
 
 Rules:
 - Units: millimeters-ish (typical object ~20–400 units across).
+- Coordinate frame: Three.js Y-up (Y is vertical / height). The exporter converts to Render3D Z-up.
 - Prefer real colors from the reference image / prompt (hex or THREE.Color).
 - Independent PBR channels — never fake metal with bright albedo alone.
 - Compound objects need multiple named meshes (body, lid, handle, trim…), not one blob.

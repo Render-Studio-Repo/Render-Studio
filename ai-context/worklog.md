@@ -1,3 +1,11 @@
+## 2026-07-24 — Right-click Export works without opening the project
+
+- Sidebar project list summaries set `latest_file: null` / `files: []` until a project is opened, so right-click **Export / share…** on an unselected project always said “no model to export.”
+- `exportProject` now fetches project detail when the filename is missing, then opens the export menu for that project id.
+- Cache-bust: `app.js?v=20260724-export-unopened`.
+
+---
+
 ## 2026-07-24 — Fusion export: one button + fit viewport
 
 - Fusion folder UI had many Export buttons (per-folder + “export here” + bottom submit) and the menu spilled past the screen.
@@ -11,6 +19,14 @@
 - Right AI panel scrolled as a whole (`overflow: visible` on sidebar/compose unlocked for old in-panel mode tips).
 - Removed that unlock (tips are body-portaled). Chrome stays put; only the prompt editor scrolls. Compacted cost thumb + toolbar so typical heights fit without an outer bar.
 - Cache-bust: `styles.css?v=20260724-ai-noscroll`.
+
+---
+
+## 2026-07-24 — Mesh GLB Y-up → Z-up (was upside down / on side)
+
+- img2threejs factories are Three.js Y-up; exporter seated on Z and the viewport sometimes flipped wrong.
+- `export_glb.mjs` now detects Y-up, `rotateX(π/2)` (+Y→+Z), then floor-seats. Re-exported bike GLB on `4162ee20` (`y_up_converted: true`, height on Z).
+- MESH_SYSTEM documents Y-up authorship.
 
 ---
 

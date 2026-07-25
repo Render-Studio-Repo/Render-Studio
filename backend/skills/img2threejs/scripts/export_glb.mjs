@@ -2,10 +2,11 @@
 /**
  * Headless Three.js → GLB exporter for Render3D Mesh mode (img2threejs).
  *
+ * Factories are authored in Three.js Y-up. Render3D's viewport is Z-up, so we
+ * convert (+Y → +Z) before seating the model on the floor and writing GLB.
+ *
  * Usage:
  *   node export_glb.mjs <factory.mjs> <out.glb>
- *
- * Uses dynamic imports so node_shims.js installs FileReader before Three loads.
  */
 import "./node_shims.js";
 import fs from "node:fs";
@@ -56,18 +57,34 @@ if (!root || !root.isObject3D) {
 }
 
 root.updateMatrixWorld(true);
-const box = new THREE.Box3().setFromObject(root);
-if (!box.isEmpty()) {
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  root.position.x -= center.x;
-  root.position.y -= center.y;
-  root.position.z -= box.min.z;
+let box = new THREE.Box3().setFromObject(root);
+if (box.isEmpty()) {
+  console.error("Factory produced an empty bounding box");
+  process.exit(1);
+}
+
+const size0 = box.getSize(new THREE.Vector3());
+// Three.js factories are Y-up. If height lives mainly on Y, rotate into Render3D Z-up.
+const looksYUp = size0.y >= size0.z * 1.05;
+let converted = false;
+if (looksYUp) {
+  // +Y → +Z (wheels/ground stay "down" after rotation).
+  root.rotateX(Math.PI / 2);
   root.updateMatrixWorld(true);
-  if (size.length() < 1e-6) {
-    console.error("Factory produced an empty / degenerate bounding box");
-    process.exit(1);
-  }
+  converted = true;
+  box = new THREE.Box3().setFromObject(root);
+}
+
+const size = box.getSize(new THREE.Vector3());
+const center = box.getCenter(new THREE.Vector3());
+root.position.x -= center.x;
+root.position.y -= center.y;
+root.position.z -= box.min.z;
+root.updateMatrixWorld(true);
+
+if (size.length() < 1e-6) {
+  console.error("Factory produced an empty / degenerate bounding box");
+  process.exit(1);
 }
 
 const scene = new THREE.Scene();
@@ -97,5 +114,6 @@ console.log(
     out: outPath,
     bytes,
     size: [finalSize.x, finalSize.y, finalSize.z],
+    y_up_converted: converted,
   })
 );

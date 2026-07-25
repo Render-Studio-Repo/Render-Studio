@@ -23724,12 +23724,42 @@ async function deleteProjectFile(filename) {
 }
 
 async function exportProject(p) {
-  const file = p.latest_file || p.files?.[0]?.name;
+  const pid = p?.id;
+  if (!pid) return;
+  let file = p.latest_file || p.files?.[0]?.name
+    || (p.browser?.components || []).find((c) => c?.name)?.name
+    || null;
+  // Sidebar list summaries intentionally omit latest_file/files until a project is
+  // opened — resolve them here so right-click Export works without selecting first.
+  if (!file) {
+    try {
+      const data = await api(projectApiPath(pid));
+      file = (isDxfDrawingFilename(data.latest_file) ? null : data.latest_file)
+        || data.files?.[0]?.name
+        || (normalizeBrowser(data).components || []).find((c) => c?.name)?.name
+        || null;
+      upsertProjectInList({
+        id: pid,
+        name: data.name || p.name || pid,
+        updated_at: data.updated_at,
+        created_at: data.created_at,
+        file_count: data.files?.length ?? data.file_count ?? p.file_count ?? 0,
+        files: data.files,
+        browser: normalizeBrowser(data),
+        timeline: data.timeline,
+        latest_file: data.latest_file,
+        generation: data.generation,
+      });
+    } catch (err) {
+      alert(err.message || "Could not load project for export");
+      return;
+    }
+  }
   if (!file) {
     alert("This project has no model to export yet.");
     return;
   }
-  const pid = p.id;
+  const listed = allProjects.find((row) => row.id === pid) || p;
   const anchor = document.querySelector(`.proj-item[data-project-id="${pid}"] .proj-row-body`)
     || document.querySelector(`.proj-item[data-project-id="${pid}"]`)
     || document.body;
@@ -23741,6 +23771,7 @@ async function exportProject(p) {
       anchorEl: anchor,
       allowOnshape: !isAnonymousPublicProject(pid),
       allowFusion: !isAnonymousPublicProject(pid),
+      title: `Export ${listed.name || file}`,
     });
   } catch (err) {
     alert(err.message || "Could not export project");
