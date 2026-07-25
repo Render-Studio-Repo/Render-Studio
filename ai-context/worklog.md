@@ -1,4 +1,11 @@
-## 2026-07-24 — One Fusion-ready STEP for download / share / admin
+## 2026-07-24 — Mesh mode replaces Fusion prompt tab (img2threejs)
+
+- Prompt Fusion tab → **Mesh**: AI writes a Three.js factory (`.mesh.mjs`), headless Node `export_glb.mjs` → GLB, same generation reload path as Jake text-to-CAD.
+- Skill vendored at `backend/skills/img2threejs/` with Node FileReader/`onloadend` shims for GLTFExporter.
+- Frontend: Mesh button + tips; legacy Fusion prompt target disabled; images stay as references (no DXF convert) in Mesh mode.
+- Cache-bust: `app.js` / `styles.css` `?v=20260724-mesh-mode`. Service restarted.
+
+---
 
 - Management download + studio export + share menus listed multiple STEPs (assembly / faceted / part); linked assemblies break Extrude/Cut.
 - Backend `list_exports_for_model` / visible-assembly bake now expose **one** STEP via `ensure_fusion_part_step`. Downloads use `?step_mode=part` and a clean `.step` filename. Admin modal defaults to that STEP.
