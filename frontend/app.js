@@ -84,7 +84,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260724-manage-keys";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260725-kimi-stick";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -15891,7 +15891,7 @@ function formatUserError(err, fallback = "Something went wrong — check Prompt 
     return "Connection lost during generation. The server may still be building — wait a minute, refresh, and check Prompt History before retrying.";
   }
   if (/credit balance is too low/i.test(msg)) {
-    return "Claude API credits are exhausted. Add credits at console.anthropic.com/settings/billing, or switch to an OpenAI key in the account menu.";
+    return "Claude API credits are exhausted. Add credits at console.anthropic.com/settings/billing, or switch to OpenAI/Kimi in the AI key picker.";
   }
   if (/overloaded|529|rate limit hit \(429\)/i.test(msg)) {
     const cleaned = msg.replace(/^Server error \d+:\s*/i, "").replace(/^\{.*"detail":\s*"([^"]+)".*\}$/s, "$1");
@@ -15904,7 +15904,7 @@ function formatUserError(err, fallback = "Something went wrong — check Prompt 
   if (/^Design failed:/i.test(msg) || /Anthropic API error/i.test(msg)) {
     const cleaned = extractApiErrorMessage(msg);
     if (/credit balance is too low/i.test(cleaned)) {
-      return "Claude API credits are exhausted. Add credits at console.anthropic.com/settings/billing, or switch to an OpenAI key in the account menu.";
+      return "Claude API credits are exhausted. Add credits at console.anthropic.com/settings/billing, or switch to OpenAI/Kimi in the AI key picker.";
     }
     return cleaned || msg || fallback;
   }
@@ -16384,6 +16384,30 @@ function parsePromptKeyOptionValue(value) {
   return { source, keyId };
 }
 
+function normalizePlatformProviderId(provider) {
+  const p = String(provider || "openai").trim().toLowerCase();
+  if (p === "anthropic" || p === "claude") return "anthropic";
+  if (p === "kimi" || p === "moonshot") return "kimi";
+  if (p === "xai" || p === "grok") return "xai";
+  return "openai";
+}
+
+function platformProviderLabel(provider) {
+  const p = normalizePlatformProviderId(provider);
+  if (p === "anthropic") return "Anthropic";
+  if (p === "kimi") return "Kimi";
+  if (p === "xai") return "Grok";
+  return "OpenAI";
+}
+
+function platformKeyDisplayName(provider) {
+  const p = normalizePlatformProviderId(provider);
+  if (p === "anthropic") return "Render3D Anthropic";
+  if (p === "kimi") return "Render3D Kimi";
+  if (p === "xai") return "Render3D Grok";
+  return "Render3D OpenAI";
+}
+
 /** True when a stored platform:* key disagrees with the account's Render3D provider. */
 function storedPlatformConflictsWithAccount(value, status) {
   const parsed = parsePromptKeyOptionValue(value);
@@ -16451,21 +16475,23 @@ function storePromptAiKeyValue(value, { projectScoped = true } = {}) {
 }
 
 function defaultPromptKeyValue(status) {
+  // Prefer the activated personal key so "Save & activate" / Use this stick,
+  // instead of silently falling back to a team or Render3D Claude key.
+  if (status?.active_key_id) {
+    return promptKeyOptionValue("personal", status.active_key_id);
+  }
   const eff = status?.effective;
   if (eff?.source === "platform" && (eff?.key_id || eff?.provider)) {
-    return promptKeyOptionValue("platform", eff.key_id || (eff.provider === "anthropic" ? "anthropic" : "openai"));
+    return promptKeyOptionValue("platform", eff.key_id || normalizePlatformProviderId(eff.provider));
   }
   if (eff?.key_id && eff?.source) {
     return promptKeyOptionValue(eff.source, eff.key_id);
   }
   const platformKeys = getPlatformPromptKeys(status);
-  if (!status?.active_key_id && platformKeys.length && status?.credits?.use_platform_key) {
-    const preferred = status.credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+  if (platformKeys.length && status?.credits?.use_platform_key) {
+    const preferred = normalizePlatformProviderId(status.credits.platform_provider);
     const match = platformKeys.find((k) => k.id === preferred) || platformKeys[0];
     return promptKeyOptionValue("platform", match.id);
-  }
-  if (status?.active_key_id) {
-    return promptKeyOptionValue("personal", status.active_key_id);
   }
   return "";
 }
@@ -16485,16 +16511,19 @@ function getPlatformPromptKeys(status) {
   const balance = Number(credits.balance_cents || 0);
   if (!credits.available || balance <= 0) return [];
   if (Array.isArray(status?.platform_keys) && status.platform_keys.length) {
-    return status.platform_keys.map((key) => ({
-      id: key.id,
-      name: key.name || (key.provider === "anthropic" ? "Render3D Anthropic" : "Render3D OpenAI"),
-      provider: key.provider === "anthropic" ? "anthropic" : "openai",
-      model: key.model || "",
-      source: "platform",
-    }));
+    return status.platform_keys.map((key) => {
+      const provider = normalizePlatformProviderId(key.provider || key.id);
+      return {
+        id: key.id || provider,
+        name: key.name || platformKeyDisplayName(provider),
+        provider,
+        model: key.model || "",
+        source: "platform",
+      };
+    });
   }
   const providers = credits.providers || {};
-  const preferred = credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+  const preferred = normalizePlatformProviderId(credits.platform_provider);
   const preferredModel = credits.platform_model || "";
   const models = credits.models || [];
   const keys = [];
@@ -16516,18 +16545,27 @@ function getPlatformPromptKeys(status) {
       source: "platform",
     });
   }
+  if (providers.kimi) {
+    keys.push({
+      id: "kimi",
+      name: "Render3D Kimi",
+      provider: "kimi",
+      model: preferred === "kimi" ? preferredModel : (models.find((m) => m.provider === "kimi")?.model || "kimi-k3"),
+      source: "platform",
+    });
+  }
   return keys;
 }
 
-/** Platform OpenAI / Anthropic keys offered to anyone with Studio credits. */
+/** Platform OpenAI / Anthropic / Kimi keys offered to anyone with Studio credits. */
 function getRender3dKeyChoices(status) {
   return getPlatformPromptKeys(status).map((key) => ({
     source: "platform",
     id: key.id,
-    provider: key.provider === "anthropic" ? "anthropic" : "openai",
+    provider: normalizePlatformProviderId(key.provider || key.id),
     model: key.model || "",
-    label: key.provider === "anthropic" ? "Anthropic" : "OpenAI",
-    name: key.name || "Render3D Key",
+    label: platformProviderLabel(key.provider || key.id),
+    name: key.name || platformKeyDisplayName(key.provider || key.id),
   }));
 }
 
@@ -16542,7 +16580,7 @@ function findRender3dChoice(status, value) {
     const match = choices.find((choice) => String(choice.id) === String(parsed.keyId));
     if (match) return match;
   }
-  const preferred = status?.credits?.platform_provider === "anthropic" ? "anthropic" : "openai";
+  const preferred = normalizePlatformProviderId(status?.credits?.platform_provider);
   return choices.find((choice) => choice.provider === preferred) || choices[0] || null;
 }
 
@@ -16794,7 +16832,7 @@ function renderPromptKeyPopup(status) {
   const keyRow = (key, source) => {
     const active = isSelected(source, key.id);
     const badge = BADGE_CLASS_MAP[key.provider] || "badge-openai";
-    const providerLabel = key.provider_label || (key.provider === "anthropic" ? "Anthropic" : "OpenAI");
+    const providerLabel = key.provider_label || platformProviderLabel(key.provider);
     return `<div class="prompt-key-popup-row${active ? " active" : ""}"
          data-action="select-key" data-source="${source}" data-key-id="${key.id}">
       <div class="prompt-key-popup-check">
@@ -16838,7 +16876,7 @@ function renderPromptKeyPopup(status) {
         </div>
         <span class="prompt-key-popup-name prompt-key-popup-name--platform">Render3D Key</span>
         <div class="prompt-key-popup-model-wrap prompt-key-popup-platform-wrap">
-          <select class="prompt-key-popup-model-select prompt-key-popup-provider-select" data-action="render3d-provider" title="OpenAI or Anthropic">
+          <select class="prompt-key-popup-model-select prompt-key-popup-provider-select" data-action="render3d-provider" title="OpenAI, Anthropic, or Kimi">
             ${render3dChoices.map((c) => {
               const selected = String(c.id) === String(current.id) ? " selected" : "";
               return `<option value="${render3dChoiceValue(c)}"${selected}>${c.label}</option>`;
@@ -16963,14 +17001,18 @@ function initPromptKeyPopup() {
       if (source === "platform") {
         try {
           const platformKey = getPlatformPromptKeys(aiStatus).find((key) => key.id === keyId);
-          const provider = keyId === "anthropic" ? "anthropic" : "openai";
-          const platformModel = provider === "anthropic"
-            ? (platformKey?.model && !/^(gpt|o1|o3)/i.test(platformKey.model)
-              ? platformKey.model
-              : defaultPlatformModelForProvider("anthropic"))
-            : (platformKey?.model && /^(gpt|o1|o3)/i.test(platformKey.model)
-              ? platformKey.model
-              : defaultPlatformModelForProvider("openai"));
+          const provider = normalizePlatformProviderId(platformKey?.provider || keyId);
+          const rowModel = String(platformKey?.model || "").trim();
+          const modelCompatible = (
+            (provider === "anthropic" && rowModel && !/^(gpt|o1|o3|chatgpt|kimi)/i.test(rowModel))
+            || (provider === "kimi" && /^kimi/i.test(rowModel))
+            || (provider === "openai" && /^(gpt|o1|o3|chatgpt)/i.test(rowModel))
+          );
+          const platformModel = modelCompatible
+            ? rowModel
+            : (defaultPlatformModelForProvider(provider, aiStatus)
+              || PROMPT_KEY_MODEL_OPTIONS[provider]?.[0]?.value
+              || null);
           const data = await api("/api/user/ai-credits", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -16990,7 +17032,33 @@ function initPromptKeyPopup() {
       } else if (source === "personal") {
         try {
           const data = await api(`/api/user/ai-keys/${keyId}/activate`, { method: "PUT" });
-          const updatedAi = { ...(data.ai || data || aiStatus || {}) };
+          // Stop routing fallbacks through Render3D Claude/OpenAI when a personal key is chosen.
+          let credits = data.ai?.credits || aiStatus?.credits;
+          try {
+            const creditData = await api("/api/user/ai-credits", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ use_platform_key: false }),
+            });
+            credits = creditData.credits || creditData.ai?.credits || credits;
+          } catch (_) { /* non-fatal */ }
+          // Opt out of opted-in team keys so server-side default matches the personal pick.
+          const teamKeys = (aiStatus?.team_keys || []).filter((tk) => tk.use_key && tk.team_id);
+          for (const tk of teamKeys) {
+            try {
+              await api(`/api/teams/${tk.team_id}/ai-keys/${tk.id}/toggle`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ use_key: false }),
+              });
+            } catch (_) { /* non-fatal */ }
+          }
+          const refreshed = teamKeys.length
+            ? await api("/api/user/ai-keys").catch(() => null)
+            : null;
+          const updatedAi = refreshed
+            ? { ...(refreshed.ai || {}), keys: refreshed.keys || refreshed.ai?.keys || [], credits }
+            : { ...(data.ai || data || aiStatus || {}), credits };
           aiKeyUi?.render(updatedAi);
           renderAIStatus(updatedAi);
           selectPromptAiKeyValue(selectedValue);
@@ -17033,13 +17101,13 @@ function initPromptKeyPopup() {
       const selectedValue = String(providerSel.value || "");
       const parsed = parsePromptKeyOptionValue(selectedValue);
       if (!parsed) return;
-      const provider = parsed.keyId === "anthropic" || parsed.keyId.includes?.("anthropic")
-        ? "anthropic"
-        : (getRender3dKeyChoices(aiStatus).find((c) => String(c.id) === String(parsed.keyId))?.provider
-          || (parsed.keyId === "anthropic" ? "anthropic" : "openai"));
       const choice = getRender3dKeyChoices(aiStatus).find((c) => String(c.id) === String(parsed.keyId))
-        || { id: parsed.keyId === "anthropic" ? "anthropic" : "openai", provider, model: "" };
-      const resolvedProvider = choice.provider === "anthropic" ? "anthropic" : "openai";
+        || {
+          id: normalizePlatformProviderId(parsed.keyId),
+          provider: normalizePlatformProviderId(parsed.keyId),
+          model: "",
+        };
+      const resolvedProvider = normalizePlatformProviderId(choice.provider || choice.id || parsed.keyId);
       const defaultModel = defaultPlatformModelForProvider(resolvedProvider, aiStatus)
         || choice.model
         || PROMPT_KEY_MODEL_OPTIONS[resolvedProvider]?.[0]?.value
@@ -17050,7 +17118,7 @@ function initPromptKeyPopup() {
         if (![...hiddenSelect.options].some((opt) => opt.value === platformValue)) {
           const opt = document.createElement("option");
           opt.value = platformValue;
-          opt.textContent = "Render3D key";
+          opt.textContent = platformKeyDisplayName(resolvedProvider);
           hiddenSelect.appendChild(opt);
         }
         hiddenSelect.value = platformValue;
@@ -17103,7 +17171,7 @@ function initPromptKeyPopup() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             use_platform_key: true,
-            platform_provider: keyId === "anthropic" ? "anthropic" : "openai",
+            platform_provider: normalizePlatformProviderId(keyId),
             platform_model: newModel || null,
           }),
         });

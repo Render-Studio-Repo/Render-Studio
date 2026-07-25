@@ -1,3 +1,20 @@
+## 2026-07-25 — Kimi selection no longer snaps back to Claude
+
+- Bug: prompt-key UI treated every non-Claude provider as OpenAI; `normalizePlatformProviderId` was missing in `app.js` (threw when reconciling platform picks). Selecting Kimi could silently keep/patch Anthropic.
+- Fix: real Kimi platform choice, provider normalize helper, personal Save/Use disables Render3D shared Claude fallback and selects `personal:<id>` in the compose picker.
+- Cache-bust `app.js` / `ai-key-ui.js` `?v=20260725-kimi-stick`.
+
+---
+
+## 2026-07-25 — Fix “Save & activate” doing nothing on Add AI key
+
+- Symptom: Add a new key (e.g. Kimi) → green **Save & activate** produced no POST / no error.
+- Cause: save relied only on native `<form submit>` + HTML5 `required` (easy to miss validation UI in the scrolled dark modal).
+- Fix: explicit button `click` → `saveNewKey()` with visible errors above the button, loading label, `novalidate`, and cache-bust `?v=20260725-save-activate`.
+- Also: platform model change no longer coerces Kimi → OpenAI.
+
+---
+
 ## 2026-07-25 — Shared credits: Kimi K3 (V3) platform key
 
 - Added `KIMI_API_KEY` (+ `KIMI_MODEL` / `KIMI_MODEL_QUALITY=kimi-k3`) to server `.env`.

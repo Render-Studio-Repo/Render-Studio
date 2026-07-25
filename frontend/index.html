@@ -2678,8 +2678,7 @@
       <!-- Add new key form (collapsed by default) -->
       <details id="ai-key-add-section" class="ai-key-add-section">
         <summary class="ai-key-add-toggle">+ Add a new key</summary>
-        <p id="ai-key-error" class="auth-error hidden"></p>
-        <form id="ai-key-form" class="auth-form ai-key-add-form">
+        <form id="ai-key-form" class="auth-form ai-key-add-form" novalidate>
           <label>Nickname
             <input type="text" id="ai-key-name" maxlength="60" placeholder="e.g. My OpenAI key" autocomplete="off" />
           </label>
@@ -2695,7 +2694,7 @@
             <select id="ai-key-model"></select>
           </label>
           <label>API key
-            <input type="password" id="ai-key-input" required autocomplete="off" placeholder="sk-... / sk-ant-... / xai-..." />
+            <input type="password" id="ai-key-input" autocomplete="off" placeholder="sk-... / sk-ant-... / xai-..." />
           </label>
           <label class="ai-key-share-toggle">
             <input type="checkbox" id="ai-key-shared" />
@@ -2712,7 +2711,8 @@
           <p id="ai-key-share-hint" class="muted small hidden">
             Shared keys are named for your team and can be assigned per member from the Members panel.
           </p>
-          <button type="submit" class="btn accent auth-submit" id="ai-key-submit">Save &amp; activate</button>
+          <p id="ai-key-error" class="auth-error hidden"></p>
+          <button type="button" class="btn accent auth-submit" id="ai-key-submit">Save &amp; activate</button>
         </form>
       </details>
     </div>
@@ -2989,7 +2989,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260725-kimi-credits"></script>
+  <script type="module" src="/app.js?v=20260725-kimi-stick"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

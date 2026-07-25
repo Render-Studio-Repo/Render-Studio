@@ -42,12 +42,13 @@ function labelFor(provider) {
   return PROVIDER_LABELS[provider] || provider || "AI";
 }
 
-  function normalizePlatformProviderId(provider) {
-    const p = String(provider || "openai").trim().toLowerCase();
-    if (p === "anthropic" || p === "claude") return "anthropic";
-    if (p === "kimi" || p === "moonshot") return "kimi";
-    return "openai";
-  }
+function normalizePlatformProviderId(provider) {
+  const p = String(provider || "openai").trim().toLowerCase();
+  if (p === "anthropic" || p === "claude") return "anthropic";
+  if (p === "kimi" || p === "moonshot") return "kimi";
+  if (p === "xai" || p === "grok") return "xai";
+  return "openai";
+}
 
 function defaultModel(provider) {
   return MODEL_OPTIONS[provider]?.[0]?.value || "gpt-5.5";
@@ -134,6 +135,13 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     if (!errorEl) return;
     errorEl.textContent = message;
     errorEl.classList.toggle("hidden", !message);
+    if (message) {
+      try {
+        errorEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   function isSharedAddMode() {
@@ -1346,7 +1354,19 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     if (action === "activate") {
       try {
         const data = await api(`/api/user/ai-keys/${keyId}/activate`, { method: "PUT" });
-        render({ ...(data.ai || {}), keys: data.ai?.keys || [] });
+        let credits = data.ai?.credits || status?.credits;
+        try {
+          const creditData = await api("/api/user/ai-credits", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ use_platform_key: false }),
+          });
+          credits = creditData.credits || creditData.ai?.credits || credits;
+        } catch {
+          /* non-fatal */
+        }
+        render({ ...(data.ai || {}), keys: data.ai?.keys || [], credits });
+        onSelectPromptKey?.(`personal:${keyId}`);
       } catch (err) {
         setError(err.message || "Could not activate key");
       }
@@ -1482,7 +1502,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
       const providerRaw = platformKeyModel.dataset.provider
         || String(providerSel?.value || "").split(":")[1]
         || "openai";
-      const provider = providerRaw === "anthropic" ? "anthropic" : "openai";
+      const provider = normalizePlatformProviderId(providerRaw);
       const model = platformKeyModel.value;
       try {
         const data = await api("/api/user/ai-credits", {
@@ -1540,28 +1560,58 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
 
   void claimCreditsFromUrl();
 
-  // Add new key form submit
-  form?.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  let savingKey = false;
+
+  async function saveNewKey() {
+    if (savingKey) return;
     setError("");
+    const provider = String(providerInput?.value || "openai").trim().toLowerCase();
+    if (!MODEL_OPTIONS[provider]) {
+      setError("Pick a provider (OpenAI, Claude, Kimi, or Grok).");
+      return;
+    }
+    // Ensure model options match the selected provider (stale empty <select> blocks nothing but saves wrong defaults).
+    if (modelInput && (!modelInput.options.length || !(MODEL_OPTIONS[provider] || []).some((m) => m.value === modelInput.value))) {
+      renderModelOptions(provider, modelInput.value);
+    }
+    const model = String(modelInput?.value || "").trim() || defaultModel(provider);
+    const name = (nameInput?.value || "").trim() || null;
+    const payload = { provider, model, name };
+    const shared = isSharedAddMode();
+    const sourceKeyId = sourceInput?.value || "__new__";
+    const usingSavedSource = shared && sourceKeyId !== "__new__";
+    const apiKey = String(keyInput?.value || "").trim();
+
+    if (shared) {
+      const teamId = teamInput?.value;
+      if (!teamId) {
+        setError("Choose a team for this shared key.");
+        return;
+      }
+      if (!usingSavedSource && apiKey.length < 20) {
+        setError("Paste a valid API key (or pick a saved key to share).");
+        keyInput?.focus();
+        return;
+      }
+      if (usingSavedSource) payload.source_key_id = sourceKeyId;
+      else payload.api_key = apiKey;
+    } else if (apiKey.length < 20) {
+      setError("Paste your API key before saving.");
+      keyInput?.focus();
+      return;
+    } else {
+      payload.api_key = apiKey;
+    }
+
+    savingKey = true;
+    const prevLabel = submitBtn?.textContent || "Save & activate";
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = shared ? "Saving shared key…" : "Saving…";
+    }
     try {
-      const payload = {
-        provider: providerInput.value,
-        model: modelInput.value.trim() || null,
-        name: (nameInput?.value || "").trim() || null,
-      };
-      if (isSharedAddMode()) {
+      if (shared) {
         const teamId = teamInput?.value;
-        if (!teamId) {
-          setError("Choose a team for this shared key.");
-          return;
-        }
-        const sourceKeyId = sourceInput?.value || "__new__";
-        if (sourceKeyId !== "__new__") {
-          payload.source_key_id = sourceKeyId;
-        } else {
-          payload.api_key = keyInput.value.trim();
-        }
         await api(`/api/teams/${teamId}/ai-keys`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1569,24 +1619,55 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
         });
         await refresh();
       } else {
-        payload.api_key = keyInput.value.trim();
         const data = await api("/api/user/ai-keys", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        render({ ...(data.ai || {}), keys: data.ai?.keys || [] });
+        // Prefer the new personal key in the compose picker (don't stay on Render3D Claude).
+        try {
+          await api("/api/user/ai-credits", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ use_platform_key: false }),
+          });
+        } catch {
+          /* non-fatal */
+        }
+        const ai = { ...(data.ai || {}), keys: data.ai?.keys || data.keys || [] };
+        render(ai);
+        const activeId = ai.active_key_id
+          || (ai.keys || []).find((k) => k.is_active)?.id
+          || (ai.keys || []).find((k) => k.provider === provider)?.id;
+        if (activeId) onSelectPromptKey?.(`personal:${activeId}`);
       }
-      // Reset form and collapse
-      form.reset();
-      providerInput.disabled = false;
-      modelInput.disabled = false;
+      form?.reset();
+      if (providerInput) providerInput.disabled = false;
+      if (modelInput) modelInput.disabled = false;
       renderModelOptions("openai");
       updateSharedAddUI();
       if (addSection) addSection.removeAttribute("open");
     } catch (err) {
-      setError(err.message || "Could not save API key");
+      setError(err?.message || "Could not save API key");
+    } finally {
+      savingKey = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = isSharedAddMode() ? "Save shared key" : "Save & activate";
+        if (!submitBtn.textContent) submitBtn.textContent = prevLabel;
+      }
     }
+  }
+
+  // Explicit button click — do not rely on native form submit (HTML5 validation / details quirks).
+  submitBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void saveNewKey();
+  });
+  form?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    void saveNewKey();
   });
 
   return {
