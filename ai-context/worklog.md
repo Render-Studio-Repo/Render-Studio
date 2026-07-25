@@ -1,4 +1,11 @@
-## 2026-07-25 — LOCK Cmd+Z transform undo (stop regressions)
+## 2026-07-25 — Restore Jul 16 upright (stop tipping models left)
+
+- Footprint ±90° scorer was still in `ensureModelZUp` despite earlier “restored” comment — that tips bikes/long assemblies onto their side.
+- Restored Jul 16 axis heuristic + GLB/GLTF flip exclusion + `v2-upright` fixed tip. Locked via `.cursor/rules/model-upright-orientation.mdc`.
+- Cache-bust `app.js?v=20260725-upright-axis`. Hard-refresh / reload project to re-orient.
+
+---
+
 
 - Extracted policy to `frontend/viewport-transform-undo.js`; hotkeys refuse timeline fallthrough when top undo is a transform.
 - Always-on Cursor rule `.cursor/rules/cmdz-transform-undo.mdc`; listed in `AGENTS.md` + conventions red zone.

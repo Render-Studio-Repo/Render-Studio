@@ -128,7 +128,7 @@ function collapseExportsToSingleStep(items = []) {
     if (/__faceted/i.test(name) || item.step_structure === "faceted" || item.step_kind === "faceted_mesh") {
       continue;
     }
-    // Prefer native editable B-rep over *.part.step caches (Part rewrite breaks Cut).
+    // Prefer native editable B-rep; Part flatten happens via ?step_mode=part / Fusion push.
     const score =
       (item.step_kind === "editable_brep" ? 6 : 0)
       + (/\.part\.step$/i.test(name) || /\.fusionpart\.step$/i.test(name) ? -8 : 2)
@@ -862,9 +862,15 @@ export async function openFileExportMenu({
   let fusionStepMode = "part";
 
   const isThreeMfFusionUpload = /\.3mf$/i.test(String(cloudFilename || filename || ""));
+  // Prefer native editable STEP of the export target — never a sibling model.
   let fusionUploadFilename = isThreeMfFusionUpload
     ? String(cloudFilename || filename).split(/[/\\]/).pop()
     : resolvedCloudFilename;
+
+  // If caller passed an explicit STEP cloudFilename, always use it for Fusion.
+  if (!isThreeMfFusionUpload && cloudFilename && /\.ste?p$/i.test(String(cloudFilename))) {
+    fusionUploadFilename = String(cloudFilename).split(/[/\\]/).pop();
+  }
 
   // Never Fusion-push a file outside the visible allow-list (blocks hidden Arduino).
   if (visibleAllowList.length && fusionUploadFilename) {
@@ -886,6 +892,13 @@ export async function openFileExportMenu({
   }
   if (!fusionUploadFilename && visibleAllowList.length) {
     fusionUploadFilename = String(visibleAllowList[0]).replace(/\.[^.]+$/, ".step");
+  }
+  // Never upload faceted mesh STEP to Fusion (not Extrude/Cut editable).
+  if (fusionUploadFilename && /__faceted/i.test(String(fusionUploadFilename))) {
+    fusionUploadFilename = String(fusionUploadFilename).replace(/__faceted/i, "");
+  }
+  if (fusionUploadFilename && !/\.(step|stp|3mf)$/i.test(String(fusionUploadFilename))) {
+    fusionUploadFilename = `${modelStem(fusionUploadFilename)}.step`;
   }
 
   // Fusion push: Part STEP for Extrude/Cut; no companion .py.

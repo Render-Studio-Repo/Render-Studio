@@ -802,8 +802,8 @@ def step_has_assembly_links(path: Path | str, *, max_bytes: int = 8_000_000) -> 
 def ensure_fusion_part_step(project_path: Path, step_path: Path) -> Path:
     """Return a Part-style STEP (no assembly links) suitable for Extrude/Cut.
 
-    Prefers an existing ``*.part.step`` sibling when it is already solid and link-free.
-    Otherwise flattens via ``export_step_as_single_part`` into ``*.part.step``.
+    Regenerates ``*.part.step`` when missing, stale (older than native), or still
+    linked. Never reuse a stale Part cache — that broke Fusion Cut / wrong solids.
     """
     project_path = Path(project_path)
     step_path = Path(step_path)
@@ -814,25 +814,55 @@ def ensure_fusion_part_step(project_path: Path, step_path: Path) -> Path:
         if stem.endswith(suffix):
             stem = stem[: -len(suffix)]
             break
+    # Prefer native sibling as the flatten source (not a prior .part.step).
+    native = step_path
+    if step_path.name.lower().endswith(".part.step") or ".fusionpart." in step_path.name.lower():
+        for ext in (".step", ".stp"):
+            cand = project_path / f"{stem}{ext}"
+            if cand.is_file() and is_editable_brep_step(cand):
+                native = cand
+                break
+    else:
+        for ext in (".step", ".stp"):
+            cand = project_path / f"{stem}{ext}"
+            if cand.is_file() and is_editable_brep_step(cand):
+                native = cand
+                break
     part_path = project_path / f"{stem}.part.step"
-    if part_path.is_file() and is_editable_brep_step(part_path) and not step_has_assembly_links(part_path):
+
+    def _part_fresh() -> bool:
+        if not part_path.is_file():
+            return False
+        if not is_editable_brep_step(part_path):
+            return False
+        if step_has_assembly_links(part_path):
+            return False
+        try:
+            if native.is_file() and part_path.stat().st_mtime + 0.01 < native.stat().st_mtime:
+                return False
+        except OSError:
+            return False
+        return True
+
+    if _part_fresh():
         return part_path
-    if not step_has_assembly_links(step_path):
-        # Already a single Part — keep as-is (also refresh .part.step cache when missing).
-        if not part_path.is_file() and step_path.resolve() != part_path.resolve():
+
+    # Already a single Part with no links — copy/cache and return.
+    if native.is_file() and not step_has_assembly_links(native) and is_editable_brep_step(native):
+        if native.resolve() != part_path.resolve():
             try:
                 import shutil
 
-                shutil.copy2(step_path, part_path)
+                shutil.copy2(native, part_path)
             except Exception:
-                pass
-        return step_path if not part_path.is_file() else part_path
+                return native
+        return part_path if part_path.is_file() else native
+
     try:
-        return export_step_as_single_part(step_path, part_path)
+        return export_step_as_single_part(native, part_path)
     except Exception:
-        # Fall back to legacy .fusionpart name if .part.step write fails mid-flight.
         alt = project_path / f"{stem}.fusionpart.step"
-        return export_step_as_single_part(step_path, alt)
+        return export_step_as_single_part(native, alt)
 
 
 def _native_brep_parent_stems(stem: str) -> list[str]:

@@ -89,13 +89,12 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-export-visible";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-export-one";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-step-part";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260725-undo-move";
 import {
-  isTimelineTransformEntry,
   undoViewportTransformAction,
   redoViewportTransformAction,
   viewportUndoBlocksTimelineFallthrough,
@@ -15403,44 +15402,18 @@ function annotatePickedReference(ref) {
 
 function allowAutoUpsideDownFlip(filename = "") {
   const ext = String(filename || "").split(".").pop()?.toLowerCase() || "";
-  // Allow footprint correction for all formats when choosing ±90° —
-  // CAD GLBs from Fusion/STEP are the ones that most need the right direction.
-  return Boolean(ext);
-}
-
-function footprintScoreAtMinZ(object3d) {
-  object3d.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(object3d);
-  if (box.isEmpty()) return 0;
-  const size = box.getSize(new THREE.Vector3());
-  if (!(size.z > 1e-9)) return 0;
-  const tol = size.z * 0.04;
-  let area = 0;
-  object3d.traverse((child) => {
-    if (!child.isMesh || !child.geometry) return;
-    const pos = child.geometry.attributes?.position;
-    if (!pos) return;
-    const v = new THREE.Vector3();
-    let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity; let count = 0;
-    for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(child.matrixWorld);
-      if (Math.abs(v.z - box.min.z) > tol) continue;
-      count += 1;
-      minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
-      minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
-    }
-    if (count < 8) return;
-    const spanX = maxX - minX;
-    const spanY = maxY - minY;
-    const mn = Math.min(spanX, spanY);
-    const mx = Math.max(spanX, spanY) || 1;
-    area += mn * (1 - Math.abs(spanX - spanY) / mx);
-  });
-  return area;
+  // GLB/GLTF files can carry explicit authoring transforms/material scene roots.
+  // A footprint guess is too aggressive for robot arms and often flips them.
+  return ext !== "glb" && ext !== "gltf";
 }
 
 function ensureModelZUp(object3d, filename = "") {
-  /** Rotate Y-up meshes (glTF / Fusion / text-to-cad) into Render3D's Z-up viewport. */
+  /**
+   * LOCKED — Jul 16 axis heuristic (do not bring back footprint ±90° scoring).
+   * Rotate clear Y-up meshes into Render3D's Z-up viewport. Leave already-Z-up
+   * models alone — the old footprint tipper laid bikes/long assemblies on their side.
+   * See `.cursor/rules/model-upright-orientation.mdc`.
+   */
   if (!object3d) return false;
   if (object3d.userData?.render3dZUp) return false;
   object3d.updateMatrixWorld(true);
@@ -15453,52 +15426,39 @@ function ensureModelZUp(object3d, filename = "") {
   const max = Math.max(sx, sy, sz);
   if (!(max > 0)) return false;
 
-  // Flat plate already on the XY floor — leave alone.
-  if (sz < Math.min(sx, sy) * 0.5) return false;
+  let rotated = false;
+  // Already standing in Z-up (height along Z).
+  if (sz >= max * 0.99) {
+    rotated = false;
+  } else if (sy >= max * 0.99) {
+    // Tallest axis is Y → classic Y-up standing model.
+    object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  } else if (sz < Math.min(sx, sy) * 0.5) {
+    // Flat Z-up plate/gear on the XY floor (thin Z vs both plan extents).
+    return false;
+  } else if (max <= 25 && sy >= sz * 0.98) {
+    object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  } else if (sy > sz * 1.12 && sy >= sx * 0.9) {
+    object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  }
 
-  const q0 = object3d.quaternion.clone();
-  const scoreOrientation = (angle) => {
-    object3d.quaternion.copy(q0);
-    if (angle) object3d.rotateX(angle);
+  if (rotated) {
     object3d.updateMatrixWorld(true);
-    const minScore = footprintScoreAtMinZ(object3d);
-    object3d.updateMatrixWorld(true);
-    const box2 = new THREE.Box3().setFromObject(object3d);
-    const sz2 = Math.abs(box2.getSize(new THREE.Vector3()).z);
-    // Prefer orientations that put meaningful height along Z and a solid base down.
-    return minScore + sz2 * 0.05;
-  };
-
-  // Always compare "as authored" vs ±90°. Only tip when a rotation clearly wins —
-  // this stops already-Z-up CAD (long in Y on the floor) from being flopped sideways,
-  // while still correcting Fusion/glTF Y-up models that arrive on their side.
-  const candidates = [
-    { angle: 0, score: scoreOrientation(0) },
-    { angle: Math.PI / 2, score: scoreOrientation(Math.PI / 2) },
-    { angle: -Math.PI / 2, score: scoreOrientation(-Math.PI / 2) },
-  ];
-  candidates.sort((a, b) => b.score - a.score);
-  const best = candidates[0];
-  const asAuthored = candidates.find((c) => c.angle === 0) || candidates[0];
-  // Require a clear improvement before tipping (avoids random left/right flops).
-  const shouldRotate = best.angle !== 0 && best.score > asAuthored.score * 1.12 + 1e-6;
-
-  object3d.quaternion.copy(q0);
-  if (shouldRotate) {
-    object3d.rotateX(best.angle);
-    object3d.updateMatrixWorld(true);
+    // If the wider footprint ended up on +Z, flip 180° so the base sits down.
     if (allowAutoUpsideDownFlip(filename) && footprintPrefersFlip180(object3d)) {
       object3d.rotateX(Math.PI);
       object3d.updateMatrixWorld(true);
     }
     object3d.userData.render3dZUp = true;
     object3d.userData.render3dZUpSource = filename || true;
-    object3d.userData.render3dZUpAngle = best.angle;
     return true;
   }
 
   // Already Z-up-ish but possibly inverted (base on +Z).
-  if (allowAutoUpsideDownFlip(filename) && sz >= sy * 0.85 && footprintPrefersFlip180(object3d)) {
+  if (allowAutoUpsideDownFlip(filename) && sz >= sy * 0.9 && footprintPrefersFlip180(object3d)) {
     object3d.rotateX(Math.PI);
     object3d.updateMatrixWorld(true);
     object3d.userData.render3dZUp = true;
@@ -15579,13 +15539,14 @@ function materializeObject(object3d, {
   orientationMode = null,
   styleMode = "auto",
 } = {}) {
-  // Jul 16 path: only tip clear Y-up models (tallest axis Y). Do not footprint-score
-  // ±90° — that was laying bikes/long Z-up assemblies on their side.
-  if (orient || orientationMode === "v2-upright") {
+  // LOCKED Jul 16: v2-upright uses a fixed tip; otherwise axis heuristic only.
+  // Never footprint-score ±90° — that lays bikes/long Z-up assemblies on their side.
+  if (orientationMode === "v2-upright") {
+    object3d.rotateX(-Math.PI / 2);
+    object3d.userData.render3dForcedUpright = "v2-upright";
+    object3d.updateMatrixWorld(true);
+  } else if (orient) {
     ensureModelZUp(object3d, filename);
-    if (orientationMode === "v2-upright") {
-      object3d.userData.render3dForcedUpright = "v2-upright";
-    }
   }
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
@@ -17785,6 +17746,9 @@ const workspaceBrowser = createWorkspaceBrowser({
       filename: entry.name,
       fusionUploadName: `${componentStemName(entry.name) || "model"}.step`,
       allowedFilenames: [entry.name],
+      cloudFilename: /\.ste?p$/i.test(String(entry.name || ""))
+        ? entry.name
+        : `${String(entry.name || "").replace(/\.[^.]+$/, "")}.step`,
       anchorEl: document.body,
       shareContext: currentVisibleShareContext,
     }).catch((err) => {
@@ -18789,6 +18753,9 @@ const projectTree = createProjectTree({
       filename: entry.name,
       fusionUploadName: `${componentStemName(entry.name) || "model"}.step`,
       allowedFilenames: [entry.name],
+      cloudFilename: /\.ste?p$/i.test(String(entry.name || ""))
+        ? entry.name
+        : `${String(entry.name || "").replace(/\.[^.]+$/, "")}.step`,
       anchorEl,
       shareContext: currentVisibleShareContext,
     }).catch((err) => {
@@ -20528,18 +20495,44 @@ function collectVisibleExportFilenames() {
     const prev = byStem.get(stem);
     if (!prev || formatRank(name) > formatRank(prev)) byStem.set(stem, name);
   }
-  const deduped = [...byStem.values()];
-  const preferred =
-    (selectedFile && !isComponentHidden(selectedFile)
-      ? deduped.find((n) => String(n).replace(/\.[^.]+$/, "").toLowerCase()
-        === String(selectedFile).replace(/\.[^.]+$/, "").toLowerCase())
-      : null)
-    || deduped.find((n) => /fully_assembled/i.test(n))
-    || deduped[0];
-  if (preferred && deduped[0] !== preferred) {
-    return [preferred, ...deduped.filter((n) => n !== preferred)];
-  }
-  return deduped;
+  return [...byStem.values()];
+}
+
+/** Single model to Export/Fusion — never bake siblings (that was the wrong-model bug). */
+function currentExportTargetFilename() {
+  const visible = collectVisibleExportFilenames();
+  if (!visible.length) return null;
+  const byStem = new Map(
+    visible.map((n) => [String(n).replace(/\.[^.]+$/, "").toLowerCase(), n]),
+  );
+  const matchStem = (raw) => {
+    const base = String(raw || "").split("#body:")[0].trim();
+    if (!base) return null;
+    let stem = base.replace(/\.[^.]+$/, "").toLowerCase().replace(/\.part$/i, "");
+    if (byStem.has(stem)) return byStem.get(stem);
+    // Body picks: foo__part_01 → foo
+    const parent = stem.replace(/__part_.*$/i, "");
+    if (parent && byStem.has(parent)) return byStem.get(parent);
+    return null;
+  };
+  const selection = objectTools.getSelection?.();
+  const fromSelection = selection?.catalogName
+    || (selection?.mesh ? catalogNameForMesh(selection.mesh) : null);
+  const fromMesh = currentMesh ? catalogNameForMesh(currentMesh) : null;
+  return (
+    matchStem(fromSelection)
+    || matchStem(selectedFile)
+    || matchStem(fromMesh)
+    || visible.find((n) => /fully_assembled/i.test(n))
+    || visible[0]
+  );
+}
+
+function exportStepFilenameFor(name) {
+  const raw = String(name || "").split("#body:")[0].trim();
+  if (!raw) return raw;
+  if (/\.ste?p$/i.test(raw)) return raw.replace(/\.part\.step$/i, ".step");
+  return `${raw.replace(/\.[^.]+$/, "")}.step`;
 }
 
 /** @deprecated name — kept for call sites; now visible-only again. */
@@ -20616,45 +20609,27 @@ async function exportCurrentModel(anchorEl) {
     alert("Open a project first.");
     return;
   }
-  const visibleFiles = collectVisibleExportFilenames();
+  // Always one model — the selected / focused visible component.
+  // Multi-file bake was compounding siblings (arduino) and pushing the wrong STEP.
+  const target = currentExportTargetFilename();
   const anchor = anchorEl || document.getElementById("btn-export-model") || document.body;
-  if (!visibleFiles.length) {
+  if (!target) {
     alert("No visible component to export. Show at least one component first.");
     return;
   }
-  const primary = visibleFiles[0];
-  const fusionDisplayName = `${componentStemName(primary) || "model"}.step`;
-  if (visibleFiles.length > 1) {
-    await openFileExportMenu({
-      api,
-      projectId,
-      filename: "visible assembly",
-      cloudFilename: null,
-      fusionUploadName: fusionDisplayName,
-      allowedFilenames: visibleFiles,
-      anchorEl: anchor,
-      title: `Export visible (${visibleFiles.length} models)`,
-      hint: `Exports the models currently shown in the viewport as “${fusionDisplayName}” (Part STEP for Fusion Cut).`,
-      allowOnshape: false,
-      shareContext: currentVisibleShareContext,
-      exportsRequest: {
-        path: `/api/projects/${projectId}/assembly/exports`,
-        options: {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filenames: visibleFiles }),
-        },
-      },
-    });
-    return;
-  }
+  const stepName = exportStepFilenameFor(target);
+  const fusionDisplayName = `${componentStemName(target) || "model"}.step`;
   await openFileExportMenu({
     api,
     projectId,
-    filename: primary,
+    filename: target,
     fusionUploadName: fusionDisplayName,
-    allowedFilenames: [primary],
+    // Force Fusion/cloud onto the native STEP for this stem (Part flatten server-side).
+    cloudFilename: stepName,
+    allowedFilenames: [target, stepName],
     anchorEl: anchor,
+    title: `Export ${componentStemName(target) || target}`,
+    hint: "Downloads / Fusion push use a Part STEP (B-rep) of this model so Extrude/Cut works.",
     shareContext: currentVisibleShareContext,
   });
 }
@@ -23763,6 +23738,9 @@ function renderFileList(files = []) {
         filename: f.name,
         fusionUploadName: `${componentStemName(f.name) || "model"}.step`,
         allowedFilenames: [f.name],
+        cloudFilename: /\.ste?p$/i.test(String(f.name || ""))
+          ? f.name
+          : `${String(f.name || "").replace(/\.[^.]+$/, "")}.step`,
         anchorEl: exp,
         shareContext: currentVisibleShareContext,
       }).catch((err) => {
@@ -23912,6 +23890,9 @@ async function exportProject(p) {
       filename: file,
       fusionUploadName: `${componentStemName(file) || "model"}.step`,
       allowedFilenames: [file],
+      cloudFilename: /\.ste?p$/i.test(String(file || ""))
+        ? file
+        : `${String(file || "").replace(/\.[^.]+$/, "")}.step`,
       anchorEl: anchor,
       allowOnshape: !isAnonymousPublicProject(pid),
       allowFusion: !isAnonymousPublicProject(pid),

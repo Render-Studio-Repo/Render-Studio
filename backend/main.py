@@ -8658,6 +8658,21 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
             except Exception as exc2:
                 logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc2)
                 raise HTTPException(422, f"Could not create Part STEP for Fusion: {exc2}") from exc2
+        if cad_service.step_has_assembly_links(step_path):
+            raise HTTPException(
+                422,
+                f"{step_path.name} is still a linked assembly — Extrude/Cut needs a Part STEP. Try Export again.",
+            )
+        try:
+            if cad_service.classify_step_file_kind(step_path) == "faceted_mesh":
+                raise HTTPException(
+                    422,
+                    f"{step_path.name} is a mesh STEP — Extrude/Cut needs editable B-rep. Export the solid STEP.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
         logger.info(
             "Fusion push Part mode project=%s file=%s links=%s",
             project_id,
