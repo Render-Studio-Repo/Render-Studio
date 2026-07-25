@@ -89,9 +89,9 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-cut-native";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-step-part";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
-import { initFusionPanel } from "./fusion-panel.js?v=20260725-cut-native";
+import { initFusionPanel } from "./fusion-panel.js?v=20260725-step-part";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-name-xform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-architect-clip";
@@ -15609,8 +15609,8 @@ function materializeObject(object3d, {
   orientationMode = null,
   styleMode = "auto",
 } = {}) {
-  // Mode 2.0 used to blindly rotateX(-90), which tipped already-Z-up GLBs onto their side.
-  // Smart detector compares as-authored vs ±90° and only tips when upright clearly wins.
+  // Jul 16 path: only tip clear Y-up models (tallest axis Y). Do not footprint-score
+  // ±90° — that was laying bikes/long Z-up assemblies on their side.
   if (orient || orientationMode === "v2-upright") {
     ensureModelZUp(object3d, filename);
     if (orientationMode === "v2-upright") {
@@ -23586,7 +23586,7 @@ async function pushFusionWorkspaceFile(payload) {
       name: payload.itemName || undefined,
       team_id: getSelectedWorkspaceId() || null,
       upload_source: false,
-      step_mode: "native",
+      step_mode: "part",
     }),
   });
   setEditStatus("ok", `Pushed ${result.name || filename || "model"} to Fusion.`);

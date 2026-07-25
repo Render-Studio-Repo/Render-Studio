@@ -1619,7 +1619,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
           filename: getSelectedFile?.() || null,
           team_id: getWorkspaceId?.() || null,
           upload_source: false,
-          step_mode: "native",
+          step_mode: "part",
         }),
       });
       if (!data.ok) {

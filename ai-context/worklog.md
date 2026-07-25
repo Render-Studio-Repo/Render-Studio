@@ -1,3 +1,20 @@
+## 2026-07-25 — Viewport: stop tipping models onto their side
+
+- Bike/long assemblies were loading “tilted left” because the footprint ±90° scorer preferred the side face as the floor.
+- Restored Jul 16 `ensureModelZUp` axis heuristic: only rotate clear Y-up (tallest axis Y); leave already-Z-up models alone.
+- Cache-bust `app.js?v=20260725-upright-jul16`.
+
+---
+
+## 2026-07-25 — Fusion Extrude/Cut: restore Jul 16 native STEP export
+
+- Cut was broken because Export/Fusion kept sending rewritten `*.part.step` via `ensure_fusion_part_step` / `export_step_as_single_part` (and `step_mode=part`).
+- Jul 16 / Jul 21 / Jul 24 production goldens upload **native solid B-rep as-is** — no Part rewrite.
+- Restored that path: push + downloads + `list_exports` prefer native `.step`; demote `*.part.step`; frontend sends `step_mode: native` and `upload_source: false` (still one file).
+- Cache-bust `?v=20260725-cut-native`. Service restarted.
+
+---
+
 ## 2026-07-24 — Mesh look-dev (match img2threejs online)
 
 - Mesh/authored models now use showcase-style look-dev: RoomEnvironment IBL, cinematic key/rim/accent lights, radial dark backdrop, stronger contact shadow.

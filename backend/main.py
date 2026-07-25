@@ -8598,10 +8598,10 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 )
         return result
 
-    # Jul 16 golden: upload native solid B-rep as-is. Never rewrite via
-    # ensure_fusion_part_step / export_step_as_single_part — that breaks Extrude/Cut.
+    # Resolve editable STEP, then optionally flatten to Part for Extrude/Cut.
     step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
-    # If the UI still points at a *.part.step cache, prefer the sibling native STEP.
+    # If the UI still points at a *.part.step cache, prefer the sibling native STEP
+    # first (so we can re-flatten cleanly when step_mode=part).
     stem_raw = step_path.stem
     base_stem = stem_raw
     for _suffix in (".fusionpart", ".part"):
@@ -8643,6 +8643,29 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 f"Refusing to push {step_path.name} — it is not in the visible component list. "
                 "Show the component you want, then export again.",
             )
+
+    step_mode = str(body.get("step_mode") or "part").strip().lower()
+    want_part = step_mode not in {"assembly", "native", "as_is", "linked", "raw"}
+    if want_part:
+        try:
+            step_path = cad_service.ensure_fusion_part_step(path, step_path)
+        except Exception as exc:
+            logger.warning("Fusion Part ensure failed for %s: %s", step_path.name, exc)
+            try:
+                if cad_service.step_has_assembly_links(step_path):
+                    part_path = path / f"{step_path.stem}.part{step_path.suffix.lower()}"
+                    step_path = cad_service.export_step_as_single_part(step_path, part_path)
+            except Exception as exc2:
+                logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc2)
+                raise HTTPException(422, f"Could not create Part STEP for Fusion: {exc2}") from exc2
+        logger.info(
+            "Fusion push Part mode project=%s file=%s links=%s",
+            project_id,
+            step_path.name,
+            cad_service.step_has_assembly_links(step_path),
+        )
+    else:
+        logger.info("Fusion push keeping assembly/native STEP project=%s file=%s", project_id, step_path.name)
 
     upload_stem = step_path.stem
     for suffix in (".fusionpart", ".part"):
@@ -13474,8 +13497,25 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
         except Exception as exc:
             logger.warning("Faceted STEP export failed for %s: %s", safe, exc)
             raise HTTPException(422, f"Could not create faceted STEP: {exc}") from exc
-    # Jul 16 golden: serve on-disk solid STEP as-is. Part rewrite via
-    # ensure_fusion_part_step breaks Extrude/Cut in Fusion.
+    # Explicit Part export (chooser / admin / ?step_mode=part|regular): flatten linked
+    # assemblies so Fusion opens a single Part. Assembly / native / empty = as-is.
+    if (
+        file_path.suffix.lower() in {".step", ".stp"}
+        and step_mode_normalized in {"regular", "part", "single", "fusion"}
+    ):
+        try:
+            part_path = cad_service.ensure_fusion_part_step(project_path, file_path)
+            if part_path.is_file():
+                file_path = part_path
+                stem = file_path.stem
+                for suffix in (".fusionpart", ".part"):
+                    if stem.lower().endswith(suffix):
+                        stem = stem[: -len(suffix)]
+                        break
+                safe = f"{stem}.step"
+        except Exception as exc:
+            logger.warning("Part STEP export failed for %s: %s", safe, exc)
+            raise HTTPException(422, f"Could not create part STEP: {exc}") from exc
     if file_path.suffix.lower() == ".3mf":
         stem = file_path.stem
         for suffix in (".step", ".stp", ".glb", ".gltf", ".stl", ".obj", ".ply", ".off"):

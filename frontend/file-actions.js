@@ -153,11 +153,15 @@ function collapseExportsToSingleStep(items = []) {
   return out;
 }
 
-function stepDownloadUrl(projectId, item) {
+function stepDownloadUrl(projectId, item, mode = "assembly") {
   const name = item?.name;
   if (!name) return item?.url || "";
-  // Native on-disk STEP — no step_mode=part rewrite.
-  return item.url || `/api/projects/${projectId}/files/${encodeURIComponent(name)}`;
+  const base = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(name)}`;
+  // Strip any prior step_mode, then apply the chooser selection.
+  const cleaned = base.replace(/([?&])step_mode=[^&]*/i, "$1").replace(/[?&]$/, "");
+  const sep = cleaned.includes("?") ? "&" : "?";
+  const stepMode = mode === "regular" || mode === "part" || mode === "single" ? "part" : (mode || "assembly");
+  return `${cleaned}${sep}step_mode=${encodeURIComponent(stepMode)}`;
 }
 
 function formatApiError(err) {
@@ -372,13 +376,13 @@ function showStepModeChooser(menu, item, onChoose, anchorEl = null) {
   chooser.className = "file-export-step-chooser";
   chooser.innerHTML = `
     <div class="file-export-step-title">Export STEP as part or assembly?</div>
-    <button type="button" class="file-export-step-choice" data-step-mode="regular">
+    <button type="button" class="file-export-step-choice" data-step-mode="part">
       <strong>Part STEP</strong>
-      <span>Single flattened part for normal CAD import</span>
+      <span>One solid Part (Bodies) — Extrude / Cut in Fusion</span>
     </button>
     <button type="button" class="file-export-step-choice" data-step-mode="assembly">
       <strong>Assembly STEP</strong>
-      <span>Preserve separate bodies/components and appearances</span>
+      <span>Keep linked components / appearances as authored</span>
     </button>
   `;
   chooser.addEventListener("click", (ev) => {
@@ -743,15 +747,34 @@ export async function openFileExportMenu({
     btn.title = item.name;
     btn.addEventListener("click", async () => {
       try {
-        // Native solid STEP (Jul 16) — no Part rewrite.
-        const url = item.format === "step"
-          ? stepDownloadUrl(projectId, item)
-          : (item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`);
+        if (item.format === "step" && item.step_kind === "faceted_mesh") {
+          const ok = window.confirm(
+            "This STEP was generated from mesh triangles, so Fusion may import it but boolean Cut may fail. Download it anyway?"
+          );
+          if (!ok) return;
+        }
+        if (item.format === "step") {
+          showStepModeChooser(menu, item, async (mode, picked) => {
+            try {
+              const chooser = menu.querySelector(".file-export-step-chooser");
+              chooser?.querySelectorAll("button")?.forEach((b) => (b.disabled = true));
+              const title = chooser?.querySelector(".file-export-step-title");
+              if (title) title.textContent = mode === "assembly" ? "Preparing assembly STEP…" : "Preparing Part STEP…";
+              const url = stepDownloadUrl(projectId, picked, mode);
+              const dlName = picked.download_name || fusionDestName || `${modelStem(picked.name)}.step`;
+              await downloadFile(url, dlName);
+              chooser?.remove();
+            } catch (err) {
+              showExportError(menu, err, { title: "Download failed" });
+              menu.querySelector(".file-export-step-chooser")?.querySelectorAll("button")?.forEach((b) => (b.disabled = false));
+            }
+          }, btn);
+          return;
+        }
+        const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
         const dlName = item.format === "3mf"
           ? item.name.replace(/\.3mf$/i, ".3MF")
-          : item.format === "step"
-            ? (item.download_name || fusionDestName || `${modelStem(item.name)}.step`)
-            : item.name;
+          : item.name;
         await downloadFile(url, dlName);
       } catch (err) {
         showExportError(menu, err, { title: "Download failed" });
@@ -825,11 +848,11 @@ export async function openFileExportMenu({
   );
 
   function showFusionStepModeChooser(onChoose, anchorEl = null) {
-    // Jul 16 path: native solid B-rep only — no Part/Assembly picker.
-    onChoose?.("native");
+    // Fusion Part STEP (flattened) so Extrude/Cut works on linked assemblies.
+    onChoose?.("part");
   }
 
-  let fusionStepMode = "native";
+  let fusionStepMode = "part";
 
   const isThreeMfFusionUpload = /\.3mf$/i.test(String(cloudFilename || filename || ""));
   let fusionUploadFilename = isThreeMfFusionUpload
@@ -852,13 +875,13 @@ export async function openFileExportMenu({
     if (bake?.name) fusionUploadFilename = bake.name;
   }
 
-  // Jul 16 working Fusion push: native STEP bytes, no Part rewrite, no companion .py.
+  // Fusion push: Part STEP for Extrude/Cut; no companion .py.
   function fusionPushBody(extra = {}) {
     const body = {
       filename: fusionUploadFilename,
       name: fusionDestName,
       allow_faceted_step: resolvedCloudStepIsFaceted,
-      step_mode: fusionStepMode || "native",
+      step_mode: fusionStepMode || "part",
       upload_source: false,
       ...extra,
     };
@@ -1193,7 +1216,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
   allowFacetedStep = false,
   format = "step",
   allowedFilenames = [],
-  stepMode = "native",
+  stepMode = "part",
 }) {
   menu.querySelector(".file-export-fusion-picker")?.remove();
   const picker = document.createElement("div");
@@ -1728,7 +1751,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
           name: uploadBaseName,
           allow_faceted_step: allowFacetedStep,
           conflict_mode: conflictMode,
-          step_mode: stepMode || "native",
+          step_mode: stepMode || "part",
           // One STEP only — never companion .py (was creating 2 Fusion files).
           upload_source: false,
           ...(isThreeMf ? { format: "3mf" } : {}),
