@@ -176,7 +176,14 @@
 
 ---
 
-## 2026-07-24 — Mesh look-dev (match img2threejs online)
+## 2026-07-25 — Mesh export: Node path fix + Mountain Mike recover
+
+- `@prompt:3e161b4d3a7a` / `a096cb1a` failed after 12 tries: `_find_node` glob was `linux-*/node` but Cursor ships `linux-x64/<hash>/node`. Systemd PATH has no `node`.
+- Fixed glob + `RENDER3D_NODE` systemd drop-in; fail-fast before AI burn; no retry on Node-missing.
+- Recovered `Stylized Cartoon Mountain mountain Mike.glb` from the saved `.mesh.mjs`. Service restarted.
+
+---
+
 
 - Mesh/authored models now use showcase-style look-dev: RoomEnvironment IBL, cinematic key/rim/accent lights, radial dark backdrop, stronger contact shadow.
 - Mode 2.0 / CAD keeps the soft studio light rig (no env map). Switch is automatic via `applyViewportStyle(..., syncViewportLights)`.

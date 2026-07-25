@@ -481,11 +481,15 @@ def run_mesh_img2threejs(
         try:
             export = _run_export(factory_path, glb_path, cancel_check=_canceled)
         except RuntimeError as exc:
-            if "canceled" in str(exc).lower():
+            msg = str(exc)
+            if "canceled" in msg.lower():
                 if last_good_export and glb_path.is_file() and glb_path.stat().st_size > 100:
                     return _success(source, attempts, note="(stopped after last good export)")
                 raise
-            last_error = str(exc)
+            # Tooling missing — do not burn the full repair budget rewriting factories.
+            if "node.js is required" in msg.lower():
+                raise
+            last_error = msg
             continue
         except subprocess.TimeoutExpired:
             last_error = "GLB export timed out."
