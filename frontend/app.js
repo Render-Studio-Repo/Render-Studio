@@ -88,7 +88,7 @@ import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short"
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-one-step";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
-import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
+import { initFusionPanel } from "./fusion-panel.js?v=20260724-fusion-one-step";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-name-xform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-architect-clip";
@@ -3085,16 +3085,10 @@ function readGlobalComposeDraft() {
   }
 }
 
-function writeGlobalComposeDraft(snapshot) {
+function clearGlobalComposeDraft() {
   try {
-    localStorage.setItem(LS_COMPOSE_DRAFT, JSON.stringify(snapshot));
-  } catch {
-    // Images can exceed localStorage quota; keep text/refs rather than failing.
-    try {
-      const { images, ...small } = snapshot || {};
-      localStorage.setItem(LS_COMPOSE_DRAFT, JSON.stringify({ ...small, images: [] }));
-    } catch (_) {}
-  }
+    localStorage.removeItem(LS_COMPOSE_DRAFT);
+  } catch (_) {}
 }
 
 function currentComposeSnapshot() {
@@ -3111,7 +3105,9 @@ function currentComposeSnapshot() {
 function saveActiveModelPromptState() {
   if (!composer || restoringModelPromptState) return;
   const snapshot = currentComposeSnapshot();
-  writeGlobalComposeDraft(snapshot);
+  // Drafts are per-project only — never write a global draft that leaks into
+  // every prompt box across projects.
+  clearGlobalComposeDraft();
   if (!projectId) return;
   const key = modelStateKey();
   const projectKey = projectPromptStateKey();
@@ -3119,6 +3115,36 @@ function saveActiveModelPromptState() {
   const state = readModelPromptState();
   if (key) state[key] = snapshot;
   if (projectKey) state[projectKey] = snapshot;
+  writeModelPromptState(state);
+}
+
+/** Clear the compose box + persisted draft for the open project (after submit). */
+function clearActiveProjectPromptDraft({ clearUi = true } = {}) {
+  if (clearUi && composer) {
+    restoringModelPromptState = true;
+    try {
+      composer.setPromptText?.("");
+      composer.replaceReferences?.([]);
+      resetRefCounter();
+      promptImages = [];
+      renderPromptImages();
+    } finally {
+      restoringModelPromptState = false;
+    }
+    sendCollabPresence?.();
+  }
+  clearGlobalComposeDraft();
+  if (!projectId) return;
+  const state = readModelPromptState();
+  const key = modelStateKey();
+  const projectKey = projectPromptStateKey();
+  if (key) delete state[key];
+  if (projectKey) delete state[projectKey];
+  // Drop any other legacy keys for this project id as well.
+  const prefix = `${projectId}:`;
+  for (const k of Object.keys(state)) {
+    if (k === projectId || k.startsWith(prefix)) delete state[k];
+  }
   writeModelPromptState(state);
 }
 
@@ -3311,11 +3337,14 @@ function dedupeRefsById(refs = []) {
 }
 
 function mergePromptReferenceSnapshots(modelState, projectState, globalState) {
-  const candidates = [modelState, projectState, globalState].filter(Boolean);
+  // Prefer model → project only. Ignore cross-project global drafts.
+  const candidates = [modelState, projectState, globalState].filter((c) => {
+    if (!c) return false;
+    if (projectId && c.project_id && c.project_id !== projectId) return false;
+    return true;
+  });
   candidates.sort((a, b) => Number(b.updated_at || 0) - Number(a.updated_at || 0));
   const newest = candidates[0] || null;
-  // Prefer the newest non-empty prompt so a transient empty clear (project load /
-  // viewport reset) cannot wipe a draft the user typed before refresh.
   let prompt = "";
   for (const c of candidates) {
     if (String(c?.prompt || "").trim()) {
@@ -3345,7 +3374,20 @@ function restoreActiveModelPromptState() {
   const states = readModelPromptState();
   const modelState = key ? states[key] : null;
   const projectState = projectKey ? states[projectKey] : null;
-  const globalState = readGlobalComposeDraft();
+  // Legacy global draft: only restore if it belongs to this project, then migrate away.
+  let globalState = null;
+  const legacy = readGlobalComposeDraft();
+  if (legacy && projectId && legacy.project_id === projectId) {
+    globalState = legacy;
+    // Migrate into per-project store and drop the global key.
+    const state = readModelPromptState();
+    if (projectKey) state[projectKey] = { ...legacy, project_id: projectId };
+    if (key) state[key] = { ...legacy, project_id: projectId, filename: selectedFile || legacy.filename || null };
+    writeModelPromptState(state);
+    clearGlobalComposeDraft();
+  } else if (legacy && (!legacy.project_id || legacy.project_id !== projectId)) {
+    clearGlobalComposeDraft();
+  }
   const merged = mergePromptReferenceSnapshots(modelState, projectState, globalState);
   restoringModelPromptState = true;
   resetRefCounter();
@@ -23501,6 +23543,8 @@ async function pushFusionWorkspaceFile(payload) {
       filename,
       name: payload.itemName || undefined,
       team_id: getSelectedWorkspaceId() || null,
+      upload_source: false,
+      step_mode: "part",
     }),
   });
   setEditStatus("ok", `Pushed ${result.name || filename || "model"} to Fusion.`);
@@ -26979,6 +27023,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         renderPrompt = String(next.prompt || prompt).trim() || prompt;
       }
       await runSceneRenderPrompt(renderPrompt, promptReferencesForSubmit());
+      clearActiveProjectPromptDraft();
     } catch (err) {
       hideViewportOverlay(projectId, { complete: false, force: true });
       const msg = formatUserError(err);
@@ -27275,6 +27320,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         await refreshPromptHistory();
         showAiComposePanel();
         pendingPromptSelectionContext = null;
+        clearActiveProjectPromptDraft();
         return;
       }
       if (data.accepted || data.status === "running") {
@@ -27283,6 +27329,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
           filename: data.filename,
           status: "running",
         });
+        clearActiveProjectPromptDraft();
         if (!generationWatchOverlay || generationWatchPid !== projectId) {
           beginGenerationWatch(projectId, { kind: "prompt", mode: genMode, pendingStart: true });
         }
@@ -27313,7 +27360,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       }
       stopGenerationWatch();
       window.dispatchEvent(new CustomEvent("render3d:model", { detail: { ...data, projectId } }));
-      saveActiveModelPromptState();
+      clearActiveProjectPromptDraft();
       const preservedTexture = captureTextureForGeneratedReplacement(data.filename);
       selectedFile = data.filename;
       await refreshFiles();

@@ -1618,6 +1618,8 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
           folder_label: folder.name || "",
           filename: getSelectedFile?.() || null,
           team_id: getWorkspaceId?.() || null,
+          upload_source: false,
+          step_mode: "part",
         }),
       });
       if (!data.ok) {

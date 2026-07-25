@@ -1,3 +1,21 @@
+## 2026-07-24 — Prompt draft: per-project only, clear on submit
+
+- Global `aiComposeDraft` was restoring the same text into every project’s prompt box.
+- Drafts now save only under `modelPromptState` keyed by project; global key cleared/migrated.
+- Successful Generate / Answer / Render submit clears the compose box and that project’s draft.
+- Cache-bust `app.js?v=20260724-prompt-draft`.
+
+---
+
+## 2026-07-24 — Fusion: one Part STEP, no companion .py
+
+- Two Fusion files came from auto-uploading `*.build123d.py` next to the STEP (`upload_source` defaulted true).
+- Backend now uploads companion source only when `upload_source: true` (explicit). Frontend always sends `false`.
+- Push always flattens linked assemblies to a Part STEP for Extrude/Cut; refuses upload if links remain.
+- Cache-bust `?v=20260724-fusion-one-step`; service restarted.
+
+---
+
 ## 2026-07-24 — Fusion: select root folders to export
 
 - Top-level (root) folders now show an explicit **Select** + **Open** row so you can export into Render3D/etc without opening first.
