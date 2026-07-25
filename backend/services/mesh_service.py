@@ -82,15 +82,22 @@ Rules:
 
 def _find_node() -> str:
     env = (os.environ.get("RENDER3D_NODE") or os.environ.get("NODE_BIN") or "").strip()
-    if env and Path(env).is_file():
+    if env and Path(env).is_file() and os.access(env, os.X_OK):
         return env
     which = shutil.which("node")
-    if which:
+    if which and Path(which).is_file():
         return which
-    cursor_bins = sorted(Path("/home/ubuntu/.cursor-server/bin").glob("linux-*/node"))
-    for candidate in reversed(cursor_bins):
-        if candidate.is_file():
-            return str(candidate)
+    # Cursor-server ships Node under bin/linux-*/<hash>/node (not bin/linux-*/node).
+    root = Path("/home/ubuntu/.cursor-server/bin")
+    candidates: list[Path] = []
+    if root.is_dir():
+        candidates.extend(root.glob("linux-*/*/node"))
+        candidates.extend(root.glob("*/node"))
+    # Prefer newest mtime so upgrades stick.
+    candidates = [c for c in candidates if c.is_file() and os.access(c, os.X_OK)]
+    if candidates:
+        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return str(candidates[0])
     raise RuntimeError("Node.js is required for Mesh mode (img2threejs GLB export).")
 
 
@@ -408,6 +415,12 @@ def run_mesh_img2threejs(
     attempts = 0
     last_good_export: dict[str, Any] | None = None
     budget = max(1, int(max_repairs))
+
+    # Fail fast before burning AI tokens if Node/export tooling is missing.
+    try:
+        _find_node()
+    except RuntimeError as exc:
+        raise RuntimeError(str(exc)) from exc
 
     for attempt in range(budget):
         if _canceled():
