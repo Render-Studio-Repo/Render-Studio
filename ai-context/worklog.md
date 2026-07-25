@@ -1,3 +1,12 @@
+## 2026-07-25 — Mesh generating chrome matches Mode 2.0 orange
+
+- Mesh spinner / canvas banner / timeline pending steps now use the same orange Jake chrome as Mode 2.0 (`timeline-step--v2`, `viewport-spinner--v2`).
+- Mesh button branding (purple→cyan) unchanged — only the in-flight generating UI.
+- Restart behavior already identical: stuck gens are stopped on startup, no auto-resume / no re-bill.
+- Cache-bust `?v=20260725-mesh-orange`.
+
+---
+
 ## 2026-07-25 — Chat images open in-app lightbox
 
 - Project chat image thumbs were `<a target="_blank">` and opened a new browser tab.

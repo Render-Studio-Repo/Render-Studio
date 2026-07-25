@@ -971,7 +971,8 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       opts.variant,
       opts.message,
     ];
-    return values.some((value) => /\b(v2|2\.0)\b/i.test(String(value || "")));
+    // Mode 2.0 + Mesh share the orange Jake-style spinner (long runs / look-dev).
+    return values.some((value) => /\b(v2|2\.0|mesh)\b/i.test(String(value || "")));
   }
 
   function isFusionOverlay(opts = {}) {

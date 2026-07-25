@@ -2026,7 +2026,7 @@ export function createWorkspaceBrowser({
     if (kind === "render" || kind === "scene_render" || kind === "render_region_edit") return "render";
     const mode = String(gen?.mode || gen?.prompt_mode || gen?.promptMode || "").toLowerCase();
     if (mode === "render") return "render";
-    if (["v2", "2.0", "2", "fusion", "architect", "fusion360", "fusion-360", "architecture"].includes(mode)) {
+    if (["v2", "2.0", "2", "mesh", "fusion", "architect", "fusion360", "fusion-360", "architecture"].includes(mode)) {
       return "v2";
     }
     const searchable = String([
@@ -2035,7 +2035,7 @@ export function createWorkspaceBrowser({
       gen?.prompt,
       gen?.progress?.label,
     ].filter(Boolean).join(" "));
-    if (/\b(v2|2\.0)\b/i.test(searchable)) return "v2";
+    if (/\b(v2|2\.0|mesh)\b/i.test(searchable)) return "v2";
     if (/\bfusion\b/i.test(searchable)) return "v2";
     if (/\barchitect(?:ure)?\b/i.test(searchable)) return "v2";
     return "standard";

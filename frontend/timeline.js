@@ -245,7 +245,9 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         const promptMode = promptModeForEntry(e);
         if (kind === "restore") btn.classList.add("timeline-step--restore");
         if (kind === "prompt" || kind === "build") btn.classList.add("timeline-step--prompt");
-        if (promptMode === "v2" || promptMode === "2.0") btn.classList.add("timeline-step--v2");
+        if (promptMode === "v2" || promptMode === "2.0" || promptMode === "mesh" || promptMode === "fusion") {
+          btn.classList.add("timeline-step--v2");
+        }
         if (kind === "render" || kind === "scene_render" || promptMode === "render") btn.classList.add("timeline-step--render");
         if (!entryIsRestorable(e)) btn.classList.add("timeline-step--history-only");
         if (e.pending || e.id === "__pending_prompt__") btn.classList.add("timeline-step--pending");

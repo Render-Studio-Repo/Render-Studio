@@ -65,7 +65,7 @@ import {
   setObjectTransparent,
 } from "./scene-style.js?v=20260725-mobile-lit";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
-import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
+import { createTimelineUI } from "./timeline.js?v=20260725-mesh-orange";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260724-opus5-kimi-grok";
@@ -73,7 +73,7 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260724-opus5-kimi-grok";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260725-mesh-orange";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260724-x-config";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
@@ -88,7 +88,7 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260725-kimi-stick";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260725-mesh-orange";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-unlink-howto";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
@@ -724,8 +724,10 @@ function syncCanvasGenerationUi() {
     generationWatchOverlay?.message
     || "Generating 3D model in background — safe to switch tabs or refresh.";
   const bannerMode = generationPromptMode(generationWatchOverlay, viewportOverlayState?.promptMode);
-  banner.classList.toggle("canvas-generation-banner--mesh", bannerMode === "mesh" || bannerMode === "fusion");
-  banner.classList.toggle("canvas-generation-banner--v2", bannerMode === "v2");
+  // Mesh uses the same orange Jake chrome as Mode 2.0 (spinner + banner).
+  const jakeChrome = bannerMode === "v2" || bannerMode === "mesh" || bannerMode === "fusion";
+  banner.classList.toggle("canvas-generation-banner--mesh", false);
+  banner.classList.toggle("canvas-generation-banner--v2", jakeChrome);
   if (messageEl) {
     messageEl.textContent = msg.replace(/\s*\(safe to refresh\)/i, " — safe to switch tabs or refresh");
   }
