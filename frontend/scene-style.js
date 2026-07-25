@@ -1,6 +1,11 @@
 import * as THREE from "three";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import {
+  applyLookdevMobileFallback,
+  isConstrainedWebGLViewport,
+  softenAuthoredEnvMaps,
+} from "./mobile-viewport-lighting.js?v=20260725-mobile-lit";
 
 /**
  * Fusion / Onshape-style dark workspace theme.
@@ -441,17 +446,25 @@ export function setViewportShadingMode(mode, { scene = _litScene, renderer = _li
     if (env) {
       scene.environment = env;
       if ("environmentIntensity" in scene) scene.environmentIntensity = 1.05;
+    } else {
+      scene.environment = null;
     }
     if (!_lookdevBgTexture) _lookdevBgTexture = _makeLookdevGradientBackground();
     scene.background = _lookdevBgTexture || new THREE.Color(FUSION.lookdevCanvas);
     if (_litRenderer) {
       _litRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-      _litRenderer.toneMappingExposure = 1.0;
+      _litRenderer.toneMappingExposure = isConstrainedWebGLViewport() ? 1.15 : 1.0;
     }
     if (shadowFloor?.material) {
       shadowFloor.material.opacity = FUSION.lookdevShadowOpacity;
       shadowFloor.material.needsUpdate = true;
     }
+    // Mobile / missing IBL: raise fill lights so metal PBR isn't pure black.
+    applyLookdevMobileFallback({
+      scene,
+      lookdevGroup: _lookdevLightGroup,
+      hasEnv: !!env,
+    });
   } else {
     scene.environment = null;
     if ("environmentIntensity" in scene) scene.environmentIntensity = 1;
@@ -721,7 +734,10 @@ export function applyViewportStyle(object3d, { filename = "", styleMode = "auto"
     || (mode === "auto" && prefersAuthoredShading(object3d, filename));
   if (useAuthored) {
     applyAuthoredStyle(object3d);
-    if (syncViewportLights) setViewportShadingMode("lookdev");
+    if (syncViewportLights) {
+      setViewportShadingMode("lookdev");
+      softenAuthoredEnvMaps(object3d, { hasEnv: !!_litScene?.environment });
+    }
     return object3d;
   }
   applyCadStyle(object3d);

@@ -5,6 +5,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { installTrackballPointerSafety } from "./trackball-pointer-safety.js?v=20260725-orbit-up";
 import {
   applyBoxProjectionUvs as pbrBoxProjectionUvs,
   applyCameraProjectedUvs,
@@ -62,7 +63,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260725-bright-cad";
+} from "./scene-style.js?v=20260725-mobile-lit";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -2106,13 +2107,21 @@ function createFallbackRenderer(error) {
 let renderer;
 let webglAvailable = true;
 try {
+  const mobileGl = (() => {
+    try {
+      return !!window.matchMedia?.("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)")?.matches;
+    } catch {
+      return false;
+    }
+  })();
   renderer = new THREE.WebGLRenderer({
-    antialias: true,
-    powerPreference: "high-performance",
+    antialias: !mobileGl,
+    powerPreference: mobileGl ? "default" : "high-performance",
     preserveDrawingBuffer: true,
-    logarithmicDepthBuffer: true,
+    // Logarithmic depth is costly / flaky on some mobile GPUs.
+    logarithmicDepthBuffer: !mobileGl,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobileGl ? 2 : 2.5));
   setupRenderer(renderer);
 } catch (err) {
   webglAvailable = false;
@@ -2337,6 +2346,7 @@ controls.panSpeed     = 0.8;
 controls.staticMoving = true;   // no inertia (matches enableDamping=false)
 controls.minDistance  = 0.05;
 controls.maxDistance  = Infinity;
+const trackballPointerSafety = installTrackballPointerSafety(controls, renderer.domElement);
 
 const LEFT_DRAG_MODE_KEY = "render3d:left-drag-mode:v1";
 const MOUSE_CONTROL_PRESET_KEY = "render3d:mouse-control-preset:v1";
@@ -10450,16 +10460,24 @@ function startExplodedOrbit() {
 function pauseExplodedOrbitFromUser() {
   if (!explodedOrbit || !orbitShouldRun()) return;
   explodedOrbit.paused = true;
-  // After the user finishes dragging, resume from the new camera pose.
+  // Only resume after the pointer is released (see scheduleExplodedOrbitResume).
+  window.clearTimeout(pauseExplodedOrbitFromUser._timer);
+}
+
+function scheduleExplodedOrbitResume() {
+  if (!orbitShouldRun()) return;
   window.clearTimeout(pauseExplodedOrbitFromUser._timer);
   pauseExplodedOrbitFromUser._timer = window.setTimeout(() => {
     if (orbitShouldRun()) startExplodedOrbit();
-  }, 1200);
+  }, 1400);
 }
 
 renderer?.domElement?.addEventListener("pointerdown", () => {
   pauseExplodedOrbitFromUser();
 });
+// Resume auto-orbit only after release — not mid-drag (old timer fired 1.2s after down).
+window.addEventListener("pointerup", scheduleExplodedOrbitResume, true);
+window.addEventListener("pointercancel", scheduleExplodedOrbitResume, true);
 
 async function setViewportOrbitMode(mode) {
   const next = mode === "assembled" || mode === "exploded" ? mode : "off";

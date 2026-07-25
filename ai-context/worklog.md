@@ -1,3 +1,21 @@
+## 2026-07-25 — Viewport: stop orbit continuing after mouse-up
+
+- Trackball could stay in ROTATE if pointerup was missed / controls disabled mid-drag — view kept following the cursor.
+- New `trackball-pointer-safety.js`: force-end drag on window pointerup/cancel, blur, `buttons===0` while moving, and when `controls.enabled` flips off.
+- Exploded/assembled auto-orbit: resume timer now starts on pointer**up**, not pointerdown (so long drags don’t restart orbit mid-hold).
+- Cache-bust `app.js?v=20260725-orbit-up`.
+
+---
+
+## 2026-07-25 — Mobile: models no longer pure black in look-dev
+
+- Mesh look-dev used ambient 0.05 + RoomEnvironment IBL; on phones IBL often fails → metal PBR shades black.
+- New `mobile-viewport-lighting.js`: on mobile or missing env, bump hemi/ambient/key/fill, show CAD fill if no IBL, soften envMapIntensity, smaller shadow maps.
+- Mobile WebGL: `powerPreference: default`, no logarithmic depth, lighter antialias.
+- Cache-bust `app.js` / `scene-style.js` `?v=20260725-mobile-lit`.
+
+---
+
 ## 2026-07-25 — Admin Recent Projects sort
 
 - Sort dropdown on Admin → Recent Projects: date (newest/oldest), name A–Z/Z–A, person A–Z/Z–A, cost, files.

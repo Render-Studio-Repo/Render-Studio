@@ -1,4 +1,4 @@
-"""Prepaid credits for users borrowing Render3D platform AI keys (OpenAI + Claude)."""
+"""Prepaid credits for users borrowing Render3D platform AI keys (OpenAI + Claude + Kimi)."""
 
 from __future__ import annotations
 
@@ -110,6 +110,19 @@ def platform_anthropic_configured() -> bool:
     return bool((getattr(settings, "anthropic_api_key", None) or "").strip())
 
 
+def platform_kimi_configured() -> bool:
+    return bool((getattr(settings, "kimi_api_key", None) or "").strip())
+
+
+def normalize_platform_provider(provider: str | None) -> str:
+    p = str(provider or "openai").strip().lower()
+    if p in {"claude", "anthropic"}:
+        return "anthropic"
+    if p in {"kimi", "moonshot"}:
+        return "kimi"
+    return "openai"
+
+
 def platform_models() -> list[dict[str, str]]:
     models: list[tuple[str, str]] = []
     if platform_openai_configured():
@@ -135,6 +148,16 @@ def platform_models() -> list[dict[str, str]]:
                 ("anthropic", "claude-4.6-sonnet"),
             ]
         )
+    if platform_kimi_configured():
+        models.extend(
+            [
+                ("kimi", getattr(settings, "kimi_model", None) or "kimi-k2.6"),
+                ("kimi", getattr(settings, "kimi_model_quality", None) or "kimi-k3"),
+                ("kimi", "kimi-k2.6"),
+                ("kimi", "kimi-k2.5"),
+                ("kimi", "kimi-k3"),
+            ]
+        )
     seen: set[tuple[str, str]] = set()
     out: list[dict[str, str]] = []
     for provider, model in models:
@@ -150,19 +173,24 @@ def _platform_model_matches_provider(model: str | None, provider: str) -> bool:
     m = str(model or "").strip().lower()
     if not m:
         return True
-    prov = "anthropic" if provider in {"anthropic", "claude"} else "openai"
-    is_openai = m.startswith(("gpt", "o1", "o3", "chatgpt"))
+    prov = normalize_platform_provider(provider)
     if prov == "anthropic":
-        return not is_openai
-    return is_openai
+        return not (m.startswith(("gpt", "o1", "o3", "chatgpt")) or m.startswith("kimi"))
+    if prov == "kimi":
+        return m.startswith("kimi") or "moonshot" in m
+    return m.startswith(("gpt", "o1", "o3", "chatgpt"))
 
 
 def _default_platform_model(provider: str, *, speed: str = "fast") -> str:
-    prov = "anthropic" if provider in {"anthropic", "claude"} else "openai"
+    prov = normalize_platform_provider(provider)
     if prov == "anthropic":
         if speed == "fast":
             return str(settings.anthropic_model or "claude-sonnet-4-5")
         return str(getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8")
+    if prov == "kimi":
+        if speed == "fast":
+            return str(getattr(settings, "kimi_model", None) or "kimi-k2.6")
+        return str(getattr(settings, "kimi_model_quality", None) or "kimi-k3")
     # Never default a provider switch to Pro — Quality mode can still pick Pro when OpenAI is active.
     return str(settings.openai_model or "gpt-5.5")
 
@@ -174,32 +202,34 @@ def resolve_platform_credentials(
     provider: str | None = None,
     model: str | None = None,
 ) -> dict[str, str] | None:
-    """Pick Render3D platform OpenAI/Claude credentials for a credit account.
+    """Pick Render3D platform OpenAI/Claude/Kimi credentials for a credit account.
 
-    ``provider`` / ``model`` let a prompt request pick Claude or OpenAI explicitly
+    ``provider`` / ``model`` let a prompt request pick a shared provider explicitly
     instead of only the account's single preferred shared model.
     """
-    preferred = str(
+    preferred = normalize_platform_provider(
         provider or (account or {}).get("platform_provider") or "openai"
-    ).strip().lower()
-    if preferred in {"claude", "anthropic"}:
-        preferred = "anthropic"
-    else:
-        preferred = "openai"
+    )
     pinned = str(model if model is not None else ((account or {}).get("platform_model") or "")).strip()
     openai_ok = platform_openai_configured()
     anthropic_ok = platform_anthropic_configured()
+    kimi_ok = platform_kimi_configured()
+    configured = {
+        "openai": openai_ok,
+        "anthropic": anthropic_ok,
+        "kimi": kimi_ok,
+    }
     # Only fall back across providers when the caller did not pin a provider.
-    if provider is None:
-        if preferred == "anthropic" and not anthropic_ok and openai_ok:
-            preferred = "openai"
-        elif preferred != "anthropic" and not openai_ok and anthropic_ok:
-            preferred = "anthropic"
+    if provider is None and not configured.get(preferred):
+        for candidate in ("openai", "anthropic", "kimi"):
+            if configured.get(candidate):
+                preferred = candidate
+                break
+
     if preferred == "anthropic":
         if not anthropic_ok:
             return None
-        # Ignore OpenAI model pins when Claude was requested.
-        if pinned and (pinned.startswith("gpt") or pinned.startswith("o1") or pinned.startswith("o3")):
+        if pinned and not _platform_model_matches_provider(pinned, "anthropic"):
             pinned = ""
         if pinned:
             chosen = pinned
@@ -215,9 +245,30 @@ def resolve_platform_credentials(
             "key_id": "anthropic",
             "source": "platform",
         }
+
+    if preferred == "kimi":
+        if not kimi_ok:
+            return None
+        if pinned and not _platform_model_matches_provider(pinned, "kimi"):
+            pinned = ""
+        if pinned:
+            chosen = pinned
+        elif speed == "fast":
+            chosen = getattr(settings, "kimi_model", None) or "kimi-k2.6"
+        else:
+            chosen = getattr(settings, "kimi_model_quality", None) or "kimi-k3"
+        return {
+            "provider": "kimi",
+            "model": chosen,
+            "api_key": settings.kimi_api_key.strip(),
+            "shared_key_name": "Render3D Kimi",
+            "key_id": "kimi",
+            "source": "platform",
+        }
+
     if not openai_ok:
         return None
-    if pinned and not (pinned.startswith("gpt") or pinned.startswith("o1") or pinned.startswith("o3")):
+    if pinned and not _platform_model_matches_provider(pinned, "openai"):
         pinned = ""
     if pinned and speed != "fast":
         chosen = pinned
