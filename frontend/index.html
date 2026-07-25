@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260724-ai-noscroll" />
+  <link rel="stylesheet" href="/styles.css?v=20260724-model-short" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
   <link rel="stylesheet" href="/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
@@ -1611,7 +1611,10 @@
                   <button type="button" class="prompt-mode-btn prompt-mode-btn--v2 active" data-prompt-mode="v2" aria-describedby="prompt-mode-v2-tip">2.0</button>
                 </span>
                 <span class="prompt-mode-wrap" data-prompt-mode-tip="mesh">
-                  <button type="button" class="prompt-mode-btn prompt-mode-btn--mesh" data-prompt-mode="mesh" aria-describedby="prompt-mode-mesh-tip">Mesh</button>
+                  <button type="button" class="prompt-mode-btn prompt-mode-btn--mesh" data-prompt-mode="mesh" aria-describedby="prompt-mode-mesh-tip">
+                    <img class="prompt-mode-mesh-logo" src="/assets/img2threejs-logo.svg?v=1" width="14" height="14" alt="" aria-hidden="true" />
+                    Mesh
+                  </button>
                 </span>
                 <span class="prompt-mode-wrap prompt-electronics-wrap" id="prompt-electronics-wrap">
                   <button
@@ -1643,11 +1646,14 @@
               </div>
               <div id="prompt-mode-mesh-tip" class="prompt-spice-tip prompt-mode-tip" role="tooltip" hidden>
                 <div class="prompt-spice-tip-top">
-                  <span class="prompt-spice-tip-badge prompt-mode-tip-badge--mesh">Mesh</span>
-                  <strong class="prompt-spice-tip-title">Procedural Three.js mesh</strong>
+                  <span class="prompt-spice-tip-badge prompt-mode-tip-badge--mesh">
+                    <img src="/assets/img2threejs-logo.svg?v=1" width="12" height="12" alt="" aria-hidden="true" />
+                    img2threejs
+                  </span>
+                  <strong class="prompt-spice-tip-title">Rebuild as procedural Three.js</strong>
                 </div>
                 <p class="prompt-spice-tip-body">
-                  Rebuilds a reference image (or text prompt) as a code-only Three.js model — primitives, materials, hierarchy — then loads the GLB in the viewport (img2threejs).
+                  Uses the img2threejs pipeline: code-only primitives + PBR materials + hierarchy from a reference image or text — then loads the GLB in the viewport. Not CAD / STEP.
                 </p>
               </div>
               <div id="prompt-electronics-tip" class="prompt-spice-tip prompt-electronics-tip" role="tooltip" hidden>
@@ -2982,7 +2988,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260724-new-v2"></script>
+  <script type="module" src="/app.js?v=20260724-model-short"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

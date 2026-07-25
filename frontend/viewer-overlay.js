@@ -151,10 +151,61 @@ function compactOverlayTokens(value) {
 function shortOverlayModel(model) {
   const raw = String(model || "").trim();
   if (!raw) return "";
-  return raw
+  const cleaned = raw
     .replace(/^openai\//i, "")
     .replace(/^anthropic\//i, "")
-    .replace(/^models\//i, "");
+    .replace(/^models\//i, "")
+    .split(",")[0]
+    .trim();
+  if (!cleaned) return "";
+  const lower = cleaned.toLowerCase();
+  const KNOWN = {
+    "claude-opus-5": "Opus 5",
+    "claude-fable-5": "Fable 5",
+    "claude-sonnet-4-5": "Sonnet 4.5",
+    "claude-opus-4-8": "Opus 4.8",
+    "claude-4.6-sonnet": "Sonnet 4.6",
+    "claude-4.6-opus": "Opus 4.6",
+    "claude-opus-4-7": "Opus 4.7",
+    "claude-opus-4-6": "Opus 4.6",
+    "claude-opus-4-5": "Opus 4.5",
+    "claude-sonnet-4-6": "Sonnet 4.6",
+    "claude-haiku-4-5": "Haiku 4.5",
+    "gpt-5.5": "GPT-5.5",
+    "gpt-5.5-pro": "GPT-5.5 Pro",
+    "gpt-5.3-codex": "Codex",
+    "gpt-5.6-sol": "GPT-5.6 Sol",
+    "kimi-k2.6": "Kimi K2.6",
+    "kimi-k2.5": "Kimi K2.5",
+    "kimi-k3": "Kimi K3",
+    "grok-4.5": "Grok 4.5",
+  };
+  if (KNOWN[lower]) return KNOWN[lower];
+  // Drop provider prefixes so "claude-fable-5" → "Fable 5", not "claude-fa…"
+  let name = cleaned
+    .replace(/^claude[-_]?/i, "")
+    .replace(/^openai[-_]?/i, "")
+    .replace(/^anthropic[-_]?/i, "")
+    .replace(/^gpt[-_]?/i, "GPT-");
+  if (/^fable/i.test(name)) {
+    const m = name.match(/fable[-_ ]?(\d+(?:\.\d+)?)/i);
+    return m ? `Fable ${m[1]}` : "Fable";
+  }
+  if (/opus/i.test(name)) {
+    const m = name.match(/opus[-_ ]?(\d+(?:\.\d+)?)/i);
+    return m ? `Opus ${m[1]}` : "Opus";
+  }
+  if (/sonnet/i.test(name)) {
+    const m = name.match(/sonnet[-_ ]?(\d+(?:\.\d+)?)/i);
+    return m ? `Sonnet ${m[1]}` : "Sonnet";
+  }
+  if (/haiku/i.test(name)) {
+    const m = name.match(/haiku[-_ ]?(\d+(?:\.\d+)?)/i);
+    return m ? `Haiku ${m[1]}` : "Haiku";
+  }
+  name = name.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  // Title-case short tokens
+  return name.replace(/\b([a-z])/g, (ch) => ch.toUpperCase());
 }
 
 function usageFromJob(job) {

@@ -282,7 +282,7 @@ def _review_factory(
     except Exception as exc:
         # Soft-open on reviewer failure — keep exported mesh (2.0 still iterates on hard gates;
         # Mesh treats review crashes as pass-with-warning so a good export is not discarded).
-        return True, f"Reviewer unavailable ({exc}); accepting export.", None if not isinstance(exc, dict) else exc
+        return True, f"Reviewer unavailable ({exc}); accepting export.", None
 
     data = _parse_review(text or "")
     passed = bool(data.get("pass"))
@@ -312,12 +312,23 @@ def run_mesh_img2threejs(
     from backend.services.project_store import file_stem_from_prompt
 
     project_path = Path(project_path)
-    base = Path(previous_source_name).stem if previous_source_name else ""
+    ctx = context or {}
+    target_mode = str(ctx.get("target_mode") or "").strip().lower()
+    base_filename = str(ctx.get("base_filename") or "").strip() or None
+    is_edit = target_mode == "edit" or bool(previous_source_name and base_filename)
+
+    # Prefer the selected object stem on Edit so we overwrite that GLB instead of
+    # inventing a new prompt-derived name.
+    base = ""
+    if previous_source_name:
+        base = Path(previous_source_name).stem
+    if not base and is_edit and base_filename:
+        base = Path(base_filename).stem
     if base.endswith(".mesh"):
         base = base[: -len(".mesh")]
     if not base:
         base = file_stem_from_prompt(prompt, max_len=48) or "mesh_model"
-    if base.lower() in {"create", "make", "build", "design", "new model", "mesh"}:
+    if not is_edit and base.lower() in {"create", "make", "build", "design", "new model", "mesh"}:
         better = file_stem_from_prompt(prompt, max_len=48)
         if better and better.lower() not in {"new model", "mesh"}:
             base = better
@@ -339,7 +350,8 @@ def run_mesh_img2threejs(
         return bool(cancel_check and cancel_check())
 
     def _success(source: str, attempts: int, note: str | None = None) -> dict[str, Any]:
-        msg = f"Built {base} as a procedural Three.js mesh (img2threejs)."
+        action = "Updated" if is_edit else "Built"
+        msg = f"{action} {base} as a procedural Three.js mesh (img2threejs)."
         if note:
             msg = f"{msg} {note}"
         _progress(progress_callback, "done", 100, "Mesh ready")
@@ -367,7 +379,14 @@ def run_mesh_img2threejs(
     _progress(progress_callback, "analyze", 8, "Mesh · analyzing reference…")
 
     has_image = bool(images)
+    edit_line = (
+        f"EDIT selected object `{base_filename or glb_name}` — revise the existing procedural mesh in place; "
+        "keep the same overall identity unless the user asks to change it.\n"
+        if is_edit
+        else "NEW object — create a fresh procedural mesh (do not reuse unrelated project parts).\n"
+    )
     user_brief = (
+        f"{edit_line}"
         f"User request:\n{prompt.strip()}\n\n"
         f"{'A reference image is attached — match proportions, silhouette, and colours.' if has_image else 'No image attached — invent a clean hard-surface prop from the description.'}\n"
         f"Write {factory_name} as a complete ES module factory (export default function createModel(THREE))."
@@ -376,6 +395,11 @@ def run_mesh_img2threejs(
         user_brief += (
             "\n\nExisting factory to revise (keep structure where possible):\n"
             f"```js\n{previous_source[:12000]}\n```"
+        )
+    elif is_edit:
+        user_brief += (
+            "\n\nNo prior Three.js factory was found for this selection — rebuild a new factory that "
+            "replaces the selected object while matching the edit request."
         )
 
     source = previous_source or ""

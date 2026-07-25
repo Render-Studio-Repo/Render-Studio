@@ -1,4 +1,57 @@
-## 2026-07-24 — New projects default to Mode 2.0
+## 2026-07-24 — Fusion export: one button + fit viewport
+
+- Fusion folder UI had many Export buttons (per-folder + “export here” + bottom submit) and the menu spilled past the screen.
+- Folders now **Select** only; a single bottom **Export to Fusion** submits. Picker body scrolls; menu max-height clamped to the viewport.
+- Cache-bust: `app.js` / `file-actions.js` / `styles.css` `?v=20260724-fusion-one-btn`.
+
+---
+
+## 2026-07-24 — AI compose panel: no outer scrollbar
+
+- Right AI panel scrolled as a whole (`overflow: visible` on sidebar/compose unlocked for old in-panel mode tips).
+- Removed that unlock (tips are body-portaled). Chrome stays put; only the prompt editor scrolls. Compacted cost thumb + toolbar so typical heights fit without an outer bar.
+- Cache-bust: `styles.css?v=20260724-ai-noscroll`.
+
+---
+
+## 2026-07-24 — Mesh Edit selected keeps the selected stem
+
+- Target Edit/New already sent `target_mode` + `base_filename` for 2.0/Mesh.
+- Mesh Edit without a `.mesh.mjs` used to invent a new prompt stem; now keeps the selected object stem and overwrites that GLB. New still creates a fresh name.
+
+---
+
+## 2026-07-24 — Overlay model label: Fable 5 not claude-fa…
+
+- Viewport usage footer showed raw ids (`claude-fable-5`) and ellipsized to `claude-fa…`.
+- `shortOverlayModel` now strips provider prefixes and uses short names (`Fable 5`, `Opus 5`, `GPT-5.5`).
+- Cache-bust: `viewer-overlay.js` / `app.js` / `styles.css` `?v=20260724-model-short`.
+
+---
+
+## 2026-07-24 — Mesh tab uses img2threejs coloring (not CAD cyan)
+
+- Mesh prompt control looked like Fusion/CAD sky-blue; restyled to img2threejs logo palette (purple `#8b5cff` → cyan `#38e8ff`) with their cube logo on the button + tip badge.
+- Generation banner for Mesh matches the same look. Tip copy clarifies “not CAD / STEP”.
+- Asset: `frontend/assets/img2threejs-logo.svg`. Cache-bust: `styles.css?v=20260724-img2threejs-look`.
+
+---
+
+## 2026-07-24 — Electronics toggle always visible in prompt mode row
+
+- Electronics was hidden whenever Mesh (or Render) was selected, which made it look removed after Fusion → Mesh.
+- Toggle stays visible next to Render / 2.0 / Mesh; `model_electronics` still only applies on 2.0 / Architect generates.
+- Cache-bust: `app.js?v=20260724-electronics-back`.
+
+---
+
+## 2026-07-24 — Mesh continues like 2.0 (review loop) + bike recovery
+
+- Prompt `1454cceb8347` / trace `d211cfc2` on `4162ee20` was **canceled** mid-try (`Stopped: Mesh cancel UI fix`) right after the factory write, before GLB export — not an AI failure. Factory was valid; exported recovered bike GLB into the project.
+- Mesh pipeline now mirrors 2.0: write → export → brief review → repair (budget 12), Mesh checklist (not CAD), finish current export / ship last-good GLB on stop.
+- Files: `backend/services/mesh_service.py`, `generation_service.py` checklist, `design_service.py` repair budget. Service restarted.
+
+---
 
 - Creating a project kept the prior session’s prompt mode (e.g. Mesh/Render).
 - `createNewProject` / `createNewProjectInFolder` now call `applyPromptModeUI(DEFAULT_PROMPT_MODE)` (`v2`) after load.

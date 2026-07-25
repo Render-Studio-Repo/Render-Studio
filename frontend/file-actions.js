@@ -1182,29 +1182,31 @@ async function showFusionExportPicker(menu, anchorBtn, {
   picker.innerHTML = `
     <button type="button" class="file-export-fusion-close" data-fusion-close aria-label="Close Fusion export">&times;</button>
     <div class="file-export-fusion-title">Export to Fusion 360</div>
-    <p class="muted small">Uploads the native editable solid STEP (for Extrude / Cut). Pick a hub, project, and folder — you can export into the folder you’re viewing.</p>
-    ${allowFacetedStep && !isThreeMf ? '<p class="status error small">Only faceted mesh STEP is available for this model. Export will work, but Fusion boolean Cut may be limited.</p>' : ""}
-    ${isThreeMf ? '<p class="muted small">This file is 3MF — it will upload as 3MF for Fusion mesh import.</p>' : ""}
-    <label class="file-export-cloud-field">
-      <span>Hub</span>
-      <select data-fusion-hub disabled><option>Loading hubs...</option></select>
-    </label>
-    <div class="file-export-cloud-field">
-      <span>Project</span>
-      <div class="file-export-fusion-project-tools">
-        <input type="search" data-fusion-project-search placeholder="Search Fusion projects…" autocomplete="off" disabled />
-        <select data-fusion-project class="file-export-fusion-project-select" disabled aria-label="Fusion project">
-          <option value="">Select a hub first</option>
-        </select>
+    <div class="file-export-fusion-picker-body">
+      <p class="muted small file-export-fusion-lead">Pick a hub, project, and folder, then export once.</p>
+      ${allowFacetedStep && !isThreeMf ? '<p class="status error small">Only faceted mesh STEP is available for this model. Export will work, but Fusion boolean Cut may be limited.</p>' : ""}
+      ${isThreeMf ? '<p class="muted small">This file is 3MF — it will upload as 3MF for Fusion mesh import.</p>' : ""}
+      <label class="file-export-cloud-field">
+        <span>Hub</span>
+        <select data-fusion-hub disabled><option>Loading hubs...</option></select>
+      </label>
+      <div class="file-export-cloud-field">
+        <span>Project</span>
+        <div class="file-export-fusion-project-tools">
+          <input type="search" data-fusion-project-search placeholder="Search Fusion projects…" autocomplete="off" disabled />
+          <select data-fusion-project class="file-export-fusion-project-select" disabled aria-label="Fusion project">
+            <option value="">Select a hub first</option>
+          </select>
+        </div>
+        <div class="file-export-fusion-project-grid" data-fusion-project-grid>
+          <p class="muted small">Select a hub to load projects.</p>
+        </div>
       </div>
-      <div class="file-export-fusion-project-grid" data-fusion-project-grid>
-        <p class="muted small">Select a hub to load projects.</p>
-      </div>
-    </div>
-    <div class="file-export-cloud-field">
-      <span>Folder</span>
-      <div class="file-export-fusion-folder-browser" data-fusion-folder-browser>
-        <p class="muted small">Select a project first.</p>
+      <div class="file-export-cloud-field">
+        <span>Folder</span>
+        <div class="file-export-fusion-folder-browser" data-fusion-folder-browser>
+          <p class="muted small">Select a project first.</p>
+        </div>
       </div>
     </div>
     <button type="button" class="btn primary file-export-fusion-submit" disabled>Upload ${uploadLabel} to Fusion</button>
@@ -1234,14 +1236,6 @@ async function showFusionExportPicker(menu, anchorBtn, {
   let lastFolderItems = [];
   let autoSelectFolders = true;
   let restoringFolderPath = null;
-
-  const resetExportHereBtn = () => {
-    const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
-    if (!hereBtn || !currentFolder) return;
-    hereBtn.disabled = false;
-    hereBtn.classList.remove("file-export-fusion-use-current--success");
-    hereBtn.textContent = `Export to Fusion · ${currentFolder.name || "this folder"}`;
-  };
 
   const askReplaceOrNew = (existingName) => new Promise((resolve) => {
     menu.querySelector(".file-export-fusion-conflict")?.remove();
@@ -1358,22 +1352,6 @@ async function showFusionExportPicker(menu, anchorBtn, {
     submit.classList.add("file-export-fusion-submit--success");
     submit.textContent = label;
     submit.disabled = true;
-    const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
-    if (hereBtn) {
-      hereBtn.classList.add("file-export-fusion-use-current--success");
-      hereBtn.textContent = label;
-      hereBtn.disabled = true;
-    }
-    folderBrowser.querySelectorAll("[data-folder-select]").forEach((btn) => {
-      const id = btn.dataset.folderSelect;
-      if (id && id === selectedFolderId) {
-        btn.classList.add("file-export-fusion-folder-pick--success");
-        btn.textContent = "✓";
-        btn.disabled = true;
-      } else {
-        btn.disabled = true;
-      }
-    });
   };
 
   const exportToFolder = (folder) => {
@@ -1384,14 +1362,8 @@ async function showFusionExportPicker(menu, anchorBtn, {
     autoSelectFolders = false;
     restoringFolderPath = null;
     setSelectedFolder(folder, { quiet: true });
-    // Don't claim “Uploading…” yet — collision check / Replace dialog may run first.
-    setStatus(`Preparing export to “${folder.name || "folder"}”…`);
-    const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
-    if (hereBtn) {
-      hereBtn.disabled = true;
-      hereBtn.textContent = "Preparing…";
-    }
-    submit.click();
+    setStatus(`Ready: “${folder.name || "folder"}”. Tap Export to Fusion below.`);
+    renderFolderBrowser(lastFolderList, { items: lastFolderItems });
   };
 
   const renderProjectGrid = () => {
@@ -1498,12 +1470,12 @@ async function showFusionExportPicker(menu, anchorBtn, {
         </nav>
       </div>
       ${currentFolder ? `
-        <button type="button" class="btn primary file-export-fusion-use-current" data-folder-export-here title="Upload into this folder (no subfolder required)">
-          Export to Fusion · ${escText(currentFolder.name || "this folder")}
+        <button type="button" class="btn secondary btn-compact file-export-fusion-use-current${currentSelected ? " is-active" : ""}" data-folder-select-here title="Select this folder as the export destination">
+          ${currentSelected ? "Selected · " : "Select · "}${escText(currentFolder.name || "this folder")}
         </button>
-        <p class="muted small file-export-fusion-folder-hint">Or open / Select a subfolder below.</p>
+        <p class="muted small file-export-fusion-folder-hint">Open a subfolder below, or tap Export to Fusion once ready.</p>
       ` : `
-        <p class="muted small file-export-fusion-folder-hint">Tap <strong>Select</strong> on a top folder to export there, or open it to browse inside.</p>
+        <p class="muted small file-export-fusion-folder-hint">Select a folder, or open it to browse inside.</p>
       `}
       ${selectedFolderId && !currentSelected ? `<p class="muted small">Selected destination: <strong>${escText(selectedFolderName)}</strong></p>` : ""}
       <div class="file-export-fusion-folder-grid" role="list">
@@ -1520,7 +1492,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
                   <span>${when ? `Updated ${escText(when)}` : "Open to browse"}${recent ? " · recent" : ""}</span>
                 </span>
               </button>
-              <button type="button" class="btn btn-compact file-export-fusion-folder-pick" data-folder-select="${escAttr(folder.id)}" title="Export into this folder now">${active ? "Export ✓" : "Export"}</button>
+              <button type="button" class="btn btn-compact file-export-fusion-folder-pick" data-folder-select="${escAttr(folder.id)}" title="Select this folder">${active ? "Selected" : "Select"}</button>
             </div>
           `;
         }).join("") : `<p class="muted small file-export-fusion-folder-empty">${escText(emptyText)}</p>`}
@@ -1545,7 +1517,8 @@ async function showFusionExportPicker(menu, anchorBtn, {
         goToBreadcrumb(Number(btn.dataset.folderCrumb) || 0);
       });
     });
-    folderBrowser.querySelector("[data-folder-export-here]")?.addEventListener("click", () => {
+    folderBrowser.querySelector("[data-folder-select-here]")?.addEventListener("click", () => {
+      if (!currentFolder) return;
       exportToFolder(currentFolder);
     });
     folderBrowser.querySelectorAll("[data-folder-open]").forEach((btn) => {
@@ -1561,7 +1534,6 @@ async function showFusionExportPicker(menu, anchorBtn, {
         event.stopPropagation();
         const folder = folders.find((item) => item.id === btn.dataset.folderSelect);
         if (!folder) return;
-        // One-click: export into this folder without opening it.
         exportToFolder(folder);
       });
     });
@@ -1602,17 +1574,17 @@ async function showFusionExportPicker(menu, anchorBtn, {
       } else if (currentFolder) {
         // Inside a nested folder: default destination is this folder, not a random child.
         setSelectedFolder(currentFolder, { quiet: true });
-        setStatus(`Ready to export into “${currentFolder.name || "this folder"}”. Tap Export to Fusion · ${currentFolder.name || "here"}.`);
+        setStatus(`Ready to export into “${currentFolder.name || "this folder"}”. Tap Export to Fusion below.`);
       } else if (folders.length) {
         const pick = folders[0];
         setSelectedFolder(pick, { quiet: true });
-        setStatus(`Auto-selected “${pick.name || pick.id}”. Tap Export on a folder tile, or open it and use Export to Fusion here.`);
+        setStatus(`Auto-selected “${pick.name || pick.id}”. Tap Export to Fusion below, or Select another folder.`);
       }
     }
     renderFolderBrowser(folders, {
       items: lastFolderItems,
       emptyText: currentFolder
-        ? "No subfolders here — use Export here, or go Back."
+        ? "No subfolders here — Select this folder above, or go Back."
         : "No top folders found.",
     });
     submit.disabled = !selectedFolderId;
@@ -1703,22 +1675,12 @@ async function showFusionExportPicker(menu, anchorBtn, {
       if (!choice) {
         setStatus("Export cancelled.");
         submit.disabled = false;
-        resetExportHereBtn();
-        folderBrowser.querySelectorAll("[data-folder-select]").forEach((btn) => {
-          btn.disabled = false;
-          if (btn.dataset.folderSelect === selectedFolderId) btn.textContent = "Export ✓";
-          else btn.textContent = "Export";
-        });
+        setSelectedFolder({ id: selectedFolderId, name: selectedFolderName }, { quiet: true });
         return;
       }
       conflictMode = choice;
     }
     submit.disabled = true;
-    const hereBtn = folderBrowser.querySelector("[data-folder-export-here]");
-    if (hereBtn) {
-      hereBtn.disabled = true;
-      hereBtn.textContent = "Uploading…";
-    }
     setStatus(isThreeMf ? "Uploading 3MF to Fusion..." : `Uploading ${uploadBaseName} to Fusion...`);
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
@@ -1768,18 +1730,6 @@ async function showFusionExportPicker(menu, anchorBtn, {
       setTimeout(() => closeExportMenu(), 1400);
     } catch (err) {
       submit.disabled = false;
-      const hereBtn2 = folderBrowser.querySelector("[data-folder-export-here]");
-      if (hereBtn2 && currentFolder) {
-        hereBtn2.disabled = false;
-        hereBtn2.classList.remove("file-export-fusion-use-current--success");
-        hereBtn2.textContent = `Export to Fusion · ${currentFolder.name || "this folder"}`;
-      }
-      folderBrowser.querySelectorAll("[data-folder-select]").forEach((btn) => {
-        btn.disabled = false;
-        btn.classList.remove("file-export-fusion-folder-pick--success");
-        if (btn.dataset.folderSelect === selectedFolderId) btn.textContent = "Export ✓";
-        else btn.textContent = "Export";
-      });
       setSelectedFolder({ id: selectedFolderId, name: selectedFolderName }, { quiet: true });
       setStatus(err.message || "Fusion export failed.", true);
     }
@@ -1804,10 +1754,12 @@ async function showFusionExportPicker(menu, anchorBtn, {
 function keepMenuInViewport(menu) {
   if (!menu) return;
   requestAnimationFrame(() => {
-    const rect = menu.getBoundingClientRect();
     const pad = 8;
-    if (rect.bottom > window.innerHeight - pad) {
-      menu.style.top = `${Math.max(pad, window.innerHeight - rect.height - pad)}px`;
+    const maxH = Math.max(240, window.innerHeight - pad * 2);
+    menu.style.maxHeight = `${maxH}px`;
+    const rect = menu.getBoundingClientRect();
+    if (rect.bottom > window.innerHeight - pad || rect.top < pad) {
+      menu.style.top = `${Math.max(pad, Math.min(rect.top, window.innerHeight - Math.min(rect.height, maxH) - pad))}px`;
     }
     if (rect.right > window.innerWidth - pad) {
       menu.style.left = `${Math.max(pad, window.innerWidth - rect.width - pad)}px`;

@@ -4416,13 +4416,23 @@ body.canvas-design-tab .main-column {
   box-shadow: 0 0 12px rgba(212, 160, 23, 0.28);
 }
 
-.canvas-generation-banner--mesh,
+.canvas-generation-banner--mesh {
+  border-bottom-color: rgba(139, 92, 255, 0.48);
+  background: linear-gradient(180deg, rgba(106, 60, 240, 0.22), rgba(17, 138, 156, 0.1));
+}
+
+.canvas-generation-banner--mesh .canvas-generation-spinner {
+  border-color: rgba(139, 92, 255, 0.22);
+  border-top-color: #38e8ff;
+  border-right-color: rgba(139, 92, 255, 0.65);
+  box-shadow: 0 0 12px rgba(139, 92, 255, 0.35);
+}
+
 .canvas-generation-banner--fusion {
   border-bottom-color: rgba(56, 189, 248, 0.42);
   background: linear-gradient(180deg, rgba(14, 165, 233, 0.18), rgba(8, 47, 73, 0.08));
 }
 
-.canvas-generation-banner--mesh .canvas-generation-spinner,
 .canvas-generation-banner--fusion .canvas-generation-spinner {
   border-color: rgba(56, 189, 248, 0.22);
   border-top-color: #7dd3fc;
@@ -13048,7 +13058,8 @@ body.mobile-sheet-open {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
+  max-width: 7.5rem;
+  flex: 0 1 auto;
 }
 
 .viewport-progress-usage-model[hidden] {
@@ -17045,7 +17056,19 @@ section h2 {
 }
 
 .file-export-menu:has(.file-export-fusion-picker) {
-  width: min(480px, calc(100vw - 16px));
+  width: min(420px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-export-menu:has(.file-export-fusion-picker) > .file-export-header,
+.file-export-menu:has(.file-export-fusion-picker) > .file-export-hint,
+.file-export-menu:has(.file-export-fusion-picker) > .file-export-status,
+.file-export-menu:has(.file-export-fusion-picker) > .file-export-list,
+.file-export-menu:has(.file-export-fusion-picker) > .file-export-actions {
+  flex-shrink: 0;
 }
 
 .file-export-header {
@@ -17496,6 +17519,23 @@ section h2 {
   max-width: 100%;
   box-sizing: border-box;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.file-export-fusion-picker-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.file-export-fusion-lead {
+  margin: 0 0 6px;
 }
 
 .file-export-fusion-title {
@@ -17504,6 +17544,7 @@ section h2 {
   color: #ffd0a3;
   margin-bottom: 4px;
   padding-right: 22px;
+  flex-shrink: 0;
 }
 
 .file-export-fusion-close {
@@ -17567,7 +17608,7 @@ section h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  max-height: 168px;
+  max-height: 112px;
   overflow: auto;
   margin-top: 6px;
   padding: 2px;
@@ -17661,7 +17702,7 @@ section h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  max-height: 240px;
+  max-height: 150px;
   overflow: auto;
   min-width: 0;
   padding: 2px;
@@ -17896,7 +17937,12 @@ section h2 {
 
 .file-export-fusion-submit {
   width: 100%;
-  margin-top: 4px;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.file-export-fusion-status {
+  flex-shrink: 0;
 }
 
 .file-export-fusion-submit.file-export-fusion-submit--success,
@@ -18095,8 +18141,8 @@ label input { margin-top: 4px; }
 }
 
 .project-cost-thumb {
-  margin: 4px 0 6px;
-  padding: 7px 10px;
+  margin: 2px 0 4px;
+  padding: 5px 8px;
   border: 1px solid rgba(168, 178, 192, 0.38);
   border-radius: 10px;
   background:
@@ -18148,8 +18194,8 @@ label input { margin-top: 4px; }
 }
 
 .project-cost-thumb-chart {
-  height: 40px;
-  margin: 5px 0 4px;
+  height: 28px;
+  margin: 3px 0 2px;
   display: flex;
   align-items: flex-end;
   gap: 3px;
@@ -18226,8 +18272,9 @@ label input { margin-top: 4px; }
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  /* Keep chrome fixed — only the prompt field scrolls, not this pane. */
-  overflow: hidden;
+  /* No outer scroll in normal use; only if chrome cannot fit the viewport. */
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
 }
 
@@ -18729,9 +18776,17 @@ label input { margin-top: 4px; }
 }
 
 .prompt-mode-tip-badge--mesh {
-  background: rgba(56, 189, 248, 0.14) !important;
-  border-color: rgba(56, 189, 248, 0.4) !important;
-  color: #7dd3fc !important;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, rgba(139, 92, 255, 0.22), rgba(56, 232, 255, 0.14)) !important;
+  border-color: rgba(139, 92, 255, 0.55) !important;
+  color: #d4c4ff !important;
+}
+
+.prompt-mode-tip-badge--mesh img {
+  flex: 0 0 auto;
+  display: block;
 }
 
 .prompt-mode-btn.active {
@@ -18760,7 +18815,7 @@ label input { margin-top: 4px; }
 /* Compose pane — prompt field absorbs leftover height and scrolls inside. */
 #prompt-pane-compose #prompt-input {
   flex: 1 1 auto;
-  min-height: 72px;
+  min-height: 56px;
   height: auto;
   max-height: none;
   margin-bottom: 2px;
@@ -18770,7 +18825,7 @@ label input { margin-top: 4px; }
 }
 
 #prompt-pane-compose:has(.prompt-image-list:not(:empty)) #prompt-input {
-  min-height: 64px;
+  min-height: 48px;
 }
 
 #prompt-pane-compose .prompt-compose-toolbar,
@@ -18789,16 +18844,19 @@ label input { margin-top: 4px; }
 
 #prompt-pane-compose .prompt-editor-wrap {
   flex: 1 1 auto;
-  min-height: 120px;
+  min-height: 56px;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
 }
 
 #prompt-pane-compose .prompt-editor {
   flex: 1 1 auto;
-  min-height: 110px;
+  min-height: 0;
   max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 #prompt-pane-compose .prompt-inline-ref-chips {
@@ -18809,12 +18867,12 @@ label input { margin-top: 4px; }
   box-sizing: border-box;
   width: 100%;
   margin-bottom: 4px;
-  padding: 10px;
-  gap: 6px;
+  padding: 7px 8px;
+  gap: 5px;
 }
 
 #prompt-pane-compose .prompt-compose-head {
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 #prompt-pane-compose #prompt-mode-hint {
@@ -30611,19 +30669,30 @@ body.kb-modal-open {
 }
 
 .prompt-mode-btn--mesh {
-  border-color: rgba(56, 189, 248, 0.45);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: rgba(139, 92, 255, 0.5);
+}
+
+.prompt-mode-btn--mesh .prompt-mode-mesh-logo {
+  flex: 0 0 auto;
+  display: block;
+  width: 14px;
+  height: 14px;
 }
 
 .prompt-mode-btn--mesh:hover:not(.active) {
-  border-color: #38bdf8;
-  color: #7dd3fc;
-  background: rgba(56, 189, 248, 0.08);
+  border-color: #8b5cff;
+  color: #c4b5fd;
+  background: linear-gradient(135deg, rgba(139, 92, 255, 0.12), rgba(56, 232, 255, 0.08));
 }
 
 .prompt-mode-btn--mesh.active {
-  border-color: #38bdf8;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.25));
+  border-color: #8b5cff;
+  color: #f4faff;
+  background: linear-gradient(135deg, rgba(106, 60, 240, 0.42), rgba(43, 212, 200, 0.28));
+  box-shadow: 0 0 0 1px rgba(139, 92, 255, 0.35), 0 0 14px rgba(56, 232, 255, 0.18);
 }
 
 .prompt-mode-btn--electronics {
@@ -30663,12 +30732,15 @@ body.kb-modal-open {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
-  margin: -2px 0 8px;
-  padding: 7px 8px;
+  gap: 4px 6px;
+  margin: 0 0 4px;
+  padding: 5px 7px;
   border: 1px solid rgba(56, 139, 253, 0.18);
   border-radius: 10px;
   background: rgba(56, 139, 253, 0.06);
+  max-height: 64px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .skill-chip--planned {

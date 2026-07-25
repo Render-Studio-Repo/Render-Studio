@@ -75,9 +75,9 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260724-manage-keys";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260723-usage-footer";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-one-step";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-one-btn";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -1443,7 +1443,10 @@ function applyPromptModeUI(mode = promptMode) {
 }
 
 function selectedPromptSupportsElectronics(mode = promptMode) {
-  return ["v2", "architect"].includes(String(mode || "").toLowerCase());
+  // Electronics solids apply to parametric CAD (2.0 / Architect). The toggle
+  // stays visible in the mode row for all modes so it doesn't disappear when
+  // switching to Mesh/Render — preference still only affects 2.0/Architect generates.
+  return ["v2", "architect", "fusion"].includes(String(mode || "").toLowerCase());
 }
 
 function isModelElectronicsEnabled() {
@@ -1478,8 +1481,9 @@ function setModelElectronicsEnabled(enabled, { persist = true } = {}) {
 function syncElectronicsToggleVisibility(mode = promptMode) {
   const wrap = document.getElementById("prompt-electronics-wrap");
   if (!wrap) return;
-  const show = selectedPromptSupportsElectronics(mode);
-  wrap.classList.toggle("hidden", !show);
+  // Always show next to Render / 2.0 / Mesh — hiding on Mesh made it look removed.
+  wrap.classList.remove("hidden");
+  void mode;
 }
 
 function initPromptElectronicsToggle() {
