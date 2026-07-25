@@ -1,4 +1,11 @@
-## 2026-07-25 — Fusion Data Panel: fix missing STEP thumbnails
+## 2026-07-25 — LOCK Cmd+Z transform undo (stop regressions)
+
+- Extracted policy to `frontend/viewport-transform-undo.js`; hotkeys refuse timeline fallthrough when top undo is a transform.
+- Always-on Cursor rule `.cursor/rules/cmdz-transform-undo.mdc`; listed in `AGENTS.md` + conventions red zone.
+- Backend `_surgical_undo_transform` marked LOCKED. Cache-bust `app.js?v=20260725-cmdz-lock`.
+
+---
+
 
 - Peach cube placeholders: Model Derivative kickoff after Fusion push was always `406` because the job requested unsupported `svf2` for WIP STEP uploads (sometimes `400` too).
 - Kickoff now tries `svf`+thumbnail → `svf` → thumbnail → `svf2` fallbacks, logs warnings, extracts tip `version_id` from create-item, and runs on `upload_step_as_new_version` too.

@@ -10,5 +10,6 @@ Non-negotiables (details in `ai-context/`):
 4. **Verify in a browser** (Playwright in `.venv`, server already running) before claiming UI work done.
 5. Don't touch auth, billing, admin, collab, OAuth flows, `backend/kernel/`, or `backend/render3d.db` unless the task explicitly requires it.
 6. Log finished work in `ai-context/worklog.md`.
+7. **LOCKED — Cmd+Z after gizmo move:** never let transform undo fall through to generation/`undoTimeline()` (wipes sibling parts). Policy lives in `frontend/viewport-transform-undo.js` + `.cursor/rules/cmdz-transform-undo.mdc`. Do not "simplify" this.
 
 Architect Mode work has its own source of truth: `TODO/quest-book/` (chapters, decisions, safe-edit zones, smoke checklist).

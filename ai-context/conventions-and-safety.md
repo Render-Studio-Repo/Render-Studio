@@ -50,6 +50,7 @@ All logic, markup generation, and state live in `quest-book.js`. Follow this sha
 - Fusion 360 / Onshape / Autodesk OAuth flows
 - Wiring simulator core
 - `backend/render3d.db` (live user data — query via app code, never hand-edit)
+- **Cmd+Z transform undo** (`frontend/viewport-transform-undo.js`, surgical path in `history_service.py`) — falling through to generation undo deletes assembly parts. Rule: `.cursor/rules/cmdz-transform-undo.mdc`
 
 ## Deployment reality
 

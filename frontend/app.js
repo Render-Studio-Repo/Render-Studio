@@ -94,6 +94,12 @@ import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-step-part";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260725-undo-move";
+import {
+  isTimelineTransformEntry,
+  undoViewportTransformAction,
+  redoViewportTransformAction,
+  viewportUndoBlocksTimelineFallthrough,
+} from "./viewport-transform-undo.js?v=20260725-cmdz-lock";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-architect-clip";
 import { createArchitectSession } from "./architect-session.js?v=20260720-architect-clip";
 import { createDirectModeling } from "./direct-modeling.js?v=20260716-body-face-pull";
@@ -6528,58 +6534,28 @@ function pushViewportUndoAction(action, { clearRedo = true } = {}) {
   if (clearRedo) viewportRedoStack.length = 0;
 }
 
-function isTimelineTransformEntry(entry) {
-  if (!entry) return false;
-  const kind = String(entry.kind || entry.action || entry.type || "").toLowerCase();
-  return kind === "transform" || kind === "body_transform" || kind.includes("transform");
-}
+// isTimelineTransformEntry imported from locked viewport-transform-undo.js
 
 function undoViewportAction() {
+  // Peek first: transform on stack must never fall through to generation undo.
+  if (viewportUndoBlocksTimelineFallthrough(viewportUndoStack)) {
+    const action = viewportUndoStack.pop();
+    const result = undoViewportTransformAction(action, {
+      undoStack: viewportUndoStack,
+      redoStack: viewportRedoStack,
+      timelineEntries: timelineData?.entries || [],
+      timelineIndex: timelineCurrentIndex(),
+      resolveMesh: resolveViewportTransformTarget,
+      cancelPendingApply: () => gizmoPanel.cancelPendingApply?.(),
+      resetDragBaseline: () => gizmoPanel.resetDragBaseline?.(),
+      refreshGizmo: () => gizmoPanel.refresh?.(),
+      setStatus: setEditStatus,
+      undoTimeline,
+    });
+    return Boolean(result?.handled);
+  }
   const action = viewportUndoStack.pop();
   if (!action) return false;
-  if (action.type === "transform") {
-    // After Apply bakes + reloads, prefer timeline undo so file + view stay in sync.
-    const entries = timelineData?.entries || [];
-    const cur = timelineCurrentIndex();
-    const tip = cur >= 0 ? entries[cur] : null;
-    const tipIsTransform = isTimelineTransformEntry(tip);
-
-    if (action.committed && tipIsTransform && cur > 0) {
-      viewportRedoStack.push(action);
-      // Cancel any in-flight auto-apply so it cannot re-bake after this undo.
-      gizmoPanel.cancelPendingApply?.();
-      void undoTimeline();
-      return true;
-    }
-
-    const mesh = resolveViewportTransformTarget(action);
-    if (mesh && action.before) {
-      gizmoPanel.cancelPendingApply?.();
-      mesh.position.fromArray(action.before.position);
-      mesh.quaternion.fromArray(action.before.quaternion);
-      mesh.scale.fromArray(action.before.scale);
-      mesh.updateMatrixWorld(true);
-      gizmoPanel.resetDragBaseline?.();
-      gizmoPanel.refresh?.();
-      setEditStatus("ok", "Undid move/rotate.");
-      viewportRedoStack.push(action);
-      return true;
-    }
-
-    // Only fall back to timeline when the tip itself is a transform.
-    // Never undo a generation/prompt step from a transform action — that deletes parts.
-    if (tipIsTransform && cur > 0) {
-      viewportRedoStack.push(action);
-      gizmoPanel.cancelPendingApply?.();
-      void undoTimeline();
-      return true;
-    }
-
-    // Could not safely undo — put the action back.
-    viewportUndoStack.push(action);
-    setEditStatus("error", "Nothing to undo.");
-    return true;
-  }
   if (action.type === "fusion-component-drop") {
     const beforeNames = new Set((action.before || []).map((item) => item.name));
     for (const [name] of [...projectAssembly.list()]) {
@@ -6623,39 +6599,24 @@ function resolveViewportTransformTarget(action = {}) {
 }
 
 function redoViewportAction() {
-  const action = viewportRedoStack.pop();
-  if (!action) return false;
-  if (action.type === "transform") {
-    const entries = timelineData?.entries || [];
-    const cur = timelineCurrentIndex();
-    const next = cur + 1 < entries.length ? entries[cur + 1] : null;
-    const nextIsTransform = isTimelineTransformEntry(next);
-    if (action.committed && nextIsTransform) {
-      viewportUndoStack.push(action);
-      void redoTimeline();
-      return true;
-    }
-    const mesh = resolveViewportTransformTarget(action);
-    if (mesh && action.after) {
-      mesh.position.fromArray(action.after.position);
-      mesh.quaternion.fromArray(action.after.quaternion);
-      mesh.scale.fromArray(action.after.scale);
-      mesh.updateMatrixWorld(true);
-      gizmoPanel.resetDragBaseline?.();
-      gizmoPanel.refresh?.();
-      setEditStatus("ok", "Redid move/rotate.");
-      viewportUndoStack.push(action);
-      return true;
-    }
-    if (nextIsTransform) {
-      viewportUndoStack.push(action);
-      void redoTimeline();
-      return true;
-    }
-    viewportRedoStack.push(action);
-    setEditStatus("error", "Nothing to redo.");
-    return true;
+  const action = viewportRedoStack[viewportRedoStack.length - 1];
+  if (action?.type === "transform") {
+    viewportRedoStack.pop();
+    const result = redoViewportTransformAction(action, {
+      undoStack: viewportUndoStack,
+      redoStack: viewportRedoStack,
+      timelineEntries: timelineData?.entries || [],
+      timelineIndex: timelineCurrentIndex(),
+      resolveMesh: resolveViewportTransformTarget,
+      resetDragBaseline: () => gizmoPanel.resetDragBaseline?.(),
+      refreshGizmo: () => gizmoPanel.refresh?.(),
+      setStatus: setEditStatus,
+      redoTimeline,
+    });
+    return Boolean(result?.handled);
   }
+  const popped = viewportRedoStack.pop();
+  if (!popped) return false;
   return false;
 }
 
@@ -27743,6 +27704,11 @@ window.addEventListener("keydown", (e) => {
     if (mod && key === "z" && !e.shiftKey) {
       e.preventDefault();
       e.target?.blur?.();
+      // LOCKED: transform undo never falls through to generation undo (wipes parts).
+      if (viewportUndoBlocksTimelineFallthrough(viewportUndoStack)) {
+        undoViewportAction();
+        return;
+      }
       if (undoViewportAction()) return;
       undoTimeline();
       return;
@@ -27790,6 +27756,11 @@ window.addEventListener("keydown", (e) => {
   }
   if (mod && key === "z" && !e.shiftKey) {
     e.preventDefault();
+    // LOCKED: transform undo never falls through to generation undo (wipes parts).
+    if (viewportUndoBlocksTimelineFallthrough(viewportUndoStack)) {
+      undoViewportAction();
+      return;
+    }
     if (undoViewportAction()) return;
     undoTimeline();
     return;

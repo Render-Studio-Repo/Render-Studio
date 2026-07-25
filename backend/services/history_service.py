@@ -413,8 +413,10 @@ def go_to_index(project_path: Path, index: int) -> dict[str, Any]:
 
     current = data.get("current_index", -1)
 
-    # Surgical single-step undo of a transform: restore only the moved file(s).
-    # Full manifest restore of the previous entry can delete sibling assembly parts.
+    # LOCKED INVARIANT (Cmd+Z move undo): surgical single-step undo of a transform.
+    # Restore only the moved file(s). Full manifest restore of the previous entry
+    # can delete sibling assembly parts. Do not remove this branch — see
+    # `.cursor/rules/cmdz-transform-undo.mdc` and `frontend/viewport-transform-undo.js`.
     if current == index + 1 and 0 <= current < len(entries):
         cur_entry = entries[current]
         if cur_entry.get("kind") in {"transform", "body_transform"}:
@@ -459,7 +461,11 @@ def _surgical_undo_transform(
     entries: list[dict[str, Any]],
     prev_index: int,
 ) -> str:
-    """Undo one transform without wiping unrelated assembly files."""
+    """LOCKED: Undo one transform without wiping unrelated assembly files.
+
+    Do not replace this with a full timeline snapshot restore — that deletes
+    sibling parts. See `.cursor/rules/cmdz-transform-undo.mdc`.
+    """
     hist = _history_dir(project_path)
     meta = transform_entry.get("meta") or {}
     current_fn = str(transform_entry.get("filename") or "")
