@@ -4379,6 +4379,15 @@ body.canvas-design-tab .main-column {
   padding: 10px 14px;
 }
 
+.canvas-generation-stop {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.canvas-generation-stop.hidden {
+  display: none !important;
+}
+
 .canvas-generation-message {
   flex: 1;
   min-width: 0;

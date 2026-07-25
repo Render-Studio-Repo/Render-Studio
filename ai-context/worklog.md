@@ -1,3 +1,11 @@
+## 2026-07-24 — Mesh mode: Stop generating control
+
+- Mesh runs had no obvious Stop (Generate stayed in the compose row; canvas banner had no cancel).
+- Stop now replaces Generate while a single Mesh job runs; canvas banner has **Stop generating**; watch starts before Improve so cancel works during spice-up. GLB export subprocess is killable on cancel.
+- Canceled stuck bike Mesh job on `4162ee20`. Cache-bust: `app.js` / `styles.css` `?v=20260724-mesh-stop`. Service restarted.
+
+---
+
 ## 2026-07-24 — Mesh mode replaces Fusion prompt tab (img2threejs)
 
 - Prompt Fusion tab → **Mesh**: AI writes a Three.js factory (`.mesh.mjs`), headless Node `export_glb.mjs` → GLB, same generation reload path as Jake text-to-CAD.

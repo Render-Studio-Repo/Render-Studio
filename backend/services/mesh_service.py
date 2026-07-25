@@ -88,20 +88,58 @@ def _looks_like_factory(source: str) -> bool:
     )
 
 
-def _run_export(factory_path: Path, out_glb: Path, *, timeout_sec: float = 90.0) -> dict[str, Any]:
+def _run_export(
+    factory_path: Path,
+    out_glb: Path,
+    *,
+    timeout_sec: float = 90.0,
+    cancel_check: CancelCb = None,
+) -> dict[str, Any]:
     node = _find_node()
     scripts_dir = EXPORT_SCRIPT.parent
     cmd = [node, str(EXPORT_SCRIPT), str(factory_path), str(out_glb)]
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         cmd,
         cwd=str(scripts_dir),
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout_sec,
         env={**os.environ, "NODE_PATH": str(scripts_dir / "node_modules")},
     )
-    stdout = (proc.stdout or "").strip()
-    stderr = (proc.stderr or "").strip()
+    deadline = time.monotonic() + max(5.0, float(timeout_sec))
+    try:
+        while True:
+            if cancel_check and cancel_check():
+                proc.kill()
+                try:
+                    proc.wait(timeout=3)
+                except Exception:
+                    pass
+                raise RuntimeError("Generation canceled.")
+            if proc.poll() is not None:
+                break
+            if time.monotonic() >= deadline:
+                proc.kill()
+                try:
+                    proc.wait(timeout=3)
+                except Exception:
+                    pass
+                raise subprocess.TimeoutExpired(cmd, timeout_sec)
+            time.sleep(0.25)
+        stdout, stderr = proc.communicate(timeout=5)
+    except RuntimeError:
+        raise
+    except subprocess.TimeoutExpired:
+        raise
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        stdout, stderr = proc.communicate(timeout=5) if proc.poll() is not None else ("", "")
+        raise
+    stdout = (stdout or "").strip()
+    stderr = (stderr or "").strip()
     meta: dict[str, Any] = {}
     if stdout:
         try:
@@ -242,7 +280,12 @@ def run_mesh_img2threejs(
             raise RuntimeError("Generation canceled.")
 
         try:
-            export = _run_export(factory_path, glb_path)
+            export = _run_export(factory_path, glb_path, cancel_check=_canceled)
+        except RuntimeError as exc:
+            if "canceled" in str(exc).lower():
+                raise
+            last_error = str(exc)
+            continue
         except subprocess.TimeoutExpired:
             last_error = "GLB export timed out."
             continue

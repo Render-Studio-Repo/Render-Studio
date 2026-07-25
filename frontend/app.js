@@ -1009,6 +1009,7 @@ function isCadGenerationActive(pid = projectId) {
 function syncStopButtonVisibility() {
   const btn = document.getElementById("btn-stop-generation");
   const promptBtn = document.getElementById("btn-prompt");
+  const canvasStopBtn = document.getElementById("btn-canvas-stop-generation");
   const wiringBtn = document.getElementById("btn-wiring-stop");
   const wiringToolbeltBtn = document.getElementById("btn-wiring-toolbelt-stop");
   const watchMatchesProject = generationWatchPid === projectId;
@@ -1016,22 +1017,36 @@ function syncStopButtonVisibility() {
   const cadGenerating = watchMatchesProject
     ? generationWatchOverlay?.kind !== "wiring"
     : isCadGenerationActive(projectId);
+  const runningCount = cadGenerating ? activeCadGenerationCount(projectId) : 0;
+  const meshGenerating = cadGenerating && ["mesh", "fusion"].includes(
+    String(generationWatchOverlay?.promptMode || generationPromptMode(allProjects.find((p) => p.id === projectId)?.generation) || promptMode || "").toLowerCase(),
+  );
   if (btn) {
+    // Mesh: Stop replaces Generate (same as Wiring) so a long img2threejs run
+    // always has an obvious cancel control in the compose panel.
     btn.classList.toggle("hidden", !cadGenerating);
     if (!cadGenerating) btn.disabled = false;
-    const runningCount = activeCadGenerationCount(projectId);
     btn.textContent = runningCount > 1 ? `Stop ${runningCount} generations` : "Stop generating";
     btn.setAttribute("aria-label", runningCount > 1 ? `Stop ${runningCount} running generations` : "Stop generating");
   }
-  // Keep Generate available while CAD jobs run so users can queue another part.
+  if (canvasStopBtn) {
+    canvasStopBtn.classList.toggle("hidden", !cadGenerating);
+    canvasStopBtn.textContent = runningCount > 1 ? `Stop ${runningCount}` : "Stop generating";
+  }
+  // Keep Generate available while CAD jobs run so users can queue another part,
+  // except Mesh (single long job) where Stop should own the row.
   if (promptBtn) {
-    promptBtn.classList.remove("hidden");
-    promptBtn.textContent = promptGenerateButtonLabel(promptMode, activeCadGenerationCount(projectId));
+    const hideGenerateForMesh = meshGenerating && runningCount <= 1;
+    promptBtn.classList.toggle("hidden", hideGenerateForMesh);
+    if (!hideGenerateForMesh) {
+      promptBtn.classList.remove("hidden");
+      promptBtn.textContent = promptGenerateButtonLabel(promptMode, runningCount);
+    }
     if (!cadGenerating || !promptSubmitInFlight) promptBtn.removeAttribute("disabled");
   }
   if (wiringBtn) wiringBtn.classList.toggle("hidden", !wiringGenerating);
   if (wiringToolbeltBtn) wiringToolbeltBtn.classList.toggle("hidden", !wiringGenerating);
-  viewerOverlay.setStopVisible?.(cadGenerating ? activeCadGenerationCount(projectId) : 0);
+  viewerOverlay.setStopVisible?.(cadGenerating ? runningCount : 0);
   wiringOverlay?.setStopVisible?.(wiringGenerating);
   syncCanvasGenerationUi();
 }
@@ -26659,6 +26674,10 @@ document.getElementById("btn-stop-generation")?.addEventListener("click", () => 
   void cancelActiveGeneration();
 });
 
+document.getElementById("btn-canvas-stop-generation")?.addEventListener("click", () => {
+  void cancelActiveGeneration();
+});
+
 document.addEventListener("click", (event) => {
   if (!viewportPromptDropdown) return;
   if (event.target.closest(".vgu-prompt-menu") || event.target.closest("#viewport-generation-user")) return;
@@ -26953,13 +26972,21 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
     });
 
-    // Improve with AI FIRST (before the Mode 2.0 generation banner), then start CAD.
+    // Show stop + generation watch before Improve so Mesh (long runs) always
+    // has a cancel control during spice-up and the POST, not only after accept.
     if (status) {
       status.className = "status loading";
       status.textContent = convertImagesToDrawing
         ? "Converting image to drawing, then improving prompt…"
         : "Improving prompt with AI…";
     }
+    if (canvasAttached) markCanvasGenerationPending(projectId);
+    viewerOverlay.clearError();
+    beginGenerationWatch(projectId, {
+      kind: "prompt",
+      mode: genMode,
+      pendingStart: true,
+    });
     showViewportOverlay(projectId, "Improving prompt with AI…", {
       kind: "prompt",
       promptMode: promptModeForRef(genMode),
@@ -26969,7 +26996,9 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       progress: {
         pct: 3,
         label: "Improving prompt with AI…",
-        thinking: "Rewriting your prompt for clearer parametric CAD…",
+        thinking: genMode === "mesh"
+          ? "Rewriting your prompt for a clearer Mesh rebuild…"
+          : "Rewriting your prompt for clearer parametric CAD…",
         activity: [{ text: "Improving prompt with AI…", stage: "analyze" }],
         spiceHold: true,
       },
@@ -27001,35 +27030,39 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       });
     }
 
-    // Show the generation banner after improve so convert/spice waits don't look stuck.
-    if (canvasAttached) markCanvasGenerationPending(projectId);
-    viewerOverlay.clearError();
-    beginGenerationWatch(projectId, {
-      kind: "prompt",
-      mode: genMode,
-      pendingStart: true,
-    });
+    if (!generationWatchOverlay || generationWatchPid !== projectId) {
+      beginGenerationWatch(projectId, {
+        kind: "prompt",
+        mode: genMode,
+        pendingStart: true,
+      });
+    }
     if (generationWatchOverlay) {
       generationWatchOverlay.progress = {
         ...(generationWatchOverlay.progress || {}),
         pct: spiceMeta.promptImproved ? 10 : 8,
-        label: spiceMeta.promptImproved ? "Prompt improved — starting CAD…" : "Starting CAD generation…",
+        label: spiceMeta.promptImproved
+          ? (genMode === "mesh" ? "Prompt improved — starting Mesh…" : "Prompt improved — starting CAD…")
+          : (genMode === "mesh" ? "Starting Mesh generation…" : "Starting CAD generation…"),
         thinking: spiceMeta.promptImproved
-          ? "Using the improved prompt for CAD generation…"
-          : "Starting CAD generation…",
+          ? (genMode === "mesh" ? "Using the improved prompt for Mesh…" : "Using the improved prompt for CAD generation…")
+          : (genMode === "mesh" ? "Starting Mesh generation…" : "Starting CAD generation…"),
         improved_prompt: spiceMeta.promptImproved ? prompt : generationWatchOverlay.progress?.improved_prompt,
         activity: spiceMeta.promptImproved
           ? [
               { text: "Prompt improved with AI", stage: "analyze" },
-              { text: "Starting CAD generation…", stage: "analyze" },
+              { text: genMode === "mesh" ? "Starting Mesh generation…" : "Starting CAD generation…", stage: "analyze" },
             ]
-          : [{ text: "Starting CAD generation…", stage: "analyze" }],
+          : [{ text: genMode === "mesh" ? "Starting Mesh generation…" : "Starting CAD generation…", stage: "analyze" }],
       };
       if (spiceMeta.promptImproved) {
-        generationWatchOverlay.message = "Prompt improved — generating…";
+        generationWatchOverlay.message = genMode === "mesh"
+          ? "Prompt improved — generating Mesh…"
+          : "Prompt improved — generating…";
       }
     }
     syncViewportGenerationOverlay();
+    syncStopButtonVisibility();
     if (status) {
       status.className = "status loading";
       status.textContent = convertImagesToDrawing
