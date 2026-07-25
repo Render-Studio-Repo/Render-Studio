@@ -2007,6 +2007,7 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
         for provider_id, label, configured in (
             ("openai", "Render3D OpenAI", bool(providers.get("openai"))),
             ("anthropic", "Render3D Claude", bool(providers.get("anthropic"))),
+            ("kimi", "Render3D Kimi", bool(providers.get("kimi"))),
         ):
             if not configured:
                 continue
@@ -2185,7 +2186,7 @@ def _platform_ai_for_user(
     if not credits.get("available"):
         raise HTTPException(
             status_code=503,
-            detail="Render3D platform AI keys are not configured. Add OpenAI or Anthropic keys on the server.",
+            detail="Render3D platform AI keys are not configured. Add OpenAI, Anthropic, or Kimi keys on the server.",
         )
     if int(credits.get("balance_cents") or 0) <= 0:
         raise HTTPException(status_code=402, detail="Buy shared-key credits to use the platform AI key.")
@@ -2200,15 +2201,17 @@ def _platform_ai_for_user(
         provider_id = "anthropic"
     elif provider_id in {"openai", "gpt"}:
         provider_id = "openai"
+    elif provider_id in {"kimi", "moonshot"}:
+        provider_id = "kimi"
     elif provider_id:
-        raise HTTPException(status_code=400, detail="Render3D key must be openai or anthropic.")
+        raise HTTPException(status_code=400, detail="Render3D key must be openai, anthropic, or kimi.")
     if provider_id:
         settings_kwargs: dict[str, Any] = {
             "use_platform_key": True,
             "platform_provider": provider_id,
         }
         # Always pass a provider-compatible model so a leftover GPT-5.5 Pro pin
-        # cannot survive an Anthropic selection (and vice versa).
+        # cannot survive an Anthropic/Kimi selection (and vice versa).
         if model is not None:
             settings_kwargs["platform_model"] = model
         else:
@@ -2226,7 +2229,11 @@ def _platform_ai_for_user(
         model=model,
     )
     if not creds:
-        label = "Claude" if provider_id == "anthropic" else "OpenAI" if provider_id == "openai" else "AI"
+        label = {
+            "anthropic": "Claude",
+            "openai": "OpenAI",
+            "kimi": "Kimi",
+        }.get(provider_id or "", "AI")
         raise HTTPException(
             status_code=503,
             detail=f"Render3D {label} platform key is not configured on the server.",

@@ -314,6 +314,7 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
     providers = {
         "openai": platform_openai_configured(),
         "anthropic": platform_anthropic_configured(),
+        "kimi": platform_kimi_configured(),
     }
     return {
         "available": any(providers.values()),
@@ -411,30 +412,29 @@ def update_settings(
     provider_out: str | None = None
     model_out: str | None = None
     if platform_provider is not None or platform_model is not None:
-        provider = str(
+        provider = normalize_platform_provider(
             platform_provider
             if platform_provider is not None
             else (account.get("platform_provider") or "openai")
-        ).strip().lower()
-        if provider in {"claude"}:
-            provider = "anthropic"
-        if provider not in {"openai", "anthropic"}:
-            raise ValueError("platform_provider must be openai or anthropic")
+        )
+        if provider not in {"openai", "anthropic", "kimi"}:
+            raise ValueError("platform_provider must be openai, anthropic, or kimi")
         if provider == "openai" and not platform_openai_configured():
             raise ValueError("Render3D OpenAI key is not configured yet.")
         if provider == "anthropic" and not platform_anthropic_configured():
             raise ValueError("Render3D Claude key is not configured yet. Add ANTHROPIC_API_KEY on the server.")
+        if provider == "kimi" and not platform_kimi_configured():
+            raise ValueError("Render3D Kimi key is not configured yet. Add KIMI_API_KEY on the server.")
         model = (
             str(platform_model).strip()[:120]
             if platform_model is not None
             else str(account.get("platform_model") or "").strip()[:120]
         )
         if not _platform_model_matches_provider(model, provider):
-            # Selecting Anthropic must never keep a leftover GPT-5.5 Pro pin (and vice versa).
-            # Prefer the quality Anthropic default (Opus) when clearing an OpenAI leftover.
+            # Selecting Anthropic/Kimi must never keep a leftover GPT pin (and vice versa).
             model = _default_platform_model(
                 provider,
-                speed="quality" if provider == "anthropic" else "fast",
+                speed="quality" if provider in {"anthropic", "kimi"} else "fast",
             )
         provider_out = provider
         model_out = model

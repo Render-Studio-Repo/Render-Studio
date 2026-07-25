@@ -18,7 +18,7 @@ const MODEL_LABELS = {
   "claude-haiku-4-5": "Haiku 4.5",
   "kimi-k2.6": "Kimi K2.6",
   "kimi-k2.5": "Kimi K2.5",
-  "kimi-k3": "Kimi K3",
+  "kimi-k3": "Kimi K3 (V3)",
   "grok-4.5": "Grok 4.5",
 };
 

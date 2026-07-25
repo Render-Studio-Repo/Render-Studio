@@ -1,3 +1,11 @@
+## 2026-07-25 — Shared credits: Kimi K3 (V3) platform key
+
+- Added `KIMI_API_KEY` (+ `KIMI_MODEL` / `KIMI_MODEL_QUALITY=kimi-k3`) to server `.env`.
+- Credits path now offers **Render3D Kimi** alongside OpenAI/Claude (`ai_credit_service` + platform key UI).
+- Default Kimi quality model: `kimi-k3` (V3). Cache-bust `app.js` / `ai-key-ui.js` `?v=20260725-kimi-credits`. Service restarted.
+
+---
+
 ## 2026-07-25 — Viewport: stop orbit continuing after mouse-up
 
 - Trackball could stay in ROTATE if pointerup was missed / controls disabled mid-drag — view kept following the cursor.

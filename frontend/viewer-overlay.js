@@ -177,7 +177,7 @@ function shortOverlayModel(model) {
     "gpt-5.6-sol": "GPT-5.6 Sol",
     "kimi-k2.6": "Kimi K2.6",
     "kimi-k2.5": "Kimi K2.5",
-    "kimi-k3": "Kimi K3",
+    "kimi-k3": "Kimi K3 (V3)",
     "grok-4.5": "Grok 4.5",
   };
   if (KNOWN[lower]) return KNOWN[lower];

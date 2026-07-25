@@ -31,7 +31,7 @@ const MODEL_OPTIONS = {
   kimi: [
     { value: "kimi-k2.6", label: "Kimi K2.6 · $0.95/$4" },
     { value: "kimi-k2.5", label: "Kimi K2.5 · $0.60/$3" },
-    { value: "kimi-k3", label: "Kimi K3 · $3/$15" },
+    { value: "kimi-k3", label: "Kimi K3 (V3) · $3/$15" },
   ],
   xai: [
     { value: "grok-4.5", label: "Grok 4.5 · $2/$6" },
@@ -41,6 +41,13 @@ const MODEL_OPTIONS = {
 function labelFor(provider) {
   return PROVIDER_LABELS[provider] || provider || "AI";
 }
+
+  function normalizePlatformProviderId(provider) {
+    const p = String(provider || "openai").trim().toLowerCase();
+    if (p === "anthropic" || p === "claude") return "anthropic";
+    if (p === "kimi" || p === "moonshot") return "kimi";
+    return "openai";
+  }
 
 function defaultModel(provider) {
   return MODEL_OPTIONS[provider]?.[0]?.value || "gpt-5.5";
@@ -276,8 +283,9 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     const providers = credits.providers || {};
     const openaiOn = !!providers.openai;
     const claudeOn = !!providers.anthropic;
+    const kimiOn = !!providers.kimi;
     const models = credits.models || [];
-    const preferredProvider = credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+    const preferredProvider = normalizePlatformProviderId(credits.platform_provider);
     const allModelsForSelect = models.length ? models : [];
     const selectedModel = credits.platform_model || "";
     const stripeReady = !!(credits.stripe_ready || credits.payment_methods?.stripe);
@@ -290,7 +298,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     const overviewPanel = `
       <div class="ai-credit-panel" data-credit-panel="overview">
         <p class="ai-credit-copy">
-          Credits unlock Render3D’s shared <strong>OpenAI</strong>${claudeOn ? " and <strong>Claude</strong>" : ""} keys.
+          Credits unlock Render3D’s shared <strong>OpenAI</strong>${claudeOn ? ", <strong>Claude</strong>" : ""}${kimiOn ? ", and <strong>Kimi</strong>" : ""} keys.
           Generation deducts model cost plus ${Number(credits.markup_percent || 15)}% — no personal API key required.
         </p>
         <div class="ai-credit-meter" title="${esc(pctLabel)}"><span style="width:${pctValue}%"></span></div>
@@ -305,6 +313,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
         <p class="ai-credit-note">
           ${openaiOn ? "OpenAI ready." : "OpenAI platform key missing."}
           ${claudeOn ? " Claude ready." : " Add ANTHROPIC_API_KEY on the server to unlock Claude."}
+          ${kimiOn ? " Kimi ready." : " Add KIMI_API_KEY on the server to unlock Kimi."}
         </p>
       </div>`;
 
@@ -438,7 +447,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
   function renderPlatformKeysSection(credits = {}, platformKeys = []) {
     const balance = Number(credits.balance_cents || 0);
     const providers = credits.providers || {};
-    const preferred = credits.platform_provider === "anthropic" ? "anthropic" : "openai";
+    const preferred = normalizePlatformProviderId(credits.platform_provider);
     const enabled = !!credits.use_platform_key && balance > 0;
     const rows = [
       {
@@ -459,11 +468,20 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
           || (credits.models || []).find((m) => m.provider === "anthropic")?.model
           || "",
       },
+      {
+        id: "kimi",
+        name: "Kimi",
+        provider: "kimi",
+        live: !!providers.kimi,
+        model: (platformKeys.find((k) => k.id === "kimi") || {}).model
+          || (credits.models || []).find((m) => m.provider === "kimi")?.model
+          || "kimi-k3",
+      },
     ];
 
     let body = "";
     if (balance <= 0) {
-      body = `<p class="ai-keys-empty">Buy Studio credits to unlock the Render3D key (OpenAI or Anthropic) — no personal API key required.</p>`;
+      body = `<p class="ai-keys-empty">Buy Studio credits to unlock the Render3D key (OpenAI, Anthropic, or Kimi) — no personal API key required.</p>`;
     } else {
       const available = rows.filter((row) => row.live);
       const current = available.find((row) => row.id === preferred) || available[0];
@@ -1043,7 +1061,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     if (activatePlatform) {
       const providerSel = keysList?.querySelector("[data-action='platform-provider']");
       const providerRaw = activatePlatform.dataset.provider || providerSel?.value || "openai";
-      const provider = providerRaw === "anthropic" ? "anthropic" : "openai";
+      const provider = normalizePlatformProviderId(providerRaw);
       const modelSel = keysList?.querySelector(`[data-action='platform-key-model']`);
       const model = modelSel?.value || undefined;
       setError("");
@@ -1410,7 +1428,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
           }),
         });
         render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
-        onSelectPromptKey?.(`platform:${provider === "anthropic" ? "anthropic" : "openai"}`);
+        onSelectPromptKey?.(`platform:${normalizePlatformProviderId(provider)}`);
       } catch (err) {
         setError(err.message || "Could not update shared model");
       }
@@ -1422,12 +1440,16 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
       const raw = String(platformProvider.value || "");
       const sep = raw.indexOf(":");
       const id = sep >= 0 ? raw.slice(sep + 1) : raw;
-      const provider = id === "anthropic" ? "anthropic" : "openai";
+      const provider = normalizePlatformProviderId(id);
       const preferredModel = (() => {
         const pinned = String(status?.credits?.platform_model || "").trim();
         if (provider === "anthropic") {
-          if (pinned && !/^(gpt|o1|o3|chatgpt)/i.test(pinned)) return pinned;
+          if (pinned && !/^(gpt|o1|o3|chatgpt|kimi)/i.test(pinned)) return pinned;
           return "claude-opus-4-8";
+        }
+        if (provider === "kimi") {
+          if (pinned && /^kimi/i.test(pinned)) return pinned;
+          return "kimi-k3";
         }
         if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/pro/i.test(pinned)) return pinned;
         const fromList = (status?.credits?.models || []).find((m) => m.provider === provider)?.model;

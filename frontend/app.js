@@ -16388,17 +16388,22 @@ function parsePromptKeyOptionValue(value) {
 function storedPlatformConflictsWithAccount(value, status) {
   const parsed = parsePromptKeyOptionValue(value);
   if (!parsed || parsed.source !== "platform") return false;
-  const preferred = status?.credits?.platform_provider === "anthropic" ? "anthropic" : "openai";
-  const keyId = parsed.keyId === "anthropic" ? "anthropic" : "openai";
+  const preferred = normalizePlatformProviderId(status?.credits?.platform_provider);
+  const keyId = normalizePlatformProviderId(parsed.keyId);
   return keyId !== preferred;
 }
 
 function defaultPlatformModelForProvider(provider, status = aiStatus) {
   const credits = status?.credits || {};
   const pinned = String(credits.platform_model || "").trim();
-  if (provider === "anthropic") {
-    if (pinned && !/^(gpt|o1|o3|chatgpt)/i.test(pinned)) return pinned;
+  const prov = normalizePlatformProviderId(provider);
+  if (prov === "anthropic") {
+    if (pinned && !/^(gpt|o1|o3|chatgpt|kimi)/i.test(pinned)) return pinned;
     return "claude-opus-4-8";
+  }
+  if (prov === "kimi") {
+    if (pinned && /^kimi/i.test(pinned)) return pinned;
+    return "kimi-k3";
   }
   // OpenAI: keep a non-Pro pin if present; otherwise gpt-5.5 (not Pro).
   if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/-pro\b/i.test(pinned)) return pinned;
