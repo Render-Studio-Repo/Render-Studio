@@ -1,3 +1,12 @@
+## 2026-07-25 — Cmd+Z move undo no longer deletes parts
+
+- Bug: after a gizmo move, Cmd+Z fell through to `undoTimeline()` on the previous generation when the transform tip wasn’t ready — that restored an old snapshot and wiped sibling parts.
+- Transform undo now only reverts pose or a real transform timeline tip; never undoes prompt/build steps. In-flight auto-apply is cancelled on undo.
+- Backend single-step transform undo restores only the moved file (no full-project wipe).
+- Cache-bust `app.js` / `gizmo-panel.js` `?v=20260725-undo-move`. Service restarted.
+
+---
+
 ## 2026-07-25 — CAD colors: no black / charcoal / aluminium on dark canvas
 
 - Part palette was aluminium / charcoal / matte black — invisible on the dark viewport.

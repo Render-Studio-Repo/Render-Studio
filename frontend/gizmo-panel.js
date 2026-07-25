@@ -35,6 +35,7 @@ export function createGizmoPanel({
   let visible = false;
   let applying = false;
   let dragActive = false;
+  let applyGeneration = 0;
 
   function destroyDragHud() {
     dragHud?.remove();
@@ -258,7 +259,7 @@ export function createGizmoPanel({
     onStatus?.(kind, text);
   }
 
-  async function apply(copy = false) {
+  async function apply(copy = false, strokeGeneration = null) {
     if (applying) return;
     const mesh = targetObject();
     const { projectId, filename, bodyIndex = null, bodyName = null, bodyCount = 1, isRoot = true } = getModelInfo();
@@ -301,6 +302,13 @@ export function createGizmoPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      // Cmd+Z during apply — discard the bake so undo pose sticks.
+      if (strokeGeneration != null && strokeGeneration !== applyGeneration) {
+        setStatus("muted", "Transform discarded (undone).");
+        captureStart();
+        updateFields();
+        return;
+      }
       // Delta is baked into the reloaded geometry; restore the pre-drag object
       // transform so placement stays where the user left it (centering offset is
       // kept on the object, not in the file vertices).
@@ -316,6 +324,10 @@ export function createGizmoPanel({
       // creates a visible snap-back for imported components.
       setStatus("ok", `Saved ${data.filename}`);
       await onApplied?.({ ...data, placementBaseline });
+      if (strokeGeneration != null && strokeGeneration !== applyGeneration) {
+        setStatus("muted", "Transform discarded (undone).");
+        return;
+      }
       captureStart();
       updateFields();
     } catch (err) {
@@ -414,12 +426,13 @@ export function createGizmoPanel({
       if (!(visible && hasMoved && beforePose)) return;
       const mesh = targetObject();
       const info = getModelInfo?.() || {};
+      const strokeGeneration = ++applyGeneration;
       // Push undo immediately so Cmd+Z works before / without waiting on Apply.
       onTransformStrokeEnd?.({
         type: "transform",
         filename: info.filename || null,
         mode: transformControls.getMode?.() || "translate",
-        liveTarget: mesh?.userData?.isMultiSelectionTransform ? "transform-controls" : null,
+        liveTarget: "transform-controls",
         skipAutoApply: !!mesh?.userData?.isMultiSelectionTransform,
         delta: d
           ? {
@@ -442,7 +455,7 @@ export function createGizmoPanel({
         updateFields();
         setStatus("ok", "Moved selected objects together. Cmd+Z to undo this live move.");
       } else {
-        void apply(false);
+        void apply(false, strokeGeneration);
       }
     });
     onUnitsChanged(() => {
@@ -479,6 +492,10 @@ export function createGizmoPanel({
       dragActive = false;
       captureStart();
       updateFields();
+    },
+    cancelPendingApply() {
+      applyGeneration += 1;
+      applying = false;
     },
     clearSnapTarget() {
       panel.querySelectorAll("[data-gz-snap-target]").forEach((b) => b.classList.remove("active"));

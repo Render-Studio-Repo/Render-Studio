@@ -413,6 +413,21 @@ def go_to_index(project_path: Path, index: int) -> dict[str, Any]:
 
     current = data.get("current_index", -1)
 
+    # Surgical single-step undo of a transform: restore only the moved file(s).
+    # Full manifest restore of the previous entry can delete sibling assembly parts.
+    if current == index + 1 and 0 <= current < len(entries):
+        cur_entry = entries[current]
+        if cur_entry.get("kind") in {"transform", "body_transform"}:
+            filename = _surgical_undo_transform(project_path, cur_entry, entries, index)
+            data["current_index"] = index
+            save_timeline(project_path, data)
+            return {
+                "index": index,
+                "entry": entries[index],
+                "filename": filename,
+                "url": f"/api/projects/{project_path.name}/files/{filename}" if filename else None,
+            }
+
     # Undo past a delete/remove step — restore removed geometry from snapshots.
     if current > index:
         for i in range(current, index, -1):
@@ -436,6 +451,62 @@ def go_to_index(project_path: Path, index: int) -> dict[str, Any]:
         "filename": restored_filename,
         "url": f"/api/projects/{project_path.name}/files/{restored_filename}" if restored_filename else None,
     }
+
+
+def _surgical_undo_transform(
+    project_path: Path,
+    transform_entry: dict[str, Any],
+    entries: list[dict[str, Any]],
+    prev_index: int,
+) -> str:
+    """Undo one transform without wiping unrelated assembly files."""
+    hist = _history_dir(project_path)
+    meta = transform_entry.get("meta") or {}
+    current_fn = str(transform_entry.get("filename") or "")
+    parent_fn = str(meta.get("parent") or current_fn or "")
+    prev_entry = entries[prev_index] if 0 <= prev_index < len(entries) else {}
+    prev_names = {
+        str(item.get("filename"))
+        for item in (prev_entry.get("snapshot_files") or [])
+        if item.get("filename")
+    }
+    if prev_entry.get("filename"):
+        prev_names.add(str(prev_entry["filename"]))
+
+    restored = ""
+    for fn in dict.fromkeys([parent_fn, current_fn]):
+        if not fn:
+            continue
+        snap = _best_snapshot_for_file(entries, prev_index, fn)
+        if not snap:
+            continue
+        snap_path = hist / snap
+        if not snap_path.is_file():
+            continue
+        shutil.copy2(snap_path, project_path / fn)
+        restored = fn
+
+    # Whole-model transform may have written a new *_edited file — remove it when
+    # it did not exist in the previous timeline snapshot.
+    if (
+        current_fn
+        and parent_fn
+        and current_fn != parent_fn
+        and current_fn not in prev_names
+        and (project_path / current_fn).is_file()
+    ):
+        try:
+            (project_path / current_fn).unlink()
+        except OSError:
+            pass
+        if parent_fn and (project_path / parent_fn).is_file():
+            restored = parent_fn
+
+    if restored:
+        return restored
+    if parent_fn and (project_path / parent_fn).is_file():
+        return parent_fn
+    return current_fn or parent_fn
 
 
 def restore_as_latest(

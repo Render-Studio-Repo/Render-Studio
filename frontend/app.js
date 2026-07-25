@@ -93,7 +93,7 @@ import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=202
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-step-part";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
-import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-name-xform";
+import { createGizmoPanel } from "./gizmo-panel.js?v=20260725-undo-move";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-architect-clip";
 import { createArchitectSession } from "./architect-session.js?v=20260720-architect-clip";
 import { createDirectModeling } from "./direct-modeling.js?v=20260716-body-face-pull";
@@ -6528,6 +6528,12 @@ function pushViewportUndoAction(action, { clearRedo = true } = {}) {
   if (clearRedo) viewportRedoStack.length = 0;
 }
 
+function isTimelineTransformEntry(entry) {
+  if (!entry) return false;
+  const kind = String(entry.kind || entry.action || entry.type || "").toLowerCase();
+  return kind === "transform" || kind === "body_transform" || kind.includes("transform");
+}
+
 function undoViewportAction() {
   const action = viewportUndoStack.pop();
   if (!action) return false;
@@ -6536,15 +6542,19 @@ function undoViewportAction() {
     const entries = timelineData?.entries || [];
     const cur = timelineCurrentIndex();
     const tip = cur >= 0 ? entries[cur] : null;
-    const tipKind = String(tip?.kind || tip?.action || tip?.type || "").toLowerCase();
-    const tipIsTransform = !!(tip && (tipKind === "transform" || tipKind.includes("transform")));
-    if (action.committed && tipIsTransform) {
+    const tipIsTransform = isTimelineTransformEntry(tip);
+
+    if (action.committed && tipIsTransform && cur > 0) {
       viewportRedoStack.push(action);
+      // Cancel any in-flight auto-apply so it cannot re-bake after this undo.
+      gizmoPanel.cancelPendingApply?.();
       void undoTimeline();
       return true;
     }
+
     const mesh = resolveViewportTransformTarget(action);
-    if (mesh && action.before && !action.committed) {
+    if (mesh && action.before) {
+      gizmoPanel.cancelPendingApply?.();
       mesh.position.fromArray(action.before.position);
       mesh.quaternion.fromArray(action.before.quaternion);
       mesh.scale.fromArray(action.before.scale);
@@ -6555,16 +6565,18 @@ function undoViewportAction() {
       viewportRedoStack.push(action);
       return true;
     }
-    // Reloaded mesh / missed committed flag — fall back to timeline.
-    if (cur > 0 && tipIsTransform) {
+
+    // Only fall back to timeline when the tip itself is a transform.
+    // Never undo a generation/prompt step from a transform action — that deletes parts.
+    if (tipIsTransform && cur > 0) {
       viewportRedoStack.push(action);
+      gizmoPanel.cancelPendingApply?.();
       void undoTimeline();
       return true;
     }
-    if (cur > 0) {
-      void undoTimeline();
-      return true;
-    }
+
+    // Could not safely undo — put the action back.
+    viewportUndoStack.push(action);
     setEditStatus("error", "Nothing to undo.");
     return true;
   }
@@ -6594,12 +6606,13 @@ function undoViewportAction() {
 }
 
 function resolveViewportTransformTarget(action = {}) {
-  const wantName = action.filename || null;
+  // Prefer the live gizmo target — part moves attach a child mesh, not the catalog root.
+  if (transformControls.object) return transformControls.object;
   if (action.liveTarget === "transform-controls" && transformControls.object) {
     return transformControls.object;
   }
+  const wantName = action.filename || null;
   if (wantName && projectAssembly.get(wantName)) return projectAssembly.get(wantName);
-  if (transformControls.object) return transformControls.object;
   if (currentMesh) return currentMesh;
   if (wantName) {
     for (const [name, obj] of projectAssembly.list() || []) {
@@ -6616,15 +6629,14 @@ function redoViewportAction() {
     const entries = timelineData?.entries || [];
     const cur = timelineCurrentIndex();
     const next = cur + 1 < entries.length ? entries[cur + 1] : null;
-    const nextKind = String(next?.kind || next?.action || next?.type || "").toLowerCase();
-    const nextIsTransform = !!(next && (nextKind === "transform" || nextKind.includes("transform")));
+    const nextIsTransform = isTimelineTransformEntry(next);
     if (action.committed && nextIsTransform) {
       viewportUndoStack.push(action);
       void redoTimeline();
       return true;
     }
     const mesh = resolveViewportTransformTarget(action);
-    if (mesh && action.after && !action.committed) {
+    if (mesh && action.after) {
       mesh.position.fromArray(action.after.position);
       mesh.quaternion.fromArray(action.after.quaternion);
       mesh.scale.fromArray(action.after.scale);
@@ -6640,10 +6652,7 @@ function redoViewportAction() {
       void redoTimeline();
       return true;
     }
-    if (cur >= 0 && cur < entries.length - 1) {
-      void redoTimeline();
-      return true;
-    }
+    viewportRedoStack.push(action);
     setEditStatus("error", "Nothing to redo.");
     return true;
   }
