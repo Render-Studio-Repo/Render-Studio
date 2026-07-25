@@ -128,23 +128,25 @@ function collapseExportsToSingleStep(items = []) {
     if (/__faceted/i.test(name) || item.step_structure === "faceted" || item.step_kind === "faceted_mesh") {
       continue;
     }
+    // Prefer native editable B-rep over *.part.step caches (Part rewrite breaks Cut).
     const score =
-      (item.fusion_editable || item.step_structure === "part" || /\.part\.step$/i.test(name) ? 4 : 0)
-      + (item.step_kind === "editable_brep" ? 2 : 0)
-      + (item.base ? 1 : 0);
+      (item.step_kind === "editable_brep" ? 6 : 0)
+      + (/\.part\.step$/i.test(name) || /\.fusionpart\.step$/i.test(name) ? -8 : 2)
+      + (item.base ? 1 : 0)
+      + (item.current ? 1 : 0);
+    const prevName = String(bestStep?.name || "");
     const prev = bestStep
-      ? (bestStep.fusion_editable || bestStep.step_structure === "part" ? 4 : 0)
-        + (bestStep.step_kind === "editable_brep" ? 2 : 0)
+      ? (bestStep.step_kind === "editable_brep" ? 6 : 0)
+        + (/\.part\.step$/i.test(prevName) || /\.fusionpart\.step$/i.test(prevName) ? -8 : 2)
         + (bestStep.base ? 1 : 0)
-      : -1;
-    if (!bestStep || score >= prev) bestStep = item;
+        + (bestStep.current ? 1 : 0)
+      : -999;
+    if (!bestStep || score > prev) bestStep = item;
   }
   if (bestStep) {
     out.push({
       ...bestStep,
       label: "STEP",
-      step_structure: "part",
-      fusion_editable: true,
       download_name: bestStep.download_name || `${modelStem(bestStep.name)}.step`,
     });
   }
@@ -154,9 +156,8 @@ function collapseExportsToSingleStep(items = []) {
 function stepDownloadUrl(projectId, item) {
   const name = item?.name;
   if (!name) return item?.url || "";
-  const base = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(name)}`;
-  if (/[?&]step_mode=/i.test(base)) return base;
-  return `${base}${base.includes("?") ? "&" : "?"}step_mode=part`;
+  // Native on-disk STEP — no step_mode=part rewrite.
+  return item.url || `/api/projects/${projectId}/files/${encodeURIComponent(name)}`;
 }
 
 function formatApiError(err) {
@@ -683,18 +684,19 @@ export async function openFileExportMenu({
     || sorted.some((item) => String(item.name || "").startsWith("_export_visible_assembly"));
   // Prefer the visible-assembly bake. Never fall back to a sibling STEP
   // (that was uploading hidden arduino_uno_q while the gripper was showing).
+  const isPartCache = (item) => /\.part\.step$/i.test(String(item?.name || "")) || /\.fusionpart\.step$/i.test(String(item?.name || ""));
   const cloudStep = isVisibleAssemblyExport
     ? (
-      sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && (item.fusion_editable || item.step_structure === "part" || item.step_kind === "editable_brep"))
+      sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && item.step_kind === "editable_brep" && !isPartCache(item))
+      || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")) && !isPartCache(item))
       || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly") && !/__faceted/i.test(String(item.name || "")))
-      || sorted.find((item) => item.format === "step" && String(item.name || "").startsWith("_export_visible_assembly"))
-      || sorted.find((item) => item.format === "step" && (item.fusion_editable || item.step_structure === "part"))
+      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && !isPartCache(item))
       || null
     )
     : (
-      sorted.find((item) => item.format === "step" && (item.fusion_editable || item.step_structure === "part") && (item.current || modelStem(item.name) === modelStem(targetStem)))
-      || sorted.find((item) => item.format === "step" && (item.fusion_editable || item.step_structure === "part"))
-      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && item.step_structure !== "assembly" && (item.current || modelStem(item.name) === modelStem(targetStem)))
+      sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && !isPartCache(item) && (item.current || modelStem(item.name) === modelStem(targetStem)))
+      || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && !isPartCache(item))
+      || sorted.find((item) => item.format === "step" && !isPartCache(item) && !/__faceted/i.test(String(item.name || "")) && (item.current || modelStem(item.name) === modelStem(targetStem)))
       || sorted.find((item) => item.format === "step" && item.step_kind === "editable_brep" && (item.current || modelStem(item.name) === modelStem(targetStem)))
       || null
     );
@@ -741,7 +743,7 @@ export async function openFileExportMenu({
     btn.title = item.name;
     btn.addEventListener("click", async () => {
       try {
-        // One Fusion-ready STEP (server flattens linked assemblies via step_mode=part).
+        // Native solid STEP (Jul 16) — no Part rewrite.
         const url = item.format === "step"
           ? stepDownloadUrl(projectId, item)
           : (item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`);
@@ -823,11 +825,11 @@ export async function openFileExportMenu({
   );
 
   function showFusionStepModeChooser(onChoose, anchorEl = null) {
-    // Single Fusion-ready Part STEP everywhere — no Part/Assembly picker.
-    onChoose?.("part");
+    // Jul 16 path: native solid B-rep only — no Part/Assembly picker.
+    onChoose?.("native");
   }
 
-  let fusionStepMode = "part";
+  let fusionStepMode = "native";
 
   const isThreeMfFusionUpload = /\.3mf$/i.test(String(cloudFilename || filename || ""));
   let fusionUploadFilename = isThreeMfFusionUpload
@@ -850,14 +852,13 @@ export async function openFileExportMenu({
     if (bake?.name) fusionUploadFilename = bake.name;
   }
 
-  // Jul 16 / pre-3fc6c13 working Fusion push body: filename + allow_faceted only.
-  // Never upload companion .py (doubles Fusion folder) — STEP Part only for Cut.
+  // Jul 16 working Fusion push: native STEP bytes, no Part rewrite, no companion .py.
   function fusionPushBody(extra = {}) {
     const body = {
       filename: fusionUploadFilename,
       name: fusionDestName,
       allow_faceted_step: resolvedCloudStepIsFaceted,
-      step_mode: fusionStepMode || "part",
+      step_mode: fusionStepMode || "native",
       upload_source: false,
       ...extra,
     };
@@ -1192,7 +1193,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
   allowFacetedStep = false,
   format = "step",
   allowedFilenames = [],
-  stepMode = "part",
+  stepMode = "native",
 }) {
   menu.querySelector(".file-export-fusion-picker")?.remove();
   const picker = document.createElement("div");
@@ -1727,7 +1728,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
           name: uploadBaseName,
           allow_faceted_step: allowFacetedStep,
           conflict_mode: conflictMode,
-          step_mode: stepMode || "part",
+          step_mode: stepMode || "native",
           // One STEP only — never companion .py (was creating 2 Fusion files).
           upload_source: false,
           ...(isThreeMf ? { format: "3mf" } : {}),

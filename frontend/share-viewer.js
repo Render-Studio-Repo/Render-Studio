@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { applyViewportStyle, setupRenderer, setObjectTransparent as styleSetObjectTransparent } from "./scene-style.js?v=20260724-texture-keep";
+import { applyViewportStyle, setupRenderer, setObjectTransparent as styleSetObjectTransparent } from "./scene-style.js?v=20260724-mesh-lookdev";
 import { authHeaders, getToken } from "./auth.js?v=20260715-share-open-project";
 import { createUrdfRobotRuntime } from "./urdf-robot-runtime.js?v=20260715-share-public-urdf";
 

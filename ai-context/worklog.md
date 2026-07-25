@@ -1,3 +1,11 @@
+## 2026-07-24 — Mesh look-dev (match img2threejs online)
+
+- Mesh/authored models now use showcase-style look-dev: RoomEnvironment IBL, cinematic key/rim/accent lights, radial dark backdrop, stronger contact shadow.
+- Mode 2.0 / CAD keeps the soft studio light rig (no env map). Switch is automatic via `applyViewportStyle(..., syncViewportLights)`.
+- Viewport light slider scales the active rig. Cache-bust: `scene-style.js` / `app.js` `?v=20260724-mesh-lookdev`.
+
+---
+
 ## 2026-07-24 — Prompt draft: per-project only, clear on submit
 
 - Global `aiComposeDraft` was restoring the same text into every project’s prompt box.

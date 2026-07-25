@@ -897,7 +897,16 @@ def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
     project_path = Path(project_path)
     safe = Path(filename).name
     stem = Path(safe).stem
+    for suffix in (".fusionpart", ".part"):
+        if stem.lower().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
     candidates: list[Path] = []
+    # Prefer the native `{stem}.step` over any `*.part.step` cache the UI requested.
+    for ext in STEP_SUFFIXES:
+        native = project_path / f"{stem}{ext}"
+        if native.is_file():
+            candidates.append(native)
     if Path(safe).suffix.lower() in STEP_SUFFIXES:
         candidates.append(project_path / safe)
     step_src = find_step_source(project_path, stem)
@@ -914,14 +923,29 @@ def resolve_native_brep_step(project_path: Path, filename: str) -> Path | None:
         variant_step = find_step_source(project_path, variant)
         if variant_step is not None:
             candidates.append(variant_step)
+
+    def _native_score(path: Path) -> int:
+        name = path.name.lower()
+        score = 0
+        if is_editable_brep_step(path):
+            score += 10
+        if ".part." in name or ".fusionpart." in name:
+            score -= 20
+        if "__faceted" in name:
+            score -= 30
+        return score
+
     seen: set[str] = set()
+    editable: list[Path] = []
     for path in candidates:
         key = str(path.resolve()) if path.exists() else path.name
         if key in seen:
             continue
         seen.add(key)
         if path.is_file() and is_editable_brep_step(path):
-            return path
+            editable.append(path)
+    if editable:
+        return max(editable, key=_native_score)
     return None
 
 
@@ -1002,8 +1026,8 @@ def resolve_existing_project_file(project_path: Path, filename: str | None) -> s
 def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, Any]]:
     """List downloadable artifacts that share a model basename.
 
-    Exposes at most **one** STEP — a Fusion-ready Part (no assembly links) so
-    Extrude/Cut works. Faceted / linked-assembly siblings are not listed.
+    Exposes at most **one** STEP — the native editable B-rep (Jul 16 path).
+    Faceted siblings are not listed. Never rewrites through ensure_fusion_part_step.
     """
     stem = Path(filename).stem
     # Strip .part from stem so Fully_Assembled.part.step still lists siblings.
@@ -1026,7 +1050,7 @@ def list_exports_for_model(project_path: Path, filename: str) -> list[dict[str, 
             continue
         fmt = _export_format(name)
         if fmt == "step":
-            # Collected below after Part ensure — never list raw/faceted/assembly STEPs.
+            # Collected below — never list raw/faceted STEPs here.
             continue
         exports.append(
             {
@@ -1047,15 +1071,16 @@ def _fusion_ready_step_export(
     root_stem: str,
     filename: str,
 ) -> dict[str, Any] | None:
-    """Pick/create one Extrude/Cut-ready STEP for downloads and share menus."""
+    """Pick one native editable B-rep STEP for downloads / Fusion (no Part rewrite)."""
     project_path = Path(project_path)
     candidates: list[Path] = []
+    # Native first — never prefer *.part.step caches (those break Extrude/Cut).
     for name in (
-        f"{root_stem}.part.step",
-        f"{root_stem}.fusionpart.step",
         f"{root_stem}.step",
         f"{root_stem}.stp",
         Path(filename).name,
+        f"{root_stem}.part.step",
+        f"{root_stem}.fusionpart.step",
     ):
         path = project_path / Path(name).name
         if path.is_file() and path.suffix.lower() in {".step", ".stp"}:
@@ -1073,38 +1098,41 @@ def _fusion_ready_step_export(
         seen.add(key)
         unique.append(path)
 
-    source: Path | None = None
-    for path in unique:
+    def _score(path: Path) -> int:
+        name = path.name.lower()
+        score = 0
         try:
             if classify_step_file_kind(path) == "editable_brep":
-                source = path
-                break
+                score += 10
         except Exception:
-            continue
-    if source is None:
-        for path in unique:
-            if "__faceted" not in path.name.lower():
-                source = path
-                break
-    if source is None:
-        return None
+            pass
+        if ".part." in name or ".fusionpart." in name:
+            score -= 20
+        if "__faceted" in name:
+            score -= 30
+        return score
 
-    try:
-        part = ensure_fusion_part_step(project_path, source)
-    except Exception:
-        part = source
-    if not part.is_file():
+    ranked = sorted(
+        [p for p in unique if p.is_file() and "__faceted" not in p.name.lower()],
+        key=_score,
+        reverse=True,
+    )
+    source = ranked[0] if ranked else None
+    if source is None:
         return None
+    try:
+        kind = classify_step_file_kind(source)
+    except Exception:
+        kind = "unknown"
     return {
-        "name": part.name,
+        "name": source.name,
         "format": "step",
-        "size": part.stat().st_size,
-        "step_kind": "editable_brep",
-        "step_structure": "part",
-        "fusion_editable": True,
+        "size": source.stat().st_size,
+        "step_kind": kind if kind != "unknown" else "editable_brep",
+        "step_structure": "assembly" if step_has_assembly_links(source) else "solid",
+        "fusion_editable": kind == "editable_brep",
         "base": True,
         "label": "STEP",
-        # Clients download as clean Model.step (server also rewrites Content-Disposition).
         "download_name": f"{root_stem}.step",
     }
 
@@ -1300,12 +1328,9 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
             pass
 
     # Prefer a solid B-rep compound of the *visible* native STEPs for Fusion.
+    # Do not flatten via ensure_fusion_part_step — that breaks Extrude/Cut.
     solid_step = _build_visible_brep_step(project_path, safe_names, project_path / f"{stem}.step")
     if solid_step is not None and solid_step.is_file():
-        try:
-            solid_step = ensure_fusion_part_step(project_path, solid_step)
-        except Exception:
-            pass
         outputs.insert(1, solid_step)
 
     result: list[dict[str, Any]] = []
@@ -1315,7 +1340,7 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
             continue
         fmt = _export_format(out.name)
         if fmt == "step":
-            # One STEP only — Fusion-ready Part. Skip faceted mesh siblings.
+            # One STEP only — native solid. Skip faceted mesh siblings.
             if "__faceted" in out.name.lower():
                 continue
             try:
@@ -1327,8 +1352,8 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
                 "format": "step",
                 "size": out.stat().st_size,
                 "step_kind": kind if kind != "unknown" else "editable_brep",
-                "step_structure": "part",
-                "fusion_editable": True,
+                "step_structure": "assembly" if step_has_assembly_links(out) else "solid",
+                "fusion_editable": kind == "editable_brep",
                 "label": "STEP",
                 "download_name": (
                     f"{Path(safe_names[0]).stem}.step"
@@ -1336,10 +1361,22 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
                     else f"{stem}.step"
                 ),
             }
-            # Prefer non-faceted solid over anything else.
-            if best_step is None or (
-                best_step.get("step_kind") != "editable_brep" and kind == "editable_brep"
-            ):
+            # Prefer non-faceted native solid; demote *.part.step caches.
+            score = (10 if kind == "editable_brep" else 0) - (
+                20 if (".part." in out.name.lower() or ".fusionpart." in out.name.lower()) else 0
+            )
+            prev = best_step
+            prev_score = -999
+            if prev is not None:
+                prev_score = (10 if prev.get("step_kind") == "editable_brep" else 0) - (
+                    20
+                    if (
+                        ".part." in str(prev.get("name") or "").lower()
+                        or ".fusionpart." in str(prev.get("name") or "").lower()
+                    )
+                    else 0
+                )
+            if best_step is None or score > prev_score:
                 best_step = item
             continue
         result.append(

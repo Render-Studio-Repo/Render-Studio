@@ -8598,12 +8598,22 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 )
         return result
 
-    # Native Jake/build123d STEPs often include NEXT_ASSEMBLY_USAGE, so Fusion
-    # opens them as linked assemblies — Extrude Cut then fails with
-    # "No target body found to cut or intersect". Flatten to one Part (Bodies
-    # kept) while preserving MANIFOLD_SOLID_BREP. Jul 19 export_step_as_single_part
-    # was the right fix for Cut; earlier we removed it thinking it broke B-rep.
+    # Jul 16 golden: upload native solid B-rep as-is. Never rewrite via
+    # ensure_fusion_part_step / export_step_as_single_part — that breaks Extrude/Cut.
     step_path = _step_for_cloud_cad(path, safe, allow_faceted=bool(body.get("allow_faceted_step")))
+    # If the UI still points at a *.part.step cache, prefer the sibling native STEP.
+    stem_raw = step_path.stem
+    base_stem = stem_raw
+    for _suffix in (".fusionpart", ".part"):
+        if base_stem.lower().endswith(_suffix):
+            base_stem = base_stem[: -len(_suffix)]
+            break
+    if base_stem != stem_raw:
+        for _ext in (".step", ".stp"):
+            native_sib = path / f"{base_stem}{_ext}"
+            if native_sib.is_file() and cad_service.is_editable_brep_step(native_sib):
+                step_path = native_sib
+                break
     try:
         kind = cad_service.classify_step_file_kind(step_path)
     except Exception:
@@ -8633,54 +8643,6 @@ def push_project_to_autodesk(project_id: str, body: dict = Body(default={}), use
                 f"Refusing to push {step_path.name} — it is not in the visible component list. "
                 "Show the component you want, then export again.",
             )
-    if kind == "editable_brep":
-        step_mode = str(body.get("step_mode") or "part").strip().lower()
-        want_part = step_mode not in {"assembly", "native", "as_is", "linked"}
-        if want_part:
-            try:
-                step_path = cad_service.ensure_fusion_part_step(path, step_path)
-            except Exception as exc:
-                logger.warning("Fusion Part ensure failed for %s: %s", step_path.name, exc)
-                try:
-                    peek = step_path.read_bytes()[:8_000_000].decode("utf-8", errors="ignore").upper()
-                except Exception:
-                    peek = ""
-                if "NEXT_ASSEMBLY_USAGE" in peek or step_path.name.lower().startswith("_export_visible_assembly"):
-                    part_path = path / f"{step_path.stem}.fusionpart{step_path.suffix.lower()}"
-                    try:
-                        step_path = cad_service.export_step_as_single_part(step_path, part_path)
-                    except Exception as exc2:
-                        logger.warning("Fusion Part flatten failed for %s: %s", step_path.name, exc2)
-        else:
-            logger.info("Fusion push keeping assembly STEP project=%s file=%s", project_id, step_path.name)
-    else:
-        # Unknown / faceted still try Part flatten when Extrude/Cut is requested
-        # and the STEP still has assembly links.
-        step_mode = str(body.get("step_mode") or "part").strip().lower()
-        want_part = step_mode not in {"assembly", "native", "as_is", "linked"}
-        if want_part:
-            try:
-                if cad_service.step_has_assembly_links(step_path):
-                    step_path = cad_service.ensure_fusion_part_step(path, step_path)
-            except Exception as exc:
-                logger.warning("Fusion Part flatten (non-brep path) failed for %s: %s", step_path.name, exc)
-
-    # Final Cut-safety check: refuse to upload a linked assembly for part mode.
-    try:
-        step_mode_final = str(body.get("step_mode") or "part").strip().lower()
-        if step_mode_final not in {"assembly", "native", "as_is", "linked"}:
-            if cad_service.step_has_assembly_links(step_path):
-                step_path = cad_service.ensure_fusion_part_step(path, step_path)
-            if cad_service.step_has_assembly_links(step_path):
-                raise HTTPException(
-                    422,
-                    "This STEP is still a linked Fusion assembly, so Extrude/Cut will fail. "
-                    "Re-export as a Part STEP from Render3D and try again.",
-                )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.warning("Fusion Cut-safety check failed for %s: %s", step_path.name, exc)
 
     upload_stem = step_path.stem
     for suffix in (".fusionpart", ".part"):
@@ -13407,7 +13369,7 @@ def get_public_file(project_id: str, filename: str, step_mode: str | None = Quer
 
 
 def _annotate_export_download_urls(project_id: str, exports: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Attach download URLs; STEP always requests the Fusion-ready Part rewrite."""
+    """Attach download URLs; STEP served native (no Part rewrite)."""
     out: list[dict[str, Any]] = []
     for item in exports or []:
         row = dict(item)
@@ -13417,7 +13379,6 @@ def _annotate_export_download_urls(project_id: str, exports: list[dict[str, Any]
             continue
         url = f"/api/projects/{project_id}/files/{name}"
         if str(row.get("format") or "").lower() == "step":
-            url = f"{url}?step_mode=part"
             stem = Path(name).name
             for suffix in (".part.step", ".fusionpart.step", ".step", ".stp"):
                 if stem.lower().endswith(suffix):
@@ -13513,30 +13474,8 @@ def _file_response(project_path: Path, project_id: str, filename: str, *, step_m
         except Exception as exc:
             logger.warning("Faceted STEP export failed for %s: %s", safe, exc)
             raise HTTPException(422, f"Could not create faceted STEP: {exc}") from exc
-    # Prefer / create a Fusion Part STEP (no NEXT_ASSEMBLY_USAGE). Linked
-    # assemblies open in Fusion without a cut target ("No target body found").
-    if (
-        file_path.suffix.lower() in {".step", ".stp"}
-        and step_mode_normalized in {"", "regular", "part", "single", "fusion"}
-    ):
-        try:
-            kind = cad_service.classify_step_file_kind(file_path)
-        except Exception:
-            kind = "unknown"
-        if kind == "editable_brep" and step_mode_normalized != "assembly":
-            try:
-                part_path = cad_service.ensure_fusion_part_step(project_path, file_path)
-                if part_path.is_file():
-                    file_path = part_path
-                    # Always download as clean .step (never *.part.step / *.fusionpart.step)
-                    stem = file_path.stem
-                    for suffix in (".fusionpart", ".part"):
-                        if stem.endswith(suffix):
-                            stem = stem[: -len(suffix)]
-                            break
-                    safe = f"{stem}.step"
-            except Exception as exc:
-                logger.warning("Part STEP ensure failed for %s: %s", safe, exc)
+    # Jul 16 golden: serve on-disk solid STEP as-is. Part rewrite via
+    # ensure_fusion_part_step breaks Extrude/Cut in Fusion.
     if file_path.suffix.lower() == ".3mf":
         stem = file_path.stem
         for suffix in (".step", ".stp", ".glb", ".gltf", ".stl", ".obj", ".ply", ".off"):
@@ -13849,7 +13788,6 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
             continue
         url = f"/api/share/{token}/files/{urllib.parse.quote(name)}"
         if str(item.get("format") or "").lower() == "step":
-            url = f"{url}?step_mode=part"
         exports.append({**item, "name": name, "url": url})
     # Also expose exports for the visibility-baked assembly viewer when present.
     if viewer_override and viewer_override != Path(filename).name:
@@ -13861,8 +13799,7 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
                 continue
             url = f"/api/share/{token}/files/{urllib.parse.quote(name)}"
             if str(item.get("format") or "").lower() == "step":
-                url = f"{url}?step_mode=part"
-            exports.append({**item, "name": name, "url": url})
+                exports.append({**item, "name": name, "url": url})
     # One STEP only in the share download menu.
     collapsed: list[dict[str, Any]] = []
     best_step: dict[str, Any] | None = None

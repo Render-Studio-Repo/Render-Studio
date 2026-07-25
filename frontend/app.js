@@ -53,13 +53,16 @@ import {
   applyAuthoredStyle,
   applyViewportStyle,
   prefersAuthoredShading,
+  setViewportShadingMode,
+  getActiveViewportLights,
+  viewportShadingMode,
   disposeStyledModel,
   positionShadowFloor,
   setViewMode,
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260724-texture-keep";
+} from "./scene-style.js?v=20260724-mesh-lookdev";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -86,9 +89,9 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-one-step";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-cut-native";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
-import { initFusionPanel } from "./fusion-panel.js?v=20260724-fusion-one-step";
+import { initFusionPanel } from "./fusion-panel.js?v=20260725-cut-native";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
 import { createGizmoPanel } from "./gizmo-panel.js?v=20260716-body-name-xform";
 import { createArchitectBayGrid } from "./architect-grid-visual.js?v=20260720-architect-clip";
@@ -2220,18 +2223,39 @@ function initPromptStatusViewportToasts() {
 }
 
 initPromptStatusViewportToasts();
-const sceneLights = setupSceneLighting(scene);
+const sceneLights = setupSceneLighting(scene, renderer);
 const VIEWPORT_LIGHTING_KEY = "render3d.viewportLightingPct";
-const sceneLightBaseIntensities = new Map(
-  Object.values(sceneLights || {})
-    .filter((light) => light && typeof light.intensity === "number")
-    .map((light) => [light, light.intensity])
-);
+const sceneLightBaseIntensities = new Map();
+
+function rebuildSceneLightBaselines() {
+  sceneLightBaseIntensities.clear();
+  const groups = [sceneLights?.cadGroup, sceneLights?.lookdevGroup].filter(Boolean);
+  for (const group of groups) {
+    group.traverse((light) => {
+      if (light?.isLight && typeof light.intensity === "number") {
+        sceneLightBaseIntensities.set(light, light.intensity);
+      }
+    });
+  }
+  // Legacy flat map of named lights (still returned for compatibility).
+  for (const light of Object.values(sceneLights || {})) {
+    if (light?.isLight && typeof light.intensity === "number" && !sceneLightBaseIntensities.has(light)) {
+      sceneLightBaseIntensities.set(light, light.intensity);
+    }
+  }
+}
+rebuildSceneLightBaselines();
 
 function applyViewportLighting(percent) {
   const pct = Math.min(180, Math.max(35, Number(percent) || 100));
   const multiplier = pct / 100;
-  for (const [light, base] of sceneLightBaseIntensities) {
+  const active = typeof getActiveViewportLights === "function"
+    ? getActiveViewportLights()
+    : [...sceneLightBaseIntensities.keys()];
+  const targets = active.length ? active : [...sceneLightBaseIntensities.keys()];
+  for (const light of targets) {
+    const base = sceneLightBaseIntensities.get(light);
+    if (base == null) continue;
     light.intensity = base * multiplier;
   }
   const value = document.getElementById("viewport-light-value");
@@ -15610,7 +15634,25 @@ function materializeObject(object3d, {
     seatObjectToFloor(object3d);
   }
   const resolvedStyle = resolveViewportStyleMode(object3d, filename, styleMode);
-  applyViewportStyle(object3d, { filename, styleMode: resolvedStyle });
+  applyViewportStyle(object3d, { filename, styleMode: resolvedStyle, syncViewportLights: true });
+  // Mixed assemblies: keep look-dev if any Mesh/authored sibling is still on screen.
+  try {
+    let anyAuthored = resolvedStyle === "shaded" || resolvedStyle === "authored" || resolvedStyle === "pbr";
+    if (!anyAuthored && typeof projectAssembly?.list === "function") {
+      for (const [name, obj] of projectAssembly.list()) {
+        if (obj === object3d) continue;
+        if (hasMeshFactorySibling(name) || prefersAuthoredShading(obj, name)) {
+          anyAuthored = true;
+          break;
+        }
+      }
+    }
+    if (anyAuthored) setViewportShadingMode("lookdev");
+    const slider = document.getElementById("viewport-light-slider");
+    if (slider) applyViewportLighting(Number(slider.value) || 100);
+  } catch {
+    /* lighting slider / assembly optional during early boot */
+  }
   // Silhouette/edge helpers can slightly expand the AABB — re-seat so the solid base stays on z = 0.
   if (seatToFloor) {
     seatObjectToFloor(object3d);
@@ -23544,7 +23586,7 @@ async function pushFusionWorkspaceFile(payload) {
       name: payload.itemName || undefined,
       team_id: getSelectedWorkspaceId() || null,
       upload_source: false,
-      step_mode: "part",
+      step_mode: "native",
     }),
   });
   setEditStatus("ok", `Pushed ${result.name || filename || "model"} to Fusion.`);

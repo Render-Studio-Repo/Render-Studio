@@ -1,14 +1,19 @@
 import * as THREE from "three";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 /**
  * Fusion / Onshape-style dark workspace theme.
  *
  * Goals: clear part separation, readable hard edges, matte CAD plastic shading
  * (not washed-out white). Edge / silhouette colours are derived per mesh body.
+ *
+ * Mesh / img2threejs models use a separate look-dev rig (RoomEnvironment IBL +
+ * cinematic key/rim) so they match the online showcase — Mode 2.0 stays on CAD lights.
  */
 export const FUSION = {
   canvas: 0x0d1117,
+  lookdevCanvas: 0x12141c,
 
   // Default single-body plastic — vivid enough to read on dark canvas.
   body: 0x5aa2e0,
@@ -26,6 +31,7 @@ export const FUSION = {
   gridMajor: 0x40516a,
   gridMinor: 0x2a3445,
   shadowOpacity: 0.08,
+  lookdevShadowOpacity: 0.18,
 };
 
 const HIGH_FRAGMENT_MESH_COUNT = 1200;
@@ -350,20 +356,133 @@ function _hasPreservableFragmentColors(meshInfos) {
 // ─── lighting ─────────────────────────────────────────────────────────────────
 
 let shadowFloor = null;
+let _litScene = null;
+let _litRenderer = null;
+let _cadLightGroup = null;
+let _lookdevLightGroup = null;
+let _roomEnvTexture = null;
+let _lookdevBgTexture = null;
+/** @type {"cad" | "lookdev"} */
+export let viewportShadingMode = "cad";
 
-export function setupSceneLighting(scene) {
+function _makeLookdevGradientBackground() {
+  const size = 1024;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const g = ctx.createRadialGradient(
+    size * 0.5,
+    size * 0.42,
+    size * 0.05,
+    size * 0.5,
+    size * 0.5,
+    size * 0.72,
+  );
+  g.addColorStop(0, "#2a3140");
+  g.addColorStop(1, "#0c0e14");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function _ensureRoomEnvironment(scene, renderer) {
+  if (_roomEnvTexture || !renderer || !scene) return _roomEnvTexture;
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader?.();
+    _roomEnvTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+  } catch (err) {
+    console.warn("RoomEnvironment IBL unavailable", err);
+    _roomEnvTexture = null;
+  }
+  return _roomEnvTexture;
+}
+
+function _collectGroupLights(group) {
+  const lights = [];
+  group?.traverse?.((child) => {
+    if (child.isLight) lights.push(child);
+  });
+  return lights;
+}
+
+/**
+ * Active lights for the viewport brightness slider (CAD or Mesh look-dev).
+ */
+export function getActiveViewportLights() {
+  const group = viewportShadingMode === "lookdev" ? _lookdevLightGroup : _cadLightGroup;
+  return _collectGroupLights(group);
+}
+
+/**
+ * Switch between CAD studio lighting (Mode 2.0) and Mesh look-dev
+ * (RoomEnvironment IBL + cinematic key/rim like img2threejs showcase).
+ */
+export function setViewportShadingMode(mode, { scene = _litScene, renderer = _litRenderer } = {}) {
+  const next = (mode === "lookdev" || mode === "mesh" || mode === "shaded" || mode === "authored" || mode === "pbr")
+    ? "lookdev"
+    : "cad";
+  if (!scene) return next;
+  _litScene = scene;
+  if (renderer) _litRenderer = renderer;
+
+  viewportShadingMode = next;
+  if (_cadLightGroup) _cadLightGroup.visible = next === "cad";
+  if (_lookdevLightGroup) _lookdevLightGroup.visible = next === "lookdev";
+
+  if (next === "lookdev") {
+    const env = _ensureRoomEnvironment(scene, renderer || _litRenderer);
+    if (env) {
+      scene.environment = env;
+      if ("environmentIntensity" in scene) scene.environmentIntensity = 1.05;
+    }
+    if (!_lookdevBgTexture) _lookdevBgTexture = _makeLookdevGradientBackground();
+    scene.background = _lookdevBgTexture || new THREE.Color(FUSION.lookdevCanvas);
+    if (_litRenderer) {
+      _litRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      _litRenderer.toneMappingExposure = 1.0;
+    }
+    if (shadowFloor?.material) {
+      shadowFloor.material.opacity = FUSION.lookdevShadowOpacity;
+      shadowFloor.material.needsUpdate = true;
+    }
+  } else {
+    scene.environment = null;
+    if ("environmentIntensity" in scene) scene.environmentIntensity = 1;
+    scene.background = new THREE.Color(FUSION.canvas);
+    if (_litRenderer) {
+      _litRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      _litRenderer.toneMappingExposure = 1.1;
+    }
+    if (shadowFloor?.material) {
+      shadowFloor.material.opacity = FUSION.shadowOpacity;
+      shadowFloor.material.needsUpdate = true;
+    }
+  }
+  return next;
+}
+
+export function setupSceneLighting(scene, renderer = null) {
+  _litScene = scene;
+  _litRenderer = renderer;
   scene.background = new THREE.Color(FUSION.canvas);
 
+  _cadLightGroup = new THREE.Group();
+  _cadLightGroup.name = "CadStudioLights";
+
   // Balanced CAD lighting: soft form shading + readable undersides/cavities.
-  // Keep ambient below key/fill so faces aren't cel-flat, but high enough that
-  // no orbit angle goes black.
   const hemi = new THREE.HemisphereLight(0xf4f7fb, 0x556274, 0.88);
-  scene.add(hemi);
+  _cadLightGroup.add(hemi);
 
   const ambient = new THREE.AmbientLight(0xe6eef6, 0.48);
-  scene.add(ambient);
+  _cadLightGroup.add(ambient);
 
-  // Key — warm upper-front (defines form).
   const key = new THREE.DirectionalLight(0xfff5ec, 1.12);
   key.position.set(5, -5, 9);
   key.castShadow = true;
@@ -376,42 +495,99 @@ export function setupSceneLighting(scene) {
   key.shadow.camera.bottom = -12;
   key.shadow.bias = -0.0001;
   key.shadow.normalBias = 0.02;
-  scene.add(key);
+  _cadLightGroup.add(key);
 
-  // Cool fill — ~65% of key so side faces stay coloured, not crushed.
   const fill = new THREE.DirectionalLight(0xd9e7ff, 0.74);
   fill.position.set(-6, 5, 5);
-  scene.add(fill);
+  _cadLightGroup.add(fill);
 
-  // Rim / back — separates parts from the canvas.
   const rim = new THREE.DirectionalLight(0xc5d6ea, 0.52);
   rim.position.set(1, 8, -7);
-  scene.add(rim);
+  _cadLightGroup.add(rim);
 
-  // Top fill — evening upper faces without bleaching.
   const front = new THREE.DirectionalLight(0xf4f8fc, 0.44);
   front.position.set(0, 0, 12);
-  scene.add(front);
+  _cadLightGroup.add(front);
 
-  // Under-fills — bottom walls and pockets stay viewable when orbiting.
   const under = new THREE.DirectionalLight(0xe4eef8, 0.58);
   under.position.set(0, 0, -9);
-  scene.add(under);
+  _cadLightGroup.add(under);
 
   const underLeft = new THREE.DirectionalLight(0xd5e4f6, 0.40);
   underLeft.position.set(-6, 4, -5);
-  scene.add(underLeft);
+  _cadLightGroup.add(underLeft);
 
   const underRight = new THREE.DirectionalLight(0xffefe3, 0.40);
   underRight.position.set(6, -4, -5);
-  scene.add(underRight);
+  _cadLightGroup.add(underRight);
 
-  // Inward cavity fill for hollow housings / trays.
   const cavity = new THREE.DirectionalLight(0xffffff, 0.46);
   cavity.position.set(3, -3, 3);
-  scene.add(cavity);
+  _cadLightGroup.add(cavity);
 
-  return { key, fill, rim, hemi, ambient, front, under, underLeft, underRight, cavity };
+  scene.add(_cadLightGroup);
+
+  // Mesh / img2threejs look-dev — mirrors showcase default studio + cinematic rim.
+  // Positions are Z-up (Render3D), converted from the showcase's Y-up rig.
+  _lookdevLightGroup = new THREE.Group();
+  _lookdevLightGroup.name = "MeshLookdevLights";
+  _lookdevLightGroup.visible = false;
+
+  const ldHemi = new THREE.HemisphereLight(0xbfe6ff, 0x1a2030, 0.32);
+  _lookdevLightGroup.add(ldHemi);
+
+  const ldAmb = new THREE.AmbientLight(0xffffff, 0.05);
+  _lookdevLightGroup.add(ldAmb);
+
+  const ldKey = new THREE.DirectionalLight(0xfff2d6, 2.15);
+  ldKey.position.set(-2.8, 2.6, 3.4);
+  ldKey.castShadow = true;
+  ldKey.shadow.mapSize.set(2048, 2048);
+  ldKey.shadow.camera.near = 0.4;
+  ldKey.shadow.camera.far = 40;
+  ldKey.shadow.camera.left = -14;
+  ldKey.shadow.camera.right = 14;
+  ldKey.shadow.camera.top = 14;
+  ldKey.shadow.camera.bottom = -14;
+  ldKey.shadow.bias = -0.00035;
+  ldKey.shadow.normalBias = 0.02;
+  ldKey.shadow.radius = 2.5;
+  _lookdevLightGroup.add(ldKey);
+
+  const ldFill = new THREE.DirectionalLight(0x9fb4ff, 0.34);
+  ldFill.position.set(3.2, 1.8, 1.2);
+  _lookdevLightGroup.add(ldFill);
+
+  const ldRim = new THREE.DirectionalLight(0x38e0d0, 0.85);
+  ldRim.position.set(5.5, -4.5, 2.8);
+  _lookdevLightGroup.add(ldRim);
+
+  const ldAccent = new THREE.PointLight(0xffc294, 10, 16, 2);
+  ldAccent.position.set(0, -3.2, 2.0);
+  _lookdevLightGroup.add(ldAccent);
+
+  const ldUnder = new THREE.PointLight(0x4ecdc4, 2.4, 10, 2);
+  ldUnder.position.set(-1.4, 1.2, 0.35);
+  _lookdevLightGroup.add(ldUnder);
+
+  scene.add(_lookdevLightGroup);
+
+  if (renderer) _ensureRoomEnvironment(scene, renderer);
+
+  return {
+    key,
+    fill,
+    rim,
+    hemi,
+    ambient,
+    front,
+    under,
+    underLeft,
+    underRight,
+    cavity,
+    cadGroup: _cadLightGroup,
+    lookdevGroup: _lookdevLightGroup,
+  };
 }
 
 export function setupRenderer(renderer) {
@@ -419,6 +595,7 @@ export function setupRenderer(renderer) {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
+  _litRenderer = renderer;
 }
 
 function _materialHasTextureMaps(mat) {
@@ -506,12 +683,24 @@ export function applyAuthoredStyle(object3d) {
     const mats = Array.isArray(child.material) ? child.material : [child.material];
     for (const mat of mats) {
       if (!mat) continue;
-      // Preserve color / metalness / roughness / maps — only tune for viewport lighting.
+      // Preserve color / metalness / roughness / maps — boost IBL response for look-dev.
       if ("envMapIntensity" in mat) {
         const cur = Number(mat.envMapIntensity);
-        mat.envMapIntensity = Number.isFinite(cur) ? Math.max(cur, 0.85) : 1.0;
+        mat.envMapIntensity = Number.isFinite(cur) ? Math.max(cur, 1.05) : 1.15;
       }
       if ("flatShading" in mat) mat.flatShading = false;
+      // Mild clearcoat on plastics/metals when the material supports it.
+      if ("clearcoat" in mat && !(Number(mat.clearcoat) > 0)) {
+        const metal = Number(mat.metalness);
+        const rough = Number(mat.roughness);
+        if (Number.isFinite(metal) && metal >= 0.35) {
+          mat.clearcoat = 0.22;
+          if ("clearcoatRoughness" in mat) mat.clearcoatRoughness = 0.28;
+        } else if (Number.isFinite(rough) && rough <= 0.45) {
+          mat.clearcoat = 0.18;
+          if ("clearcoatRoughness" in mat) mat.clearcoatRoughness = 0.35;
+        }
+      }
       if (mat.polygonOffset && mat.userData?.render3dCadColorHex) {
         mat.polygonOffset = false;
       }
@@ -523,13 +712,21 @@ export function applyAuthoredStyle(object3d) {
 
 /**
  * Apply the right viewport look: CAD plastic for STEP-ish previews, authored PBR for Mesh.
+ * Pass `syncViewportLights: true` from the main studio so Mesh gets look-dev IBL
+ * without flipping share/mini-viewer scenes.
  */
-export function applyViewportStyle(object3d, { filename = "", styleMode = "auto" } = {}) {
+export function applyViewportStyle(object3d, { filename = "", styleMode = "auto", syncViewportLights = false } = {}) {
   const mode = String(styleMode || "auto").toLowerCase();
   const useAuthored = mode === "shaded" || mode === "authored" || mode === "pbr"
     || (mode === "auto" && prefersAuthoredShading(object3d, filename));
-  if (useAuthored) return applyAuthoredStyle(object3d);
-  return applyCadStyle(object3d);
+  if (useAuthored) {
+    applyAuthoredStyle(object3d);
+    if (syncViewportLights) setViewportShadingMode("lookdev");
+    return object3d;
+  }
+  applyCadStyle(object3d);
+  if (syncViewportLights) setViewportShadingMode("cad");
+  return object3d;
 }
 
 // ─── shadow floor ─────────────────────────────────────────────────────────────
