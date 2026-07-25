@@ -1,4 +1,19 @@
-## 2026-07-25 — Restore Jul 16 upright (stop tipping models left)
+## 2026-07-25 — Fusion imports upright (Y-up → Z-up)
+
+- Fusion/APS imports stayed “turned left”: they’re Y-up, but long floor plans have tallest=X so the Jul 16 axis heuristic skipped them.
+- `isFusionAuthoredModel` (via `.autodesk_source_*` siblings) always applies `rotateX(+90°)`; native models keep axis-only heuristic.
+- `project_summary` now includes `fusion_source`. Cache-bust `app.js?v=20260725-fusion-yup`.
+
+---
+
+
+- Main Export no longer bakes all visible siblings (that pushed arduino / wrong compound). Always exports the **selected/focused** model only.
+- Fusion/cloud forced onto that model’s native `.step`; server Part-flattens for Extrude/Cut and refuses linked/faceted uploads.
+- `ensure_fusion_part_step` regenerates when native is newer (no stale Part cache).
+- Cache-bust `app.js` / `file-actions.js` `?v=20260725-export-one`. Service restarted.
+
+---
+
 
 - Footprint ±90° scorer was still in `ensureModelZUp` despite earlier “restored” comment — that tips bikes/long assemblies onto their side.
 - Restored Jul 16 axis heuristic + GLB/GLTF flip exclusion + `v2-upright` fixed tip. Locked via `.cursor/rules/model-upright-orientation.mdc`.

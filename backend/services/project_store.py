@@ -509,6 +509,7 @@ def project_summary(project_path: Path) -> dict[str, Any]:
         "latest_file": latest_model_file(project_path),
         "usage_summary": prompt_history_service.project_usage_summary(project_path),
         "generation": generation_service.public_summary(project_path),
+        "fusion_source": meta.get("autodesk_source"),
     }
 
 

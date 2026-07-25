@@ -15404,7 +15404,29 @@ function allowAutoUpsideDownFlip(filename = "") {
   const ext = String(filename || "").split(".").pop()?.toLowerCase() || "";
   // GLB/GLTF files can carry explicit authoring transforms/material scene roots.
   // A footprint guess is too aggressive for robot arms and often flips them.
+  // Fusion-imported GLBs are Y-up tessellations — allow base flip for those only.
+  if (isFusionAuthoredModel(filename)) return true;
   return ext !== "glb" && ext !== "gltf";
+}
+
+/** Fusion/APS STEP imports are authored Y-up; detect via hidden `.autodesk_source_*` siblings. */
+function isFusionAuthoredModel(filename = "") {
+  const raw = String(filename || "").split("#body:")[0].trim();
+  if (!raw) return false;
+  if (/autodesk_source/i.test(raw)) return true;
+  const stem = raw
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase()
+    .replace(/\.part$/i, "")
+    .replace(/__part_.*$/i, "");
+  if (!stem) return false;
+  const names = (lastProjectFiles || []).map((f) => String(typeof f === "string" ? f : f?.name || ""));
+  return names.some((name) => {
+    const m = String(name).match(/^\.autodesk_source_(.+)\.(step|stp|glb|gltf)$/i);
+    if (!m) return false;
+    const src = String(m[1] || "").toLowerCase();
+    return stem === src || stem.startsWith(`${src}_`) || stem.startsWith(`${src}__`);
+  });
 }
 
 function ensureModelZUp(object3d, filename = "") {
@@ -15412,6 +15434,7 @@ function ensureModelZUp(object3d, filename = "") {
    * LOCKED — Jul 16 axis heuristic (do not bring back footprint ±90° scoring).
    * Rotate clear Y-up meshes into Render3D's Z-up viewport. Leave already-Z-up
    * models alone — the old footprint tipper laid bikes/long assemblies on their side.
+   * Exception: Fusion/APS imports are always Y-up (even when plan X is longest).
    * See `.cursor/rules/model-upright-orientation.mdc`.
    */
   if (!object3d) return false;
@@ -15427,8 +15450,14 @@ function ensureModelZUp(object3d, filename = "") {
   if (!(max > 0)) return false;
 
   let rotated = false;
-  // Already standing in Z-up (height along Z).
-  if (sz >= max * 0.99) {
+
+  // Fusion imports: always Y-up → Z-up. Long floor plans have tallest=X so the
+  // generic axis heuristic leaves them tipped on their side ("turned left").
+  if (isFusionAuthoredModel(filename)) {
+    object3d.rotateX(Math.PI / 2);
+    rotated = true;
+  } else if (sz >= max * 0.99) {
+    // Already standing in Z-up (height along Z).
     rotated = false;
   } else if (sy >= max * 0.99) {
     // Tallest axis is Y → classic Y-up standing model.
@@ -15454,6 +15483,7 @@ function ensureModelZUp(object3d, filename = "") {
     }
     object3d.userData.render3dZUp = true;
     object3d.userData.render3dZUpSource = filename || true;
+    if (isFusionAuthoredModel(filename)) object3d.userData.render3dFusionYUp = true;
     return true;
   }
 
