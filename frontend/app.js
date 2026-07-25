@@ -200,6 +200,8 @@ let lastProjectBrowser = { components: [], drawings: [], sketches: [], wiring: [
 let lastProjectFiles = [];
 /** Autodesk/Fusion provenance from project_summary (`fusion_source`). */
 let lastProjectFusionSource = null;
+/** Block draft saves while switching projects so the old compose text can't contaminate the new project. */
+let promptDraftSwitchLock = false;
 let robotArtifactData = null;
 let allProjects = [];
 let projectsFetchGeneration = 0;
@@ -3134,7 +3136,7 @@ function currentComposeSnapshot() {
 }
 
 function saveActiveModelPromptState() {
-  if (!composer || restoringModelPromptState) return;
+  if (!composer || restoringModelPromptState || promptDraftSwitchLock) return;
   const snapshot = currentComposeSnapshot();
   // Drafts are per-project only — never write a global draft that leaks into
   // every prompt box across projects.
@@ -3147,6 +3149,21 @@ function saveActiveModelPromptState() {
   if (key) state[key] = snapshot;
   if (projectKey) state[projectKey] = snapshot;
   writeModelPromptState(state);
+}
+
+/** Wipe the compose UI without touching localStorage (used during project switch). */
+function clearComposeUiOnly() {
+  if (!composer) return;
+  restoringModelPromptState = true;
+  try {
+    composer.setPromptText?.("");
+    composer.replaceReferences?.([]);
+    resetRefCounter();
+    promptImages = [];
+    renderPromptImages();
+  } finally {
+    restoringModelPromptState = false;
+  }
 }
 
 /** Clear the compose box + persisted draft for the open project (after submit). */
@@ -21447,10 +21464,17 @@ async function loadProject(id) {
   const wiringMode = workspaceModes?.isWiring?.() ?? false;
   let wiringLoadPromise = null;
   try {
+    // Persist the outgoing project's draft under the OLD id, then lock + clear the
+    // compose box so a long sticky prompt (e.g. Yeti bike) can't be re-saved into
+    // whatever project we open next during the async load gap.
     saveActiveModelPromptState();
     const prevProjectId = projectId;
     prefetchWiringForProject(id);
     projectId = id;
+    if (prevProjectId !== id) {
+      promptDraftSwitchLock = true;
+      clearComposeUiOnly();
+    }
     loadSavedMeasurements();
     if (wiringMode) wiringLoadPromise = wiringSim.load();
     renderPromptAiKeySelect(aiStatus, { preserveSelection: prevProjectId === id });
@@ -21596,6 +21620,7 @@ async function loadProject(id) {
     }
     if (loadGen !== loadProjectGeneration) return;
     safeRestoreActiveModelPromptState();
+    promptDraftSwitchLock = false;
     if (wiringMode && wiringLoadPromise) {
       await wiringLoadPromise;
     }
@@ -21627,11 +21652,12 @@ async function loadProject(id) {
     setEditStatus("error", err.message || "Could not load project");
     viewerOverlay.showError(err.message || "Could not load project");
   } finally {
-    setProjectLoading(id, false);
     if (loadGen === loadProjectGeneration) {
+      promptDraftSwitchLock = false;
       syncViewportGenerationOverlay();
       syncStopButtonVisibility();
     }
+    setProjectLoading(id, false);
   }
 }
 

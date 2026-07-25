@@ -1,4 +1,10 @@
-## 2026-07-25 — Fusion imports upright (Y-up floor plans)
+## 2026-07-25 — Sticky AI compose draft no longer leaks across projects
+
+- Long prompts (e.g. Yeti enduro bike) were sticking in the compose box and getting re-saved into whatever project you opened next during the async `loadProject` gap — so the same text showed up in House Framing, Gripper, etc.
+- On project switch: save outgoing draft → clear compose UI + lock saves → restore the new project’s draft.
+- Cache-bust `app.js?v=20260725-prompt-draft-lock`. Hard-refresh; clear the compose box once if the bike text is still sitting there.
+
+---
 
 - Fusion/APS imports stayed “turned left”: they’re often Y-up, and long floor plans have tallest=X so the Jul 16 axis heuristic skipped them.
 - Native gens stay on the axis heuristic only.
