@@ -17069,12 +17069,13 @@ section h2 {
   flex-direction: column;
 }
 
+/* Fusion picker owns the panel — hide download chrome so Export stays on-screen. */
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-header,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-hint,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-status,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-list,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-actions {
-  flex-shrink: 0;
+  display: none !important;
 }
 
 .file-export-header {
@@ -17515,7 +17516,7 @@ section h2 {
 }
 
 .file-export-fusion-picker {
-  margin-top: 8px;
+  margin-top: 0;
   padding: 9px;
   position: relative;
   border: 1px solid rgba(241, 138, 43, 0.24);
@@ -17529,6 +17530,7 @@ section h2 {
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  max-height: calc(100vh - 24px);
 }
 
 .file-export-fusion-picker-body {
@@ -17538,6 +17540,81 @@ section h2 {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
+}
+
+.file-export-fusion-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 8px 8px;
+  border-top: 1px solid rgba(241, 138, 43, 0.35);
+  background: linear-gradient(180deg, rgba(13, 17, 23, 0.92), rgba(13, 17, 23, 1));
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.35);
+}
+
+.file-export-fusion-dest {
+  margin: 0;
+  font-size: 0.68rem;
+  color: #ffd0a3;
+  font-weight: 600;
+  min-height: 1em;
+}
+
+.file-export-fusion-submit {
+  width: 100%;
+  margin-top: 0;
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 12px 14px !important;
+  border-radius: 10px !important;
+  border: 1px solid #f18a2b !important;
+  background: #f18a2b !important;
+  color: #1a1208 !important;
+  font-size: 0.85rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.01em;
+  box-shadow: 0 0 0 1px rgba(241, 138, 43, 0.35), 0 8px 20px rgba(241, 138, 43, 0.25);
+}
+
+.file-export-fusion-submit:hover:not(:disabled) {
+  background: #ff9d3f !important;
+  border-color: #ff9d3f !important;
+  color: #1a1208 !important;
+}
+
+.file-export-fusion-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  box-shadow: none;
+}
+
+.file-export-fusion-submit.is-ready {
+  animation: fusion-export-pulse 1.1s ease-in-out 2;
+}
+
+@keyframes fusion-export-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(241, 138, 43, 0.35), 0 8px 20px rgba(241, 138, 43, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(241, 138, 43, 0.55), 0 10px 28px rgba(241, 138, 43, 0.4); }
+}
+
+.file-export-fusion-status {
+  flex-shrink: 0;
+}
+
+.file-export-fusion-submit.file-export-fusion-submit--success,
+.file-export-fusion-submit--success {
+  background: #238636 !important;
+  border-color: #2ea043 !important;
+  color: #fff !important;
+  cursor: default;
+  box-shadow: none;
+  animation: none;
 }
 
 .file-export-fusion-lead {
@@ -17708,7 +17785,7 @@ section h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  max-height: 150px;
+  max-height: 220px;
   overflow: auto;
   min-width: 0;
   padding: 2px;
@@ -17837,6 +17914,7 @@ section h2 {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   transition: border-color 0.15s ease, background 0.15s ease;
+  cursor: pointer;
 }
 
 .file-export-fusion-folder-tile:hover {
@@ -17845,14 +17923,14 @@ section h2 {
 }
 
 .file-export-fusion-folder-tile.is-active {
-  border-color: rgba(241, 138, 43, 0.7);
-  background: rgba(241, 138, 43, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(241, 138, 43, 0.25);
+  border-color: rgba(241, 138, 43, 0.85);
+  background: rgba(241, 138, 43, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(241, 138, 43, 0.35);
 }
 
 .file-export-fusion-folder-tile-main {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
   width: 100%;
@@ -17863,6 +17941,21 @@ section h2 {
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.file-export-fusion-folder-check {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #0d1117;
+  background: #3fb950;
+  box-shadow: 0 0 0 2px rgba(63, 185, 80, 0.25);
 }
 
 .file-export-fusion-folder-icon {
@@ -17908,9 +18001,15 @@ section h2 {
   color: var(--muted);
 }
 
-.file-export-fusion-folder-pick {
+.file-export-fusion-folder-pick,
+.file-export-fusion-folder-open {
   width: 100%;
   justify-self: stretch;
+}
+
+.file-export-fusion-folder-open {
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 
 .file-export-fusion-use-current {
@@ -17941,24 +18040,6 @@ section h2 {
   cursor: default;
 }
 
-.file-export-fusion-submit {
-  width: 100%;
-  margin-top: 6px;
-  flex-shrink: 0;
-}
-
-.file-export-fusion-status {
-  flex-shrink: 0;
-}
-
-.file-export-fusion-submit.file-export-fusion-submit--success,
-.file-export-fusion-submit--success {
-  background: #238636 !important;
-  border-color: #2ea043 !important;
-  color: #fff !important;
-  cursor: default;
-}
-
 .file-export-fusion-files {
   margin-top: 10px;
   display: grid;
@@ -17969,6 +18050,8 @@ section h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  max-height: 140px;
+  overflow: auto;
 }
 
 .file-export-fusion-file-card {

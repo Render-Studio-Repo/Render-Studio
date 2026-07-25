@@ -1,3 +1,28 @@
+## 2026-07-24 — Fusion Export CTA visible (orange)
+
+- Export submit used faint `.btn.primary` blue and was easy to miss / look “not there”.
+- Bright orange sticky footer CTA + destination line; pulse on folder select; second click on selected folder starts upload.
+- Cache-bust `?v=20260724-fusion-cta`.
+
+---
+
+## 2026-07-24 — Fusion folder click = select with ✓
+
+- Folder tiles used to **Open** on click, so picking a destination inside Render3D felt broken.
+- Click folder → select export target + green ✓; separate **Open** browses inside.
+- Taller folder grid; cache-bust `?v=20260724-fusion-check`.
+
+---
+
+## 2026-07-24 — Fusion Export button pinned (no scroll)
+
+- Export CTA was clipped: picker lived inside `.file-export-actions` under STEP/GLB chrome, so “Export to Fusion” sat below the fold.
+- Picker is now a direct menu child; download chrome hidden while open; sticky `.file-export-fusion-footer`; menu pinned to top.
+- Second tap on the selected-folder chip also triggers Export.
+- Cache-bust: `styles.css` / `app.js` / `file-actions.js` `?v=20260724-fusion-pin`.
+
+---
+
 ## 2026-07-24 — Textures kept (CAD wipe) + better wrap; Mode 2.0 untouched
 
 - Library/render textures were wiped on reload: `applyCadStyle` treated white+map as washed and dropped maps / swapped shared face plastic.

@@ -6,6 +6,12 @@ import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import {
+  applyBoxProjectionUvs as pbrBoxProjectionUvs,
+  applyCameraProjectedUvs,
+  derivePbrMapsFromImage,
+  makePhysicalTexturedMaterial,
+} from "./texture-pbr.js?v=20260724-texture-pbr";
+import {
   pickGeometry,
   pickObject,
   resetRefCounter,
@@ -80,7 +86,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260724-model-short";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-export-all";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260724-fusion-cta";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260720-fusion-folder-toolbar";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -25944,7 +25950,9 @@ async function extractModelOnlyTextureDataUrl(renderUrl, targetFilename = "") {
     ? String(renderUrl)
     : await fetchRenderedImageBlob(renderUrl).then(blobToDataUrl);
   const maskDataUrl = captureModelMaskDataUrl(targetFilename);
-  if (!maskDataUrl) return renderDataUrl;
+  if (!maskDataUrl) {
+    return { dataUrl: renderDataUrl, crop: { x0: 0, y0: 0, x1: 1, y1: 1 } };
+  }
   const [renderImg, maskImg] = await Promise.all([
     loadImageElement(renderDataUrl, "Could not load rendered texture image."),
     loadImageElement(maskDataUrl, "Could not load model mask image."),
@@ -25955,7 +25963,9 @@ async function extractModelOnlyTextureDataUrl(renderUrl, targetFilename = "") {
   renderCanvas.width = width;
   renderCanvas.height = height;
   const renderCtx = renderCanvas.getContext("2d", { willReadFrequently: true });
-  if (!renderCtx) return renderDataUrl;
+  if (!renderCtx) {
+    return { dataUrl: renderDataUrl, crop: { x0: 0, y0: 0, x1: 1, y1: 1 } };
+  }
   renderCtx.drawImage(renderImg, 0, 0, width, height);
   const renderPixels = renderCtx.getImageData(0, 0, width, height);
 
@@ -25963,7 +25973,9 @@ async function extractModelOnlyTextureDataUrl(renderUrl, targetFilename = "") {
   maskCanvas.width = width;
   maskCanvas.height = height;
   const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
-  if (!maskCtx) return renderDataUrl;
+  if (!maskCtx) {
+    return { dataUrl: renderDataUrl, crop: { x0: 0, y0: 0, x1: 1, y1: 1 } };
+  }
   maskCtx.drawImage(maskImg, 0, 0, width, height);
   const maskPixels = maskCtx.getImageData(0, 0, width, height);
 
@@ -25989,7 +26001,9 @@ async function extractModelOnlyTextureDataUrl(renderUrl, targetFilename = "") {
     sumB += renderPixels.data[i + 2];
     count += 1;
   }
-  if (!count || maxX <= minX || maxY <= minY) return renderDataUrl;
+  if (!count || maxX <= minX || maxY <= minY) {
+    return { dataUrl: renderDataUrl, crop: { x0: 0, y0: 0, x1: 1, y1: 1 } };
+  }
   const pad = Math.max(6, Math.round(Math.max(maxX - minX, maxY - minY) * 0.035));
   minX = Math.max(0, minX - pad);
   minY = Math.max(0, minY - pad);
@@ -26006,7 +26020,9 @@ async function extractModelOnlyTextureDataUrl(renderUrl, targetFilename = "") {
   outCanvas.width = outW;
   outCanvas.height = outH;
   const outCtx = outCanvas.getContext("2d", { willReadFrequently: true });
-  if (!outCtx) return renderDataUrl;
+  if (!outCtx) {
+    return { dataUrl: renderDataUrl, crop: { x0: 0, y0: 0, x1: 1, y1: 1 } };
+  }
   const out = outCtx.createImageData(outW, outH);
   for (let y = 0; y < outH; y += 1) {
     for (let x = 0; x < outW; x += 1) {
@@ -26028,7 +26044,16 @@ async function extractModelOnlyTextureDataUrl(renderUrl, targetFilename = "") {
     }
   }
   outCtx.putImageData(out, 0, 0);
-  return outCanvas.toDataURL("image/png");
+  return {
+    dataUrl: outCanvas.toDataURL("image/png"),
+    // Normalized full-frame crop so camera UVs land on the same pixels.
+    crop: {
+      x0: minX / width,
+      y0: minY / height,
+      x1: (maxX + 1) / width,
+      y1: (maxY + 1) / height,
+    },
+  };
 }
 
 function firstTextureDataUrlFromObject(object) {
@@ -26081,53 +26106,8 @@ async function maybeReapplyCapturedTexture(capture, replacementFilename) {
   }
 }
 
-function applyBoxProjectionUvs(geometry, { tilesPerUnit = 0.004 } = {}) {
-  if (!geometry?.attributes?.position) return geometry;
-  const geom = geometry.index ? geometry.toNonIndexed() : geometry.clone();
-  geom.computeBoundingBox();
-  if (!geom.attributes.normal) geom.computeVertexNormals();
-  const pos = geom.attributes.position;
-  const normal = geom.attributes.normal;
-  const box = geom.boundingBox;
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const min = box.min;
-  const sx = Math.max(size.x, 1e-6);
-  const sy = Math.max(size.y, 1e-6);
-  const sz = Math.max(size.z, 1e-6);
-  // Tile by physical size so large parts get repeats instead of one stretched wrap.
-  const scale = Math.max(tilesPerUnit, 1e-5);
-  const uvs = new Float32Array(pos.count * 2);
-  for (let i = 0; i < pos.count; i += 1) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    const nx = Math.abs(normal?.getX(i) || 0);
-    const ny = Math.abs(normal?.getY(i) || 0);
-    const nz = Math.abs(normal?.getZ(i) || 0);
-    let u;
-    let v;
-    if (nx >= ny && nx >= nz) {
-      u = (y - min.y) * scale;
-      v = (z - min.z) * scale;
-    } else if (ny >= nx && ny >= nz) {
-      u = (x - min.x) * scale;
-      v = (z - min.z) * scale;
-    } else {
-      u = (x - min.x) * scale;
-      v = (y - min.y) * scale;
-    }
-    uvs[i * 2] = u;
-    uvs[i * 2 + 1] = v;
-  }
-  // Tiny parts: boost so the map isn't a single blurry texel blob.
-  const maxDim = Math.max(sx, sy, sz);
-  if (maxDim * scale < 0.85) {
-    const boost = 0.85 / Math.max(maxDim * scale, 1e-6);
-    for (let i = 0; i < uvs.length; i += 1) uvs[i] *= boost;
-  }
-  geom.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-  return geom;
+function applyBoxProjectionUvs(geometry, opts = {}) {
+  return pbrBoxProjectionUvs(geometry, opts);
 }
 
 function stripViewportHelperObjects(root) {
@@ -26168,34 +26148,54 @@ function findMeshByUuid(root, uuid) {
   return found;
 }
 
-function makeTexturedMaterial(texture) {
-  if (texture) {
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.anisotropy = Math.max(Number(texture.anisotropy) || 1, 8);
-    texture.generateMipmaps = true;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.needsUpdate = true;
+function makeTexturedMaterial(textureOrMaps, { delight = true, repeat = false } = {}) {
+  let maps = textureOrMaps;
+  if (textureOrMaps?.isTexture || textureOrMaps instanceof THREE.Texture) {
+    const image = textureOrMaps.image;
+    if (!image) {
+      return makePhysicalTexturedMaterial({ map: textureOrMaps });
+    }
+    maps = derivePbrMapsFromImage(image, {
+      maxSize: 1536,
+      delight,
+      flipY: false,
+      repeat,
+    });
+  } else if (textureOrMaps?.map && !textureOrMaps.normalMap) {
+    const image = textureOrMaps.map.image;
+    if (image) {
+      maps = derivePbrMapsFromImage(image, {
+        maxSize: 1536,
+        delight,
+        flipY: false,
+        repeat,
+      });
+    }
   }
-  return new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    map: texture,
-    metalness: 0.08,
-    roughness: 0.52,
-    side: THREE.DoubleSide,
-    envMapIntensity: 0.9,
+  return makePhysicalTexturedMaterial(maps, {
+    clearcoat: delight ? 0.38 : 0.22,
+    clearcoatRoughness: 0.3,
+    envMapIntensity: 1.2,
+    normalScale: delight ? 0.9 : 0.55,
   });
 }
 
-function applyTextureToModelClone(object, texture, { targetMesh = null, faceIndices = null } = {}) {
+function applyTextureToModelClone(object, texture, {
+  targetMesh = null,
+  faceIndices = null,
+  projection = null,
+  delight = true,
+} = {}) {
   const targetPath = targetMesh ? meshChildPath(object, targetMesh) : null;
   const faceSet = faceIndices?.length ? new Set(faceIndices.map((n) => Number(n)).filter((n) => n >= 0)) : null;
+  // Keep world transforms while projecting so camera UVs match the viewport/render.
+  object.updateMatrixWorld?.(true);
   const clone = object.clone(true);
-  clone.position.set(0, 0, 0);
-  clone.quaternion.set(0, 0, 0, 1);
-  clone.scale.set(1, 1, 1);
+  const projCamera = projection?.camera || null;
+  const crop = projection?.crop || { x0: 0, y0: 0, x1: 1, y1: 1 };
+  const useCamera = Boolean(projCamera && (projection?.mode === "camera" || projection?.mode == null));
+  const repeatMaps = !useCamera;
+
   // Tag so reload keeps maps via authored shading — CAD plastic must not wipe textures.
   clone.userData = {
     ...(clone.userData || {}),
@@ -26203,12 +26203,34 @@ function applyTextureToModelClone(object, texture, { targetMesh = null, faceIndi
     render3dPipeline: "texture",
   };
   stripViewportHelperObjects(clone);
-  const cloneTarget = targetPath ? meshAtChildPath(clone, targetPath) : null;
+
+  // Match clone mesh world matrices to source before baking camera UVs.
+  const sourceMeshes = [];
+  object.traverse((child) => {
+    if (child.isMesh && child.geometry) sourceMeshes.push(child);
+  });
+  const cloneMeshes = [];
   clone.traverse((child) => {
-    if (!child.isMesh || !child.geometry) return;
-    if (cloneTarget && child !== cloneTarget) return;
-    if (!cloneTarget && targetMesh) return;
-    child.geometry = applyBoxProjectionUvs(child.geometry);
+    if (child.isMesh && child.geometry) cloneMeshes.push(child);
+  });
+
+  const cloneTarget = targetPath ? meshAtChildPath(clone, targetPath) : null;
+  for (let mi = 0; mi < cloneMeshes.length; mi += 1) {
+    const child = cloneMeshes[mi];
+    const sourceMesh = sourceMeshes[mi] || null;
+    if (cloneTarget && child !== cloneTarget) continue;
+    if (!cloneTarget && targetMesh) continue;
+
+    if (useCamera && sourceMesh) {
+      // Project in source world space, then assign geometry to the clone mesh.
+      child.geometry = applyCameraProjectedUvs(sourceMesh.geometry, sourceMesh, projCamera, {
+        crop,
+        flipY: false,
+      });
+    } else {
+      child.geometry = applyBoxProjectionUvs(child.geometry);
+    }
+
     if (faceSet && faceSet.size) {
       const geom = child.geometry;
       const faceCount = geom.index
@@ -26216,18 +26238,23 @@ function applyTextureToModelClone(object, texture, { targetMesh = null, faceIndi
         : Math.floor((geom.attributes.position?.count || 0) / 3);
       const originalMat = Array.isArray(child.material) ? child.material[0] : child.material;
       const keepMat = originalMat?.clone?.() || new THREE.MeshStandardMaterial({ color: 0xc4c4c4 });
-      const texMat = makeTexturedMaterial(texture);
+      const texMat = makeTexturedMaterial(texture, { delight, repeat: repeatMaps });
       geom.clearGroups();
       for (let i = 0; i < faceCount; i += 1) {
         geom.addGroup(i * 3, 3, faceSet.has(i) ? 1 : 0);
       }
       child.material = [keepMat, texMat];
     } else {
-      child.material = makeTexturedMaterial(texture);
+      child.material = makeTexturedMaterial(texture, { delight, repeat: repeatMaps });
     }
     child.castShadow = true;
     child.receiveShadow = true;
-  });
+  }
+
+  // Normalize root pose for export (UVs already baked in).
+  clone.position.set(0, 0, 0);
+  clone.quaternion.set(0, 0, 0, 1);
+  clone.scale.set(1, 1, 1);
   return clone;
 }
 
@@ -26398,9 +26425,19 @@ async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFi
     const sourceObject = catalogName ? projectAssembly.get(catalogName) : null;
     if (!sourceObject) throw new Error("Load the target model in the viewport before applying the rendered texture.");
 
-    const textureDataUrl = await extractModelOnlyTextureDataUrl(renderUrl, resolvedBase);
-    const texture = await renderedImageUrlToTexture(textureDataUrl);
-    const texturedObject = applyTextureToModelClone(sourceObject, texture);
+    const extracted = await extractModelOnlyTextureDataUrl(renderUrl, resolvedBase);
+    const texture = await renderedImageUrlToTexture(extracted.dataUrl);
+    const projCam = (sketchEditor?.getRenderCamera?.() || camera).clone();
+    projCam.updateMatrixWorld?.(true);
+    projCam.updateProjectionMatrix?.();
+    const texturedObject = applyTextureToModelClone(sourceObject, texture, {
+      projection: {
+        mode: "camera",
+        camera: projCam,
+        crop: extracted.crop || { x0: 0, y0: 0, x1: 1, y1: 1 },
+      },
+      delight: true,
+    });
     const glbBuffer = await exportObjectToGlb(texturedObject);
     const filename = renderedTextureOutputFilename(resolvedBase || renderFilename);
     const form = new FormData();
@@ -26451,8 +26488,9 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         <p class="render-texture-eyebrow">Texture ready</p>
         <h2 id="render-texture-title">Apply this rendered look to your model?</h2>
         <p>
-          Render3D extracts the model pixels from this render, removes the surrounding
-          scene/background, and wraps that texture sheet around the selected model.
+          Render3D extracts the model from this photoreal render, projects it from the
+          current camera onto the mesh, and builds PBR maps (albedo + normal + roughness)
+          so the viewport look stays closer to the image.
         </p>
         <label class="render-texture-target">
           <span>Apply to model</span>
@@ -26477,9 +26515,9 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
   modal.querySelector("#render-texture-target")?.addEventListener("change", (event) => {
     const targetFilename = event.currentTarget?.value || resolvedBase;
     void extractModelOnlyTextureDataUrl(renderUrl, targetFilename)
-      .then((dataUrl) => {
+      .then((extracted) => {
         const img = modal.querySelector("[data-render-texture-img]");
-        if (img) img.src = dataUrl;
+        if (img) img.src = extracted?.dataUrl || extracted;
       })
       .catch(() => {
         modal.querySelector(".render-texture-preview")?.classList.add("is-unavailable");
@@ -26494,7 +26532,8 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
       }
       try {
         const targetFilename = modal.querySelector("#render-texture-target")?.value || resolvedBase;
-        const dataUrl = await extractModelOnlyTextureDataUrl(renderUrl, targetFilename);
+        const extracted = await extractModelOnlyTextureDataUrl(renderUrl, targetFilename);
+        const dataUrl = extracted?.dataUrl || extracted;
         await texturePanel?.saveFromRender?.({
           sourceDataUrl: dataUrl,
           name: (renderFilename || "Rendered texture").replace(/\.[^.]+$/, "") || "Rendered texture",
@@ -26514,9 +26553,9 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
     })();
   });
   void extractModelOnlyTextureDataUrl(renderUrl, resolvedBase)
-    .then((dataUrl) => {
+    .then((extracted) => {
       const img = modal.querySelector("[data-render-texture-img]");
-      if (img) img.src = dataUrl;
+      if (img) img.src = extracted?.dataUrl || extracted;
     })
     .catch(() => {
       modal.querySelector(".render-texture-preview")?.classList.add("is-unavailable");

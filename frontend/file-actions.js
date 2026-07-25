@@ -920,8 +920,8 @@ export async function openFileExportMenu({
 
   async function openSharedFusionExport(btn) {
     if (!fusionUploadFilename) {
-      showExportError(menu, new Error("No visible STEP/3MF to upload. Show the components you want, then export again."), {
-        title: "Nothing visible to send to Fusion",
+      showExportError(menu, new Error("No STEP/3MF prepared for Fusion. Try Export again."), {
+        title: "Nothing to send to Fusion",
         onRetry: null,
       });
       return;
@@ -1228,15 +1228,23 @@ async function showFusionExportPicker(menu, anchorBtn, {
         </div>
       </div>
     </div>
-    <button type="button" class="btn primary file-export-fusion-submit" disabled>Upload ${uploadLabel} to Fusion</button>
-    <div class="file-export-fusion-status muted small"></div>
+    <div class="file-export-fusion-footer">
+      <p class="file-export-fusion-dest" data-fusion-dest>Pick a folder above, then export.</p>
+      <button type="button" class="btn file-export-fusion-submit" disabled>Export to Fusion</button>
+      <div class="file-export-fusion-status muted small"></div>
+    </div>
   `;
-  anchorBtn.insertAdjacentElement("afterend", picker);
+  // Must be a direct child of the export menu so the sticky footer isn't clipped
+  // inside .file-export-actions (that was hiding "Export to Fusion").
+  menu.appendChild(picker);
+  menu.classList.add("has-fusion-picker");
   picker.scrollIntoView({ block: "nearest" });
   keepMenuInViewport(menu);
 
   picker.querySelector("[data-fusion-close]")?.addEventListener("click", () => {
     picker.remove();
+    menu.classList.remove("has-fusion-picker");
+    keepMenuInViewport(menu);
   });
 
   const hubSelect = picker.querySelector("[data-fusion-hub]");
@@ -1246,6 +1254,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
   const folderBrowser = picker.querySelector("[data-fusion-folder-browser]");
   const submit = picker.querySelector(".file-export-fusion-submit");
   const status = picker.querySelector(".file-export-fusion-status");
+  const destLabel = picker.querySelector("[data-fusion-dest]");
   let currentFolder = null;
   let folderStack = [];
   let selectedFolderId = "";
@@ -1253,8 +1262,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
   let allProjects = [];
   let lastFolderList = [];
   let lastFolderItems = [];
-  let autoSelectFolders = true;
-  let restoringFolderPath = null;
+  // Never auto-pick a folder past project root — user must click to select.
 
   const askReplaceOrNew = (existingName) => new Promise((resolve) => {
     menu.querySelector(".file-export-fusion-conflict")?.remove();
@@ -1313,7 +1321,6 @@ async function showFusionExportPicker(menu, anchorBtn, {
     }
   };
   const lastTarget = readLastTarget();
-  restoringFolderPath = Array.isArray(lastTarget?.folder_path) ? [...lastTarget.folder_path] : null;
 
   const formatWhen = (raw) => {
     if (!raw) return "";
@@ -1350,17 +1357,31 @@ async function showFusionExportPicker(menu, anchorBtn, {
     select.disabled = !items.length;
   };
 
-  const setSelectedFolder = (folder, { quiet = false } = {}) => {
+  const setSelectedFolder = (folder, { quiet = false, pulse = false } = {}) => {
     selectedFolderId = folder?.id || "";
     selectedFolderName = folder?.name || selectedFolderId;
     submit.disabled = !selectedFolderId;
+    submit.classList.toggle("is-ready", !!selectedFolderId);
     if (selectedFolderId) {
       const dest = selectedFolderName || "folder";
       submit.textContent = `Export to Fusion · ${dest}`;
       submit.title = `Upload into “${dest}”`;
+      if (destLabel) destLabel.textContent = `✓ Destination: ${dest}`;
+      if (pulse) {
+        submit.classList.remove("is-ready");
+        // reflow so animation can replay
+        void submit.offsetWidth;
+        submit.classList.add("is-ready");
+        try {
+          submit.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } catch {
+          /* ignore */
+        }
+      }
     } else {
-      submit.textContent = `Upload ${uploadLabel} to Fusion`;
+      submit.textContent = `Export to Fusion`;
       submit.title = "";
+      if (destLabel) destLabel.textContent = "Pick a folder above, then export.";
     }
     if (!quiet) {
       setStatus(selectedFolderId ? `Ready: “${selectedFolderName}”` : "");
@@ -1369,6 +1390,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
 
   const markExportSuccess = (label = "Exported ✓") => {
     submit.classList.add("file-export-fusion-submit--success");
+    submit.classList.remove("is-ready");
     submit.textContent = label;
     submit.disabled = true;
   };
@@ -1378,10 +1400,14 @@ async function showFusionExportPicker(menu, anchorBtn, {
       setStatus("Choose a Fusion folder first.", true);
       return;
     }
-    autoSelectFolders = false;
-    restoringFolderPath = null;
-    setSelectedFolder(folder, { quiet: true });
-    setStatus(`Ready: “${folder.name || "folder"}”. Tap Export to Fusion below.`);
+    // Second click on the already-selected folder starts the upload.
+    if (selectedFolderId && selectedFolderId === folder.id) {
+      setSelectedFolder(folder, { quiet: true, pulse: true });
+      if (!submit.disabled) submit.click();
+      return;
+    }
+    setSelectedFolder(folder, { quiet: true, pulse: true });
+    setStatus(`Ready: “${folder.name || "folder"}”. Tap the orange Export button below.`);
     renderFolderBrowser(lastFolderList, { items: lastFolderItems });
   };
 
@@ -1489,14 +1515,14 @@ async function showFusionExportPicker(menu, anchorBtn, {
         </nav>
       </div>
       ${currentFolder ? `
-        <button type="button" class="btn secondary btn-compact file-export-fusion-use-current${currentSelected ? " is-active" : ""}" data-folder-select-here title="Select this folder as the export destination">
-          ${currentSelected ? "Selected · " : "Select · "}${escText(currentFolder.name || "this folder")}
+        <button type="button" class="btn secondary btn-compact file-export-fusion-use-current${currentSelected ? " is-active" : ""}" data-folder-select-here title="${currentSelected ? "Export into this folder" : "Select this folder as the export destination"}">
+          ${currentSelected ? "✓ " : ""}${currentSelected ? "Selected · " : "Select · "}${escText(currentFolder.name || "this folder")}
         </button>
-        <p class="muted small file-export-fusion-folder-hint">Open a subfolder below, or tap Export to Fusion once ready.</p>
+        <p class="muted small file-export-fusion-folder-hint">${currentSelected ? "Export to Fusion is pinned below. Click another folder to change the target." : "Click a folder below to select it (✓), or Open to browse inside."}</p>
       ` : `
-        <p class="muted small file-export-fusion-folder-hint">Select a folder, or open it to browse inside.</p>
+        <p class="muted small file-export-fusion-folder-hint">Click a folder to select it (✓). Use Open to browse inside.</p>
       `}
-      ${selectedFolderId && !currentSelected ? `<p class="muted small">Selected destination: <strong>${escText(selectedFolderName)}</strong></p>` : ""}
+      ${selectedFolderId && !currentSelected ? `<p class="muted small">Selected destination: <strong>✓ ${escText(selectedFolderName)}</strong></p>` : ""}
       <div class="file-export-fusion-folder-grid" role="list">
         ${folders.length ? folders.map((folder, index) => {
           const when = formatWhen(folder.last_modified || folder.created);
@@ -1504,14 +1530,15 @@ async function showFusionExportPicker(menu, anchorBtn, {
           const recent = index === 0 && !currentFolder && !folderStack.length;
           return `
             <div class="file-export-fusion-folder-tile${active ? " is-active" : ""}" role="listitem">
-              <button type="button" class="file-export-fusion-folder-tile-main" data-folder-open="${escAttr(folder.id)}" title="Open ${escAttr(folder.name || "folder")}">
+              <button type="button" class="file-export-fusion-folder-tile-main" data-folder-select="${escAttr(folder.id)}" title="Select ${escAttr(folder.name || "folder")} for export" aria-pressed="${active ? "true" : "false"}">
                 <span class="file-export-fusion-folder-icon" aria-hidden="true"></span>
                 <span class="file-export-fusion-folder-tile-body">
-                  <strong>${escText(folder.name || "Folder")}</strong>
-                  <span>${when ? `Updated ${escText(when)}` : "Open to browse"}${recent ? " · recent" : ""}</span>
+                  <strong>${active ? "✓ " : ""}${escText(folder.name || "Folder")}</strong>
+                  <span>${active ? "Selected for export" : (when ? `Updated ${escText(when)}` : "Click to select")}${recent && !active ? " · recent" : ""}</span>
                 </span>
+                ${active ? `<span class="file-export-fusion-folder-check" aria-hidden="true">✓</span>` : ""}
               </button>
-              <button type="button" class="btn btn-compact file-export-fusion-folder-pick" data-folder-select="${escAttr(folder.id)}" title="Select this folder">${active ? "Selected" : "Select"}</button>
+              <button type="button" class="btn secondary btn-compact file-export-fusion-folder-open" data-folder-open="${escAttr(folder.id)}" title="Open ${escAttr(folder.name || "folder")}">Open</button>
             </div>
           `;
         }).join("") : `<p class="muted small file-export-fusion-folder-empty">${escText(emptyText)}</p>`}
@@ -1538,10 +1565,16 @@ async function showFusionExportPicker(menu, anchorBtn, {
     });
     folderBrowser.querySelector("[data-folder-select-here]")?.addEventListener("click", () => {
       if (!currentFolder) return;
+      // Second tap on an already-selected folder starts the export (big orange CTA).
+      if (selectedFolderId && selectedFolderId === currentFolder.id) {
+        if (!submit.disabled) submit.click();
+        return;
+      }
       exportToFolder(currentFolder);
     });
     folderBrowser.querySelectorAll("[data-folder-open]").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
         const folder = folders.find((item) => item.id === btn.dataset.folderOpen);
         if (!folder) return;
         restoringFolderPath = null;
@@ -1550,6 +1583,7 @@ async function showFusionExportPicker(menu, anchorBtn, {
     });
     folderBrowser.querySelectorAll("[data-folder-select]").forEach((btn) => {
       btn.addEventListener("click", (event) => {
+        event.preventDefault();
         event.stopPropagation();
         const folder = folders.find((item) => item.id === btn.dataset.folderSelect);
         if (!folder) return;
@@ -1776,6 +1810,19 @@ function keepMenuInViewport(menu) {
     const pad = 8;
     const maxH = Math.max(240, window.innerHeight - pad * 2);
     menu.style.maxHeight = `${maxH}px`;
+    const hasFusion = menu.classList.contains("has-fusion-picker")
+      || !!menu.querySelector(".file-export-fusion-picker");
+    // Fusion picker: pin near the top so the Export footer stays on-screen.
+    if (hasFusion) {
+      menu.style.top = `${pad}px`;
+      menu.style.maxHeight = `${maxH}px`;
+      const rect = menu.getBoundingClientRect();
+      if (rect.right > window.innerWidth - pad) {
+        menu.style.left = `${Math.max(pad, window.innerWidth - rect.width - pad)}px`;
+      }
+      if (rect.left < pad) menu.style.left = `${pad}px`;
+      return;
+    }
     const rect = menu.getBoundingClientRect();
     if (rect.bottom > window.innerHeight - pad || rect.top < pad) {
       menu.style.top = `${Math.max(pad, Math.min(rect.top, window.innerHeight - Math.min(rect.height, maxH) - pad))}px`;
