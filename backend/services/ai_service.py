@@ -388,29 +388,28 @@ PATTERN — for repeated surface details (vents, buttons, bolts, grilles, pads):
     {{"op":"cylinder","diameter":16,"height":4,"combine":"add","at":[-55,-45,2]}},
     {{"op":"pattern","arrange":"rectangular","x_count":2,"y_count":2,"x_spacing":110,"y_spacing":90}}
 
-CHARACTERISTIC PART COLORS (use these exact hex values for realism — match colour to what the part IS):
-  Matte black ABS housing: #1e2124
-  Dark charcoal plastic:   #2b2f33
-  Light grey plastic:      #d4d4d0
-  Brushed aluminium:       #9ea3a8
-  Polished chrome:         #c8cdd2
-  Stainless steel:         #b8bab8
-  Gunmetal / robot links:  #4e5c6c
-  Glass / transparent:     #b0d4e8  (light blue for glass carafes, jars)
-  LCD / display dark:      #1a2230
-  Rubber / TPU black:      #111316
-  Copper / brass:          #b87333
-  Wood / timber:           #aa8250
-  PCB green:               #1a5c2a
+CHARACTERISTIC PART COLORS (use these exact hex values — bright enough to read on a dark viewport; NEVER use black, charcoal, or dull aluminium greys):
+  Housing / shell plastic: #7eb6e8
+  Light plastic:           #d6dee8
+  Soft metal / bracket:    #a8c4dc
+  Stainless / fasteners:   #c6d0da
+  Robot links / gears:     #78aee8
+  Glass / transparent:     #b0d4e8
+  Rubber / TPU / tires:    #6d7a8c
+  Copper / brass:          #d69a56
+  Wood / timber:           #c49a62
+  PCB green:               #2e944e
   Accent blue:             #1e87f0
   Accent orange:           #e86828
   Accent red:              #d43030
-  White plastic:           #e8e6e0
-  Food-safe / ceramic:     #e8e6e0
+  White / ceramic:         #e8e6e0
+  Sand / food-safe:        #e8d6a8
+  Mint accent:             #8fd17f
+  Violet accent:           #b79be8
 
-When colouring multi-body assemblies, assign materials by role (bolts=steel, housings=ABS black,
-gears=gunmetal, rubber feet=TPU black, aluminium brackets=#9ea3a8). Do NOT invent random rainbow
-CAD colours for generic parts.
+When colouring multi-body assemblies, assign distinct mid/light colours by role so every body
+reads against the dark canvas (bolts=light steel #c6d0da, housings=#7eb6e8, gears=#78aee8,
+rubber=#6d7a8c, brackets=#a8c4dc). Do NOT use #000000, #1e2124, #2b2f33, or aluminium greys.
 ━━━ EXAMPLES OF GOOD CAD REASONING ━━━
 
 EXAMPLE 1 — "Make a coffee mug"
@@ -475,13 +474,13 @@ Reasoning: A coffee maker is NEVER a single box. Use the revolve recipe for cara
 ⚠ Each part has EXPLICIT "placement" — feature "at" values are LOCAL offsets from that placement.
 
 parts / features:
-  "body" (#2b2f33, ABS), placement:[0,0,0]:
+  "body" (#7eb6e8, ABS), placement:[0,0,0]:
     {{"op":"loft","sections":[{{"z":0,"width":180,"height":230}},{{"z":160,"width":175,"height":225}},{{"z":310,"width":165,"height":215}}]}},
     {{"op":"box","size":[145,170,175],"combine":"cut","at":[0,-28,87]}},        ← local: front carafe alcove
     {{"op":"box","size":[100,10,60],"combine":"cut","at":[0,-108,230]}},        ← local: control panel recess
     {{"op":"fillet","radius":8,"edges":"vertical"}}
 
-  "water_dome" (#3a4048, ABS) — REVOLVE DOME, placement:[0,50,285]:
+  "water_dome" (#a8c4dc, ABS) — REVOLVE DOME, placement:[0,50,285]:
     {{"op":"revolve","profile":[[0,0],[58,0],[60,8],[56,35],[35,50],[0,50]],"angle":360}}
     ← no "at" needed: placement positions it at world [0,50,285], feature stays at local origin
 
@@ -489,7 +488,7 @@ parts / features:
     {{"op":"revolve","profile":[[0,0],[55,0],[60,10],[58,80],[52,150],[48,175],[50,185],[0,185]],"angle":360}}
     ← placement [0,-28,0] puts it in the front alcove at ground level
 
-  "drip_plate" (#9ea3a8, chrome), placement:[0,-28,175]:
+  "drip_plate" (#c6d0da, chrome), placement:[0,-28,175]:
     {{"op":"cylinder","radius":65,"height":8}},
     {{"op":"cylinder","radius":55,"height":4,"combine":"add","at":[0,0,4]}}     ← local: +4mm above plate bottom
 
@@ -622,11 +621,11 @@ For bottles: prefer pet_soda_bottle generator OR a single revolve profile + opti
 
 For consumer electronics, appliances, furniture, tools, and any real-world product:
 ALWAYS use MULTIPLE PARTS (3–8) with DIFFERENT COLORS to produce a recognisable object.
-A product that looks like a single dark grey box is WRONG and unacceptable.
+A product that looks like a single dark grey / black / aluminium blob is WRONG and unacceptable.
 
 Visual differentiation rules:
 1. Decompose into parts that are PHYSICALLY AND VISUALLY DISTINCT: body, trim, display, buttons, legs, etc.
-2. Each part gets its own color (#hex): plastic bodies (#2b2f33 or #e8e4dc), chrome/metal (#a8aeb8 or #c8c8c8), glass/transparent (#b0d8f0), rubber (#1a1a1a), LCD/display (#1c2a3a), accent colors.
+2. Each part gets its own color (#hex): plastic bodies (#7eb6e8 or #d6dee8), soft metal (#a8c4dc or #c6d0da), glass/transparent (#b0d8f0), rubber (#6d7a8c), accents (#e86828 / #8fd17f). NEVER black/charcoal.
 3. Use CHARACTERISTIC SHAPES for each product category:
    - Coffee makers: tapered box body + dome lid (revolve) + glass carafe (cylinder, light blue) + chrome drip plate + buttons
    - Controller stands: wide base (160×110×15) + NARROW spine pillar (36×22×95, NOT 80mm wide!) + TWO CYLINDER PEGS (d=13mm, 65mm tall, 66mm apart) for controller grips + rubber feet

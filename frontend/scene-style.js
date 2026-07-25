@@ -73,16 +73,16 @@ function _isFaceFragmentedModel(meshes) {
 }
 
 
-/** Muted industrial / material-like CAD palette (avoid random rainbows). */
+/** Bright CAD palette for dark canvas — avoid black / charcoal / dull aluminium. */
 const CAD_PART_PALETTE = [
-  new THREE.Color("#9ea3a8"), // brushed aluminium
-  new THREE.Color("#4e5c6c"), // gunmetal
-  new THREE.Color("#2b2f33"), // charcoal plastic
-  new THREE.Color("#b8bab8"), // stainless
-  new THREE.Color("#d4d4d0"), // light grey plastic
-  new THREE.Color("#1e2124"), // matte black ABS
-  new THREE.Color("#aa8250"), // wood / phenolic
-  new THREE.Color("#b87333"), // copper / brass
+  new THREE.Color("#78aee8"), // sky blue
+  new THREE.Color("#8fd17f"), // mint
+  new THREE.Color("#f0c15a"), // amber
+  new THREE.Color("#e88974"), // coral
+  new THREE.Color("#b79be8"), // violet
+  new THREE.Color("#6bc7c6"), // teal
+  new THREE.Color("#e8d6a8"), // sand
+  new THREE.Color("#d6dee8"), // cool light grey
 ];
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

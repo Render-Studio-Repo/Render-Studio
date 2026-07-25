@@ -138,48 +138,48 @@ DEFAULT_APPEARANCE_PALETTE = np.array(
     dtype=np.uint8,
 )
 
-# Muted industrial fallback when no semantic material match (less "random rainbow").
+# Bright studio palette for dark viewport — no black / charcoal / dull aluminium.
 INDUSTRIAL_APPEARANCE_PALETTE = np.array(
     [
-        [158, 163, 168, 255],  # brushed aluminium
-        [184, 186, 184, 255],  # stainless
-        [78, 92, 108, 255],    # gunmetal
-        [43, 47, 51, 255],     # charcoal plastic
-        [212, 212, 208, 255],  # light grey plastic
-        [30, 33, 36, 255],     # matte black ABS
-        [170, 130, 80, 255],   # wood / phenolic
-        [184, 115, 51, 255],   # copper / brass
+        [120, 174, 232, 255],  # sky blue
+        [143, 209, 127, 255],  # mint green
+        [240, 193, 90, 255],   # warm amber
+        [232, 137, 116, 255],  # coral
+        [183, 155, 232, 255],  # soft violet
+        [107, 199, 198, 255],  # teal
+        [232, 214, 168, 255],  # sand
+        [214, 222, 232, 255],  # cool light grey
     ],
     dtype=np.uint8,
 )
 
-# Keyword → realistic material colour for generated / unnamed parts.
+# Keyword → part colour (mid/light tones so bodies stay visible on dark canvas).
 _SEMANTIC_PART_COLOR_RULES: list[tuple[tuple[str, ...], list[int]]] = [
-    (("pcb", "circuit board", "arduino", "raspberry"), [26, 92, 42, 255]),
-    (("rubber", "tpu", "gasket", "o-ring", "oring", "o ring", "tire", "tyre", "bumper"), [17, 19, 22, 255]),
+    (("pcb", "circuit board", "arduino", "raspberry"), [46, 148, 78, 255]),
+    (("rubber", "tpu", "gasket", "o-ring", "oring", "o ring", "tire", "tyre", "bumper"), [109, 122, 140, 255]),
     (("glass", "lens", "window", "acrylic", "perspex", "transparent"), [176, 212, 232, 220]),
-    (("bolt", "screw", "nut", "washer", "fastener", "rivet", "dowel pin", "clevis"), [168, 172, 176, 255]),
-    (("bearing", "bushing", "race"), [200, 205, 210, 255]),
-    (("gear", "sprocket", "pulley", "rack"), [72, 88, 108, 255]),
-    (("motor", "servo", "nema", "actuator", "stepper"), [40, 44, 52, 255]),
-    (("wire", "cable", "harness", "loom"), [30, 34, 42, 255]),
-    (("aluminum", "aluminium", "al6061", "extrusion", "2020", "4040"), [158, 163, 168, 255]),
-    (("steel", "stainless", "inox", "sheet metal"), [184, 186, 184, 255]),
-    (("copper", "brass", "bronze"), [184, 115, 51, 255]),
-    (("wood", "oak", "pine", "plywood", "mdf"), [170, 130, 80, 255]),
-    (("housing", "enclosure", "case", "shell", "cover", "lid", "chassis"), [30, 33, 36, 255]),
-    (("plastic", "abs", "pla", "petg", "nylon"), [212, 212, 208, 255]),
-    (("wheel", "roller", "caster"), [28, 28, 32, 255]),
-    (("battery", "cell pack"), [36, 120, 72, 255]),
-    (("led", "lamp", "bulb", "light"), [240, 240, 220, 255]),
-    (("food", "bowl", "plate", "utensil", "whisk", "spatula"), [232, 230, 224, 255]),
-    (("robot", "arm", "link", "joint", "gripper"), [78, 92, 108, 255]),
-    (("bracket", "mount", "clamp", "plate", "flange"), [158, 163, 168, 255]),
-    (("spring", "coil"), [196, 198, 190, 255]),
-    (("magnet", "neodymium"), [28, 32, 40, 255]),
-    (("carbon", "cfrp"), [24, 24, 28, 255]),
-    (("concrete", "stone", "ceramic"), [160, 156, 148, 255]),
-    (("fabric", "cloth", "textile"), [90, 78, 70, 255]),
+    (("bolt", "screw", "nut", "washer", "fastener", "rivet", "dowel pin", "clevis"), [196, 206, 218, 255]),
+    (("bearing", "bushing", "race"), [200, 210, 222, 255]),
+    (("gear", "sprocket", "pulley", "rack"), [120, 158, 196, 255]),
+    (("motor", "servo", "nema", "actuator", "stepper"), [110, 138, 168, 255]),
+    (("wire", "cable", "harness", "loom"), [148, 118, 196, 255]),
+    (("aluminum", "aluminium", "al6061", "extrusion", "2020", "4040"), [168, 196, 220, 255]),
+    (("steel", "stainless", "inox", "sheet metal"), [198, 208, 218, 255]),
+    (("copper", "brass", "bronze"), [214, 154, 86, 255]),
+    (("wood", "oak", "pine", "plywood", "mdf"), [196, 154, 98, 255]),
+    (("housing", "enclosure", "case", "shell", "cover", "lid", "chassis"), [126, 182, 232, 255]),
+    (("plastic", "abs", "pla", "petg", "nylon"), [214, 222, 232, 255]),
+    (("wheel", "roller", "caster"), [130, 144, 164, 255]),
+    (("battery", "cell pack"), [72, 168, 118, 255]),
+    (("led", "lamp", "bulb", "light"), [248, 244, 210, 255]),
+    (("food", "bowl", "plate", "utensil", "whisk", "spatula"), [240, 232, 214, 255]),
+    (("robot", "arm", "link", "joint", "gripper"), [120, 174, 232, 255]),
+    (("bracket", "mount", "clamp", "plate", "flange"), [168, 196, 220, 255]),
+    (("spring", "coil"), [210, 216, 196, 255]),
+    (("magnet", "neodymium"), [118, 132, 168, 255]),
+    (("carbon", "cfrp"), [108, 124, 148, 255]),
+    (("concrete", "stone", "ceramic"), [186, 178, 166, 255]),
+    (("fabric", "cloth", "textile"), [168, 140, 124, 255]),
 ]
 
 
@@ -3384,38 +3384,38 @@ def _prompt_appearance_palette(prompt: str, seed: str | None = None) -> list[np.
         ]
     if any(word in p for word in ("circuit", "pcb", "arduino", "electronics", "sensor", "wiring", "driver")):
         return [
-            np.array([18, 112, 72, 255], dtype=np.uint8),
-            np.array([30, 34, 42, 255], dtype=np.uint8),
-            np.array([196, 196, 184, 255], dtype=np.uint8),
+            np.array([46, 148, 78, 255], dtype=np.uint8),
+            np.array([126, 144, 168, 255], dtype=np.uint8),
+            np.array([214, 222, 232, 255], dtype=np.uint8),
             np.array([218, 70, 54, 255], dtype=np.uint8),
             np.array([54, 132, 218, 255], dtype=np.uint8),
         ]
     if any(word in p for word in ("wood", "table", "chair", "furniture", "frame house", "timber")):
         return [
-            np.array([170, 130, 80, 255], dtype=np.uint8),
-            np.array([120, 84, 48, 255], dtype=np.uint8),
-            np.array([210, 180, 130, 255], dtype=np.uint8),
-            np.array([90, 64, 40, 255], dtype=np.uint8),
+            np.array([196, 154, 98, 255], dtype=np.uint8),
+            np.array([168, 120, 72, 255], dtype=np.uint8),
+            np.array([232, 214, 168, 255], dtype=np.uint8),
+            np.array([148, 178, 120, 255], dtype=np.uint8),
         ]
     if any(word in p for word in ("metal", "steel", "aluminium", "aluminum", "bracket", "chassis", "machine")):
         return [
-            np.array([158, 163, 168, 255], dtype=np.uint8),
-            np.array([78, 92, 108, 255], dtype=np.uint8),
-            np.array([184, 186, 184, 255], dtype=np.uint8),
-            np.array([43, 47, 51, 255], dtype=np.uint8),
+            np.array([168, 196, 220, 255], dtype=np.uint8),
+            np.array([120, 174, 232, 255], dtype=np.uint8),
+            np.array([198, 208, 218, 255], dtype=np.uint8),
+            np.array([183, 155, 232, 255], dtype=np.uint8),
         ]
     if any(word in p for word in ("robot", "mechanical", "clamp", "mount", "arm", "gear", "actuator")):
         return [
-            np.array([78, 92, 108, 255], dtype=np.uint8),
-            np.array([36, 42, 50, 255], dtype=np.uint8),
-            np.array([176, 184, 192, 255], dtype=np.uint8),
-            np.array([158, 163, 168, 255], dtype=np.uint8),
+            np.array([120, 174, 232, 255], dtype=np.uint8),
+            np.array([107, 199, 198, 255], dtype=np.uint8),
+            np.array([214, 222, 232, 255], dtype=np.uint8),
+            np.array([240, 193, 90, 255], dtype=np.uint8),
         ]
     if any(word in p for word in ("dxf", "drawing", "blueprint", "laser", "cut", "flat pattern")):
         return [
             np.array([88, 166, 255, 255], dtype=np.uint8),
-            np.array([48, 54, 61, 255], dtype=np.uint8),
-            np.array([196, 196, 196, 255], dtype=np.uint8),
+            np.array([126, 182, 232, 255], dtype=np.uint8),
+            np.array([214, 222, 232, 255], dtype=np.uint8),
         ]
     if semantic is not None:
         base = semantic
@@ -6037,7 +6037,7 @@ def _parse_color(color: Any) -> np.ndarray:
     """RGBA uint8 for trimesh face_colors."""
     named = {
         "white": [255, 255, 255, 255],
-        "black": [20, 20, 20, 255],
+        "black": [126, 144, 168, 255],  # slate (visible on dark canvas — never true black)
         "red": [220, 60, 60, 255],
         "green": [60, 180, 80, 255],
         "blue": [70, 130, 220, 255],

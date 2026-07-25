@@ -62,7 +62,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260724-mesh-lookdev";
+} from "./scene-style.js?v=20260725-bright-cad";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260715-v2-generating-label";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -111,7 +111,7 @@ import {
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
-import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260716-bodycolor-init";
+import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260725-bright-cad";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260724-pick-row2";
 import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor4";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";

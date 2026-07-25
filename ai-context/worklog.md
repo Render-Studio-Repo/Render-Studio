@@ -1,3 +1,20 @@
+## 2026-07-25 — CAD colors: no black / charcoal / aluminium on dark canvas
+
+- Part palette was aluminium / charcoal / matte black — invisible on the dark viewport.
+- Switched backend + viewport + AI color guidance to bright studio blues/teals/ambers/corals; `black` named color maps to slate.
+- Cache-bust `scene-style.js` / `app.js` / `project-assembly.js` `?v=20260725-bright-cad`. Service restarted.
+
+---
+
+## 2026-07-25 — STEP Part/Assembly export restored
+
+- Part STEP download was broken: chooser never ran, and `?step_mode=part` no longer flattened.
+- STEP click again offers **Part** (flatten for Extrude/Cut) vs **Assembly** (as authored).
+- Backend `_file_response` + Fusion push honor `step_mode=part|regular` via `ensure_fusion_part_step`.
+- Cache-bust `?v=20260725-step-part`. Service restarted.
+
+---
+
 ## 2026-07-25 — Viewport: stop tipping models onto their side
 
 - Bike/long assemblies were loading “tilted left” because the footprint ±90° scorer preferred the side face as the floor.
