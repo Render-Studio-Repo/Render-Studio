@@ -15146,6 +15146,139 @@ def _parse_robot_srdf_groups(path: Path) -> dict[str, list[dict[str, Any]]]:
     return {"groups": groups, "states": states, "end_effectors": end_effectors}
 
 
+def _prefer_urdf_root_link(link_names: list[str]) -> str:
+    """Pick a sensible assembly root when gen_urdf() left multiple disconnected roots."""
+    if not link_names:
+        raise ValueError("no URDF links")
+    preferred = (
+        "base_link",
+        "base_plate",
+        "base",
+        "world",
+        "root",
+        "chassis",
+        "frame",
+    )
+    lower_map = {str(name).lower(): str(name) for name in link_names}
+    for key in preferred:
+        if key in lower_map:
+            return lower_map[key]
+    # Prefer a link whose name starts with base_
+    for name in link_names:
+        if str(name).lower().startswith("base"):
+            return str(name)
+    return str(link_names[0])
+
+
+def _urdf_root_candidates(urdf_path: Path) -> list[str]:
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(urdf_path).getroot()
+    links = [str(el.attrib.get("name") or "").strip() for el in root.findall("link")]
+    links = [name for name in links if name]
+    children: set[str] = set()
+    for joint in root.findall("joint"):
+        child_el = joint.find("child")
+        child = str(child_el.attrib.get("link") or "").strip() if child_el is not None else ""
+        if child:
+            children.add(child)
+    return [name for name in links if name not in children]
+
+
+def _repair_urdf_multi_root_xml(urdf_path: Path) -> list[tuple[str, str, str]]:
+    """Attach orphan roots to a preferred root with fixed joints. Returns added joints."""
+    import xml.etree.ElementTree as ET
+
+    if not urdf_path.is_file():
+        return []
+    tree = ET.parse(urdf_path)
+    root = tree.getroot()
+    links = [str(el.attrib.get("name") or "").strip() for el in root.findall("link")]
+    links = [name for name in links if name]
+    children: set[str] = set()
+    existing_names = {
+        str(j.attrib.get("name") or "").strip()
+        for j in root.findall("joint")
+        if str(j.attrib.get("name") or "").strip()
+    }
+    for joint in root.findall("joint"):
+        child_el = joint.find("child")
+        child = str(child_el.attrib.get("link") or "").strip() if child_el is not None else ""
+        if child:
+            children.add(child)
+    orphans = [name for name in links if name not in children]
+    if len(orphans) <= 1:
+        return []
+    preferred = _prefer_urdf_root_link(orphans)
+    added: list[tuple[str, str, str]] = []
+    for orphan in orphans:
+        if orphan == preferred:
+            continue
+        joint_name = f"{preferred}_to_{orphan}_auto"
+        n = 1
+        while joint_name in existing_names:
+            n += 1
+            joint_name = f"{preferred}_to_{orphan}_auto_{n}"
+        joint = ET.SubElement(root, "joint", name=joint_name, type="fixed")
+        ET.SubElement(joint, "parent", link=preferred)
+        ET.SubElement(joint, "child", link=orphan)
+        ET.SubElement(joint, "origin", xyz="0 0 0", rpy="0 0 0")
+        existing_names.add(joint_name)
+        added.append((joint_name, preferred, orphan))
+    if added:
+        tree.write(urdf_path, encoding="utf-8", xml_declaration=True)
+    return added
+
+
+def _inject_fixed_joints_into_gen_urdf(source_text: str, joints: list[tuple[str, str, str]]) -> str | None:
+    """Best-effort: append missing fixed joints into a gen_urdf() `joints = { ... }` dict."""
+    import re as _re
+
+    if not joints or "def gen_urdf" not in (source_text or ""):
+        return None
+    # Locate joints = { ... } after gen_urdf definition.
+    fn_match = _re.search(r"\ndef gen_urdf\s*\(", source_text)
+    if not fn_match:
+        return None
+    after = source_text[fn_match.start() :]
+    dict_match = _re.search(r"\n(?P<indent>[ \t]*)joints\s*=\s*\{", after)
+    if not dict_match:
+        return None
+    abs_start = fn_match.start() + dict_match.end()
+    # Find matching closing brace for the joints dict.
+    depth = 1
+    i = abs_start
+    while i < len(source_text) and depth > 0:
+        ch = source_text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        return None
+    close_idx = i - 1
+    block = source_text[abs_start:close_idx]
+    missing = [(n, p, c) for n, p, c in joints if f'"{n}"' not in block and f"'{n}'" not in block]
+    if not missing:
+        return source_text
+    indent = dict_match.group("indent") + "    "
+    lines = []
+    for name, parent, child in missing:
+        lines.append(f'{indent}"{name}": ("{parent}", "{child}"),')
+    insertion = "\n".join(lines)
+    # Insert before closing brace; keep a trailing newline if the block had one.
+    prefix = block.rstrip()
+    if prefix and not prefix.endswith(","):
+        # last entry may lack trailing comma — add one via newline entries only
+        pass
+    if prefix:
+        new_block = prefix + ",\n" + insertion + "\n"
+    else:
+        new_block = "\n" + insertion + "\n"
+    return source_text[:abs_start] + new_block + source_text[close_idx:]
+
+
 def _robot_artifact_summary(project_path: Path) -> dict[str, Any]:
     sources = sorted(path.name for path in project_path.glob("*.py") if path.is_file())
     artifacts = sorted(
@@ -15476,6 +15609,10 @@ def _run_rigging_artifact_pipeline(
             "- Joint parent/child names must reference existing links. The first child of each chain "
             "parents to the real base/root link (never invent missing seg0 links).\n"
             "- Form a connected tree: exactly (links - 1) joints, single root.\n"
+            "- CRITICAL: every link except ONE root must appear as a joint child. If you create "
+            "cover/lid/motor/pinion/tooling links, parent them with fixed (or actuated) joints to "
+            "the base — never leave a second disconnected root.\n"
+            "- Prefer root name base_link / base_plate / base when those links exist.\n"
             "- gen_srdf MUST return a dict with EXACTLY two keys: `xml` and `urdf`.\n"
             "  * `xml`: SRDF root Element or XML string (planning <group> lives inside this XML).\n"
             "  * `urdf`: relative path string to the sibling .urdf file ONLY "
@@ -15558,6 +15695,37 @@ def _run_rigging_artifact_pipeline(
 
     if kind in {"urdf", "both"}:
         run_one("urdf", f"{stem}.urdf", 52)
+        # AI-authored gen_urdf() often leaves floating covers/pinions as extra roots.
+        # Repair once: attach orphans under a preferred root, patch source, regenerate.
+        urdf_errs = [e for e in errors if e.get("tool") == "urdf"]
+        multi_root = any(
+            "single rooted tree" in str(e.get("stderr") or "") or "found roots" in str(e.get("stderr") or "")
+            for e in urdf_errs
+        )
+        urdf_out = path / f"{stem}.urdf"
+        if multi_root and urdf_out.is_file():
+            generation_service.update_progress(
+                path,
+                {
+                    "stage": "repair-urdf-tree",
+                    "pct": 58,
+                    "label": "Repairing URDF joint tree…",
+                    "thinking": "Connecting orphan links under a single root with fixed joints.",
+                },
+                trace_id=trace_id,
+            )
+            added = _repair_urdf_multi_root_xml(urdf_out)
+            if added:
+                patched_src = _inject_fixed_joints_into_gen_urdf(
+                    source_path.read_text(encoding="utf-8"),
+                    added,
+                )
+                if patched_src:
+                    source_path.write_text(patched_src.rstrip() + "\n", encoding="utf-8")
+                # Drop prior urdf failure and regenerate from the patched source.
+                errors[:] = [e for e in errors if e.get("tool") != "urdf"]
+                outputs[:] = [o for o in outputs if o.get("tool") != "urdf"]
+                run_one("urdf", f"{stem}.urdf", 62)
     if kind in {"srdf", "both"}:
         run_one("srdf", f"{stem}.srdf", 74)
 
