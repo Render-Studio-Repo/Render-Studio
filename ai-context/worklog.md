@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-07-26 — Mesh quality closer to img2threejs showcase
+
+- Online demos use bevelled Extrude, clearcoat Physical materials, and multi-pass enrichment; our Mesh was one soft write.
+- Forced showcase **detail pass** after first export; harder gates (Extrude/Lathe/Tube, clearcoat, bevels, ≥30 vehicle parts); max_tokens 16k.
+- Preserve authored `flatShading` in viewport. Service restarted — re-run Mesh for better results (costs more tokens).
+
+---
+
 ## 2026-07-26 — Lock Mode 2.0 upright (stop tipping on side)
 
 - Mode 2.0 completion forced `rotateX(-90°)` via `v2-upright`, but Jake/cadjs GLBs are already STEP Z-up — that laid models on their side.

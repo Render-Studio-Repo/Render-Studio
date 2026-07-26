@@ -63,7 +63,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260726-transform-mat";
+} from "./scene-style.js?v=20260726-mesh-showcase";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260725-mesh-orange";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
