@@ -269,10 +269,23 @@ function isA1ProjectsAdminUser() {
 }
 
 const loadingProjectIds = new Set();
-let generationPollTimer = null;
+/** Per-project generation polls — switching projects must not kill sibling watches. */
+const generationPollTimers = new Map();
 let generationWatchPid = null;
 let generationWatchOverlay = null;
 let viewportOverlayPid = null;
+
+function hasGenerationPoll(pid = null) {
+  if (pid) return generationPollTimers.has(pid);
+  return generationPollTimers.size > 0;
+}
+
+function clearGenerationPoll(pid) {
+  if (!pid) return;
+  const timer = generationPollTimers.get(pid);
+  if (timer) clearInterval(timer);
+  generationPollTimers.delete(pid);
+}
 // Projects with a completed generation the user hasn't viewed yet.
 const newlyCompletedProjects = new Set();
 let viewportOverlayState = null;
@@ -487,7 +500,7 @@ async function keepRiggingGenerationOpenIfRunning(pid = projectId, status = null
     if (!riggingRunning) return false;
     const proj = allProjects.find((p) => p.id === pid);
     if (proj) proj.generation = gen;
-    if (generationWatchPid !== pid || !generationPollTimer) {
+    if (generationWatchPid !== pid || !hasGenerationPoll(pid)) {
       beginGenerationWatch(pid, { kind: "rigging", mode: "rigging", pendingStart: false });
     } else if (generationWatchOverlay) {
       Object.assign(generationWatchOverlay, {
@@ -1123,33 +1136,53 @@ let promptSubmitInFlight = false;
 let wiringPromptSubmitInFlight = false;
 let promptClickInFlight = false;
 
-function stopGenerationWatch() {
-  if (generationPollTimer) {
-    clearInterval(generationPollTimer);
-    generationPollTimer = null;
+function stopGenerationWatch(targetPid = generationWatchPid) {
+  // Full reset (rare): stop every project poll.
+  if (targetPid == null) {
+    for (const pid of [...generationPollTimers.keys()]) clearGenerationPoll(pid);
+    generationWatchPid = null;
+    generationWatchOverlay = null;
+    promptSubmitInFlight = false;
+    wiringPromptSubmitInFlight = false;
+    promptClickInFlight = false;
+    syncViewportGenerationOverlay({ complete: true });
+    document.getElementById("btn-prompt")?.removeAttribute("disabled");
+    document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
+    document.getElementById("btn-wiring-toolbelt-generate")?.removeAttribute("disabled");
+    syncStopButtonVisibility();
+    return;
   }
-  const pid = generationWatchPid;
-  generationWatchPid = null;
-  generationWatchOverlay = null;
-  promptSubmitInFlight = false;
-  wiringPromptSubmitInFlight = false;
-  promptClickInFlight = false;
-  if (pid) setProjectLoading(pid, false);
-  clearCanvasGenerationPending(pid);
-  syncViewportGenerationOverlay({ complete: true });
-  document.getElementById("btn-prompt")?.removeAttribute("disabled");
-  document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
-  document.getElementById("btn-wiring-toolbelt-generate")?.removeAttribute("disabled");
-  syncStopButtonVisibility();
-  if (pid === projectId) clearPendingPromptTimelineStep();
+  clearGenerationPoll(targetPid);
+  setProjectLoading(targetPid, false);
+  clearCanvasGenerationPending(targetPid);
+  const wasFocused = generationWatchPid === targetPid;
+  if (wasFocused) {
+    generationWatchPid = null;
+    generationWatchOverlay = null;
+    promptSubmitInFlight = false;
+    wiringPromptSubmitInFlight = false;
+    promptClickInFlight = false;
+    // Prefer the open project's still-running poll as the new focus.
+    if (projectId && projectId !== targetPid && hasGenerationPoll(projectId)) {
+      generationWatchPid = projectId;
+    }
+    syncViewportGenerationOverlay({ complete: true });
+    document.getElementById("btn-prompt")?.removeAttribute("disabled");
+    document.getElementById("btn-wiring-prompt")?.removeAttribute("disabled");
+    document.getElementById("btn-wiring-toolbelt-generate")?.removeAttribute("disabled");
+    syncStopButtonVisibility();
+    if (targetPid === projectId) clearPendingPromptTimelineStep();
+  } else {
+    syncStopButtonVisibility();
+    renderProjectList();
+  }
 }
 
 async function cancelActiveGeneration(opts = {}) {
-  const pid =
-    (isGenerationUiActive(projectId) && projectId)
-    || generationWatchPid
-    || viewportOverlayPid
-    || projectId;
+  // Only cancel the open project (or an explicit pid). Never fall back to a
+  // background generationWatchPid on another project — that stopped gens when
+  // switching projects / when Stop fired while the watch pointed elsewhere.
+  const pid = opts.projectId || opts.pid || projectId;
   if (!pid || !isGenerationUiActive(pid)) return;
 
   if (
@@ -1252,7 +1285,7 @@ async function cancelActiveGeneration(opts = {}) {
     }
     const stillRunning = generationRunningJobs(nextGen).length > 0 || nextGen?.status === "running";
     if (stillRunning) {
-      if (!generationPollTimer) {
+      if (!hasGenerationPoll(pid)) {
         beginGenerationWatch(pid, {
           kind: nextGen?.kind || "prompt",
           mode: generationPromptMode(nextGen, generationWatchOverlay?.promptMode || "standard"),
@@ -1263,7 +1296,7 @@ async function cancelActiveGeneration(opts = {}) {
       }
       userCancelRequested = false;
     } else {
-      stopGenerationWatch();
+      stopGenerationWatch(pid);
       hideViewportOverlay(pid);
       promptSubmitInFlight = false;
       document.getElementById("btn-prompt")?.removeAttribute("disabled");
@@ -1701,10 +1734,8 @@ function preservePromptModeAfterAttach(modeBeforeAttach = promptMode) {
 
 function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standard", pendingStart = false } = {}) {
   if (!pid) return;
-  if (generationPollTimer) {
-    clearInterval(generationPollTimer);
-    generationPollTimer = null;
-  }
+  // Replace only this project's poll — leave sibling project generations running.
+  clearGenerationPoll(pid);
   generationWatchPid = pid;
   if (currentUser) {
     upsertProjectInList({
@@ -1816,7 +1847,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       if (proj) proj.generation = gen;
       const runningJobs = generationRunningJobs(gen, generationWatchOverlay);
       if (gen.status === "running" || runningJobs.length > 0) {
-        if (generationWatchOverlay) {
+        if (generationWatchPid === pid && generationWatchOverlay) {
           const liveMode = generationWatchOverlay.kind === "rigging"
             ? "rigging"
             : generationPromptMode(gen, generationWatchOverlay.promptMode || mode);
@@ -1895,7 +1926,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       // After a deploy, stuck jobs are STOPPED (not auto-resumed). Auto-resume
       // used to re-run the prompt from scratch and re-bill. Fall through to the
       // normal finished-job handlers below.
-      stopGenerationWatch();
+      stopGenerationWatch(pid);
       userCancelRequested = false;
       // Handle finished jobs from the multi-job list first.
       const finishedJobs = Array.isArray(gen.jobs) && gen.jobs.length ? gen.jobs : [gen];
@@ -1978,7 +2009,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
             viewerOverlay.clearError();
             wiringOverlay?.clearError();
           }
-          stopGenerationWatch();
+          stopGenerationWatch(pid);
           userCancelRequested = false;
           if (pid === projectId) {
             if (gen.kind === "wiring") await refreshWiringPromptHistory();
@@ -2032,7 +2063,7 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
     }
   };
   poll();
-  generationPollTimer = setInterval(poll, 2500);
+  generationPollTimers.set(pid, setInterval(poll, 2500));
   syncStopButtonVisibility();
   syncCanvasGenerationUi();
 }
@@ -13120,7 +13151,7 @@ const featureEditor = createFeatureEditor({
   onGenerating: (active, message) => {
     if (active) {
       showViewportOverlay(projectId, message || "Rebuilding…", { mode: "build", estimateMs: 60000 });
-    } else if (!generationPollTimer) {
+    } else if (!hasGenerationPoll(projectId)) {
       hideViewportOverlay(projectId, { complete: true });
     }
   },
@@ -19877,7 +19908,7 @@ async function runWiringPrompt() {
       }
       return;
     }
-    stopGenerationWatch();
+    stopGenerationWatch(projectId);
     wiringSim.applySchematic(data.schematic);
     await refreshFiles();
     await refreshWiringPromptHistory();
@@ -19892,7 +19923,7 @@ async function runWiringPrompt() {
     renderWiringPromptRefs();
     renderWiringPromptImages();
   } catch (err) {
-    if (!userCancelRequested) stopGenerationWatch();
+    if (!userCancelRequested) stopGenerationWatch(projectId);
     await refreshWiringPromptHistory();
     if (status) {
       const wasCanceled = userCancelRequested || err.name === "AbortError" || err.message?.toLowerCase().includes("cancel");
@@ -21043,7 +21074,7 @@ async function deleteProject(p) {
     return;
   }
 
-  if (generationWatchPid === p.id) stopGenerationWatch();
+  if (generationWatchPid === p.id) stopGenerationWatch(p.id);
 
   if (projectId === p.id) {
     projectId = null;
@@ -21176,6 +21207,15 @@ async function openProjectById(id, { updateUrl = true, replaceUrl = false, throw
 }
 
 window.__openProject = openProjectById;
+window.__generationDebug = {
+  hasPoll: hasGenerationPoll,
+  beginWatch: beginGenerationWatch,
+  stopWatch: stopGenerationWatch,
+  cancel: cancelActiveGeneration,
+  watchPid: () => generationWatchPid,
+  pollCount: () => generationPollTimers.size,
+  pollPids: () => [...generationPollTimers.keys()],
+};
 rememberStudioReturnUrl();
 document.addEventListener("click", (event) => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -27305,7 +27345,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       const runningJobs = generationRunningJobs(gen);
       // Allow another CAD prompt while jobs are already running (multi-part).
       if (gen?.status === "running" || runningJobs.length > 0) {
-        if (generationWatchPid !== projectId || !generationPollTimer) {
+        if (generationWatchPid !== projectId || !hasGenerationPoll(projectId)) {
           await resumeGenerationIfNeeded(projectId, gen);
         }
         // Fall through and submit an additional prompt.
@@ -27317,7 +27357,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         return;
       } else {
         // failed / canceled / idle — drop the stale UI and start a fresh generate.
-        stopGenerationWatch();
+        stopGenerationWatch(projectId);
         hideViewportOverlay(projectId);
         viewerOverlay.clearError();
         if (proj) proj.generation = { status: "idle" };
@@ -27325,7 +27365,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     } catch {
       // Keep a pending local watch; only tear down if we aren't mid-submit.
       if (!(generationWatchPid === projectId && generationWatchOverlay?.pendingStart)) {
-        stopGenerationWatch();
+        stopGenerationWatch(projectId);
         hideViewportOverlay(projectId);
         viewerOverlay.clearError();
       }
@@ -27460,6 +27500,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   ).some((ref) => String(ref?.type || "").toLowerCase() === "dxf");
   promptSubmitInFlight = true;
   promptClickInFlight = false;
+  let submitProjectId = null;
   try {
     // Mesh mode needs the reference image for img2threejs — never convert to DXF.
     if (hasPromptImages && !alreadyHasDxfRef && lockedPromptMode !== "mesh" && lockedPromptMode !== "fusion") {
@@ -27469,6 +27510,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
 
     await ensureProject();
+    // Pin the project this Generate belongs to — switching projects mid-spice/POST
+    // must not rebind the watch or POST onto the newly opened project.
+    submitProjectId = projectId;
+    if (!submitProjectId) {
+      promptSubmitInFlight = false;
+      return;
+    }
     syncPromptTargetUI();
     pendingPromptSelectionContext = capturePromptSelectionContext();
     const promptReferences = promptReferencesForSubmit();
@@ -27486,7 +27534,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     const selectedModelInfo = getSelectedPromptModelInfo();
     addPendingPromptHistoryEntry({
       id: promptHistoryId,
-      project_id: projectId,
+      project_id: submitProjectId,
       prompt,
       success: false,
       status: "running",
@@ -27522,14 +27570,14 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         ? "Converting image to drawing, then improving prompt…"
         : "Improving prompt with AI…";
     }
-    if (canvasAttached) markCanvasGenerationPending(projectId);
+    if (canvasAttached) markCanvasGenerationPending(submitProjectId);
     viewerOverlay.clearError();
-    beginGenerationWatch(projectId, {
+    beginGenerationWatch(submitProjectId, {
       kind: "prompt",
       mode: genMode,
       pendingStart: true,
     });
-    showViewportOverlay(projectId, "Improving prompt with AI…", {
+    showViewportOverlay(submitProjectId, "Improving prompt with AI…", {
       kind: "prompt",
       promptMode: promptModeForRef(genMode),
       mode: genMode,
@@ -27556,8 +27604,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         error: "Prompt is empty.",
       });
       promptSubmitInFlight = false;
-      hideViewportOverlay(projectId, { complete: false, force: true });
-      stopGenerationWatch();
+      hideViewportOverlay(submitProjectId, { complete: false, force: true });
+      stopGenerationWatch(submitProjectId);
       if (status) {
         status.className = "status error";
         status.textContent = "Prompt is empty.";
@@ -27572,8 +27620,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       });
     }
 
-    if (!generationWatchOverlay || generationWatchPid !== projectId) {
-      beginGenerationWatch(projectId, {
+    if (!hasGenerationPoll(submitProjectId) || generationWatchPid !== submitProjectId) {
+      beginGenerationWatch(submitProjectId, {
         kind: "prompt",
         mode: genMode,
         pendingStart: true,
@@ -27794,13 +27842,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     } finally {
       if (genId === activePromptGenerationId) activePromptAbort = null;
       if (genId !== activePromptGenerationId) return;
-      if (!generationPollTimer && !isCadGenerationActive(projectId)) {
+      if (!hasGenerationPoll(projectId) && !isCadGenerationActive(projectId)) {
         hideViewportOverlay(projectId, { complete: !promptFailed });
         syncStopButtonVisibility();
       }
     }
   } catch (err) {
-    stopGenerationWatch();
+    if (submitProjectId) stopGenerationWatch(submitProjectId);
     setPromptPanelFailureStatus(document.getElementById("prompt-status"));
     showPromptGenerationFailure(err, lastPromptCopyContext || {});
   } finally {
@@ -27819,7 +27867,7 @@ ribbon = createRibbon({
   onGenerating: (active, message) => {
     if (active) {
       showViewportOverlay(projectId, message || "Building model…", { mode: "build", estimateMs: 60000 });
-    } else if (!generationPollTimer) {
+    } else if (!hasGenerationPoll(projectId)) {
       hideViewportOverlay(projectId, { complete: true });
     }
   },

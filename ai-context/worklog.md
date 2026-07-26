@@ -1,3 +1,18 @@
+## 2026-07-26 — Switching projects no longer stops another project's generation
+
+- Bug: a single global `generationPollTimer` meant opening project B while A was generating replaced A's watch; `cancelActiveGeneration` could also fall back to `generationWatchPid` and cancel the background project. Generate mid-spice could rebind POST to the newly opened project.
+- Fix: per-project `generationPollTimers` Map (sibling polls keep running); Stop/cancel only targets the open project (or explicit pid); pin `submitProjectId` for improve+POST so project switches don't steal the job.
+- Cache-bust `app.js?v=20260726-multi-proj-gen`. Playwright: two watches stay alive across A↔B with zero `/generation/cancel` on switch.
+
+---
+
+## 2026-07-26 — Fix generationPollTimer ReferenceError
+
+- After per-project `generationPollTimers` Map refactor, four call sites still referenced singular `generationPollTimer` (undefined) — broke generate/resume on projects like `ee20a13f`.
+- Replaced with `hasGenerationPoll(projectId)`. Cache-bust `?v=20260726-poll-timer`. Hard-refresh.
+
+---
+
 ## 2026-07-26 — Wiring Simulator restored + mesh.mjs /bodies 500
 
 - Wiring Simulator workspace itself was intact (Blink demo loads 4 parts / 7 wires). Accidental `app.js` regressions had reintroduced locked `rotateX(-90°)` upright tip and weakened Mesh authored-style retention.
