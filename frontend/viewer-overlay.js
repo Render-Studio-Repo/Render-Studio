@@ -120,9 +120,55 @@ function isRepairLoop(checklist, peakIdx) {
   return stats.activeIdx < peakIdx;
 }
 
+/** Display stats that only count forward — repairs keep the peak step number. */
+function displayStepStats(checklist, peakIdx) {
+  const stats = stepStats(checklist);
+  const repair = isRepairLoop(checklist, peakIdx);
+  const displayIdx = repair ? peakIdx : stats.activeIdx;
+  const detail = repair
+    ? humanizeProgressText(stats.detail || stats.label || "", "Revising model…")
+    : stats.detail;
+  return {
+    ...stats,
+    activeIdx: displayIdx,
+    current: displayIdx + 1,
+    repair,
+    label: repair ? "Revising model" : stats.label,
+    detail: repair ? (detail && detail !== stats.label ? detail : "Revising model…") : detail,
+  };
+}
+
+/** Freeze the checklist at the farthest step reached; show revisiting as revising, not a rewind. */
+function checklistForDisplay(items, peakIdx) {
+  const list = items?.length ? items : DEFAULT_CHECKLIST;
+  if (!isRepairLoop(list, peakIdx)) return list;
+  return list.map((item, index) => {
+    if (index < peakIdx) {
+      return { ...item, status: "done", detail: "" };
+    }
+    if (index === peakIdx) {
+      return {
+        ...item,
+        status: "active",
+        detail: "Revising model…",
+      };
+    }
+    return { ...item, status: "pending", detail: "" };
+  });
+}
+
 function formatStepCounter(stats, { repair = false } = {}) {
-  const base = `${stats.current}/${stats.total}`;
-  return repair ? `↺ ${base}` : base;
+  // Always show the forward display current (never a lower repair-target index).
+  return `${stats.current}/${stats.total}`;
+}
+
+function formatProgressHeadline(stats, detailText, { repair = false } = {}) {
+  const step = formatStepCounter(stats, { repair });
+  if (repair) {
+    return `${step} · Revising model`;
+  }
+  const detail = humanizeProgressText(detailText, stats.label);
+  return `${step} · ${detail}`;
 }
 
 function formatOverlayCostUsd(value) {
@@ -222,15 +268,6 @@ function usageFromJob(job) {
     model: shortOverlayModel(model),
     ai_calls: Number(job.ai_calls || job.meta?.ai_calls || 0) || 0,
   };
-}
-
-function formatProgressHeadline(stats, detailText, { repair = false } = {}) {
-  const detail = humanizeProgressText(detailText, stats.label);
-  const step = formatStepCounter(stats, { repair });
-  if (repair) {
-    return `Repair loop · ${step} · ${detail}`;
-  }
-  return `${step} · ${detail}`;
 }
 
 function esc(value) {
@@ -617,7 +654,10 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
 
   function renderChecklist() {
     if (!checklistEl) return;
-    const items = checklist.length ? checklist : DEFAULT_CHECKLIST;
+    const items = checklistForDisplay(
+      checklist.length ? checklist : DEFAULT_CHECKLIST,
+      peakChecklistIdx,
+    );
     const repair = isRepairLoop(checklist, peakChecklistIdx);
     checklistEl.innerHTML = items.map((item, index) => {
       const status = item.status || "pending";
@@ -627,7 +667,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
         ? `<span class="viewport-agent-check-detail">${esc(detailRaw)}</span>`
         : "";
       const repairNote = status === "active" && repair
-        ? `<span class="viewport-agent-check-repair">Repair pass — revisiting this step to fix earlier output</span>`
+        ? `<span class="viewport-agent-check-repair">Revising model…</span>`
         : "";
       return `
         <li class="viewport-agent-check viewport-agent-check--${esc(status)}" data-status="${esc(status)}">
@@ -635,7 +675,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
           <span class="viewport-agent-check-body">
             <span class="viewport-agent-check-label">${esc(`${index + 1}. ${item.label || item.id || "Step"}`)}</span>
             ${repairNote}
-            ${detail}
+            ${!repairNote ? detail : ""}
           </span>
         </li>
       `;
@@ -668,12 +708,11 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       .slice(-8)
       .reverse();
     if (!rows.length) {
-      const stats = stepStats(checklist);
-      const repair = isRepairLoop(checklist, peakChecklistIdx);
+      const stats = displayStepStats(checklist, peakChecklistIdx);
       const headline = formatProgressHeadline(
         stats,
         stats.detail || stats.label,
-        { repair },
+        { repair: stats.repair },
       );
       activityEl.innerHTML = `<li class="viewport-agent-activity-item muted">${esc(headline)}</li>`;
       return;
@@ -694,22 +733,23 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   }
 
   function renderDetails() {
-    const stats = stepStats(checklist);
-    const repair = isRepairLoop(checklist, peakChecklistIdx);
-    const nowText = humanizeProgressText(
-      thinkingLabel || progressLabel || stats.detail || stats.label,
-      stats.label,
-    );
-    const headline = formatProgressHeadline(stats, nowText, { repair });
+    const stats = displayStepStats(checklist, peakChecklistIdx);
+    const nowText = stats.repair
+      ? "Revising model…"
+      : humanizeProgressText(
+          thinkingLabel || progressLabel || stats.detail || stats.label,
+          stats.label,
+        );
+    const headline = formatProgressHeadline(stats, nowText, { repair: stats.repair });
     if (thinkingLabelEl) {
-      thinkingLabelEl.textContent = repair ? "Repair loop" : "Current step";
+      thinkingLabelEl.textContent = stats.repair ? "Revising" : "Current step";
     }
     if (thinkingText) {
       const focused = activeJobs.length > 1 ? `Focused model · ` : "";
       const multi = activeJobs.length > 1 ? `${activeJobs.length} models generating · ` : "";
       thinkingText.textContent = `${multi}${focused}${headline}`;
     }
-    spinner.classList.toggle("viewport-spinner--repair", repair);
+    spinner.classList.toggle("viewport-spinner--repair", stats.repair);
     renderImprovedPrompt();
     renderChecklist();
     renderActivity();
@@ -823,15 +863,16 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
       return;
     }
     const pct = Math.round(Math.max(0, Math.min(100, progressValue)));
-    const stats = stepStats(checklist);
-    const repair = isRepairLoop(checklist, peakChecklistIdx);
+    const stats = displayStepStats(checklist, peakChecklistIdx);
     spinner.style.setProperty("--gen-pct", String(pct));
     if (progressFill) progressFill.style.width = `${pct}%`;
     if (progressPct) progressPct.textContent = `${pct}%`;
-    if (progressStep) progressStep.textContent = formatStepCounter(stats, { repair });
+    if (progressStep) progressStep.textContent = formatStepCounter(stats, { repair: stats.repair });
     if (spinnerLabel) {
-      const clean = humanizeProgressText(progressLabel || thinkingLabel || stats.label, stats.label);
-      spinnerLabel.textContent = formatProgressHeadline(stats, clean, { repair });
+      const clean = stats.repair
+        ? "Revising model…"
+        : humanizeProgressText(progressLabel || thinkingLabel || stats.label, stats.label);
+      spinnerLabel.textContent = formatProgressHeadline(stats, clean, { repair: stats.repair });
     }
     if (pct >= 100 && generating) {
       spinner.classList.add("viewport-spinner--place");

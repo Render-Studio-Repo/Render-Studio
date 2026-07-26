@@ -1,3 +1,19 @@
+## 2026-07-26 — Gripper URDF movable jaws + re-author prompt
+
+- Error on `184f51c9` (`d13e7c4f`) was real: AI `gen_urdf()` left roots `base_plate`/`cover_plate`/`pinion`, then preferred all-fixed so Rigging showed “No URDF movable joints”.
+- Hand-authored single-tree `gen_urdf`/`gen_srdf`: prismatic `rack_left_slide`/`rack_right_slide` (±20 mm), revolute `base_to_pinion`; regenerated `.urdf`/`.srdf` (root `base_plate`, 3 movable).
+- Author prompt now requires grippers/arms to emit prismatic/revolute (not all-fixed). Restart `render3d` when idle so that prompt is live for future `/rigging/author-robot` runs.
+
+---
+
+## 2026-07-26 — Loading steps only count forward
+
+- Repair loops used to rewind the spinner from e.g. step 6 → 3.
+- Overlay now freezes at the peak step and shows **Revising model** instead of jumping backward.
+- Cache-bust `?v=20260726-revise-forward`.
+
+---
+
 ## 2026-07-26 — URDF multi-root robot artifact failure
 
 - `gen_urdf()` for NEMA utensil gripper left disconnected roots (`base_plate`, `cover_plate`, `pinion`) → UrdfSourceError.
