@@ -1,3 +1,11 @@
+## 2026-07-26 — URDF multi-root robot artifact failure
+
+- `gen_urdf()` for NEMA utensil gripper left disconnected roots (`base_plate`, `cover_plate`, `pinion`) → UrdfSourceError.
+- Fixed project `184f51c9` joints (cover + pinion under base_plate); regenerated URDF.
+- Pipeline now auto-repairs multi-root once (fixed joints to preferred root + patch source) before failing; author prompt stresses single-tree rule.
+
+---
+
 ## 2026-07-26 — Switching projects no longer stops another project's generation
 
 - Bug: a single global `generationPollTimer` meant opening project B while A was generating replaced A's watch; `cancelActiveGeneration` could also fall back to `generationWatchPid` and cancel the background project. Generate mid-spice could rebind POST to the newly opened project.
