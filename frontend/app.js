@@ -1800,9 +1800,8 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
           ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
           : "Generating in background… safe to refresh.";
     }
-    if (["v2", "mesh", "architect"].includes((mode || "standard").toLowerCase()) && pid === projectId) {
-      applyPromptModeUI((mode || "standard").toLowerCase());
-    }
+    // Do NOT applyPromptModeUI(mode) here. Resuming a prior 2.0 job was stealing
+    // the compose picker (Mesh → 2.0) right before Generate built the request body.
   }
   syncStopButtonVisibility();
   if ((kind === "prompt" || kind === "build") && pid === projectId) {
@@ -27241,11 +27240,26 @@ document.getElementById("viewport-generation-user")?.addEventListener("click", a
 document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   const canvasAttached = applyCanvasSketchToPrompt();
   if (canvasAttached && promptMode === "draw") applyPromptModeUI("v2");
+  // Lock the mode the user picked before any async resume of an in-flight job.
+  const lockedPromptMode = promptMode;
   let prompt = composer.getPromptText();
+  if (typeof window !== "undefined") {
+    console.log("MESHTEST_GEN", {
+      lockedPromptMode,
+      promptMode,
+      prompt: String(prompt || "").slice(0, 80),
+      canvasAttached,
+      inFlight: !!(promptClickInFlight || promptSubmitInFlight),
+    });
+  }
   if (canvasAttached) prompt = augmentPromptForCanvasSketch(prompt);
   if (canvasAttached && prompt !== composer.getPromptText()) composer.setPromptText(prompt);
-  if (!prompt) return;
+  if (!prompt) {
+    console.log("MESHTEST_GEN empty-prompt return");
+    return;
+  }
   if (promptClickInFlight || promptSubmitInFlight) {
+    console.log("MESHTEST_GEN in-flight return");
     const status = document.getElementById("prompt-status");
     if (status) {
       status.className = "status loading";
@@ -27267,8 +27281,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     promptStatusEl.className = "status loading";
     promptStatusEl.textContent = "Preparing generation…";
   }
+  console.log("MESHTEST_GEN prepared", promptStatusEl?.textContent);
   userCancelRequested = false;
   if (workspaceModes?.isWiring?.()) {
+    console.log("MESHTEST_GEN wiring return");
     const wiringInput = document.getElementById("wiring-prompt-input");
     const wiringStatus = document.getElementById("wiring-prompt-status");
     if (wiringInput) wiringInput.value = prompt;
@@ -27279,6 +27295,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     document.getElementById("btn-wiring-prompt")?.click();
     return;
   }
+  console.log("MESHTEST_GEN before-resume", {
+    projectId,
+    genUi: typeof isGenerationUiActive === "function" ? isGenerationUiActive(projectId) : null,
+    aiReady: !!aiStatus?.ai_ready,
+  });
   if (isGenerationUiActive(projectId)) {
     try {
       const gen = await api(`/api/projects/${projectId}/generation`);
@@ -27313,7 +27334,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       }
     }
   }
-  if (promptMode === "draw") {
+  // Keep Mesh/2.0/Render selection even if a prior job resume touched UI state.
+  if (promptMode !== lockedPromptMode) applyPromptModeUI(lockedPromptMode);
+  console.log("MESHTEST_GEN after-resume", { promptMode, lockedPromptMode, status: document.getElementById("prompt-status")?.textContent });
+  if (lockedPromptMode === "draw") {
     lastPromptCopyContext = promptCopyContextBase(prompt);
     try {
       await runDrawPrompt(prompt);
@@ -27337,7 +27361,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   // Photoreal render only when the user explicitly chose Render mode.
   // Do NOT auto-hijack Mode 2.0 / Fusion / Architect CAD prompts that merely
   // mention "render" / "on a table" — that broke Improve Prompt + CAD generate.
-  if (promptMode === "render") {
+  if (lockedPromptMode === "render") {
     promptSubmitInFlight = true;
     promptClickInFlight = false;
     userCancelRequested = false;
@@ -27392,7 +27416,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     }
     return;
   }
-  if (!aiStatus?.ai_ready && promptMode !== "render") {
+  if (!aiStatus?.ai_ready && lockedPromptMode !== "render") {
+    console.log("MESHTEST_GEN ai-not-ready return");
     const status = document.getElementById("prompt-status");
     if (status) {
       status.className = "status error";
@@ -27402,7 +27427,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     aiKeyUi?.openRequired();
     return;
   }
-  if (["v2", "architect"].includes(promptMode) && isCodexEnabled()) {
+  if (["v2", "architect"].includes(lockedPromptMode) && isCodexEnabled()) {
     const openAiKeys = listOpenAiKeysForCodex();
     if (!openAiKeys.length) {
       setCodexEnabled(false);
@@ -27442,7 +27467,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   promptClickInFlight = false;
   try {
     // Mesh mode needs the reference image for img2threejs — never convert to DXF.
-    if (hasPromptImages && !alreadyHasDxfRef && promptMode !== "mesh" && promptMode !== "fusion") {
+    if (hasPromptImages && !alreadyHasDxfRef && lockedPromptMode !== "mesh" && lockedPromptMode !== "fusion") {
       const choice = await askConvertImageToDrawing();
       if (choice === "cancel") return;
       convertImagesToDrawing = choice === "yes";
@@ -27455,11 +27480,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     const { targetMode, baseFilename: targetBaseFilename } = resolvePromptEditTarget(promptReferences, { canvasAttached });
     const status = document.getElementById("prompt-status");
     const reply = document.getElementById("prompt-reply");
-    const genMode = promptMode === "mesh" || promptMode === "fusion"
+    const genMode = lockedPromptMode === "mesh" || lockedPromptMode === "fusion"
       ? "mesh"
-      : promptMode === "architect"
+      : lockedPromptMode === "architect"
         ? "architect"
-        : promptMode === "v2"
+        : lockedPromptMode === "v2"
           ? "v2"
           : "standard";
     const promptHistoryId = newPromptHistoryId();
@@ -27489,8 +27514,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       references: promptReferences,
       model: selectedModelInfo.model,
       provider: selectedModelInfo.provider,
-      codex_agent: ["v2", "architect"].includes(promptMode) && isCodexEnabled(),
-      model_electronics: selectedPromptSupportsElectronics(promptMode) && isModelElectronicsEnabled(),
+      codex_agent: ["v2", "architect"].includes(lockedPromptMode) && isCodexEnabled(),
+      model_electronics: selectedPromptSupportsElectronics(lockedPromptMode) && isModelElectronicsEnabled(),
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
     });
 
@@ -27589,11 +27614,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       status.className = "status loading";
       status.textContent = convertImagesToDrawing
         ? "Converting image to drawing, then generating…"
-        : promptMode === "mesh" || promptMode === "fusion"
+        : lockedPromptMode === "mesh" || lockedPromptMode === "fusion"
         ? `${targetMode === "edit" ? "Editing selected mesh" : "Building procedural mesh"} with Mesh mode... (img2threejs → GLB)`
-        : promptMode === "architect"
+        : lockedPromptMode === "architect"
         ? `${targetMode === "edit" ? "Editing selected module" : "Adding modular house part"} with Architect mode... (runs in background - safe to refresh)`
-        : promptMode === "v2"
+        : lockedPromptMode === "v2"
         ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with 2.0... (runs in background - safe to refresh)`
         : `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
     }
@@ -27615,13 +27640,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
         target_mode: targetMode === "edit" ? "edit" : "new",
         ...getPromptAiKeyBodyFields(),
-        ...(promptMode === "mesh" || promptMode === "fusion" ? { mode: "mesh" } : {}),
-        ...(promptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
-        ...(promptMode === "v2" ? { mode: "v2" } : {}),
-        ...(["v2", "architect"].includes(promptMode) && isCodexEnabled()
+        ...(lockedPromptMode === "mesh" || lockedPromptMode === "fusion" ? { mode: "mesh" } : {}),
+        ...(lockedPromptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
+        ...(lockedPromptMode === "v2" ? { mode: "v2" } : {}),
+        ...(["v2", "architect"].includes(lockedPromptMode) && isCodexEnabled()
           ? { codex_agent: true }
           : {}),
-        ...(selectedPromptSupportsElectronics(promptMode)
+        ...(selectedPromptSupportsElectronics(lockedPromptMode)
           ? { model_electronics: isModelElectronicsEnabled() }
           : {}),
         ...getKnowledgePromptFields(),
@@ -27689,11 +27714,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
           if (proj) proj.generation = data.generation;
         }
         if (status) {
-          status.textContent = promptMode === "mesh" || promptMode === "fusion"
+          status.textContent = lockedPromptMode === "mesh" || lockedPromptMode === "fusion"
             ? "Generating Mesh in background... writing Three.js, exporting GLB, then loading viewport."
-            : promptMode === "architect"
+            : lockedPromptMode === "architect"
             ? "Generating Architect module in background... building, rendering, reviewing, and repairing."
-            : promptMode === "v2"
+            : lockedPromptMode === "v2"
             ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
             : "Generating in background... safe to switch tabs or refresh; model loads when ready.";
         }
