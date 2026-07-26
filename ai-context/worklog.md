@@ -1,3 +1,12 @@
+## 2026-07-26 — Wiring Simulator restored + mesh.mjs /bodies 500
+
+- Wiring Simulator workspace itself was intact (Blink demo loads 4 parts / 7 wires). Accidental `app.js` regressions had reintroduced locked `rotateX(-90°)` upright tip and weakened Mesh authored-style retention.
+- Restored upright lock + `keepAuthoredStyle` / `hasMeshFactorySibling` from snapshot; kept Mesh `lockedPromptMode` so Mesh≠2.0.
+- `/api/.../files/*.mesh.mjs/bodies` was 500 (`file_type 'mjs' not supported`) when mesh projects opened tools/wiring — now returns empty unsupported payload (200).
+- Cache-bust `app.js` / `ai-key-ui.js` / `scene-style` `?v=20260726-wiring-restore`; restarted `render3d`.
+
+---
+
 ## 2026-07-25 — Mesh selection no longer snaps back to CAD 2.0
 
 - Bug: choosing Mesh then Generate while a prior 2.0 job was active/resuming still POSTed `mode: v2` (Kimi included). `beginGenerationWatch` called `applyPromptModeUI(runningMode)`, stealing the picker mid-click before the request body was built.

@@ -16762,17 +16762,17 @@ function syncPromptAiKeyDisplay() {
 // MODEL_OPTIONS is defined in ai-key-ui.js; mirror it here for the popup
 const PROMPT_KEY_MODEL_OPTIONS = {
   openai: [
-    { value: "gpt-5.5", label: "GPT-5.5" },
-    { value: "gpt-5.5-pro", label: "GPT-5.5 Pro" },
-    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
-    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+    { value: "gpt-5.5", label: "GPT-5.5 · $5/$30" },
+    { value: "gpt-5.5-pro", label: "GPT-5.5 Pro · $30/$180" },
+    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex · $1.75/$14" },
+    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol · $5/$30" },
   ],
   anthropic: [
     { value: "claude-opus-5", label: "Opus 5 · $5/$25" },
-    { value: "claude-fable-5", label: "Fable 5" },
-    { value: "claude-sonnet-4-5", label: "Sonnet 4.5" },
-    { value: "claude-opus-4-8", label: "Opus 4.8" },
-    { value: "claude-4.6-sonnet", label: "Sonnet 4.6" },
+    { value: "claude-fable-5", label: "Fable 5 · $10/$50" },
+    { value: "claude-sonnet-4-5", label: "Sonnet 4.5 · $3/$15" },
+    { value: "claude-opus-4-8", label: "Opus 4.8 · $5/$25" },
+    { value: "claude-4.6-sonnet", label: "Sonnet 4.6 · $3/$15" },
   ],
   kimi: [
     { value: "kimi-k2.6", label: "Kimi K2.6 · $0.95/$4" },
