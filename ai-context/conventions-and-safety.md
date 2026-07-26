@@ -51,7 +51,7 @@ All logic, markup generation, and state live in `quest-book.js`. Follow this sha
 - Wiring simulator core
 - `backend/render3d.db` (live user data — query via app code, never hand-edit)
 - **Cmd+Z transform undo** (`frontend/viewport-transform-undo.js`, surgical path in `history_service.py`) — falling through to generation undo deletes assembly parts. Rule: `.cursor/rules/cmdz-transform-undo.mdc`
-- **Model upright orientation** (`ensureModelZUp` in `app.js`) — footprint ±90° tipper turns models left; keep Jul 16 axis heuristic. Rule: `.cursor/rules/model-upright-orientation.mdc`
+- **Model upright orientation** (`ensureModelZUp` in `app.js`) — footprint ±90° tipper OR Mode 2.0 forced `rotateX(±90°)` tips Jake/bikes onto their side. Keep axis heuristic only. Rule: `.cursor/rules/model-upright-orientation.mdc`
 
 ## Deployment reality
 

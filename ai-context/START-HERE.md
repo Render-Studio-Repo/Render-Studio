@@ -41,7 +41,7 @@ Also load-bearing, outside this folder:
 4. **Verify in a real browser before claiming done.** Playwright is in `.venv`; the server is already running on `127.0.0.1:8001`. Screenshot your work. See [verify-and-test.md](./verify-and-test.md).
 5. **Don't rewrite red zones casually:** auth/billing/admin, collab, Fusion/Onshape/APS OAuth flows, the CAD kernel (`backend/kernel/`), wiring simulator, `ai_service.py` core. If a task requires touching them, make the smallest possible change.
 6. **LOCKED — Cmd+Z after gizmo move** must never fall through to generation timeline undo (wipes sibling parts). Policy: `frontend/viewport-transform-undo.js` + `.cursor/rules/cmdz-transform-undo.mdc`.
-7. **LOCKED — model upright orientation:** Jul 16 axis heuristic only — never footprint ±90° tipper (turns models left). Rule: `.cursor/rules/model-upright-orientation.mdc`.
+7. **LOCKED — model upright orientation:** Jul 16 axis heuristic only — never footprint ±90° tipper and never Mode 2.0 forced ±90° (Jake already Z-up). Rule: `.cursor/rules/model-upright-orientation.mdc`.
 8. **Backups exist but aren't an excuse.** Cron snapshots every 30 min to `backups/snapshots/` (validated; broken states quarantined), daily to Drive. `milestones/` holds golden frontend snapshots.
 9. **Update this folder.** When you finish meaningful work, append a dated entry to [worklog.md](./worklog.md). If you learn a workspace fact future agents need, add it to the right doc here.
 

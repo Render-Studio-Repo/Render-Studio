@@ -63,7 +63,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260725-mobile-lit";
+} from "./scene-style.js?v=20260726-transform-mat";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260725-mesh-orange";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -6520,12 +6520,19 @@ async function afterModelEdit(data) {
   );
   const isBakedTransform = data?.action === "transform" || data?.action === "body_transform";
   const placementBaseline = isBakedTransform ? transformBaselineFromPayload(data?.placementBaseline) : null;
+  const isTextureEdit = /texture/i.test(String(data?.action || "")) || /texture/i.test(String(data?.label || ""));
+  const isFacePull = data?.action === "face_pull" || data?.kind === "face_pull" || /pulled|face.?pull/i.test(String(data?.label || ""));
 
-  // Snapshot the existing mesh transform so we can restore it after reload.
-  // This prevents the model from jumping when the new GLB has a slightly
-  // different internal origin (e.g. after a face-pull or fillet).
+  // Snapshot authored/Mesh look BEFORE we drop the assembly mesh — transform
+  // reloads as `*_edited.glb` and used to fall through to CAD plastic.
   let savedTransform = null;
   const prevMesh = projectAssembly.get?.(prevCatalog || selectedFile) || currentMesh;
+  const keepAuthoredStyle =
+    isTextureEdit
+    || hasMeshFactorySibling(data.filename)
+    || hasMeshFactorySibling(stableCatalog)
+    || hasMeshFactorySibling(prevCatalog)
+    || (prevMesh ? prefersAuthoredShading(prevMesh, prevCatalog || data.filename || "") : false);
   if (prevMesh && !isBakedTransform) {
     prevMesh.updateMatrixWorld(true);
     savedTransform = {
@@ -6549,8 +6556,6 @@ async function afterModelEdit(data) {
   selectedFile = stableCatalog;
   bumpModelCacheEpoch();
   await refreshFiles();
-  const isFacePull = data?.action === "face_pull" || data?.kind === "face_pull" || /pulled|face.?pull/i.test(String(data?.label || ""));
-  const isTextureEdit = /texture/i.test(String(data?.action || "")) || /texture/i.test(String(data?.label || ""));
   await loadModel(data.url, data.filename, {
     cacheBust: true,
     projectId,
@@ -6565,8 +6570,8 @@ async function afterModelEdit(data) {
     fitView: false,
     // Avoid popping the transform gizmo after Extrude/Cut — it feels like a hard reload.
     autoGizmo: isBakedTransform ? true : !isFacePull && !inAssembly,
-    // Textured GLBs must keep maps; Mode 2.0 CAD edits stay on auto → CAD plastic.
-    styleMode: isTextureEdit ? "shaded" : "auto",
+    // Mesh / textured / authored PBR must survive transform bake+reload (not CAD plastic).
+    styleMode: keepAuthoredStyle ? "shaded" : "auto",
   });
   gizmoPanel.resetDragBaseline?.();
   // Transforms already swapped the edited mesh — do not re-pull browser primaries,
@@ -15696,14 +15701,15 @@ function materializeObject(object3d, {
   orientationMode = null,
   styleMode = "auto",
 } = {}) {
-  // LOCKED Jul 16: v2-upright uses a fixed tip; otherwise axis heuristic only.
-  // Never footprint-score ±90° — that lays bikes/long Z-up assemblies on their side.
-  if (orientationMode === "v2-upright") {
-    object3d.rotateX(-Math.PI / 2);
-    object3d.userData.render3dForcedUpright = "v2-upright";
-    object3d.updateMatrixWorld(true);
-  } else if (orient) {
+  // LOCKED: Mode 2.0 / Jake GLBs are already STEP Z-up. Never force rotateX(±90°)
+  // on `v2-upright` — that tipped upright models onto their side. Always use the
+  // Jul 16 axis heuristic (`ensureModelZUp`) only. See
+  // `.cursor/rules/model-upright-orientation.mdc`.
+  if (orient || orientationMode === "v2-upright") {
     ensureModelZUp(object3d, filename);
+    if (orientationMode === "v2-upright") {
+      object3d.userData.render3dForcedUpright = "v2-axis";
+    }
   }
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
@@ -15763,6 +15769,16 @@ function resolveViewportStyleMode(object3d, filename = "", styleMode = "auto") {
 function hasMeshFactorySibling(filename = "") {
   const stem = fileStemName(filename || "");
   if (!stem) return false;
+  // Transform/paint bakes write `Foo_edited.glb` / `Foo_copy2.glb` — factory stays `Foo.mesh.mjs`.
+  const candidates = new Set([stem]);
+  const withoutEdit = stem.replace(/_edited(?:_\d+)?$/i, "");
+  if (withoutEdit) candidates.add(withoutEdit);
+  const withoutCopy = withoutEdit.replace(/_copy\d*$/i, "") || stem.replace(/_copy\d*$/i, "");
+  if (withoutCopy) candidates.add(withoutCopy);
+  for (const c of [...candidates]) {
+    const bare = c.replace(/\.mesh$/i, "");
+    if (bare) candidates.add(bare);
+  }
   const names = new Set();
   for (const f of lastProjectFiles || []) {
     if (f?.name) names.add(String(f.name));
@@ -15776,9 +15792,10 @@ function hasMeshFactorySibling(filename = "") {
   } catch {
     /* tree optional */
   }
-  if (names.has(`${stem}.mesh.mjs`)) return true;
-  const bare = stem.replace(/\.mesh$/i, "");
-  return bare !== stem && names.has(`${bare}.mesh.mjs`);
+  for (const c of candidates) {
+    if (names.has(`${c}.mesh.mjs`) || names.has(`${c}.mesh.js`)) return true;
+  }
+  return false;
 }
 
 function normalizeObjectPivotToBounds(object3d) {

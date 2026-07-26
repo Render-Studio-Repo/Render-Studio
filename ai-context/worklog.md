@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-26 — Lock Mode 2.0 upright (stop tipping on side)
+
+- Mode 2.0 completion forced `rotateX(-90°)` via `v2-upright`, but Jake/cadjs GLBs are already STEP Z-up — that laid models on their side.
+- `materializeObject` now always uses `ensureModelZUp` axis heuristic (including `v2-upright` tag). Locked in `.cursor/rules/model-upright-orientation.mdc`.
+- Cache-bust `?v=20260726-v2-upright-lock`. Hard-refresh / reopen project to re-orient.
+
+---
+
+## 2026-07-26 — Transform no longer rewrites Mesh materials
+
+- Transform bake reloads `*_edited.glb`; factory sibling check missed `.mesh.mjs`, so reload used CAD plastic and changed colours/materials.
+- Fix: resolve `Foo_edited` → `Foo.mesh.mjs`; `afterModelEdit` keeps `styleMode: "shaded"` for Mesh/authored/textured.
+- Cache-bust `?v=20260726-transform-mat`.
+
+---
+
 ## 2026-07-26 — Mesh detail gate (showcase vs toy blockout)
 
 - User compared Mesh bikes to img2threejs videos: our factories were soft Box/Sphere blockouts that passed review on try 1.
