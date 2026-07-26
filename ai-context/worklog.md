@@ -6,46 +6,6 @@
 
 ---
 
-## 2026-07-26 — Mesh quality closer to img2threejs showcase
-
-- Online demos use bevelled Extrude, clearcoat Physical materials, and multi-pass enrichment; our Mesh was one soft write.
-- Forced showcase **detail pass** after first export; harder gates (Extrude/Lathe/Tube, clearcoat, bevels, ≥30 vehicle parts); max_tokens 16k.
-- Preserve authored `flatShading` in viewport. Service restarted — re-run Mesh for better results (costs more tokens).
-
----
-
-## 2026-07-26 — Lock Mode 2.0 upright (stop tipping on side)
-
-- Mode 2.0 completion forced `rotateX(-90°)` via `v2-upright`, but Jake/cadjs GLBs are already STEP Z-up — that laid models on their side.
-- `materializeObject` now always uses `ensureModelZUp` axis heuristic (including `v2-upright` tag). Locked in `.cursor/rules/model-upright-orientation.mdc`.
-- Cache-bust `?v=20260726-v2-upright-lock`. Hard-refresh / reopen project to re-orient.
-
----
-
-## 2026-07-26 — Transform no longer rewrites Mesh materials
-
-- Transform bake reloads `*_edited.glb`; factory sibling check missed `.mesh.mjs`, so reload used CAD plastic and changed colours/materials.
-- Fix: resolve `Foo_edited` → `Foo.mesh.mjs`; `afterModelEdit` keeps `styleMode: "shaded"` for Mesh/authored/textured.
-- Cache-bust `?v=20260726-transform-mat`.
-
----
-
-## 2026-07-26 — Mesh detail gate (showcase vs toy blockout)
-
-- User compared Mesh bikes to img2threejs videos: our factories were soft Box/Sphere blockouts that passed review on try 1.
-- Raised `MESH_SYSTEM` / review bar; added `_factory_detail_gaps` (min parts, advanced geometries, reject box-slab vehicles).
-- Soft LLM pass can no longer skip structural repairs mid-budget. Service restarted.
-
----
-
-## 2026-07-26 — Model picker shows $input/$output for all models
-
-- Opus 5 already showed `· $5/$25`; GPT / Fable / Sonnet / Opus 4.8 lacked rates so compares were hard.
-- Same list-price format on prompt key picker + Manage keys (`ai-key-ui` + `PROMPT_KEY_MODEL_OPTIONS`).
-- Cache-bust `?v=20260726-model-io-rates`.
-
----
-
 ## 2026-07-25 — Mesh finished off-project left empty viewport
 
 - Root cause: Mesh for `a096cb1a` completed while viewing another project; completion marked applied without loading the GLB, so reopen skipped reveal.

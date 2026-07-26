@@ -63,7 +63,7 @@ import {
   reapplyViewMode,
   viewMode,
   setObjectTransparent,
-} from "./scene-style.js?v=20260726-mesh-showcase";
+} from "./scene-style.js?v=20260726-wiring-restore";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260725-mesh-orange";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
@@ -84,7 +84,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260726-model-io-rates";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260726-wiring-restore";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -16762,17 +16762,17 @@ function syncPromptAiKeyDisplay() {
 // MODEL_OPTIONS is defined in ai-key-ui.js; mirror it here for the popup
 const PROMPT_KEY_MODEL_OPTIONS = {
   openai: [
-    { value: "gpt-5.5", label: "GPT-5.5 · $5/$30" },
-    { value: "gpt-5.5-pro", label: "GPT-5.5 Pro · $30/$180" },
-    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex · $1.75/$14" },
-    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol · $5/$30" },
+    { value: "gpt-5.5", label: "GPT-5.5" },
+    { value: "gpt-5.5-pro", label: "GPT-5.5 Pro" },
+    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ],
   anthropic: [
     { value: "claude-opus-5", label: "Opus 5 · $5/$25" },
-    { value: "claude-fable-5", label: "Fable 5 · $10/$50" },
-    { value: "claude-sonnet-4-5", label: "Sonnet 4.5 · $3/$15" },
-    { value: "claude-opus-4-8", label: "Opus 4.8 · $5/$25" },
-    { value: "claude-4.6-sonnet", label: "Sonnet 4.6 · $3/$15" },
+    { value: "claude-fable-5", label: "Fable 5" },
+    { value: "claude-sonnet-4-5", label: "Sonnet 4.5" },
+    { value: "claude-opus-4-8", label: "Opus 4.8" },
+    { value: "claude-4.6-sonnet", label: "Sonnet 4.6" },
   ],
   kimi: [
     { value: "kimi-k2.6", label: "Kimi K2.6 · $0.95/$4" },

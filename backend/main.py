@@ -20036,6 +20036,9 @@ def mesh_bodies_info(
     src = project_path / filename
     if not src.is_file():
         raise HTTPException(404, "File not found")
+    # Mesh factories (.mesh.mjs / .js) are source code, not geometry — no body split.
+    if src.suffix.lower() in {".mjs", ".js", ".ts"}:
+        return {"count": 0, "body_names": [], "face_offsets": [], "can_split": False, "faces": 0, "unsupported": True}
     # Prefer the viewport GLB when the client asks about a STEP assembly: dense
     # Compounds (stairs, etc.) report 50–100+ solids from STEP while the viewer
     # mesh is already a single assembly shell.

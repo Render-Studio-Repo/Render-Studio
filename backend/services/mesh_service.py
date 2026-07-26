@@ -35,168 +35,49 @@ MESH_CHECKLIST = (
 
 MESH_SYSTEM = """You are the img2threejs Mesh builder for Render3D.
 
-Rebuild the requested object as a CODE-ONLY procedural Three.js model.
-Match the fidelity of polished img2threejs showcase demos (Sony earbuds, loot chest,
-shotgun) — NOT a toy blockout of a few boxes.
+Rebuild the requested object as a CODE-ONLY procedural Three.js model (primitives + materials).
+This is reconstruction-by-code — NOT photogrammetry, NOT downloading meshes.
 
 Output ONLY a complete ES module. No markdown fences. No prose.
-Headless export has NO document/canvas — do not use CanvasTexture or DOM APIs.
 
 Contract:
 ```js
 export default function createModel(THREE) {
   const root = new THREE.Group();
   root.name = "MeshModel";
-  // Detailed named Groups + Meshes. Toolkit (use several):
-  //   ExtrudeGeometry(+Shape, bevelEnabled), LatheGeometry, TubeGeometry(+Curve),
-  //   TorusGeometry, CapsuleGeometry, CylinderGeometry, SphereGeometry, ConeGeometry,
-  //   BoxGeometry (rectilinear only), RingGeometry
-  // Materials: MeshPhysicalMaterial for paint/glass/metal (clearcoat!), MeshStandardMaterial for rubber/matte
+  // ... build from BoxGeometry, SphereGeometry, CylinderGeometry, ConeGeometry,
+  // TorusGeometry, ExtrudeGeometry, LatheGeometry, TubeGeometry, CapsuleGeometry
+  // Materials: MeshStandardMaterial / MeshPhysicalMaterial with real metalness/roughness
+  // Hierarchy: name parts, nest under pivots/groups for animation readiness
   return root;
 }
 ```
 
-Showcase techniques (required when they fit the subject):
-- Curved shells / fairings / cases: THREE.Shape + ExtrudeGeometry with
-  `{ bevelEnabled: true, bevelThickness, bevelSize, bevelSegments: 3-5, curveSegments: 24+ }`
-- Revolved bottles/knobs/rims: LatheGeometry from a profile of Vector2 points
-- Frame tubes / cables / hoses: TubeGeometry along CatmullRomCurve3 or Capsule chains
-- Tires: TorusGeometry (not a flat cylinder)
-- Paint / anodized / glossy plastic: MeshPhysicalMaterial with clearcoat 0.25–0.8,
-  clearcoatRoughness 0.1–0.4, real metalness/roughness (never fake metal with bright albedo)
-- Secondary identity details: parting seams, lips, bezels, fasteners, grips, vents —
-  each as its own named mesh (repeat with a loop; InstancedMesh is OK)
-
-Quality bar:
-- Vehicles / bikes / motorcycles: ≥30 named parts. Separate frame, forks, swingarm,
-  wheels (tire+rim+hub+spokes/disc), brakes, bars, seat, drivetrain/engine cues,
-  and silhouette-true body panels (Extrude/Lathe/Tube/Capsule) — NOT one box per panel.
-- Other props: ≥16 named parts with secondary trim.
-- Units: millimeters-ish (~50–600 across). Y-up (exporter converts to Z-up).
-- No imports, network, lights, or cameras — object Group only. Seat near origin.
+Rules:
+- Units: millimeters-ish (typical object ~20–400 units across).
+- Coordinate frame: Three.js Y-up (Y is vertical / height). The exporter converts to Render3D Z-up.
+- Prefer real colors from the reference image / prompt (hex or THREE.Color).
+- Independent PBR channels — never fake metal with bright albedo alone.
+- Compound objects need multiple named meshes (body, lid, handle, trim…), not one blob.
+- Infer unseen sides by mirroring; do not invent fake fine detail you cannot justify.
+- No imports, no network, no document/window, no TextureLoader URLs.
+- Do not add lights or cameras — only the object Group.
+- Seat the model roughly around origin; the exporter will floor-align.
 """
 
 MESH_REVIEW_SYSTEM = """You are the Mesh visual/structure reviewer for Render3D (img2threejs).
 
-Decide if the factory matches polished showcase fidelity (not a soft toy blockout).
+Given the user brief, the Three.js factory source, and export metadata, decide if the mesh is good enough to ship to the viewport.
 
 Return JSON only:
 {"pass": true|false, "issues": ["..."], "repair_brief": "..."}
 
-FAIL when ANY are true:
-- Primary identity parts missing
-- Vehicle/bike body mostly BoxGeometry slabs
-- Too few meshes / no Extrude|Lathe|Tube for curved forms on complex subjects
-- No MeshPhysicalMaterial clearcoat on painted/glossy parts when the brief implies paint/gloss
-- Looks like a first-pass blockout vs a finished procedural prop
-
-PASS only when silhouette, materials, AND secondary detail approach showcase demos.
-repair_brief: concrete rewrite steps. Empty when pass=true.
+Rules:
+- pass=true when major named parts from the brief exist, silhouette/proportions are plausible, and materials roughly match.
+- pass=false for missing primary parts, collapsed/degenerate size, wrong hierarchy, or materials that ignore the brief.
+- repair_brief: short concrete instructions for the next factory rewrite (what to add/fix). Empty string when pass=true.
+- Do not ask for photogrammetry or external assets.
 """
-
-
-def _factory_detail_gaps(source: str, prompt: str) -> list[str]:
-    """Cheap structural checks so soft box-blockouts cannot pass on try 1."""
-    src = source or ""
-    brief = (prompt or "").lower()
-    gaps: list[str] = []
-
-    mesh_ctors = len(re.findall(r"new\s+THREE\.Mesh\s*\(", src))
-    named_parts = len(re.findall(r"\.name\s*=\s*['\"][^'\"]+['\"]", src))
-    helper_defs = {m.group(1) for m in re.finditer(r"function\s+(\w+)\s*\(", src)}
-    helper_uses = 0
-    for name in helper_defs:
-        calls = len(re.findall(rf"\b{re.escape(name)}\s*\(", src))
-        helper_uses += max(0, calls - 1)
-    part_count = max(mesh_ctors, named_parts, helper_uses)
-
-    geo_types = set(re.findall(r"new\s+THREE\.(\w+Geometry)\s*\(", src))
-    form_fit = geo_types & {
-        "ExtrudeGeometry",
-        "LatheGeometry",
-        "TubeGeometry",
-    }
-    advanced = form_fit | (geo_types & {
-        "TorusGeometry",
-        "CapsuleGeometry",
-        "RingGeometry",
-        "ShapeGeometry",
-    })
-    basic_only = geo_types and geo_types <= {
-        "BoxGeometry",
-        "SphereGeometry",
-        "CylinderGeometry",
-        "ConeGeometry",
-        "PlaneGeometry",
-    }
-    box_uses = len(re.findall(r"new\s+THREE\.BoxGeometry\s*\(", src))
-    if "box" in helper_defs:
-        box_uses = max(box_uses, max(0, len(re.findall(r"\bbox\s*\(", src)) - 1))
-
-    has_physical = "MeshPhysicalMaterial" in src
-    has_clearcoat = bool(re.search(r"clearcoat\s*:", src))
-    has_bevel = bool(re.search(r"bevelEnabled\s*:\s*true", src)) or "LatheGeometry" in geo_types
-
-    vehicleish = bool(
-        re.search(
-            r"\b(bike|bicycle|motorcycle|motorbike|mtb|enduro|ninja|scooter|car|truck|vehicle)\b",
-            brief,
-        )
-    )
-    glossyish = bool(
-        re.search(
-            r"\b(paint|gloss|clearcoat|anodiz|chrome|metal|plastic|fairing|tank|bike|motorcycle|phone|case)\b",
-            brief,
-        )
-    ) or vehicleish
-
-    min_parts = 30 if vehicleish else 16
-    if part_count < min_parts:
-        gaps.append(
-            f"Only ~{part_count} parts — need ≥{min_parts} named parts with secondary trim "
-            f"({'vehicle' if vehicleish else 'prop'})."
-        )
-    if vehicleish and "TorusGeometry" not in geo_types:
-        gaps.append("Add TorusGeometry tires (plus rim/hub/spokes or disc) — not flat cylinders.")
-    if vehicleish and basic_only:
-        gaps.append(
-            "Body is Box/Sphere/Cylinder/Cone only. Rebuild with ExtrudeGeometry (bevelled), "
-            "LatheGeometry, TubeGeometry, CapsuleGeometry."
-        )
-    elif vehicleish and not form_fit:
-        gaps.append(
-            "Add ExtrudeGeometry and/or LatheGeometry and/or TubeGeometry for frame tubes "
-            "and curved body panels (Torus alone is not enough)."
-        )
-    if vehicleish and box_uses >= 8 and len(form_fit) < 1:
-        gaps.append(
-            "Too many BoxGeometry panels. Replace slab fairings/tank/tail with extruded or "
-            "lathed shapes (showcase-level)."
-        )
-    if glossyish and not (has_physical and has_clearcoat):
-        gaps.append(
-            "Paint/gloss parts need MeshPhysicalMaterial with clearcoat (and clearcoatRoughness)."
-        )
-    if (vehicleish or glossyish) and "ExtrudeGeometry" in geo_types and not has_bevel:
-        gaps.append(
-            "ExtrudeGeometry must use bevelEnabled:true with bevelSegments≥3 for soft catch-light edges."
-        )
-    if not vehicleish and not advanced and part_count < 24:
-        gaps.append(
-            "Add Extrude/Lathe/Tube/Torus/Capsule for form-fitting parts — basic solids only reads as a toy."
-        )
-    return gaps
-
-
-_DETAIL_PASS_BRIEF = (
-    "DETAIL PASS REQUIRED (match img2threejs showcase fidelity):\n"
-    "- Curved shells: ExtrudeGeometry from Shape with bevelEnabled:true, bevelSegments:3-5\n"
-    "- Tubes/frames: TubeGeometry or Capsule chains — not boxes\n"
-    "- Paint: MeshPhysicalMaterial with clearcoat 0.3-0.8 + clearcoatRoughness\n"
-    "- Add secondary trim: seams, lips, bezels, fasteners, vents (named meshes)\n"
-    "- Keep existing identity; ENRICH — do not simplify or delete major parts\n"
-    "Return the FULL enriched ES module only."
-)
 
 
 def _find_node() -> str:
@@ -515,11 +396,8 @@ def run_mesh_img2threejs(
     user_brief = (
         f"{edit_line}"
         f"User request:\n{prompt.strip()}\n\n"
-        f"{'A reference image is attached — match proportions, silhouette, colours, AND secondary detail '
-          '(seams, fasteners, curved panels). Do not ship a soft box blockout.' if has_image else 'No image attached — invent a clean but DETAILED hard-surface prop (not a toy blockout).'}\n"
-        f"Write {factory_name} as a complete ES module factory (export default function createModel(THREE)). "
-        "Use ExtrudeGeometry / LatheGeometry / TubeGeometry / TorusGeometry where forms curve — "
-        "boxes only for truly rectangular parts."
+        f"{'A reference image is attached — match proportions, silhouette, and colours.' if has_image else 'No image attached — invent a clean hard-surface prop from the description.'}\n"
+        f"Write {factory_name} as a complete ES module factory (export default function createModel(THREE))."
     )
     if previous_source and previous_source.strip():
         user_brief += (
@@ -536,8 +414,7 @@ def run_mesh_img2threejs(
     last_error = None
     attempts = 0
     last_good_export: dict[str, Any] | None = None
-    detail_pass_done = False
-    budget = max(2, int(max_repairs))  # at least structure + detail pass
+    budget = max(1, int(max_repairs))
 
     # Fail fast before burning AI tokens if Node/export tooling is missing.
     try:
@@ -574,7 +451,7 @@ def run_mesh_img2threejs(
                 user_brief + repair_block,
                 trace_id=trace_id,
                 images=images if attempt == 0 else None,
-                max_tokens=16000,
+                max_tokens=12000,
                 json_response=False,
                 allow_truncated=False,
             )
@@ -634,38 +511,6 @@ def run_mesh_img2threejs(
             data=export.get("meta") or {},
         )
 
-        detail_gaps = _factory_detail_gaps(source, prompt)
-
-        # Showcase demos are multi-pass. Force one enrichment rewrite after the first
-        # successful export on NEW objects (even if the soft gate is quiet).
-        if not detail_pass_done and not is_edit and attempt < budget - 1:
-            detail_pass_done = True
-            last_error = _DETAIL_PASS_BRIEF
-            if detail_gaps:
-                last_error += "\nAlso fix:\n- " + "\n- ".join(detail_gaps)
-            trace_add(
-                "info",
-                f"[Mesh] Forcing showcase detail pass (try {attempts})",
-                trace_id=trace_id,
-            )
-            _progress(
-                progress_callback,
-                "generate",
-                min(72, 40 + attempt * 5),
-                "Mesh · enriching detail (showcase pass)…",
-            )
-            continue
-
-        # Structural detail gate — block showcase-vs-toy gap.
-        if detail_gaps and attempt < budget - 1:
-            last_error = "Detail gate failed:\n- " + "\n- ".join(detail_gaps)
-            trace_add(
-                "warning",
-                f"[Mesh] Detail gate requested repair (try {attempts}): {last_error[:400]}",
-                trace_id=trace_id,
-            )
-            continue
-
         # Review gate (Jake-style). Soft-open on reviewer crashes.
         _progress(progress_callback, "review", min(96, 78 + attempt * 2), "Mesh · reviewing against brief…")
         if _canceled():
@@ -682,31 +527,15 @@ def run_mesh_img2threejs(
             ai_traces.append(review_trace)
             _sync_usage()
 
-        if detail_gaps and passed and attempt < budget - 1:
-            passed = False
-            repair_brief = "Detail gate failed:\n- " + "\n- ".join(detail_gaps)
-
-        if passed and not detail_gaps:
+        if passed:
             return _success(source, attempts)
 
         last_error = repair_brief or "Mesh review requested repairs."
-        if detail_gaps and "Detail gate" not in str(last_error):
-            last_error = f"{last_error}\nAlso: " + "; ".join(detail_gaps)
-        if passed and detail_gaps and attempt >= budget - 1:
-            return _success(
-                source,
-                attempts,
-                note="(shipped — detail gate still open; re-prompt to refine)",
-            )
         trace_add("warning", f"[Mesh] Review requested repair (try {attempts}): {last_error[:400]}", trace_id=trace_id)
         # Continue like 2.0 — keep iterating with the repair brief.
 
     if last_good_export and glb_path.is_file() and glb_path.stat().st_size > 100 and source:
         # Exhausted budget but we have a shippable GLB — return it (2.0 also surfaces best effort).
-        final_gaps = _factory_detail_gaps(source, prompt)
-        note = "(shipped last export after repair budget)"
-        if final_gaps:
-            note = "(best effort — still below showcase detail bar)"
-        return _success(source, attempts, note=note)
+        return _success(source, attempts, note="(shipped last export after repair budget)")
 
     raise RuntimeError(last_error or "Mesh generation failed")

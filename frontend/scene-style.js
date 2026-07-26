@@ -696,11 +696,12 @@ export function applyAuthoredStyle(object3d) {
     const mats = Array.isArray(child.material) ? child.material : [child.material];
     for (const mat of mats) {
       if (!mat) continue;
-      // Preserve authored flatShading (low-poly Mesh look). Do not force smooth.
+      // Preserve color / metalness / roughness / maps — boost IBL response for look-dev.
       if ("envMapIntensity" in mat) {
         const cur = Number(mat.envMapIntensity);
         mat.envMapIntensity = Number.isFinite(cur) ? Math.max(cur, 1.05) : 1.15;
       }
+      if ("flatShading" in mat) mat.flatShading = false;
       // Mild clearcoat on plastics/metals when the material supports it.
       if ("clearcoat" in mat && !(Number(mat.clearcoat) > 0)) {
         const metal = Number(mat.metalness);

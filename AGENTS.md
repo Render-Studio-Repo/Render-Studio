@@ -11,6 +11,6 @@ Non-negotiables (details in `ai-context/`):
 5. Don't touch auth, billing, admin, collab, OAuth flows, `backend/kernel/`, or `backend/render3d.db` unless the task explicitly requires it.
 6. Log finished work in `ai-context/worklog.md`.
 7. **LOCKED — Cmd+Z after gizmo move:** never let transform undo fall through to generation/`undoTimeline()` (wipes sibling parts). Policy lives in `frontend/viewport-transform-undo.js` + `.cursor/rules/cmdz-transform-undo.mdc`. Do not "simplify" this.
-8. **LOCKED — model upright orientation:** `ensureModelZUp` Jul 16 axis heuristic only. Never footprint ±90° tipper and never Mode 2.0 forced `rotateX(±90°)` (Jake is already Z-up). Rule: `.cursor/rules/model-upright-orientation.mdc`.
+8. **LOCKED — model upright orientation:** `ensureModelZUp` must stay Jul 16 axis heuristic — never footprint ±90° tipper (tips models left). Rule: `.cursor/rules/model-upright-orientation.mdc`.
 
 Architect Mode work has its own source of truth: `TODO/quest-book/` (chapters, decisions, safe-edit zones, smoke checklist).
