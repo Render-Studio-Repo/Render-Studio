@@ -84,7 +84,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260725-kimi-stick";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260726-model-io-rates";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -16745,17 +16745,17 @@ function syncPromptAiKeyDisplay() {
 // MODEL_OPTIONS is defined in ai-key-ui.js; mirror it here for the popup
 const PROMPT_KEY_MODEL_OPTIONS = {
   openai: [
-    { value: "gpt-5.5", label: "GPT-5.5" },
-    { value: "gpt-5.5-pro", label: "GPT-5.5 Pro" },
-    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
-    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+    { value: "gpt-5.5", label: "GPT-5.5 · $5/$30" },
+    { value: "gpt-5.5-pro", label: "GPT-5.5 Pro · $30/$180" },
+    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex · $1.75/$14" },
+    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol · $5/$30" },
   ],
   anthropic: [
     { value: "claude-opus-5", label: "Opus 5 · $5/$25" },
-    { value: "claude-fable-5", label: "Fable 5" },
-    { value: "claude-sonnet-4-5", label: "Sonnet 4.5" },
-    { value: "claude-opus-4-8", label: "Opus 4.8" },
-    { value: "claude-4.6-sonnet", label: "Sonnet 4.6" },
+    { value: "claude-fable-5", label: "Fable 5 · $10/$50" },
+    { value: "claude-sonnet-4-5", label: "Sonnet 4.5 · $3/$15" },
+    { value: "claude-opus-4-8", label: "Opus 4.8 · $5/$25" },
+    { value: "claude-4.6-sonnet", label: "Sonnet 4.6 · $3/$15" },
   ],
   kimi: [
     { value: "kimi-k2.6", label: "Kimi K2.6 · $0.95/$4" },
@@ -27243,23 +27243,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   // Lock the mode the user picked before any async resume of an in-flight job.
   const lockedPromptMode = promptMode;
   let prompt = composer.getPromptText();
-  if (typeof window !== "undefined") {
-    console.log("MESHTEST_GEN", {
-      lockedPromptMode,
-      promptMode,
-      prompt: String(prompt || "").slice(0, 80),
-      canvasAttached,
-      inFlight: !!(promptClickInFlight || promptSubmitInFlight),
-    });
-  }
   if (canvasAttached) prompt = augmentPromptForCanvasSketch(prompt);
   if (canvasAttached && prompt !== composer.getPromptText()) composer.setPromptText(prompt);
-  if (!prompt) {
-    console.log("MESHTEST_GEN empty-prompt return");
-    return;
-  }
+  if (!prompt) return;
   if (promptClickInFlight || promptSubmitInFlight) {
-    console.log("MESHTEST_GEN in-flight return");
     const status = document.getElementById("prompt-status");
     if (status) {
       status.className = "status loading";
@@ -27281,10 +27268,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     promptStatusEl.className = "status loading";
     promptStatusEl.textContent = "Preparing generation…";
   }
-  console.log("MESHTEST_GEN prepared", promptStatusEl?.textContent);
   userCancelRequested = false;
   if (workspaceModes?.isWiring?.()) {
-    console.log("MESHTEST_GEN wiring return");
     const wiringInput = document.getElementById("wiring-prompt-input");
     const wiringStatus = document.getElementById("wiring-prompt-status");
     if (wiringInput) wiringInput.value = prompt;
@@ -27295,11 +27280,6 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     document.getElementById("btn-wiring-prompt")?.click();
     return;
   }
-  console.log("MESHTEST_GEN before-resume", {
-    projectId,
-    genUi: typeof isGenerationUiActive === "function" ? isGenerationUiActive(projectId) : null,
-    aiReady: !!aiStatus?.ai_ready,
-  });
   if (isGenerationUiActive(projectId)) {
     try {
       const gen = await api(`/api/projects/${projectId}/generation`);
@@ -27336,7 +27316,6 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   }
   // Keep Mesh/2.0/Render selection even if a prior job resume touched UI state.
   if (promptMode !== lockedPromptMode) applyPromptModeUI(lockedPromptMode);
-  console.log("MESHTEST_GEN after-resume", { promptMode, lockedPromptMode, status: document.getElementById("prompt-status")?.textContent });
   if (lockedPromptMode === "draw") {
     lastPromptCopyContext = promptCopyContextBase(prompt);
     try {
@@ -27417,7 +27396,6 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     return;
   }
   if (!aiStatus?.ai_ready && lockedPromptMode !== "render") {
-    console.log("MESHTEST_GEN ai-not-ready return");
     const status = document.getElementById("prompt-status");
     if (status) {
       status.className = "status error";

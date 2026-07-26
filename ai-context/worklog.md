@@ -1,3 +1,27 @@
+## 2026-07-25 — Mesh selection no longer snaps back to CAD 2.0
+
+- Bug: choosing Mesh then Generate while a prior 2.0 job was active/resuming still POSTed `mode: v2` (Kimi included). `beginGenerationWatch` called `applyPromptModeUI(runningMode)`, stealing the picker mid-click before the request body was built.
+- Fix: stop forcing the compose mode from generation watch; snapshot `lockedPromptMode` at Generate click and use it for routing/`mode` in the body (restore UI after resume).
+- Cache-bust `app.js` `?v=20260725-mesh-mode-stick`. Verified: with mid-flight 2.0 steal, improve+prompt still send `mode: mesh`.
+
+---
+
+## 2026-07-26 — Mesh detail gate (showcase vs toy blockout)
+
+- User compared Mesh bikes to img2threejs videos: our factories were soft Box/Sphere blockouts that passed review on try 1.
+- Raised `MESH_SYSTEM` / review bar; added `_factory_detail_gaps` (min parts, advanced geometries, reject box-slab vehicles).
+- Soft LLM pass can no longer skip structural repairs mid-budget. Service restarted.
+
+---
+
+## 2026-07-26 — Model picker shows $input/$output for all models
+
+- Opus 5 already showed `· $5/$25`; GPT / Fable / Sonnet / Opus 4.8 lacked rates so compares were hard.
+- Same list-price format on prompt key picker + Manage keys (`ai-key-ui` + `PROMPT_KEY_MODEL_OPTIONS`).
+- Cache-bust `?v=20260726-model-io-rates`.
+
+---
+
 ## 2026-07-25 — Mesh finished off-project left empty viewport
 
 - Root cause: Mesh for `a096cb1a` completed while viewing another project; completion marked applied without loading the GLB, so reopen skipped reveal.
