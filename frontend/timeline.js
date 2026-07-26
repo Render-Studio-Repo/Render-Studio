@@ -47,6 +47,8 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     if (k === "remove_body") return "−";
     if (k === "restore") return "↺";
     if (k === "render" || k === "scene_render") return "◉";
+    if (k === "texture_remove" || k === "remove_texture") return "◌";
+    if (k === "texture" || k.includes("texture")) return "🧱";
     if (k.includes("sketch")) return "✎";
     if (k === "fusion_sync" || k === "autodesk_import") return "↻";
     return "▣";

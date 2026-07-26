@@ -2043,8 +2043,9 @@ def viewer_filename_for_model(filename: str, project_path: Path) -> str:
     suffix = Path(safe).suffix.lower()
     stem = Path(safe).stem
 
-    if suffix in STEP_SUFFIXES:
+    if suffix in STEP_SUFFIXES | {".3mf"}:
         # Prefer Jake multi-body materials, then solid preview, then face-dumped OCC mesh.
+        # 3MF is printable but not a public-viewer format — resolve to sibling GLB/STEP.
         solid_glb = project_path / f"{stem}.glb"
         faceted_glb = project_path / f"{stem}__faceted.glb"
         edited_glb = latest_edited_viewer_variant(project_path, stem, newer_than=solid_glb)
@@ -2059,6 +2060,12 @@ def viewer_filename_for_model(filename: str, project_path: Path) -> str:
             return faceted_glb.name
         if jake_glb is not None:
             return jake_glb.name
+        if suffix == ".3mf":
+            for ext in (".step", ".stp", ".stl"):
+                sibling = project_path / f"{stem}{ext}"
+                if sibling.is_file():
+                    return sibling.name
+            return safe
     if suffix in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
         # If someone points at *__faceted.glb, prefer the solid sibling when present.
         if "__faceted" in stem.lower():

@@ -116,6 +116,8 @@ VIEWPORT_WORKSPACE_ACTIVITY_KINDS = {
     "delete_object",
     "transform",
     "paint",
+    "texture",
+    "texture_remove",
     "extrude",
     "hole",
     "draw_route",
@@ -126,6 +128,16 @@ VIEWPORT_WORKSPACE_ACTIVITY_KINDS = {
     "mesh_cleanup",
     "split_bodies",
     "remove_body",
+}
+
+# Optional multipart fields on /upload — texture wraps must not show as generic "Upload".
+_UPLOAD_HISTORY_KIND_ALIASES = {
+    "upload": "upload",
+    "texture": "texture",
+    "texture_library_apply": "texture",
+    "texture_wrap": "texture",
+    "texture_remove": "texture_remove",
+    "remove_texture": "texture_remove",
 }
 
 app = FastAPI(title="Render3D", description="CAD project visualizer with AI prompting")
@@ -13065,6 +13077,8 @@ async def upload_file(
     project_id: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    history_kind: str | None = Form(None),
+    history_label: str | None = Form(None),
     user: dict[str, Any] = Depends(get_current_user),
 ):
     path = _require_project(user, project_id)
@@ -13266,7 +13280,16 @@ async def upload_file(
                 "Try exporting as STL or GLB, or repair the file.",
             ) from exc
 
-    entry = _record_history(path, "upload", f"Upload {dest.name}", dest.name, user=user)
+    kind_key = str(history_kind or "upload").strip().lower()
+    record_kind = _UPLOAD_HISTORY_KIND_ALIASES.get(kind_key, "upload")
+    label_override = str(history_label or "").strip()
+    if record_kind == "texture":
+        record_label = label_override or f"Applied texture · {dest.name}"
+    elif record_kind == "texture_remove":
+        record_label = label_override or "Removed texturing"
+    else:
+        record_label = label_override or f"Upload {dest.name}"
+    entry = _record_history(path, record_kind, record_label, dest.name, user=user)
     project_store.touch_project(path)
     background_tasks.add_task(_background_push_new_file_to_fusion, project_id, path, dest.name)
     _notify_project(
@@ -13278,7 +13301,7 @@ async def upload_file(
             "url": f"/api/projects/{project_id}/files/{viewer_filename}",
             "by": user["display_name"],
             "by_user_id": user["id"],
-            "action": "upload",
+            "action": record_kind,
             "timeline_entry": entry,
             "preview_pending": preview_pending,
         },
@@ -13288,8 +13311,10 @@ async def upload_file(
         "viewer_filename": viewer_filename,
         "url": f"/api/projects/{project_id}/files/{viewer_filename}",
         "timeline_index": entry.get("index") if isinstance(entry, dict) else None,
+        "timeline_entry": entry,
         "drawing": False,
         "preview_pending": preview_pending,
+        "action": record_kind,
     }
     if extracted_note:
         payload["note"] = extracted_note
@@ -14151,6 +14176,16 @@ def create_file_share(
             "created_by": user["id"],
         }
     share = shares[token]
+    # Public viewer is GLB-only. If the shared file is STEP/3MF/STL, prefer a sibling
+    # viewport GLB so /share/{token} actually renders (unless a bake overrides below).
+    if not share.get("viewer_filename") and not share.get("assembly_filename"):
+        try:
+            resolved_viewer = cad_service.resolve_viewport_filename(project_path, safe)
+            if resolved_viewer and (project_path / resolved_viewer).is_file():
+                if Path(resolved_viewer).suffix.lower() in {".glb", ".gltf"}:
+                    share["viewer_filename"] = resolved_viewer
+        except Exception:
+            logger.debug("Could not resolve share viewer for %s", safe, exc_info=True)
     if isinstance(body, dict):
         viewport_image = str(body.get("viewport_image") or "")
         if viewport_image.startswith("data:image/"):

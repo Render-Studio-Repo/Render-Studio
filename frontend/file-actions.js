@@ -33,6 +33,70 @@ function fileStem(filename) {
   return i > 0 ? base.slice(0, i) : base;
 }
 
+function modelStemKey(filename) {
+  return fileStem(filename)
+    .toLowerCase()
+    .replace(/\.part$/i, "")
+    .replace(/__faceted$/i, "");
+}
+
+/** Public share viewer only renders GLB — never mint a share rooted on 3MF/STL alone. */
+function preferShareFilename(filename, exports = [], dataFilename = null) {
+  const candidates = [
+    ...(Array.isArray(exports) ? exports.map((item) => item?.name).filter(Boolean) : []),
+    dataFilename,
+    filename,
+  ]
+    .map((name) => String(name || "").trim())
+    .filter(Boolean)
+    .filter((name) => !/^(visible|project)\s+assembly$/i.test(name));
+  if (!candidates.length) return null;
+  const targetKey = modelStemKey(filename || candidates[0]);
+  const sameStem = (name) => modelStemKey(name) === targetKey;
+  const byExt = (ext) =>
+    candidates.find((name) => sameStem(name) && name.toLowerCase().endsWith(ext))
+    || candidates.find((name) => name.toLowerCase().endsWith(ext));
+  return (
+    byExt(".glb")
+    || byExt(".gltf")
+    || byExt(".step")
+    || byExt(".stp")
+    || byExt(".stl")
+    || candidates.find(sameStem)
+    || candidates[0]
+  );
+}
+
+/** Keep Export → share on the model being exported, not every eye-visible sibling. */
+async function scopedShareContext(shareContext, filename) {
+  let body = {};
+  if (typeof shareContext === "function") {
+    try {
+      const ctx = await shareContext();
+      if (ctx && typeof ctx === "object") body = { ...ctx };
+    } catch (err) {
+      console.warn("shareContext failed; sharing without viewport snapshot", err);
+    }
+  } else if (shareContext && typeof shareContext === "object") {
+    body = { ...shareContext };
+  }
+  const key = modelStemKey(filename);
+  if (key) {
+    const visible = Array.isArray(body.visible_filenames) ? body.visible_filenames : [];
+    const scoped = visible
+      .map((name) => String(name || "").split("#")[0].trim())
+      .filter((name) => name && modelStemKey(name) === key);
+    body.visible_filenames = scoped.length ? scoped : [String(filename || "").trim()].filter(Boolean);
+    // Don't re-hide unrelated scene parts into this single-model share.
+    if (Array.isArray(body.hidden_filenames)) {
+      body.hidden_filenames = body.hidden_filenames.filter(
+        (name) => modelStemKey(name) === key,
+      );
+    }
+  }
+  return body;
+}
+
 function fallbackExports(filename) {
   const stem = fileStem(filename);
   return PRIMARY_FORMATS.map((fmt) => ({ name: `${stem}.${fmt}`, format: fmt, size: null }));
@@ -285,23 +349,18 @@ function showExportSuccess(menu, message, { autoDismissMs = 4200 } = {}) {
 }
 
 async function createShareUrl(projectId, filename, shareContext = null) {
-  let body = {};
-  if (typeof shareContext === "function") {
-    try {
-      const ctx = await shareContext();
-      if (ctx && typeof ctx === "object") body = { ...ctx };
-    } catch (err) {
-      console.warn("shareContext failed; sharing without viewport snapshot", err);
-    }
-  } else if (shareContext && typeof shareContext === "object") {
-    body = { ...shareContext };
-  }
+  const body = await scopedShareContext(shareContext, filename);
   // Always mint a fresh share so we never reopen an old Arduino/ball token.
   body.force_new = true;
   if (!Array.isArray(body.visible_filenames)) body.visible_filenames = [];
   const safeName = String(filename || "").trim();
   if (!safeName || /^(visible|project)\s+assembly$/i.test(safeName)) {
     throw new Error("No shareable model file prepared yet. Try Export again.");
+  }
+  // Prefer a GLB (or STEP) root so the public viewer can actually load the model.
+  // Sharing a .3mf alone creates a link with no 3D preview.
+  if (/\.3mf$/i.test(safeName) && !body.viewer_hint) {
+    body.prefer_viewer = "glb";
   }
   const res = await fetch(`/api/projects/${projectId}/files/${encodeURIComponent(safeName)}/share`, {
     method: "POST",
@@ -619,11 +678,12 @@ export async function openFileExportMenu({
   // placeholder label "visible assembly" / "project assembly" (404 → old token).
   const bakedGlb = (data?.exports || []).find((item) => item.format === "glb" && String(item.name || "").startsWith("_export_visible_assembly"))
     || (data?.filename && String(data.filename).endsWith(".glb") ? { name: data.filename } : null);
-  const shareFilename = bakedGlb?.name
-    || (data?.filename && !/^(visible|project)\s+assembly$/i.test(String(data.filename)) ? data.filename : null)
-    || (filename && !/^(visible|project)\s+assembly$/i.test(String(filename)) ? filename : null)
-    || (exports.find((item) => item.format === "glb")?.name)
-    || null;
+  // Public share needs a GLB (or STEP) — never root the share on a regenerated 3MF.
+  const shareFilename = preferShareFilename(
+    bakedGlb?.name || filename,
+    data?.exports || exports,
+    data?.filename,
+  );
   if (data?.filename && data.filename !== filename && !/^(visible|project)\s+assembly$/i.test(String(data.filename))) {
     const titleEl = menu.querySelector(".file-export-title");
     if (titleEl && !title) titleEl.textContent = `Export ${data.filename}`;

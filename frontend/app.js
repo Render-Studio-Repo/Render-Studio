@@ -65,7 +65,7 @@ import {
   setObjectTransparent,
 } from "./scene-style.js?v=20260726-worm-mesh-lit";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
-import { createTimelineUI } from "./timeline.js?v=20260725-mesh-orange";
+import { createTimelineUI } from "./timeline.js?v=20260726-texture-timeline";
 import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260724-opus5-kimi-grok";
@@ -90,7 +90,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260726-revise-forward";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260725-unlink-howto";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260726-share-scope";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -13093,6 +13093,11 @@ function openMarkingMenu(event) {
   }
   const menu = document.createElement("div");
   menu.className = "marking-menu";
+  const designTab = String(workspaceModes?.getDesignTab?.() || "SOLID").toUpperCase();
+  const isArchitectTab = designTab === "ARCHITECT";
+  const textureAction = isArchitectTab
+    ? ["🧱", "AI Wall Texture", () => setArchitectPromptForSelectedEdit("texture_ai")]
+    : ["◌", "Remove texturing (back to original rendered colors)", () => { void removeTexturingFromSelectedModel(); }];
   const actions = [
     ["⇕", "Press-Pull", () => launchViewportTool("presspull")],
     ["⌫", "Delete object", () => { void deleteActiveAssemblyObject(); }],
@@ -13113,7 +13118,7 @@ function openMarkingMenu(event) {
       objectTools.splitBodies();
     }],
     ["🎨", "Color", () => showColorTool()],
-    ["🧱", "AI Wall Texture", () => setArchitectPromptForSelectedEdit("texture_ai")],
+    textureAction,
     ["▣", "Pick Face", () => { activatePickMode("face"); setEditStatus("ok", "Click faces on the model to add @face references."); }],
     ["⌁", "Pick Edge", () => { activatePickMode("edge"); setEditStatus("ok", "Click near edges on the model to add @edge references."); }],
     ["▣", "Select object", () => { activatePickMode("object"); setEditStatus("ok", "Click to select the whole model · double-click a part to select just that part · Cmd+Z to undo moves."); }],
@@ -26730,6 +26735,147 @@ function applyTextureToModelClone(object, texture, {
   return clone;
 }
 
+const TEXTURE_MAP_KEYS = [
+  "map",
+  "normalMap",
+  "roughnessMap",
+  "metalnessMap",
+  "aoMap",
+  "emissiveMap",
+  "bumpMap",
+  "displacementMap",
+  "clearcoatMap",
+  "clearcoatNormalMap",
+  "clearcoatRoughnessMap",
+  "specularMap",
+  "alphaMap",
+];
+
+function materialHasTextureMaps(mat) {
+  if (!mat) return false;
+  return TEXTURE_MAP_KEYS.some((key) => Boolean(mat[key]));
+}
+
+function objectHasTextureMaps(object) {
+  let found = false;
+  object?.traverse?.((child) => {
+    if (found || !child.isMesh) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    if (mats.some(materialHasTextureMaps)) found = true;
+  });
+  return found;
+}
+
+function stripTexturesFromModelClone(object) {
+  object.updateMatrixWorld?.(true);
+  const clone = object.clone(true);
+  stripViewportHelperObjects(clone);
+  clone.userData = { ...(clone.userData || {}) };
+  if (String(clone.userData.render3dPipeline || "").toLowerCase().includes("texture")) {
+    delete clone.userData.render3dPipeline;
+  }
+  clone.traverse((child) => {
+    const pipeline = String(child.userData?.render3dPipeline || "").toLowerCase();
+    if (pipeline.includes("texture")) delete child.userData.render3dPipeline;
+    if (!child.isMesh || !child.geometry) return;
+    const sourceMats = Array.isArray(child.material) ? child.material : [child.material];
+    // Prefer a non-mapped material (face texturing keeps the original as slot 0).
+    const base = sourceMats.find((m) => m && !materialHasTextureMaps(m)) || sourceMats[0];
+    const mat = base?.clone?.() || new THREE.MeshStandardMaterial({ color: 0xc4c4c4 });
+    for (const key of TEXTURE_MAP_KEYS) {
+      if (mat[key]) {
+        try { mat[key].dispose?.(); } catch { /* ignore */ }
+        mat[key] = null;
+      }
+    }
+    if ("envMap" in mat) mat.envMap = null;
+    mat.needsUpdate = true;
+    child.material = mat;
+    child.geometry.clearGroups?.();
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+  clone.position.set(0, 0, 0);
+  clone.quaternion.set(0, 0, 0, 1);
+  clone.scale.set(1, 1, 1);
+  // Solid viewport look: CAD plastic / original solid colors (not wrapped maps).
+  applyCadStyle(clone);
+  return clone;
+}
+
+async function removeTexturingFromSelectedModel() {
+  if (!projectId) {
+    setEditStatus("error", "Open a project first.");
+    return;
+  }
+  const filename = resolveTextureTargetFilename(selectedFile);
+  if (!filename) {
+    setEditStatus("error", "Select a part or object first.");
+    return;
+  }
+  const catalogName = projectAssembly.has(filename)
+    ? filename
+    : assemblyCatalogMatchingStem(filename);
+  const sourceObject = catalogName ? projectAssembly.get(catalogName) : null;
+  if (!sourceObject) {
+    setEditStatus("error", "Load the model in the viewport first.");
+    return;
+  }
+
+  // Prefer timeline backtrack when the latest step is a texture apply.
+  try {
+    if (!timelineData?.entries?.length) await refreshTimeline();
+  } catch { /* continue with mesh strip */ }
+  const entries = timelineData?.entries || [];
+  const currentIdx = Number.isInteger(timelineData?.current_index)
+    ? timelineData.current_index
+    : entries.length - 1;
+  const current = entries[currentIdx];
+  const currentIsTexture = current && (
+    /texture/i.test(String(current.kind || ""))
+    || /texture|wrap/i.test(String(current.label || ""))
+  );
+  if (currentIsTexture && currentIdx > 0) {
+    setEditStatus("loading", "Removing texturing via timeline…");
+    await restoreTimelineAsLatest(currentIdx - 1);
+    setEditStatus("ok", "Removed texturing — restored previous rendered colors.");
+    return;
+  }
+
+  if (!objectHasTextureMaps(sourceObject)) {
+    setEditStatus("ok", "No texture maps on this model. Use Timeline to restore an earlier step if needed.");
+    return;
+  }
+
+  try {
+    setEditStatus("loading", "Removing texturing…");
+    const cleaned = stripTexturesFromModelClone(sourceObject);
+    const glbBuffer = await exportObjectToGlb(cleaned);
+    const outName = renderedTextureOutputFilename(filename);
+    const form = new FormData();
+    form.append("file", new File([new Blob([glbBuffer], { type: "model/gltf-binary" })], outName, { type: "model/gltf-binary" }), outName);
+    form.append("history_kind", "texture_remove");
+    form.append("history_label", "Removed texturing");
+    const uploaded = await api(`/api/projects/${projectId}/upload`, {
+      method: "POST",
+      body: form,
+    });
+    const viewerFile = uploaded?.viewer_filename || uploaded?.filename || outName;
+    await afterModelEdit({
+      filename: viewerFile,
+      url: uploaded?.url || `/api/projects/${projectId}/files/${encodeURIComponent(viewerFile)}`,
+      replaceCatalog: catalogName || filename,
+      action: "texture_remove",
+      label: "Removed texturing",
+      timeline_entry: uploaded?.timeline_entry,
+    });
+    setEditStatus("ok", "Removed texturing — back to original rendered colors.");
+  } catch (err) {
+    setEditStatus("error", err.message || "Could not remove texturing.");
+    viewerOverlay.showError(err.message || "Could not remove texturing.");
+  }
+}
+
 async function authTextureUrlToDataUrl(url) {
   if (!url) throw new Error("Texture URL missing");
   if (String(url).startsWith("data:")) return String(url);
@@ -26836,6 +26982,8 @@ async function applyLibraryTexture(texture, scope = "object", { targetFilename =
   const outName = renderedTextureOutputFilename(filename);
   const form = new FormData();
   form.append("file", new File([new Blob([glbBuffer], { type: "model/gltf-binary" })], outName, { type: "model/gltf-binary" }), outName);
+  form.append("history_kind", "texture");
+  form.append("history_label", `Applied texture (${scope})`);
   const uploaded = await api(`/api/projects/${projectId}/upload`, {
     method: "POST",
     body: form,
@@ -26847,6 +26995,8 @@ async function applyLibraryTexture(texture, scope = "object", { targetFilename =
     replaceCatalog: catalogName || filename,
     action: "texture_library_apply",
     label: `Applied texture (${scope})`,
+    timeline: uploaded?.timeline,
+    timeline_entry: uploaded?.timeline_entry,
   });
 }
 
@@ -26914,6 +27064,8 @@ async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFi
     const filename = renderedTextureOutputFilename(resolvedBase || renderFilename);
     const form = new FormData();
     form.append("file", new File([new Blob([glbBuffer], { type: "model/gltf-binary" })], filename, { type: "model/gltf-binary" }), filename);
+    form.append("history_kind", "texture");
+    form.append("history_label", "Applied rendered texture");
     const uploaded = await api(`/api/projects/${projectId}/upload`, {
       method: "POST",
       body: form,
@@ -26925,6 +27077,8 @@ async function applyRenderedTextureReference({ renderFilename, renderUrl, baseFi
       replaceCatalog: catalogName || resolvedBase,
       action: "texture_wrap",
       label: "Applied rendered texture",
+      timeline: uploaded?.timeline,
+      timeline_entry: uploaded?.timeline_entry,
     });
     setEditStatus("ok", `Wrapped rendered texture onto ${resolvedBase}.`);
     viewerOverlay.clearError();

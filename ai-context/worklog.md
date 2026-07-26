@@ -1,3 +1,10 @@
+## 2026-07-26 — Export share scoped to the model (not whole scene)
+
+- Sharing `Shower_Door…step` baked every eye-visible sibling (old Parametric assembly + other mounts) and sometimes rooted the link on `.3mf` (no GLB preview).
+- Export → Copy share link now prefers sibling `.glb` and scopes `visible_filenames` to that model stem; 3MF resolves to GLB for the public viewer.
+
+---
+
 ## 2026-07-26 — Admin Recent Notifications tab
 
 - Added **Notifications** view on `/admin-dashboard.html`: review signup alerts + suggestions/bugs one at a time (Prev/Next, ←/→, filters).
