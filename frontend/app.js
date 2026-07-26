@@ -874,6 +874,23 @@ async function applyGenerationComplete(gen, pid = projectId) {
       gen,
       generationWatchOverlay?.promptMode || (document.body.classList.contains("architect-design-tab") ? "architect" : "")
     );
+    // CAD/Mesh completions must show the real model. If the user was in Rigging,
+    // a placeholder URDF scene can leave the CAD assembly hidden → empty viewport.
+    try {
+      urdfRobotRuntime?.clear?.();
+    } catch {
+      /* optional */
+    }
+    setCadAssemblyHiddenForUrdf(false);
+    if (
+      document.body.classList.contains("rigging-design-tab")
+      || document.body.classList.contains("canvas-design-tab")
+      || workspaceModes?.getDesignTab?.() === "RIGGING"
+    ) {
+      workspaceModes?.setDesignTab?.("SOLID");
+      ribbon?.setDesignTab?.("SOLID");
+      exitRiggingMode();
+    }
     saveActiveModelPromptState();
     const preservedTexture = captureTextureForGeneratedReplacement(gen.filename);
     selectedFile = gen.filename;
@@ -896,6 +913,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
       orientationMode,
       styleMode,
     });
+    setCadAssemblyHiddenForUrdf(false);
     restorePromptSelectionContext(pendingPromptSelectionContext, { resultFilename: gen.filename });
     viewerOverlay.clearError();
     await refreshTimeline();
@@ -920,10 +938,7 @@ async function applyGenerationComplete(gen, pid = projectId) {
       statusEl.className = "status ok";
       statusEl.textContent = ref ? `Model ready · ${ref}` : "Model ready.";
     }
-    if (document.body.classList.contains("canvas-design-tab")) {
-      workspaceModes?.setDesignTab?.("SOLID");
-      setEditStatus("ok", "Model ready — opened in 3D view.");
-    }
+    setEditStatus("ok", "Model ready — opened in 3D view.");
     pendingPromptSelectionContext = null;
     void maybeAskGenerateSimulatedMotion(gen, pid);
     void maybeShowElectronicsSuggestDockAfterGeneration(pid);
@@ -11717,9 +11732,9 @@ function urdfRuntimeMovableJoints(state = null) {
 function urdfRuntimeHasDisplayableModel(state = null) {
   const visuals = (state?.urdf?.links || []).flatMap((link) => link.visuals || []);
   if (!visuals.length) return false;
-  if (visuals.some((visual) => visual.kind === "mesh")) return true;
-  // Box/cylinder primitives are authored geometry; sphere-only exports are usually bone placeholders.
-  return visuals.some((visual) => visual.kind === "box" || visual.kind === "cylinder");
+  // Only mesh visuals are rich enough to replace the CAD assembly. Box/cylinder
+  // placeholders from gen_urdf() must not hide the real model (looks like an empty viewport).
+  return visuals.some((visual) => visual.kind === "mesh");
 }
 
 function urdfRuntimeHasUsableMotion(state = null) {
@@ -11744,22 +11759,35 @@ async function ensureUrdfRobotScene({ quiet = false, force = false } = {}) {
     const state = await urdfRobotRuntime.loadFromProject(projectId, { urdfFile, srdfFile });
     const hasDisplayableModel = urdfRuntimeHasDisplayableModel(state);
     const hasMotion = urdfRuntimeHasUsableMotion(state);
-    if (!hasDisplayableModel || !hasMotion) {
+    if (!hasMotion) {
       urdfRobotRuntime.clear();
       setCadAssemblyHiddenForUrdf(false);
       updateMoveIt2StatusUi({
         connected: false,
-        detail: hasMotion ? "URDF has no displayable model geometry" : "URDF has no movable joints",
+        detail: "URDF has no movable joints",
+      });
+      if (!quiet) {
+        setEditStatus("ok", "Keeping the CAD model visible. No movable robot motion is available yet.");
+      }
+      return null;
+    }
+    // Motion-ready but only primitive visuals: keep CAD visible, still load URDF for sliders.
+    if (!hasDisplayableModel) {
+      setCadAssemblyHiddenForUrdf(false);
+      updateMoveIt2StatusUi({
+        connected: false,
+        detail: "URDF placeholders — CAD model kept visible",
       });
       if (!quiet) {
         setEditStatus(
           "ok",
-          hasMotion
-            ? "Keeping the CAD model visible. The available URDF only contains placeholder geometry."
-            : "Keeping the CAD model visible. No movable robot motion is available yet."
+          "Loaded robot joints from URDF. Keeping the CAD model visible (URDF has placeholder geometry only)."
         );
       }
-      return null;
+      syncUrdfSlidersFromRuntime();
+      fillMoveIt2Selectors(robotArtifactData || {});
+      void refreshMoveIt2Connection({ quiet: true });
+      return state;
     }
     setCadAssemblyHiddenForUrdf(true);
     const box = urdfRobotRuntime.fitBox();
@@ -27010,6 +27038,18 @@ async function runSceneRenderPrompt(prompt, promptReferences = promptReferencesF
   await ensureProject();
   const status = document.getElementById("prompt-status");
   const reply = document.getElementById("prompt-reply");
+  // Photoreal uses OpenAI gpt-image-1 — Kimi/Claude keys cannot produce the image.
+  const renderProvider = normalizePlatformProviderId(getSelectedPromptModelInfo()?.provider || "openai");
+  if (renderProvider !== "openai") {
+    const msg = "Photoreal Render mode needs an OpenAI key (gpt-image-1). Switch the compose key to OpenAI, or use CAD/Mesh with Kimi.";
+    if (status) {
+      status.className = "status error";
+      status.textContent = msg;
+    }
+    viewerOverlay.showError(msg);
+    aiKeyUi?.openRequired?.({ preferProvider: "openai", message: msg });
+    throw new Error(msg);
+  }
   const renderProjectId = projectId;
   const renderGenerationId = `render:${Date.now()}`;
   const projectEntry = allProjects.find((p) => p.id === renderProjectId);

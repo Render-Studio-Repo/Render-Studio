@@ -1,3 +1,12 @@
+## 2026-07-26 — Kimi CAD complete left empty viewport (Rigging hid CAD)
+
+- Kimi job `882f9767` on `184f51c9` succeeded (valid GLB + snapshots); viewport looked empty because Rigging URDF with box placeholders called `setCadAssemblyHiddenForUrdf(true)`.
+- CAD/Mesh completion now exits Rigging → SOLID, clears URDF overlay, and forces CAD visible.
+- Primitive-only URDF visuals no longer hide CAD (mesh visuals still can). Photoreal Render with non-OpenAI key gets an early clear error.
+- Cache-bust `app.js?v=20260726-kimi-cad-reveal`. Hard-refresh.
+
+---
+
 ## 2026-07-26 — Gripper URDF movable jaws + re-author prompt
 
 - Error on `184f51c9` (`d13e7c4f`) was real: AI `gen_urdf()` left roots `base_plate`/`cover_plate`/`pinion`, then preferred all-fixed so Rigging showed “No URDF movable joints”.
