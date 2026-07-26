@@ -35167,6 +35167,79 @@ body.feedback-page-dragging {
   font-size: 0.68rem;
 }
 
+.admin-panel--notifications {
+  scroll-margin-top: 88px;
+}
+
+.admin-notif-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.admin-notif-filter {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.35);
+  color: var(--muted, #94a3b8);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.admin-notif-filter:hover {
+  border-color: rgba(88, 166, 255, 0.45);
+  color: #e6edf3;
+}
+
+.admin-notif-filter.active {
+  border-color: rgba(88, 166, 255, 0.65);
+  background: rgba(56, 139, 253, 0.16);
+  color: #e6edf3;
+}
+
+.admin-notif-pager {
+  min-height: 220px;
+}
+
+.admin-notif-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(88, 166, 255, 0.22);
+  border-radius: 14px;
+  background: rgba(13, 17, 23, 0.55);
+}
+
+.admin-notif-card-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-notif-position {
+  font-size: 0.82rem;
+  color: var(--muted, #94a3b8);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-notif-body {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  font-size: 0.95rem;
+}
+
+.admin-notif-actions {
+  margin-top: 4px;
+}
+
+.admin-notif-jump {
+  margin: 0;
+}
+
 .admin-daily-chart {
   display: grid;
   grid-template-columns: repeat(14, minmax(0, 1fr));

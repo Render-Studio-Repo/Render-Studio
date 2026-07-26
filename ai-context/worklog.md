@@ -1,3 +1,20 @@
+## 2026-07-26 — Admin Recent Notifications tab
+
+- Added **Notifications** view on `/admin-dashboard.html`: review signup alerts + suggestions/bugs one at a time (Prev/Next, ←/→, filters).
+- New module `frontend/admin-notifications.js`; thin wire into `admin-dashboard.js`. Actions reuse existing review/message APIs.
+- Cache-bust `admin-dashboard.js` / `styles.css` / HTML `?v=20260726-admin-notif`.
+
+---
+
+## 2026-07-26 — wormGear dark mesh + clipping
+
+- Project `0dae20dc`: dense ~100k-tri worm/wheel GLB looked near-black because CAD crease edges + black silhouettes covered the plastic shading (z-fight / “wireframe void”).
+- `scene-style.js`: skip edges/silhouettes above 24k tris; recompute normals + DoubleSide on dense meshes.
+- Geometry: center distance uses worm **pitch** radius (not major) + slightly more clearance; lighter loft; regenerated Reduction assembled + exploded.
+- Cache-bust `scene-style` / `app.js` `?v=20260726-worm-mesh-lit`. Hard-refresh; reopen wormGear.
+
+---
+
 ## 2026-07-26 — Kimi CAD complete left empty viewport (Rigging hid CAD)
 
 - Kimi job `882f9767` on `184f51c9` succeeded (valid GLB + snapshots); viewport looked empty because Rigging URDF with box placeholders called `setCadAssemblyHiddenForUrdf(true)`.

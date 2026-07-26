@@ -7,6 +7,10 @@ import {
   sortProjects,
   projectSortSelectHtml,
 } from "./admin-project-sort.js?v=20260725-sort";
+import {
+  adminNotificationsSectionHtml,
+  createAdminNotificationsPager,
+} from "./admin-notifications.js?v=20260726-admin-notif";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -291,6 +295,7 @@ let latestAgentStats = {};
 let adminRealtimeSocket = null;
 let adminRealtimeReconnectTimer = null;
 let adminDashboardRoot = null;
+let adminNotificationsPager = null;
 
 function clearChartCleanups() {
   chartCleanups.forEach((fn) => {
@@ -321,6 +326,9 @@ function handleAdminRealtimeEvent(msg = {}) {
   }
   if (event.startsWith("new_user.")) {
     void loadNewUserAlerts(adminDashboardRoot);
+  }
+  if (event.startsWith("feedback.") || event.startsWith("new_user.")) {
+    void adminNotificationsPager?.refresh({ keepPosition: true });
   }
 }
 
@@ -818,6 +826,7 @@ function renderUserLookup(users = []) {
 function renderAdminViewToolbar() {
   const items = [
     ["overview", "Overview", "Stats and trends"],
+    ["notifications", "Notifications", "Review one by one"],
     ["requests", "Requests", "Suggestions and bugs"],
     ["new-users", "New Users", "Signup alerts"],
     ["agent", "Render Agent", "User questions"],
@@ -952,8 +961,11 @@ function renderDashboard(root, data) {
       </div>
     </section>
 
+    ${adminNotificationsSectionHtml()}
+
     <section class="admin-panel admin-panel--feedback-inbox" id="admin-section-new-users" data-admin-section="new-users">
       <div class="admin-alert-tabs" role="tablist" aria-label="Management inbox tabs">
+        <a class="admin-alert-tab" role="tab" href="#admin-section-notifications">Review one-by-one</a>
         <button type="button" class="admin-alert-tab active" role="tab" aria-selected="true">New user alerts</button>
         <a class="admin-alert-tab" role="tab" href="#admin-feedback-list">Suggestions & bugs</a>
       </div>
@@ -975,6 +987,7 @@ function renderDashboard(root, data) {
 
     <section class="admin-panel admin-panel--feedback-inbox" id="admin-section-requests" data-admin-section="requests">
       <div class="admin-alert-tabs" role="tablist" aria-label="Management inbox tabs">
+        <a class="admin-alert-tab" role="tab" href="#admin-section-notifications">Review one-by-one</a>
         <a class="admin-alert-tab" role="tab" href="#admin-new-user-list">New user alerts</a>
         <button type="button" class="admin-alert-tab active" role="tab" aria-selected="true">Suggestions & bugs</button>
       </div>
@@ -1018,6 +1031,15 @@ function renderDashboard(root, data) {
   void loadGettingStartedApprovals(root);
   void loadNewUserAlerts(root);
   void loadFeedbackInbox(root);
+  adminNotificationsPager?.destroy?.();
+  adminNotificationsPager = createAdminNotificationsPager({
+    api,
+    escapeHtml,
+    formatDate,
+    formatNumber,
+    authBlobUrl,
+  });
+  adminNotificationsPager.mount(root);
   const search = root.querySelector("#admin-user-search");
   const lookupList = root.querySelector("#admin-user-lookup-list");
   const allUsers = data.users || [];

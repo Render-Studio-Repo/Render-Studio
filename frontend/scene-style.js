@@ -42,6 +42,8 @@ export const FUSION = {
 const HIGH_FRAGMENT_MESH_COUNT = 1200;
 /** Models with many 1–2 triangle meshes (OpenCascade face dumps) — one solid colour. */
 const FACE_FRAGMENT_MESH_COUNT = 48;
+/** Skip crease edges / silhouettes above this — dense gears/worms turn into a dark wireframe and z-fight. */
+const HIGH_TRIANGLE_EDGE_SKIP = 24000;
 
 function _triangleCount(mesh) {
   const geo = mesh?.geometry;
@@ -49,6 +51,12 @@ function _triangleCount(mesh) {
   if (geo.index?.count) return Math.max(1, Math.round(geo.index.count / 3));
   const pos = geo.attributes?.position?.count || 0;
   return Math.max(1, Math.round(pos / 3));
+}
+
+function _totalTriangleCount(meshes) {
+  let total = 0;
+  for (const mesh of meshes) total += _triangleCount(mesh);
+  return total;
 }
 
 /**
@@ -865,6 +873,7 @@ export function applyCadStyle(object3d) {
     return applyAuthoredStyle(object3d);
   }
   const highFragmentModel = faceFragmented || meshes.length > HIGH_FRAGMENT_MESH_COUNT;
+  const denseTriModel = !faceFragmented && _totalTriangleCount(meshes) >= HIGH_TRIANGLE_EDGE_SKIP;
   // Per-mesh palette only for real multi-body assemblies, not triangle dumps.
   const usePalette = !faceFragmented && _useGeneratedPalette(meshInfos);
   const { hide: hideInternals, shellBias } = faceFragmented
@@ -917,6 +926,15 @@ export function applyCadStyle(object3d) {
     const preferShell = shellBias.has(index) || _isColorfulAuthored(info);
     child.renderOrder = preferShell ? 3 : 2;
     smoothDisplayGeometry(child);
+    // Dense single-body tessellations (worm gears, fine threads): recompute
+    // normals + double-side so loft/facet noise does not render as a black void.
+    if (denseTriModel && child.geometry) {
+      try {
+        child.geometry.computeVertexNormals();
+      } catch {
+        /* ignore */
+      }
+    }
 
     if (faceFragmented && sharedFaceMaterial) {
       child.material = sharedFaceMaterial;
@@ -989,14 +1007,15 @@ export function applyCadStyle(object3d) {
       emissive,
       emissiveIntensity: shouldPaletteColor ? 0.14 : FUSION.bodyEmissiveIntensity,
       flatShading: false,
+      side: denseTriModel ? THREE.DoubleSide : THREE.FrontSide,
       polygonOffset: true,
       polygonOffsetFactor,
       polygonOffsetUnits,
-      envMapIntensity: 0.28,
+      envMapIntensity: denseTriModel ? 0.42 : 0.28,
     });
     _rememberCadColor(child, child.material, bodyColor);
 
-    if (!highFragmentModel) {
+    if (!highFragmentModel && !denseTriModel) {
       addVisibleEdges(child);
     }
   });
