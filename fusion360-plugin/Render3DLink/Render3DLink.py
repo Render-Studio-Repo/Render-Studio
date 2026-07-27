@@ -64,8 +64,8 @@ def _run_fusion_script(source: str) -> dict:
     return {"ok": True, "message": "Fusion script executed."}
 
 
-class Render StudioBridgeHandler(BaseHTTPRequestHandler):
-    server_version = "Render StudioLink/0.1"
+class Render3DBridgeHandler(BaseHTTPRequestHandler):
+    server_version = "Render3DLink/0.1"
 
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -83,7 +83,7 @@ class Render StudioBridgeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/health":
-            self._send_json(200, {"ok": True, "bridge": "Render StudioLink", "port": PORT})
+            self._send_json(200, {"ok": True, "bridge": "Render3DLink", "port": PORT})
             return
         self._send_json(404, {"ok": False, "error": "Not found"})
 
@@ -117,8 +117,8 @@ def _start_server() -> None:
     global SERVER, SERVER_THREAD
     if SERVER:
         return
-    SERVER = ThreadingHTTPServer((HOST, PORT), Render StudioBridgeHandler)
-    SERVER_THREAD = threading.Thread(target=SERVER.serve_forever, name="Render StudioLink", daemon=True)
+    SERVER = ThreadingHTTPServer((HOST, PORT), Render3DBridgeHandler)
+    SERVER_THREAD = threading.Thread(target=SERVER.serve_forever, name="Render3DLink", daemon=True)
     SERVER_THREAD.start()
 
 

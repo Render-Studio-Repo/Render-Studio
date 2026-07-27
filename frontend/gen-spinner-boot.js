@@ -6,7 +6,7 @@
 const GENERATE_SELECTORS = "#btn-prompt, #btn-wiring-prompt, #btn-wiring-toolbelt-generate";
 
 function flashLoader(message = "Preparing generation…") {
-  const api = window.Render StudioViewerOverlay;
+  const api = window.Render3DViewerOverlay;
   if (!api?.setGenerating) return;
   api.clearError?.();
   api.setGenerating(true, message, { pendingStart: true, kind: "prompt" });

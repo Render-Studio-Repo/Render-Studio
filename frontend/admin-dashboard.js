@@ -1726,7 +1726,7 @@ async function loadTrialCredits(root) {
       const demoUsd = formatMoney(security.demo_purchase_usd);
       const demoWarn = Number(security.demo_purchase_count || 0) > 0;
       secEl.innerHTML = `
-        <span class="admin-pill${demoWarn ? " admin-pill--warn" : ""}"><strong>Demo purchases</strong><em>${formatNumber(security.demo_purchase_count)} · ${demoUsd}</em></span>
+        <span class="admin-pill"><strong>Demo purchases${demoWarn ? " (!)" : ""}</strong><em>${formatNumber(security.demo_purchase_count)} · ${demoUsd}</em></span>
         <span class="admin-pill"><strong>Missing grant IP</strong><em>${formatNumber(security.trial_grants_missing_ip)}</em></span>
         <span class="admin-pill"><strong>Providers (30d)</strong><em>${escapeHtml((data.providers_window || []).map((p) => `${p.provider} ${formatMoney(p.spent_usd)}`).join(" · ") || "—")}</em></span>
       `;

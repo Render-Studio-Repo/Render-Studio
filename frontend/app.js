@@ -88,7 +88,7 @@ import { createAIKeyUI } from "./ai-key-ui.js?v=20260727-render-studio";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
-import { createViewerOverlay } from "./viewer-overlay.js?v=20260726-revise-forward";
+import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
 import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260727-mobile-export";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
@@ -2129,7 +2129,7 @@ const pickHintText = document.getElementById("pick-hint-text");
 
 const viewport = document.getElementById("viewport");
 if (!viewport) {
-  throw new Error("Render Studio: #viewport element missing from page");
+  throw new Error("Render3D: #viewport element missing from page");
 }
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FUSION.canvas);
@@ -2454,7 +2454,7 @@ const LEFT_DRAG_MODE_KEY = "render3d:left-drag-mode:v1";
 const MOUSE_CONTROL_PRESET_KEY = "render3d:mouse-control-preset:v1";
 const MOUSE_CONTROL_PRESETS = {
   render3d: {
-    label: "Render Studio default",
+    label: "Render3D default",
     hint: "Left drag uses the toolbar Select/Rotate toggle. Middle-drag pans. Right-drag rotates.",
   },
   solidworks: {
@@ -5609,7 +5609,7 @@ document.getElementById("fusion-capability-close")?.addEventListener("click", cl
 function connectFusionTargetIfNeeded() {
   if (!getToken()) {
     authUi?.openModal?.();
-    setEditStatus("error", "Sign in to Render Studio first, then connect Autodesk Fusion 360.");
+    setEditStatus("error", "Sign in to Render3D first, then connect Autodesk Fusion 360.");
     return;
   }
   if (authUi?.startAutodeskConnect) {
@@ -7596,9 +7596,9 @@ function architectPromptPrefix() {
     `Use a ${gridMm} mm snap grid and ${wallHeightMm} mm wall height.`,
     "Build one recognizable room module at a time unless I explicitly ask for a full multi-room house, but make it out of separate editable bodies/pieces.",
     "A room module must include separate named parts/bodies for the floor slab, north/south/east/west wall panels, door/window inserts, trim/baseboards, corner connectors, ceiling/roof sockets, and snap interfaces.",
-    "Never fuse the room or house into one solid; Render Studio must be able to select each wall piece, adjust its length, move it around, and snap it into place.",
+    "Never fuse the room or house into one solid; Render3D must be able to select each wall piece, adjust its length, move it around, and snap it into place.",
     "Design parts for 3D printing and robot assembly: chunky tabs, sockets, rails, keyed connectors, chamfered lead-ins, robot pick tabs, grip flats, orientation labels, and mating-side labels.",
-    "Leave one wall open, lowered, or cut away so the Render Studio preview looks like a real interior room instead of a closed cube.",
+    "Leave one wall open, lowered, or cut away so the Render3D preview looks like a real interior room instead of a closed cube.",
     "Use house materials/colors: warm wood or tan floors, light plaster/drywall walls, darker roof/ceiling parts, blue glass, and contrasting trim/connectors.",
     "Keep modules rectangular/grid-aligned unless asked otherwise, with STEP-valid separate solids, semantic names, connector pockets/tabs, alignment keys, robot assembly labels, clearance notes, and build order notes.",
   ].join(" ");
@@ -15636,7 +15636,7 @@ function isFusionAuthoredModel(filename = "") {
 function ensureModelZUp(object3d, filename = "") {
   /**
    * LOCKED — Jul 16 axis heuristic (do not bring back footprint ±90° scoring).
-   * Rotate clear Y-up meshes into Render Studio's Z-up viewport. Leave already-Z-up
+   * Rotate clear Y-up meshes into Render3D's Z-up viewport. Leave already-Z-up
    * models alone — the old footprint tipper laid bikes/long assemblies on their side.
    * Exception: Fusion/APS imports that are still Y-up (including long floor plans
    * where tallest=X) get rotateX(+90°). Already-Z-up Fusion files must not tip.
@@ -16550,10 +16550,10 @@ function platformProviderLabel(provider) {
 }
 
 function platformKeyDisplayName(provider) {
-  return "Render Studio Key";
+  return "Render3D Key";
 }
 
-/** True when a stored platform:* key disagrees with the account's Render Studio provider. */
+/** True when a stored platform:* key disagrees with the account's Render3D provider. */
 function storedPlatformConflictsWithAccount(value, status) {
   const parsed = parsePromptKeyOptionValue(value);
   if (!parsed || parsed.source !== "platform") return false;
@@ -16575,6 +16575,11 @@ function defaultPlatformModelForProvider(provider, status = aiStatus) {
     return "kimi-k3";
   }
   // OpenAI: keep a non-Pro pin if present; otherwise gpt-5.5 (not Pro).
+  // Free-trial Quality cannot use GPT-5.5 / Pro — prefer Sol.
+  if (isOnFreeTrialCredits(status) && getPromptSpeed() === "quality") {
+    if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/^gpt-5\.5(-pro)?$/i.test(pinned)) return pinned;
+    return "gpt-5.6-sol";
+  }
   if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/-pro\b/i.test(pinned)) return pinned;
   return "gpt-5.5";
 }
@@ -16621,7 +16626,7 @@ function storePromptAiKeyValue(value, { projectScoped = true } = {}) {
 
 function defaultPromptKeyValue(status) {
   // Prefer the activated personal key so "Save & activate" / Use this stick,
-  // instead of silently falling back to a team or Render Studio Claude key.
+  // instead of silently falling back to a team or Render3D Claude key.
   if (status?.active_key_id) {
     return promptKeyOptionValue("personal", status.active_key_id);
   }
@@ -16675,7 +16680,7 @@ function getPlatformPromptKeys(status) {
   if (providers.openai) {
     keys.push({
       id: "openai",
-      name: "Render Studio Key",
+      name: "Render3D Key",
       provider: "openai",
       model: preferred === "openai" ? preferredModel : (models.find((m) => m.provider === "openai")?.model || ""),
       source: "platform",
@@ -16684,7 +16689,7 @@ function getPlatformPromptKeys(status) {
   if (providers.anthropic) {
     keys.push({
       id: "anthropic",
-      name: "Render Studio Key",
+      name: "Render3D Key",
       provider: "anthropic",
       model: preferred === "anthropic" ? preferredModel : (models.find((m) => m.provider === "anthropic")?.model || ""),
       source: "platform",
@@ -16693,7 +16698,7 @@ function getPlatformPromptKeys(status) {
   if (providers.kimi) {
     keys.push({
       id: "kimi",
-      name: "Render Studio Key",
+      name: "Render3D Key",
       provider: "kimi",
       model: preferred === "kimi" ? preferredModel : (models.find((m) => m.provider === "kimi")?.model || "kimi-k3"),
       source: "platform",
@@ -16702,7 +16707,7 @@ function getPlatformPromptKeys(status) {
   return keys;
 }
 
-/** Platform OpenAI / Anthropic / Kimi keys offered to anyone with render credits. */
+/** Platform OpenAI / Anthropic / Kimi keys offered to anyone with Studio credits. */
 function getRender3dKeyChoices(status) {
   return getPlatformPromptKeys(status).map((key) => ({
     source: "platform",
@@ -16737,7 +16742,7 @@ function getSelectedPromptAiKeyLabel() {
   if (!parsed) return aiStatus?.effective?.key_name || "Default key";
   if (parsed.source === "platform") {
     const platformKey = getPlatformPromptKeys(aiStatus).find((k) => k.id === parsed.keyId);
-    return platformKey?.name || "Render Studio key";
+    return platformKey?.name || "Render3D key";
   }
   const allKeys = [...(aiStatus?.keys || []), ...(aiStatus?.team_keys || [])];
   const found = allKeys.find((k) => k.id === parsed.keyId);
@@ -16864,11 +16869,37 @@ const BADGE_CLASS_MAP = {
   xai: "badge-grok",
 };
 
+function isOnFreeTrialCredits(status = aiStatus) {
+  const trial = status?.credits?.trial || status?.trial;
+  if (status?.credits?.on_free_trial || status?.on_free_trial || trial?.on_free_trial) return true;
+  return !!(trial?.granted && !trial?.reclaimed_at && Number(status?.credits?.balance_cents || 0) > 0
+    && !status?.credits?.last_purchase_cents);
+}
+
+function trialQualityBlockedOpenAIModels(status = aiStatus) {
+  const listed = status?.credits?.trial?.quality_blocked_openai_models;
+  if (Array.isArray(listed) && listed.length) return new Set(listed.map((m) => String(m).toLowerCase()));
+  return new Set(["gpt-5.5", "gpt-5.5-pro"]);
+}
+
 function buildModelOptionsHTML(provider, currentModel, allowedModels = null) {
   let opts = PROMPT_KEY_MODEL_OPTIONS[provider] || PROMPT_KEY_MODEL_OPTIONS.openai;
   if (Array.isArray(allowedModels) && allowedModels.length) {
     const allow = new Set(allowedModels);
     const filtered = opts.filter((o) => allow.has(o.value));
+    if (filtered.length) opts = filtered;
+  }
+  // Free trial + Quality: hide GPT-5.5 / GPT-5.5 Pro on the Render3D Key.
+  const usingPlatform = getSelectedPromptAiKey()?.source === "platform"
+    || String(document.getElementById("prompt-ai-key-select")?.value || "").startsWith("platform:");
+  if (
+    usingPlatform
+    && isOnFreeTrialCredits()
+    && getPromptSpeed() === "quality"
+    && String(provider || "").toLowerCase() === "openai"
+  ) {
+    const blocked = trialQualityBlockedOpenAIModels();
+    const filtered = opts.filter((o) => !blocked.has(String(o.value).toLowerCase()));
     if (filtered.length) opts = filtered;
   }
   const known = opts.map((o) => o.value);
@@ -16918,7 +16949,7 @@ function renderPromptAiKeySelect(status, { preserveSelection = true } = {}) {
   platformKeys.forEach((key) => {
     const opt = document.createElement("option");
     opt.value = promptKeyOptionValue("platform", key.id);
-    opt.textContent = key.name || "Render Studio key";
+    opt.textContent = key.name || "Render3D key";
     sel.appendChild(opt);
   });
   personalKeys.forEach((key) => {
@@ -17008,18 +17039,18 @@ function renderPromptKeyPopup(status) {
     </div>`;
 
   if (!personalKeys.length && !teamKeys.length && !render3dChoices.length) {
-    html += `<p class="prompt-key-popup-empty">No keys saved. Use <strong>Manage keys</strong> to add one or buy render credits.</p>`;
+    html += `<p class="prompt-key-popup-empty">No keys saved. Use <strong>Manage keys</strong> to add one or buy Studio credits.</p>`;
   } else {
     if (render3dChoices.length) {
       const current = findRender3dChoice(status, currentValue) || render3dChoices[0];
       const platformActive = render3dChoices.some((c) => isSelected(c.source, c.id));
-      html += `<div class="prompt-key-popup-section">Render Studio Key</div>`;
+      html += `<div class="prompt-key-popup-section">Render3D Key</div>`;
       html += `<div class="prompt-key-popup-row prompt-key-popup-row--platform${platformActive ? " active" : ""}"
            data-action="select-key" data-source="platform" data-key-id="${current.id}">
         <div class="prompt-key-popup-check">
           <div class="prompt-key-popup-check-dot"></div>
         </div>
-        <span class="prompt-key-popup-name prompt-key-popup-name--platform">Render Studio Key</span>
+        <span class="prompt-key-popup-name prompt-key-popup-name--platform">Render3D Key</span>
         <div class="prompt-key-popup-model-wrap prompt-key-popup-platform-wrap">
           <select class="prompt-key-popup-model-select prompt-key-popup-provider-select" data-action="render3d-provider" title="OpenAI, Anthropic, or Kimi">
             ${render3dChoices.map((c) => {
@@ -17031,7 +17062,7 @@ function renderPromptKeyPopup(status) {
             data-action="change-model"
             data-key-id="${current.id}"
             data-source="platform"
-            title="Model for this Render Studio key">
+            title="Model for this Render3D key">
             ${buildModelOptionsHTML(current.provider, current.model || "")}
           </select>
         </div>
@@ -17172,12 +17203,12 @@ function initPromptKeyPopup() {
           renderAIStatus(updatedAi);
           selectPromptAiKeyValue(selectedValue);
         } catch (err) {
-          console.error("Could not activate Render Studio key:", err);
+          console.error("Could not activate Render3D key:", err);
         }
       } else if (source === "personal") {
         try {
           const data = await api(`/api/user/ai-keys/${keyId}/activate`, { method: "PUT" });
-          // Stop routing fallbacks through Render Studio Claude/OpenAI when a personal key is chosen.
+          // Stop routing fallbacks through Render3D Claude/OpenAI when a personal key is chosen.
           let credits = data.ai?.credits || aiStatus?.credits;
           try {
             const creditData = await api("/api/user/ai-credits", {
@@ -17285,7 +17316,7 @@ function initPromptKeyPopup() {
         selectPromptAiKeyValue(platformValue);
         renderPromptKeyPopup(aiStatus);
       } catch (err) {
-        console.error("Could not switch Render Studio provider:", err);
+        console.error("Could not switch Render3D provider:", err);
       }
       return;
     }
@@ -17481,7 +17512,7 @@ function initTrialCreditsModal() {
     void ackTrialCreditsPopup().then(() => {
       if (action === "buy") {
         aiKeyUi?.openRequired?.({
-          message: "Buy more render credits to keep the Render Studio Key after your $10 trial.",
+          message: "Buy more Studio credits to keep the Render3D Key after your $10 trial.",
           openAdd: false,
         });
       }
@@ -17565,7 +17596,7 @@ function initAISetupIntroModal() {
     }
     if (action === "credits") {
       aiKeyUi?.openRequired?.({
-        message: "Load shared-key credits to use Render Studio's platform AI key without pasting your own key.",
+        message: "Load shared-key credits to use Render3D's platform AI key without pasting your own key.",
         openAdd: false,
       });
       return;
@@ -17691,7 +17722,7 @@ function personalWorkspaceId(teams = allTeams) {
       || name === "personal"
     );
   };
-  // Prefer a true solo personal workspace. Multi-member collab teams (Render Studio)
+  // Prefer a true solo personal workspace. Multi-member collab teams (Render3D)
   // must not steal the personal slot or they disappear from shared-workspace UI.
   const solo = mine.filter((team) => workspaceMemberCount(team) <= 1);
   if (solo.length) {
@@ -21567,7 +21598,7 @@ function handleRealtimeEvent(msg = {}) {
   }
 
   if (msg.type === "management.feedback.message") {
-    const adminName = msg.admin_name || "Render Studio support";
+    const adminName = msg.admin_name || "Render3D support";
     setEditStatus("ok", `${adminName} replied to your feedback${msg.project_id ? " in project chat" : ""}.`);
     if (msg.project_id && msg.project_id !== projectId) {
       projectChat?.handleRealtime?.({ ...msg, type: "project.chat.mention", mention: true });
@@ -22893,7 +22924,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
   }
   const folder = data.render_folder || {};
   const provider = folder.provider || "render3d";
-  const label = folder.label || (provider === "fusion" ? "Fusion 360" : "Render Studio cloud");
+  const label = folder.label || (provider === "fusion" ? "Fusion 360" : "Render3D cloud");
   folderEl.innerHTML = `
     <strong>${appEscapeHtml(label)}</strong>
     <span>${appEscapeHtml(provider.replace(/_/g, " "))}${folder.folder_ref ? ` · ${appEscapeHtml(folder.folder_ref)}` : ""}</span>
@@ -22915,17 +22946,17 @@ function renderWorkspaceRealtimeEditor(data = null) {
   if (!fusionProjects.length) {
     projectsEl.innerHTML = `
       <strong>Fusion projects</strong>
-      <span>No Fusion mirror folders linked yet. Open a Render Studio project, then use Fusion Library → Link mirror on each teammate's own Fusion folder.</span>
+      <span>No Fusion mirror folders linked yet. Open a Render3D project, then use Fusion Library → Link mirror on each teammate's own Fusion folder.</span>
     `;
     window.applyRealtimeBrowserControls?.();
     return;
   }
   projectsEl.innerHTML = `
     <strong>Fusion linked folders</strong>
-    <p class="muted small">Local edits sync back to Fusion when you open linked files or sync. Teammates only receive files when they <strong>Link mirror on this same Render Studio project</strong> — then Sync / Push all mirrors the full file set into their Fusion folder.</p>
+    <p class="muted small">Local edits sync back to Fusion when you open linked files or sync. Teammates only receive files when they <strong>Link mirror on this same Render3D project</strong> — then Sync / Push all mirrors the full file set into their Fusion folder.</p>
     ${staleMirrorCount ? `
       <div class="workspace-fusion-stale-banner">
-        <p class="muted small error">${staleMirrorCount} stale Fusion mirror${staleMirrorCount === 1 ? "" : "s"} on old Render Studio projects still point at hubs you no longer have access to. They do not affect your current link.</p>
+        <p class="muted small error">${staleMirrorCount} stale Fusion mirror${staleMirrorCount === 1 ? "" : "s"} on old Render3D projects still point at hubs you no longer have access to. They do not affect your current link.</p>
         <button type="button" class="btn btn-compact" data-workspace-cleanup-stale-fusion>Remove ${staleMirrorCount} stale mirror${staleMirrorCount === 1 ? "" : "s"}</button>
       </div>
     ` : ""}
@@ -23053,7 +23084,7 @@ function renderWorkspaceRealtimeEditor(data = null) {
         const extra = result.teammate_files_pushed
           ? ` Mirrored ${result.teammate_files_pushed} file${result.teammate_files_pushed === 1 ? "" : "s"} to teammates.`
           : "";
-        setEditStatus("ok", (result.message || (result.changed ? "Fusion update synced through Render Studio." : "Fusion mirror already has the latest version.")) + extra);
+        setEditStatus("ok", (result.message || (result.changed ? "Fusion update synced through Render3D." : "Fusion mirror already has the latest version.")) + extra);
         await refreshWorkspaceRealtimeEditor();
       } catch (err) {
         btn.disabled = false;
@@ -23247,7 +23278,7 @@ function renderWorkspaceFusionComponents(project) {
       </label>
       ${renderFusionBrowserSection("Bodies", bodies.length, bodyRows || renderFusionEmptyRow("No Fusion bodies found in the source design."), { key: `bodies:${project.id}`, defaultOpen: bodies.length > 0, className: "workspace-fusion-browser-section--bodies" })}
       ${renderFusionBrowserSection("Components", componentEntries.length, componentRows || renderFusionEmptyRow("No visible Fusion components yet."), { key: `components:${project.id}`, defaultOpen: false })}
-      ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render Studio project yet."), { key: `sketches:${project.id}`, defaultOpen: false })}
+      ${renderFusionBrowserSection("Sketches", sketches.length, sketchRows || renderFusionEmptyRow("No sketches synced into this Render3D project yet."), { key: `sketches:${project.id}`, defaultOpen: false })}
     </div>
   `;
 }
@@ -23308,7 +23339,7 @@ function renderAllWorkspaceRealtimeOverview(data = {}) {
   const sorted = [...workspaces].sort((a, b) => Number(b.connected) - Number(a.connected));
   return `
     <strong>Connected workspaces and file trees</strong>
-    <p class="muted small">Fusion-connected workspaces appear first. Expand any project to browse its Render Studio file tree.</p>
+    <p class="muted small">Fusion-connected workspaces appear first. Expand any project to browse its Render3D file tree.</p>
     <div class="workspace-realtime-workspace-list">
       ${sorted.map((workspace) => {
         const team = workspace.team || {};
@@ -23319,7 +23350,7 @@ function renderAllWorkspaceRealtimeOverview(data = {}) {
             <div class="workspace-realtime-workspace-head">
               <div>
                 <strong>${appEscapeHtml(team.name || "Workspace")}</strong>
-                <small>${connected ? "Fusion connected" : "Render Studio workspace"} · ${projects.length} project${projects.length === 1 ? "" : "s"}</small>
+                <small>${connected ? "Fusion connected" : "Render3D workspace"} · ${projects.length} project${projects.length === 1 ? "" : "s"}</small>
               </div>
               <button type="button" class="btn btn-compact secondary" data-realtime-team="${appEscapeHtml(team.id || "")}">Use workspace</button>
             </div>
@@ -23392,7 +23423,7 @@ function renderWorkspaceFusionMirrors(project) {
               <span>${appEscapeHtml(fusionMirrorPathLabel(mirror))}</span>
               ${latestLink}
             </p>
-            <p class="muted small workspace-fusion-mirror-hint">Click a file to open &amp; edit. Use Save to keep a local Render Studio copy.${mirror.user_id === getStoredUser()?.id ? " Use Sync / Push all so teammates get every file in this project." : " This folder only fills after they link on the same project and someone syncs."}</p>
+            <p class="muted small workspace-fusion-mirror-hint">Click a file to open &amp; edit. Use Save to keep a local Render3D copy.${mirror.user_id === getStoredUser()?.id ? " Use Sync / Push all so teammates get every file in this project." : " This folder only fills after they link on the same project and someone syncs."}</p>
             <div class="workspace-fusion-browser">
               ${renderFusionBrowserSection(
                 mirror.folder_label || "Fusion folder",
@@ -23493,7 +23524,7 @@ function renderFusionLatestVersionLink(mirror, items = []) {
     data-item-name="${appEscapeHtml(item.name || "Untitled")}"
     data-version-id="${appEscapeHtml(item.version_id || version)}"
     data-web-url="${appEscapeHtml(item.web_url || "")}"
-    title="Open ${appEscapeHtml(item.name || label)} in Render Studio">${appEscapeHtml(label)}</button>`;
+    title="Open ${appEscapeHtml(item.name || label)} in Render3D">${appEscapeHtml(label)}</button>`;
 }
 
 function renderFusionBrowserItem({ projectId, filename, name, badge, icon = "□", child = false, disabled = false }) {
@@ -23590,14 +23621,14 @@ function renderFusionMirrorFileRow(project, mirror, item) {
   return `
     <div class="workspace-fusion-file-entry">
       <button type="button" class="workspace-fusion-browser-row workspace-fusion-file-row" data-fusion-file-open ${commonAttrs}
-        title="Open in Render Studio to view and edit">
+        title="Open in Render3D to view and edit">
         <span class="workspace-fusion-preview workspace-fusion-preview--file" aria-hidden="true"><span>${appEscapeHtml(String(name).trim().charAt(0).toUpperCase() || "F")}</span></span>
         <span class="workspace-fusion-browser-icon">□</span>
         <span class="workspace-fusion-browser-name">${appEscapeHtml(name)}</span>
         <small>${localMatch ? "Local" : "Open"}</small>
       </button>
       <button type="button" class="btn btn-compact workspace-fusion-file-save-btn" data-fusion-file-save-local ${commonAttrs}
-        title="Save a local Render Studio copy (choose workspace folder)">Save</button>
+        title="Save a local Render3D copy (choose workspace folder)">Save</button>
     </div>
   `;
 }
@@ -23868,7 +23899,7 @@ async function openFusionWorkspaceFileModal(payload, { mode = "save" } = {}) {
     <div class="auth-card app-dialog-card fusion-workspace-file-card">
       <p class="app-dialog-eyebrow">Save locally</p>
       <h2 class="app-dialog-title">${appEscapeHtml(payload.itemName)}</h2>
-      <p class="muted small">Keep a Render Studio copy you can edit offline, then sync back to Fusion when you open the library.</p>
+      <p class="muted small">Keep a Render3D copy you can edit offline, then sync back to Fusion when you open the library.</p>
       <p class="muted small">${appEscapeHtml(payload.folderLabel || "Fusion folder")} · ${appEscapeHtml(payload.apsProjectLabel || payload.apsProjectId || "")}</p>
       <section class="fusion-workspace-file-section">
         <h3>Where to save</h3>
@@ -23880,11 +23911,11 @@ async function openFusionWorkspaceFileModal(payload, { mode = "save" } = {}) {
           </label>` : ""}
           <label class="fusion-workspace-dest-option">
             <input type="radio" name="fusion-save-dest" value="current" ${preferLinked ? "" : (projectId ? "checked" : "disabled")} ${projectId ? "" : "disabled"} />
-            <span><strong>Open project</strong><small>${projectId ? appEscapeHtml(currentLabel) : "Open a Render Studio project first"}</small></span>
+            <span><strong>Open project</strong><small>${projectId ? appEscapeHtml(currentLabel) : "Open a Render3D project first"}</small></span>
           </label>
           <label class="fusion-workspace-dest-option">
             <input type="radio" name="fusion-save-dest" value="new" ${preferLinked || projectId ? "" : "checked"} />
-            <span><strong>New project</strong><small>Create a Render Studio project and pick a workspace folder</small></span>
+            <span><strong>New project</strong><small>Create a Render3D project and pick a workspace folder</small></span>
           </label>
         </div>
         <label class="app-dialog-label fusion-workspace-folder-field">Workspace folder
@@ -23933,7 +23964,7 @@ async function openFusionWorkspaceFileModal(payload, { mode = "save" } = {}) {
 
   modal.querySelector("[data-fusion-file-view]")?.addEventListener("click", async () => {
     try {
-      setModalStatus("Opening in Render Studio…");
+      setModalStatus("Opening in Render3D…");
       const opened = await viewFusionWorkspaceFile(payload);
       closeFusionWorkspaceFileModal();
       document.removeEventListener("keydown", onKey);
@@ -23951,14 +23982,14 @@ async function openFusionWorkspaceFileModal(payload, { mode = "save" } = {}) {
     const btn = event.currentTarget;
     const dest = destInputs.find((input) => input.checked)?.value || "new";
     if ((dest === "current" || dest === "linked") && !(dest === "linked" ? payload.renderProjectId : projectId)) {
-      setModalStatus("Open a Render Studio project first, or choose New project.", true);
+      setModalStatus("Open a Render3D project first, or choose New project.", true);
       return;
     }
     btn.disabled = true;
     const original = btn.textContent;
     btn.textContent = "Saving…";
     try {
-      setModalStatus(dest === "new" ? "Creating local Render Studio project…" : "Saving into Render Studio project…");
+      setModalStatus(dest === "new" ? "Creating local Render3D project…" : "Saving into Render3D project…");
       const result = await saveFusionWorkspaceFile(payload, {
         destination: dest === "linked" ? "linked" : dest,
         folderId: folderSelect?.value || "",
@@ -23968,7 +23999,7 @@ async function openFusionWorkspaceFileModal(payload, { mode = "save" } = {}) {
       closeFusionWorkspaceFileModal();
       document.removeEventListener("keydown", onKey);
       await refreshWorkspaceRealtimeEditor();
-      setEditStatus("ok", `Saved ${result.name || payload.itemName} locally in Render Studio.`);
+      setEditStatus("ok", `Saved ${result.name || payload.itemName} locally in Render3D.`);
     } catch (err) {
       btn.disabled = false;
       btn.textContent = original;
@@ -23991,10 +24022,10 @@ async function saveFusionWorkspaceFile(payload, { destination = "new", folderId 
   };
   if (destination === "linked") {
     const target = linkedProjectId || payload.renderProjectId;
-    if (!target) throw new Error("No linked Render Studio project for this Fusion mirror.");
+    if (!target) throw new Error("No linked Render3D project for this Fusion mirror.");
     body.target_project_id = target;
   } else if (destination === "current") {
-    if (!projectId) throw new Error("Open a Render Studio project before importing into it.");
+    if (!projectId) throw new Error("Open a Render3D project before importing into it.");
     body.target_project_id = projectId;
   } else if (folderId) {
     body.workspace_folder_id = folderId;
@@ -24086,7 +24117,7 @@ async function viewFusionWorkspaceFile(payload) {
 }
 
 async function pushFusionWorkspaceFile(payload) {
-  if (!projectId) throw new Error("Open a Render Studio project before pushing back to Fusion.");
+  if (!projectId) throw new Error("Open a Render3D project before pushing back to Fusion.");
   const filename = selectedFile || payload.localFilename || null;
   const result = await api(`/api/projects/${encodeURIComponent(projectId)}/push-to-autodesk`, {
     method: "POST",
@@ -24714,7 +24745,7 @@ function syncLeftDragModeButton() {
     btn.textContent = `Mouse: ${preset.label}`;
     btn.classList.add("active");
     btn.setAttribute("aria-pressed", "true");
-    btn.title = `${preset.hint} Click to switch back to Render Studio default controls.`;
+    btn.title = `${preset.hint} Click to switch back to Render3D default controls.`;
     return;
   }
   const selecting = !isMobileInteraction() && leftDragMode !== "rotate";
@@ -27308,7 +27339,7 @@ function showApplyRenderedTexturePrompt({ renderFilename, renderUrl, baseFilenam
         <p class="render-texture-eyebrow">Texture ready</p>
         <h2 id="render-texture-title">Apply this rendered look to your model?</h2>
         <p>
-          Render Studio extracts the model from this photoreal render, projects it from the
+          Render3D extracts the model from this photoreal render, projects it from the
           current camera onto the mesh, and builds PBR maps (albedo + normal + roughness)
           so the viewport look stays closer to the image.
         </p>
@@ -28902,7 +28933,7 @@ window.addEventListener("keydown", (e) => {
         <div class="share-arrival-head">
           <div class="share-arrival-icon" aria-hidden="true">R</div>
           <div>
-            <p class="share-arrival-eyebrow">Shared Render Studio model</p>
+            <p class="share-arrival-eyebrow">Shared Render3D model</p>
             <h2>What do you want to do?</h2>
             <p>${appEscapeHtml(meta?.project_name || meta?.filename || "Shared model")}</p>
           </div>
@@ -28990,7 +29021,7 @@ window.addEventListener("keydown", (e) => {
         window.history.replaceState({}, "", cleanUrl || "/");
         modal.remove();
         const collaboration = data.shared_with_sharer ? " Shared with the original sharer for collaboration." : "";
-        setEditStatus("ok", `Imported shared preview as ${data.filename || "a Render Studio project"}.${collaboration}`);
+        setEditStatus("ok", `Imported shared preview as ${data.filename || "a Render3D project"}.${collaboration}`);
         if (action === "open") return;
         const anchor = document.getElementById("btn-export-model") || document.body;
         await openFileExportMenu({
@@ -30516,7 +30547,7 @@ window.addEventListener("keydown", (e) => {
         <div class="auth-card app-dialog-card" style="width:min(420px,calc(100vw - 28px))">
           <button type="button" class="auth-close" data-x-pin-cancel aria-label="Close">&times;</button>
           <h2 class="app-dialog-title">Enter the PIN from X</h2>
-          <p class="muted small">Authorize Render Studio in the X window, then type the PIN shown there.</p>
+          <p class="muted small">Authorize Render3D in the X window, then type the PIN shown there.</p>
           <div class="viewport-x-pin-row" style="margin-top:12px">
             <input type="text" inputmode="numeric" autocomplete="one-time-code" data-x-pin-input placeholder="PIN code" maxlength="12" />
             <button type="button" class="btn accent" data-x-pin-submit>Connect</button>
@@ -30620,7 +30651,7 @@ window.addEventListener("keydown", (e) => {
       "render3d-twitter-connect",
       `popup=yes,width=${width},height=${height},left=${left},top=${top}`,
     );
-    if (!popup) throw new Error("Popup blocked — allow popups for Render Studio.");
+    if (!popup) throw new Error("Popup blocked — allow popups for Render3D.");
     if (mode === "oob") {
       const pin = await askAuthorizedAppXPin();
       try { popup.close(); } catch (_) {}
@@ -30733,7 +30764,7 @@ window.addEventListener("keydown", (e) => {
         : twitterReady
           ? `Share clips & screenshots as ${twitterHandle ? `@${twitterHandle}` : "this X account"}`
           : twitterConfigured
-            ? "Connect your X Corp account to share from Render Studio"
+            ? "Connect your X Corp account to share from Render3D"
             : "Server needs an X developer app (TWITTER_CLIENT_ID / SECRET)";
       const rows = [
         {
@@ -30985,7 +31016,7 @@ window.addEventListener("keydown", (e) => {
           </section>
           <section class="profile-preferences-section profile-preferences-section--wide">
             <strong>Email notifications</strong>
-            <p class="muted small profile-preferences-note">Choose which Render Studio events should send email. Workspace invites, meeting requests, and credit refill emails are on by default.</p>
+            <p class="muted small profile-preferences-note">Choose which Render3D events should send email. Workspace invites, meeting requests, and credit refill emails are on by default.</p>
             <label class="profile-preference-switch">
               <span>
                 <b>Chat alerts</b>
@@ -31148,7 +31179,7 @@ window.addEventListener("keydown", (e) => {
               </article>
               <article class="profile-preferences-category profile-preferences-category--authorized ${preferencesAdvancedTab === "authorized" ? "" : "hidden"}" data-preferences-advanced-panel="authorized">
                 <h3>Authorized apps</h3>
-                <p class="muted small profile-preferences-note">Connect X (X Corp), Discord, payout providers, and backup storage used by Render Studio.</p>
+                <p class="muted small profile-preferences-note">Connect X (X Corp), Discord, payout providers, and backup storage used by Render3D.</p>
                 <div class="profile-backup-storage-card">
                   <span class="profile-backup-storage-orb" aria-hidden="true"></span>
                   <span>
@@ -31178,7 +31209,7 @@ window.addEventListener("keydown", (e) => {
                 <label class="profile-preference-field">
                   <span>
                     <b>Mouse controls</b>
-                    <small>Use Render Studio, SolidWorks, Fusion 360, or Onshape-style navigation.</small>
+                    <small>Use Render3D, SolidWorks, Fusion 360, or Onshape-style navigation.</small>
                   </span>
                   <select id="pref-advanced-mouse-preset">
                     ${mouseOptions}
@@ -31287,7 +31318,7 @@ window.addEventListener("keydown", (e) => {
         if (btn) btn.disabled = true;
         const status = await api("/api/integrations/twitter/status").catch(() => null);
         if (status?.connected) {
-          const ok = window.confirm("Unlink your X account from Render Studio?");
+          const ok = window.confirm("Unlink your X account from Render3D?");
           if (!ok) return;
           await unlinkXAccount();
         } else {
@@ -31310,7 +31341,7 @@ window.addEventListener("keydown", (e) => {
         if (btn) btn.disabled = true;
         const status = await api("/api/integrations/discord/status").catch(() => null);
         if (status?.connected) {
-          const ok = window.confirm("Unlink your Discord account from Render Studio?");
+          const ok = window.confirm("Unlink your Discord account from Render3D?");
           if (!ok) return;
           await unlinkDiscordAccount();
           await refreshAccountAuthorizedAppStatus();

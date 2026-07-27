@@ -828,7 +828,7 @@ def sanitize_fusion_part_stem(stem: str) -> str:
     s = re.sub(r"(?i)[_\s-]*assembl(?:y|ies)[_\s-]*", "_", s)
     s = re.sub(r"(?i)^new_", "", s)
     s = re.sub(r"[^\w\-]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_") or "Render Studio_Model"
+        s = re.sub(r"_+", "_", s).strip("_") or "RenderStudio_Model"
     s = s[:72]
     if not re.search(r"(?i)_part$", s):
         s = f"{s}_Part"

@@ -479,6 +479,38 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE ai_credit_accounts ADD COLUMN trial_reclaimed_at TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_credit_trial_pool (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    balance_cents INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO ai_credit_trial_pool (id, balance_cents, updated_at) VALUES (1, 0, '')"
+            )
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_credit_trial_waitlist (
+                    user_id TEXT PRIMARY KEY,
+                    ip TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ai_credit_transactions_user ON ai_credit_transactions(user_id, created_at DESC)"
             )

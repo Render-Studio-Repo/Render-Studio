@@ -122,13 +122,15 @@ def render_trial_credits_email(user: dict[str, Any]) -> dict[str, str]:
     <div style="max-width:720px;margin:0 auto;padding:28px;">
       <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:linear-gradient(135deg,#161b22,#0d1117);">
         <img src="https://render3d.app/render3d-logo.png" alt="Render Studio" width="56" height="56" style="border-radius:14px;" />
-        <h1 style="margin:18px 0 8px;font-size:26px;">Hi {name} — you have $10 to try Render Studio.</h1>
+        <h1 style="margin:18px 0 8px;font-size:26px;">Hi {name} — you have $10 for one week.</h1>
         <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">
-          We added <strong style="color:#e6edf3;">$10 in render credits</strong> to your account.
-          That unlocks the temporary <strong style="color:#e6edf3;">Render Studio Key</strong> for OpenAI, Claude, and Kimi models we support — no personal API key required.
+          We added <strong style="color:#e6edf3;">$10 in free trial credits</strong> to your account
+          (one week only). That unlocks the temporary <strong style="color:#e6edf3;">Render Studio Key</strong>
+          for OpenAI, Claude, and Kimi — no personal API key required.
         </p>
         <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">
-          When the $10 is used up, the Render Studio Key disappears from your key list until you buy more credits (or add your own API key).
+          If you don’t use them for a week, unused credits may be reclaimed for other new users.
+          When the $10 is used up, the Render Studio Key disappears until you buy more credits (or add your own API key).
           Usage uses the same pricing as paid render credits (model cost + 15% markup).
         </p>
         <a href="{studio}" style="display:inline-block;margin:8px 0 18px;padding:12px 16px;border-radius:999px;background:#fb8500;color:#0d1117;text-decoration:none;font-weight:800;">Open Studio</a>
@@ -143,11 +145,11 @@ def render_trial_credits_email(user: dict[str, Any]) -> dict[str, str]:
     </div>
   </body>
 </html>"""
-    text_body = f"""Hi {user.get('display_name') or 'there'} — you have $10 to try Render Studio.
+    text_body = f"""Hi {user.get('display_name') or 'there'} — you have $10 for one week.
 
-We added $10 in render credits to your account. That unlocks the temporary Render Studio Key for OpenAI, Claude, and Kimi models we support — no personal API key required.
+We added $10 in free trial credits (one week only). That unlocks the temporary Render Studio Key for OpenAI, Claude, and Kimi — no personal API key required.
 
-When the $10 is used up, the Render Studio Key disappears until you buy more credits (or add your own API key).
+If you don't use them for a week, unused credits may be reclaimed for other new users. When the $10 is used up, the Render Studio Key disappears until you buy more credits (or add your own API key).
 
 Open Studio: {studio}
 

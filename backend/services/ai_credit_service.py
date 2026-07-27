@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -18,10 +18,29 @@ DEFAULT_REFILL_CENTS = 2000
 DEFAULT_REFILL_THRESHOLD_CENTS = 500
 MAX_PAYMENT_LINK_CENTS = 100_000
 SIGNUP_TRIAL_CENTS = 1000  # $10 Render Studio key trial for every account once
+TRIAL_GRANTS_PER_WEEK = 10  # company-funded new trial grants per rolling 7 days
+TRIAL_IDLE_RECLAIM_DAYS = 7  # unused balance reclaimed after this idle period
+TRIAL_DURATION_DAYS = 7  # advertised trial window on popup / status
+# Free-trial Quality mode may not use these expensive OpenAI models.
+TRIAL_QUALITY_BLOCKED_OPENAI = frozenset({"gpt-5.5", "gpt-5.5-pro"})
+TRIAL_QUALITY_OPENAI_FALLBACK = "gpt-5.6-sol"
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _stripe():
@@ -170,6 +189,21 @@ def platform_models() -> list[dict[str, str]]:
     return out
 
 
+def _platform_models_for_account(account: dict[str, Any] | None) -> list[dict[str, str]]:
+    models = platform_models()
+    # UI still lists GPT-5.5 for Speed; Quality selection is blocked server-side for free trial.
+    # Annotate restricted models so the client can hide them in Quality mode.
+    on_trial = is_free_trial_credits_account(account)
+    out: list[dict[str, str]] = []
+    for item in models:
+        row = dict(item)
+        model = str(row.get("model") or "").strip().lower()
+        if on_trial and row.get("provider") == "openai" and model in TRIAL_QUALITY_BLOCKED_OPENAI:
+            row["trial_quality_blocked"] = True
+        out.append(row)
+    return out
+
+
 def _platform_model_matches_provider(model: str | None, provider: str) -> bool:
     m = str(model or "").strip().lower()
     if not m:
@@ -277,6 +311,13 @@ def resolve_platform_credentials(
         chosen = settings.openai_model
     else:
         chosen = settings.openai_model_quality
+    # Free-trial Quality: never run GPT-5.5 / GPT-5.5 Pro on shared credits.
+    if (
+        speed != "fast"
+        and is_free_trial_credits_account(account)
+        and str(chosen or "").strip().lower() in TRIAL_QUALITY_BLOCKED_OPENAI
+    ):
+        chosen = TRIAL_QUALITY_OPENAI_FALLBACK
     return {
         "provider": "openai",
         "model": chosen,
@@ -310,18 +351,355 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
     granted_at = str(account.get("trial_granted_at") or "").strip() or None
     popup_seen_at = str(account.get("trial_popup_seen_at") or "").strip() or None
     email_sent_at = str(account.get("trial_email_sent_at") or "").strip() or None
+    reclaimed_at = str(account.get("trial_reclaimed_at") or "").strip() or None
     balance = int(account.get("balance_cents") or 0)
+    uid = str(account.get("user_id") or "")
+    on_free = is_free_trial_credits_account(account, user_id=uid or None)
     return {
         "granted": bool(granted_at),
         "granted_at": granted_at,
+        "reclaimed_at": reclaimed_at,
         "amount_cents": SIGNUP_TRIAL_CENTS,
         "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2),
+        "duration_days": TRIAL_DURATION_DAYS,
+        "idle_reclaim_days": TRIAL_IDLE_RECLAIM_DAYS,
+        "weekly_grant_cap": TRIAL_GRANTS_PER_WEEK,
         "popup_seen": bool(popup_seen_at),
-        "show_popup": bool(granted_at and not popup_seen_at),
+        "show_popup": bool(granted_at and not popup_seen_at and not reclaimed_at),
         "email_sent": bool(email_sent_at),
-        "active": bool(granted_at and balance > 0 and account.get("use_platform_key")),
+        "active": bool(granted_at and balance > 0 and account.get("use_platform_key") and not reclaimed_at),
+        "on_free_trial": on_free,
+        "quality_blocked_openai_models": sorted(TRIAL_QUALITY_BLOCKED_OPENAI),
         "key_label": "Render Studio Key",
     }
+
+
+
+def is_free_trial_credits_account(account: dict[str, Any] | None, user_id: str | None = None) -> bool:
+    """True while the user is still on unpaid signup-trial credits (no purchase yet)."""
+    if not account:
+        return False
+    if not str(account.get("trial_granted_at") or "").strip():
+        return False
+    if str(account.get("trial_reclaimed_at") or "").strip():
+        return False
+    uid = str(user_id or account.get("user_id") or "").strip()
+    if uid and _last_purchase(uid):
+        return False
+    return True
+
+
+def _ensure_trial_pool(conn) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO ai_credit_trial_pool (id, balance_cents, updated_at)
+        VALUES (1, 0, ?)
+        """,
+        (_now(),),
+    )
+
+
+def get_trial_pool_cents() -> int:
+    with get_conn() as conn:
+        _ensure_trial_pool(conn)
+        row = conn.execute("SELECT balance_cents FROM ai_credit_trial_pool WHERE id = 1").fetchone()
+    return int((row["balance_cents"] if row else 0) or 0)
+
+
+def _company_trial_grants_since(conn, since_iso: str) -> int:
+    rows = conn.execute(
+        """
+        SELECT meta_json FROM ai_credit_transactions
+        WHERE kind = 'trial' AND created_at >= ?
+        """,
+        (since_iso,),
+    ).fetchall()
+    count = 0
+    for row in rows:
+        try:
+            meta = json.loads(row["meta_json"] or "{}")
+        except Exception:
+            meta = {}
+        if meta.get("from_pool"):
+            continue
+        count += 1
+    return count
+
+
+def _enqueue_trial_waitlist(conn, user_id: str, ip: str | None) -> None:
+    conn.execute(
+        """
+        INSERT INTO ai_credit_trial_waitlist (user_id, ip, created_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET ip = COALESCE(excluded.ip, ai_credit_trial_waitlist.ip)
+        """,
+        (user_id, (ip or None), _now()),
+    )
+
+
+def _remove_trial_waitlist(conn, user_id: str) -> None:
+    conn.execute("DELETE FROM ai_credit_trial_waitlist WHERE user_id = ?", (user_id,))
+
+
+def _trial_last_activity_at(conn, user_id: str, granted_at: str) -> datetime:
+    row = conn.execute(
+        """
+        SELECT created_at FROM ai_credit_transactions
+        WHERE user_id = ? AND kind = 'usage'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+    usage_dt = _parse_iso(row["created_at"]) if row else None
+    grant_dt = _parse_iso(granted_at) or datetime.now(timezone.utc)
+    if usage_dt and usage_dt > grant_dt:
+        return usage_dt
+    return grant_dt
+
+
+def reclaim_idle_trial_credits(*, now: datetime | None = None) -> dict[str, Any]:
+    """Zero idle unused trial balances and move leftovers into the redistributable pool.
+
+    After ``TRIAL_IDLE_RECLAIM_DAYS`` with no usage (and no paid purchase), remaining
+    trial balance is reclaimed so it can fund another waitlisted user's free credits.
+    """
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=TRIAL_IDLE_RECLAIM_DAYS)
+    reclaimed_users: list[dict[str, Any]] = []
+    funded_users: list[str] = []
+    with get_conn() as conn:
+        _ensure_trial_pool(conn)
+        rows = conn.execute(
+            """
+            SELECT * FROM ai_credit_accounts
+            WHERE trial_granted_at IS NOT NULL
+              AND TRIM(COALESCE(trial_granted_at, '')) != ''
+              AND (trial_reclaimed_at IS NULL OR TRIM(COALESCE(trial_reclaimed_at, '')) = '')
+              AND balance_cents > 0
+            """
+        ).fetchall()
+        pool_add = 0
+        for row in rows:
+            account = dict(row)
+            uid = str(account["user_id"])
+            # Never reclaim once they bought credits — paid balance is theirs.
+            purchased = conn.execute(
+                """
+                SELECT 1 FROM ai_credit_transactions
+                WHERE user_id = ? AND kind IN ('purchase', 'demo_purchase')
+                LIMIT 1
+                """,
+                (uid,),
+            ).fetchone()
+            if purchased:
+                continue
+            last_activity = _trial_last_activity_at(conn, uid, str(account.get("trial_granted_at") or ""))
+            if last_activity > cutoff:
+                continue
+            amount = int(account.get("balance_cents") or 0)
+            if amount <= 0:
+                continue
+            stamp = now.isoformat()
+            conn.execute(
+                """
+                UPDATE ai_credit_accounts
+                SET balance_cents = 0,
+                    use_platform_key = 0,
+                    trial_reclaimed_at = ?,
+                    updated_at = ?
+                WHERE user_id = ?
+                """,
+                (stamp, stamp, uid),
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_credit_transactions (
+                  id, user_id, kind, amount_cents, balance_after_cents, provider, meta_json, created_at
+                ) VALUES (?, ?, 'trial_reclaim', ?, 0, 'render3d', ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    uid,
+                    -amount,
+                    json.dumps(
+                        {
+                            "idle_days": TRIAL_IDLE_RECLAIM_DAYS,
+                            "note": "Unused free trial credits reclaimed after idle week.",
+                        }
+                    ),
+                    stamp,
+                ),
+            )
+            pool_add += amount
+            reclaimed_users.append({"user_id": uid, "amount_cents": amount})
+
+        if pool_add:
+            conn.execute(
+                """
+                UPDATE ai_credit_trial_pool
+                SET balance_cents = balance_cents + ?, updated_at = ?
+                WHERE id = 1
+                """,
+                (pool_add, now.isoformat()),
+            )
+
+        # Fund waitlisted users from the pool ($10 each when available).
+        while True:
+            pool_row = conn.execute("SELECT balance_cents FROM ai_credit_trial_pool WHERE id = 1").fetchone()
+            pool_bal = int((pool_row["balance_cents"] if pool_row else 0) or 0)
+            if pool_bal < SIGNUP_TRIAL_CENTS:
+                break
+            waiter = conn.execute(
+                """
+                SELECT w.user_id, w.ip FROM ai_credit_trial_waitlist w
+                LEFT JOIN ai_credit_accounts a ON a.user_id = w.user_id
+                WHERE a.trial_granted_at IS NULL
+                   OR TRIM(COALESCE(a.trial_granted_at, '')) = ''
+                ORDER BY w.created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            if not waiter:
+                break
+            ok = _grant_trial_to_user(
+                conn,
+                user_id=str(waiter["user_id"]),
+                ip=str(waiter["ip"] or "").strip() or None,
+                from_pool=True,
+                amount=SIGNUP_TRIAL_CENTS,
+            )
+            if not ok:
+                break
+            funded_users.append(str(waiter["user_id"]))
+
+    return {
+        "reclaimed": reclaimed_users,
+        "reclaimed_cents": sum(u["amount_cents"] for u in reclaimed_users),
+        "funded_user_ids": funded_users,
+        "pool_cents": get_trial_pool_cents(),
+    }
+
+
+def _grant_trial_to_user(
+    conn,
+    *,
+    user_id: str,
+    ip: str | None,
+    from_pool: bool,
+    amount: int,
+) -> bool:
+    """Insert a trial grant inside an open connection. Returns False if skipped."""
+    ensure_row = conn.execute("SELECT * FROM ai_credit_accounts WHERE user_id = ?", (user_id,)).fetchone()
+    if not ensure_row:
+        now0 = _now()
+        conn.execute(
+            """
+            INSERT INTO ai_credit_accounts (
+              user_id, balance_cents, auto_refill_enabled, auto_refill_threshold_cents,
+              auto_refill_amount_cents, use_platform_key, platform_provider, platform_model,
+              created_at, updated_at
+            ) VALUES (?, 0, 0, ?, ?, 0, 'openai', '', ?, ?)
+            """,
+            (user_id, DEFAULT_REFILL_THRESHOLD_CENTS, DEFAULT_REFILL_CENTS, now0, now0),
+        )
+    else:
+        if str(ensure_row["trial_granted_at"] or "").strip():
+            _remove_trial_waitlist(conn, user_id)
+            return False
+
+    if ip:
+        prior = conn.execute("SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?", (ip,)).fetchone()
+        if prior and str(prior["user_id"]) != str(user_id):
+            return False
+
+    if from_pool:
+        cur = conn.execute(
+            """
+            UPDATE ai_credit_trial_pool
+            SET balance_cents = balance_cents - ?, updated_at = ?
+            WHERE id = 1 AND balance_cents >= ?
+            """,
+            (amount, _now(), amount),
+        )
+        if cur.rowcount == 0:
+            return False
+
+    now = _now()
+    cur = conn.execute(
+        """
+        UPDATE ai_credit_accounts
+        SET balance_cents = balance_cents + ?,
+            use_platform_key = 1,
+            trial_granted_at = ?,
+            trial_reclaimed_at = NULL,
+            trial_grant_ip = COALESCE(NULLIF(trial_grant_ip, ''), ?),
+            updated_at = ?
+        WHERE user_id = ?
+          AND (trial_granted_at IS NULL OR TRIM(COALESCE(trial_granted_at, '')) = '')
+        """,
+        (amount, now, ip, now, user_id),
+    )
+    if cur.rowcount == 0:
+        if from_pool:
+            conn.execute(
+                "UPDATE ai_credit_trial_pool SET balance_cents = balance_cents + ?, updated_at = ? WHERE id = 1",
+                (amount, now),
+            )
+        return False
+
+    if ip:
+        try:
+            conn.execute(
+                "INSERT INTO ai_credit_trial_ips (ip, user_id, granted_at) VALUES (?, ?, ?)",
+                (ip, user_id, now),
+            )
+        except Exception:
+            other = conn.execute("SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?", (ip,)).fetchone()
+            if other and str(other["user_id"]) != str(user_id):
+                conn.execute(
+                    """
+                    UPDATE ai_credit_accounts
+                    SET balance_cents = CASE WHEN balance_cents > ? THEN balance_cents - ? ELSE 0 END,
+                        use_platform_key = 0,
+                        trial_granted_at = NULL,
+                        trial_grant_ip = NULL,
+                        updated_at = ?
+                    WHERE user_id = ?
+                    """,
+                    (amount, amount, now, user_id),
+                )
+                if from_pool:
+                    conn.execute(
+                        "UPDATE ai_credit_trial_pool SET balance_cents = balance_cents + ?, updated_at = ? WHERE id = 1",
+                        (amount, now),
+                    )
+                return False
+
+    row = conn.execute("SELECT balance_cents FROM ai_credit_accounts WHERE user_id = ?", (user_id,)).fetchone()
+    balance = int((row["balance_cents"] if row else 0) or 0)
+    meta = {
+        "signup_trial": True,
+        "key_label": "Render Studio Key",
+        "from_pool": bool(from_pool),
+        "duration_days": TRIAL_DURATION_DAYS,
+        "client_ip": ip,
+        "note": (
+            "Funded from reclaimed unused free credits."
+            if from_pool
+            else "Temporary shared Render Studio key credits for OpenAI, Anthropic, and Kimi."
+        ),
+    }
+    conn.execute(
+        """
+        INSERT INTO ai_credit_transactions (
+          id, user_id, kind, amount_cents, balance_after_cents, provider, meta_json, created_at
+        ) VALUES (?, ?, 'trial', ?, ?, 'render3d', ?, ?)
+        """,
+        (str(uuid.uuid4()), user_id, amount, balance, json.dumps(meta), now),
+    )
+    _remove_trial_waitlist(conn, user_id)
+    return True
 
 
 def _claim_trial_ip_for_user(user_id: str, ip: str, *, granted_at: str | None = None) -> None:
@@ -359,13 +737,10 @@ def grant_signup_trial_if_needed(
     *,
     client_ip: str | None = None,
 ) -> dict[str, Any]:
-    """One-time $10 Render Studio-key trial for every user (new or returning).
+    """One-time $10 Render Studio-key trial (max 10 company-funded grants / rolling week).
 
-    Idempotent. Enables the temporary Render Studio Key (OpenAI / Anthropic / Kimi)
-    until the balance is spent; the key option disappears at $0.
-
-    Only one free trial is allowed per client IP — additional accounts from the
-    same IP do not receive credits.
+    Idle unused balances are reclaimed after a week and redistributed from the pool
+    to waitlisted users. Idempotent per user; one trial per client IP.
     """
     empty = {
         "granted": False,
@@ -375,9 +750,17 @@ def grant_signup_trial_if_needed(
         "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2),
         "email_sent": False,
         "blocked_ip": False,
+        "blocked_weekly_cap": False,
+        "duration_days": TRIAL_DURATION_DAYS,
     }
     if not user or not user.get("id"):
         return empty
+
+    # Opportunistic reclaim/redistribute before deciding new grants.
+    try:
+        reclaim_idle_trial_credits()
+    except Exception:
+        pass
 
     try:
         from backend.request_context import get_client_ip
@@ -390,23 +773,24 @@ def grant_signup_trial_if_needed(
         info = _trial_info(account)
         info["just_granted"] = False
         info["blocked_ip"] = False
+        info["blocked_weekly_cap"] = False
         return info
 
     account = ensure_account(user["id"])
     if str(account.get("trial_granted_at") or "").strip():
-        # Existing trial holders claim their current IP so later signups from it are blocked.
         if ip:
             _claim_trial_ip_for_user(user["id"], ip, granted_at=str(account.get("trial_granted_at") or "") or None)
         info = _trial_info(account)
         info["just_granted"] = False
         info["blocked_ip"] = False
+        info["blocked_weekly_cap"] = False
         return info
 
-    # No usable client IP → refuse grant (blocks unlimited trials when IP is blank).
     if not ip:
         info = _trial_info(account)
         info["just_granted"] = False
         info["blocked_ip"] = True
+        info["blocked_weekly_cap"] = False
         info["blocked_reason"] = (
             "Could not verify your network for the free trial. "
             "Try again from a normal browser connection."
@@ -414,14 +798,9 @@ def grant_signup_trial_if_needed(
         return info
 
     amount = SIGNUP_TRIAL_CENTS
-    now = _now()
-    meta = {
-        "signup_trial": True,
-        "key_label": "Render Studio Key",
-        "note": "Temporary shared Render Studio key credits for OpenAI, Anthropic, and Kimi.",
-        "client_ip": ip,
-    }
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     with get_conn() as conn:
+        _ensure_trial_pool(conn)
         prior = conn.execute(
             "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
             (ip,),
@@ -430,81 +809,51 @@ def grant_signup_trial_if_needed(
             info = _trial_info(account)
             info["just_granted"] = False
             info["blocked_ip"] = True
+            info["blocked_weekly_cap"] = False
             info["blocked_reason"] = "Free trial credits were already claimed from this network."
             return info
 
-        cur = conn.execute(
-            """
-            UPDATE ai_credit_accounts
-            SET balance_cents = balance_cents + ?,
-                use_platform_key = 1,
-                trial_granted_at = ?,
-                trial_grant_ip = COALESCE(NULLIF(trial_grant_ip, ''), ?),
-                updated_at = ?
-            WHERE user_id = ?
-              AND (trial_granted_at IS NULL OR TRIM(COALESCE(trial_granted_at, '')) = '')
-            """,
-            (amount, now, ip, now, user["id"]),
+        company_grants = _company_trial_grants_since(conn, week_ago)
+        pool_row = conn.execute("SELECT balance_cents FROM ai_credit_trial_pool WHERE id = 1").fetchone()
+        pool_bal = int((pool_row["balance_cents"] if pool_row else 0) or 0)
+        from_pool = False
+        if company_grants >= TRIAL_GRANTS_PER_WEEK:
+            if pool_bal >= amount:
+                from_pool = True
+            else:
+                _enqueue_trial_waitlist(conn, user["id"], ip)
+                info = _trial_info(account)
+                info["just_granted"] = False
+                info["blocked_ip"] = False
+                info["blocked_weekly_cap"] = True
+                info["waitlisted"] = True
+                info["blocked_reason"] = (
+                    f"Free trial spots are limited to {TRIAL_GRANTS_PER_WEEK} new users per week. "
+                    "You're on the waitlist — unused credits from idle trials may open a spot."
+                )
+                return info
+
+        ok = _grant_trial_to_user(
+            conn,
+            user_id=user["id"],
+            ip=ip,
+            from_pool=from_pool,
+            amount=amount,
         )
-        if cur.rowcount == 0:
-            account = dict(
-                conn.execute("SELECT * FROM ai_credit_accounts WHERE user_id = ?", (user["id"],)).fetchone() or {}
-            )
+        if not ok:
+            account = ensure_account(user["id"])
             info = _trial_info(account)
             info["just_granted"] = False
             info["blocked_ip"] = False
+            info["blocked_weekly_cap"] = False
             return info
 
-        # Claim the IP atomically; if another signup won the race, roll back this grant.
-        try:
-            conn.execute(
-                """
-                INSERT INTO ai_credit_trial_ips (ip, user_id, granted_at)
-                VALUES (?, ?, ?)
-                """,
-                (ip, user["id"], now),
-            )
-        except Exception:
-            other = conn.execute(
-                "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
-                (ip,),
-            ).fetchone()
-            if other and str(other["user_id"]) != str(user["id"]):
-                conn.execute(
-                    """
-                    UPDATE ai_credit_accounts
-                    SET balance_cents = CASE
-                          WHEN balance_cents > ? THEN balance_cents - ?
-                          ELSE 0
-                        END,
-                        use_platform_key = 0,
-                        trial_granted_at = NULL,
-                        trial_grant_ip = NULL,
-                        updated_at = ?
-                    WHERE user_id = ?
-                    """,
-                    (amount, amount, now, user["id"]),
-                )
-                info = _trial_info(ensure_account(user["id"]))
-                info["just_granted"] = False
-                info["blocked_ip"] = True
-                info["blocked_reason"] = "Free trial credits were already claimed from this network."
-                return info
-
-        row = conn.execute("SELECT balance_cents FROM ai_credit_accounts WHERE user_id = ?", (user["id"],)).fetchone()
-        balance = int((row["balance_cents"] if row else 0) or 0)
-        conn.execute(
-            """
-            INSERT INTO ai_credit_transactions (
-              id, user_id, kind, amount_cents, balance_after_cents, provider, meta_json, created_at
-            ) VALUES (?, ?, 'trial', ?, ?, 'render3d', ?, ?)
-            """,
-            (str(uuid.uuid4()), user["id"], amount, balance, json.dumps(meta), now),
-        )
     account = ensure_account(user["id"])
     info = _trial_info(account)
     info["just_granted"] = True
     info["blocked_ip"] = False
+    info["blocked_weekly_cap"] = False
+    info["from_pool"] = from_pool
     return info
 
 
@@ -533,6 +882,10 @@ def mark_trial_email_sent(user_id: str) -> None:
 
 
 def status(user: dict[str, Any]) -> dict[str, Any]:
+    try:
+        reclaim_idle_trial_credits()
+    except Exception:
+        pass
     account = ensure_account(user["id"])
     balance = int(account.get("balance_cents") or 0)
     # Temporary Render Studio key must not stay selected once credits are gone.
@@ -565,7 +918,7 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
         "auto_refill_amount_cents": int(account.get("auto_refill_amount_cents") or DEFAULT_REFILL_CENTS),
         "last_purchase_cents": last_amount,
         "last_purchase_percent_left": percent_left,
-        "models": platform_models() if balance > 0 else [],
+        "models": _platform_models_for_account(account) if balance > 0 else [],
         "stripe_ready": bool(_stripe()),
         "payment_methods": {
             "stripe": bool(_stripe()) or bool(_payment_link_url()),
@@ -573,6 +926,7 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
             "paypal": False,
         },
         "trial": _trial_info(account),
+        "on_free_trial": is_free_trial_credits_account(account, user_id=user["id"]),
         "key_configured": any(providers.values()),
     }
 
