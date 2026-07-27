@@ -114,7 +114,7 @@ def send_welcome_email(user: dict[str, Any]) -> dict[str, Any]:
 
 def render_trial_credits_email(user: dict[str, Any]) -> dict[str, str]:
     name = html.escape(str(user.get("display_name") or "there"))
-    subject = "You've got $10 in render credits"
+    subject = "You've got $10 free credits for one week"
     studio = "https://render3d.app/"
     html_body = f"""<!doctype html>
 <html>

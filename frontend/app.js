@@ -74,7 +74,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-loading-rs";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-built-on";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -16575,11 +16575,6 @@ function defaultPlatformModelForProvider(provider, status = aiStatus) {
     return "kimi-k3";
   }
   // OpenAI: keep a non-Pro pin if present; otherwise gpt-5.5 (not Pro).
-  // Free-trial Quality cannot use GPT-5.5 / Pro — prefer Sol.
-  if (isOnFreeTrialCredits(status) && getPromptSpeed() === "quality") {
-    if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/^gpt-5\.5(-pro)?$/i.test(pinned)) return pinned;
-    return "gpt-5.6-sol";
-  }
   if (pinned && /^(gpt|o1|o3|chatgpt)/i.test(pinned) && !/-pro\b/i.test(pinned)) return pinned;
   return "gpt-5.5";
 }
@@ -16869,37 +16864,11 @@ const BADGE_CLASS_MAP = {
   xai: "badge-grok",
 };
 
-function isOnFreeTrialCredits(status = aiStatus) {
-  const trial = status?.credits?.trial || status?.trial;
-  if (status?.credits?.on_free_trial || status?.on_free_trial || trial?.on_free_trial) return true;
-  return !!(trial?.granted && !trial?.reclaimed_at && Number(status?.credits?.balance_cents || 0) > 0
-    && !status?.credits?.last_purchase_cents);
-}
-
-function trialQualityBlockedOpenAIModels(status = aiStatus) {
-  const listed = status?.credits?.trial?.quality_blocked_openai_models;
-  if (Array.isArray(listed) && listed.length) return new Set(listed.map((m) => String(m).toLowerCase()));
-  return new Set(["gpt-5.5", "gpt-5.5-pro"]);
-}
-
 function buildModelOptionsHTML(provider, currentModel, allowedModels = null) {
   let opts = PROMPT_KEY_MODEL_OPTIONS[provider] || PROMPT_KEY_MODEL_OPTIONS.openai;
   if (Array.isArray(allowedModels) && allowedModels.length) {
     const allow = new Set(allowedModels);
     const filtered = opts.filter((o) => allow.has(o.value));
-    if (filtered.length) opts = filtered;
-  }
-  // Free trial + Quality: hide GPT-5.5 / GPT-5.5 Pro on the Render3D Key.
-  const usingPlatform = getSelectedPromptAiKey()?.source === "platform"
-    || String(document.getElementById("prompt-ai-key-select")?.value || "").startsWith("platform:");
-  if (
-    usingPlatform
-    && isOnFreeTrialCredits()
-    && getPromptSpeed() === "quality"
-    && String(provider || "").toLowerCase() === "openai"
-  ) {
-    const blocked = trialQualityBlockedOpenAIModels();
-    const filtered = opts.filter((o) => !blocked.has(String(o.value).toLowerCase()));
     if (filtered.length) opts = filtered;
   }
   const known = opts.map((o) => o.value);
