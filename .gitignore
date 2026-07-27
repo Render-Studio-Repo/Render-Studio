@@ -63,11 +63,13 @@ __pycache__/
 # Generated viewer bundles
 backend/skills/cad-viewer/scripts/viewer/dist/
 
+
+# Local CLI/tooling config (gh tokens, uv, etc.) — never upload
+.config/
 # Secrets / keys
 *.pem
 *.key
 id_rsa*
-.config/ohio/
 scripts/credentials_google*.json
 
 # Home dotfiles
