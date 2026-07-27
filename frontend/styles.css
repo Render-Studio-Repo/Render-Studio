@@ -17906,6 +17906,8 @@ section h2 {
 /* Fusion picker owns the panel — hide download chrome so Export stays on-screen. */
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-header,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-hint,
+.file-export-menu:has(.file-export-fusion-picker) > .file-export-share-bar,
+.file-export-menu:has(.file-export-fusion-picker) > .file-export-share-url,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-status,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-list,
 .file-export-menu:has(.file-export-fusion-picker) > .file-export-actions {
@@ -18084,8 +18086,21 @@ section h2 {
   gap: 6px;
 }
 
+.file-export-share-bar {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(22, 27, 34, 0.92));
+  padding-bottom: 2px;
+}
+
 .file-export-share {
   width: 100%;
+  min-height: 44px;
+  font-weight: 600;
 }
 
 .file-export-share-url {

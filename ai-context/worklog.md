@@ -1,3 +1,19 @@
+## 2026-07-27 — Copy share link pinned to top of Export
+
+- Moved **Copy share link** above the download list (sticky) so it is not scrolled off on mobile.
+- Stopped mobile bottom-sheet from being overwritten by desktop top positioning.
+- Cache-bust `?v=20260727-share-btn-top`.
+
+---
+
+## 2026-07-27 — Fix URDF box size / SRDF robot name on robot artifacts
+
+- AI-authored `gen_urdf()` often emitted `<box><size>…</size></box>` (invalid); coerce to `<box size="…"/>` in URDF skill CLI.
+- AI-authored `gen_srdf()` often omitted `<robot name>` and used `<link_group>`; coerce name from URDF + rewrite to `<link name>`.
+- Hardened authoring prompt; fixed License Plate Frame project generators and regenerated `.urdf`/`.srdf`.
+
+---
+
 ## 2026-07-27 — Mobile share link copy fix
 
 - Export “Copy share link” uses native `navigator.share` on mobile, with Clipboard + execCommand fallbacks.

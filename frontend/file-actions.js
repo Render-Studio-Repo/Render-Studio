@@ -483,8 +483,10 @@ function revealShareUrlForManualCopy(menu, shareUrl, shareBtn) {
       <label class="muted small">Share link — tap to select, then copy</label>
       <input type="text" readonly inputmode="none" autocomplete="off" spellcheck="false" />
     `;
+    const shareBar = menu.querySelector(".file-export-share-bar");
     const actions = menu.querySelector(".file-export-actions");
-    if (actions) actions.insertAdjacentElement("afterend", box);
+    if (shareBar) shareBar.insertAdjacentElement("afterend", box);
+    else if (actions) actions.insertAdjacentElement("beforebegin", box);
     else menu.appendChild(box);
     const input = box.querySelector("input");
     input?.addEventListener("focus", () => {
@@ -517,7 +519,7 @@ function revealShareUrlForManualCopy(menu, shareUrl, shareBtn) {
       }
     });
   }
-  if (shareBtn) shareBtn.textContent = isMobileClient() ? "Share / copy again" : "Copy again";
+  if (shareBtn) shareBtn.textContent = "Copy share link";
 }
 
 function showStepModeChooser(menu, item, onChoose, anchorEl = null, clickEvent = null) {
@@ -680,10 +682,12 @@ export async function openFileExportMenu({
       <button type="button" class="file-export-close" data-export-close aria-label="Close export">&times;</button>
     </div>
     <p class="file-export-hint muted small">${hint || defaultHint}</p>
+    <div class="file-export-share-bar">
+      <button type="button" class="btn secondary btn-compact file-export-share" disabled>Copy share link</button>
+    </div>
     <p class="file-export-status muted small">Preparing exports…</p>
     <div class="file-export-list"></div>
     <div class="file-export-actions">
-      <button type="button" class="btn secondary btn-compact file-export-share" disabled>${mobile && typeof navigator.share === "function" ? "Share link" : "Copy share link"}</button>
       ${onshapeSource ? `
       <button type="button" class="btn file-export-onshape file-export-onshape-push" title="Push updated STEP back to the original Onshape document">
         <img src="/onshape-logo.png" width="14" height="14" alt="" style="vertical-align:-2px" />
@@ -802,31 +806,9 @@ export async function openFileExportMenu({
     exports = collapseExportsToSingleStep([...exports, ...extraExports]);
   }
 
-  if (fetchError && !(data?.exports?.length)) {
-    list.innerHTML = "";
-    setExportActionsPreparing(menu, false);
-    statusEl.textContent = exportsRequest
-      ? (fetchError.message || "Could not prepare assembly exports.")
-      : `${formatApiError(fetchError)} Click a format to download.`;
-    statusEl.className = "file-export-status status error";
-    if (exportsRequest) return;
-  } else if (!exports.length) {
-    list.innerHTML = "";
-    setExportActionsPreparing(menu, false);
-    statusEl.textContent = "No export files found for this model.";
-    statusEl.className = "file-export-status status error";
-    return;
-  } else {
-    statusEl.remove();
-    list.innerHTML = "";
-    setExportActionsPreparing(menu, false);
-  }
-
   let preparedShareUrl = "";
   let preparingShare = false;
-  const shareReadyLabel = () => (
-    mobile && typeof navigator.share === "function" ? "Share link" : "Copy share link"
-  );
+  const shareReadyLabel = () => "Copy share link";
   const prepareShareLink = async () => {
     if (!shareBtn || preparingShare || preparedShareUrl) return;
     preparingShare = true;
@@ -850,7 +832,67 @@ export async function openFileExportMenu({
       if (!preparedShareUrl) shareBtn.disabled = false;
     }
   };
+  // Always wire share even when export list is empty / errored.
   void prepareShareLink();
+  shareBtn?.addEventListener("click", async () => {
+    try {
+      if (!preparedShareUrl) {
+        await prepareShareLink();
+        if (!preparedShareUrl) return;
+      }
+      shareBtn.disabled = true;
+      const result = await shareOrCopyUrl(preparedShareUrl, {
+        title: title || `Share ${shareFilename || filename}`,
+      });
+      if (result.method === "share-cancel") {
+        shareBtn.textContent = shareReadyLabel();
+        revealShareUrlForManualCopy(menu, preparedShareUrl, shareBtn);
+      } else if (result.method === "share") {
+        shareBtn.textContent = "Shared!";
+        window.setTimeout(() => {
+          if (shareBtn.isConnected) shareBtn.textContent = shareReadyLabel();
+        }, 1600);
+      } else {
+        shareBtn.textContent = "Link copied!";
+        window.setTimeout(() => {
+          if (shareBtn.isConnected) shareBtn.textContent = shareReadyLabel();
+        }, 1600);
+      }
+    } catch (err) {
+      shareBtn.textContent = shareReadyLabel();
+      if (preparedShareUrl) revealShareUrlForManualCopy(menu, preparedShareUrl, shareBtn);
+      showExportError(menu, err, {
+        title: "Could not copy share link",
+        onRetry: () => shareBtn.click(),
+      });
+    } finally {
+      shareBtn.disabled = false;
+    }
+  });
+
+  if (fetchError && !(data?.exports?.length)) {
+    list.innerHTML = "";
+    setExportActionsPreparing(menu, false);
+    statusEl.textContent = exportsRequest
+      ? (fetchError.message || "Could not prepare assembly exports.")
+      : `${formatApiError(fetchError)} Click a format to download.`;
+    statusEl.className = "file-export-status status error";
+    if (exportsRequest) {
+      keepMenuInViewport(menu);
+      return;
+    }
+  } else if (!exports.length) {
+    list.innerHTML = "";
+    setExportActionsPreparing(menu, false);
+    statusEl.textContent = "No export files found for this model.";
+    statusEl.className = "file-export-status status error";
+    keepMenuInViewport(menu);
+    return;
+  } else {
+    statusEl.remove();
+    list.innerHTML = "";
+    setExportActionsPreparing(menu, false);
+  }
 
   const targetStem = fileStem(filename);
   const sorted = [...exports].sort(
@@ -959,37 +1001,6 @@ export async function openFileExportMenu({
     });
     list.appendChild(btn);
   }
-
-  shareBtn?.addEventListener("click", async () => {
-    try {
-      if (!preparedShareUrl) {
-        await prepareShareLink();
-        if (!preparedShareUrl) return;
-      }
-      shareBtn.disabled = true;
-      const result = await shareOrCopyUrl(preparedShareUrl, {
-        title: title || `Share ${shareFilename || filename}`,
-      });
-      if (result.method === "share-cancel") {
-        shareBtn.textContent = shareReadyLabel();
-        revealShareUrlForManualCopy(menu, preparedShareUrl, shareBtn);
-      } else if (result.method === "share") {
-        shareBtn.textContent = "Shared!";
-      } else {
-        shareBtn.textContent = "Link copied!";
-      }
-    } catch (err) {
-      shareBtn.textContent = shareReadyLabel();
-      // Always surface a selectable URL on mobile so the user can long-press copy.
-      if (preparedShareUrl) revealShareUrlForManualCopy(menu, preparedShareUrl, shareBtn);
-      showExportError(menu, err, {
-        title: "Could not copy share link",
-        onRetry: () => shareBtn.click(),
-      });
-    } finally {
-      shareBtn.disabled = false;
-    }
-  });
 
   async function onshapeAction(btn, endpoint, body, resetLabel) {
     btn.disabled = true;
@@ -1232,8 +1243,11 @@ export async function openFileExportMenu({
     });
   });
 
-  const rect2 = anchorEl.getBoundingClientRect();
-  menu.style.top = `${Math.min(rect2.bottom + 6, window.innerHeight - Math.max(220, menu.offsetHeight + 12))}px`;
+  if (!mobile) {
+    const rect2 = anchorEl.getBoundingClientRect();
+    menu.style.top = `${Math.min(rect2.bottom + 6, window.innerHeight - Math.max(220, menu.offsetHeight + 12))}px`;
+  }
+  keepMenuInViewport(menu);
 
   if (autoAction) {
     requestAnimationFrame(() => {
