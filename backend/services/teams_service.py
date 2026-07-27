@@ -161,18 +161,19 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
     team_id = str(uuid.uuid4())[:8]
     now = _now()
     joined_team_ids: list[str] = []
+    password_hash = hash_password(password)
     with get_conn() as conn:
         try:
             handle = ensure_unique_handle(conn, slugify_handle(display_name or email.split("@")[0]))
             try:
                 conn.execute(
                     "INSERT INTO users (id, email, display_name, password_hash, created_at, handle) VALUES (?, ?, ?, ?, ?, ?)",
-                    (user_id, email, display_name, hash_password(password), now, handle),
+                    (user_id, email, display_name, password_hash, now, handle),
                 )
             except sqlite3.OperationalError:
                 conn.execute(
                     "INSERT INTO users (id, email, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (user_id, email, display_name, hash_password(password), now),
+                    (user_id, email, display_name, password_hash, now),
                 )
                 handle = None
             first_name = display_name.split()[0] if display_name.split() else display_name
@@ -208,6 +209,26 @@ def create_user(email: str, password: str, display_name: str) -> dict[str, Any]:
 
         for team_id in joined_team_ids:
             deny_shared_keys_for_new_member(team_id, user_id)
+    # Best security: register password in Supabase Auth (bcrypt via GoTrue).
+    # Local password_hash is cleared after a successful Supabase create.
+    try:
+        from backend.services import supabase_auth_service as sbauth
+
+        if sbauth.enabled():
+            sbauth.create_auth_user(
+                email=email,
+                password=password,
+                app_user_id=user_id,
+                display_name=display_name,
+            )
+            sbauth.upsert_profile(
+                user_id=user_id,
+                email=email,
+                display_name=display_name,
+                handle=handle if handle else None,
+            )
+    except Exception:
+        pass
     out = {"id": user_id, "email": email, "display_name": display_name, "created_at": now}
     if handle:
         out["handle"] = handle
@@ -219,10 +240,11 @@ def authenticate(email: str, password: str) -> dict[str, Any] | None:
     email = email.strip().lower()
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-    if not row or not verify_password(password, row["password_hash"]):
+    if not row:
         return None
+
     keys = row.keys()
-    return {
+    user_dict = {
         "id": row["id"],
         "email": row["email"],
         "display_name": row["display_name"],
@@ -230,6 +252,54 @@ def authenticate(email: str, password: str) -> dict[str, Any] | None:
         "avatar_url": row["avatar_url"] if "avatar_url" in keys else None,
         "created_at": row["created_at"],
     }
+
+    # Prefer Supabase Auth when connected (passwords live there, hashed).
+    try:
+        from backend.services import supabase_auth_service as sbauth
+
+        if sbauth.enabled():
+            if sbauth.verify_password(email, password):
+                # Keep profile mirror warm; ensure local link exists.
+                sid = sbauth.get_local_supabase_user_id(user_dict["id"])
+                if not sid:
+                    sbauth.migrate_local_user_password(
+                        email=email,
+                        password=password,
+                        app_user_id=user_dict["id"],
+                        display_name=user_dict["display_name"],
+                    )
+                else:
+                    sbauth.upsert_profile(
+                        user_id=user_dict["id"],
+                        email=email,
+                        display_name=user_dict["display_name"],
+                        handle=user_dict.get("handle"),
+                        supabase_user_id=sid,
+                    )
+                return user_dict
+            # If local hash was cleared after Supabase migration, do not fall back.
+            if not str(row["password_hash"] or "").strip():
+                return None
+    except Exception:
+        pass
+
+    if not verify_password(password, row["password_hash"]):
+        return None
+
+    # Lazy-migrate bcrypt users into Supabase Auth on successful local login.
+    try:
+        from backend.services import supabase_auth_service as sbauth
+
+        if sbauth.enabled():
+            sbauth.migrate_local_user_password(
+                email=email,
+                password=password,
+                app_user_id=user_dict["id"],
+                display_name=user_dict["display_name"],
+            )
+    except Exception:
+        pass
+    return user_dict
 
 
 def list_teams(user_id: str) -> list[dict[str, Any]]:

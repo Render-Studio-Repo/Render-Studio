@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_publishable_key: str = ""
     supabase_secret_key: str = ""
+    # Dedicated key for encrypting user BYOK at rest (Fernet). Prefer over jwt_secret.
+    secrets_fernet_key: str = ""
 
     # Marketplace payments (Stripe Connect + Link)
     stripe_secret_key: str = ""

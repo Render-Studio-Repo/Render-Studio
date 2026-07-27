@@ -48,9 +48,53 @@ PROVIDER_MODEL_CATALOG: dict[str, list[str]] = {
 }
 
 
+def _try_fernet(material: str) -> Fernet | None:
+    raw = (material or "").strip()
+    if not raw:
+        return None
+    try:
+        return Fernet(raw.encode("utf-8"))
+    except Exception:
+        try:
+            digest = hashlib.sha256(raw.encode("utf-8")).digest()
+            return Fernet(base64.urlsafe_b64encode(digest))
+        except Exception:
+            return None
+
+
 def _fernet() -> Fernet:
-    digest = hashlib.sha256(settings.jwt_secret.encode("utf-8")).digest()
+    """Prefer dedicated SECRETS_FERNET_KEY; fall back to jwt_secret-derived key."""
+    dedicated = _try_fernet(getattr(settings, "secrets_fernet_key", None) or "")
+    if dedicated:
+        return dedicated
+    legacy = _try_fernet(settings.jwt_secret or "")
+    if legacy:
+        return legacy
+    digest = hashlib.sha256(b"change-me-in-production-render3d").digest()
     return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def _fernet_decrypt_candidates() -> list[Fernet]:
+    """Try dedicated key first, then legacy jwt_secret (existing ciphertext)."""
+    out: list[Fernet] = []
+    for material in (
+        (getattr(settings, "secrets_fernet_key", None) or "").strip(),
+        (settings.jwt_secret or "").strip(),
+        "change-me-in-production-render3d",
+    ):
+        f = _try_fernet(material)
+        if f is not None:
+            out.append(f)
+    # Deduplicate while preserving order
+    uniq: list[Fernet] = []
+    seen: set[int] = set()
+    for f in out:
+        i = id(f._signing_key)  # type: ignore[attr-defined]
+        if i in seen:
+            continue
+        seen.add(i)
+        uniq.append(f)
+    return uniq or [_fernet()]
 
 
 def normalize_provider(provider: str | None) -> str:
@@ -181,10 +225,13 @@ def _encrypt(value: str) -> str:
 def _decrypt(enc: str | None) -> str | None:
     if not enc:
         return None
-    try:
-        return _fernet().decrypt(enc.encode("ascii")).decode("utf-8")
-    except (InvalidToken, UnicodeError):
-        return None
+    raw = enc.encode("ascii")
+    for f in _fernet_decrypt_candidates():
+        try:
+            return f.decrypt(raw).decode("utf-8")
+        except (InvalidToken, UnicodeError, ValueError):
+            continue
+    return None
 
 
 # ── Multi-key library ─────────────────────────────────────────────────────────
@@ -276,6 +323,22 @@ def add_key(
             )
         conn.commit()
 
+    try:
+        from backend.services import supabase_secrets_store as sbsec
+
+        sbsec.upsert_ai_key(
+            key_id=key_id,
+            user_id=user_id,
+            provider=provider,
+            name=key_name,
+            model=chosen_model,
+            ciphertext=enc,
+            key_hint=key_hint(key),
+            is_active=bool(activate),
+        )
+    except Exception:
+        pass
+
     return status_for_user_id(user_id)
 
 
@@ -314,6 +377,13 @@ def delete_key(user_id: str, key_id: str) -> dict[str, Any]:
                     (user_id,),
                 )
         conn.commit()
+
+    try:
+        from backend.services import supabase_secrets_store as sbsec
+
+        sbsec.delete_ai_key(key_id)
+    except Exception:
+        pass
 
     return status_for_user_id(user_id)
 

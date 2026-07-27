@@ -9881,11 +9881,39 @@ def admin_trial_credits(
     }
     try:
         from backend.services import supabase_security_store as sbsec
+        from backend.services import supabase_auth_service as sbauth
 
-        report["supabase"] = sbsec.ping()
+        report["supabase"] = {
+            **sbsec.ping(),
+            "auth": sbauth.status(),
+        }
     except Exception as exc:
         report["supabase"] = {"ok": False, "error": str(exc)[:200]}
     return report
+
+
+@app.post("/api/admin/supabase/sync")
+def admin_supabase_sync(user: dict[str, Any] = Depends(get_current_user)):
+    """Push local users (Auth hashes) + encrypted API keys into Supabase."""
+    _require_a1projects_admin(user)
+    from backend.services import supabase_auth_service as sbauth
+    from backend.services import supabase_secrets_store as sbsec
+    from backend.services import supabase_client
+
+    if not supabase_client.configured():
+        raise HTTPException(
+            503,
+            "Supabase not configured — set SUPABASE_URL in server .env "
+            "(Dashboard → Project Settings → API → Project URL).",
+        )
+    auth_result = sbauth.sync_all_users_to_supabase()
+    keys_result = sbsec.sync_all_keys()
+    return {
+        "ok": bool(auth_result.get("ok") and keys_result.get("ok")),
+        "auth": auth_result,
+        "secrets": keys_result,
+        "client": supabase_client.status(),
+    }
 
 
 @app.get("/api/users")

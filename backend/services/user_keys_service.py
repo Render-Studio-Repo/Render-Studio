@@ -13,8 +13,16 @@ from backend.database import get_conn
 
 
 def _fernet() -> Fernet:
-    digest = hashlib.sha256(settings.jwt_secret.encode("utf-8")).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
+    # Prefer dedicated secrets key; keep jwt_secret-derived fallback for legacy rows.
+    from backend.services.user_ai_keys_service import _fernet as _shared_fernet
+
+    return _shared_fernet()
+
+
+def _decrypt_compat(enc: str) -> str | None:
+    from backend.services.user_ai_keys_service import _decrypt as _shared_decrypt
+
+    return _shared_decrypt(enc)
 
 
 def _owner_emails() -> set[str]:
