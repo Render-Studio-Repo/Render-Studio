@@ -17767,7 +17767,7 @@ def _save_prompt_history(
                 usage_meta["model"] = model
             if effective.get("provider"):
                 usage_meta["provider"] = effective.get("provider")
-        return prompt_history_service.append_entry(
+        entry = prompt_history_service.append_entry(
             project_path,
             prompt=prompt,
             success=success,
@@ -17795,6 +17795,20 @@ def _save_prompt_history(
             **usage_meta,
             **key_meta,
         )
+        if success and user and filename:
+            try:
+                from backend.services.sam_alert_email_service import maybe_notify_first_model_async
+
+                maybe_notify_first_model_async(
+                    user,
+                    project_id=project_path.name,
+                    project_path=project_path,
+                    filename=filename,
+                    prompt=prompt,
+                )
+            except Exception:
+                logger.debug("Sam first-model notify skipped", exc_info=True)
+        return entry
     except ValueError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
     except Exception as exc:
@@ -18367,6 +18381,23 @@ def _background_prompt_kernel(
                 daemon=True,
                 name=f"fusion-new-file-{project_id}-{Path(str(filename)).stem[:24]}",
             ).start()
+            try:
+                from backend.services.sam_alert_email_service import maybe_notify_first_model_async
+
+                prompt_text = ""
+                try:
+                    prompt_text = str(PromptRequest.model_validate(body_data).prompt or "")
+                except Exception:
+                    prompt_text = str((body_data or {}).get("prompt") or "")
+                maybe_notify_first_model_async(
+                    user,
+                    project_id=project_id,
+                    project_path=project_path,
+                    filename=str(filename),
+                    prompt=prompt_text,
+                )
+            except Exception:
+                logger.debug("Sam first-model notify skipped (background)", exc_info=True)
     except HTTPException as exc:
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
             if exc.status_code == 499:

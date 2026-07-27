@@ -67,6 +67,12 @@ def add_new_user(user: dict[str, Any], *, source: str = "email") -> dict[str, An
     }
     data["items"].append(item)
     _save(data)
+    try:
+        from backend.services.sam_alert_email_service import notify_new_signup_async
+
+        notify_new_signup_async(user, source=source)
+    except Exception:
+        pass
     return item
 
 

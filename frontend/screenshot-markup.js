@@ -297,7 +297,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
         </div>
         <label class="screenshot-markup-caption">
           <span>Caption</span>
-          <textarea data-shot-markup-text maxlength="270" rows="2" placeholder="Built on Render Studio"></textarea>
+          <textarea data-shot-markup-text maxlength="270" rows="3" placeholder="Your caption…"></textarea>
         </label>
         <p class="screenshot-markup-x-status muted small" data-shot-markup-x-status></p>
         <p class="screenshot-markup-status muted small" data-shot-markup-status role="status"></p>
@@ -653,14 +653,28 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
     }
   }
 
+  const X_SHARE_SITE = "https://render3d.app";
+  const X_SHARE_ATTRIBUTION = "Built in Render Studio";
+  const X_SHARE_DEFAULT = `\n\n${X_SHARE_ATTRIBUTION}`;
+
+  function normalizeXShareCaption(text) {
+    let caption = String(text ?? "");
+    if (!caption.trim()) return X_SHARE_DEFAULT;
+    const hasAttr = new RegExp(X_SHARE_ATTRIBUTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(caption);
+    if (!hasAttr) {
+      caption = `${caption.replace(/[ \t]+$/g, "").replace(/\n+$/g, "")}\n\n${X_SHARE_ATTRIBUTION}`;
+    }
+    return caption.slice(0, 270);
+  }
+
   function openXCompose(text) {
     // X cannot hyperlink arbitrary words; attach render3d.app via the url=
-    // intent param so "Built on Render Studio" posts include a live link to the site.
-    const caption = String(text || "Built on Render Studio").trim().slice(0, 270) || "Built on Render Studio";
+    // intent param so "Built in Render Studio" posts include a live link to the site.
+    const caption = normalizeXShareCaption(text);
     const params = new URLSearchParams();
     params.set("text", caption);
     if (!/render3d\.app/i.test(caption)) {
-      params.set("url", "https://render3d.app");
+      params.set("url", X_SHARE_SITE);
     }
     const url = `https://x.com/intent/post?${params.toString()}`;
     const win = window.open(url, "_blank", "noopener,noreferrer");
@@ -683,11 +697,11 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
     try {
       const file = new File([blob], "render3d-screenshot.png", { type: blob.type || "image/png" });
       if (navigator.canShare && !navigator.canShare({ files: [file], text })) return false;
-      const shareText = text || "Built on Render Studio";
+      const shareText = normalizeXShareCaption(text);
       const payload = {
         files: [file],
-        text: /render3d\.app/i.test(shareText) ? shareText : `${shareText}\nhttps://render3d.app`,
-        title: "Built on Render Studio",
+        text: shareText,
+        title: "Render Studio",
       };
       if (navigator.canShare && !navigator.canShare(payload)) return false;
       await navigator.share(payload);
@@ -703,7 +717,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
       setStatus("Opening X compose…");
       const dataUrl = await compositeMarkedPng();
       const blob = await (await fetch(dataUrl)).blob();
-      const caption = String(modalEl?.querySelector("[data-shot-markup-text]")?.value || "Built on Render Studio").trim() || "Built on Render Studio";
+      const caption = normalizeXShareCaption(modalEl?.querySelector("[data-shot-markup-text]")?.value);
 
       const shared = await shareImageViaWebShare(blob, caption);
       if (shared) {
@@ -742,7 +756,17 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
     const eyebrow = modalEl.querySelector(".screenshot-markup-eyebrow");
     if (eyebrow) eyebrow.textContent = modeLabel;
     const caption = modalEl.querySelector("[data-shot-markup-text]");
-    if (caption && !caption.value.trim()) caption.value = "Built on Render Studio";
+    if (caption) {
+      if (!String(caption.value || "").trim() || String(caption.value || "").trim() === X_SHARE_ATTRIBUTION) {
+        caption.value = X_SHARE_DEFAULT;
+      }
+      requestAnimationFrame(() => {
+        try {
+          caption.focus();
+          caption.setSelectionRange(0, 0);
+        } catch (_) {}
+      });
+    }
     modalEl.classList.remove("hidden");
     void refreshXStatus();
   }

@@ -1086,12 +1086,18 @@ def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png"
     return media_id
 
 
-def _caption_with_site_link(text: str, *, default: str = "Built on Render Studio") -> str:
-    caption = (text or default).strip() or default
+def _caption_with_site_link(text: str, *, default: str = "\n\nBuilt in Render Studio") -> str:
+    attribution = "Built in Render Studio"
+    caption = text if text is not None else ""
+    if not str(caption).strip():
+        caption = default
+    elif attribution.lower() not in str(caption).lower():
+        caption = f"{str(caption).rstrip()}\n\n{attribution}"
+    caption = str(caption)[:270]
     if "render3d.app" not in caption.lower():
-        # X auto-links URLs; keep under tweet limit.
-        suffix = " https://render3d.app"
-        caption = (caption[: max(0, 270 - len(suffix))] + suffix).strip()
+        # Prefer intent url= on web; API posts append the link on its own line.
+        suffix = "\nhttps://render3d.app"
+        caption = (caption[: max(0, 270 - len(suffix))] + suffix)
     return caption[:270]
 
 

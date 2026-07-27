@@ -325,7 +325,7 @@ export function createViewportVideoRecorder({
         <div data-video-editor-host></div>
         <label class="viewport-video-share-caption">
           <span>Caption (X)</span>
-          <textarea data-video-share-text maxlength="270" rows="3" placeholder="Built on Render Studio"></textarea>
+          <textarea data-video-share-text maxlength="270" rows="4" placeholder="Your caption…"></textarea>
         </label>
         <p class="viewport-video-share-x-status muted small" data-video-share-x-status></p>
         <p class="viewport-video-share-status muted small" data-video-share-status role="status"></p>
@@ -643,14 +643,32 @@ export function createViewportVideoRecorder({
     }
   }
 
+  const X_SHARE_SITE = "https://render3d.app";
+  const X_SHARE_ATTRIBUTION = "Built in Render Studio";
+  const X_SHARE_DEFAULT = `\n\n${X_SHARE_ATTRIBUTION}`;
+
+  function normalizeXShareCaption(text) {
+    // Keep a blank line above the attribution so tweets read like:
+    //   testing this out
+    //
+    //   Built in Render Studio
+    let caption = String(text ?? "");
+    if (!caption.trim()) return X_SHARE_DEFAULT;
+    const hasAttr = new RegExp(X_SHARE_ATTRIBUTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(caption);
+    if (!hasAttr) {
+      caption = `${caption.replace(/[ \t]+$/g, "").replace(/\n+$/g, "")}\n\n${X_SHARE_ATTRIBUTION}`;
+    }
+    return caption.slice(0, 270);
+  }
+
   function openXCompose(text) {
     // X cannot hyperlink arbitrary words; attach render3d.app via the url=
-    // intent param so "Built on Render Studio" posts include a live link to the site.
-    const caption = String(text || "Built on Render Studio").trim().slice(0, 270) || "Built on Render Studio";
+    // intent param so "Built in Render Studio" posts include a live link to the site.
+    const caption = normalizeXShareCaption(text);
     const params = new URLSearchParams();
     params.set("text", caption);
     if (!/render3d\.app/i.test(caption)) {
-      params.set("url", "https://render3d.app");
+      params.set("url", X_SHARE_SITE);
     }
     const url = `https://x.com/intent/post?${params.toString()}`;
     const win = window.open(url, "_blank", "noopener,noreferrer");
@@ -700,9 +718,8 @@ export function createViewportVideoRecorder({
       const file = new File([blob], `render3d-video.${ext}`, {
         type: blob.type || (ext === "mov" ? "video/quicktime" : "video/mp4"),
       });
-      const shareText = text || "Built on Render Studio";
-      const withLink = /render3d\.app/i.test(shareText) ? shareText : `${shareText}\nhttps://render3d.app`;
-      const payload = { files: [file], text: withLink, title: "Built on Render Studio" };
+      const shareText = normalizeXShareCaption(text);
+      const payload = { files: [file], text: shareText, title: "Render Studio" };
       if (navigator.canShare && !navigator.canShare(payload)) return false;
       await navigator.share(payload);
       return true;
@@ -750,7 +767,9 @@ export function createViewportVideoRecorder({
       setShareStatus("Nothing to post yet.", true);
       return;
     }
-    const text = shareModalEl?.querySelector("[data-video-share-text]")?.value?.trim() || "Built on Render Studio";
+    const text = normalizeXShareCaption(
+      shareModalEl?.querySelector("[data-video-share-text]")?.value,
+    );
     const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
     if (postBtn) postBtn.disabled = true;
     try {
@@ -801,7 +820,18 @@ export function createViewportVideoRecorder({
       preview.volume = 1;
     }
     const text = modal.querySelector("[data-video-share-text]");
-    if (text && !text.value) text.value = "Built on Render Studio";
+    if (text) {
+      if (!String(text.value || "").trim() || String(text.value || "").trim() === X_SHARE_ATTRIBUTION) {
+        text.value = X_SHARE_DEFAULT;
+      }
+      // Cursor at the top so typing goes above the blank line + attribution.
+      requestAnimationFrame(() => {
+        try {
+          text.focus();
+          text.setSelectionRange(0, 0);
+        } catch (_) {}
+      });
+    }
     setShareStatus(append ? "3D take added to timeline." : "");
     modal.classList.remove("hidden");
     await refreshXStatus();
