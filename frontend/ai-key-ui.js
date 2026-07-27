@@ -489,7 +489,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
 
     let body = "";
     if (balance <= 0) {
-      body = `<p class="ai-keys-empty">Buy Studio credits to unlock the Render3D key (OpenAI, Anthropic, or Kimi) — no personal API key required.</p>`;
+      body = `<p class="ai-keys-empty">Buy Studio credits to unlock the temporary Render3D Key (OpenAI, Anthropic, or Kimi) — no personal API key required. It disappears again when credits run out.</p>`;
     } else {
       const available = rows.filter((row) => row.live);
       const current = available.find((row) => row.id === preferred) || available[0];
@@ -527,7 +527,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
       <div class="ai-keys-section-label">
         <span>Render3D Key</span>
       </div>
-      <p class="ai-keys-section-hint">Anyone with Studio credits can use the shared OpenAI and Anthropic keys you offer — pick a provider, then a model.</p>
+      <p class="ai-keys-section-hint">Temporary while you have Studio credits — use Render3D’s shared OpenAI, Anthropic, or Kimi keys. The key disappears when your balance hits $0; buy more credits to bring it back.</p>
       ${body}
     `;
   }
