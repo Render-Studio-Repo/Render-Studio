@@ -74,7 +74,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-video-upload";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-local-share";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -10511,13 +10511,17 @@ function captureObjectTransform(obj) {
 function syncExplodedModeUi() {
   const main = document.getElementById("btn-exploded-viewport");
   const menu = document.getElementById("viewport-exploded-menu");
+  const rotateBadge = main?.querySelector("[data-exploded-rotate-badge]");
+  const rotateExplodedOn = viewportOrbitMode === "exploded";
   main?.classList.toggle("active", explodedViewEnabled);
+  main?.classList.toggle("is-orbiting", rotateExplodedOn);
   main?.setAttribute("aria-pressed", String(explodedViewEnabled));
+  rotateBadge?.classList.toggle("hidden", !rotateExplodedOn);
   if (main) {
     if (viewportOrbitMode === "assembled") {
       main.title = "Exploded view off — camera orbiting assembled model. Use ▾ to change.";
     } else if (explodedViewEnabled) {
-      main.title = viewportOrbitMode === "exploded"
+      main.title = rotateExplodedOn
         ? "Exploded view on — camera orbiting. Use ▾ to stop rotate."
         : "Exploded view on — use ▾ to enable rotate.";
     } else {
@@ -19440,6 +19444,20 @@ document.querySelectorAll("[data-mobile-corner]").forEach((btn) => {
     ]);
   });
 });
+
+window.Render3DMobileStudio = {
+  openLeftPanel: openMobileLeftPanel,
+  openRightPanel: openMobileRightPanel,
+  openAiPanel: () => {
+    showAiComposePanel();
+    openMobileRightPanel(workspaceModes?.isWiring?.() ? "wiring" : "prompt");
+  },
+  openDesignTab: openMobileDesignTab,
+  openModelPicker: () => openMobileModelPicker?.(),
+  triggerUpload: triggerMobileUpload,
+  closePanels: closeMobilePanels,
+  openAccountMenu: openMobileAccountMenu,
+};
 
 document.querySelector("[data-mobile-sheet-close]")?.addEventListener("click", closeMobilePanels);
 document.getElementById("mobile-panel-close")?.addEventListener("click", closeMobilePanels);
@@ -28873,6 +28891,7 @@ window.addEventListener("keydown", (e) => {
     api,
     onUserMenuOpen: () => {
       void refreshWorkspaceAiUsage();
+      void refreshAccountAuthorizedAppStatus();
     },
     onReady: async (data) => {
       currentUser = data.user;
@@ -30411,6 +30430,146 @@ window.addEventListener("keydown", (e) => {
     });
   }
 
+  const X_CORP_LOGO_HTML = `<img src="/assets/brands/x-corp.svg?v=20260727-x" width="16" height="16" alt="" />`;
+
+  function setAccountAppConnectionStatus(provider, { connected = false, label = "", detail = "" } = {}) {
+    const row = document.querySelector(`[data-cloud-row="${provider}"]`);
+    const statusEl = document.getElementById(`${provider === "x" ? "x" : provider}-connection-status`);
+    if (row) row.classList.toggle("is-connected", !!connected);
+    if (statusEl) statusEl.textContent = detail || (connected ? (label || "Connected") : "Click to connect");
+  }
+
+  async function refreshAccountAuthorizedAppStatus() {
+    if (!currentUser) {
+      setAccountAppConnectionStatus("x", { connected: false, detail: "Sign in to connect" });
+      setAccountAppConnectionStatus("discord", { connected: false, detail: "Sign in to connect" });
+      return;
+    }
+    const [twitter, discord] = await Promise.all([
+      api("/api/integrations/twitter/status").catch((err) => ({ error: err.message || "Could not load X status." })),
+      api("/api/integrations/discord/status").catch((err) => ({ error: err.message || "Could not load Discord status." })),
+    ]);
+    const twAccount = twitter?.account || {};
+    const twHandle = twAccount.username || twAccount.display_name || "";
+    if (twitter?.error) {
+      setAccountAppConnectionStatus("x", { connected: false, detail: twitter.error });
+    } else if (twitter?.connected) {
+      setAccountAppConnectionStatus("x", {
+        connected: true,
+        detail: twHandle ? `Connected · @${twHandle}` : "Connected",
+      });
+    } else if (twitter?.configured) {
+      setAccountAppConnectionStatus("x", { connected: false, detail: "Click to connect" });
+    } else {
+      setAccountAppConnectionStatus("x", { connected: false, detail: "Setup needed on server" });
+    }
+
+    const dcAccount = discord?.account || {};
+    const dcHandle = dcAccount.handle || dcAccount.display_name || "";
+    if (discord?.error) {
+      setAccountAppConnectionStatus("discord", { connected: false, detail: discord.error });
+    } else if (discord?.connected) {
+      setAccountAppConnectionStatus("discord", {
+        connected: true,
+        detail: dcHandle ? `Connected · @${dcHandle}` : "Connected",
+      });
+    } else if (discord?.configured) {
+      setAccountAppConnectionStatus("discord", { connected: false, detail: "Click to connect" });
+    } else {
+      setAccountAppConnectionStatus("discord", { connected: false, detail: "Setup needed on server" });
+    }
+  }
+
+  async function connectXAccount({ onStatus } = {}) {
+    const note = (kind, message) => {
+      if (typeof onStatus === "function") onStatus(kind, message);
+      else setEditStatus(kind, message);
+    };
+    note("ok", "Opening X authorization...");
+    const data = await api("/api/integrations/twitter/link-url", { method: "POST" });
+    if (!data?.url) throw new Error("X authorization URL was not returned.");
+    const mode = String(data.mode || "redirect").toLowerCase();
+    const width = 560;
+    const height = 720;
+    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+    const popup = window.open(
+      data.url,
+      "render3d-twitter-connect",
+      `popup=yes,width=${width},height=${height},left=${left},top=${top}`,
+    );
+    if (!popup) throw new Error("Popup blocked — allow popups for Render3D.");
+    if (mode === "oob") {
+      const pin = await askAuthorizedAppXPin();
+      try { popup.close(); } catch (_) {}
+      if (!pin) {
+        note("error", "Connect cancelled — no PIN entered.");
+        return false;
+      }
+      note("ok", "Finishing X connect…");
+      await api("/api/integrations/twitter/link-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: data.state, pin }),
+      });
+      note("ok", "X connected.");
+      return true;
+    }
+    await new Promise((resolve) => {
+      const onMessage = (event) => {
+        if (event.origin !== window.location.origin) return;
+        if (!event.data || event.data.type !== "render3d:oauth-done") return;
+        if (!["twitter", "x"].includes(String(event.data.provider || "").toLowerCase())) return;
+        window.removeEventListener("message", onMessage);
+        window.clearInterval(timer);
+        resolve(event.data);
+      };
+      window.addEventListener("message", onMessage);
+      const timer = window.setInterval(() => {
+        if (!popup.closed) return;
+        window.clearInterval(timer);
+        window.removeEventListener("message", onMessage);
+        resolve(null);
+      }, 800);
+      window.setTimeout(() => {
+        window.clearInterval(timer);
+        window.removeEventListener("message", onMessage);
+        resolve(null);
+      }, 10 * 60 * 1000);
+    });
+    note("ok", "X connect finished — refresh if status didn’t update.");
+    return true;
+  }
+
+  async function unlinkXAccount({ onStatus } = {}) {
+    const note = (kind, message) => {
+      if (typeof onStatus === "function") onStatus(kind, message);
+      else setEditStatus(kind, message);
+    };
+    await api("/api/integrations/twitter/link", { method: "DELETE" });
+    note("ok", "X unlinked.");
+  }
+
+  async function connectDiscordAccount({ onStatus } = {}) {
+    const note = (kind, message) => {
+      if (typeof onStatus === "function") onStatus(kind, message);
+      else setEditStatus(kind, message);
+    };
+    note("ok", "Opening Discord authorization...");
+    const data = await api("/api/integrations/discord/link-url", { method: "POST" });
+    if (!data?.url) throw new Error("Discord authorization URL was not returned.");
+    window.location.href = data.url;
+  }
+
+  async function unlinkDiscordAccount({ onStatus } = {}) {
+    const note = (kind, message) => {
+      if (typeof onStatus === "function") onStatus(kind, message);
+      else setEditStatus(kind, message);
+    };
+    await api("/api/integrations/discord/link", { method: "DELETE" });
+    note("ok", "Discord unlinked.");
+  }
+
   async function hydrateAuthorizedApps(panel = document.getElementById("profile-preferences-panel")) {
     const host = panel?.querySelector("#pref-authorized-apps-list");
     if (!host) return;
@@ -30450,9 +30609,9 @@ window.addEventListener("keydown", (e) => {
       const twitterDetail = twitter?.error
         ? twitter.error
         : twitterReady
-          ? `Post viewport videos as ${twitterHandle ? `@${twitterHandle}` : "this X account"}`
+          ? `Share clips & screenshots as ${twitterHandle ? `@${twitterHandle}` : "this X account"}`
           : twitterConfigured
-            ? "Share viewport recordings to your X timeline"
+            ? "Connect your X Corp account to share from Render3D"
             : "Server needs an X developer app (TWITTER_CLIENT_ID / SECRET)";
       const rows = [
         {
@@ -30483,24 +30642,24 @@ window.addEventListener("keydown", (e) => {
           cta: details.phantom?.wallet_address ? "Reconnect" : "Connect",
         },
         {
+          key: "twitter",
+          label: "X",
+          iconHtml: X_CORP_LOGO_HTML,
+          detail: twitterDetail,
+          connected: twitterReady,
+          action: twitterReady ? "unlink-twitter" : "connect-twitter",
+          cta: twitterReady ? "Unlink" : twitterConfigured ? "Connect" : "Setup needed",
+          disabled: !!twitter?.error || (!twitterReady && !twitterConfigured),
+        },
+        {
           key: "discord",
           label: "Discord",
           iconHtml: `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M19.54 5.33A16.7 16.7 0 0 0 15.42 4l-.2.39a12.3 12.3 0 0 1 3.63 1.82 13.55 13.55 0 0 0-4.38-1.31 13.82 13.82 0 0 0-4.95 0 13.55 13.55 0 0 0-4.38 1.31 12.3 12.3 0 0 1 3.63-1.82L8.58 4a16.7 16.7 0 0 0-4.12 1.33C1.85 9.21 1.14 13 1.5 16.73A16.56 16.56 0 0 0 6.55 19.3l.61-.84a10.82 10.82 0 0 1-1.92-.92l.47-.36a11.9 11.9 0 0 0 12.58 0l.47.36a10.82 10.82 0 0 1-1.92.92l.61.84a16.56 16.56 0 0 0 5.05-2.57c.43-4.34-.73-8.09-2.96-11.4ZM8.35 14.33c-.78 0-1.42-.72-1.42-1.6 0-.89.63-1.61 1.42-1.61.8 0 1.44.72 1.42 1.61 0 .88-.63 1.6-1.42 1.6Zm7.3 0c-.78 0-1.42-.72-1.42-1.6 0-.89.63-1.61 1.42-1.61.8 0 1.44.72 1.42 1.61 0 .88-.63 1.6-1.42 1.6Z"/></svg>`,
           detail: discordDetail,
           connected: discordReady,
           action: discordReady ? "unlink-discord" : "connect-discord",
-          cta: discordReady ? "Unlink" : discordConfigured ? "Link" : "Setup needed",
+          cta: discordReady ? "Unlink" : discordConfigured ? "Connect" : "Setup needed",
           disabled: !!discord?.error || (!discordReady && !discordConfigured),
-        },
-        {
-          key: "twitter",
-          label: "X",
-          iconHtml: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
-          detail: twitterDetail,
-          connected: twitterReady,
-          action: twitterReady ? "unlink-twitter" : "connect-twitter",
-          cta: twitterReady ? "Unlink" : twitterConfigured ? "Link" : "Setup needed",
-          disabled: !!twitter?.error || (!twitterReady && !twitterConfigured),
         },
         {
           key: "google-drive",
@@ -30525,6 +30684,7 @@ window.addEventListener("keydown", (e) => {
           <button type="button" class="btn secondary btn-compact" data-authorized-app-action="${appEscapeHtml(row.action)}" ${row.disabled ? "disabled" : ""}>${appEscapeHtml(row.cta)}</button>
         </article>
       `).join("");
+      void refreshAccountAuthorizedAppStatus();
     } catch (err) {
       host.innerHTML = `<p class="muted small">Could not load authorized apps: ${appEscapeHtml(err.message || "error")}</p>`;
     }
@@ -30758,7 +30918,7 @@ window.addEventListener("keydown", (e) => {
                   <b>CAD & files</b><small>Fusion, edits, workspace defaults</small>
                 </button>
                 <button type="button" data-preferences-advanced-tab="authorized" class="${preferencesAdvancedTab === "authorized" ? "active" : ""}">
-                  <b>Authorized apps</b><small>Payouts, Discord, Drive backups</small>
+                  <b>Authorized apps</b><small>X, Discord, payouts, Drive</small>
                 </button>
                 <button type="button" data-preferences-advanced-tab="store" class="${preferencesAdvancedTab === "store" ? "active" : ""}">
                   <b>Store</b><small>Public shop, pricing, publish models</small>
@@ -30866,7 +31026,7 @@ window.addEventListener("keydown", (e) => {
               </article>
               <article class="profile-preferences-category profile-preferences-category--authorized ${preferencesAdvancedTab === "authorized" ? "" : "hidden"}" data-preferences-advanced-panel="authorized">
                 <h3>Authorized apps</h3>
-                <p class="muted small profile-preferences-note">Connected payout providers, marketplace account links, notification integrations, and backup storage.</p>
+                <p class="muted small profile-preferences-note">Connect X (X Corp), Discord, payout providers, and backup storage used by Render3D.</p>
                 <div class="profile-backup-storage-card">
                   <span class="profile-backup-storage-orb" aria-hidden="true"></span>
                   <span>
@@ -30995,6 +31155,53 @@ window.addEventListener("keydown", (e) => {
   syncQuestTrackingToggles();
   document.getElementById("btn-auth")?.addEventListener("click", () => {
     window.setTimeout(syncQuestTrackingToggles, 0);
+    window.setTimeout(() => { void refreshAccountAuthorizedAppStatus(); }, 0);
+  });
+
+  document.getElementById("btn-x-connect")?.addEventListener("click", () => {
+    void (async () => {
+      const btn = document.getElementById("btn-x-connect");
+      try {
+        if (btn) btn.disabled = true;
+        const status = await api("/api/integrations/twitter/status").catch(() => null);
+        if (status?.connected) {
+          const ok = window.confirm("Unlink your X account from Render3D?");
+          if (!ok) return;
+          await unlinkXAccount();
+        } else {
+          await connectXAccount();
+        }
+        await refreshAccountAuthorizedAppStatus();
+        await hydrateAuthorizedApps(document.getElementById("profile-preferences-panel"));
+      } catch (err) {
+        setEditStatus("error", err?.message || "Could not update X connection.");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    })();
+  });
+
+  document.getElementById("btn-discord-connect")?.addEventListener("click", () => {
+    void (async () => {
+      const btn = document.getElementById("btn-discord-connect");
+      try {
+        if (btn) btn.disabled = true;
+        const status = await api("/api/integrations/discord/status").catch(() => null);
+        if (status?.connected) {
+          const ok = window.confirm("Unlink your Discord account from Render3D?");
+          if (!ok) return;
+          await unlinkDiscordAccount();
+          await refreshAccountAuthorizedAppStatus();
+          await hydrateAuthorizedApps(document.getElementById("profile-preferences-panel"));
+          return;
+        }
+        await connectDiscordAccount();
+      } catch (err) {
+        setEditStatus("error", err?.message || "Could not update Discord connection.");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    })();
   });
 
   document.getElementById("profile-preferences-panel")?.addEventListener("change", (e) => {
@@ -31129,81 +31336,25 @@ window.addEventListener("keydown", (e) => {
         try {
           appAction.disabled = true;
           if (action === "connect-discord") {
-            setEditStatus("ok", "Opening Discord authorization...");
-            const data = await api("/api/integrations/discord/link-url", { method: "POST" });
-            if (!data?.url) throw new Error("Discord authorization URL was not returned.");
-            window.location.href = data.url;
+            await connectDiscordAccount();
             return;
           }
           if (action === "unlink-discord") {
-            await api("/api/integrations/discord/link", { method: "DELETE" });
-            setEditStatus("ok", "Discord unlinked.");
+            await unlinkDiscordAccount();
             await hydrateAuthorizedApps(panel);
+            await refreshAccountAuthorizedAppStatus();
             return;
           }
           if (action === "connect-twitter") {
-            setEditStatus("ok", "Opening X authorization...");
-            const data = await api("/api/integrations/twitter/link-url", { method: "POST" });
-            if (!data?.url) throw new Error("X authorization URL was not returned.");
-            const mode = String(data.mode || "redirect").toLowerCase();
-            const width = 560;
-            const height = 720;
-            const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
-            const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
-            const popup = window.open(
-              data.url,
-              "render3d-twitter-connect",
-              `popup=yes,width=${width},height=${height},left=${left},top=${top}`,
-            );
-            if (!popup) throw new Error("Popup blocked — allow popups for Render3D.");
-            if (mode === "oob") {
-              const pin = await askAuthorizedAppXPin();
-              try { popup.close(); } catch (_) {}
-              if (!pin) {
-                setEditStatus("error", "Connect cancelled — no PIN entered.");
-                return;
-              }
-              setEditStatus("ok", "Finishing X connect…");
-              await api("/api/integrations/twitter/link-pin", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ state: data.state, pin }),
-              });
-              setEditStatus("ok", "X connected.");
-              await hydrateAuthorizedApps(panel);
-              return;
-            }
-            // Web redirect apps: wait for popup callback.
-            await new Promise((resolve) => {
-              const onMessage = (event) => {
-                if (event.origin !== window.location.origin) return;
-                if (!event.data || event.data.type !== "render3d:oauth-done") return;
-                if (!["twitter", "x"].includes(String(event.data.provider || "").toLowerCase())) return;
-                window.removeEventListener("message", onMessage);
-                window.clearInterval(timer);
-                resolve(event.data);
-              };
-              window.addEventListener("message", onMessage);
-              const timer = window.setInterval(() => {
-                if (!popup.closed) return;
-                window.clearInterval(timer);
-                window.removeEventListener("message", onMessage);
-                resolve(null);
-              }, 800);
-              window.setTimeout(() => {
-                window.clearInterval(timer);
-                window.removeEventListener("message", onMessage);
-                resolve(null);
-              }, 10 * 60 * 1000);
-            });
-            setEditStatus("ok", "X connect finished — refresh if status didn’t update.");
+            await connectXAccount();
             await hydrateAuthorizedApps(panel);
+            await refreshAccountAuthorizedAppStatus();
             return;
           }
           if (action === "unlink-twitter") {
-            await api("/api/integrations/twitter/link", { method: "DELETE" });
-            setEditStatus("ok", "X unlinked.");
+            await unlinkXAccount();
             await hydrateAuthorizedApps(panel);
+            await refreshAccountAuthorizedAppStatus();
             return;
           }
           if (action === "connect-google-drive") {

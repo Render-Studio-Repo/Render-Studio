@@ -456,10 +456,11 @@ export function createViewportVideoRecorder({
   async function refreshXStatus() {
     const connectBtn = shareModalEl?.querySelector("[data-video-share-connect-x]");
     const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
+    // Local Share to X (compose + attach) never needs the API.
+    if (postBtn) postBtn.disabled = false;
     if (!api) {
-      setXStatus("Sign in to connect X.");
+      setXStatus("Share to X opens compose with your caption and saves the clip for you to attach.");
       if (connectBtn) connectBtn.disabled = true;
-      if (postBtn) postBtn.disabled = true;
       return { connected: false };
     }
     try {
@@ -467,28 +468,26 @@ export function createViewportVideoRecorder({
       const connected = !!data?.connected;
       const handle = data?.account?.username ? `@${data.account.username}` : "";
       if (!data?.configured) {
-        setXStatus("X isn’t set up on this server yet (missing TWITTER_CLIENT_ID / SECRET). Download the clip for now.");
+        setXStatus("Share to X opens compose + saves the clip — attach it with X’s media button.");
         if (connectBtn) connectBtn.disabled = true;
-        if (postBtn) postBtn.disabled = true;
       } else if (connected) {
-        setXStatus(`Connected as ${handle || "X account"}.`);
+        setXStatus(
+          `Connected as ${handle || "X account"}. Share to X uses compose + attach (API media needs paid X credits).`,
+        );
         if (connectBtn) {
           connectBtn.textContent = "Reconnect X";
           connectBtn.disabled = false;
         }
-        if (postBtn) postBtn.disabled = false;
       } else {
-        setXStatus("Connect X to post this clip from Render3D.");
+        setXStatus("Share to X opens compose with your caption and saves the clip for you to attach.");
         if (connectBtn) {
           connectBtn.textContent = "Connect X";
           connectBtn.disabled = false;
         }
-        if (postBtn) postBtn.disabled = true;
       }
       return data;
     } catch (err) {
-      setXStatus(err?.message || "Could not load X status.");
-      if (postBtn) postBtn.disabled = true;
+      setXStatus("Share to X opens compose + saves the clip — attach it with X’s media button.");
       return { connected: false };
     }
   }
@@ -679,6 +678,25 @@ export function createViewportVideoRecorder({
     }
   }
 
+  async function shareViaComposeAttach(blob, text) {
+    // No site can inject a file into x.com's compose box. On phones, the OS
+    // share sheet can hand the video to the X app. On desktop, we open compose
+    // with the caption and save the clip so the user attaches it in one click.
+    const shared = await shareVideoViaWebShare(blob, text);
+    if (shared) {
+      setShareStatus("Pick X in the share sheet — the video goes with the post.");
+      setStatus(true, "Shared viewport video.");
+      return true;
+    }
+    openXCompose(text);
+    downloadShareBlob(blob);
+    setShareStatus(
+      "X compose is open with your caption. The clip just saved to Downloads — in X, click the media button and pick that file.",
+    );
+    setStatus(true, "Opened X compose — attach the downloaded clip.");
+    return false;
+  }
+
   async function postToX() {
     const blob = await resolveShareBlob();
     if (!blob) {
@@ -688,61 +706,15 @@ export function createViewportVideoRecorder({
     const text = shareModalEl?.querySelector("[data-video-share-text]")?.value?.trim() || "Made in Render3D";
     const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
     if (postBtn) postBtn.disabled = true;
-
-    // Prefer the connected-account API upload so the video is attached to the tweet.
-    // Only fall back to compose/share-sheet when X is not linked.
     try {
-      const status = await refreshXStatus();
-      const connected = !!status?.connected;
-      if (!connected || !api) {
-        setShareStatus("Connect X to upload the video with your caption, or use the share sheet…");
-        const shared = await shareVideoViaWebShare(blob, text);
-        if (shared) {
-          setShareStatus("Shared via your device share sheet.");
-          setStatus(true, "Shared viewport video.");
-          return;
-        }
-        openXCompose(text);
-        downloadShareBlob(blob);
-        setShareStatus("Opened X compose with your caption — attach the downloaded clip (Connect X to auto-upload).", true);
-        return;
-      }
-
-      setShareStatus("Uploading to X… this can take a minute for longer clips.");
-      const form = new FormData();
-      const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
-      form.append("video", blob, `render3d-video.${ext}`);
-      form.append("text", text);
-      const headers = {};
-      const token = getToken?.();
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch("/api/integrations/twitter/post-video", {
-        method: "POST",
-        headers,
-        body: form,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const detail = data?.detail || data?.message || res.statusText || "Post failed.";
-        if (res.status === 401) {
-          setShareStatus(String(detail), true);
-          await refreshXStatus();
-          return;
-        }
-        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
-      }
-      setShareStatus(data?.url ? `Posted — ${data.url}` : "Posted to X with video.");
-      setStatus(true, "Shared viewport video to X.");
-      if (data?.url) {
-        try {
-          window.open(data.url, "_blank", "noopener");
-        } catch (_) {}
-      }
+      // Skip X API media upload — it needs paid developer credits and was
+      // showing "Uploading…" then silently falling back to a download.
+      setShareStatus("Opening X with your caption…");
+      await shareViaComposeAttach(blob, text);
     } catch (err) {
-      setShareStatus(err?.message || "Could not post to X.", true);
+      setShareStatus(err?.message || "Could not open X.", true);
     } finally {
       if (postBtn) postBtn.disabled = false;
-      await refreshXStatus();
     }
   }
 

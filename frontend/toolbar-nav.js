@@ -72,7 +72,13 @@ function enhanceNav(nav) {
 
   toggle.addEventListener("click", (e) => {
     e.stopPropagation();
-    setOpen(!nav.classList.contains("is-open"));
+    const willOpen = !nav.classList.contains("is-open");
+    setOpen(willOpen);
+    if (willOpen) window.Render3DMobileChrome?.closeMobileToolsPopup?.();
+  });
+
+  menu.addEventListener("click", (e) => {
+    if (e.target?.closest?.("a.nav-tab")) setOpen(false);
   });
 
   document.addEventListener("click", (e) => {

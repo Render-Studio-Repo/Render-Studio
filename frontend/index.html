@@ -27,7 +27,8 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260727-x-pin-ui" />
+  <link rel="stylesheet" href="/styles.css?v=20260727-exploded-rotate-badge" />
+  <link rel="stylesheet" href="/mobile-app-chrome.css?v=20260727-mobile-chrome" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/fusion-unlink-howto.css?v=20260725-break" />
   <link rel="stylesheet" href="/studio-boot-robot.css?v=20260715-arm-start-higher" />
@@ -572,6 +573,30 @@
               </div>
             </button>
           </div>
+          <div id="authorized-apps-card" class="cloud-connections-card authorized-apps-card">
+            <div class="cloud-connections-head">
+              <span>Authorized apps</span>
+              <small>Share clips and alerts from your accounts</small>
+            </div>
+            <button type="button" id="btn-x-connect" class="cloud-connection-row" data-cloud-row="x" aria-label="Connect X">
+              <span class="cloud-connection-icon cloud-connection-icon--x" aria-hidden="true">
+                <img src="/assets/brands/x-corp.svg?v=20260727-x" width="18" height="18" alt="" />
+              </span>
+              <div>
+                <strong>X</strong>
+                <small id="x-connection-status">Click to connect</small>
+              </div>
+            </button>
+            <button type="button" id="btn-discord-connect" class="cloud-connection-row" data-cloud-row="discord" aria-label="Connect Discord">
+              <span class="cloud-connection-icon cloud-connection-icon--discord" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M19.54 5.33A16.7 16.7 0 0 0 15.42 4l-.2.39a12.3 12.3 0 0 1 3.63 1.82 13.55 13.55 0 0 0-4.38-1.31 13.82 13.82 0 0 0-4.95 0 13.55 13.55 0 0 0-4.38 1.31 12.3 12.3 0 0 1 3.63-1.82L8.58 4a16.7 16.7 0 0 0-4.12 1.33C1.85 9.21 1.14 13 1.5 16.73A16.56 16.56 0 0 0 6.55 19.3l.61-.84a10.82 10.82 0 0 1-1.92-.92l.47-.36a11.9 11.9 0 0 0 12.58 0l.47.36a10.82 10.82 0 0 1-1.92.92l.61.84a16.56 16.56 0 0 0 5.05-2.57c.43-4.34-.73-8.09-2.96-11.4ZM8.35 14.33c-.78 0-1.42-.72-1.42-1.6 0-.89.63-1.61 1.42-1.61.8 0 1.44.72 1.42 1.61 0 .88-.63 1.6-1.42 1.6Zm7.3 0c-.78 0-1.42-.72-1.42-1.6 0-.89.63-1.61 1.42-1.61.8 0 1.44.72 1.42 1.61 0 .88-.63 1.6-1.42 1.6Z"/></svg>
+              </span>
+              <div>
+                <strong>Discord</strong>
+                <small id="discord-connection-status">Click to connect</small>
+              </div>
+            </button>
+          </div>
           <div class="user-menu-section">
             <div class="user-menu-section-head">
               <span>AI &amp; billing</span>
@@ -989,7 +1014,16 @@
             </div>
           </div>
           <div class="viewport-transparent-control viewport-exploded-control">
-            <button type="button" id="btn-exploded-viewport" class="viewport-view-btn" title="Exploded view — space parts apart for BOM review" aria-pressed="false">Exploded</button>
+            <button type="button" id="btn-exploded-viewport" class="viewport-view-btn" title="Exploded view — space parts apart for BOM review" aria-pressed="false">
+              <span class="viewport-exploded-rotate-badge hidden" data-exploded-rotate-badge aria-hidden="true" title="Rotate exploded">
+                <svg viewBox="0 0 16 16" width="11" height="11" focusable="false">
+                  <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+                    d="M13.2 8A5.2 5.2 0 1 1 11.7 4.2" />
+                  <path fill="currentColor" d="M11.1 2.2h3.1v3.1h-1V3.2h-2.1z" />
+                </svg>
+              </span>
+              Exploded
+            </button>
             <button type="button" id="btn-exploded-options" class="viewport-view-btn viewport-transparent-options" aria-haspopup="menu" aria-expanded="false" aria-controls="viewport-exploded-menu" title="Exploded options">▾</button>
             <div id="viewport-exploded-menu" class="viewport-transparent-menu hidden" role="menu" aria-label="Exploded options">
               <button type="button" data-viewport-orbit="off" role="menuitem">
@@ -2985,11 +3019,11 @@
       <div id="architect-library-grid" class="architect-library-grid"></div>
     </div>
   </div>
-  <script type="module" src="/toolbar-nav.js?v=20260715-navbar-visible-actions"></script>
-  <script type="module" src="/mobile-app-chrome.js?v=20260715-mobile-app"></script>
+  <script type="module" src="/toolbar-nav.js?v=20260727-mobile-chrome"></script>
+  <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260727-x-video-upload"></script>
+  <script type="module" src="/app.js?v=20260727-exploded-rotate-badge"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

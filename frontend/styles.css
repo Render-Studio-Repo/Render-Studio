@@ -8757,12 +8757,12 @@ body.canvas-design-tab .main-column {
     display: none;
   }
 
-  .mobile-showcase-bar {
-    display: flex;
-  }
-
-  .mobile-corner-launchers {
-    display: block;
+  /* Legacy corner FABs + showcase bar — retired; menu + tools FAB replace them */
+  .mobile-showcase-bar,
+  .mobile-showcase-bar[hidden],
+  .mobile-corner-launchers,
+  .mobile-corner-launchers[hidden] {
+    display: none !important;
   }
 
   .mobile-corner-sheet:not(.hidden) {
@@ -8886,53 +8886,19 @@ body.canvas-design-tab .main-column {
     display: block;
   }
 
-  /* Clear the 4 corner launchers — no overlap with cube / tools / spinner */
-  .mobile-corner-btn {
-    width: 46px;
-    height: 46px;
-    border-radius: 15px;
-    font-size: 0.88rem;
-    font-weight: 800;
-    border-color: rgba(139, 148, 158, 0.42);
-    background: rgba(13, 17, 23, 0.78);
-    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    letter-spacing: 0.01em;
-  }
-
-  .mobile-corner-btn--tl {
-    top: max(10px, env(safe-area-inset-top, 0px));
-    left: max(10px, env(safe-area-inset-left, 0px));
-  }
-
-  .mobile-corner-btn--tr {
-    top: max(10px, env(safe-area-inset-top, 0px));
-    right: max(10px, env(safe-area-inset-right, 0px));
-  }
-
-  .mobile-corner-btn--br {
-    right: max(10px, env(safe-area-inset-right, 0px));
-    bottom: max(12px, env(safe-area-inset-bottom, 0px));
-  }
-
-  .mobile-corner-btn--bl {
-    left: max(10px, env(safe-area-inset-left, 0px));
-    bottom: max(12px, env(safe-area-inset-bottom, 0px));
-  }
-
+  /* Clear the retired corner FABs — keep cube/tools under the slim header only */
   .view-cube {
-    top: calc(max(10px, env(safe-area-inset-top, 0px)) + 46px + 10px);
+    top: max(10px, env(safe-area-inset-top, 0px));
     right: max(8px, env(safe-area-inset-right, 0px));
     width: 92px;
     height: 104px;
-    transform: scale(0.78);
+    transform: scale(0.72);
     transform-origin: top right;
     z-index: 18;
   }
 
   .viewport-corner-tools {
-    top: calc(max(10px, env(safe-area-inset-top, 0px)) + 46px + 10px + 108px);
+    top: calc(max(10px, env(safe-area-inset-top, 0px)) + 92px);
     right: max(8px, env(safe-area-inset-right, 0px));
     z-index: 18;
   }
@@ -10705,6 +10671,46 @@ label.btn { display: inline-flex; align-items: center; }
   gap: 2px;
 }
 
+#btn-exploded-viewport {
+  position: relative;
+  padding-right: 18px;
+}
+
+.viewport-exploded-rotate-badge {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  color: #58a6ff;
+  background: rgba(13, 17, 23, 0.82);
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.35);
+  pointer-events: none;
+  animation: viewport-exploded-rotate-spin 2.4s linear infinite;
+}
+
+.viewport-exploded-rotate-badge.hidden {
+  display: none;
+}
+
+.viewport-exploded-rotate-badge svg {
+  display: block;
+}
+
+@keyframes viewport-exploded-rotate-spin {
+  to { transform: rotate(360deg); }
+}
+
+body.theme-light .viewport-exploded-rotate-badge {
+  color: #0969da;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(9, 105, 218, 0.28);
+}
+
 .viewport-transparent-control .viewport-view-btn:first-child {
   border-top-right-radius: 7px;
   border-bottom-right-radius: 7px;
@@ -12451,8 +12457,9 @@ body.mobile-sheet-open {
 }
 
 @media (max-width: 820px), (pointer: coarse) and (max-width: 1024px) {
-  .mobile-corner-launchers {
-    display: block;
+  .mobile-corner-launchers,
+  .mobile-corner-launchers[hidden] {
+    display: none !important;
   }
 
   .mobile-corner-sheet:not(.hidden) {
@@ -23523,6 +23530,28 @@ body.theme-light .quest-book-btn-text small {
 
 .cloud-connection-icon--fusion {
   background: rgba(255, 111, 0, 0.08);
+}
+
+.cloud-connection-icon--x {
+  background: #000;
+  color: #fff;
+}
+
+.cloud-connection-icon--discord {
+  background: #5865f2;
+  color: #fff;
+}
+
+.authorized-apps-card {
+  margin-top: 8px;
+}
+
+.cloud-connection-row.is-connected .cloud-connection-icon--x {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.cloud-connection-row.is-connected .cloud-connection-icon--discord {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
 .cloud-connection-row strong,
@@ -39875,6 +39904,14 @@ body.gs-agent-open .updates-page {
 .authorized-app-row--twitter .authorized-app-icon {
   background: #000;
   color: #fff;
+  min-width: 34px;
+  padding: 0;
+}
+
+.authorized-app-row--twitter .authorized-app-icon img {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 
 .authorized-app-row--discord .authorized-app-icon {

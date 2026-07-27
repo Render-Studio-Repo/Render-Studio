@@ -1,6 +1,5 @@
 /**
- * App-like mobile chrome: lock page zoom/scale and keep the shell fixed.
- * Studio action wiring lives in app.js (uses existing mobile panel helpers).
+ * App-like mobile chrome: lock page zoom/scale, slim header, and wire Menu tiles.
  */
 
 const MOBILE_MQ = window.matchMedia?.("(max-width: 820px), (pointer: coarse) and (max-width: 1024px)");
@@ -14,7 +13,6 @@ function syncMobileAppLock() {
   document.documentElement.classList.toggle("mobile-app-locked", on);
   document.body.classList.toggle("mobile-app-shell", on);
   if (on) {
-    // Re-assert viewport on soft navigations / iOS gesture recovery.
     const meta = document.querySelector('meta[name="viewport"]');
     if (meta) {
       meta.setAttribute(
@@ -22,13 +20,6 @@ function syncMobileAppLock() {
         "width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover"
       );
     }
-  }
-}
-
-function preventPageZoom(e) {
-  if (!isMobileShell()) return;
-  if (e.touches?.length > 1) {
-    e.preventDefault();
   }
 }
 
@@ -62,6 +53,61 @@ export function closeMobileToolsPopup() {
   setMobileToolsPopupOpen(false);
 }
 
+function studioBridge() {
+  return window.Render3DMobileStudio || null;
+}
+
+function runMobileAppAction(action) {
+  const bridge = studioBridge();
+  closeToolbarNavMenu();
+  closeMobileToolsPopup();
+
+  switch (action) {
+    case "explorer":
+      bridge?.openLeftPanel?.();
+      break;
+    case "ai":
+      bridge?.openAiPanel?.();
+      break;
+    case "edit-tools":
+      bridge?.openRightPanel?.("tools");
+      break;
+    case "models":
+      bridge?.openModelPicker?.();
+      break;
+    case "new-project":
+      document.getElementById("btn-new-project")?.click();
+      break;
+    case "upload":
+      bridge?.triggerUpload?.() || document.getElementById("file-upload")?.click();
+      break;
+    case "catalog":
+      bridge?.openDesignTab?.("CATALOG");
+      break;
+    case "sketch":
+      bridge?.openDesignTab?.("SKETCH");
+      break;
+    case "wiring":
+      bridge?.openDesignTab?.("WIRING");
+      break;
+    case "export":
+      document.getElementById("btn-export-model")?.click();
+      break;
+    default:
+      break;
+  }
+}
+
+function initMobileAppMenuActions() {
+  document.addEventListener("click", (e) => {
+    const btn = e.target?.closest?.("[data-mobile-app]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    runMobileAppAction(btn.getAttribute("data-mobile-app") || "");
+  });
+}
+
 function initViewportLock() {
   syncMobileAppLock();
   MOBILE_MQ?.addEventListener?.("change", syncMobileAppLock);
@@ -73,12 +119,10 @@ function initViewportLock() {
     if (!isMobileShell()) return;
     if (e.touches?.length > 1) {
       e.preventDefault();
-      return;
     }
   }, { passive: false });
   document.addEventListener("wheel", preventCtrlWheelZoom, { passive: false });
 
-  // Block double-tap zoom on the viewport chrome without killing panel scroll.
   let lastTouchEnd = 0;
   document.addEventListener(
     "touchend",
@@ -98,6 +142,7 @@ function initViewportLock() {
 }
 
 initViewportLock();
+initMobileAppMenuActions();
 
 window.Render3DMobileChrome = {
   isMobileShell,
@@ -105,4 +150,5 @@ window.Render3DMobileChrome = {
   setMobileToolsPopupOpen,
   closeMobileToolsPopup,
   syncMobileAppLock,
+  runMobileAppAction,
 };

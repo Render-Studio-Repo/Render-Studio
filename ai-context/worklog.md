@@ -1,3 +1,27 @@
+## 2026-07-27 — Changelog comprehensive backfill
+
+- Rebuilt `CHANGELOG.md` + `DEVELOPER_CHANGELOG.md` from full `ai-context/worklog.md` (Jul 19–27) plus git reconstruction (Jun 19; Jul 6–7, 10, 14–17).
+- Date headings (not SemVer). Empty Auto-backup-only days omitted. Policy `backfillStatus: completed`.
+
+---
+
+## 2026-07-27 — X Corp in Authorized apps
+
+- Added `/assets/brands/x-corp.svg` and an Account menu **Authorized apps** card (X + Discord) with connect/unlink.
+- Preferences Authorized apps uses the same X logo + Connect CTA; shared `connectXAccount` PIN/popup flow.
+- Cache-bust `app.js` / `styles.css` `?v=20260727-x-authorized`.
+
+---
+
+## 2026-07-27 — Mobile chrome: menu + profile + no corner overlap
+
+- Linked `mobile-app-chrome.css`; hide 4-corner launchers for good (`display:none !important` — they were overlapping cube/FAB/tray).
+- Menu toggle is a low-profile chip until expanded; studio tiles navigate (Explorer/AI/Tools/etc.) via `Render3DMobileStudio`.
+- Slim header keeps profile avatar visible top-right; tools FAB centered above pick tray.
+- Cache-bust `?v=20260727-mobile-chrome`.
+
+---
+
 ## 2026-07-27 — Simple Changelogs adopted + worklog backfill
 
 - Policy: `.simple-changelogs.json` distribution `web`, developer history required, signatures on, new surfaces ask.
