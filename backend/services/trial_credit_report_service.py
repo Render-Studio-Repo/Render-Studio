@@ -55,7 +55,7 @@ def build_report(*, since: datetime | None = None, now: datetime | None = None) 
         accounts = conn.execute(
             """
             SELECT a.user_id, a.balance_cents, a.use_platform_key, a.trial_granted_at,
-                   a.platform_provider, a.created_at,
+                   a.trial_grant_ip, a.platform_provider, a.created_at,
                    u.email, u.display_name
             FROM ai_credit_accounts a
             LEFT JOIN users u ON u.id = a.user_id
@@ -147,6 +147,7 @@ def build_report(*, since: datetime | None = None, now: datetime | None = None) 
                 "email": row["email"] or "",
                 "display_name": row["display_name"] or "",
                 "trial_granted_at": row["trial_granted_at"],
+                "trial_grant_ip": row["trial_grant_ip"] or "",
                 "granted_cents": granted_cents,
                 "balance_cents": balance,
                 "spent_lifetime_cents": spent_life,

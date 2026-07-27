@@ -9653,6 +9653,8 @@ def demo_user_ai_credits(
     body: UserAICreditCheckoutRequest,
     user: dict[str, Any] = Depends(get_current_user),
 ):
+    """Admin-only test credit mint. Regular users must use Stripe checkout."""
+    _require_a1projects_admin(user)
     return {"credits": ai_credit_service.demo_add(user, body.amount_cents), "ai": _ai_status_for_user(user)}
 
 
@@ -9723,6 +9725,54 @@ def update_user_ai_key(key_id: str, body: UserAIKeyRenameRequest, user: dict[str
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"ai": _ai_status_for_user(user)}
+
+
+
+@app.get("/api/admin/trial-credits")
+def admin_trial_credits(
+    user: dict[str, Any] = Depends(get_current_user),
+    days: int = Query(30, ge=1, le=365),
+):
+    """Live free-trial credit usage for the management dashboard."""
+    _require_a1projects_admin(user)
+    from datetime import datetime, timedelta, timezone
+    from backend.services import trial_credit_report_service
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=int(days))
+    report = trial_credit_report_service.build_report(since=since, now=now)
+    # Abuse signals for ops
+    with get_conn() as conn:
+        demo_rows = conn.execute(
+            """
+            SELECT COUNT(*) AS c, COALESCE(SUM(amount_cents), 0) AS s
+            FROM ai_credit_transactions
+            WHERE provider = 'demo' AND kind = 'purchase'
+            """
+        ).fetchone()
+        ip_dupes = conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+              SELECT ip FROM ai_credit_trial_ips GROUP BY ip HAVING COUNT(*) > 1
+            )
+            """
+        ).fetchone()[0]
+        empty_ip_grants = conn.execute(
+            """
+            SELECT COUNT(*) FROM ai_credit_accounts
+            WHERE trial_granted_at IS NOT NULL
+              AND TRIM(COALESCE(trial_granted_at, '')) != ''
+              AND TRIM(COALESCE(trial_grant_ip, '')) = ''
+            """
+        ).fetchone()[0]
+    report["security"] = {
+        "demo_purchase_count": int(demo_rows["c"] or 0),
+        "demo_purchase_cents": int(demo_rows["s"] or 0),
+        "demo_purchase_usd": round(int(demo_rows["s"] or 0) / 100, 2),
+        "duplicate_trial_ip_rows": int(ip_dupes or 0),
+        "trial_grants_missing_ip": int(empty_ip_grants or 0),
+    }
+    return report
 
 
 @app.get("/api/users")
@@ -17671,30 +17721,42 @@ def _save_prompt_history(
                 effective = {}
         usage_meta = _usage_meta_for_prompt(project_path, trace_id, ai_traces)
         platform_credit_charge = None
-        if user and not effective:
+        used_platform = str(getattr(body, "ai_key_source", None) or "").strip().lower() == "platform"
+        if user and (used_platform or not effective):
             try:
                 credits = ai_credit_service.status(user)
-                if credits.get("use_platform_key"):
-                    key_meta = {
-                        "key_source": "platform",
-                        "shared_key_name": "Render Studio shared AI key",
-                    }
-                    platform_trace = {
-                        "cost_usd": usage_meta.get("cost_usd"),
-                        "model": usage_meta.get("model"),
-                        "provider": usage_meta.get("provider") or "openai",
-                    }
-                    platform_credit_charge = ai_credit_service.spend_for_trace(
-                        user["id"],
-                        platform_trace,
-                        project_id=project_path.name,
-                    )
-                    if platform_credit_charge:
-                        key_meta["platform_credit_charge"] = platform_credit_charge
+                # Charge whenever this prompt used the platform key, or when no
+                # personal/team key was selected and platform credits are active.
+                should_charge = used_platform or bool(credits.get("use_platform_key"))
+                if should_charge and (used_platform or not effective):
+                    if int(credits.get("balance_cents") or 0) <= 0 and used_platform:
+                        raise ValueError("Not enough shared-key credits. Buy more credits to continue.")
+                    if used_platform or credits.get("use_platform_key"):
+                        key_meta = {
+                            "key_source": "platform",
+                            "shared_key_name": "Render Studio shared AI key",
+                        }
+                        platform_trace = {
+                            "cost_usd": usage_meta.get("cost_usd"),
+                            "model": usage_meta.get("model"),
+                            "provider": usage_meta.get("provider") or "openai",
+                        }
+                        if platform_trace.get("cost_usd") is not None:
+                            platform_credit_charge = ai_credit_service.spend_for_trace(
+                                user["id"],
+                                platform_trace,
+                                project_id=project_path.name,
+                            )
+                            if platform_credit_charge:
+                                key_meta["platform_credit_charge"] = platform_credit_charge
             except ValueError:
                 raise
             except Exception as exc:
-                logger.debug("platform credit charge failed: %s", exc)
+                logger.warning("platform credit charge failed user_id=%s: %s", user.get("id"), exc)
+                raise HTTPException(
+                    status_code=402,
+                    detail="Could not bill shared-key credits for this generation. Try again or buy more credits.",
+                ) from exc
         if not usage_meta.get("model") and effective:
             model = (effective.get("model") or "").strip()
             if not model and effective.get("provider") == "openai":

@@ -930,6 +930,7 @@ function renderAdminViewToolbar() {
     ["notifications", "Notifications", "Review one by one"],
     ["requests", "Requests", "Suggestions and bugs"],
     ["new-users", "New Users", "Signup alerts"],
+    ["trial-credits", "Trial Credits", "Free $10 usage"],
     ["agent", "Render Agent", "User questions"],
     ["approvals", "Approvals", "Guides and requests"],
     ["users", "Users", "Lookup and cohorts"],
@@ -986,6 +987,23 @@ function renderDashboard(root, data) {
       ${statCard("AI Spend", formatMoney(stats.estimated_cost_usd), `${formatNumber(stats.total_tokens)} tokens`)}
       ${statCard("Models", formatNumber(stats.model_count || community.model_count || 0), `${formatNumber(stats.training_ready_count || 0)} training-ready`)}
       ${statCard("Success Rate", stats.success_rate == null ? "—" : `${Math.round(stats.success_rate * 100)}%`, "Prompt history success")}
+    </section>
+
+    <section class="admin-panel" id="admin-section-trial-credits" data-admin-section="trial-credits">
+      <div class="admin-agent-head">
+        <div>
+          <h3>Free trial credits ($10)</h3>
+          <p class="muted small admin-panel-hint">Signup Render Studio Key grants and spend. Refresh for live totals (not cached with the daily dashboard).</p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-trial-credits-refresh">Refresh</button>
+      </div>
+      <div class="admin-agent-stats" id="admin-trial-credits-stats">
+        <span class="admin-pill"><strong>Loading…</strong></span>
+      </div>
+      <div id="admin-trial-credits-security" class="admin-pill-list" style="margin:12px 0"></div>
+      <div class="admin-list" id="admin-trial-credits-list">
+        <p class="muted small">Loading free trial credit usage…</p>
+      </div>
     </section>
 
     <section class="admin-grid admin-grid--wide-left" data-admin-section="overview">
@@ -1142,6 +1160,9 @@ function renderDashboard(root, data) {
   root.querySelector("#admin-new-user-refresh")?.addEventListener("click", () => {
     void loadNewUserAlerts(root);
   });
+  root.querySelector("#admin-trial-credits-refresh")?.addEventListener("click", () => {
+    void loadTrialCredits(root);
+  });
   root.querySelector("#admin-changelog-refresh")?.addEventListener("click", () => {
     void loadAdminChangelog(root);
   });
@@ -1149,6 +1170,7 @@ function renderDashboard(root, data) {
   void loadRenderAgentActivity(root);
   void loadGettingStartedApprovals(root);
   void loadNewUserAlerts(root);
+  void loadTrialCredits(root);
   void loadFeedbackInbox(root);
   adminNotificationsPager?.destroy?.();
   adminNotificationsPager = createAdminNotificationsPager({
@@ -1680,6 +1702,63 @@ async function loadDashboard(root) {
     renderDashboard(root, data);
   } catch (err) {
     root.innerHTML = `<section class="admin-hero-card"><h2>Could not load dashboard</h2><p class="muted">${escapeHtml(err.message || "Request failed")}</p><a class="btn secondary" href="/">Back to Studio</a></section>`;
+  }
+}
+
+
+async function loadTrialCredits(root) {
+  const statsEl = root.querySelector("#admin-trial-credits-stats");
+  const listEl = root.querySelector("#admin-trial-credits-list");
+  const secEl = root.querySelector("#admin-trial-credits-security");
+  if (!statsEl || !listEl) return;
+  statsEl.innerHTML = `<span class="admin-pill"><strong>Loading…</strong></span>`;
+  try {
+    const data = await api("/api/admin/trial-credits?days=30");
+    const s = data.summary || {};
+    const security = data.security || {};
+    statsEl.innerHTML = `
+      ${statCard("Trial users", formatNumber(s.trial_users), `${formatNumber(s.grants_in_window)} new (30d)`)}
+      ${statCard("Spent (30d)", formatMoney(s.window_spent_usd), `Lifetime ${formatMoney(s.lifetime_spent_usd)}`)}
+      ${statCard("Remaining", formatMoney(s.remaining_balance_usd), `${formatNumber(s.active_with_balance)} with balance`)}
+      ${statCard("Granted", formatMoney(s.granted_total_usd), `${formatNumber(s.depleted)} depleted`)}
+    `;
+    if (secEl) {
+      const demoUsd = formatMoney(security.demo_purchase_usd);
+      const demoWarn = Number(security.demo_purchase_count || 0) > 0;
+      secEl.innerHTML = `
+        <span class="admin-pill${demoWarn ? " admin-pill--warn" : ""}"><strong>Demo purchases</strong><em>${formatNumber(security.demo_purchase_count)} · ${demoUsd}</em></span>
+        <span class="admin-pill"><strong>Missing grant IP</strong><em>${formatNumber(security.trial_grants_missing_ip)}</em></span>
+        <span class="admin-pill"><strong>Providers (30d)</strong><em>${escapeHtml((data.providers_window || []).map((p) => `${p.provider} ${formatMoney(p.spent_usd)}`).join(" · ") || "—")}</em></span>
+      `;
+    }
+    const users = data.users || [];
+    if (!users.length) {
+      listEl.innerHTML = `<p class="muted small">No free-trial grants yet.</p>`;
+      return;
+    }
+    listEl.innerHTML = users.map((u) => {
+      const name = escapeHtml(u.display_name || "—");
+      const email = escapeHtml(u.email || u.user_id || "");
+      const ip = escapeHtml(u.trial_grant_ip || "—");
+      const prov = escapeHtml((u.providers || []).join(", ") || "—");
+      return `
+        <article class="admin-row">
+          <div class="admin-row-main">
+            <strong>${name}</strong>
+            <span class="muted small">${email}</span>
+            <span class="muted small">IP ${ip} · granted ${escapeHtml(formatDate(u.trial_granted_at))}</span>
+          </div>
+          <div class="admin-row-stats">
+            <span><strong>${formatMoney((u.spent_lifetime_cents || 0) / 100)}</strong><em>spent</em></span>
+            <span><strong>${formatMoney((u.balance_cents || 0) / 100)}</strong><em>left</em></span>
+            <span><strong>${escapeHtml(prov)}</strong><em>providers</em></span>
+          </div>
+        </article>
+      `;
+    }).join("");
+  } catch (err) {
+    statsEl.innerHTML = `<span class="admin-pill"><strong>Error</strong></span>`;
+    listEl.innerHTML = `<p class="muted">${escapeHtml(err.message || "Could not load trial credits")}</p>`;
   }
 }
 
