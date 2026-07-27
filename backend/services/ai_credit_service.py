@@ -355,6 +355,16 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
     balance = int(account.get("balance_cents") or 0)
     uid = str(account.get("user_id") or "")
     on_free = is_free_trial_credits_account(account, user_id=uid or None)
+    # Only advertise free credits when the user still has a usable trial balance.
+    # Weekly-cap / waitlisted users never get granted_at, and spent/reclaimed
+    # trials must not keep showing the "$10 free" popup.
+    show_popup = bool(
+        granted_at
+        and not popup_seen_at
+        and not reclaimed_at
+        and balance > 0
+        and on_free
+    )
     return {
         "granted": bool(granted_at),
         "granted_at": granted_at,
@@ -365,7 +375,7 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
         "idle_reclaim_days": TRIAL_IDLE_RECLAIM_DAYS,
         "weekly_grant_cap": TRIAL_GRANTS_PER_WEEK,
         "popup_seen": bool(popup_seen_at),
-        "show_popup": bool(granted_at and not popup_seen_at and not reclaimed_at),
+        "show_popup": show_popup,
         "email_sent": bool(email_sent_at),
         "active": bool(granted_at and balance > 0 and account.get("use_platform_key") and not reclaimed_at),
         "on_free_trial": on_free,
@@ -865,6 +875,7 @@ def grant_signup_trial_if_needed(
         info["just_granted"] = False
         info["blocked_ip"] = True
         info["blocked_weekly_cap"] = False
+        info["show_popup"] = False
         info["blocked_reason"] = (
             "Could not verify your network for the free trial. "
             "Try again from a normal browser connection."
@@ -885,6 +896,7 @@ def grant_signup_trial_if_needed(
                 info["just_granted"] = False
                 info["blocked_ip"] = True
                 info["blocked_weekly_cap"] = False
+                info["show_popup"] = False
                 info["blocked_reason"] = "Free trial credits were already claimed from this network."
                 return info
         except Exception:
@@ -898,6 +910,7 @@ def grant_signup_trial_if_needed(
             info["just_granted"] = False
             info["blocked_ip"] = True
             info["blocked_weekly_cap"] = False
+            info["show_popup"] = False
             info["blocked_reason"] = "Free trial credits were already claimed from this network."
             return info
 
@@ -915,6 +928,7 @@ def grant_signup_trial_if_needed(
                 info["blocked_ip"] = False
                 info["blocked_weekly_cap"] = True
                 info["waitlisted"] = True
+                info["show_popup"] = False
                 info["blocked_reason"] = (
                     f"Free trial spots are limited to {TRIAL_GRANTS_PER_WEEK} new users per week. "
                     "You're on the waitlist — unused credits from idle trials may open a spot."

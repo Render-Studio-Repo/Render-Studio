@@ -17439,8 +17439,15 @@ function shouldShowTrialCreditsPopup() {
   try {
     if (localStorage.getItem(trialCreditsPopupSeenKey()) === "1") return false;
   } catch (_) {}
-  const trial = aiStatus?.credits?.trial;
-  return !!(trial?.show_popup);
+  const credits = aiStatus?.credits || {};
+  const trial = credits.trial || {};
+  // Never tease free credits when the weekly allotment is out, waitlisted,
+  // reclaimed, or the balance is already $0.
+  if (trial.blocked_weekly_cap || trial.waitlisted) return false;
+  if (trial.reclaimed_at) return false;
+  if (!(Number(credits.balance_cents) > 0)) return false;
+  if (!(trial.on_free_trial || trial.active || trial.granted)) return false;
+  return !!trial.show_popup;
 }
 
 let trialCreditsPopupTimer = null;
