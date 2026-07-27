@@ -37,7 +37,7 @@ function appIcon(app) {
 }
 
 function ownerLabel(app) {
-  return app.owner?.name || app.owner?.email || "Render3D creator";
+  return app.owner?.name || app.owner?.email || "Render Studio creator";
 }
 
 const RELATED_TERMS = {

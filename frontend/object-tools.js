@@ -80,7 +80,7 @@ export function createObjectTools({
     });
     const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
     multiTransformGroup = new THREE.Group();
-    multiTransformGroup.name = "Render3D multi-selection transform";
+    multiTransformGroup.name = "Render Studio multi-selection transform";
     multiTransformGroup.userData.isMultiSelectionTransform = true;
     multiTransformGroup.position.copy(center);
     scene.add(multiTransformGroup);

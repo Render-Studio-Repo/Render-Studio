@@ -323,7 +323,7 @@ def run_skill_tool(
 
 
 def _validate_step_basic(step_path: Path) -> dict[str, Any]:
-    """Validate a Render3D-exported STEP with OCP when text-to-cad topology is unavailable."""
+    """Validate a Render Studio-exported STEP with OCP when text-to-cad topology is unavailable."""
     try:
         from OCP.BRepGProp import BRepGProp
         from OCP.GProp import GProp_GProps
@@ -387,5 +387,5 @@ def inspect_step_facts(step_path: Path, *, timeout_sec: float = 60.0) -> dict[st
     basic["prep"] = prep
     basic["mode"] = "render3d-ocp"
     if not prep.get("ok"):
-        basic["prep_note"] = "text-to-cad topology prep skipped or unavailable for Render3D STEP exports"
+        basic["prep_note"] = "text-to-cad topology prep skipped or unavailable for Render Studio STEP exports"
     return basic

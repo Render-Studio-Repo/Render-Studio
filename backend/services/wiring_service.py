@@ -12,7 +12,7 @@ from typing import Any
 
 from backend.services.ai_service import AIService
 
-WIRING_SYSTEM_PROMPT = """You are Render3D's wiring schematic engine for breadboard, Arduino, and Raspberry Pi projects.
+WIRING_SYSTEM_PROMPT = """You are Render Studio's wiring schematic engine for breadboard, Arduino, and Raspberry Pi projects.
 
 Given a user brief (and optional reference photo of a circuit, breadboard, or schematic),
 produce a complete 2D wiring diagram the Wiring Simulator can render.
@@ -986,7 +986,7 @@ def generate_wiring_schematic(
 
 # ── Circuit photo diagnostic ───────────────────────────────────────────────────
 
-CIRCUIT_DEBUG_SYSTEM_PROMPT = """You are an expert electronics engineer and circuit debugger for Render3D's Wiring Simulator.
+CIRCUIT_DEBUG_SYSTEM_PROMPT = """You are an expert electronics engineer and circuit debugger for Render Studio's Wiring Simulator.
 
 The user has uploaded a photo of their physical breadboard or circuit assembly and wants you to identify problems, misconnections, missing components, and potential damage risks.
 

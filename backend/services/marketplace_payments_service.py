@@ -421,7 +421,7 @@ def create_checkout_session(
                     "currency": currency,
                     "unit_amount": price,
                     "product_data": {
-                        "name": str(listing.get("name") or "Render3D product")[:120],
+                        "name": str(listing.get("name") or "Render Studio product")[:120],
                         "description": str(listing.get("tagline") or "")[:400] or None,
                     },
                 },

@@ -102,7 +102,7 @@ function ensureAgentMarkup() {
         <strong>Render Agent</strong>
         <span id="render-agent-active-thread-label">Drag header to move · drag edges to resize</span>
       </div>
-      <img class="render-agent-head-logo" src="${LOGO}" alt="Render3D" />
+      <img class="render-agent-head-logo" src="${LOGO}" alt="Render Studio" />
       <button type="button" id="render-agent-close" class="render-agent-close" aria-label="Close Render Agent">&times;</button>
     </header>
     <div id="render-agent-thread-popover" class="render-agent-thread-popover hidden">

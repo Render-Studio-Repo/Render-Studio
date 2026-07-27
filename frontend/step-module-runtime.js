@@ -1,5 +1,5 @@
 /**
- * Jake-compatible STEP parameter module runtime for Render3D.
+ * Jake-compatible STEP parameter module runtime for Render Studio.
  *
  * Motion is not inferred from mesh names. Jake (and this runtime) only animate
  * when a sidecar `.<stem>.step.js` module exists beside the STEP/GLB. The module

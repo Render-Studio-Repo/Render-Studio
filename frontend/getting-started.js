@@ -185,7 +185,7 @@ function tipVisual(topic = "") {
 }
 
 function tipCard(tip, index) {
-  const ask = tip.starter || `Tell me more about this Render3D tip: ${tip.title}`;
+  const ask = tip.starter || `Tell me more about this Render Studio tip: ${tip.title}`;
   const steps = Array.isArray(tip.steps) ? tip.steps : [];
   const visual = tipVisual(tip.topic);
   return `
@@ -490,7 +490,7 @@ function mountAgent() {
     }
   });
 
-  const tourQ = "Give me a tour of Render3D for a new user";
+  const tourQ = "Give me a tour of Render Studio for a new user";
 
   document.getElementById("gs-features")?.addEventListener("click", (e) => {
     const show = e.target.closest?.("[data-gs-show-me]");

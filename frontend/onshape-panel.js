@@ -275,7 +275,7 @@ export function initOnshapePanel({ api, onImported, onView, getCurrentProjectId 
     if (!listEl) return;
     listEl.innerHTML = `
       <div class="cloud-library-connect">
-        <p class="muted small">Link Onshape to browse documents and import Part Studios or assemblies into Render3D.</p>
+        <p class="muted small">Link Onshape to browse documents and import Part Studios or assemblies into Render Studio.</p>
         <button type="button" class="btn primary btn-compact btn-cloud-connect-now" data-cloud="onshape">
           <img src="/onshape-logo.png?v=20260617-small" width="14" height="14" alt="" />
           Connect now
@@ -300,7 +300,7 @@ export function initOnshapePanel({ api, onImported, onView, getCurrentProjectId 
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
-        setStatus("Sign in to Render3D first, then connect Onshape.", true);
+        setStatus("Sign in to Render Studio first, then connect Onshape.", true);
         return;
       }
       if (!res.ok) throw new Error(data.detail || `Could not start Onshape connect (${res.status})`);

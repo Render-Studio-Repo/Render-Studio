@@ -1,6 +1,6 @@
 """Jake-style tool-using CAD authoring agent.
 
-Mirrors upstream text-to-cad (Codex / Claude Code) inside Render3D:
+Mirrors upstream text-to-cad (Codex / Claude Code) inside Render Studio:
 
 1. Agent edits ``gen_step()`` source with surgical tools (not full-file regen only)
 2. Agent runs ``scripts/step``, ``inspect``, ``snapshot`` itself

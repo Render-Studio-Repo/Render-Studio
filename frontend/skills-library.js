@@ -201,9 +201,9 @@ function skillHowToText(skill = {}) {
   const desc = String(skill.description || skill.preview || "").trim();
   const category = skillCategory(skill).toLowerCase();
   const base = desc
-    ? `${name} helps Render3D ${desc.charAt(0).toLowerCase()}${desc.slice(1)}`
-    : `${name} adds a focused ${category} workflow to Render3D.`;
-  return `${base} Enable it for prompts, then describe the output you want in Studio; Render3D will route relevant requests to @skill:${skill.id} and use its tools or references when they apply.`;
+    ? `${name} helps Render Studio ${desc.charAt(0).toLowerCase()}${desc.slice(1)}`
+    : `${name} adds a focused ${category} workflow to Render Studio.`;
+  return `${base} Enable it for prompts, then describe the output you want in Studio; Render Studio will route relevant requests to @skill:${skill.id} and use its tools or references when they apply.`;
 }
 
 function skillMediaHtml(skill = {}) {
@@ -569,7 +569,7 @@ export function initSkillsLibraryPage({ listEl, detailEl, statusEl, searchEl = n
               </label>
               <button type="button" class="btn secondary btn-compact" data-skill-media-generate="${escapeHtml(merged.id)}">Generate 3D loop</button>
               ${media ? `<button type="button" class="btn ghost btn-compact" data-skill-media-clear="${escapeHtml(merged.id)}">Clear media</button>` : ""}
-              <small class="muted">Use a small repeating GIF/WebM/MP4, or generate a Render3D loop from the skill summary.</small>
+              <small class="muted">Use a small repeating GIF/WebM/MP4, or generate a Render Studio loop from the skill summary.</small>
             </div>
           </div>
         </div>

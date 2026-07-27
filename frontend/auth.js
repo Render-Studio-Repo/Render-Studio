@@ -611,7 +611,7 @@ export function createAuthUI({ api, onReady, onUserMenuOpen }) {
       switchTab("login");
       const box = document.getElementById("auth-connect-fusion");
       if (box) box.checked = true;
-      throw new Error("Sign in to Render3D first, then connect Autodesk Fusion 360.");
+      throw new Error("Sign in to Render Studio first, then connect Autodesk Fusion 360.");
     }
     try {
       const status = await api("/api/autodesk/status");

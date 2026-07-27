@@ -203,7 +203,7 @@ def _aps_forbidden_hint(*, context: str = "") -> str:
     return (
         f"Autodesk denied access{ctx}. Common fixes: "
         "1) In APS My Apps, enable Data Management API (and Manufacturing Data Model API for Fusion imports). "
-        "2) Disconnect and reconnect Autodesk in Render3D so scopes refresh. "
+        "2) Disconnect and reconnect Autodesk in Render Studio so scopes refresh. "
         "3) Re-link the Fusion mirror folder to a hub/project you still have access to. "
         "4) For ACC/BIM 360 hubs, add this app's Client ID under Account Admin → Custom Integrations."
     )

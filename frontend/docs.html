@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Docs — Render3D</title>
+  <title>Docs — Render Studio</title>
   <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
@@ -17,8 +17,8 @@
     <header class="toolbar">
       <div class="brand">
         <a href="/" class="brand-link">
-          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
-          <h1>Render3D</h1>
+          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render Studio" />
+          <h1>Render Studio</h1>
         </a>
       </div>
       <nav class="toolbar-nav" aria-label="Main">
@@ -40,7 +40,7 @@
       <article class="info-content docs-content">
         <header class="info-hero docs-hero">
           <p class="info-eyebrow">Documentation</p>
-          <h2>Render3D CAD Visualizer</h2>
+          <h2>Render Studio CAD Visualizer</h2>
           <p class="info-lead">
             Complete product documentation for Studio — AI CAD, modeling, sketch, rigging/URDF,
             wiring, cloud sync, collaboration, and more — with how-tos and demo GIFs.
@@ -120,7 +120,7 @@
           <section class="info-section">
             <h3>What changed today</h3>
             <p>
-              Render3D now has a more complete electronics-to-CAD workflow: source parts, wire them,
+              Render Studio now has a more complete electronics-to-CAD workflow: source parts, wire them,
               generate real mounting fixtures, draw routes between objects, and inspect AI cost usage
               by project, person, prompt, tokens, or calls.
             </p>
@@ -265,7 +265,7 @@ Move the LED one column right and add a second red LED on pin 12 with its own 22
           <h4 class="prompt-example-title">Component-aware fixture — real parts, real mounts</h4>
           <p>
             Drag components from the project browser into the prompt or copy their <code>@component</code>
-            reference. Render3D measures the current mesh, uses known part profiles when available,
+            reference. Render Studio measures the current mesh, uses known part profiles when available,
             and can place the component models into deterministic mounting geometry.
           </p>
           <pre class="info-code"><code>@component:adafruit_858_stepper_motor_5vdc
@@ -355,7 +355,7 @@ add wire clips between these two objects using @path-1</code></pre>
 
         <section class="info-section">
           <h3 id="quick-start">Quick start</h3>
-          <pre class="info-code"><code>cd Render3D
+          <pre class="info-code"><code>cd Render Studio
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -409,7 +409,7 @@ python run.py</code></pre>
         <section class="info-section">
           <h3>Skills Library</h3>
           <p>
-            Render3D ships agent skills from
+            Render Studio ships agent skills from
             <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener">text-to-cad</a>
             under <code>backend/skills/</code>. Enable skills on the
             <a href="/skills.html">Skills Library</a> page; active skills appear as

@@ -8,7 +8,7 @@ from typing import Any
 
 from backend.services.ai_service import AIService
 
-SKETCH_SYSTEM_PROMPT = """You are Render3D's 2D sketch engine (Fusion 360 style).
+SKETCH_SYSTEM_PROMPT = """You are Render Studio's 2D sketch engine (Fusion 360 style).
 
 Given a user brief (and optional reference photo), produce sketch entities on a work plane
 that form a closed profile suitable for extrusion.

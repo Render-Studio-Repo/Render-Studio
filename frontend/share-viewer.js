@@ -380,11 +380,11 @@ async function main() {
     return;
   }
 
-  document.title = meta.share_title || `${meta.project_name || "Render3D"} · with Render3D`;
+  document.title = meta.share_title || `${meta.project_name || "Render Studio"} · with Render Studio`;
   titleEl.textContent = meta.project_name || meta.filename || "Shared model";
   subEl.textContent = meta.filename
-    ? `with Render3D · ${meta.filename}`
-    : "with Render3D";
+    ? `with Render Studio · ${meta.filename}`
+    : "with Render Studio";
 
   exportItems = Array.isArray(meta.exports) ? [...meta.exports] : [];
   const seen = new Set(exportItems.map((e) => e.name));

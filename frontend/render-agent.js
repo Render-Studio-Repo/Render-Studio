@@ -308,7 +308,7 @@ export function createRenderAgent({
     }
     messagesEl.innerHTML = `
       <div class="render-agent-empty">
-        <strong>Ask me anything about Render3D.</strong>
+        <strong>Ask me anything about Render Studio.</strong>
         ${renderAgentTipCard()}
         <p class="muted small" style="margin-top:10px">
           New here? Read the
@@ -435,7 +435,7 @@ export function createRenderAgent({
     } else if (messagesEl && !(messagesEl.childElementCount)) {
       messagesEl.innerHTML = `
         <div class="render-agent-empty">
-          <strong>Ask me anything about Render3D.</strong>
+          <strong>Ask me anything about Render Studio.</strong>
           <p class="muted small">Sign in to send a question — demos from Getting Started appear in replies.</p>
           <p class="muted small"><a href="/getting-started.html">Getting Started docs</a></p>
         </div>
@@ -944,7 +944,7 @@ export function createRenderAgent({
     if (!messages.length) {
       messagesEl.innerHTML = `
         <div class="render-agent-empty">
-          <strong>Ask me anything about Render3D.</strong>
+          <strong>Ask me anything about Render Studio.</strong>
           ${renderAgentTipCard()}
         </div>
       `;
@@ -1384,7 +1384,7 @@ export function createRenderAgent({
       await waitForDoItContinue({
         selector: "#render-agent-panel",
         title: "1. I’m setting up the workspace",
-        body: "I need a project first because every CAD edit, upload, and prompt result is saved into a Render3D project.",
+        body: "I need a project first because every CAD edit, upload, and prompt result is saved into a Render Studio project.",
       });
       let targetProjectId = selectedProjectId || getProjectId?.() || "";
       if (mode === "new") {
@@ -1425,7 +1425,7 @@ export function createRenderAgent({
         : "Target object: whole project / no specific object";
       const projectLine = `Project: ${getProjectName?.() || targetProjectId}`;
       const finalPrompt = [
-        "Do it for me in Render3D.",
+        "Do it for me in Render Studio.",
         projectLine,
         objectLine,
         "",

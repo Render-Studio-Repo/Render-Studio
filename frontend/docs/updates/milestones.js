@@ -63,7 +63,7 @@ export const MILESTONE_UPDATES = [
     kind: "feature",
     title: "AI setup intro",
     summary:
-      "Signed-in users without AI access now get a Render3D intro-style setup window with clear next steps to connect an API key, load shared credits, or start a tutorial.",
+      "Signed-in users without AI access now get a Render Studio intro-style setup window with clear next steps to connect an API key, load shared credits, or start a tutorial.",
     visual: "/docs/media/ai-generate.gif?v=20260715-real",
     href: "/",
   },
@@ -73,7 +73,7 @@ export const MILESTONE_UPDATES = [
     kind: "feature",
     title: "Discord public model announcements",
     summary:
-      "When a project is pushed to Public, Render3D can now post a Discord bot announcement with the project title, creator, description, thumbnail, and public view link.",
+      "When a project is pushed to Public, Render Studio can now post a Discord bot announcement with the project title, creator, description, thumbnail, and public view link.",
     href: "/",
   },
   {

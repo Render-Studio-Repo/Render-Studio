@@ -7,7 +7,7 @@ from typing import Any
 
 from backend.services.ai_service import AIService
 
-RIGGING_SYSTEM_PROMPT = """You are Render3D's robot rigging engine for URDF-style kinematic chains.
+RIGGING_SYSTEM_PROMPT = """You are Render Studio's robot rigging engine for URDF-style kinematic chains.
 
 Given a user brief (and optional reference photo of a robot arm or mechanism),
 produce a bone hierarchy and optional keyframe animation the Rigging editor can load.
@@ -60,7 +60,7 @@ Rules:
 - Use URDF-style link names: base_link, link_1, link_2, ee_link, etc.
 - Root bone has parentId null and jointType "fixed".
 - Child joints default to "revolute" with axis [0,0,1] unless the brief specifies otherwise.
-- Positions are in meters, Z-up, matching Render3D viewport.
+- Positions are in meters, Z-up, matching Render Studio viewport.
 - Stack links along the kinematic chain; position is offset from parent frame.
 - Include at least one animation with 2+ keyframes when motion is described.
 - Keyframe poses must include rotation (and position if changed) per affected bone id.

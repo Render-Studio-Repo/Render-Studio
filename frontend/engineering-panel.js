@@ -1,4 +1,4 @@
-// Render3D engineering output panel.
+// Render Studio engineering output panel.
 //
 // Self-contained module: listens for the `render3d:model` event dispatched after
 // a successful AI prompt / build and renders the engineering deliverables —

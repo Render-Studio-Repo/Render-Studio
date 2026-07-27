@@ -1796,7 +1796,7 @@ export function createProjectChatUI({
       if (title) title.textContent = "Project chat";
       if (subtitle) subtitle.textContent = "Open a project first";
       if (messagesEl) {
-        messagesEl.innerHTML = `<div class="pc-empty"><strong>Open a project to start chatting.</strong><span class="muted">Project chat is tied to the active Render3D workspace.</span></div>`;
+        messagesEl.innerHTML = `<div class="pc-empty"><strong>Open a project to start chatting.</strong><span class="muted">Project chat is tied to the active Render Studio workspace.</span></div>`;
       }
       onStatus?.("error", "Open a project to chat");
       return;
@@ -1807,7 +1807,7 @@ export function createProjectChatUI({
     document.body.classList.add("project-chat-open");
     const title = overlay.querySelector("#pc-title");
     const subtitle = overlay.querySelector("#pc-subtitle");
-    if (title) title.textContent = "Render3D chat";
+    if (title) title.textContent = "Render Studio chat";
     if (subtitle) {
       const active = threads.find((t) => t.id === activeThreadId);
       if (active?.slug === "general" || active?.scope === "workspace") {

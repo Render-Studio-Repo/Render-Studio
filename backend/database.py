@@ -647,7 +647,7 @@ def init_db() -> None:
                 "builtin-wiring-simulator",
                 "wiring-simulator",
                 "Wiring Simulator",
-                "Simulate wiring diagrams, circuits, and photo-based wiring debug inside Render3D.",
+                "Simulate wiring diagrams, circuits, and photo-based wiring debug inside Render Studio.",
                 (
                     "Use the wiring agent tools to lay out circuits, run interactive simulations, "
                     "debug wiring from photos, and generate Arduino-style hookup guidance."
@@ -730,7 +730,7 @@ def init_db() -> None:
                 "slug": "sam-robot-arm-assembly",
                 "name": "Sam's Robot Arm Assembly",
                 "tagline": "Public robot arm project with editable mechanical pieces and robotics-ready structure.",
-                "description": "A free Render3D robotics project listing for exploring arm joints, end-effectors, mounting plates, and component organization.",
+                "description": "A free Render Studio robotics project listing for exploring arm joints, end-effectors, mounting plates, and component organization.",
                 "body": "## Includes\n- Robot arm assembly concept\n- Component-friendly structure\n- Great starter for URDF, motion, and gripper experiments\n\nUse this as the public example robot arm project in the model marketplace.",
                 "category": "Robotics",
                 "license": "cc-by",
@@ -783,7 +783,7 @@ def init_db() -> None:
                 "name": "Mini Drone Frame",
                 "tagline": "Lightweight free frame concept with motor pads and electronics bay.",
                 "description": "A public mini drone frame concept for testing CAD workflows, exports, and marketplace downloads.",
-                "body": "## Includes\n- Frame plate concept\n- Motor mount pads\n- Electronics bay placeholder\n\nFree public model for early Render3D marketplace browsing.",
+                "body": "## Includes\n- Frame plate concept\n- Motor mount pads\n- Electronics bay placeholder\n\nFree public model for early Render Studio marketplace browsing.",
                 "category": "Aerospace",
                 "license": "cc-by-nc",
                 "thumb": _model_thumb("Mini Drone Frame", "#f59e0b", "FREE"),
@@ -925,7 +925,7 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
-            -- Google / Apple / Microsoft identities linked to Render3D users.
+            -- Google / Apple / Microsoft identities linked to Render Studio users.
             CREATE TABLE IF NOT EXISTS social_accounts (
                 provider TEXT NOT NULL,
                 provider_user_id TEXT NOT NULL,

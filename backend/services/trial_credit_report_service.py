@@ -1,4 +1,4 @@
-"""Analytics + email digest for free signup ($10) Render3D Key trial credits."""
+"""Analytics + email digest for free signup ($10) Render Studio Key trial credits."""
 
 from __future__ import annotations
 
@@ -237,7 +237,7 @@ def render_report_email(report: dict[str, Any]) -> dict[str, str]:
       <div style="padding:22px;border:1px solid #30363d;border-radius:18px;background:#161b22;">
         <h1 style="margin:0 0 8px;font-size:22px;">Free signup credit usage</h1>
         <p style="margin:0 0 16px;color:#9da7b3;line-height:1.5;">
-          Render3D Key trial (${report.get('trial_amount_usd', 10):.0f} at signup) — analytics for Sam.
+          Render Studio Key trial (${report.get('trial_amount_usd', 10):.0f} at signup) — analytics for Sam.
           Window: <strong style="color:#e6edf3">{html.escape(start_label)}</strong>
           → <strong style="color:#e6edf3">{html.escape(end_label)}</strong>
         </p>
@@ -280,7 +280,7 @@ def render_report_email(report: dict[str, Any]) -> dict[str, str]:
           {users_html}
         </table>
         <p style="margin:18px 0 0;color:#9da7b3;font-size:12px;line-height:1.45;">
-          Scheduled Mon / Wed / Fri 9:00 AM America/New_York. Covers users who received the free $10 Render3D Key trial at signup.
+          Scheduled Mon / Wed / Fri 9:00 AM America/New_York. Covers users who received the free $10 Render Studio Key trial at signup.
         </p>
       </div>
     </div>

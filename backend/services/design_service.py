@@ -1138,7 +1138,7 @@ def _architect_major_build123d_children(children: list[Any]) -> list[Any]:
     """Keep only useful top-level Architect browser modules.
 
     Upstream text-to-cad treats the STEP/GLB as the primary assembly and relies on
-    native labels for internals. Render3D previously promoted every labeled leaf
+    native labels for internals. Render Studio previously promoted every labeled leaf
     into a separate browser component, which turns trim, connector lips, grooves,
     and snap details into dozens of files. Architect mode should expose only
     coarse modules users actually move: floors, walls, doors/windows, pillars,
@@ -1360,7 +1360,7 @@ def _dxf_semantic_source_issue(source: str, prompt: str, context: dict[str, Any]
         )
     ):
         return (
-            "DXF/VXF semantic modeling failed: the source uses a generic Render3D fallback template "
+            "DXF/VXF semantic modeling failed: the source uses a generic Render Studio fallback template "
             "or bounding-box plate instead of reconstructing the requested 3D CAD from the drawing.\n"
             "Fix: follow the upstream text-to-cad loop. Parse the DXF/VXF intent and write real build123d "
             "source with named solids for the frame, walls, bosses, mounting holes, pockets, cutouts, tabs, "
@@ -1704,7 +1704,7 @@ def _maybe_rewrite_incomplete_dxf_source(
 ) -> tuple[str, str | None]:
     """Deprecated: keep generated source in Jake's repair loop.
 
-    Render3D-specific DXF template rewrites were removed because they could
+    Render Studio-specific DXF template rewrites were removed because they could
     convert failed CAD generation into flat fallback geometry.
     """
     return source, None
@@ -1759,7 +1759,7 @@ def _augment_text_to_cad_source(
 
     Jake-identical: only inject ``dxf_filename`` when the script already
     references a DXF import — never invent thicknesses/helpers.
-    Render3D compatibility path may also backfill common DXF defaults.
+    Render Studio compatibility path may also backfill common DXF defaults.
     """
     dxf_names = _collect_dxf_filenames(context, project_path, prompt)
     if not dxf_names and _source_mentions_dxf_import(source):
@@ -2044,7 +2044,7 @@ def _finalize_text_to_cad_source_before_step(
             source_path.write_text(finalized.rstrip() + "\n", encoding="utf-8")
         return finalized
 
-    # Render3D compatibility path: backfill missing dims and harden fillets.
+    # Render Studio compatibility path: backfill missing dims and harden fillets.
     finalized = _backfill_all_undefined_constants(finalized, base=source_path.stem, prompt=prompt)
     finalized = _apply_jake_deterministic_repairs(finalized, prompt=prompt)
     poisoned = _source_poisoned_sequence_issues(finalized)
@@ -2116,12 +2116,12 @@ def _wire_jake_artifacts_to_product_shell(
     if step_path.is_file():
         # Prefer the STEP-derived Jake/cadjs sidecar for viewport output. The
         # shell GLB emitted by scripts/step can be Y-up while the sidecar keeps
-        # the STEP assembly in Render3D's expected Z-up orientation.
+        # the STEP assembly in Render Studio's expected Z-up orientation.
         if jake_glb.is_file():
             shell_glb.write_bytes(jake_glb.read_bytes())
         elif shell_glb.is_file() and not jake_glb.is_file():
             jake_glb.write_bytes(shell_glb.read_bytes())
-        # Jake/cadpy GLBs are often metres (glTF). Render3D viewport is mm —
+        # Jake/cadpy GLBs are often metres (glTF). Render Studio viewport is mm —
         # bake the STEP unit match into both shell + sidecar so models aren't tiny.
         for preview in (shell_glb, jake_glb):
             if preview.is_file():
@@ -3127,7 +3127,7 @@ def _v2_quality_repair_note(
     """Spec-driven size checks from inspect facts (Jake inspection-and-validation).
 
     On Jake-identical path: only fail when inspect bbox clearly contradicts
-    user/brief overall axis dimensions — never use Render3D faceCount heuristics.
+    user/brief overall axis dimensions — never use Render Studio faceCount heuristics.
     """
     summary = _inspect_summary(inspect_out) or {}
     source_lower = (source or "").lower()
@@ -3460,7 +3460,7 @@ def _ensure_base_footprint_on_min_z(mesh) -> bool:
 
 
 def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
-    """Convert upstream text-to-cad's native Y-up preview GLB to Render3D Z-up.
+    """Convert upstream text-to-cad's native Y-up preview GLB to Render Studio Z-up.
 
     Picks +90° or -90° about X so the larger base-like footprint ends at min Z,
     then seats the mesh on the XY floor (z = 0).
@@ -3647,7 +3647,7 @@ def _run_text_to_cad_v2(
                 "\nFUSION 360 PLUGIN TARGET:\n"
                 "- Keep phase functions and named parameters especially clean because this design may be translated or streamed into a Fusion 360 API add-in.\n"
                 "- Prefer operations that map directly to Fusion features: sketches, extrudes/cuts, revolves, sweeps/pipes, circular patterns, combines, fillets, chamfers, materials, and timeline-like phase names.\n"
-                "- Still satisfy the Render3D build123d source contract for now; the local plugin bridge will consume generated code/scripts in a separate connection path.\n"
+                "- Still satisfy the Render Studio build123d source contract for now; the local plugin bridge will consume generated code/scripts in a separate connection path.\n"
             )
     elif architect_mode:
         if _looks_like_architect_prompt(prompt):
@@ -4111,7 +4111,7 @@ def _run_text_to_cad_v2(
                     trace_id=trace_id,
                 )
             if not jake_identical:
-                # Render3D compatibility: backfill missing numeric/string config constants.
+                # Render Studio compatibility: backfill missing numeric/string config constants.
                 source = _augment_common_constants(source, base=base, prompt=prompt)
             dxf_issue = _dxf_semantic_source_issue(source, prompt, context)
             if dxf_issue:
@@ -4284,7 +4284,7 @@ def _run_text_to_cad_v2(
                                 f"Full error:\n{detail}"
                             )
                         else:
-                            # Deterministic heal (Render3D compatibility path only).
+                            # Deterministic heal (Render Studio compatibility path only).
                             try:
                                 healed_src = source_path.read_text(encoding="utf-8", errors="ignore")
                                 patched = _inject_missing_name_constant(
@@ -4459,7 +4459,7 @@ def _run_text_to_cad_v2(
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
         # Jake: inspect facts/planes/positioning baseline, then fail on clear
-        # envelope contradictions. No Render3D faceCount heuristics on Jake path.
+        # envelope contradictions. No Render Studio faceCount heuristics on Jake path.
         quality_note = _v2_quality_repair_note(
             prompt,
             source,
@@ -4849,7 +4849,7 @@ def _normalize_joint(raw: dict[str, Any], index: int, seen_ids: set[str]) -> dic
 def _sanitize_program_dict(program: dict[str, Any]) -> dict[str, Any]:
     """Normalize common AI schema mistakes before strict FeatureProgram validation.
 
-    Gear meshes/ratios are design metadata, not physical joints in Render3D's
+    Gear meshes/ratios are design metadata, not physical joints in Render Studio's
     current URDF/MJCF joint model. Preserve them under ``meta.gear_relationships``
     instead of letting a non-supported ``type: gear`` crash validation.
     """

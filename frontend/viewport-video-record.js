@@ -331,7 +331,7 @@ export function createViewportVideoRecorder({
         <p class="viewport-video-share-status muted small" data-video-share-status role="status"></p>
         <div class="viewport-x-pin-panel hidden" data-video-x-pin-panel>
           <p class="viewport-x-pin-title">Enter the PIN from X</p>
-          <p class="muted small">Authorize Render3D in the X window, then type the PIN shown there.</p>
+          <p class="muted small">Authorize Render Studio in the X window, then type the PIN shown there.</p>
           <div class="viewport-x-pin-row">
             <input type="text" inputmode="numeric" autocomplete="one-time-code" data-video-x-pin-input placeholder="PIN code" maxlength="12" />
             <button type="button" class="btn accent" data-video-x-pin-submit>Connect</button>
@@ -517,7 +517,7 @@ export function createViewportVideoRecorder({
     const html = `
         <div class="viewport-x-pin-panel hidden" data-video-x-pin-panel>
           <p class="viewport-x-pin-title">Enter the PIN from X</p>
-          <p class="muted small">Authorize Render3D in the X window, then type the PIN shown there.</p>
+          <p class="muted small">Authorize Render Studio in the X window, then type the PIN shown there.</p>
           <div class="viewport-x-pin-row">
             <input type="text" inputmode="numeric" autocomplete="one-time-code" data-video-x-pin-input placeholder="PIN code" maxlength="12" />
             <button type="button" class="btn accent" data-video-x-pin-submit>Connect</button>
@@ -575,7 +575,7 @@ export function createViewportVideoRecorder({
       );
       if (!popup) {
         setShareStatus(
-          "Popup blocked — allow popups for Render3D, or open the X link from Account → Authorized apps.",
+          "Popup blocked — allow popups for Render Studio, or open the X link from Account → Authorized apps.",
           true,
         );
         return;

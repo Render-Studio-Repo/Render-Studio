@@ -7,7 +7,7 @@
 ## 2026-07-27
 
 - Management Changelog tab: `GET /api/admin/changelog` reads repo `CHANGELOG.md`; admin-dashboard.js renders markdown in `#admin-section-changelog` (`?v=20260727-admin-changelog`).
-- Signup trial: `grant_signup_trial_if_needed` ($10), trial email, popup + `/api/user/ai-credits/trial-ack`; platform key labeled Render3D Key.
+- Signup trial: `grant_signup_trial_if_needed` ($10), trial email, popup + `/api/user/ai-credits/trial-ack`; platform key labeled Render Studio Key.
 - Share to X: `blobForXShare` prefers MP4 before compose/download.
 - Linked mobile-app-chrome.css; forced .mobile-corner-launchers / showcase bar display:none !important.
 - Menu tiles [data-mobile-app] wired via Render3DMobileStudio; low-profile hamburger until is-open.
@@ -60,11 +60,11 @@
 - Kimi tool-agent costs were priced as OpenAI: Kimi list prices were already in `ai_cost.py` ($3/$15 for `kimi-k3`).
 - Kimi tool-agent costs were priced as OpenAI: Bug: Jake tool-agent traces hardcoded `provider: openai`, so some Kimi turns were overcharged (~2×).
 - Kimi selection no longer snaps back to Claude: Bug: prompt-key UI treated every non-Claude provider as OpenAI; `normalizePlatformProviderId` was missing in `app.js` (threw when reconciling platform picks). Selecting Kimi could silently keep/patch Anthropic.
-- Kimi selection no longer snaps back to Claude: Fix: real Kimi platform choice, provider normalize helper, personal Save/Use disables Render3D shared Claude fallback and selects `personal:<id>` in the compose picker.
+- Kimi selection no longer snaps back to Claude: Fix: real Kimi platform choice, provider normalize helper, personal Save/Use disables Render Studio shared Claude fallback and selects `personal:<id>` in the compose picker.
 - Fix “Save & activate” doing nothing on Add AI key: Symptom: Add a new key (e.g. Kimi) → green Save & activate produced no POST / no error.
 - Fix “Save & activate” doing nothing on Add AI key: Cause: save relied only on native `<form submit>` + HTML5 `required` (easy to miss validation UI in the scrolled dark modal).
 - Shared credits: Kimi K3 (V3) platform key: Added `KIMI_API_KEY` (+ `KIMI_MODEL` / `KIMI_MODEL_QUALITY=kimi-k3`) to server `.env`.
-- Shared credits: Kimi K3 (V3) platform key: Credits path now offers Render3D Kimi alongside OpenAI/Claude (`ai_credit_service` + platform key UI).
+- Shared credits: Kimi K3 (V3) platform key: Credits path now offers Render Studio Kimi alongside OpenAI/Claude (`ai_credit_service` + platform key UI).
 - Viewport: stop orbit continuing after mouse-up: Trackball could stay in ROTATE if pointerup was missed / controls disabled mid-drag — view kept following the cursor.
 - Viewport: stop orbit continuing after mouse-up: New `trackball-pointer-safety.js`: force-end drag on window pointerup/cancel, blur, `buttons===0` while moving, and when `controls.enabled` flips off.
 - Mobile: models no longer pure black in look-dev: Mesh look-dev used ambient 0.05 + RoomEnvironment IBL; on phones IBL often fails → metal PBR shades black.
@@ -94,13 +94,13 @@
 - Prompt draft: per-project only, clear on submit: Drafts now save only under `modelPromptState` keyed by project; global key cleared/migrated.
 - Fusion: one Part STEP, no companion .py: Two Fusion files came from auto-uploading `*.build123d.py` next to the STEP (`upload_source` defaulted true).
 - Fusion: one Part STEP, no companion .py: Backend now uploads companion source only when `upload_source: true` (explicit). Frontend always sends `false`.
-- Fusion: select root folders to export: Top-level (root) folders now show an explicit Select + Open row so you can export into Render3D/etc without opening first.
+- Fusion: select root folders to export: Top-level (root) folders now show an explicit Select + Open row so you can export into Render Studio/etc without opening first.
 - Fusion: select root folders to export: Cache-bust `?v=20260724-fusion-root`.
 - Fusion export: no auto folder select: Stopped auto-selecting last/first/current folder and auto-diving past project root.
 - Fusion export: no auto folder select: Hub/project may still restore; folders start unselected until the user clicks one (✓).
 - Fusion Export CTA visible (orange): Export submit used faint `.btn.primary` blue and was easy to miss / look “not there”.
 - Fusion Export CTA visible (orange): Bright orange sticky footer CTA + destination line; pulse on folder select; second click on selected folder starts upload.
-- Fusion folder click = select with ✓: Folder tiles used to Open on click, so picking a destination inside Render3D felt broken.
+- Fusion folder click = select with ✓: Folder tiles used to Open on click, so picking a destination inside Render Studio felt broken.
 - Fusion folder click = select with ✓: Click folder → select export target + green ✓; separate Open browses inside.
 - Fusion Export button pinned (no scroll): Export CTA was clipped: picker lived inside `.file-export-actions` under STEP/GLB chrome, so “Export to Fusion” sat below the fold.
 - Fusion Export button pinned (no scroll): Picker is now a direct menu child; download chrome hidden while open; sticky `.file-export-fusion-footer`; menu pinned to top.
@@ -170,7 +170,7 @@
 - Fusion B-rep Cut: restore Jul 16 native STEP push: Fix: Fusion cloud push always uploads native solid B-rep (`assembly` only). Removed Part/Assembly chooser for Fusion; backend ignores legacy `step_mode=part` on `/push-to-autodesk`.
 - Fusion export: green check on success: Export to Fusion · {folder} turns green with Exported ✓ after a successful upload (same for the bottom submit + matching folder tile).
 - Fusion export: green check on success: Cache-bust: `?v=20260724-fusion-check`.
-- Fusion export: upload to current folder: Inside a Fusion folder (e.g. Render3D) there is a primary Export to Fusion · {folder} button — no subfolder required.
+- Fusion export: upload to current folder: Inside a Fusion folder (e.g. Render Studio) there is a primary Export to Fusion · {folder} button — no subfolder required.
 - Fusion export: upload to current folder: Folder tiles use Export (one-click upload there). Bottom submit label shows the destination folder name.
 - Restore working B-rep export/Fusion from backup: Afternoon Part-mode forcing rewrote native STEPs through `export_step_as_single_part`, which broke Fusion editability (“all B-rep messed up”).
 - Restore working B-rep export/Fusion from backup: Restored `file-actions.js` + `admin-dashboard.js` from snapshot `20260724T150001Z-cron` (pre-break), then re-applied only the nested Fusion folder grid.
@@ -178,7 +178,7 @@
 - Fusion/STEP: Part mode for editable solids: Studio STEP download always asks Part vs Assembly (Part recommended). Admin defaults to `?step_mode=part` and labels options clearly.
 - Admin STEP download: keep parametric B-rep: Admin project modal download collapsed all STEPs into one format slot; `*__faceted.step` often won, so downloads lost solid/parametric B-rep (labels/bodies).
 - Admin STEP download: keep parametric B-rep: Now keeps both variants, labels them (`parametric B-rep` vs `faceted mesh`), and defaults to editable B-rep.
-- Fusion export: nested folder grid picker: Export → Fusion folder browser is now a 2-column tile grid; click a tile to open nested folders (e.g. Project Files → Render3D → …).
+- Fusion export: nested folder grid picker: Export → Fusion folder browser is now a 2-column tile grid; click a tile to open nested folders (e.g. Project Files → Render Studio → …).
 - Fusion export: nested folder grid picker: Export here selects the current folder; breadcrumbs + Back for navigation; last nested path remembered.
 - Part names: product noun, not “fully assembled CAD”: Spice-improved prompts often started with CAD boilerplate, so STEP/Fusion file + `model_label` became `Parametric Fully Assembled CAD…`.
 - Part names: product noun, not “fully assembled CAD”: `title_from_prompt` / `file_stem_from_prompt` now strip that jargon and prefer `Gripper - Robot Arm`-style names; colon openings (`Parallel gripper: …`) keep the product name.
@@ -205,7 +205,7 @@
 
 ## 2026-07-23
 
-- Invited workspace projects → shared folder: Problem: accepting a workspace invite dumped that team's root projects into the invitee's personal Projects root (Vineet had 1 personal + ~60 Render3D models mixed).
+- Invited workspace projects → shared folder: Problem: accepting a workspace invite dumped that team's root projects into the invitee's personal Projects root (Vineet had 1 personal + ~60 Render Studio models mixed).
 - Invited workspace projects → shared folder: Fix: `list_projects` nests non-personal root projects under virtual `__shared_ws_{teamId}` named "{Team} shared workspace". Real subfolders unchanged. Browser treats them as virtual/read-only.
 - Fix AI usage sparkline overflow: Cost bars were scaled to 42px inside a 28px chart (clipped/overflow). Chart restored to 40px; bar heights capped to fit; overflow hidden. Cache-bust `?v=20260723-cost-bars`.
 - Right panel tabs: 2 rows, tighter chrome: Right tabs forced to a 3-column / 2-row grid (was wrapping to 3 rows).
@@ -218,7 +218,7 @@
 - Fix: robotic work-cell props polluted Design viewport: Fix: never inject on bind; default env `empty`; always clear on leave; sweep leftover `isRobotSimEnvironment` nodes. Cache-bust `?v=20260723-robot-sim-fix`.
 - Robotic Simulator tab (next to Electronics): Design/Wiring tab ROBOTICS + right panel: catalog arms, URDF/SRDF upload, work-cell environments, play cycle / joint playground.
 - Robotic Simulator tab (next to Electronics): New `frontend/robotic-simulator.js`; upload accepts `.urdf`/`.srdf` in `POST /upload`. Cache-bust `?v=20260723-robot-sim`.
-- Link preview title → AI & Robotics Studio: Updated `frontend/index.html` `<title>`, `og:title`, `twitter:title`, and descriptions to Render3D — The AI & Robotics Studio (was “AI Product Studio”).
+- Link preview title → AI & Robotics Studio: Updated `frontend/index.html` `<title>`, `og:title`, `twitter:title`, and descriptions to Render Studio — The AI & Robotics Studio (was “AI Product Studio”).
 - Viewport high-quality video record control: Added video camera icon next to Screenshot in the viewport view bar.
 - Viewport high-quality video record control: ▾ opens settings: quality (Standard/High/Ultra), fps (30/60), optional mic; main click starts/stops recording.
 - Quest tracking moved to Preferences → Advanced: Removed Quest tracking toggle from the account Learn menu and General preferences.

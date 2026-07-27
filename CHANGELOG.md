@@ -7,7 +7,7 @@
 ## 2026-07-27
 
 - Management dashboard has a Changelog tab that shows the live `CHANGELOG.md` from the repo (Refresh reloads the latest copy).
-- New accounts get a one-time $10 Render3D Key trial with welcome popup and email; the shared key disappears when credits run out.
+- New accounts get a one-time $10 Render Studio Key trial with welcome popup and email; the shared key disappears when credits run out.
 - Share to X prepares an MP4 when needed, then opens compose with your caption and downloads the clip to attach.
 - Video studio supports multi-track clip editing with webcam, upload, and phone QR capture, plus Handy-oriented Bambu send on mobile.
 - Connect X (X Corp logo) from Account → Authorized apps and Preferences → Authorized apps, with connect/unlink status.
@@ -34,7 +34,7 @@
 - Project chat images open in an in-app lightbox instead of a new browser tab.
 - Kimi selection no longer snaps back to Claude or OpenAI.
 - Personal key Save & activate works reliably when adding an AI key.
-- Shared credits include Render3D Kimi K3 (V3).
+- Shared credits include Render Studio Kimi K3 (V3).
 - Viewport orbit stops when you release the mouse.
 - Mobile look-dev no longer shows pure-black models.
 - Admin Recent Projects can be sorted by date, name, person, cost, or files.
@@ -210,7 +210,7 @@
 - Management dashboard for operators (users, projects, prompts, stats).
 - Wiring debugger focus diagram and photo-debug tooling.
 - Extrude-drag and measure tooling modules in Studio.
-- Local Fusion 360 add-in scaffold (Render3DLink) for localhost script bridge use.
+- Local Fusion 360 add-in scaffold (Render StudioLink) for localhost script bridge use.
 
 ## 2026-06-19
 

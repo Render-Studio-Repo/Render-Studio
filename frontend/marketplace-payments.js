@@ -163,7 +163,7 @@ export function mountSellerPanel(host, { onStatus } = {}) {
   host.innerHTML = `
     <div class="marketplace-seller-panel" id="mkt-seller-panel">
       <strong>Seller payouts</strong>
-      <p class="muted small">Connect payout accounts the same way you connect apps. Stripe handles bank payouts, PayPal stores your payout account email, and Phantom links your crypto wallet. Render3D keeps a <strong>10%</strong> platform fee on each sale.</p>
+      <p class="muted small">Connect payout accounts the same way you connect apps. Stripe handles bank payouts, PayPal stores your payout account email, and Phantom links your crypto wallet. Render Studio keeps a <strong>10%</strong> platform fee on each sale.</p>
       <p class="marketplace-seller-status" id="mkt-seller-status">Sign in to connect payouts.</p>
       <div class="seller-actions">
         <button type="button" class="marketplace-payout-btn marketplace-payout-btn--stripe marketplace-payout-card" id="mkt-connect-stripe">
@@ -362,7 +362,7 @@ export function bindPriceFeeHint(priceInput, hintEl) {
     }
     hintEl.innerHTML =
       `Buyer pays <strong>${formatMoney(preview.price_cents)}</strong> · ` +
-      `Render3D fee <strong>${formatMoney(preview.platform_fee_cents)}</strong> (${PLATFORM_FEE_PERCENT}%) · ` +
+      `Render Studio fee <strong>${formatMoney(preview.platform_fee_cents)}</strong> (${PLATFORM_FEE_PERCENT}%) · ` +
       `You receive <strong>${formatMoney(preview.seller_net_cents)}</strong>`;
   };
   priceInput.addEventListener("input", update);

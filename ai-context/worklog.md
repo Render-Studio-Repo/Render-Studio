@@ -1,3 +1,11 @@
+## 2026-07-27 — Rebrand to Render Studio + render credits
+
+- User-facing product name: **Render Studio** (kept `render3d.app` URLs, logos, `Render3DMobile*` APIs).
+- Billing copy: **Render3D credits / Studio credits → render credits**; platform key label **Render Studio Key**.
+- Cache-bust `?v=20260727-render-studio`.
+
+---
+
 ## 2026-07-27 — X share caption: Render Studio + site link
 
 - Default Share to X caption is **Render Studio** (not “Made in Render3D”).

@@ -4,7 +4,7 @@ Supports:
   - OAuth 1.0a (API Key + API Key Secret) — default; matches Keys and tokens in the portal
   - OAuth 2.0 PKCE (Client ID + Client Secret) when TWITTER_OAUTH_MODE=oauth2
 
-Stores user tokens so the browser can Connect X once and post without leaving Render3D.
+Stores user tokens so the browser can Connect X once and post without leaving Render Studio.
 """
 
 from __future__ import annotations

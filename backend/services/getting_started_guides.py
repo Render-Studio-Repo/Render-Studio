@@ -179,7 +179,7 @@ GETTING_STARTED_GUIDES: list[dict[str, Any]] = [
         "category": "help",
         "title": "Tips and tricks",
         "summary": "Shift-select files, drag refs into the prompt, keep prompts focused, share context.",
-        "ask": "Give me practical Render3D tips and tricks.",
+        "ask": "Give me practical Render Studio tips and tricks.",
         "steps": ["Shift-click in the Project browser to select a file range.", "Drag files into the AI prompt as references.", "Prefer @face/@edge/@path chips over vague locations.", "Generate the main object first, then revise selected results."],
         "keywords": ["tips", "tricks", "shift select", "best practices"],
         "gif": f"/docs/media/link-to-prompt.gif?{GIF_CACHE}",

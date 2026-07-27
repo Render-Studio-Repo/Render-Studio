@@ -85,7 +85,7 @@ function ensureUpdateBanner(onReloadNow, onDismiss) {
   banner.className = "client-update-banner hidden";
   banner.setAttribute("role", "status");
   banner.innerHTML = `
-    <span>Render3D just received an update. Click to refresh when you’re ready.</span>
+    <span>Render Studio just received an update. Click to refresh when you’re ready.</span>
     <button type="button" class="btn btn-compact accent" data-client-reload-now>Refresh</button>
     <button type="button" class="btn-icon" data-client-reload-dismiss title="Dismiss">×</button>
   `;
@@ -144,7 +144,7 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
     if (banner) {
       banner.classList.remove("hidden");
       const label = banner.querySelector("span");
-      if (label) label.textContent = "Refreshing Render3D and restoring your project…";
+      if (label) label.textContent = "Refreshing Render Studio and restoring your project…";
       banner.querySelector("[data-client-reload-now]")?.classList.add("hidden");
       banner.querySelector("[data-client-reload-dismiss]")?.classList.add("hidden");
     }
@@ -167,7 +167,7 @@ export function initClientVersionWatcher({ getSnapshot, onUpdating, isBusy, onUp
     );
     const label = banner.querySelector("span");
     if (label) {
-      label.textContent = "Render3D just received an update. Click to refresh when you’re ready.";
+      label.textContent = "Render Studio just received an update. Click to refresh when you’re ready.";
     }
     banner.querySelector("[data-client-reload-now]")?.classList.remove("hidden");
     banner.querySelector("[data-client-reload-dismiss]")?.classList.remove("hidden");

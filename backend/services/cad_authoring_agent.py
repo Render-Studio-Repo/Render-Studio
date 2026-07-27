@@ -1,8 +1,8 @@
-"""Jake-style CAD authoring agent helpers for Render3D CAD 2.0.
+"""Jake-style CAD authoring agent helpers for Render Studio CAD 2.0.
 
 Upstream text-to-cad is a Codex/Claude agent that reads ``skills/cad/SKILL.md``
 and runs ``scripts/step`` → ``inspect`` → ``snapshot`` → repair across turns.
-Render3D cannot embed Codex CLI inside the product shell, so this module
+Render Studio cannot embed Codex CLI inside the product shell, so this module
 implements the same skill contract as an in-process authoring agent:
 
 1. Write/edit ``gen_step()`` source (LLM)

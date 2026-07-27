@@ -116,7 +116,7 @@ function fileExt(name = "") {
 }
 
 function ownerLabel(item) {
-  return item.owner?.name || item.members?.[0]?.display_name || "Render3D creator";
+  return item.owner?.name || item.members?.[0]?.display_name || "Render Studio creator";
 }
 
 function isKnowledgeListing(item) {

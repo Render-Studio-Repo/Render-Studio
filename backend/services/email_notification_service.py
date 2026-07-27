@@ -175,11 +175,11 @@ def send_workspace_invite_email(
     user_id: str | None = None,
 ) -> dict[str, Any]:
     safe_inviter = html.escape(inviter_name or "A teammate")
-    safe_team = html.escape(team_name or "a Render3D workspace")
+    safe_team = html.escape(team_name or "a Render Studio workspace")
     safe_url = html.escape(invite_url)
-    subject = f"You're invited to {team_name or 'a Render3D workspace'}"
+    subject = f"You're invited to {team_name or 'a Render Studio workspace'}"
     text = (
-        f"{inviter_name or 'A teammate'} invited you to join {team_name or 'a Render3D workspace'} on Render3D.\n\n"
+        f"{inviter_name or 'A teammate'} invited you to join {team_name or 'a Render Studio workspace'} on Render Studio.\n\n"
         f"Join workspace: {invite_url}\n\n"
         "This link accepts the workspace invite for the invited email address."
     )
@@ -188,9 +188,9 @@ def send_workspace_invite_email(
   <body style="margin:0;background:#0d1117;color:#e6edf3;font-family:Inter,Arial,sans-serif;">
     <div style="max-width:640px;margin:0 auto;padding:28px;">
       <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:linear-gradient(135deg,#161b22,#0d1117);">
-        <img src="https://render3d.app/render3d-logo.png" alt="Render3D" width="52" height="52" style="border-radius:14px;" />
+        <img src="https://render3d.app/render3d-logo.png" alt="Render Studio" width="52" height="52" style="border-radius:14px;" />
         <h1 style="margin:18px 0 8px;font-size:26px;">Join {safe_team}</h1>
-        <p style="margin:0 0 18px;color:#9da7b3;line-height:1.55;">{safe_inviter} invited you to collaborate in Render3D. This link accepts the invite for this email address and opens the workspace.</p>
+        <p style="margin:0 0 18px;color:#9da7b3;line-height:1.55;">{safe_inviter} invited you to collaborate in Render Studio. This link accepts the invite for this email address and opens the workspace.</p>
         <a href="{safe_url}" style="display:inline-block;padding:12px 16px;border-radius:999px;background:#fb8500;color:#0d1117;text-decoration:none;font-weight:800;">Join workspace</a>
         <p style="margin:18px 0 0;color:#9da7b3;font-size:13px;">If the button does not work, paste this link into your browser:<br />{safe_url}</p>
       </div>
@@ -216,11 +216,11 @@ def send_project_share_invite_email(
     user_id: str | None = None,
 ) -> dict[str, Any]:
     safe_inviter = html.escape(inviter_name or "A teammate")
-    safe_project = html.escape(project_name or "a Render3D project")
+    safe_project = html.escape(project_name or "a Render Studio project")
     safe_url = html.escape(invite_url)
     subject = f"{inviter_name or 'Someone'} shared “{project_name or 'a project'}” with you"
     text = (
-        f"{inviter_name or 'A teammate'} shared “{project_name or 'a project'}” with you on Render3D.\n\n"
+        f"{inviter_name or 'A teammate'} shared “{project_name or 'a project'}” with you on Render Studio.\n\n"
         f"Accept share: {invite_url}\n\n"
         "After you accept, the project appears in your files with a Shared tag. "
         "Edits stay linked to the same live project."
@@ -230,7 +230,7 @@ def send_project_share_invite_email(
   <body style="margin:0;background:#0d1117;color:#e6edf3;font-family:Inter,Arial,sans-serif;">
     <div style="max-width:640px;margin:0 auto;padding:28px;">
       <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:linear-gradient(135deg,#161b22,#0d1117);">
-        <img src="https://render3d.app/render3d-logo.png" alt="Render3D" width="52" height="52" style="border-radius:14px;" />
+        <img src="https://render3d.app/render3d-logo.png" alt="Render Studio" width="52" height="52" style="border-radius:14px;" />
         <h1 style="margin:18px 0 8px;font-size:26px;">Shared: {safe_project}</h1>
         <p style="margin:0 0 18px;color:#9da7b3;line-height:1.55;">{safe_inviter} shared a project with you. Accept to add it to your files with a Shared tag — edits stay linked live.</p>
         <a href="{safe_url}" style="display:inline-block;padding:12px 16px;border-radius:999px;background:#fb8500;color:#0d1117;text-decoration:none;font-weight:800;">Accept project</a>

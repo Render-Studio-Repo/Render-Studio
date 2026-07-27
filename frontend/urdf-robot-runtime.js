@@ -1,4 +1,4 @@
-/** Jake-style URDF/SRDF robot runtime for Render3D's Three.js viewport. */
+/** Jake-style URDF/SRDF robot runtime for Render Studio's Three.js viewport. */
 
 import * as THREE from "three";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
@@ -430,7 +430,7 @@ export function createUrdfRobotRuntime({ scene, authHeaders } = {}) {
     root = new THREE.Group();
     root.name = `urdf:${urdf.name}`;
     root.userData.isUrdfRobot = true;
-    // Render3D CAD viewport is millimeter-based; URDF is meters.
+    // Render Studio CAD viewport is millimeter-based; URDF is meters.
     root.scale.setScalar(1000);
     linkGroups = new Map();
     linkParents = new Map();

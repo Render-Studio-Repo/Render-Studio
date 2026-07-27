@@ -549,7 +549,7 @@ export function setupSceneLighting(scene, renderer = null) {
   scene.add(_cadLightGroup);
 
   // Mesh / img2threejs look-dev — mirrors showcase default studio + cinematic rim.
-  // Positions are Z-up (Render3D), converted from the showcase's Y-up rig.
+  // Positions are Z-up (Render Studio), converted from the showcase's Y-up rig.
   _lookdevLightGroup = new THREE.Group();
   _lookdevLightGroup.name = "MeshLookdevLights";
   _lookdevLightGroup.visible = false;

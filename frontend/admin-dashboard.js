@@ -960,7 +960,7 @@ function renderDashboard(root, data) {
       <div>
         <p class="info-eyebrow">Management</p>
         <h2>Site Overview</h2>
-        <p class="info-lead">Users, recent model activity, prompt history, and training-ready prompt↔model pairs across Render3D.</p>
+        <p class="info-lead">Users, recent model activity, prompt history, and training-ready prompt↔model pairs across Render Studio.</p>
       </div>
       <button type="button" class="btn secondary" id="admin-refresh">Refresh</button>
     </section>
@@ -1523,7 +1523,7 @@ async function loadFeedbackInbox(root) {
         const row = btn.closest("[data-feedback-id]");
         const id = row?.getAttribute("data-feedback-id");
         if (!id) return;
-        const text = window.prompt("Message this user from Render3D support:");
+        const text = window.prompt("Message this user from Render Studio support:");
         if (!text || !text.trim()) return;
         btn.disabled = true;
         try {

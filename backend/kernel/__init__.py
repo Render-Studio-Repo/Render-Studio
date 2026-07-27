@@ -1,4 +1,4 @@
-"""Render3D parametric CAD kernel (build123d / OpenCASCADE B-rep).
+"""Render Studio parametric CAD kernel (build123d / OpenCASCADE B-rep).
 
 This package replaces the fragile trimesh-primitive engine with a real
 parametric B-rep kernel. The public contract is the :class:`FeatureProgram`

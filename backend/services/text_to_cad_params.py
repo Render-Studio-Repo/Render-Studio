@@ -279,7 +279,7 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
         raise RuntimeError(detail[:2000] or "scripts/step failed")
     glb_path = project_path / glb_name
     if glb_path.is_file():
-        # scripts/step writes native Y-up metre GLBs; Render3D viewport is Z-up mm.
+        # scripts/step writes native Y-up metre GLBs; Render Studio viewport is Z-up mm.
         _convert_regenerated_glb_to_z_up(glb_path)
         step_path = project_path / step_name
         if step_path.is_file():
@@ -453,7 +453,7 @@ def _rebuild_urdf_preview_glb(project_path: Path, stem: str) -> None:
 
 
 def _convert_regenerated_glb_to_z_up(glb_path: Path) -> None:
-    """Match design_service: rotate native Y-up text-to-cad GLB into Render3D Z-up."""
+    """Match design_service: rotate native Y-up text-to-cad GLB into Render Studio Z-up."""
     from backend.services.design_service import _convert_text_to_cad_glb_to_z_up
 
     _convert_text_to_cad_glb_to_z_up(glb_path)

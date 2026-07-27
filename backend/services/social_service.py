@@ -456,7 +456,7 @@ def build_ics(
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//Render3D//Meetings//EN",
+        "PRODID:-//Render Studio//Meetings//EN",
         "CALSCALE:GREGORIAN",
         "METHOD:REQUEST",
         "BEGIN:VEVENT",
@@ -466,7 +466,7 @@ def build_ics(
         f"DTEND:{fmt(ends_at)}",
         f"SUMMARY:{_ics_escape(title)}",
         f"DESCRIPTION:{_ics_escape(description)}",
-        f"ORGANIZER;CN=Render3D:mailto:{organizer_email}",
+        f"ORGANIZER;CN=Render Studio:mailto:{organizer_email}",
     ]
     for email in attendee_emails:
         if email:

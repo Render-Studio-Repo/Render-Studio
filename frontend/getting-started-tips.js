@@ -29,7 +29,7 @@ export const GETTING_STARTED_TIPS = [
     topic: "DXF / drawings",
     title: "Clean drawings win",
     body: "Closed polylines, clear layers, real units. Ask the agent to repair messy layers before solids.",
-    starter: "My DXF has overlapping lines — what’s the best workflow in Render3D?",
+    starter: "My DXF has overlapping lines — what’s the best workflow in Render Studio?",
   },
   {
     topic: "DXF / drawings",
@@ -230,7 +230,7 @@ export const GETTING_STARTED_TIPS = [
       "Create the share link.",
       "Send it for browser preview, components, section view, and downloads.",
     ],
-    starter: "What can reviewers do with a shared Render3D model link?",
+    starter: "What can reviewers do with a shared Render Studio model link?",
   },
   {
     topic: "Cloud CAD",

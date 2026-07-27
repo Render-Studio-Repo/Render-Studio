@@ -451,9 +451,9 @@ def create_meeting_request(
 
     from_handle = from_user.get("handle") or slugify_handle(from_user.get("display_name") or "user")
     to_handle = target.get("handle") or slugify_handle(target.get("display_name") or "user")
-    meeting_title = f"Render3D meeting: {from_user.get('display_name') or from_handle} ↔ {target.get('display_name') or to_handle}"
+    meeting_title = f"Render Studio meeting: {from_user.get('display_name') or from_handle} ↔ {target.get('display_name') or to_handle}"
     details = (
-        (message or f"Meeting request from @{from_handle} on Render3D").strip()
+        (message or f"Meeting request from @{from_handle} on Render Studio").strip()
         + f"\n\nProfiles:\n- https://render3d.app/u/{from_handle}\n- https://render3d.app/u/{to_handle}"
     )
     if proposed_time and not start_dt:
@@ -559,8 +559,8 @@ def meeting_ics_payload(req_id: str) -> tuple[str, str]:
         end_dt = start_dt + __import__("datetime").timedelta(minutes=30)
     from_user = get_user_row(row["from_user_id"]) or {}
     to_user = get_user_row(row["to_user_id"]) or {}
-    title = f"Render3D meeting: {from_user.get('display_name') or 'User'} ↔ {to_user.get('display_name') or 'User'}"
-    details = (row.get("message") or "Render3D meeting").strip()
+    title = f"Render Studio meeting: {from_user.get('display_name') or 'User'} ↔ {to_user.get('display_name') or 'User'}"
+    details = (row.get("message") or "Render Studio meeting").strip()
     organizer = (app_settings.capacity_alert_from or "info@render3d.app").strip()
     ics = build_ics(
         uid=row.get("ics_uid") or f"{req_id}@render3d.app",

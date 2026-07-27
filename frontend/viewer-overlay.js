@@ -1391,7 +1391,7 @@ export function createViewerOverlay(viewportEl, { fetchLogs, onStopGeneration, g
   const api = { setGenerating, isGenerating, updateProgress, setStopVisible, setActiveJobs, showError, clearError, showReadyBanner, clearReadyBanner, dismiss };
   // Main studio viewport only — wiring has its own overlay instance.
   if (viewportEl?.id === "viewport") {
-    window.Render3DViewerOverlay = api;
+    window.Render StudioViewerOverlay = api;
   }
   return api;
 }

@@ -36,7 +36,7 @@ function colorizePlainPreviewMeshes(root) {
 export function createMiniViewer(container, { autoRotate = true, background = 0x0d1117, worldUp = "z" } = {}) {
   if (!container) return { load: async () => {}, dispose() {}, setAutoRotate() {}, resize() {} };
 
-  // Match the main studio: CAD / Render3D meshes are authored Z-up.
+  // Match the main studio: CAD / Render Studio meshes are authored Z-up.
   const up = worldUp === "y" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
 
   const scene = new THREE.Scene();

@@ -33,7 +33,7 @@ MESH_CHECKLIST = (
     {"id": "finalize", "label": "Finalize viewport model"},
 )
 
-MESH_SYSTEM = """You are the img2threejs Mesh builder for Render3D.
+MESH_SYSTEM = """You are the img2threejs Mesh builder for Render Studio.
 
 Rebuild the requested object as a CODE-ONLY procedural Three.js model (primitives + materials).
 This is reconstruction-by-code — NOT photogrammetry, NOT downloading meshes.
@@ -55,7 +55,7 @@ export default function createModel(THREE) {
 
 Rules:
 - Units: millimeters-ish (typical object ~20–400 units across).
-- Coordinate frame: Three.js Y-up (Y is vertical / height). The exporter converts to Render3D Z-up.
+- Coordinate frame: Three.js Y-up (Y is vertical / height). The exporter converts to Render Studio Z-up.
 - Prefer real colors from the reference image / prompt (hex or THREE.Color).
 - Independent PBR channels — never fake metal with bright albedo alone.
 - Compound objects need multiple named meshes (body, lid, handle, trim…), not one blob.
@@ -65,7 +65,7 @@ Rules:
 - Seat the model roughly around origin; the exporter will floor-align.
 """
 
-MESH_REVIEW_SYSTEM = """You are the Mesh visual/structure reviewer for Render3D (img2threejs).
+MESH_REVIEW_SYSTEM = """You are the Mesh visual/structure reviewer for Render Studio (img2threejs).
 
 Given the user brief, the Three.js factory source, and export metadata, decide if the mesh is good enough to ship to the viewport.
 

@@ -247,13 +247,13 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
             <span class="fusion-mirror-card-badge">${stale ? "Needs re-link" : "Linked"}</span>
           </div>
           <p class="muted small fusion-mirror-card-meta">
-            Render3D project <code>${esc(mirror.project_id)}</code>${mirror.team_name ? ` · ${esc(mirror.team_name)}` : ""}
+            Render Studio project <code>${esc(mirror.project_id)}</code>${mirror.team_name ? ` · ${esc(mirror.team_name)}` : ""}
           </p>
           <p class="muted small fusion-mirror-card-path">Fusion: ${esc(fusionPath)}</p>
           ${stale && mirror.access?.error ? `<p class="muted small error">${esc(mirror.access.error)}</p>` : ""}
           <p class="muted small fusion-mirror-card-meta">Updated ${esc(formatMirrorWhen(mirror.updated_at))}${mirror.last_pushed_at ? ` · Last push ${esc(formatMirrorWhen(mirror.last_pushed_at))}` : ""}</p>
           <div class="fusion-mirror-card-actions">
-            <button type="button" class="btn btn-compact btn-fusion-open-mirror-project">Open Render3D project</button>
+            <button type="button" class="btn btn-compact btn-fusion-open-mirror-project">Open Render Studio project</button>
             <button type="button" class="btn btn-compact btn-fusion-goto-mirror-folder"${stale ? " disabled" : ""}>Show in Browse</button>
             <button type="button" class="btn btn-compact btn-fusion-unlink-mirror-project">${stale ? "Remove stale link" : "Unlink"}</button>
           </div>
@@ -271,11 +271,11 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         event.currentTarget.textContent = "Opening...";
         try {
           await onOpenProject?.(projectId);
-          setStatus(`Opened Render3D project ${projectId}.`);
+          setStatus(`Opened Render Studio project ${projectId}.`);
           setActiveTab("browse");
           await syncMirrorUiFromCurrentProject();
         } catch (err) {
-          setStatus(err.message || "Could not open Render3D project.", true);
+          setStatus(err.message || "Could not open Render Studio project.", true);
         } finally {
           event.currentTarget.disabled = false;
           event.currentTarget.textContent = orig;
@@ -317,7 +317,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     renderControls();
     await loadProjects();
     if (getCurrentProjectId?.() !== mirror.project_id) {
-      setStatus(`Showing Fusion folder for Render3D project ${mirror.render3d_project_name || mirror.project_id}. Open that project to link or push.`);
+      setStatus(`Showing Fusion folder for Render Studio project ${mirror.render3d_project_name || mirror.project_id}. Open that project to link or push.`);
     }
   }
 
@@ -351,7 +351,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
           ? `${accountMirrors.length} linked mirror${accountMirrors.length === 1 ? "" : "s"} for ${accountLabel}.`
           : `No linked Fusion mirrors saved for ${accountLabel} yet.`;
       }
-      setStatus(`Removed Fusion mirror link from Render3D project ${projectId}.`);
+      setStatus(`Removed Fusion mirror link from Render Studio project ${projectId}.`);
       onStatus?.("ok", "Fusion mirror unlinked.");
       onMirrorLinked?.();
       window.dispatchEvent(new CustomEvent("render3d:fusion-mirror-changed"));
@@ -520,7 +520,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   async function unlinkMirrorFolder(btn) {
     const currentProjectId = getCurrentProjectId?.();
     if (!currentProjectId) {
-      setStatus("Open a Render3D project before unlinking a Fusion mirror folder.", true);
+      setStatus("Open a Render Studio project before unlinking a Fusion mirror folder.", true);
       return;
     }
     const orig = btn.textContent;
@@ -586,14 +586,14 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     const currentProjectId = getCurrentProjectId?.();
     const currentProjectLabel = currentProjectId
       ? (getCurrentProjectLabel?.() || currentProjectId)
-      : "None open — open a Render3D project first";
+      : "None open — open a Render Studio project first";
     controlsEl.innerHTML = `
       <div class="fusion-account-row">
         <span class="fusion-account-label">${esc(accountLabel)}</span>
         <button type="button" class="btn btn-compact btn-fusion-disconnect-account" title="Disconnect this Autodesk account so you can connect a different one.">Disconnect account</button>
       </div>
       <p class="fusion-mirror-target muted small${currentProjectId ? "" : " error"}">
-        Linking mirror to Render3D project: <strong>${esc(currentProjectLabel)}</strong>
+        Linking mirror to Render Studio project: <strong>${esc(currentProjectLabel)}</strong>
       </p>
       ${mirrorStale ? `<p class="fusion-mirror-stale muted small error">${esc(mirrorStaleMessage)}</p>` : ""}
       <label class="fusion-library-field">
@@ -605,10 +605,10 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         <select id="fusion-project-select"></select>
       </label>
       <div class="fusion-library-actions">
-        ${preferredMirrorTarget && !mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render3D project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
-        ${mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Remove the stale Fusion mirror saved on this Render3D project.">Clear stale mirror</button>' : ""}
+        ${preferredMirrorTarget && !mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Unlink this Render Studio project from the currently selected Fusion mirror folder.">Unlink mirror</button>' : ""}
+        ${mirrorStale ? '<button type="button" class="btn btn-compact btn-fusion-unlink-mirror" title="Remove the stale Fusion mirror saved on this Render Studio project.">Clear stale mirror</button>' : ""}
         <button type="button" class="btn btn-compact btn-fusion-import-visible" title="Import every file currently shown in open Fusion folders.">Import all visible</button>
-        <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Push your local Render3D edits to Fusion, pull any newer Fusion versions, then update teammate mirrors.">Sync with Fusion</button>
+        <button type="button" class="btn btn-compact btn-fusion-sync-latest" title="Push your local Render Studio edits to Fusion, pull any newer Fusion versions, then update teammate mirrors.">Sync with Fusion</button>
       </div>
       <p class="muted small fusion-folder-hint">Open a folder to read its full name and see Link / Import / Push options, then pick files inside.</p>
     `;
@@ -927,9 +927,9 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       </div>
       <div class="onshape-doc-elements fusion-folder-panel fusion-folder-panel-collapsed">
         <div class="fusion-folder-toolbar">
-          <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}" title="Link this Fusion folder as the mirror for the open Render3D project">${preferred ? "Linked mirror" : "Link mirror"}</button>
+          <button type="button" class="btn btn-compact btn-fusion-link-mirror${preferred ? " success" : ""}" title="Link this Fusion folder as the mirror for the open Render Studio project">${preferred ? "Linked mirror" : "Link mirror"}</button>
           <button type="button" class="btn btn-compact btn-fusion-import-folder" title="Import all supported files in this folder">Import all</button>
-          <button type="button" class="btn btn-compact btn-fusion-push" title="Push the current Render3D model into this folder">Push current</button>
+          <button type="button" class="btn btn-compact btn-fusion-push" title="Push the current Render Studio model into this folder">Push current</button>
         </div>
         <div class="fusion-folder-contents"></div>
       </div>
@@ -967,7 +967,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   async function linkMirrorFolder(folder, btn, { item = null, importSelected = false } = {}) {
     const currentProjectId = getCurrentProjectId?.();
     if (!currentProjectId) {
-      setStatus("Open a Render3D project before linking a Fusion mirror folder.", true);
+      setStatus("Open a Render Studio project before linking a Fusion mirror folder.", true);
       return;
     }
     const orig = btn?.textContent;
@@ -1056,7 +1056,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   async function openMirrorLinkModal(folder, triggerBtn) {
     const currentProjectId = getCurrentProjectId?.();
     if (!currentProjectId) {
-      setStatus("Open a Render3D project before linking a Fusion mirror folder.", true);
+      setStatus("Open a Render Studio project before linking a Fusion mirror folder.", true);
       return;
     }
     closeMirrorLinkModal();
@@ -1076,10 +1076,10 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
         <p class="muted small fusion-mirror-link-subtitle">
           Hub <strong>${esc(hub?.name || activeHubId || "—")}</strong>
           · Project <strong>${esc(project?.name || activeProjectId || "—")}</strong>
-          · Render3D <strong>${esc(renderProjectLabel)}</strong>
+          · Render Studio <strong>${esc(renderProjectLabel)}</strong>
         </p>
         <section class="fusion-mirror-link-section">
-          <h3>People attached to this Render3D project</h3>
+          <h3>People attached to this Render Studio project</h3>
           <div class="fusion-mirror-people" data-mirror-people>
             <p class="muted small loading-dots">Loading collaborators…</p>
           </div>
@@ -1183,12 +1183,12 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       }
     });
 
-    // Load people attached to this Render3D project's mirrors.
+    // Load people attached to this Render Studio project's mirrors.
     try {
       const data = await api(`/api/projects/${encodeURIComponent(currentProjectId)}/fusion-mirrors?include_contents=true`);
       const mirrors = data.mirrors || [];
       if (!mirrors.length) {
-        peopleEl.innerHTML = `<p class="muted small">Nobody has a Fusion mirror on this Render3D project yet. You’ll be the first.</p>`;
+        peopleEl.innerHTML = `<p class="muted small">Nobody has a Fusion mirror on this Render Studio project yet. You’ll be the first.</p>`;
       } else {
         peopleEl.innerHTML = `
           <ul class="fusion-mirror-people-list">
@@ -1232,7 +1232,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   async function syncLatestFromFusion(btn) {
     const currentProjectId = getCurrentProjectId?.();
     if (!currentProjectId) {
-      setStatus("Open the Render3D project you want to sync from Fusion.", true);
+      setStatus("Open the Render Studio project you want to sync from Fusion.", true);
       return;
     }
     const orig = btn.textContent;
@@ -1254,13 +1254,13 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
       const pushed = result.pushed_mirrors?.length || 0;
       const errors = result.push_errors?.length || 0;
       if (!result.changed) {
-        setStatus(result.message || "Render3D already has the latest Fusion version.");
+        setStatus(result.message || "Render Studio already has the latest Fusion version.");
       } else if (errors) {
-        setStatus(`Pulled latest Fusion update into Render3D and pushed to ${pushed} mirror${pushed === 1 ? "" : "s"}; ${errors} mirror push failed.`, true);
+        setStatus(`Pulled latest Fusion update into Render Studio and pushed to ${pushed} mirror${pushed === 1 ? "" : "s"}; ${errors} mirror push failed.`, true);
       } else {
-        setStatus(`Pulled latest Fusion update into Render3D and pushed to ${pushed} teammate mirror${pushed === 1 ? "" : "s"}.`);
+        setStatus(`Pulled latest Fusion update into Render Studio and pushed to ${pushed} teammate mirror${pushed === 1 ? "" : "s"}.`);
       }
-      onStatus?.(errors ? "error" : "ok", result.changed ? "Fusion update synced through Render3D." : "Fusion mirror already up to date.");
+      onStatus?.(errors ? "error" : "ok", result.changed ? "Fusion update synced through Render Studio." : "Fusion mirror already up to date.");
     } catch (err) {
       btn.disabled = false;
       btn.textContent = orig;
@@ -1348,7 +1348,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
           <button type="button" class="btn btn-compact btn-fusion-view">View</button>
           <button type="button" class="btn btn-compact btn-fusion-push-imported">Push update</button>
         ` : `
-          <button type="button" class="btn accent btn-compact btn-fusion-import" title="${canImport ? "Import into Render3D" : "Convert Fusion design to STEP, then import"}">Import</button>
+          <button type="button" class="btn accent btn-compact btn-fusion-import" title="${canImport ? "Import into Render Studio" : "Convert Fusion design to STEP, then import"}">Import</button>
         `}
         ${file.web_url ? `<a class="btn btn-compact btn-onshape-view" target="_blank" rel="noopener" href="${esc(file.web_url)}">Open</a>` : ""}
       </div>
@@ -1376,7 +1376,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
     const menu = document.createElement("div");
     menu.className = "folder-context-menu fusion-file-context-menu";
     menu.innerHTML = `
-      ${imported ? `<button type="button" data-action="view-render3d">View in Render3D</button>` : `<button type="button" data-action="import">Import to Render3D</button>`}
+      ${imported ? `<button type="button" data-action="view-render3d">View in Render Studio</button>` : `<button type="button" data-action="import">Import to Render Studio</button>`}
       <button type="button" data-action="open">View in Fusion project</button>
     `;
     document.body.appendChild(menu);
@@ -1600,7 +1600,7 @@ export function initFusionPanel({ api, getCurrentProjectId, getCurrentProjectLab
   async function pushToFolder(folder, btn) {
     const currentProjectId = getCurrentProjectId?.();
     if (!currentProjectId) {
-      setStatus("Open or create a Render3D project before pushing to Fusion.", true);
+      setStatus("Open or create a Render Studio project before pushing to Fusion.", true);
       return;
     }
     const orig = btn.textContent;

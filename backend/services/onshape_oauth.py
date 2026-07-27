@@ -129,7 +129,7 @@ def upsert_user_tokens(token_data: dict[str, Any], link_user_id: str | None = No
     """Store Onshape tokens and return (or create) the local user record.
 
     When ``link_user_id`` is set (connect-after-login), tokens are attached to
-    that Render3D account instead of creating a separate Onshape-only user.
+    that Render Studio account instead of creating a separate Onshape-only user.
 
     Returns a dict with 'user_id' so the caller can issue our own JWT.
     """
@@ -253,7 +253,7 @@ def export_step_to_onshape(access_token: str, step_bytes: bytes,
                            model_name: str) -> dict[str, Any]:
     """Full flow: create doc → upload STEP → return document URL."""
     doc = create_onshape_document(access_token, name=model_name,
-                                  description=f"Exported from Render3D — {model_name}")
+                                  description=f"Exported from Render Studio — {model_name}")
     did = doc["id"]
     wid = doc["defaultWorkspace"]["id"]
     step_filename = f"{model_name}.step"
@@ -461,7 +461,7 @@ def get_valid_access_token(user_id: str) -> str | None:
     expires_at = datetime.fromisoformat(row["expires_at"])
     if datetime.now(timezone.utc) < expires_at - timedelta(minutes=5):
         return row["access_token"]
-    # Token expired — refresh it, keeping tokens on the same Render3D user.
+    # Token expired — refresh it, keeping tokens on the same Render Studio user.
     try:
         new_tokens = refresh_access_token(row["refresh_token"])
         upsert_user_tokens(

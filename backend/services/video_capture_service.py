@@ -91,7 +91,7 @@ def create_session(user_id: str, *, project_id: str | None = None, hint: str | N
         "token": token,
         "user_id": str(user_id),
         "project_id": project_id,
-        "hint": (str(hint or "").strip() or "Record a clip for your Render3D edit")[:160],
+        "hint": (str(hint or "").strip() or "Record a clip for your Render Studio edit")[:160],
         "created_at": created,
         "expires_at": created + _SESSION_TTL_SEC,
         "clips": [],

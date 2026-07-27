@@ -1,4 +1,4 @@
-"""Prepaid credits for users borrowing Render3D platform AI keys (OpenAI + Claude + Kimi)."""
+"""Prepaid credits for users borrowing Render Studio platform AI keys (OpenAI + Claude + Kimi)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ MIN_CHECKOUT_CENTS = 500
 DEFAULT_REFILL_CENTS = 2000
 DEFAULT_REFILL_THRESHOLD_CENTS = 500
 MAX_PAYMENT_LINK_CENTS = 100_000
-SIGNUP_TRIAL_CENTS = 1000  # $10 Render3D key trial for every account once
+SIGNUP_TRIAL_CENTS = 1000  # $10 Render Studio key trial for every account once
 
 
 def _now() -> str:
@@ -203,7 +203,7 @@ def resolve_platform_credentials(
     provider: str | None = None,
     model: str | None = None,
 ) -> dict[str, str] | None:
-    """Pick Render3D platform OpenAI/Claude/Kimi credentials for a credit account.
+    """Pick Render Studio platform OpenAI/Claude/Kimi credentials for a credit account.
 
     ``provider`` / ``model`` let a prompt request pick a shared provider explicitly
     instead of only the account's single preferred shared model.
@@ -242,7 +242,7 @@ def resolve_platform_credentials(
             "provider": "anthropic",
             "model": chosen,
             "api_key": settings.anthropic_api_key.strip(),
-            "shared_key_name": "Render3D Key",
+            "shared_key_name": "Render Studio Key",
             "key_id": "anthropic",
             "source": "platform",
         }
@@ -262,7 +262,7 @@ def resolve_platform_credentials(
             "provider": "kimi",
             "model": chosen,
             "api_key": settings.kimi_api_key.strip(),
-            "shared_key_name": "Render3D Key",
+            "shared_key_name": "Render Studio Key",
             "key_id": "kimi",
             "source": "platform",
         }
@@ -281,7 +281,7 @@ def resolve_platform_credentials(
         "provider": "openai",
         "model": chosen,
         "api_key": settings.openai_api_key.strip(),
-        "shared_key_name": "Render3D Key",
+        "shared_key_name": "Render Studio Key",
         "key_id": "openai",
         "source": "platform",
     }
@@ -320,7 +320,7 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
         "show_popup": bool(granted_at and not popup_seen_at),
         "email_sent": bool(email_sent_at),
         "active": bool(granted_at and balance > 0 and account.get("use_platform_key")),
-        "key_label": "Render3D Key",
+        "key_label": "Render Studio Key",
     }
 
 
@@ -359,9 +359,9 @@ def grant_signup_trial_if_needed(
     *,
     client_ip: str | None = None,
 ) -> dict[str, Any]:
-    """One-time $10 Render3D-key trial for every user (new or returning).
+    """One-time $10 Render Studio-key trial for every user (new or returning).
 
-    Idempotent. Enables the temporary Render3D Key (OpenAI / Anthropic / Kimi)
+    Idempotent. Enables the temporary Render Studio Key (OpenAI / Anthropic / Kimi)
     until the balance is spent; the key option disappears at $0.
 
     Only one free trial is allowed per client IP — additional accounts from the
@@ -405,8 +405,8 @@ def grant_signup_trial_if_needed(
     now = _now()
     meta = {
         "signup_trial": True,
-        "key_label": "Render3D Key",
-        "note": "Temporary shared Render3D key credits for OpenAI, Anthropic, and Kimi.",
+        "key_label": "Render Studio Key",
+        "note": "Temporary shared Render Studio key credits for OpenAI, Anthropic, and Kimi.",
         "client_ip": ip or None,
     }
     with get_conn() as conn:
@@ -525,7 +525,7 @@ def mark_trial_email_sent(user_id: str) -> None:
 def status(user: dict[str, Any]) -> dict[str, Any]:
     account = ensure_account(user["id"])
     balance = int(account.get("balance_cents") or 0)
-    # Temporary Render3D key must not stay selected once credits are gone.
+    # Temporary Render Studio key must not stay selected once credits are gone.
     if balance <= 0 and account.get("use_platform_key"):
         with get_conn() as conn:
             conn.execute(
@@ -647,11 +647,11 @@ def update_settings(
         if provider not in {"openai", "anthropic", "kimi"}:
             raise ValueError("platform_provider must be openai, anthropic, or kimi")
         if provider == "openai" and not platform_openai_configured():
-            raise ValueError("Render3D OpenAI key is not configured yet.")
+            raise ValueError("Render Studio OpenAI key is not configured yet.")
         if provider == "anthropic" and not platform_anthropic_configured():
-            raise ValueError("Render3D Claude key is not configured yet. Add ANTHROPIC_API_KEY on the server.")
+            raise ValueError("Render Studio Claude key is not configured yet. Add ANTHROPIC_API_KEY on the server.")
         if provider == "kimi" and not platform_kimi_configured():
-            raise ValueError("Render3D Kimi key is not configured yet. Add KIMI_API_KEY on the server.")
+            raise ValueError("Render Studio Kimi key is not configured yet. Add KIMI_API_KEY on the server.")
         model = (
             str(platform_model).strip()[:120]
             if platform_model is not None
@@ -713,7 +713,7 @@ def spend_for_trace(user_id: str, trace: dict[str, Any] | None, *, project_id: s
         raise ValueError("Not enough shared-key credits. Buy more credits to continue.")
     new_balance = balance - charge_cents
     now = _now()
-    # When trial/prepaid credits hit zero, hide the temporary Render3D key.
+    # When trial/prepaid credits hit zero, hide the temporary Render Studio key.
     disable_platform = 1 if new_balance <= 0 else 0
     with get_conn() as conn:
         if disable_platform:
@@ -790,8 +790,8 @@ def create_checkout_session(
                         "currency": "usd",
                         "unit_amount": amount,
                         "product_data": {
-                            "name": "Render3D AI credits",
-                            "description": "Prepaid credits for Render3D shared OpenAI & Claude keys",
+                            "name": "render credits",
+                            "description": "Prepaid credits for Render Studio shared OpenAI & Claude keys",
                         },
                     },
                 }

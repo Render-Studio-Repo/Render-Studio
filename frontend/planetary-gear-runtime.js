@@ -80,7 +80,7 @@ function captureRest(obj) {
 
 /**
  * Apply Jake fixed-ring planetary kinematics at drive angle (degrees).
- * Gear axes are +Z after Render3D's Y-up → Z-up GLB conversion.
+ * Gear axes are +Z after Render Studio's Y-up → Z-up GLB conversion.
  */
 function applyDrive(parts, driveDeg, { explode = 0 } = {}) {
   const sunAngle = Number(driveDeg) || 0;

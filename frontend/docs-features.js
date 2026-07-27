@@ -1,4 +1,4 @@
-/** Complete Render3D feature documentation — categorized how-tos + GIF demos. */
+/** Complete Render Studio feature documentation — categorized how-tos + GIF demos. */
 
 export const DOC_CATEGORIES = [
   { id: "ai-cad", title: "AI CAD & prompting", blurb: "Generate and revise parts from natural language." },

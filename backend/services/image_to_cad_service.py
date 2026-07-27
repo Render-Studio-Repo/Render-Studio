@@ -14,7 +14,7 @@ from backend.services.ai_service import AIService
 from backend.services.trace_log import add as trace_add
 
 
-IMAGE_TO_CAD_PREFLIGHT_PROMPT = """You are Render3D's image-to-CAD preflight engineer.
+IMAGE_TO_CAD_PREFLIGHT_PROMPT = """You are Render Studio's image-to-CAD preflight engineer.
 Inspect the attached image set and the user's request. Return one JSON object only.
 
 Goal: decide how to produce an accurate CAD model, not a decorative mesh.

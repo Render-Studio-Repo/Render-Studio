@@ -1,5 +1,5 @@
 /**
- * Quest Book — gamified learning map for Render3D.
+ * Quest Book — gamified learning map for Render Studio.
  * Chapters from DOC_CATEGORIES; nodes from DOC_FEATURES + Welcome chapter.
  * Progress via feature-events.js (localStorage per user).
  */
@@ -17,7 +17,7 @@ const OVERLAY_ID = "quest-book-overlay";
 const WELCOME_CHAPTER = {
   id: "welcome",
   title: "Welcome",
-  blurb: "Your first steps in Render3D.",
+  blurb: "Your first steps in Render Studio.",
 };
 
 const WELCOME_QUESTS = [
@@ -248,7 +248,7 @@ function buildOverlay() {
         <span class="quest-book-head-icon" aria-hidden="true">${icon("welcome", 18)}</span>
         <div class="quest-book-head-titles">
           <strong>Quest Book</strong>
-          <span>Learn Render3D quest by quest</span>
+          <span>Learn Render Studio quest by quest</span>
         </div>
         <div class="quest-book-progress" title="Quest completion">
           <span class="quest-book-progress-label" id="quest-book-progress-label">0 / 0 quests</span>

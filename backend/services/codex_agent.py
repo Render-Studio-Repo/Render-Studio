@@ -1,4 +1,4 @@
-"""Run the Codex CAD agent (earthtojake/text-to-cad skill plugin) for Render3D.
+"""Run the Codex CAD agent (earthtojake/text-to-cad skill plugin) for Render Studio.
 
 Upstream text-to-cad is a Codex / Claude Code skill plugin — not an in-process
 chat rewrite loop. This module shells out to the Codex CLI with the installed
@@ -6,7 +6,7 @@ chat rewrite loop. This module shells out to the Codex CLI with the installed
 
   edit gen_step() source → python scripts/step → inspect → snapshot → repair
 
-Render3D keeps the product shell (viewer, progress UI, Fusion, etc.).
+Render Studio keeps the product shell (viewer, progress UI, Fusion, etc.).
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def _ensure_project_agents_md(project_path: Path) -> None:
     if path.is_file():
         return
     path.write_text(
-        "# Render3D / Jake CAD workspace\n\n"
+        "# Render Studio / Jake CAD workspace\n\n"
         "Use the installed `$cad` skill (earthtojake/text-to-cad).\n"
         "Work in this directory. Run CAD tools as:\n\n"
         "```bash\n"
@@ -135,7 +135,7 @@ def _ensure_project_agents_md(project_path: Path) -> None:
         "python scripts/snapshot --input <name>.step --output <name>_snapshot.png --camera iso --view-labels --size-profile diagnostic\n"
         "```\n\n"
         "STEP is primary. Prefer surgical edits over rewrites. Skip `$cad-viewer` "
-        "handoff — Render3D owns the viewer.\n",
+        "handoff — Render Studio owns the viewer.\n",
         encoding="utf-8",
     )
 
@@ -195,7 +195,7 @@ Required workflow (do not skip):
 5. Validate: `python scripts/inspect refs {step_name} --facts --planes --positioning`
 6. Mandatory snapshot with the installed CLI shape (NOT a bare STEP arg):
    `python scripts/snapshot --input {step_name} --output {Path(step_name).stem}_snapshot.png --camera iso --view-labels --size-profile diagnostic`
-   If snapshot deps fail after a valid STEP/GLB exists, finish anyway and report the files — Render3D owns visual review.
+   If snapshot deps fail after a valid STEP/GLB exists, finish anyway and report the files — Render Studio owns visual review.
 7. Repair until scripts/step succeeds and inspect is acceptable. Do not loop forever on snapshot tooling.
 
 Rules:
@@ -204,7 +204,7 @@ Rules:
 - Never assign bare floats to list-like `*_positions` constants (wrong: `rod_hole_positions = 10.0`).
 - When the prompt mentions motors/servos/ESC/battery/wiring/electronics: model visible labeled electronics solids and wire runs — not empty pockets alone.
 - Target basenames: source={source_name}, step={step_name}, glb={glb_name} (assembled primary).
-- Skip `$cad-viewer` handoff — Render3D owns the product viewer. Report final file names when done.
+- Skip `$cad-viewer` handoff — Render Studio owns the product viewer. Report final file names when done.
 - Do not ask clarifying questions; proceed with explicit assumptions.
 """
 

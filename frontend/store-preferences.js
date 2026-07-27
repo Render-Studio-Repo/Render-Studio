@@ -244,7 +244,7 @@ export function createStorePreferencesUI({ api, getTeamId }) {
     const description =
       document.getElementById("pref-store-listing-desc")?.value?.trim() ||
       settings.store_tagline ||
-      `Published from Render3D Studio project files: ${filenames.join(", ")}`;
+      `Published from Render Studio project files: ${filenames.join(", ")}`;
     if (status) status.textContent = "Publishing to store…";
     try {
       const data = await api("/api/model-listings", {

@@ -1,4 +1,4 @@
-"""Render3D — CAD project visualizer API."""
+"""Render Studio — CAD project visualizer API."""
 
 from __future__ import annotations
 
@@ -141,7 +141,7 @@ _UPLOAD_HISTORY_KIND_ALIASES = {
     "remove_texture": "texture_remove",
 }
 
-app = FastAPI(title="Render3D", description="CAD project visualizer with AI prompting")
+app = FastAPI(title="Render Studio", description="CAD project visualizer with AI prompting")
 
 
 def _recover_stuck_generations() -> None:
@@ -1241,7 +1241,7 @@ def _personal_workspace_id(user: dict[str, Any]) -> str | None:
     """Return the user's true personal workspace id.
 
     Prefer a solo owned workspace (or a classic \"Name's Workspace\"). Multi-member
-    collab teams like \"Render3D\" must not be treated as personal — otherwise they
+    collab teams like \"Render Studio\" must not be treated as personal — otherwise they
     never appear as a shared-workspace folder in Projects.
     """
     user_id = str(user.get("id") or "")
@@ -1303,7 +1303,7 @@ def _nest_shared_workspace_root_projects(
 
     Rules:
     - If the user has a true personal/solo workspace: nest every other team's
-      root projects (invitee case — e.g. Vineet + Render3D).
+      root projects (invitee case — e.g. Vineet + Render Studio).
     - If they don't (owner of only multi-member teams, e.g. Sam W): keep teams
       they own/admin at the root, and nest teams where they are only a member.
     Real subfolders inside those workspaces are left alone.
@@ -2034,9 +2034,9 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
         preferred = str(credits.get("platform_provider") or "openai").strip().lower()
         preferred_model = str(credits.get("platform_model") or "").strip()
         for provider_id, label, configured in (
-            ("openai", "Render3D Key", bool(providers.get("openai"))),
-            ("anthropic", "Render3D Key", bool(providers.get("anthropic"))),
-            ("kimi", "Render3D Key", bool(providers.get("kimi"))),
+            ("openai", "Render Studio Key", bool(providers.get("openai"))),
+            ("anthropic", "Render Studio Key", bool(providers.get("anthropic"))),
+            ("kimi", "Render Studio Key", bool(providers.get("kimi"))),
         ):
             if not configured:
                 continue
@@ -2216,12 +2216,12 @@ def _platform_ai_for_user(
     if not credits.get("available"):
         raise HTTPException(
             status_code=503,
-            detail="Render3D platform AI keys are not configured. Add OpenAI, Anthropic, or Kimi keys on the server.",
+            detail="Render Studio platform AI keys are not configured. Add OpenAI, Anthropic, or Kimi keys on the server.",
         )
     if int(credits.get("balance_cents") or 0) <= 0:
         raise HTTPException(status_code=402, detail="Buy shared-key credits to use the platform AI key.")
     if require_enabled and not credits.get("use_platform_key"):
-        raise HTTPException(status_code=403, detail="Enable Render3D shared keys in AI & billing first.")
+        raise HTTPException(status_code=403, detail="Enable Render Studio shared keys in AI & billing first.")
     account = ai_credit_service.ensure_account(user["id"])
     if not account.get("use_platform_key"):
         ai_credit_service.update_settings(user["id"], use_platform_key=True)
@@ -2234,7 +2234,7 @@ def _platform_ai_for_user(
     elif provider_id in {"kimi", "moonshot"}:
         provider_id = "kimi"
     elif provider_id:
-        raise HTTPException(status_code=400, detail="Render3D key must be openai, anthropic, or kimi.")
+        raise HTTPException(status_code=400, detail="Render Studio key must be openai, anthropic, or kimi.")
     if provider_id:
         settings_kwargs: dict[str, Any] = {
             "use_platform_key": True,
@@ -2266,7 +2266,7 @@ def _platform_ai_for_user(
         }.get(provider_id or "", "AI")
         raise HTTPException(
             status_code=503,
-            detail=f"Render3D {label} platform key is not configured on the server.",
+            detail=f"Render Studio {label} platform key is not configured on the server.",
         )
     ai = AIService(model=creds["model"], api_key=creds["api_key"], provider=creds["provider"])
     setattr(ai, "billing_source", "platform")
@@ -5482,8 +5482,8 @@ async def assemble_viewport_video(
         )
 
 
-RENDER_AGENT_SYSTEM_PROMPT = """You are Render Agent, the in-app support assistant for Render3D.
-Answer practical questions about Render3D tooling, CAD workflows, Fusion 360/Onshape sync, file uploads,
+RENDER_AGENT_SYSTEM_PROMPT = """You are Render Agent, the in-app support assistant for Render Studio.
+Answer practical questions about Render Studio tooling, CAD workflows, Fusion 360/Onshape sync, file uploads,
 AI model generation, sketches, wiring diagrams, BOMs, project folders, permissions, and troubleshooting.
 Be concise and action-oriented. If the user asks for destructive actions, explain the safe workflow first.
 You can use attached images and text snippets as context. You cannot directly edit files from this chat.
@@ -5551,7 +5551,7 @@ def _render_agent_user_content(
     }
     parts = [
         f"User question:\n{message}\n\n"
-        f"Render3D context JSON:\n{json.dumps(context, separators=(',', ':'), default=str)}"
+        f"Render Studio context JSON:\n{json.dumps(context, separators=(',', ':'), default=str)}"
     ]
     if guide_context:
         parts.append(f"\n\n{guide_context}")
@@ -5719,7 +5719,7 @@ def suggest_to_developer(body: RenderAgentSuggestRequest, request: Request, user
             share_url = None
     who = user.get("display_name") or user.get("email") or user.get("id")
     sms_body = (
-        f"Render3D suggest from {who}:\n"
+        f"Render Studio suggest from {who}:\n"
         f"{body.message.strip()[:700]}\n"
         f"Chat: {share_url or '(no chat link)'}"
     )
@@ -5772,14 +5772,14 @@ def generate_getting_started_guide(
 
     ai = _sam_ai_service()
     prompt = (
-        "Create a short Getting Started guide for Render3D CAD software.\n"
+        "Create a short Getting Started guide for Render Studio CAD software.\n"
         "Return JSON only with keys: title, summary, steps (array of 3-6 short steps), "
         "keywords (array of short strings), ask (one follow-up question).\n"
         f"User question: {body.question.strip()}"
     )
     try:
         raw, _trace = ai._call_model(
-            "You write concise onboarding docs for Render3D. Output valid JSON only.",
+            "You write concise onboarding docs for Render Studio. Output valid JSON only.",
             prompt,
             max_tokens=900,
             json_response=True,
@@ -6149,7 +6149,7 @@ def admin_review_new_user_alert(
 def admin_onboarding_email_template(user: dict[str, Any] = Depends(get_current_user)):
     _require_a1projects_admin(user)
     sample = {
-        "display_name": "New Render3D user",
+        "display_name": "New Render Studio user",
         "email": "new-user@example.com",
     }
     return {"template": onboarding_email_service.render_welcome_email(sample)}
@@ -6231,7 +6231,7 @@ def admin_message_feedback_user(
             body_text = (
                 f"@[{mention_name}](user:{target_user_id}) "
                 f"{text}\n\n"
-                f"_Reply here and the Render3D team will see it. Feedback #{item_id}._"
+                f"_Reply here and the Render Studio team will see it. Feedback #{item_id}._"
             )
             members = _project_chat_members(project_id)
             if not any(str(m.get("id")) == target_user_id for m in members):
@@ -6895,11 +6895,11 @@ def onshape_oauth_callback(code: str | None = None, state: str | None = None, er
             status_code=302,
         )
 
-    # Connect-after-login: keep the existing Render3D session; only signal success.
+    # Connect-after-login: keep the existing Render Studio session; only signal success.
     if stored_user_id:
         return RedirectResponse("/?onshape_linked=1", status_code=302)
 
-    # Login-with-Onshape: issue a Render3D session for the Onshape-backed user.
+    # Login-with-Onshape: issue a Render Studio session for the Onshape-backed user.
     return RedirectResponse(f"/?onshape_token={jwt}", status_code=302)
 
 
@@ -7147,7 +7147,7 @@ def list_user_fusion_mirrors(
     include_access: bool = Query(True),
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    """All Fusion folder mirrors linked by this Render3D user across every project."""
+    """All Fusion folder mirrors linked by this Render Studio user across every project."""
     from backend.database import get_conn
     from backend.services import project_store
     from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
@@ -7545,7 +7545,7 @@ def autodesk_import_item(body: dict = Body(...), user: dict[str, Any] = Depends(
 
 @app.post("/api/autodesk/download")
 def autodesk_download_item(body: dict = Body(...), user: dict[str, Any] = Depends(get_current_user)):
-    """Download an Autodesk item through Render3D so authenticated users can save it locally."""
+    """Download an Autodesk item through Render Studio so authenticated users can save it locally."""
     from backend.services.autodesk_oauth import download_item_file, get_folder_item, get_valid_access_token
 
     token = get_valid_access_token(user["id"])
@@ -8199,7 +8199,7 @@ def _schedule_background_fusion_push(
 
 
 def _project_needs_fusion_push(project_path: Path, mirror: dict[str, Any]) -> bool:
-    """True when local Render3D edits should be uploaded to Fusion on next access/sync."""
+    """True when local Render Studio edits should be uploaded to Fusion on next access/sync."""
     meta = project_store.load_meta(project_path)
     if meta.get("fusion_pending_push"):
         return True
@@ -8276,7 +8276,7 @@ def _push_local_changes_to_fusion(
         return {
             "pushed": False,
             "skipped": "up_to_date",
-            "message": "Local Render3D changes are already synced to Fusion.",
+            "message": "Local Render Studio changes are already synced to Fusion.",
             "pushed_mirrors": [],
             "push_errors": [],
         }
@@ -8438,7 +8438,7 @@ def _import_fusion_item_into_existing_project(
     import_bodies: bool,
     user: dict[str, Any],
 ) -> dict[str, Any]:
-    """Download/export a Fusion item into an existing Render3D project."""
+    """Download/export a Fusion item into an existing Render Studio project."""
     from backend.services.autodesk_oauth import download_item_file, export_fusion_item_as_step
     from backend.services import cad_service
 
@@ -8513,7 +8513,7 @@ def get_project_fusion_mirrors(
     include_contents: bool = Query(False),
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Per-user Fusion folder mirrors for this shared Render3D project."""
+    """Per-user Fusion folder mirrors for this shared Render Studio project."""
     _require_project_read(user, project_id)
     with get_conn() as conn:
         rows = conn.execute(
@@ -8540,7 +8540,7 @@ def save_project_fusion_mirror(
     body: dict = Body(...),
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Bind this user's personal Fusion folder as a mirror for a Render3D project."""
+    """Bind this user's personal Fusion folder as a mirror for a Render Studio project."""
     _require_project_read(user, project_id)
     from backend.services.autodesk_oauth import fusion_mirror_access_issue, get_valid_access_token
 
@@ -8571,7 +8571,7 @@ def save_project_fusion_mirror(
         body=body,
     )
     # Seed this newly linked Fusion folder with every CAD file already in the
-    # shared Render3D project so teammates start from the same set.
+    # shared Render Studio project so teammates start from the same set.
     path = PROJECTS / project_id
     seed = {"files_pushed": 0, "push_errors": [], "pushed_mirrors": []}
     if path.is_dir():
@@ -8599,7 +8599,7 @@ def save_project_fusion_mirror(
 
 @app.delete("/api/projects/{project_id}/fusion-mirror")
 def delete_project_fusion_mirror(project_id: str, user: dict[str, Any] = Depends(get_current_user)):
-    """Remove this user's Fusion mirror folder binding for a Render3D project."""
+    """Remove this user's Fusion mirror folder binding for a Render Studio project."""
     _require_project_read(user, project_id)
     with get_conn() as conn:
         row = conn.execute(
@@ -8621,7 +8621,7 @@ def push_local_changes_to_fusion_mirror(
     body: dict = Body(default={}),
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Push pending local Render3D edits to the linked Fusion mirror (used on Fusion access)."""
+    """Push pending local Render Studio edits to the linked Fusion mirror (used on Fusion access)."""
     path = _require_project(user, project_id)
     return _push_local_changes_to_fusion(
         project_id,
@@ -8654,7 +8654,7 @@ def push_all_fusion_files_to_teammates(
     if not others or int(others["c"] or 0) < 1:
         raise HTTPException(
             422,
-            "No teammate Fusion mirrors on this project yet. Each teammate must open this same Render3D project and Link mirror to their own Fusion folder.",
+            "No teammate Fusion mirrors on this project yet. Each teammate must open this same Render Studio project and Link mirror to their own Fusion folder.",
         )
     force = bool((body or {}).get("force", False))
     result = _fan_out_project_files_to_mirrors(
@@ -9643,7 +9643,7 @@ def claim_user_ai_credit_checkout(
 
 @app.post("/api/user/ai-credits/trial-ack")
 def ack_user_ai_credit_trial(user: dict[str, Any] = Depends(get_current_user)):
-    """Dismiss the $10 Render3D Key trial welcome popup."""
+    """Dismiss the $10 Render Studio Key trial welcome popup."""
     credits = ai_credit_service.ack_trial_popup(user["id"])
     return {"credits": credits, "ai": _ai_status_for_user(user)}
 
@@ -10804,7 +10804,7 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, request: Request, user
             email_result = email_notification_service.send_workspace_invite_email(
                 to_email=body.email.strip().lower(),
                 inviter_name=user.get("display_name") or user.get("email") or "A teammate",
-                team_name=(team["name"] if team else "Render3D workspace"),
+                team_name=(team["name"] if team else "Render Studio workspace"),
                 invite_url=invite_url,
                 user_id=(target_user["id"] if target_user else None),
             )
@@ -10812,7 +10812,7 @@ def invite_to_team(team_id: str, body: TeamInviteRequest, request: Request, user
             result["invite_url"] = invite_url
         except Exception:
             logger.warning("Could not send workspace invite email team_id=%s email=%s", team_id, body.email, exc_info=True)
-    team_name = "Render3D workspace"
+    team_name = "Render Studio workspace"
     try:
         with get_conn() as conn:
             team_row = conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)).fetchone()
@@ -11853,12 +11853,12 @@ def _announce_public_project_to_discord(project_id: str, request_origin: str | N
             generated_by.get("display_name")
             or owner.get("owner_name")
             or (prompt or {}).get("user_name")
-            or "Render3D user"
+            or "Render Studio user"
         )
         description = _admin_prompt_preview(
             (prompt or {}).get("prompt")
             or (prompt or {}).get("original_prompt")
-            or f"Public Render3D model with {summary.get('file_count') or 0} project file(s).",
+            or f"Public Render Studio model with {summary.get('file_count') or 0} project file(s).",
             700,
         )
         base = str(request_origin or getattr(settings, "public_base_url", None) or "https://render3d.app").rstrip("/")
@@ -11875,14 +11875,14 @@ def _announce_public_project_to_discord(project_id: str, request_origin: str | N
                 {"name": "Creator", "value": str(username)[:1024], "inline": True},
                 {"name": "View", "value": f"[Open public model]({view_url})", "inline": True},
             ],
-            "footer": {"text": "Render3D public model"},
+            "footer": {"text": "Render Studio public model"},
         }
         if latest_file:
             embed["fields"].append({"name": "File", "value": str(latest_file)[:1024], "inline": True})
         if preview_url:
             embed["image"] = {"url": preview_url}
         payload = {
-            "content": f"New public Render3D model from **{str(username)[:80]}**",
+            "content": f"New public Render Studio model from **{str(username)[:80]}**",
             "embeds": [embed],
             "allowed_mentions": {"parse": []},
         }
@@ -12903,8 +12903,8 @@ def _notify_discord_chat_mention(
             discord_link_service.send_dm(
                 str(discord_user_id),
                 (
-                    f"{sender_name} tagged you in Render3D on **{project_name}** ({thread_title}).\n"
-                    f"> {body or 'Open Render3D to view the message.'}\n"
+                    f"{sender_name} tagged you in Render Studio on **{project_name}** ({thread_title}).\n"
+                    f"> {body or 'Open Render Studio to view the message.'}\n"
                     f"Open it here: {url}\n\n"
                     "Reply support through Discord requires the Render bot Gateway listener to be running."
                 ),
@@ -12941,14 +12941,14 @@ def _maybe_reply_as_render_agent(
         ).strip() or raw_body
         reply_text = (
             f"Thanks for the ping, {who}. "
-            "I'm here — ask me about modeling steps, prompts, or how to use Render3D."
+            "I'm here — ask me about modeling steps, prompts, or how to use Render Studio."
         )
         try:
             ai = _sam_ai_service()
             system = (
-                "You are the Render Agent inside a Render3D project collaboration chat. "
+                "You are the Render Agent inside a Render Studio project collaboration chat. "
                 "Reply helpfully and concisely (2-6 short sentences). "
-                "Focus on CAD, prompts, modeling steps, and Render3D product guidance. "
+                "Focus on CAD, prompts, modeling steps, and Render Studio product guidance. "
                 "Do not invent file names or claim you already edited the model."
             )
             user_content = (
@@ -14514,8 +14514,8 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
         "preview_type": preview_meta.get("preview_type") or ("image/jpeg" if str(preview_file or "").lower().endswith(".jpg") else "image/png"),
         "browser": browser,
         "robot": {**robot, "artifacts": robot_artifacts},
-        "share_title": f"{project_name} · with Render3D",
-        "share_description": f"3D model preview of {filename} — shared with Render3D",
+        "share_title": f"{project_name} · with Render Studio",
+        "share_description": f"3D model preview of {filename} — shared with Render Studio",
     }
 
 
@@ -14552,7 +14552,7 @@ def _share_page_html(token: str, request: Request) -> str:
   <link rel="icon" type="image/png" href="{html.escape(f'{origin}/favicon-32.png?v=20260715-new-logo', quote=True)}" sizes="32x32" />
   <link rel="apple-touch-icon" href="{icon}" />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Render3D" />
+  <meta property="og:site_name" content="Render Studio" />
   <meta property="og:title" content="{title}" />
   <meta property="og:description" content="{description}" />
   <meta property="og:url" content="{url}" />
@@ -14580,13 +14580,13 @@ def _share_page_html(token: str, request: Request) -> str:
     raw = raw.replace(">Loading shared model…<", f">{project_name}<", 1)
     if filename:
         raw = raw.replace(
-            'id="share-subtitle">with Render3D</p>',
-            f'id="share-subtitle">with Render3D · {filename}</p>',
+            'id="share-subtitle">with Render Studio</p>',
+            f'id="share-subtitle">with Render Studio · {filename}</p>',
             1,
         )
-        raw = raw.replace(">Rotate · section · download<", f">with Render3D · {filename}<", 1)
+        raw = raw.replace(">Rotate · section · download<", f">with Render Studio · {filename}<", 1)
     else:
-        raw = raw.replace(">Rotate · section · download<", ">with Render3D<", 1)
+        raw = raw.replace(">Rotate · section · download<", ">with Render Studio<", 1)
     return raw
 
 
@@ -17677,7 +17677,7 @@ def _save_prompt_history(
                 if credits.get("use_platform_key"):
                     key_meta = {
                         "key_source": "platform",
-                        "shared_key_name": "Render3D shared AI key",
+                        "shared_key_name": "Render Studio shared AI key",
                     }
                     platform_trace = {
                         "cost_usd": usage_meta.get("cost_usd"),
@@ -17809,7 +17809,7 @@ def _looks_like_scene_render_intent(text: str) -> bool:
 
 
 def _scene_render_prompt(user_prompt: str, project_name: str | None, base_filename: str | None) -> str:
-    context = f"Model/project: {project_name or 'Render3D model'}"
+    context = f"Model/project: {project_name or 'Render Studio model'}"
     if base_filename:
         context += f" ({base_filename})"
     return (
@@ -18437,7 +18437,7 @@ def _background_kernel_build(
         generation_service.fail(project_path, f"Kernel build failed: {exc}", trace_id=trace_id)
 
 
-IMPROVE_CAD_PROMPT_SYSTEM = """You rewrite user prompts into stronger text-to-CAD generation prompts for Render3D Mode 2.0 / parametric CAD.
+IMPROVE_CAD_PROMPT_SYSTEM = """You rewrite user prompts into stronger text-to-CAD generation prompts for Render Studio Mode 2.0 / parametric CAD.
 
 Return JSON only:
 {"improved_prompt":"..."}
@@ -18459,7 +18459,7 @@ Rules for improved_prompt:
 - Keep under 1200 characters when possible; hard max 4000.
 """
 
-IMPROVE_RENDER_PROMPT_SYSTEM = """You rewrite user prompts into stronger Render-mode prompts for Render3D.
+IMPROVE_RENDER_PROMPT_SYSTEM = """You rewrite user prompts into stronger Render-mode prompts for Render Studio.
 
 Render mode generates a photoreal image from the current viewport/model reference. It should describe scene, environment, lighting, camera, materials, and mood, not Mode 2.0 CAD geometry or a parametric feature tree.
 
@@ -18480,7 +18480,7 @@ Rules for improved_prompt:
 """
 
 
-IMPROVE_MESH_PROMPT_SYSTEM = """You rewrite user prompts into stronger Mesh-mode prompts for Render3D (img2threejs).
+IMPROVE_MESH_PROMPT_SYSTEM = """You rewrite user prompts into stronger Mesh-mode prompts for Render Studio (img2threejs).
 
 Mesh mode rebuilds an object as a CODE-ONLY procedural Three.js model (primitives + materials + hierarchy), then exports GLB. It is NOT photogrammetry and NOT parametric CAD/STEP.
 
@@ -18503,7 +18503,7 @@ Rules for improved_prompt:
 
 @app.post("/api/prompt/improve")
 def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[str, Any] = Depends(get_current_user)):
-    """Rewrite a freeform prompt into a stronger Render3D prompt using the user's AI key."""
+    """Rewrite a freeform prompt into a stronger Render Studio prompt using the user's AI key."""
     trace_id = getattr(request.state, "trace_id", new_trace_id())
     original = (body.prompt or "").strip()
     if not original:

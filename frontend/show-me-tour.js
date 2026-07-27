@@ -78,7 +78,7 @@ const SHOW_ME_TOURS = {
     ],
   },
   "prompt-onboarding": {
-    title: "Welcome to Render3D",
+    title: "Welcome to Render Studio",
     example: "Create a 90 mm robot wrist bracket that mounts to the selected arm link, with 4 bolt holes and rounded edges.",
     studioPath: "/?showMe=prompt-onboarding",
     gif: "/docs/media/ai-generate.gif?v=20260715-real",
@@ -156,7 +156,7 @@ const SHOW_ME_TOURS = {
       },
       {
         selector: "#prompt-codex-toggle, #prompt-codex-wrap",
-        label: "Codex is optional. Use it for deeper code-style CAD repair loops; leave it off for normal Render3D generation.",
+        label: "Codex is optional. Use it for deeper code-style CAD repair loops; leave it off for normal Render Studio generation.",
         click: false,
         reveal: "mobile-ai",
       },
@@ -175,7 +175,7 @@ const SHOW_ME_TOURS = {
       {
         demo: "knowledge-base",
         demoTarget: "upload",
-        label: "Add source material next. Drop PDFs, CAD files, screenshots, DXF drawings, spreadsheets, or notes. Render3D keeps them organized as reusable prompt context.",
+        label: "Add source material next. Drop PDFs, CAD files, screenshots, DXF drawings, spreadsheets, or notes. Render Studio keeps them organized as reusable prompt context.",
         click: false,
       },
       {
@@ -953,7 +953,7 @@ function showCompletionSummary(summary = {}) {
     <div class="show-me-summary-glow" aria-hidden="true"></div>
     <div class="show-me-summary-brand">
       <img class="show-me-summary-logo" src="/render3d-logo.png?v=20260715-new-logo" alt="" width="40" height="40" />
-      <span class="show-me-summary-brand-word">Render3D</span>
+      <span class="show-me-summary-brand-word">Render Studio</span>
     </div>
     ${gif ? `
       <div class="show-me-summary-gif-wrap">

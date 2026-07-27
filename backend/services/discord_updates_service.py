@@ -1,4 +1,4 @@
-"""Post Render3D product updates to a Discord channel via bot token."""
+"""Post Render Studio product updates to a Discord channel via bot token."""
 
 from __future__ import annotations
 
@@ -181,10 +181,10 @@ def build_update_payload(update: dict[str, Any]) -> dict[str, Any]:
 
     embed: dict[str, Any] = {
         "title": title[:256],
-        "description": (summary or "New Render3D update.")[:4000],
+        "description": (summary or "New Render Studio update.")[:4000],
         "color": color,
         "timestamp": f"{date_s}T12:00:00.000Z" if len(date_s) == 10 else datetime.now(timezone.utc).isoformat(),
-        "footer": {"text": f"Render3D · {kind_label}"},
+        "footer": {"text": f"Render Studio · {kind_label}"},
         "fields": [
             {"name": "Type", "value": f"**{kind_label}**", "inline": True},
         ],
@@ -205,9 +205,9 @@ def build_update_payload(update: dict[str, Any]) -> dict[str, Any]:
                 "inline": True,
             }
         )
-        content = f"**{kind_label}** · **New Render3D update** · [@{author_handle}]({profile})"
+        content = f"**{kind_label}** · **New Render Studio update** · [@{author_handle}]({profile})"
     else:
-        content = f"**{kind_label}** · **New Render3D update**"
+        content = f"**{kind_label}** · **New Render Studio update**"
     return {"content": content, "embeds": [embed], "allowed_mentions": {"parse": []}}
 
 
@@ -260,7 +260,7 @@ def send_channel_message_with_file(
     name = filename or path.name
     mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
     payload = {"content": str(content or "")[:2000], "allowed_mentions": {"parse": []}}
-    boundary = f"----Render3D{uuid.uuid4().hex}"
+    boundary = f"----Render Studio{uuid.uuid4().hex}"
     body = bytearray()
     body.extend(f"--{boundary}\r\n".encode())
     body.extend(b'Content-Disposition: form-data; name="payload_json"\r\n')

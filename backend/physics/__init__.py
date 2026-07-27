@@ -3,7 +3,7 @@
 Turns kernel solids + a Feature Program's joints into a documented simulation
 package: per-part mass, centre of mass, and inertia tensor (from real geometry x
 material density), joint definitions, and engine-import files (sim.json + URDF +
-MJCF). This is what makes Render3D output behave correctly in Unity, Unreal,
+MJCF). This is what makes Render Studio output behave correctly in Unity, Unreal,
 Blender, MuJoCo, or any robotics simulator.
 """
 

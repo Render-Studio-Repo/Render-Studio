@@ -954,7 +954,7 @@ export function createReferenceFilesViewer(options = {}) {
 
   function debugTagForTab(tab) {
     return [
-      `Render3D render image`,
+      `Render Studio render image`,
       `project_id=${tab?.projectId || getProjectId?.() || ""}`,
       `filename=${tab?.filename || ""}`,
       `prompt_debug=include this project id and filename when reporting render image issues`,

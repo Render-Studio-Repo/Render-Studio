@@ -269,7 +269,7 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("Social provider did not return a stable user id.")
     email = str(profile.get("email") or "").strip().lower()
     email_verified = _truthy(profile.get("email_verified"))
-    display_name = str(profile.get("display_name") or "").strip() or (email.split("@")[0] if email else "Render3D User")
+    display_name = str(profile.get("display_name") or "").strip() or (email.split("@")[0] if email else "Render Studio User")
     picture_url = str(profile.get("picture_url") or "").strip() or None
     now = _now()
     created_new_user = False

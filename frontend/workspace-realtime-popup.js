@@ -204,7 +204,7 @@ export function openWorkspaceRealtimePopup({ refresh } = {}) {
           <small data-realtime-result-count>All linked items</small>
         </div>
         <div class="workspace-realtime-modal-body">
-          <div id="workspace-render-folder-card" class="workspace-render-folder-card muted small">Render3D cloud source</div>
+          <div id="workspace-render-folder-card" class="workspace-render-folder-card muted small">Render Studio cloud source</div>
           <div id="workspace-fusion-projects" class="workspace-fusion-projects muted small"></div>
         </div>
       </div>

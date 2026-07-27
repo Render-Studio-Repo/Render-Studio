@@ -265,7 +265,7 @@ export function createAdminNotificationsPager({
               body: JSON.stringify({ status: action }),
             });
           } else if (action === "ask") {
-            const text = window.prompt("Message this user from Render3D support:");
+            const text = window.prompt("Message this user from Render Studio support:");
             if (!text || !text.trim()) {
               btn.disabled = false;
               return;

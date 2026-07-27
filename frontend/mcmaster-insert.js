@@ -16,7 +16,7 @@ const RECENT_MAX = 10;
 const IDB_NAME = "render3d-mcmaster";
 const IDB_STORE = "handles";
 const CAD_NAME_RE = /\.(step|stp|stl|obj|glb|gltf|3mf|iges|igs|sat|sldprt|x_t|x_b)$/i;
-const MCMASTER_BUCKET = "Render3D-McMaster";
+const MCMASTER_BUCKET = "Render Studio-McMaster";
 const LS_DOWNLOAD_FOLDER_NAME = "render3d:mcmasterDownloadFolderName:v1";
 const LS_AUTO_UPLOAD = "render3d:mcmasterAutoUpload:v1";
 
@@ -528,7 +528,7 @@ export function createMcMasterInsert({
   /** @type {FileSystemDirectoryHandle | null} */
   let parentDir = null;
   /** @type {FileSystemDirectoryHandle | null} */
-  let downloadsDir = null; // the Render3D-McMaster bucket
+  let downloadsDir = null; // the Render Studio-McMaster bucket
   let downloadFolderName = readDownloadFolderName();
   let autoUploadEnabled = readAutoUploadPref();
   /** @type {{ name: string, file: File, at: number }[]} */
@@ -741,7 +741,7 @@ export function createMcMasterInsert({
       `popup=yes,noopener=no,noreferrer=no,width=${w},height=${h},left=${left},top=${top}`,
     );
     if (!mcmasterWin) {
-      setStatus("error", "Popup blocked — allow popups for Render3D to open McMaster.");
+      setStatus("error", "Popup blocked — allow popups for Render Studio to open McMaster.");
       syncConnectionUi();
       return null;
     }

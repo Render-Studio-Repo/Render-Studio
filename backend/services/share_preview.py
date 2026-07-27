@@ -560,7 +560,7 @@ def make_share_preview_transparent(project_path: Path, snapshot_name: str) -> st
 
 
 def _draw_render3d_badge(image: Any) -> None:
-    """Stamp icon in the top-right and a metallic Render3D wordmark bottom-right."""
+    """Stamp icon in the top-right and a metallic Render Studio wordmark bottom-right."""
     from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
     width, height = image.size
@@ -597,7 +597,7 @@ def _draw_render3d_badge(image: Any) -> None:
             fill=(230, 237, 243, 255),
         )
 
-    text = "Render3D"
+    text = "Render Studio"
     word_h = max(84, min(150, int(height * 0.13)))
     try:
         font = ImageFont.truetype("DejaVuSans-Bold.ttf", max(48, int(word_h * 0.72)))
@@ -680,7 +680,7 @@ def make_branded_viewport_share_preview(
     """Brand a live viewport screenshot for share previews.
 
     The viewport capture is the authoritative current visible/hidden model view;
-    this function only bakes it onto black and stamps the Render3D brand.
+    this function only bakes it onto black and stamps the Render Studio brand.
     """
     out = project_path / Path(output_name).with_suffix(".png").name
     try:

@@ -90,7 +90,7 @@ def cad_authoring_max_tokens(model: str | None) -> int:
         return 16384
     return 8192
 
-DESIGN_SYSTEM_PROMPT = """You are Render3D's CAD design engine. You are an expert mechanical engineer
+DESIGN_SYSTEM_PROMPT = """You are Render Studio's CAD design engine. You are an expert mechanical engineer
 and CAD modeler. You think step-by-step about HOW to construct 3D objects using boolean
 operations (union, subtraction, intersection), just like Fusion 360, SolidWorks, or ForgeCAD.
 
@@ -1242,7 +1242,7 @@ class AIService:
             raise RuntimeError("CAD skill not installed")
 
         skill_md = skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8", errors="ignore")
-        # Keep Jake skill body; drop Render3D Studio appendix so it cannot contradict gen_step().
+        # Keep Jake skill body; drop Render Studio appendix so it cannot contradict gen_step().
         marker = "<!-- render3d-studio -->"
         if marker in skill_md:
             skill_md = skill_md.split(marker, 1)[0].rstrip()

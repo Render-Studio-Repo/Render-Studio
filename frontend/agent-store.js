@@ -53,7 +53,7 @@ function initials(name) {
 }
 
 function ownerLabel(app) {
-  return app.owner?.name || app.owner?.email || "Render3D";
+  return app.owner?.name || app.owner?.email || "Render Studio";
 }
 
 function ownerAvatar(app) {
@@ -61,7 +61,7 @@ function ownerAvatar(app) {
   if (owner.avatar_url) {
     return `<span class="agent-creator-avatar agent-creator-avatar--image" style="background-image:url('${escapeAttr(owner.avatar_url)}')">${escapeHtml(initials(owner.name || owner.email))}</span>`;
   }
-  return `<span class="agent-creator-avatar">${escapeHtml(initials(owner.name || owner.email || "Render3D"))}</span>`;
+  return `<span class="agent-creator-avatar">${escapeHtml(initials(owner.name || owner.email || "Render Studio"))}</span>`;
 }
 
 function priceLabel(app) {

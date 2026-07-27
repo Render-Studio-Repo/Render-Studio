@@ -30,7 +30,7 @@ function defaultState() {
     keepAudio: true,
     grade: "none",
     effects: { fade: false, vignette: false, slow: false, title: false },
-    titleText: "Made in Render3D",
+    titleText: "loading Render Studio",
     baking: false,
   };
 }
@@ -45,7 +45,7 @@ function cloneEditorState(state) {
       slow: !!state.effects?.slow,
       title: !!state.effects?.title,
     },
-    titleText: String(state.titleText || "Made in Render3D").slice(0, 80),
+    titleText: String(state.titleText || "loading Render Studio").slice(0, 80),
   };
 }
 
@@ -125,7 +125,7 @@ export function parseVideoEditPrompt(raw = "") {
     plan.summary.push(`title “${plan.titleText}”`);
   } else if (/\b(title card|add title|opening title)\b/.test(lower)) {
     plan.effects.title = true;
-    plan.titleText = "Made in Render3D";
+    plan.titleText = "loading Render Studio";
     plan.summary.push("title card");
   }
 
@@ -151,7 +151,7 @@ export async function renderEditedClip(sourceBlob, state = {}, { onProgress } = 
   const keepAudio = state.keepAudio !== false;
   const grade = state.grade || "none";
   const effects = state.effects || {};
-  const titleText = String(state.titleText || "Made in Render3D").slice(0, 80);
+  const titleText = String(state.titleText || "loading Render Studio").slice(0, 80);
   const needsBake = !keepAudio
     || grade !== "none"
     || effects.fade
@@ -362,7 +362,7 @@ export function mountViewportVideoEditor(host, {
 
       <label class="vve-title-field hidden" data-vve-title-wrap>
         <span>Title text</span>
-        <input type="text" maxlength="80" data-vve-title-input value="Made in Render3D" />
+        <input type="text" maxlength="80" data-vve-title-input value="loading Render Studio" />
       </label>
 
       <div class="vve-prompt">
@@ -412,7 +412,7 @@ export function mountViewportVideoEditor(host, {
       slow: !!snap.effects?.slow,
       title: !!snap.effects?.title,
     };
-    state.titleText = String(snap.titleText || "Made in Render3D").slice(0, 80);
+    state.titleText = String(snap.titleText || "loading Render Studio").slice(0, 80);
     syncUi();
   }
 
@@ -618,7 +618,7 @@ export function mountViewportVideoEditor(host, {
     host.dataset.vveTitleBaseline = JSON.stringify(cloneEditorState(state));
   });
   host.querySelector("[data-vve-title-input]")?.addEventListener("input", (e) => {
-    state.titleText = String(e.target.value || "").slice(0, 80) || "Made in Render3D";
+    state.titleText = String(e.target.value || "").slice(0, 80) || "loading Render Studio";
     clearTimeout(titleDebounce);
     titleDebounce = window.setTimeout(() => {
       try {

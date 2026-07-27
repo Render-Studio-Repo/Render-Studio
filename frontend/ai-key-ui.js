@@ -306,7 +306,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
     const overviewPanel = `
       <div class="ai-credit-panel" data-credit-panel="overview">
         <p class="ai-credit-copy">
-          Credits unlock Render3D’s shared <strong>OpenAI</strong>${claudeOn ? ", <strong>Claude</strong>" : ""}${kimiOn ? ", and <strong>Kimi</strong>" : ""} keys.
+          Credits unlock Render Studio’s shared <strong>OpenAI</strong>${claudeOn ? ", <strong>Claude</strong>" : ""}${kimiOn ? ", and <strong>Kimi</strong>" : ""} keys.
           Generation deducts model cost plus ${Number(credits.markup_percent || 15)}% — no personal API key required.
         </p>
         <div class="ai-credit-meter" title="${esc(pctLabel)}"><span style="width:${pctValue}%"></span></div>
@@ -342,7 +342,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
             ${stripeReady ? `Buy ${formatCents(creditAmount)} with Stripe` : "Stripe not configured"}
           </button>
         </div>
-        <p class="ai-credit-note">Live Stripe checkout. Credits enable Render3D shared keys automatically after payment.</p>
+        <p class="ai-credit-note">Live Stripe checkout. Credits enable Render Studio shared keys automatically after payment.</p>
       </div>`;
 
     const modelOptions = allModelsForSelect.length
@@ -369,7 +369,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
           </label>
           <label class="ai-credit-toggle-row">
             <input type="checkbox" data-action="use-platform-key" ${credits.use_platform_key ? "checked" : ""} />
-            <span>Use Render3D shared keys when I don’t have a personal key active</span>
+            <span>Use Render Studio shared keys when I don’t have a personal key active</span>
           </label>
           <label class="ai-credit-toggle-row">
             <input type="checkbox" data-action="auto-refill" ${credits.auto_refill_enabled ? "checked" : ""} />
@@ -390,7 +390,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
       <div class="ai-credit-card${credits.use_platform_key ? " ai-credit-card--active" : ""}">
         <div class="ai-credit-hero">
           <div class="ai-credit-brand">
-            <span class="ai-credit-kicker">Render3D Credits</span>
+            <span class="ai-credit-kicker">render credits</span>
             <strong>Studio AI balance</strong>
             <div class="ai-credit-pill-row">
               <span class="ai-credit-pill ${openaiOn ? "ai-credit-pill--on" : "ai-credit-pill--off"}">OpenAI ${openaiOn ? "live" : "off"}</span>
@@ -489,12 +489,12 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
 
     let body = "";
     if (balance <= 0) {
-      body = `<p class="ai-keys-empty">Buy Studio credits to unlock the temporary Render3D Key (OpenAI, Anthropic, or Kimi) — no personal API key required. It disappears again when credits run out.</p>`;
+      body = `<p class="ai-keys-empty">Buy render credits to unlock the temporary Render Studio Key (OpenAI, Anthropic, or Kimi) — no personal API key required. It disappears again when credits run out.</p>`;
     } else {
       const available = rows.filter((row) => row.live);
       const current = available.find((row) => row.id === preferred) || available[0];
       if (!current) {
-        body = `<p class="ai-keys-empty">Render3D shared keys are not configured on this server yet.</p>`;
+        body = `<p class="ai-keys-empty">Render Studio shared keys are not configured on this server yet.</p>`;
       } else {
         const badgeClass = PROVIDER_BADGE_CLASS[current.provider] || "badge-openai";
         const isActive = enabled;
@@ -502,14 +502,14 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
           <div class="ai-key-row ai-key-row--platform${isActive ? " ai-key-row--active" : ""}"
                data-platform-provider="${esc(current.id)}">
             <div class="ai-key-row-info">
-              <span class="ai-key-row-name">Render3D Key</span>
+              <span class="ai-key-row-name">Render Studio Key</span>
               <span class="ai-key-badge ${badgeClass}">${esc(labelFor(current.provider))}</span>
               <select class="ai-key-model-select" data-action="render3d-provider" title="OpenAI or Anthropic">
                 ${available.map((row) => `
                   <option value="platform:${esc(row.id)}"${row.id === current.id ? " selected" : ""}>${esc(row.name)}</option>
                 `).join("")}
               </select>
-              <select class="ai-key-model-select" data-action="platform-key-model" data-provider="${esc(current.id)}" title="Model for this Render3D key">
+              <select class="ai-key-model-select" data-action="platform-key-model" data-provider="${esc(current.id)}" title="Model for this Render Studio key">
                 ${modelOptionsHTML(current.provider, credits.platform_model || current.model)}
               </select>
             </div>
@@ -525,9 +525,9 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
 
     return `
       <div class="ai-keys-section-label">
-        <span>Render3D Key</span>
+        <span>Render Studio Key</span>
       </div>
-      <p class="ai-keys-section-hint">Temporary while you have Studio credits — use Render3D’s shared OpenAI, Anthropic, or Kimi keys. The key disappears when your balance hits $0; buy more credits to bring it back.</p>
+      <p class="ai-keys-section-hint">Temporary while you have render credits — use Render Studio’s shared OpenAI, Anthropic, or Kimi keys. The key disappears when your balance hits $0; buy more credits to bring it back.</p>
       ${body}
     `;
   }
@@ -872,8 +872,8 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
         message
           || (required
             ? (provider === "openai"
-              ? "Add your own OpenAI API key, or buy shared-key credits to borrow Render3D's API key."
-              : "Add your own key, or buy shared-key credits to use Render3D's API key.")
+              ? "Add your own OpenAI API key, or buy shared-key credits to borrow Render Studio's API key."
+              : "Add your own key, or buy shared-key credits to use Render Studio's API key.")
             : ""),
       );
       if (providerInput) providerInput.value = provider;
@@ -1087,7 +1087,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
         render(next);
         onSelectPromptKey?.(`platform:${provider}`);
       } catch (err) {
-        setError(err.message || "Could not activate Render3D key");
+        setError(err.message || "Could not activate Render Studio key");
       }
       return;
     }
@@ -1491,7 +1491,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
         render(next);
         onSelectPromptKey?.(`platform:${provider}`);
       } catch (err) {
-        setError(err.message || "Could not switch Render3D provider");
+        setError(err.message || "Could not switch Render Studio provider");
       }
       return;
     }
@@ -1517,7 +1517,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
         render({ ...(data.ai || status || {}), credits: data.credits || data.ai?.credits });
         onSelectPromptKey?.(`platform:${provider}`);
       } catch (err) {
-        setError(err.message || "Could not update Render3D model");
+        setError(err.message || "Could not update Render Studio model");
       }
     }
   });
@@ -1624,7 +1624,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        // Prefer the new personal key in the compose picker (don't stay on Render3D Claude).
+        // Prefer the new personal key in the compose picker (don't stay on Render Studio Claude).
         try {
           await api("/api/user/ai-credits", {
             method: "PATCH",

@@ -303,7 +303,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
         <p class="screenshot-markup-status muted small" data-shot-markup-status role="status"></p>
         <div class="viewport-x-pin-panel hidden" data-shot-x-pin-panel>
           <p class="viewport-x-pin-title">Enter the PIN from X</p>
-          <p class="muted small">Authorize Render3D in the X window, then type the PIN shown there.</p>
+          <p class="muted small">Authorize Render Studio in the X window, then type the PIN shown there.</p>
           <div class="viewport-x-pin-row">
             <input type="text" inputmode="numeric" autocomplete="one-time-code" data-shot-x-pin-input placeholder="PIN code" maxlength="12" />
             <button type="button" class="btn accent" data-shot-x-pin-submit>Connect</button>
@@ -526,7 +526,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
       } else {
         setXStatus(
           data?.configured
-            ? "Connect X to post this screenshot from Render3D."
+            ? "Connect X to post this screenshot from Render Studio."
             : "X posting is not configured on this server yet.",
         );
         if (connectBtn) {
@@ -598,7 +598,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
         `popup=yes,width=${widthPx},height=${heightPx},left=${left},top=${top}`,
       );
       if (!popup) {
-        setStatus("Popup blocked — allow popups for Render3D.", true);
+        setStatus("Popup blocked — allow popups for Render Studio.", true);
         return;
       }
       if (mode === "oob") {

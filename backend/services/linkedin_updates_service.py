@@ -1,4 +1,4 @@
-"""Post Render3D product updates to LinkedIn (member or organization).
+"""Post Render Studio product updates to LinkedIn (member or organization).
 
 Env:
   LINKEDIN_ACCESS_TOKEN   — OAuth access token with w_member_social and/or w_organization_social
@@ -163,7 +163,7 @@ def build_commentary(update: dict[str, Any]) -> str:
         "improve": "Improve",
     }.get(kind, kind.title())
     href = _absolute_url(update.get("href") or "/updates.html")
-    parts = [f"**{kind_label}**", "", f"New in Render3D — {title}"]
+    parts = [f"**{kind_label}**", "", f"New in Render Studio — {title}"]
     if summary:
         parts.append("")
         parts.append(summary)
@@ -176,7 +176,7 @@ def build_commentary(update: dict[str, Any]) -> str:
         parts.append("")
         parts.append(f"Author: @{author_handle} — {PUBLIC_BASE}/u/{author_handle}")
     parts.append("")
-    parts.append("#Render3D #CAD #AI")
+    parts.append("#Render Studio #CAD #AI")
     return "\n".join(parts)[:2800]
 
 
@@ -256,9 +256,9 @@ def announce_text(content: str, *, media_path: str | Path | None = None) -> dict
                     "media": [
                         {
                             "status": "READY",
-                            "description": {"text": "Render3D update"},
+                            "description": {"text": "Render Studio update"},
                             "media": media_urn,
-                            "title": {"text": "Render3D"},
+                            "title": {"text": "Render Studio"},
                         }
                     ],
                 }

@@ -20,8 +20,8 @@ INSTALL_REQUIRED_SKILLS = {
 
 _RENDER3D_ADAPTER = """\
 ━━━ RENDER3D ADAPTATION (active skill: {skill_id}) ━━━
-You are running inside Render3D Studio, not a standalone text-to-cad agent CLI.
-Apply this skill's methodology and defaults, but emit Render3D's JSON Feature Program
+You are running inside Render Studio, not a standalone text-to-cad agent CLI.
+Apply this skill's methodology and defaults, but emit Render Studio's JSON Feature Program
 (see the main system prompt) unless the user explicitly asks for Python build123d source.
 The kernel uses build123d internally and auto-exports STEP, STL, GLB, URDF, and MJCF.
 - THINK FIRST: fill the required `design_plan` (8 ForgeCAD-style steps) before `program`/`generator`.
@@ -326,7 +326,7 @@ def resolve_prompt_skills(
         if skill_id in available_set and skill_id not in resolved:
             resolved.append(skill_id)
 
-    # CAD is the base skill for Render3D geometry generation.
+    # CAD is the base skill for Render Studio geometry generation.
     add("cad")
 
     if has_images or _prompt_matches(prompt, "blueprint", "schematic", "image", "photo", "drawing", "diagram"):

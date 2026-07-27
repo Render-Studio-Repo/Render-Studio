@@ -828,7 +828,7 @@ def sanitize_fusion_part_stem(stem: str) -> str:
     s = re.sub(r"(?i)[_\s-]*assembl(?:y|ies)[_\s-]*", "_", s)
     s = re.sub(r"(?i)^new_", "", s)
     s = re.sub(r"[^\w\-]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_") or "Render3D_Model"
+    s = re.sub(r"_+", "_", s).strip("_") or "Render Studio_Model"
     s = s[:72]
     if not re.search(r"(?i)_part$", s):
         s = f"{s}_Part"
@@ -1915,7 +1915,7 @@ def _match_glb_scale_to_step(step_path: Path, glb_path: Path) -> None:
     """Keep OCC/Jake-written GLB previews in the same units as the source STEP.
 
     Jake/cadpy and some STEP→GLB writers follow glTF's metre convention even when
-    the source STEP is millimetres. Render3D's CAD workspace uses millimetres, so
+    the source STEP is millimetres. Render Studio's CAD workspace uses millimetres, so
     compare GLB bounds to the STEP tessellation and bake a scale correction when
     the ratio is clearly unit-related (~1000×).
 
@@ -3341,7 +3341,7 @@ def export_scene_3mf(scene: trimesh.Scene, path: Path) -> Path:
             "{http://www.w3.org/XML/1998/namespace}lang": "en-US",
         },
     )
-    ET.SubElement(model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "Application"}).text = "Render3D"
+    ET.SubElement(model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "Application"}).text = "Render Studio"
     resources = ET.SubElement(model, f"{{{THREEMF_CORE_NS}}}resources")
     build = ET.SubElement(
         model,
@@ -4760,7 +4760,7 @@ def export_mesh_step(mesh: trimesh.Trimesh, path: Path) -> Path:
             from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
 
             color = _dominant_rgba(mesh) or _palette_color_for_name(path.stem)
-            doc = TDocStd_Document(TCollection_ExtendedString("Render3D"))
+            doc = TDocStd_Document(TCollection_ExtendedString("Render Studio"))
             shape_tool = XCAFDoc_DocumentTool.ShapeTool(doc.Main())
             color_tool = XCAFDoc_DocumentTool.ColorTool(doc.Main())
             label = shape_tool.AddShape(shape, False)
