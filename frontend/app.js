@@ -73,8 +73,8 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260725-mesh-orange";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260724-x-config";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-pin-ui";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -90,7 +90,7 @@ import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260726-revise-forward";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260726-share-scope";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260727-mobile-export";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -6566,19 +6566,27 @@ async function afterModelEdit(data) {
   );
   const isBakedTransform = data?.action === "transform" || data?.action === "body_transform";
   const placementBaseline = isBakedTransform ? transformBaselineFromPayload(data?.placementBaseline) : null;
-  const isTextureEdit = /texture/i.test(String(data?.action || "")) || /texture/i.test(String(data?.label || ""));
+  const actionKey = String(data?.action || "").toLowerCase();
+  const isTextureRemove = actionKey === "texture_remove" || actionKey === "remove_texture"
+    || /remove\s*textur/i.test(String(data?.label || ""));
+  const isTextureEdit = !isTextureRemove && (
+    /texture/i.test(actionKey) || /texture/i.test(String(data?.label || ""))
+  );
   const isFacePull = data?.action === "face_pull" || data?.kind === "face_pull" || /pulled|face.?pull/i.test(String(data?.label || ""));
 
   // Snapshot authored/Mesh look BEFORE we drop the assembly mesh — transform
   // reloads as `*_edited.glb` and used to fall through to CAD plastic.
   let savedTransform = null;
   const prevMesh = projectAssembly.get?.(prevCatalog || selectedFile) || currentMesh;
+  // Texture *apply* must keep maps; texture *remove* must fall back to CAD plastic.
   const keepAuthoredStyle =
-    isTextureEdit
-    || hasMeshFactorySibling(data.filename)
-    || hasMeshFactorySibling(stableCatalog)
-    || hasMeshFactorySibling(prevCatalog)
-    || (prevMesh ? prefersAuthoredShading(prevMesh, prevCatalog || data.filename || "") : false);
+    !isTextureRemove && (
+      isTextureEdit
+      || hasMeshFactorySibling(data.filename)
+      || hasMeshFactorySibling(stableCatalog)
+      || hasMeshFactorySibling(prevCatalog)
+      || (prevMesh ? prefersAuthoredShading(prevMesh, prevCatalog || data.filename || "") : false)
+    );
   if (prevMesh && !isBakedTransform) {
     prevMesh.updateMatrixWorld(true);
     savedTransform = {
@@ -17783,7 +17791,7 @@ async function fetchAllProjects() {
   return allProjects;
 }
 
-async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false, orientationMode = null, styleMode = "auto" } = {}) {
+async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGen, fitView = true, loadAll = false, orientationMode = null, styleMode = "auto", cacheBust = false } = {}) {
   if (!comps?.length) return false;
   comps = comps.filter((entry) => !isInternalCadSidecar(entry?.name));
   if (!comps.length) return false;
@@ -17835,6 +17843,7 @@ async function loadProjectComponents(comps, { projectId: pid, latestFile, loadGe
           center: !hasBakedPlacement(entry),
           fitView: false,
           autoGizmo: false,
+          cacheBust: !!cacheBust,
           orientationMode: (orientationMode && (entry.name === latestFile || entry.viewer_filename === latestFile)) ? orientationMode : null,
           styleMode: (styleMode && styleMode !== "auto")
             ? ((entry.name === latestFile || entry.viewer_filename === latestFile || hasMeshFactorySibling(entry.name) || hasMeshFactorySibling(entry.viewer_filename))
@@ -24427,6 +24436,7 @@ async function restoreTimelineAsLatest(index) {
     projectAssembly.clear();
     prepareViewportForModels();
     selectedFile = data.filename || selectedFile;
+    bumpModelCacheEpoch();
     await refreshFiles();
     const browser = normalizeBrowser(await api(`/api/projects/${projectId}`));
     renderProjectBrowser(browser);
@@ -24436,6 +24446,7 @@ async function restoreTimelineAsLatest(index) {
         projectId,
         latestFile: data.filename || null,
         fitView: true,
+        cacheBust: true,
       });
     } else {
       await reloadViewportFromProject({ fitView: true, latestFile: data.filename || null });
@@ -26108,6 +26119,7 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   onMenuOpen: () => closeScreenshotMenu(),
   api,
   getToken,
+  getProjectId: () => projectId,
 });
 try {
   viewportVideoRecorder.bind();
@@ -26803,6 +26815,42 @@ function stripTexturesFromModelClone(object) {
   return clone;
 }
 
+function stripTexturesFromLiveObject(object) {
+  if (!object) return false;
+  let stripped = false;
+  object.traverse((child) => {
+    const pipeline = String(child.userData?.render3dPipeline || "").toLowerCase();
+    if (pipeline.includes("texture")) {
+      delete child.userData.render3dPipeline;
+      stripped = true;
+    }
+    if (!child.isMesh || !child.geometry) return;
+    const sourceMats = Array.isArray(child.material) ? child.material : [child.material];
+    const base = sourceMats.find((m) => m && !materialHasTextureMaps(m)) || sourceMats[0];
+    const mat = base?.clone?.() || new THREE.MeshStandardMaterial({ color: 0xc4c4c4 });
+    for (const key of TEXTURE_MAP_KEYS) {
+      if (mat[key]) {
+        try { mat[key].dispose?.(); } catch { /* ignore */ }
+        mat[key] = null;
+        stripped = true;
+      }
+    }
+    if ("envMap" in mat) mat.envMap = null;
+    mat.needsUpdate = true;
+    child.material = mat;
+    child.geometry.clearGroups?.();
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+  if (String(object.userData?.render3dPipeline || "").toLowerCase().includes("texture")) {
+    delete object.userData.render3dPipeline;
+    stripped = true;
+  }
+  // Solid viewport look immediately (don't wait for upload/reload).
+  applyCadStyle(object);
+  return stripped;
+}
+
 async function removeTexturingFromSelectedModel() {
   if (!projectId) {
     setEditStatus("error", "Open a project first.");
@@ -26821,6 +26869,13 @@ async function removeTexturingFromSelectedModel() {
     setEditStatus("error", "Load the model in the viewport first.");
     return;
   }
+
+  // Instant feedback — don't leave the textured mesh up until a full reload.
+  const hadMaps = objectHasTextureMaps(sourceObject);
+  stripTexturesFromLiveObject(sourceObject);
+  currentMesh = projectAssembly.getRoot();
+  reapplyViewMode?.(currentMesh);
+  rebuildGrid?.();
 
   // Prefer timeline backtrack when the latest step is a texture apply.
   try {
@@ -26842,7 +26897,7 @@ async function removeTexturingFromSelectedModel() {
     return;
   }
 
-  if (!objectHasTextureMaps(sourceObject)) {
+  if (!hadMaps && !objectHasTextureMaps(sourceObject)) {
     setEditStatus("ok", "No texture maps on this model. Use Timeline to restore an earlier step if needed.");
     return;
   }
@@ -28595,6 +28650,23 @@ window.addEventListener("keydown", (e) => {
     window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}` || "/");
   }
   if (twitterLinkParam) {
+    const inOAuthPopup = !!(window.opener && !window.opener.closed);
+    if (inOAuthPopup) {
+      try {
+        window.opener.postMessage(
+          {
+            type: "render3d:oauth-done",
+            provider: "twitter",
+            ok: twitterLinkParam === "connected",
+            detail: twitterErrorParam || "",
+          },
+          window.location.origin,
+        );
+      } catch { /* ignore */ }
+      try {
+        window.close();
+      } catch { /* ignore */ }
+    }
     preferencesAdvancedOpen = true;
     preferencesAdvancedTab = "authorized";
     window.setTimeout(() => {
@@ -28603,7 +28675,7 @@ window.addEventListener("keydown", (e) => {
         twitterLinkParam === "connected" ? "ok" : "error",
         twitterLinkParam === "connected"
           ? "X linked. You can share viewport videos to your account."
-          : `X link failed${twitterErrorParam ? `: ${twitterErrorParam}` : "."}`,
+          : `X link failed${twitterErrorParam ? `: ${twitterErrorParam}` : ". Check that the X app Callback URI is https://render3d.app/oauth/twitter/callback"}`,
       );
     }, 500);
     const params = new URLSearchParams(window.location.search);
@@ -30290,6 +30362,55 @@ window.addEventListener("keydown", (e) => {
     }
   }
 
+  function askAuthorizedAppXPin() {
+    return new Promise((resolve) => {
+      document.getElementById("authorized-x-pin-modal")?.remove();
+      const modal = document.createElement("div");
+      modal.id = "authorized-x-pin-modal";
+      modal.className = "auth-modal";
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", "true");
+      modal.innerHTML = `
+        <div class="auth-backdrop" data-x-pin-cancel></div>
+        <div class="auth-card app-dialog-card" style="width:min(420px,calc(100vw - 28px))">
+          <button type="button" class="auth-close" data-x-pin-cancel aria-label="Close">&times;</button>
+          <h2 class="app-dialog-title">Enter the PIN from X</h2>
+          <p class="muted small">Authorize Render3D in the X window, then type the PIN shown there.</p>
+          <div class="viewport-x-pin-row" style="margin-top:12px">
+            <input type="text" inputmode="numeric" autocomplete="one-time-code" data-x-pin-input placeholder="PIN code" maxlength="12" />
+            <button type="button" class="btn accent" data-x-pin-submit>Connect</button>
+            <button type="button" class="btn secondary" data-x-pin-cancel>Cancel</button>
+          </div>
+        </div>
+      `;
+      const finish = (value) => {
+        modal.remove();
+        resolve(value);
+      };
+      modal.addEventListener("click", (ev) => {
+        if (ev.target.closest("[data-x-pin-submit]")) {
+          const pin = String(modal.querySelector("[data-x-pin-input]")?.value || "").trim();
+          finish(pin || null);
+          return;
+        }
+        if (ev.target.closest("[data-x-pin-cancel]")) finish(null);
+      });
+      modal.querySelector("[data-x-pin-input]")?.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          const pin = String(modal.querySelector("[data-x-pin-input]")?.value || "").trim();
+          finish(pin || null);
+        }
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          finish(null);
+        }
+      });
+      document.body.appendChild(modal);
+      window.setTimeout(() => modal.querySelector("[data-x-pin-input]")?.focus(), 40);
+    });
+  }
+
   async function hydrateAuthorizedApps(panel = document.getElementById("profile-preferences-panel")) {
     const host = panel?.querySelector("#pref-authorized-apps-list");
     if (!host) return;
@@ -31024,7 +31145,59 @@ window.addEventListener("keydown", (e) => {
             setEditStatus("ok", "Opening X authorization...");
             const data = await api("/api/integrations/twitter/link-url", { method: "POST" });
             if (!data?.url) throw new Error("X authorization URL was not returned.");
-            window.location.href = data.url;
+            const mode = String(data.mode || "redirect").toLowerCase();
+            const width = 560;
+            const height = 720;
+            const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+            const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+            const popup = window.open(
+              data.url,
+              "render3d-twitter-connect",
+              `popup=yes,width=${width},height=${height},left=${left},top=${top}`,
+            );
+            if (!popup) throw new Error("Popup blocked — allow popups for Render3D.");
+            if (mode === "oob") {
+              const pin = await askAuthorizedAppXPin();
+              try { popup.close(); } catch (_) {}
+              if (!pin) {
+                setEditStatus("error", "Connect cancelled — no PIN entered.");
+                return;
+              }
+              setEditStatus("ok", "Finishing X connect…");
+              await api("/api/integrations/twitter/link-pin", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ state: data.state, pin }),
+              });
+              setEditStatus("ok", "X connected.");
+              await hydrateAuthorizedApps(panel);
+              return;
+            }
+            // Web redirect apps: wait for popup callback.
+            await new Promise((resolve) => {
+              const onMessage = (event) => {
+                if (event.origin !== window.location.origin) return;
+                if (!event.data || event.data.type !== "render3d:oauth-done") return;
+                if (!["twitter", "x"].includes(String(event.data.provider || "").toLowerCase())) return;
+                window.removeEventListener("message", onMessage);
+                window.clearInterval(timer);
+                resolve(event.data);
+              };
+              window.addEventListener("message", onMessage);
+              const timer = window.setInterval(() => {
+                if (!popup.closed) return;
+                window.clearInterval(timer);
+                window.removeEventListener("message", onMessage);
+                resolve(null);
+              }, 800);
+              window.setTimeout(() => {
+                window.clearInterval(timer);
+                window.removeEventListener("message", onMessage);
+                resolve(null);
+              }, 10 * 60 * 1000);
+            });
+            setEditStatus("ok", "X connect finished — refresh if status didn’t update.");
+            await hydrateAuthorizedApps(panel);
             return;
           }
           if (action === "unlink-twitter") {

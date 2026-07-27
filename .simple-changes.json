@@ -1,0 +1,12 @@
+{
+  "changelogHandling": "delegate-if-available",
+  "concurrentWork": "preserve",
+  "defaultFinish": "ship",
+  "guidance": {
+    "version": 1
+  },
+  "productionDeploy": "allow",
+  "questions": "blocking-only",
+  "review": "repository-policy",
+  "schemaVersion": 1
+}

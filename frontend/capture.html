@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Render3D · Phone capture</title>
+  <link rel="stylesheet" href="/capture.css?v=20260727-phone-capture" />
+</head>
+<body>
+  <main class="cap">
+    <header class="cap-head">
+      <p class="cap-eyebrow">Render3D</p>
+      <h1>Add a clip</h1>
+      <p class="cap-sub" data-cap-hint>Record from your phone and send it to the desktop editor.</p>
+    </header>
+
+    <section class="cap-stage">
+      <video class="cap-preview" data-cap-preview playsinline muted autoplay></video>
+      <p class="cap-status" data-cap-status role="status"></p>
+    </section>
+
+    <label class="cap-label">
+      <span>Label (so AI knows what this is)</span>
+      <input type="text" data-cap-label maxlength="80" placeholder="e.g. Printed part in hand" />
+    </label>
+
+    <div class="cap-actions">
+      <button type="button" class="cap-btn secondary" data-cap-flip>Flip camera</button>
+      <button type="button" class="cap-btn accent" data-cap-record>Record</button>
+      <button type="button" class="cap-btn secondary hidden" data-cap-stop>Stop</button>
+    </div>
+
+    <div class="cap-alt">
+      <label class="cap-upload">
+        <input type="file" accept="video/*,video/mp4,video/webm,video/quicktime" data-cap-file hidden />
+        <span>Or upload a video from Photos</span>
+      </label>
+    </div>
+
+    <p class="cap-foot muted">Keep this page open until upload finishes. Then check the desktop editor timeline.</p>
+  </main>
+  <script type="module" src="/capture.js?v=20260727-phone-capture"></script>
+</body>
+</html>

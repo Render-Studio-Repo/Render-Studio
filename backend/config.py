@@ -110,9 +110,12 @@ class Settings(BaseSettings):
     discord_updates_webhook_url: str = ""
 
     # X (Twitter) — per-user OAuth for Share to X from viewport video
+    # Default oauth1 uses API Key + API Key Secret (Keys and tokens).
+    # Set TWITTER_OAUTH_MODE=oauth2 when using OAuth 2.0 Client ID + Client Secret.
     twitter_client_id: str = ""
     twitter_client_secret: str = ""
     twitter_redirect_uri: str = "https://render3d.app/oauth/twitter/callback"
+    twitter_oauth_mode: str = "auto"
 
     # LinkedIn product-update announcements (member or organization URN)
     linkedin_client_id: str = ""

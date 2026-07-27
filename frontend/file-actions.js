@@ -576,14 +576,20 @@ export async function openFileExportMenu({
     } catch { /* non-critical */ }
   }
 
+  const mobile = isMobileClient();
+  const bambuLabel = bambuTargetLabel();
+  const defaultHint = mobile
+    ? `Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to ${bambuLabel} — or copy a public preview link.`
+    : "Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to Bambu Studio — or copy a public preview link.";
+
   const menu = document.createElement("div");
-  menu.className = "file-export-menu";
+  menu.className = `file-export-menu${mobile ? " file-export-menu--mobile" : ""}`;
   menu.innerHTML = `
     <div class="file-export-header">
       <div class="file-export-title">${title || `Export ${filename}`}</div>
       <button type="button" class="file-export-close" data-export-close aria-label="Close export">&times;</button>
     </div>
-    <p class="file-export-hint muted small">${hint || "Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to Bambu Studio — or copy a public preview link."}</p>
+    <p class="file-export-hint muted small">${hint || defaultHint}</p>
     <p class="file-export-status muted small">Preparing exports…</p>
     <div class="file-export-list"></div>
     <div class="file-export-actions">
@@ -602,17 +608,25 @@ export async function openFileExportMenu({
         <img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" />
         Fusion 360
       </button>` : ""}
-      <button type="button" class="btn file-export-bambu" title="Open this model as 3MF in local Bambu Studio and place it on the build plate">
+      <button type="button" class="btn file-export-bambu" title="${mobile ? `Prepare a plate-ready 3MF and send it to ${bambuLabel}` : "Open this model as 3MF in local Bambu Studio and place it on the build plate"}">
         <!-- @milestone id=send-to-bambu-studio title="Send to Bambu Studio" summary="Export prepares a plate-ready 3MF and opens it in local Bambu Studio so the part lands on the build plate." kind=feature href="/" -->
         <span class="file-export-bambu-mark" aria-hidden="true">B</span>
-        Send to Bambu Studio
+        Send to ${bambuLabel}
       </button>
     </div>
   `;
   const rect = anchorEl.getBoundingClientRect();
   menu.style.position = "fixed";
-  menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 260)}px`;
-  menu.style.left = `${Math.min(rect.left, Math.max(8, window.innerWidth - 316))}px`;
+  if (mobile) {
+    menu.style.left = "8px";
+    menu.style.right = "8px";
+    menu.style.width = "auto";
+    menu.style.bottom = "8px";
+    menu.style.top = "auto";
+  } else {
+    menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 260)}px`;
+    menu.style.left = `${Math.min(rect.left, Math.max(8, window.innerWidth - 316))}px`;
+  }
   document.body.appendChild(menu);
   keepMenuInViewport(menu);
   openMenu = menu;
@@ -635,10 +649,12 @@ export async function openFileExportMenu({
   };
   openMenuCleanup = () => {
     document.removeEventListener("mousedown", onDoc);
+    document.removeEventListener("touchstart", onDoc);
     document.removeEventListener("keydown", onKey);
   };
   setTimeout(() => {
     document.addEventListener("mousedown", onDoc);
+    document.addEventListener("touchstart", onDoc, { passive: true });
     document.addEventListener("keydown", onKey);
   }, 0);
 
@@ -1134,6 +1150,32 @@ function detectClientOs() {
   return "windows";
 }
 
+function isMobileClient() {
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  try {
+    if (window.matchMedia?.("(pointer: coarse)").matches && window.matchMedia("(max-width: 1024px)").matches) {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+function isIosClient() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent || "")
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isAndroidClient() {
+  return /Android/i.test(navigator.userAgent || "");
+}
+
+function bambuTargetLabel() {
+  return isMobileClient() ? "Bambu Handy" : "Bambu Studio";
+}
+
 function bambuStudioOpenUrls(fileUrl) {
   // URI-encoded HTTPS in the protocol query is what Bambu Studio actually
   // imports on first open. Plain URLs often only focus an empty plate.
@@ -1149,6 +1191,13 @@ function bambuStudioOpenUrls(fileUrl) {
     macos: `bambustudioopen://${encoded}`,
     macosEncoded: `bambustudioopen://${encoded}`,
     macosPlain: `bambustudioopen://${fileUrl}`,
+    // Handy (iOS/Android) — open app; file is delivered via share/download.
+    handy: "bambu://",
+    handyIos: "bambu://",
+    // Android intent to launch Handy package (opens app; share sheet carries the 3MF).
+    handyAndroid: "intent://#Intent;package=bbl.intl.bambulab.com;scheme=bambu;end",
+    handyPlayStore: "https://play.google.com/store/apps/details?id=bbl.intl.bambulab.com",
+    handyAppStore: "https://apps.apple.com/app/bambu-handy/id1624242803",
   };
 }
 
@@ -1167,6 +1216,37 @@ function launchBambuProtocol(url) {
   document.body.appendChild(opener);
   opener.click();
   opener.remove();
+}
+
+async function shareThreeMfToApps(fileUrl, filename) {
+  if (!navigator.share) return false;
+  try {
+    const res = await fetch(fileUrl);
+    if (!res.ok) throw new Error(`Could not fetch 3MF (${res.status})`);
+    const blob = await res.blob();
+    const type = blob.type && blob.type !== "application/octet-stream"
+      ? blob.type
+      : "model/3mf";
+    const file = new File([blob], filename, { type });
+    if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+      // Some browsers only share URLs/text.
+      await navigator.share({
+        title: filename,
+        text: `Print ${filename} in Bambu Handy`,
+        url: fileUrl,
+      });
+      return true;
+    }
+    await navigator.share({
+      files: [file],
+      title: filename,
+      text: "Open in Bambu Handy to print",
+    });
+    return true;
+  } catch (err) {
+    if (String(err?.name || "") === "AbortError") return true; // user cancelled share sheet
+    return false;
+  }
 }
 
 async function ensureThreeMfExport({ projectId, filename, exports, forceRefresh = false }) {
@@ -1208,11 +1288,13 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
   if (!btn) return;
   const menu = btn.closest(".file-export-menu");
   const original = btn.innerHTML;
+  const mobile = isMobileClient();
+  const target = bambuTargetLabel();
   btn.disabled = true;
   btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Preparing 3MF…`;
   try {
     if (!getToken()) {
-      throw new Error("Not authenticated. Sign in to create the temporary 3MF share link Bambu Studio needs.");
+      throw new Error(`Not authenticated. Sign in to create the temporary 3MF share link ${target} needs.`);
     }
     const threeMf = await ensureThreeMfExport({
       projectId,
@@ -1231,7 +1313,7 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
     }
     const share = await shareRes.json();
     const token = share.token;
-    if (!token) throw new Error("Could not create a public 3MF link for Bambu Studio.");
+    if (!token) throw new Error(`Could not create a public 3MF link for ${target}.`);
 
     // Keep a clean .3mf path — Bambu's downloader keys off the extension.
     const safeName = String(threeMf.name || "model.3mf").replace(/\.3MF$/i, ".3mf");
@@ -1239,22 +1321,43 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
     const fileUrl = `${window.location.origin}${filePath}`;
     const urls = bambuStudioOpenUrls(fileUrl);
     const os = detectClientOs();
-    const primary = urls[os] || urls.windows;
 
-    btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Opening Bambu Studio…`;
+    if (mobile) {
+      btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sending to Handy…`;
+      // Best path on phones: system share sheet → pick Bambu Handy.
+      const shared = await shareThreeMfToApps(fileUrl, safeName);
+      if (!shared) {
+        try {
+          await downloadFile(fileUrl, safeName);
+        } catch {
+          /* non-fatal */
+        }
+      }
+      // Wake Handy so the user can open the shared/downloaded 3MF.
+      if (isAndroidClient()) {
+        launchBambuProtocol(urls.handyAndroid || urls.handy);
+      } else {
+        launchBambuProtocol(urls.handyIos || urls.handy);
+      }
+      btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sent to Handy ✓`;
+      showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: safeName, mobile: true });
+    } else {
+      const primary = urls[os] || urls.windows;
+      btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Opening Bambu Studio…`;
 
-    // Also download the 3MF so the user can open it from Downloads if the protocol
-    // only focuses an already-running Studio window without importing.
-    try {
-      await downloadFile(fileUrl, safeName);
-    } catch {
-      /* non-fatal — protocol open still attempted */
+      // Also download the 3MF so the user can open it from Downloads if the protocol
+      // only focuses an already-running Studio window without importing.
+      try {
+        await downloadFile(fileUrl, safeName);
+      } catch {
+        /* non-fatal — protocol open still attempted */
+      }
+
+      launchBambuProtocol(primary);
+
+      btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sent to Bambu ✓`;
+      showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: safeName, mobile: false });
     }
-
-    launchBambuProtocol(primary);
-
-    btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sent to Bambu ✓`;
-    showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: safeName });
     setTimeout(() => {
       btn.disabled = false;
       if (!btn.dataset.bambuFollowup) btn.innerHTML = original;
@@ -1263,42 +1366,75 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
     btn.disabled = false;
     btn.innerHTML = original;
     showExportError(menu, err, {
-      title: "Could not send to Bambu Studio",
+      title: `Could not send to ${target}`,
       onRetry: () => sendToBambuStudio({ btn, projectId, filename, exports }),
     });
   }
 }
 
-function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName }) {
+function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName, mobile = false }) {
   const menu = btn.closest(".file-export-menu");
   if (!menu) return;
   menu.querySelector(".file-export-bambu-followup")?.remove();
   const panel = document.createElement("div");
   panel.className = "file-export-bambu-followup";
-  const alt = os === "macos"
-    ? (urls.windowsPlain || urls.windows)
-    : (urls.macosPlain || urls.macos);
-  const encodedPrimary = os === "macos" ? urls.macosEncoded : (urls[`${os}Encoded`] || urls.windowsEncoded);
-  panel.innerHTML = `
-    <p><strong>${escText(threeMfName)}</strong> was prepared as a plate-ready 3MF.</p>
-    <p class="muted small">If Studio opened with an empty plate:</p>
-    <ul class="muted small file-export-bambu-tips">
-      <li>Click <strong>Yes</strong> on Bambu’s “not from a trusted site” prompt</li>
-      <li>In Bambu Preferences, enable <strong>Keep only one Bambu Studio instance</strong></li>
-      <li>Open the downloaded <strong>${escText(threeMfName)}</strong> from your Downloads folder (File → Import)</li>
-    </ul>
-    <div class="file-export-bambu-followup-actions">
-      <button type="button" class="btn secondary btn-compact" data-bambu-encoded>Open again</button>
-      <button type="button" class="btn secondary btn-compact" data-bambu-alt>Try alternate open link</button>
-      <button type="button" class="btn secondary btn-compact" data-bambu-download>Download 3MF again</button>
-    </div>
-  `;
-  panel.querySelector("[data-bambu-alt]")?.addEventListener("click", () => {
-    launchBambuProtocol(alt);
-  });
-  panel.querySelector("[data-bambu-encoded]")?.addEventListener("click", () => {
-    launchBambuProtocol(encodedPrimary || urls[os] || urls.windows);
-  });
+  if (mobile) {
+    const store = isIosClient() ? urls.handyAppStore : urls.handyPlayStore;
+    panel.innerHTML = `
+      <p><strong>${escText(threeMfName)}</strong> is ready for Bambu Handy.</p>
+      <p class="muted small">Handy isn’t a desktop slicer — use the share sheet and pick <strong>Bambu Handy</strong>, or open the downloaded 3MF from Files.</p>
+      <ul class="muted small file-export-bambu-tips">
+        <li>Tap <strong>Share again</strong> and choose <strong>Bambu Handy</strong></li>
+        <li>If Handy didn’t appear, install it, then share the 3MF again</li>
+        <li>In Handy, open the file and send it to your printer</li>
+      </ul>
+      <div class="file-export-bambu-followup-actions">
+        <button type="button" class="btn secondary btn-compact" data-bambu-share>Share again</button>
+        <button type="button" class="btn secondary btn-compact" data-bambu-open-handy>Open Handy</button>
+        <button type="button" class="btn secondary btn-compact" data-bambu-download>Download 3MF</button>
+        ${store ? `<a class="btn secondary btn-compact" data-bambu-store href="${escAttr(store)}" target="_blank" rel="noopener">Get Handy</a>` : ""}
+      </div>
+    `;
+    panel.querySelector("[data-bambu-share]")?.addEventListener("click", async () => {
+      const ok = await shareThreeMfToApps(fileUrl, threeMfName);
+      if (!ok) {
+        try {
+          await downloadFile(fileUrl, threeMfName);
+        } catch (err) {
+          showExportError(menu, err, { title: "3MF share failed" });
+        }
+      }
+    });
+    panel.querySelector("[data-bambu-open-handy]")?.addEventListener("click", () => {
+      if (isAndroidClient()) launchBambuProtocol(urls.handyAndroid || urls.handy);
+      else launchBambuProtocol(urls.handyIos || urls.handy);
+    });
+  } else {
+    const alt = os === "macos"
+      ? (urls.windowsPlain || urls.windows)
+      : (urls.macosPlain || urls.macos);
+    const encodedPrimary = os === "macos" ? urls.macosEncoded : (urls[`${os}Encoded`] || urls.windowsEncoded);
+    panel.innerHTML = `
+      <p><strong>${escText(threeMfName)}</strong> was prepared as a plate-ready 3MF.</p>
+      <p class="muted small">If Studio opened with an empty plate:</p>
+      <ul class="muted small file-export-bambu-tips">
+        <li>Click <strong>Yes</strong> on Bambu’s “not from a trusted site” prompt</li>
+        <li>In Bambu Preferences, enable <strong>Keep only one Bambu Studio instance</strong></li>
+        <li>Open the downloaded <strong>${escText(threeMfName)}</strong> from your Downloads folder (File → Import)</li>
+      </ul>
+      <div class="file-export-bambu-followup-actions">
+        <button type="button" class="btn secondary btn-compact" data-bambu-encoded>Open again</button>
+        <button type="button" class="btn secondary btn-compact" data-bambu-alt>Try alternate open link</button>
+        <button type="button" class="btn secondary btn-compact" data-bambu-download>Download 3MF again</button>
+      </div>
+    `;
+    panel.querySelector("[data-bambu-alt]")?.addEventListener("click", () => {
+      launchBambuProtocol(alt);
+    });
+    panel.querySelector("[data-bambu-encoded]")?.addEventListener("click", () => {
+      launchBambuProtocol(encodedPrimary || urls[os] || urls.windows);
+    });
+  }
   panel.querySelector("[data-bambu-download]")?.addEventListener("click", async () => {
     try {
       await downloadFile(fileUrl, threeMfName);
@@ -1921,12 +2057,23 @@ function keepMenuInViewport(menu) {
     // Fusion picker: pin near the top so the Export footer stays on-screen.
     if (hasFusion) {
       menu.style.top = `${pad}px`;
+      menu.style.bottom = "";
       menu.style.maxHeight = `${maxH}px`;
       const rect = menu.getBoundingClientRect();
       if (rect.right > window.innerWidth - pad) {
         menu.style.left = `${Math.max(pad, window.innerWidth - rect.width - pad)}px`;
       }
       if (rect.left < pad) menu.style.left = `${pad}px`;
+      return;
+    }
+    if (menu.classList.contains("file-export-menu--mobile")) {
+      menu.style.left = `${pad}px`;
+      menu.style.right = `${pad}px`;
+      menu.style.width = "auto";
+      menu.style.bottom = `${pad}px`;
+      menu.style.top = "auto";
+      menu.style.maxHeight = `${Math.min(maxH, window.innerHeight * 0.78)}px`;
+      menu.style.overflowY = "auto";
       return;
     }
     const rect = menu.getBoundingClientRect();

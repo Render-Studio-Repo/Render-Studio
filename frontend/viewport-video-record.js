@@ -1,5 +1,7 @@
 /** High-quality viewport video recording — expandable settings next to Screenshot. */
 
+import { mountVideoClipStudio } from "./video-clip-studio.js?v=20260727-clip-studio";
+
 const LS_KEY = "render3d:viewportVideo:v1";
 
 const DEFAULTS = {
@@ -61,6 +63,7 @@ export function createViewportVideoRecorder({
   onMenuOpen,
   api,
   getToken,
+  getProjectId,
 } = {}) {
   let prefs = readPrefs();
   let recorder = null;
@@ -71,7 +74,10 @@ export function createViewportVideoRecorder({
   let tickTimer = 0;
   let recording = false;
   let lastBlob = null;
+  let sourceBlob = null;
   let shareModalEl = null;
+  let videoEditor = null;
+  let appendNextViewportTake = false;
 
   function els() {
     return {
@@ -157,17 +163,148 @@ export function createViewportVideoRecorder({
     }
   }
 
-  function downloadBlob(blob) {
+  function downloadBlob(blob, ext = "webm") {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
+    const safeExt = String(ext || "webm").replace(/^\./, "").toLowerCase() || "webm";
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `render3d-video-${stamp}.${ext}`;
+    link.download = `render3d-video-${stamp}.${safeExt}`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  function selectedDownloadFormat() {
+    const sel = shareModalEl?.querySelector("[data-video-download-format]");
+    const value = String(sel?.value || "webm").toLowerCase();
+    if (value === "mp4" || value === "gif" || value === "webm") return value;
+    return "webm";
+  }
+
+  function blobLooksLike(blob, format) {
+    const type = String(blob?.type || "").toLowerCase();
+    if (format === "mp4") return type.includes("mp4") || type.includes("m4v");
+    if (format === "gif") return type.includes("gif");
+    if (format === "webm") return type.includes("webm");
+    return false;
+  }
+
+  async function remuxViaCanvas(blob, mimeType) {
+    if (!blob || !window.MediaRecorder) return null;
+    if (mimeType && !MediaRecorder.isTypeSupported?.(mimeType)) return null;
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.src = url;
+    video.playsInline = true;
+    video.muted = true;
+    video.preload = "auto";
+    try {
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("Could not load clip for conversion."));
+      });
+      const w = Math.max(2, video.videoWidth || 1280);
+      const h = Math.max(2, video.videoHeight || 720);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (!ctx) return null;
+      const outStream = canvas.captureStream(30);
+      const tracks = [...outStream.getVideoTracks()];
+      try {
+        const captured = typeof video.captureStream === "function"
+          ? video.captureStream()
+          : (typeof video.mozCaptureStream === "function" ? video.mozCaptureStream() : null);
+        for (const t of captured?.getAudioTracks?.() || []) tracks.push(t);
+      } catch (_) {}
+      const mixed = new MediaStream(tracks);
+      const recorder = mimeType
+        ? new MediaRecorder(mixed, { mimeType, videoBitsPerSecond: 10_000_000 })
+        : new MediaRecorder(mixed, { videoBitsPerSecond: 10_000_000 });
+      const chunks = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data?.size) chunks.push(e.data);
+      };
+      const done = new Promise((resolve, reject) => {
+        recorder.onerror = () => reject(new Error("Could not encode download."));
+        recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || "video/webm" }));
+      });
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      recorder.start(200);
+      video.currentTime = 0;
+      await video.play().catch(() => {});
+      await new Promise((resolve) => {
+        video.onended = () => resolve();
+        const tick = () => {
+          if (video.ended || video.paused) {
+            ctx.drawImage(video, 0, 0, w, h);
+            resolve();
+            return;
+          }
+          ctx.drawImage(video, 0, 0, w, h);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        setTimeout(resolve, (duration || 30) * 1000 + 4000);
+      });
+      try { video.pause(); } catch (_) {}
+      if (recorder.state !== "inactive") recorder.stop();
+      const out = await done;
+      outStream.getTracks().forEach((t) => t.stop());
+      return out?.size ? out : null;
+    } catch {
+      return null;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function convertViaApi(blob, format) {
+    const token = typeof getToken === "function" ? getToken() : null;
+    if (!token) throw new Error("Sign in to convert this clip to " + format.toUpperCase() + ".");
+    const form = new FormData();
+    const srcName = blobLooksLike(blob, "mp4") ? "clip.mp4" : "clip.webm";
+    form.append("video", blob, srcName);
+    form.append("format", format);
+    const res = await fetch("/api/video/convert", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const detail = data?.detail || data?.message || res.statusText || "Conversion failed.";
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    const type = res.headers.get("content-type") || (
+      format === "gif" ? "image/gif" : format === "mp4" ? "video/mp4" : "video/webm"
+    );
+    return new Blob([await res.arrayBuffer()], { type });
+  }
+
+  async function blobForDownloadFormat(blob, format) {
+    if (!blob) return null;
+    if (blobLooksLike(blob, format)) return blob;
+    if (format === "webm") {
+      if (blobLooksLike(blob, "webm")) return blob;
+      const local = await remuxViaCanvas(blob, "video/webm;codecs=vp9")
+        || await remuxViaCanvas(blob, "video/webm");
+      if (local) return local;
+      return convertViaApi(blob, "webm");
+    }
+    if (format === "mp4") {
+      const local = await remuxViaCanvas(blob, "video/mp4")
+        || await remuxViaCanvas(blob, "video/mp4;codecs=avc1.42E01E,mp4a.40.2");
+      if (local && blobLooksLike(local, "mp4")) return local;
+      return convertViaApi(blob, "mp4");
+    }
+    if (format === "gif") {
+      return convertViaApi(blob, "gif");
+    }
+    return blob;
   }
 
   function ensureShareModal() {
@@ -179,20 +316,39 @@ export function createViewportVideoRecorder({
     shareModalEl.setAttribute("aria-modal", "true");
     shareModalEl.innerHTML = `
       <div class="auth-backdrop" data-video-share-close></div>
-      <div class="auth-card app-dialog-card viewport-video-share-card">
+      <div class="auth-card app-dialog-card viewport-video-share-card viewport-video-studio-card">
         <button type="button" class="auth-close" data-video-share-close aria-label="Close">&times;</button>
-        <p class="viewport-video-share-eyebrow">Viewport recording</p>
-        <h2 class="app-dialog-title">Share your clip</h2>
-        <p class="muted small">Download it, or post straight to X once your account is connected.</p>
-        <video class="viewport-video-share-preview" controls playsinline muted></video>
+        <p class="viewport-video-share-eyebrow">Video studio</p>
+        <h2 class="app-dialog-title">Edit &amp; assemble clips</h2>
+        <p class="muted small">Mix 3D takes, webcam, uploads, and phone clips — label them so assemble knows the cut.</p>
+        <video class="viewport-video-share-preview" controls playsinline></video>
+        <div data-video-editor-host></div>
         <label class="viewport-video-share-caption">
-          <span>Caption</span>
+          <span>Caption (X)</span>
           <textarea data-video-share-text maxlength="270" rows="3" placeholder="Made in Render3D…"></textarea>
         </label>
         <p class="viewport-video-share-x-status muted small" data-video-share-x-status></p>
         <p class="viewport-video-share-status muted small" data-video-share-status role="status"></p>
+        <div class="viewport-x-pin-panel hidden" data-video-x-pin-panel>
+          <p class="viewport-x-pin-title">Enter the PIN from X</p>
+          <p class="muted small">Authorize Render3D in the X window, then type the PIN shown there.</p>
+          <div class="viewport-x-pin-row">
+            <input type="text" inputmode="numeric" autocomplete="one-time-code" data-video-x-pin-input placeholder="PIN code" maxlength="12" />
+            <button type="button" class="btn accent" data-video-x-pin-submit>Connect</button>
+            <button type="button" class="btn secondary" data-video-x-pin-cancel>Cancel</button>
+          </div>
+        </div>
         <div class="viewport-video-share-actions">
-          <button type="button" class="btn secondary" data-video-share-download>Download</button>
+          <div class="viewport-video-download-wrap">
+            <label class="viewport-video-download-format">
+              <select data-video-download-format aria-label="Download file type">
+                <option value="webm">WebM</option>
+                <option value="mp4">MP4</option>
+                <option value="gif">GIF</option>
+              </select>
+            </label>
+            <button type="button" class="btn secondary" data-video-share-download>Download</button>
+          </div>
           <button type="button" class="btn secondary" data-video-share-connect-x>Connect X</button>
           <button type="button" class="btn accent" data-video-share-post-x>Share to X</button>
         </div>
@@ -206,8 +362,7 @@ export function createViewportVideoRecorder({
       el.addEventListener("click", () => closeShareModal());
     });
     shareModalEl.querySelector("[data-video-share-download]")?.addEventListener("click", () => {
-      if (lastBlob) downloadBlob(lastBlob);
-      setShareStatus("Downloaded.");
+      void downloadEdited();
     });
     shareModalEl.querySelector("[data-video-share-connect-x]")?.addEventListener("click", () => {
       void connectX();
@@ -215,7 +370,75 @@ export function createViewportVideoRecorder({
     shareModalEl.querySelector("[data-video-share-post-x]")?.addEventListener("click", () => {
       void postToX();
     });
+    shareModalEl.querySelector("[data-video-x-pin-submit]")?.addEventListener("click", () => {
+      finishXPinPrompt(true);
+    });
+    shareModalEl.querySelector("[data-video-x-pin-cancel]")?.addEventListener("click", () => {
+      finishXPinPrompt(false);
+    });
+    shareModalEl.querySelector("[data-video-x-pin-input]")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        finishXPinPrompt(true);
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        finishXPinPrompt(false);
+      }
+    });
+
+    const host = shareModalEl.querySelector("[data-video-editor-host]");
+    videoEditor = mountVideoClipStudio(host, {
+      getPreviewEl: () => shareModalEl?.querySelector(".viewport-video-share-preview"),
+      getToken,
+      getProjectId,
+      onOutputBlob: (blob) => {
+        if (blob) {
+          lastBlob = blob;
+          sourceBlob = blob;
+        }
+      },
+      onStatus: (msg, isError) => setShareStatus(msg, !!isError),
+      onRequestViewportRecord: () => {
+        appendNextViewportTake = true;
+        closeShareModal();
+        setStatus(true, "Record another 3D take — it will append to your timeline.");
+        void startRecording();
+      },
+    });
     return shareModalEl;
+  }
+
+  async function resolveShareBlob() {
+    if (videoEditor?.needsBake?.()) {
+      const baked = await videoEditor.ensureBaked();
+      if (baked) lastBlob = baked;
+    }
+    return lastBlob;
+  }
+
+  async function downloadEdited() {
+    const blob = await resolveShareBlob();
+    if (!blob) {
+      setShareStatus("Nothing to download yet.", true);
+      return;
+    }
+    const format = selectedDownloadFormat();
+    const btn = shareModalEl?.querySelector("[data-video-share-download]");
+    if (btn) btn.disabled = true;
+    setShareStatus(format === "webm" && blobLooksLike(blob, "webm")
+      ? "Downloading…"
+      : `Converting to ${format.toUpperCase()}…`);
+    try {
+      const out = await blobForDownloadFormat(blob, format);
+      if (!out) throw new Error("Could not prepare download.");
+      downloadBlob(out, format);
+      setShareStatus(`Downloaded ${format.toUpperCase()}.`);
+    } catch (err) {
+      setShareStatus(err?.message || "Download failed.", true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function setShareStatus(text, isError = false) {
@@ -270,6 +493,68 @@ export function createViewportVideoRecorder({
     }
   }
 
+  let xPinResolver = null;
+
+  function hideXPinPanel() {
+    const panel = shareModalEl?.querySelector("[data-video-x-pin-panel]");
+    panel?.classList.add("hidden");
+    const input = shareModalEl?.querySelector("[data-video-x-pin-input]");
+    if (input) input.value = "";
+  }
+
+  function finishXPinPrompt(submit) {
+    const input = shareModalEl?.querySelector("[data-video-x-pin-input]");
+    const pin = submit ? String(input?.value || "").trim() : "";
+    hideXPinPanel();
+    const resolve = xPinResolver;
+    xPinResolver = null;
+    resolve?.(pin || null);
+  }
+
+  function ensureXPinPanel() {
+    ensureShareModal();
+    if (shareModalEl.querySelector("[data-video-x-pin-panel]")) return;
+    const status = shareModalEl.querySelector("[data-video-share-status]");
+    const html = `
+        <div class="viewport-x-pin-panel hidden" data-video-x-pin-panel>
+          <p class="viewport-x-pin-title">Enter the PIN from X</p>
+          <p class="muted small">Authorize Render3D in the X window, then type the PIN shown there.</p>
+          <div class="viewport-x-pin-row">
+            <input type="text" inputmode="numeric" autocomplete="one-time-code" data-video-x-pin-input placeholder="PIN code" maxlength="12" />
+            <button type="button" class="btn accent" data-video-x-pin-submit>Connect</button>
+            <button type="button" class="btn secondary" data-video-x-pin-cancel>Cancel</button>
+          </div>
+        </div>`;
+    if (status) status.insertAdjacentHTML("afterend", html);
+    else shareModalEl.querySelector(".viewport-video-share-actions")?.insertAdjacentHTML("beforebegin", html);
+    shareModalEl.querySelector("[data-video-x-pin-submit]")?.addEventListener("click", () => finishXPinPrompt(true));
+    shareModalEl.querySelector("[data-video-x-pin-cancel]")?.addEventListener("click", () => finishXPinPrompt(false));
+    shareModalEl.querySelector("[data-video-x-pin-input]")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finishXPinPrompt(true); }
+      if (e.key === "Escape") { e.preventDefault(); finishXPinPrompt(false); }
+    });
+  }
+
+  function askXPinInModal() {
+    ensureXPinPanel();
+    return new Promise((resolve) => {
+      if (xPinResolver) {
+        const prev = xPinResolver;
+        xPinResolver = null;
+        prev(null);
+      }
+      xPinResolver = resolve;
+      const panel = shareModalEl.querySelector("[data-video-x-pin-panel]");
+      const input = shareModalEl.querySelector("[data-video-x-pin-input]");
+      panel?.classList.remove("hidden");
+      if (input) {
+        input.value = "";
+        window.setTimeout(() => input.focus(), 50);
+      }
+      setShareStatus("Authorize in the X window, then enter the PIN below.");
+    });
+  }
+
   async function connectX() {
     if (!api) {
       setShareStatus("Sign in first.", true);
@@ -279,14 +564,89 @@ export function createViewportVideoRecorder({
     try {
       const data = await api("/api/integrations/twitter/link-url", { method: "POST" });
       if (!data?.url) throw new Error("X authorization URL was not returned.");
-      window.location.href = data.url;
+      const mode = String(data.mode || "redirect").toLowerCase();
+      const width = 560;
+      const height = 720;
+      const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+      const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+      const popup = window.open(
+        data.url,
+        "render3d-twitter-connect",
+        `popup=yes,width=${width},height=${height},left=${left},top=${top}`,
+      );
+      if (!popup) {
+        setShareStatus(
+          "Popup blocked — allow popups for Render3D, or open the X link from Account → Authorized apps.",
+          true,
+        );
+        return;
+      }
+
+      // Desktop/Native X apps only support PIN (oob) — collect it in-page (window.prompt is often blocked).
+      if (mode === "oob") {
+        const pin = await askXPinInModal();
+        try { popup.close(); } catch (_) {}
+        if (!pin) {
+          setShareStatus("Connect cancelled — no PIN entered.", true);
+          return;
+        }
+        setShareStatus("Finishing X connect…");
+        await api("/api/integrations/twitter/link-pin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: data.state, pin }),
+        });
+        setShareStatus("X connected — you can Share to X now.");
+        void refreshXStatus();
+        return;
+      }
+
+      setShareStatus("Finish connecting in the X window…");
+      const onMessage = (event) => {
+        if (event.origin !== window.location.origin) return;
+        if (!event.data || event.data.type !== "render3d:oauth-done") return;
+        if (!["twitter", "x"].includes(String(event.data.provider || "").toLowerCase())) return;
+        window.removeEventListener("message", onMessage);
+        window.clearInterval(closeTimer);
+        if (event.data.ok) {
+          setShareStatus("X connected — you can Share to X now.");
+          void refreshXStatus();
+        } else {
+          const detail = String(event.data.detail || "").trim().toLowerCase();
+          setShareStatus(
+            detail
+              ? `X connect failed: ${detail}`
+              : "X connect failed. Enable User authentication + Read and write in the Developer Portal.",
+            true,
+          );
+          void refreshXStatus();
+        }
+      };
+      window.addEventListener("message", onMessage);
+      const closeTimer = window.setInterval(() => {
+        if (!popup.closed) return;
+        window.clearInterval(closeTimer);
+        window.removeEventListener("message", onMessage);
+        void refreshXStatus().then((status) => {
+          if (status?.connected) {
+            setShareStatus("X connected — you can Share to X now.");
+          } else {
+            setShareStatus("X window closed without connecting.", true);
+          }
+        });
+      }, 800);
+      window.setTimeout(() => {
+        window.clearInterval(closeTimer);
+        window.removeEventListener("message", onMessage);
+      }, 10 * 60 * 1000);
     } catch (err) {
       setShareStatus(err?.message || "Could not start X connect.", true);
     }
   }
 
   async function postToX() {
-    if (!lastBlob || !api) {
+    const blob = await resolveShareBlob();
+    if (!blob || !api) {
       setShareStatus("Nothing to post yet.", true);
       return;
     }
@@ -296,8 +656,8 @@ export function createViewportVideoRecorder({
     setShareStatus("Uploading to X… this can take a minute for longer clips.");
     try {
       const form = new FormData();
-      const ext = (lastBlob.type || "").includes("mp4") ? "mp4" : "webm";
-      form.append("video", lastBlob, `render3d-video.${ext}`);
+      const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
+      form.append("video", blob, `render3d-video.${ext}`);
       form.append("text", text);
       const headers = {};
       const token = getToken?.();
@@ -333,6 +693,7 @@ export function createViewportVideoRecorder({
   }
 
   function closeShareModal() {
+    finishXPinPrompt(false);
     const preview = shareModalEl?.querySelector(".viewport-video-share-preview");
     if (preview) {
       preview.removeAttribute("src");
@@ -342,19 +703,33 @@ export function createViewportVideoRecorder({
   }
 
   async function openShareModal(blob) {
+    const append = appendNextViewportTake;
+    appendNextViewportTake = false;
+    sourceBlob = blob;
     lastBlob = blob;
     const modal = ensureShareModal();
+    if (append && videoEditor?.addClip) {
+      await videoEditor.addClip({
+        blob,
+        source: "viewport",
+        label: `3D take ${(videoEditor.getClips?.() || []).filter((c) => c.source === "viewport").length + 1}`,
+      });
+    } else {
+      videoEditor?.setPrimaryClip?.(blob, { label: "3D viewport", source: "viewport" });
+    }
     const preview = modal.querySelector(".viewport-video-share-preview");
-    if (preview) {
+    if (preview && !append) {
       const url = URL.createObjectURL(blob);
       preview.src = url;
       preview.onloadeddata = () => {
         setTimeout(() => URL.revokeObjectURL(url), 30_000);
       };
+      preview.muted = false;
+      preview.volume = 1;
     }
     const text = modal.querySelector("[data-video-share-text]");
     if (text && !text.value) text.value = "Made in Render3D";
-    setShareStatus("");
+    setShareStatus(append ? "3D take added to timeline." : "");
     modal.classList.remove("hidden");
     await refreshXStatus();
   }

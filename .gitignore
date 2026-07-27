@@ -80,3 +80,7 @@ scripts/credentials_google*.json
 .python_history
 .zshrc
 .ssh/
+
+# Local tool installs (do not commit)
+/.bun/
+/.agents/

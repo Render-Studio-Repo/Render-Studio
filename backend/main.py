@@ -4899,12 +4899,26 @@ async def _handle_discord_link_callback(code: str | None, state: str | None, err
     return RedirectResponse("/?discord_link=connected", status_code=302)
 
 
-async def _handle_twitter_link_callback(code: str | None, state: str | None, error: str | None = None) -> RedirectResponse:
+async def _handle_twitter_link_callback(
+    code: str | None,
+    state: str | None,
+    error: str | None = None,
+    oauth_token: str | None = None,
+    oauth_verifier: str | None = None,
+) -> RedirectResponse:
     from backend.database import get_conn
     from backend.services import twitter_link_service
 
     if error:
         return RedirectResponse(f"/?twitter_link=error&twitter_error={urllib.parse.quote(str(error)[:160])}", status_code=302)
+    # OAuth 1.0a returns oauth_token + oauth_verifier (no code/state PKCE pair).
+    if oauth_token and oauth_verifier:
+        try:
+            twitter_link_service.upsert_link_oauth1(oauth_token, oauth_verifier)
+        except Exception as exc:
+            logger.warning("Twitter OAuth1 link callback failed: %s", exc)
+            return RedirectResponse(f"/?twitter_link=error&twitter_error={urllib.parse.quote(str(exc)[:160])}", status_code=302)
+        return RedirectResponse("/?twitter_link=connected", status_code=302)
     if not code or not state:
         return RedirectResponse("/?twitter_link=error&twitter_error=missing_params", status_code=302)
     try:
@@ -4931,6 +4945,8 @@ async def social_oauth_callback(
     state: str | None = None,
     error: str | None = None,
     error_description: str | None = None,
+    oauth_token: str | None = None,
+    oauth_verifier: str | None = None,
 ):
     provider_key = provider.strip().lower()
     if provider_key == "autodesk":
@@ -4938,7 +4954,13 @@ async def social_oauth_callback(
     if provider_key == "discord":
         return await _handle_discord_link_callback(code, state, error)
     if provider_key in {"twitter", "x"}:
-        return await _handle_twitter_link_callback(code, state, error)
+        return await _handle_twitter_link_callback(
+            code,
+            state,
+            error,
+            oauth_token=oauth_token,
+            oauth_verifier=oauth_verifier,
+        )
     return await _handle_social_callback(provider, code, state, error)
 
 
@@ -4965,6 +4987,8 @@ async def social_oauth_callback_post(provider: str, request: Request):
             str(form.get("code") or "") or None,
             str(form.get("state") or "") or None,
             str(form.get("error") or "") or None,
+            oauth_token=str(form.get("oauth_token") or "") or None,
+            oauth_verifier=str(form.get("oauth_verifier") or "") or None,
         )
     return await _handle_social_callback(
         provider,
@@ -5016,9 +5040,29 @@ def twitter_link_url(user: dict[str, Any] = Depends(get_current_user)):
     from backend.services import twitter_link_service
 
     try:
-        return {"url": twitter_link_service.link_url(user["id"])}
+        return twitter_link_service.link_start(user["id"])
     except Exception as exc:
         raise HTTPException(503, str(exc)) from exc
+
+
+@app.post("/api/integrations/twitter/link-pin")
+def twitter_link_pin(
+    payload: dict[str, Any],
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Complete Desktop/Native X OAuth using the PIN shown after authorizing."""
+    from backend.services import twitter_link_service
+
+    state = str((payload or {}).get("state") or "").strip()
+    pin = str((payload or {}).get("pin") or (payload or {}).get("verifier") or "").strip()
+    try:
+        account = twitter_link_service.complete_oob(user["id"], state, pin)
+        return {"ok": True, "account": account}
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        logger.exception("twitter link-pin failed user_id=%s", user.get("id"))
+        raise HTTPException(502, str(exc) or "Could not finish X connect.") from exc
 
 
 @app.delete("/api/integrations/twitter/link")
@@ -5059,6 +5103,347 @@ async def twitter_post_video(
     except Exception as exc:
         logger.exception("twitter post-video failed user_id=%s", user.get("id"))
         raise HTTPException(502, str(exc) or "Could not post to X.") from exc
+
+
+@app.post("/api/video/convert")
+async def convert_viewport_video(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Convert a recorded viewport clip to webm / mp4 / gif for download."""
+    import subprocess
+    import tempfile
+
+    form = await request.form()
+    upload = form.get("video")
+    fmt = str(form.get("format") or "mp4").strip().lower()
+    if fmt not in {"webm", "mp4", "gif"}:
+        raise HTTPException(400, "format must be webm, mp4, or gif.")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(400, "Missing video file.")
+    raw = await upload.read()
+    if not raw:
+        raise HTTPException(400, "Video file is empty.")
+    if len(raw) > 180 * 1024 * 1024:
+        raise HTTPException(400, "Video is too large to convert (max 180 MB).")
+
+    filename = str(getattr(upload, "filename", None) or "clip.webm")
+    mime = str(getattr(upload, "content_type", None) or "video/webm").lower()
+    src_suffix = ".mp4" if filename.lower().endswith((".mp4", ".m4v")) or "mp4" in mime else ".webm"
+
+    with tempfile.TemporaryDirectory(prefix="r3d-vid-") as tmp:
+        src = Path(tmp) / f"input{src_suffix}"
+        src.write_bytes(raw)
+        if fmt == "webm" and src_suffix == ".webm":
+            return Response(content=raw, media_type="video/webm", headers={
+                "Content-Disposition": 'attachment; filename="render3d-video.webm"',
+            })
+        if fmt == "mp4" and src_suffix == ".mp4":
+            return Response(content=raw, media_type="video/mp4", headers={
+                "Content-Disposition": 'attachment; filename="render3d-video.mp4"',
+            })
+
+        out = Path(tmp) / f"output.{fmt}"
+        if fmt == "mp4":
+            cmd = [
+                "ffmpeg", "-y", "-i", str(src),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-preset", "veryfast", "-crf", "23",
+                "-c:a", "aac", "-movflags", "+faststart",
+                str(out),
+            ]
+            media_type = "video/mp4"
+            download_name = "render3d-video.mp4"
+        elif fmt == "webm":
+            cmd = [
+                "ffmpeg", "-y", "-i", str(src),
+                "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32",
+                "-c:a", "libopus",
+                str(out),
+            ]
+            media_type = "video/webm"
+            download_name = "render3d-video.webm"
+        else:
+            cmd = [
+                "ffmpeg", "-y", "-i", str(src),
+                "-vf", "fps=12,scale='min(720,iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5",
+                "-loop", "0",
+                str(out),
+            ]
+            media_type = "image/gif"
+            download_name = "render3d-video.gif"
+
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        except FileNotFoundError as exc:
+            raise HTTPException(503, "ffmpeg is required for clip conversion.") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(504, "Video conversion timed out.") from exc
+        if proc.returncode != 0 or not out.is_file() or out.stat().st_size <= 0:
+            detail = (proc.stderr or proc.stdout or "")[-400:]
+            logger.warning("video convert failed user_id=%s format=%s detail=%s", user.get("id"), fmt, detail)
+            raise HTTPException(400, f"Could not convert clip to {fmt.upper()}.")
+        data = out.read_bytes()
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+        )
+
+
+@app.post("/api/video/capture-sessions")
+def create_video_capture_session(
+    body: dict[str, Any] | None = Body(default=None),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import video_capture_service
+
+    payload = body or {}
+    project_id = str(payload.get("project_id") or "").strip() or None
+    hint = str(payload.get("hint") or "").strip() or None
+    try:
+        meta = video_capture_service.create_session(user["id"], project_id=project_id, hint=hint)
+    except Exception as exc:
+        raise HTTPException(400, str(exc) or "Could not create capture session.") from exc
+    base = str(getattr(settings, "public_base_url", "") or "https://render3d.app").rstrip("/")
+    token = meta["token"]
+    capture_url = f"{base}/capture.html?t={urllib.parse.quote(token)}"
+    return {
+        **meta,
+        "capture_url": capture_url,
+        "qr_url": f"/api/video/capture-sessions/{urllib.parse.quote(token)}/qr.png",
+    }
+
+
+@app.get("/api/video/capture-sessions/{token}")
+def get_video_capture_session(
+    token: str,
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+):
+    from backend.services import video_capture_service
+
+    try:
+        meta = video_capture_service.get_session(token)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    owner = user and str(user.get("id")) == str(meta.get("user_id"))
+    out = video_capture_service.public_session(meta, include_owner=bool(owner))
+    base = str(getattr(settings, "public_base_url", "") or "https://render3d.app").rstrip("/")
+    token_q = urllib.parse.quote(token)
+    out["capture_url"] = f"{base}/capture.html?t={token_q}"
+    out["qr_url"] = f"/api/video/capture-sessions/{token_q}/qr.png"
+    return out
+
+
+@app.get("/api/video/capture-sessions/{token}/qr.png")
+def video_capture_session_qr(token: str):
+    from backend.services import video_capture_service
+    import io
+    import qrcode
+
+    try:
+        video_capture_service.get_session(token)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    base = str(getattr(settings, "public_base_url", "") or "https://render3d.app").rstrip("/")
+    capture_url = f"{base}/capture.html?t={urllib.parse.quote(token)}"
+    img = qrcode.make(capture_url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.post("/api/video/capture-sessions/{token}/clips")
+async def upload_video_capture_clip(token: str, request: Request):
+    from backend.services import video_capture_service
+
+    form = await request.form()
+    upload = form.get("video")
+    label = str(form.get("label") or "").strip()
+    source = str(form.get("source") or "phone").strip() or "phone"
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(400, "Missing video file.")
+    raw = await upload.read()
+    filename = str(getattr(upload, "filename", None) or "clip.webm")
+    mime = str(getattr(upload, "content_type", None) or "video/webm")
+    try:
+        video_capture_service.get_session(token)
+        entry = video_capture_service.add_clip(
+            token,
+            raw=raw,
+            filename=filename,
+            mime=mime,
+            label=label,
+            source=source,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "clip": entry}
+
+
+@app.get("/api/video/capture-sessions/{token}/clips/{clip_id}")
+def download_video_capture_clip(token: str, clip_id: str):
+    from backend.services import video_capture_service
+
+    try:
+        path, clip = video_capture_service.clip_path(token, clip_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    media = str(clip.get("mime") or "video/webm")
+    return FileResponse(
+        path,
+        media_type=media,
+        filename=str(clip.get("original_name") or clip.get("filename") or f"{clip_id}.webm"),
+    )
+
+
+@app.delete("/api/video/capture-sessions/{token}/clips/{clip_id}")
+def delete_video_capture_clip(
+    token: str,
+    clip_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import video_capture_service
+
+    try:
+        video_capture_service.delete_clip(token, clip_id, user_id=user["id"])
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.delete("/api/video/capture-sessions/{token}")
+def close_video_capture_session(
+    token: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import video_capture_service
+
+    try:
+        video_capture_service.close_session(token, user_id=user["id"])
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.post("/api/video/assemble")
+async def assemble_viewport_video(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Concatenate ordered clip uploads into one webm/mp4 via ffmpeg."""
+    import subprocess
+    import tempfile
+
+    form = await request.form()
+    fmt = str(form.get("format") or "webm").strip().lower()
+    if fmt not in {"webm", "mp4"}:
+        raise HTTPException(400, "format must be webm or mp4.")
+    uploads = form.getlist("clips") if hasattr(form, "getlist") else []
+    if not uploads:
+        # Fallback: clips, clips[], video
+        for key in ("clips", "clips[]", "video"):
+            item = form.get(key)
+            if item is not None:
+                uploads = [item]
+                break
+    files = [u for u in uploads if u is not None and hasattr(u, "read")]
+    if len(files) < 1:
+        raise HTTPException(400, "Add at least one clip to assemble.")
+    if len(files) > 24:
+        raise HTTPException(400, "Too many clips (max 24).")
+
+    with tempfile.TemporaryDirectory(prefix="r3d-asm-") as tmp:
+        tmp_path = Path(tmp)
+        list_file = tmp_path / "list.txt"
+        paths: list[Path] = []
+        for i, upload in enumerate(files):
+            raw = await upload.read()
+            if not raw:
+                continue
+            if len(raw) > 180 * 1024 * 1024:
+                raise HTTPException(400, f"Clip {i + 1} is too large (max 180 MB).")
+            name = str(getattr(upload, "filename", None) or f"clip{i}.webm")
+            ext = Path(name).suffix.lower() or ".webm"
+            if ext not in {".webm", ".mp4", ".mov", ".m4v", ".mkv"}:
+                ext = ".webm"
+            # Normalize each clip to mp4 first for reliable concat
+            src = tmp_path / f"in_{i}{ext}"
+            src.write_bytes(raw)
+            norm = tmp_path / f"norm_{i}.mp4"
+            norm_cmd = [
+                "ffmpeg", "-y", "-i", str(src),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "23",
+                "-c:a", "aac", "-ar", "48000", "-ac", "2",
+                "-movflags", "+faststart",
+                str(norm),
+            ]
+            try:
+                proc = subprocess.run(norm_cmd, capture_output=True, text=True, timeout=180)
+            except FileNotFoundError as exc:
+                raise HTTPException(503, "ffmpeg is required to assemble clips.") from exc
+            except subprocess.TimeoutExpired as exc:
+                raise HTTPException(504, "Clip normalize timed out.") from exc
+            if proc.returncode != 0 or not norm.is_file():
+                raise HTTPException(400, f"Could not normalize clip {i + 1} for assembly.")
+            paths.append(norm)
+
+        if not paths:
+            raise HTTPException(400, "No usable clips to assemble.")
+
+        list_file.write_text("".join(f"file '{p.name}'\n" for p in paths), encoding="utf-8")
+        out = tmp_path / f"assembled.{fmt}"
+        if fmt == "mp4":
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
+                "-c", "copy", str(out),
+            ]
+            media_type = "video/mp4"
+            download_name = "render3d-assembled.mp4"
+        else:
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
+                "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32",
+                "-c:a", "libopus",
+                str(out),
+            ]
+            media_type = "video/webm"
+            download_name = "render3d-assembled.webm"
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=240, cwd=str(tmp_path))
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(504, "Assemble timed out.") from exc
+        if proc.returncode != 0 or not out.is_file() or out.stat().st_size <= 0:
+            # Fallback re-encode concat
+            cmd2 = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "23",
+                "-c:a", "aac",
+                str(tmp_path / "assembled.mp4"),
+            ]
+            proc2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=240, cwd=str(tmp_path))
+            out2 = tmp_path / "assembled.mp4"
+            if proc2.returncode != 0 or not out2.is_file():
+                detail = (proc.stderr or proc2.stderr or "")[-400:]
+                logger.warning("video assemble failed user_id=%s detail=%s", user.get("id"), detail)
+                raise HTTPException(400, "Could not assemble clips.")
+            data = out2.read_bytes()
+            return Response(
+                content=data,
+                media_type="video/mp4",
+                headers={"Content-Disposition": 'attachment; filename="render3d-assembled.mp4"'},
+            )
+        return Response(
+            content=out.read_bytes(),
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+        )
 
 
 RENDER_AGENT_SYSTEM_PROMPT = """You are Render Agent, the in-app support assistant for Render3D.

@@ -31,6 +31,122 @@ function saveIdSet(key, set) {
   localStorage.setItem(key, JSON.stringify([...set]));
 }
 
+/** Long-press (mobile) → same action as right-click context menu. */
+function bindLongPress(el, onLongPress, { ms = 480, moveTolerance = 14 } = {}) {
+  if (!el || typeof onLongPress !== "function") return () => {};
+  let timer = 0;
+  let armTimer = 0;
+  let startX = 0;
+  let startY = 0;
+  let fired = false;
+  let armed = false;
+
+  const clearSelection = () => {
+    try {
+      const sel = window.getSelection?.();
+      if (sel && sel.rangeCount) sel.removeAllRanges();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const clear = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = 0;
+    }
+    if (armTimer) {
+      clearTimeout(armTimer);
+      armTimer = 0;
+    }
+    armed = false;
+    el.classList.remove("is-long-pressing");
+  };
+
+  const onSelectStart = (e) => {
+    if (armed || fired || timer) {
+      e.preventDefault();
+      clearSelection();
+    }
+  };
+
+  const onStart = (e) => {
+    if (e.touches?.length && e.touches.length !== 1) return;
+    const t = e.touches?.[0] || e;
+    startX = t.clientX;
+    startY = t.clientY;
+    fired = false;
+    clear();
+    el.classList.add("is-long-pressing");
+    // Arm early so iOS can't start a text highlight while the hold continues.
+    armTimer = window.setTimeout(() => {
+      armed = true;
+      clearSelection();
+    }, 180);
+    timer = window.setTimeout(() => {
+      fired = true;
+      armed = true;
+      clearSelection();
+      try {
+        navigator.vibrate?.(14);
+      } catch {
+        /* ignore */
+      }
+      onLongPress({
+        clientX: startX,
+        clientY: startY,
+        preventDefault() {},
+        stopPropagation() {},
+        target: el,
+      });
+      clearSelection();
+    }, ms);
+  };
+
+  const onMove = (e) => {
+    const t = e.touches?.[0] || e;
+    if (!t || (!timer && !armTimer)) return;
+    if (Math.hypot(t.clientX - startX, t.clientY - startY) > moveTolerance) {
+      clear();
+      return;
+    }
+    if (armed) clearSelection();
+  };
+
+  const onEnd = (e) => {
+    if (fired || armed) {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+      clearSelection();
+    }
+    if (fired) {
+      el.dataset.longPressConsumed = "1";
+      window.setTimeout(() => {
+        delete el.dataset.longPressConsumed;
+        clearSelection();
+      }, 450);
+    }
+    clear();
+  };
+
+  el.addEventListener("touchstart", onStart, { passive: true });
+  el.addEventListener("touchmove", onMove, { passive: true });
+  el.addEventListener("touchend", onEnd, { passive: false });
+  el.addEventListener("touchcancel", clear, { passive: true });
+  el.addEventListener("selectstart", onSelectStart);
+  el.addEventListener("dragstart", onSelectStart);
+
+  return () => {
+    clear();
+    el.removeEventListener("touchstart", onStart);
+    el.removeEventListener("touchmove", onMove);
+    el.removeEventListener("touchend", onEnd);
+    el.removeEventListener("touchcancel", clear);
+    el.removeEventListener("selectstart", onSelectStart);
+    el.removeEventListener("dragstart", onSelectStart);
+  };
+}
+
 function loadArchivedFolders() {
   try {
     const raw = JSON.parse(localStorage.getItem(FOLDER_ARCHIVE_KEY) || "[]");
@@ -1461,28 +1577,35 @@ export function createWorkspaceBrowser({
       && !project?.public
       && !sharedWithMe
       && (!!me && (project?.owner_user_id === me || project?.created_by === me));
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches
+      || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
     const menu = document.createElement("div");
-    menu.className = "folder-context-menu project-context-menu";
+    menu.className = `folder-context-menu project-context-menu${coarse ? " project-context-menu--mobile" : ""}`;
     menu.innerHTML = `
       <div class="component-context-title">
         <strong>${escapeHtml(project?.name || project?.id || "Project")}</strong>
         <span>${escapeHtml(idToken)}</span>
       </div>
+      <button type="button" data-action="export">Export / share…</button>
       <button type="button" data-action="open">Open project</button>
       <button type="button" data-action="copy-id">Copy project ID</button>
       ${canShare ? `<button type="button" data-action="share">Share with teammate…</button>` : ""}
       ${sharedWithMe ? `<button type="button" data-action="leave-share">Remove from my folder</button>` : ""}
       ${readOnly || project?.public ? "" : `<button type="button" data-action="move">Move to…</button>`}
       ${readOnly || project?.public ? "" : `<button type="button" data-action="make-public">Make public</button>`}
-      <button type="button" data-action="export">Export / share…</button>
       ${readOnly ? "" : `<button type="button" data-action="rename">Rename…</button>`}
       ${canDelete ? `<hr />
       <button type="button" data-action="delete">Delete project</button>` : ""}
     `;
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();
-    const left = Math.min(e.clientX, window.innerWidth - rect.width - 8);
-    const top = Math.min(e.clientY, window.innerHeight - rect.height - 8);
+    let left = Math.min(e.clientX || 16, window.innerWidth - rect.width - 8);
+    let top = Math.min(e.clientY || 16, window.innerHeight - rect.height - 8);
+    if (coarse) {
+      // Prefer a bottom-sheet style menu on phones so thumbs can reach Export.
+      left = Math.max(8, (window.innerWidth - rect.width) / 2);
+      top = Math.max(8, window.innerHeight - rect.height - 16);
+    }
     menu.style.left = `${Math.max(8, left)}px`;
     menu.style.top = `${Math.max(8, top)}px`;
     contextMenu = menu;
@@ -2175,24 +2298,39 @@ export function createWorkspaceBrowser({
       ? `<span class="folder-shared-tag proj-shared-tag" title="Shared with you">Shared</span>`
       : "";
     body.innerHTML = `${genBadge}${spinner}${progressBadge}<span class="proj-name">${escapeHtml(p.name || p.id)}</span>${sharedTag}${newBadge}<span class="proj-id-badge" title="${escapeHtml(projectIdToken)}">${escapeHtml(projectIdLabel)}</span>${loadingLabel}${ownerMeta}<span class="proj-meta">${files} file${files !== 1 ? "s" : ""} · ${steps} step${steps !== 1 ? "s" : ""}${promptCost}${when ? " · " + when : ""}</span>`;
-    body.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onOpenProject?.(p.id);
-    });
-
     const actions = document.createElement("div");
     actions.className = "proj-row-actions proj-row-actions--menu-only";
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches
+      || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
     if (!readOnly || p.shared_with_me) {
-      actions.title = p.shared_with_me
-        ? "Right-click to open or remove from your folder"
-        : "Right-click project for share, export, rename, and delete";
+      actions.title = coarse
+        ? (p.shared_with_me
+          ? "Hold to open menu or remove from your folder"
+          : "Hold for export, share, rename, and delete")
+        : (p.shared_with_me
+          ? "Right-click to open or remove from your folder"
+          : "Right-click project for share, export, rename, and delete");
     }
 
     const main = document.createElement("div");
     main.className = "proj-item-main";
     main.append(handle, expandBtn, body, actions);
+
+    body.addEventListener("click", (e) => {
+      if (main.dataset.longPressConsumed === "1") {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      e.stopPropagation();
+      onOpenProject?.(p.id);
+    });
+
     main.addEventListener("contextmenu", (e) => {
       showProjectContextMenu(e, p);
+    });
+    bindLongPress(main, (fakeEvent) => {
+      showProjectContextMenu(fakeEvent, p);
     });
     li.append(main);
     if (loading && projectOpen) {
